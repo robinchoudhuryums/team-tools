@@ -587,16 +587,32 @@ entry says which it is.
 <a id="operator-set-script-property-manager-emails"></a>
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
-  reads this before CONFIG; without it, no one passes the
-  `isManager` check and manager features stay locked out.
+  reads this before `CONFIG.MANAGER_EMAILS`. **It is NOT the in-app manager
+  gate:** who counts as a manager inside the app (`emp.isManager`, every
+  `'Manager access required.'` endpoint, the manager tabs) is the roster's
+  column G, `IsManager` (`TRUE`/`yes`/`y`/`1`), read by `getEmployeeInfo_`.
+  This list does three other jobs: it gates the trigger handlers and
+  `installAutomationTriggers` (`assertManagerCaller_` — a caller not on it is
+  refused), it is the RECIPIENT list for every manager email (the digests, the
+  daily brief, training questions, the fallback for a notice whose owner left —
+  FORM-5 / F41), and the managerSource drift detector compares it with the
+  roster's column G. Unset, the triggers cannot be installed and the manager
+  mail goes nowhere, while in-app manager features still work for anyone
+  marked in column G — keep the two in step (Admin → System names a drift).
+  (Corrected cycle 25 F25: this entry used to say no one passes `isManager`
+  without it.)
   **Since cycle 22 S7 (2026-09-25) offboarding a person REMOVES their address
   from this list** (unless it is the last entry) — see the offboarding entry.
 <a id="operator-script-property-admin-emails"></a>
 - **Script Property `ADMIN_EMAILS`** (optional) — comma-separated list of the
-  above-manager **admin tier** (the Manage module's Admin tab). `getAdminEmails_()`
-  reads it; **UNSET/empty falls back to `MANAGER_EMAILS`** so a fresh deploy never
-  hides Admin from the deployer, and **SET narrows** Admin to exactly that list
-  (admins are a SUBSET of managers — an admin always passes `isManager`). Drives
+  above-manager **admin tier** (the Manage module's Admin tab). `empIsAdmin_`
+  reads it (there is no `getAdminEmails_`); **UNSET/empty makes EVERY roster
+  manager an admin** (column G — not `MANAGER_EMAILS`), so a fresh deploy never
+  hides Admin from the deployer, and **SET narrows** Admin to the listed
+  addresses that are ALSO roster managers (admins are a SUBSET of managers — a
+  listed address whose column G is not set is not an admin; F(M-10)).
+  (Corrected cycle 25 F25: this entry used to name a `getAdminEmails_()` and a
+  fallback to `MANAGER_EMAILS`, neither of which exists.) Drives
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab
@@ -858,6 +874,18 @@ entry says which it is.
   (`SPANISH_PENDING_IDS_PREFIX`) carries each reopened thread's claim floor
   beside its id — timestamps only. Nothing to set; tell the members.
 
+  **Cycle 25 E4 (G5, 2026-10-15) — escalation.** A pending request that has
+  waited **7 calendar days** (`SPANISH_ESCALATE_DAYS`) is escalated: an
+  "Escalated · N days" pill and stripe on the tab and the Dashboard card, its
+  claimant's Needs-you item turns overdue, and the **8am escalation digest**
+  (`sendSpanishEscalationDigest`, riding `runDailyChecks` — no new trigger, so
+  re-running `installAutomationTriggers` is not required) emails the managers
+  the escalated requests: age, email or voicemail, who has it, and the Gmail
+  link — never the subject, text or requester. It reads the tab's widest
+  window (90 days), heartbeats as `spanishEscalation` (stale past 26 h), logs
+  each decision under Admin → System → Email deliveries, and a morning with
+  none sends nothing. It does nothing while `SPANISH_INBOX_ADDRESS` is unset.
+
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
   2026-08-31).** The operator asked whether the Spanish-inbox median counted
@@ -1106,11 +1134,16 @@ entry says which it is.
   driven by `TRIGGER_GROUPS` (the ONE source for the dispatcher bodies, the
   derived `RETIRED_TRIGGER_HANDLERS` dedupe list, the install email and the
   TQ pins): `runHourlyJobs` (hourly → `sendCallNotesEodDigest`,
-  `autoAssignSpanishThreadsScheduled`), `runWeeklyDigests` (Friday
-  manager-tz 8am → `sendCallNotesWeeklyDigests`, `sendCoachingRecapDigest`)
-  and `runNightlyPurges` (daily manager-tz 2am → `purgeOldDiagnostics`,
-  `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes` — the
-  four DELETE-ONLY retention purges, bounded first, cross-rep walk last).
+  `scanDeptRequestReplies` (22post D), `autoAssignSpanishThreadsScheduled`),
+  `runWeeklyDigests` (Friday manager-tz 8am → `sendCallNotesWeeklyDigests`,
+  `sendCoachingRecapDigest`), `runNightlyPurges` (daily manager-tz 2am →
+  `purgeOldDiagnostics`, `purgeOldQaReviews`, `purgeExpiredFormData`,
+  `purgeArchivedCallNotes` — the four DELETE-ONLY retention purges, bounded
+  first, cross-rep walk last) and `runDailyChecks` (daily manager-tz 8am →
+  `checkOpenPunches`, `sendCallNotesUrgentDigest`, `sendSpanishEscalationDigest`
+  (cycle 25 E4) — the open-punch stamp the 9am health digest reads). The
+  groups' membership is `TRIGGER_GROUPS` and its size is the running-totals
+  block's "Jobs riding a dispatcher" — never a number written here.
   `runTriggerGroup_` runs each job in its own try/catch (a throw is stamped
   under the job's KEY into `AUTOMATION_LAST_ERRORS` — `TRIGGER_HANDLER_JOB_KEYS`
   maps each grouped handler to it since seams F3 (cycle 24), so it is labelled
@@ -1123,7 +1156,7 @@ entry says which it is.
   and `runDailyExportCheck` — and the failure digest itself carry a
   heartbeat too (`AUTOMATION_DIGEST_LAST_RUNS`), so every daily trigger has a
   liveness signal. **Known limit: a group shares one
-  six-minute execution** — all eight grouped jobs are cheap by default (the
+  six-minute execution** — every grouped job is cheap by default (the
   purges no-op while their windows are 0), but a purge enabled against a
   large backlog that runs long is killed WITH the jobs after it; their own
   liveness rows then read stale, which is the signal to re-order or split.
@@ -2184,6 +2217,36 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-digestdeliveries-tab-cycle-25"></a>
+- **The `DigestDeliveries` tab (ADP spreadsheet) — the manager digest delivery
+  log (cycle 25 E1, G3).** **Nothing to set up:** it is auto-provisioned on the
+  first manager digest after the deploy (the automation-health digest at 9am,
+  the brief or the urgent digest at 8am — whichever runs first). Columns:
+  Timestamp (CONFIG.TIMEZONE, the diagnostics form) · Digest (a key from
+  `DIGEST_DELIVERY_LABELS` — the manager digests' heartbeat keys `weekly`,
+  `urgent`, `managerBrief`, `trainingOverdue`, `deptReqReminder`,
+  `automationHealth`, `missedPunch`, and since the E1 follow-ups the rep- and
+  agent-facing reminders `eod`, `missedPunchRep`, `trainingOverdueRep`,
+  `coachingRecap` and the alerts `selfTest`, `clientErrSpike`) · Recipient · Status (`sent`, `suppressed`
+  — it rode the daily brief, `failed`, `empty` — nothing to report) · Items
+  (blank when unknown) · Reason (a fixed phrase, or the send error). One row per
+  recipient per email decision (a rep with nothing due gets no row). **PHI-free by construction** — staff addresses
+  and fixed phrases only — so it lives beside ClientErrors and ViewUsage.
+  **Retention is FIXED at 90 days** (`DIGEST_DELIVERY_RETENTION_DAYS`, a
+  constant, not a Script Property), purged by `purgeOldDiagnostics` — which is
+  now enabled on every deployment, so its `DiagnosticsPurge` audit row appears
+  every night and its Automation Health liveness row is always checked (an
+  existing deployment with both diagnostics windows at 0 will see that row
+  start appearing). Read on Manage → Admin → System → **Digest deliveries**
+  (admin-gated, the last 14 days, beside Automation Health). App-owned: do not
+  edit or reorder its columns; deleting the tab only loses history (the next
+  email recreates it). A row that could not be WRITTEN is counted in the
+  auto-managed Script Property `DIGEST_DELIVERY_LOG_FAILS` (`{count, firstMs,
+  lastMs, lastError}`) and named on the panel while its latest failure is inside
+  the view window — delete the property to reset the count. Rep-initiated mail
+  (call-note emails, intake sends, form links) is not logged; each has its own
+  audit row.
+
 <a id="operator-script-property-whatsnew-kb-id"></a>
 - **Script Property `WHATSNEW_KB_ID`** (optional — the "What's new" panel,
   INV-152). Set it to the ID of a PUBLISHED Reference **article** (create a
@@ -2495,6 +2558,19 @@ entry says which it is.
   (DR-1). **One-time check:** in the DeptRequests tab, look for two rows with
   the same ThreadId value — those requests share a Gmail conversation, and
   their unnamed replies will now ask for a look instead of resolving both.
+  **Cycle 25 E4 (ST1, 2026-10-15) — the review queue.** A held reply now waits
+  under **Replies to check** at the top of the Dept Requests tab with the
+  reason the check held it back, and **Resolved** / **Still open** buttons
+  (whoever may resolve the request may answer). Still open keeps the request
+  open and the check never raises that same reply again — only the
+  department's next reply. **Store:** the DeptRequests tab gains a trailing
+  **ReplyReason** column (a code, never the reply's text; the header
+  self-heals), and a new **DeptReplyReviews** tab (Timestamp, RequestId,
+  Reason, Answer, By — PHI-free, auto-provisioned beside DeptRequests) logs
+  every answer. **Admin → System → Dept Request reply check** counts, per
+  rule, how often people overrode it over 90 days; the check never changes
+  itself — a rule people mostly answer Resolved is one to ask to change.
+  Requests held before the deploy show "reason not recorded".
 
 <a id="operator-script-property-dash-team-layouts-22post-e"></a>
 - **Script Property `DASH_TEAM_LAYOUTS` (22post E, 2026-09-28; auto-managed).**

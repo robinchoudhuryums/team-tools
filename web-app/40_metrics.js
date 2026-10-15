@@ -273,6 +273,13 @@ function validateCdrColumns_(sheet) {
   }
   return _cdrColumnWarning;
 }
+/** F16 (cycle 25): did the alias read FAIL in this execution? A failure is
+ *  answered with {} (the readers keep working, unaliased) but never memoised,
+ *  and a caller that caches its own result asks this first — a round read
+ *  without the aliases drops every aliased rep as off-roster, and the
+ *  dashboard pinned that for its six-hour TTL (g129). */
+var _cdrNameMapFailed = false;
+function cdrNameMapDegraded_() { return _cdrNameMapFailed; }
 function getCdrNameMap_() {
   var now = Date.now();
   if (_cdrNameMapCache && now < _cdrNameMapExpiry) return _cdrNameMapCache;
@@ -291,9 +298,11 @@ function getCdrNameMap_() {
       map[oldName] = canonical;
     }
   } catch (e) {
-    Logger.log('getCdrNameMap_ skipped: ' + e.message);
+    Logger.log('getCdrNameMap_ failed: ' + e.message);
+    _cdrNameMapFailed = true;   // F16: answered, not memoised — the next call reads again
+    return map;
   }
-  _cdrNameMapCache = map;
+  _cdrNameMapCache = map;   // (the failed flag is NOT cleared: a round whose first read failed stays degraded — module state lives one execution)
   _cdrNameMapExpiry = now + (CONFIG.CDR_CACHE_TTL * 1000);
   return map;
 }
@@ -1345,36 +1354,76 @@ function dashboardAlignToData_(range, latestDate, prevWorkday, todayIso) {
   var next = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0');
   return { importPending: true, dataThrough: latestDate, prevAnchor: next };
 }
+/** PURE (F12, cycle 25; Node-pinned) — the workdays (Mon–Fri, not a company
+ *  holiday in `holidays`, an {iso:true} map) in [fromIso, toIso], inclusive.
+ *  0 for a bad or empty range. The CDR holds no weekend or holiday rows, so a
+ *  workday is the unit a period's call volume accrues in. */
+function dashWorkdayCount_(fromIso, toIso, holidays) {
+  var re = /^\d{4}-\d{2}-\d{2}$/;
+  if (!re.test(String(fromIso || '')) || !re.test(String(toIso || '')) || toIso < fromIso) return 0;
+  var fmt = function (x) { return x.getUTCFullYear() + '-' + String(x.getUTCMonth() + 1).padStart(2, '0') + '-' + String(x.getUTCDate()).padStart(2, '0'); };
+  var d = new Date(fromIso + 'T12:00:00Z'), end = Date.parse(toIso + 'T12:00:00Z'), n = 0;
+  for (var steps = 0; d.getTime() <= end && steps < 400; steps++) {
+    var dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6 && !(holidays && holidays[fmt(d)])) n++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return n;
+}
 /** Pure (Node-pinned) — the LIKE-FOR-LIKE prior window for a period, used for
  *  the MTD deltas (operator 2026-08-12: "show the delta from last month").
  *
- *  MTD compares against the PRIOR MONTH'S SAME ELAPSED DAYS OF DATA, not the whole
- *  prior month. That choice is load-bearing for the VOLUME metrics: on the 12th,
- *  12 days of answered calls against a full 31-day month is not a delta, it is
- *  an arithmetic artifact that would read as a collapse every month and recover
- *  on the 31st. The day is CLAMPED to the prior month's length (Mar 31 → Feb 28
- *  / 29), which makes the comparison SHORTER, never longer — under-reporting is
- *  the safe direction for a figure a rep is judged by. Returns null for periods
- *  we do not compare (yesterday / ytd — deliberately out of scope). */
-function dashboardPrevRange_(periodKey, todayIso) {
+ *  MTD compares against the PRIOR MONTH'S SAME NUMBER OF WORKDAYS OF DATA, not
+ *  the whole prior month. That choice is load-bearing for the VOLUME metrics: on
+ *  the 12th, 12 days of answered calls against a full 31-day month is not a
+ *  delta, it is an arithmetic artifact that would read as a collapse every
+ *  month and recover on the 31st.
+ *
+ *  F12 (cycle 25): WORKDAYS, not calendar days. Calls accrue on workdays only,
+ *  and a month's first days differ in how many of them are weekends or a
+ *  holiday — "Oct 1–2" (Wed–Thu, two workdays) against "Sep 1–2" (Labor Day and
+ *  a Tuesday, one) read +100% with nothing changed, and the first week of every
+ *  month swung −50% to +200%. The current window's data days are counted as
+ *  workdays (W), and the prior window runs from the 1st to the prior month's
+ *  W-th workday. A prior month with fewer than W workdays is CLAMPED to its
+ *  end — the comparison gets SHORTER, never longer (under-reporting is the
+ *  safe direction for a figure a rep is judged by). `holidays` is the company
+ *  calendar ({iso:true}); omitted, it is read through companyHolidayMap_
+ *  (typeof-guarded so the Node pin stays pure — weekends only there).
+ *  Returns null for periods we do not compare (yesterday / ytd — deliberately
+ *  out of scope) and for a window with no workday of data yet. */
+function dashboardPrevRange_(periodKey, todayIso, holidays) {
   if (periodKey !== 'mtd' || !/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
   var y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7), d = +todayIso.slice(8, 10);
   var py = (m === 1) ? y - 1 : y, pm = (m === 1) ? 12 : m - 1;
   var pLen = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  var pad = function (n) { return String(n).padStart(2, '0'); };
+  var prevFrom = py + '-' + pad(pm) + '-01';
   // M8 (cycle 22): LAG-ALIGNED. The current window runs to today but the CDR
-  // holds nothing for today, so it carries d-1 days of data; comparing it with
-  // days 1..d of last month gave the prior window a whole extra day (every
-  // volume delta read ~1/d low). On the 1st there is no complete day to
-  // compare, so there is no comparison.
+  // holds nothing for today, so its data is days 1..d-1. On the 1st there is no
+  // complete day, so there is no comparison.
   var have = d - 1;
   if (have < 1) return null;
-  var pd = Math.min(have, pLen);
-  var pad = function (n) { return String(n).padStart(2, '0'); };
+  var hol = holidays;
+  if (!hol) {
+    try { hol = (typeof companyHolidayMap_ === 'function') ? companyHolidayMap_(prevFrom, todayIso) : {}; }
+    catch (e) { hol = {}; }
+  }
+  var w = dashWorkdayCount_(todayIso.slice(0, 8) + '01', todayIso.slice(0, 8) + pad(have), hol);
+  if (w < 1) return null;   // the month's data days so far are a weekend or holidays: nothing to compare yet
+  var pd = 0, seen = 0;
+  for (var day = 1; day <= pLen; day++) {
+    if (dashWorkdayCount_(py + '-' + pad(pm) + '-' + pad(day), py + '-' + pad(pm) + '-' + pad(day), hol)) seen++;
+    if (seen === w) { pd = day; break; }
+  }
+  var clamped = !pd;
+  if (clamped) pd = pLen;
   return {
-    from: py + '-' + pad(pm) + '-01',
+    from: prevFrom,
     to: py + '-' + pad(pm) + '-' + pad(pd),
     label: DASH_MONTH_ABBR[pm - 1] + (pd === 1 ? ' 1' : ' 1–' + pd),
-    clamped: pd < have,
+    clamped: clamped,
+    workdays: w,
   };
 }
 /** Pure (Node-pinned) — team CDR aggregate from getCdrAgentMetrics_'s .agents
@@ -1457,7 +1506,9 @@ function getDashboardMetrics(periodKey) {
     // v7 (cycle 23 Batch 11): a pre-import window ends on its newest data day
     // and the payload carries importPending — a v6 entry cached by the code
     // before MET-5 could still be a misaligned pre-import round.
-    var cacheKey = 'dash_metrics_v7:' + emp.id + ':' + periodKey + ':' + todayIso;
+    // v8 (cycle 25 F12): the MTD prior window counts WORKDAYS and the payload
+    // carries the projection's workday basis — a v7 entry is a calendar-day one.
+    var cacheKey = 'dash_metrics_v8:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
       try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
     }
@@ -1536,7 +1587,15 @@ function getDashboardMetrics(periodKey) {
     // MET-5 follow-up (Batch 11): before the daily import, both windows end on
     // the newest DATA day, so the comparison stays like-for-like.
     var align = dashboardAlignToData_(range, cur.latestDate, prevWorkdayIso_(todayIso), todayIso);
-    var prevRange = align.prevAnchor ? dashboardPrevRange_(periodKey, align.prevAnchor) : null, prev = null, prevUnavailable = false;
+    // F12 (cycle 25): ONE company-calendar read covers the prior month, this
+    // period and the period's end — the workday-aligned comparison and the
+    // projection's workday basis both read it. Unreadable: weekends only (the
+    // prevWorkdayIso_ posture).
+    var periodEnd = periodKey === 'ytd' ? todayIso.slice(0, 4) + '-12-31'
+      : (periodKey === 'mtd' ? todayIso.slice(0, 8) + String(new Date(Date.UTC(+todayIso.slice(0, 4), +todayIso.slice(5, 7), 0)).getUTCDate()).padStart(2, '0') : todayIso);
+    var dashHol = {};
+    try { dashHol = companyHolidayMap_(String(+todayIso.slice(0, 4) - 1) + '-12-01', periodEnd) || {}; } catch (e) { dashHol = {}; }
+    var prevRange = align.prevAnchor ? dashboardPrevRange_(periodKey, align.prevAnchor, dashHol) : null, prev = null, prevUnavailable = false;
     if (prevRange) {
       try {
         var pShaped = shapeWindow(prevRange.from, prevRange.to);
@@ -1555,6 +1614,10 @@ function getDashboardMetrics(periodKey) {
       periodKey: periodKey, from: from, to: to, label: range.label,
       dataThrough: align.dataThrough,   // M8: the projection's denominator; MET-5 follow-up: the newest data day while the import is pending
       importPending: align.importPending,   // MET-5 follow-up: the card says the latest day is not in yet
+      // F12 (cycle 25): the run-rate projects over WORKDAYS — the days with data
+      // so far and the workdays in the whole period — never calendar days.
+      workdays: (align.dataThrough && (periodKey === 'mtd' || periodKey === 'ytd'))
+        ? { elapsed: dashWorkdayCount_(from, align.dataThrough, dashHol), total: dashWorkdayCount_(from, periodEnd, dashHol) } : null,
       own: cur.own,
       team: cur.team,
       cohort: cur.cohort,
@@ -1589,7 +1652,7 @@ function getDashboardMetrics(periodKey) {
     // 6-hour TTL pinned those WRONG numbers past the import. Not cached until
     // the newest data day reaches the previous workday.
     var importPending = align.importPending;
-    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending) {
+    if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending && !cdrNameMapDegraded_()) {   // F16: never pin a round read without the aliases
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
     return result;

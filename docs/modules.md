@@ -225,6 +225,21 @@ not restate it. Server endpoints live in the fourteen server files
      un-approves today (F19). A grouped automation job that crashes is reported
      under its own, labelled name (F3).
 
+     **Cycle 25 E2 (2026-10-15) — closing a pay period.** Manage Time →
+     Periodic carries a standing **Pay Period Close** card (`getPayPeriodClose`,
+     manager-gated, read-only): for each pay cycle with reps, the period that
+     just ended and the current one, listing every rep with an open or
+     incomplete day (counted up to two days before today, so a shift in
+     progress is not flagged) and every pending time-off or punch-adjustment
+     request dated inside the period. An open day inside the 30-day edit window
+     opens Day Edit; an older one is named as a hand-edit. The collapsed
+     Periodic row says critical / warning / ready / check failed — a failed read
+     never reads as ready. An offboarded rep whose punches the export still
+     ships by ID is found too, labelled (`payrollSubjectId_`, F19), and Day Edit
+     opens for them in their own roster timezone; the open-punch check sees them
+     as well. `biweeklyRangeFor_` is the one biweekly period rule, shared with
+     the automated export.
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -240,7 +255,10 @@ not restate it. Server endpoints live in the fourteen server files
      (alongside All / Caller / Issue — INV-45); the manager Stats view is a
      scannable table (shared `mtRenderTable_` component); and the Admin tab is
      split into **Overview / Tags / Compliance / Config** sub-tabs with
-     system-status cards. **Marker text formatting (operator 2026-08-25):**
+     system-status cards. **Handbook strip (cycle 25 E3):** a pause in the
+     Issue field offers up to three published handbook sections under it (our
+     own `searchReference`, the drawer's suggestion path); a chip opens the
+     Ctrl/⌘+K drawer at the section. **Marker text formatting (operator 2026-08-25):**
      Issue/Resolution support `**bold**` / `__underline__` / `==highlight==`
      — typed literally or via Ctrl/⌘+B / Ctrl/⌘+U / Ctrl/⌘+Shift+H
      (preventDefault always fires in a `.ce` so native contenteditable
@@ -601,6 +619,16 @@ not restate it. Server endpoints live in the fourteen server files
      **Mark resolved** button instead of resolving on open, and the sender's own
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
+
+     **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
+     **Replies to check**: each department reply the hourly check held back,
+     with the rule that held it ("asks a question", "only acknowledges", …) and
+     Resolved / Still open; Still open stops the same reply being raised again,
+     and Admin → System counts per rule how often people overrode it (the check
+     never loosens itself). In the Spanish Inbox a request waiting 7 calendar
+     days is **escalated** — a pill and stripe on the tab and the Dashboard card,
+     an overdue Needs-you item for its claimant, and an 8am digest to managers
+     carrying no request content.
 
      **Cycle 23 Batch 10 (2026-10-02):** the range hero's rate is call-weighted
      (Σanswered / Σ(answered + missed)) and is never compared with itself: My Stats
@@ -1088,7 +1116,10 @@ not restate it. Server endpoints live in the fourteen server files
      hovering or focusing one previews the target section. Manual sections are
      read-only in the app — Edit, Delete and Revert refuse a `man-` id on the
      server — and each carries "Suggest an edit", which flags the section for
-     review with the agent's note. A section changed in the last 12 months carries
+     review with the agent's note (its own `suggest` kind since cycle 25 E3, shown
+     apart from "out of date"; admins export every section's feedback to a Sheet
+     for the repo-side editors, and an import that changes a section's text
+     counts as its review). A section changed in the last 12 months carries
      an Updated badge from the changelog. Typing a section number (`5.9`, `§5-9`,
      `10.B`, `card 5`, `part 5`) into either search box jumps to it, but only to a
      section the caller can see. The Ctrl/⌘+K drawer adds "What did the caller

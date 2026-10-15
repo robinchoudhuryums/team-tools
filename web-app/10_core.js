@@ -777,13 +777,21 @@ function clientErrSpikeAlert_() {
     const htmlBody = buildBrandedEmailHtml_('Client errors are spiking', inner,
       { tone: 'danger', subLabel: 'Diagnostics',
         ctaUrl: safeWebAppUrl_('callNotesAdmin'), ctaLabel: 'Open Automation Health' });
-    appSendMail_({
-      to: recipients.join(','),
-      subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
-      body: n + ' client error(s) in the last hour.\n\n' + rowsText +
-        '\nFull detail: Manage → Admin → Automation Health → Client errors.',
-      htmlBody: htmlBody,
-    });
+    try {
+      appSendMail_({
+        to: recipients.join(','),
+        subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
+        body: n + ' client error(s) in the last hour.\n\n' + rowsText +
+          '\nFull detail: Manage → Admin → Automation Health → Client errors.',
+        htmlBody: htmlBody,
+      });
+    } catch (e) {
+      logDigestDelivery_('clientErrSpike', recipients, 'failed', n, e.message);   // E1 follow-ups
+      throw e;
+    }
+    // The cooldown and the threshold are not logged — they decide per beacon,
+    // and a row per beacon would bury the log; only a SEND decision is a row.
+    logDigestDelivery_('clientErrSpike', recipients, 'sent', n, 'errors in the last hour');   // E1 follow-ups
   } catch (e) { Logger.log('clientErrSpikeAlert_ skipped: ' + e.message); }
 }
 function getOrCreateViewUsageSheet_() {
@@ -1019,7 +1027,8 @@ function clientErrRetentionDays_() { return retentionWindowDays_(CLIENT_ERR_RETE
 function diagRetentionText_() {
   const vu = viewUsageRetentionDays_(), ce = clientErrRetentionDays_();
   return 'diagnostics tabs — ViewUsage ' + (vu > 0 ? vu + 'd purge' : 'kept') +
-    ' · ClientErrors ' + (ce > 0 ? ce + 'd purge' : 'kept');
+    ' · ClientErrors ' + (ce > 0 ? ce + 'd purge' : 'kept') +
+    ' · DigestDeliveries ' + DIGEST_DELIVERY_RETENTION_DAYS + 'd purge';   // G3 (cycle 25 E1) — always on
 }
 /** Epoch ms of a diagnostics Timestamp cell. Both tabs are written
  *  'yyyy-MM-dd HH:mm:ss' in CONFIG.TIMEZONE (recordClientError /
@@ -1079,23 +1088,146 @@ function diagPurgeTab_(sheet, cutoffMs, budget) {
   out.hitCap = idx.length >= budget;
   return out;
 }
-/** Daily diagnostics purge (trigger #20). No-ops while BOTH windows are 0
- *  (the default) — the early return precedes the lock, so installing the
- *  trigger is harmless. Counts-only audit on every enabled run; a thrown run
- *  stamps AUTOMATION_LAST_ERRORS (a handler that only RETURNS reaches nobody —
- *  the F4 rule) and a clean one clears it. */
+// ── G3 (cycle 25 E1): the digest delivery log ─────────────────────────────
+// One row per manager per digest run (DIGEST_DELIVERY_HEADERS), PHI-free by
+// construction — see the constants. Rows past DIGEST_DELIVERY_RETENTION_DAYS
+// go in the nightly diagnostics purge.
+function getOrCreateDigestDeliveriesSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(DIGEST_DELIVERIES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(DIGEST_DELIVERIES_TAB);
+    sheet.appendRow(sheetSafeRow_(DIGEST_DELIVERY_HEADERS.map(function (h, i) {
+      return i === 0 ? `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})` : h;
+    })));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** PURE (Node-pinned): the rows one digest decision writes — one per distinct
+ *  recipient, lowercased. An unknown status is recorded as `failed` (never as
+ *  a delivery); a count that is not a whole non-negative number is blank,
+ *  never 0 (g114 — a zero a reader could reach two ways). */
+function digestDeliveryRows_(digest, recipients, status, items, reason, stamp) {
+  const st = DIGEST_DELIVERY_STATUSES.indexOf(status) >= 0 ? status : 'failed';
+  const n = (typeof items === 'number' && isFinite(items) && items >= 0) ? Math.round(items) : '';
+  const why = String(reason || '').replace(/\s+/g, ' ').trim().slice(0, DIGEST_DELIVERY_REASON_MAX);
+  const seen = {};
+  return (Array.isArray(recipients) ? recipients : [recipients])
+    .map(function (r) { return String(r || '').trim().toLowerCase(); })
+    .filter(function (r) { if (!r || seen[r]) return false; seen[r] = true; return true; })
+    .map(function (r) { return [stamp, String(digest || ''), r, st, n, why]; });
+}
+/** Best-effort and NEVER throws — a digest's delivery must not depend on its
+ *  own log. Takes NO lock: it runs from inside jobs (a helper inside a job's
+ *  path never re-takes the script lock — A8), and appendRow is atomic. A row
+ *  that could not be written is the view's stated limit, not a delivery. */
+function logDigestDelivery_(digest, recipients, status, items, reason) {
+  try {
+    const rows = digestDeliveryRows_(digest, recipients, status, items, reason,
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()));
+    if (!rows.length) return 0;
+    const sheet = getOrCreateDigestDeliveriesSheet_();
+    rows.forEach(function (row) { sheet.appendRow(sheetSafeRow_(row)); });
+    return rows.length;
+  } catch (e) {
+    Logger.log('logDigestDelivery_(' + digest + ') failed: ' + e.message);
+    noteDigestDeliveryWriteFailure_(e);   // E1 follow-ups: a lost row is counted, so the panel can say so
+    return 0;
+  }
+}
+/** E1 follow-ups (cycle 25) — counts a delivery row that could not be written
+ *  (DIGEST_DELIVERY_FAIL_PROP). Best-effort and lock-free like its caller (A8):
+ *  a lost increment under a race undercounts a counter that only has to be
+ *  non-zero to be shown. Never throws. */
+function noteDigestDeliveryWriteFailure_(err) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = null;
+    try { rec = JSON.parse(props.getProperty(DIGEST_DELIVERY_FAIL_PROP)); } catch (_) {}
+    if (!rec || typeof rec !== 'object') rec = { count: 0, firstMs: Date.now() };
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastMs = Date.now();
+    rec.lastError = String((err && err.message) || err || '').slice(0, 200);
+    propSetBounded_(DIGEST_DELIVERY_FAIL_PROP, JSON.stringify(rec), { mode: 'degrade', shrink: propShrinkStripFields_(['lastError']) });
+  } catch (e) { /* best-effort — the Logger line above is the floor */ }
+}
+/** PURE (Node-pinned): the write-failure record as the panel shows it — only
+ *  when its latest failure falls inside the view window; else null. */
+function digestDeliveryWriteFailuresView_(raw, cutoffMs) {
+  let rec = null;
+  try { rec = JSON.parse(raw); } catch (_) { return null; }
+  if (!rec || typeof rec !== 'object') return null;
+  const last = Number(rec.lastMs), n = Number(rec.count);
+  if (!(n > 0) || !isFinite(last) || last < cutoffMs) return null;
+  return { count: n, lastMs: last, lastError: String(rec.lastError || '') };
+}
+/** PURE (Node-pinned): the Admin view of the raw tab rows — inside the window
+ *  (a stamp that will not parse is KEPT, never silently dropped), newest
+ *  first. `at` is shown as written; a Sheets-coerced Date stamp (g11) is
+ *  normalised the way every diagnostics read is. */
+function digestDeliveriesView_(rows, cutoffMs) {
+  const out = [];
+  (rows || []).forEach(function (r) {
+    if (!r || !String(r[1] || '').trim()) return;
+    const ms = diagTsMs_(r[0]);
+    if (ms !== null && ms < cutoffMs) return;
+    const n = Number(r[4]);
+    out.push({ at: normalizeAuditTs_(r[0]), ms: ms, digest: String(r[1]).trim(), recipient: String(r[2] || '').trim(),
+      status: DIGEST_DELIVERY_STATUSES.indexOf(String(r[3]).trim()) >= 0 ? String(r[3]).trim() : 'failed',
+      items: (r[4] === '' || r[4] === null || !isFinite(n)) ? null : n, reason: String(r[5] || '') });
+  });
+  return out.reverse();
+}
+/** G3 — ADMIN-gated read of the delivery log (Manage → Admin → System).
+ *  `{rows, days, retentionDays, truncated, missing}` or `{error}`. `missing`
+ *  = no digest has written since this shipped; `truncated` = the tail scan
+ *  stopped inside the window, so older rows exist that were not read (g152). */
+function getDigestDeliveries(opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    let days = parseInt(opts && opts.days, 10);
+    if (!(days >= 1)) days = DIGEST_DELIVERY_VIEW_DAYS;
+    days = Math.min(days, DIGEST_DELIVERY_RETENTION_DAYS);
+    const cutoff = Date.now() - days * 86400000;
+    // E1 follow-ups: the labels ride the payload (the client keeps no copy),
+    // and a row that could not be written inside the window is named.
+    let failRaw = null;
+    try { failRaw = PropertiesService.getScriptProperties().getProperty(DIGEST_DELIVERY_FAIL_PROP); } catch (_) {}
+    const base = { rows: [], days: days, retentionDays: DIGEST_DELIVERY_RETENTION_DAYS, truncated: false, missing: false,
+                   labels: DIGEST_DELIVERY_LABELS, writeFailures: digestDeliveryWriteFailuresView_(failRaw, cutoff) };
+    const sheet = getAdpSS_().getSheetByName(DIGEST_DELIVERIES_TAB);
+    if (!sheet) { base.missing = true; return base; }
+    const last = sheet.getLastRow();
+    if (last < 2) return base;
+    const start = Math.max(2, last - DIGEST_DELIVERY_SCAN_MAX + 1);
+    const vals = sheet.getRange(start, 1, last - start + 1, DIGEST_DELIVERY_HEADERS.length).getValues();
+    base.rows = digestDeliveriesView_(vals, cutoff);
+    if (start > 2) {
+      const firstMs = diagTsMs_(vals[0][0]);
+      base.truncated = firstMs === null || firstMs >= cutoff;
+    }
+    return base;
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+/** Daily diagnostics purge (trigger #20). ViewUsage and ClientErrors purge
+ *  only while their windows are set (default 0, kept); the DigestDeliveries
+ *  log (G3, cycle 25 E1) always keeps DIGEST_DELIVERY_RETENTION_DAYS, so the
+ *  job runs every night and writes its counts-only audit row every night. Its
+ *  outcome is recorded by runAutomationJob_ (ST2): a throw stamps
+ *  AUTOMATION_LAST_ERRORS (the F4 rule), a clean run clears it. */
 function purgeOldDiagnostics() {
   assertManagerCaller_('purgeOldDiagnostics');
-  try {
+  return runAutomationJob_('DiagnosticsPurge', function () {
     const vuDays = viewUsageRetentionDays_(), ceDays = clientErrRetentionDays_();
-    if (!vuDays && !ceDays) {
-      Logger.log('purgeOldDiagnostics: both windows disabled (VIEW_USAGE_RETENTION_DAYS=0, CLIENT_ERR_RETENTION_DAYS=0) — nothing purged.');
-      return;
-    }
+    const ddDays = DIGEST_DELIVERY_RETENTION_DAYS;
     const ss = getAdpSS_();
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
-    let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false };
+    let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1104,21 +1236,21 @@ function purgeOldDiagnostics() {
       }
       if (ceDays) {
         ce = diagPurgeTab_(ss.getSheetByName(CLIENT_ERRORS_TAB), Date.now() - ceDays * 86400000, budget);
+        budget -= ce.removed;
       }
+      dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
     } finally {
       lock.releaseLock();
     }
-    const capped = vu.hitCap || ce.hitCap;
+    const capped = vu.hitCap || ce.hitCap || dd.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
-      `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}` +
+      `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    clearAutomationError_('DiagnosticsPurge');
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors row(s)` +
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries row(s)` +
       (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + '.');
-  } catch (err) {
-    stampAutomationError_('DiagnosticsPurge', err.message);
-    Logger.log('purgeOldDiagnostics failed: ' + err.message);
-  }
+    return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
+             outcome: automationOutcome_('ok') };
+  });
 }
 
 // ── Automation Health (Admin tab) ────────────────────────────────────────
@@ -1142,10 +1274,10 @@ function withAutomationErrorLock_(fn) {
   try { return fn(); }
   finally { if (locked) { try { lock.releaseLock(); } catch (_) {} } }
 }
-function stampAutomationError_(job, message) {
-  withAutomationErrorLock_(function () { stampAutomationErrorUnlocked_(job, message); });
+function stampAutomationError_(job, message, extra) {
+  withAutomationErrorLock_(function () { stampAutomationErrorUnlocked_(job, message, extra); });
 }
-function stampAutomationErrorUnlocked_(job, message) {
+function stampAutomationErrorUnlocked_(job, message, extra) {
   try {
     const props = PropertiesService.getScriptProperties();
     let map = {};
@@ -1153,6 +1285,11 @@ function stampAutomationErrorUnlocked_(job, message) {
     if (!map || typeof map !== 'object' || Array.isArray(map)) map = {};
     map[job] = { at: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
                  message: String(message || '').slice(0, 300) };
+    // ST2 (cycle 25 E1): a PARTIAL run says so, and names what it skipped.
+    if (extra && extra.status === 'partial') map[job].status = 'partial';
+    if (extra && Array.isArray(extra.skipped) && extra.skipped.length) {
+      map[job].skipped = extra.skipped.slice(0, AUTOMATION_OUTCOME_SKIPPED_MAX).map(function (n) { return String(n).slice(0, 60); });
+    }
     propSetBounded_(AUTOMATION_ERROR_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });   // Q1 — drops the OLDEST stamped job first
   } catch (e) { /* best-effort — never break the job's own error path */ }
 }
@@ -1168,6 +1305,51 @@ function clearAutomationErrorUnlocked_(job) {
     delete map[job];
     propSetBounded_(AUTOMATION_ERROR_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkDropOldest_ });
   } catch (e) { /* best-effort */ }
+}
+/** ST2 (cycle 25 E1) — the run-outcome contract (AUTOMATION_OUTCOME_STATUSES
+ *  holds the rule). A job body RETURNS one of these; it never stamps or clears
+ *  its key by hand. `skipped` names what a partial run left undone. */
+function automationOutcome_(status, message, skipped) {
+  return { status: status, message: String(message || ''),
+           skipped: (Array.isArray(skipped) ? skipped : []).map(String) };
+}
+/** PURE: a valid outcome has a known status, and a stamping one says why. */
+function automationOutcomeValid_(o) {
+  if (!o || typeof o !== 'object' || AUTOMATION_OUTCOME_STATUSES.indexOf(o.status) < 0) return false;
+  if ((o.status === 'partial' || o.status === 'failed') && !String(o.message || '').trim()) return false;
+  return true;
+}
+/** The ONE recorder: ok clears the job's key, partial and failed stamp it,
+ *  idle leaves it as it is. An invalid outcome is recorded as a failure — a
+ *  job that cannot say how it went has not gone well. Returns what it recorded. */
+function recordAutomationOutcome_(key, outcome) {
+  let o = outcome;
+  if (!automationOutcomeValid_(o)) {
+    o = automationOutcome_('failed', 'the job ended without a valid run outcome (a code defect — every automation job must return one through runAutomationJob_)');
+  }
+  if (o.status === 'ok') clearAutomationError_(key);
+  else if (o.status === 'partial' || o.status === 'failed') {
+    stampAutomationError_(key, o.message, { status: o.status, skipped: o.skipped });
+  }
+  return o;
+}
+/** Runs a job body under the contract: an unexpected throw is a failed run
+ *  (logged, recorded, and returned as {success:false, error} — the shape the
+ *  handlers' catch blocks used to return), and the result carries `outcome`
+ *  beside the job's own fields, which every caller keeps reading. The caller
+ *  gates FIRST (assertManagerCaller_) — a refused caller records nothing. */
+function runAutomationJob_(key, body) {
+  let res;
+  try {
+    res = body();
+  } catch (err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    Logger.log(key + ' failed: ' + msg);
+    res = { success: false, error: msg, outcome: automationOutcome_('failed', msg) };
+  }
+  if (!res || typeof res !== 'object') res = {};
+  res.outcome = recordAutomationOutcome_(key, res.outcome);
+  return res;
 }
 /** A1 (cycle 22) — the run ledger: one Script Property per automation action
  *  (AUTOMATION_RUN_<action>), stamped beside the action's audit row. Its own
@@ -1235,6 +1417,9 @@ function automationErrorsLabelled_(map) {
   Object.keys(map || {}).forEach(function (k) {
     const e = (map[k] && typeof map[k] === 'object') ? map[k] : {};
     out[k] = { at: e.at, message: e.message, label: tabled[k] || AUTOMATION_ERROR_LABELS[k] || k };
+    // ST2 (cycle 25 E1): a partial run says so, with what it skipped.
+    if (e.status === 'partial') out[k].status = 'partial';
+    if (Array.isArray(e.skipped) && e.skipped.length) out[k].skipped = e.skipped.map(String);
   });
   return out;
 }
@@ -1299,7 +1484,7 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
     }
     const err = errors && errors[job.action];
     if (err) {
-      push('jobError', job.action, 'The ' + job.label + ' FAILED on ' + err.at + ': ' + err.message);
+      push('jobError', job.action, 'The ' + job.label + (err.status === 'partial' ? ' ran only in part on ' : ' FAILED on ') + err.at + ': ' + err.message);
     }
   });
   return (opts && opts.items) ? out : out.map(function (i) { return i.text; });
@@ -1509,6 +1694,14 @@ function automationDetectorChecks_() {
   });
   return checks;
 }
+/** PURE (Node-pinned) — F60 (cycle 25): a digest with no heartbeat on record
+ *  is overdue once the triggers have been installed for longer than its stale
+ *  window. An unknown install time is never overdue (the fresh-deploy
+ *  posture: nothing says a trigger should have fired yet). */
+function digestNeverRanOverdue_(installedMs, nowMs, staleHours) {
+  if (installedMs === null || installedMs === undefined || !isFinite(installedMs)) return false;
+  return (Number(nowMs) - Number(installedMs)) > Number(staleHours) * 3600000;
+}
 function computeAutomationHealth_(opts) {
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Default OFF: the three direct callers (badge, digest, deploy-readiness)
@@ -1667,23 +1860,38 @@ function computeAutomationHealth_(opts) {
     // no heartbeat either — the missed-punch alerts, the ADP export check and
     // this failure digest itself — could die silently. Each stamps here now.
     const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2, deptReplyScan: 2,
-                                 missedPunch: 26, exportCheck: 26, automationHealth: 26 };
+                                 missedPunch: 26, exportCheck: 26, automationHealth: 26, spanishEscalation: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
         .getProperty(DIGEST_LAST_RUN_PROP)) || {};
     } catch (_) {}
     if (!digestMap || typeof digestMap !== 'object' || Array.isArray(digestMap)) digestMap = {};
+    // F60 (cycle 25): when the triggers were installed. A digest with NO
+    // heartbeat used to be the fresh-deploy posture for ever — a trigger that
+    // never got created, or whose job died before its first stamp, never
+    // reached the dot. Past its window since the install, it is stale. No
+    // record (installed before cycle 22 kept one) keeps the old posture.
+    let installedMs = null, installedAt = '';
+    try {
+      const owner = JSON.parse(PropertiesService.getScriptProperties().getProperty(AUTOMATION_TRIGGER_OWNER_PROP) || 'null');
+      if (owner && owner.at) {
+        installedMs = Utilities.parseDate(String(owner.at), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
+        installedAt = convertAuditTs_(String(owner.at), CONFIG.TIMEZONE, mgrTz);
+      }
+    } catch (_) { installedMs = null; installedAt = ''; }
     // The reported set is DERIVED from the staleness map (INV-179) — a
     // heartbeat with a window but no row here would be stamped and never read.
     const digestHealth = Object.keys(DIGEST_STALE_HOURS).map(function (k) {
       const raw = String(digestMap[k] || '');
-      let stale = false;
+      let stale = false, neverRan = false;
       if (raw) {
         try {
           const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
           stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
         } catch (_) { stale = true; }
+      } else {
+        neverRan = stale = digestNeverRanOverdue_(installedMs, Date.now(), DIGEST_STALE_HOURS[k]);
       }
       // 4a follow-ons (cycle 23): a stale heartbeat whose job STAMPED a failure
       // inside the same window ran — and failed. Ship that, so the stale line
@@ -1693,6 +1901,8 @@ function computeAutomationHealth_(opts) {
         key: k,
         last: raw ? convertAuditTs_(raw, CONFIG.TIMEZONE, mgrTz) : null,
         stale: stale,
+        neverRan: neverRan,
+        installedAt: neverRan ? installedAt : '',
         failedAt: (stale && errorKey) ? automationFailedWithin_(automationErrors[errorKey], DIGEST_STALE_HOURS[k], Date.now()) : '',
         errorKey: errorKey,
       };
@@ -1740,6 +1950,14 @@ function computeAutomationHealth_(opts) {
       }
     } catch (_) {}
 
+    // ST2 (cycle 25 E1): two jobs report their failure through a finding of
+    // their own — the open-punch scan's stamp ("the scan could not run") and
+    // the self-test result (mode 'error'). Since every job records an outcome,
+    // their AUTOMATION_LAST_ERRORS entry would say it a second time; mark it so
+    // the problem list and the System tab show the one, more specific line.
+    const openPunches = readOpenPunchCheck_();
+    if (automationErrors.OpenPunchCheck && openPunches && openPunches.error) automationErrors.OpenPunchCheck.ownFinding = 'openPunches';
+    if (automationErrors.NightlySelfTest && selfTest && selfTest.mode === 'error') automationErrors.NightlySelfTest.ownFinding = 'selfTest';
     return {
       syncFails: syncFails,
       automationLastRuns: automationLastRuns,
@@ -1750,7 +1968,7 @@ function computeAutomationHealth_(opts) {
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
       accrualReconcile: readAccrualReconcile_(),   // the last PTO accrual reconcile pass (operator 2026-09-15)
-      openPunches: readOpenPunchCheck_(),          // the last open-punch scan (operator 2026-09-15)
+      openPunches: openPunches,                    // the last open-punch scan (operator 2026-09-15)
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
       // F9 (cycle 16) — Offerings catalog shape. null when not scanned (the
       // badge/digest path), so the client can tell "not checked" from "clean".
@@ -1795,9 +2013,14 @@ function automationProblems_(report, opts) {
   if (!report) return done();
   (report.digests || []).forEach(function (d) {
     if (d && d.stale) {
+      // F60 (cycle 25): a digest with no run on record, past its window since
+      // the install, says so — "last ran too long ago" would invent a run.
+      const ran = d.neverRan
+        ? 'The "' + d.key + '" digest has no run on record since the triggers were installed' + (d.installedAt ? ' (' + d.installedAt + ')' : '')
+        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago');
       add('digest', d.key, d.failedAt
-        ? 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
-        : 'The "' + d.key + '" digest last ran ' + (d.last || 'too long ago') + ' — the trigger may be disabled.');
+        ? ran + ' — it ran and FAILED at ' + d.failedAt + ' (see that failure), so this is not a missing trigger.'
+        : ran + (d.neverRan ? ' — its trigger may be missing; re-run installAutomationTriggers().' : ' — the trigger may be disabled.'));
     }
   });
   // Per-JOB liveness + last-error, DERIVED from AUTOMATION_JOB_CHECKS rather
@@ -1824,7 +2047,9 @@ function automationProblems_(report, opts) {
   Object.keys(report.automationErrors || {}).forEach(function (k) {
     if (tabledActions[k]) return;
     const e = report.automationErrors[k] || {};
-    add('jobError', k, 'The ' + (e.label && e.label !== k ? e.label + ' (' + k + ')' : k) + ' job FAILED on ' + (e.at || '?') + ': ' + (e.message || 'unknown error'));
+    if (e.ownFinding) return;   // ST2: said once, by its own finding below
+    add('jobError', k, 'The ' + (e.label && e.label !== k ? e.label + ' (' + k + ')' : k) +
+      (e.status === 'partial' ? ' job ran only in part on ' : ' job FAILED on ') + (e.at || '?') + ': ' + (e.message || 'unknown error'));
   });
   // PTO accrual reconciliation (operator 2026-09-15). The top-up heals late
   // data on its own, so a top-up is NOT a problem — it is the system working.
@@ -1842,7 +2067,7 @@ function automationProblems_(report, opts) {
         ') — an empty open-punch list below is NOT a clean board.');
     } else if (op.days > 0) {
       const who = (op.detail || []).map(function (d) {
-        return d.name + ' (' + d.count + ')';
+        return d.name + (d.offboarded ? ', offboarded' : '') + ' (' + d.count + ')';   // F19 (cycle 25 E2)
       }).join(', ');
       add('openPunch', 'days', 'Open punches: ' + op.days + ' day(s) across ' + op.reps +
         ' rep(s) have no usable clock-in/clock-out pair — ' + who +
@@ -1975,77 +2200,83 @@ function runNightlySelfTest() {
     return { error: 'runNightlySelfTest runs from its own trigger as the script owner — not from the browser. Nothing was recorded.' };
   }
   stampDigestLastRun_('selfTest');
-  const props = PropertiesService.getScriptProperties();
-  try {
-    if (typeof runSmokeTests !== 'function' || typeof _TEST_STATE === 'undefined') {
-      Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
-      return;
-    }
-    // A5 (cycle 13): the full suite runs ONLY on a CONFIRMED dev instance —
-    // both markers present (isDevInstance_). The old inline test inferred dev
-    // from the presence of INSTANCE_LABEL alone, so labelling prod (which the
-    // docs recommend, to tell the two tabs apart) silently promoted this to
-    // `runAllTests` against live payroll every night; assertNotProdInstance_
-    // does not catch it, because it only fires on INSTANCE_IS_PROD === 'true'.
-    const isDev = isDevInstance_();
-    const mode = isDev ? 'full' : 'smoke';
-    // …and say so when a HALF-configured dev instance gets downgraded, rather
-    // than silently running smoke forever. A labelled instance with no explicit
-    // INSTANCE_IS_PROD is exactly the ambiguous case; the note rides the stored
-    // result into Automation Health so the operator can finish the setup.
-    const needsMarker = !isDev && !!instanceLabel_();
-    const note = needsMarker
-      ? 'Full suite skipped: INSTANCE_LABEL is set but INSTANCE_IS_PROD is not. ' +
-        'Set it explicitly ("false" on dev, "true" on prod) — an unset value is treated as production.'
-      : '';
-    // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
-    // fired, but the outcome below is written only on a normal return or a
-    // CATCHABLE throw. An Apps Script execution-time-limit kill is not
-    // reliably catchable, and on the dev instance this branch runs the FULL
-    // 281-test suite against live spreadsheets — plausibly over the 6-minute
-    // ceiling. In that case the heartbeat was fresh while
-    // SELF_TEST_LAST_RESULT still held the PREVIOUS result, so a chronically
-    // timing-out suite reported GREEN and nothing surfaced it: the mechanism
-    // built to catch post-deploy regressions could silently stop running (the
-    // cycle-7 "detector that can never fire" class, in the newest detector).
-    // Stamping {running:true} first means a killed run leaves the sentinel
-    // behind, and automationProblems_ treats a STALE one as a failure.
+  // ST2 (cycle 25 E1): the run's outcome is recorded under NightlySelfTest.
+  // Failing TESTS are a finished run (ok) — they ride SELF_TEST_LAST_RESULT
+  // and their own finding; a CRASHED run is a failed one.
+  return runAutomationJob_('NightlySelfTest', function () {
     try {
-      propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify({
-        running: true, startedAt: Date.now(), mode: mode,
+      if (typeof runSmokeTests !== 'function' || typeof _TEST_STATE === 'undefined') {
+        Logger.log('runNightlySelfTest: test suite not present in this project — skipping.');
+        return { outcome: automationOutcome_('ok') };
+      }
+      // A5 (cycle 13): the full suite runs ONLY on a CONFIRMED dev instance —
+      // both markers present (isDevInstance_). The old inline test inferred dev
+      // from the presence of INSTANCE_LABEL alone, so labelling prod (which the
+      // docs recommend, to tell the two tabs apart) silently promoted this to
+      // `runAllTests` against live payroll every night; assertNotProdInstance_
+      // does not catch it, because it only fires on INSTANCE_IS_PROD === 'true'.
+      const isDev = isDevInstance_();
+      const mode = isDev ? 'full' : 'smoke';
+      // …and say so when a HALF-configured dev instance gets downgraded, rather
+      // than silently running smoke forever. A labelled instance with no explicit
+      // INSTANCE_IS_PROD is exactly the ambiguous case; the note rides the stored
+      // result into Automation Health so the operator can finish the setup.
+      const needsMarker = !isDev && !!instanceLabel_();
+      const note = needsMarker
+        ? 'Full suite skipped: INSTANCE_LABEL is set but INSTANCE_IS_PROD is not. ' +
+          'Set it explicitly ("false" on dev, "true" on prod) — an unset value is treated as production.'
+        : '';
+      // F15 (cycle 12) — RUNNING sentinel. The heartbeat above proves the TRIGGER
+      // fired, but the outcome below is written only on a normal return or a
+      // CATCHABLE throw. An Apps Script execution-time-limit kill is not
+      // reliably catchable, and on the dev instance this branch runs the FULL
+      // 281-test suite against live spreadsheets — plausibly over the 6-minute
+      // ceiling. In that case the heartbeat was fresh while
+      // SELF_TEST_LAST_RESULT still held the PREVIOUS result, so a chronically
+      // timing-out suite reported GREEN and nothing surfaced it: the mechanism
+      // built to catch post-deploy regressions could silently stop running (the
+      // cycle-7 "detector that can never fire" class, in the newest detector).
+      // Stamping {running:true} first means a killed run leaves the sentinel
+      // behind, and automationProblems_ treats a STALE one as a failure.
+      try {
+        propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify({
+          running: true, startedAt: Date.now(), mode: mode,
+          date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+          pass: 0, fail: 0, skip: 0,
+        }), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) });
+      } catch (e) {}
+      // Batch S: runAllTests runs the sharded list (smoke, then integration A,
+      // then B) SEQUENTIALLY in this one execution — the ~6-min quiet-window
+      // runtime sits far under the 30-min ceiling; the Part A/B entry points
+      // exist for a mid-shift manual run, not for the nightly.
+      if (isDev) runAllTests(); else runSmokeTests();
+      const res = {
         date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
-        pass: 0, fail: 0, skip: 0,
-      }), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) });
-    } catch (e) {}
-    // Batch S: runAllTests runs the sharded list (smoke, then integration A,
-    // then B) SEQUENTIALLY in this one execution — the ~6-min quiet-window
-    // runtime sits far under the 30-min ceiling; the Part A/B entry points
-    // exist for a mid-shift manual run, not for the nightly.
-    if (isDev) runAllTests(); else runSmokeTests();
-    const res = {
-      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
-      mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
-      note: note,   // A5 — surfaced in the Admin panel; '' on a settled instance
-    };
-    try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
-    if (res.fail > 0) {
-      const names = (_TEST_STATE.results || [])
-        .filter(function (r) { return r.status === 'FAIL'; })
-        .map(function (r) { return r.name; }).slice(0, 20);
-      selfTestFailureEmail_(mode, res, names);
+        mode: mode, pass: _TEST_STATE.pass, fail: _TEST_STATE.fail, skip: _TEST_STATE.skip,
+        note: note,   // A5 — surfaced in the Admin panel; '' on a settled instance
+      };
+      try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
+      if (res.fail > 0) {
+        const names = (_TEST_STATE.results || [])
+          .filter(function (r) { return r.status === 'FAIL'; })
+          .map(function (r) { return r.name; }).slice(0, 20);
+        selfTestFailureEmail_(mode, res, names);
+      }
+      Logger.log('runNightlySelfTest (' + mode + '): ' + res.pass + ' passed, ' + res.fail + ' failed, ' + res.skip + ' skipped.');
+      return { pass: res.pass, fail: res.fail, skip: res.skip, mode: mode, outcome: automationOutcome_('ok') };
+    } catch (err) {
+      // A crashed run IS a failure — record + email best-effort.
+      const res = {
+        date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
+        mode: 'error', pass: 0, fail: 1, skip: 0,
+        error: String(err && err.message || err).substring(0, 300),
+      };
+      try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
+      selfTestFailureEmail_('error', res, [res.error]);
+      Logger.log('runNightlySelfTest failed: ' + (err && err.message));
+      return { outcome: automationOutcome_('failed', 'the self-test run crashed: ' + res.error) };
     }
-    Logger.log('runNightlySelfTest (' + mode + '): ' + res.pass + ' passed, ' + res.fail + ' failed, ' + res.skip + ' skipped.');
-  } catch (err) {
-    // A crashed run IS a failure — record + email best-effort.
-    const res = {
-      date: fmtDate_(new Date()) + ' ' + fmtTime_(new Date()),
-      mode: 'error', pass: 0, fail: 1, skip: 0,
-      error: String(err && err.message || err).substring(0, 300),
-    };
-    try { propSetBounded_(SELF_TEST_RESULT_PROP, JSON.stringify(res), { mode: 'degrade', shrink: propShrinkStripFields_(['note', 'error']) }); } catch (e) {}
-    selfTestFailureEmail_('error', res, [res.error]);
-    Logger.log('runNightlySelfTest failed: ' + (err && err.message));
-  }
+  });
 }
 /** Best-effort failure notification for the nightly self-test (INV-14 —
  *  never throws). PHI-free: test names / a truncated error only. */
@@ -2061,37 +2292,47 @@ function selfTestFailureEmail_(mode, res, names) {
       esc_(String(res.skip)) + ' skipped.</p>' +
       (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
       '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
-    appSendMail_({
-      to: mgrEmails.join(','),
-      subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
-      body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
-      htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
-    });
+    try {
+      appSendMail_({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
+        body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
+        htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
+      });
+    } catch (e) {
+      logDigestDelivery_('selfTest', mgrEmails, 'failed', res.fail, e.message);   // E1 follow-ups
+      throw e;
+    }
+    logDigestDelivery_('selfTest', mgrEmails, 'sent', res.fail, mode + ' mode');   // E1 follow-ups
   } catch (e) { Logger.log('selfTestFailureEmail_ failed: ' + e.message); }
 }
 function sendAutomationHealthDigest() {
   assertManagerCaller_('sendAutomationHealthDigest');
-  try {
+  return runAutomationJob_('AutomationHealthDigest', function () {
     const mgrEmails = getManagerEmails_();
-    if (!mgrEmails.length) { Logger.log('No manager emails — skipping automation-health digest.'); return; }
+    if (!mgrEmails.length) {
+      Logger.log('No manager emails — skipping automation-health digest.');
+      return { outcome: automationOutcome_('idle') };   // nobody to send to proves nothing
+    }
     let report = null;
     try { report = computeAutomationHealth_(); }
     catch (e) {
       // F-20: the watchdog's own failure used to reach nobody — a Logger line
-      // and a silent return. Stamp it (the panel lists every stamped key) and
-      // leave the heartbeat UNSTAMPED, so a dead computation reads stale too.
+      // and a silent return. It is a FAILED run (the panel lists every stamped
+      // key) and the heartbeat stays UNSTAMPED, so a dead computation reads
+      // stale too.
       Logger.log('automation-health digest: report failed: ' + e.message);
-      stampAutomationError_('AutomationHealthDigest', e.message);
+      logDigestDelivery_('automationHealth', mgrEmails, 'failed', null, 'the health report could not be computed: ' + e.message);   // G3
+      return { outcome: automationOutcome_('failed', e.message) };
     }
-    if (!report) return;
 
     const problems = automationProblems_(report);
 
     if (!problems.length) {
       stampDigestLastRun_('automationHealth');
-      clearAutomationError_('AutomationHealthDigest');
+      logDigestDelivery_('automationHealth', mgrEmails, 'empty', 0, 'all clear — nothing to report');   // G3
       Logger.log('automation-health digest: all clear, nothing to send.');
-      return;
+      return { outcome: automationOutcome_('ok') };
     }
 
     const itemsHtml = '<ul style="margin:0;padding-left:18px;">' +
@@ -2112,16 +2353,14 @@ function sendAutomationHealthDigest() {
       // CORE-02 + MAIL-4 (cycle 23): the heartbeat and the clear used to land
       // BEFORE the send, so an undelivered digest read as a clean run.
       Logger.log('automation-health digest send failed: ' + mailErr.message);
-      stampAutomationError_('AutomationHealthDigest', 'the digest found ' + problems.length + ' issue(s) but could not be sent: ' + mailErr.message);
-      return;
+      logDigestDelivery_('automationHealth', mgrEmails, 'failed', problems.length, mailErr.message);   // G3
+      return { outcome: automationOutcome_('failed', 'the digest found ' + problems.length + ' issue(s) but could not be sent: ' + mailErr.message) };
     }
     stampDigestLastRun_('automationHealth');
-    clearAutomationError_('AutomationHealthDigest');
+    logDigestDelivery_('automationHealth', mgrEmails, 'sent', problems.length, '');   // G3
     Logger.log('sendAutomationHealthDigest: ' + problems.length + ' issue(s) emailed to ' + mgrEmails.length + ' manager(s).');
-  } catch (err) {
-    stampAutomationError_('AutomationHealthDigest', err.message);
-    Logger.log('sendAutomationHealthDigest failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Storage Health (#1) — ADMIN-gated (`callerEmp.isAdmin` — F-26), read-only
  *  one-pane-of-glass over every
@@ -2774,7 +3013,9 @@ function deployReadinessItems_(storage, automation, managerCount) {
   var anyStale = digests.some(function (d) { return !!d.stale; });
   if (!autoErr) push('triggers', 'Automation triggers (digest heartbeats)',
     !anyHeartbeat ? 'warn' : (anyStale ? 'warn' : 'ok'),
-    !anyHeartbeat ? 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).'
+    // F60 (cycle 25): no heartbeat at all, long after the install, is not a fresh deploy.
+    !anyHeartbeat ? (anyStale ? 'No digest has run since the triggers were installed — re-run installAutomationTriggers() and check the trigger list.'
+        : 'No digest has run yet — run installAutomationTriggers() (expected on a fresh deploy).')
       : (anyStale ? 'A digest looks stale — check the cross-account trigger-ownership trap.' : 'Heartbeats fresh.'));
 
   // ADM-09 (cycle 23): the readiness headline read "All clear" under a red
@@ -3190,17 +3431,23 @@ function propBudgetsFor_(keys) {
  *  INV-187). Values are counted, never returned. */
 function scriptPropertiesStatus_() {
   const out = { valueMax: PROP_VALUE_MAX, storeMax: PROP_STORE_MAX, warnPct: PROP_WARN_PCT,
-                count: null, bytes: null, largestKey: '', largestBytes: null, error: '' };
+                count: null, bytes: null, largestKey: '', largestBytes: null, error: '',
+                accrualLedger: null };   // cycle 25 FU3 — {count, bytes} of the F17 per-rep side copies
   try {
     const all = PropertiesService.getScriptProperties().getProperties() || {};
     const keys = Object.keys(all);
     let total = 0, bigKey = '', big = 0;
+    const led = { count: 0, bytes: 0 };
     keys.forEach(function (k) {
       const vb = utf8Len_(all[k]);
       total += utf8Len_(k) + vb;
       if (vb > big) { big = vb; bigKey = k; }
+      // FU3: one Script Property per accruing rep grows with the roster, so
+      // its share of the store is named rather than lost in the total.
+      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) === 0 && k !== PTO_ACCRUAL_LEDGER_SINCE) { led.count++; led.bytes += utf8Len_(k) + vb; }
     });
     out.count = keys.length; out.bytes = total; out.largestKey = bigKey; out.largestBytes = keys.length ? big : 0;
+    out.accrualLedger = led;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 }
@@ -3282,13 +3529,14 @@ function purgeSheetRowsOlderThan_(sheet, dateColIdx, cutoffMs, msOf) {
   return toDelete.length;
 }
 // Runs a dispatcher's jobs one after another, each in its own try/catch, so a
-// job that throws never starves the ones after it. The jobs already catch
-// their own failures and stamp / audit them; this backstop only catches a
-// throw none of them expected, and stamps it under the JOB's key
-// (TRIGGER_HANDLER_JOB_KEYS — seams F3, cycle 24: it used the raw handler
-// name, which no label map or heartbeat knew) so the health dot + failure
-// digest see it, labelled (INV-161). A clean run clears a key the job does
-// not manage itself, and any stamp a pre-F3 run left under the handler name.
+// job that throws never starves the ones after it. Since ST2 (cycle 25 E1)
+// every job records its own outcome through runAutomationJob_, so the
+// dispatcher no longer clears or stamps on a job's behalf; it VERIFIES that an
+// outcome came back and stamps under the job's key (TRIGGER_HANDLER_JOB_KEYS)
+// when one did not — a missing handler, a throw that escaped (a gate refusal,
+// or a body outside the contract), or a return with no valid outcome — so the
+// health dot + failure digest see it, labelled (INV-161). Any stamp a pre-F3
+// run left under the raw handler name is cleared on the way past.
 // KNOWN LIMIT: the group shares ONE six-minute execution. All eight grouped
 // jobs are cheap by default (the purges no-op while their windows are 0), but
 // a purge enabled against a large backlog that runs long is killed by the
@@ -3299,21 +3547,26 @@ function runTriggerGroup_(label) {
   const results = [];
   jobs.forEach(function (name) {
     const fn = globalThis[name];
-    const job = TRIGGER_HANDLER_JOB_KEYS[name] || { key: name, owns: false };
+    const key = TRIGGER_HANDLER_JOB_KEYS[name] || name;
     if (typeof fn !== 'function') {
       results.push({ job: name, ok: false, error: 'not a defined function' });
-      stampAutomationError_(job.key, label + ': "' + name + '" is not a defined top-level function');
+      stampAutomationError_(key, label + ': "' + name + '" is not a defined top-level function');
       return;
     }
     try {
       const r = fn();
-      if (!job.owns) clearAutomationError_(job.key);
-      if (job.key !== name) clearAutomationError_(name);   // a pre-F3 stamp under the handler name
-      results.push({ job: name, ok: true, result: r });
+      if (key !== name) clearAutomationError_(name);   // a pre-F3 stamp under the handler name
+      const outcome = r && r.outcome;
+      if (!automationOutcomeValid_(outcome)) {
+        stampAutomationError_(key, name + ' returned no run outcome — every automation job must end through runAutomationJob_ (ST2)');
+        results.push({ job: name, ok: false, error: 'no run outcome' });
+        return;
+      }
+      results.push({ job: name, ok: outcome.status !== 'failed', status: outcome.status, result: r });
     } catch (e) {
       const msg = (e && e.message) ? e.message : String(e);
       Logger.log(label + ': ' + name + ' threw: ' + msg);
-      stampAutomationError_(job.key, name + ' stopped with an unexpected error: ' + msg);
+      stampAutomationError_(key, name + ' stopped with an unexpected error: ' + msg);
       results.push({ job: name, ok: false, error: msg });
     }
   });
@@ -3501,7 +3754,7 @@ function installAutomationTriggers() {
     // trigger on THIS handler name, so folding it into a dispatcher would
     // silently un-suppress the digests it replaces.
     ScriptApp.newTrigger('sendManagerDailyBrief')
-      .timeBased().atHour(8).everyDays(1)
+      .timeBased().atHour(MANAGER_BRIEF_HOUR).everyDays(1)
       .inTimezone(CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE).create();
     // Timesheet cold-archive (#7, INV-153) — daily manager-tz 6pm. F(cycle-8):
     // moved OFF the 1am slot — 1am CT is ~11:30am IST / ~2pm PHT, the middle of
@@ -3676,6 +3929,16 @@ function stampDigestLastRun_(key) {
  *  every 8am run, even while the flag is off — INV-151) is younger than 26h.
  *  Missing/stale/unparseable heartbeat → FAIL SAFE: the individual digests
  *  keep sending (a doubled email beats a silent outage). */
+/** PURE (Node-pinned) — F8 (cycle 25): does the brief's last delivery cover
+ *  NOW? Days are manager-tz yyyy-MM-dd. Today's beat covers the rest of the
+ *  day; yesterday's covers only until today's brief hour has passed (the
+ *  trigger fires within that hour, so the end of it); anything older, or none,
+ *  never does — the digests send (the fail-safe direction, M-11). */
+function briefBeatCoversNow_(beatDay, todayDay, yesterdayDay, nowHour, briefHour) {
+  if (!beatDay) return false;
+  if (beatDay === todayDay) return true;
+  return beatDay === yesterdayDay && Number(nowHour) < Number(briefHour) + 1;
+}
 function managerBriefSuppressionActive_(opts) {
   if (!getFlag_('managerDailyBrief')) return false;
   try {
@@ -3683,11 +3946,24 @@ function managerBriefSuppressionActive_(opts) {
     try { map = JSON.parse(PropertiesService.getScriptProperties().getProperty(DIGEST_LAST_RUN_PROP)) || {}; } catch (_) {}
     const raw = String((map && map.managerBrief) || '');
     if (!raw) return false;
-    const ms = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime();
-    if (!((Date.now() - ms) < 26 * 3600000)) return false;
+    // F8 (cycle 25): "a heartbeat under 26h old" let every digest that runs
+    // AFTER the brief stand down on YESTERDAY's beat — the 10am dept reminder
+    // and the evening missed-punch summary skipped the day a brief failed, and
+    // nothing resent them (CORE-01's "the digests resume" held only the next
+    // day). A digest now stands down only while the brief has delivered
+    // TODAY (manager tz), or delivered yesterday and today's brief has not yet
+    // had its hour. The 7am training digest and the 8am urgent digest still
+    // decide before the brief runs; on a failed day they resume tomorrow (both
+    // windows carry their items forward) and the failure is stamped.
+    const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+    const now = new Date();
+    const beat = Utilities.parseDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    const today = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
+    if (!briefBeatCoversNow_(Utilities.formatDate(beat, mgrTz, 'yyyy-MM-dd'), today, addDaysIso_(today, -1),
+        parseInt(Utilities.formatDate(now, mgrTz, 'H'), 10), MANAGER_BRIEF_HOUR)) return false;
     // Cycle-9 L-18: the heartbeat proves "the handler RAN", not "a trigger
     // exists" — a manual editor/console run of sendManagerDailyBrief stamps
-    // it, opening a ~26h window where the four digests suppress but no 8am
+    // it, opening a window (the rest of that day, since F8 cycle 25) where the four digests suppress but no 8am
     // brief will ever fire (the silent-outage class M-11 closed, re-opened by
     // a manual run; the briefConfig detector can't see it because suppression
     // reads active). The four DIGEST call sites pass {checkTrigger:true}: in
@@ -3861,16 +4137,18 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
  *  all-clear morning sends nothing (house style: silent when healthy). */
 function sendManagerDailyBrief() {
   assertManagerCaller_('sendManagerDailyBrief');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('ManagerDailyBrief', function () {
     // Heartbeat stamps while the flag is off — the trigger ran; the Automation
     // Health caption explains the flag gate. CORE-01 (cycle 23): with the flag
     // ON the heartbeat is what makes the four standalone digests stand down
     // (managerBriefSuppressionActive_), so it is stamped only once the brief
     // has DELIVERED — stamped first, a brief that failed to send left every
     // manager with no daily mail at all and the health dot green.
-    if (!getFlag_('managerDailyBrief')) { stampDigestLastRun_('managerBrief'); Logger.log('managerDailyBrief flag is off — brief not sent.'); return; }
+    // ST2 (cycle 25 E1): a throw is a failed run (CORE-01: not a quiet
+    // morning); the flag off is a clean one; no recipients proves nothing.
+    if (!getFlag_('managerDailyBrief')) { stampDigestLastRun_('managerBrief'); Logger.log('managerDailyBrief flag is off — brief not sent.'); return { outcome: automationOutcome_('ok') }; }
     const mgrEmails = getManagerEmails_();
-    if (!mgrEmails.length) { stampDigestLastRun_('managerBrief'); Logger.log('No manager emails — skipping daily brief.'); return; }
+    if (!mgrEmails.length) { stampDigestLastRun_('managerBrief'); Logger.log('No manager emails — skipping daily brief.'); return { outcome: automationOutcome_('idle') }; }
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     const now = new Date();
     const todayIso = Utilities.formatDate(now, mgrTz, 'yyyy-MM-dd');
@@ -3922,17 +4200,17 @@ function sendManagerDailyBrief() {
       const sections = managerBriefSections_(d);
       // Silent ONLY on a genuine all-clear. If a source could not be read, the
       // absence of sections is not an all-clear and the brief says so.
-      if (!sections.length && !failedSources.length) return;
-      try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; }
-      catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('daily brief to ' + email + ' failed: ' + lastSendError); }
+      const items = sections.reduce(function (n, x) { return n + x.count; }, 0);
+      if (!sections.length && !failedSources.length) { logDigestDelivery_('managerBrief', email, 'empty', 0, 'all clear — nothing to report'); return; }   // G3
+      try { sendManagerBriefEmail_(email, sections, d, todayIso); sent++; logDigestDelivery_('managerBrief', email, 'sent', items, failedSources.length ? 'incomplete — could not read ' + failedSources.join(', ') : ''); }
+      catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('daily brief to ' + email + ' failed: ' + lastSendError); logDigestDelivery_('managerBrief', email, 'failed', items, lastSendError); }
     });
-    // One stamp names everything that went wrong this run — a source that could
-    // not be read AND a brief that could not be sent — and a clean run clears it.
+    // One outcome names everything that went wrong this run — a source that
+    // could not be read AND a brief that could not be sent. Partial while any
+    // brief went out; failed when every one that should have went nowhere.
     const problems = [];
     if (failedSources.length) problems.push(failedSources.length + ' source(s) unreadable: ' + failedSources.join(', '));
     if (sendFailed) problems.push(sendFailed + ' of ' + (sent + sendFailed) + ' brief email(s) failed to send (' + lastSendError + ')');
-    if (problems.length) stampAutomationError_('ManagerDailyBrief', problems.join(' · '));
-    else clearAutomationError_('ManagerDailyBrief');
     // A manager whose brief failed got none of the four suppressed digests
     // either — withholding the heartbeat lets them send again (fail-safe).
     if (!sendFailed) stampDigestLastRun_('managerBrief');
@@ -3940,10 +4218,9 @@ function sendManagerDailyBrief() {
       ' missed=' + missed.length + ' urgent=' + urgent.length +
       ' training=' + training.length + ' docs=' + docs.length +
       ' coaching=' + coaching.length + ' deptOverdue=' + deptOverdue.length);
-  } catch (err) {
-    Logger.log('sendManagerDailyBrief failed: ' + err.message);
-    stampAutomationError_('ManagerDailyBrief', 'the brief run failed: ' + err.message);   // CORE-01: a throw is not a quiet morning
-  }
+    if (!problems.length) return { outcome: automationOutcome_('ok') };
+    return { outcome: automationOutcome_(sendFailed && !sent ? 'failed' : 'partial', problems.join(' · ')) };
+  });
 }
 /** H1 (2026-09-17): the ONE company holiday calendar -- [{date, name}] for
  *  `year`, the getUsHolidays_ shape every consumer already reads. Source: the

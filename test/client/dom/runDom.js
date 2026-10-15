@@ -542,6 +542,45 @@ test('C4 (cycle 22): a Save & Compose that switches to External COMPLETES on the
   assert.strictEqual(h.read('CN_STATE.composeFlow'), null);
 });
 
+test('F23 DOM (cycle 25): Clear Note is Ctrl/⌘+SHIFT+Backspace — plain Ctrl/⌘+Backspace is left to the browser (delete the previous word) and never clears the note', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Patient called about a refill');
+  const fld = h.$('#cn-fld-issue');
+  ['ctrl', 'meta'].forEach((mod) => {
+    const ev = h.dispatchKey('Backspace', { [mod]: true, target: fld });
+    assert.strictEqual(ev.defaultPrevented, false, 'THE REGRESSION: ' + mod + '+Backspace was taken from the system word-delete');
+    assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient called about a refill', mod + '+Backspace does not clear the note');
+  });
+  const ev = h.dispatchKey('Backspace', { ctrl: true, shift: true, target: fld });
+  assert.strictEqual(ev.defaultPrevented, true, 'the new chord is handled');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'and clears the note (Ctrl+Z still undoes it)');
+  h.window.cnOpenShortcutsOverlay_();
+  const row = h.$$('#cn-shortcuts-overlay tr').filter((tr) => /Clear Note/.test(tr.textContent))[0];
+  assert.ok(row && /Shift\s*\+\s*Backspace/.test(row.textContent), 'the shortcuts sheet names the new chord');
+});
+
+test('F35 DOM (cycle 25): an all-time quick chip opens History on the last 90 days with its filter, and says how many of the counted notes are older — until the range changes', () => {
+  const h = bootLog();
+  h.window.cnUpdateQuickChipRow_({ flagCounts: { all: 120, action: 42 } });
+  const chip = h.$$('.cn-quick-chip').filter((b) => b.dataset.flag === 'action')[0];
+  h.click(chip);
+  assert.strictEqual(h.read('CN_STATE.filter'), 'action');
+  const call = h.run.pending('getMyCallNotesRange')[0];
+  assert.ok(call, 'History loads a range');
+  const [start, end] = call.args;
+  assert.strictEqual(Math.round((Date.parse(end) - Date.parse(start)) / 86400000), 89, 'THE GAP: the last 90 days (the server\'s widest span), not the last-used range');
+  const notes = [1, 2, 3].map((i) => noteFixture({ noteId: 'a' + i, flagType: 'action', dateLocal: end }));
+  notes.push(noteFixture({ noteId: 'x', flagType: '', dateLocal: end }));
+  h.run.flushSuccess({ notes }, 'getMyCallNotesRange');
+  const sum = h.$('#cn-history-summary').textContent;
+  assert.ok(/Showing the last 90 days: 3 of your 42 Action notes\. The other 39 are older/.test(sum) && /use Search/.test(sum),
+    'the count the chip showed is reconciled with what History can show: ' + sum);
+  // Any range change and the claim is gone (it described the chip's range only).
+  h.click(h.$$('.cn-history-preset-btn').filter((b) => b.dataset.preset === 'last7')[0]);
+  h.run.flushSuccess({ notes: notes.slice(0, 1) }, 'getMyCallNotesRange');
+  assert.ok(!/of your 42/.test(h.$('#cn-history-summary').textContent), 'a different range does not carry the chip\'s count');
+});
+
 test('C3 (cycle 22): a failed load for a NEW History range never shows the previous range\'s notes under its label; an over-cap range is refused before the RPC', () => {
   const h = bootLog();
   h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");
@@ -2128,6 +2167,63 @@ test('reopening after a range session re-enables Add even when the day has no ro
     'and the add control comes back with it — no RPC required');
 });
 
+test('F1 (cycle 25): filling "To" parks the PREFILLED punches (clearing it restores them), a typed slot is kept, and a range save names what it will SET and waits for the confirm', async () => {
+  // THE DEFECT: the slots arrive filled with the From day's real punches, and
+  // range mode SETS every non-blank slot on every day — a manager filling "To"
+  // to add one missing Clock Out stamped 08:02 / 12:00–12:30 / 17:41 over the
+  // whole range, with no confirmation.
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const date = h.read('_deDate');
+  h.run.flushSuccess({ days: [{ date, clockIn: '08:02:00', clockOut: '17:41:00',
+    breaks: [{ out: '12:00:00', in: '12:30:00' }] }] }, 'getEmployeeTimesheetForManager');
+  const ci = h.document.getElementById('de-clockin');
+  const co = h.document.getElementById('de-clockout');
+  const to = h.document.getElementById('de-date-to');
+  const setTo = (v) => { to.value = v; to.dispatchEvent(new h.window.Event('change')); };
+  assert.strictEqual(ci.value + '|' + co.value + '|' + deRows(h).length, '08:02|17:41|1', 'the day prefilled');
+  setTo('2099-01-01');
+  assert.strictEqual(ci.value + '|' + co.value + '|' + h.read('deReadBreaks_')().length, '||0',
+    'range mode starts from blank slots — nothing of the From day rides along');
+  // The manager types the one thing every day should get.
+  co.value = '17:30'; co.dispatchEvent(new h.window.Event('input'));
+  h.document.getElementById('de-save').click();
+  await tick();
+  assert.strictEqual(h.run.pending('managerSaveDayRange').length, 0, 'nothing is sent before the confirm');
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg, 'a range save asks first');
+  assert.match(dlg.textContent, /Clock Out 5:30 PM/, 'it names the slot, in 12-hour time');
+  assert.ok(!/Clock In|Break/.test(dlg.textContent), 'and ONLY the slot that will be written');
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const call = h.run.pending('managerSaveDayRange');
+  assert.strictEqual(call.length, 1, 'confirmed, the range is sent');
+  const slots = JSON.parse(JSON.stringify(call[0].args[3]));
+  assert.strictEqual(slots.ClockIn + '|' + slots.ClockOut + '|' + slots.breaks.length, '|17:30|0',
+    'with the prefilled clock-in and break left BLANK (blank = unchanged on the server)');
+  // Clearing "To" brings the parked prefill back; the typed slot stays the manager's.
+  setTo('');
+  assert.strictEqual(ci.value, '08:02', 'the parked clock-in is restored for a single-day save');
+  assert.strictEqual(h.read('deReadBreaks_')().map((b) => b.out + '-' + b.in).join('|'), '12:00-12:30', 'and the break');
+  assert.strictEqual(co.value, '17:30', 'a slot the manager typed is never overwritten');
+
+  // A prefill that lands AFTER "To" was filled is parked too, never written in.
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const to2 = h2.document.getElementById('de-date-to');
+  to2.value = '2099-01-01'; to2.dispatchEvent(new h2.window.Event('change'));
+  h2.run.flushSuccess({ days: [{ date: h2.read('_deDate'), clockIn: '08:02:00' }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(h2.document.getElementById('de-clockin').value, '', 'a late prefill does not fill a range');
+  to2.value = ''; to2.dispatchEvent(new h2.window.Event('change'));
+  assert.strictEqual(h2.document.getElementById('de-clockin').value, '08:02', 'and comes back when the range is cleared');
+  // A range with nothing typed sends nothing at all.
+  to2.value = '2099-01-01'; to2.dispatchEvent(new h2.window.Event('change'));
+  h2.document.getElementById('de-save').click();
+  await tick();
+  assert.ok(!h2.$('.ui-dialog'), 'no confirm for an empty range');
+  assert.strictEqual(h2.run.pending('managerSaveDayRange').length, 0, 'and no RPC');
+});
+
 test('the async prefill never overwrites what the manager already typed, ignores a stale response, and a failed prefill disables Save', () => {
   // Operator 2026-09-03: a changed Clock In "kept the old time" — the modal
   // opens blank, the prefill lands ~1s later, and a field typed BEFORE that
@@ -2907,6 +3003,46 @@ test('PTO1/PTO2 DOM: the leave balance renders on the live-status card and the c
     'the balance rides the chip where the approve decision is actually made');
   assert.strictEqual(chipFor('Bo Contractor').querySelector('.tcal-off-bal'), null,
     'and the contractor chip carries no balance — the SAME gate as the card, because they share one helper');
+});
+
+test('E2 DOM (cycle 25): the Pay Period Close card loads with Manage Time, states itself in the Periodic summary, and an open day opens Day Edit for THAT rep and date — an offboarded rep included, on their own timezone; a failed check says so', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const today = h.read('isoDateTz')('Asia/Kolkata');
+  const back = (n) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getPayPeriodClose', () => ({ adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST', orphans: [], periods: [
+    { cycle: 'Monthly', which: 'previous', start: back(40), end: back(10), checkedThrough: back(10), ready: false,
+      counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 },
+      reps: [{ id: 'E2', name: "Bob O'Neil", offboarded: true, timezone: 'Asia/Kolkata',
+        openDays: [{ date: back(12), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const card = h.window.document.getElementById('mgr-pay-close');
+  assert.ok(card && /Pay Period Close/.test(card.textContent) && /offboarded/.test(card.textContent), 'the card renders, the offboarded rep labelled');
+  const sum = h.window.document.getElementById('mgr-sum-payclose');
+  assert.ok(sum && /a period that has ended/.test(sum.textContent) && sum.getAttribute('data-tone') === 'crit',
+    'the collapsed Periodic group still SAYS an ended period has work left');
+  const btn = card.querySelector('button[data-date]');
+  assert.strictEqual(btn.getAttribute('onclick'), 'mgrPayCloseEdit_(this)', 'the button carries data-* only (g133)');
+  h.read('mgrPayCloseEdit_')(btn);   // jsdom does not run inline handlers — call what the attribute names
+  h.flushTimers();
+  const ov = h.window.document.getElementById('day-edit-overlay');
+  assert.strictEqual(h.read('_deEmpId'), 'E2', 'for the offboarded rep — no Live Status card exists for them');
+  assert.strictEqual(h.window.document.getElementById('de-date').value, back(12), 'on the open day');
+  const load = h.run.calls.filter((c) => c.method === 'getEmployeeTimesheetForManager').pop();
+  assert.deepStrictEqual(load && load.args.slice(0, 1), ['E2'], 'and loads their punches');
+  h.read('closeOverlay')(ov);
+  h.run.respond('getPayPeriodClose', () => { throw new Error('archive unreadable'); });
+  h.read('loadPayPeriodClose_')();
+  h.flushTimers();
+  await tick(); await tick();
+  const txt = h.window.document.getElementById('mgr-pay-close').textContent;
+  assert.ok(/failed check/.test(txt) && /archive unreadable/.test(txt) && !/offboarded/.test(txt), 'a failed check replaces the last read and says it failed');
+  assert.strictEqual(h.window.document.getElementById('mgr-sum-payclose').textContent, 'check failed');
 });
 
 // OOP-A (operator 2026-09-16) — the price lookup on BOTH hosts.
@@ -4358,6 +4494,40 @@ test('T8 DOM: the OOP pricing diagnostics have a HOME — the Admin System tab r
   assert.ok(!/OopPricing/.test(failTxt), 'and does not leave the previous read on screen as if it were current');
 });
 
+test('G3 DOM (cycle 25 E1): the digest delivery log has a panel beside Automation Health — loaded on enter through the real loader, escaped, and a failed read says so instead of leaving the last read on screen', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, isAdmin: true });
+  let called = 0;
+  h.run.respond('getDigestDeliveries', () => {
+    called++;
+    return { days: 14, retentionDays: 90, truncated: false, missing: false, rows: [
+      { at: '2026-10-15 08:00:30', digest: 'managerBrief', recipient: 'floor.lead@x.com', status: 'failed', items: 4, reason: 'quota <b>exceeded</b>' },
+      { at: '2026-10-15 08:00:09', digest: 'urgent', recipient: 'ops@x.com', status: 'suppressed', items: null, reason: 'rode the daily brief' }] };
+  });
+  h.run.respond('getCallNotesAuditLog', () => ({ rows: [] }));
+  h.window.enterTool('manage', 'callNotesAdmin');
+  h.flushTimers();
+  await tick(); await tick();
+  const panel = h.window.document.getElementById('cn-sys-sec-digests');
+  assert.ok(panel, 'the delivery log has a panel in the Admin System tab');
+  assert.strictEqual(called, 1, 'fetched once, on enter');
+  const health = h.window.document.getElementById('cn-admin-health');
+  assert.ok(health && health.nextElementSibling && health.nextElementSibling.id === 'cn-admin-digests', 'it sits directly beside Automation Health');
+  const txt = panel.textContent;
+  assert.ok(/Manager daily brief/.test(txt) && /floor\.lead@x\.com/.test(txt) && /Failed/.test(txt) && /Suppressed/.test(txt), 'each decision, labelled, per recipient');
+  assert.ok(/quota <b>exceeded<\/b>/.test(txt) && !panel.querySelector('td b'), 'a server string renders as TEXT, never markup');
+  const cells = panel.querySelectorAll('table.cn-dd-table td[data-label]');
+  assert.ok(cells.length === 12 && cells[0].getAttribute('data-label') === 'When', 'E1 follow-ups: every cell carries its column label, for the phone card layout');
+  h.run.respond('getDigestDeliveries', () => { throw new Error('Admin access required.'); });
+  h.read('cnLoadDigestDeliveries_')();
+  h.flushTimers();
+  await tick(); await tick();
+  const failTxt = h.window.document.getElementById('cn-sys-sec-digests').textContent;
+  assert.ok(/unavailable/i.test(failTxt) && /Admin access required/.test(failTxt), 'a failed read says so, with the reason');
+  assert.ok(!/floor\.lead/.test(failTxt), 'and does not leave the previous read on screen as if it were current');
+});
+
 test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and a city-delegated verdict names the city that decided', async () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -4770,6 +4940,72 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   h.read('cnCloseScratchpadModal_')();
 });
 
+test('E4 DOM (cycle 25, ST1): "Replies to check" leads the Dept Requests tab — each held reply says why; Still open keeps it open and takes it off the list, Resolved closes the request, both answers lock while in flight, a reply someone else answered first refreshes the view, and a failure gives the buttons back', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const item = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'Oct 14', createdMs: 1000, byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m1', { replyVerdict: 'needs-look', repliedAt: 'Oct 15, 9:00 AM', repliedMs: Date.parse('2026-10-15T09:00:00'), replyReason: 'not-done', replyReasonLabel: 'the reply says it is not done yet, promises work, or refuses' })],
+    incoming: [item('i1', { replyVerdict: 'needs-look', repliedAt: 'Oct 14, 10:15 AM', repliedMs: Date.parse('2026-10-14T10:15:00'), replyReason: 'question', replyReasonLabel: 'the reply asks a question' }),
+      item('i2', { replyVerdict: 'needs-look', repliedAt: 'Oct 15, 11:00 AM', repliedMs: Date.parse('2026-10-15T11:00:00'), replyReason: 'ack', replyReasonLabel: 'the reply only acknowledges the email' })],
+    recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 2 };
+  let reads = 0;
+  h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const looks = () => h.$$('#dr-looks .dr-look');
+  const body = h.$('#dr-body').textContent;
+  assert.ok(body.indexOf('Replies to check · 3') >= 0 && body.indexOf('Replies to check') < body.indexOf('Incoming ·'), 'the group leads the page');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['i1', 'm1', 'i2'], 'longest-waiting first');
+  assert.ok(/Held back because the reply asks a question\./.test(looks()[0].textContent), 'each row says why');
+  const btn = (id, ans) => h.$('#dr-looks .dr-look[data-req="' + id + '"] button[data-dr-look="' + ans + '"]');
+  assert.strictEqual(btn('i1', 'open').getAttribute('onclick'), 'drLookAnswerClick_(this)');
+  // Still open.
+  h.read('drLookAnswerClick_')(btn('i1', 'open'));
+  assert.ok(btn('i1', 'open').disabled && btn('i1', 'resolved').disabled, 'both answers lock while in flight');
+  h.read('drLookAnswerClick_')(btn('i1', 'resolved'));
+  assert.deepStrictEqual(h.run.pending('answerDeptReplyLook').map((c) => Array.from(c.args)), [['i1', 'open']], 'one answer is sent');
+  h.run.flushSuccess({ success: true, answer: 'open', reason: 'question' }, 'answerDeptReplyLook');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['m1', 'i2'], 'kept open: it leaves the list');
+  const i1 = h.$$('.sp-task[data-req="i1"]:not(.dr-look)')[0];
+  assert.ok(i1 && !i1.querySelector('.dr-needs-look') && i1.querySelector('.sp-resolve'), 'its card is plainly open again, Mark resolved still there');
+  // Resolved.
+  h.read('drLookAnswerClick_')(btn('m1', 'resolved'));
+  h.run.flushSuccess({ success: true, answer: 'resolved', reason: 'not-done' }, 'answerDeptReplyLook');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['i2']);
+  assert.ok(/marked in app/.test(h.$$('.sp-task[data-req="m1"]:not(.dr-look)')[0].textContent), 'Resolved closes the request (an in-app resolve)');
+  // A failure gives the buttons back.
+  h.read('drLookAnswerClick_')(btn('i2', 'open'));
+  h.run.flushFailure('quota', 'answerDeptReplyLook');
+  assert.ok(!btn('i2', 'open').disabled && !btn('i2', 'resolved').disabled && looks().length === 1, 'the row stays, answerable');
+  // Someone else answered first: the view refreshes.
+  const before = reads;
+  h.read('drLookAnswerClick_')(btn('i2', 'resolved'));
+  h.run.flushSuccess({ success: false, stale: true, error: 'This reply was already answered — the list will refresh.' }, 'answerDeptReplyLook');
+  h.flushTimers();
+  assert.ok(reads > before, 'a stale answer re-reads the tab');
+});
+
+test('E4 DOM (cycle 25, G5): an escalated Spanish request reads "Escalated · N days" with a stripe on the tab; one that is not escalated carries neither', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: 2, resolved: 0, avgMinutes: null, medianMinutes: null,
+    avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
+    membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: [
+    { threadId: 'old', requester: 'a@x.com', ageHours: 9 * 24 + 3, escalated: true, subject: 'Ayuda', snippet: 's', hasMore: false, permalink: 'https://mail/old', claim: null },
+    { threadId: 'new', requester: 'b@x.com', ageHours: 30, escalated: false, subject: 'Hola', snippet: 's', hasMore: false, permalink: 'https://mail/new', claim: null }],
+    members: ['me@x.com'], self: 'me@x.com', truncated: false }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
+  assert.ok(card('old').classList.contains('sp-escalated') && /Escalated · 9 days/.test(card('old').querySelector('.sp-esc-pill').textContent));
+  assert.ok(!card('new').classList.contains('sp-escalated') && !card('new').querySelector('.sp-esc-pill'), 'a day-old request is not escalated, however late it is');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -4784,7 +5020,8 @@ test('22post D DOM: a reply-resolved card says so and credits the replier, a nee
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
   h.window.enterTool('metrics', 'metricsDeptReq');
   h.flushTimers();
-  const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
+  // E4 (cycle 25): the request CARDS — a "Replies to check" row (.dr-look) carries the same data-req.
+  const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
   assert.ok(/replied · 3h 5m/.test(card('m1').querySelector('.sp-task-age').textContent), 'a reply resolve is timed and says "replied"');
   assert.ok(/Resolved by Dana <b>W<\/b> \(by reply\)/.test(card('m1').textContent) && !card('m1').querySelector('.sp-task-body b'), 'credited to the replier, escaped');
   const look = card('i1').querySelector('.dr-needs-look');
@@ -5055,10 +5292,116 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   h.dispatchKey('Enter', { target: input });
   await tick();
   assert.strictEqual(h.run.pending('kbFlagItem').length, 0, 'an empty suggestion is not sent');
+  // E3 (cycle 25): an over-long suggestion is caught in the prompt — the server refuses rather than cuts it.
+  input.value = 'x'.repeat(501);
+  h.dispatchKey('Enter', { target: input });
+  await tick();
+  assert.strictEqual(h.run.pending('kbFlagItem').length, 0, 'a 501-character suggestion is not sent');
+  assert.ok(/under 500 characters \(501 now\)/.test(h.$('.ui-dialog').textContent), 'the prompt says how long it may be');
   input.value = 'The fee is now $85';
   h.dispatchKey('Enter', { target: input });
   await tick();
-  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'stale', 'The fee is now $85']]);
+  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'suggest', 'The fee is now $85']],
+    'E3: a suggested edit is its own kind, never an "out of date" flag');
+});
+
+test('E3 DOM (cycle 25, ST3): handbook sections for the Issue text — a search after the rep pauses, published only; a stale answer is dropped; up to three sections; a click opens the drawer AT the section; Clear Note and the off switch hide it; a failure shows nothing', () => {
+  // bootLog's shell leaves a deferred landing on Clock in the timer queue, so
+  // the shell's timers run FIRST here and the debounce is then flushed alone.
+  const h = boot();
+  h.bootShell();
+  h.flushTimers();
+  h.window.enterTool('callNotes');
+  h.run.flushSuccess({ departments: [], suggestionsByDept: {}, defaultSuggestions: [], flags: {}, emailTemplates: [], externalLinks: [] }, 'getCallNotesDepartments');
+  h.run.flushSuccess({ notes: [], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  h.flushTimers();
+  assert.strictEqual(h.read('currentView'), 'callNotes', 'on the Log');
+  const strip = h.$('#cn-hb-suggest');
+  assert.ok(strip && strip.hidden && strip.closest('.cnv-row').contains(h.$('#cn-fld-issue')), 'a hidden host in the Issue row');
+  h.setField('cn-fld-issue', 'fee');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'one word is not worth a search');
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee');
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'nothing is sent while the rep is typing');
+  h.flushTimers();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('searchReference').map((c) => c.args))),
+    [['Patient called about the oxygen fee', { publishedOnly: true }]], 'after the pause: the Issue text, published sections only');
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee waiver');
+  h.flushTimers();
+  h.run.flushSuccess({ results: [{ id: 'man-1-1', title: '1.1 Stale answer' }] }, 'searchReference');
+  assert.ok(strip.hidden, 'the answer for the OLD text is dropped');
+  h.run.flushSuccess({ results: [{ id: 'kb-7', title: 'Not the handbook' }, { id: 'man-8-2', title: '8.2 Oxygen fees', anchor: '8.2.1' },
+    { id: 'man-8-2', title: '8.2 Oxygen fees', anchor: '8.2.4' }, { id: 'man-10-3', title: '10.3 Waivers' },
+    { id: 'man-0-1', title: '0.1 Start' }, { id: 'man-0-2', title: '0.2 Status' }] }, 'searchReference');
+  assert.ok(!strip.hidden, 'the strip shows');
+  const picks = h.$$('#cn-hb-suggest .cn-hb-pick');
+  assert.deepStrictEqual(picks.map((b) => b.textContent), ['8.2 Oxygen fees', '10.3 Waivers', '0.1 Start'], 'handbook only, one per section, three at most');
+  assert.strictEqual(picks[0].getAttribute('onclick'), 'kbHbStripOpen_(this)');
+  h.read('kbHbStripOpen_')(picks[0]);   // jsdom does not run inline handlers
+  assert.strictEqual(h.read('KB_DRAWER.open'), true, 'the drawer opens');
+  assert.deepStrictEqual([h.read('KB_DRAWER.view'), h.read('KB_DRAWER.itemId')], ['item', 'man-8-2'], 'at that section');
+  // Opening the drawer paints its home first, whose own suggestions search
+  // the Issue text (the drawer's existing path, no publishedOnly); that answer
+  // arrives after the section opened and is dropped by the drawer's view guard.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('searchReference').map((c) => c.args))), [['Patient called about the oxygen fee waiver']]);
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.strictEqual(h.read('KB_DRAWER.view'), 'item', 'still at the section');
+  h.read('kbDrawerClose_')();
+  // The same text again asks nothing new.
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee waiver');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'the answer for this text is reused');
+  // Clear Note empties the field without typing — the strip still goes.
+  h.dispatchKey('Backspace', { ctrl: true, shift: true, target: h.$('#cn-fld-issue') });
+  assert.ok(strip.hidden && !strip.innerHTML, 'Clear Note hides it');
+  // A failure shows nothing — no message that would have to quote the patient.
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling question');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 1, 'one search per text, however many timers fire');
+  h.run.flushFailure('quota', 'searchReference');
+  assert.ok(strip.hidden, 'a failed search shows nothing');
+  // The off switch is the drawer's per-rep "suggest" setting.
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling again');
+  h.flushTimers();
+  h.run.flushSuccess({ results: [{ id: 'man-6-1', title: '6.1 Repairs' }] }, 'searchReference');
+  assert.ok(!strip.hidden);
+  h.read('kbHbStripOff_')();
+  assert.ok(strip.hidden, 'off hides it');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(h.read('KB_PANEL_LS_KEY'))).suggest, false, 'and is the one per-rep setting');
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling once more');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'off means nothing is sent');
+});
+
+test('E3 DOM (cycle 25, G2): the review queue shows a suggested edit apart from "out of date", with its words; the Handbook dialog exports the feedback — disabled in flight, a link on success, the button back on failure', () => {
+  const h = m4Boot_();
+  const st = h.read('KB_STATE');
+  st.isManager = true;
+  st.reviewDue = { items: [{ id: 'man-5-9', title: '5.9 Fees', ageDays: 10, views: 3, staleFlags: 0, suggestFlags: 2, suggestNote: 'The fee is <b>$85</b>' },
+    { id: 'kb-2', title: 'Old', ageDays: 120, views: 1, staleFlags: 1, staleNote: 'Phone changed', suggestFlags: 0 }], total: 2, dueDays: 90 };
+  h.read('kbRenderLanding_')();
+  const rows = h.$$('.kb-land-rd');
+  assert.strictEqual(rows.length, 2);
+  assert.ok(/suggested edit · 2/.test(rows[0].textContent) && !/out of date/.test(rows[0].textContent), 'a suggestion reads as one');
+  assert.ok(/“The fee is <b>\$85<\/b>”/.test(rows[0].textContent) && !rows[0].querySelector('.kb-land-note b'), 'its words, escaped');
+  assert.ok(/out of date · 1/.test(rows[1].textContent) && !/suggested/.test(rows[1].textContent), 'an out-of-date flag reads as before');
+  // The export.
+  h.read('kbOpenManualImport_')();
+  const btn = h.$('#kb-man-fbx-go');
+  assert.ok(btn && btn.getAttribute('onclick') === 'kbManualExportFeedback_()', 'the dialog carries the export');
+  h.read('kbManualExportFeedback_')();
+  assert.ok(btn.disabled, 'disabled in flight');
+  h.read('kbManualExportFeedback_')();
+  assert.strictEqual(h.run.pending('exportHandbookFeedback').length, 1, 'a second press sends nothing');
+  h.run.flushFailure('timeout', 'exportHandbookFeedback');
+  assert.ok(!btn.disabled && /timeout/.test(h.$('#kb-man-fbx-res').textContent), 'a failure says so and gives the button back');
+  h.read('kbManualExportFeedback_')();
+  h.run.flushSuccess({ success: true, url: 'https://docs.google.com/spreadsheets/d/X/edit', sections: 160, open: 7, truncated: false }, 'exportHandbookFeedback');
+  const link = h.$('#kb-man-fbx-res a');
+  assert.ok(link && link.getAttribute('href') === 'https://docs.google.com/spreadsheets/d/X/edit' && link.getAttribute('target') === '_blank', 'the sheet is a link');
+  assert.ok(/160 sections · 7 open items/.test(h.$('#kb-man-fbx-res').textContent));
+  // An import says how many sections it counted as reviewed.
+  h.read('kbManualRun_')(true);
 });
 
 test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, themed, with its section numbers as cross-references that open like any other', async () => {
@@ -5895,6 +6238,442 @@ test('M4-FU2/FU3 DOM: the Manual dialog takes manual.json from the computer (no 
   assert.ok(!imp.disabled && gate.hidden, 'a clean check unlocks Import and the line goes');
   h.read('kbManualSetFile_')({ name: 'other.json', size: 2, text: '{}' });
   assert.ok(imp.disabled && !gate.hidden, 'another file locks it again, with the reason back');
+});
+
+// ── Cycle 25 Batch 4 — the handbook reader ──────────────────────────────────
+test('F10 (cycle 25): a search hit\'s slug anchor lands on its sub-heading — the reader\'s focus took only "0.10.2", so "Open ¶" landed on the section top; a numbered anchor still lands, and an unknown one falls back to the title', async () => {
+  const h = m4Boot_();
+  const flashed = (id) => h.$$('#kb-man-sec-' + id + ' h1, #kb-man-sec-' + id + ' h2, #kb-man-sec-' + id + ' h3, #kb-man-sec-' + id + ' h4')
+    .filter((x) => x.classList.contains('kb-h-flash')).map((x) => x.textContent.trim());
+  h.read('kbOpenItem_')('man-0-10', '0-10-2-trx-state');   // what searchReference ships: kbSlug_ of the heading
+  h.run.flushSuccess(JSON.parse(JSON.stringify(M2_PART0)), 'getManualPart');
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10.2 Trx State'], 'THE REGRESSION: the slug found no heading, and the section title flashed instead');
+  h.flushTimers();
+  h.read('kbOpenItem_')('man-0-10', '0.10.1');   // a cross-reference's numbered anchor, same part (no fetch)
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10.1 Trx Type'], 'a numbered anchor still lands on its heading');
+  h.flushTimers();
+  h.read('kbOpenItem_')('man-0-10', 'no-such-heading');
+  assert.deepStrictEqual(flashed('man-0-10'), ['0.10 Anatomy of a transaction'], 'an anchor that names nothing lands on the section title');
+  // ONE resolver serves every open path.
+  const host = h.$('#kb-man-sec-man-0-10');
+  const r = h.read('kbFindAnchorHeading_');
+  assert.strictEqual(r(host, '0-10-2-trx-state').textContent.trim(), '0.10.2 Trx State');
+  assert.strictEqual(r(host, '0.10.2').textContent.trim(), '0.10.2 Trx State');
+  assert.strictEqual(r(host, 'a"]bad'), null, 'a string that is neither form is no selector (it would throw)');
+});
+
+test('F11 (cycle 25): a failed handbook-meta read answers every waiter as FAILED and is never cached — the next open asks again; "none" is cached; an import forgets the meta, and a read in flight across it is answered but not kept; the call router says it could not load', async () => {
+  const h = m4Boot_();
+  const st = h.read('KB_STATE');
+  h.run.pending('getManualMeta').forEach(() => h.run.flushFailure('boot noise', 'getManualMeta'));
+  assert.strictEqual(st.manualMeta, undefined, 'a transport failure is not cached');
+  const ens = h.read('kbEnsureManualMeta_');
+  const got = [];
+  ens((m, f) => got.push(['a', m, f])); ens((m, f) => got.push(['b', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 1, 'one read for two waiters');
+  h.run.flushFailure('timeout', 'getManualMeta');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [['a', null, true], ['b', null, true]], 'THE REGRESSION: a transport failure dropped the waiters unanswered');
+  got.length = 0;
+  ens((m, f) => got.push(['c', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 1, 'the next open asks again');
+  h.run.flushSuccess({ error: 'KB store unreachable' }, 'getManualMeta');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got)), [['c', null, true]], 'an {error} is a failure too');
+  assert.strictEqual(st.manualMeta, undefined, 'THE REGRESSION: an {error} was cached as "no meta" for the session');
+  ens(() => {});
+  h.run.flushSuccess({ none: true }, 'getManualMeta');
+  assert.strictEqual(st.manualMeta, null, 'a manual with no meta is an answer, and is kept');
+  ens((m, f) => got.push(['d', m, f]));
+  assert.strictEqual(h.run.pending('getManualMeta').length, 0, 'so it is not asked again');
+  // An import or a publish forgets it; a read that was in flight across one is answered, never kept.
+  h.read('kbManualInvalidate_')();
+  assert.strictEqual(st.manualMeta, undefined, 'THE REGRESSION: an import left the old version, router and changelog in place');
+  ens(() => {});
+  h.read('kbManualInvalidate_')();
+  h.run.flushSuccess({ version: 'v-old', router: [], changelog: [] }, 'getManualMeta');
+  assert.strictEqual(st.manualMeta, undefined, 'a pre-import answer is not kept');
+  // The call router names its failure — "No phrase matches" said the router had been read.
+  h.read('kbOpenRouterFromTab_')();
+  h.run.flushFailure('timeout', 'getManualMeta');
+  const list = h.$('#kbd-rt-list');
+  assert.ok(/could not be loaded/.test(list.textContent) && !/No phrase matches/.test(list.textContent), list.textContent);
+  const inp = h.$('#kbd-rt-q'); inp.value = 'where'; inp.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(/could not be loaded/.test(h.$('#kbd-rt-list').textContent), 'and typing a filter does not turn it into "no matches"');
+});
+
+test('F50 (cycle 25): a Check answers only for the file it read — a late verdict for a file since replaced neither paints over the new one nor unlocks Import; the new file\'s own clean Check does', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenManualImport_')();
+  const imp = doc.getElementById('kb-man-import'), gate = doc.getElementById('kb-man-gate'), out = doc.getElementById('kb-man-result');
+  h.read('kbManualSetFile_')({ name: 'a.json', size: 2, text: '{"a":1}' });
+  h.read('kbManualRun_')(true);
+  h.read('kbManualSetFile_')({ name: 'b.json', size: 2, text: '{"b":2}' });
+  h.run.flushSuccess({ success: true, dryRun: true, total: 3, created: 3, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(imp.disabled && !gate.hidden, 'THE REGRESSION: A\'s clean check unlocked Import for B, which nobody had checked');
+  assert.strictEqual(out.textContent.trim(), '', 'and A\'s verdict is not painted under B');
+  assert.ok(/b\.json/.test(doc.getElementById('kb-man-picked').textContent), 'B is still the file on screen');
+  assert.strictEqual(doc.getElementById('kb-man-check').disabled, false, 'Check is usable for B');
+  // a late FAILURE for A is dropped the same way
+  h.read('kbManualRun_')(true);
+  h.read('kbManualSetFile_')({ name: 'c.json', size: 2, text: '{"c":3}' });
+  h.run.flushFailure('A timed out', 'kbImportManual');
+  assert.strictEqual(out.textContent.trim(), '', 'a stale failure is not painted either');
+  // C's own clean check unlocks, and Import sends C
+  h.read('kbManualRun_')(true);
+  assert.strictEqual(JSON.parse(JSON.stringify(h.run.pending('kbImportManual').slice(-1)[0].args[0])).text, '{"c":3}');
+  h.run.flushSuccess({ success: true, dryRun: true, total: 1, created: 1, updated: 0, unchanged: 0, skipped: [], orphaned: [] }, 'kbImportManual');
+  assert.ok(!imp.disabled && gate.hidden, 'the chosen file\'s clean check unlocks Import');
+});
+
+test('F51 (cycle 25): the scroll-spy patches the reader bar\'s bookmark IN PLACE — the same button, its focus kept, now naming the section in view', async () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(JSON.parse(JSON.stringify(M2_PART0)), 'getManualPart');
+  const bar = h.$('#kb-main [data-kb-man-bar]');
+  const star = bar.querySelector('.kb-bm');
+  star.focus();
+  assert.strictEqual(doc.activeElement, star, 'a keyboard reader is on the star (non-vacuous)');
+  h.read('kbManualBarPaint_')('man-0-11');   // what the spy does at a section boundary
+  assert.strictEqual(bar.querySelector('.kb-bm'), star, 'THE REGRESSION: the button was replaced (outerHTML) on every boundary');
+  assert.strictEqual(doc.activeElement, star, 'and focus stayed on it');
+  const on = h.read('kbIsBookmarked_')('man-0-11');
+  assert.deepStrictEqual([star.getAttribute('data-kb-id'), star.getAttribute('data-kb-title'), star.getAttribute('aria-pressed'), star.classList.contains('on')],
+    ['man-0-11', '0.11 Notes and email conventions', on ? 'true' : 'false', on], 'it names the section in view, in the state the builder draws');
+  assert.ok(star.classList.contains('kb-man-bar-ic') && star.classList.contains('kb-bm'), 'its own classes are kept');
+});
+
+test('F52 (cycle 25): a keyboard reader reaches the card\'s buttons — Tab from the mark steps INTO the open card, Tab past its last button (or Escape) hands focus back to the mark without reopening it, and focus that leaves the card closes it', async () => {
+  const h = m4Boot_();
+  const w = h.window, doc = w.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Intro¹ text.\n\n**Notes**\n\n¹ Intro note.\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const ref = h.$('#kb-man-sec-man-0-11 button.kb-fn-ref');
+  const card = () => doc.getElementById('kb-xrefcard');
+  const shown = () => !!(card() && card().classList.contains('show'));
+  ref.focus(); h.flushTimers();
+  assert.ok(shown(), 'focus on the mark shows the card (non-vacuous)');
+  const go = card().querySelector('[data-fn-go]');
+  const t1 = h.dispatchKey('Tab', { target: ref });
+  assert.ok(t1.defaultPrevented && doc.activeElement === go, 'THE REGRESSION: Tab left the mark, the card hid, and "Go to note" was never reachable');
+  assert.ok(shown(), 'the card stays while focus is inside it');
+  const t2 = h.dispatchKey('Tab', { target: go });
+  assert.ok(t2.defaultPrevented && !shown() && doc.activeElement === ref, 'Tab past the last button hides the card and hands focus back to the mark');
+  h.flushTimers();
+  assert.ok(!shown(), 'and the mark does not reopen it — the next Tab moves on');
+  assert.ok(!h.dispatchKey('Tab', { target: ref }).defaultPrevented, 'with the card closed, Tab from the mark is the browser\'s');
+  // Shift+Tab before the first button, and Escape inside the card, come back the same way.
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  h.dispatchKey('Tab', { target: card().querySelector('[data-fn-go]'), shift: true });
+  assert.ok(!shown() && doc.activeElement === ref, 'Shift+Tab out of the card returns to the mark');
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  h.dispatchKey('Escape', { target: card().querySelector('[data-fn-go]') });
+  assert.ok(!shown() && doc.activeElement === ref, 'Escape inside the card hides it and returns to the mark (focus was left on a hidden button)');
+  // Focus that leaves the card for somewhere else closes it.
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  ref.focus(); h.flushTimers();
+  h.dispatchKey('Tab', { target: ref });
+  doc.getElementById('kb-search').focus(); h.flushTimers();
+  assert.ok(!shown(), 'focus that leaves the card for elsewhere closes it');
+});
+
+// ── Cycle 25 Batch 5a — Call Notes lost work ────────────────────────────────
+test('F21 (cycle 25): a save that fails while the rep is already typing the NEXT note puts the failed note in front of them to copy — the toast no longer claims a clipboard that held something else', async () => {
+  const h = bootLog();
+  c23Clipboard_(h, true);
+  h.setField('cn-fld-issue', 'Note A — will fail');
+  h.window.cnSubmitActiveForm_();
+  await tick(); await tick();                               // the save-time auto-copy settles (it worked)
+  h.setField('cn-fld-issue', 'Note B — the next caller');  // the rep moves on; the form is not empty
+  h.run.flushFailure(new Error('Lock timeout'), 'submitCallNote');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Note A/.test(mc.querySelector('#manual-copy-val').value),
+    'THE REGRESSION: the failed note was nowhere — not in the form, not in the draft slot, and the clipboard may hold anything since');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'Note B — the next caller', 'the current typing is untouched');
+  const t = c23Toasts_(h).filter((x) => /Lock timeout/.test(x));
+  assert.ok(t.length && !/on your clipboard/.test(t.join()), 'no clipboard claim: ' + JSON.stringify(t));
+  assert.ok(/shown so you can copy it/.test(t.join()), 'the toast says where the note is');
+});
+
+test('F22 (cycle 25): a live refresh requested before a delete (the path Ctrl+Z\'s undo of a save takes) or a toggle cannot bring back the old server state; one with no write in between still applies', () => {
+  const two = () => [noteFixture({ noteId: 'n1', issue: 'first' }), noteFixture({ noteId: 'n2', issue: 'second' })];
+  const h = bootLog(two());
+  const ids = () => h.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  // Delete n2 while a poll is in flight; the poll's list was read before the delete.
+  h.window.cnRefreshRollingStack_();
+  h.read('cnDoDeleteNote_')('n2');
+  h.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(ids(), 'n1', 'deleted');
+  h.run.flushSuccess({ notes: two(), autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(ids(), 'n1', 'THE REGRESSION: the stale list put the deleted note back on the stack');
+  // A poll requested AFTER the delete began, answered before it settled: the delete is not optimistic, so its own success settles the stack.
+  const h2 = bootLog(two());
+  const ids2 = () => h2.read('CN_STATE.rollingNotes.map(function (n) { return n.noteId; }).join()');
+  h2.read('cnDoDeleteNote_')('n2');
+  h2.window.cnRefreshRollingStack_();
+  h2.run.flushSuccess({ notes: two(), autoCopyFormat: '' }, 'getMyCallNotes');   // the server had not deleted it yet
+  h2.run.flushSuccess({ success: true }, 'deleteCallNote');
+  assert.strictEqual(ids2(), 'n1', 'the delete\'s success removes it, whatever the poll carried');
+  // A toggle: pin n1 while a poll is in flight; the poll's copy is unpinned.
+  const h3 = bootLog([noteFixture({ noteId: 'n1', issue: 'first' })]);
+  h3.window.cnRefreshRollingStack_();
+  h3.read('cnTogglePinned_')('n1');
+  h3.run.flushSuccess({ success: true, note: noteFixture({ noteId: 'n1', issue: 'first', subformData: { pinned: true, pinnedAt: '2026-10-14T09:00:00Z' } }) }, 'setCallNotePinned');
+  const pinnedAfterToggle = h3.read('JSON.stringify(cnFindNoteAnywhere_("n1").subformData)');
+  h3.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'first' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h3.read('JSON.stringify(cnFindNoteAnywhere_("n1").subformData)'), pinnedAfterToggle, 'the toggle is not reverted by the older list');
+  // Non-vacuous: with no write in between, the poll is believed (an edit made elsewhere lands).
+  h3.window.cnRefreshRollingStack_();
+  h3.run.flushSuccess({ notes: [noteFixture({ noteId: 'n1', issue: 'edited in another window' })], autoCopyFormat: '' }, 'getMyCallNotes');
+  assert.strictEqual(h3.read('CN_STATE.rollingNotes[0].issue'), 'edited in another window', 'a poll with no write in between still applies');
+});
+
+test('F24 (cycle 25): the reminders modal says "Loading" until the list is read and "Could not load" when it is not — "No upcoming reminders" only for a list that came back empty; a failed refresh keeps the last list', () => {
+  const h = bootLog();
+  h.run.pending('getMyScheduledCalls').forEach(() => h.run.flushSuccess({ calls: null }, 'getMyScheduledCalls'));   // boot noise
+  h.read('SCHED_STATE').items = null; h.read('SCHED_STATE').error = '';
+  h.read('cnOpenSchedModal_')();
+  const list = () => h.$('#cn-sched-list').textContent.replace(/\s+/g, ' ').trim();
+  assert.ok(/Loading your reminders/.test(list()) && !/No upcoming/.test(list()), 'THE REGRESSION (loading): ' + list());
+  h.run.flushFailure(new Error('Service unavailable'), 'getMyScheduledCalls');
+  assert.ok(/Could not load your reminders — Service unavailable/.test(list()) && !/No upcoming/.test(list()), 'THE REGRESSION (failed): ' + list());
+  h.read('cnSchedRetry_')();
+  assert.ok(/Loading your reminders/.test(list()), 'Try again shows loading');
+  h.run.flushSuccess({ error: 'The Forms store could not be opened' }, 'getMyScheduledCalls');
+  assert.ok(/Could not load your reminders — The Forms store could not be opened/.test(list()), 'an {error} is a failure too');
+  h.read('cnSchedRetry_')();
+  h.run.flushSuccess({ calls: [] }, 'getMyScheduledCalls');
+  assert.strictEqual(list(), 'No upcoming reminders.', 'an empty list that was READ says so');
+  // A list, then a refresh that fails: the list stays, under a note.
+  h.read('cnSchedRetry_')();
+  h.run.flushSuccess({ calls: [{ id: 's1', whenMs: Date.now() + 3600000, label: 'Call Mrs. Ortiz back', status: 'active' }] }, 'getMyScheduledCalls');
+  assert.ok(/Call Mrs\. Ortiz back/.test(list()) && !/Could not/.test(list()));
+  h.read('cnSchedRetry_')();
+  h.run.flushFailure(new Error('timeout'), 'getMyScheduledCalls');
+  assert.ok(/Could not refresh your reminders — this is the list as last loaded/.test(list()) && /Call Mrs\. Ortiz back/.test(list()), 'the last list read stays: ' + list());
+});
+
+// ── Cycle 25 Batch 5b — Call Notes races and accessibility ─────────────────
+test('F36 (cycle 25): a search answer paints only if it is the LATEST search — a slower answer for the old field scope (same query) cannot paint under the new tab', () => {
+  const h = bootLog();
+  h.window.showView('callNotesSearch');
+  h.read("CN_STATE.searchQuery = 'jane'");
+  h.window.cnFireSearch_();                    // field: all
+  h.window.cnSetSearchField_('caller');        // the rep clicks the Caller tab — same query
+  const [allScope, callerScope] = h.run.pending('searchMyCallNotes');
+  assert.deepStrictEqual([allScope.args[1], callerScope.args[1]], ['all', 'caller'], 'two scopes in flight (non-vacuous)');
+  callerScope.resolved = true; callerScope.success({ results: [noteFixture({ noteId: 'c1', caller: 'Jane CALLER-SCOPE' })] });
+  allScope.resolved = true; allScope.success({ results: [noteFixture({ noteId: 'a1', caller: 'Jane ALL-SCOPE' })] });
+  const txt = h.$('#cn-search-results').textContent;
+  assert.ok(/CALLER-SCOPE/.test(txt) && !/ALL-SCOPE/.test(txt), 'THE REGRESSION: the late all-fields answer painted under the Caller tab: ' + txt.slice(0, 120));
+  // a late FAILURE for the old scope is dropped too
+  h.window.cnSetSearchField_('issue');
+  h.window.cnSetSearchField_('caller');
+  const [issueScope, caller2] = h.run.pending('searchMyCallNotes');
+  caller2.resolved = true; caller2.success({ results: [noteFixture({ noteId: 'c2', caller: 'Jane AGAIN' })] });
+  issueScope.resolved = true; issueScope.failure(new Error('timeout'));
+  assert.ok(/Jane AGAIN/.test(h.$('#cn-search-results').textContent) && !/Search failed/.test(h.$('#cn-search-results').textContent), 'a stale failure does not paint');
+});
+
+test('F37 + F38 (cycle 25): a manager delete removes THAT card only — a comment half-typed on another card survives; and a late failure for the rep the manager left cannot paint over the one they moved to', async () => {
+  const h = boot(); h.bootShell();
+  const area = mount_(h, 'view-area');
+  h.read("CN_STATE.mgrRepView = { repId: 'E9', date: '2026-06-16' }");
+  const n1 = noteFixture({ noteId: 'm1', caller: 'One' }), n2 = noteFixture({ noteId: 'm2', caller: 'Two' });
+  area.innerHTML = '<div id="cn-mgr-rep-stack">' + h.window.cnMgrRenderReadonlyCard_(n1) + h.window.cnMgrRenderReadonlyCard_(n2) + '</div>';
+  const input = (id) => h.$('#cn-mgr-rep-stack .cn-mgr-reply-row[data-note-id="' + id + '"] .cn-mgr-reply-input');
+  input('m2').value = 'half-typed for card two';
+  input('m2').focus();
+  const del = h.document.createElement('button'); del.dataset.noteId = 'm1'; del.dataset.repId = 'E9';
+  h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]').appendChild(del);
+  h.window.cnMgrDeleteNote_(del);
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  h.run.flushSuccess({ success: true }, 'managerDeleteCallNote');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 0, 'THE REGRESSION: the whole stack reloaded');
+  assert.ok(!h.$('#cn-mgr-rep-stack .cn-card[data-note-id="m1"]'), 'the deleted card is gone');
+  assert.strictEqual(input('m2').value, 'half-typed for card two', 'the other card\'s typing survives');
+  assert.strictEqual(h.document.activeElement, input('m2'), 'and its focus');
+  // The last card deleted: the stack reloads (its empty state holds nothing to lose).
+  h.window.cnMgrRemoveCard_('E9', 'm2');
+  assert.strictEqual(h.run.pending('managerGetCallNotes').length, 1, 'no card left → the stack reloads');
+  h.run.drain();
+  // F38: rep A's load fails late, after the manager moved to rep B.
+  h.read("currentView = 'callNotesManager'");
+  h.read("CN_STATE.mgrRepView = { repId: 'A', date: '2026-06-16' }");
+  h.window.cnMgrLoadRepNotes_();
+  h.read("CN_STATE.mgrRepView = { repId: 'B', date: '2026-06-16' }");
+  h.window.cnMgrLoadRepNotes_();
+  const [loadA, loadB] = h.run.pending('managerGetCallNotes');
+  loadB.resolved = true; loadB.success({ notes: [noteFixture({ noteId: 'b1', caller: 'Rep B caller' })], repName: 'B', date: '2026-06-16' });
+  loadA.resolved = true; loadA.failure(new Error('Rep A sheet timed out'));
+  const stackTxt = h.$('#cn-mgr-rep-stack').textContent;
+  assert.ok(/Rep B caller/.test(stackTxt) && !/timed out/.test(stackTxt), 'THE REGRESSION: rep A\'s late failure replaced rep B\'s notes: ' + stackTxt.slice(0, 120));
+});
+
+test('F39 (cycle 25): the History "Refreshing…" pill goes away when its refresh settles — even when the rep picked another range meanwhile and the answer is dropped', () => {
+  const h = bootLog();
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'h1' })] }, 'getMyCallNotesRange');
+  h.window.showView('callNotes');
+  h.run.drain();
+  h.window.showView('callNotesHistory');          // within the freshness window: instant paint + pill
+  assert.ok(h.$('#view-refreshing-pill'), 'the pill is up (non-vacuous)');
+  h.read("CN_STATE.historyDate = '2026-01-01'; CN_STATE.historyEndDate = '2026-01-02'");
+  h.window.cnHistoryRangeChanged_();               // the rep picks another range mid-refresh
+  h.run.flushSuccess({ notes: [] }, 'getMyCallNotesRange');   // the refresh's answer — for the old range, dropped
+  assert.ok(!h.$('#view-refreshing-pill'), 'THE REGRESSION: the pill stayed up for the rest of the visit');
+});
+
+test('F40 (cycle 25) — composer focus: a composer that closes ITSELF (after a send) returns focus to what opened it — found again by id if the Log rebuilt it — and never over another open dialog', async () => {
+  const h = boot(); h.bootShell();
+  const doc = h.document;
+  for (let i = 0; i < 6; i++) h.flushTimers();   // settle the shell's own deferred renders (they move focus too)
+  const trigger = doc.createElement('button'); trigger.id = 'f40-trigger'; doc.body.appendChild(trigger);
+  const openComposer = () => {
+    const ov = h.window.ensureOverlay('cn-compose-overlay', { label: 'Department email composer', onClose: h.window.cnCloseComposerModal_ });
+    ov.innerHTML = '<button id="cmp-x">x</button>';
+    doc.getElementById('cmp-x').focus();
+    h.read('CN_STATE.composer = { noteId: "n1" }');
+    return ov;
+  };
+  trigger.focus(); openComposer();
+  h.window.cnCloseComposerModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, trigger, 'THE REGRESSION: focus was left on <body> after the composer closed itself');
+  // The send re-renders the Log after the close: the trigger is rebuilt under the same id.
+  trigger.focus(); openComposer();
+  h.window.cnCloseComposerModal_();
+  trigger.remove();
+  const rebuilt = doc.createElement('button'); rebuilt.id = 'f40-trigger'; doc.body.appendChild(rebuilt);
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, rebuilt, 'the rebuilt trigger takes the focus');
+  // Never over another open dialog (a switch to the other composer).
+  rebuilt.focus(); openComposer();
+  const other = h.window.ensureOverlay('cn-ext-overlay', { label: 'External email composer' });
+  other.innerHTML = '<input id="ext-to">';
+  doc.getElementById('ext-to').focus();
+  h.window.cnCloseComposerModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, doc.getElementById('ext-to'), 'focus stays in the dialog that is still open');
+  // The external composer's own close does the same.
+  other.remove();
+  rebuilt.focus();
+  const ext = h.window.ensureOverlay('cn-ext-overlay', { label: 'External email composer', onClose: h.window.cnCloseExternalEmailModal_ });
+  ext.innerHTML = '<input id="ext-to2">'; doc.getElementById('ext-to2').focus();
+  h.read('CN_STATE.extComposer = { noteId: "n1" }');
+  h.window.cnCloseExternalEmailModal_();
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, rebuilt, 'and so does the external composer');
+});
+
+test('F40 (cycle 25) — the rest of the bundle: the save card\'s collapse button says its state; a collapsed History group stays collapsed through a re-render; a failed Q&A tray load says so', async () => {
+  const h = bootLog();
+  const doc = h.document;
+  // (b) the save card's collapse button exposes its state.
+  const col = doc.querySelector('.cn-save-collapse');
+  assert.strictEqual(col.getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(doc.getElementById(col.getAttribute('aria-controls')), doc.querySelector('#cn-save-card .rail-actions'), 'it names what it controls');
+  h.window.cnToggleSaveCard_(col);
+  assert.ok(doc.getElementById('cn-save-card').classList.contains('collapsed') && col.getAttribute('aria-expanded') === 'false', 'collapsed, and says so');
+  h.window.cnToggleSaveCard_(col);
+  assert.strictEqual(col.getAttribute('aria-expanded'), 'true');
+  // (d) a failed Q&A tray load is said, never an empty tray.
+  h.run.flushFailure(new Error('Quota exceeded'), 'getMyTrainingQA');
+  assert.ok(/Training answers could not be loaded — Quota exceeded/.test(doc.getElementById('cn-training-qa-tray').textContent), 'THE REGRESSION: the tray stayed silently empty');
+  // (c) a History group the rep collapsed stays collapsed through a re-render.
+  h.window.showView('callNotesHistory');
+  h.run.flushSuccess({ notes: [noteFixture({ noteId: 'h1', dateLocal: '2026-06-16' }), noteFixture({ noteId: 'h2', dateLocal: '2026-06-15' })] }, 'getMyCallNotesRange');
+  const head = () => doc.querySelector('.cn-hist-group[data-hgdate="2026-06-15"] .cn-hist-grouphead');
+  h.window.cnToggleHistGroup_(head());
+  h.window.cnRenderHistoryStack_();
+  assert.ok(head().closest('.cn-hist-group').classList.contains('collapsed') && head().getAttribute('aria-expanded') === 'false', 'THE REGRESSION: every re-render opened the groups again');
+  assert.ok(!doc.querySelector('.cn-hist-group[data-hgdate="2026-06-16"]').classList.contains('collapsed'), 'the other group is untouched');
+});
+
+// ── Cycle 25 Batch 6a — Metrics framing (+ F40(e), operator option 1) ──────
+const c25MyDay_ = (over) => Object.assign({ date: '2026-10-13', repName: 'Rep', cdr: null, noteCount: 0, noteCountUnavailable: false,
+  cdrUnavailable: false, trend: [], series: {}, kpiMinCohort: 3, transfer: null, alertThreshold: null, alertBand: null, standardSource: '' }, over || {});
+
+test('F53 (cycle 25): My Stats says when the call data or the day-by-day trend could not be READ — never the quiet "No call data found" card, never a silently missing chart', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  h.window.mRenderMyStats_(c25MyDay_({ cdrUnavailable: true }));
+  const txt = h.$('#m-my-content').textContent;
+  assert.ok(h.$('#m-my-content .error-state') && /Call data could not be read for 2026-10-13 — this is a read failure, not a day without calls/.test(txt),
+    'THE REGRESSION: a failed read showed the empty card: ' + txt.slice(0, 120));
+  assert.ok(!h.$('#m-my-content .m-empty'), 'not the empty-state card (A12)');
+  h.window.mRenderMyStats_(c25MyDay_());
+  assert.ok(h.$('#m-my-content .m-empty') && /No call data found/.test(h.$('#m-my-content').textContent), 'a day that was READ with no calls keeps the empty card');
+  // A range whose trend read failed: the totals render, and the missing chart says why.
+  h.window.mRenderMyStats_({ from: '2026-10-01', to: '2026-10-13', repName: 'Rep', noteCount: 3, noteCountUnavailable: false, trend: [], trendUnavailable: true,
+    cdr: { totalRung: 40, totalAnswered: 36, totalMissed: 4, pctAnswered: 90, tttFormatted: '1:00:00', attFormatted: '1:40', tttSeconds: 3600, attSeconds: 100 },
+    transfer: null, alertThreshold: null, alertBand: null, standardSource: '' });
+  assert.ok(/The day-by-day trend could not be read — the totals above are complete/.test(h.$('#m-my-content').textContent), 'THE REGRESSION: the sparkline just vanished');
+});
+
+test('F56 (cycle 25): a server {error} on a background refresh keeps the painted last-good Metrics view (My Stats and Team Metrics) and says so — the transport-failure path already did', () => {
+  const h = boot(); h.bootShell();
+  h.run.drain();   // the shell's own Dashboard calls getMyMetrics at boot
+  h.window.enterTool('metrics', 'metricsMyStats');
+  const good = c25MyDay_({ cdr: { totalRung: 20, totalAnswered: 18, totalMissed: 2, pctAnswered: 90, tttFormatted: '0:30:00', attFormatted: '1:40', tttSeconds: 1800, attSeconds: 100 } });
+  h.run.flushSuccess(good, 'getMyMetrics');
+  assert.ok(/90/.test(h.$('#m-my-content').textContent), 'painted (non-vacuous)');
+  h.window.mLoadMyStats_();                      // a re-enter: instant paint from cache, refresh behind the pill
+  h.run.flushSuccess({ error: 'CDR read failed' }, 'getMyMetrics');
+  assert.ok(!h.$('#m-my-content .error-state') && /90/.test(h.$('#m-my-content').textContent), 'THE REGRESSION: the error card replaced the last-good view');
+  assert.ok(h.$$('#toast-stack .toast').some((t) => /showing last loaded \(CDR read failed\)/.test(t.textContent)), 'and the rep is told');
+  // Team Metrics, the same.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/metrics/script_metrics.html'), 'utf8');
+  const team = /function mLoadTeamMetrics_\(opts\) \{[\s\S]*?\n\}/.exec(src)[0];
+  assert.ok(/if \(painted && \(!data \|\| data\.error\)\) \{[\s\S]*?showing last loaded/.test(team), 'Team Metrics keeps its painted view on an {error} too');
+});
+
+test('F40(e) (cycle 25, operator option 1): a draft another window wrote — or this window before a reload — is OFFERED, never loaded silently; Not now leaves it; a save here never wipes it; Restore takes it over, or opens the copy dialog if the rep has started typing', async () => {
+  const draft = (by, issue) => JSON.stringify({ values: { issue: issue, patient: 'TRX-9' }, at: Date.now(), by: by });
+  let h = bootLog();
+  const KEY = h.read('CN_FORM_STICKY_LS_KEY');
+  // Another window's draft is in the slot; this window enters the Log.
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), '', 'THE REGRESSION: the other window\'s note was loaded silently into this form');
+  assert.ok(h.$('.ui-dialog') && /Restore an unsaved call note\?/.test(h.$('.ui-dialog').textContent) && /TRX-9/.test(h.$('.ui-dialog').textContent), 'it is offered instead');
+  h.click(h.$('.ui-dialog-cancel')); await tick();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Pop-out note', 'Not now leaves it in the slot');
+  // A save here must not wipe the other window's draft.
+  h.read('cnClearStickyFormDraft_')();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).values.issue, 'Pop-out note', 'THE REGRESSION: a save in one window cleared the other\'s draft');
+  // Restore loads it and this window takes it over.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'Pop-out note', 'Restore fills the form');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(KEY)).by, h.read('CN_WINDOW_ID'), 'and this window owns the draft now');
+  // Typed before answering: the draft goes to the copy dialog, the typing stays.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft('w-other', 'Pop-out note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  h.setField('cn-fld-issue', 'New caller, typed first');
+  h.click(h.$('.ui-dialog-ok')); await tick();
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'New caller, typed first', 'the typing is never overwritten');
+  const mc = h.$('#manual-copy-overlay');
+  assert.ok(mc && mc.classList.contains('open') && /Pop-out note/.test(mc.querySelector('#manual-copy-val').value), 'the draft is shown to copy');
+  // This window's own draft (and a legacy one with no owner) restore silently, as before.
+  h = bootLog();
+  h.window.localStorage.setItem(KEY, draft(h.read('CN_WINDOW_ID'), 'My own note'));
+  h.window.showView('callNotesHistory'); h.run.drain();
+  h.window.showView('callNotes');
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'My own note', 'own draft: silent restore');
+  assert.ok(!h.$('.ui-dialog'), 'no question asked');
 });
 
 // ── Batch M5a — the reader ──────────────────────────────────────────────────
@@ -7208,4 +7987,75 @@ test('PK-7 DOM (review PDFs, operator 2026-10-13): a chapter PDF keeps its chapt
   assert.deepStrictEqual([...d3.querySelectorAll('#pdftoc li')].map((li) => li.classList.contains('pdf-skip')), [false, false, false, true], 'its contents row goes too');
   assert.strictEqual(d3.getElementById('pz').textContent, 'see A.1 Terms', 'a link into the dropped part is plain text, without the chapter PDF\'s suffix');
   assert.ok(!d3.querySelector('#pz a') && r3.title === '', 'no link left behind; no chapter title on a full cut');
+});
+
+// ── Cycle 25 Batch 8a — Intake, Training, QA ────────────────────────────────
+section('Cycle 25 Batch 8a — Intake, Training, QA');
+test('F20 (cycle 25): a failed agent-list read is said and NOT cached — the next PPD preview asks again and fills the list; the account form treats an {error} the same', async () => {
+  const h = boot();
+  h.bootShell({});
+  h.run.drain();
+  h.read('INTAKE_STATE.ppd.agents = null');
+  const open = h.read('intakeOpenPpdPreviewModal_');
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 1, 'a cold cache fetches');
+  h.run.flushSuccess({ error: 'Roster unavailable' }, 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'THE REGRESSION: an {error} was cached as [] — truthy, so no later preview asked again');
+  assert.ok(b9Toasts(h).some((t) => /Could not load the agent list: Roster unavailable/.test(t)), 'the failure is said');
+  assert.ok(h.$('#intk-ppd-recipient') || h.$('.intk-foot'), 'the preview still opens — Default and Custom still work');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 1, 'the next preview asks again');
+  h.run.flushFailure('timeout', 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'a transport failure is not cached either');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }] }, 'getIntakeAgents');
+  assert.ok(/Ana Ruiz/.test(h.$('.overlay.open').innerHTML), 'a real list fills the picker');
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  open('<p>preview</p>', []);
+  assert.strictEqual(h.run.pending('getIntakeAgents').length, 0, 'and a real list IS cached');
+  // The account form: the same rule.
+  h.read('closeOverlay')(h.$('.overlay.open'));
+  h.read('INTAKE_STATE.ppd.agents = null');
+  h.read('intakeBuildAcctModal_')('pmd', '<p>acct</p>');
+  h.run.flushSuccess({ error: 'Roster unavailable' }, 'getIntakeAgents');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'the account form does not cache an {error} either');
+});
+
+test('F44 (cycle 25): a quiz with answers picked asks before Escape or Cancel throws them away; an untouched quiz, a grade in flight and the result view close at once', async () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({});
+  h.run.drain();
+  const quiz = { quizId: 'q1', title: 'Safety', passPct: 100, questions: [{ q: 'A?', options: ['x', 'y'] }, { q: 'B?', options: ['m', 'n'] }],
+    lockout: { locked: false, attemptsLeft: 3, maxAttempts: 3 } };
+  const ov = () => h.$('#train-quiz-overlay.open');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.dispatchKey('Escape');
+  assert.ok(!ov() && !b9Ask(h), 'nothing picked: Escape closes at once');
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.click('input[name="tr-q-0"][value="1"]');
+  h.dispatchKey('Escape');
+  assert.ok(ov() && b9Ask(h), 'THE REGRESSION: one keypress threw the picked answers away');
+  h.click('.ui-dialog-cancel'); await tick();
+  assert.ok(ov() && h.$('input[name="tr-q-0"][value="1"]').checked, 'Keep editing keeps the answers');
+  // A grade in flight is not a discard — the attempt is recorded either way (E13).
+  h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  assert.strictEqual(h.run.pending('submitQuizAttempt').length, 1, 'grading');
+  h.dispatchKey('Escape');
+  assert.ok(!b9Ask(h) && !ov(), 'mid-grade: no question, the close goes through');
+  h.run.flushSuccess({ success: true, passed: true, scorePct: 100, right: 2, total: 2, passPct: 100, attempt: 1, perQuestion: [true, true] }, 'submitQuizAttempt');
+  // The result view has nothing left to lose.
+  h.read('trainOpenQuiz_')('q1');
+  h.run.flushSuccess(quiz, 'getQuiz');
+  h.click('input[name="tr-q-0"][value="0"]'); h.click('input[name="tr-q-1"][value="0"]');
+  h.click('#tr-quiz-submit');
+  h.run.flushSuccess({ success: true, passed: false, scorePct: 50, right: 1, total: 2, passPct: 100, attempt: 2, perQuestion: [true, false], attemptsLeft: 1, maxAttempts: 3, locked: false }, 'submitQuizAttempt');
+  assert.ok(h.$('#tr-quiz-retake'), 'the result view');
+  h.dispatchKey('Escape');
+  assert.ok(!ov() && !b9Ask(h), 'a submitted attempt is not asked about');
 });

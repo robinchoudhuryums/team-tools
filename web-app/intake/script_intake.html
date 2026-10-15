@@ -1796,14 +1796,23 @@ function intakeOpenPpdPreviewModal_(html, recs) {
     // wasn't, so a slow getIntakeAgents popped the body-mounted PHI preview
     // modal over whatever view the rep had navigated to (the INT-5 class).
     var requestedView = currentView;
+    // F20 (cycle 25): only a list that was READ is cached. An {error} or a
+    // transport failure used to be stored as [] — truthy, so every later
+    // preview skipped the fetch and the "send to agent" list stayed empty for
+    // the session. Now the modal opens without the agents, says so, and the
+    // next preview asks again (g129).
+    var failed = function (msg) {
+      if (currentView !== requestedView) return;
+      showToast('Could not load the agent list: ' + msg + ' — Default and Custom recipients still work; preview again to retry.', 'toast-warn');
+      intakeBuildPpdModal_(html, recs);
+    };
     google.script.run.withSuccessHandler(function (r) {
-      INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      if (!r || r.error || !Array.isArray(r.agents)) { failed((r && r.error) || 'no list returned'); return; }
+      INTAKE_STATE.ppd.agents = r.agents;
       if (currentView !== requestedView) return;
       intakeBuildPpdModal_(html, recs);
-    }).withFailureHandler(function () {
-      INTAKE_STATE.ppd.agents = [];
-      if (currentView !== requestedView) return;
-      intakeBuildPpdModal_(html, recs);
+    }).withFailureHandler(function (err) {
+      failed((err && err.message) || 'server error');
     }).getIntakeAgents();
   } else {
     intakeBuildPpdModal_(html, recs);
@@ -2237,7 +2246,12 @@ function intakeBuildAcctModal_(form, html) {
   // load agents lazily (shared cache on ppd.agents) so the dropdown fills
   if (!INTAKE_STATE.ppd.agents) {
     google.script.run.withSuccessHandler(function (r) {
-      INTAKE_STATE.ppd.agents = (r && r.agents) || [];
+      // F20 (cycle 25): an {error} is a failure, never an empty list to keep.
+      if (!r || r.error || !Array.isArray(r.agents)) {
+        showToast('Could not load the agent list: ' + ((r && r.error) || 'no list returned'), 'toast-warn');
+        return;
+      }
+      INTAKE_STATE.ppd.agents = r.agents;
       var sel = document.getElementById('intk-acct-recipient');
       if (sel) {
         var custom = sel.querySelector('option[value="custom"]');

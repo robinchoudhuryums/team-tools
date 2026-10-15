@@ -6,10 +6,20 @@ Renders the **production partials** (the real `index.html` with every
 (tool × viewport × light/dark). This is the layer neither Node harness can
 see: actual pixels — overflow, wrap, collision, dead space, dark-mode holes.
 
-It is **manual / on-demand** (like the editor suite), NOT wired into CI:
-it needs a Chromium install and its findings need human eyes. Run it before
-cutting a deploy that touched `styles*.html` or any view partial, and after
-any layout-affecting change.
+The full matrix is **manual / on-demand** (like the editor suite): its
+findings need human eyes. Run it before cutting a deploy that touched
+`styles*.html` or any view partial, and after any layout-affecting change.
+
+**A subset runs in CI (cycle 25 E5, ST4).** `node shoot.mjs --ci` shoots the
+scenarios `ci-gate.cjs` names (every tool, at the widths its layout defects have
+lived) and exits non-zero on what a screenshot cannot show: sideways overflow,
+a page taller than its content (`verticalRunawayPx` past 200px), a text column
+narrower than a word (`narrowText`), an RPC with no fixture, or an uncaught page
+error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
+the shots as an artifact when it fails. A finding owned elsewhere goes in
+`ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
+whose finding stops firing fails the run, so remove it with the fix. A subset
+name the matrix lacks is refused before the browser starts.
 
 **Where the rest of this lives** (the Doc map in
 [`CLAUDE.md`](../../CLAUDE.md) is the index): the **Visual Audit Stage** —
@@ -79,6 +89,18 @@ Claude Code remote-env pre-install) → Playwright's own managed download.
   (`window.__MISSING__`), and the landed view key. **A missing fixture means
   the scenario rendered a loader/error state, not the real view** — add the
   endpoint to `mock.js` before trusting that screenshot.
+- **Three layout measurements** ride every scenario in `report.json`, and the
+  run prints a section for each one that fires — because a squeezed layout, an
+  overflowing one and a runaway one all look fine in a screenshot:
+  - `overflowPx` — the page scrolls SIDEWAYS (the document's scroll width past
+    its client width).
+  - `verticalRunawayPx` (cycle 25 F69) — the document scrolls PAST its content:
+    its scroll height beyond the bottom of everything visibly laid out (a
+    visually hidden box is excluded, since an escaped one is the usual cause —
+    F67, g171). Over 200px prints under VERTICAL RUNAWAY.
+  - `narrowText` (cycle 25 F69) — an element holding a real run of its own text
+    laid out narrower than a word (under 48px); F68's 22px text column at 390px
+    is the shape (g72). Printed under SQUEEZED TEXT.
 - `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)

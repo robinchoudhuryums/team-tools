@@ -748,7 +748,14 @@ function qaSample_() {
     .withSuccessHandler(function (r) {
       if (btn) btn.disabled = false;
       if (!r || !r.success) { showToast((r && r.error) || 'Sampling failed.', 'toast-warn'); return; }
-      showToast(r.assigned + ' recording(s) assigned to you — shortest-covered agents first', 'toast-success');
+      // F47 (cycle 25): a pick made without the exemptions or the roster says so.
+      var unread = Array.isArray(r.unread) ? r.unread : [];
+      if (unread.length) {
+        showToast(r.assigned + ' recording(s) assigned to you, but the ' + unread.join(' and ') +
+          ' could not be read — agents already at target or exempt this period may be in the pick.', 'toast-warn');
+      } else {
+        showToast(r.assigned + ' recording(s) assigned to you — shortest-covered agents first', 'toast-success');
+      }
       if (currentView === 'qaQueue' && !QA_STATE.det) {
         renderLoading(document.getElementById('view-area'), 'Refreshing…', 'waveform');
         qaLoadQueue_();

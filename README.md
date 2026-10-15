@@ -77,13 +77,14 @@ Script project synced via [clasp](https://github.com/google/clasp).
     section-aware full-text search + reader for training/policy docs.
     Markdown articles (rendered with HTML-escape-first) and embedded
     Drive Doc/Sheet/file previews, plus a per-item Doc→article
-    converter with Drive image export and paste-a-screenshot upload
-    in the editor. A Ctrl/⌘+K slide-over drawer gives reps mid-call
+    converter and paste-a-screenshot upload in the editor — article
+    images are stored in the KB spreadsheet's KbImages tab, not Drive
+    (the domain disables Apps Script's Drive). A Ctrl/⌘+K slide-over drawer gives reps mid-call
     lookup from any tool, with an optional AI guidance card
     (Anthropic API, whitelisted call facets only — no note text ever
-    leaves the app; feature-flagged off by default). Managers edit
-    inline; reps browse read-only, and get a usage-sorted "Review due"
-    queue for re-confirming stale articles. Three operator-maintained
+    leaves the app; feature-flagged off by default). Admins author and
+    edit articles; managers get a usage-sorted "Review due" queue for
+    re-confirming stale ones; reps browse read-only. Three operator-maintained
     lookup tables ride the same store and the same two surfaces
     (landing + drawer): an insurance payor check, an out-of-pocket
     price lookup, and an area-eligibility check that takes an address
@@ -120,8 +121,9 @@ Script project synced via [clasp](https://github.com/google/clasp).
     complete; managers see a per-rep completion matrix. Re-assigning
     an item resets its completion (re-certification). Interactive
     quizzes: manager-authored (or imported from a Google Forms quiz),
-    graded server-side (answer keys never reach the browser), unlimited
-    retries with attempt tracking — a pass completes the item.
+    graded server-side (answer keys never reach the browser), with
+    attempt tracking and a retry limit — three failed attempts, then a
+    24-hour wait or a manager's reset — and a pass completes the item.
     Per-employee signable documents (reviews,
     PIPs, policy acknowledgments) live in a dedicated HR spreadsheet:
     content is frozen and hashed at issue, employees sign on a canvas
@@ -222,8 +224,10 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders the scenario matrix in headless Chromium; it is
-manual / on-demand, NOT in CI. (For how many scenarios — and for every other
+(`test/visual/`) renders the scenario matrix in headless Chromium; the full
+matrix is manual / on-demand, and since cycle 25 E5 a fixed subset runs in CI
+(`node shoot.mjs --ci`) and fails on a layout MEASUREMENT — sideways overflow, a
+page past its content, squeezed text, a missing fixture, an uncaught error. (For how many scenarios — and for every other
 figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
 read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
 had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
@@ -231,7 +235,10 @@ answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
-`npm ci` + the DOM harness, on every push and PR — the project's only
-automated check. (The zero-install steps deliberately run before `npm ci`:
-a registry or jsdom-resolution failure must not stop the only checks that
-need no dependencies from running at all.)
+`npm ci` + the DOM harness, the server identifier lint, the browser-free
+handbook build, the counts block and the cycle close-out check
+(`scripts/cycle-closeout.mjs --check`), on every push and PR; a second job runs
+the visual subset above. These are the project's only automated checks — a
+batch is green when the run on its pushed commit is. (The zero-install steps
+deliberately run before `npm ci`: a registry or jsdom-resolution failure must
+not stop the only checks that need no dependencies from running at all.)

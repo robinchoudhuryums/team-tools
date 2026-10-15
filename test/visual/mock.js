@@ -651,6 +651,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       stateTaxRates: {}, stateAbbrToName: {}, deleteWindowSeconds: 300, autoCopyFormat: '',
     },
     getMyCallNotes: { notes: [note(0), note(1), note(2)], autoCopyFormat: '', timezone: 'Asia/Kolkata' },
+    // F35 (cycle 25): History is photographed now (its preset row gained Last 90 Days).
+    getMyCallNotesRange: { notes: [note(0), note(1, { dateLocal: daysAgo(1), timestamp: ts(daysAgo(1), '11:20:00') }),
+      note(2, { dateLocal: daysAgo(3), timestamp: ts(daysAgo(3), '09:05:00'), flagType: 'action' })], archivedBefore: '' },
     getMyPinnedCallNotes: { notes: [note(9, { subformData: { pinned: true, pinnedAt: ts(daysAgo(2), '15:00:00'), flags: [], tags: ['complex-case'] }, dateLocal: daysAgo(2), timestamp: ts(daysAgo(2), '14:58:00'), flagType: '' })] },
     getMyTrainingQA: { items: [], notes: [] },
     // The editor file-drop: a FUNCTION, because the response shape depends on
@@ -990,7 +993,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       incoming: [
         { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', createdMs: new Date(daysAgo(0) + 'T08:30:00').getTime(), byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1,
           // 22post D: the department replied with a question — still open, flagged for a look.
-          threadTracked: true, replyVerdict: 'needs-look', repliedAt: daysAgo(0) + ' 10:15' }],
+          threadTracked: true, replyVerdict: 'needs-look', repliedAt: daysAgo(0) + ' 10:15', repliedMs: new Date(daysAgo(0) + 'T10:15:00').getTime(),
+          // E4 (cycle 25, ST1): WHY the check held it back — the server's label, never the reply.
+          replyReason: 'question', replyReasonLabel: 'the reply asks a question' }],
       // 22post D: requests the caller may reopen (not their own), resolved in the last reopenDays.
       recentResolved: [
         { requestId: 'r9', toDept: 'Billing', label: 'OOP Order', patientTrx: 'T. Okafor · TRX 48170', createdAt: daysAgo(1) + ' 13:10', createdMs: new Date(daysAgo(1) + 'T13:10:00').getTime(), byName: 'Sam Ortiz', status: 'resolved', elapsedMin: 95, elapsedWallMin: 95, slaBusiness: true, resolvedBy: 'Priya Raman', resolvedVia: 'reply', threadTracked: true, replyVerdict: 'resolved', repliedAt: daysAgo(1) + ' 14:45', resolvedMs: new Date(daysAgo(1) + 'T14:45:00').getTime(), slaDays: 1 }],
@@ -1002,6 +1007,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // 22post A-7: a manager's summary cards are team-wide (drTeamKpis_'s shape).
       teamKpis: { open: 5, overdue: 2, resolved: 16, total: 21, medianMin: 220, manualCount: 3 },
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaDays: 1, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
+    // E4 (cycle 25, ST1): drReplyReviewReport_'s rows — a rule people mostly
+    // override (amber), one they back, and one with no answers yet.
+    getDeptReplyReviewStats: { days: 90, flagOn: true, rows: [
+      { reason: 'ack', label: 'the reply only acknowledges the email', waiting: 1, resolved: 6, open: 2, answered: 8, overridePct: 75 },
+      { reason: 'question', label: 'the reply asks a question', waiting: 2, resolved: 1, open: 9, answered: 10, overridePct: 10 },
+      { reason: 'unattributed', label: 'the thread is shared with another request and the reply does not name this one', waiting: 1, resolved: 0, open: 0, answered: 0, overridePct: null }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -1223,13 +1234,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getSpanishInboxPending: { pending: [
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
-      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
+      // E4 (cycle 25, G5): it has waited 9 days — escalated (the server's flag), so the pill and stripe are on camera on the tab and the Dashboard card.
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
       { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
       { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
       { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
-      medianMinutes: 45, truncated: false,
+      medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       self: 'avery@umsupply.com' },
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
@@ -1322,8 +1334,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         changelog: REAL_META.changelog.filter(function (c) { return c.id === 'man-0-11'; }).slice(0, 1)
           .map(function (c) { return Object.assign({}, c, { date: daysAgo(40) }); }) };
     },
+    // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
+    exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
+      sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
     kbImportManual: function (source, opts) {   // M4-FU3: source is {text} — the file, not a Drive link
-      return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153,
+      return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153, reviewed: 2,
         skipped: [{ id: 'man-5-9', title: '5.9 Equipment guide', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Difficult calls', reason: 'deleted' }],
         images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toStore: 160, removed: 0 }
           : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' } };
@@ -1527,6 +1542,32 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       };
     })(),
     getPtoReconciliation: { reps: [] },
+    // G1 + F19 (cycle 25 E2): the pay-period close checklist — an ended period
+    // with an OFFBOARDED rep's open day (editable) and one past the edit window,
+    // pending requests, a current period that is ready, and an orphan request.
+    getPayPeriodClose: {
+      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST',
+      periods: [
+        { cycle: 'Monthly', which: 'previous', start: daysAgo(44), end: daysAgo(14), checkedThrough: daysAgo(14),
+          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1 }, ready: false,
+          reps: [
+            { id: 'E-1042', name: 'Jordan Reyes', offboarded: true, timezone: 'Asia/Kolkata',
+              openDays: [{ date: daysAgo(20), kind: 'no clock-out', editable: true }, { date: daysAgo(36), kind: 'clock-out with no clock-in', editable: false }],
+              pendingTimeOff: [], pendingAdjust: [{ date: daysAgo(20), label: 'ClockOut' }] },
+            { id: 'E-1007', name: 'Avery Blake', offboarded: false, timezone: 'Asia/Kolkata',
+              openDays: [{ date: daysAgo(16), kind: 'no clock-out', editable: true }], pendingTimeOff: [{ date: daysAgo(15), label: 'Full Day' }], pendingAdjust: [] },
+          ] },
+        { cycle: 'Monthly', which: 'current', start: daysAgo(13), end: daysAgo(-17), checkedThrough: daysAgo(2),
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+        { cycle: 'Biweekly', which: 'previous', start: daysAgo(20), end: daysAgo(7), checkedThrough: daysAgo(7),
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+        { cycle: 'Biweekly', which: 'current', start: daysAgo(6), end: daysAgo(-7), checkedThrough: daysAgo(2),
+          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 }, ready: false,
+          reps: [{ id: 'E-1088', name: 'Sam Ortiz', offboarded: false, timezone: 'Asia/Manila',
+            openDays: [{ date: daysAgo(4), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] },
+      ],
+      orphans: [{ id: 'E-0999', name: 'Former Rep', date: daysAgo(18), kind: 'timeOff', label: 'Full Day' }],
+    },
     // Punctuality (operator 2026-08-18 width round — the tab had never been
     // shot). Shape mirrors getPunctualityReport's return block: {from, to,
     // grace, reps[{id,name,tz,startMin,days,onTime,late,onTimePct,avgLate,
@@ -1735,7 +1776,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // contentRequests uses the real {open, resolved, openCount} shape; the
     // coaching rows carry the server's exact TRX field casing (the drifted
     // lowercase form meant no screenshot could ever render the TRX chip).
-    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', comments: 2 }], total: 1, cap: 40, dueDays: 90 },
+    kbGetReviewDue: { items: [
+      // Cycle 25 E3: a handbook section with a rep's suggested edit, labelled apart from "out of date".
+      { id: 'man-5-2', title: '5.2 PAK (Pre-Appointment Kit)', department: 'Chapter 05 — Power Mobility', ageDays: 12, views: 31, staleFlags: 0, suggestFlags: 2, suggestNote: 'The PAK now goes out with the delivery ticket, not a day before', comments: 1 },
+      { id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', suggestFlags: 0, comments: 2 }], total: 2, cap: 40, dueDays: 90 },
     kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0, comments: 2 }], windowDays: 30 },
     // Cycle 21 (operator report 2026-09-21): the three LOOKUP endpoints had no
     // fixture at all, so no scenario could ever render a RESULT — only empty
@@ -2260,6 +2304,27 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
+    // G3 (cycle 25 E1) — the digest delivery log: every status, a long send
+    // error (the reason column must wrap, not widen the page), a blank count.
+    getDigestDeliveries: {
+      days: 14, retentionDays: 90, truncated: false, missing: false,
+      // E1 follow-ups: the labels ride the payload; a lost row is named.
+      labels: { weekly: 'Weekly training/review digests', urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief',
+        trainingOverdue: 'Training-overdue digest', automationHealth: 'Automation-health failure digest',
+        eod: 'End-of-day flag reminder (to the rep)', missedPunchRep: 'Missed clock-out reminder (to the rep)' },
+      writeFailures: { count: 2, lastMs: Date.now() - 3600000, lastError: 'Service Spreadsheets timed out while accessing document' },
+      rows: [
+        { at: daysAgo(0) + ' 17:00:05', digest: 'eod', recipient: 'jordan.reyes@umsupply.com', status: 'sent', items: 2, reason: '' },
+        { at: daysAgo(0) + ' 09:30:02', digest: 'missedPunchRep', recipient: 'ana.cruz@umsupply.com', status: 'failed', items: 1, reason: 'Invalid email: ana.cruz@umsupply' },
+        { at: daysAgo(0) + ' 09:00:14', digest: 'automationHealth', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 1, reason: '' },
+        { at: daysAgo(0) + ' 08:00:31', digest: 'managerBrief', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 6, reason: 'incomplete — could not read urgent notes (1 rep Sheet(s) unreadable)' },
+        { at: daysAgo(0) + ' 08:00:30', digest: 'managerBrief', recipient: 'floor.lead@umsupply.com', status: 'failed', items: 4, reason: 'Service invoked too many times for one day: email. Try again tomorrow or reduce the number of recipients on this script.' },
+        { at: daysAgo(0) + ' 08:00:09', digest: 'urgent', recipient: 'ops.manager@umsupply.com', status: 'suppressed', items: null, reason: 'rode the daily brief' },
+        { at: daysAgo(0) + ' 08:00:09', digest: 'urgent', recipient: 'floor.lead@umsupply.com', status: 'suppressed', items: null, reason: 'rode the daily brief' },
+        { at: daysAgo(1) + ' 07:00:02', digest: 'trainingOverdue', recipient: 'ops.manager@umsupply.com', status: 'empty', items: 0, reason: 'nothing overdue' },
+        { at: daysAgo(4) + ' 08:00:20', digest: 'weekly', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 3, reason: 'Training Queue' },
+      ],
+    },
     getStorageHealth: (function () {
       var store = function (label, role, cls, retention, prop, over) {
         return Object.assign({
@@ -2507,6 +2572,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
+    // G3 (cycle 25 E1): a fresh deploy — no digest has written a row yet.
+    getDigestDeliveries: { days: 14, retentionDays: 90, truncated: false, missing: true, rows: [], labels: {}, writeFailures: null },
     // ADM-07 (cycle 23): the Reference-lookups diagnostics now reach "Needs
     // attention", so the all-clear shot needs their CLEAN shape too — every
     // column found, a registry, no unreadable row or value.

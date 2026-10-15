@@ -157,12 +157,12 @@ function getMyDoc(docId) {
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
 function acknowledgeDoc(docId, signatureDataUrl, responses) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const found = findEmpDocRow_(docId);
     if (!found || found.doc.empId !== emp.id) return { success: false, error: 'Document not found.' };
     const d = found.doc;
@@ -253,12 +253,12 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
  *  (issuing reveals nothing); READING stays team-scoped. Audit: EmpDocIssue
  *  (docId/empId/type — never the title or body). */
 function issueDoc(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = empDocValidateIssue_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.doc.empId);
@@ -294,12 +294,12 @@ function issueDoc(payload) {
  *  (draft → issued) and notifies them. The frozen content/hash is untouched —
  *  release only flips the gate. Audit: EmpDocRelease. */
 function releaseDoc(docId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status !== 'draft') return { success: false, error: 'Only a draft can be released.' };
@@ -356,11 +356,11 @@ function getDocsDashboard() {
  *  signed doc keeps its DocSignatures row ("signed, later voided"). Audit:
  *  EmpDocVoid (docId only — the reason lives in the scoped HR sheet). */
 function voidDoc(docId, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocRow_(docId);
     if (!found || !empDocCanManagerSee_(callerEmp, found.doc)) return { success: false, error: 'Document not found.' };
     if (found.doc.status === 'void') return { success: true, alreadyVoid: true };
@@ -485,11 +485,11 @@ function getEmpDocTemplates() {
  *  (new id minted when absent). Validates via empDocTemplateValidate_. Audit:
  *  EmpDocTemplateSave (id + name only — PHI-free). */
 function saveEmpDocTemplate(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = empDocTemplateValidate_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const fieldsRaw = v.tpl.fields.length ? JSON.stringify(v.tpl.fields) : '';
@@ -519,11 +519,11 @@ function saveEmpDocTemplate(payload) {
 /** Manager-gated (INV-02), locked (INV-01). Removes a template row only —
  *  already-issued docs are independent (the body was frozen at issue). */
 function deleteEmpDocTemplate(templateId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findEmpDocTemplateRow_(templateId);
     if (!found) return { success: false, error: 'Template not found.' };
     getOrCreateEmpDocSheet_(EMPDOC_TPL_TAB, EMPDOC_TPL_HEADERS).deleteRow(found.rowIdx);
@@ -552,19 +552,57 @@ function notifyEmpDocIssued_(target, doc) {
   } catch (e) { console.warn('notifyEmpDocIssued_ failed: ' + e.message); }
 }
 /** Best-effort (INV-14) — issuer notification on signature. */
+/** PURE (Node-pinned; F41, cycle 25 — the FORM-5 rule for HR notices). Who a
+ *  notice addressed to a stored issuer or creator actually goes to. That
+ *  address outlives the role: a manager who was demoted or offboarded kept
+ *  receiving "signed" and "acknowledged" notices about the team. Only a
+ *  current roster MANAGER is mailed; otherwise the rep's own manager (column M)
+ *  when they are one, else every address in MANAGER_EMAILS — and `rerouted`
+ *  says the notice must open by saying why. rosterManagers: lowercased emails
+ *  of roster rows that are managers. */
+function hrNoticeRoute_(stored, repManagerEmail, rosterManagers, gateManagers) {
+  const s = String(stored || '').trim().toLowerCase();
+  if (!s) return { to: [], rerouted: false };
+  const mgrs = (rosterManagers || []).map(function (e) { return String(e).toLowerCase(); });
+  if (mgrs.indexOf(s) >= 0) return { to: [String(stored).trim()], rerouted: false };
+  const rm = String(repManagerEmail || '').trim().toLowerCase();
+  if (rm && rm !== s && mgrs.indexOf(rm) >= 0) return { to: [rm], rerouted: true };
+  return { to: (gateManagers || []).filter(function (e) { return String(e).trim().toLowerCase() !== s; }), rerouted: true };
+}
+/** F41 — hrNoticeRoute_ over the live roster's managers and MANAGER_EMAILS. */
+function hrNoticeTargets_(stored, repManagerEmail) {
+  let rows;
+  // An unreadable roster cannot say who left — the notice goes where it was
+  // always sent rather than nowhere (a best-effort mail never blocks the sign).
+  try { rows = getEmployeeRosterRows_(); } catch (e) { return { to: stored ? [String(stored).trim()] : [], rerouted: false }; }
+  const mgrs = [];
+  for (let i = 1; i < rows.length; i++) {
+    const e = empRosterEmail_(rows[i]).toLowerCase();
+    if (e && /^(true|yes|y|1)$/i.test(String(rows[i][EMP.IS_MANAGER] || '').trim())) mgrs.push(e);
+  }
+  return hrNoticeRoute_(stored, repManagerEmail, mgrs, getManagerEmails_());
+}
+/** F41 — the line a rerouted HR notice opens with. */
+function hrDepartedIssuerLine_(who, what) {
+  return 'This ' + what + ' was set up by ' + who + ', who is no longer a manager on the team roster, so this notice comes to you instead.';
+}
 function notifyEmpDocSigned_(doc, signer, completedOnly) {
   try {
     if (!doc.issuedBy) return;
+    const route = hrNoticeTargets_(doc.issuedBy, signer && signer.managerEmail);   // F41
+    if (!route.to.length) return;
+    const lead = route.rerouted ? hrDepartedIssuerLine_(doc.issuedBy, 'document') : '';
     // Cycle-11 L-6: a fields-only COMPLETION (no signature) must not tell the
     // issuer the doc was "signed" — an HR paper-trail mislabel. The stored
     // artifacts (EmpDocCompleted witness row, completion cert) were always
     // correct; only this notification's wording was wrong.
     const verb = completedOnly ? 'completed' : 'signed';
-    const body = signer.name + ' ' + verb + ' "' + doc.title + '".';
+    const body = (lead ? lead + '\n\n' : '') + signer.name + ' ' + verb + ' "' + doc.title + '".';
     const htmlBody = buildBrandedEmailHtml_(completedOnly ? 'Document completed' : 'Document signed',
+      (lead ? '<p style="margin:0 0 12px;">' + esc_(lead) + '</p>' : '') +
       brandedKvRows_([['Document', doc.title], [completedOnly ? 'Completed by' : 'Signed by', signer.name]]),
       { tone: 'success', subLabel: 'Employee Docs' });
-    appSendMail_({ to: doc.issuedBy, subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
+    appSendMail_({ to: route.to.join(','), subject: (completedOnly ? 'Completed: ' : 'Signed: ') + doc.title,
       body: body, htmlBody: htmlBody });
   } catch (e) { console.warn('notifyEmpDocSigned_ failed: ' + e.message); }
 }

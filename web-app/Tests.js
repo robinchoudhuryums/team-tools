@@ -1020,6 +1020,15 @@ function cleanupTestData() {
     }
   } catch (e) { Logger.log('cleanupTestData: MANAGER_EMAILS strip skipped: ' + e.message); }
 
+  // F17 (cycle 25): the accrual ledger's side copy for a TEST_ rep — a by-key
+  // backstop for a killed run (g132).
+  try {
+    const ledProps = PropertiesService.getScriptProperties();
+    ledProps.getKeys().forEach(function (k) {
+      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX + 'TEST_') === 0) ledProps.deleteProperty(k);
+    });
+  } catch (e) { Logger.log('cleanupTestData: accrual side-ledger sweep skipped: ' + e.message); }
+
   // F-22 (2026-09-18): the two LIVE tabs the suite probes and never swept.
   // DeptRequests (its own store or the ADP fallback) and ClientErrors carry
   // TEST_-keyed rows from three self-cleaning tests whose own tidy-up ran in
@@ -1074,6 +1083,8 @@ function _clearTestState(empId) {
   _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB), empId, PAR.EMP_ID, 2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.AUDIT_TAB),   empId, 1,          2);
+  // F17 (cycle 25): the accrual ledger's side copy is part of the same baseline.
+  try { PropertiesService.getScriptProperties().deleteProperty(PTO_ACCRUAL_LEDGER_PREFIX + empId); } catch (e) {}
 
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);
   const rows = empSheet.getDataRange().getValues();
@@ -6662,6 +6673,8 @@ function test_managerGates_rejectNonManager() {
     ['kbPublishItem',                  function () { return kbPublishItem('no-such-id'); }],
     ['kbImportManual',                 function () { return kbImportManual('no-such-file', { dryRun: true }); }],
     ['kbPublishManual',                function () { return kbPublishManual({ dryRun: true }); }],
+    ['exportHandbookFeedback',         function () { return exportHandbookFeedback(); }],   // cycle 25 E3
+    ['getDeptReplyReviewStats',        function () { return getDeptReplyReviewStats(); }],   // cycle 25 E4
     ['kbGetSearchConfig',              function () { return kbGetSearchConfig(); }],
     ['kbSaveSearchConfig',             function () { return kbSaveSearchConfig([]); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
@@ -6699,6 +6712,8 @@ function test_managerGates_rejectNonManager() {
     ['adminScanStoredFormulas',        function () { return adminScanStoredFormulas(); }],
     ['getDeployReadiness',             function () { return getDeployReadiness(); }],
     ['getAdminSheetView',              function () { return getAdminSheetView('auditLog'); }],
+    ['getDigestDeliveries',            function () { return getDigestDeliveries({}); }],   // G3 (cycle 25 E1)
+    ['getPayPeriodClose',              function () { return getPayPeriodClose(); }],   // G1 (cycle 25 E2)
     ['kbConvertDriveSheet',            function () { return kbConvertDriveSheet({ driveUrl: 'https://docs.google.com/spreadsheets/d/x/edit' }); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
@@ -6789,7 +6804,7 @@ function test_managerGates_rejectNonManager() {
     saveBreakSchedules: 1, getBreakCoverage: 1,
     saveQaScorecardCriteria: 1, saveQaMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
-    getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
+    getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1, getDigestDeliveries: 1,
     getOopPricingDiagnostics: 1, adminScanStoredFormulas: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
@@ -6805,6 +6820,10 @@ function test_managerGates_rejectNonManager() {
     kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
     // Batch M1 — the procedures manual import + bulk publish (authoring tier).
     kbImportManual: 1, kbPublishManual: 1,
+    // Cycle 25 E3 — the handbook feedback export, beside the import it answers.
+    exportHandbookFeedback: 1,
+    // Cycle 25 E4 — the reply check's review report (Admin → System).
+    getDeptReplyReviewStats: 1,
     // #8 — search-synonym config (authoring-adjacent).
     kbGetSearchConfig: 1, kbSaveSearchConfig: 1,
     // Reference data tables + editor file ingest (operator 2026-08-25) — both

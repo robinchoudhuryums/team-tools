@@ -496,6 +496,21 @@
      .m-table td is nowrap, so it wraps inside its own span or the Link column
      leaves the canvas — measured at 1440px. */
   .cn-store-ret { display: block; max-width: 260px; white-space: normal; font-size: 11px; line-height: 1.4; }
+  /* G3 (cycle 25 E1): a digest delivery's reason can be a whole MailApp error —
+     the same nowrap td, the same fix (measured: it ran off the canvas at 1440px). */
+  .cn-dd-reason { display: block; min-width: 180px; max-width: 360px; white-space: normal; font-size: 12px; line-height: 1.4; }
+  /* E1 follow-ups: on a phone the delivery table reads as one card per row
+     (label · value) instead of scrolling sideways inside its wrapper. */
+  @media (max-width: 540px) {
+    .m-table.cn-dd-table thead { display: none; }
+    .m-table.cn-dd-table, .m-table.cn-dd-table tbody, .m-table.cn-dd-table tr { display: block; width: 100%; }
+    .m-table.cn-dd-table tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .m-table.cn-dd-table td { display: flex; gap: 8px; padding: 2px 0; border-bottom: 0; white-space: normal; text-align: left; }
+    .m-table.cn-dd-table td::before { content: attr(data-label); flex: 0 0 84px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+    .m-table.cn-dd-table .cn-dd-reason { min-width: 0; max-width: none; }
+    .m-table.cn-dd-table td:empty { display: none; }   /* no blank "Reason" line on a card */
+  }
   .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .cn-store-detail .fix { color: var(--warning-deep); }
   .cn-store-detail .bad { color: var(--danger-deep); }
@@ -644,7 +659,19 @@
     color: var(--muted); letter-spacing: .08em; text-transform: uppercase;
     padding-top: 2px;
   }
-  .qa-msg { color: var(--ink); }
+  .qa-msg { color: var(--ink); min-width: 0; }
+  /* F68 (cycle 25, measured): in a narrow card the role label ("You · question",
+     86px) left the message 49px, one word a line — in the default 480×800
+     pop-out too. A container query on the THREAD (A2: never a viewport rule —
+     the pop-out is narrow at any viewport): under 280px the message takes its
+     own full-width line beneath the label and time. */
+  .qa-thread { container-type: inline-size; }
+  @container (max-width: 280px) {
+    .qa-row { grid-template-columns: auto 1fr; }
+    .qa-row .qa-role { grid-column: 1; grid-row: 1; }
+    .qa-row .qa-ts { grid-column: 2; grid-row: 1; justify-self: end; }
+    .qa-row .qa-msg { grid-column: 1 / -1; grid-row: 2; }
+  }
   .qa-ts {
     font-family: var(--mono); font-size: 10px; color: var(--muted-2);
     font-variant-numeric: tabular-nums;
@@ -1415,8 +1442,15 @@
   .rail-dir .flag-btn { width: 100%; }
   .flag-btn.dir-outbound svg { color: var(--info); }
   .flag-btn.dir-outbound.on { background: var(--info-soft); color: var(--info-deep); border-color: transparent; }
+  /* F68 (cycle 25, measured): a card's actions (up to six buttons, 178–243px)
+     sat beside the text in one unbreakable row, so at 390px the text column was
+     22–88px — the caller cut to "P…", the issue one word a line, the Q&A bubble
+     beneath it 49px wide (in the 480×800 pop-out too). The text column now
+     claims at least 160px; when the row cannot also hold the actions, they wrap
+     onto their own line, right-aligned. Wide layouts are unchanged (one row). */
   .cn-card-row {
     display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap;
   }
   .cn-card-time {
     font-family: var(--mono); font-size: 11px;
@@ -1425,7 +1459,7 @@
     min-width: 50px;
   }
   .cn-card-main {
-    flex: 1; min-width: 0;
+    flex: 1 1 160px; min-width: 0;
     display: flex; flex-direction: column; gap: 2px;
   }
   .cn-card-caller {
@@ -1445,7 +1479,7 @@
   }
   .cn-card-actions {
     display: inline-flex; align-items: center; gap: 2px;
-    flex-shrink: 0;
+    flex-shrink: 0; margin-left: auto;   /* F68: right-aligned when it wraps */
   }
   .cn-card-actions .cn-act-btn {
     appearance: none; border: none; background: transparent;
@@ -2090,6 +2124,21 @@
   }
   /* F(cycle-8 M-10): active-filter pill on the History stack (the quick-chip
      "jump filtered" target) — mirrors the Search exact-mode badge vocabulary. */
+  /* F35 (cycle 25): the "N of M — the rest are older" line under an all-time chip. */
+  /* E3 (cycle 25, ST3): handbook sections for the Issue text — one quiet line
+     that wraps; a pick is a link-weight chip, never a primary action. */
+  /* It is the row's third grid child: it sits under the FIELD in every layout
+     (the last column — the only column once the row stacks on a phone). */
+  .cn-hb-suggest { grid-column: -2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: -4px; font-size: 12px; min-width: 0; }
+  .cn-hb-suggest[hidden] { display: none; }
+  .cn-hb-lbl { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-weight: 600; }
+  .cn-hb-pick { font: inherit; font-size: 12px; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 9px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cn-hb-pick:hover, .cn-hb-pick:focus-visible { border-color: var(--accent); }
+  .cn-hb-off { font: inherit; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0;
+    background: none; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; }
+  .cn-hb-off:hover, .cn-hb-off:focus-visible { color: var(--ink); background: var(--paper-2); }
+  .cn-history-chipnote { font-size: 12px; color: var(--muted); margin: 4px 0 8px; line-height: 1.4; }
   .cn-hist-filterpill {
     display: inline-block; margin-left: 8px; padding: 1px 8px;
     font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
@@ -2217,6 +2266,7 @@
 
   /* ── Sent Forms view ────────────────────────────────────────────── */
   .cn-sf-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .cn-sf-trunc { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 12px; color: var(--warning-deep); }
   .cn-sf-empty {
     color: var(--muted); font-size: var(--text-base); padding: 28px 12px; text-align: center;
     border: 1.5px dashed var(--line-2); border-radius: var(--radius-md);
@@ -2514,6 +2564,7 @@ const CN_STATE = {
   // here was removed — it silently overrode the §7a declaration above (a
   // drift trap: an intentional change to one was clobbered by the other).
   mgrSearchResults: [],      // results from managerSearchCallNotes
+  mgrSearchTotal: 0,         // F30: every match when the server capped the list (0 = not capped)
   mgrSearchTimer: null,      // debounce timer for manager search
   trainingQA: [],            // rep's recent training Q&A notes (loaded once per Log view enter)
   formCatalog: null,         // cached from getFormCatalog() — [{id, name, category}]
@@ -2525,6 +2576,15 @@ const CN_DEFAULT_FILTERS = ['all','action','training','review','unresolved','ans
 const CN_CLEAR_UNDO_WINDOW_MS = 30000;  // window during which Ctrl/⌘+Z restores a just-cleared form
 const CN_FORM_STARTED_LS_KEY = 'umsCallNotesFormStartedAt';  // persists across refresh so completion-time stays accurate
 const CN_FORM_STICKY_LS_KEY  = 'umsCallNotesActiveFormDraft'; // sticky-form: in-progress draft restored on next load
+// F40(e) (cycle 25, operator option 1, 2026-10-14): the main window and the
+// Call Notes pop-out share the ONE draft slot above. Each page load has an id
+// (memory only — never stored on its own), every draft records the id that
+// wrote it, and a window owns only its own: it never clears or empties another
+// window's draft, and another window's draft — or one from before a reload,
+// which cannot be told apart — is OFFERED on the Log, never loaded silently
+// into this form. A draft with no id (written before this change) restores as
+// it always did.
+const CN_WINDOW_ID = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 // Draft TTL — the sticky draft carries PHI (patient name/TRX, issue text) in
 // the browser's localStorage, so it must not linger indefinitely on a shared
 // computer. 24h covers an overnight resume; older drafts are wiped on the
@@ -2613,8 +2673,11 @@ function enterCallNotesHistoryView(area) {
     cnLoadDateRange_(start, end, function () {
       if (currentView !== reqV) return;
       cnRenderHistoryStack_();   // stack + summary only — never re-wires the date inputs
-      if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
-    });
+    }, { always: function () {
+      // F39: only History's own pill — another view's pill shares the id, and
+      // leaving History already removed this one with #view-area's content.
+      if (currentView === reqV && typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
+    } });
     return;
   }
   renderLoading(area, 'Loading history…', 'list');
@@ -2646,7 +2709,7 @@ function enterCallNotesFormsView(area) {
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
       if (res && res.error) { cnRenderSentFormsView_(area, null, res.error); return; }
-      cnRenderSentFormsView_(area, (res && res.forms) || [], null);
+      cnRenderSentFormsView_(area, (res && res.forms) || [], null, !!(res && res.truncated));
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
@@ -2655,7 +2718,7 @@ function enterCallNotesFormsView(area) {
     .getMySentForms();
 }
 
-function cnRenderSentFormsView_(area, forms, errorMsg) {
+function cnRenderSentFormsView_(area, forms, errorMsg, truncated) {
   const compact = (typeof COMPACT_MODE !== 'undefined' && COMPACT_MODE);
   const head = compact
     ? ''   // pop-out: the tool tab bar already names the active tab (operator 2026-08-11)
@@ -2667,13 +2730,18 @@ function cnRenderSentFormsView_(area, forms, errorMsg) {
     area.innerHTML = head + errorStateHtml_(errorMsg);
     return;
   }
+  // F33 (cycle 25): the server read only the newest rows — say so, and never
+  // call an empty result "No fillable forms sent yet" when older ones may exist.
+  const cut = truncated
+    ? '<div class="cn-sf-trunc" role="status">' + icon('warning', 12) + ' Showing your most recent forms only — older ones are not listed here.</div>'
+    : '';
   if (!forms || forms.length === 0) {
-    area.innerHTML = head + '<div class="cn-sf-empty">No fillable forms sent yet. ' +
-      'Send one from the “Open Email” composer on the Log view.</div>';
+    area.innerHTML = head + cut + (truncated ? '' : '<div class="cn-sf-empty">No fillable forms sent yet. ' +
+      'Send one from the “Open Email” composer on the Log view.</div>');
     return;
   }
   const cards = forms.map(function (f) { return cnSentFormCardHtml_(f); }).join('');
-  area.innerHTML = head + '<div class="cn-sf-list">' + cards + '</div>';
+  area.innerHTML = head + cut + '<div class="cn-sf-list">' + cards + '</div>';
 }
 
 function cnSentFormCardHtml_(f) {
@@ -2804,13 +2872,20 @@ function cnHistorySpanDays_(startDate, endDate) {
   return Math.round((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000);
 }
 
-function cnLoadDateRange_(startDate, endDate, then) {
+function cnLoadDateRange_(startDate, endDate, then, opts) {
   const requestedView = currentView;
   const isSingleDate = startDate === endDate;
+  // F39 (cycle 25): `opts.always` runs however the load settles — success, a
+  // failure, a response dropped because the rep has since picked another range
+  // (where `then` never runs), or a view left. The History refresh's
+  // "Refreshing…" pill rode `then` alone, so a range change mid-refresh left it
+  // up for the rest of the visit.
+  const always = function () { if (opts && typeof opts.always === 'function') { try { opts.always(); } catch (e) {} } };
   CN_STATE.historyRangeRefused = '';
   if (cnHistorySpanDays_(startDate, endDate) > CN_HISTORY_MAX_SPAN_DAYS) {
     CN_STATE.historyRangeRefused = 'History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
       ' days at a time — narrow the range.';
+    always();
     if (then) then();
     return;
   }
@@ -2828,6 +2903,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
   }
   rpc(
     function (res) {
+      always();
       // F(cycle-8 M-8): drop a response whose RANGE the rep has since moved
       // off (the preset buttons make rapid changes realistic — a slow
       // "Last 30" response used to land after a fast "Yesterday" one and
@@ -2866,6 +2942,7 @@ function cnLoadDateRange_(startDate, endDate, then) {
       if (then) then();
     },
     function (err) {
+      always();
       // C17-5 — mirror of cnLoadToday_'s failure posture.
       CN_STATE.historyLoadFailed = true;
       CN_STATE.historyEntry = null;
@@ -2939,7 +3016,7 @@ function cnRenderNotesView(area) {
           <tr><td>Bold selection <span style="color:var(--muted)">(**text**)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>B</kbd></td></tr>
           <tr><td>Underline selection <span style="color:var(--muted)">(__text__)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>U</kbd></td></tr>
           <tr><td>Highlight selection <span style="color:var(--muted)">(==text==)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd></td></tr>
-          <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
+          <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Backspace</kbd></td></tr>
           <tr><td>Undo Clear / Undo Save</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd> <span style="color:var(--muted)">(30s, empty form)</span></td></tr>
           <tr><td>Next Field</td><td><kbd>Tab</kbd> or <kbd>Enter</kbd></td></tr>
           <tr><td>New Line (same field)</td><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
@@ -3072,6 +3149,7 @@ function cnRenderActiveForm_() {
             <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-issue"
                  data-field="issue" data-placeholder="Why did they call?"
                  role="textbox" aria-multiline="true" aria-label="Issue" tabindex="0"></div>
+            <div class="cn-hb-suggest" id="cn-hb-suggest" role="group" aria-label="Handbook sections that may help" hidden></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</div>
@@ -3125,10 +3203,10 @@ function cnRenderActiveForm_() {
         <div class="rail-card" id="cn-save-card">
           <h4><span>Save the note</span><span class="sub">${esc(mod)}⇧C saves</span>
             <button type="button" class="cn-save-collapse" title="Collapse / expand actions"
-                    aria-label="Collapse or expand the save actions"
-                    onclick="document.getElementById('cn-save-card').classList.toggle('collapsed')">${icon('chevronDown', 14)}</button>
+                    aria-label="Save actions" aria-expanded="true" aria-controls="cn-save-actions"
+                    onclick="cnToggleSaveCard_(this)">${icon('chevronDown', 14)}</button>
           </h4>
-          <div class="rail-actions">
+          <div class="rail-actions" id="cn-save-actions">
             <button type="button" class="cn-action-prime" id="cn-form-submit" title="Save the note and copy to clipboard for the CRM (${esc(mod)}+Shift+C)">
               <span>Save &amp; Copy</span><span class="kbd-chip">${esc(mod)}⇧C</span>
             </button>
@@ -3320,11 +3398,19 @@ function cnWireActiveForm_() {
           return;
         }
       }
+      // F23 (cycle 25, operator 2026-10-15): Clear Note is ${mod}+SHIFT+Backspace.
+      // Plain Ctrl+Backspace is the system's "delete previous word" on Windows
+      // (⌘+Backspace "delete to line start" on a Mac); taking it wiped the whole
+      // note mid-edit. Without Shift it now falls through to the browser.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key === 'Backspace') {
+        e.preventDefault();
+        if (!e.repeat) cnClearActiveForm_();   // a held chord auto-repeats (the M-3 rule)
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') { e.preventDefault(); cnFormToggleFlag_('action'); return; }
         if (e.key === '2') { e.preventDefault(); cnFormToggleFlag_('training'); return; }
         if (e.key === '3') { e.preventDefault(); cnFormToggleFlag_('review'); return; }
-        if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
       // Operator feedback (2026-06-12): Enter advances to the next field
@@ -3622,6 +3708,7 @@ function cnClearActiveForm_(opts) {
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
   cnFormTimerReset_();
+  if (typeof kbHbStripRefresh_ === 'function') kbHbStripRefresh_();   // E3: no input event fires for a cleared field
   // Auto-tag session state is per NOTE: a fresh form starts with no applied
   // set and no dismissals (the dismissal was an answer about the old note).
   CN_STATE.autoTagApplied = [];
@@ -3855,6 +3942,7 @@ function cnPersistActiveFormDraft_() {
       reviewC: rcVal,      // Round-1 #1
       direction: dirVal,   // Round-1 #2
       at: Date.now(),   // drafts expire after CN_FORM_STICKY_MAX_AGE_MS (PHI TTL)
+      by: CN_WINDOW_ID,   // F40(e): the window that wrote it
     };
     const anyContent = Object.keys(values).some(function (k) { return (values[k] || '').trim(); })
                     || flags.length > 0 || tags.length > 0 || dirVal
@@ -3862,8 +3950,8 @@ function cnPersistActiveFormDraft_() {
                     || (data.reviewC && data.reviewC.trim());
     if (anyContent) {
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
-    } else {
-      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+    } else if (cnStickyDraftIsMine_()) {
+      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);   // F40(e): an empty form never removes ANOTHER window's draft
     }
   } catch (e) { /* localStorage unavailable — accept the loss */ }
 }
@@ -3998,42 +4086,101 @@ function cnLoadTagSuggestions_() {
 
 /** Sticky form: on view enter (after the form is rendered) restore the
  *  draft from localStorage. No-op if no draft exists. */
-function cnRestoreActiveFormDraft_() {
+/** F40(e) — the live (inside the PHI TTL) draft in the slot, or null. An
+ *  expired one is wiped, as before. */
+function cnReadStickyDraft_() {
+  const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+  if (!raw) return null;
+  const data = JSON.parse(raw);
+  // PHI TTL: a draft older than CN_FORM_STICKY_MAX_AGE_MS is wiped, not
+  // restored (shared-computer hygiene). Legacy drafts without `at` (saved
+  // pre-TTL) restore this once and pick up a timestamp on the next persist.
+  if (data && data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS) {
+    localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
+    cnFormTimerReset_();
+    return null;
+  }
+  return data || null;
+}
+/** F40(e) — is the slot's draft this window's (or an un-owned legacy one)? */
+function cnStickyDraftIsMine_() {
   try {
     const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
-    if (!raw) return false;
+    if (!raw) return true;
     const data = JSON.parse(raw);
-    // PHI TTL: a draft older than CN_FORM_STICKY_MAX_AGE_MS is wiped, not
-    // restored (shared-computer hygiene). Legacy drafts without `at` (saved
-    // pre-TTL) restore this once and pick up a timestamp on the next persist.
-    if (data && data.at && (Date.now() - data.at) > CN_FORM_STICKY_MAX_AGE_MS) {
-      localStorage.removeItem(CN_FORM_STICKY_LS_KEY);
-      cnFormTimerReset_();
-      return false;
+    return !data || !data.by || data.by === CN_WINDOW_ID;
+  } catch (e) { return true; }
+}
+function cnApplyStickyDraft_(data) {
+  Object.keys(data.values || {}).forEach(function (k) {
+    cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
+  });
+  const form = document.getElementById('cn-active-form');
+  if (form) {
+    if (Array.isArray(data.flags) && data.flags.length > 0) {
+      cnSetFormFlags_(form, data.flags);
+    } else if (data.flag) {
+      cnSetFormFlags_(form, [data.flag]);
     }
-    Object.keys(data.values || {}).forEach(function (k) {
-      cnSetFieldValue_('cn-fld-' + k, data.values[k] || '');
-    });
-    const form = document.getElementById('cn-active-form');
-    if (form) {
-      if (Array.isArray(data.flags) && data.flags.length > 0) {
-        cnSetFormFlags_(form, data.flags);
-      } else if (data.flag) {
-        cnSetFormFlags_(form, [data.flag]);
-      }
-      if (Array.isArray(data.tags) && data.tags.length > 0) {
-        cnSetFormTags_(form, data.tags);
-      }
-      if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
+    if (Array.isArray(data.tags) && data.tags.length > 0) {
+      cnSetFormTags_(form, data.tags);
     }
-    if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
-    if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
+    if (data.direction) cnSetFormDirection_(form, data.direction);   // Round-1 #2
+  }
+  if (data.trainingQ) cnSetFieldValue_('cn-fld-training-q', data.trainingQ);
+  if (data.reviewC) cnSetFieldValue_('cn-fld-review-c', data.reviewC);   // Round-1 #1
+}
+function cnRestoreActiveFormDraft_() {
+  try {
+    const data = cnReadStickyDraft_();
+    if (!data) return false;
+    // F40(e): another window's draft (or this window's before a reload) is
+    // offered, not loaded — it may be a different caller's note.
+    if (data.by && data.by !== CN_WINDOW_ID) { cnOfferForeignDraft_(data); return false; }
+    cnApplyStickyDraft_(data);
     return true;
   } catch (e) { return false; }
 }
+/** F40(e) — "an unsaved note is waiting": Restore loads it into this form and
+ *  this window takes it over; Not now leaves it in the slot (asked once per
+ *  draft per page). If the rep has typed into the form by the time they answer,
+ *  Restore shows the draft in the copy dialog instead of overwriting their
+ *  typing (g68: an async fill never lands on top of what was typed). */
+function cnOfferForeignDraft_(data) {
+  if (CN_STATE.foreignDraftAsked === data.at) return;
+  CN_STATE.foreignDraftAsked = data.at;
+  const v = data.values || {};
+  const what = String(v.patient || v.caller || v.issue || '').trim();
+  let when = '';
+  try { when = new Date(data.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch (e) {}
+  uiConfirm({
+    title: 'Restore an unsaved call note?',
+    message: 'A call note that was not saved is waiting' + (when ? ' (last typed ' + when + ')' : '') +
+      (what ? ': ' + (what.length > 60 ? what.slice(0, 60) + '…' : what) : '') +
+      '. It came from another Call Notes window, or from before this page reloaded.',
+    confirmLabel: 'Restore', cancelLabel: 'Not now',
+  }).then(function (ok) {
+    if (!ok) return;
+    let cur = null;
+    try { cur = cnReadStickyDraft_(); } catch (e) { cur = null; }
+    if (!cur || cur.at !== data.at) cur = data;   // the slot moved on meanwhile: restore what was offered
+    const form = document.getElementById('cn-active-form');
+    const typed = form && ['callback','caller','relationship','patient','issue','transferred','resolution']
+      .some(function (k) { return String(cnGetFieldValue_('cn-fld-' + k) || '').trim(); });
+    if (!form || typed) {
+      const cv = cur.values || {};
+      manualCopyModal_(cnFormatNoteForCopy_(Object.assign({}, cv, { patientAndTrx: cv.patient })), 'The unsaved call note');
+      return;
+    }
+    cnApplyStickyDraft_(cur);
+    cnPersistActiveFormDraft_();   // this window owns it now
+  });
+}
 
 function cnClearStickyFormDraft_() {
-  try { localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
+  // F40(e): a save or a clear in THIS window empties only this window's draft —
+  // the pop-out's save used to wipe the main window's unsaved note too.
+  try { if (cnStickyDraftIsMine_()) localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
 }
 
 /** Voice-to-text mic markup, gated on (a) CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED
@@ -4374,16 +4521,20 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
       cnRestoreFromSnapshot_(snapshot);
       outcome = ' — note restored to the form';
     } else if (form) {
-      outcome = ' — the unsaved note is on your clipboard (your current typing was left untouched)';
+      // F21 (cycle 25): the rep is already typing the NEXT note, so the failed
+      // one cannot go back in the form — and "it is on your clipboard" was a
+      // claim about the save-time auto-copy, which may have failed (g76) and
+      // which the rep has very likely copied over since. The note was then
+      // nowhere. Put it in front of the rep to copy, as the CNUI-01 branch does.
+      cnShowUnsavedNote_(lostNote, snapshot);
+      outcome = ' — your current typing was left untouched; the note that did not save is shown so you can copy it';
     } else if (cnStickyDraftHasOtherText_(snapshot)) {
       // CNUI-01 (cycle 23): the ONE draft slot already holds newer typing — the
       // rep started the next note, then left Log while this save was still in
       // flight. Writing the failed note there destroyed that newer note for
       // good while the toast promised the failed one "was kept". Keep the newer
       // draft, and put the note that did not save in front of the rep to copy.
-      const v = snapshot.values || {};
-      manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
-        'The call note that did not save');
+      cnShowUnsavedNote_(lostNote, snapshot);
       outcome = ' — your newer draft was kept; the note that did not save is shown so you can copy it';
     } else {
       cnSaveSnapshotAsStickyDraft_(snapshot);
@@ -4391,6 +4542,15 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
     }
   }
   showToast(message + outcome, 'toast-error');
+}
+
+/** The note that did not save, in the copy dialog — the one place a failed
+ *  save's text goes when it cannot go back into the form or the draft slot
+ *  (CNUI-01, F21). */
+function cnShowUnsavedNote_(lostNote, snapshot) {
+  const v = (snapshot && snapshot.values) || {};
+  manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
+    'The call note that did not save');
 }
 
 /** Park a failed-submit snapshot in the sticky-draft slot (same shape
@@ -4429,6 +4589,7 @@ function cnSaveSnapshotAsStickyDraft_(snap) {
       reviewC: snap.reviewC || '',        // Round-1 #1
       direction: snap.direction || '',    // Round-1 #2
       at: Date.now(),
+      by: CN_WINDOW_ID,   // F40(e)
     }));
   } catch (e) { /* localStorage unavailable — the clipboard copy is the fallback */ }
 }
@@ -5165,10 +5326,17 @@ function cnOpenSchedModal_(opts) {
         '<button type="button" class="cn-act-btn" style="width:auto;padding:6px 14px" onclick="closeOverlay(document.getElementById(\'cn-sched-overlay\'))">Close</button>' +
       '</div>' +
     '</div>';
-  cnSchedRenderList_();
   // The shell list may be stale (created in another window / never fetched) —
-  // refresh on open; cnSchedListChanged_ re-renders when it lands.
+  // refresh on open; cnSchedListChanged_ re-renders when it lands. Started
+  // BEFORE the first paint, so that paint can say "loading" (F24).
   if (typeof schedFetch_ === 'function') schedFetch_(true);
+  cnSchedRenderList_();
+}
+
+/** F24 (cycle 25) — the modal's Try again: a fresh read, shown as loading. */
+function cnSchedRetry_() {
+  if (typeof schedFetch_ === 'function') schedFetch_(true);
+  cnSchedRenderList_();
 }
 
 /** onClose — the hook OWNS the close (closeOverlay delegates entirely to a
@@ -5198,13 +5366,28 @@ function cnSchedFmt_(whenMs) {
 function cnSchedRenderList_() {
   var host = document.getElementById('cn-sched-list');
   if (!host) return;
-  var items = (typeof SCHED_STATE !== 'undefined' && Array.isArray(SCHED_STATE.items)) ? SCHED_STATE.items : null;
-  if (!items || !items.length) {
-    host.innerHTML = '<div class="cn-sched-empty">No upcoming reminders.</div>';
+  // F24 (cycle 25): "No upcoming reminders" is said only for a list that was
+  // READ and came back empty. Before the first read lands it is loading; a
+  // read that failed says so (with a retry), and a failed REFRESH keeps the
+  // last list on screen under a note. It read "No upcoming reminders" while
+  // loading and after a failure, so a rep took a real reminder to be gone.
+  var st = (typeof SCHED_STATE !== 'undefined' && SCHED_STATE) || {};
+  var items = Array.isArray(st.items) ? st.items : null;
+  var failed = !!st.error && !st.inflight;
+  var retry = '<div style="text-align:right;margin-top:6px"><button type="button" class="cn-act-btn" style="width:auto;padding:2px 10px" onclick="cnSchedRetry_()">Try again</button></div>';
+  if (!items) {
+    host.innerHTML = failed
+      ? errorStateHtml_('Could not load your reminders — ' + st.error + '.') + retry   // A12: a failure is never an empty state
+      : '<div class="cn-sched-empty" role="status">Loading your reminders…</div>';
+    return;
+  }
+  var note = failed ? errorStateHtml_('Could not refresh your reminders — this is the list as last loaded.') + retry : '';
+  if (!items.length) {
+    host.innerHTML = note + '<div class="cn-sched-empty">No upcoming reminders.</div>';
     return;
   }
   var nowMs = Date.now();
-  host.innerHTML = '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
+  host.innerHTML = note + '<div class="day-section-label" style="margin:12px 0 6px">Upcoming · ' + items.length + '</div>' +
     items.map(function (it) {
       var overdue = Number(it.whenMs) < nowMs;
       return '<div class="cn-sched-item' + (overdue ? ' overdue' : '') + '">' +
@@ -5988,8 +6171,10 @@ function cnSaveEdit_(noteId) {
   };
   var saveBtn = document.querySelector('[data-note-id="' + noteId + '"] [data-cn-action="save-edit"]');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       if (!res.success) {
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
         showToast(res.error || 'Save failed', 'toast-error'); return;
@@ -6001,6 +6186,7 @@ function cnSaveEdit_(noteId) {
       showToast('Saved', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       showToast('Save failed: ' + err.message, 'toast-error');
     })
@@ -6024,8 +6210,10 @@ function cnDoDeleteNote_(noteId, opts) {
   document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) {
     c.classList.add('is-deleting');
   });
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       if (!res.success) {
         document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
         // CNUI-02 (cycle 23): a caller that owns the refusal (the compose
@@ -6045,6 +6233,7 @@ function cnDoDeleteNote_(noteId, opts) {
       if (!opts || opts.toast !== '') showToast((opts && opts.toast) || 'Deleted', 'toast-success');
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       document.querySelectorAll('[data-note-id="' + noteId + '"]').forEach(function (c) { c.classList.remove('is-deleting'); });
       showToast('Delete failed: ' + err.message, 'toast-error');
     })
@@ -6104,8 +6293,10 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
   if (prev.flagType !== next) note.resolved = false;
   cnReRenderActiveView_();
   cnRenderFilterBar_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.flagType = prev.flagType; note.resolved = prev.resolved;
@@ -6117,6 +6308,7 @@ function cnDoToggleFlag_(noteId, note, prev, next, trainingQ, reviewC) {
       cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.flagType = prev.flagType; note.resolved = prev.resolved;
       cnReRenderActiveView_(); cnRenderFilterBar_();
@@ -6145,8 +6337,10 @@ function cnToggleUrgent_(noteId) {
   note.subformData.flags = nextFlags;
   cnReRenderActiveView_();
   if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res || !res.success) {
         note.subformData.flags = prevFlags;
@@ -6160,6 +6354,7 @@ function cnToggleUrgent_(noteId) {
       if (typeof cnRenderPinnedTray_ === 'function') cnRenderPinnedTray_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.subformData.flags = prevFlags;
       cnReRenderActiveView_();
@@ -6202,8 +6397,10 @@ function cnTogglePinned_(noteId) {
   }
   cnRenderPinnedTray_();
   cnReRenderActiveView_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.subformData.pinned = wasPinned;
@@ -6219,6 +6416,7 @@ function cnTogglePinned_(noteId) {
       cnReRenderActiveView_();
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.subformData.pinned = wasPinned;
       if (prevPinnedAt) note.subformData.pinnedAt = prevPinnedAt;
@@ -6294,14 +6492,22 @@ function cnLoadTrainingQA_() {
   var requestedView = currentView;
   google.script.run
     .withSuccessHandler(function (res) {
+      // F40 (cycle 25): a failed read is said, never an empty tray — an empty
+      // tray reads as "no manager has answered", which may be untrue (g53). The
+      // last answers read stay on screen; the next Log visit asks again.
       if (res && !res.error) {
         CN_STATE.trainingQA = res.notes || [];
+        CN_STATE.trainingQAError = '';
+      } else {
+        CN_STATE.trainingQAError = (res && res.error) || 'unknown error';
       }
       if (currentView !== requestedView) return;
       cnRenderTrainingQATray_();
     })
-    .withFailureHandler(function () {
-      // Silent failure — tray stays empty
+    .withFailureHandler(function (err) {
+      CN_STATE.trainingQAError = (err && err.message) || 'unknown error';   // F40
+      if (currentView !== requestedView) return;
+      cnRenderTrainingQATray_();
     })
     .getMyTrainingQA();
 }
@@ -6344,7 +6550,10 @@ function cnRenderTrainingQATray_() {
   const host = document.getElementById('cn-training-qa-tray');
   if (!host) return;
   const qa = CN_STATE.trainingQA || [];
-  if (qa.length === 0) { host.innerHTML = ''; return; }
+  const failed = CN_STATE.trainingQAError
+    ? errorStateHtml_('Training answers could not be loaded — ' + CN_STATE.trainingQAError + '. They load again when you next open the Log.')
+    : '';
+  if (qa.length === 0) { host.innerHTML = failed; return; }
   const cards = qa.map(function (n) {
     const time = cnFormatTimestampForCopy_(n.timestamp);
     const question = (n.subformData && n.subformData.trainingQuestion) || '';
@@ -6362,7 +6571,7 @@ function cnRenderTrainingQATray_() {
   host.innerHTML =
     // A1 + A11: keyboard-reachable disclosure with its open state exposed.
     `<button type="button" class="cn-qa-label" aria-expanded="true" aria-controls="cn-qa-cards" onclick="cnToggleQaTray_(this)">${icon('bulb', 11)}<span>Training Answers · ${qa.length}</span> ${icon('chevronDown', 10)}</button>` +
-    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>`;
+    `<div class="cn-qa-cards" id="cn-qa-cards">${cards}</div>` + failed;
 }
 
 function cnToggleResolved_(noteId) {
@@ -6375,8 +6584,10 @@ function cnToggleResolved_(noteId) {
   note.resolved = !prevResolved;
   cnReRenderActiveView_();
   cnRenderFilterBar_();
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       note._flagInFlight = false;
       if (!res.success) {
         note.resolved = prevResolved;
@@ -6396,6 +6607,7 @@ function cnToggleResolved_(noteId) {
       }
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       note._flagInFlight = false;
       note.resolved = prevResolved;
       cnReRenderActiveView_(); cnRenderFilterBar_();
@@ -6652,7 +6864,9 @@ function cnCloseComposerModal_() {
   }
   CN_STATE.composer = null;
   const overlay = document.getElementById('cn-compose-overlay');
+  const back = overlay && overlay._restoreFocus;
   if (overlay) overlay.remove();
+  cnComposerReturnFocus_(back);   // F40 (cycle 25)
   // Operator feedback (2026-06-12 r3): closing a Save&Compose-opened
   // composer WITHOUT sending rolls the whole action back — the just-saved
   // note is deleted (server 5-min window covers it) and the text is still
@@ -6660,6 +6874,31 @@ function cnCloseComposerModal_() {
   // so this only fires on a genuine cancel/Esc — and only for a flow THIS
   // composer owns (a tab switch hands it to the other one first, C4).
   if (cnComposeFlowOwnedBy_('dept')) cnRollbackComposeFlow_();
+}
+
+/** F40 (cycle 25) — the save card's collapse button says whether the actions
+ *  are shown (`aria-expanded`); a screen reader heard only "Collapse or expand
+ *  the save actions", with no state either way. */
+function cnToggleSaveCard_(btn) {
+  var card = document.getElementById('cn-save-card'); if (!card) return;
+  var collapsed = card.classList.toggle('collapsed');
+  if (btn) btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+/** F40 (cycle 25) — hand focus back to what opened a composer. closeOverlay
+ *  does this for Escape, the backdrop and Cancel, but a composer also closes
+ *  ITSELF — after a send, or as the loading stub gives way — through its hook,
+ *  and focus was then left on <body>. Deferred one tick, because a send
+ *  re-renders the Log right after the close (the trigger is found again by id
+ *  if it was rebuilt). Never steals focus: not while another dialog is open
+ *  (a switch to the other composer), nor when focus already sits somewhere real. */
+function cnComposerReturnFocus_(back) {
+  setTimeout(function () {
+    if (document.querySelector('.overlay.open')) return;
+    var ae = document.activeElement;
+    if (ae && ae !== document.body && ae.isConnected) return;
+    if (back && !back.isConnected && back.id) back = document.getElementById(back.id);
+    if (back && back.isConnected) { try { back.focus(); } catch (e) {} }
+  }, 0);
 }
 
 /** C4 — which composer the Save & Compose transaction currently rides. A flow
@@ -6926,8 +7165,10 @@ function cnComposerSaveNoteEdits_(then) {
   c.savingNote = true;
   const btn = document.getElementById('cnC-nr-save');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  cnMutBegin_();   // F22 (cycle 25): a live refresh in flight now predates this write
   google.script.run
     .withSuccessHandler(function (res) {
+      cnMutEnd_();
       c.savingNote = false;
       if (!res || !res.success) {
         if (CN_STATE.composer === c && btn) { btn.disabled = false; btn.textContent = 'Save note'; }
@@ -6952,6 +7193,7 @@ function cnComposerSaveNoteEdits_(then) {
       if (then) then(true);
     })
     .withFailureHandler(function (err) {
+      cnMutEnd_();
       c.savingNote = false;
       if (CN_STATE.composer !== c) return;
       if (btn) { btn.disabled = false; btn.textContent = 'Save note'; }
@@ -7777,6 +8019,7 @@ function cnRenderHistoryView(area) {
         <button type="button" class="cn-history-preset-btn" data-preset="yesterday">Yesterday</button>
         <button type="button" class="cn-history-preset-btn" data-preset="last7">Last 7 Days</button>
         <button type="button" class="cn-history-preset-btn" data-preset="last30">Last 30 Days</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="last90">Last 90 Days</button>
         <button type="button" class="cn-history-preset-btn" data-preset="thisWeek">This Week</button>
         <button type="button" class="cn-history-preset-btn" data-preset="lastWeek">Last Week</button>
       </div>
@@ -7840,6 +8083,10 @@ function cnHistoryPresetRange_(preset) {
       var d30 = toDate(today); d30.setUTCDate(d30.getUTCDate() - 29);
       return { start: fmt(d30), end: today };
     }
+    case 'last90': {   // F35 (cycle 25): the widest span the server serves (CN_HISTORY_MAX_SPAN_DAYS)
+      var d90 = toDate(today); d90.setUTCDate(d90.getUTCDate() - (CN_HISTORY_MAX_SPAN_DAYS - 1));
+      return { start: fmt(d90), end: today };
+    }
     case 'thisWeek': {
       var dow = todayD.getUTCDay();
       var mon = toDate(today); mon.setUTCDate(mon.getUTCDate() - ((dow + 6) % 7));
@@ -7885,6 +8132,11 @@ function cnRenderHistoryStack_() {
     : '<span class="cn-hist-filterpill">Filtered: ' + esc(flt) +
       ' · <a href="#" onclick="CN_STATE.filter=\'all\';cnRenderHistoryStack_();return false;">clear</a></span>';
   const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
+  // F35 (cycle 25): opened from an all-time chip — say when the count includes
+  // notes older than the range History can show (only while the range and the
+  // filter are still the ones the chip set; any change and it is gone).
+  const chipNote = cnHistoryChipNoteHtml_(CN_STATE.historyChipHint, curKey + '|' + flt,
+    (CN_STATE.historyNotesKey === curKey) ? notes.length : null);
 
   // M-4 (cycle 10): same typed-edit preservation as cnRenderStack_ — History
   // is the "view & edit prior notes" surface, but an optimistic toggle / QA
@@ -7894,7 +8146,7 @@ function cnRenderHistoryStack_() {
   const editSnap = cnEditSnapshot_();
 
   if (notes.length === 0) {
-    if (summary) summary.innerHTML = fltPill;
+    if (summary) summary.innerHTML = fltPill + chipNote;
     if (CN_STATE.historyRangeRefused && allNotes.length === 0) {
       stack.innerHTML = errorStateHtml_(CN_STATE.historyRangeRefused);
       return;
@@ -7914,7 +8166,7 @@ function cnRenderHistoryStack_() {
     var endLabel = cnFormatDateLabel_(CN_STATE.historyEndDate);
     if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
       esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') +
-      fltPill + '</div>';
+      fltPill + '</div>' + chipNote;
 
     // Group by dateLocal, newest dates first — each group is collapsible with
     // a metadata header (note count + per-flag-type counts).
@@ -7927,10 +8179,15 @@ function cnRenderHistoryStack_() {
     });
     groups.sort(function (a, b) { return b.localeCompare(a); });
     var html = '';
+    // F40 (cycle 25): a group the rep collapsed stays collapsed through a
+    // re-render (a refresh, an edit, a flag) for the rest of the visit — every
+    // repaint used to open them all again. Session memory, not a stored setting.
+    var shut = CN_STATE.histCollapsed || {};
     groups.forEach(function (d) {
       var gnotes = groupMap[d];
-      html += '<div class="cn-hist-group" data-hgdate="' + esc(d) + '">' +
-        '<button class="cn-hist-grouphead" onclick="cnToggleHistGroup_(this)" aria-expanded="true">' +
+      var closed = !!shut[d];
+      html += '<div class="cn-hist-group' + (closed ? ' collapsed' : '') + '" data-hgdate="' + esc(d) + '">' +
+        '<button class="cn-hist-grouphead" onclick="cnToggleHistGroup_(this)" aria-expanded="' + (closed ? 'false' : 'true') + '">' +
           '<span class="cn-hg-caret">' + icon('chevronDown', 14) + '</span>' +
           '<span class="cn-hg-date">' + esc(cnFormatDateLabel_(d)) + '</span>' +
           '<span class="cn-hg-count">' + gnotes.length + ' note' + (gnotes.length !== 1 ? 's' : '') + '</span>' +
@@ -7941,10 +8198,24 @@ function cnRenderHistoryStack_() {
     });
     stack.innerHTML = html;
   } else {
-    if (summary) summary.innerHTML = fltPill;
+    if (summary) summary.innerHTML = fltPill + chipNote;
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
   cnEditRestore_(editSnap);   // M-4 — typed edit values survive the re-render
+}
+
+/** F35 (cycle 25) — PURE (Node + DOM pinned). The chip's count spans the rep's
+ *  whole Sheet; History serves at most CN_HISTORY_MAX_SPAN_DAYS. When the chip's
+ *  range + filter are still the current ones and fewer notes loaded than it
+ *  counted, say how many are older and where they are. `shown` is null while
+ *  the range has not loaded (nothing is claimed about notes not yet read). */
+function cnHistoryChipNoteHtml_(hint, curKeyFilter, shown) {
+  if (!hint || hint.key !== curKeyFilter || shown === null || !(hint.count > shown)) return '';
+  var older = hint.count - shown;
+  return '<div class="cn-history-chipnote" role="status">Showing the last ' + CN_HISTORY_MAX_SPAN_DAYS + ' days: ' +
+    shown + ' of your ' + hint.count + ' ' + esc(hint.label) + ' note' + (hint.count === 1 ? '' : 's') + '. The other ' + older +
+    (older === 1 ? ' is' : ' are') + ' older — History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
+    ' days at a time, so use Search to find an older note.</div>';
 }
 
 /** Per-flag-type count chips for a History date group. action/training/review
@@ -7979,6 +8250,9 @@ function cnToggleHistGroup_(btn) {
   if (!group) return;
   var collapsed = group.classList.toggle('collapsed');
   btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  var d = group.getAttribute('data-hgdate');   // F40: remembered for the next render
+  CN_STATE.histCollapsed = CN_STATE.histCollapsed || {};
+  if (collapsed) CN_STATE.histCollapsed[d] = true; else delete CN_STATE.histCollapsed[d];
 }
 
 function cnFormatDateLabel_(isoDate) {
@@ -8170,6 +8444,11 @@ function cnSetSearchField_(f) {
 
 function cnFireSearch_() {
   const q = String(CN_STATE.searchQuery || '').trim();
+  // F36 (cycle 25): the guard is the REQUEST, not the query text. Every scope
+  // change (field tab, date range, archive box, exact mode) fires a new search,
+  // and only the latest may paint — matching the query alone let a slower
+  // answer for the old field, range or archive scope paint under the new one.
+  const seq = CN_STATE.searchSeq = (CN_STATE.searchSeq || 0) + 1;
   if (q.length < 2) {
     CN_STATE.searchResults = [];
     cnRenderSearchResults_();
@@ -8183,6 +8462,7 @@ function cnFireSearch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (currentView !== requestedView) return;
+      if (seq !== CN_STATE.searchSeq) return;   // F36: a later search (any scope) owns the results
       // F(M-5): compare trimmed-to-trimmed — requestedQuery is the TRIMMED q
       // but the state holds the raw input, so a query with surrounding
       // whitespace (a pasted TRX/phone) fetched results and discarded them.
@@ -8201,6 +8481,7 @@ function cnFireSearch_() {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
+      if (seq !== CN_STATE.searchSeq) return;   // F36
       if (String(CN_STATE.searchQuery || '').trim() !== requestedQuery) return;
       CN_STATE.searchResults = [];
       var fh = document.getElementById('cn-search-results');
@@ -8502,6 +8783,11 @@ function cnMgrLoadRepNotes_() {
     })
     .withFailureHandler(function (err) {
       if (currentView !== requestedView) return;
+      // F38 (cycle 25): the same guard as success — a late FAILURE for the rep
+      // (or day) the manager has left painted over the one they moved to.
+      if (!CN_STATE.mgrRepView
+          || CN_STATE.mgrRepView.repId !== requestedRepId
+          || CN_STATE.mgrRepView.date !== requestedDate) return;
       const liveStack = document.getElementById('cn-mgr-rep-stack');
       if (liveStack) liveStack.innerHTML = errorStateHtml_('Failed: ' + err.message);
     })
@@ -8641,7 +8927,7 @@ function cnMgrDeleteNote_(btn) {
           return;
         }
         showToast('Note deleted', 'toast-success');
-        cnMgrLoadRepNotes_();
+        cnMgrRemoveCard_(repId, noteId);   // F37 (cycle 25): this card only
       })
       .withFailureHandler(function (err) {
         btn.disabled = false;
@@ -8694,6 +8980,17 @@ function cnMgrPatchCard_(repId, note) {
   var tmp = document.createElement('div');
   tmp.innerHTML = cnMgrRenderReadonlyCard_(note).trim();
   if (tmp.firstElementChild) card.replaceWith(tmp.firstElementChild);
+}
+/** F37 (cycle 25) — the delete's own result rides a targeted patch too: the
+ *  deleted card leaves and nothing else is touched. Reloading the whole stack
+ *  wiped a comment or reply half-typed on every OTHER card (g141, the CNUI-04
+ *  shape). The last card gone, or a different rep on screen: the stack
+ *  reloads (its empty state holds nothing to lose). */
+function cnMgrRemoveCard_(repId, noteId) {
+  var stack = document.getElementById('cn-mgr-rep-stack');
+  if (!stack || !CN_STATE.mgrRepView || CN_STATE.mgrRepView.repId !== repId) { cnMgrLoadRepNotes_(); return; }
+  stack.querySelectorAll('.cn-card').forEach(function (c) { if (c.dataset.noteId === noteId) c.remove(); });
+  if (!stack.querySelector('.cn-card')) cnMgrLoadRepNotes_();
 }
 /** Item 9 — manager comment (feedback / praise) on ANY note. Reads the text
  *  from the sibling input and fires setCallNoteManagerComment; refreshes the
@@ -9038,7 +9335,7 @@ function cnMgrFireSearch_() {
       // F(M-5): trimmed-to-trimmed — same whitespace-guard fix as cnFireSearch_.
       if (String(CN_STATE.mgrSearchQuery || '').trim() !== requestedQuery) return;
       if (res.error) {
-        CN_STATE.mgrSearchResults = [];
+        CN_STATE.mgrSearchResults = []; CN_STATE.mgrSearchTotal = 0;
         var eh = document.getElementById('cn-mgr-search-results');
         if (eh) eh.innerHTML = errorStateHtml_('Search failed for "' + requestedQuery + '" - ' + res.error,
           'Search failed - ' + res.error);   // S3: the query is shown, never beaconed
@@ -9046,6 +9343,7 @@ function cnMgrFireSearch_() {
       }
       CN_STATE.mgrSearchResults = res.results || [];
       CN_STATE.mgrSearchSkipped = res.skippedReps || [];   // C17 batch-2 (INV-187)
+      CN_STATE.mgrSearchTotal = res.truncated ? (Number(res.total) || 0) : 0;   // F30: a capped search says so
       cnMgrRenderSearchResults_();
     })
     .withFailureHandler(function (err) {
@@ -9074,7 +9372,10 @@ function cnMgrRenderSearchResults_() {
     host.innerHTML = skipNote + '<div class="cn-stack-empty">No matches.</div>';
     return;
   }
-  const count = `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
+  const total = Number(CN_STATE.mgrSearchTotal) || 0;
+  const count = total > results.length
+    ? `<div class="cn-result-count" role="status">Showing the newest <b>${results.length}</b> of ${total} results for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps — narrow by date range to see older ones</div>`
+    : `<div class="cn-result-count"><b>${results.length}</b> result${results.length === 1 ? '' : 's'} for &ldquo;${esc(CN_STATE.mgrSearchQuery)}&rdquo; across all reps</div>`;
   host.innerHTML = skipNote + count + results.map(function (n) { return cnRenderResultCard_(n, n.repName); }).join('');
   if (typeof kbHighlightTerms_ === 'function') kbHighlightTerms_(host, CN_STATE.mgrSearchQuery);
 }
@@ -9116,6 +9417,18 @@ function cnRollingStackSignature_(notes) {
  *  Optimistic `_pending` notes not yet on the server are preserved on top.
  *  Re-render is signature-guarded (cnRollingStackSignature_) so an unchanged
  *  poll doesn't flash the stack. */
+/** F22 (cycle 25) — every write to a note on the stack (delete — Ctrl+Z's
+ *  undo of a save included — edit, flag, urgent, pin, resolve) bumps
+ *  `_mutSeq` when it starts and again when it settles. A live refresh drops a
+ *  server list requested before a write it cannot reflect: such a list
+ *  brought a deleted note back onto the stack and reverted a toggle. The next
+ *  poll (60s, or the next window focus) reads the settled state. A list
+ *  requested AFTER a write began, and answered before it settled, needs no
+ *  guard of its own: deletes and edits are not optimistic (the local note is
+ *  the server's until the write lands), and an in-flight toggle already keeps
+ *  its local object (`_flagInFlight`, INV-56). */
+function cnMutBegin_() { CN_STATE._mutSeq = (CN_STATE._mutSeq || 0) + 1; }
+function cnMutEnd_() { CN_STATE._mutSeq = (CN_STATE._mutSeq || 0) + 1; }
 function cnRefreshRollingStack_(then) {
   // `then` (optional) fires on EVERY exit path, so a caller driving a UI
   // indicator (e.g. the instant-paint "Refreshing…" pill) can always clear it.
@@ -9124,10 +9437,13 @@ function cnRefreshRollingStack_(then) {
   if (CN_STATE.editingNoteId) { done(); return; }   // don't clobber an open inline edit
   const requestedView = currentView;
   const requestedSeq = CN_STATE._confirmSeq || 0;
+  const requestedMut = CN_STATE._mutSeq || 0;
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || res.error || res.enrolled === false) { done(); return; }
       if (currentView !== requestedView) { done(); return; }
+      // F22 (cycle 25): a list that predates a delete, edit or toggle is not the stack.
+      if ((CN_STATE._mutSeq || 0) !== requestedMut) { done(); return; }
       const server = res.notes || [];
       const serverIds = {};
       server.forEach(function (n) { serverIds[n.noteId] = true; });
@@ -9543,7 +9859,7 @@ function cnUpdateQuickChipRow_(res) {
   // moves to the counts rather than the counts to the label: a weekly count
   // here would contradict the same numbers everywhere else they appear.
   row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · all time</span>'
-    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
+    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" data-label="${esc(c.label)}" data-count="${esc(String(c.count))}" ` +
         `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
         `<span class="count">${c.count}</span>` +
         `<span class="cn-qc-arrow">${icon('chevronRight', 11)}</span></button>`).join('');
@@ -9555,6 +9871,17 @@ function cnUpdateQuickChipRow_(res) {
       // Map "qa" → "answered" (existing CN filter name for training Q&A)
       const filterName = f === 'qa' ? 'answered' : f;
       CN_STATE.filter = filterName;
+      // F35 (cycle 25, operator 2026-10-15): the count is ALL TIME, but History
+      // kept whatever range was used last, so "Action 42" could open on three.
+      // It opens on the widest range History can show, and remembers the count
+      // for exactly that range + filter so History can say how many are older.
+      const range = cnHistoryPresetRange_('last90');
+      if (range) {
+        CN_STATE.historyDate = range.start;
+        CN_STATE.historyEndDate = range.end;
+        CN_STATE.historyChipHint = { key: range.start + ':' + range.end + '|' + filterName,
+          label: btn.dataset.label || filterName, count: parseInt(btn.dataset.count, 10) || 0 };
+      }
       if (typeof showView === 'function') showView('callNotesHistory');
     });
   });
@@ -9826,6 +10153,8 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-oop"></div>' +
       '<div id="cn-admin-formulas">' + cnRenderFormulaScanPanel_(null) + '</div>' +
       '<div id="cn-admin-health"></div>' +
+      '<div id="cn-admin-digests"></div>' +   // G3 (cycle 25 E1) — beside Automation Health
+      '<div id="cn-admin-replyreviews"></div>' +   // E4 (cycle 25, ST1) — how people answered the reply check
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
       '<div id="cn-admin-augment"></div>' +
@@ -9871,6 +10200,11 @@ function enterCallNotesAdminView(area) {
   // Automation Health — sync-failure / CDR-drift / last-run surfacing.
   // Independent load; failure stays contained to its own slot.
   cnLoadHealthPanel_();
+  // G3 (cycle 25 E1) — the digest delivery log. Independent load; failure
+  // stays contained to its own slot.
+  cnLoadDigestDeliveries_();
+  // E4 (cycle 25, ST1) — the reply check's review report. Independent load.
+  cnLoadReplyReviews_();
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
@@ -11346,11 +11680,21 @@ function cnPropStoreHtml_(ps) {
       esc(Number(ps.bytes).toLocaleString()) + ' of ' + esc(Number(ps.storeMax).toLocaleString()) + ' bytes across ' +
       esc(String(ps.count)) + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + storePct + '%)' +
       (ps.largestKey ? ' · largest <code>' + esc(ps.largestKey) + '</code> at ' + esc(Number(ps.largestBytes).toLocaleString()) +
-        ' of ' + esc(Number(ps.valueMax).toLocaleString()) + ' bytes per value (' + valuePct + '%)' : '') + '.' +
+        ' of ' + esc(Number(ps.valueMax).toLocaleString()) + ' bytes per value (' + valuePct + '%)' : '') +
+      esc(cnPropLedgerNote_(ps)) + '.' +
       (over ? ' A save past the per-value cap is refused by name — shorten or remove entries in the editor that writes it.' : '');
   }
   return '<div class="cn-drive-line cn-drive-' + tone + '">' +
     icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
+}
+/** Cycle 25 FU3 — the PTO accrual ledger's per-rep side copies (F17) as a
+ *  clause of the Script Properties line: '' when none exist or the server is
+ *  older. Plain text; the callers escape or render it as text. */
+function cnPropLedgerNote_(ps) {
+  var l = ps && ps.accrualLedger;
+  if (!l || !(Number(l.count) > 0)) return '';
+  return ' · PTO accrual ledger copies: ' + Number(l.count) + ' rep' + (Number(l.count) === 1 ? '' : 's') +
+    ', ' + Number(l.bytes).toLocaleString() + ' bytes';
 }
 
 /** Expand/collapse an mtRenderTable_ detail row from its disclosure button/** Expand/collapse an mtRenderTable_ detail row from its disclosure button
@@ -11434,6 +11778,144 @@ function cnLoadHealthPanel_() {
       fail((err && err.message) || 'load failed');
     })
     .getAutomationHealth();
+}
+
+/** G3 (cycle 25 E1) — the digest delivery log: every manager digest decision
+ *  (sent / suppressed / failed / empty) per recipient, newest first, with a
+ *  per-digest summary line. PURE over its payload — Node- and DOM-pinned. A
+ *  failed read is a warn card (INV-175), never an empty log; a tab that does
+ *  not exist yet says so; a tail scan that stopped inside the window says so
+ *  (g152). Every string from the server is escaped. */
+var CN_DIGEST_DELIVERY_SHOW_MAX_ = 200;
+var CN_DIGEST_DELIVERY_STATUS_ = {
+  sent: { label: 'Sent', color: 'var(--success-deep)' },
+  suppressed: { label: 'Suppressed', color: 'var(--muted)' },
+  failed: { label: 'Failed', color: 'var(--danger-deep)' },
+  empty: { label: 'Nothing to send', color: 'var(--muted)' },
+};
+function cnRenderDigestDeliveries_(res) {
+  var wrap = function (inner) {
+    return '<div class="panel" id="cn-sys-sec-digests" style="margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Email deliveries</div>' + inner + '</div>';
+  };
+  if (!res) return wrap('<div style="padding:10px 0">' + loSweep() + '</div>');
+  if (res.error) return wrap(errorStateHtml_('Email deliveries unavailable: ' + String(res.error)));   // K10: no second esc()
+  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Every automated email decision in the last ' +
+    esc(String(res.days)) + ' days, per recipient — the manager digests, the reminders sent to reps, and the two alerts: sent, suppressed (it rode the daily brief), failed, or nothing to send. ' +
+    'Rows are kept ' + esc(String(res.retentionDays)) + ' days. A run that could not write its row is not listed here; ' +
+    'Automation Health above is each job’s own record.</div>';
+  // E1 follow-ups: a row the log could not WRITE is not in the table — say so,
+  // or a missing row reads as "nothing was sent".
+  var wf = res.writeFailures;
+  var lost = (wf && wf.count > 0)
+    ? '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:8px">' + esc(String(wf.count)) +
+      ' delivery row' + (wf.count === 1 ? '' : 's') + ' could not be written to the log' +
+      (wf.lastError ? ' (latest: ' + esc(wf.lastError) + ')' : '') +
+      ' — those emails are not listed below, whether or not they went out. Check the ADP spreadsheet is reachable.</div>'
+    : '';
+  if (res.missing) {
+    return wrap(intro + lost + '<div class="m-empty">No email has recorded a delivery yet — the log starts with the first automated email after this deploy.</div>');
+  }
+  var rows = res.rows || [];
+  var label = function (k) { return (res.labels && res.labels[k]) || CN_DIGEST_LABELS_[k] || k; };   // the server's map leads (E1 follow-ups)
+  var order = [], by = {};
+  rows.forEach(function (r) {
+    if (!by[r.digest]) { by[r.digest] = { last: r, n: { sent: 0, suppressed: 0, failed: 0, empty: 0 } }; order.push(r.digest); }
+    if (by[r.digest].n[r.status] !== undefined) by[r.digest].n[r.status]++;
+  });
+  var summary = order.map(function (k) {
+    var d = by[k], st = CN_DIGEST_DELIVERY_STATUS_[d.last.status] || CN_DIGEST_DELIVERY_STATUS_.failed;
+    var parts = ['sent', 'suppressed', 'failed', 'empty'].filter(function (s) { return d.n[s]; }).map(function (s) {
+      return esc(String(d.n[s])) + ' ' + esc(CN_DIGEST_DELIVERY_STATUS_[s].label.toLowerCase());
+    });
+    return '<div style="font-size:12px;padding:2px 0' + (d.n.failed ? ';color:var(--danger-deep)' : '') + '">' +
+      '<b>' + esc(label(k)) + '</b> — last: ' + '<span style="color:' + st.color + '">' + esc(st.label.toLowerCase()) + '</span> ' +
+      esc(d.last.at || '') + ' · ' + parts.join(' · ') + '</div>';
+  }).join('');
+  var shown = rows.slice(0, CN_DIGEST_DELIVERY_SHOW_MAX_);
+  var table = mtRenderTable_({
+    columns: [
+      { key: 'at', label: 'When', cell: function (r) { return esc(r.at || ''); } },
+      { key: 'digest', label: 'Digest', cell: function (r) { return esc(label(r.digest)); } },
+      { key: 'recipient', label: 'Recipient', cell: function (r) { return esc(r.recipient); } },
+      { key: 'status', label: 'Status', cell: function (r) {
+        var st = CN_DIGEST_DELIVERY_STATUS_[r.status] || CN_DIGEST_DELIVERY_STATUS_.failed;
+        return '<span style="color:' + st.color + ';font-weight:600">' + esc(st.label) + '</span>';
+      } },
+      { key: 'items', label: 'Items', numeric: true, cell: function (r) { return r.items == null ? '—' : esc(String(r.items)); } },
+      { key: 'reason', label: 'Reason', cell: function (r) { return r.reason ? '<span class="cn-dd-reason">' + esc(r.reason) + '</span>' : ''; } },
+    ],
+    rows: shown,
+    tableClass: 'cn-dd-table', dataLabels: true,   // E1 follow-ups: cards on a phone
+    empty: '<div class="m-empty">No email decisions in the last ' + esc(String(res.days)) + ' days.</div>',
+  });
+  var notes = '';
+  if (rows.length > shown.length) notes += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Showing the newest ' + esc(String(shown.length)) + ' of ' + esc(String(rows.length)) + ' rows.</div>';
+  if (res.truncated) notes += '<div style="font-size:11px;color:var(--warning-deep);margin-top:6px">The log is longer than one read reaches — older rows inside this window were not read. Open the DigestDeliveries tab for the full log.</div>';
+  return wrap(intro + lost + (summary ? '<div style="margin-bottom:8px">' + summary + '</div>' : '') + table + notes);
+}
+function cnLoadDigestDeliveries_() {
+  var slot = document.getElementById('cn-admin-digests');
+  if (!slot) return;
+  slot.innerHTML = cnRenderDigestDeliveries_(null);
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-digests');
+    if (live) live.innerHTML = cnRenderDigestDeliveries_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'load failed' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'load failed' }); })
+    .getDigestDeliveries({});
+}
+
+// ── E4 (cycle 25, ST1, operator 2026-10-15): the reply check's review report.
+// Per rule that held a department reply back: how many wait for an answer, and
+// how often people answered Resolved (the rule held back a reply that HAD
+// finished the request) or Still open. The check never changes itself — this
+// is for the operator to ask for a rule change.
+function cnRenderReplyReviews_(res) {
+  var wrap = function (inner) {
+    return '<div class="panel" id="cn-sys-sec-replyreviews" style="margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept Request reply check</div>' + inner + '</div>';
+  };
+  if (!res) return wrap('<div style="padding:10px 0">' + loSweep() + '</div>');
+  if (res.error) return wrap(errorStateHtml_('Reply check report unavailable: ' + String(res.error)));   // K10: no second esc()
+  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">When a department replies to a request, the hourly check resolves it — unless the reply asks, holds, refuses or only acknowledges, when it waits under “Replies to check” on the Dept Requests tab. ' +
+    'Below, per rule, how people answered in the last ' + esc(String(res.days)) + ' days. A rule people mostly answer <b>Resolved</b> is holding back finished work; the check never loosens itself — ask for the rule to change.' +
+    (res.flagOn === false ? ' <b style="color:var(--warning-deep)">The reply check is OFF (Config → Features → deptReplyResolve).</b>' : '') + '</div>';
+  var table = mtRenderTable_({
+    columns: [
+      { key: 'label', label: 'Held back because', cell: function (r) { return '<span class="cn-dd-reason">' + esc(r.label) + '</span>'; } },
+      { key: 'waiting', label: 'Waiting', numeric: true, cell: function (r) { return esc(String(r.waiting)); } },
+      { key: 'resolved', label: 'Answered Resolved', numeric: true, cell: function (r) { return esc(String(r.resolved)); } },
+      { key: 'open', label: 'Answered Still open', numeric: true, cell: function (r) { return esc(String(r.open)); } },
+      { key: 'overridePct', label: 'Overridden', numeric: true, cell: function (r) {
+        if (r.overridePct == null) return '<span style="color:var(--muted)">no answers yet</span>';
+        return '<span style="' + (r.answered >= 5 && r.overridePct >= 50 ? 'color:var(--warning-deep);font-weight:600' : '') + '">' + esc(String(r.overridePct)) + '%</span>';
+      } },
+    ],
+    rows: res.rows || [],
+    tableClass: 'cn-dd-table', dataLabels: true,
+    empty: '<div class="m-empty">No reply has been held back, and nobody has answered one, in the last ' + esc(String(res.days)) + ' days.</div>',
+  });
+  return wrap(intro + table);
+}
+function cnLoadReplyReviews_() {
+  var slot = document.getElementById('cn-admin-replyreviews');
+  if (!slot) return;
+  slot.innerHTML = cnRenderReplyReviews_(null);
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-replyreviews');
+    if (live) live.innerHTML = cnRenderReplyReviews_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'load failed' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'load failed' }); })
+    .getDeptReplyReviewStats();
 }
 
 /** Design handoff A3 — ONE derivation of "what needs attention" from the two
@@ -11537,21 +12019,29 @@ function cnHealthFindings_(health, storage, oop) {
     var aeJobs = Object.keys(ae);
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
-      add('automationError:' + job, 'automation', 'fail', (e.label || job) + ' failed on its last run',
+      if (e.ownFinding) return;   // ST2 (cycle 25 E1): said once, by its own finding (open punches / self-test)
+      // ST2: a PARTIAL run warns and names what it skipped; a failed one fails.
+      var partial = e.status === 'partial';
+      add('automationError:' + job, 'automation', partial ? 'warn' : 'fail',
+        (e.label || job) + (partial ? ' ran only in part on its last run' : ' failed on its last run'),
         (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
-        'Run the job from the editor to reproduce; a clean run clears this flag.');
+        partial ? 'Fix what it skipped (named above); its next complete run clears this flag.'
+          : 'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
-    if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
-    // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy posture.
+    if (!aeJobs.filter(function (j) { return !(ae[j] || {}).ownFinding; }).length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
+    // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy
+    // posture only until the triggers have been installed past its window
+    // (F60, cycle 25 — the server marks that case `neverRan` and stale).
     var digests = health.digests || [];
     var stale = digests.filter(function (d) { return d.stale; });
-    var never = digests.filter(function (d) { return !d.last; });
+    var never = digests.filter(function (d) { return !d.last && !d.stale; });
     stale.forEach(function (d) {
       // 4a follow-ons (cycle 23): a stale heartbeat whose job ran and FAILED in
       // the window is that failure, not a dead trigger — reinstalling triggers
       // changes nothing (g142). The failure itself is its own finding above.
-      add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + ' is stale',
-        'last ran ' + (d.last || '?') + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
+      add('digest:' + d.key, 'automation', 'warn', (CN_DIGEST_LABELS_[d.key] || d.key) + (d.neverRan ? ' has never run' : ' is stale'),
+        (d.neverRan ? 'no run on record since the triggers were installed' + (d.installedAt ? ' (' + d.installedAt + ')' : '')
+          : 'last ran ' + (d.last || '?')) + ' — past its expected cadence' + (d.failedAt ? '; it ran and failed at ' + d.failedAt : ''),
         d.failedAt ? 'Fix the failure reported for this job — its trigger is running.' : 'The trigger may be dead — re-run installAutomationTriggers().');
     });
     if (!stale.length) {
@@ -11741,7 +12231,7 @@ function cnHealthFindings_(health, storage, oop) {
         var detail = Number(ps.bytes).toLocaleString() + ' of ' + Number(ps.storeMax).toLocaleString() +
           ' bytes across ' + ps.count + ' propert' + (ps.count === 1 ? 'y' : 'ies') + ' (' + sPct + '%)' +
           (ps.largestKey ? '; largest ' + ps.largestKey + ' at ' + Number(ps.largestBytes).toLocaleString() +
-            ' of ' + Number(ps.valueMax).toLocaleString() + ' per value (' + vPct + '%)' : '');
+            ' of ' + Number(ps.valueMax).toLocaleString() + ' per value (' + vPct + '%)' : '') + cnPropLedgerNote_(ps);
         if (sPct >= warnAt || vPct >= warnAt) {
           add('propStore', 'storage', 'warn', 'Script Properties are filling up', detail,
             'Shorten or remove entries in the Admin editor that writes the largest value — a save past the cap is refused by name, nothing is written.');
@@ -11872,6 +12362,7 @@ var CN_DIGEST_LABELS_ = {
   missedPunch: 'Daily missed-punch alerts',
   exportCheck: 'Daily ADP export check',
   automationHealth: 'Automation-health failure digest',
+  spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
   spanishAutoAssign: 'Spanish Inbox auto-assign',
   deptReplyScan: 'Dept Request reply scan',
 };
@@ -12187,11 +12678,18 @@ function cnRenderHealthPanel_(res) {
     missedPunch: { label: 'Daily missed-punch alerts', expect: 'daily 8am — stale past 26h; heartbeats even on a morning with no missed punch' },
     exportCheck: { label: 'Daily ADP export check', expect: 'daily 12pm — stale past 26h; the export itself lands only at a period end (AdpExportAuto)' },
     automationHealth: { label: 'Automation-health failure digest', expect: 'daily 9am — stale past 26h; heartbeats on an all-clear morning too, and its own failure is stamped' },
+    spanishEscalation: { label: 'Spanish Inbox escalation digest', expect: 'daily 8am — requests waiting 7+ days, to managers; heartbeats on a morning with none; stale past 26h' },   // E4 (cycle 25, G5)
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };
     var when;
-    if (!d.last) {
+    if (!d.last && d.neverRan) {
+      // F60 (cycle 25): installed longer ago than this digest's window, and
+      // still no run — a missing trigger, not a fresh deploy.
+      when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' no run on record since the triggers were installed' +
+        (d.installedAt ? ' (' + esc(d.installedAt) + (tz ? ' ' + esc(tz) : '') + ')' : '') + ' — ' +
+        (d.failedAt ? 'it ran and failed at ' + esc(d.failedAt) + ' — see the failure above' : 'its trigger may be missing; re-run installAutomationTriggers()') + '</span>';
+    } else if (!d.last) {
       when = '<span style="color:var(--muted)">no heartbeat recorded yet — check the trigger is installed</span>';
     } else if (d.stale) {
       when = '<span style="color:var(--warning-deep);font-weight:600">' + icon('warning', 11) + ' last ran ' +
@@ -12861,6 +13359,8 @@ function cnOnboardSubmit_(btn) {
         release();
         btn.disabled = false; btn.textContent = 'Add team member';
         if (!res || res.error) { showToast((res && res.error) || 'Add failed', 'toast-error'); return; }
+        // Cycle 25 FU2: a biweekly rep added to a roster with no pay anchor.
+        if (res.anchorWarning) showToast(res.name + ' added — but ' + res.anchorWarning, 'toast-warn', { sticky: true });
         if (res.provisionWarning) showToast(res.name + ' added — but ' + res.provisionWarning, 'toast-warn');
         else showToast(res.name + ' added' + (res.provision ? ' + Call Notes Sheet provisioned' : ''), 'toast-success');
         cnAdminLoadOnboarding_({ resetForm: true });   // ADM-10: the person is added — the form empties
@@ -13254,12 +13754,17 @@ function cnRenderAdminBody_(cfg) {
         .withSuccessHandler(function (res) {
           btn.disabled = false; btn.textContent = 'Reconcile Sheets';
           if (!res || res.error) { showToast((res && res.error) || 'Reconcile failed', 'toast-error'); return; }
-          showToast(res.rowsBackfilled > 0
+          var done = res.rowsBackfilled > 0
             ? ('Reconciled ' + res.rowsBackfilled + ' row(s) across ' + res.repsTouched + ' rep(s)')
-            : 'Nothing to reconcile — all rows already have IDs', 'toast-success');
+            : 'Nothing to reconcile — all rows already have IDs';
+          // F57 (cycle 25): the manual pass no longer stamps the nightly job's
+          // failure record, so a rep Sheet it could not open is named HERE.
+          var skippedReps = res.skippedReps || [];
+          if (skippedReps.length) showToast(done + ' — but ' + skippedReps.length + ' rep Sheet(s) could not be opened: ' + skippedReps.join(', '), 'toast-warn', { sticky: true });
+          else showToast(done, 'toast-success');
         })
         .withFailureHandler(function (err) { btn.disabled = false; btn.textContent = 'Reconcile Sheets'; showToast((err && err.message) || 'Reconcile failed', 'toast-error'); })
-        .reconcileCallNotes();
+        .reconcileCallNotesNow();
     });
   });
 
@@ -14423,7 +14928,9 @@ function cnCloseExternalEmailModal_() {
   }
   CN_STATE.extComposer = null;
   var overlay = document.getElementById('cn-ext-overlay');
+  var back = overlay && overlay._restoreFocus;
   if (overlay) overlay.remove();
+  cnComposerReturnFocus_(back);   // F40 (cycle 25)
   // C4: an external composer the Save & Compose flow moved into is the
   // transaction now — closing it without sending is the same cancel the
   // department composer's close is. (A send completes the flow first.)

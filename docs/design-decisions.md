@@ -1370,6 +1370,15 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   removed). This deliberately differs from single-day mode (`managerSaveDay`,
   a full-day reconcile where a blank field deletes that punch), so a range
   apply can't silently wipe lunches on days it touches. See INV-108.
+  **AMENDED (cycle 25 F1, 2026-10-14): range mode starts from BLANK slots,
+  and asks.** The slots arrive prefilled with the From day's real punches, and
+  every non-blank slot is SET on every day — so a manager filling "To" to add
+  one missing Clock Out stamped the From day's whole day over the range.
+  Filling "To" now parks every slot the PREFILL filled and the manager has not
+  touched (clearing "To" restores them; a typed slot is the manager's in either
+  mode, and a prefill that lands while a range is set is parked, never written
+  in), and a range save names exactly what it will set, in 12-hour time, and
+  waits for a confirm. An empty range is refused before any RPC.
   **Prefill (team calendar, 2026-08-31):** `openDayEditModal` takes an
   optional 3rd `prefillDate`, honored only inside the picker's own
   [min, today] bounds (the `openAdjustModal(prefillDate)` precedent) — the
@@ -1835,8 +1844,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   2026-06-12 r3 feedback round — too close to the Enter-nav muscle
   memory; plain Ctrl/⌘+Enter is now unbound). Ctrl/⌘+Shift+Enter
   saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
-  action/training/review flags on the active form. Ctrl/⌘+Backspace
-  clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
+  action/training/review flags on the active form. Ctrl/⌘+Shift+Backspace
+  clears the form (cycle 25 F23, operator 2026-10-15 — it was plain
+  Ctrl/⌘+Backspace, the system's "delete previous word" / "delete to line
+  start", and a rep editing a word mid-call cleared the whole note). Ctrl/⌘+/ or bare ? opens a shortcuts help
   overlay. Shortcuts only bind in the Log view's active form; the
   ? handler skips when focus is in an input/textarea. The help
   overlay uses the shared `.overlay` pattern (Escape closes it).
@@ -3748,8 +3759,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   Open-¶ jumps. Cached per issue-text (`KB_DRAWER.suggestCache`) with a
   sequence guard; instant first paint comes from the client-side TITLE
   match (`kbSuggestMatches_`) while the content search runs, and a
-  failed RPC silently keeps the title matches. Rendered only inside the
-  drawer and behind a per-rep toggle (`umsKbPanel.suggest`, default on). Reuses the three
+  failed RPC silently keeps the title matches. Rendered inside the
+  drawer and behind a per-rep toggle (`umsKbPanel.suggest`, default on) —
+  and since cycle 25 E3 the same toggle also governs the Log's handbook
+  strip under the Issue field (see "The handbook's feedback reaches its
+  source"). Reuses the three
   enrolled-employee KB read endpoints — no new read surface. Pinned by
   the `kbRecentsPush_` / `kbSuggestMatches_` Node tests.
 - <a id="kb-usage-feedback-loop-most-referenced-during-calls"></a>**KB usage feedback loop ("most referenced during calls").** Every
@@ -3781,7 +3795,13 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   describes a topic, not a patient — the same posture as form-consent), chosen
   over raw zero-result-query logging precisely because a raw query could carry a
   pasted patient name. It hands managers a data-driven content roadmap instead of
-  guessing. Rep writers are rep-callable/locked/append-only; the manager
+  guessing. **AMENDED (cycle 25 F9, 2026-10-14):** the client nonetheless sent the
+  original query as a hidden third argument even when the rep rewrote the topic,
+  and the landing showed it ("searched “…”"). `kbRequestArticle` now ignores that
+  argument and writes the Query column blank, `kbGetContentRequests` never ships
+  the column, and the client sends only the topic. A PHI-safe search signal (terms
+  matched against an admin vocabulary, team-level, 90 days) is the operator's G4
+  decision, scheduled as expansion E6. Rep writers are rep-callable/locked/append-only; the manager
   triage endpoints (`kbGetContentRequests`/`kbResolveContentRequest`) sit in the
   MANAGER review tier (alongside `kbGetReviewDue`/`kbMarkReviewed`), NOT the admin
   content-authoring tier. **Drawer parity (shipped):** the "Was this helpful? +
@@ -5007,6 +5027,14 @@ pick them up without re-deriving the context.
   that request's id, which the resolve link carries and a reply quotes; one that
   names only another sharer is not this request's, and one that names none
   cannot be attributed, so it is a look, never a resolve.
+  **AMENDED (cycle 25 E4, ST1, 2026-10-15): a look is answered, and the
+  answers are counted.** A held reply names the rule that held it
+  (`drReplyHoldReason_`: question, asks, not-done, ack, empty, unattributed)
+  and waits under "Replies to check" until a person answers Resolved or Still
+  open; Still open is `kept-open`, so that reply is never raised again. The
+  answers are counted per rule for the operator, never fed back into the rules
+  — see "A held reply waits for a person, and the answers are counted, not
+  learned from".
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
@@ -5430,3 +5458,196 @@ pick them up without re-deriving the context.
   chapter's last section (votes would stop being per section), and a "⋯" menu
   (one more tap for the commonest action).
 
+
+- <a id="every-automation-job-ends-through-one-run-outcome-contract"></a>**Every automation job ends through ONE run-outcome contract — ok, idle, partial or failed (cycle 25 E1, ST2, operator 2026-10-15)**
+  The F4/F5 failure class — a job that caught its error, or skipped a rep Sheet,
+  then cleared its key or returned in silence — had been fixed one job at a time
+  across four cycles, and each fix was a pair of hand-written `stampAutomationError_`
+  / `clearAutomationError_` calls a new job could forget. Now every job (each
+  `installAutomationTriggers` target and each `TRIGGER_GROUPS` handler — the
+  operator chose all of them at once, not only the dispatched eleven) gates with
+  `assertManagerCaller_`, then returns `runAutomationJob_(KEY, body)`; the body
+  RETURNS `automationOutcome_(status, message, skipped)` and the one recorder
+  (`recordAutomationOutcome_`) decides: `ok` clears, `partial` and `failed` stamp,
+  `idle` leaves the record alone. `idle` exists because some runs prove nothing —
+  an hour that matched no rep's EOD hour, an out-of-hours Spanish run, no manager
+  recipients — and clearing there would wipe a failure before the 9am digest
+  reads it (the seams F2 rule, now one rule). `partial` exists because "the run
+  happened but skipped Ana's Sheet" is neither clean nor a dead job: it stamps
+  with `status: 'partial'` and the skipped names, reads "ran only in part" on the
+  dot and is a WARNING (not a failure) on the System tab. A disabled job is an
+  `ok` run (it clears a stale failure). A throw, or a body that returns no valid
+  outcome, is FAILED — the guard that makes the contract hold for a job nobody
+  has written yet. The dispatcher no longer clears on a job's behalf (`owns` went
+  with the hand stamps); it verifies an outcome came back. Two jobs report their
+  failure through a finding of their own — the open-punch scan's stamp and the
+  self-test result — so their entry is marked `ownFinding` and said once. The
+  Admin button's manual reconcile stays outside the contract (F57). Rejected:
+  wrapping only the eleven dispatched jobs (the standalone twelve held most of
+  the history of this class); a dispatcher-only check (it cannot see a
+  standalone trigger); `partial` as `failed` (a nightly purge that skipped one
+  rep would read as dead, and the operator would reinstall triggers — g142).
+
+- <a id="digest-deliveries-are-logged-per-manager"></a>**Digest deliveries are logged per manager, PHI-free, on the ADP sheet, for 90 days (cycle 25 E1, G3, operator 2026-10-15)**
+  "Did my digest go out, and why not?" had no answer short of the Logger: a
+  digest suppressed by the daily brief, an empty morning and a failed send all
+  left the same trace — nothing. Each manager digest (weekly, urgent, daily
+  brief, training-overdue, dept-request reminder, automation health, the
+  missed-punch summary) now writes one `DigestDeliveries` row per recipient per
+  decision: `sent`, `suppressed` (it rode the brief), `failed` (with the send
+  error) or `empty` (nothing to report), the item count (blank, never 0, when
+  unknown) and a short reason. The tab sits on the ADP sheet beside ClientErrors
+  and ViewUsage because it holds staff addresses and fixed phrases only — no
+  note, patient or request content — and it is purged at 90 days by the nightly
+  diagnostics purge, which is therefore always enabled. The writer takes no lock
+  and never throws (a digest's delivery must not depend on its own log). Manage →
+  Admin → System shows the last 14 days beside Automation Health
+  (`getDigestDeliveries`, admin-gated): a summary per digest and the rows, with
+  a cut tail and a fresh deploy stated. **Since the E1 follow-ups (operator
+  2026-10-15) every AUTOMATED email is logged**, not only the manager digests:
+  the rep's end-of-day flag reminder (a row per reminder due, and a failed row
+  for a Sheet that could not be read — never an hourly "empty" per rep), the
+  missed clock-out reminder, the overdue-documents nudge, the agent's coaching
+  recap, the self-test failure alert and the client-error spike alert (a row per
+  SEND — the threshold and the cooldown decide per beacon and are not rows). ONE
+  server map, `DIGEST_DELIVERY_LABELS`, names every key and rides the payload,
+  so the panel (now "Email deliveries") keeps no label copy. A row the log could
+  not WRITE is counted (`DIGEST_DELIVERY_LOG_FAILS`) and named on the panel —
+  on a missing tab too — so a lost row never reads as "nothing was sent". On a
+  phone the table reads as one card per row (`mtRenderTable_`'s opt-in
+  `dataLabels`). Rep-initiated mail (call-note emails, intake sends, form links)
+  stays out: each already has its own audit row. Rejected: a Script Property ring (the 9KB cap — g07); the AuditLog
+  (it is the payroll audit trail, and a daily row per manager per digest would
+  push the job rows out of its 4,000-row tail — g152); logging only failures (a
+  missing row would then mean both "sent" and "never ran").
+
+- <a id="a-pay-period-closes-against-one-checklist"></a>**A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)**
+  Nothing said what stood between a pay period and a clean export: the daily
+  open-punch check watched the adjust window, not a period, and nothing named
+  pending requests that a later approval would change. And an offboarded rep was
+  invisible to all of it — offboarding clears the roster email, every walk
+  skipped them by INV-183, and no Day Edit entry point listed them — while the
+  export, which selects punches by employee ID, shipped their half-punched last
+  period (F19). The operator chose: **find and fix** (not "warn at offboarding",
+  not "hold their incomplete days out of the export", which would drop paid hours
+  silently); a **standing card** in Manage Time → Periodic (not inside the export
+  dialog); and **open days plus pending requests** as the contents.
+  `getPayPeriodClose` (manager-gated, read-only, no lock) covers, per pay cycle
+  with reps, the period that just ended and the current one — the calendar month,
+  and the org-anchor biweekly period through `biweeklyRangeFor_`, now the export's
+  own rule too. It lists every payroll subject (`payrollSubjectId_`, offboarded
+  labelled) with an open or incomplete day — counted through today minus the
+  open-punch grace, so a shift in progress is not a defect — and each pending
+  time-off or punch-adjustment request dated inside the period. An open day inside
+  the Day Edit window is a button that opens Day Edit for that rep and date (on the
+  rep's roster timezone, since an offboarded rep has no Live Status card); an older
+  one says it is a hand-edit. A pending request for an ID no roster row carries is
+  named, never dropped. The Periodic summary row states the result: critical for a
+  period that has ENDED with work left, a warning for the current one, "ready"
+  when clean, "check failed" when the read failed — never ready from a failed
+  read. The open-punch check walks payroll subjects too and names an offboarded
+  rep as offboarded in the 9am digest. Rejected: blocking the export (the
+  automated export must still run — the checklist informs, it does not hold
+  payroll); a second, checklist-only period rule (the export and the card must
+  agree on what "the period" is).
+
+- <a id="the-handbook-s-feedback-reaches-its-source"></a>**The handbook's feedback reaches its source, and a section's new text is its review; the Log offers handbook sections for the Issue text (cycle 25 E3, G2 + ST3, operator 2026-10-15)**
+  The handbook is edited in the repo and imported read-only, so a rep's
+  "Suggest an edit" was only useful once it reached `manual/src` — and it
+  could not: it was written as an "out of date" flag, it sat in a manager
+  queue keyed to app ids, and fixing the source and re-importing left the
+  flag open until someone clicked Reviewed. Three changes close the loop.
+  **A suggestion is its own kind** (`suggest`): handbook sections only,
+  refused (never cut) when empty or over 500 characters, counted apart from
+  "out of date" in Review due (a blue chip with its words, where out of date
+  stays red), and open on the same strictly-newer-than-the-review rule.
+  **A section whose TEXT an import changed counts as reviewed** — ReviewedAt/By
+  become the import's — so whatever was raised before the fix closes; Check
+  says how many would. A retitle or reorder alone keeps the old review,
+  because it is not a fix. **Admin → Reference → Handbook → Export feedback**
+  writes a new Google Sheet (the call-note and payroll export pattern — the
+  app has no download path, and a Sheet is something the operator can read
+  before it reaches the repo): one row per section with its source
+  (`src/p5.md §5-9`, `kbManualSourceRef_`, derived against the real headings),
+  votes, comment count, last review and the open items, text cells '@'; an
+  About tab says how far back the feedback tab was read. No rep names: the
+  worklist is about the text, and it may be committed beside it.
+  `manual/feedback_report.py` turns the tab's CSV into a Markdown worklist by
+  source file (`--check` runs in CI). Rejected: a JSON download (a new
+  pattern for one admin button), writing the worklist into the repo from the
+  app (the app has no repo access, by design), and clearing flags on ANY
+  re-import (an unchanged section was not fixed).
+  **ST3 — the Log's handbook strip.** The drawer already suggested articles
+  from the Issue text, but only while it was open. A slim "Handbook:" line now
+  sits under the Issue field: 700 ms after the rep stops typing (two real words
+  at least) it asks `searchReference(text, {publishedOnly: true})` — the
+  drawer's own path, our server only, never logged — and offers up to three
+  published handbook sections, one per section at its best-matching part; a
+  chip opens the drawer at that section, × turns suggestions off (the same
+  `umsKbPanel.suggest` the drawer's box sets). A stale answer is dropped, one
+  text is searched once, Clear Note empties it, and a failure shows nothing —
+  the strip is an offer, so its absence claims nothing (unlike g53's
+  reassuring absences), and a message could only say something by quoting the
+  patient's words (g146). Rejected: a "Find in handbook" button (one more step
+  mid-call), and ranking handbook sections first inside the drawer only (still
+  invisible until the drawer is opened).
+
+- <a id="a-held-reply-waits-for-a-person"></a>**A held reply waits for a person, and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)**
+  **ST1.** The reply check marked a held reply "Responded — needs a look" on its
+  card and nowhere else, with no reason and no way to say "yes, it's done" other
+  than Mark resolved, and no record of how often each rule held back finished
+  work. Now the scan names the rule that held the reply (`drReplyHoldReason_` —
+  the same tests, in the same order, so no verdict changed) and stores the code
+  in a trailing ReplyReason column; the Dept Requests tab opens with "Replies to
+  check", one row per held reply, longest-waiting first, saying why, with
+  **Resolved** (the shared in-app resolve, untimed) and **Still open**
+  (`kept-open`: the scan never raises that reply again; the department's next
+  reply is read afresh). Every answer is logged to DeptReplyReviews (id, rule,
+  answer, who — no reply text, no patient), and Admin → System counts per rule
+  how often people overrode it. The operator chose the tab only (no Needs-you
+  item), and that the check **never loosens itself**: an automatic loosening
+  turns "people often say this kind of reply was fine" into closed requests
+  nobody looked at, the exact failure g159 exists to prevent — the report
+  tells a person which rule to ask about. Rejected: admin phrase lists (an
+  allowlist of user text with its own drift), and a Needs-you item per look.
+  **G5.** A Spanish request had no age past which anything happened; the tab
+  toned anything over a day red and stopped there. At 7 calendar days (the
+  tab's own wall-clock age, the operator's choice over 5 working days) the
+  server flags it `escalated`; the tab and Dashboard draw the flag (the client
+  never decides), the claimant's Needs-you item turns overdue, and an 8am
+  digest — riding `runDailyChecks`, so no trigger is added against a quota that
+  has bitten once — lists them to the managers with age, kind, claimant and the
+  Gmail link, and nothing of the request's content: the inbox's gate stays the
+  only way to read it. An unread inbox throws (a failed run, never "none
+  escalated", g53); a morning with none logs `empty` and sends nothing. It reads
+  the tab's widest window (90 days) so a request older than the 30-day default
+  is not dropped from the very list meant to catch it. Rejected: a section in
+  the manager daily brief (off by default), and the tab's own 24-hour red as the
+  threshold (it would email every morning).
+
+
+- <a id="the-close-out-is-a-command-and-the-visual-gate-a-subset"></a>**A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5, 2026-10-15)**
+  **ST5.** The close-out was three hand steps that each went stale on its own
+  schedule — PROJECT_HEALTH named cycle 21 for four cycles (F26), and cycle 24's
+  STATE was still interleaved with cycle 25's two weeks after it closed. The
+  counts block's rule applies: the standing is DERIVED from `metrics.csv` and
+  STATE's `Cycle:` line into a marked region, the Score History gains a row for
+  every reflected cycle it lacks, and CI's `--check` fails on drift. Existing
+  history rows are never rewritten — the hand-written ones say more than a CSV
+  row can — and only the two generated lines are owned by the script; the rest of
+  Current Standing stays the author's. The HISTORY move runs as `/reflect`'s last
+  step (`--close --write`), because an audit may write only STATE's fields; it
+  carries the not-struck Pending / follow-on / decision bullets, since an owed
+  deploy walk that vanished with the cycle would be the silent loss the move must
+  not cause. Rejected: regenerating the whole file (destroys the prose), and
+  closing at audit time (the audit cannot write).
+  **ST4.** The page-height and column-width measurements already shipped with
+  F69; what was missing was anyone running them. A fixed subset (every tool at
+  phone and pop-out width, the wide reader of F67) runs in its own CI job and
+  fails on a measurement; findings owned elsewhere sit in a `KNOWN` list with a
+  reason that fails once the finding stops firing, so it can only shrink. The
+  subset is by EXACT name and an unknown name is refused before the browser
+  starts — a filter that matches nothing would pass by shooting nothing (g116).
+  A plain console.error is reported but not gated: an error-state scenario logs
+  one on purpose. Rejected: the whole matrix in CI (~12 minutes, and its real
+  output is screenshots a person must look at).

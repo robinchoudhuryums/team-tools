@@ -10,6 +10,130 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — the visual layout gate in CI, and the cycle close-out scripted (cycle 25 E5)
+
+**Adds NO operator settings and changes no `web-app/` file — nothing to deploy.**
+- **CI now shoots part of the visual matrix** (a new `visual-layout` job): about
+  two dozen screens, every tool at phone and pop-out width, in headless Chromium.
+  It fails when a page scrolls sideways, runs on past its content, squeezes text
+  narrower than a word, renders a loader for want of a fixture, or throws. When
+  it fails, the job keeps the screenshots as a download. The full matrix is still
+  run by hand before a layout deploy.
+- **The cycle close-out is one command:** `node scripts/cycle-closeout.mjs
+  --close --write`, as the last step of a `/reflect`. It moves the cycle's STATE
+  into `.cycle/HISTORY.md`, starts a fresh STATE that keeps the open pending
+  items, follow-ons and decisions, and updates PROJECT_HEALTH's standing and
+  Score History from `metrics.csv`. CI fails while any of it is owed. Cycle 24's
+  STATE lines, never moved, were moved by hand in this batch.
+
+## 2026-10-15 — request triage: held replies are answered from the tab; Spanish requests escalate at 7 days (cycle 25 E4)
+
+**Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New
+version). No new trigger: the escalation digest rides the 8am daily-checks
+dispatcher, so `installAutomationTriggers` does not need re-running. Your
+decisions of 2026-10-15:
+- **Replies to check** (Metrics → Dept Requests): when a department replies but
+  the hourly check is not sure the reply finished the request, it now waits at
+  the top of the tab with the reason ("the reply asks a question", "only
+  acknowledges the email", …) and two buttons. **Resolved** closes it;
+  **Still open** keeps it open, and the check waits for the department's next
+  reply instead of asking about the same one again. Nothing on Needs you.
+- **Admin → System → Dept Request reply check** shows, per rule, how often
+  people overrode it in the last 90 days. The check never changes itself: if a
+  rule is mostly answered Resolved, ask for that rule to change. Two new places
+  in the Dept Requests spreadsheet hold this: a ReplyReason column and a
+  DeptReplyReviews tab (no reply text, no patient names).
+- **Spanish escalation:** a request waiting 7 days or more reads "Escalated · N
+  days" on the Spanish Inbox tab and the Dashboard card, turns its claimant's
+  Needs-you item overdue, and is listed in a new 8am email to managers (age,
+  email or voicemail, who has it, a Gmail link — no message text). It appears
+  under Email deliveries like the other digests. Tell the Spanish team.
+
+## 2026-10-15 — the handbook loop: suggested edits reach the source, and the Log offers handbook sections (cycle 25 E3)
+
+**Adds NO operator state** (the `suggest` kind rides the existing KbFeedback tab).
+Deploy the web app (`clasp push -f`, then a New version); no trigger change. Your
+decisions of 2026-10-15:
+- **Suggest an edit is now its own kind.** In Reference → Review due a handbook
+  section a rep suggested a change to shows a blue "suggested edit · N" chip with
+  their words; "out of date" stays red. A suggestion over 500 characters is
+  refused in the prompt rather than cut. Suggestions sent BEFORE this deploy were
+  saved as "out of date" and still read that way.
+- **Re-importing a section whose text changed counts as its review**, so the
+  suggestions and flags raised before the fix close by themselves. Check says how
+  many sections would count. A retitle or reorder alone does not.
+- **Export feedback** (Reference → Handbook, admins): a new Google Sheet, one row
+  per handbook section with the source file it comes from, its votes, comment
+  count and open items. Download the Feedback tab as CSV and run
+  `python3 manual/feedback_report.py <file>.csv > feedback.md` for a worklist by
+  file. No rep names are exported.
+- **Handbook suggestions on the Log**: after a rep types the Issue and pauses, up
+  to three handbook sections appear under it; a click opens the Ctrl/⌘+K drawer at
+  that section. The × turns them off for that rep (the drawer's "suggest" box is
+  the same setting). The Issue text goes only to the app's own search, as the
+  drawer's suggestions always did.
+
+## 2026-10-15 — Clear Note moves to Shift; History's all-time chips say what they show (cycle 25 F23 + F35)
+
+**Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New
+version); no trigger change. Both are your decisions of 2026-10-15.
+- **Clear Note is Ctrl/⌘+Shift+Backspace** (F23). Ctrl+Backspace (⌥/⌘+Backspace
+  on a Mac) is the system's delete-a-word key again inside the note fields; it
+  used to wipe the whole form. The shortcuts sheet (?) shows the new chord. Tell
+  the team — anyone who learned the old chord will now delete a word instead.
+- **The History chips open the last 90 days** (F35). A quick chip's number counts
+  every note you have; History shows at most 90 days at a time, so clicking a
+  chip now opens the last 90 days with that filter, and when the chip counted
+  more notes than the range holds, History says how many are older and points to
+  Search. History also gains a **Last 90 Days** preset.
+
+## 2026-10-15 — a pay period closes against a checklist, offboarded reps included (cycle 25 E2)
+
+**Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New
+version); no trigger change.
+- **Pay Period Close** is a new card under Manage Time → Periodic. For each pay
+  cycle it lists, for the period that just ended and the current one, every rep
+  with an open or incomplete day (no clock-out, or a clock-out with no clock-in)
+  and every pending time-off or punch-adjustment request dated inside the period.
+  Each open day inside the 30-day edit window is a button that opens Day Edit; an
+  older one says it needs a hand-edit of the Timesheet. The Periodic summary row
+  says what it found even while the group is collapsed.
+- **Offboarded reps are included** (F19 — your decision: find and fix). The ADP
+  export always shipped an offboarded rep's last period by employee ID; now its
+  open days show here, labelled "offboarded", and Day Edit opens for them. The
+  9am failure digest's open-punch line names them as offboarded too.
+- The checklist informs; it never holds the export. The automated export runs as
+  before.
+
+## 2026-10-15 — automation jobs say "ran only in part", and digest deliveries are logged (cycle 25 E1)
+
+**Adds ONE auto-provisioned tab and no Script Property.** Deploy the web app
+(`clasp push -f`, then a New version). Re-running `installAutomationTriggers` is
+NOT needed — no trigger was added, renamed or regrouped.
+- **Run outcomes (ST2).** Every automation job now reports ok, partial or failed
+  through one contract. A job that ran but skipped something — a rep Sheet that
+  would not open, one of the two weekly queues, some of the sends — shows as
+  "ran only in part" (a warning, amber) on Manage → Admin → System and in the
+  9am failure digest, naming what it skipped; a job that did nothing shows as
+  failed (red). The urgent and weekly digests that went out with an unreadable
+  rep Sheet used to read clean — they now read "ran only in part". An enabled
+  Timesheet archive with no Timesheet tab, which used to log and return, now
+  reads failed.
+- **Digest deliveries (G3).** A new **Digest deliveries** panel under Automation
+  Health lists, per manager, every manager digest decision of the last 14 days:
+  sent, suppressed (it rode the daily brief), failed (with the error) or nothing
+  to send. The rows live in a new `DigestDeliveries` tab on the ADP spreadsheet,
+  created by the first digest after the deploy; PHI-free, kept 90 days.
+- **E1 follow-ups (same day): every automated email is logged**, not only the
+  manager digests — the rep's end-of-day reminder, the missed clock-out reminder,
+  the overdue-documents nudge, the coaching recap, the self-test failure alert and
+  the client-error spike alert. The panel is now **Email deliveries**, reads as
+  cards on a phone, and says when rows could not be written to the log (an
+  auto-managed `DIGEST_DELIVERY_LOG_FAILS` property — delete it to reset).
+- **The nightly diagnostics purge now runs every night** (it trims that tab), so
+  a `DiagnosticsPurge` audit row and its Automation detail line appear on a
+  deployment where they never did before. That is expected.
+
 ## 2026-10-14 — the reviewers' full handbook PDF leaves out the changelog
 
 **Adds NO operator state.** Rebuild with `./make_packets.sh`. The full handbook

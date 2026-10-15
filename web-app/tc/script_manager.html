@@ -264,7 +264,7 @@ function loadManagerDashboard() {
       const area = document.getElementById('view-area');
       if (!area || currentView !== 'manage') return;
       if (document.getElementById('mgr-refresh') && mgrSwrRenderBlocked_()) return;   // state warm, render deferred
-      renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); loadTeamCalendar_();
+      renderManagerView(area, data); loadPtoReconciliation_(); loadSheetDoctor_(); loadPendingAdjustments_(); loadTeamCalendar_(); loadPayPeriodClose_();
     })
     .withFailureHandler(err => mgrLoadError_(err.message||'Load failed'))
     .getManagerDashboard();
@@ -297,6 +297,95 @@ function loadPtoReconciliation_() {
       mgrSetSummary_('mgr-sum-pto', 'check failed', 'warn');
     })
     .getPtoReconciliation();
+}
+
+// ── G1 + F19 (cycle 25 E2): the pay-period close checklist ──────────────────
+// Lazy, best-effort like the two cards beside it — but a FAILED check is never
+// "ready to close" (INV-187), and a clean one still STATES its state in the
+// Periodic summary row (M5). Offboarded reps are included (F19): the export
+// ships their punches by id, and this is the only place their open days show.
+function loadPayPeriodClose_() {
+  const slot = document.getElementById('mgr-pay-close');
+  if (!slot) return;
+  const paint = function (res) {
+    const s = document.getElementById('mgr-pay-close');
+    if (!s || currentView !== 'manage') return;
+    s.innerHTML = renderPayCloseCard_(res);
+    const sum = payCloseSummary_(res);
+    mgrSetSummary_('mgr-sum-payclose', sum.text, sum.tone);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'load failed' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'load failed' }); })
+    .getPayPeriodClose();
+}
+/** PURE: the Periodic summary-row state. A period that has ENDED with work
+ *  left is critical (its export is due or done); the current one is a warning. */
+function payCloseSummary_(res) {
+  if (!res || res.error) return { text: 'check failed', tone: 'warn' };
+  const left = function (p) { return p.counts ? p.counts.openDays + p.counts.pendingTimeOff + p.counts.pendingAdjust : 0; };
+  const periods = res.periods || [];
+  const ended = periods.filter(function (p) { return p.which === 'previous' && (left(p) > 0 || p.error); });
+  const cur = periods.filter(function (p) { return p.which === 'current' && (left(p) > 0 || p.error); });
+  const n = periods.reduce(function (t, p) { return t + left(p); }, 0) + (res.orphans || []).length;
+  if (!n && !ended.length && !cur.length) return { text: 'ready', tone: 'ok' };
+  if (ended.length) return { text: n + ' item' + (n === 1 ? '' : 's') + ' · a period that has ended', tone: 'crit' };
+  return { text: n + ' item' + (n === 1 ? '' : 's') + ' in the current period', tone: 'warn' };
+}
+/** PURE (Node + DOM pinned): the checklist card. Every server string escaped;
+ *  each open day inside the Day Edit window is a button (data-* only — g133),
+ *  an older one says it is a hand-edit. */
+function renderPayCloseCard_(res) {
+  const head = '<h2 class="card-label">Pay Period Close</h2>';
+  if (!res || res.error) {
+    return '<div class="card">' + head + errorStateHtml_('Pay-period close check could not run — this is a failed check, not "ready to close". (' +
+      String((res && res.error) || 'load failed') + ')') + '</div>';
+  }
+  const muted = function (t) { return '<span style="color:var(--muted)">' + t + '</span>'; };
+  const plural = function (n, one) { return n + ' ' + one + (n === 1 ? '' : 's'); };
+  const blocks = (res.periods || []).map(function (p) {
+    const title = '<div style="font-weight:600;font-size:13px;margin:12px 0 4px;color:var(--ink)">' + esc(p.cycle) +
+      (p.start ? ' · ' + esc(p.start) + ' → ' + esc(p.end) : '') + ' ' +
+      muted(p.which === 'previous' ? '(just ended)' : '(current' + (p.checkedThrough && p.checkedThrough < p.end ? ', checked through ' + esc(p.checkedThrough) : '') + ')') + '</div>';
+    if (p.error) return title + '<div style="font-size:12px;color:var(--warning-deep)">' + esc(p.error) + '</div>';
+    if (p.ready) return title + '<div style="font-size:12px;color:var(--success-deep)">' + icon('check', 12) + ' Ready to close — no open days, no pending requests.</div>';
+    const reps = (p.reps || []).map(function (r) {
+      const days = r.openDays.map(function (d) {
+        if (d.editable) {
+          return '<button type="button" class="refresh-btn" style="margin:2px 4px 2px 0" data-emp-id="' + esc(r.id) + '" data-emp-name="' + esc(r.name) +
+            '" data-date="' + esc(d.date) + '" data-tz="' + esc(r.timezone || '') + '" onclick="mgrPayCloseEdit_(this)">' +
+            icon('adjust', 12) + esc(d.date) + ' · ' + esc(d.kind) + '</button>';
+        }
+        return '<span style="display:inline-block;margin:2px 6px 2px 0;font-size:12px;color:var(--warning-deep)">' + esc(d.date) + ' · ' + esc(d.kind) +
+          ' — past the ' + esc(String(res.adjustWindowDays)) + '-day edit window: hand-edit the Timesheet</span>';
+      }).join('');
+      const pend = [];
+      if (r.pendingTimeOff.length) pend.push(plural(r.pendingTimeOff.length, 'pending time-off request') + ' (' + r.pendingTimeOff.map(function (x) { return esc(x.date); }).join(', ') + ')');
+      if (r.pendingAdjust.length) pend.push(plural(r.pendingAdjust.length, 'pending punch adjustment') + ' (' + r.pendingAdjust.map(function (x) { return esc(x.date); }).join(', ') + ')');
+      return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)">' +
+        '<div style="font-size:13px;font-weight:600;color:var(--ink)">' + esc(r.name) +
+          (r.offboarded ? ' <span style="font-weight:400;font-size:11px;color:var(--warning-deep)">offboarded</span>' : '') + '</div>' +
+        (days ? '<div>' + days + '</div>' : '') +
+        (pend.length ? '<div style="font-size:12px;color:var(--muted)">' + pend.join(' · ') + ' — decide them under Needs you</div>' : '') +
+      '</div>';
+    }).join('');
+    const c = p.counts;
+    return title + '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:4px">' +
+      [c.openDays ? plural(c.openDays, 'open day') : '', c.pendingTimeOff ? plural(c.pendingTimeOff, 'pending time-off request') : '',
+       c.pendingAdjust ? plural(c.pendingAdjust, 'pending adjustment') : ''].filter(Boolean).join(' · ') +
+      ' before this period exports cleanly</div>' + reps;
+  }).join('');
+  const orphans = (res.orphans || []).length
+    ? '<div style="font-size:12px;color:var(--warning-deep);margin-top:10px">Pending request(s) for an employee id the roster does not carry, so no pay period can be placed: ' +
+      res.orphans.map(function (o) { return esc(o.name || o.id) + ' ' + esc(o.date); }).join(', ') + '</div>'
+    : '';
+  return '<div class="card">' + head +
+    '<div class="mgr-card-sub">Everything that would change the export, per pay period — open or incomplete days and requests still pending, offboarded reps included. ' +
+      'The last ' + esc(String(res.graceDays)) + ' days are not counted as open (a shift may still be in progress). Dates in ' + esc(res.tzAbbr || '') + '.</div>' +
+    blocks + orphans + '</div>';
+}
+function mgrPayCloseEdit_(btn) {
+  openDayEditModal(btn.dataset.empId, btn.dataset.empName, btn.dataset.date, btn.dataset.tz || null);
 }
 
 function renderPtoReconCard_(res) {
@@ -1044,6 +1133,7 @@ function renderManagerView(area, data) {
         <span class="chev">${icon(periodicOpen ? 'chevronDown' : 'chevronRight', 14)}</span>Periodic
       </button>
       <span class="mgr-group-sum" id="mgr-periodic-sum" aria-live="polite">
+        <span class="mgr-sum-item">Pay period close: <span id="mgr-sum-payclose" class="mgr-sum-state">checking…</span></span>
         <span class="mgr-sum-item">Export</span>
         <span class="mgr-sum-item">PTO drift: <span id="mgr-sum-pto" class="mgr-sum-state">checking…</span></span>
         <span class="mgr-sum-item">Sheet health: <span id="mgr-sum-doctor" class="mgr-sum-state">checking…</span></span>
@@ -1052,6 +1142,7 @@ function renderManagerView(area, data) {
       </span>
     </h2>
     <div id="mgr-periodic" class="mgr-group"${periodicOpen ? '' : ' hidden'}>
+      <div id="mgr-pay-close"></div>
       <div class="card">
         <h2 class="card-label">Export ADP Upload</h2>
         <button class="export-btn-large" id="mgr-export">${icon('download', 16)}Generate ADP Export</button>
@@ -1808,6 +1899,70 @@ function deSyncRangeMode_() {
 var _deLoadSeq = 0;
 var _deTouched = {};
 function deMarkTouched_(key) { _deTouched[key] = true; }
+
+/* F1 (cycle 25): range mode SETS every non-blank slot on every day of the
+ * range (managerSaveDayRange), but the slots arrive PREFILLED with the From
+ * day's real punches. A manager who filled "To" meaning to add one missing
+ * Clock Out stamped the From day's clock-in, clock-out and break over every
+ * day in the range — up to 31 days of paid punches, no confirmation. So
+ * filling "To" clears every slot the PREFILL filled and the manager has not
+ * touched (they are parked, not lost), clearing "To" puts them back, and a
+ * range save names exactly what it will write and asks first. A slot the
+ * manager typed is theirs in either mode. */
+var _dePrefilled = {};
+var _deRangeStash = null;
+function deRangeModeOn_() {
+  var toEl = document.getElementById('de-date-to');
+  return !!(toEl && toEl.value);
+}
+function deResetRangePrefill_() {
+  _dePrefilled = {};
+  _deRangeStash = deRangeModeOn_() ? {} : null;
+}
+function deApplyRangePrefill_() {
+  var ci = document.getElementById('de-clockin');
+  var co = document.getElementById('de-clockout');
+  if (deRangeModeOn_()) {
+    if (_deRangeStash) return;   // already in range mode — a new To date changes nothing here
+    var stash = {};
+    if (_dePrefilled.clockin && !_deTouched.clockin)   { stash.clockin = ci.value; ci.value = ''; }
+    if (_dePrefilled.clockout && !_deTouched.clockout) { stash.clockout = co.value; co.value = ''; }
+    if (_dePrefilled.breaks && !_deTouched.breaks)     { stash.pairs = deReadBreaks_(); deRenderBreaks_([]); }
+    _deRangeStash = stash;
+    return;
+  }
+  if (!_deRangeStash) return;
+  var s = _deRangeStash;
+  _deRangeStash = null;
+  if ('clockin' in s && !_deTouched.clockin)   ci.value = s.clockin;
+  if ('clockout' in s && !_deTouched.clockout) co.value = s.clockout;
+  if (!_deTouched.breaks) {
+    if (s.day) deSetBreaksFromDay_(s.day);
+    else if (s.pairs) deRenderBreaks_(s.pairs);
+  }
+}
+/** PURE — the confirm text for a range save: every slot that will be SET, in
+ *  12-hour time (an AM/PM slip is the costly mistake here), or '' when there
+ *  is nothing to write. */
+function deRangeSummary_(slots, fromIso, toIso) {
+  var lines = [];
+  function t(v) {
+    var p = String(v || '').split(':');
+    var h = parseInt(p[0], 10);
+    return (h % 12 || 12) + ':' + (p[1] || '00') + ' ' + (h >= 12 ? 'PM' : 'AM');
+  }
+  if (slots.ClockIn) lines.push('Clock In ' + t(slots.ClockIn));
+  (slots.breaks || []).forEach(function (b) {
+    if (b && (b.out || b.in)) lines.push('Break ' + (b.out ? t(b.out) : '—') + ' – ' + (b.in ? t(b.in) : '—'));
+  });
+  if (slots.ClockOut) lines.push('Clock Out ' + t(slots.ClockOut));
+  if (!lines.length) return '';
+  var days = 0;
+  for (var d = fromIso; d <= toIso && days <= 366; d = deNextDay_(d)) days++;
+  return 'On every day from ' + fromIso + ' to ' + toIso + ' (' + days + ' day' + (days === 1 ? '' : 's') + ') these times will be SET — ' +
+    'an existing punch of the same type is replaced:\n\n' + lines.join('\n') +
+    '\n\nBlank slots are left unchanged.';
+}
 function deSetLoading_(on, note) {
   var sub = document.getElementById('day-edit-subtitle');
   if (sub) sub.textContent = _deEmpName + (note ? ' · ' + note : '');
@@ -1819,7 +1974,7 @@ function deSetLoading_(on, note) {
   else if (save && on === true) { save.disabled = true; save.textContent = 'Loading\u2026'; }
   else if (save) { save.disabled = false; save.textContent = 'Save Changes'; }
 }
-function openDayEditModal(empId, empName, prefillDate) {
+function openDayEditModal(empId, empName, prefillDate, tzHint) {
   _deEmpId = empId;
   _deEmpName = empName;
   _deTouched = {};
@@ -1836,7 +1991,9 @@ function openDayEditModal(empId, empName, prefillDate) {
       if (ls[i].id === empId) { targetTz = ls[i].timezone || null; break; }
     }
   } catch (e) {}
-  var tz = targetTz || empTz();
+  // F19 (cycle 25 E2): an OFFBOARDED rep has no Live Status entry, so the pay-
+  // period close checklist passes their roster timezone instead.
+  var tz = targetTz || tzHint || empTz();
   var today = isoDateTz(tz);
   _deDate = today;
   deSetLoading_(true, 'loading punches…');
@@ -1870,6 +2027,7 @@ function openDayEditModal(empId, empName, prefillDate) {
   // save), max stays today.
   var deToEl = document.getElementById('de-date-to');
   if (deToEl) { deToEl.value = ''; deToEl.min = deNextDay_(_deDate); deToEl.max = today; }
+  deResetRangePrefill_();   // F1 (cycle 25): after the To reset — nothing prefilled yet
   // A4: render the (empty) break list AFTER the To reset — deRenderBreaks_
   // re-syncs range mode off the live To value, so clearing it afterwards would
   // leave the add control disabled from the PREVIOUS session. The prefill
@@ -1894,10 +2052,20 @@ function loadDayEditPunches(empId, start, end) {
       deSetLoading_(false);
       var day = (data.days || []).find(function (d) { return d.date === _deDate; });
       if (!day) return;
+      // F1 (cycle 25): with "To" already filled the prefill is NOT written into
+      // the form — range mode sends every non-blank slot to every day — it is
+      // parked in the stash, and comes back if "To" is cleared.
+      if (deRangeModeOn_()) {
+        _deRangeStash = _deRangeStash || {};
+        if (!_deTouched.clockin)  { _deRangeStash.clockin  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true; }
+        if (!_deTouched.clockout) { _deRangeStash.clockout = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true; }
+        if (!_deTouched.breaks)   { _deRangeStash.day = day; _dePrefilled.breaks = true; }
+        return;
+      }
       // Fill only what the manager has NOT typed into yet (the race above).
-      if (!_deTouched.clockin)  document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : '';
-      if (!_deTouched.clockout) document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : '';
-      if (!_deTouched.breaks)   deSetBreaksFromDay_(day);
+      if (!_deTouched.clockin)  { document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true; }
+      if (!_deTouched.clockout) { document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true; }
+      if (!_deTouched.breaks)   { deSetBreaksFromDay_(day); _dePrefilled.breaks = true; }
     })
     .withFailureHandler(function () {
       if (empId !== _deEmpId || seq !== _deLoadSeq) return;
@@ -1933,6 +2101,9 @@ document.getElementById('de-breaks').addEventListener('click', function (e) {
   deMarkTouched_('breaks');
   deRenderBreaks_(pairs);
 });
+// F1 (cycle 25): filling "To" parks the prefilled slots; clearing it restores
+// them. Registered BEFORE the sync so the cap reads the list range mode keeps.
+document.getElementById('de-date-to').addEventListener('change', deApplyRangePrefill_);
 // Filling/clearing "To" flips range mode, which caps the list at one pair.
 document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode_);
 // Typing into a break field can change nothing structural, but the row COUNT
@@ -1975,6 +2146,7 @@ document.getElementById('de-date').addEventListener('change', function () {
   // now-invalid To (≤ the new From) is cleared rather than silently kept.
   var deToEl = document.getElementById('de-date-to');
   if (deToEl) { deToEl.min = deNextDay_(d); if (deToEl.value && deToEl.value <= d) deToEl.value = ''; }
+  deResetRangePrefill_();   // F1 (cycle 25): a new day's prefill, possibly into a live range
   document.getElementById('de-clockin').value = '';
   document.getElementById('de-clockout').value = '';
   deRenderBreaks_([]);
@@ -2005,8 +2177,12 @@ document.getElementById('de-save').addEventListener('click', function () {
   }
   var rangeMode = toDate && toDate > _deDate;   // #4b — multi-day additive apply
   var btn = document.getElementById('de-save');
-  btn.disabled = true;
-  btn.textContent = 'Saving…';
+  // F1 (cycle 25): a range save writes to every day — say exactly what, first.
+  var rangeSummary = '';
+  if (rangeMode) {
+    rangeSummary = deRangeSummary_(slots, _deDate, toDate);
+    if (!rangeSummary) { showToast('Type at least one time to apply across the range, or clear “To”', 'toast-error'); return; }
+  }
   var onOk = function (result) {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
@@ -2022,13 +2198,29 @@ document.getElementById('de-save').addEventListener('click', function () {
     btn.textContent = 'Save Changes';
     showToast((err.message || 'Server error'), 'toast-error');
   };
-  if (rangeMode) {
-    google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
-      .managerSaveDayRange(_deEmpId, _deDate, toDate, slots, reason);
-  } else {
-    google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
-      .managerSaveDay(_deEmpId, _deDate, slots, reason);
-  }
+  var send = function () {
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    if (rangeMode) {
+      google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
+        .managerSaveDayRange(_deEmpId, _deDate, toDate, slots, reason);
+    } else {
+      google.script.run.withSuccessHandler(onOk).withFailureHandler(onErr)
+        .managerSaveDay(_deEmpId, _deDate, slots, reason);
+    }
+  };
+  if (!rangeMode) { send(); return; }
+  var empId = _deEmpId, fromDate = _deDate;
+  uiConfirm({
+    title: 'Apply to every day in the range?',
+    message: rangeSummary,
+    confirmLabel: 'Apply to the range',
+  }).then(function (ok) {
+    // The modal may have moved on while the confirm was open — never send a
+    // range for a different employee or day than the one just confirmed.
+    if (!ok || empId !== _deEmpId || fromDate !== _deDate) return;
+    send();
+  });
 });
 
 /** 7-bar daily-hours sparkline inside each live-status card (V4·E3).

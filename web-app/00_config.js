@@ -496,7 +496,7 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 };
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17, REPLY_REASON:18 };
 // RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
 // header self-heals): HOW the row was resolved — 'email' = the recipient
 // clicked the resolve link in the department email (a real response time),
@@ -514,7 +514,7 @@ const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CR
 // the daily SLA reminder EMAIL and the shared AuditLog stay LABEL-ONLY —
 // `deptRequestsOverdueOpen_` deliberately never reads this column, and no
 // audit row carries it (INV-32's discipline for the shared trail).
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict'];
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict','ReplyReason'];
 // 22post D (operator 2026-09-27) — reply = resolution. Four trailing columns
 // (the header self-heals; a legacy row reads them blank):
 //   ThreadId     the department email's Gmail thread id(s) in the DEPLOYER's
@@ -533,8 +533,32 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 // RES-1 (cycle 23): and 'self' — the email link clicked by the request's own
 // SENDER (their sent/BCC copy carries the same link). That is a manual clear,
 // not the department responding, so it is UNTIMED, like 'app'.
-const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self'];
-const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
+// 'copy' (cycle 25 F55): the resolve link clicked by a COPY recipient — the CC
+// mailbox, a MAIL_BCC_ALL address, or a roster member outside the receiving
+// department. Untimed like 'self': only the department's click is a response.
+const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self', 'copy'];
+// E4 (cycle 25, ST1, operator 2026-10-15): 'kept-open' — a person answered a
+// 'needs-look' with "Still open". The scan never re-raises the SAME reply, and a
+// later department reply is read afresh. The order is load-bearing: [0] and [1]
+// are the scan's own verdicts.
+const DR_REPLY_VERDICTS = ['resolved', 'needs-look', 'kept-open'];
+// ReplyReason (trailing, E4 — the header self-heals): WHICH part of rule 4 held
+// a reply back, so the "Replies to check" row can say why and the review report
+// can count how often people overrode each rule. A code, never the reply's text.
+const DR_REPLY_REASONS = {
+  question: 'the reply asks a question',
+  asks: 'the reply asks for something, or says the request is on hold',
+  'not-done': 'the reply says it is not done yet, promises work, or refuses',
+  ack: 'the reply only acknowledges the email',
+  empty: 'the reply has no new text of its own',
+  unattributed: 'the thread is shared with another request and the reply does not name this one',
+};
+// The answers people give a 'needs-look' (E4): one row each, PHI-free — the
+// request id, the rule that held the reply back, the answer and who gave it.
+const DR_REVIEWS_TAB = 'DeptReplyReviews';
+const DR_REVIEWS_HEADERS = ['Timestamp', 'RequestId', 'Reason', 'Answer', 'By'];
+const DR_REVIEW_ANSWERS = ['resolved', 'open'];
+const DR_REVIEW_REPORT_DAYS = 90;
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
 const DR_REPLY_SCAN_DAYS = 30;      // an open request older than this is no longer scanned for replies
@@ -580,6 +604,9 @@ const CN_HEADERS = [
 // "12/5" as a Date. One list, read by every writer of these columns.
 const CN_TEXT_IDX = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
 const CN_FLAG_TYPES = ['action','training','review'];
+/** Cycle 25 F30: the most matches a manager's cross-rep search ships, newest
+ *  first; past it the response says `truncated` with the full `total`. */
+const CN_MGR_SEARCH_CAP = 500;
 // Round 2 · 8e — extended flag set for the multi-select toolbar. 'urgent'
 // is new; pin lives separately in subformData.pinned (subject to its own
 // 3-cap, INV-50). Order matters — it drives deriveFlagType_'s priority.
@@ -987,7 +1014,7 @@ const VIEW_USAGE_TIMING_KEYS = ['shell', 'state', 'view'];
 // large first enable drains over successive nights (the INV-153/F3 bound).
 const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS';
 const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';
-const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across BOTH tabs, oldest first
+const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across all three tabs (G3 added DigestDeliveries), oldest first
 // Audit actions written by the automation jobs. Purges write a row only when
 // retention is enabled (a disabled purge returns before the audit write), and
 // AdpExportAuto only fires at period end — the client captions each
@@ -1066,9 +1093,11 @@ const AUTOMATION_JOB_CHECKS = [
   { action: 'QaReviewPurge', label: 'QA review-record retention purge',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return qaReviewRetentionDays_() > 0 && qaStoreConfigured_(); } },
-  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors)',
+  // G3 (cycle 25 E1): the digest delivery log always has a window, so this
+  // purge runs (and writes its row) every night on every deployment.
+  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors / DigestDeliveries)',
     cadence: 'daily', staleHours: 30,
-    enabled: function () { return viewUsageRetentionDays_() > 0 || clientErrRetentionDays_() > 0; } },
+    enabled: function () { return true; } },
 ];
 // A trigger handler that CATCHES its own error reports failure to nobody:
 // Apps Script's own failure email fires on a THROW, not on a returned error
@@ -1085,6 +1114,7 @@ const DIGEST_ERROR_KEYS = {
   deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
+  spanishEscalation: 'SpanishEscalationDigest',   // E4 (cycle 25, G5)
 };
 // The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
 // tabled key takes the table's label). ONE map, shipped on each stamp by
@@ -1099,7 +1129,62 @@ const AUTOMATION_ERROR_LABELS = {
   MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
   AutomationHealthDigest: 'Automation-health failure digest',
   OpenPunchCheck: 'Daily open-punch check',
+  NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
+  SpanishEscalationDigest: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
 };
+// ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
+// Every installable-trigger job — the standalone TARGETS and every handler a
+// TRIGGER_GROUPS dispatcher runs — ends through runAutomationJob_, which
+// records the outcome its body RETURNS under the job's AUTOMATION_LAST_ERRORS
+// key. The F4/F5 class (a job that caught a failure, or skipped a rep Sheet,
+// and then cleared its key or returned without a word) was closed one job at a
+// time across four cycles; here it is one rule, and a body cannot record by
+// hand (pinned: the stamp/clear primitives have no other callers).
+//   ok      — the run did its job (a disabled job is an ok run) → clears
+//   idle    — a run that did nothing and therefore proves nothing (an hour
+//             matching no rep's EOD hour, outside business hours, no manager
+//             recipients) → neither stamps nor clears
+//   partial — it ran, but part of it did not (a skipped rep Sheet, one of two
+//             queues unreadable, some sends failed) → stamps, names the skipped
+//   failed  — nothing it exists to do happened → stamps
+// A body that returns no valid outcome is itself recorded as failed.
+const AUTOMATION_OUTCOME_STATUSES = ['ok', 'idle', 'partial', 'failed'];
+const AUTOMATION_OUTCOME_SKIPPED_MAX = 20;   // names kept on a stamp — the message carries the count
+// ── G3 (cycle 25 E1): the digest delivery log ────────────────────────────
+// One row per manager per digest run — sent, suppressed (it rode the daily
+// brief), failed or empty (nothing to report) — so "did my digest go out, and
+// why not" has an answer without reading the Logger. PHI-FREE BY CONSTRUCTION:
+// the recipient is a staff address, the digest a heartbeat key, the reason a
+// fixed phrase or a send error; never note, patient or request content. Rows
+// older than DIGEST_DELIVERY_RETENTION_DAYS are removed by the nightly
+// diagnostics purge (purgeOldDiagnostics), which is therefore always enabled.
+const DIGEST_DELIVERIES_TAB = 'DigestDeliveries';
+const DIGEST_DELIVERY_HEADERS = ['Timestamp', 'Digest', 'Recipient', 'Status', 'Items', 'Reason'];
+const DIGEST_DELIVERY_STATUSES = ['sent', 'suppressed', 'failed', 'empty'];
+const DIGEST_DELIVERY_RETENTION_DAYS = 90;
+const DIGEST_DELIVERY_SCAN_MAX = 4000;    // the Admin view's tail bound (INV-13 spirit)
+const DIGEST_DELIVERY_VIEW_DAYS = 14;     // the Admin view's default window
+const DIGEST_DELIVERY_REASON_MAX = 200;
+// E1 follow-ups (cycle 25, operator 2026-10-15): every AUTOMATED mail is logged,
+// not only the manager digests — the rep- and agent-facing reminders and the two
+// alerts too. ONE map names every key the log is written under (pinned against
+// every logDigestDelivery_ literal in the server) and ships with the Admin read,
+// so the panel keeps no label copy of its own. The manager digests reuse their
+// heartbeat keys; a mail with no heartbeat of its own gets a key here.
+const DIGEST_DELIVERY_LABELS = {
+  weekly: 'Weekly training/review digests', urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief',
+  trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
+  automationHealth: 'Automation-health failure digest', missedPunch: 'Missed-punch summary (to managers)',
+  eod: 'End-of-day flag reminder (to the rep)', coachingRecap: 'Weekly coaching recap (to the agent)',
+  missedPunchRep: 'Missed clock-out reminder (to the rep)', trainingOverdueRep: 'Overdue-documents reminder (to the employee)',
+  selfTest: 'Nightly self-test failure alert', clientErrSpike: 'Client-error spike alert',
+  spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
+};
+// A delivery row that could not be WRITTEN is counted here — {count, firstMs,
+// lastMs, lastError} — and the Admin panel says so for a failure inside its
+// window, so a missing row is never read as "nothing was sent". Auto-managed;
+// delete the property to reset the count.
+const DIGEST_DELIVERY_FAIL_PROP = 'DIGEST_DELIVERY_LOG_FAILS';
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',
@@ -1280,6 +1365,17 @@ const AUTOMATION_TRIGGER_QUOTA = 20;
 // costs nothing at read time (the range index reads the whole tab regardless)
 // and lengthens only the in-memory per-month slicing.
 const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
+// F17 (cycle 25): the accrual ledger's SIDE copy — one Script Property per
+// accruing rep, `PTO_ACCRUAL_LEDGER_<empId>` = {"YYYY-MM": hoursCreditedFor},
+// written beside every PtoAccrualCredit audit row (the cycle-22 A1 run-ledger
+// pattern). The audit rows stay the record; this copy is what the reconcile can
+// still READ once a month's row has scrolled out of the AuditLog tail it scans.
+// `…_SINCE` is the first month the side copy existed (manager tz): a window whose
+// oldest month is at or after it is fully covered, so a truncated tail read no
+// longer matters there. Each rep's map keeps its newest KEEP months.
+const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';
+const PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
+const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
 // defined top-level function that carries its own assertManagerCaller_ gate
 // (INV-44) — each stays reachable via google.script.run and keeps its own
@@ -1297,29 +1393,29 @@ const TRIGGER_GROUPS = {
   // a standalone trigger of its own, so the group is COUNT-NEUTRAL against the
   // quota that already bit this deployment once (RETIRED_TRIGGER_HANDLERS is
   // derived from these lists, so a re-install removes its old trigger).
-  runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
+  runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest', 'sendSpanishEscalationDigest'],   // E4 (cycle 25, G5): count-neutral
 };
-// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under.
-// runTriggerGroup_ stamped an unexpected throw under the raw handler name,
-// which no label map knew (the digest showed "checkOpenPunches failed…") and
-// which DIGEST_ERROR_KEYS could not see, so a stale heartbeat still blamed the
-// trigger. `owns` = the job stamps AND clears this key itself, so the
-// dispatcher must never clear it after a normal return (that would erase the
-// job's own failure stamp); a job that does not own its key is cleared by the
-// dispatcher on a clean run. Every TRIGGER_GROUPS handler has a row, and
-// `owns` is checked against each job's body (pinned both ways).
+// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under
+// (it used the raw handler name, which no label map or heartbeat knew). Since
+// ST2 (cycle 25 E1) every handler records its own outcome under this key
+// through runAutomationJob_; the dispatcher only verifies that an outcome came
+// back, and stamps here when a handler is missing or returns none. The
+// `owns` flag went with the hand-written stamps it described: no job clears
+// or stamps by hand any more. Every TRIGGER_GROUPS handler has a row, and each
+// row equals the key the handler passes to runAutomationJob_ (pinned).
 const TRIGGER_HANDLER_JOB_KEYS = {
-  sendCallNotesEodDigest:            { key: 'CallNotesEodDigest',     owns: true },
-  scanDeptRequestReplies:            { key: 'DeptReplyScan',          owns: true },
-  autoAssignSpanishThreadsScheduled: { key: 'SpanishAutoAssign',      owns: true },
-  sendCallNotesWeeklyDigests:        { key: 'CallNotesWeeklyDigests', owns: true },
-  sendCoachingRecapDigest:           { key: 'CoachingRecapDigest',    owns: true },
-  purgeOldDiagnostics:               { key: 'DiagnosticsPurge',       owns: true },
-  purgeOldQaReviews:                 { key: 'QaReviewPurge',          owns: true },
-  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: false },
-  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: false },
-  checkOpenPunches:                  { key: 'OpenPunchCheck',         owns: false },
-  sendCallNotesUrgentDigest:         { key: 'CallNotesUrgentDigest',  owns: true },
+  sendCallNotesEodDigest:            'CallNotesEodDigest',
+  scanDeptRequestReplies:            'DeptReplyScan',
+  autoAssignSpanishThreadsScheduled: 'SpanishAutoAssign',
+  sendCallNotesWeeklyDigests:        'CallNotesWeeklyDigests',
+  sendCoachingRecapDigest:           'CoachingRecapDigest',
+  purgeOldDiagnostics:               'DiagnosticsPurge',
+  purgeOldQaReviews:                 'QaReviewPurge',
+  purgeExpiredFormData:              'FormDataPurge',
+  purgeArchivedCallNotes:            'CallNotesArchivePurge',
+  checkOpenPunches:                  'OpenPunchCheck',
+  sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
+  sendSpanishEscalationDigest:       'SpanishEscalationDigest',
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
@@ -1336,6 +1432,11 @@ const _SYSTEM_AUDIT_EMP_ = { id: 'SYSTEM', name: 'Automation', email: 'automatio
 // Property heartbeat; getAutomationHealth surfaces it with a staleness flag —
 // closing the "silently dead digest trigger" blind spot.
 const DIGEST_LAST_RUN_PROP = 'AUTOMATION_DIGEST_LAST_RUNS';
+// F8 (cycle 25): the manager-tz hour the consolidated daily brief's trigger
+// fires in. ONE value for the trigger and for the suppression rule — a digest
+// stands down only while that hour's brief has delivered today, or has not
+// yet had its chance to (briefBeatCoversNow_).
+const MANAGER_BRIEF_HOUR = 8;
 // Seams F11 (cycle 24): an UNMARKED instance is treated as production by the
 // suite guard too (isDevInstance_ already was). Running the full suite on one
 // knowingly takes an explicit, EXPIRING override: allowFullSuiteHere() (an
@@ -1481,7 +1582,20 @@ const SPANISH_STATE_SPAN_DAYS = 180;
  *  on the next clean run. The core's own audit row (`SpanishInboxAutoAssign`,
  *  counts only) is written only when something was unclaimed, so an idle
  *  hour adds nothing to the bounded AuditLog tail scans. */
-const SPANISH_AUTO_ASSIGN_DAYS = 7;   // the pending window the button uses by default
+// F14 (cycle 25): ONE pending window for every reader that is not the tab's
+// own select — the scheduled auto-assign, the Dashboard's Needs-you claims and
+// the Dashboard's pending card — and it is the tab's default (30). At 7, a
+// claimed request left 8+ days dropped off its owner's Needs-you while the tab
+// still listed it pending, and the scheduled run never assigned it.
+const SPANISH_PENDING_WINDOW_DAYS = 30;
+// E4 (cycle 25, G5, operator 2026-10-15): a pending Spanish request is ESCALATED
+// once it has waited this many CALENDAR days (wall clock — the tab's own age
+// measure). It reads "Escalated · N days" on the tab and the Dashboard card,
+// its claimant's Needs-you item turns overdue, and the 8am escalation digest
+// lists it to the managers. The digest reads the tab's widest window, so a
+// request older than the 30-day default is still escalated, not forgotten.
+const SPANISH_ESCALATE_DAYS = 7;
+const SPANISH_ESCALATE_READ_DAYS = 90;
 // 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
 // getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
 // list can tell which of a rep's claims are still pending WITHOUT a Gmail read
@@ -1649,6 +1763,10 @@ const INTAKE_WEIGHT_MIN_LBS = 20;
 const INTAKE_WEIGHT_MAX_LBS = 1000;
 const INTAKE_VOLUME_MONTHS = 6;
 const INTAKE_VOLUME_SCAN_MAX = 4000;
+/** Cycle 25 F43: the volume read goes back in SCAN_MAX-row blocks until it
+ *  passes the window's first month; past this many blocks the type is named
+ *  in `truncatedTypes` rather than counted short. */
+const INTAKE_VOLUME_SCAN_BLOCKS = 10;
 // ════════════════════════════════════════════════════════════════════════════
 //  DASHBOARD METRICS (Time Clock → Dashboard)
 //  Period-aggregated own + cohort-guarded team CDR for the Dashboard carousels.
@@ -1691,6 +1809,10 @@ var PENDING_TASKS_CAP = 30;                // items returned; `total` carries th
 var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
+// F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
+// "3/4/28" was stored as the date 2028-03-04. A '@' column (g144), derived from
+// the header list so the index cannot drift from it.
+const INTAKE_ACCT_TEXT_IDX = [INTAKE_ACCT_SUB_HEADERS.indexOf('DOB')];
 // ── F-27 (2026-09-18): the ENGLISH question banks, server-held ─────────────
 // The email is ALWAYS English whatever language the form was completed in
 // (g43), and until Batch 5 the server rendered whatever LABEL text the client
@@ -1906,7 +2028,12 @@ const KB_USAGE_TOP_N = 5;
 const KB_FEEDBACK_TAB = 'KbFeedback';
 const KB_FEEDBACK_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'RepName', 'Kind', 'Note'];
 const KBF = { TS: 0, ITEM_ID: 1, REP_ID: 2, REP_NAME: 3, KIND: 4, NOTE: 5 };
-const KB_FEEDBACK_KINDS = { helpful: 1, notHelpful: 1, stale: 1 };
+// E3 (cycle 25, operator 2026-10-15): 'suggest' is the handbook reader's
+// "Suggest an edit" — it was written as 'stale', so a suggested wording and an
+// "out of date" click read the same in the queue. Both are OPEN until the
+// item's next review, and both carry the rep's note.
+const KB_FEEDBACK_KINDS = { helpful: 1, notHelpful: 1, stale: 1, suggest: 1 };
+const KB_FEEDBACK_NOTED = { stale: 1, suggest: 1 };   // the kinds that keep a note and stay open until a review
 const KB_FEEDBACK_NOTE_MAX = 500;
 const KB_FEEDBACK_MAX_SCAN = 4000;
 const KB_REQUESTS_TAB = 'KbContentRequests';
@@ -2575,7 +2702,11 @@ const QA_SCORECARD_CRITERIA = [
 const QA_STATUSES = ['new', 'in_review', 'done', 'skipped'];
 const QA_LIST_SCAN = 2000;            // bounded tail over QaRecordings
 const QA_LIST_CAP = 200;              // payload cap; pre-slice total reported (INV-169)
-const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments
+const QA_COMMENTS_SCAN = 4000;        // bounded tail over QaComments (the queue's comment COUNTS only — F42)
+// F42 (cycle 25): a per-recording read (its comments, its scorecards, My
+// Reviews, a comment's delete) finds its rows through the WHOLE id column and
+// reads only those, in runs — rows closer than this are read as one range.
+const QA_ROW_RUN_GAP = 25;
 const QA_COMMENT_MAX_CHARS = 2000;
 const QA_COMMENT_MAX_AT_SEC = 86400;  // sanity bound on the timestamp anchor
 const QA_SYNC_MAX_FILES = 500;        // folder files SCANNED per sync run; truncated reported

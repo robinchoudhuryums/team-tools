@@ -67,12 +67,12 @@ function sanitizeTagsArray_(arr) {
  *  composition is a separate two-stage action (preview → confirm) via
  *  previewCallNoteEmail / emailFromCallNote. */
 function submitCallNote(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const cleaned = sanitizeCallNotePayload_(payload || {});
     const v = validateCallNotePayload_(cleaned);
@@ -132,11 +132,11 @@ function submitCallNote(payload) {
 /** Updates an existing call note's content. Inline-edit support for the
  *  rolling stack. The audit log records the diff for accountability. */
 function updateCallNote(noteId, payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const cleaned = sanitizeCallNotePayload_(payload || {});
     const v = validateCallNotePayload_(cleaned);
@@ -183,11 +183,12 @@ function updateCallNote(noteId, payload) {
  *  Optional trainingQuestion: when flagging as 'training', merges
  *  the question into subformData so it appears in digests/Q&A. */
 function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     // Round 2 deferred 8e — accept 'urgent' as a card-level toggle. Urgent
     // never enters the FlagType column (sanitizeFlagType_ still rejects it,
     // INV-37 preserved), but it does flip in subformData.flags so the form
@@ -230,8 +231,13 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
       // F(cycle-8): same 2000-char cap as the submit path (sanitizeCallNotePayload_,
       // M-15) — an uncapped write can push the SubformData cell toward the ~50k
       // Sheets limit, after which EVERY later metadata write to the note throws.
+      const prevQ = String(subformData.trainingQuestion || '').trim();
       subformData.trainingQuestion = String(trainingQuestion).trim().slice(0, 2000);
       sheet.getRange(located.rowIndex, CN.SUBFORM_DATA + 1).setValue(sheetSafe_(JSON.stringify(subformData)));
+      // F31 (cycle 25): a question asked from a card emails the managers like
+      // one asked at submit (g92) — once per question, post-lock (M-7).
+      const q = subformData.trainingQuestion, qDate = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
+      if (q && q !== prevQ) notifyAfter = function () { notifyManagerTrainingQuestion_(emp, q, qDate); };
     }
     if (t === 'review' && reviewComment) {
       // Round-1 pilot #1 — optional review comment from the card toggle; the
@@ -263,16 +269,19 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally {
+    lock.releaseLock();
+    if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
+  }
 }
 /** Marks an action-flagged note as resolved (or un-resolves it). Only
  *  meaningful when FlagType=action. */
 function setCallNoteResolved(noteId, resolved) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -312,11 +321,11 @@ function cnDeleteWindowError_(noteMs, nowMs, windowSeconds) {
  *  CONFIG.CALL_NOTES.DELETE_WINDOW_SECONDS cannot be self-deleted — they
  *  must be addressed through the manager or left in place. */
 function deleteCallNote(noteId) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -346,11 +355,11 @@ function deleteCallNote(noteId) {
  *  (that's the point — the rep window is 5 min, INV-60). Audit row carries
  *  the manager as actor + a deletedBy marker; PHI-free (noteId only). */
 function managerDeleteCallNote(repEmpId, noteId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const emp = lookupEmployeeById_(String(repEmpId || '').trim());
     if (!emp || !emp.callNotesSheetId) return { success: false, error: 'Rep not found or not enrolled.' };
     const sheet = getCallNotesSheet_(emp);
@@ -375,11 +384,11 @@ function managerDeleteCallNote(repEmpId, noteId) {
  *  Enforces CN_PIN_LIMIT (3): pinning a 4th note returns an error so the
  *  rep is forced to unpin something first. */
 function setCallNotePinned(noteId, pinned) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -448,6 +457,11 @@ function setCallNotePinned(noteId, pinned) {
  *  (~16× fewer cells than a full-history read), with a cheap substring
  *  pre-filter before JSON.parse, then fetches just the few pinned rows
  *  (≤ CN_PIN_LIMIT under the cap) at full width. */
+/** PURE — does a SubformData cell say the note is pinned? A corrupt blob is not. */
+function cnBlobPinned_(raw) {
+  if (!raw) return false;
+  try { const sub = JSON.parse(raw); return !!(sub && sub.pinned); } catch (e) { return false; }
+}
 function getMyPinnedCallNotes() {
   try {
     const emp = getEmployeeInfo_();
@@ -459,6 +473,7 @@ function getMyPinnedCallNotes() {
     if (lastRow >= 2) {
       const n = lastRow - 1;
       const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, n, 1).getValues();
+      const idCol = sheet.getRange(2, CN.NOTE_ID + 1, n, 1).getValues();
       for (let i = 0; i < n; i++) {
         const raw = subCol[i][0];
         if (!raw) continue;
@@ -466,12 +481,17 @@ function getMyPinnedCallNotes() {
         // toggle DELETES `pinned`/`pinnedAt` rather than writing false). The
         // JSON.parse below stays authoritative for any substring false-positive.
         if (String(raw).indexOf('"pinned"') < 0) continue;
-        let sub = null;
-        try { sub = JSON.parse(raw); } catch (e) { continue; }
-        if (!sub || !sub.pinned) continue;
-        const rowIndex = i + 2;
-        const row = sheet.getRange(rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
-        notes.push(callNoteRowToObject_({ row: row, rowIndex: rowIndex }));
+        if (!cnBlobPinned_(raw)) continue;
+        const noteId = String(idCol[i][0] || '').trim();
+        if (!noteId) continue;
+        // F32 (cycle 25): this read is unlocked, so a delete between the scan
+        // and the fetch moves another note under the index (g164). The fetched
+        // row must still carry the id it was found by and still be pinned;
+        // otherwise the note is found again by its id.
+        let located = { rowIndex: i + 2, row: sheet.getRange(i + 2, 1, 1, CN_HEADERS.length).getValues()[0] };
+        if (!formLocatedRowIs_(located.row, CN.NOTE_ID, noteId)) located = findCallNoteRow_(sheet, noteId);
+        if (!located || !cnBlobPinned_(located.row[CN.SUBFORM_DATA])) continue;
+        notes.push(callNoteRowToObject_(located));
       }
     }
     // Newest-pinned first
@@ -895,6 +915,7 @@ function getPatientTimeline(trx) {
     try {
       const fr = getMySentForms();
       if (fr && fr.error) failedSources.push('sent forms');
+      if (fr && fr.truncated) truncatedSources.push('sent forms (the newest only)');   // F33
       forms = (fr && fr.forms) || [];
     } catch (e) { failedSources.push('sent forms'); }
 
@@ -1407,11 +1428,11 @@ function cnTagSkippedNote_(skippedReps) {
  *  tag already exists on a note, the rename collapses (dedupes) by
  *  dropping the old tag from those rows. Audit row records old+new+counts. */
 function renameCallNoteTag(oldTag, newTag) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const oldT = normalizeTagForAdmin_(oldTag);
     const newT = normalizeTagForAdmin_(newTag);
     if (!oldT) return { success: false, error: 'Invalid source tag.' };
@@ -1445,11 +1466,11 @@ function renameCallNoteTag(oldTag, newTag) {
  *  primarily UX: the manager confirmed they expect targetTag to already
  *  exist on some notes. Audit row labels it 'merge' for trail clarity. */
 function mergeCallNoteTags(sourceTag, targetTag) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const srcT = normalizeTagForAdmin_(sourceTag);
     const tgtT = normalizeTagForAdmin_(targetTag);
     if (!srcT) return { success: false, error: 'Invalid source tag.' };
@@ -1483,11 +1504,11 @@ function mergeCallNoteTags(sourceTag, targetTag) {
  *  as a deprecated category. Stored in Script Property CN_ARCHIVED_TAGS
  *  (JSON array of lowercase tag strings). */
 function archiveCallNoteTag(tag, archived) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
     const t = normalizeTagForAdmin_(tag);
     if (!t) return { success: false, error: 'Invalid tag.' };
     const set = getArchivedTagsSet_();
@@ -1643,8 +1664,11 @@ function managerSearchCallNotes(query, field, repFilter, dateRange, includeArchi
       }
     }
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    if (results.length > 500) results.length = 500;
-    return { results, skippedReps };
+    // F30 (cycle 25): the cap is said — `total` is every match, so a search
+    // that found more than the newest CN_MGR_SEARCH_CAP never reads as whole.
+    const total = results.length;
+    if (results.length > CN_MGR_SEARCH_CAP) results.length = CN_MGR_SEARCH_CAP;
+    return { results, skippedReps, total: total, truncated: total > results.length };
   } catch (err) { return { error: err.message }; }
 }
 function managerGetUnresolvedActionCount() {
@@ -1921,7 +1945,12 @@ function exportCallNotesRange(startDate, endDate) {
       ];
     });
     sh.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers])).setFontWeight('bold');
-    sh.getRange(2, 1, data.length, headers.length).setValues(sheetSafeRows_(data));
+    // F6 (cycle 25): the seven note-text columns (Callback … Resolution) are
+    // '@' cells in the rep's Sheet (CN-7, g144); written sheet-safe here, a
+    // callback's leading zero was lost and "3/4" became a Date. Same '@' cells.
+    const EXPORT_TEXT_IDX = [4, 5, 6, 7, 8, 9, 10];
+    sh.getRange(2, EXPORT_TEXT_IDX[0] + 1, data.length, EXPORT_TEXT_IDX.length).setNumberFormat('@');
+    sh.getRange(2, 1, data.length, headers.length).setValues(sheetTextRows_(data, EXPORT_TEXT_IDX));
     sh.setFrozenRows(1);
     SpreadsheetApp.flush();
 
@@ -1964,11 +1993,11 @@ function exportCallNotesRange(startDate, endDate) {
  *  reply on any note that has a thread). Writes a CallNoteManagerComment audit
  *  row (PHI-free: noteId only). */
 function setCallNoteManagerComment(repEmpId, noteId, message) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const msg = String(message || '').trim().slice(0, 2000);   // F(cycle-8): cell-size guard
     if (!msg) return { success: false, error: 'Comment is empty.' };
     const target = lookupEmployeeById_(repEmpId);
@@ -2005,11 +2034,11 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
   finally { lock.releaseLock(); }
 }
 function appendCallNoteFeedback(noteId, message, kind) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     if (!emp.callNotesSheetId) return { success: false, error: 'Your call-notes Sheet is not configured.' };
 
     const kindV = (kind === 'ack' || kind === 'clarification') ? kind : 'clarification';
@@ -2399,11 +2428,11 @@ function computeCnEmailHash_(htmlBody, subject, to) {
  *  success rather than failure — failing here would prompt the rep to re-send
  *  a duplicate. The stamp failure is logged to console for ops to notice. */
 function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
@@ -2566,8 +2595,12 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // records the recipient DOMAIN (g36). The domain says where PHI went
     // without naming anyone; the full address stays in the note's own
     // subformData (individualEmail).
+    // F3 (cycle 25): "Other" takes a COMMA LIST (validateEmailSelections_), and
+    // intakeEmailDomain_ returns everything after the FIRST "@" — so a second
+    // recipient's full address rode into the shared log. Domains of every
+    // address, deduped, through the helper the Dept Request row already uses.
     const otherDomain = (selections.departments.indexOf('Other') >= 0 && selections.individualEmail)
-      ? intakeEmailDomain_(selections.individualEmail) : '';
+      ? drRecipientDomains_(selections.individualEmail) : '';
     writeAuditLog_(emp, 'CallNoteEmail', note.dateLocal, '', false, 0,
       `noteId=${noteId}; depts=${deptLabel || '(none)'}; recipients=${recipientList.to.split(',').length}` +
       (otherDomain ? `; otherDomain=${otherDomain}` : '') +
@@ -3548,17 +3581,18 @@ function getNoteRetentionDays_() {
  *  Writes a PHI-free CallNotesPurge audit row with counts. */
 function purgeOldCallNotes() {
   assertManagerCaller_('purgeOldCallNotes');
-  try {
+  return runAutomationJob_('CallNotesPurge', function () {
     const days = getNoteRetentionDays_();
     if (!days) {
       Logger.log('purgeOldCallNotes: retention disabled (CN_NOTE_RETENTION_DAYS=0) — nothing purged.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesRemoved = 0;
+    const skipped = [];
     try {
       for (let r = 1; r < roster.length; r++) {
         const sheetId = cnEnrolledSheetId_(roster[r]);
@@ -3572,6 +3606,7 @@ function purgeOldCallNotes() {
           const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('purgeOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3579,11 +3614,16 @@ function purgeOldCallNotes() {
       lock.releaseLock();
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesPurge', '', '', false, 0,
-      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+      `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
     Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
-  } catch (err) {
-    Logger.log('purgeOldCallNotes failed: ' + err.message);
-  }
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their notes stay past the retention window) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named, where the health dot and the failure digest
+    // read it; a clean run clears. A run that never finished is failed.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their notes stay past the retention window: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** PURE (C12, cycle 22) — when a read's range reaches notes the cold archive
  *  may have MOVED (older than the archive window), the date before which they
@@ -3695,7 +3735,17 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (archiveSheet.getMaxRows() < needRows) {
     archiveSheet.insertRowsAfter(archiveSheet.getMaxRows(), needRows - archiveSheet.getMaxRows());
   }
-  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, block.length, width).setValues(sheetSafeRows_(block));
+  // F6 (cycle 25): the call-note text columns are '@' cells in Notes (CN-7,
+  // g144) and must stay '@' in the archive — written sheet-safe into an
+  // ordinary cell, a callback "09171234567" lost its leading zero for good and
+  // an issue reading "3/4" became a Date that every archive reader then
+  // printed as "Wed Mar 04 2026 …". opts.textIdx names those columns: they are
+  // formatted '@' on the target rows and written raw; every other cell stays
+  // sheet-safe. A caller that passes none (the Timesheet tier) is unchanged.
+  const archStart = archiveSheet.getLastRow() + 1;
+  const textIdx = Array.isArray(opts.textIdx) ? opts.textIdx : [];
+  textIdx.forEach(function (i) { archiveSheet.getRange(archStart, i + 1, block.length, 1).setNumberFormat('@'); });
+  archiveSheet.getRange(archStart, 1, block.length, width).setValues(sheetTextRows_(block, textIdx));   // textIdx [] = every cell sheet-safe (the Timesheet tier, unchanged)
   SpreadsheetApp.flush();   // ensure the archive write lands before we delete the source
   // Sheets REFUSES to delete every non-frozen row of a grid ("not possible to
   // delete all non-frozen rows" — the _clearTestCallNotes lesson). A run whose
@@ -3706,7 +3756,14 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
   if (toDelete.length && toDelete.length >= srcSheet.getMaxRows() - headerRows) {
     srcSheet.insertRowAfter(srcSheet.getMaxRows());
   }
-  for (let j = toDelete.length - 1; j >= 0; j--) srcSheet.deleteRow(toDelete[j]);
+  // F7 (cycle 25): one deleteRows per CONTIGUOUS run, descending — not one
+  // deleteRow per row. The run cap (2000 rows) times the per-row delete cost
+  // the F3 note above estimates (up to ~0.2s) is past the 6-minute ceiling,
+  // and a run killed after the flushed append re-appends the undeleted rows
+  // the next night — the duplication the cap exists to prevent. Old rows are a
+  // prefix of an append-ordered tab, so this is usually ONE call (the purge
+  // tiers' shared deleter since cycle 23 4a-FU2).
+  contiguousRowRunsDesc_(toDelete).forEach(function (run) { srcSheet.deleteRows(run.start, run.count); });
   return toMoveRows.length;
 }
 /** Cold-archive tier for call-note retention (the SAFE alternative to the
@@ -3728,17 +3785,18 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
  *  retained in NotesArchive. */
 function archiveOldCallNotes() {
   assertManagerCaller_('archiveOldCallNotes');
-  try {
+  return runAutomationJob_('CallNotesArchive', function () {
     const days = getNoteArchiveDays_();
     if (!days) {
       Logger.log('archiveOldCallNotes: archival disabled (CN_NOTE_ARCHIVE_DAYS=0) — nothing archived.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesArchived = 0;
+    const skipped = [];   // F5 (cycle 25)
     // Cycle-12 F3-sibling: a WHOLE-RUN row budget, shared across reps. The
     // Timesheet twin needed a bound because one tab can hold ~20k rows; here
     // the compounding is worse — the mover is called once PER REP inside one
@@ -3784,9 +3842,10 @@ function archiveOldCallNotes() {
           const live = getCallNotesSheet_(emp);
           const archive = getOrCreateNotesArchiveTab_(live.getParent());
           const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs,
-            { maxRows: budget });
+            { maxRows: budget, textIdx: CN_TEXT_IDX });   // F6 (cycle 25): the '@' columns stay '@'
           if (moved > 0) { notesArchived += moved; repsTouched++; budget -= moved; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('archiveOldCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3798,11 +3857,15 @@ function archiveOldCallNotes() {
     const capped = truncated
       ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
-      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}`);
+      `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
     Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
-  } catch (err) {
-    Logger.log('archiveOldCallNotes failed: ' + err.message);
-  }
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their notes stay in the live tab) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their old notes were not archived: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** 3rd-tier cold-store retention window: days from CN_ARCHIVE_RETENTION_DAYS
  *  Script Property first, else CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS.
@@ -3831,17 +3894,18 @@ function getArchiveRetentionDays_() {
  *  (before the 3am archive) so it operates on yesterday's settled archive. */
 function purgeArchivedCallNotes() {
   assertManagerCaller_('purgeArchivedCallNotes');
-  try {
+  return runAutomationJob_('CallNotesArchivePurge', function () {
     const days = getArchiveRetentionDays_();
     if (!days) {
       Logger.log('purgeArchivedCallNotes: archive retention disabled (CN_ARCHIVE_RETENTION_DAYS=0) — nothing purged.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let repsTouched = 0, notesRemoved = 0;
+    const skipped = [];   // F5 (cycle 25)
     try {
       for (let r = 1; r < roster.length; r++) {
         const sheetId = cnEnrolledSheetId_(roster[r]);
@@ -3858,6 +3922,7 @@ function purgeArchivedCallNotes() {
           const removed = purgeSheetRowsOlderThan_(archive, CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
         } catch (e) {
+          skipped.push(emp.name || emp.id);
           Logger.log('purgeArchivedCallNotes: skipped rep ' + emp.id + ': ' + e.message);
         }
       }
@@ -3865,11 +3930,15 @@ function purgeArchivedCallNotes() {
       lock.releaseLock();
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchivePurge', '', '', false, 0,
-      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}`);
+      `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
     Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
-  } catch (err) {
-    Logger.log('purgeArchivedCallNotes failed: ' + err.message);
-  }
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (their archived notes stay past the window) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their archived notes stay past the retention window: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
  *  for HAND-ENTERED rows (content present but no noteId — typed directly into
@@ -3880,19 +3949,52 @@ function purgeArchivedCallNotes() {
  *  Manager-gated + locked; per-rep Sheet failures are skipped. Content fields
  *  are NEVER modified. Writes a CallNotesReconcile audit row. */
 function reconcileCallNotes() {
-  // F1/F2 — this is a DAILY TRIGGER handler (runs as the installer) AS WELL AS a
-  // manual Admin-tab button, so it MUST use the MANAGER_EMAILS trigger-handler
-  // gate (assertManagerCaller_, the INV-44 idiom), NOT emp.isAdmin: under a
-  // narrowed ADMIN_EMAILS, or a MANAGER_EMAILS installer who isn't a roster
-  // employee, an admin/roster gate silently no-ops the nightly reconcile (INV-109).
+  // F1/F2 — this is the DAILY TRIGGER handler (runs as the installer), so it
+  // MUST use the MANAGER_EMAILS trigger-handler gate (assertManagerCaller_, the
+  // INV-44 idiom), NOT emp.isAdmin: under a narrowed ADMIN_EMAILS, or a
+  // MANAGER_EMAILS installer who isn't a roster employee, an admin/roster gate
+  // silently no-ops the nightly reconcile (INV-109). The Admin-tab button calls
+  // reconcileCallNotesNow instead (F57, cycle 25).
   assertManagerCaller_('reconcileCallNotes');
-  const callerEmp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
+  return runAutomationJob_('CallNotesReconcile', function () {
+    const res = reconcileCallNotesCore_(getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_, 'CallNotesReconcile');
+    // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
+    // that rep (its hand-entered notes stay unreconciled) — it used to reach only Logger.log, and the
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears; a throw is failed (F5:
+    // the nightly trigger's {error} reached nobody) and still returns {error}.
+    res.outcome = res.skippedReps.length
+      ? automationOutcome_('partial', res.skippedReps.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + res.skippedReps.join(', '), res.skippedReps)
+      : automationOutcome_('ok');
+    return res;
+  });
+}
+/** F57 (cycle 25) — the Admin tab's "Reconcile Sheets" button. The same pass as
+ *  the nightly job, but it is NOT the job: it writes its own audit action
+ *  (CallNotesReconcileManual — outside AUTOMATION_AUDIT_ACTIONS, so it stamps no
+ *  AUTOMATION_RUN_ liveness record) and never stamps or clears the job's error
+ *  key. A manager's press used to refresh the nightly liveness line and clear
+ *  its failure, so a dead 5am trigger read healthy for another 30 hours after
+ *  every press. The skipped reps ride the result, where the toast names them. */
+function reconcileCallNotesNow() {
+  assertManagerCaller_('reconcileCallNotesNow');
+  try {
+    return reconcileCallNotesCore_(getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_, 'CallNotesReconcileManual');
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+/** The reconcile pass itself (#8), shared by the nightly job and the manual
+ *  button. Locked; throws on a lock timeout or an unreadable roster; a rep
+ *  Sheet that will not open is skipped and returned by name. */
+function reconcileCallNotesCore_(callerEmp, auditAction) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     const roster = getEmployeeRosterRows_();
     const CONTENT_COLS = [CN.CALLBACK, CN.CALLER, CN.RELATIONSHIP, CN.PATIENT_TRX, CN.ISSUE, CN.TRANSFERRED_TO, CN.RESOLUTION];
     let repsTouched = 0, rowsBackfilled = 0;
+    const skipped = [];   // F5 (cycle 25)
     for (let r = 1; r < roster.length; r++) {
       const sheetId = cnEnrolledSheetId_(roster[r]);
       if (!sheetId) continue;
@@ -3934,13 +4036,14 @@ function reconcileCallNotes() {
         }
         if (repBackfilled > 0) { rowsBackfilled += repBackfilled; repsTouched++; }
       } catch (e) {
+        skipped.push(emp.name || emp.id);
         Logger.log('reconcileCallNotes: skipped rep ' + emp.id + ': ' + e.message);
       }
     }
-    writeAuditLog_(callerEmp, 'CallNotesReconcile', '', '', false, 0,
-      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}`, callerEmp.email);
-    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled };
-  } catch (err) { return { error: err.message }; }
+    writeAuditLog_(callerEmp, auditAction, '', '', false, 0,
+      `repsTouched=${repsTouched}; rowsBackfilled=${rowsBackfilled}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''), callerEmp.email);
+    return { success: true, repsTouched: repsTouched, rowsBackfilled: rowsBackfilled, skippedReps: skipped };
+  }
   finally { lock.releaseLock(); }
 }
 
@@ -3950,7 +4053,7 @@ function reconcileCallNotes() {
 // ════════════════════════════════════════════════════════════════════════════
 function sendCallNotesEodDigest() {
   assertManagerCaller_('sendCallNotesEodDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CallNotesEodDigest', function () {
     const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
     const now = new Date();
     const roster = getEmployeeRosterRows_();
@@ -3960,6 +4063,7 @@ function sendCallNotesEodDigest() {
     // reached only the log while the heartbeat below read healthy. Count both
     // and stamp them; `attempted` = reps whose local EOD hour this run was.
     let attempted = 0, unread = 0, sendFailed = 0, lastError = '';
+    const unreadNames = [];   // ST2 (cycle 25 E1): a partial run names its skipped reps
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
@@ -4004,33 +4108,40 @@ function sendCallNotesEodDigest() {
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
-        unread++; lastError = e.message;
+        unread++; lastError = e.message; unreadNames.push(empObj.name || empObj.id);
+        logDigestDelivery_('eod', empObj.email, 'failed', null, 'their Call Notes Sheet could not be read');   // E1 follow-ups
         continue;
       }
       if (unresolved.length === 0) continue;
+      // E1 follow-ups: a reminder that went (or did not) is a row; a rep with
+      // nothing flagged gets none — an hourly "empty" per rep would bury the log.
       try {
         sendOneRepEodDigest_(empObj, unresolved);
         sentCount++;
+        logDigestDelivery_('eod', empObj.email, 'sent', unresolved.length, '');
       } catch (e) {
         Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
         sendFailed++; lastError = e.message;
+        logDigestDelivery_('eod', empObj.email, 'failed', unresolved.length, e.message);
       }
     }
     stampDigestLastRun_('eod');
-    // One stamp names everything that went wrong (the TrainingOverdueDigest
+    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
+    // One outcome names everything that went wrong (the TrainingOverdueDigest
     // shape). Only a run that reached a rep may CLEAR it: most hours match no
     // rep's EOD hour, and an hour that did nothing proves nothing — clearing
-    // there would wipe a failure before the morning failure digest reads it.
+    // there would wipe a failure before the morning failure digest reads it
+    // (ST2: that hour is `idle`). Partial while any rep was served; a throw
+    // is failed (seams F2: a throw is not a quiet hour).
     const problems = [];
-    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)');
+    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)' + (unreadNames.length ? ': ' + unreadNames.join(', ') : ''));
     if (sendFailed) problems.push(sendFailed + ' EOD reminder email(s) failed to send');
-    if (problems.length) stampAutomationError_('CallNotesEodDigest', problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''));
-    else if (attempted) clearAutomationError_('CallNotesEodDigest');
-    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
-  } catch (err) {
-    Logger.log('sendCallNotesEodDigest failed: ' + err.message);
-    stampAutomationError_('CallNotesEodDigest', err.message);   // seams F2: a throw is not a quiet hour
-  }
+    if (problems.length) {
+      return { sent: sentCount, outcome: automationOutcome_(attempted > unread + sendFailed ? 'partial' : 'failed',
+        problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''), unreadNames) };
+    }
+    return { sent: sentCount, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
+  });
 }
 function sendOneRepEodDigest_(emp, unresolvedNotes) {
   const P = CN_EMAIL_PALETTE;
@@ -4079,9 +4190,9 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
 }
 function sendCallNotesWeeklyDigests() {
   assertManagerCaller_('sendCallNotesWeeklyDigests');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CallNotesWeeklyDigests', function () {
     const mgrEmails = getManagerEmails_();
-    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return; }
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return { outcome: automationOutcome_('idle') }; }
     const now = new Date();
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Look back 7 days
@@ -4095,30 +4206,48 @@ function sendCallNotesWeeklyDigests() {
     // C17 batch-2: a queue with unreadable rep Sheets is not a silently-
     // skippable empty queue — send (with the warning) whenever there are
     // results OR skipped reps; genuinely-empty-and-clean stays silent (S24).
-    if ((training.results && training.results.length > 0) || (training.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
-    }
-    if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
-    }
+    const sendFails = [];   // F4 (cycle 25): a send that failed is a failed run
+    let delivered = 0;
+    // G3 (cycle 25 E1): each queue's decision is logged per manager — the
+    // reason names the queue, since one weekly run sends two digests.
+    const sendQueue = function (label, q, what) {
+      const results = q.results || [];
+      if (q.error) { logDigestDelivery_('weekly', mgrEmails, 'failed', null, label + ': the queue could not be read — ' + q.error); return; }
+      if (!results.length && !(q.skippedReps || []).length) { logDigestDelivery_('weekly', mgrEmails, 'empty', 0, label + ': nothing flagged this week'); return; }
+      const sent = sendManagerFlagDigest_(mgrEmails, label, results, dateRange, q.skippedReps);
+      if (sent && sent.error) {
+        sendFails.push('the ' + what + ' digest could not be sent: ' + sent.error);
+        logDigestDelivery_('weekly', mgrEmails, 'failed', results.length, label + ': ' + sent.error);
+      } else {
+        delivered++;
+        logDigestDelivery_('weekly', mgrEmails, 'sent', results.length, label + ((q.skippedReps || []).length ? ' — incomplete, ' + q.skippedReps.length + ' rep Sheet(s) unreadable' : ''));
+      }
+    };
+    sendQueue('Training Queue', training, 'training');
+    sendQueue('Review Candidates', review, 'review');
     // C2 (cycle 22): an {error} is not an empty queue. It used to read as one —
     // nothing sent, and a HEALTHY heartbeat stamped (INV-109's failure mode).
     // Stamp the failure where the digest and the dot read it, and withhold the
     // heartbeat so the weekly row goes stale too. The readable queue still sent.
     const failed = [['training', training], ['review', review]].filter(function (q) { return q[1] && q[1].error; });
-    if (failed.length) {
-      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).join('; ');
-      stampAutomationError_('CallNotesWeeklyDigests', why);
-      Logger.log('sendCallNotesWeeklyDigests: could not read ' + why + ' — no heartbeat.');
-      return;
+    if (failed.length || sendFails.length) {
+      const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).concat(sendFails).join('; ');
+      Logger.log('sendCallNotesWeeklyDigests: ' + why + ' — no heartbeat.');
+      // ST2 (cycle 25 E1): partial while one queue still went out or read clean.
+      const okQueues = 2 - failed.length - sendFails.length;
+      return { outcome: automationOutcome_(okQueues > 0 ? 'partial' : 'failed', why) };
     }
-    clearAutomationError_('CallNotesWeeklyDigests');
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
-  } catch (err) {
-    stampAutomationError_('CallNotesWeeklyDigests', err.message);
-    Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
-  }
+    // ST2 (cycle 25 E1): a queue sent with unreadable rep Sheets went out
+    // incomplete — the digest warned the managers; the run says so too.
+    const skipped = (training.skippedReps || []).concat(review.skippedReps || [])
+      .filter(function (n, i, a) { return a.indexOf(n) === i; });
+    if (skipped.length) {
+      return { outcome: automationOutcome_('partial', skipped.length + ' rep Call Notes Sheet(s) could not be read, so the weekly digests went out incomplete: ' + skipped.join(', '), skipped) };
+    }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Daily safety-net digest of urgent-flagged notes to MANAGER_EMAILS. 'urgent'
  *  is a secondary flag (subformData.flags[], INV-75/77) with no resolved state,
@@ -4129,18 +4258,22 @@ function sendCallNotesWeeklyDigests() {
  *  this is the catch-it-by-morning backstop. */
 function sendCallNotesUrgentDigest() {
   assertManagerCaller_('sendCallNotesUrgentDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  // Follow-up to C2 (cycle 22): a failed read is not an empty queue — a throw
+  // is a FAILED outcome (ST2), recorded where the health dot and the failure
+  // digest read it, and the heartbeat stays withheld.
+  return runAutomationJob_('CallNotesUrgentDigest', function () {
     // #2 (INV-151): while the consolidated daily brief is on, urgent notes
     // ride the 8am brief instead. Still stamp the heartbeat — the trigger ran
     // and made its (suppressed) decision; a dead trigger stays detectable.
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       stampDigestLastRun_('urgent');
+      logDigestDelivery_('urgent', getManagerEmails_(), 'suppressed', null, 'rode the daily brief');   // G3
       Logger.log('Urgent digest: consolidated into the daily brief.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // ST2: the decision ran clean
     }
     const mgrEmails = getManagerEmails_();
-    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return; }
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return { outcome: automationOutcome_('idle') }; }
     const now = new Date();
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Cover the previous calendar day through today (manager tz) so nothing
@@ -4154,20 +4287,28 @@ function sendCallNotesUrgentDigest() {
     const dateRange = { start, end };
 
     const urgent = managerAggregateUrgent_(dateRange);
-    if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
-      sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
+    const skipped = urgent.skippedReps || [];
+    const count = (urgent.results || []).length;
+    if (count > 0 || skipped.length > 0) {
+      const sentU = sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
+      if (sentU && sentU.error) {
+        // F4 (cycle 25): nothing was sent — a failed run, and the heartbeat withheld.
+        logDigestDelivery_('urgent', mgrEmails, 'failed', count, sentU.error);   // G3
+        Logger.log('sendCallNotesUrgentDigest: send failed — no heartbeat.');
+        return { outcome: automationOutcome_('failed', 'the urgent digest could not be sent: ' + sentU.error) };
+      }
+      logDigestDelivery_('urgent', mgrEmails, 'sent', count, skipped.length ? 'incomplete — ' + skipped.length + ' rep Sheet(s) unreadable' : '');   // G3
+    } else {
+      logDigestDelivery_('urgent', mgrEmails, 'empty', 0, 'no urgent notes');   // G3
     }
-    clearAutomationError_('CallNotesUrgentDigest');
     stampDigestLastRun_('urgent');
-    Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
-  } catch (err) {
-    // Follow-up to C2 (cycle 22): a failed read is not an empty queue. The
-    // catch used to log and return — nothing sent, nothing stamped, so the
-    // only trace was an ageing heartbeat. Stamp the failure where the health
-    // dot and the failure digest read it (the heartbeat stays withheld).
-    stampAutomationError_('CallNotesUrgentDigest', err.message);
-    Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
-  }
+    Logger.log(`sendCallNotesUrgentDigest: urgent=${count}`);
+    // ST2 (cycle 25 E1): sent with unreadable rep Sheets is a partial run.
+    if (skipped.length) {
+      return { outcome: automationOutcome_('partial', skipped.length + ' rep Call Notes Sheet(s) could not be read, so the urgent digest went out incomplete: ' + skipped.join(', '), skipped) };
+    }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -4267,7 +4408,15 @@ function sendManagerFlagDigest_(toEmails, label, notes, dateRange, skippedReps) 
       body: textBody,
       htmlBody,
     });
-  } catch (e) { Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`); }
+    return { sent: true };
+  } catch (e) {
+    // F4 (cycle 25): a failed send is RETURNED, never only logged — both
+    // callers used to stamp a healthy heartbeat and clear their error key
+    // after a quota or MailApp failure that sent nothing (the g53 / MAIL-4
+    // shape seams F2 closed for the EOD digest). The other queue still sends.
+    Logger.log(`sendManagerFlagDigest_(${label}) email failed: ${e.message}`);
+    return { error: (e && e.message) ? e.message : String(e) };
+  }
 }
 
 
@@ -4353,11 +4502,11 @@ function schedReadMine_(sh, empId) {
  *  may name a patient, so it persists ONLY in the PHI store and the audit row
  *  carries the id alone (the INV-32 discipline). */
 function createScheduledCall(payload) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { error: 'Not authorized.' };
     const p = payload || {};
     const v = schedValidateShape_(p.date, p.time, p.label, p.leadMin);
     if (v.error) return v;
@@ -4400,11 +4549,11 @@ function getMyScheduledCalls() {
 function setScheduledCallStatus(id, status) {
   const st = String(status || '').trim().toLowerCase();
   if (st !== 'done' && st !== 'cancelled') return { error: 'Status must be done or cancelled.' };
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { error: 'Not authorized.' };
     const sh = getFormsSS_().getSheetByName(SCHED_CALLS_TAB);
     if (!sh) return { error: 'Reminder not found.' };
     const wanted = String(id || '').trim();

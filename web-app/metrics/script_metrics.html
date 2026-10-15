@@ -686,6 +686,14 @@ function mLoadMyStats_(opts) {
     // then drop the RENDER if a newer load superseded this one (M-6).
     if (data && !data.error) M_STATE.myCache[key] = { data: data, entry: { at: Date.now() } };
     if (currentView !== requestedView || seq !== M_STATE.mySeq) { done(); return; }
+    // F56 (cycle 25): a server {error} during a background refresh is a FAILED
+    // refresh — the transport-failure path below already keeps the painted
+    // last-good view; this one repainted it as an error card.
+    if (painted && (!data || data.error)) {
+      done();
+      showToast('Couldn’t refresh metrics — showing last loaded' + (data && data.error ? ' (' + data.error + ')' : ''), 'toast-warn');
+      return;
+    }
     mRenderMyStats_(data);
     done();
   };
@@ -743,7 +751,13 @@ function mRenderMyStats_(data) {
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
-    html += '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
+    // F53 (cycle 25): `cdrUnavailable` means the call data could not be READ
+    // (F-47) — the quiet "No call data found" card read it as a day without
+    // calls (A12: a failure is never the empty state).
+    html += data.cdrUnavailable
+      ? errorStateHtml_('Call data could not be read for ' + (isRange ? data.from + ' → ' + data.to : data.date) +
+          ' — this is a read failure, not a day without calls. Try again shortly.')
+      : '<div class="m-empty">No call data found for ' + (isRange ? esc(data.from) + ' → ' + esc(data.to) : esc(data.date)) +
       '. This may be a non-working day/range, or the CDR spreadsheet is not yet configured.</div>';
     // C17-14 (cycle 17) — the cycle-16 F5 sweep fixed the CDR branch below
     // but missed this sibling: a failed note read rendered a confident
@@ -798,6 +812,10 @@ function mRenderMyStats_(data) {
     var firstLabel = trend[0].date ? trend[0].date.substring(5) : '';
     var lastLabel = trend[trend.length - 1].date ? trend[trend.length - 1].date.substring(5) : '';
     html += '<div class="m-hero-spark-labels"><span>' + esc(firstLabel) + '</span><span>' + esc(lastLabel) + '</span></div>';   // D7 (cycle 10) — the documented Metrics esc() rule
+  } else if (data.trendUnavailable) {
+    // F53 (cycle 25): the range's day-by-day read failed (L-3 ships the totals
+    // anyway) — the missing sparkline used to read as "too few days to draw".
+    html += '<div class="m-hero-bw" role="status" style="color:var(--warning-deep)">The day-by-day trend could not be read — the totals above are complete.</div>';
   }
   html += '</div>';
 
@@ -1372,7 +1390,8 @@ function mTeamActivePreset_() {
   var today = mTodayIso_();
   var f = M_STATE.teamFrom, t = M_STATE.teamTo;
   if (f === today && t === today) return 'today';
-  if (f === mDaysAgo_(1) && t === mDaysAgo_(1)) return 'yesterday';
+  var yd = mPrevWorkdayIso_(today);   // F15 (cycle 25): the previous WORKDAY, as My Stats
+  if (f === yd && t === yd) return 'yesterday';
   if (f === mDaysAgo_(6) && t === today) return 'week';
   if (f === mDaysAgo_(29) && t === today) return 'month';
   return '';
@@ -1384,7 +1403,11 @@ function mTeamSyncPresets_() {
 function mTeamPreset_(key) {
   var today = mTodayIso_();
   if (key === 'today')     { M_STATE.teamFrom = today; M_STATE.teamTo = today; }
-  if (key === 'yesterday') { M_STATE.teamFrom = mDaysAgo_(1); M_STATE.teamTo = mDaysAgo_(1); }
+  // F15 (cycle 25): "Yesterday" is the previous WORKDAY (weekends and company
+  // holidays skipped) — the CDR has no rows for a Sunday or a holiday, so the
+  // calendar yesterday was an empty table every Monday and post-holiday morning.
+  // My Stats' preset already read it this way (cycle 22 M2).
+  if (key === 'yesterday') { var yd = mPrevWorkdayIso_(today); M_STATE.teamFrom = yd; M_STATE.teamTo = yd; }
   if (key === 'week')      { M_STATE.teamFrom = mDaysAgo_(6); M_STATE.teamTo = today; }
   if (key === 'month')     { M_STATE.teamFrom = mDaysAgo_(29); M_STATE.teamTo = today; }
   var fromEl = document.getElementById('m-team-from');
@@ -1426,6 +1449,11 @@ function mLoadTeamMetrics_(opts) {
     .withSuccessHandler(function (data) {
       if (data && !data.error) M_STATE.teamCache[key] = { data: data, entry: { at: Date.now() } };
       if (currentView !== requestedView || seq !== M_STATE.teamSeq) { done(); return; }
+      if (painted && (!data || data.error)) {   // F56 (cycle 25): keep the painted last-good view
+        done();
+        showToast('Couldn’t refresh metrics — showing last loaded' + (data && data.error ? ' (' + data.error + ')' : ''), 'toast-warn');
+        return;
+      }
       mRenderTeamMetrics_(data);
       done();
     })
@@ -1775,6 +1803,9 @@ function mLoadIntakeVolume_() {
       var note = (res.failedTypes && res.failedTypes.length)
         ? '<div class="m-vol-note" role="alert">' + esc(res.failedTypes.join(', ')) + ' tab(s) could not be read — those columns may be incomplete.</div>'
         : '';
+      if (res.truncatedTypes && res.truncatedTypes.length) {
+        note += '<div class="m-vol-note" role="alert">' + esc(res.truncatedTypes.join(', ')) + ' tab(s) hold more rows than one read covers — the earliest months may be undercounted.</div>';
+      }
       host.innerHTML = '<h2 class="card-label" style="margin-top:var(--space-lg)">Intake volume <span style="color:var(--muted-2);font-weight:400">· by month sent</span></h2>' +
         note +
         mtRenderTable_({
@@ -2694,6 +2725,15 @@ function spanishSetClaimLocal_(tid, claim) {
   spanishRenderList_();
 }
 
+/** PURE (Node-pinned) — E4 (cycle 25, G5): the server's escalation flag as a
+ *  pill ("Escalated · N days"), '' otherwise. The server decides (7 calendar
+ *  days, SPANISH_ESCALATE_DAYS); the client only draws it. */
+function spanishEscalatedPillHtml_(t) {
+  if (!t || !t.escalated) return '';
+  var d = Math.floor(Number(t.ageHours) / 24);
+  return '<span class="sp-esc-pill" title="Waiting ' + esc(String(d)) + ' days — escalated to the managers\' 8am digest">' +
+    icon('warning', 11) + ' Escalated · ' + esc(String(d)) + ' days</span>';
+}
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
@@ -2717,8 +2757,9 @@ function spanishTaskCard_(t) {
   var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
   var claimPill = spanishClaimPillHtml_(t, pd.self || '');
   var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
-  return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
+  return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + (t.escalated ? ' sp-escalated' : '') + '">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + spanishFollowUpPillHtml_(t) + claimPill +
+      spanishEscalatedPillHtml_(t) +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +

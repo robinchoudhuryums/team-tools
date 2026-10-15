@@ -349,6 +349,10 @@ function formLocatedRowIs_(row, col, token) {
 function getFormByToken(token) {
   token = String(token || '').trim();
   if (!token) return { error: 'No form token provided.' };
+  // F34 (cycle 25): refused on shape before any read — the submit path's S9
+  // check. Anything that loads a page can call this, and every garbage string
+  // used to cost a read of the whole token column.
+  if (!formTokenShapeOk_(token)) return { error: 'Form not found. This link may be invalid.' };
 
   try {
     const sheet = getOrCreateFormTokensSheet_();
@@ -786,8 +790,13 @@ function getMySentForms() {
       });
     }
     forms.sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+    // F33 (cycle 25): a short list says so — rows above the scanned tail may
+    // hold this rep's older forms, and the output is capped at 200. Both
+    // read as the whole list before, and the patient timeline called itself
+    // complete on top of it (g152).
+    const truncated = (lastRow - 1 > scanCount) || forms.length > 200;
     if (forms.length > 200) forms.length = 200;
-    return { forms: forms };
+    return { forms: forms, truncated: truncated };
   } catch (err) { return { error: err.message }; }
 }
 /** Manager-side companion to getFormSubmission: lets a manager review a
@@ -1243,11 +1252,15 @@ function purgeExpiredFormData() {
   // Top-level (time-trigger target) → reachable via google.script.run, so gate
   // it: a purge is destructive and must not be firable by a non-manager rep.
   assertManagerCaller_('purgeExpiredFormData');
-  try {
+  // F5 (cycle 25): a PHI purge that failed (a lock timeout, the forms store
+  // unreachable) only logged, then the dispatcher CLEARED its key as a clean
+  // return, so the only trace was a stale line blaming the trigger (g142).
+  // ST2 (cycle 25 E1): a throw is a FAILED outcome, recorded by the runner.
+  return runAutomationJob_('FormDataPurge', function () {
     const days = getFormRetentionDays_();
     if (!days) {
       Logger.log('purgeExpiredFormData: retention disabled (FORM_DATA_RETENTION_DAYS=0) — nothing purged.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const lock = LockService.getScriptLock();
@@ -1262,9 +1275,8 @@ function purgeExpiredFormData() {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'FormDataPurge', '', '', false, 0,
       `retentionDays=${days}; submissionsRemoved=${subsRemoved}; tokensRemoved=${tokensRemoved}`);
     Logger.log(`purgeExpiredFormData: removed ${subsRemoved} submission(s) + ${tokensRemoved} token(s) older than ${days} day(s).`);
-  } catch (err) {
-    Logger.log('purgeExpiredFormData failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Public-ish resolve page served by doGet?resolve=<token>. The token is the
  *  credential (in the email to the dept); we record the clicker if Google can
@@ -1326,18 +1338,27 @@ function resolvePageHtml_(heading, msg, token) {
  *  is opened from an email by anyone in the department): the TOKEN is the
  *  credential, exactly as the link was, and the caller must be identifiable —
  *  an unattributed resolve is refused, as before. The sender's own click is
- *  recorded as 'self' (untimed) by markDeptRequestResolved_. */
+ *  recorded as 'self' (untimed) by markDeptRequestResolved_, and since cycle 25
+ *  F55 a copy recipient's — the CC mailbox, a MAIL_BCC_ALL address, a roster
+ *  member outside the receiving department — as 'copy' (untimed). */
 function confirmDeptRequestResolve(token) {
   try {
     const tok = String(token || '').trim();
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(tok)) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     const by = getActiveUserEmail_();
     if (!by) return { heading: 'Sign in to confirm', message: 'Open this link while signed in to your UniversalMed Supply work account so we can record who resolved the request.' };
-    const res = markDeptRequestResolved_(tok, by, 'email');
+    // F55: who the clicker is, read OUTSIDE the resolve's lock. A roster read
+    // that fails leaves the clicker unplaced (the 'email' default) rather than
+    // refusing the resolve — the click is real either way.
+    let clickerDepts = null;
+    try { const ce = getEmployeeInfo_(); if (ce) clickerDepts = empDepartments_(ce); } catch (e) {}
+    const copyAddrs = [].concat(String(CONFIG.CALL_NOTES.CC_EMAIL || '').split(','), mailBccAll_());
+    const res = markDeptRequestResolved_(tok, by, 'email', { copyAddrs: copyAddrs, clickerDepts: clickerDepts });
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };
     return { heading: 'Marked resolved — thank you!',
       message: 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ')' +
-        (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.' : '.') };
+        (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.'
+          : res.copy ? ' — as a clear from a copy of the email, not the department: it is not counted as a department response time.' : '.') };
   } catch (e) { return { heading: 'Something went wrong', message: 'Could not record the resolution. Please try again.' }; }
 }

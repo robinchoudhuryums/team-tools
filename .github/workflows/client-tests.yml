@@ -73,6 +73,35 @@ jobs:
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js
 
+      # Cycle 25 F29 + F65: the handbook's Python build. It never ran here, so a
+      # broken [[§…]] cross-reference (build.py fails on it) reached a commit
+      # green, and the M3-D1 pin hashes only the generated SVGs — an edited
+      # diagram generator or export transform with stale output passed. This runs
+      # the browser-free half of manual/make_all.sh (no Playwright, no
+      # LibreOffice, no Word render) and then fails if regenerating changed a
+      # committed diagram or the diagram partial the app ships.
+      - name: Set up Python (handbook build)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the handbook (no browser) and check its generated files are current
+        run: |
+          set -e
+          python -m pip install "markdown==3.7" "beautifulsoup4==4.15.0"
+          cd manual
+          python roles.py && python footnotes.py
+          python make_diagrams.py && python make_flow_diagrams.py
+          rm -f out/*.md
+          python build.py
+          python make_html.py out/Policies-and-Procedures-Handbook-v3.0.md "$RUNNER_TEMP/handbook.html"
+          python validate_html.py "$RUNNER_TEMP/handbook.html"
+          python feedback_report.py --check   # cycle 25 E3: the feedback worklist's self-test
+          MANUAL_OUT="$RUNNER_TEMP/manual-dist" python export_reference.py
+          cd ..
+          git diff --exit-code -- manual/diagrams web-app/kb/script_manual_diagrams.html
+        shell: bash
+
       # Batch C: the generated counts block in CLAUDE.md must equal what the
       # tree derives. This runs LAST because it re-runs both harnesses to read
       # their own summary lines — a static count cannot equal either total
@@ -80,3 +109,52 @@ jobs:
       # without spawning the harness that is asking.
       - name: Check the generated counts block
         run: node scripts/counts.mjs --check
+
+      # Cycle 25 E5 (ST5): PROJECT_HEALTH's standing and Score History are
+      # DERIVED from .cycle/metrics.csv and STATE.md's Cycle line, and a
+      # reflected cycle's STATE block must have moved to HISTORY.md once a later
+      # cycle opens. The standing named cycle 21 for four cycles (F26) because
+      # nothing compared it with anything. Zero dependencies.
+      - name: Check the cycle close-out (standing, Score History, HISTORY)
+        run: node scripts/cycle-closeout.mjs --check
+
+  # Cycle 25 E5 (ST4): the visual matrix's measurements, in CI. shoot.mjs reports
+  # sideways overflow, a page taller than its content, a text column narrower
+  # than a word, RPCs with no fixture and uncaught page errors — but the matrix
+  # was manual, so a measurement helped only when someone ran it. This shoots a
+  # fast subset (test/visual/ci-gate.cjs) in headless Chromium and fails on any
+  # of them. Its own job, so a browser-install hiccup never hides the harness
+  # results above, and the shots ride an artifact when it fails.
+  visual-layout:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright and its Chromium
+        working-directory: test/visual
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Shoot the CI subset and gate on the layout measurements
+        working-directory: test/visual
+        run: |
+          node build.mjs
+          node shoot.mjs --ci
+
+      - name: Keep the shots and the report when the gate fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-layout
+          path: |
+            test/visual/report.json
+            test/visual/shots/
+          retention-days: 7

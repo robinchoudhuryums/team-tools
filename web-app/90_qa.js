@@ -428,11 +428,11 @@ function qaSelfReviewRefusalFor_(emp, ss, fid) {
  *  so a crafted call can never write garbage into the column (INV-37 spirit).
  *  Audit row is id + status only (the status is an enum, never free text). */
 function qaSetRecordingStatus(fileId, status, reason) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const st = String(status || '').trim().toLowerCase();
     if (QA_STATUSES.indexOf(st) < 0) return { success: false, error: 'Unknown status.' };
@@ -457,11 +457,11 @@ function qaSetRecordingStatus(fileId, status, reason) {
  *  target must be a configured member; a non-manager cannot take over another
  *  member's live assignment; release is assignee-or-manager, idempotent. */
 function qaAssignRecording(fileId, assigneeEmail) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const self = String(emp.email || '').trim().toLowerCase();
     const target = String(assigneeEmail || '').trim().toLowerCase();
@@ -631,12 +631,11 @@ function qaListComments(fileId) {
     if (selfNo) return { error: selfNo };
     const sheet = ss.getSheetByName(QA_COMMENTS_TAB);
     if (!fid || !sheet || sheet.getLastRow() < 2) return { comments: [], canModerate: !!emp.isManager };
-    const last = sheet.getLastRow();
-    const start = Math.max(2, last - QA_COMMENTS_SCAN + 1);
-    const rows = sheet.getRange(start, 1, last - start + 1, QA_COMMENTS_HEADERS.length).getValues();
+    const want = {}; want[fid] = true;
+    const rows = qaRowsForFiles_(sheet, QAC.FILE_ID, QA_COMMENTS_HEADERS.length, want);   // F42 — however old
     const out = [];
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][QAC.FILE_ID] || '') !== fid) continue;
+      if (String(rows[i][QAC.FILE_ID] || '').trim() !== fid) continue;
       if (String(rows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
       out.push({
         commentId: String(rows[i][QAC.ID] || ''),
@@ -657,11 +656,11 @@ function qaListComments(fileId) {
  *  rows — the IntakeFeedback posture), over-cap REFUSES. The audit row is
  *  id-only: comment text may name a patient, so it stays in the QA store. */
 function qaAddComment(fileId, atSec, text) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!fid) return { success: false, error: 'Missing recording id.' };
     const at = Math.round(Number(atSec) * 10) / 10;
@@ -688,17 +687,17 @@ function qaAddComment(fileId, atSec, text) {
 /** Soft-delete a comment — its AUTHOR or a manager (the kbDeleteComment
  *  shape: rows are never removed, Status flips to 'deleted'). */
 function qaDeleteComment(commentId) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const wanted = String(commentId || '').trim();
     if (!wanted) return { success: false, error: 'Missing comment id.' };
     const sheet = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
     if (!sheet || sheet.getLastRow() < 2) return { success: false, error: 'Comment not found.' };
     const last = sheet.getLastRow();
-    const start = Math.max(2, last - QA_COMMENTS_SCAN + 1);
+    const start = 2;   // F42 (cycle 25): the whole id column — a comment on an old review is deletable too
     const ids = sheet.getRange(start, QAC.ID + 1, last - start + 1, 1).getValues();
     for (let i = ids.length - 1; i >= 0; i--) {
       if (String(ids[i][0] || '') !== wanted) continue;
@@ -916,15 +915,17 @@ function qaReviewRetentionDays_() {
  *  INV-161). Read-only w.r.t. tab existence — never provisions. */
 function purgeOldQaReviews() {
   assertManagerCaller_('purgeOldQaReviews');
-  try {
+  // QA-3: the F4 rule — a caught failure reaches nobody unless recorded; since
+  // ST2 (cycle 25 E1) the runner records a throw as a FAILED outcome.
+  return runAutomationJob_('QaReviewPurge', function () {
     const days = qaReviewRetentionDays_();
     if (!days) {
       Logger.log('purgeOldQaReviews: retention disabled (QA_REVIEW_RETENTION_DAYS=0) — nothing purged.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // a disabled job is a clean run
     }
     if (!qaStoreConfigured_()) {
       Logger.log('purgeOldQaReviews: QA_SS_ID not set — nothing to purge.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // no QA store — nothing exists to purge
     }
     const cutoffMs = Date.now() - days * 86400000;
     const lock = LockService.getScriptLock();
@@ -949,11 +950,8 @@ function purgeOldQaReviews() {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge', '', '', false, 0,
       `retentionDays=${days}; commentsRemoved=${comments}; scorecardsRemoved=${scorecards}`);
     Logger.log(`purgeOldQaReviews: removed ${comments} comment(s) + ${scorecards} scorecard(s) older than ${days} day(s).`);
-    clearAutomationError_('QaReviewPurge');
-  } catch (err) {
-    stampAutomationError_('QaReviewPurge', err.message);   // QA-3: the F4 rule — a caught failure reaches nobody unless stamped
-    Logger.log('purgeOldQaReviews failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** PURE (Node-pinned) — QA-3: a QA review row's CreatedMs as epoch ms, or null
  *  (never deleted) for a 0, blank or non-numeric cell. */
@@ -968,11 +966,11 @@ function qaPurgeMs_(v) {
  *  The audit row is id-only: the agent NAME stays in the QA store, the same
  *  INV-32/196 rule as recording file names. */
 function qaSetRecordingAgent(fileId, agentName) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const name = String(agentName || '').trim().substring(0, 80);
     const sheet = getOrCreateQaRecordingsSheet_();
@@ -1019,11 +1017,11 @@ function qaAgentChangeUnshares_(prev, next, sharedMs) {
  *  reloads and re-scores. Append-only: latest per (recording, reviewer) wins
  *  everywhere it is read (qaLatestScorecards_). Audit row is id-only. */
 function qaSaveScorecard(fileId, ratings, notes) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     if (!fid) return { success: false, error: 'Missing recording id.' };
     if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
@@ -1063,17 +1061,60 @@ function qaSaveScorecard(fileId, ratings, notes) {
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
-/** Bounded tail read of QaScorecards (all, or one recording's), parsed
- *  defensively — a corrupt RatingsJson row is skipped, never a broken read. */
-function qaReadScorecards_(fid) {
+/** PURE (Node-pinned; F42, cycle 25) — ascending 0-based row indexes as
+ *  inclusive [start, end] runs, joining two when fewer than `gap` rows lie
+ *  between them (one range read beats many single-row reads). */
+function qaRowRuns_(idxs, gap) {
+  const out = [];
+  (idxs || []).forEach(function (i) {
+    const r = out[out.length - 1];
+    if (r && i - r[1] <= (gap || 0) + 1) r[1] = i; else out.push([i, i]);
+  });
+  return out;
+}
+/** F42 (cycle 25) — every row of `sheet` whose `fileCol` is in `wanted`
+ *  ({fileId: true}), in sheet order, however old: ONE read of the id column,
+ *  then only the runs that hold a match. The tail read missed an old review's
+ *  rows once newer recordings had pushed them out, and the review rendered
+ *  empty. */
+function qaRowsForFiles_(sheet, fileCol, width, wanted) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const last = sheet.getLastRow();
+  const ids = sheet.getRange(2, fileCol + 1, last - 1, 1).getValues();
+  const idxs = [];
+  for (let i = 0; i < ids.length; i++) if (qaWants_(wanted, ids[i][0])) idxs.push(i);
+  const out = [];
+  qaRowRuns_(idxs, QA_ROW_RUN_GAP).forEach(function (run) {
+    const rows = sheet.getRange(run[0] + 2, 1, run[1] - run[0] + 1, width).getValues();
+    rows.forEach(function (r) { if (qaWants_(wanted, r[fileCol])) out.push(r); });
+  });
+  return out;
+}
+/** PURE — is this cell's id one of `wanted`'s OWN keys? A plain lookup would
+ *  read an id like "constructor" off the object's prototype. */
+function qaWants_(wanted, id) {
+  const k = String(id || '').trim();
+  return !!k && Object.prototype.hasOwnProperty.call(wanted || {}, k) && !!wanted[k];
+}
+/** QaScorecards parsed defensively — a corrupt RatingsJson row is skipped,
+ *  never a broken read. All rows: a bounded tail (`truncated` says so). One
+ *  recording (`fid`) or a set (`fidSet`, {fileId: true}): every row of those
+ *  recordings, however old (F42). */
+function qaReadScorecards_(fid, fidSet) {
   const sheet = getQaSS_().getSheetByName(QA_SCORECARDS_TAB);
   if (!sheet || sheet.getLastRow() < 2) return { cards: [], truncated: false };
   const last = sheet.getLastRow();
-  const start = Math.max(2, last - QA_SCORECARDS_SCAN + 1);
-  const rows = sheet.getRange(start, 1, last - start + 1, QA_SCORECARDS_HEADERS.length).getValues();
+  let rows, start = 2;
+  const wanted = fidSet || (fid ? (function () { const w = {}; w[fid] = true; return w; })() : null);
+  if (wanted) {
+    rows = qaRowsForFiles_(sheet, QSC.FILE_ID, QA_SCORECARDS_HEADERS.length, wanted);
+  } else {
+    start = Math.max(2, last - QA_SCORECARDS_SCAN + 1);
+    rows = sheet.getRange(start, 1, last - start + 1, QA_SCORECARDS_HEADERS.length).getValues();
+  }
   const cards = [];
   for (let i = 0; i < rows.length; i++) {
-    if (fid && String(rows[i][QSC.FILE_ID] || '') !== fid) continue;
+    if (wanted && !qaWants_(wanted, rows[i][QSC.FILE_ID])) continue;
     let ratings = null;
     try { ratings = JSON.parse(String(rows[i][QSC.RATINGS] || '')); } catch (e) { ratings = null; }
     if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) continue;
@@ -1244,20 +1285,27 @@ function qaIsManualId_(fid) { return String(fid || '').indexOf(QA_MANUAL_ID_PREF
  *  reviewed recording. QA-gated, locked, audit row id-only (the label may
  *  name the caller/agent; it stays in the QA store — INV-32/196). */
 function qaCreateManualRecording(agentName, label) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const name = String(label || '').trim();
     if (!name) return { success: false, error: 'Give the audit a label (e.g. the call date and caller).' };
     if (name.length > QA_MANUAL_LABEL_MAX) return { success: false, error: 'Label is capped at ' + QA_MANUAL_LABEL_MAX + ' characters.' };
     const agent = String(agentName || '').trim().substring(0, 80);
+    // F48 (cycle 25): the roster id is resolved AT WRITE, as qaSetRecordingAgent
+    // does (F-16) — a manual audit with no AgentId never released to its agent
+    // (My Reviews scopes by id) — and S6 holds here too: an audit of your OWN
+    // call, entered by hand, is reviewing your own record by another route.
+    const agentId = qaRosterIdByName_(agent);
+    const selfNo = qaSelfReviewRefusal_(emp, [{ name: agent, id: agentId }]);
+    if (selfNo) return { success: false, error: selfNo };
     const fid = QA_MANUAL_ID_PREFIX + Utilities.getUuid();
     const now = Date.now();
     appendRowsTextSafe_(getOrCreateQaRecordingsSheet_(), [[
-      fid, name, 0, 'manual', now, now, 'in_review', String(emp.email || '').trim().toLowerCase(), now, '', agent, 0, 0, '',
-    ]], QA_RECORDINGS_TEXT_IDX);   // S2: FileId/Name/Agent are '@' columns
+      fid, name, 0, 'manual', now, now, 'in_review', String(emp.email || '').trim().toLowerCase(), now, '', agent, 0, 0, '', agentId,
+    ]], QA_RECORDINGS_TEXT_IDX);   // S2: FileId/Name/Agent/AgentId are '@' columns
     writeAuditLog_(emp, 'QaManualRecording', '', '', false, 0, 'fileId=' + fid, emp.email);
     return { success: true, fileId: fid };
   } catch (err) { return { success: false, error: err.message }; }
@@ -1427,11 +1475,11 @@ function qaYmdMs_(ymd, tz) {
  *  unattributed recording would release it to nobody while READING as
  *  shared). Audit row is id-only (INV-32/196). */
 function qaSetRecordingShared(fileId, shared) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const sheet = getOrCreateQaRecordingsSheet_();
     const found = qaFindRecordingRow_(sheet, fid);
@@ -1499,8 +1547,10 @@ function getMyQaReviews() {
     if (mine.length) {
       const wanted = {};
       mine.forEach(function (r) { wanted[r.fileId] = r; });
-      // ONE bounded pass each over scorecards + comments for all my rows.
-      const latest = qaLatestScorecards_(qaReadScorecards_(null).cards);
+      // F42 (cycle 25): every scorecard and comment row of MY recordings,
+      // however old — a released review that had scrolled out of the 4,000-row
+      // tails rendered with no scores and no comments.
+      const latest = qaLatestScorecards_(qaReadScorecards_(null, wanted).cards);
       latest.sort(function (a, b) { return b.createdMs - a.createdMs; });
       latest.forEach(function (c) {
         const r = wanted[c.fileId];
@@ -1509,12 +1559,10 @@ function getMyQaReviews() {
       try {
         const cs = getQaSS_().getSheetByName(QA_COMMENTS_TAB);
         if (cs && cs.getLastRow() >= 2) {
-          const cLast = cs.getLastRow();
-          const cStart = Math.max(2, cLast - QA_COMMENTS_SCAN + 1);
-          const cRows = cs.getRange(cStart, 1, cLast - cStart + 1, QA_COMMENTS_HEADERS.length).getValues();
+          const cRows = qaRowsForFiles_(cs, QAC.FILE_ID, QA_COMMENTS_HEADERS.length, wanted);   // F42
           for (let i = 0; i < cRows.length; i++) {
             if (String(cRows[i][QAC.STATUS] || '').trim().toLowerCase() !== 'active') continue;
-            const r = wanted[String(cRows[i][QAC.FILE_ID] || '')];
+            const r = wanted[String(cRows[i][QAC.FILE_ID] || '').trim()];
             if (!r) continue;
             r.comments.push({
               atSec: Number(cRows[i][QAC.AT_SEC]) || 0,
@@ -1570,11 +1618,11 @@ function qaSamplePick_(candidates, count, reviewedByAgent, rand, targets) {
  *  qaSamplePick_ (agents with the fewest DONE reviews first). Counts-only
  *  audit (INV-32/196). */
 function qaSampleRecordings(count, period) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const n = Math.floor(Number(count) || 0);
     if (!(n >= 1 && n <= 10)) return { success: false, error: 'Sample 1–10 recordings.' };
     const self = String(emp.email || '').trim().toLowerCase();
@@ -1591,8 +1639,12 @@ function qaSampleRecordings(count, period) {
     const periodKey = qaPeriodValid_(period) ? String(period).trim()
       : qaPeriodOptions_(Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd'))[0].key;
     const target = qaAuditTarget_();
+    // F47 (cycle 25): an input that could not be read is NAMED in the answer —
+    // an unreadable exemption list samples an exempt agent, an unreadable
+    // roster samples with no targets, and both used to read as a clean pick.
+    const unread = [];
     let exemptions = {};
-    try { exemptions = qaReadExemptions_(); } catch (e) { exemptions = {}; }
+    try { exemptions = qaReadExemptions_(); } catch (e) { exemptions = {}; unread.push('exemptions'); }
     const canon = {};    // lowercase roster name → roster spelling
     const targets = {};  // roster spelling → target for this period
     try {
@@ -1604,7 +1656,7 @@ function qaSampleRecordings(count, period) {
         canon[nm.toLowerCase()] = nm;
         targets[nm] = qaExemptFor_(exemptions, nm.toLowerCase(), periodKey) ? 0 : target;   // QA2-1: one key rule
       }
-    } catch (e) { /* best-effort — an unreadable roster degrades to the uncapped pick */ }
+    } catch (e) { unread.push('roster'); /* degrades to the uncapped pick — and says so (F47) */ }
     const candidates = [];
     const reviewedByAgent = {};
     for (let i = 0; i < rows.length; i++) {
@@ -1630,9 +1682,10 @@ function qaSampleRecordings(count, period) {
     if (!picked.length) return { success: false, error: 'Nothing to sample — every unassigned recording belongs to an agent already at target this period.' };
     picked.forEach(function (c) { sheet.getRange(c.rowIdx, QAR.ASSIGNEE + 1).setValue(sheetSafe_(self)); });
     writeAuditLog_(emp, 'QaSample', '', '', false, 0,
-      'requested=' + n + '; assigned=' + picked.length, emp.email);
+      'requested=' + n + '; assigned=' + picked.length + (unread.length ? '; unread=' + unread.join(',') : ''), emp.email);
     return { success: true, assigned: picked.length,
-             fileIds: picked.map(function (c) { return c.fileId; }) };
+             fileIds: picked.map(function (c) { return c.fileId; }),
+             unread: unread };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -1969,11 +2022,11 @@ function qaReadExemptions_() {
  *  append-only ledger; the audit row carries period + flag only (the name
  *  stays in the QA store — INV-196's name rule). */
 function qaSetExemption(empName, period, on) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
     const name = String(empName || '').trim().substring(0, 80);
     const per = String(period || '').trim();
     if (!name) return { success: false, error: 'Employee name required.' };
@@ -1998,11 +2051,11 @@ function qaSetExemption(empName, period, on) {
  *  bounded; a non-blank cell is never overwritten, no audit row (it is
  *  metadata the file already carries, not a review action). */
 function qaSetRecordingDuration(fileId, sec) {
+  const emp = getEmployeeInfo_();
+  if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp || !canSeeQa_(emp)) return { success: false, error: 'QA access required.' };
     const fid = String(fileId || '').trim();
     const n = Math.round(Number(sec));
     if (!(n >= 1 && n <= QA_DURATION_MAX_SEC)) return { success: false, error: 'Invalid duration.' };

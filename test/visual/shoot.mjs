@@ -1,10 +1,12 @@
 // Playwright driver for the visual audit: scenarios × viewport × theme.
 // Run `node build.mjs` first (page.html is generated, not committed).
 // Usage: node shoot.mjs [name-substring ...]   — no args shoots everything.
+//        node shoot.mjs --ci   — the CI subset (ci-gate.cjs), exit 1 on a layout finding.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import gate from './ci-gate.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(HERE, 'page.html');
@@ -104,7 +106,15 @@ const SCENARIOS = [
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],
   ['manage-dark-wide',      { tool: 'manage',    tab: 'manage' },     WIDE, 'dark',  ''],
+  // G1 + F19 (cycle 25 E2): the pay-period close checklist sits in the
+  // Periodic group, collapsed by default — these open it.
+  ['manage-periodic-light-wide',   { tool: 'manage', tab: 'manage' }, WIDE,   'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  ['manage-periodic-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  ['manage-periodic-error-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?failrpc=getPayPeriodClose', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['cn-log-light-wide',     { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'light', ''],
+  // F35 (cycle 25): History had never been shot; its preset row gained a button.
+  ['cn-history-light-wide',   { tool: 'callNotes', tab: 'callNotesHistory' }, WIDE,   'light', ''],
+  ['cn-history-light-mobile', { tool: 'callNotes', tab: 'callNotesHistory' }, MOBILE, 'light', ''],
   ['cn-log-dark-wide',      { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'dark',  ''],
   ['metrics-light-wide',    { tool: 'metrics',   tab: null },         WIDE, 'light', ''],
   ['metrics-dark-wide',     { tool: 'metrics',   tab: null },         WIDE, 'dark',  ''],
@@ -197,6 +207,8 @@ const SCENARIOS = [
   // table) STACKS in the pop-out; and the sort + date controls in dark mode.
   ['deptreq-light-compact', { tool: 'metrics', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
   ['deptreq-dark-wide',     { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
+  ['deptreq-looks-light-mobile', { tool: 'metrics', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
   // 22post A-2a — the Scratchpad with the standard modal buttons.
   ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
@@ -360,6 +372,17 @@ const SCENARIOS = [
     "kbOpenItem_('man-5-1'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 400)"],
   ['reference-manual-imported-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(false)"],
+  // Cycle 25 E3 — the handbook loop: the feedback export's answer in the
+  // Handbook dialog (a cut window, warn tone), and the Issue field's handbook
+  // strip on the Log at phone width and in dark mode.
+  ['reference-manual-feedback-export-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenManualImport_(); kbManualExportFeedback_()"],
+  ['reference-review-due-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '',
+    "setTimeout(function(){ var r=document.querySelector('.kb-land-rd'); if(r) r.scrollIntoView(); }, 600)"],
+  ['cn-log-handbook-strip-light-mobile', { tool: 'callNotes', tab: 'callNotes' }, MOBILE, 'light', '',
+    "cnSetFieldValue_('cn-fld-issue', 'Patient waiting on the doctor to sign the order'); kbHbStripRefresh_()"],
+  ['cn-log-handbook-strip-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '',
+    "cnSetFieldValue_('cn-fld-issue', 'Patient waiting on the doctor to sign the order'); kbHbStripRefresh_()"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
   // by any scenario, at any width. That is why both lookups sat inside
   // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result
@@ -428,6 +451,11 @@ const SCENARIOS = [
   ['admin-system-light-mobile',      { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('system')"],
   ['admin-system-light-wide',        { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('system')"],
   ['admin-system-dark-wide',         { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'dark', '', "cnAdminTab_('system')"],
+  // Cycle 25 E4 (ST1): the reply check's review report, scrolled into view (an over-fired rule in amber).
+  ['admin-system-replycheck-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '',
+    "cnAdminTab_('system'); setTimeout(function(){ var p=document.getElementById('cn-sys-sec-replyreviews'); if(p) p.scrollIntoView(); }, 700)"],
+  ['admin-system-replycheck-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '',
+    "cnAdminTab_('system'); setTimeout(function(){ var p=document.getElementById('cn-sys-sec-replyreviews'); if(p) p.scrollIntoView(); }, 700)"],
   ['admin-system-allclear-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?fixture=empty', "cnAdminTab_('system')"],
   ['admin-system-error-light-wide',  { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?failrpc=getAutomationHealth', "cnAdminTab_('system')"],
   // The Drive grant the operator was actually missing (2026-09-09) — the
@@ -459,11 +487,21 @@ const SCENARIOS = [
   ['clock-light-wide-pht', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?tz=America/Chicago&role=rep', '', { tz: 'Asia/Manila', utc: [16, 5] }],
 ];
 
-const only = process.argv[2] ? process.argv.slice(2) : null;
+// --ci (cycle 25 E5, ST4): the gate's subset by EXACT name. A name the matrix
+// does not have is refused before the browser starts — a filter that matches
+// nothing would shoot nothing and pass.
+const CI = process.argv.includes('--ci');
+if (CI) {
+  const names = new Set(SCENARIOS.map((s) => s[0]));
+  const absent = gate.CI_SCENARIOS.filter((n) => !names.has(n));
+  if (absent.length) { console.error('ci-gate: no such scenario: ' + absent.join(', ')); process.exit(1); }
+}
+const only = CI ? null : (process.argv[2] ? process.argv.slice(2) : null);
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
 for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
+  if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
   // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
@@ -513,10 +551,49 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     clientW: document.documentElement.clientWidth,
   }));
   const overflowPx = Math.max(0, layout.scrollW - layout.clientW);
+  // Cycle 25 F69 — the two layout failures overflowPx cannot see.
+  // (1) VERTICAL RUNAWAY (F67): a visually hidden `position:absolute` element
+  //     with no positioned ancestor inside its scroller escaped it and made the
+  //     page 8,245px tall for a 900px window — no sideways scroll, no console
+  //     error, just blank pixels. Measured as the document's scroll height past
+  //     the bottom of everything VISIBLY laid out; a visually hidden box (a clip,
+  //     or under 2px a side) is excluded, because it is exactly the escapee.
+  // (2) SQUEEZED TEXT (F68): an unshrinkable sibling squeezed a card's
+  //     `min-width: 0` text column to 22px at 390px. Any element that holds a
+  //     real run of text (16+ characters of its own) laid out narrower than a
+  //     word is reported.
+  const shape = await page.evaluate(() => {
+    const vh = window.innerHeight;
+    let bottom = 0;
+    const narrow = [];
+    const all = document.body ? document.body.getElementsByTagName('*') : [];
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      if ((cs.clip && cs.clip !== 'auto') || (cs.clipPath && cs.clipPath !== 'none' && /inset\(\s*(50|100)%/.test(cs.clipPath))) continue;
+      if (cs.position === 'fixed') continue;   // fixed chrome never extends the document
+      bottom = Math.max(bottom, r.bottom + window.scrollY);
+      let own = '';
+      for (let n = el.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) own += n.nodeValue;
+      own = own.replace(/\s+/g, ' ').trim();
+      // SVG <text> is drawn, not laid out in a column — a scaled-down diagram's labels are not squeezed text.
+      if (own.length >= 16 && r.width < 48 && cs.display !== 'inline' && !(el instanceof SVGElement) && r.right > 0 && r.left < window.innerWidth) {
+        narrow.push({ tag: el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''),
+          w: Math.round(r.width), text: own.slice(0, 24) });
+      }
+    }
+    const scrollH = document.documentElement.scrollHeight;
+    return { runaway: Math.max(0, Math.round(scrollH - Math.max(bottom, vh))), scrollH, narrow: narrow.slice(0, 5) };
+  });
   report.push({
     name, view, missing,
     viewport: vp.width + 'x' + vp.height,
     overflowPx,
+    verticalRunawayPx: shape.runaway,
+    narrowText: shape.narrow,
     errors: Array.from(new Set(errors)).slice(0, 8),
   });
   await ctx.close();
@@ -529,8 +606,29 @@ if (overflowing.length) {
   console.log('\nHORIZONTAL OVERFLOW (the page scrolls sideways — measure, do not eyeball):');
   overflowing.forEach((r) => console.log('  ' + r.name + '  +' + r.overflowPx + 'px @ ' + r.viewport));
 }
+// F69: a page taller than its content by more than this is a runaway, not a
+// margin — ONE constant, the CI gate's.
+const RUNAWAY_PX = gate.RUNAWAY_PX;
+const runaway = report.filter((r) => r.verticalRunawayPx > RUNAWAY_PX);
+if (runaway.length) {
+  console.log('\nVERTICAL RUNAWAY (the page scrolls past its content — an escaped absolute element?):');
+  runaway.forEach((r) => console.log('  ' + r.name + '  +' + r.verticalRunawayPx + 'px blank @ ' + r.viewport));
+}
+const squeezed = report.filter((r) => r.narrowText.length);
+if (squeezed.length) {
+  console.log('\nSQUEEZED TEXT (a text column laid out narrower than a word):');
+  squeezed.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.narrowText.map((n) => n.tag + ' ' + n.w + 'px "' + n.text + '"').join(' · ')));
+}
 const fixtureGaps = report.filter((r) => r.missing.length);
 if (fixtureGaps.length) {
   console.log('\nMISSING FIXTURES (these scenarios rendered a LOADER, not the real view):');
   fixtureGaps.forEach((r) => console.log('  ' + r.name + '  ' + r.missing.join(', ')));
+}
+if (CI) {
+  const v = gate.ciVerdict(report, gate.CI_SCENARIOS, gate.KNOWN);
+  console.log('\nCI GATE (' + gate.CI_SCENARIOS.length + ' scenarios): ' + (v.ok ? 'PASS' : 'FAIL'));
+  v.failures.forEach((f) => console.log('  ' + f.scenario + '  ' + f.kind + '  ' + f.detail));
+  v.stale.forEach((k) => console.log('  KNOWN entry no longer fires — remove it from ci-gate.cjs: ' + k.scenario + ' ' + k.kind));
+  v.unshot.forEach((n) => console.log('  not shot: ' + n));
+  if (!v.ok) process.exit(1);
 }

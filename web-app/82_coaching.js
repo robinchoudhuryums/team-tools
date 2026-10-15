@@ -242,13 +242,13 @@ function coachCanManagerSee_(callerEmp, item) {
  *  post-lock (M-7) and best-effort; `mailed` on the response is TRUE only when
  *  the send actually went (false when it threw, absent when none was owed). */
 function createCoaching(payload) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   let result = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const v = coachValidate_(payload);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.item.empId);
@@ -329,12 +329,12 @@ function coachActorName_(email) {
  *  written to RepResponse ONLY on the open→acknowledged transition — a second
  *  ack never overwrites the reply; the reply itself stays in the HR store. */
 function acknowledgeCoaching(coachId, response) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Not authorized.' };
     const found = findCoachingRow_(coachId);
     if (!found || found.item.empId !== emp.id) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status === 'void') return { success: false, error: 'This item is no longer active.' };
@@ -418,15 +418,19 @@ function getCoachingDashboard() {
  *  a CRITICAL item sends a short retraction to the same recipient (post-lock)
  *  — an unretracted "critical" notice in a rep's inbox is worse than none. */
 function voidCoaching(coachId, reason) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findCoachingRow_(coachId);
     if (!found) return { success: false, error: 'Coaching item not found.' };
     if (!coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
+    // F45 (cycle 25): idempotent, like voidDoc — a second void (a double
+    // click, a second manager, a stale drawer) rewrote the VoidReason on a
+    // keep-forever HR row and wrote a second audit row.
+    if (found.item.status === 'void') return { success: true, alreadyVoid: true };
     const sheet = getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS);
     sheet.getRange(found.rowIdx, CO.STATUS + 1).setValue(sheetSafe_('void'));
     // F(cycle-8 M-6): the reason (free text plausibly naming a patient/TRX —
@@ -453,11 +457,11 @@ function voidCoaching(coachId, reason) {
  *  the item's FollowUpAt (a calendar DATE — "Revisit on"). Audit
  *  CoachingFollowUp, id-only (the date is HR-record detail). */
 function setCoachingFollowUp(coachId, dateOrNull) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const iso = coachIsoDateOrBlank_(dateOrNull);
     if (dateOrNull && !iso) return { success: false, error: 'Pick a date (yyyy-MM-dd) or clear it.' };
     const found = findCoachingRow_(coachId);
@@ -490,13 +494,13 @@ function coachStampDayMgr_(ts) {
   } catch (_) { return ''; }
 }
 function nudgeCoaching(coachId) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   let result = null;
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
     const found = findCoachingRow_(coachId);
     if (!found || !coachCanManagerSee_(callerEmp, found.item)) return { success: false, error: 'Coaching item not found.' };
     if (found.item.status !== 'open') return { success: false, error: 'Only an open (unacknowledged) item can be nudged.' };
@@ -635,11 +639,14 @@ function notifyRepOfCoachingNudge_(target, item, manager) {
 function notifyManagerOfCoachingAck_(item, rep, replied) {
   try {
     if (!item.createdBy) return;
+    const route = hrNoticeTargets_(item.createdBy, rep && rep.managerEmail);   // F41 — the FORM-5 rule
+    if (!route.to.length) return;
+    const lead = route.rerouted ? hrDepartedIssuerLine_(item.createdBy, 'coaching item') : '';
     const sevLabel = COACH_SEV_LABELS[item.severity] || item.severity;
-    const body = rep.name + ' acknowledged your coaching (' + sevLabel + ').' + (replied ? ' They left a reply — open Coaching to read it.' : '');
-    coachSendMail_({ to: item.createdBy, subject: 'Acknowledged: coaching for ' + rep.name,
+    const body = (lead ? lead + '\n\n' : '') + rep.name + ' acknowledged ' + (lead ? 'the' : 'your') + ' coaching (' + sevLabel + ').' + (replied ? ' They left a reply — open Coaching to read it.' : '');
+    coachSendMail_({ to: route.to.join(','), subject: 'Acknowledged: coaching for ' + rep.name,
       body: body, htmlBody: buildBrandedEmailHtml_('Coaching acknowledged',
-        brandedKvRows_([['Employee', rep.name], ['Type', sevLabel], ['Reply', replied ? 'Yes — in the app' : 'None']]),
+        (lead ? '<p style="margin:0 0 12px;">' + esc_(lead) + '</p>' : '') + brandedKvRows_([['Employee', rep.name], ['Type', sevLabel], ['Reply', replied ? 'Yes — in the app' : 'None']]),
         { tone: 'success', subLabel: 'Training · Coaching', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
   } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
@@ -668,7 +675,7 @@ function coachRecapBuckets_(items, nowMs, windowDays) {
  *  (INV-134). Heartbeat `coachingRecap`. */
 function sendCoachingRecapDigest() {
   assertManagerCaller_('sendCoachingRecapDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CoachingRecapDigest', function () {
     const windowDays = CONFIG.COACHING_RECAP_DAYS || 7;
     const nowMs = Date.now();
     let items = [];
@@ -685,9 +692,9 @@ function sendCoachingRecapDigest() {
       stampDigestLastRun_('coachingRecap');   // the trigger ran
       // HR-3 (cycle 23): an UNSET store is a deployment without coaching; a set
       // one that throws means nobody got a recap, and that is a failure.
-      if (hrDocsConfigured_()) stampAutomationError_('CoachingRecapDigest', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message);
-      else clearAutomationError_('CoachingRecapDigest');
-      return;
+      // ST2 (cycle 25 E1): returned as the run's outcome.
+      if (hrDocsConfigured_()) return { outcome: automationOutcome_('failed', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message) };
+      return { outcome: automationOutcome_('ok') };
     }
     const buckets = coachRecapBuckets_(items, nowMs, windowDays);
     const roster = getEmployeeRosterRows_();
@@ -725,15 +732,16 @@ function sendCoachingRecapDigest() {
             { tone: 'info', subLabel: 'Training · Coaching', statusLabel: 'Weekly recap', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
       } catch (e) { console.warn('coaching recap to ' + who.email + ' failed: ' + e.message); }
       if (ok) sent++; else failed++;
+      // E1 follow-ups: coachSendMail_ returns false and logs its own reason, so
+      // the row names the failure without the error text.
+      logDigestDelivery_('coachingRecap', who.email, ok ? 'sent' : 'failed', list.length, ok ? '' : 'the recap email could not be sent');
     });
     stampDigestLastRun_('coachingRecap');
-    if (failed) stampAutomationError_('CoachingRecapDigest', failed + ' of ' + (sent + failed) + ' coaching recap email(s) failed to send');
-    else clearAutomationError_('CoachingRecapDigest');
     Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' failed=' + failed + ' noEmail=' + skipped);
-  } catch (err) {
-    Logger.log('sendCoachingRecapDigest failed: ' + err.message);
-    stampAutomationError_('CoachingRecapDigest', err.message);
-  }
+    // ST2 (cycle 25 E1): partial while any recap went out, failed when none did.
+    if (failed) return { outcome: automationOutcome_(sent ? 'partial' : 'failed', failed + ' of ' + (sent + failed) + ' coaching recap email(s) failed to send') };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 
 // ── T2 extension: import a quiz from a Google Forms quiz ──────────────────

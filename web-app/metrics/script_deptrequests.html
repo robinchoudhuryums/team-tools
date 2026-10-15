@@ -269,12 +269,13 @@ function drKpiStripHtml_(data) {
   // median must skip `resolvedVia === 'app'` explicitly. Only email-link
   // resolves (the receiver's own click) carry a resolution time.
   const resolvedMins = resolvedAll
-    .filter(function (r) { return r.resolvedVia !== 'app' && r.resolvedVia !== 'self'; })
+    .filter(function (r) { return r.resolvedVia !== 'app' && r.resolvedVia !== 'self' && r.resolvedVia !== 'copy'; })
     .map(function (r) { return r.elapsedMin; })
     .filter(function (x) { return x != null; }).sort(function (a, b) { return a - b; });
   // RES-1 (cycle 23): 'self' — the sender clicked their own copy's link — is a
-  // manual clear too, never a timed reply.
-  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app' || r.resolvedVia === 'self'; }).length;
+  // manual clear too, never a timed reply; so is 'copy' (cycle 25 F55 — a CC,
+  // BCC-all or other non-department recipient clicked theirs).
+  const manualCount = resolvedAll.filter(function (r) { return r.resolvedVia === 'app' || r.resolvedVia === 'self' || r.resolvedVia === 'copy'; }).length;
   // DR-3 (cycle 23): a true median — the client tile is the server's twin.
   const mm = Math.floor(resolvedMins.length / 2);
   const medianResolve = !resolvedMins.length ? null
@@ -342,7 +343,7 @@ function drRender_(area, data, errorMsg) {
   const intro = '<div class="dr-note">' + icon('outbox', 13) +
     ' Every department email you send from Call Notes is logged here. Resolve a request with the button below, ' +
     'or the receiver can click the “Mark resolved” link in the email. A reply from the department resolves it too (checked hourly) — ' +
-    'unless the reply asks a question, which marks it “Responded — needs a look”.</div>';
+    'unless the reply asks a question, holds, refuses or only acknowledges, which puts it under “Replies to check” for you to answer.</div>';
 
   // The server reads only the most-recent rows (bounded tail) — be transparent
   // when older entries fall outside that window (F1/A4).
@@ -421,6 +422,9 @@ function drRender_(area, data, errorMsg) {
   // with the summary cards BESIDE "Resolution time by department", then the
   // team-wide list, then Incoming, then My requests. A rep's order is unchanged.
   const controls = drControlsHtml_();
+  // E4 (cycle 25, ST1): the replies the hourly check was not sure about lead
+  // the page, each with the reason it held back and an answer.
+  const looks = drLooksHtml_(data);
   let body;
   if (data && data.isManager) {
     body = deptBar + controls +
@@ -430,7 +434,7 @@ function drRender_(area, data, errorMsg) {
   } else {
     body = strip + deptBar + controls + incomingSection + drRecentHtml_(data) + mineSection;
   }
-  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + body + '</div>';
+  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + looks + body + '</div>';
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -460,11 +464,13 @@ function drCardStatusHtml_(item) {
     // 22post D: 'reply' — the department's own reply resolved it; timed.
     const via = item.resolvedVia === 'app' ? 'marked in app'
       : item.resolvedVia === 'self' ? 'marked by the sender'   // RES-1 — untimed
+      : item.resolvedVia === 'copy' ? 'marked from a copy'     // F55 — untimed
       : (item.resolvedVia === 'reply' && item.elapsedMin != null) ? 'replied · ' + drFmtMin_(item.elapsedMin)
       : (item.resolvedVia === 'email' && item.elapsedMin != null) ? drFmtMin_(item.elapsedMin)
       : 'resolved';
     const viaTtl = item.resolvedVia === 'app' ? ' title="Marked resolved in the app — not counted as a timed reply"'
       : item.resolvedVia === 'self' ? ' title="The sender used the email link on their own copy — not counted as a timed reply"'
+      : item.resolvedVia === 'copy' ? ' title="Someone outside the department used the email link on a copy (CC, BCC or forwarded) — not counted as a timed reply"'
       : item.resolvedVia === 'reply' ? ' title="Resolved by the department\u2019s reply to the email"' : ttl;
     return '<span class="sp-task-age" style="color:var(--success-deep)"' + viaTtl + '>' + icon('check', 12) + ' ' +
       esc(via) + '</span>';
@@ -476,7 +482,8 @@ function drCardStatusHtml_(item) {
   // SLA reading so the desk knows a person must look.
   if (item.replyVerdict === 'needs-look') {
     return '<span class="sp-task-age dr-needs-look" title="' + esc('Replied ' + (item.repliedAt || '') +
-      ' — the reply asks a question or puts the request on hold. Check the email thread, then Mark resolved if it is done.') + '">' +
+      ' — ' + (item.replyReasonLabel || 'the reply asks a question or puts the request on hold') +
+      '. Answer it under Replies to check, or check the email thread and Mark resolved if it is done.') + '">' +
       esc('Responded — needs a look' + (item.slaStatus === 'overdue' ? ' · overdue' : '')) + '</span>';
   }
   if (item.slaStatus === 'overdue') {
@@ -845,13 +852,103 @@ function drResolveClick_(btn) {
     .resolveDeptRequest(id);
 }
 
+// ── E4 (cycle 25, ST1, operator 2026-10-15): "Replies to check" ───────────
+/** PURE (Node-pinned) — the open requests whose department reply the hourly
+ *  check held back ('needs-look'), from every list in the payload, one per
+ *  request, the longest-waiting first. A 'kept-open' answer leaves the group. */
+function drLooksToCheck_(data) {
+  const seen = {}, out = [];
+  ['mine', 'incoming', 'allOpen'].forEach(function (k) {
+    ((data && data[k]) || []).forEach(function (r) {
+      if (!r || r.status === 'resolved' || r.replyVerdict !== 'needs-look' || seen[r.requestId]) return;
+      seen[r.requestId] = 1; out.push(r);
+    });
+  });
+  // By the reply's TIME (repliedMs) — repliedAt is a display string, and
+  // "Oct 15, 11:00 AM" sorts before "Oct 15, 9:00 AM" as text.
+  return out.sort(function (a, b) { return (Number(a.repliedMs) || 0) - (Number(b.repliedMs) || 0); });
+}
+/** PURE — one row: the department, the subject, WHY the check held back (the
+ *  server's label, never the reply), and the two answers. data-* only (g133). */
+function drLookRowHtml_(item) {
+  const subj = esc(item.label || 'Department request') +
+    (item.patientTrx ? ' <span class="dr-subj-trx">· ' + esc(item.patientTrx) + '</span>' : '');
+  return '<div class="sp-task dr-look" data-req="' + esc(item.requestId) + '">' +
+    '<div class="sp-task-head"><span class="sp-task-from">' + esc(item.toDept || '—') + '</span>' +
+      '<span class="sp-task-age dr-needs-look">' + esc('Replied ' + (item.repliedAt || '')) + '</span></div>' +
+    '<div class="sp-task-subj">' + subj + '</div>' +
+    '<div class="sp-task-body dr-look-why">' + icon('info', 12) + ' ' +
+      esc('Held back because ' + (item.replyReasonLabel || 'the reply did not clearly say it was done') + '.') + '</div>' +
+    '<div class="sp-task-actions">' +
+      '<button type="button" class="sp-more sp-resolve" data-req="' + esc(item.requestId) + '" data-dr-look="resolved" onclick="drLookAnswerClick_(this)">' +
+        icon('check', 12) + ' Resolved</button>' +
+      '<button type="button" class="sp-more" data-req="' + esc(item.requestId) + '" data-dr-look="open" onclick="drLookAnswerClick_(this)">' +
+        icon('refresh', 12) + ' Still open</button>' +
+    '</div></div>';
+}
+/** PURE — the group ('' when nothing waits). Its id is the repaint anchor. */
+function drLooksHtml_(data) {
+  const looks = drLooksToCheck_(data);
+  if (!looks.length) return '<div id="dr-looks"></div>';
+  return '<div id="dr-looks" class="dr-looks" role="region" aria-label="Replies to check">' +
+    '<div class="day-section-label" style="margin:14px 0 4px">Replies to check · ' + looks.length + '</div>' +
+    '<div class="dr-note">The department replied, but the hourly check is not sure the reply finished the request. Read the thread, then answer — ' +
+      'Resolved closes it; Still open keeps it open and the check waits for their next reply.</div>' +
+    looks.map(drLookRowHtml_).join('') + '</div>';
+}
+/** Answer a "Replies to check" row. Both buttons lock while the answer is in
+ *  flight; success patches the cached payload (every list) and repaints the
+ *  group and the request's cards; a reply someone else answered first
+ *  refreshes the view; a failure gives the buttons back. */
+function drLookAnswerClick_(btn) {
+  const id = btn.getAttribute('data-req'), ans = btn.getAttribute('data-dr-look');
+  if (!id || !ans || btn.disabled) return;
+  const row = btn.closest('.dr-look');
+  const btns = row ? Array.prototype.slice.call(row.querySelectorAll('button[data-dr-look]')) : [btn];
+  btns.forEach(function (b) { b.disabled = true; });
+  if (row) row.classList.add('is-busy');
+  const requestedView = currentView;
+  const restore = function () { btns.forEach(function (b) { b.disabled = false; }); if (row) row.classList.remove('is-busy'); };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && res.success) {
+        showToast(ans === 'resolved' ? 'Marked resolved.' : 'Kept open — the next reply will be checked.', 'toast-success');
+        if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();
+        if (ans === 'resolved') drApplyResolved_(id);
+        else ['mine', 'incoming', 'allOpen'].forEach(function (k) {
+          ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) { if (String(r.requestId) === String(id)) r.replyVerdict = 'kept-open'; });
+        });
+        DR_STATE.entry = null;
+        if (currentView !== requestedView) return;
+        const host = document.getElementById('dr-looks');
+        if (host) host.outerHTML = drLooksHtml_(DR_LAST_DATA);
+        drRepaintRequest_(id);
+        if (DR_LAST_DATA && DR_LAST_DATA.isManager && ans === 'resolved') drReconcile_(requestedView, id);
+      } else if (res && res.stale) {
+        showToast(res.error || 'Already answered.', 'toast-info');
+        DR_STATE.entry = null;
+        if (currentView !== requestedView) return;
+        const area = getDeptRequestsArea_();
+        if (area) enterDeptRequestsView(area);
+      } else {
+        showToast((res && res.error) || 'Could not save the answer.', 'toast-error');
+        restore();
+      }
+    })
+    .withFailureHandler(function (err) {
+      showToast((err && err.message) || 'Could not save the answer.', 'toast-error');
+      restore();
+    })
+    .answerDeptReplyLook(id, ans);
+}
+
 /** 22post D — reopen in the CACHED payload (every list it appears in), so
  *  the quiet refetch below repaints from a truthful last-good. */
 function drApplyReopened_(id) {
   ['mine', 'incoming', 'allOpen', 'recentResolved'].forEach(function (k) {
     ((DR_LAST_DATA && DR_LAST_DATA[k]) || []).forEach(function (r) {
       if (String(r.requestId) === String(id)) {
-        r.status = 'open'; r.resolvedVia = ''; r.resolvedBy = ''; r.replyVerdict = '';
+        r.status = 'open'; r.resolvedVia = ''; r.resolvedBy = ''; r.replyVerdict = ''; r.replyReason = ''; r.replyReasonLabel = '';
       }
     });
   });
@@ -957,6 +1054,11 @@ function drFmtMin_(min) {
   .dr-subj-trx { font-weight: 500; color: var(--muted); }
   /* 22post D — the department replied, but a person must look. */
   .dr-needs-look { color: var(--info-deep); font-weight: 600; }
+  /* E4 (cycle 25, ST1): the "Replies to check" group — an info-toned card per
+     reply, the reason on its own line. */
+  .dr-looks { margin-bottom: 6px; }
+  .sp-task.dr-look { border-left: 3px solid var(--info); }
+  .dr-look-why { display: flex; gap: 6px; align-items: flex-start; color: var(--ink); }
   /* Mark unresolved is the quiet secondary action on a resolved card. */
   .dr-reopen { color: var(--muted); }
   .dr-detail { margin-top: 8px; padding: 8px 10px; background: var(--paper-2);
