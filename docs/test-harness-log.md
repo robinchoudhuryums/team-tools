@@ -2764,3 +2764,24 @@ per-change detail. By delta:
 - 2026-10-13 (follow-up): PK-6 pins ONE closing question in a combined packet — each part's close held back, asked once after every chapter's questions, citing each chapter's resources. Bite-checked by letting a part's close through, BIT.
 - 2026-10-13 (handbook rename + HTML PDFs): the Node and DOM pins that named "CSR Procedures Manual" / "Procedures manual" follow the new name. PK-7 is rewritten for the HTML-printed PDFs (print-doc rules, one `:not(.print-sec,.print-doc)` so the card print keeps its specificity, a section rule riding its heading, diagrams fitted, fonts through the proxy WITH certificate checks); new PK-7 DOM drives make_review_pdfs.py's own KEEP_CHAPTER in jsdom — Chapter 10's two halves kept, p1 not a prefix of p10, links out made plain text. Bite-checked two ways (prefix match; localisation skipped), both BIT.
 - 2026-10-14: PK-7 pins `DROP_FROM_FULL = ["apd"]` and the front-page wording; PK-7 DOM drives the full cut (`[null, ['apa']]` on the fixture): every part but the dropped one kept, its contents row gone, a link into it plain text without the chapter suffix. Bite-checked (the drop ignored), BIT.
+
+## Cycle 25 E5 — the visual gate in CI (ST4) and the scripted close-out (ST5)
+
+- **Pure harness:** the E5 pins. `ciVerdict` is DRIVEN (each failing kind, the
+  200px threshold, a plain console.error not gated, a KNOWN entry excusing only
+  its own kind and failing once stale, an unshot subset name failing); the subset
+  names are checked against `shoot.mjs`'s SCENARIOS; `cycle-closeout.mjs` is run
+  as a CLI over fixture trees built in a temp dir (`--root`), so its file writes
+  are observed rather than inferred — Score History append (quoted CSV, unicode
+  minus, `|` escaped, hand rows untouched, idempotent), the HISTORY-owed check
+  (including `Cycle 240` / `Cycle 24post` not matching 24), metrics ahead of STATE,
+  and `--close` (preview writes nothing; STATE verbatim at the top of HISTORY; the
+  carried bullets with their sub-lines; struck items not carried; the refusals).
+  The real tree is `--check`ed too, so a stale standing fails the harness as well
+  as CI.
+- **The F69 pin** now looks for the shared `RUNAWAY_PX = gate.RUNAWAY_PX`.
+- **The CI job** is the first in this repo to run Chromium. A local run uses
+  `/opt/pw-browsers`; CI uses Playwright's own download, a different Chromium
+  build and different system fonts — a measurement that differs between the two
+  is a KNOWN entry with the reason, never a loosened threshold.
+

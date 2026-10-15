@@ -6,10 +6,20 @@ Renders the **production partials** (the real `index.html` with every
 (tool × viewport × light/dark). This is the layer neither Node harness can
 see: actual pixels — overflow, wrap, collision, dead space, dark-mode holes.
 
-It is **manual / on-demand** (like the editor suite), NOT wired into CI:
-it needs a Chromium install and its findings need human eyes. Run it before
-cutting a deploy that touched `styles*.html` or any view partial, and after
-any layout-affecting change.
+The full matrix is **manual / on-demand** (like the editor suite): its
+findings need human eyes. Run it before cutting a deploy that touched
+`styles*.html` or any view partial, and after any layout-affecting change.
+
+**A subset runs in CI (cycle 25 E5, ST4).** `node shoot.mjs --ci` shoots the
+scenarios `ci-gate.cjs` names (every tool, at the widths its layout defects have
+lived) and exits non-zero on what a screenshot cannot show: sideways overflow,
+a page taller than its content (`verticalRunawayPx` past 200px), a text column
+narrower than a word (`narrowText`), an RPC with no fixture, or an uncaught page
+error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
+the shots as an artifact when it fails. A finding owned elsewhere goes in
+`ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
+whose finding stops firing fails the run, so remove it with the fix. A subset
+name the matrix lacks is refused before the browser starts.
 
 **Where the rest of this lives** (the Doc map in
 [`CLAUDE.md`](../../CLAUDE.md) is the index): the **Visual Audit Stage** —

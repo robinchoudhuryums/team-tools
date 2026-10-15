@@ -5625,3 +5625,29 @@ pick them up without re-deriving the context.
   the manager daily brief (off by default), and the tab's own 24-hour red as the
   threshold (it would email every morning).
 
+
+- <a id="the-close-out-is-a-command-and-the-visual-gate-a-subset"></a>**A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5, 2026-10-15)**
+  **ST5.** The close-out was three hand steps that each went stale on its own
+  schedule — PROJECT_HEALTH named cycle 21 for four cycles (F26), and cycle 24's
+  STATE was still interleaved with cycle 25's two weeks after it closed. The
+  counts block's rule applies: the standing is DERIVED from `metrics.csv` and
+  STATE's `Cycle:` line into a marked region, the Score History gains a row for
+  every reflected cycle it lacks, and CI's `--check` fails on drift. Existing
+  history rows are never rewritten — the hand-written ones say more than a CSV
+  row can — and only the two generated lines are owned by the script; the rest of
+  Current Standing stays the author's. The HISTORY move runs as `/reflect`'s last
+  step (`--close --write`), because an audit may write only STATE's fields; it
+  carries the not-struck Pending / follow-on / decision bullets, since an owed
+  deploy walk that vanished with the cycle would be the silent loss the move must
+  not cause. Rejected: regenerating the whole file (destroys the prose), and
+  closing at audit time (the audit cannot write).
+  **ST4.** The page-height and column-width measurements already shipped with
+  F69; what was missing was anyone running them. A fixed subset (every tool at
+  phone and pop-out width, the wide reader of F67) runs in its own CI job and
+  fails on a measurement; findings owned elsewhere sit in a `KNOWN` list with a
+  reason that fails once the finding stops firing, so it can only shrink. The
+  subset is by EXACT name and an unknown name is refused before the browser
+  starts — a filter that matches nothing would pass by shooting nothing (g116).
+  A plain console.error is reported but not gated: an error-state scenario logs
+  one on purpose. Rejected: the whole matrix in CI (~12 minutes, and its real
+  output is screenshots a person must look at).

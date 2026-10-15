@@ -109,3 +109,52 @@ jobs:
       # without spawning the harness that is asking.
       - name: Check the generated counts block
         run: node scripts/counts.mjs --check
+
+      # Cycle 25 E5 (ST5): PROJECT_HEALTH's standing and Score History are
+      # DERIVED from .cycle/metrics.csv and STATE.md's Cycle line, and a
+      # reflected cycle's STATE block must have moved to HISTORY.md once a later
+      # cycle opens. The standing named cycle 21 for four cycles (F26) because
+      # nothing compared it with anything. Zero dependencies.
+      - name: Check the cycle close-out (standing, Score History, HISTORY)
+        run: node scripts/cycle-closeout.mjs --check
+
+  # Cycle 25 E5 (ST4): the visual matrix's measurements, in CI. shoot.mjs reports
+  # sideways overflow, a page taller than its content, a text column narrower
+  # than a word, RPCs with no fixture and uncaught page errors — but the matrix
+  # was manual, so a measurement helped only when someone ran it. This shoots a
+  # fast subset (test/visual/ci-gate.cjs) in headless Chromium and fails on any
+  # of them. Its own job, so a browser-install hiccup never hides the harness
+  # results above, and the shots ride an artifact when it fails.
+  visual-layout:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Chicago
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright and its Chromium
+        working-directory: test/visual
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Shoot the CI subset and gate on the layout measurements
+        working-directory: test/visual
+        run: |
+          node build.mjs
+          node shoot.mjs --ci
+
+      - name: Keep the shots and the report when the gate fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-layout
+          path: |
+            test/visual/report.json
+            test/visual/shots/
+          retention-days: 7

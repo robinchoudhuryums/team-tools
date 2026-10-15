@@ -587,6 +587,7 @@ for the reasoning, which is usually the part that matters.
 - [A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)](docs/design-decisions.md#a-pay-period-closes-against-one-checklist)
 - [The handbook's feedback reaches its source, a section's new text is its review, and the Log offers handbook sections for the Issue text (cycle 25 E3, G2 + ST3, operator 2026-10-15)](docs/design-decisions.md#the-handbook-s-feedback-reaches-its-source)
 - [A held reply waits for a person under "Replies to check", and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)](docs/design-decisions.md#a-held-reply-waits-for-a-person)
+- [A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5)](docs/design-decisions.md#the-close-out-is-a-command-and-the-visual-gate-a-subset)
 
 ## Operator State Checklist
 
@@ -804,10 +805,13 @@ carries the same number. `/cycle-status` surfaces it.
 - `.cycle/STATE.md` — the CURRENT cycle ONLY (template below); written by the
   implement commands' CHECKPOINT step, read by `/cycle-resume` + `/cycle-status`
   and the SessionStart hook. **Split (2026-07-24):** STATE.md no longer rolls —
-  closed-cycle blocks live in `.cycle/HISTORY.md`. **Close-out procedure:** when
-  a new audit cycle opens (or the prior cycle's deploy is confirmed), move the
-  finished cycle's whole block into HISTORY.md (newest first, directly below its
-  header) and reset STATE.md from the template. **Editing rule (a truncation
+  closed-cycle blocks live in `.cycle/HISTORY.md`. **Close-out procedure (scripted,
+  cycle 25 E5):** as /reflect's last step run `node scripts/cycle-closeout.mjs
+  --close --write` — it moves STATE's whole cycle into HISTORY.md (newest first),
+  resets STATE from the template carrying the open Pending / follow-on / decision
+  bullets, and derives PROJECT_HEALTH's standing region and Score History rows
+  from `metrics.csv`; CI's `--check` fails while any of it is owed (an audit can
+  write only STATE's fields, so wait for the reflect, never close mid-cycle). **Editing rule (a truncation
   bit this file once):** template headings repeat across cycles, so never locate
   a section by first-occurrence heading SEARCH in a multi-cycle file — the split
   makes STATE.md's headings unique, but the rule still applies to any edit of
@@ -945,7 +949,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1353 | `node test/client/run.js` |
+| Pure harness tests | 1360 | `node test/client/run.js` |
 | DOM harness tests | 260 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 171 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
@@ -955,7 +959,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 367 | `.cycle/config.md` |
+| Invariant library entries | 368 | `.cycle/config.md` |
 | Regression scenarios (S*) | 137 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

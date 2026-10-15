@@ -37103,7 +37103,7 @@ test('F69 (cycle 25): the visual matrix measures VERTICAL runaway and SQUEEZED t
   assert.ok(/cs\.clip && cs\.clip !== 'auto'/.test(shoot) && /r\.width < 2 \|\| r\.height < 2/.test(shoot), 'a visually hidden box is not content — it is the usual escapee (F67, g171)');
   assert.ok(/cs\.position === 'fixed'/.test(shoot), 'fixed chrome does not extend the document');
   assert.ok(/own\.length >= 16 && r\.width < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
-  assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = 200;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
+  assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = gate\.RUNAWAY_PX;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
   const readme = fs.readFileSync(path.join(__dirname, '../visual/README.md'), 'utf8');
   assert.ok(/verticalRunawayPx/.test(readme) && /narrowText/.test(readme), 'the harness README names both measurements');
 });
@@ -38216,6 +38216,165 @@ test('E4 (cycle 25, G5): the tab card and the Dashboard card draw the server\'s 
   assert.ok(/\.sp-esc-pill \{/.test(styles) && /\.sp-task\.sp-escalated \{/.test(styles), 'both classes have rules');
   const dash = stripJsComments_(extractFunction('tc/script_clock.html', 'clkDashSpanishCard_'));
   assert.ok(/p && p\.escalated/.test(dash) && /' escalated<\/span>'/.test(dash) && /typeof spanishEscalatedPillHtml_ === 'function'/.test(dash), 'the Dashboard counts and draws them (typeof-guarded)');
+});
+
+// ── Cycle 25 E5 (ST4 + ST5): the visual gate in CI, the close-out scripted ───
+console.log('\nCycle 25 E5 — the visual layout gate and the scripted close-out');
+const E5_ROOT = path.join(__dirname, '../..');
+const E5_GATE = require(path.join(E5_ROOT, 'test', 'visual', 'ci-gate.cjs'));
+const e5Clean_ = (name) => ({ name, missing: [], overflowPx: 0, verticalRunawayPx: 0, narrowText: [], errors: [] });
+
+test('E5 (cycle 25, ST4): ciVerdict — overflow, a runaway past 200px, squeezed text, a missing fixture and an uncaught error each FAIL; a console.error alone and a 200px runaway do not', () => {
+  const sub = ['a', 'b'];
+  const ok = E5_GATE.ciVerdict([e5Clean_('a'), e5Clean_('b')], sub, []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ok)), { ok: true, failures: [], stale: [], unshot: [] });
+  const cases = [
+    [{ overflowPx: 3 }, 'overflow'],
+    [{ verticalRunawayPx: 201 }, 'runaway'],
+    [{ narrowText: [{ tag: 'div.x', w: 22, text: 'a squeezed column' }] }, 'narrowText'],
+    [{ missing: ['getThing'] }, 'missingFixture'],
+    [{ errors: ['PAGEERROR: x is not defined'] }, 'pageError'],
+    [{ errors: ['post hook threw: boom'] }, 'pageError'],
+  ];
+  cases.forEach(([patch, kind]) => {
+    const v = E5_GATE.ciVerdict([Object.assign(e5Clean_('a'), patch), e5Clean_('b')], sub, []);
+    assert.strictEqual(v.ok, false, kind);
+    assert.deepStrictEqual(v.failures.map((f) => f.scenario + ':' + f.kind), ['a:' + kind]);
+  });
+  assert.strictEqual(E5_GATE.ciVerdict([Object.assign(e5Clean_('a'), { verticalRunawayPx: 200 }), e5Clean_('b')], sub, []).ok, true, '200px is the threshold, not over it');
+  assert.strictEqual(E5_GATE.ciVerdict([Object.assign(e5Clean_('a'), { errors: ['Failed to load resource'] }), e5Clean_('b')], sub, []).ok, true, 'a console.error is reported, not gated');
+  assert.strictEqual(E5_GATE.RUNAWAY_PX, 200);
+});
+
+test('E5 (cycle 25, ST4): ciVerdict — a KNOWN finding passes only while it fires (the list shrinks), and a subset name the report lacks is a failure, never a vacuous pass', () => {
+  const known = [{ scenario: 'a', kind: 'narrowText', reason: 'owned elsewhere' }];
+  const sq = Object.assign(e5Clean_('a'), { narrowText: [{ tag: 'td', w: 30, text: 'In this chapter list' }] });
+  assert.strictEqual(E5_GATE.ciVerdict([sq, e5Clean_('b')], ['a', 'b'], known).ok, true, 'the known finding is excused');
+  const gone = E5_GATE.ciVerdict([e5Clean_('a'), e5Clean_('b')], ['a', 'b'], known);
+  assert.strictEqual(gone.ok, false); assert.strictEqual(gone.stale.length, 1, 'a fixed finding leaves a stale entry, which fails');
+  const other = E5_GATE.ciVerdict([Object.assign(sq, { overflowPx: 4 }), e5Clean_('b')], ['a', 'b'], known);
+  assert.deepStrictEqual(other.failures.map((f) => f.kind), ['overflow'], 'a KNOWN entry excuses its own kind only');
+  const unshot = E5_GATE.ciVerdict([e5Clean_('a')], ['a', 'b'], []);
+  assert.strictEqual(unshot.ok, false); assert.deepStrictEqual(unshot.unshot, ['b']);
+  const outside = E5_GATE.ciVerdict([e5Clean_('a'), e5Clean_('b')], ['a', 'b'], [{ scenario: 'z', kind: 'overflow', reason: 'r' }]);
+  assert.strictEqual(outside.ok, false, 'a KNOWN entry outside the subset can never fire, so it is stale');
+});
+
+test('E5 (cycle 25, ST4): the CI subset names real scenarios, every KNOWN entry has a reason, shoot.mjs --ci selects by exact name and exits non-zero, and the workflow runs it with Chromium', () => {
+  const shoot = fs.readFileSync(path.join(E5_ROOT, 'test', 'visual', 'shoot.mjs'), 'utf8');
+  const names = new Set([...shoot.matchAll(/^  \['([^']+)'/gm)].map((m) => m[1]));
+  assert.ok(names.size > 100, 'the scenario list was read');
+  const absent = E5_GATE.CI_SCENARIOS.filter((n) => !names.has(n));
+  assert.deepStrictEqual(absent, [], 'every CI name is a scenario');
+  assert.strictEqual(new Set(E5_GATE.CI_SCENARIOS).size, E5_GATE.CI_SCENARIOS.length, 'no duplicates');
+  E5_GATE.KNOWN.forEach((k) => {
+    assert.ok(E5_GATE.CI_SCENARIOS.includes(k.scenario), 'KNOWN in the subset: ' + k.scenario);
+    assert.ok(k.reason && k.reason.length > 20, 'KNOWN has a reason: ' + k.scenario);
+  });
+  const body = stripJsComments_(shoot);
+  assert.ok(/if \(CI && !gate\.CI_SCENARIOS\.includes\(name\)\) continue;/.test(body), 'exact-name selection');
+  assert.ok(/gate\.CI_SCENARIOS\.filter\(\(n\) => !names\.has\(n\)\)[\s\S]{0,200}process\.exit\(1\)/.test(body), 'an unknown name is refused before the browser starts');
+  assert.ok(/const v = gate\.ciVerdict\(report, gate\.CI_SCENARIOS, gate\.KNOWN\);[\s\S]{0,700}if \(!v\.ok\) process\.exit\(1\);/.test(body), 'the verdict decides the exit code');
+  assert.ok(/const RUNAWAY_PX = gate\.RUNAWAY_PX;/.test(body) && !/RUNAWAY_PX = \d/.test(body), 'one runaway threshold');
+  const wf = fs.readFileSync(path.join(E5_ROOT, '.github', 'workflows', 'client-tests.yml'), 'utf8');
+  assert.ok(/npx playwright install --with-deps chromium/.test(wf), 'CI installs Chromium');
+  assert.ok(/node build\.mjs\s*\n\s*node shoot\.mjs --ci/.test(wf), 'CI builds the page and runs the gate');
+});
+
+// The close-out script, driven over a fixture tree (--root).
+const E5_CLOSE = path.join(E5_ROOT, 'scripts', 'cycle-closeout.mjs');
+const e5Tree_ = (o) => {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'e5-closeout-'));
+  fs.mkdirSync(path.join(dir, '.cycle', 'blocks'), { recursive: true });
+  const H = 'date,cycle,subsystem,phase,net_score,prod_fixes,new_failure_modes,category_d_ratio,axis_b_lowest,notes,defensive_count\n';
+  fs.writeFileSync(path.join(dir, '.cycle', 'metrics.csv'), H + (o.metrics || ''));
+  fs.writeFileSync(path.join(dir, '.cycle', 'STATE.md'), o.state);
+  fs.writeFileSync(path.join(dir, '.cycle', 'HISTORY.md'), o.history || '# Cycle History (append-only archive)\n\nNewest first.\n\n---\n\n# Cycle 23 (closed)\nold\n');
+  fs.writeFileSync(path.join(dir, 'PROJECT_HEALTH.md'), o.health || ('# Project Health\n\n## Current Standing\nprose\n\n' +
+    '<!-- closeout:begin — generated by scripts/cycle-closeout.mjs from .cycle/metrics.csv and .cycle/STATE.md; do not hand-edit -->\n<!-- closeout:end -->\n\n' +
+    '## Score History\n| Date | Cycle | Overall | Notes |\n|------|-------|---------|-------|\n| 2026-10-05 | 23 | net +10 (hand) | hand-written row |\n'));
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), fs.readFileSync(path.join(E5_ROOT, 'CLAUDE.md'), 'utf8'));
+  (o.blocks || []).forEach((b) => fs.writeFileSync(path.join(dir, '.cycle', 'blocks', b), 'x'));
+  return dir;
+};
+const e5Run_ = (dir, ...a) => require('child_process').spawnSync(process.execPath, [E5_CLOSE, '--root', dir, ...a], { encoding: 'utf8' });
+const e5Read_ = (dir, rel) => fs.readFileSync(path.join(dir, rel), 'utf8');
+const E5_M23 = '2026-10-05,23,"Server (all), Client",reflect,10,13,3,0.88,Operator-Only State Gaps,"Cycle 23 - the scan. More.",115\n';
+const E5_M24 = '2026-10-06,24,"Seams, ""quoted""",reflect,-2,1,3,0.95,Test Coverage Quality,"Cycle 24 - a seams | audit, with commas. Second sentence.",21\n';
+const E5_STATE = (cyc, phase, extra) => '# Cycle State\n\n## Current\nCycle: ' + cyc + ' — opened by a scan\nPhase: ' + phase + '\nScope: broad\nTest Command: manual\nEstimates: E1: S\nSubsystem cycles since last Seams audit: 2\nUpdated: 2026-10-10\n\n' +
+  '## In progress (facts to carry forward — NOT judgments)\n- doing a thing\n\n## Completed this cycle\n- F1 | a.js | fixed\n\n' +
+  '## Pending / not yet done\n- **Deploy** and walk S1\n  - sub-step one\n- ~~old item~~ DONE\n\n## Open follow-on items\n- follow one\n\n' +
+  '## Decisions made (so the next session doesn\'t re-litigate)\n- decided X\n- ~~superseded~~\n\n## Where I left off\nmid-batch\n' + (extra || '');
+
+test('E5 (cycle 25, ST5): --check fails while PROJECT_HEALTH lags metrics.csv; --write adds the missing Score History row (quoted CSV, a unicode minus, | escaped) and the standing region, leaves hand rows alone, and a second --write changes nothing', () => {
+  const dir = e5Tree_({ metrics: E5_M23 + '2026-10-01,24,x,reflect,9,9,0,,Other,"An earlier reflection of 24.",1\n' + E5_M24, state: E5_STATE('24', 'reflect'), blocks: ['24-a-reflect.md', '24-b-reflect.md'], history: '# H\n\n---\n\n# Cycle 23 (closed)\n' });
+  const c1 = e5Run_(dir, '--check');
+  assert.strictEqual(c1.status, 1, c1.stdout + c1.stderr);
+  assert.ok(/Score History: \+ \| 2026-10-06 \| 24/.test(c1.stderr) && /generated region/.test(c1.stderr), c1.stderr);
+  const before = e5Read_(dir, 'PROJECT_HEALTH.md');
+  const w = e5Run_(dir, '--write'); assert.strictEqual(w.status, 0, w.stderr);
+  const ph = e5Read_(dir, 'PROJECT_HEALTH.md');
+  assert.ok(ph.includes('| 2026-10-05 | 23 | net +10 (hand) | hand-written row |'), 'the hand row is untouched');
+  assert.ok(ph.includes('| 2026-10-06 | 24 | net −2 (1 prod fix − 3 new failure modes; 21 defensive) | Cycle 24 - a seams \\| audit, with commas. Axis-B lowest: Test Coverage Quality. Reflect block: `.cycle/blocks/24-b-reflect.md`. |'), ph);
+  assert.ok(/\*\*Now: cycle 24 is closed\*\* \(reflected 2026-10-06\)/.test(ph) && /\*\*Last closed cycle: 24, reflected 2026-10-06 — net −2/.test(ph), ph);
+  assert.ok(ph.startsWith(before.slice(0, before.indexOf('<!-- closeout:begin'))), 'the prose above the region is kept');
+  assert.strictEqual(e5Run_(dir, '--check').status, 0);
+  e5Run_(dir, '--write');
+  assert.strictEqual(e5Read_(dir, 'PROJECT_HEALTH.md'), ph, 'idempotent');
+  const nomark = e5Tree_({ metrics: E5_M23, state: E5_STATE('23', 'reflect'), health: '# P\n\n## Current Standing\nx\n\n## Score History\n| Date | Cycle | O | N |\n|--|--|--|--|\n| d | 23 | x | y |\n' });
+  const c2 = e5Run_(nomark, '--check');
+  assert.strictEqual(c2.status, 1); assert.ok(/no closeout:begin/.test(c2.stderr), c2.stderr);
+});
+
+test('E5 (cycle 25, ST5): --check fails when a reflected cycle below STATE\'s has no HISTORY block, and when metrics.csv is ahead of STATE', () => {
+  const dir = e5Tree_({ metrics: E5_M23 + E5_M24, state: E5_STATE('25', 'implement'), history: '# H\n\n---\n\n# Cycle 23 (closed)\n' });
+  e5Run_(dir, '--write');
+  const c = e5Run_(dir, '--check');
+  assert.strictEqual(c.status, 1); assert.ok(/HISTORY\.md has no "Cycle 24" block/.test(c.stderr), c.stderr);
+  fs.writeFileSync(path.join(dir, '.cycle', 'HISTORY.md'), '# H\n\n---\n\n# Cycle 24 (closed)\n\n# Cycle 23 (closed)\n');
+  assert.strictEqual(e5Run_(dir, '--check').status, 0, 'a "# Cycle 24" heading satisfies it');
+  fs.writeFileSync(path.join(dir, '.cycle', 'HISTORY.md'), '# H\n\n---\n\n## Cycle 240 (closed)\n# Cycle 24post (closed)\n# Cycle 23\n');
+  assert.strictEqual(e5Run_(dir, '--check').status, 1, '"Cycle 240" and "Cycle 24post" are not cycle 24');
+  const ahead = e5Tree_({ metrics: E5_M23 + E5_M24, state: E5_STATE('23', 'implement') });
+  const a = e5Run_(ahead, '--check');
+  assert.strictEqual(a.status, 2); assert.ok(/reflects cycle 24 but STATE\.md is on cycle 23/.test(a.stderr), a.stderr);
+});
+
+test('E5 (cycle 25, ST5): --close --write moves STATE verbatim to the top of HISTORY, resets STATE from the CLAUDE.md template carrying the open Pending / follow-on / decision bullets (not the struck ones), and refuses a cycle that is not reflected or already closed', () => {
+  const dir = e5Tree_({ metrics: E5_M23 + E5_M24, state: E5_STATE('24', 'reflect'), blocks: ['24-a-reflect.md'] });
+  const oldState = e5Read_(dir, '.cycle/STATE.md');
+  const pv = e5Run_(dir, '--close');
+  assert.strictEqual(pv.status, 0, pv.stderr); assert.ok(/preview/.test(pv.stdout));
+  assert.strictEqual(e5Read_(dir, '.cycle/STATE.md'), oldState, 'a preview writes nothing');
+  const w = e5Run_(dir, '--close', '--write', '--today', '2026-10-20');
+  assert.strictEqual(w.status, 0, w.stderr);
+  const hist = e5Read_(dir, '.cycle/HISTORY.md');
+  assert.ok(hist.indexOf('# Cycle 24 (closed 2026-10-06') > hist.indexOf('\n---\n') && hist.indexOf('# Cycle 24 (closed') < hist.indexOf('# Cycle 23 (closed)'), 'newest first, below the header');
+  assert.ok(hist.includes(oldState.slice(oldState.indexOf('## Current')).trimEnd()), 'the STATE is verbatim in the block');
+  assert.ok(/Carried into the fresh STATE: 1 pending item, 1 follow-on, 1 decision/.test(hist), hist);
+  const st = e5Read_(dir, '.cycle/STATE.md');
+  assert.ok(/^Cycle: 24 — closed 2026-10-06/m.test(st) && /^Phase: idle$/m.test(st) && /^Test Command: manual$/m.test(st), st);
+  assert.ok(/^Subsystem cycles since last Seams audit: 2$/m.test(st) && /^Updated: 2026-10-20 /m.test(st), 'kept fields and today');
+  assert.ok(st.includes('- **Deploy** and walk S1\n  - sub-step one'), 'a carried bullet keeps its sub-lines');
+  assert.ok(!/old item|superseded|doing a thing|F1 \| a\.js/.test(st), 'struck, in-progress and completed lines stay in HISTORY only');
+  assert.ok(/## Open follow-on items\n- follow one/.test(st) && /## Decisions made[^\n]*\n- decided X/.test(st));
+  ['## Current', '## In progress', '## Completed this cycle', '## Pending / not yet done', '## Where I left off'].forEach((h) => assert.ok(st.includes(h), h));
+  assert.ok(!/\[N —|\[what is/.test(st), 'no template placeholder survives');
+  assert.strictEqual(e5Run_(dir, '--check').status, 0, 'the close-out leaves everything in step');
+  const again = e5Run_(dir, '--close', '--write');
+  assert.strictEqual(again.status, 2); assert.ok(/already has a "Cycle 24" block/.test(again.stderr));
+  const impl = e5Tree_({ metrics: E5_M23 + E5_M24, state: E5_STATE('24', 'implement') });
+  assert.ok(/phase "implement"/.test(e5Run_(impl, '--close', '--write').stderr));
+  const unref = e5Tree_({ metrics: E5_M23, state: E5_STATE('24', 'reflect') });
+  assert.ok(/no reflect row for cycle 24/.test(e5Run_(unref, '--close', '--write').stderr));
+});
+
+test('E5 (cycle 25, ST5): the real tree is in step, CI runs --check, and CLAUDE.md\'s close-out procedure names the script', () => {
+  const r = e5Run_(E5_ROOT, '--check');
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  const wf = fs.readFileSync(path.join(E5_ROOT, '.github', 'workflows', 'client-tests.yml'), 'utf8');
+  assert.ok(/node scripts\/cycle-closeout\.mjs --check/.test(wf));
+  assert.ok(/cycle-closeout\.mjs\s+--close --write/.test(fs.readFileSync(path.join(E5_ROOT, 'CLAUDE.md'), 'utf8')), 'the procedure names the command');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

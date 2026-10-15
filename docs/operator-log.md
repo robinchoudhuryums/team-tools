@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — the visual layout gate in CI, and the cycle close-out scripted (cycle 25 E5)
+
+**Adds NO operator settings and changes no `web-app/` file — nothing to deploy.**
+- **CI now shoots part of the visual matrix** (a new `visual-layout` job): about
+  two dozen screens, every tool at phone and pop-out width, in headless Chromium.
+  It fails when a page scrolls sideways, runs on past its content, squeezes text
+  narrower than a word, renders a loader for want of a fixture, or throws. When
+  it fails, the job keeps the screenshots as a download. The full matrix is still
+  run by hand before a layout deploy.
+- **The cycle close-out is one command:** `node scripts/cycle-closeout.mjs
+  --close --write`, as the last step of a `/reflect`. It moves the cycle's STATE
+  into `.cycle/HISTORY.md`, starts a fresh STATE that keeps the open pending
+  items, follow-ons and decisions, and updates PROJECT_HEALTH's standing and
+  Score History from `metrics.csv`. CI fails while any of it is owed. Cycle 24's
+  STATE lines, never moved, were moved by hand in this batch.
+
 ## 2026-10-15 — request triage: held replies are answered from the tab; Spanish requests escalate at 7 days (cycle 25 E4)
 
 **Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New

@@ -1,10 +1,12 @@
 // Playwright driver for the visual audit: scenarios × viewport × theme.
 // Run `node build.mjs` first (page.html is generated, not committed).
 // Usage: node shoot.mjs [name-substring ...]   — no args shoots everything.
+//        node shoot.mjs --ci   — the CI subset (ci-gate.cjs), exit 1 on a layout finding.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import gate from './ci-gate.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(HERE, 'page.html');
@@ -485,11 +487,21 @@ const SCENARIOS = [
   ['clock-light-wide-pht', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?tz=America/Chicago&role=rep', '', { tz: 'Asia/Manila', utc: [16, 5] }],
 ];
 
-const only = process.argv[2] ? process.argv.slice(2) : null;
+// --ci (cycle 25 E5, ST4): the gate's subset by EXACT name. A name the matrix
+// does not have is refused before the browser starts — a filter that matches
+// nothing would shoot nothing and pass.
+const CI = process.argv.includes('--ci');
+if (CI) {
+  const names = new Set(SCENARIOS.map((s) => s[0]));
+  const absent = gate.CI_SCENARIOS.filter((n) => !names.has(n));
+  if (absent.length) { console.error('ci-gate: no such scenario: ' + absent.join(', ')); process.exit(1); }
+}
+const only = CI ? null : (process.argv[2] ? process.argv.slice(2) : null);
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
 for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
+  if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
   // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
@@ -594,8 +606,9 @@ if (overflowing.length) {
   console.log('\nHORIZONTAL OVERFLOW (the page scrolls sideways — measure, do not eyeball):');
   overflowing.forEach((r) => console.log('  ' + r.name + '  +' + r.overflowPx + 'px @ ' + r.viewport));
 }
-// F69: a page taller than its content by more than this is a runaway, not a margin.
-const RUNAWAY_PX = 200;
+// F69: a page taller than its content by more than this is a runaway, not a
+// margin — ONE constant, the CI gate's.
+const RUNAWAY_PX = gate.RUNAWAY_PX;
 const runaway = report.filter((r) => r.verticalRunawayPx > RUNAWAY_PX);
 if (runaway.length) {
   console.log('\nVERTICAL RUNAWAY (the page scrolls past its content — an escaped absolute element?):');
@@ -610,4 +623,12 @@ const fixtureGaps = report.filter((r) => r.missing.length);
 if (fixtureGaps.length) {
   console.log('\nMISSING FIXTURES (these scenarios rendered a LOADER, not the real view):');
   fixtureGaps.forEach((r) => console.log('  ' + r.name + '  ' + r.missing.join(', ')));
+}
+if (CI) {
+  const v = gate.ciVerdict(report, gate.CI_SCENARIOS, gate.KNOWN);
+  console.log('\nCI GATE (' + gate.CI_SCENARIOS.length + ' scenarios): ' + (v.ok ? 'PASS' : 'FAIL'));
+  v.failures.forEach((f) => console.log('  ' + f.scenario + '  ' + f.kind + '  ' + f.detail));
+  v.stale.forEach((k) => console.log('  KNOWN entry no longer fires — remove it from ci-gate.cjs: ' + k.scenario + ' ' + k.kind));
+  v.unshot.forEach((n) => console.log('  not shot: ' + n));
+  if (!v.ok) process.exit(1);
 }
