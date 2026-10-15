@@ -2784,4 +2784,11 @@ per-change detail. By delta:
   `/opt/pw-browsers`; CI uses Playwright's own download, a different Chromium
   build and different system fonts — a measurement that differs between the two
   is a KNOWN entry with the reason, never a loosened threshold.
+- **CI was red for eight pushes and nothing here noticed (cycle 25 Batch 9 → E4).**
+  The handbook step installed only `markdown`; `make_html.py` imports `bs4`. The
+  F29 pin asserted "the one Python dependency" — a claim, not a measurement
+  (g116). It now walks the step's scripts' imports (following local modules
+  through `manual/`), drops the stdlib (`sys.stdlib_module_names`), and requires
+  every remaining module to be pip-installed in the step, pinned. Lesson for the
+  procedure: a local green is not CI's — read the workflow run after a push.
 

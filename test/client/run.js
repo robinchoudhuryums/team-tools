@@ -37044,7 +37044,32 @@ test('F29 + F65 (cycle 25): CI runs the handbook\'s Python build and fails when 
     step.indexOf('python make_diagrams.py') < step.indexOf('python build.py'), 'generate, then build, then export (the make_all.sh order)');
   assert.ok(/git diff --exit-code -- manual\/diagrams web-app\/kb\/script_manual_diagrams\.html/.test(step),
     'THE REGRESSION (F65): an edited generator or export transform with stale committed output fails here, not just a hand-edited SVG');
-  assert.ok(/pip install "markdown==\d+\.\d+(\.\d+)?"/.test(step), 'the one Python dependency is pinned to an exact version');
+  // E5 follow-on (cycle 25): this line used to assert "the ONE Python dependency"
+  // — and make_html.py imports bs4, so the step failed on every run from Batch 9
+  // to E5 while the pin stayed green. DERIVED now: every third-party module the
+  // step's scripts import (following local imports through manual/) must be
+  // pip-installed in the step, pinned to an exact version.
+  const stdlib = new Set(JSON.parse(require('child_process').execFileSync('python3', ['-c', 'import sys, json; print(json.dumps(sorted(sys.stdlib_module_names)))'], { encoding: 'utf8' })));
+  const PIP = { bs4: 'beautifulsoup4', markdown: 'markdown', PIL: 'pillow', yaml: 'pyyaml' };
+  const mdir = path.join(__dirname, '../../manual');
+  const seen = new Set(); const third = new Set();
+  const walk = (mod) => {
+    if (seen.has(mod)) return; seen.add(mod);
+    const src = fs.readFileSync(path.join(mdir, mod + '.py'), 'utf8');
+    for (const m of src.matchAll(/^[ \t]*(?:from[ \t]+([A-Za-z_][\w.]*)[ \t]+import|import[ \t]+([A-Za-z_][\w.]*(?:[ \t]*,[ \t]*[A-Za-z_][\w.]*)*))/gm)) {
+      (m[1] ? [m[1]] : m[2].split(',')).map((x) => x.trim().split('.')[0]).forEach((top) => {
+        if (fs.existsSync(path.join(mdir, top + '.py'))) walk(top);
+        else if (!stdlib.has(top) && top !== '__future__') third.add(top);
+      });
+    }
+  };
+  [...step.matchAll(/python ([a-z_]+)\.py/g)].forEach((m) => walk(m[1]));
+  assert.ok(seen.has('make_html') && seen.has('build'), 'the walk read the step\'s scripts');
+  assert.ok(third.has('bs4') && third.has('markdown'), 'the walk sees the imports it exists for');
+  [...third].forEach((mod) => {
+    assert.ok(PIP[mod], 'a third-party import the CI step does not know how to install: ' + mod);
+    assert.ok(new RegExp('pip install[^\\n]*"' + PIP[mod] + '==\\d+\\.\\d+(\\.\\d+)?"').test(step), 'the handbook step installs ' + PIP[mod] + ' (imported as ' + mod + '), pinned');
+  });
   assert.ok(!/playwright|soffice|render_docx/.test(step), 'the browser-free half only — no Playwright, LibreOffice or Word render in CI');
 });
 
