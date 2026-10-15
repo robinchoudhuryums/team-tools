@@ -474,6 +474,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   LockService that throws if touched.
 
 
+  **Cycle 25 E1 (G3, 2026-10-15): the digest delivery log takes NO lock.**
+  `logDigestDelivery_` runs from inside the digest jobs — a helper on a job's
+  path never re-takes the script lock (A8) — and writes each row with an atomic
+  `appendRow`; it never throws into the digest. Verify: the G3 rows pin (no
+  lock, `appendRow(sheetSafeRow_(row))`, a store that will not open returns 0).
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -1657,6 +1663,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   as complete. The result now carries `total` and `truncated`
   (`CN_MGR_SEARCH_CAP`), and the count line says "Showing the newest 500 of N".
   Verify: the F30 (cycle 25) drive.
+
+  **Cycle 25 E1 (ST2, 2026-10-15): the class closed by construction.** Every
+  instance above was fixed one job at a time — a job that caught its failure,
+  or skipped a rep Sheet, and then cleared its key or said nothing. Now every
+  automation job (each `installAutomationTriggers` target and each
+  `TRIGGER_GROUPS` handler) gates, then ends through `runAutomationJob_(KEY,
+  body)`, and the body RETURNS an outcome: `ok` (clears), `idle` (an hour or a
+  recipient list that proves nothing — neither stamps nor clears), `partial`
+  (stamps, names what it skipped, reads "ran only in part" on the dot and as a
+  warning on the System tab) or `failed` (stamps). A throw is a failed run; a
+  body that returns NO valid outcome is recorded as failed, so a new job cannot
+  bring the silence back. The stamp and clear primitives have no other callers
+  than the recorder and the dispatcher's own checks. Two jobs with a finding of
+  their own (the open-punch scan, the self-test) are marked `ownFinding`, so
+  their failure is said once. Verify: the four ST2 (cycle 25 E1) pins — the
+  contract driven, the derived net over every job, the partial reading, and each
+  job's status choice.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 

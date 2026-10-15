@@ -1316,29 +1316,27 @@ function autoAssignSpanishThreads(days) {
 }
 function autoAssignSpanishThreadsScheduled() {
   assertManagerCaller_('autoAssignSpanishThreadsScheduled');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('SpanishAutoAssign', function () {
     stampDigestLastRun_('spanishAutoAssign');
-    if (!getFlag_('spanishAutoAssign')) { Logger.log('spanishAutoAssign flag is off — nothing assigned.'); return; }
+    if (!getFlag_('spanishAutoAssign')) { Logger.log('spanishAutoAssign flag is off — nothing assigned.'); return { outcome: automationOutcome_('ok') }; }
     const nowMs = Date.now();
     // Inside the business window iff the next minute counts as a business
     // minute — the same helper that times every request, so "working hour"
     // has exactly one meaning. null (unusable input) reads as NOT inside.
     const bizMin = businessMinutesBetween_(nowMs, nowMs + 60000);
-    if (!(bizMin > 0)) { Logger.log('spanishAutoAssign: outside business hours — nothing assigned.'); return; }
+    // ST2 (cycle 25 E1): an out-of-hours run proves nothing — `idle`, so a
+    // failure from the afternoon survives to the morning failure digest.
+    if (!(bizMin > 0)) { Logger.log('spanishAutoAssign: outside business hours — nothing assigned.'); return { outcome: automationOutcome_('idle') }; }
     const emp = getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_;
     const r = spanishAutoAssignCore_(emp, SPANISH_PENDING_WINDOW_DAYS);
     if (!r || !r.success) {
       const why = (r && r.error) || 'auto-assign failed';
       Logger.log('spanishAutoAssign: ' + why);
-      stampAutomationError_('SpanishAutoAssign', why);
-      return;
+      return { outcome: automationOutcome_('failed', why) };
     }
-    clearAutomationError_('SpanishAutoAssign');
     Logger.log('spanishAutoAssign: ' + (r.assigned || []).length + ' assigned of ' + (r.unclaimed || 0) + ' unclaimed.');
-  } catch (err) {
-    Logger.log('autoAssignSpanishThreadsScheduled failed: ' + err.message);
-    stampAutomationError_('SpanishAutoAssign', err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Admin-gated (INV-136 / INV-57 family): persist the Spanish bilingual member
  *  list to Script Property SPANISH_INBOX_MEMBERS (operator 2026-08-18 — the

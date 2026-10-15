@@ -2200,6 +2200,29 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-digestdeliveries-tab-cycle-25"></a>
+- **The `DigestDeliveries` tab (ADP spreadsheet) — the manager digest delivery
+  log (cycle 25 E1, G3).** **Nothing to set up:** it is auto-provisioned on the
+  first manager digest after the deploy (the automation-health digest at 9am,
+  the brief or the urgent digest at 8am — whichever runs first). Columns:
+  Timestamp (CONFIG.TIMEZONE, the diagnostics form) · Digest (the heartbeat key:
+  `weekly`, `urgent`, `managerBrief`, `trainingOverdue`, `deptReqReminder`,
+  `automationHealth`, `missedPunch`) · Recipient · Status (`sent`, `suppressed`
+  — it rode the daily brief, `failed`, `empty` — nothing to report) · Items
+  (blank when unknown) · Reason (a fixed phrase, or the send error). One row per
+  manager per digest decision. **PHI-free by construction** — staff addresses
+  and fixed phrases only — so it lives beside ClientErrors and ViewUsage.
+  **Retention is FIXED at 90 days** (`DIGEST_DELIVERY_RETENTION_DAYS`, a
+  constant, not a Script Property), purged by `purgeOldDiagnostics` — which is
+  now enabled on every deployment, so its `DiagnosticsPurge` audit row appears
+  every night and its Automation Health liveness row is always checked (an
+  existing deployment with both diagnostics windows at 0 will see that row
+  start appearing). Read on Manage → Admin → System → **Digest deliveries**
+  (admin-gated, the last 14 days, beside Automation Health). App-owned: do not
+  edit or reorder its columns; deleting the tab only loses history (the next
+  digest recreates it). Rep- and agent-facing mail (the EOD reminder, the
+  coaching recap, the missed-punch reminder to the rep) is not logged.
+
 <a id="operator-script-property-whatsnew-kb-id"></a>
 - **Script Property `WHATSNEW_KB_ID`** (optional — the "What's new" panel,
   INV-152). Set it to the ID of a PUBLISHED Reference **article** (create a

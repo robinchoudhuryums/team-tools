@@ -3581,12 +3581,11 @@ function getNoteRetentionDays_() {
  *  Writes a PHI-free CallNotesPurge audit row with counts. */
 function purgeOldCallNotes() {
   assertManagerCaller_('purgeOldCallNotes');
-  try {
+  return runAutomationJob_('CallNotesPurge', function () {
     const days = getNoteRetentionDays_();
     if (!days) {
       Logger.log('purgeOldCallNotes: retention disabled (CN_NOTE_RETENTION_DAYS=0) — nothing purged.');
-      clearAutomationError_('CallNotesPurge');   // F5 (cycle 25): every path rewrites the job's state
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
@@ -3616,17 +3615,15 @@ function purgeOldCallNotes() {
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesPurge', '', '', false, 0,
       `retentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
     // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
     // that rep (their notes stay past the retention window) — it used to reach only Logger.log, and the
-    // audit row read like a clean run with a smaller count. Stamped by name
-    // where the health dot and the failure digest read it; a clean run clears.
-    if (skipped.length) stampAutomationError_('CallNotesPurge', skipped.length + ' rep Sheet(s) could not be opened, so their notes stay past the retention window: ' + skipped.join(', '));
-    else clearAutomationError_('CallNotesPurge');
-    Logger.log(`purgeOldCallNotes: removed ${notesRemoved} note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
-  } catch (err) {
-    stampAutomationError_('CallNotesPurge', err.message);   // F5 (cycle 25): a run that never finished is a failure, not a stale trigger
-    Logger.log('purgeOldCallNotes failed: ' + err.message);
-  }
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named, where the health dot and the failure digest
+    // read it; a clean run clears. A run that never finished is failed.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their notes stay past the retention window: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** PURE (C12, cycle 22) — when a read's range reaches notes the cold archive
  *  may have MOVED (older than the archive window), the date before which they
@@ -3788,12 +3785,11 @@ function archiveSheetRowsOlderThan_(srcSheet, archiveSheet, dateColIdx, cutoffMs
  *  retained in NotesArchive. */
 function archiveOldCallNotes() {
   assertManagerCaller_('archiveOldCallNotes');
-  try {
+  return runAutomationJob_('CallNotesArchive', function () {
     const days = getNoteArchiveDays_();
     if (!days) {
       Logger.log('archiveOldCallNotes: archival disabled (CN_NOTE_ARCHIVE_DAYS=0) — nothing archived.');
-      clearAutomationError_('CallNotesArchive');   // F5 (cycle 25)
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
@@ -3862,17 +3858,14 @@ function archiveOldCallNotes() {
       ? `; hitPerRunCap=${CN_NOTE_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : '';
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchive', '', '', false, 0,
       `archiveDays=${days}; repsTouched=${repsTouched}; notesArchived=${notesArchived}${capped}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
     // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
     // that rep (their notes stay in the live tab) — it used to reach only Logger.log, and the
-    // audit row read like a clean run with a smaller count. Stamped by name
-    // where the health dot and the failure digest read it; a clean run clears.
-    if (skipped.length) stampAutomationError_('CallNotesArchive', skipped.length + ' rep Sheet(s) could not be opened, so their old notes were not archived: ' + skipped.join(', '));
-    else clearAutomationError_('CallNotesArchive');
-    Logger.log(`archiveOldCallNotes: moved ${notesArchived} note(s) across ${repsTouched} rep(s) older than ${days} day(s) to ${CONFIG.CALL_NOTES.ARCHIVE_TAB}.`);
-  } catch (err) {
-    stampAutomationError_('CallNotesArchive', err.message);   // F5 (cycle 25)
-    Logger.log('archiveOldCallNotes failed: ' + err.message);
-  }
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their old notes were not archived: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** 3rd-tier cold-store retention window: days from CN_ARCHIVE_RETENTION_DAYS
  *  Script Property first, else CONFIG.CALL_NOTES.ARCHIVE_RETENTION_DAYS.
@@ -3901,12 +3894,11 @@ function getArchiveRetentionDays_() {
  *  (before the 3am archive) so it operates on yesterday's settled archive. */
 function purgeArchivedCallNotes() {
   assertManagerCaller_('purgeArchivedCallNotes');
-  try {
+  return runAutomationJob_('CallNotesArchivePurge', function () {
     const days = getArchiveRetentionDays_();
     if (!days) {
       Logger.log('purgeArchivedCallNotes: archive retention disabled (CN_ARCHIVE_RETENTION_DAYS=0) — nothing purged.');
-      clearAutomationError_('CallNotesArchivePurge');   // F5 (cycle 25)
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const roster = getEmployeeRosterRows_();
@@ -3939,17 +3931,14 @@ function purgeArchivedCallNotes() {
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'CallNotesArchivePurge', '', '', false, 0,
       `archiveRetentionDays=${days}; repsTouched=${repsTouched}; notesRemoved=${notesRemoved}` + (skipped.length ? `; repsSkipped=${skipped.length}` : ''));
+    Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
     // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
     // that rep (their archived notes stay past the window) — it used to reach only Logger.log, and the
-    // audit row read like a clean run with a smaller count. Stamped by name
-    // where the health dot and the failure digest read it; a clean run clears.
-    if (skipped.length) stampAutomationError_('CallNotesArchivePurge', skipped.length + ' rep Sheet(s) could not be opened, so their archived notes stay past the retention window: ' + skipped.join(', '));
-    else clearAutomationError_('CallNotesArchivePurge');
-    Logger.log(`purgeArchivedCallNotes: removed ${notesRemoved} archived note(s) across ${repsTouched} rep(s) older than ${days} day(s).`);
-  } catch (err) {
-    stampAutomationError_('CallNotesArchivePurge', err.message);   // F5 (cycle 25)
-    Logger.log('purgeArchivedCallNotes failed: ' + err.message);
-  }
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears.
+    if (skipped.length) return { outcome: automationOutcome_('partial', skipped.length + ' rep Sheet(s) could not be opened, so their archived notes stay past the retention window: ' + skipped.join(', '), skipped) };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** #8 — manager-triggered reconcile pass. Scans every enrolled rep's Notes tab
  *  for HAND-ENTERED rows (content present but no noteId — typed directly into
@@ -3967,20 +3956,18 @@ function reconcileCallNotes() {
   // silently no-ops the nightly reconcile (INV-109). The Admin-tab button calls
   // reconcileCallNotesNow instead (F57, cycle 25).
   assertManagerCaller_('reconcileCallNotes');
-  try {
+  return runAutomationJob_('CallNotesReconcile', function () {
     const res = reconcileCallNotesCore_(getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_, 'CallNotesReconcile');
     // F5 (cycle 25): a rep Sheet that could not be opened is a FAILED run for
     // that rep (its hand-entered notes stay unreconciled) — it used to reach only Logger.log, and the
-    // audit row read like a clean run with a smaller count. Stamped by name
-    // where the health dot and the failure digest read it; a clean run clears.
-    if (res.skippedReps.length) stampAutomationError_('CallNotesReconcile', res.skippedReps.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + res.skippedReps.join(', '));
-    else clearAutomationError_('CallNotesReconcile');
+    // audit row read like a clean run with a smaller count. ST2 (cycle 25 E1):
+    // a PARTIAL outcome, named; a clean run clears; a throw is failed (F5:
+    // the nightly trigger's {error} reached nobody) and still returns {error}.
+    res.outcome = res.skippedReps.length
+      ? automationOutcome_('partial', res.skippedReps.length + ' rep Sheet(s) could not be opened, so their hand-entered notes were not reconciled: ' + res.skippedReps.join(', '), res.skippedReps)
+      : automationOutcome_('ok');
     return res;
-  } catch (err) {
-    // F5 (cycle 25): the nightly trigger's {error} reached nobody — stamp it.
-    stampAutomationError_('CallNotesReconcile', err.message);
-    return { error: err.message };
-  }
+  });
 }
 /** F57 (cycle 25) — the Admin tab's "Reconcile Sheets" button. The same pass as
  *  the nightly job, but it is NOT the job: it writes its own audit action
@@ -4066,7 +4053,7 @@ function reconcileCallNotesCore_(callerEmp, auditAction) {
 // ════════════════════════════════════════════════════════════════════════════
 function sendCallNotesEodDigest() {
   assertManagerCaller_('sendCallNotesEodDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CallNotesEodDigest', function () {
     const targetHour = CONFIG.CALL_NOTES.EOD_WARNING_HOUR;
     const now = new Date();
     const roster = getEmployeeRosterRows_();
@@ -4076,6 +4063,7 @@ function sendCallNotesEodDigest() {
     // reached only the log while the heartbeat below read healthy. Count both
     // and stamp them; `attempted` = reps whose local EOD hour this run was.
     let attempted = 0, unread = 0, sendFailed = 0, lastError = '';
+    const unreadNames = [];   // ST2 (cycle 25 E1): a partial run names its skipped reps
     for (let r = 1; r < roster.length; r++) {
       const emailAddr = String(roster[r][EMP.EMAIL] || '').trim();
       const sheetId = cnEnrolledSheetId_(roster[r]);   // F14: trimmed predicate
@@ -4120,7 +4108,7 @@ function sendCallNotesEodDigest() {
         }
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
-        unread++; lastError = e.message;
+        unread++; lastError = e.message; unreadNames.push(empObj.name || empObj.id);
         continue;
       }
       if (unresolved.length === 0) continue;
@@ -4133,20 +4121,22 @@ function sendCallNotesEodDigest() {
       }
     }
     stampDigestLastRun_('eod');
-    // One stamp names everything that went wrong (the TrainingOverdueDigest
+    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
+    // One outcome names everything that went wrong (the TrainingOverdueDigest
     // shape). Only a run that reached a rep may CLEAR it: most hours match no
     // rep's EOD hour, and an hour that did nothing proves nothing — clearing
-    // there would wipe a failure before the morning failure digest reads it.
+    // there would wipe a failure before the morning failure digest reads it
+    // (ST2: that hour is `idle`). Partial while any rep was served; a throw
+    // is failed (seams F2: a throw is not a quiet hour).
     const problems = [];
-    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)');
+    if (unread) problems.push('could not read ' + unread + ' rep Call Notes Sheet(s)' + (unreadNames.length ? ': ' + unreadNames.join(', ') : ''));
     if (sendFailed) problems.push(sendFailed + ' EOD reminder email(s) failed to send');
-    if (problems.length) stampAutomationError_('CallNotesEodDigest', problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''));
-    else if (attempted) clearAutomationError_('CallNotesEodDigest');
-    Logger.log(`sendCallNotesEodDigest: sent ${sentCount} reminder(s).`);
-  } catch (err) {
-    Logger.log('sendCallNotesEodDigest failed: ' + err.message);
-    stampAutomationError_('CallNotesEodDigest', err.message);   // seams F2: a throw is not a quiet hour
-  }
+    if (problems.length) {
+      return { sent: sentCount, outcome: automationOutcome_(attempted > unread + sendFailed ? 'partial' : 'failed',
+        problems.join(' · ') + (lastError ? ' (' + lastError + ')' : ''), unreadNames) };
+    }
+    return { sent: sentCount, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
+  });
 }
 function sendOneRepEodDigest_(emp, unresolvedNotes) {
   const P = CN_EMAIL_PALETTE;
@@ -4195,9 +4185,9 @@ function sendOneRepEodDigest_(emp, unresolvedNotes) {
 }
 function sendCallNotesWeeklyDigests() {
   assertManagerCaller_('sendCallNotesWeeklyDigests');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CallNotesWeeklyDigests', function () {
     const mgrEmails = getManagerEmails_();
-    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return; }
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping weekly digests.'); return { outcome: automationOutcome_('idle') }; }
     const now = new Date();
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Look back 7 days
@@ -4212,14 +4202,24 @@ function sendCallNotesWeeklyDigests() {
     // skippable empty queue — send (with the warning) whenever there are
     // results OR skipped reps; genuinely-empty-and-clean stays silent (S24).
     const sendFails = [];   // F4 (cycle 25): a send that failed is a failed run
-    if ((training.results && training.results.length > 0) || (training.skippedReps || []).length > 0) {
-      const sentT = sendManagerFlagDigest_(mgrEmails, 'Training Queue', training.results || [], dateRange, training.skippedReps);
-      if (sentT && sentT.error) sendFails.push('the training digest could not be sent: ' + sentT.error);
-    }
-    if ((review.results && review.results.length > 0) || (review.skippedReps || []).length > 0) {
-      const sentR = sendManagerFlagDigest_(mgrEmails, 'Review Candidates', review.results || [], dateRange, review.skippedReps);
-      if (sentR && sentR.error) sendFails.push('the review digest could not be sent: ' + sentR.error);
-    }
+    let delivered = 0;
+    // G3 (cycle 25 E1): each queue's decision is logged per manager — the
+    // reason names the queue, since one weekly run sends two digests.
+    const sendQueue = function (label, q, what) {
+      const results = q.results || [];
+      if (q.error) { logDigestDelivery_('weekly', mgrEmails, 'failed', null, label + ': the queue could not be read — ' + q.error); return; }
+      if (!results.length && !(q.skippedReps || []).length) { logDigestDelivery_('weekly', mgrEmails, 'empty', 0, label + ': nothing flagged this week'); return; }
+      const sent = sendManagerFlagDigest_(mgrEmails, label, results, dateRange, q.skippedReps);
+      if (sent && sent.error) {
+        sendFails.push('the ' + what + ' digest could not be sent: ' + sent.error);
+        logDigestDelivery_('weekly', mgrEmails, 'failed', results.length, label + ': ' + sent.error);
+      } else {
+        delivered++;
+        logDigestDelivery_('weekly', mgrEmails, 'sent', results.length, label + ((q.skippedReps || []).length ? ' — incomplete, ' + q.skippedReps.length + ' rep Sheet(s) unreadable' : ''));
+      }
+    };
+    sendQueue('Training Queue', training, 'training');
+    sendQueue('Review Candidates', review, 'review');
     // C2 (cycle 22): an {error} is not an empty queue. It used to read as one —
     // nothing sent, and a HEALTHY heartbeat stamped (INV-109's failure mode).
     // Stamp the failure where the digest and the dot read it, and withhold the
@@ -4227,17 +4227,22 @@ function sendCallNotesWeeklyDigests() {
     const failed = [['training', training], ['review', review]].filter(function (q) { return q[1] && q[1].error; });
     if (failed.length || sendFails.length) {
       const why = failed.map(function (q) { return q[0] + ' queue: ' + q[1].error; }).concat(sendFails).join('; ');
-      stampAutomationError_('CallNotesWeeklyDigests', why);
       Logger.log('sendCallNotesWeeklyDigests: ' + why + ' — no heartbeat.');
-      return;
+      // ST2 (cycle 25 E1): partial while one queue still went out or read clean.
+      const okQueues = 2 - failed.length - sendFails.length;
+      return { outcome: automationOutcome_(okQueues > 0 ? 'partial' : 'failed', why) };
     }
-    clearAutomationError_('CallNotesWeeklyDigests');
     stampDigestLastRun_('weekly');
     Logger.log(`sendCallNotesWeeklyDigests: training=${(training.results || []).length}, review=${(review.results || []).length}`);
-  } catch (err) {
-    stampAutomationError_('CallNotesWeeklyDigests', err.message);
-    Logger.log('sendCallNotesWeeklyDigests failed: ' + err.message);
-  }
+    // ST2 (cycle 25 E1): a queue sent with unreadable rep Sheets went out
+    // incomplete — the digest warned the managers; the run says so too.
+    const skipped = (training.skippedReps || []).concat(review.skippedReps || [])
+      .filter(function (n, i, a) { return a.indexOf(n) === i; });
+    if (skipped.length) {
+      return { outcome: automationOutcome_('partial', skipped.length + ' rep Call Notes Sheet(s) could not be read, so the weekly digests went out incomplete: ' + skipped.join(', '), skipped) };
+    }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Daily safety-net digest of urgent-flagged notes to MANAGER_EMAILS. 'urgent'
  *  is a secondary flag (subformData.flags[], INV-75/77) with no resolved state,
@@ -4248,18 +4253,22 @@ function sendCallNotesWeeklyDigests() {
  *  this is the catch-it-by-morning backstop. */
 function sendCallNotesUrgentDigest() {
   assertManagerCaller_('sendCallNotesUrgentDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  // Follow-up to C2 (cycle 22): a failed read is not an empty queue — a throw
+  // is a FAILED outcome (ST2), recorded where the health dot and the failure
+  // digest read it, and the heartbeat stays withheld.
+  return runAutomationJob_('CallNotesUrgentDigest', function () {
     // #2 (INV-151): while the consolidated daily brief is on, urgent notes
     // ride the 8am brief instead. Still stamp the heartbeat — the trigger ran
     // and made its (suppressed) decision; a dead trigger stays detectable.
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       stampDigestLastRun_('urgent');
+      logDigestDelivery_('urgent', getManagerEmails_(), 'suppressed', null, 'rode the daily brief');   // G3
       Logger.log('Urgent digest: consolidated into the daily brief.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // ST2: the decision ran clean
     }
     const mgrEmails = getManagerEmails_();
-    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return; }
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping urgent digest.'); return { outcome: automationOutcome_('idle') }; }
     const now = new Date();
     const mgrTz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
     // Cover the previous calendar day through today (manager tz) so nothing
@@ -4273,26 +4282,28 @@ function sendCallNotesUrgentDigest() {
     const dateRange = { start, end };
 
     const urgent = managerAggregateUrgent_(dateRange);
-    if ((urgent.results && urgent.results.length > 0) || (urgent.skippedReps || []).length > 0) {
+    const skipped = urgent.skippedReps || [];
+    const count = (urgent.results || []).length;
+    if (count > 0 || skipped.length > 0) {
       const sentU = sendManagerFlagDigest_(mgrEmails, 'Urgent', urgent.results || [], dateRange, urgent.skippedReps);
       if (sentU && sentU.error) {
-        // F4 (cycle 25): nothing was sent — stamp it and withhold the heartbeat.
-        stampAutomationError_('CallNotesUrgentDigest', 'the urgent digest could not be sent: ' + sentU.error);
+        // F4 (cycle 25): nothing was sent — a failed run, and the heartbeat withheld.
+        logDigestDelivery_('urgent', mgrEmails, 'failed', count, sentU.error);   // G3
         Logger.log('sendCallNotesUrgentDigest: send failed — no heartbeat.');
-        return;
+        return { outcome: automationOutcome_('failed', 'the urgent digest could not be sent: ' + sentU.error) };
       }
+      logDigestDelivery_('urgent', mgrEmails, 'sent', count, skipped.length ? 'incomplete — ' + skipped.length + ' rep Sheet(s) unreadable' : '');   // G3
+    } else {
+      logDigestDelivery_('urgent', mgrEmails, 'empty', 0, 'no urgent notes');   // G3
     }
-    clearAutomationError_('CallNotesUrgentDigest');
     stampDigestLastRun_('urgent');
-    Logger.log(`sendCallNotesUrgentDigest: urgent=${(urgent.results || []).length}`);
-  } catch (err) {
-    // Follow-up to C2 (cycle 22): a failed read is not an empty queue. The
-    // catch used to log and return — nothing sent, nothing stamped, so the
-    // only trace was an ageing heartbeat. Stamp the failure where the health
-    // dot and the failure digest read it (the heartbeat stays withheld).
-    stampAutomationError_('CallNotesUrgentDigest', err.message);
-    Logger.log('sendCallNotesUrgentDigest failed: ' + err.message);
-  }
+    Logger.log(`sendCallNotesUrgentDigest: urgent=${count}`);
+    // ST2 (cycle 25 E1): sent with unreadable rep Sheets is a partial run.
+    if (skipped.length) {
+      return { outcome: automationOutcome_('partial', skipped.length + ' rep Call Notes Sheet(s) could not be read, so the urgent digest went out incomplete: ' + skipped.join(', '), skipped) };
+    }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════

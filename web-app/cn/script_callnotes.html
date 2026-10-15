@@ -496,6 +496,9 @@
      .m-table td is nowrap, so it wraps inside its own span or the Link column
      leaves the canvas — measured at 1440px. */
   .cn-store-ret { display: block; max-width: 260px; white-space: normal; font-size: 11px; line-height: 1.4; }
+  /* G3 (cycle 25 E1): a digest delivery's reason can be a whole MailApp error —
+     the same nowrap td, the same fix (measured: it ran off the canvas at 1440px). */
+  .cn-dd-reason { display: block; min-width: 180px; max-width: 360px; white-space: normal; font-size: 12px; line-height: 1.4; }
   .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .cn-store-detail .fix { color: var(--warning-deep); }
   .cn-store-detail .bad { color: var(--danger-deep); }
@@ -10078,6 +10081,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-oop"></div>' +
       '<div id="cn-admin-formulas">' + cnRenderFormulaScanPanel_(null) + '</div>' +
       '<div id="cn-admin-health"></div>' +
+      '<div id="cn-admin-digests"></div>' +   // G3 (cycle 25 E1) — beside Automation Health
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
       '<div id="cn-admin-augment"></div>' +
@@ -10123,6 +10127,9 @@ function enterCallNotesAdminView(area) {
   // Automation Health — sync-failure / CDR-drift / last-run surfacing.
   // Independent load; failure stays contained to its own slot.
   cnLoadHealthPanel_();
+  // G3 (cycle 25 E1) — the digest delivery log. Independent load; failure
+  // stays contained to its own slot.
+  cnLoadDigestDeliveries_();
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
@@ -11698,6 +11705,86 @@ function cnLoadHealthPanel_() {
     .getAutomationHealth();
 }
 
+/** G3 (cycle 25 E1) — the digest delivery log: every manager digest decision
+ *  (sent / suppressed / failed / empty) per recipient, newest first, with a
+ *  per-digest summary line. PURE over its payload — Node- and DOM-pinned. A
+ *  failed read is a warn card (INV-175), never an empty log; a tab that does
+ *  not exist yet says so; a tail scan that stopped inside the window says so
+ *  (g152). Every string from the server is escaped. */
+var CN_DIGEST_DELIVERY_SHOW_MAX_ = 200;
+var CN_DIGEST_DELIVERY_STATUS_ = {
+  sent: { label: 'Sent', color: 'var(--success-deep)' },
+  suppressed: { label: 'Suppressed', color: 'var(--muted)' },
+  failed: { label: 'Failed', color: 'var(--danger-deep)' },
+  empty: { label: 'Nothing to send', color: 'var(--muted)' },
+};
+function cnRenderDigestDeliveries_(res) {
+  var wrap = function (inner) {
+    return '<div class="panel" id="cn-sys-sec-digests" style="margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Digest deliveries</div>' + inner + '</div>';
+  };
+  if (!res) return wrap('<div style="padding:10px 0">' + loSweep() + '</div>');
+  if (res.error) return wrap(errorStateHtml_('Digest deliveries unavailable: ' + String(res.error)));   // K10: no second esc()
+  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Every manager digest decision in the last ' +
+    esc(String(res.days)) + ' days, per recipient — sent, suppressed (it rode the daily brief), failed, or nothing to send. ' +
+    'Rows are kept ' + esc(String(res.retentionDays)) + ' days. A run that could not write its row is not listed here; ' +
+    'Automation Health above is each job’s own record.</div>';
+  if (res.missing) {
+    return wrap(intro + '<div class="m-empty">No digest has recorded a delivery yet — the log starts with the first digest run after this deploy.</div>');
+  }
+  var rows = res.rows || [];
+  var label = function (k) { return CN_DIGEST_LABELS_[k] || k; };
+  var order = [], by = {};
+  rows.forEach(function (r) {
+    if (!by[r.digest]) { by[r.digest] = { last: r, n: { sent: 0, suppressed: 0, failed: 0, empty: 0 } }; order.push(r.digest); }
+    if (by[r.digest].n[r.status] !== undefined) by[r.digest].n[r.status]++;
+  });
+  var summary = order.map(function (k) {
+    var d = by[k], st = CN_DIGEST_DELIVERY_STATUS_[d.last.status] || CN_DIGEST_DELIVERY_STATUS_.failed;
+    var parts = ['sent', 'suppressed', 'failed', 'empty'].filter(function (s) { return d.n[s]; }).map(function (s) {
+      return esc(String(d.n[s])) + ' ' + esc(CN_DIGEST_DELIVERY_STATUS_[s].label.toLowerCase());
+    });
+    return '<div style="font-size:12px;padding:2px 0' + (d.n.failed ? ';color:var(--danger-deep)' : '') + '">' +
+      '<b>' + esc(label(k)) + '</b> — last: ' + '<span style="color:' + st.color + '">' + esc(st.label.toLowerCase()) + '</span> ' +
+      esc(d.last.at || '') + ' · ' + parts.join(' · ') + '</div>';
+  }).join('');
+  var shown = rows.slice(0, CN_DIGEST_DELIVERY_SHOW_MAX_);
+  var table = mtRenderTable_({
+    columns: [
+      { key: 'at', label: 'When', cell: function (r) { return esc(r.at || ''); } },
+      { key: 'digest', label: 'Digest', cell: function (r) { return esc(label(r.digest)); } },
+      { key: 'recipient', label: 'Recipient', cell: function (r) { return esc(r.recipient); } },
+      { key: 'status', label: 'Status', cell: function (r) {
+        var st = CN_DIGEST_DELIVERY_STATUS_[r.status] || CN_DIGEST_DELIVERY_STATUS_.failed;
+        return '<span style="color:' + st.color + ';font-weight:600">' + esc(st.label) + '</span>';
+      } },
+      { key: 'items', label: 'Items', numeric: true, cell: function (r) { return r.items == null ? '—' : esc(String(r.items)); } },
+      { key: 'reason', label: 'Reason', cell: function (r) { return '<span class="cn-dd-reason">' + esc(r.reason || '') + '</span>'; } },
+    ],
+    rows: shown,
+    empty: '<div class="m-empty">No digest decisions in the last ' + esc(String(res.days)) + ' days.</div>',
+  });
+  var notes = '';
+  if (rows.length > shown.length) notes += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Showing the newest ' + esc(String(shown.length)) + ' of ' + esc(String(rows.length)) + ' rows.</div>';
+  if (res.truncated) notes += '<div style="font-size:11px;color:var(--warning-deep);margin-top:6px">The log is longer than one read reaches — older rows inside this window were not read. Open the DigestDeliveries tab for the full log.</div>';
+  return wrap(intro + (summary ? '<div style="margin-bottom:8px">' + summary + '</div>' : '') + table + notes);
+}
+function cnLoadDigestDeliveries_() {
+  var slot = document.getElementById('cn-admin-digests');
+  if (!slot) return;
+  slot.innerHTML = cnRenderDigestDeliveries_(null);
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-digests');
+    if (live) live.innerHTML = cnRenderDigestDeliveries_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'load failed' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'load failed' }); })
+    .getDigestDeliveries({});
+}
+
 /** Design handoff A3 — ONE derivation of "what needs attention" from the two
  *  health payloads. Pure (no DOM, no globals) so it is Node-testable; the
  *  findings list, the three Overview cards and the System tab badge all
@@ -11799,11 +11886,16 @@ function cnHealthFindings_(health, storage, oop) {
     var aeJobs = Object.keys(ae);
     aeJobs.forEach(function (job) {
       var e = ae[job] || {};
-      add('automationError:' + job, 'automation', 'fail', (e.label || job) + ' failed on its last run',
+      if (e.ownFinding) return;   // ST2 (cycle 25 E1): said once, by its own finding (open punches / self-test)
+      // ST2: a PARTIAL run warns and names what it skipped; a failed one fails.
+      var partial = e.status === 'partial';
+      add('automationError:' + job, 'automation', partial ? 'warn' : 'fail',
+        (e.label || job) + (partial ? ' ran only in part on its last run' : ' failed on its last run'),
         (e.at ? 'at ' + e.at + ' — ' : '') + (e.message || e.error || 'unknown error'),   // F-20: the stamp's field is `message`
-        'Run the job from the editor to reproduce; a clean run clears this flag.');
+        partial ? 'Fix what it skipped (named above); its next complete run clears this flag.'
+          : 'Run the job from the editor to reproduce; a clean run clears this flag.');
     });
-    if (!aeJobs.length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
+    if (!aeJobs.filter(function (j) { return !(ae[j] || {}).ownFinding; }).length) add('automationErrors', 'automation', 'ok', 'Automation jobs', 'no stamped failures');
     // (d) Digest heartbeats — stale warns; never-ran is the fresh-deploy
     // posture only until the triggers have been installed past its window
     // (F60, cycle 25 — the server marks that case `neverRan` and stale).

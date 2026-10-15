@@ -200,9 +200,11 @@ function trainOverdueForRoster_(todayIso) {
  *  (org-wide) + overdue unsigned docs (team-scoped per manager). */
 function sendTrainingOverdueDigest() {
   assertManagerCaller_('sendTrainingOverdueDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  // MAIL-4: a throw is not a quiet morning — the runner records it as a
+  // FAILED outcome (ST2, cycle 25 E1).
+  return runAutomationJob_('TrainingOverdueDigest', function () {
     const mgrEmails = getManagerEmails_();
-    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return; }
+    if (mgrEmails.length === 0) { Logger.log('No manager emails — skipping training overdue digest.'); return { outcome: automationOutcome_('idle') }; }
     const todayIso = trainTodayIso_();
     const overdueTraining = trainOverdueForRoster_(todayIso);   // org-wide
     // HR-3 (cycle 23): the two HR sweeps throw by name when the store is set
@@ -223,6 +225,7 @@ function sendTrainingOverdueDigest() {
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Training-overdue manager nudge: consolidated into the daily brief.');
+      logDigestDelivery_('trainingOverdue', mgrEmails, 'suppressed', null, 'rode the daily brief');   // G3
     } else {
       mgrEmails.forEach(function (email) {
         const mgr = { email: email, isManager: true };
@@ -233,11 +236,16 @@ function sendTrainingOverdueDigest() {
           return coachCanManagerSee_(mgr, oc.item);
         });
         // Silent only on a genuine all-clear: an unreadable source is not one.
-        if (!overdueTraining.length && !scopedDocs.length && !scopedCoaching.length && !unread.length) return;   // nothing for this manager
+        const items = overdueTraining.length + scopedDocs.length + scopedCoaching.length;
+        if (!items && !unread.length) { logDigestDelivery_('trainingOverdue', email, 'empty', 0, 'nothing overdue'); return; }   // nothing for this manager (G3)
         try {
           sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso, unread);
           sent++;
-        } catch (e) { sendFailed++; lastSendError = String((e && e.message) || e); console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + lastSendError); }
+          logDigestDelivery_('trainingOverdue', email, 'sent', items, unread.length ? 'incomplete — could not read ' + unread.join(' and ') : '');   // G3
+        } catch (e) {
+          sendFailed++; lastSendError = String((e && e.message) || e); console.warn('sendTrainingOverdueDigest to ' + email + ' failed: ' + lastSendError);
+          logDigestDelivery_('trainingOverdue', email, 'failed', items, lastSendError);   // G3
+        }
       });
     }
     // v2 — also nudge the EMPLOYEE about their own overdue documents (one
@@ -254,22 +262,22 @@ function sendTrainingOverdueDigest() {
       catch (e) { empFailed++; lastSendError = String((e && e.message) || e); console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + lastSendError); }
     });
     stampDigestLastRun_('trainingOverdue');   // the trigger ran
-    // HR-3 + MAIL-4 (cycle 23): one stamp names everything that went wrong —
+    // HR-3 + MAIL-4 (cycle 23): one outcome names everything that went wrong —
     // an unreadable source, an undelivered manager digest, an undelivered
-    // employee nudge — and a clean run clears it.
+    // employee nudge — and a clean run clears it. ST2 (cycle 25 E1): partial
+    // while anything went out; failed when every send that was due failed.
     const problems = [];
     if (unread.length) problems.push('could not read ' + unread.join(' and ') + ' (the Employee Docs store)');
     if (sendFailed) problems.push(sendFailed + ' manager digest email(s) failed to send');
     if (empFailed) problems.push(empFailed + ' employee overdue-document reminder(s) failed to send');
-    if (problems.length) stampAutomationError_('TrainingOverdueDigest', problems.join(' · ') + (lastSendError ? ' (' + lastSendError + ')' : ''));
-    else clearAutomationError_('TrainingOverdueDigest');
     Logger.log('sendTrainingOverdueDigest: training=' + overdueTraining.length +
       ' docs=' + overdueDocs.length + ' coaching=' + overdueCoaching.length +
       ' managersEmailed=' + sent + ' employeesNudged=' + empNudged);
-  } catch (err) {
-    Logger.log('sendTrainingOverdueDigest failed: ' + err.message);
-    stampAutomationError_('TrainingOverdueDigest', err.message);   // MAIL-4: a throw is not a quiet morning
-  }
+    if (!problems.length) return { outcome: automationOutcome_('ok') };
+    const nothingWent = (sendFailed || empFailed) && !sent && !empNudged;
+    return { outcome: automationOutcome_(nothingWent ? 'failed' : 'partial',
+      problems.join(' · ') + (lastSendError ? ' (' + lastSendError + ')' : '')) };
+  });
 }
 /** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
  *  the wrapper, every user field esc_'d here; plain-text body fallback). */

@@ -747,9 +747,9 @@ function drReplyScanCore_() {
  *  check (liveness is observable while off), and a failure is stamped. */
 function scanDeptRequestReplies() {
   assertManagerCaller_('scanDeptRequestReplies');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('DeptReplyScan', function () {
     stampDigestLastRun_('deptReplyScan');
-    if (!getFlag_('deptReplyResolve')) { Logger.log('deptReplyResolve flag is off — no replies read.'); return; }
+    if (!getFlag_('deptReplyResolve')) { Logger.log('deptReplyResolve flag is off — no replies read.'); return { outcome: automationOutcome_('ok') }; }
     const r = drReplyScanCore_();
     // F54 (cycle 25): the per-run cap reads the NEWEST open requests, so past
     // it the oldest were never read — and the run cleared its key and read as
@@ -758,14 +758,11 @@ function scanDeptRequestReplies() {
     if (r.errors) problems.push(r.errors + ' request thread(s) could not be read');
     if (r.truncated) problems.push((r.candidates - DR_REPLY_SCAN_MAX) + ' of ' + r.candidates + ' open request(s) were past the ' +
       DR_REPLY_SCAN_MAX + '-thread cap, so the oldest were not read for replies — resolve them by hand or close the stale ones');
-    if (problems.length) stampAutomationError_('DeptReplyScan', problems.join('; '));
-    else clearAutomationError_('DeptReplyScan');
     Logger.log('deptReplyScan: ' + JSON.stringify(r));
+    // ST2 (cycle 25 E1): the scan read what it could — a PARTIAL run, named.
+    r.outcome = problems.length ? automationOutcome_('partial', problems.join('; ')) : automationOutcome_('ok');
     return r;
-  } catch (err) {
-    Logger.log('scanDeptRequestReplies failed: ' + err.message);
-    stampAutomationError_('DeptReplyScan', err.message);
-  }
+  });
 }
 /** "Mark unresolved" — the sender, a manager or a member of the receiving
  *  department (drCanAct_, the resolve rule) reopens a RESOLVED request, by any
@@ -1142,21 +1139,28 @@ function drAgeWorkingDaysLabel_(bizMin, dayHours) {
 }
 function sendDeptRequestReminderDigest() {
   assertManagerCaller_('sendDeptRequestReminderDigest');
-  try {
+  // MAIL-4: a failed read is not "nothing overdue" — a throw is a FAILED
+  // outcome (ST2, cycle 25 E1).
+  return runAutomationJob_('DeptRequestReminderDigest', function () {
     // #2 (INV-151): while the consolidated daily brief is on, the SLA overdue
     // list rides the 8am brief instead. Stamp the heartbeat first — the
     // trigger ran; a dead trigger stays detectable.
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       stampDigestLastRun_('deptReqReminder');
+      logDigestDelivery_('deptReqReminder', getManagerEmails_(), 'suppressed', null, 'rode the daily brief');   // G3
       Logger.log('Dept-request reminder: consolidated into the daily brief.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // ST2: the decision ran clean
     }
     const mgrEmails = getManagerEmails_();
-    if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return; }
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping dept-request reminder.'); return { outcome: automationOutcome_('idle') }; }
     const overdue = deptRequestsOverdueOpen_();
     stampDigestLastRun_('deptReqReminder');
-    if (!overdue.length) { clearAutomationError_('DeptRequestReminderDigest'); Logger.log('dept-request reminder: nothing overdue.'); return; }
+    if (!overdue.length) {
+      logDigestDelivery_('deptReqReminder', mgrEmails, 'empty', 0, 'nothing overdue');   // G3
+      Logger.log('dept-request reminder: nothing overdue.');
+      return { outcome: automationOutcome_('ok') };
+    }
 
     const byDept = {};
     overdue.forEach(function (o) { (byDept[o.dept] = byDept[o.dept] || []).push(o); });
@@ -1185,13 +1189,11 @@ function sendDeptRequestReminderDigest() {
     } catch (mailErr) {
       // MAIL-4 (cycle 23): an undelivered reminder used to reach only the log.
       Logger.log('dept-request reminder send failed: ' + mailErr.message);
-      stampAutomationError_('DeptRequestReminderDigest', overdue.length + ' overdue request(s) found but the reminder could not be sent: ' + mailErr.message);
-      return;
+      logDigestDelivery_('deptReqReminder', mgrEmails, 'failed', overdue.length, mailErr.message);   // G3
+      return { outcome: automationOutcome_('failed', overdue.length + ' overdue request(s) found but the reminder could not be sent: ' + mailErr.message) };
     }
-    clearAutomationError_('DeptRequestReminderDigest');
+    logDigestDelivery_('deptReqReminder', mgrEmails, 'sent', overdue.length, '');   // G3
     Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
-  } catch (err) {
-    Logger.log('sendDeptRequestReminderDigest failed: ' + err.message);
-    stampAutomationError_('DeptRequestReminderDigest', err.message);   // MAIL-4: a failed read is not "nothing overdue"
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }

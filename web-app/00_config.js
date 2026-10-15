@@ -993,7 +993,7 @@ const VIEW_USAGE_TIMING_KEYS = ['shell', 'state', 'view'];
 // large first enable drains over successive nights (the INV-153/F3 bound).
 const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS';
 const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';
-const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across BOTH tabs, oldest first
+const DIAG_PURGE_MAX_ROWS_PER_RUN = 2000;   // across all three tabs (G3 added DigestDeliveries), oldest first
 // Audit actions written by the automation jobs. Purges write a row only when
 // retention is enabled (a disabled purge returns before the audit write), and
 // AdpExportAuto only fires at period end — the client captions each
@@ -1072,9 +1072,11 @@ const AUTOMATION_JOB_CHECKS = [
   { action: 'QaReviewPurge', label: 'QA review-record retention purge',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return qaReviewRetentionDays_() > 0 && qaStoreConfigured_(); } },
-  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors)',
+  // G3 (cycle 25 E1): the digest delivery log always has a window, so this
+  // purge runs (and writes its row) every night on every deployment.
+  { action: 'DiagnosticsPurge', label: 'diagnostics retention purge (ViewUsage / ClientErrors / DigestDeliveries)',
     cadence: 'daily', staleHours: 30,
-    enabled: function () { return viewUsageRetentionDays_() > 0 || clientErrRetentionDays_() > 0; } },
+    enabled: function () { return true; } },
 ];
 // A trigger handler that CATCHES its own error reports failure to nobody:
 // Apps Script's own failure email fires on a THROW, not on a returned error
@@ -1105,7 +1107,41 @@ const AUTOMATION_ERROR_LABELS = {
   MissedPunchAlerts: 'Daily missed-punch alerts', DailyExportCheck: 'Daily ADP export check',
   AutomationHealthDigest: 'Automation-health failure digest',
   OpenPunchCheck: 'Daily open-punch check',
+  NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
 };
+// ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
+// Every installable-trigger job — the standalone TARGETS and every handler a
+// TRIGGER_GROUPS dispatcher runs — ends through runAutomationJob_, which
+// records the outcome its body RETURNS under the job's AUTOMATION_LAST_ERRORS
+// key. The F4/F5 class (a job that caught a failure, or skipped a rep Sheet,
+// and then cleared its key or returned without a word) was closed one job at a
+// time across four cycles; here it is one rule, and a body cannot record by
+// hand (pinned: the stamp/clear primitives have no other callers).
+//   ok      — the run did its job (a disabled job is an ok run) → clears
+//   idle    — a run that did nothing and therefore proves nothing (an hour
+//             matching no rep's EOD hour, outside business hours, no manager
+//             recipients) → neither stamps nor clears
+//   partial — it ran, but part of it did not (a skipped rep Sheet, one of two
+//             queues unreadable, some sends failed) → stamps, names the skipped
+//   failed  — nothing it exists to do happened → stamps
+// A body that returns no valid outcome is itself recorded as failed.
+const AUTOMATION_OUTCOME_STATUSES = ['ok', 'idle', 'partial', 'failed'];
+const AUTOMATION_OUTCOME_SKIPPED_MAX = 20;   // names kept on a stamp — the message carries the count
+// ── G3 (cycle 25 E1): the digest delivery log ────────────────────────────
+// One row per manager per digest run — sent, suppressed (it rode the daily
+// brief), failed or empty (nothing to report) — so "did my digest go out, and
+// why not" has an answer without reading the Logger. PHI-FREE BY CONSTRUCTION:
+// the recipient is a staff address, the digest a heartbeat key, the reason a
+// fixed phrase or a send error; never note, patient or request content. Rows
+// older than DIGEST_DELIVERY_RETENTION_DAYS are removed by the nightly
+// diagnostics purge (purgeOldDiagnostics), which is therefore always enabled.
+const DIGEST_DELIVERIES_TAB = 'DigestDeliveries';
+const DIGEST_DELIVERY_HEADERS = ['Timestamp', 'Digest', 'Recipient', 'Status', 'Items', 'Reason'];
+const DIGEST_DELIVERY_STATUSES = ['sent', 'suppressed', 'failed', 'empty'];
+const DIGEST_DELIVERY_RETENTION_DAYS = 90;
+const DIGEST_DELIVERY_SCAN_MAX = 4000;    // the Admin view's tail bound (INV-13 spirit)
+const DIGEST_DELIVERY_VIEW_DAYS = 14;     // the Admin view's default window
+const DIGEST_DELIVERY_REASON_MAX = 200;
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',
@@ -1316,27 +1352,26 @@ const TRIGGER_GROUPS = {
   // derived from these lists, so a re-install removes its old trigger).
   runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
 };
-// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under.
-// runTriggerGroup_ stamped an unexpected throw under the raw handler name,
-// which no label map knew (the digest showed "checkOpenPunches failed…") and
-// which DIGEST_ERROR_KEYS could not see, so a stale heartbeat still blamed the
-// trigger. `owns` = the job stamps AND clears this key itself, so the
-// dispatcher must never clear it after a normal return (that would erase the
-// job's own failure stamp); a job that does not own its key is cleared by the
-// dispatcher on a clean run. Every TRIGGER_GROUPS handler has a row, and
-// `owns` is checked against each job's body (pinned both ways).
+// Seams F3 (cycle 24) — the KEY each grouped handler's failures live under
+// (it used the raw handler name, which no label map or heartbeat knew). Since
+// ST2 (cycle 25 E1) every handler records its own outcome under this key
+// through runAutomationJob_; the dispatcher only verifies that an outcome came
+// back, and stamps here when a handler is missing or returns none. The
+// `owns` flag went with the hand-written stamps it described: no job clears
+// or stamps by hand any more. Every TRIGGER_GROUPS handler has a row, and each
+// row equals the key the handler passes to runAutomationJob_ (pinned).
 const TRIGGER_HANDLER_JOB_KEYS = {
-  sendCallNotesEodDigest:            { key: 'CallNotesEodDigest',     owns: true },
-  scanDeptRequestReplies:            { key: 'DeptReplyScan',          owns: true },
-  autoAssignSpanishThreadsScheduled: { key: 'SpanishAutoAssign',      owns: true },
-  sendCallNotesWeeklyDigests:        { key: 'CallNotesWeeklyDigests', owns: true },
-  sendCoachingRecapDigest:           { key: 'CoachingRecapDigest',    owns: true },
-  purgeOldDiagnostics:               { key: 'DiagnosticsPurge',       owns: true },
-  purgeOldQaReviews:                 { key: 'QaReviewPurge',          owns: true },
-  purgeExpiredFormData:              { key: 'FormDataPurge',          owns: true },   // F5 (cycle 25)
-  purgeArchivedCallNotes:            { key: 'CallNotesArchivePurge',  owns: true },   // F5 (cycle 25)
-  checkOpenPunches:                  { key: 'OpenPunchCheck',         owns: false },
-  sendCallNotesUrgentDigest:         { key: 'CallNotesUrgentDigest',  owns: true },
+  sendCallNotesEodDigest:            'CallNotesEodDigest',
+  scanDeptRequestReplies:            'DeptReplyScan',
+  autoAssignSpanishThreadsScheduled: 'SpanishAutoAssign',
+  sendCallNotesWeeklyDigests:        'CallNotesWeeklyDigests',
+  sendCoachingRecapDigest:           'CoachingRecapDigest',
+  purgeOldDiagnostics:               'DiagnosticsPurge',
+  purgeOldQaReviews:                 'QaReviewPurge',
+  purgeExpiredFormData:              'FormDataPurge',
+  purgeArchivedCallNotes:            'CallNotesArchivePurge',
+  checkOpenPunches:                  'OpenPunchCheck',
+  sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install

@@ -2260,6 +2260,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
+    // G3 (cycle 25 E1) — the digest delivery log: every status, a long send
+    // error (the reason column must wrap, not widen the page), a blank count.
+    getDigestDeliveries: {
+      days: 14, retentionDays: 90, truncated: false, missing: false,
+      rows: [
+        { at: daysAgo(0) + ' 09:00:14', digest: 'automationHealth', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 1, reason: '' },
+        { at: daysAgo(0) + ' 08:00:31', digest: 'managerBrief', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 6, reason: 'incomplete — could not read urgent notes (1 rep Sheet(s) unreadable)' },
+        { at: daysAgo(0) + ' 08:00:30', digest: 'managerBrief', recipient: 'floor.lead@umsupply.com', status: 'failed', items: 4, reason: 'Service invoked too many times for one day: email. Try again tomorrow or reduce the number of recipients on this script.' },
+        { at: daysAgo(0) + ' 08:00:09', digest: 'urgent', recipient: 'ops.manager@umsupply.com', status: 'suppressed', items: null, reason: 'rode the daily brief' },
+        { at: daysAgo(0) + ' 08:00:09', digest: 'urgent', recipient: 'floor.lead@umsupply.com', status: 'suppressed', items: null, reason: 'rode the daily brief' },
+        { at: daysAgo(1) + ' 07:00:02', digest: 'trainingOverdue', recipient: 'ops.manager@umsupply.com', status: 'empty', items: 0, reason: 'nothing overdue' },
+        { at: daysAgo(4) + ' 08:00:20', digest: 'weekly', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 3, reason: 'Training Queue' },
+      ],
+    },
     getStorageHealth: (function () {
       var store = function (label, role, cls, retention, prop, over) {
         return Object.assign({
@@ -2507,6 +2521,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
+    // G3 (cycle 25 E1): a fresh deploy — no digest has written a row yet.
+    getDigestDeliveries: { days: 14, retentionDays: 90, truncated: false, missing: true, rows: [] },
     // ADM-07 (cycle 23): the Reference-lookups diagnostics now reach "Needs
     // attention", so the all-clear shot needs their CLEAN shape too — every
     // column found, a registry, no unreadable row or value.

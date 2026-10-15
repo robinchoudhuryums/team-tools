@@ -794,49 +794,54 @@ const OPEN_PUNCH_EXPIRING_DAYS = 7;
  *  Top-level → reachable via google.script.run, so it carries the INV-44 gate. */
 function checkOpenPunches() {
   assertManagerCaller_('checkOpenPunches');
-  try {
-    const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const todayIso = fmtDateTz_(new Date(), tz);
-    const startIso = addDaysIso_(todayIso, -CONFIG.ADJUST_WINDOW_DAYS);
-    const endIso = addDaysIso_(todayIso, -OPEN_PUNCH_GRACE_DAYS);
-    if (endIso < startIso) return { success: true, reps: 0, days: 0, window: null };
-    const expiringBeforeIso = addDaysIso_(startIso, OPEN_PUNCH_EXPIRING_DAYS);
+  // ST2 (cycle 25 E1): the run's outcome is recorded under OpenPunchCheck.
+  return runAutomationJob_('OpenPunchCheck', function () {
+    try {
+      const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+      const todayIso = fmtDateTz_(new Date(), tz);
+      const startIso = addDaysIso_(todayIso, -CONFIG.ADJUST_WINDOW_DAYS);
+      const endIso = addDaysIso_(todayIso, -OPEN_PUNCH_GRACE_DAYS);
+      if (endIso < startIso) return { success: true, reps: 0, days: 0, window: null, outcome: automationOutcome_('ok') };
+      const expiringBeforeIso = addDaysIso_(startIso, OPEN_PUNCH_EXPIRING_DAYS);
 
-    const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
-    const roster = [];
-    for (let i = 1; i < rows.length; i++) {
-      if (!empRosterEmail_(rows[i])) continue;              // INV-183 — the ONE inclusion predicate
-      roster.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+      const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
+      const roster = [];
+      for (let i = 1; i < rows.length; i++) {
+        if (!empRosterEmail_(rows[i])) continue;              // INV-183 — the ONE inclusion predicate
+        roster.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+      }
+      const idx = workedHoursByEmpForRange_(startIso, endIso);   // throws → caught below, nothing stamped
+      const found = planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso);
+      const rec = {
+        at: Date.now(),
+        window: { start: startIso, end: endIso, adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS },
+        reps: found.length,
+        days: found.reduce((n, r) => n + r.count, 0),
+        expiring: found.reduce((n, r) => n + r.expiring.length, 0),
+        detail: found.map((r) => ({ id: r.id, name: r.name, count: r.count,
+          first: r.days[0].date, last: r.days[r.days.length - 1].date,
+          kinds: r.days.map((d) => d.kind).filter((k, i, a) => a.indexOf(k) === i),
+          expiring: r.expiring.length })),
+      };
+      stampOpenPunchCheck_(rec);
+      Logger.log('checkOpenPunches: ' + rec.days + ' open day(s) across ' + rec.reps +
+        ' rep(s) in ' + startIso + '…' + endIso + (rec.expiring ? ' — ' + rec.expiring + ' about to leave the adjust window' : ''));
+      // Open days found are the scan's FINDINGS (its own stamp) — the run is ok.
+      return { success: true, reps: rec.reps, days: rec.days, expiring: rec.expiring, window: rec.window,
+               outcome: automationOutcome_('ok') };
+    } catch (err) {
+      // A FAILED check must not read as "no open punches" — that is the reassuring
+      // absence this whole batch exists to remove. Stamp the failure so the health
+      // panel says the check could not run, rather than showing a clean board.
+      // This stamp is rewritten in full on every run, so it self-clears. Since
+      // ST2 (cycle 25 E1) the run is ALSO a failed outcome under OpenPunchCheck —
+      // cleared by the next clean run like every job's — and the health report
+      // marks that entry `ownFinding`, so the failure is said once, by this
+      // stamp's more specific line.
+      stampOpenPunchCheck_({ at: Date.now(), error: err.message });
+      return { success: false, error: err.message, outcome: automationOutcome_('failed', 'the open-punch scan could not run: ' + err.message) };
     }
-    const idx = workedHoursByEmpForRange_(startIso, endIso);   // throws → caught below, nothing stamped
-    const found = planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso);
-    const rec = {
-      at: Date.now(),
-      window: { start: startIso, end: endIso, adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS },
-      reps: found.length,
-      days: found.reduce((n, r) => n + r.count, 0),
-      expiring: found.reduce((n, r) => n + r.expiring.length, 0),
-      detail: found.map((r) => ({ id: r.id, name: r.name, count: r.count,
-        first: r.days[0].date, last: r.days[r.days.length - 1].date,
-        kinds: r.days.map((d) => d.kind).filter((k, i, a) => a.indexOf(k) === i),
-        expiring: r.expiring.length })),
-    };
-    stampOpenPunchCheck_(rec);
-    Logger.log('checkOpenPunches: ' + rec.days + ' open day(s) across ' + rec.reps +
-      ' rep(s) in ' + startIso + '…' + endIso + (rec.expiring ? ' — ' + rec.expiring + ' about to leave the adjust window' : ''));
-    return { success: true, reps: rec.reps, days: rec.days, expiring: rec.expiring, window: rec.window };
-  } catch (err) {
-    // A FAILED check must not read as "no open punches" — that is the reassuring
-    // absence this whole batch exists to remove. Stamp the failure so the health
-    // panel says the check could not run, rather than showing a clean board.
-    // The failure rides THIS stamp rather than AUTOMATION_LAST_ERRORS: that map
-    // is cleared by a job's own next clean run, and a job outside
-    // AUTOMATION_JOB_CHECKS (this one writes no audit row, so it is correctly
-    // not in that table) would leave an entry nothing ever clears. This stamp
-    // is rewritten in full on every run, so it self-clears.
-    stampOpenPunchCheck_({ at: Date.now(), error: err.message });
-    return { success: false, error: err.message };
-  }
+  });
 }
 
 /** Auto-managed diagnostic — the last open-punch scan. Bounded per INV-201:
@@ -923,7 +928,8 @@ function readAccrualReconcile_() {
  *  Timesheet/archive read aborts the whole run with no credits and no stamp
  *  movement, so tomorrow's run retries intact. */
 /** F-46 (2026-09-18): the reconcile stamp and the job's error flag are
- *  REWRITTEN on every path the job takes, the early returns included. Until
+ *  REWRITTEN on every path the job takes, the early returns included (the
+ *  flag, since ST2 / cycle 25 E1, by the `ok` outcome those paths return). Until
  *  now only the full path reached `stampAccrualReconcile_` / the clear, so a
  *  shortfall stamped one month kept alarming Automation Health after PTO
  *  tracking was switched off or the last accruing rep left the roster — and a
@@ -931,123 +937,128 @@ function readAccrualReconcile_() {
 function accrualNothingToDo_(window, reason) {
   stampAccrualReconcile_({ at: Date.now(), window: (window || []).slice(), toppedUp: 0, days: 0,
                            shortfalls: [], skipped: [], incomplete: [], truncated: false, reason: reason });
-  clearAutomationError_('PtoAccrualCredit');
 }
 function creditMonthlyPtoAccruals() {
   assertManagerCaller_('creditMonthlyPtoAccruals');
-  if (!getFlag_('enablePtoTracking')) {
-    accrualNothingToDo_([], 'PTO tracking disabled');   // F-46
-    return { success: true, skipped: 'PTO tracking disabled' };
-  }
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
-    const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
-    const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
-    const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
-    const rows = sheet.getDataRange().getValues();
-    const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
-    const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
-    // BOTH come from the resolver. `perDay` was left undeclared when the
-    // resolver was extracted (the credit used to compute both itself), and the
-    // reconcile call below threw ReferenceError on every run — see g118.
-    const basis = run.basis, perDay = run.perDay;
-    if (run.entries.length === 0) {
-      accrualNothingToDo_(recMonths, 'no accruing reps');   // F-46
-      return { success: true, credited: 0, seeded: 0 };
+  // ST2 (cycle 25 E1): every path below RETURNS its outcome — recorded under
+  // PtoAccrualCredit by runAutomationJob_, never stamped or cleared by hand.
+  return runAutomationJob_('PtoAccrualCredit', function () {
+    if (!getFlag_('enablePtoTracking')) {
+      accrualNothingToDo_([], 'PTO tracking disabled');   // F-46
+      return { success: true, skipped: 'PTO tracking disabled', outcome: automationOutcome_('ok') };
     }
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const tz = CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE;
+      const nowYm = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
+      const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
+      const rows = sheet.getDataRange().getValues();
+      const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
+      const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
+      // BOTH come from the resolver. `perDay` was left undeclared when the
+      // resolver was extracted (the credit used to compute both itself), and the
+      // reconcile call below threw ReferenceError on every run — see g118.
+      const basis = run.basis, perDay = run.perDay;
+      if (run.entries.length === 0) {
+        accrualNothingToDo_(recMonths, 'no accruing reps');   // F-46
+        return { success: true, credited: 0, seeded: 0, outcome: automationOutcome_('ok') };
+      }
 
-    let credited = 0, seeded = 0, zeroHourReps = 0;
-    run.entries.forEach((p) => {
-      const earned = p.earned;
-      if (p.months.length > 0 && earned) {
-        // F-19 (2026-09-18): ONE ledger row PER MONTH. A catch-up (a first
-        // credit, a re-enabled rep) used to write one row keyed by the whole
-        // month-set, and the reconcile pass — which values months INSIDE its
-        // window — reported that key as unreconcilable every day for months
-        // once one member aged out. Per-month rows are per-month keys.
-        const months = accrualMonthRows_(p);
-        let repCredited = false;
-        for (let mi = 0; mi < months.length; mi++) {
-          const m = months[mi];
-          if (m.earned && m.earned.days > 0) {
-            const newBal = adjustLeaveBalance_(p.emp.id, 'annual', m.earned.days);
-            if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
-            // WITNESS-class since the reconcile ledger reads these rows back: a
-            // dropped row would read as "never credited" and the next run would
-            // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
-            writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-              accrualCreditNote_(m, basis, m.earned, newBal));
-            recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
-            repCredited = true;
-          } else {
-            // Zero hours worked = zero accrual. Correct under an hours-driven
-            // rule, but recorded — WITH the reason — so a month of unexpected
-            // silence is something the operator can act on rather than re-derive.
-            writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
-              accrualZeroNote_(m, basis));
-            recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
+      let credited = 0, seeded = 0, zeroHourReps = 0;
+      run.entries.forEach((p) => {
+        const earned = p.earned;
+        if (p.months.length > 0 && earned) {
+          // F-19 (2026-09-18): ONE ledger row PER MONTH. A catch-up (a first
+          // credit, a re-enabled rep) used to write one row keyed by the whole
+          // month-set, and the reconcile pass — which values months INSIDE its
+          // window — reported that key as unreconcilable every day for months
+          // once one member aged out. Per-month rows are per-month keys.
+          const months = accrualMonthRows_(p);
+          let repCredited = false;
+          for (let mi = 0; mi < months.length; mi++) {
+            const m = months[mi];
+            if (m.earned && m.earned.days > 0) {
+              const newBal = adjustLeaveBalance_(p.emp.id, 'annual', m.earned.days);
+              if (newBal === null) return;      // gated away mid-run — leave the stamp for a clean retry
+              // WITNESS-class since the reconcile ledger reads these rows back: a
+              // dropped row would read as "never credited" and the next run would
+              // top up the whole month again. Retry, then stamp WITNESS_AUDIT_FAILS.
+              writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+                accrualCreditNote_(m, basis, m.earned, newBal));
+              recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
+              repCredited = true;
+            } else {
+              // Zero hours worked = zero accrual. Correct under an hours-driven
+              // rule, but recorded — WITH the reason — so a month of unexpected
+              // silence is something the operator can act on rather than re-derive.
+              writeWitnessAuditLog_(p.emp, 'PtoAccrualCredit', '', '', false, 0,
+                accrualZeroNote_(m, basis));
+              recordAccrualLedger_(p.emp.id, m.months, m.totalHours);   // F17
+            }
           }
+          if (repCredited) credited++; else zeroHourReps++;
         }
-        if (repCredited) credited++; else zeroHourReps++;
-      }
-      if (p.stamp !== p.plan.newStamp) {
-        sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
-        if (p.plan.seeded) seeded++;
-      }
-    });
-    if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
-
-    // ── RECONCILE (operator 2026-09-15). The month-stamp made the credit
-    // idempotent on "this month was processed", but the Timesheet is NOT final
-    // on the 1st: a missing-punch adjustment approved on the 3rd, a manager day
-    // edit, a direct Sheet edit all land later, and every one of them was lost
-    // behind the stamp. It fired live — all three PH reps were credited ZERO
-    // for 2026-08 on open days that were closed by approvals days afterwards.
-    // The fix is to make the credit idempotent on the HOURS ALREADY PAID FOR,
-    // which is what the ledger records, so late data heals itself here instead.
-    const rec = { at: Date.now(), window: recMonths.slice(), toppedUp: 0, days: 0,
-                  shortfalls: [], skipped: [], incomplete: [], truncated: false };
-    if (recMonths.length && run.hoursIdx) {
-      // Widen the ledger read a little past the window: the audit stamp is
-      // written in CONFIG.TIMEZONE while the months are manager-tz, and a row
-      // on a boundary day must not fall outside the scan (INV-51's class).
-      const ledger = readAccrualLedger_(addDaysIso_(recMonths[recMonths.length - 1] + '-01', -10));
-      rec.truncated = !!ledger.truncated;
-      planAccrualReconcile_(run.entries, ledger, run.hoursIdx, recMonths, basis, perDay).forEach((r) => {
-        if (r.incompleteDays || r.orphanDays) {
-          rec.incomplete.push({ id: r.emp.id, months: r.monthsKey, days: (r.incompleteDays || 0) + (r.orphanDays || 0) });
-        }
-        if (r.action === 'topup') {
-          const newBal = adjustLeaveBalance_(r.emp.id, 'annual', r.deltaDays);
-          if (newBal === null) return;   // gated away mid-run — next run retries
-          writeWitnessAuditLog_(r.emp, 'PtoAccrualCredit', '', '', false, 0,
-            accrualTopUpNote_(r, basis, r.earnedNow, r.deltaDays, newBal));
-          recordAccrualLedger_(r.emp.id, r.months, r.hoursNow);   // F17
-          rec.toppedUp++; rec.days = +(rec.days + r.deltaDays).toFixed(2);
-        } else if (r.action === 'shortfall') {
-          // NEVER clawed back. A script does not quietly take PTO off a
-          // balance, and the cause needs a person either way.
-          rec.shortfalls.push({ id: r.emp.id, months: r.monthsKey, was: r.ledgerHours, now: r.hoursNow });
-        } else if (r.action === 'skipped') {
-          rec.skipped.push({ id: r.emp.id, months: r.monthsKey, why: r.why });
+        if (p.stamp !== p.plan.newStamp) {
+          sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
+          if (p.plan.seeded) seeded++;
         }
       });
-    }
-    stampAccrualReconcile_(rec);
+      if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
 
-    clearAutomationError_('PtoAccrualCredit');
-    return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps,
-             toppedUp: rec.toppedUp, topUpDays: rec.days, shortfalls: rec.shortfalls.length };
-  } catch (err) {
-    // F4: this job writes LEAVE BALANCES, and a caught error reports failure to
-    // nobody — Apps Script's trigger-failure email fires on a THROW, not on a
-    // returned error object, and nothing else reads this return value. Stamp it
-    // so Admin → Automation Health and the daily failure digest can see it.
-    stampAutomationError_('PtoAccrualCredit', err.message);
-    return { success: false, error: err.message };
-  }
-  finally { lock.releaseLock(); }
+      // ── RECONCILE (operator 2026-09-15). The month-stamp made the credit
+      // idempotent on "this month was processed", but the Timesheet is NOT final
+      // on the 1st: a missing-punch adjustment approved on the 3rd, a manager day
+      // edit, a direct Sheet edit all land later, and every one of them was lost
+      // behind the stamp. It fired live — all three PH reps were credited ZERO
+      // for 2026-08 on open days that were closed by approvals days afterwards.
+      // The fix is to make the credit idempotent on the HOURS ALREADY PAID FOR,
+      // which is what the ledger records, so late data heals itself here instead.
+      const rec = { at: Date.now(), window: recMonths.slice(), toppedUp: 0, days: 0,
+                    shortfalls: [], skipped: [], incomplete: [], truncated: false };
+      if (recMonths.length && run.hoursIdx) {
+        // Widen the ledger read a little past the window: the audit stamp is
+        // written in CONFIG.TIMEZONE while the months are manager-tz, and a row
+        // on a boundary day must not fall outside the scan (INV-51's class).
+        const ledger = readAccrualLedger_(addDaysIso_(recMonths[recMonths.length - 1] + '-01', -10));
+        rec.truncated = !!ledger.truncated;
+        planAccrualReconcile_(run.entries, ledger, run.hoursIdx, recMonths, basis, perDay).forEach((r) => {
+          if (r.incompleteDays || r.orphanDays) {
+            rec.incomplete.push({ id: r.emp.id, months: r.monthsKey, days: (r.incompleteDays || 0) + (r.orphanDays || 0) });
+          }
+          if (r.action === 'topup') {
+            const newBal = adjustLeaveBalance_(r.emp.id, 'annual', r.deltaDays);
+            if (newBal === null) return;   // gated away mid-run — next run retries
+            writeWitnessAuditLog_(r.emp, 'PtoAccrualCredit', '', '', false, 0,
+              accrualTopUpNote_(r, basis, r.earnedNow, r.deltaDays, newBal));
+            recordAccrualLedger_(r.emp.id, r.months, r.hoursNow);   // F17
+            rec.toppedUp++; rec.days = +(rec.days + r.deltaDays).toFixed(2);
+          } else if (r.action === 'shortfall') {
+            // NEVER clawed back. A script does not quietly take PTO off a
+            // balance, and the cause needs a person either way.
+            rec.shortfalls.push({ id: r.emp.id, months: r.monthsKey, was: r.ledgerHours, now: r.hoursNow });
+          } else if (r.action === 'skipped') {
+            rec.skipped.push({ id: r.emp.id, months: r.monthsKey, why: r.why });
+          }
+        });
+      }
+      stampAccrualReconcile_(rec);
+
+      // Shortfalls, skipped months and open days are the reconcile stamp's own
+      // findings (read by automationProblems_) — the RUN itself finished.
+      return { success: true, credited: credited, seeded: seeded, zeroHourReps: zeroHourReps,
+               toppedUp: rec.toppedUp, topUpDays: rec.days, shortfalls: rec.shortfalls.length,
+               outcome: automationOutcome_('ok') };
+    } catch (err) {
+      // F4: this job writes LEAVE BALANCES, and a caught error reports failure to
+      // nobody — Apps Script's trigger-failure email fires on a THROW, not on a
+      // returned error object, and nothing else reads this return value. A
+      // FAILED outcome, so Admin → Automation Health and the daily failure
+      // digest can see it.
+      return { success: false, error: err.message, outcome: automationOutcome_('failed', err.message) };
+    }
+    finally { lock.releaseLock(); }
+  });
 }
 
 /** READ-ONLY dry run of the monthly accrual (operator 2026-09-14). Answers the
@@ -5054,28 +5065,33 @@ function getOrCreateTimesheetArchiveTab_(ss, liveSheet) {
  *  Writes a PHI-free TimesheetArchive audit row with counts. */
 function archiveOldTimesheetRows() {
   assertManagerCaller_('archiveOldTimesheetRows');
-  try {
+  return runAutomationJob_('TimesheetArchive', function () {
     const days = getTimesheetArchiveDays_();
     if (!days) {
       Logger.log('archiveOldTimesheetRows: archival disabled (TIMESHEET_ARCHIVE_DAYS=0) — nothing archived.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // ST2: a disabled job is a clean run
     }
     const cutoffMs = Date.now() - days * 86400000;
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
-    let moved = 0;
+    let moved = 0, noTab = false;
     try {
       const ss = getAdpSS_();
       const live = ss.getSheetByName(CONFIG.ADP_TAB);
-      if (!live) { Logger.log('archiveOldTimesheetRows: no Timesheet tab.'); return; }
-      const archive = getOrCreateTimesheetArchiveTab_(ss, live);
-      moved = archiveSheetRowsOlderThan_(live, archive, ADP.DATE, cutoffMs,
-        { headerRows: 2, width: Math.max(live.getLastColumn(), 9),
-          // F3 (cycle 12): bounded per run — see the constant.
-          maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN });
+      if (!live) noTab = true;
+      else {
+        const archive = getOrCreateTimesheetArchiveTab_(ss, live);
+        moved = archiveSheetRowsOlderThan_(live, archive, ADP.DATE, cutoffMs,
+          { headerRows: 2, width: Math.max(live.getLastColumn(), 9),
+            // F3 (cycle 12): bounded per run — see the constant.
+            maxRows: TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN });
+      }
     } finally {
       lock.releaseLock();
     }
+    // ST2 (cycle 25 E1): an enabled archive with no Timesheet tab archived
+    // nothing it exists to — a FAILED run, not the quiet log line it was.
+    if (noTab) return { outcome: automationOutcome_('failed', 'no ' + CONFIG.ADP_TAB + ' tab in the ADP spreadsheet — nothing could be archived') };
     // TC2-9: the readers' archive gate caches the archive's newest date — a
     // move changes it. Best-effort: the gate also unions the window's own date.
     if (moved > 0) { try { CacheService.getScriptCache().remove(TS_ARCHIVE_REACH_CACHE_KEY); } catch (e) {} }
@@ -5089,14 +5105,8 @@ function archiveOldTimesheetRows() {
       (hitCap ? `; hitPerRunCap=${TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN} (more remain — continues tomorrow)` : ''));
     Logger.log(`archiveOldTimesheetRows: moved ${moved} row(s) older than ${days} day(s) to ${TIMESHEET_ARCHIVE_TAB}.` +
       (hitCap ? ' Hit the per-run cap — more rows remain for the next run.' : ''));
-    clearAutomationError_('TimesheetArchive');
-  } catch (err) {
-    // TC-07 (cycle 23): the F4 rule — a caught failure reaches nobody unless
-    // stamped. Before this, only the audit row's staleness noticed, a day
-    // later and without the message.
-    stampAutomationError_('TimesheetArchive', err.message);
-    Logger.log('archiveOldTimesheetRows failed: ' + err.message);
-  }
+    return { moved: moved, outcome: automationOutcome_('ok') };   // ST2: a throw is recorded as failed (TC-07's F4 rule)
+  });
 }
 /** Missed-clock-out detection ("yesterday" in each rep's OWN tz at call time),
  *  factored from sendDailyMissedPunchAlerts so the consolidated daily brief
@@ -5148,23 +5158,29 @@ function sendDailyMissedPunchAlerts() {
   // Session.getActiveUser() returns the installer (always a manager via
   // installAutomationTriggers' own check), so the gate is a no-op for triggers.
   assertManagerCaller_('sendDailyMissedPunchAlerts');
-  try {
+  return runAutomationJob_('MissedPunchAlerts', function () {
     const missed = computeMissedClockOuts_();
     // F-20 (2026-09-18): this job writes no audit row, so a dead trigger was
     // invisible — the heartbeat (stale > 26h) is the liveness signal, stamped
     // once the read succeeded and BEFORE the no-work early return.
     stampDigestLastRun_('missedPunch');
-    if (missed.length === 0) { clearAutomationError_('MissedPunchAlerts'); Logger.log('No missed clock-outs.'); return; }
+    if (missed.length === 0) {
+      logDigestDelivery_('missedPunch', getManagerEmails_(), 'empty', 0, 'no missed clock-outs');   // G3
+      Logger.log('No missed clock-outs.');
+      return { outcome: automationOutcome_('ok') };
+    }
     // MAIL-4 (cycle 23): a reminder or a summary that could not be sent used
     // to reach only the log, after the error had already been CLEARED — so the
-    // run read clean. The outcome is now settled after the sends.
-    let empFailed = 0, mgrFailed = false, lastSendError = '';
+    // run read clean. The outcome is settled after the sends (ST2: partial
+    // while any send went out, failed when none did).
+    let empFailed = 0, mgrFailed = false, mgrTried = false, lastSendError = '';
     const settle = function () {
       const p = [];
       if (empFailed) p.push(empFailed + ' of ' + missed.length + ' employee reminder(s) failed to send');
       if (mgrFailed) p.push('the manager summary failed to send');
-      if (p.length) stampAutomationError_('MissedPunchAlerts', p.join(' · ') + ' (' + lastSendError + ')');
-      else clearAutomationError_('MissedPunchAlerts');
+      if (!p.length) return { missed: missed.length, outcome: automationOutcome_('ok') };
+      const allFailed = empFailed === missed.length && (!mgrTried || mgrFailed);
+      return { missed: missed.length, outcome: automationOutcome_(allFailed ? 'failed' : 'partial', p.join(' · ') + ' (' + lastSendError + ')') };
     };
 
     missed.forEach(emp => {
@@ -5195,11 +5211,12 @@ function sendDailyMissedPunchAlerts() {
     // F(cycle-8 M-11): suppression requires a LIVE brief heartbeat, not just the flag.
     if (managerBriefSuppressionActive_({ checkTrigger: true })) {
       Logger.log('Missed-punch manager summary: consolidated into the daily brief.');
-      settle();
-      return;
+      logDigestDelivery_('missedPunch', getManagerEmails_(), 'suppressed', missed.length, 'rode the daily brief');   // G3
+      return settle();
     }
     const recipients = getManagerEmails_();
     if (recipients.length > 0) {
+      mgrTried = true;
       const list = missed.map(e =>
         `• ${e.name} (${e.id}) — ${e.email} — missed ${e.yesterdayStr} ${tzAbbr_(e.timezone)}`).join('\n');
       try {
@@ -5222,18 +5239,19 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock',
               ctaUrl: safeWebAppUrl_('manage'), ctaLabel: 'Open the manager dashboard' }),
         });
-      } catch (e) { mgrFailed = true; lastSendError = String((e && e.message) || e); Logger.log('Manager missed-punch digest email failed: ' + lastSendError); }
+        logDigestDelivery_('missedPunch', recipients, 'sent', missed.length, '');   // G3
+      } catch (e) {
+        mgrFailed = true; lastSendError = String((e && e.message) || e);
+        Logger.log('Manager missed-punch digest email failed: ' + lastSendError);
+        logDigestDelivery_('missedPunch', recipients, 'failed', missed.length, lastSendError);   // G3
+      }
     }
-    settle();
-  } catch (err) {
-    // F-20: a caught failure reaches nobody unless stamped (the F4 rule).
-    stampAutomationError_('MissedPunchAlerts', err.message);
-    Logger.log('sendDailyMissedPunchAlerts failed: ' + err.message);
-  }
+    return settle();
+  });
 }
 function runDailyExportCheck() {
   assertManagerCaller_('runDailyExportCheck');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('DailyExportCheck', function () {
     // F(cycle-8 M-1): export the morning AFTER the period completes, never on
     // its final day. The trigger fires at 12pm IST — mid-shift for both
     // offshore teams — so a period-end-day export silently omitted every punch
@@ -5256,11 +5274,8 @@ function runDailyExportCheck() {
     // end, so the daily CHECK itself had no liveness signal — a dead trigger
     // meant a silently missing payroll export. The heartbeat is the signal.
     stampDigestLastRun_('exportCheck');
-    clearAutomationError_('DailyExportCheck');
-  } catch (err) {
-    stampAutomationError_('DailyExportCheck', err.message);
-    Logger.log('runDailyExportCheck failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };   // ST2: a throw is recorded as failed
+  });
 }
 function getMonthRange_(date) {
   const y = date.getFullYear(), m = date.getMonth();

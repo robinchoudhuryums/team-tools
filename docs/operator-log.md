@@ -10,6 +10,29 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — automation jobs say "ran only in part", and digest deliveries are logged (cycle 25 E1)
+
+**Adds ONE auto-provisioned tab and no Script Property.** Deploy the web app
+(`clasp push -f`, then a New version). Re-running `installAutomationTriggers` is
+NOT needed — no trigger was added, renamed or regrouped.
+- **Run outcomes (ST2).** Every automation job now reports ok, partial or failed
+  through one contract. A job that ran but skipped something — a rep Sheet that
+  would not open, one of the two weekly queues, some of the sends — shows as
+  "ran only in part" (a warning, amber) on Manage → Admin → System and in the
+  9am failure digest, naming what it skipped; a job that did nothing shows as
+  failed (red). The urgent and weekly digests that went out with an unreadable
+  rep Sheet used to read clean — they now read "ran only in part". An enabled
+  Timesheet archive with no Timesheet tab, which used to log and return, now
+  reads failed.
+- **Digest deliveries (G3).** A new **Digest deliveries** panel under Automation
+  Health lists, per manager, every manager digest decision of the last 14 days:
+  sent, suppressed (it rode the daily brief), failed (with the error) or nothing
+  to send. The rows live in a new `DigestDeliveries` tab on the ADP spreadsheet,
+  created by the first digest after the deploy; PHI-free, kept 90 days.
+- **The nightly diagnostics purge now runs every night** (it trims that tab), so
+  a `DiagnosticsPurge` audit row and its Automation detail line appear on a
+  deployment where they never did before. That is expected.
+
 ## 2026-10-14 — the reviewers' full handbook PDF leaves out the changelog
 
 **Adds NO operator state.** Rebuild with `./make_packets.sh`. The full handbook

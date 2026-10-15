@@ -6710,6 +6710,7 @@ function test_managerGates_rejectNonManager() {
     ['adminScanStoredFormulas',        function () { return adminScanStoredFormulas(); }],
     ['getDeployReadiness',             function () { return getDeployReadiness(); }],
     ['getAdminSheetView',              function () { return getAdminSheetView('auditLog'); }],
+    ['getDigestDeliveries',            function () { return getDigestDeliveries({}); }],   // G3 (cycle 25 E1)
     ['kbConvertDriveSheet',            function () { return kbConvertDriveSheet({ driveUrl: 'https://docs.google.com/spreadsheets/d/x/edit' }); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
@@ -6800,7 +6801,7 @@ function test_managerGates_rejectNonManager() {
     saveBreakSchedules: 1, getBreakCoverage: 1,
     saveQaScorecardCriteria: 1, saveQaMembers: 1,
     saveStateTaxRates: 1, saveUpdateSuggestions: 1, getAutomationHealth: 1,
-    getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1,
+    getStorageHealth: 1, getDeployReadiness: 1, getAdminSheetView: 1, getDigestDeliveries: 1,
     getOopPricingDiagnostics: 1, adminScanStoredFormulas: 1,
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,

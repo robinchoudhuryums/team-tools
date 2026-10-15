@@ -1252,12 +1252,15 @@ function purgeExpiredFormData() {
   // Top-level (time-trigger target) → reachable via google.script.run, so gate
   // it: a purge is destructive and must not be firable by a non-manager rep.
   assertManagerCaller_('purgeExpiredFormData');
-  try {
+  // F5 (cycle 25): a PHI purge that failed (a lock timeout, the forms store
+  // unreachable) only logged, then the dispatcher CLEARED its key as a clean
+  // return, so the only trace was a stale line blaming the trigger (g142).
+  // ST2 (cycle 25 E1): a throw is a FAILED outcome, recorded by the runner.
+  return runAutomationJob_('FormDataPurge', function () {
     const days = getFormRetentionDays_();
     if (!days) {
       Logger.log('purgeExpiredFormData: retention disabled (FORM_DATA_RETENTION_DAYS=0) — nothing purged.');
-      clearAutomationError_('FormDataPurge');   // F5 (cycle 25): every path rewrites the job's state
-      return;
+      return { outcome: automationOutcome_('ok') };   // F5 (cycle 25): every path rewrites the job's state
     }
     const cutoffMs = Date.now() - days * 86400000;
     const lock = LockService.getScriptLock();
@@ -1271,15 +1274,9 @@ function purgeExpiredFormData() {
     }
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'FormDataPurge', '', '', false, 0,
       `retentionDays=${days}; submissionsRemoved=${subsRemoved}; tokensRemoved=${tokensRemoved}`);
-    clearAutomationError_('FormDataPurge');
     Logger.log(`purgeExpiredFormData: removed ${subsRemoved} submission(s) + ${tokensRemoved} token(s) older than ${days} day(s).`);
-  } catch (err) {
-    // F5 (cycle 25): a PHI purge that failed (a lock timeout, the forms store
-    // unreachable) only logged, then the dispatcher CLEARED its key as a clean
-    // return, so the only trace was a stale line blaming the trigger (g142).
-    stampAutomationError_('FormDataPurge', err.message);
-    Logger.log('purgeExpiredFormData failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** Public-ish resolve page served by doGet?resolve=<token>. The token is the
  *  credential (in the email to the dept); we record the clicker if Google can

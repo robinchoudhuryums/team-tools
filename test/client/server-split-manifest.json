@@ -2777,6 +2777,70 @@
     "updateTimeOffStatus"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "Cycle 25 E1: ST2 run-outcome contract (automationOutcome_, recordAutomationOutcome_, runAutomationJob_) for every automation job; G3 digest delivery log (DigestDeliveries tab, logDigestDelivery_, getDigestDeliveries)",
+   "added": [
+    "AUTOMATION_OUTCOME_SKIPPED_MAX",
+    "AUTOMATION_OUTCOME_STATUSES",
+    "DIGEST_DELIVERIES_TAB",
+    "DIGEST_DELIVERY_HEADERS",
+    "DIGEST_DELIVERY_REASON_MAX",
+    "DIGEST_DELIVERY_RETENTION_DAYS",
+    "DIGEST_DELIVERY_SCAN_MAX",
+    "DIGEST_DELIVERY_STATUSES",
+    "DIGEST_DELIVERY_VIEW_DAYS",
+    "automationOutcomeValid_",
+    "automationOutcome_",
+    "digestDeliveriesView_",
+    "digestDeliveryRows_",
+    "getDigestDeliveries",
+    "getOrCreateDigestDeliveriesSheet_",
+    "logDigestDelivery_",
+    "recordAutomationOutcome_",
+    "runAutomationJob_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "AUTOMATION_JOB_CHECKS",
+    "DIAG_PURGE_MAX_ROWS_PER_RUN",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "accrualNothingToDo_",
+    "archiveOldCallNotes",
+    "archiveOldTimesheetRows",
+    "autoAssignSpanishThreadsScheduled",
+    "automationErrorsLabelled_",
+    "automationJobProblems_",
+    "automationProblems_",
+    "checkOpenPunches",
+    "computeAutomationHealth_",
+    "creditMonthlyPtoAccruals",
+    "diagRetentionText_",
+    "purgeArchivedCallNotes",
+    "purgeExpiredFormData",
+    "purgeOldCallNotes",
+    "purgeOldDiagnostics",
+    "purgeOldQaReviews",
+    "reconcileCallNotes",
+    "runDailyExportCheck",
+    "runNightlySelfTest",
+    "runTriggerGroup_",
+    "scanDeptRequestReplies",
+    "sendAutomationHealthDigest",
+    "sendCallNotesEodDigest",
+    "sendCallNotesUrgentDigest",
+    "sendCallNotesWeeklyDigests",
+    "sendCoachingRecapDigest",
+    "sendDailyMissedPunchAlerts",
+    "sendDeptRequestReminderDigest",
+    "sendManagerDailyBrief",
+    "sendTrainingOverdueDigest",
+    "stampAutomationErrorUnlocked_",
+    "stampAutomationError_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2834,7 +2898,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "4f181d511e4eef62"
+   "sha": "572591aadaa1c8b7"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -2844,7 +2908,17 @@
   "AUTOMATION_JOB_CHECKS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "80e1aaed6249b137"
+   "sha": "b11a742b457448b7"
+  },
+  "AUTOMATION_OUTCOME_SKIPPED_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9717647f0e558dc3"
+  },
+  "AUTOMATION_OUTCOME_STATUSES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4248aee1b68073c0"
   },
   "AUTOMATION_RUN_PROP_PREFIX": {
    "file": "00_config.js",
@@ -3294,7 +3368,42 @@
   "DIAG_PURGE_MAX_ROWS_PER_RUN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b5f4d676334826c5"
+   "sha": "3e90a8f24c3c0750"
+  },
+  "DIGEST_DELIVERIES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8329547ca7e535a5"
+  },
+  "DIGEST_DELIVERY_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "80d76f8f298adcd1"
+  },
+  "DIGEST_DELIVERY_REASON_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c3e47bbe3045511a"
+  },
+  "DIGEST_DELIVERY_RETENTION_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dfcce25dbac77a71"
+  },
+  "DIGEST_DELIVERY_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8c9aeaa594880ef2"
+  },
+  "DIGEST_DELIVERY_STATUSES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "74f9d342276825a2"
+  },
+  "DIGEST_DELIVERY_VIEW_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "97f1a41bc1067881"
   },
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
@@ -5004,7 +5113,7 @@
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "18c6ba840d74285a"
+   "sha": "b8bc93ecd021b896"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -5239,7 +5348,7 @@
   "accrualNothingToDo_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "78f690d407f597b8"
+   "sha": "7a43e279754b7d8c"
   },
   "accrualReconcileMonths_": {
    "file": "20_timeclock.js",
@@ -5409,12 +5518,12 @@
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b4edf522dcf98a43"
+   "sha": "db0fc4f9e85989a1"
   },
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2a6fa055a54e901f"
+   "sha": "a5682e6dbea82e25"
   },
   "archiveSheetRowsOlderThan_": {
    "file": "30_callnotes.js",
@@ -5469,7 +5578,7 @@
   "autoAssignSpanishThreadsScheduled": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "e516fbe005cbcc0b"
+   "sha": "f4c4d69a159fb8b1"
   },
   "automationDetectorChecks_": {
    "file": "10_core.js",
@@ -5479,7 +5588,7 @@
   "automationErrorsLabelled_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a6f4a1308378a2e9"
+   "sha": "22fff8e851b7dca1"
   },
   "automationFailedWithin_": {
    "file": "10_core.js",
@@ -5489,17 +5598,27 @@
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4ccd80cd4b110e06"
+   "sha": "13cc892f070188a8"
   },
   "automationLastRunMerge_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "ccdc354f044ad4a0"
   },
+  "automationOutcomeValid_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "015f1b400a298aab"
+  },
+  "automationOutcome_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "24a5d779df077f03"
+  },
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ead9f3fe27e83d1d"
+   "sha": "2cfb5e9afa1fe28b"
   },
   "automationRunKey_": {
    "file": "10_core.js",
@@ -5849,7 +5968,7 @@
   "checkOpenPunches": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "59ebd6ed8df42579"
+   "sha": "3d74f37c923c5e6c"
   },
   "claimSpanishThread": {
    "file": "51_spanish.js",
@@ -6129,7 +6248,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6ff28b012e50f8e3"
+   "sha": "63511850b2b68362"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -6199,7 +6318,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b5b6a3313193c422"
+   "sha": "539242b2104e144f"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -6319,12 +6438,22 @@
   "diagRetentionText_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "3187c49a15fdf948"
+   "sha": "b626d3fd7a42e4b0"
   },
   "diagTsMs_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "6cf8fed74316377e"
+  },
+  "digestDeliveriesView_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7b639af0955958c3"
+  },
+  "digestDeliveryRows_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "f1096ae70946383a"
   },
   "digestNeverRanOverdue_": {
    "file": "10_core.js",
@@ -7116,6 +7245,11 @@
    "kind": "function",
    "sha": "6773bf29b37274e7"
   },
+  "getDigestDeliveries": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b3250123407c8fde"
+  },
   "getDocsDashboard": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -7490,6 +7624,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "0749da495a869f88"
+  },
+  "getOrCreateDigestDeliveriesSheet_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "169743d7b12de36d"
   },
   "getOrCreateEmpDocSheet_": {
    "file": "81_empdocs.js",
@@ -8876,6 +9015,11 @@
    "kind": "function",
    "sha": "fbe31492361e0bff"
   },
+  "logDigestDelivery_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7abc742fae3426af"
+  },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9439,27 +9583,27 @@
   "purgeArchivedCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "e7e10cbf121e28c7"
+   "sha": "2b1036e5cb6c70f2"
   },
   "purgeExpiredFormData": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "2d8e8c6746cb345e"
+   "sha": "9cad85841db1a59b"
   },
   "purgeOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "ac624c4be94dc928"
+   "sha": "4d05c44d332d22bc"
   },
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a08199a6b30311fe"
+   "sha": "2d0002440a9bffe4"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
    "kind": "function",
-   "sha": "5beb83697b2916e3"
+   "sha": "1be2473a74f81041"
   },
   "purgeSheetRowsOlderThan_": {
    "file": "10_core.js",
@@ -9874,7 +10018,7 @@
   "reconcileCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "518e0137845f8869"
+   "sha": "909a718cbbc5b9d3"
   },
   "reconcileCallNotesCore_": {
    "file": "30_callnotes.js",
@@ -9890,6 +10034,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "343d2c8bb27759ac"
+  },
+  "recordAutomationOutcome_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ed6f4dc022a37095"
   },
   "recordClientError": {
    "file": "10_core.js",
@@ -10046,6 +10195,11 @@
    "kind": "function",
    "sha": "1a37be5691c30e7c"
   },
+  "runAutomationJob_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "788285de6a85c02d"
+  },
   "runDailyChecks": {
    "file": "10_core.js",
    "kind": "function",
@@ -10054,7 +10208,7 @@
   "runDailyExportCheck": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2ac8aca1451f7816"
+   "sha": "72c981c28e6bbbf9"
   },
   "runHourlyJobs": {
    "file": "10_core.js",
@@ -10069,12 +10223,12 @@
   "runNightlySelfTest": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f2ae8d43d81aec5d"
+   "sha": "782ed900b225b055"
   },
   "runTriggerGroup_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "84e54426f402cad1"
+   "sha": "ec74f214e5de5bab"
   },
   "runWeeklyDigests": {
    "file": "10_core.js",
@@ -10214,7 +10368,7 @@
   "scanDeptRequestReplies": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "c27212a87a0c87b0"
+   "sha": "4efd8d653f3e4a44"
   },
   "scanStoredFormulas_": {
    "file": "10_core.js",
@@ -10299,37 +10453,37 @@
   "sendAutomationHealthDigest": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "efc99bd051018909"
+   "sha": "bf70cfb6cf695553"
   },
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "22f082b4467b8f71"
+   "sha": "e17a48d485618151"
   },
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "5f2098fc292487f4"
+   "sha": "02bde30b52db04dd"
   },
   "sendCallNotesWeeklyDigests": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "b926aa13648503ee"
+   "sha": "93314268bc5a2436"
   },
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "487f4e6d0af9fbd1"
+   "sha": "ce7bad86c21bb528"
   },
   "sendDailyMissedPunchAlerts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c0ef01f6f36760c6"
+   "sha": "0c4fab05b777098c"
   },
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "2d4f0708178a01ae"
+   "sha": "77a28857eacb745b"
   },
   "sendEmployeeOverdueDocsEmail_": {
    "file": "20_timeclock.js",
@@ -10349,7 +10503,7 @@
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4ccfa852fd55985e"
+   "sha": "1996a99454348c23"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -10369,7 +10523,7 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "f17a7cf54014ca46"
+   "sha": "64e47e92c414432f"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
@@ -10679,12 +10833,12 @@
   "stampAutomationErrorUnlocked_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "89d25d96b3fd76df"
+   "sha": "4366b683c368f35b"
   },
   "stampAutomationError_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e231fd582b7a189d"
+   "sha": "f8b1256048e809d2"
   },
   "stampAutomationRun_": {
    "file": "10_core.js",

@@ -5445,3 +5445,54 @@ pick them up without re-deriving the context.
   chapter's last section (votes would stop being per section), and a "⋯" menu
   (one more tap for the commonest action).
 
+
+- <a id="every-automation-job-ends-through-one-run-outcome-contract"></a>**Every automation job ends through ONE run-outcome contract — ok, idle, partial or failed (cycle 25 E1, ST2, operator 2026-10-15)**
+  The F4/F5 failure class — a job that caught its error, or skipped a rep Sheet,
+  then cleared its key or returned in silence — had been fixed one job at a time
+  across four cycles, and each fix was a pair of hand-written `stampAutomationError_`
+  / `clearAutomationError_` calls a new job could forget. Now every job (each
+  `installAutomationTriggers` target and each `TRIGGER_GROUPS` handler — the
+  operator chose all of them at once, not only the dispatched eleven) gates with
+  `assertManagerCaller_`, then returns `runAutomationJob_(KEY, body)`; the body
+  RETURNS `automationOutcome_(status, message, skipped)` and the one recorder
+  (`recordAutomationOutcome_`) decides: `ok` clears, `partial` and `failed` stamp,
+  `idle` leaves the record alone. `idle` exists because some runs prove nothing —
+  an hour that matched no rep's EOD hour, an out-of-hours Spanish run, no manager
+  recipients — and clearing there would wipe a failure before the 9am digest
+  reads it (the seams F2 rule, now one rule). `partial` exists because "the run
+  happened but skipped Ana's Sheet" is neither clean nor a dead job: it stamps
+  with `status: 'partial'` and the skipped names, reads "ran only in part" on the
+  dot and is a WARNING (not a failure) on the System tab. A disabled job is an
+  `ok` run (it clears a stale failure). A throw, or a body that returns no valid
+  outcome, is FAILED — the guard that makes the contract hold for a job nobody
+  has written yet. The dispatcher no longer clears on a job's behalf (`owns` went
+  with the hand stamps); it verifies an outcome came back. Two jobs report their
+  failure through a finding of their own — the open-punch scan's stamp and the
+  self-test result — so their entry is marked `ownFinding` and said once. The
+  Admin button's manual reconcile stays outside the contract (F57). Rejected:
+  wrapping only the eleven dispatched jobs (the standalone twelve held most of
+  the history of this class); a dispatcher-only check (it cannot see a
+  standalone trigger); `partial` as `failed` (a nightly purge that skipped one
+  rep would read as dead, and the operator would reinstall triggers — g142).
+
+- <a id="digest-deliveries-are-logged-per-manager"></a>**Digest deliveries are logged per manager, PHI-free, on the ADP sheet, for 90 days (cycle 25 E1, G3, operator 2026-10-15)**
+  "Did my digest go out, and why not?" had no answer short of the Logger: a
+  digest suppressed by the daily brief, an empty morning and a failed send all
+  left the same trace — nothing. Each manager digest (weekly, urgent, daily
+  brief, training-overdue, dept-request reminder, automation health, the
+  missed-punch summary) now writes one `DigestDeliveries` row per recipient per
+  decision: `sent`, `suppressed` (it rode the brief), `failed` (with the send
+  error) or `empty` (nothing to report), the item count (blank, never 0, when
+  unknown) and a short reason. The tab sits on the ADP sheet beside ClientErrors
+  and ViewUsage because it holds staff addresses and fixed phrases only — no
+  note, patient or request content — and it is purged at 90 days by the nightly
+  diagnostics purge, which is therefore always enabled. The writer takes no lock
+  and never throws (a digest's delivery must not depend on its own log). Manage →
+  Admin → System shows the last 14 days beside Automation Health
+  (`getDigestDeliveries`, admin-gated): a summary per digest and the rows, with
+  a cut tail and a fresh deploy stated. Rep- and agent-facing mail (the EOD
+  reminder, the coaching recap) is not logged — the operator asked about manager
+  digests. Rejected: a Script Property ring (the 9KB cap — g07); the AuditLog
+  (it is the payroll audit trail, and a daily row per manager per digest would
+  push the job rows out of its 4,000-row tail — g152); logging only failures (a
+  missing row would then mean both "sent" and "never ran").

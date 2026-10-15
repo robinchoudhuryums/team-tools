@@ -675,7 +675,7 @@ function coachRecapBuckets_(items, nowMs, windowDays) {
  *  (INV-134). Heartbeat `coachingRecap`. */
 function sendCoachingRecapDigest() {
   assertManagerCaller_('sendCoachingRecapDigest');  // see sendDailyMissedPunchAlerts note
-  try {
+  return runAutomationJob_('CoachingRecapDigest', function () {
     const windowDays = CONFIG.COACHING_RECAP_DAYS || 7;
     const nowMs = Date.now();
     let items = [];
@@ -692,9 +692,9 @@ function sendCoachingRecapDigest() {
       stampDigestLastRun_('coachingRecap');   // the trigger ran
       // HR-3 (cycle 23): an UNSET store is a deployment without coaching; a set
       // one that throws means nobody got a recap, and that is a failure.
-      if (hrDocsConfigured_()) stampAutomationError_('CoachingRecapDigest', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message);
-      else clearAutomationError_('CoachingRecapDigest');
-      return;
+      // ST2 (cycle 25 E1): returned as the run's outcome.
+      if (hrDocsConfigured_()) return { outcome: automationOutcome_('failed', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message) };
+      return { outcome: automationOutcome_('ok') };
     }
     const buckets = coachRecapBuckets_(items, nowMs, windowDays);
     const roster = getEmployeeRosterRows_();
@@ -734,13 +734,11 @@ function sendCoachingRecapDigest() {
       if (ok) sent++; else failed++;
     });
     stampDigestLastRun_('coachingRecap');
-    if (failed) stampAutomationError_('CoachingRecapDigest', failed + ' of ' + (sent + failed) + ' coaching recap email(s) failed to send');
-    else clearAutomationError_('CoachingRecapDigest');
     Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' failed=' + failed + ' noEmail=' + skipped);
-  } catch (err) {
-    Logger.log('sendCoachingRecapDigest failed: ' + err.message);
-    stampAutomationError_('CoachingRecapDigest', err.message);
-  }
+    // ST2 (cycle 25 E1): partial while any recap went out, failed when none did.
+    if (failed) return { outcome: automationOutcome_(sent ? 'partial' : 'failed', failed + ' of ' + (sent + failed) + ' coaching recap email(s) failed to send') };
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 
 // ── T2 extension: import a quiz from a Google Forms quiz ──────────────────

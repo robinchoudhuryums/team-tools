@@ -915,15 +915,17 @@ function qaReviewRetentionDays_() {
  *  INV-161). Read-only w.r.t. tab existence — never provisions. */
 function purgeOldQaReviews() {
   assertManagerCaller_('purgeOldQaReviews');
-  try {
+  // QA-3: the F4 rule — a caught failure reaches nobody unless recorded; since
+  // ST2 (cycle 25 E1) the runner records a throw as a FAILED outcome.
+  return runAutomationJob_('QaReviewPurge', function () {
     const days = qaReviewRetentionDays_();
     if (!days) {
       Logger.log('purgeOldQaReviews: retention disabled (QA_REVIEW_RETENTION_DAYS=0) — nothing purged.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // a disabled job is a clean run
     }
     if (!qaStoreConfigured_()) {
       Logger.log('purgeOldQaReviews: QA_SS_ID not set — nothing to purge.');
-      return;
+      return { outcome: automationOutcome_('ok') };   // no QA store — nothing exists to purge
     }
     const cutoffMs = Date.now() - days * 86400000;
     const lock = LockService.getScriptLock();
@@ -948,11 +950,8 @@ function purgeOldQaReviews() {
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'QaReviewPurge', '', '', false, 0,
       `retentionDays=${days}; commentsRemoved=${comments}; scorecardsRemoved=${scorecards}`);
     Logger.log(`purgeOldQaReviews: removed ${comments} comment(s) + ${scorecards} scorecard(s) older than ${days} day(s).`);
-    clearAutomationError_('QaReviewPurge');
-  } catch (err) {
-    stampAutomationError_('QaReviewPurge', err.message);   // QA-3: the F4 rule — a caught failure reaches nobody unless stamped
-    Logger.log('purgeOldQaReviews failed: ' + err.message);
-  }
+    return { outcome: automationOutcome_('ok') };
+  });
 }
 /** PURE (Node-pinned) — QA-3: a QA review row's CreatedMs as epoch ms, or null
  *  (never deleted) for a 0, blank or non-numeric cell. */

@@ -2793,6 +2793,20 @@ test('registry reorg: Manage hosts the moved tabs; Admin is adminOnly; old tools
 // Intake module — recommendation engine (PPD crown jewel) + layout coupling.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ST2 (cycle 25 E1) — every automation job ends through runAutomationJob_, so a
+// pin that drives a job loads the REAL contract into its sandbox: the recorder
+// then calls the pin's own stampAutomationError_ / clearAutomationError_ stubs,
+// which is what those pins have always observed. logDigestDelivery_ is a no-op
+// unless the pin supplies one (G3's delivery rows have pins of their own).
+function autoContract_(ctx) {
+  vm.runInContext(extractConstDecl_('AUTOMATION_OUTCOME_STATUSES').replace(/^const /, 'var ') + '\n' +
+    extractConstDecl_('AUTOMATION_OUTCOME_SKIPPED_MAX').replace(/^const /, 'var ') + '\n' +
+    ['automationOutcome_', 'automationOutcomeValid_', 'recordAutomationOutcome_', 'runAutomationJob_']
+      .map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  if (typeof ctx.logDigestDelivery_ !== 'function') ctx.logDigestDelivery_ = function () {};
+  if (!ctx.Logger) ctx.Logger = { log() {} };
+  return ctx;
+}
 // extract a top-level `const NAME = {...};` object literal from a source file
 // Extract a whole top-level `const NAME = …;` declaration BY NAME from the
 // server source, brace/bracket-matched. Batch F2 made position meaningless —
@@ -12359,16 +12373,19 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
     // job catches its own error, and Apps Script emails only on a THROW.
     const credit = extractRawFunction('Code.js', 'creditMonthlyPtoAccruals')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');   // INV-188
-    assert.ok(/catch\s*\([\s\S]{0,40}stampAutomationError_\('PtoAccrualCredit'/.test(credit),
-      'the catch stamps the failure');
-    assert.ok(/clearAutomationError_\('PtoAccrualCredit'\)/.test(credit),
-      'and a clean run clears it, so an old failure cannot nag forever');
+    // ST2 (cycle 25 E1): the job ends through the contract — its catch RETURNS
+    // a failed outcome and its clean path an ok one; the runner records both.
+    assert.ok(/return runAutomationJob_\('PtoAccrualCredit'/.test(credit), 'the job records under its own key');
+    assert.ok(/catch\s*\([\s\S]{0,400}automationOutcome_\('failed', err\.message\)/.test(credit),
+      'the catch returns a FAILED outcome');
+    assert.ok(/shortfalls: rec\.shortfalls\.length,\s*outcome: automationOutcome_\('ok'\)/.test(credit),
+      'and a clean run is ok (cleared), so an old failure cannot nag forever');
     // The brief has the same shape for the same reason (its six sources are
     // individually best-effort, and it SUPPRESSES the digests it replaces).
     const brief = extractRawFunction('Code.js', 'sendManagerDailyBrief')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.ok(/failedSources\.push/.test(brief), 'the brief records which sources failed');
-    assert.ok(/stampAutomationError_\('ManagerDailyBrief'/.test(brief), 'and stamps them');
+    assert.ok(/automationOutcome_\(sendFailed && !sent \? 'failed' : 'partial', problems\.join/.test(brief), 'and records them (ST2: partial, or failed when no brief went out)');
     assert.ok(/!sections\.length && !failedSources\.length/.test(brief),
       'a brief with a failed source is NOT silent — silence means a true all-clear');
   });
@@ -22412,16 +22429,20 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
   assert.ok(mp.indexOf("stampDigestLastRun_('missedPunch')") > mp.indexOf('computeMissedClockOuts_()') &&
             mp.indexOf("stampDigestLastRun_('missedPunch')") < mp.indexOf('missed.length === 0'),
     'missed-punch heartbeats once the read succeeded and BEFORE the no-work early return (a quiet morning is still a live trigger)');
-  assert.ok(/clearAutomationError_\('MissedPunchAlerts'\)/.test(mp) && /catch \(err\) \{\s*stampAutomationError_\('MissedPunchAlerts', err\.message\)/.test(mp),
-    'missed-punch clears on a clean run and stamps its own failure (F4)');
+  // ST2 (cycle 25 E1): each job ends through runAutomationJob_ — a throw is a
+  // failed outcome the runner records, a clean run an ok one (cleared).
+  assert.ok(/return runAutomationJob_\('MissedPunchAlerts'/.test(mp) && /outcome: automationOutcome_\('ok'\)/.test(mp),
+    'missed-punch clears on a clean run and records its own failure (F4)');
   const ex = foNc(extractRawFunction('Code.js', 'runDailyExportCheck'));
-  assert.ok(ex.indexOf("stampDigestLastRun_('exportCheck')") > ex.indexOf('getCurrentBiweeklyRange_') && /clearAutomationError_\('DailyExportCheck'\)/.test(ex),
+  assert.ok(ex.indexOf("stampDigestLastRun_('exportCheck')") > ex.indexOf('getCurrentBiweeklyRange_') &&
+            ex.indexOf("automationOutcome_('ok')") > ex.indexOf("stampDigestLastRun_('exportCheck')"),
     'the export check heartbeats at the END of a clean run (after both period gates)');
-  assert.ok(/catch \(err\) \{\s*stampAutomationError_\('DailyExportCheck', err\.message\)/.test(ex), 'and stamps its own failure');
+  assert.ok(/return runAutomationJob_\('DailyExportCheck'/.test(ex), 'and records its own failure');
   const dg = foNc(extractRawFunction('Code.js', 'sendAutomationHealthDigest'));
-  assert.strictEqual((dg.match(/stampAutomationError_\('AutomationHealthDigest'/g) || []).length, 3, 'the digest stamps a failed report, a failed SEND (CORE-02/MAIL-4, cycle 23) AND its own outer failure');
-  assert.ok(dg.indexOf("stampDigestLastRun_('automationHealth')") > dg.indexOf('if (!report) return;'), 'the heartbeat lands only when a report was computed — a dead computation reads stale');
-  assert.ok(/clearAutomationError_\('AutomationHealthDigest'\)/.test(dg), 'and clears on a computed report');
+  assert.ok(/return runAutomationJob_\('AutomationHealthDigest'/.test(dg), 'the digest records under its own key (a throw is the runner\'s failed outcome)');
+  assert.strictEqual((dg.match(/automationOutcome_\('failed'/g) || []).length, 2, 'it fails a failed report and a failed SEND (CORE-02/MAIL-4, cycle 23)');
+  assert.ok(dg.indexOf("stampDigestLastRun_('automationHealth')") > dg.indexOf('automationProblems_(report)'), 'the heartbeat lands only when a report was computed — a dead computation reads stale');
+  assert.ok(/automationOutcome_\('ok'\)/.test(dg), 'and clears on a computed report');
 
   // Behavioural: the digest itself, driven through a throwing and a clean report.
   const drive = (compute) => {
@@ -22432,7 +22453,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), stampDigestLastRun_: (k) => log.hb.push(k),
       clearAutomationError_: (k) => log.clr.push(k), appSendMail_: () => { log.mail++; }, buildBrandedEmailHtml_: () => '', esc_: (x) => x };
     vm.createContext(ctx);
-    vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
     ctx.sendAutomationHealthDigest();
     return log;
   };
@@ -22526,6 +22547,7 @@ test('F-46: the accrual job REWRITES the reconcile stamp and clears its error on
       stampAccrualReconcile_: (r) => { log.stamp = JSON.parse(JSON.stringify(r)); },
       clearAutomationError_: (k) => log.clr.push(k), stampAutomationError_: () => { throw new Error('must not stamp an error'); } };
     vm.createContext(ctx);
+    autoContract_(ctx);
     ['accrualReconcileMonths_', 'accrualNothingToDo_', 'creditMonthlyPtoAccruals'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
     return { res: ctx.creditMonthlyPtoAccruals(), log };
   };
@@ -24278,7 +24300,8 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
     vm.createContext(ctx);
     ['retentionWindowDays_', 'viewUsageRetentionDays_', 'clientErrRetentionDays_', 'diagRetentionText_'].forEach((fn) =>
       vm.runInContext(extractRawFunction('Code.js', fn), ctx, { filename: 'Code.js#' + fn }));
-    vm.runInContext("const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS'; const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';", ctx);
+    vm.runInContext("const VIEW_USAGE_RETENTION_PROP = 'VIEW_USAGE_RETENTION_DAYS'; const CLIENT_ERR_RETENTION_PROP = 'CLIENT_ERR_RETENTION_DAYS';\n" +
+      extractConstDecl_('DIGEST_DELIVERY_RETENTION_DAYS').replace(/^const /, 'var '), ctx);
     return ctx;
   };
   let c = mk({});
@@ -24287,8 +24310,8 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   c = mk({ VIEW_USAGE_RETENTION_DAYS: '180' });
   assert.strictEqual(c.viewUsageRetentionDays_(), 180, 'property wins');
   assert.strictEqual(c.clientErrRetentionDays_(), 0, 'the sibling window is untouched — independent');
-  assert.strictEqual(c.diagRetentionText_(), 'diagnostics tabs — ViewUsage 180d purge · ClientErrors kept',
-    'Storage Health reads the live window; an unset one is the FACT "kept" (INV-186)');
+  assert.strictEqual(c.diagRetentionText_(), 'diagnostics tabs — ViewUsage 180d purge · ClientErrors kept · DigestDeliveries 90d purge',
+    'Storage Health reads the live window; an unset one is the FACT "kept" (INV-186); the digest log always purges (G3, cycle 25 E1)');
   c = mk({ CLIENT_ERR_RETENTION_DAYS: '-5' }, { VIEW_USAGE_RETENTION_DAYS: 90 });
   assert.strictEqual(c.viewUsageRetentionDays_(), 90, 'CONFIG fallback when the property is unset');
   assert.strictEqual(c.clientErrRetentionDays_(), 0, 'negative → disabled');
@@ -24316,18 +24339,20 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   const raw = extractRawFunction('Code.js', 'purgeOldDiagnostics');
   const f = nc(raw);
   assert.ok(/assertManagerCaller_\('purgeOldDiagnostics'\)/.test(f), 'INV-44 gate — reachable via google.script.run');
-  const lockIdx = f.indexOf('waitLock(15000)');
-  assert.ok(lockIdx > 0 && f.indexOf('if (!vuDays && !ceDays)') > -1 && f.indexOf('if (!vuDays && !ceDays)') < lockIdx,
-    'the both-disabled return precedes the lock — installing the trigger is harmless');
+  // G3 (cycle 25 E1): the digest delivery log always has a window, so the job
+  // no longer returns before the lock while the two optional windows are off —
+  // it purges the log every night (and writes its row every night).
+  assert.ok(!/if \(!vuDays && !ceDays\)/.test(f) && /dd = diagPurgeTab_\(ss\.getSheetByName\(DIGEST_DELIVERIES_TAB\), Date\.now\(\) - ddDays \* 86400000, budget\)/.test(f),
+    'the digest log is purged on every run, past its fixed window');
   assert.ok(/releaseLock\(\)/.test(f) && /finally/.test(f), 'INV-01 finally-release');
   assert.ok(/getSheetByName\(VIEW_USAGE_TAB\)/.test(f) && /getSheetByName\(CLIENT_ERRORS_TAB\)/.test(f) && !/getOrCreate|insertSheet/.test(f),
     'reads with getSheetByName — never provisions a tab (a missing tab = nothing recorded)');
-  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the two diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
-  assert.ok(/stampAutomationError_\('DiagnosticsPurge'/.test(f) && /clearAutomationError_\('DiagnosticsPurge'\)/.test(f),
-    'a thrown run stamps AUTOMATION_LAST_ERRORS and a clean run clears it (F4 — a returned error reaches nobody)');
+  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the three diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
+  assert.ok(/return runAutomationJob_\('DiagnosticsPurge'/.test(f) && /outcome: automationOutcome_\('ok'\)/.test(f),
+    'a thrown run is a failed outcome the runner stamps and a clean run clears it (F4 — a returned error reaches nobody; ST2)');
   const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
-  assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}/.test(call),
-    'counts-only audit note on every enabled run (the INV-161 heartbeat)');
+  assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; digestDeliveryDays=\$\{ddDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}; digestDeliveriesRemoved=\$\{dd\.removed\}/.test(call),
+    'counts-only audit note on every run (the INV-161 heartbeat)');
   assert.ok(/hitPerRunCap=/.test(call), 'a capped run says so in its audit row (the INV-153/F3 shape)');
   const tab = nc(extractRawFunction('Code.js', 'diagPurgeTab_'));
   assert.ok(/ms !== null && ms < cutoffMs/.test(tab), 'a null stamp is never deleted');
@@ -24335,13 +24360,14 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   assert.ok(/insertRowAfter\(sheet\.getMaxRows\(\)\)/.test(tab) && tab.indexOf('insertRowAfter') < tab.indexOf('deleteRows('),
     'the spare-row guard runs BEFORE the deletes — Sheets refuses to delete every non-frozen row');
   assert.ok(/contiguousRowRunsDesc_\(idx\)/.test(tab) && !/deleteRow\(/.test(tab), 'deletes contiguous runs, never row by row');
-  // (e) Liveness: the job row is gated on EITHER window (INV-186 — a
-  // deployment with both off is never checked), and the action is registered
+  // (e) Liveness: the job row was gated on EITHER window (INV-186 — a
+  // deployment with both off was never checked); since G3 (cycle 25 E1) the
+  // job runs every night, so it is always checked. The action is registered
   // in the audit-action list + the client's label map (the ⊇ couplings hold
   // it, this names the row).
   const jobRow = codeSrc.slice(codeSrc.indexOf("{ action: 'DiagnosticsPurge'"), codeSrc.indexOf("{ action: 'DiagnosticsPurge'") + 400);
-  assert.ok(/enabled: function \(\) \{ return viewUsageRetentionDays_\(\) > 0 \|\| clientErrRetentionDays_\(\) > 0; \}/.test(jobRow),
-    'AUTOMATION_JOB_CHECKS row gated on either window > 0');
+  assert.ok(/enabled: function \(\) \{ return true; \}/.test(jobRow),
+    'AUTOMATION_JOB_CHECKS row always enabled — the digest log purges every night (G3)');
   assert.ok(/'QaReviewPurge', 'DiagnosticsPurge',/.test(codeSrc), 'registered in AUTOMATION_AUDIT_ACTIONS');
   const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   assert.ok(/DiagnosticsPurge:\s+\{ label: 'Diagnostics retention purge'/.test(cn), 'CN_HEALTH_RUN_LABELS carries the panel label');
@@ -24598,6 +24624,7 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
       stampAutomationError_: (j, m) => { log.stamped.push(j + ':' + m); },
       clearAutomationError_: (j) => { log.cleared.push(j); },
     });
+    autoContract_(ctx);
     vm.runInContext('const SPANISH_PENDING_WINDOW_DAYS = 30;\n' + raw, ctx, { filename: 'Code.js#autoAssignSpanishThreadsScheduled' });
     ctx.autoAssignSpanishThreadsScheduled();
     return log;
@@ -24609,6 +24636,8 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
   assert.strictEqual(l.core.length, 0, 'flag off → the core never runs');
   l = drive({ flag: true, biz: 0, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
   assert.strictEqual(l.core.length, 0, 'outside business hours (0 business minutes) → nothing assigned');
+  assert.deepStrictEqual([l.stamped.length, l.cleared.length], [0, 0],
+    'ST2 (cycle 25 E1): an out-of-hours run is IDLE — it neither stamps nor clears, so an afternoon failure survives to the morning digest');
   l = drive({ flag: true, biz: null, emp: mgr, core: { success: true, assigned: [], unclaimed: 0 } });
   assert.strictEqual(l.core.length, 0, 'an UNKNOWN business window (null) reads as NOT inside — never as "go ahead"');
   l = drive({ flag: true, biz: 1, emp: mgr, core: { success: true, assigned: [{}, {}], unclaimed: 3 } });
@@ -24635,8 +24664,8 @@ test('SA-1: autoAssignSpanishThreadsScheduled — gated, heartbeat-first, flag-g
     'no second weekday/hour arithmetic — businessMinutesBetween_ is the ONE definition of a working hour');
   assert.ok(!/waitLock|GmailApp|spanishClaimsMap_|getOrCreateSpanishClaimsSheet_/.test(body),
     'the handler holds no lock and touches no store itself — that is the core\'s job');
-  assert.ok(/stampAutomationError_\('SpanishAutoAssign'/.test(body) && /clearAutomationError_\('SpanishAutoAssign'\)/.test(body),
-    'stamped on failure, cleared on success');
+  assert.ok(/return runAutomationJob_\('SpanishAutoAssign'/.test(body) && /automationOutcome_\('failed', why\)/.test(body) && /automationOutcome_\('ok'\)/.test(body),
+    'recorded as failed on a refusal, cleared on success (ST2, cycle 25 E1)');
 
   // Registry + wiring.
   const m = codeSrc.match(/key:\s*'spanishAutoAssign'[\s\S]*?scope:\s*'(\w+)'/);
@@ -24964,33 +24993,38 @@ test('TQ-1: the installer stays under the quota WITH headroom, refuses BEFORE de
   assert.ok(/newTrigger\('runWeeklyDigests'\)\s*\.timeBased\(\)\.onWeekDay\(ScriptApp\.WeekDay\.FRIDAY\)\.atHour\(8\)/.test(inst), 'the weekly dispatcher is Friday 8am');
 });
 
-test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the JOB name and the jobs after it still run; a clean run clears; an undefined job is named', () => {
+test('TQ-2: runTriggerGroup_ isolates each job — a throw is stamped under the JOB name and the jobs after it still run; a job with no run outcome is stamped (ST2); an undefined job is named', () => {
   const mk = (groupSrc) => {
     const log = { stamped: [], cleared: [], ran: [] };
     const ctx = vm.createContext({
       Logger: { log: () => {} },
       stampAutomationError_: (j, m) => log.stamped.push(j + ':' + m),
       clearAutomationError_: (j) => log.cleared.push(j),
-      jobA: () => { log.ran.push('A'); return 'a'; },
+      jobA: () => { log.ran.push('A'); return { outcome: { status: 'ok', message: '', skipped: [] } }; },
       jobB: () => { log.ran.push('B'); throw new Error('boom'); },
-      jobC: () => { log.ran.push('C'); return { success: true }; },
+      jobC: () => { log.ran.push('C'); return { success: true }; },   // outside the contract: no outcome
+      jobD: () => { log.ran.push('D'); return { outcome: { status: 'partial', message: 'one rep Sheet unreadable', skipped: ['Ana'] } }; },
     });
+    autoContract_(ctx);
     vm.runInContext('var TRIGGER_HANDLER_JOB_KEYS = {};\n' + groupSrc + '\n' + extractRawFunction('Code.js', 'runTriggerGroup_'), ctx, { filename: 'Code.js#runTriggerGroup_' });   // unmapped jobs: the pre-F3 behaviour
     return { ctx, log };
   };
-  let t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobB', 'jobNope', 'jobC'] };");
+  let t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobB', 'jobNope', 'jobC', 'jobD'] };");
   const r = t.ctx.runTriggerGroup_('g');
-  assert.strictEqual(t.log.ran.join(''), 'ABC', 'C ran AFTER B threw — one job never starves the next');
+  assert.strictEqual(t.log.ran.join(''), 'ABCD', 'C and D ran AFTER B threw — one job never starves the next');
   assert.strictEqual(r.success, false, 'the group reports failure when any job failed');
-  assert.strictEqual(r.results.length, 4, 'one result per job, the undefined one included');
+  assert.strictEqual(r.results.length, 5, 'one result per job, the undefined one included');
   assert.strictEqual(r.results[1].ok, false); assert.strictEqual(r.results[1].error, 'boom');
   assert.strictEqual(r.results[2].job, 'jobNope'); assert.strictEqual(r.results[2].ok, false);
   assert.strictEqual(t.log.stamped.filter((x) => x === 'jobB:jobB stopped with an unexpected error: boom').length, 1, 'the throw is stamped under the JOB name (the health dot + failure digest read it — INV-161)');
   assert.ok(t.log.stamped.some((x) => /^jobNope:.*not a defined top-level function/.test(x)), 'a typo in TRIGGER_GROUPS is stamped BY NAME, never silently skipped');
-  assert.strictEqual(t.log.cleared.join('|'), 'jobA|jobC', 'each clean job clears its own stamp');
-  t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobC'] };");
+  assert.ok(t.log.stamped.some((x) => /^jobC:jobC returned no run outcome/.test(x)) && r.results[3].ok === false,
+    'ST2 (cycle 25 E1): a job that returns no run outcome is a FAILED job — the F4 silence cannot come back through a new job');
+  assert.deepStrictEqual([r.results[0].status, r.results[4].status, r.results[4].ok], ['ok', 'partial', true], 'the outcome rides the result; a partial run is not a failed job');
+  assert.strictEqual(t.log.cleared.length, 0, 'the dispatcher never clears on a job\'s behalf — each job records its own outcome');
+  t = mk("const TRIGGER_GROUPS = { g: ['jobA', 'jobD'] };");
   const ok = t.ctx.runTriggerGroup_('g');
-  assert.strictEqual(ok.success, true); assert.strictEqual(t.log.stamped.length, 0, 'a clean group stamps nothing');
+  assert.strictEqual(ok.success, true); assert.strictEqual(t.log.stamped.length, 0, 'a group whose jobs all returned an outcome stamps nothing itself');
   assert.strictEqual(t.ctx.runTriggerGroup_('unknownGroup').results.length, 0, 'an unknown group key runs nothing rather than throwing');
 });
 
@@ -27860,7 +27894,7 @@ test('C2: the weekly digest treats a queue {error} as a FAILURE — stamped, no 
       sendManagerFlagDigest_: (to, label) => log.sent.push(label),
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
       stampDigestLastRun_: (k) => log.hb.push(k) });
-    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
     ctx.sendCallNotesWeeklyDigests();
     return log;
   };
@@ -28603,13 +28637,13 @@ test('FU-B6a: the urgent digest STAMPS a failed read (heartbeat withheld) and cl
       getManagerEmails_: () => ['m@x'], managerAggregateUrgent_: agg, sendManagerFlagDigest_: () => calls.push('send'),
       stampAutomationError_: (k, m) => calls.push('err:' + k + ':' + m), clearAutomationError_: (k) => calls.push('clear:' + k),
       stampDigestLastRun_: (k) => calls.push('beat:' + k) });
-    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
     return ctx.sendCallNotesUrgentDigest;
   };
   mk(() => { throw new Error('roster unreadable'); })();
   assert.deepStrictEqual(calls.splice(0), ['err:CallNotesUrgentDigest:roster unreadable'], 'stamped, and NO heartbeat');
   mk(() => ({ results: [], skippedReps: [] }))();
-  assert.deepStrictEqual(calls.splice(0), ['clear:CallNotesUrgentDigest', 'beat:urgent'], 'a clean empty run clears the flag and beats');
+  assert.deepStrictEqual(calls.splice(0), ['beat:urgent', 'clear:CallNotesUrgentDigest'], 'a clean empty run beats and clears the flag (ST2: the outcome is recorded as the run ends)');
 });
 
 // ── cycle 25 Batch 3a — automation failures reach the health dot ─────────────
@@ -28636,7 +28670,7 @@ test('F4 (cycle 25): a digest whose SEND fails is a failed run — sendManagerFl
       sendManagerFlagDigest_: (to, label) => { log.sent.push(label); return sendFor(label); },
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k),
       stampDigestLastRun_: (k) => log.hb.push(k) });
-    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
     ctx.sendCallNotesWeeklyDigests();
     return log;
   };
@@ -28654,7 +28688,7 @@ test('F4 (cycle 25): a digest whose SEND fails is a failed run — sendManagerFl
     sendManagerFlagDigest_: () => ({ error: 'quota' }),
     stampAutomationError_: (k, m) => calls.push('err:' + k + ':' + m), clearAutomationError_: (k) => calls.push('clear:' + k),
     stampDigestLastRun_: (k) => calls.push('beat:' + k) });
-  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctxU);
+  autoContract_(ctxU); vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctxU);
   ctxU.sendCallNotesUrgentDigest();
   assert.deepStrictEqual(calls, ['err:CallNotesUrgentDigest:the urgent digest could not be sent: quota'], 'stamped; no clear, no heartbeat');
 });
@@ -28662,11 +28696,12 @@ test('F4 (cycle 25): a digest whose SEND fails is a failed run — sendManagerFl
 test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the form-data purge STAMP a run that failed or skipped a rep Sheet, clear on a clean run, and own their keys (driven + a net over all five)', () => {
   const KEYS = { purgeOldCallNotes: 'CallNotesPurge', archiveOldCallNotes: 'CallNotesArchive', purgeArchivedCallNotes: 'CallNotesArchivePurge',
     purgeExpiredFormData: 'FormDataPurge', reconcileCallNotes: 'CallNotesReconcile' };
-  // The net: each body stamps AND clears its job-table key (the action the health dot reads errors under).
+  // The net: each body records under its job-table key (the action the health
+  // dot reads errors under) — since ST2 (cycle 25 E1) through runAutomationJob_.
   const code = serverSource();
   Object.keys(KEYS).forEach((fn) => {
     const body = stripJsComments_(extractRawFunction('Code.js', fn));
-    assert.ok(body.indexOf("stampAutomationError_('" + KEYS[fn] + "'") >= 0 && body.indexOf("clearAutomationError_('" + KEYS[fn] + "'") >= 0, fn + ' stamps and clears ' + KEYS[fn]);
+    assert.ok(body.indexOf("return runAutomationJob_('" + KEYS[fn] + "'") >= 0, fn + ' records its outcome under ' + KEYS[fn]);
     assert.ok(new RegExp("action: '" + KEYS[fn] + "'").test(code), KEYS[fn] + ' is a job-table action, so the error line is labelled and sits beside its liveness line');
   });
   // Driven: a rep Sheet that will not open is a FAILURE, named.
@@ -28681,7 +28716,7 @@ test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the
       purgeSheetRowsOlderThan_: () => 1,
       writeAuditLog_: (e, a, d, t, x, y, notes) => log.audit.push(notes), _SYSTEM_AUDIT_EMP_: {},
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
-    vm.runInContext(extractRawFunction('Code.js', 'purgeOldCallNotes'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'purgeOldCallNotes'), ctx);
     ctx.purgeOldCallNotes();
     return log;
   };
@@ -28703,13 +28738,16 @@ test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the
     getOrCreateFormSubmissionsSheet_: () => { throw new Error('forms store unreachable'); }, getOrCreateFormTokensSheet_: () => ({}),
     purgeSheetRowsOlderThan_: () => 0, writeAuditLog_() {}, _SYSTEM_AUDIT_EMP_: {},
     stampAutomationError_: (k, m) => fl.err.push(k + ':' + m), clearAutomationError_: (k) => fl.clr.push(k) });
-  vm.runInContext(extractRawFunction('Code.js', 'purgeExpiredFormData'), fctx);
+  autoContract_(fctx); vm.runInContext(extractRawFunction('Code.js', 'purgeExpiredFormData'), fctx);
   fctx.purgeExpiredFormData();
   assert.deepStrictEqual([fl.err, fl.clr.length], [['FormDataPurge:forms store unreachable'], 0]);
   const keys = vm.createContext({});
   vm.runInContext(extractConstDecl_('TRIGGER_HANDLER_JOB_KEYS').replace(/^const /, 'var '), keys);
-  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeExpiredFormData.owns, true);
-  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeArchivedCallNotes.owns, true, 'the dispatcher used to CLEAR these keys after the job swallowed its failure');
+  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeExpiredFormData, 'FormDataPurge');
+  assert.strictEqual(keys.TRIGGER_HANDLER_JOB_KEYS.purgeArchivedCallNotes, 'CallNotesArchivePurge',
+    'the dispatcher used to CLEAR these keys after the job swallowed its failure — since ST2 it never clears for a job');
+  assert.ok(!/clearAutomationError_\(key\)|clearAutomationError_\(job\.key\)/.test(stripJsComments_(extractRawFunction('Code.js', 'runTriggerGroup_'))),
+    'and the dispatcher has no clear of a job key left to make');
 });
 
 test('F7 (cycle 25): the cold-archive mover deletes the moved rows in contiguous runs — one deleteRows per run, never one deleteRow per row (driven)', () => {
@@ -28788,6 +28826,7 @@ test('F57 (cycle 25): the Admin "Reconcile Sheets" button runs the pass WITHOUT 
       getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
       writeAuditLog_: (e, action) => log.audit.push(action),
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
+    autoContract_(ctx);
     ['reconcileCallNotesCore_', 'reconcileCallNotes', 'reconcileCallNotesNow'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     log.res = ctx[fn]();
     return log;
@@ -28845,7 +28884,7 @@ test('F54 (cycle 25): a reply scan past its per-run cap NAMES the requests it di
     const ctx = vm.createContext({ String, JSON, Logger: { log() {} }, DR_REPLY_SCAN_MAX: 150,
       assertManagerCaller_() {}, stampDigestLastRun_() {}, getFlag_: () => true, drReplyScanCore_: () => core,
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
-    vm.runInContext(extractRawFunction('Code.js', 'scanDeptRequestReplies'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'scanDeptRequestReplies'), ctx);
     ctx.scanDeptRequestReplies();
     return log;
   };
@@ -29017,7 +29056,7 @@ test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, in
     stampAutomationError_: (k, m) => stamped.push(k + ':' + m), clearAutomationError_() {},
     empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: (d) => (d.urgent.length ? ['u'] : []),
     sendManagerBriefEmail_: (e, secs, d) => { sentD = d; } });
-  vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
+  autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
   ctx.sendManagerDailyBrief();
   assert.strictEqual(sentD.urgent.length, 1, 'the readable urgent notes still ride the brief');
   assert.ok(sentD.failedSources.some((f) => /urgent notes \(2 rep Sheet\(s\) unreadable\)/.test(f)), 'and the unreadable Sheets are named in it');
@@ -29999,7 +30038,7 @@ test('D-2/D-3: the wiring — the hourly rider, its heartbeat and flag, a reply 
   assert.ok(h.indexOf("assertManagerCaller_('scanDeptRequestReplies')") < h.indexOf('stampDigestLastRun_') &&
     h.indexOf("stampDigestLastRun_('deptReplyScan')") < h.indexOf("getFlag_('deptReplyResolve')") &&
     h.indexOf("getFlag_('deptReplyResolve')") < h.indexOf('drReplyScanCore_('), 'gate → heartbeat → flag → core (g26, INV-151)');
-  assert.ok(/stampAutomationError_\('DeptReplyScan'/.test(h) && /clearAutomationError_\('DeptReplyScan'\)/.test(h), 'a failed thread read reaches the health dot');
+  assert.ok(/return runAutomationJob_\('DeptReplyScan'/.test(h) && /automationOutcome_\('partial', problems\.join\('; '\)\)/.test(h), 'a failed thread read reaches the health dot (ST2: a partial run, recorded)');
   assert.ok(/deptReplyScan: 2[,\s}]/.test(stripJsComments_(fs.readFileSync(path.join(PA_WEB, '10_core.js'), 'utf8'))), 'an hourly staleness window');
   // A reply is a response time in the per-department fold.
   const sctx = vm.createContext({ String, Math, Object, getDeptRequestSla_: () => 2 });
@@ -32163,7 +32202,7 @@ test('CORE-01 (cycle 23): the daily brief heartbeats only once it has DELIVERED 
       trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
       empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: () => ['s'],
       sendManagerBriefEmail_: (e) => { if ((opts.failFor || []).indexOf(e) >= 0) throw new Error('quota'); log.mail.push(e); } });
-    vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
     ctx.sendManagerDailyBrief();
     return log;
   };
@@ -32174,7 +32213,7 @@ test('CORE-01 (cycle 23): the daily brief heartbeats only once it has DELIVERED 
   assert.deepStrictEqual(l.hb, [], 'THE REGRESSION: the heartbeat was stamped before any send, so a failed brief kept the four digests suppressed');
   assert.ok(l.err.length === 1 && /^ManagerDailyBrief:1 of 2 brief email\(s\) failed to send \(quota\)/.test(l.err[0]), l.err[0]);
   l = run({ mgrs: () => { throw new Error('props down'); } });
-  assert.ok(l.err.some((e) => /ManagerDailyBrief:the brief run failed: props down/.test(e)), 'a throw is stamped, not just logged');
+  assert.ok(l.err.some((e) => /^ManagerDailyBrief:props down$/.test(e)), 'a throw is stamped, not just logged (ST2: the runner\'s failed outcome)');
   assert.deepStrictEqual(l.hb, []);
   l = run({ flag: false });
   assert.deepStrictEqual(l.hb, ['managerBrief'], 'flag off: the trigger ran, so it still heartbeats (INV-151)');
@@ -32210,7 +32249,7 @@ test('CORE-02 (cycle 23): a health check that could not run is UNKNOWN — never
     const log = c23Log_();
     const ctx = c23AutoCtx_(log, { getManagerEmails_: () => ['m@x'], computeAutomationHealth_: () => ({}), automationProblems_: () => problems,
       esc_: (x) => x, buildBrandedEmailHtml_: () => '', appSendMail_: () => { if (sendThrows) throw new Error('quota'); log.mail.push(1); } });
-    vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), ctx);
     ctx.sendAutomationHealthDigest();
     return log;
   };
@@ -32252,7 +32291,7 @@ test('HR-3 + MAIL-4 (cycle 23): the training digest still sends, SAYS which HR s
       empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true,
       sendTrainingOverdueEmail_: (e, t, d, c, iso, unread) => { if (opts.mgrThrows) throw new Error('quota'); log.mail.push(Array.from(unread || [])); },
       sendEmployeeOverdueDocsEmail_: () => { if (opts.empThrows) throw new Error('bounce'); } });
-    vm.runInContext(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'), ctx);
     ctx.sendTrainingOverdueDigest();
     return log;
   };
@@ -32283,7 +32322,7 @@ test('HR-3 / MAIL-3 (cycle 23): the coaching recap counts a FAILED send as faile
       getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann'], ['E2', 'Bo']], empRosterEmail_: (r) => r[1].toLowerCase() + '@x',
       esc_: (x) => x, brandedKvRows_: () => '', buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => '',
       coachSendMail_: (m) => !(opts.failTo || []).includes(m.to) });
-    vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), ctx);
     ctx.sendCoachingRecapDigest();
     return log;
   };
@@ -32304,7 +32343,7 @@ test('MAIL-4 (cycle 23): the dept-request reminder and the missed-punch alerts s
     const ctx = c23AutoCtx_(log, { managerBriefSuppressionActive_: () => false, getManagerEmails_: () => ['m@x'],
       deptRequestsOverdueOpen_: opts.read || (() => [{ dept: 'D', byName: 'A', label: 'L', ageDaysLabel: '3 working days open' }]),
       esc_: (x) => x, buildBrandedEmailHtml_: () => '', appSendMail_: () => { if (opts.sendThrows) throw new Error('quota'); log.mail.push(1); } });
-    vm.runInContext(extractRawFunction('Code.js', 'sendDeptRequestReminderDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendDeptRequestReminderDigest'), ctx);
     ctx.sendDeptRequestReminderDigest();
     return log;
   };
@@ -32320,7 +32359,7 @@ test('MAIL-4 (cycle 23): the dept-request reminder and the missed-punch alerts s
       tzAbbr_: () => 'T', esc_: (x) => x, CN_EMAIL_PALETTE: {}, buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => '',
       managerBriefSuppressionActive_: () => !!opts.suppressed, getManagerEmails_: () => ['m@x'], getAdpSS_: () => ({ getId: () => 'ID' }),
       appSendMail_: (m) => { if (m.to === 'a@x' && opts.empThrows) throw new Error('bounce'); if (m.to === 'm@x' && opts.mgrThrows) throw new Error('quota'); log.mail.push(m.to); } });
-    vm.runInContext(extractRawFunction('Code.js', 'sendDailyMissedPunchAlerts'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendDailyMissedPunchAlerts'), ctx);
     ctx.sendDailyMissedPunchAlerts();
     return log;
   };
@@ -32342,7 +32381,7 @@ test('TC-07 (cycle 23): a timesheet archive failure is STAMPED under its audit a
       CONFIG: { ADP_TAB: 'Timesheet' }, ADP: { DATE: 0 }, TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN: 500, TIMESHEET_ARCHIVE_TAB: 'TimesheetArchive', _SYSTEM_AUDIT_EMP_: {},
       getAdpSS_: () => ({ getSheetByName: () => ({ getLastColumn: () => 9 }) }), getOrCreateTimesheetArchiveTab_: () => ({}),
       archiveSheetRowsOlderThan_: () => 3, writeAuditLog_: () => {} });
-    vm.runInContext(extractRawFunction('Code.js', 'archiveOldTimesheetRows'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'archiveOldTimesheetRows'), ctx);
     ctx.archiveOldTimesheetRows();
     return log;
   };
@@ -32370,8 +32409,8 @@ test('QA-3 (cycle 23): the QA review purge rides the shared deleter — a full g
   assert.strictEqual(ctx.purgeSheetRowsOlderThan_(sh, 0, CUT, ctx.qaPurgeMs_), 1, 'only the real expired stamp');
   assert.deepStrictEqual(sh.rows.slice(1).map((r) => r[0]), [0, '', 'garbage', CUT + 5], 'a 0/garbage stamp is never deleted (fail-safe)');
   const purge = stripJsComments_(extractRawFunction('Code.js', 'purgeOldQaReviews'));
-  assert.ok(/catch \(err\) \{\s*stampAutomationError_\('QaReviewPurge', err\.message\)/.test(purge) && /clearAutomationError_\('QaReviewPurge'\)/.test(purge),
-    'a failure is stamped under the audit action (the F4 rule) and a clean run clears it');
+  assert.ok(/return runAutomationJob_\('QaReviewPurge'/.test(purge) && /return \{ outcome: automationOutcome_\('ok'\) \};\s*\}\);\s*\}$/.test(purge.trim()),
+    'a failure is recorded under the audit action (the F4 rule; ST2: the runner) and a clean run clears it');
 });
 
 // ── cycle 23 — the Batch 4a follow-ons ──
@@ -32423,11 +32462,13 @@ test('4a-FU3 (cycle 23): every stamped automation failure carries a human LABEL 
   assert.strictEqual(out.TimesheetArchive.label, 'Timesheet cold-archive', 'a tabled key takes the table label');
   assert.strictEqual(out.ManagerDailyBrief.label, 'Manager daily brief', 'an untabled key takes the map');
   assert.strictEqual(out.SomethingNew.label, 'SomethingNew', 'an unknown key falls back to itself, never vanishes');
-  // Derived net: every key the server STAMPS is tabled or labelled.
+  // Derived net: every key the server RECORDS is tabled or labelled. Since ST2
+  // (cycle 25 E1) a job records only through runAutomationJob_('<key>', …), and
+  // the stamp primitive has no literal-key callers left (pinned by the ST2 net).
   const tabled = {};
   (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
   const stamped = {};
-  (code.match(/stampAutomationError_\('([A-Za-z]+)'/g) || []).forEach((m) => { stamped[m.slice(23, -1)] = true; });
+  (code.match(/runAutomationJob_\('([A-Za-z]+)'/g) || []).forEach((m) => { stamped[m.slice(19, -1)] = true; });
   assert.ok(Object.keys(stamped).length >= 10, 'the net found the stamps (non-vacuous)');
   Object.keys(stamped).forEach((k) => assert.ok(tabled[k] || ctx.AUTOMATION_ERROR_LABELS[k], k + ' is stamped but has neither a job-table row nor a label'));
   // ...and every digest→error mapping names a real heartbeat and a real stamp.
@@ -35474,7 +35515,7 @@ test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable 
       sendOneRepEodDigest_: (e) => { if (opts.sendFails && e.id === 'B') throw new Error('Service invoked too many times'); },
       stampDigestLastRun_: () => { calls.beat++; },
       stampAutomationError_: (k, m) => calls.stamp.push([k, m]), clearAutomationError_: (k) => calls.clear.push(k) });
-    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), ctx);
     ctx.sendCallNotesEodDigest();
     return calls;
   };
@@ -35493,23 +35534,26 @@ test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable 
   assert.ok(/eod: 'CallNotesEodDigest'/.test(codeSrc) && /CallNotesEodDigest: '[^']+'/.test(codeSrc), 'DIGEST_ERROR_KEYS + AUTOMATION_ERROR_LABELS carry the EOD key');
 });
 
-test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under its JOB key — labelled, and seen by its heartbeat — and the dispatcher never clears a key the job owns (driven + a two-sided net)', () => {
+test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under its JOB key — labelled, and seen by its heartbeat — and the dispatcher never clears a job\'s key (driven + a two-sided net; ST2 cycle 25 E1)', () => {
   const code = serverSource();
   const log = { stamped: [], cleared: [] };
+  const ok = { outcome: { status: 'ok', message: '', skipped: [] } };
   const ctx = vm.createContext({ Logger: { log: () => {} },
     stampAutomationError_: (j, m) => log.stamped.push([j, m]), clearAutomationError_: (j) => log.cleared.push(j),
     sendCallNotesUrgentDigest: () => { throw new Error('quota'); },
-    checkOpenPunches: () => ({}), purgeOldQaReviews: () => ({}) });
+    checkOpenPunches: () => ok, purgeOldQaReviews: () => ok });
+  autoContract_(ctx);
   vm.runInContext(extractConstDecl_('TRIGGER_HANDLER_JOB_KEYS').replace(/^const /, 'var ') +
     "\nvar TRIGGER_GROUPS = { g: ['sendCallNotesUrgentDigest', 'checkOpenPunches', 'purgeOldQaReviews'] };\n" +
     extractRawFunction('Code.js', 'runTriggerGroup_'), ctx);
   ctx.runTriggerGroup_('g');
   assert.deepStrictEqual(log.stamped.map((x) => x[0]), ['CallNotesUrgentDigest'], 'THE REGRESSION: the throw was stamped as "sendCallNotesUrgentDigest", a key no label or heartbeat knew');
   assert.ok(/^sendCallNotesUrgentDigest stopped with an unexpected error: quota$/.test(log.stamped[0][1]), 'the message still names the handler');
-  assert.ok(log.cleared.indexOf('OpenPunchCheck') >= 0, 'a job that does not manage its key is cleared on a clean run');
-  assert.ok(log.cleared.indexOf('QaReviewPurge') < 0, 'a job that OWNS its key is never cleared by the dispatcher — that would erase its own failure stamp');
+  assert.ok(log.cleared.indexOf('OpenPunchCheck') < 0 && log.cleared.indexOf('QaReviewPurge') < 0,
+    'the dispatcher never clears a job key — each job records its own outcome (ST2), so a dispatcher clear could only erase a job\'s failure');
   assert.ok(log.cleared.indexOf('checkOpenPunches') >= 0 && log.cleared.indexOf('purgeOldQaReviews') >= 0, 'a pre-F3 stamp under the handler name is cleaned up');
-  // Two-sided net: every grouped handler has a row; `owns` matches the job's own body; every key is labelled.
+  // Two-sided net: every grouped handler has a row; the row equals the key the
+  // handler's own body records under; every key is labelled.
   const groups = vm.runInContext('(' + /const TRIGGER_GROUPS = (\{[\s\S]*?\n\});/.exec(code)[1] + ')', vm.createContext({}));
   const map = ctx.TRIGGER_HANDLER_JOB_KEYS;
   const handlers = [].concat.apply([], Object.keys(groups).map((k) => groups[k]));
@@ -35520,9 +35564,9 @@ test('Seams F3 (cycle 24): a grouped job\'s unexpected throw is stamped under it
   const tabled = {}; (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
   handlers.forEach((h) => {
     const body = extractRawFunction('Code.js', h);
-    const k = map[h].key;
-    const self = body.indexOf("stampAutomationError_('" + k + "'") >= 0 && body.indexOf("clearAutomationError_('" + k + "'") >= 0;
-    assert.strictEqual(map[h].owns, self, h + ': owns=' + map[h].owns + ' but its body ' + (self ? 'does' : 'does not') + ' stamp and clear ' + k);
+    const k = map[h];
+    assert.strictEqual(typeof k, 'string', h + ': the row is the key itself (the `owns` flag went with the hand stamps)');
+    assert.ok(body.indexOf("return runAutomationJob_('" + k + "'") >= 0, h + ' records under ' + k + ', the key its row names');
     assert.ok(tabled[k] || lab.AUTOMATION_ERROR_LABELS[k], k + ' (' + h + ') has neither a job-table row nor a label');
   });
 });
@@ -37053,6 +37097,338 @@ test('F69 (cycle 25): the visual matrix measures VERTICAL runaway and SQUEEZED t
   assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = 200;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
   const readme = fs.readFileSync(path.join(__dirname, '../visual/README.md'), 'utf8');
   assert.ok(/verticalRunawayPx/.test(readme) && /narrowText/.test(readme), 'the harness README names both measurements');
+});
+
+// ── cycle 25 E1 — ST2: one run-outcome contract; G3: the digest delivery log ──
+const e1Handlers_ = () => {
+  const code = serverSource();
+  const groups = vm.runInContext('(' + /const TRIGGER_GROUPS = (\{[\s\S]*?\n\});/.exec(code)[1] + ')', vm.createContext({}));
+  const inst = stripJsComments_(extractRawFunction('Code.js', 'installAutomationTriggers'));
+  const targets = (/const TARGETS = \[([\s\S]*?)\];/.exec(inst)[1].match(/'(\w+)'/g) || []).map((x) => x.slice(1, -1));
+  const grouped = [].concat.apply([], Object.keys(groups).map((k) => groups[k]));
+  return targets.filter((t) => !groups[t]).concat(grouped);
+};
+
+test('ST2 (cycle 25 E1): the run-outcome contract — ok clears, idle leaves the record, partial and failed stamp (partial naming what it skipped), a throw or a missing outcome is a FAILED run, and the job\'s own fields survive (driven)', () => {
+  const log = { stamp: [], clear: [] };
+  const ctx = vm.createContext({ String, Array, Logger: { log() {} },
+    stampAutomationError_: (k, m, x) => log.stamp.push([k, m, x ? JSON.parse(JSON.stringify(x)) : x]),
+    clearAutomationError_: (k) => log.clear.push(k) });
+  autoContract_(ctx);
+  const run = (body) => { log.stamp = []; log.clear = []; return JSON.parse(JSON.stringify(ctx.runAutomationJob_('JobK', body))); };
+  let r = run(() => ({ credited: 3, outcome: ctx.automationOutcome_('ok') }));
+  assert.deepStrictEqual([log.clear, log.stamp.length, r.credited, r.outcome.status], [['JobK'], 0, 3, 'ok'], 'ok clears, and the job\'s own fields ride the result');
+  run(() => ({ outcome: ctx.automationOutcome_('idle') }));
+  assert.deepStrictEqual([log.clear.length, log.stamp.length], [0, 0], 'idle neither stamps nor clears — an hour that did nothing proves nothing');
+  run(() => ({ outcome: ctx.automationOutcome_('partial', '1 rep Sheet(s) could not be opened: Ana', ['Ana']) }));
+  assert.deepStrictEqual(log.stamp, [['JobK', '1 rep Sheet(s) could not be opened: Ana', { status: 'partial', skipped: ['Ana'] }]], 'partial stamps, says it was partial and names the skipped');
+  assert.strictEqual(log.clear.length, 0, 'and never clears');
+  run(() => ({ outcome: ctx.automationOutcome_('failed', 'send failed') }));
+  assert.deepStrictEqual(log.stamp.map((x) => [x[0], x[1], x[2].status]), [['JobK', 'send failed', 'failed']]);
+  r = run(() => { throw new Error('Lock timeout'); });
+  assert.deepStrictEqual([r.success, r.error, r.outcome.status, log.stamp[0][1]], [false, 'Lock timeout', 'failed', 'Lock timeout'],
+    'a throw is a FAILED run, recorded, and still answers {success:false, error} — the shape the handlers\' catch blocks returned');
+  [undefined, {}, { success: true }, { outcome: { status: 'done' } }, { outcome: { status: 'failed', message: '  ' } }].forEach((ret) => {
+    run(() => ret);
+    assert.ok(log.stamp.length === 1 && /without a valid run outcome/.test(log.stamp[0][1]) && log.clear.length === 0,
+      'THE CLASS: a job that cannot say how it went is recorded as failed — never cleared as if it had gone well (' + JSON.stringify(ret) + ')');
+  });
+  assert.deepStrictEqual(Array.from(ctx.AUTOMATION_OUTCOME_STATUSES), ['ok', 'idle', 'partial', 'failed']);
+});
+
+test('ST2 (cycle 25 E1): EVERY automation job — each install TARGET and each dispatcher-grouped handler — gates first, then ends through runAutomationJob_ under one labelled key, and nothing else in the server stamps or clears a job by hand (derived net)', () => {
+  const code = serverSource();
+  const handlers = e1Handlers_();
+  assert.ok(handlers.length >= 20, 'non-vacuous: ' + handlers.length + ' jobs');
+  const lab = vm.createContext({});
+  vm.runInContext(/^const AUTOMATION_ERROR_LABELS = \{[\s\S]*?\n\};$/m.exec(code)[0].replace(/^const /, 'var '), lab);
+  const tabled = {}; (code.match(/action: '([A-Za-z]+)'/g) || []).forEach((m) => { tabled[m.slice(9, -1)] = true; });
+  const keys = {};
+  handlers.forEach((h) => {
+    const body = stripJsComments_(extractRawFunction('Code.js', h));
+    const gate = body.indexOf("assertManagerCaller_('" + h + "')");
+    const m = /return runAutomationJob_\('([A-Za-z]+)', function \(\) \{/.exec(body);
+    assert.ok(gate > 0 && m && gate < m.index, h + ': the INV-44 gate, then return runAutomationJob_(KEY, …) — a refused caller records nothing');
+    assert.strictEqual((body.match(/runAutomationJob_\(/g) || []).length, 1, h + ': one outcome per run');
+    assert.ok(!/stampAutomationError_\(|clearAutomationError_\(|recordAutomationOutcome_\(/.test(body), h + ' records only through the contract — no hand stamp or clear');
+    assert.ok(tabled[m[1]] || lab.AUTOMATION_ERROR_LABELS[m[1]], m[1] + ' (' + h + ') has neither a job-table row nor a label');
+    assert.ok(!keys[m[1]], m[1] + ' is recorded by two jobs (' + keys[m[1]] + ', ' + h + ')');
+    keys[m[1]] = h;
+  });
+  // The primitives' callers: the recorder, the dispatcher's own checks, and nothing else.
+  const decls = serverDecls().decls;
+  const callers = (marker) => Array.from(decls.keys()).filter((n) => {
+    const d = decls.get(n);
+    if (d.kind !== 'function' || /Tests\.js|DevTools\.js/.test(d.file) || n === marker) return false;
+    return stripJsComments_(extractRawFunction('Code.js', n)).indexOf(marker + '(') >= 0;
+  }).sort();
+  assert.deepStrictEqual(callers('stampAutomationError_'), ['recordAutomationOutcome_', 'runTriggerGroup_'], 'THE F4/F5 CLASS: a hand stamp outside the contract');
+  assert.deepStrictEqual(callers('clearAutomationError_'), ['recordAutomationOutcome_', 'runTriggerGroup_'], 'a hand clear outside the contract (the dispatcher clears only a pre-F3 stamp under a handler NAME)');
+  assert.deepStrictEqual(callers('runAutomationJob_').sort(), handlers.slice().sort(), 'every caller of the runner is an installed job — and every installed job calls it');
+  const rec = stripJsComments_(extractRawFunction('Code.js', 'reconcileCallNotesNow'));
+  assert.ok(!/runAutomationJob_|AutomationError_/.test(rec), 'the Admin button\'s manual reconcile stays OUTSIDE the contract (F57 — it must not touch the nightly job\'s record)');
+});
+
+test('ST2 (cycle 25 E1): a PARTIAL run reads as one — the stamp keeps its status and skipped names, the digest/dot line says "ran only in part", the System tab warns rather than fails, and a job with its own finding is said once (driven)', () => {
+  // The stamp keeps status + skipped.
+  const store = {};
+  const ctx = vm.createContext({ String, JSON, Array, Object, Date,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null }) },
+    LockService: { getUserLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    propSetBounded_: (k, v) => { store[k] = v; }, propShrinkDropOldest_: () => null,
+    fmtDate_: () => '2026-10-15', fmtTime_: () => '02:00:01' });
+  vm.runInContext(extractConstDecl_('AUTOMATION_ERROR_PROP').replace(/^const /, 'var ') + '\n' +
+    extractConstDecl_('AUTOMATION_OUTCOME_SKIPPED_MAX').replace(/^const /, 'var ') + '\n' +
+    ['withAutomationErrorLock_', 'stampAutomationError_', 'stampAutomationErrorUnlocked_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  const many = Array.from({ length: 30 }, (_, i) => 'Rep ' + i);
+  ctx.stampAutomationError_('CallNotesPurge', '30 rep Sheet(s) could not be opened', { status: 'partial', skipped: many });
+  ctx.stampAutomationError_('FormDataPurge', 'forms store unreachable', { status: 'failed', skipped: [] });
+  const map = JSON.parse(store.AUTOMATION_LAST_ERRORS);
+  assert.deepStrictEqual([map.CallNotesPurge.status, map.CallNotesPurge.skipped.length, map.CallNotesPurge.skipped[0]], ['partial', 20, 'Rep 0'], 'partial + the first skipped names (bounded)');
+  assert.ok(!('status' in map.FormDataPurge) && !('skipped' in map.FormDataPurge), 'a failed stamp keeps the pre-ST2 shape');
+  // The label pass carries them; the problem line words them.
+  const lctx = vm.createContext({ Object, Array, String, AUTOMATION_JOB_CHECKS: [{ action: 'CallNotesPurge', label: 'call-note retention purge' }], AUTOMATION_ERROR_LABELS: {} });
+  vm.runInContext(extractRawFunction('Code.js', 'automationErrorsLabelled_'), lctx);
+  const lab = JSON.parse(JSON.stringify(lctx.automationErrorsLabelled_(map)));
+  assert.deepStrictEqual([lab.CallNotesPurge.status, lab.CallNotesPurge.skipped.length], ['partial', 20]);
+  const pctx = { String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-10') },
+    AUTOMATION_JOB_CHECKS: [{ action: 'CallNotesPurge', label: 'call-note retention purge', cadence: 'daily', staleHours: 30, enabled: () => true }] };
+  vm.createContext(pctx);
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), pctx));
+  const lines = pctx.automationProblems_({ digests: [], automationLastRuns: [{ action: 'CallNotesPurge', last: { ms: Date.now() } }], automationErrors: {
+    CallNotesPurge: { at: 't1', message: 'skipped Ana', status: 'partial', label: 'call-note retention purge' },
+    SpanishAutoAssign: { at: 't2', message: 'no members', label: 'Spanish Inbox auto-assign' },
+    MissedPunchAlerts: { at: 't3', message: '1 of 3 reminders failed', status: 'partial', label: 'Daily missed-punch alerts' },
+    OpenPunchCheck: { at: 't4', message: 'the open-punch scan could not run: x', label: 'Daily open-punch check', ownFinding: 'openPunches' } },
+    openPunches: { error: 'x' } });
+  assert.ok(lines.some((l) => /The call-note retention purge ran only in part on t1: skipped Ana/.test(l)), 'a tabled partial run says so');
+  assert.ok(lines.some((l) => /Daily missed-punch alerts \(MissedPunchAlerts\) job ran only in part on t3/.test(l)), 'an untabled partial run says so');
+  assert.ok(lines.some((l) => /SpanishAutoAssign\) job FAILED on t2/.test(l)), 'a failed run still reads FAILED');
+  assert.strictEqual(lines.filter((l) => /open-punch|OpenPunchCheck/i.test(l)).length, 1, 'the open-punch failure is said ONCE — by its own, more specific finding');
+  // The System tab.
+  sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
+  const items = fn({ digests: [], automationErrors: {
+    CallNotesPurge: { at: 't1', message: 'skipped Ana', status: 'partial', label: 'call-note retention purge' },
+    SpanishAutoAssign: { at: 't2', message: 'no members', label: 'Spanish Inbox auto-assign' },
+    NightlySelfTest: { at: 't5', message: 'crashed', label: 'Nightly self-test', ownFinding: 'selfTest' } } }, null).items;
+  const p = items.find((x) => x.id === 'automationError:CallNotesPurge');
+  const f = items.find((x) => x.id === 'automationError:SpanishAutoAssign');
+  assert.ok(p && p.severity === 'warn' && /ran only in part/.test(p.title), 'a partial run is a warning, worded as one');
+  assert.ok(f && f.severity === 'fail' && /failed on its last run/.test(f.title), 'a failed run still fails');
+  assert.ok(!items.some((x) => x.id === 'automationError:NightlySelfTest'), 'a job with its own finding is not listed twice');
+  // The server marks those two only when their own finding shows the failure.
+  const ch = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/if \(automationErrors\.OpenPunchCheck && openPunches && openPunches\.error\) automationErrors\.OpenPunchCheck\.ownFinding = 'openPunches';/.test(ch) &&
+            /if \(automationErrors\.NightlySelfTest && selfTest && selfTest\.mode === 'error'\) automationErrors\.NightlySelfTest\.ownFinding = 'selfTest';/.test(ch),
+    'ownFinding is set only when the dedicated finding actually carries the failure');
+});
+
+test('ST2 (cycle 25 E1): each job chooses its status honestly — skipped reps are PARTIAL (the weekly and urgent digests included), an hour or a recipient list that proves nothing is IDLE, a disabled job is OK, an enabled Timesheet archive with no tab is FAILED (driven)', () => {
+  const rec = (ctx) => (k, m, x) => ctx.__log.push(['stamp', k, x && x.status, (x && x.skipped) || []]);
+  const mk = (extra) => {
+    const ctx = vm.createContext(Object.assign({ String, Date, JSON, Array, Object, Math, console: { warn() {} }, Logger: { log() {} }, __log: [],
+      assertManagerCaller_() {}, stampDigestLastRun_() {}, CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago', ADP_TAB: 'Timesheet' },
+      Utilities: { formatDate: () => '2026-10-15' } }, extra));
+    ctx.stampAutomationError_ = rec(ctx); ctx.clearAutomationError_ = (k) => ctx.__log.push(['clear', k]);
+    return autoContract_(ctx);
+  };
+  // The urgent digest, sent with an unreadable rep Sheet.
+  let ctx = mk({ managerBriefSuppressionActive_: () => false, getManagerEmails_: () => ['m@x'],
+    managerAggregateUrgent_: () => ({ results: [{ id: 1 }], skippedReps: ['Ana Reyes'] }), sendManagerFlagDigest_: () => ({ sent: true }) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
+  ctx.sendCallNotesUrgentDigest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.__log)), [['stamp', 'CallNotesUrgentDigest', 'partial', ['Ana Reyes']]],
+    'THE GAP: a digest that went out without a rep\'s notes CLEARED its key — it is a partial run, named');
+  ctx = mk({ managerBriefSuppressionActive_: () => false, getManagerEmails_: () => [] });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), ctx);
+  ctx.sendCallNotesUrgentDigest();
+  assert.deepStrictEqual(ctx.__log, [], 'no recipients is IDLE — it neither stamps nor clears');
+  // The weekly digests: one queue unreadable, the other sent → partial; both skipped-rep clean → partial.
+  ctx = mk({ getManagerEmails_: () => ['m@x'],
+    managerAggregateFlagged_: (kind) => (kind === 'training' ? { error: 'roster unreadable' } : { results: [{ id: 2 }], skippedReps: [] }),
+    sendManagerFlagDigest_: () => ({ sent: true }) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+  ctx.sendCallNotesWeeklyDigests();
+  assert.deepStrictEqual(ctx.__log.map((x) => x.slice(0, 3)), [['stamp', 'CallNotesWeeklyDigests', 'partial']], 'one queue still went — partial');
+  ctx = mk({ getManagerEmails_: () => ['m@x'], managerAggregateFlagged_: () => ({ error: 'roster unreadable' }), sendManagerFlagDigest_: () => ({ sent: true }) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+  ctx.sendCallNotesWeeklyDigests();
+  assert.deepStrictEqual(ctx.__log.map((x) => x.slice(0, 3)), [['stamp', 'CallNotesWeeklyDigests', 'failed']], 'neither queue — failed');
+  ctx = mk({ getManagerEmails_: () => ['m@x'], managerAggregateFlagged_: () => ({ results: [], skippedReps: ['Sam Ortiz'] }), sendManagerFlagDigest_: () => ({ sent: true }) });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesWeeklyDigests'), ctx);
+  ctx.sendCallNotesWeeklyDigests();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.__log)), [['stamp', 'CallNotesWeeklyDigests', 'partial', ['Sam Ortiz']]], 'sent incomplete — partial, the rep named once');
+  // The Timesheet archive: enabled with no tab is FAILED; disabled is OK.
+  const tsArchive = (days, live) => {
+    const c = mk({ getTimesheetArchiveDays_: () => days, LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      getAdpSS_: () => ({ getSheetByName: () => live }), CacheService: { getScriptCache: () => ({ remove() {} }) }, writeAuditLog_() {}, _SYSTEM_AUDIT_EMP_: {},
+      TIMESHEET_ARCHIVE_MAX_ROWS_PER_RUN: 5000, TIMESHEET_ARCHIVE_TAB: 'TimesheetArchive', TS_ARCHIVE_REACH_CACHE_KEY: 'k', ADP: { DATE: 1 },
+      getOrCreateTimesheetArchiveTab_: () => ({}), archiveSheetRowsOlderThan_: () => 0 });
+    vm.runInContext(extractRawFunction('Code.js', 'archiveOldTimesheetRows'), c);
+    c.archiveOldTimesheetRows();
+    return c.__log.map((x) => x.slice(0, 3));
+  };
+  assert.deepStrictEqual(tsArchive(365, null), [['stamp', 'TimesheetArchive', 'failed']], 'THE GAP: an enabled archive with no Timesheet tab was a Logger line and a silent return');
+  assert.deepStrictEqual(tsArchive(0, null), [['clear', 'TimesheetArchive']], 'a disabled archive is a clean run (it clears a stale failure)');
+  assert.deepStrictEqual(tsArchive(365, { getLastColumn: () => 9 }), [['clear', 'TimesheetArchive']], 'an archived run clears');
+  // The EOD digest: a reached rep whose Sheet would not open is PARTIAL while another was served, and names them.
+  const eod = (unreadable) => {
+    const c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
+      getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z']], cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t,
+      Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
+      getCallNotesSheet_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; },
+      readCallNoteRowsInRange_: () => [], cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}), sendOneRepEodDigest_() {} });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), c);
+    c.sendCallNotesEodDigest();
+    return JSON.parse(JSON.stringify(c.__log));
+  };
+  assert.deepStrictEqual(eod(['A']), [['stamp', 'CallNotesEodDigest', 'partial', ['Ann']]], 'one of two reps unreadable — partial, named');
+  assert.deepStrictEqual(eod(['A', 'B']).map((x) => x.slice(0, 3)), [['stamp', 'CallNotesEodDigest', 'failed']], 'every reached rep unreadable — failed');
+});
+
+test('G3 (cycle 25 E1): the digest delivery rows — one per distinct recipient, a known status or "failed", a blank (never 0) unknown count, a bounded one-line reason; the writer never throws, takes no lock, and writes through sheetSafeRow_ (driven)', () => {
+  const ctx = vm.createContext({ String, Array, Math, isFinite, Logger: { log() {} } });
+  vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_REASON_MAX', 'DIGEST_DELIVERIES_TAB', 'DIGEST_DELIVERY_HEADERS']
+    .map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' + extractRawFunction('Code.js', 'digestDeliveryRows_'), ctx);
+  const rows = (...a) => JSON.parse(JSON.stringify(ctx.digestDeliveryRows_(...a)));
+  assert.deepStrictEqual(rows('urgent', ['A@x.com', 'a@x.com ', '', 'b@x.com'], 'sent', 3, ' ok ', 'T'),
+    [['T', 'urgent', 'a@x.com', 'sent', 3, 'ok'], ['T', 'urgent', 'b@x.com', 'sent', 3, 'ok']], 'one row per distinct recipient, lowercased');
+  assert.deepStrictEqual(rows('weekly', 'm@x', 'delivered', 1, '', 'T')[0][3], 'failed', 'an unknown status is never recorded as a delivery');
+  assert.deepStrictEqual([rows('w', 'm@x', 'suppressed', null, '', 'T')[0][4], rows('w', 'm@x', 'empty', 'many', '', 'T')[0][4], rows('w', 'm@x', 'empty', 0, '', 'T')[0][4]], ['', '', 0],
+    'an unknown count is BLANK — 0 only when it was zero (g114)');
+  const why = rows('w', 'm@x', 'failed', 1, 'Service invoked\n too many times ' + 'x'.repeat(400), 'T')[0][5];
+  assert.ok(why.length === 200 && !/\n/.test(why) && /^Service invoked too many times/.test(why), 'the reason is one line, bounded');
+  assert.deepStrictEqual(rows('w', [], 'sent', 1, '', 'T'), [], 'no recipient, no row');
+  // The writer.
+  const w = stripJsComments_(extractRawFunction('Code.js', 'logDigestDelivery_'));
+  assert.ok(!/getScriptLock|getUserLock|waitLock/.test(w), 'no lock — it runs inside jobs (A8)');
+  assert.ok(/sheet\.appendRow\(sheetSafeRow_\(row\)\)/.test(w), 'appendRow (atomic, grows the grid — g145) through the sheet-safe boundary');
+  const wctx = vm.createContext({ String, Array, Math, isFinite, Logger: { log() {} }, fmtDate_: () => '2026-10-15', fmtTime_: () => '08:00:00',
+    getOrCreateDigestDeliveriesSheet_: () => { throw new Error('ADP sheet unreachable'); }, sheetSafeRow_: (r) => r });
+  vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_REASON_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
+    extractRawFunction('Code.js', 'digestDeliveryRows_') + '\n' + extractRawFunction('Code.js', 'logDigestDelivery_'), wctx);
+  assert.strictEqual(wctx.logDigestDelivery_('urgent', ['m@x'], 'sent', 1, ''), 0, 'a log that cannot be written returns 0 — it never throws into the digest');
+  const written = [];
+  wctx.getOrCreateDigestDeliveriesSheet_ = () => ({ appendRow: (r) => written.push(r) });
+  assert.strictEqual(wctx.logDigestDelivery_('urgent', ['m@x', 'n@x'], 'sent', 1, ''), 2);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(written)).map((r) => r[0] + '|' + r[2]), ['2026-10-15 08:00:00|m@x', '2026-10-15 08:00:00|n@x'], 'stamped in the diagnostics form the purge parses');
+});
+
+test('G3 (cycle 25 E1): the Admin read — admin-gated before any read, a missing tab is "nothing yet", the window and a cut tail are stated, an unparseable stamp is kept (driven)', () => {
+  const NOW = Date.parse('2026-10-15T12:00:00Z');
+  const mk = (emp, sheet, opts) => {
+    const reads = [];
+    const ctx = vm.createContext({ String, Number, Math, isFinite, parseInt, Array,
+      Date: class extends Date { static now() { return NOW; } },
+      getEmployeeInfo_: () => emp, getAdpSS_: () => { reads.push('ss'); return { getSheetByName: () => sheet }; },
+      normalizeAuditTs_: (v) => String(v), diagTsMs_: (v) => (/^2026-/.test(String(v)) ? Date.parse(String(v).replace(' ', 'T') + 'Z') : null) });
+    vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_HEADERS', 'DIGEST_DELIVERY_RETENTION_DAYS', 'DIGEST_DELIVERY_SCAN_MAX', 'DIGEST_DELIVERY_VIEW_DAYS', 'DIGEST_DELIVERIES_TAB']
+      .map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + (opts && opts.scan ? '\nDIGEST_DELIVERY_SCAN_MAX = ' + opts.scan + ';' : '') + '\n' +
+      extractRawFunction('Code.js', 'digestDeliveriesView_') + '\n' + extractRawFunction('Code.js', 'getDigestDeliveries'), ctx);
+    return { ctx, reads };
+  };
+  const rowsTab = (rows) => ({ getLastRow: () => rows.length + 1, getRange: (r, c, n) => ({ getValues: () => rows.slice(r - 2, r - 2 + n) }) });
+  let t = mk({ isManager: true, isAdmin: false }, rowsTab([]));
+  assert.deepStrictEqual([t.ctx.getDigestDeliveries({}).error, t.reads.length], ['Admin access required.', 0], 'a manager who is not an admin is refused BEFORE the store is opened');
+  t = mk({ isAdmin: true }, null);
+  assert.strictEqual(t.ctx.getDigestDeliveries({}).missing, true, 'no tab yet — "no digest has written", never an empty log presented as quiet');
+  const R = [
+    ['2026-09-20 08:00:00', 'urgent', 'm@x', 'sent', 1, ''],            // outside a 14-day window
+    ['garbled', 'weekly', 'm@x', 'odd', '', 'x'],                         // unparseable stamp → kept, unknown status → failed
+    ['2026-10-14 08:00:00', 'managerBrief', 'm@x', 'suppressed', '', 'rode the daily brief'],
+    ['2026-10-15 08:00:00', 'urgent', 'm@x', 'failed', 2, 'quota'],
+  ];
+  t = mk({ isAdmin: true }, rowsTab(R));
+  let res = JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({})));
+  assert.deepStrictEqual(res.rows.map((r) => r.digest + ':' + r.status + ':' + r.items), ['urgent:failed:2', 'managerBrief:suppressed:null', 'weekly:failed:null'],
+    'newest first; the 14-day window; a blank count stays unknown; an unparseable stamp is KEPT, never silently dropped');
+  assert.deepStrictEqual([res.days, res.retentionDays, res.truncated], [14, 90, false]);
+  assert.strictEqual(JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({ days: 400 }))).days, 90, 'the window never reaches past what is kept');
+  t = mk({ isAdmin: true }, rowsTab(R), { scan: 2 });
+  res = JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({})));
+  assert.strictEqual(res.truncated, true, 'a tail that starts INSIDE the window says older rows exist that were not read (g152)');
+  t = mk({ isAdmin: true }, rowsTab([R[0], R[0], R[3]]), { scan: 2 });
+  assert.strictEqual(JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({}))).truncated, false, 'a tail that starts before the window cut nothing');
+});
+
+test('G3 (cycle 25 E1): every manager digest logs its decision — sent, suppressed (it rode the brief), failed or empty — per recipient, with its heartbeat key (driven: urgent, brief, health; a net over all seven)', () => {
+  const mk = (extra) => {
+    const ctx = vm.createContext(Object.assign({ String, Date, JSON, Array, Object, Math, console: { warn() {} }, Logger: { log() {} }, __rows: [],
+      assertManagerCaller_() {}, stampDigestLastRun_() {}, stampAutomationError_() {}, clearAutomationError_() {},
+      CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10-15' } }, extra));
+    ctx.logDigestDelivery_ = (d, to, st, n, why) => ctx.__rows.push([d, [].concat(to).join(','), st, n, why]);
+    return autoContract_(ctx);
+  };
+  const urgent = (o) => {
+    const c = mk({ managerBriefSuppressionActive_: () => !!o.suppressed, getManagerEmails_: () => ['a@x', 'b@x'],
+      managerAggregateUrgent_: () => ({ results: o.results || [], skippedReps: [] }), sendManagerFlagDigest_: () => (o.fail ? { error: 'quota' } : { sent: true }) });
+    vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesUrgentDigest'), c);
+    c.sendCallNotesUrgentDigest();
+    return JSON.parse(JSON.stringify(c.__rows));
+  };
+  assert.deepStrictEqual(urgent({ suppressed: true }), [['urgent', 'a@x,b@x', 'suppressed', null, 'rode the daily brief']], 'suppressed — and why');
+  assert.deepStrictEqual(urgent({}), [['urgent', 'a@x,b@x', 'empty', 0, 'no urgent notes']], 'nothing to send is recorded, not silent');
+  assert.deepStrictEqual(urgent({ results: [1, 2] }), [['urgent', 'a@x,b@x', 'sent', 2, '']]);
+  assert.deepStrictEqual(urgent({ results: [1], fail: true }), [['urgent', 'a@x,b@x', 'failed', 1, 'quota']], 'a failed send names the error');
+  // The brief is per manager: one sent, one failed, one with nothing.
+  const b = mk({ getFlag_: () => true, getManagerEmails_: () => ['a@x', 'b@x', 'c@x'],
+    computeMissedClockOuts_: () => [], managerAggregateUrgent_: () => ({ results: [], skippedReps: [] }), trainOverdueForRoster_: () => [],
+    empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+    empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true,
+    managerBriefSections_: (d) => (d.docs === undefined ? [] : []), sendManagerBriefEmail_: (e) => { if (e === 'b@x') throw new Error('quota'); } });
+  b.managerBriefSections_ = function () { return b.__sections.shift(); };
+  b.__sections = [[{ key: 'urgent', count: 2 }], [{ key: 'missed', count: 1 }], []];
+  vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), b);
+  b.sendManagerDailyBrief();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(b.__rows)), [['managerBrief', 'a@x', 'sent', 2, ''], ['managerBrief', 'b@x', 'failed', 1, 'quota'],
+    ['managerBrief', 'c@x', 'empty', 0, 'all clear — nothing to report']], 'one row per manager, each with its own outcome');
+  // The health digest: a report that could not be computed is a failed delivery for everyone.
+  const hd = mk({ getManagerEmails_: () => ['a@x'], computeAutomationHealth_: () => { throw new Error('audit tab gone'); } });
+  vm.runInContext(extractRawFunction('Code.js', 'sendAutomationHealthDigest'), hd);
+  hd.sendAutomationHealthDigest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(hd.__rows)), [['automationHealth', 'a@x', 'failed', null, 'the health report could not be computed: audit tab gone']]);
+  // The net: each manager digest logs under its heartbeat key, and the four
+  // the brief can replace record that they were suppressed.
+  const NET = { sendCallNotesWeeklyDigests: 'weekly', sendCallNotesUrgentDigest: 'urgent', sendManagerDailyBrief: 'managerBrief',
+    sendTrainingOverdueDigest: 'trainingOverdue', sendDeptRequestReminderDigest: 'deptReqReminder', sendAutomationHealthDigest: 'automationHealth',
+    sendDailyMissedPunchAlerts: 'missedPunch' };
+  const stale = /const DIGEST_STALE_HOURS = \{([\s\S]*?)\};/.exec(serverSource())[1];
+  Object.keys(NET).forEach((h) => {
+    const body = stripJsComments_(extractRawFunction('Code.js', h));
+    const calls = body.match(new RegExp("logDigestDelivery_\\('" + NET[h] + "'", 'g')) || [];
+    assert.ok(calls.length >= 2, h + ' logs its decisions under "' + NET[h] + '"');
+    assert.ok(/'sent'/.test(body) && /'failed'/.test(body), h + ' logs both a delivery and a failed one');
+    assert.ok(new RegExp('\\b' + NET[h] + ':').test(stale), NET[h] + ' is a heartbeat key the Admin labels know');
+    if (/managerBriefSuppressionActive_\(/.test(body)) assert.ok(/'suppressed', [\w.]+, 'rode the daily brief'/.test(body), h + ' records the suppression');
+  });
+});
+
+test('G3 (cycle 25 E1): the Admin System panel — a failed read is a warn card, a fresh deploy says the log starts with the next run, rows render escaped with a per-digest summary, a cut tail and a capped list are stated (driven)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  ['CN_DIGEST_DELIVERY_SHOW_MAX_', 'CN_DIGEST_DELIVERY_STATUS_'].forEach((k) => {
+    const m = new RegExp('^var ' + k + ' = [\\s\\S]*?;$', 'm').exec(cn);
+    assert.ok(m, k); vm.runInContext(m[0], sb);
+  });
+  sb.CN_DIGEST_LABELS_ = { urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief' };
+  const render = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderDigestDeliveries_');
+  let h = render({ error: 'Admin access required.' });
+  assert.ok(/Digest deliveries unavailable: Admin access required/.test(h) && /id="cn-sys-sec-digests"/.test(h), 'a failed read is the warn card, in its own panel (INV-175)');
+  h = render({ days: 14, retentionDays: 90, missing: true, rows: [] });
+  assert.ok(/No digest has recorded a delivery yet/.test(h), 'a fresh deploy is not "nothing was sent"');
+  h = render({ days: 14, retentionDays: 90, truncated: true, rows: [
+    { at: '2026-10-15 08:00:30', digest: 'managerBrief', recipient: 'b@x', status: 'failed', items: 4, reason: '<img src=x onerror=alert(1)>' },
+    { at: '2026-10-15 08:00:31', digest: 'managerBrief', recipient: 'a@x', status: 'sent', items: 6, reason: '' },
+    { at: '2026-10-15 08:00:09', digest: 'urgent', recipient: 'a@x', status: 'suppressed', items: null, reason: 'rode the daily brief' }] });
+  assert.ok(!/<img/.test(h) && /&lt;img/.test(h), 'every server string is escaped');
+  assert.ok(/<b>Manager daily brief<\/b> — last: <span[^>]*>failed<\/span>/.test(h) && /1 sent · 1 failed/.test(h), 'a summary per digest, labelled, naming the latest decision and the counts');
+  assert.ok(/Suppressed/.test(h) && />—</.test(h), 'an unknown count is a dash, never 0');
+  assert.ok(/older rows inside this window were not read/.test(h), 'a cut tail is stated');
+  const many = Array.from({ length: 205 }, (_, i) => ({ at: 't' + i, digest: 'urgent', recipient: 'a@x', status: 'empty', items: 0, reason: '' }));
+  assert.ok(/Showing the newest 200 of 205 rows/.test(render({ days: 14, retentionDays: 90, rows: many })), 'a capped list says so');
+  // The loader is wired into the Admin enter and the System pane has its slot.
+  assert.ok(/'<div id="cn-admin-digests"><\/div>' \+/.test(cn) && /cnLoadHealthPanel_\(\);[\s\S]{0,200}cnLoadDigestDeliveries_\(\);/.test(cn), 'the panel sits beside Automation Health');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

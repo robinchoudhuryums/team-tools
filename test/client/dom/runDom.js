@@ -4415,6 +4415,38 @@ test('T8 DOM: the OOP pricing diagnostics have a HOME — the Admin System tab r
   assert.ok(!/OopPricing/.test(failTxt), 'and does not leave the previous read on screen as if it were current');
 });
 
+test('G3 DOM (cycle 25 E1): the digest delivery log has a panel beside Automation Health — loaded on enter through the real loader, escaped, and a failed read says so instead of leaving the last read on screen', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, isAdmin: true });
+  let called = 0;
+  h.run.respond('getDigestDeliveries', () => {
+    called++;
+    return { days: 14, retentionDays: 90, truncated: false, missing: false, rows: [
+      { at: '2026-10-15 08:00:30', digest: 'managerBrief', recipient: 'floor.lead@x.com', status: 'failed', items: 4, reason: 'quota <b>exceeded</b>' },
+      { at: '2026-10-15 08:00:09', digest: 'urgent', recipient: 'ops@x.com', status: 'suppressed', items: null, reason: 'rode the daily brief' }] };
+  });
+  h.run.respond('getCallNotesAuditLog', () => ({ rows: [] }));
+  h.window.enterTool('manage', 'callNotesAdmin');
+  h.flushTimers();
+  await tick(); await tick();
+  const panel = h.window.document.getElementById('cn-sys-sec-digests');
+  assert.ok(panel, 'the delivery log has a panel in the Admin System tab');
+  assert.strictEqual(called, 1, 'fetched once, on enter');
+  const health = h.window.document.getElementById('cn-admin-health');
+  assert.ok(health && health.nextElementSibling && health.nextElementSibling.id === 'cn-admin-digests', 'it sits directly beside Automation Health');
+  const txt = panel.textContent;
+  assert.ok(/Manager daily brief/.test(txt) && /floor\.lead@x\.com/.test(txt) && /Failed/.test(txt) && /Suppressed/.test(txt), 'each decision, labelled, per recipient');
+  assert.ok(/quota <b>exceeded<\/b>/.test(txt) && !panel.querySelector('td b'), 'a server string renders as TEXT, never markup');
+  h.run.respond('getDigestDeliveries', () => { throw new Error('Admin access required.'); });
+  h.read('cnLoadDigestDeliveries_')();
+  h.flushTimers();
+  await tick(); await tick();
+  const failTxt = h.window.document.getElementById('cn-sys-sec-digests').textContent;
+  assert.ok(/unavailable/i.test(failTxt) && /Admin access required/.test(failTxt), 'a failed read says so, with the reason');
+  assert.ok(!/floor\.lead/.test(failTxt), 'and does not leave the previous read on screen as if it were current');
+});
+
 test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and a city-delegated verdict names the city that decided', async () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
