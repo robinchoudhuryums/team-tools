@@ -38585,6 +38585,19 @@ test('E6 (cycle 25, G4): the vocabulary is cached under a key that hashes its co
     'never a vocabulary built from rep text — not the reps\' own tags, notes, requests or comments (g167, KB-2)');
 });
 
+test('E6 follow-on (cycle 25): a content request\'s topic and its "name · age" line are separate lines — STRUCTURAL: the DOM harness loads partial scripts, never their <style>, so the layout is measured in Chromium (the reference-search-signal scenarios), not here', () => {
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/\.kb-land-req-body \.kb-land-t, \.kb-land-req-body \.kb-land-meta \{ display: block; \}/.test(kb),
+    'THE DEFECT: inline, the topic ran into the meta — "cleaning stepsAna Ruiz · 2d ago"');
+  assert.ok(/\.kb-land-req-body \.kb-land-meta \{ margin-left: 0; margin-top: 2px; white-space: normal; \}/.test(kb),
+    'the meta wraps inside the request body instead of keeping the row-level nowrap');
+  assert.ok(/\.kb-land-meta \{ margin-left: auto; font-size: \.76rem; color: var\(--muted\); white-space: nowrap; \}/.test(kb),
+    'an ordinary landing row keeps its right-aligned, one-line meta');
+  const render = stripJsComments_(extractFunction('kb/script_kb.html', 'kbLandingBlocksHtml_'));
+  assert.ok(/<div class="kb-land-req-body">' \+\s*'<span class="kb-land-t">' \+ esc\(rq\.topic\) \+ '<\/span>' \+\s*'<span class="kb-land-meta">' \+ meta/.test(render),
+    'the rule matches the markup it styles (the topic and meta spans inside .kb-land-req-body)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

@@ -735,6 +735,11 @@
   .kb-land-req { align-items: flex-start; cursor: default; }
   .kb-land-req:hover { background: none; }
   .kb-land-req-body { flex: 1; min-width: 0; }
+  /* The request's topic and its "name · age" line each take their own line —
+     inline, the topic ran into the meta ("cleaning stepsAna Ruiz · 2d ago"),
+     found by the first scenario that showed a request (cycle 25 E6). */
+  .kb-land-req-body .kb-land-t, .kb-land-req-body .kb-land-meta { display: block; }
+  .kb-land-req-body .kb-land-meta { margin-left: 0; margin-top: 2px; white-space: normal; }
   .kb-land-req-acts { display: flex; gap: 4px; flex-shrink: 0; }
 
   /* #2 — article/embed freshness feedback bar (below the reader content). */

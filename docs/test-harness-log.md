@@ -2814,4 +2814,10 @@ per-change detail. By delta:
   signal block, which no shot had reached. The first shot found the request
   row's topic and meta running together on one line — pre-existing, now a
   follow-on.
+- **Follow-on (the request row):** fixed in CSS — the topic and its meta are
+  block lines inside `.kb-land-req-body`. A DOM drive was written first and
+  dropped: `boot.js` loads each partial's `<script>`, never its `<style>`, so
+  jsdom's computed style cannot see the rule (the test failed for that reason,
+  not the defect's). The pin is structural and says so; the layout was measured
+  in Chromium (the meta's top below the topic's bottom, both at 1440 and 390).
 
