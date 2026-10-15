@@ -240,7 +240,10 @@ not restate it. Server endpoints live in the fourteen server files
      (alongside All / Caller / Issue — INV-45); the manager Stats view is a
      scannable table (shared `mtRenderTable_` component); and the Admin tab is
      split into **Overview / Tags / Compliance / Config** sub-tabs with
-     system-status cards. **Marker text formatting (operator 2026-08-25):**
+     system-status cards. **Handbook strip (cycle 25 E3):** a pause in the
+     Issue field offers up to three published handbook sections under it (our
+     own `searchReference`, the drawer's suggestion path); a chip opens the
+     Ctrl/⌘+K drawer at the section. **Marker text formatting (operator 2026-08-25):**
      Issue/Resolution support `**bold**` / `__underline__` / `==highlight==`
      — typed literally or via Ctrl/⌘+B / Ctrl/⌘+U / Ctrl/⌘+Shift+H
      (preventDefault always fires in a `.ce` so native contenteditable
@@ -1088,7 +1091,10 @@ not restate it. Server endpoints live in the fourteen server files
      hovering or focusing one previews the target section. Manual sections are
      read-only in the app — Edit, Delete and Revert refuse a `man-` id on the
      server — and each carries "Suggest an edit", which flags the section for
-     review with the agent's note. A section changed in the last 12 months carries
+     review with the agent's note (its own `suggest` kind since cycle 25 E3, shown
+     apart from "out of date"; admins export every section's feedback to a Sheet
+     for the repo-side editors, and an import that changes a section's text
+     counts as its review). A section changed in the last 12 months carries
      an Updated badge from the changelog. Typing a section number (`5.9`, `§5-9`,
      `10.B`, `card 5`, `part 5`) into either search box jumps to it, but only to a
      section the caller can see. The Ctrl/⌘+K drawer adds "What did the caller

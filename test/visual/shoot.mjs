@@ -368,6 +368,17 @@ const SCENARIOS = [
     "kbOpenItem_('man-5-1'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 400)"],
   ['reference-manual-imported-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenManualImport_(); kbManualSetFile_({ name: 'manual.json', size: 1577555, text: 'x'.repeat(1577555) }); kbManualRun_(false)"],
+  // Cycle 25 E3 — the handbook loop: the feedback export's answer in the
+  // Handbook dialog (a cut window, warn tone), and the Issue field's handbook
+  // strip on the Log at phone width and in dark mode.
+  ['reference-manual-feedback-export-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenManualImport_(); kbManualExportFeedback_()"],
+  ['reference-review-due-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '',
+    "setTimeout(function(){ var r=document.querySelector('.kb-land-rd'); if(r) r.scrollIntoView(); }, 600)"],
+  ['cn-log-handbook-strip-light-mobile', { tool: 'callNotes', tab: 'callNotes' }, MOBILE, 'light', '',
+    "cnSetFieldValue_('cn-fld-issue', 'Patient waiting on the doctor to sign the order'); kbHbStripRefresh_()"],
+  ['cn-log-handbook-strip-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '',
+    "cnSetFieldValue_('cn-fld-issue', 'Patient waiting on the doctor to sign the order'); kbHbStripRefresh_()"],
   // Cycle 21 (operator report, 2026-09-21) — the KB DRAWER had never been shot,
   // by any scenario, at any width. That is why both lookups sat inside
   // `.kbd-sec` — a mono/uppercase flex HEADING bar — for weeks: every result

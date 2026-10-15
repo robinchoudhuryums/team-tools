@@ -10,6 +10,30 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — the handbook loop: suggested edits reach the source, and the Log offers handbook sections (cycle 25 E3)
+
+**Adds NO operator state** (the `suggest` kind rides the existing KbFeedback tab).
+Deploy the web app (`clasp push -f`, then a New version); no trigger change. Your
+decisions of 2026-10-15:
+- **Suggest an edit is now its own kind.** In Reference → Review due a handbook
+  section a rep suggested a change to shows a blue "suggested edit · N" chip with
+  their words; "out of date" stays red. A suggestion over 500 characters is
+  refused in the prompt rather than cut. Suggestions sent BEFORE this deploy were
+  saved as "out of date" and still read that way.
+- **Re-importing a section whose text changed counts as its review**, so the
+  suggestions and flags raised before the fix close by themselves. Check says how
+  many sections would count. A retitle or reorder alone does not.
+- **Export feedback** (Reference → Handbook, admins): a new Google Sheet, one row
+  per handbook section with the source file it comes from, its votes, comment
+  count and open items. Download the Feedback tab as CSV and run
+  `python3 manual/feedback_report.py <file>.csv > feedback.md` for a worklist by
+  file. No rep names are exported.
+- **Handbook suggestions on the Log**: after a rep types the Issue and pauses, up
+  to three handbook sections appear under it; a click opens the Ctrl/⌘+K drawer at
+  that section. The × turns them off for that rep (the drawer's "suggest" box is
+  the same setting). The Issue text goes only to the app's own search, as the
+  drawer's suggestions always did.
+
 ## 2026-10-15 — Clear Note moves to Shift; History's all-time chips say what they show (cycle 25 F23 + F35)
 
 **Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New

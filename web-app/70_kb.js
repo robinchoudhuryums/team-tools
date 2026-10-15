@@ -2712,7 +2712,8 @@ function kbGetReviewDue() {
       if (baseIso) { const n = cnIsoToDayNum_(baseIso); if (n != null && todayNum != null) ageDays = todayNum - n; }
       const ageDue = (ageDays == null) || (ageDays >= dueDays);
       const staleCount = (stale[id] && stale[id].count) || 0;
-      if (!ageDue && !staleCount) return;
+      const suggestCount = (stale[id] && stale[id].suggest) || 0;   // E3
+      if (!ageDue && !staleCount && !suggestCount) return;
       items.push({
         id: id,
         title: String(r[KB.TITLE] || '(untitled)'),
@@ -2724,15 +2725,18 @@ function kbGetReviewDue() {
         views: (usage[id] && usage[id].count) || 0,
         staleFlags: staleCount,          // #2 — open "out of date" flags from reps
         staleNote: (stale[id] && stale[id].lastNote) || '',
+        suggestFlags: suggestCount,      // E3 — open suggested edits (handbook)
+        suggestNote: (stale[id] && stale[id].lastSuggest) || '',
         helpful: (fb[id] && fb[id].helpful) || 0,
         notHelpful: (fb[id] && fb[id].notHelpful) || 0,
         comments: cc[id] || 0,
       });
     });
     items.sort(function (a, b) {
-      // Rep-flagged-stale first (then by flag count), then most-used, then oldest.
-      return ((b.staleFlags ? 1 : 0) - (a.staleFlags ? 1 : 0)) ||
-             (b.staleFlags - a.staleFlags) ||
+      // Rep-flagged first (then by open flags — out of date + suggested edits),
+      // then most-used, then oldest.
+      const fa = a.staleFlags + a.suggestFlags, fb2 = b.staleFlags + b.suggestFlags;
+      return ((fb2 ? 1 : 0) - (fa ? 1 : 0)) || (fb2 - fa) ||
              (b.views - a.views) || ((b.ageDays || 0) - (a.ageDays || 0)) ||
              a.title.localeCompare(b.title);
     });
@@ -2784,16 +2788,19 @@ function kbStaleFlags_(reviewedTsByItem) {
     const startRow = Math.max(2, lastRow - KB_FEEDBACK_MAX_SCAN + 1);
     const data = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_FEEDBACK_HEADERS.length).getValues();
     for (let i = 0; i < data.length; i++) {
-      if (String(data[i][KBF.KIND] || '') !== 'stale') continue;
+      const kind = String(data[i][KBF.KIND] || '');
+      if (!KB_FEEDBACK_NOTED[kind]) continue;
       const id = String(data[i][KBF.ITEM_ID] || '').trim();
       if (!id) continue;
       const flagTs = kbCellTs_(data[i][KBF.TS], ssTz);
       const reviewedTs = (reviewedTsByItem && reviewedTsByItem[id]) || '';
       if (reviewedTs && flagTs <= reviewedTs) continue;   // a later review cleared this flag
-      if (!out[id]) out[id] = { count: 0, lastNote: '' };
-      out[id].count++;
+      if (!out[id]) out[id] = { count: 0, lastNote: '', suggest: 0, lastSuggest: '' };
       const note = String(data[i][KBF.NOTE] || '').trim();
-      if (note) out[id].lastNote = note;   // chronological append order → latest note wins
+      // E3: an "out of date" flag and a suggested edit are counted apart —
+      // chronological append order, so the latest note of each kind wins.
+      if (kind === 'suggest') { out[id].suggest++; if (note) out[id].lastSuggest = note; }
+      else { out[id].count++; if (note) out[id].lastNote = note; }
     }
   } catch (e) { unavailable = true; }   // F-25: carried, never rendered as "none"
   return { map: out, unavailable: unavailable };
@@ -2916,11 +2923,19 @@ function kbFlagItem(itemId, kind, note) {
     if (!id) return { success: false, error: 'Missing item id.' };
     const k = String(kind || '').trim();
     if (!KB_FEEDBACK_KINDS[k]) return { success: false, error: 'Unknown feedback kind.' };
-    const n = (k === 'stale') ? String(note || '').trim().substring(0, KB_FEEDBACK_NOTE_MAX) : '';
+    const raw = String(note || '').trim();
+    if (k === 'suggest') {
+      // E3: a suggested edit IS the rep's words — refused, never cut (the
+      // kbAddComment posture), and only the handbook carries the button.
+      if (!KB_MANUAL_ID_RE.test(id)) return { success: false, error: 'Suggested edits are for handbook sections.' };
+      if (!raw) return { success: false, error: 'Write the change you suggest.' };
+      if (raw.length > KB_FEEDBACK_NOTE_MAX) return { success: false, error: 'A suggestion can be at most ' + KB_FEEDBACK_NOTE_MAX + ' characters.' };
+    }
+    const n = KB_FEEDBACK_NOTED[k] ? raw.substring(0, KB_FEEDBACK_NOTE_MAX) : '';
     getOrCreateKbFeedbackSheet_().appendRow(sheetSafeRow_([
       fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, emp.name, k, n,
     ]));
-    if (k === 'stale') writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id, emp.email);
+    if (KB_FEEDBACK_NOTED[k]) writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id + (k === 'suggest' ? '; kind=suggest' : ''), emp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
@@ -4218,6 +4233,8 @@ function kbImportManual(source, opts) {
         total: v.items.length, created: plan.create.length, updated: plan.update.length,
         unchanged: plan.unchanged.length, skipped: plan.skipped,
         repaired: plan.repair.length,   // KB2-8: rows an unfinished import wrote; this run records them
+        // E3: updates whose TEXT changes — each counts as its section's review.
+        reviewed: plan.update.filter(function (it) { return kbManualReviewOnUpdate_(rowAt[it.id].values, it.body, '', '').changed; }).length,
         orphaned: orphaned, removed: 0, metaUpdated: metaChanged, hasMeta: !!metaJson,
         version: mv.meta ? mv.meta.version : '',
         images: null,
@@ -4243,8 +4260,9 @@ function kbImportManual(source, opts) {
       plan.update.forEach(function (it) {
         const at = rowAt[it.id];
         kbAppendRevision_(at.values, emp.email, 'manual-import');
+        const rv = kbManualReviewOnUpdate_(at.values, it.body, now, emp.email);   // E3
         const vals = [it.id, it.department, it.title, 'article', it.body, '', '', it.sortOrder,
-          now, emp.email, at.values[KB.REVIEWED_AT], at.values[KB.REVIEWED_BY], kbRowStatus_(at.values[KB.STATUS])];
+          now, emp.email, rv.at, rv.by, kbRowStatus_(at.values[KB.STATUS])];
         sheet.getRange(at.sheetRow, 1, 1, KB_HEADERS.length).setValues(sheetSafeRows_([vals]));
         ledgerWrites.push([it.id, it.sourceHash, hashFn(it.department, it.title, it.body)]);
       });
@@ -4303,6 +4321,7 @@ function kbImportManual(source, opts) {
       writeAuditLog_(emp, 'KbManualImport', '', '', false, 0,
         'total=' + summary.total + '; created=' + summary.created + '; updated=' + summary.updated +
         '; unchanged=' + summary.unchanged + '; skipped=' + plan.skipped.length + '; repaired=' + summary.repaired +
+        '; reviewed=' + summary.reviewed +
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
@@ -4311,6 +4330,17 @@ function kbImportManual(source, opts) {
     } finally { lock.releaseLock(); }
     return result;
   } catch (err) { return { success: false, error: err.message }; }
+}
+
+/** E3 (cycle 25, operator 2026-10-15) — the review an import writes onto a
+ *  section it UPDATES. A section whose TEXT changed was edited in the repo, and
+ *  that edit is its review: ReviewedAt/By become the import's, so every flag
+ *  and suggestion raised before it closes (kbStaleFlags_'s strictly-newer
+ *  rule). A title, chapter or order change alone keeps the old review. Pure. */
+function kbManualReviewOnUpdate_(rowValues, newBody, now, email) {
+  const changed = String(rowValues[KB.BODY_MD] || '') !== String(newBody || '');
+  return changed ? { changed: true, at: now, by: email }
+    : { changed: false, at: rowValues[KB.REVIEWED_AT], by: rowValues[KB.REVIEWED_BY] };
 }
 
 /** Admin — publish the imported manual's DRAFTS (all, or one department), and
@@ -4357,6 +4387,152 @@ function kbPublishManual(opts) {
     return { success: true, dryRun: false, count: picks.length, reviewSpreadDays: dueDays };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── E3 (cycle 25, G2, operator 2026-10-15): the handbook's feedback, exported
+// for the people who edit its source in the repo. The app is read-only for
+// handbook sections, so a suggestion is only useful once it reaches the file
+// it is about — one row per section, keyed to `manual/src`, written to a new
+// Google Sheet (the call-note / payroll export pattern), whose CSV
+// `manual/feedback_report.py` turns into a worklist by source file.
+
+/** Where a handbook article id lives in `manual/` — the inverse of
+ *  export_reference.py's article_id(): man-5-9 → src/p5.md §5-9, man-10-a →
+ *  src/p10.md §10-A, man-c-5 → src/appendix_c.md §C-5, man-a → the glossary,
+ *  man-howto → build.py's HOWTO. Pure; '' for an id that is not the manual's. */
+function kbManualSourceRef_(id) {
+  id = String(id || '');
+  if (!KB_MANUAL_ID_RE.test(id)) return '';
+  if (id === 'man-howto') return 'build.py HOWTO';
+  const parts = id.substring(4).split('-');
+  const head = parts[0], rest = parts.slice(1).join('-').toUpperCase();
+  if (/^[abc]$/.test(head)) return 'src/appendix_' + head + '.md' + (rest ? ' §' + head.toUpperCase() + '-' + rest : '');
+  if (/^\d+$/.test(head)) return 'src/p' + head + '.md' + (rest ? ' §' + head + '-' + rest : '');
+  return '';
+}
+
+/** The export's rows, from plain inputs (pure — the sheet reads stay in the
+ *  endpoint). `sections` = [{id, title, department, sortOrder, reviewedTs}];
+ *  `feedback` = [{ts, id, kind, note}] in append order; `comments` = {id: n}.
+ *  Votes are cumulative over the rows read (kbFeedbackCounts_'s rule); a flag
+ *  or suggestion is OPEN while it is strictly newer than the section's last
+ *  review (kbStaleFlags_'s rule). No rep names — the worklist is about the
+ *  text, and it may be committed beside the source. */
+function kbHandbookFeedbackRows_(sections, feedback, comments) {
+  const by = {};
+  sections.forEach(function (s) {
+    by[s.id] = { id: s.id, title: s.title, department: s.department, sortOrder: Number(s.sortOrder) || 0,
+      source: kbManualSourceRef_(s.id), reviewedTs: s.reviewedTs || '',
+      helpful: 0, notHelpful: 0, suggest: 0, stale: 0, comments: (comments && comments[s.id]) || 0, open: [] };
+  });
+  (feedback || []).forEach(function (f) {
+    const r = by[f.id];
+    if (!r) return;
+    if (f.kind === 'helpful') { r.helpful++; return; }
+    if (f.kind === 'notHelpful') { r.notHelpful++; return; }
+    if (!KB_FEEDBACK_NOTED[f.kind]) return;
+    if (r.reviewedTs && String(f.ts) <= r.reviewedTs) return;   // a later review closed it
+    r[f.kind === 'suggest' ? 'suggest' : 'stale']++;
+    r.open.push(String(f.ts).substring(0, 10) + ' · ' + (f.kind === 'suggest' ? 'suggested edit' : 'out of date') +
+      ' · ' + (String(f.note || '').replace(/\s+/g, ' ').trim() || '(no note)'));
+  });
+  return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) {
+    return String(a.department).localeCompare(String(b.department)) || (a.sortOrder - b.sortOrder) ||
+      String(a.title).localeCompare(String(b.title));
+  });
+}
+
+/** The export's reads (read-only — kept out of the export so the function
+ *  that writes the new Sheet never holds the KB tab, M5b-I2): the handbook's
+ *  sections from the KB tab, and the KbFeedback tail with where it starts. */
+function kbHandbookFeedbackInputs_() {
+  const ss = getKbSS_();
+  const ssTz = ss.getSpreadsheetTimeZone();
+  const kbSheet = getOrCreateKbSheet_();
+  const last = kbSheet.getLastRow();
+  const all = last >= 2 ? kbSheet.getRange(2, 1, last - 1, KB_HEADERS.length).getValues() : [];
+  const sections = [];
+  all.forEach(function (r) {
+    const id = String(r[KB.ID] || '').trim();
+    if (!KB_MANUAL_ID_RE.test(id)) return;
+    sections.push({ id: id, title: String(r[KB.TITLE] || ''), department: String(r[KB.DEPARTMENT] || ''),
+      sortOrder: r[KB.SORT_ORDER], reviewedTs: kbCellTs_(r[KB.REVIEWED_AT], ssTz) });
+  });
+  const fbSheet = ss.getSheetByName(KB_FEEDBACK_TAB);
+  const feedback = [];
+  let windowFrom = '', truncated = false;
+  if (fbSheet && fbSheet.getLastRow() >= 2) {
+    const fl = fbSheet.getLastRow();
+    const start = Math.max(2, fl - KB_FEEDBACK_MAX_SCAN + 1);
+    truncated = start > 2;
+    const data = fbSheet.getRange(start, 1, fl - start + 1, KB_FEEDBACK_HEADERS.length).getValues();
+    data.forEach(function (d, i) {
+      const ts = kbCellTs_(d[KBF.TS], ssTz);
+      if (i === 0) windowFrom = ts.substring(0, 10);
+      feedback.push({ ts: ts, id: String(d[KBF.ITEM_ID] || '').trim(), kind: String(d[KBF.KIND] || ''), note: d[KBF.NOTE] });
+    });
+  }
+  return { sections: sections, feedback: feedback, windowFrom: windowFrom, truncated: truncated };
+}
+
+const KB_HANDBOOK_FEEDBACK_HEADERS = ['Section', 'Chapter', 'Source', 'Id', 'Open suggestions', 'Open out of date',
+  'Helpful', 'Not helpful', 'Comments', 'Last reviewed', 'Open items'];
+
+/** Admin — export the handbook's feedback to a new Google Sheet, shared with
+ *  the caller. Admin-gated before any read (the import's gate: whoever imports
+ *  the handbook is whoever acts on what it says). Read-only on the stores; the
+ *  audit row carries counts only. The feedback tab is read over its bounded
+ *  tail, and the About tab says so when the tail did not reach its first row. */
+function exportHandbookFeedback() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const inp = kbHandbookFeedbackInputs_();
+    const sections = inp.sections, feedback = inp.feedback, windowFrom = inp.windowFrom, truncated = inp.truncated;
+    if (!sections.length) return { error: 'The handbook has not been imported, so there is no feedback to export.' };
+    // A read failure throws to the catch below — an {error}, never an export
+    // that reads as "no feedback" (g53).
+    const cc = kbCommentCounts_();
+    if (cc.unavailable) return { error: 'Could not read the handbook comments, so the export would be incomplete. Try again.' };
+    const rows = kbHandbookFeedbackRows_(sections, feedback, cc.map);
+    const data = rows.map(function (r) {
+      return [r.title, r.department, r.source, r.id, r.suggest, r.stale, r.helpful, r.notHelpful, r.comments,
+        r.reviewedTs.substring(0, 10), r.open.join('\n')];
+    });
+    const openCount = rows.reduce(function (n, r) { return n + r.open.length; }, 0);
+    const stamp = fmtDate_(new Date()).replace(/-/g, '') + '_' + fmtTime_(new Date()).replace(/:/g, '');
+    const name = 'Handbook feedback (' + stamp + ')';
+    const newSs = createPinnedSpreadsheet_(name);   // pins tz + locale (H-2/M-14)
+    const sh = newSs.getActiveSheet();
+    sh.setName('Feedback');
+    const H = KB_HANDBOOK_FEEDBACK_HEADERS;
+    if (data.length + 1 > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), data.length + 1 - sh.getMaxRows());   // g145: a new sheet is a fixed grid
+    sh.getRange(1, 1, 1, H.length).setValues(sheetSafeRows_([H])).setFontWeight('bold');
+    // The section title and the reps' notes are text: '@' cells, written raw (g144).
+    const TEXT_IDX = [0, 1, 2, 3, 10];
+    TEXT_IDX.forEach(function (c) { sh.getRange(2, c + 1, data.length, 1).setNumberFormat('@'); });
+    sh.getRange(2, 1, data.length, H.length).setValues(sheetTextRows_(data, TEXT_IDX));
+    sh.setFrozenRows(1);
+    const about = newSs.insertSheet('About');
+    const aboutRows = [
+      ['Exported', fmtDate_(new Date()) + ' ' + fmtTime_(new Date())],
+      ['Sections', String(rows.length)],
+      ['Open items', String(openCount)],
+      ['Feedback read from', truncated ? (windowFrom + ' — the newest ' + KB_FEEDBACK_MAX_SCAN + ' rows; older votes are not counted') : 'the first row'],
+      ['Open', 'A suggestion or out-of-date flag raised after the section was last reviewed. Importing a section whose text changed counts as its review.'],
+      ['Worklist', 'File → Download → CSV of the Feedback tab, then: python3 manual/feedback_report.py <file>.csv > feedback.md'],
+    ];
+    about.getRange(1, 1, aboutRows.length, 2).setNumberFormat('@').setValues(sheetTextRows_(aboutRows));
+    SpreadsheetApp.flush();
+    try {
+      const owner = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+      if (emp.email && String(emp.email).toLowerCase() !== owner) newSs.addEditor(emp.email);
+    } catch (shareErr) { console.warn('Handbook feedback export share failed: ' + shareErr.message); }
+    writeAuditLog_(emp, 'KbHandbookFeedbackExport', '', '', false, 0,
+      'sections=' + rows.length + '; open=' + openCount + (truncated ? '; truncated=1' : '') + ' → ' + newSs.getId(), emp.email);
+    return { success: true, url: newSs.getUrl(), fileName: name, sections: rows.length, open: openCount,
+      truncated: truncated, windowFrom: truncated ? windowFrom : '' };
+  } catch (err) { return { error: err.message }; }
 }
 
 // ── KB Phase 2 — Google-Doc → markdown article converter ───────────────────

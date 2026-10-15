@@ -1995,7 +1995,12 @@ const KB_USAGE_TOP_N = 5;
 const KB_FEEDBACK_TAB = 'KbFeedback';
 const KB_FEEDBACK_HEADERS = ['Timestamp', 'ItemId', 'RepId', 'RepName', 'Kind', 'Note'];
 const KBF = { TS: 0, ITEM_ID: 1, REP_ID: 2, REP_NAME: 3, KIND: 4, NOTE: 5 };
-const KB_FEEDBACK_KINDS = { helpful: 1, notHelpful: 1, stale: 1 };
+// E3 (cycle 25, operator 2026-10-15): 'suggest' is the handbook reader's
+// "Suggest an edit" — it was written as 'stale', so a suggested wording and an
+// "out of date" click read the same in the queue. Both are OPEN until the
+// item's next review, and both carry the rep's note.
+const KB_FEEDBACK_KINDS = { helpful: 1, notHelpful: 1, stale: 1, suggest: 1 };
+const KB_FEEDBACK_NOTED = { stale: 1, suggest: 1 };   // the kinds that keep a note and stay open until a review
 const KB_FEEDBACK_NOTE_MAX = 500;
 const KB_FEEDBACK_MAX_SCAN = 4000;
 const KB_REQUESTS_TAB = 'KbContentRequests';

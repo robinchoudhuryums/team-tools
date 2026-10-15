@@ -6673,6 +6673,7 @@ function test_managerGates_rejectNonManager() {
     ['kbPublishItem',                  function () { return kbPublishItem('no-such-id'); }],
     ['kbImportManual',                 function () { return kbImportManual('no-such-file', { dryRun: true }); }],
     ['kbPublishManual',                function () { return kbPublishManual({ dryRun: true }); }],
+    ['exportHandbookFeedback',         function () { return exportHandbookFeedback(); }],   // cycle 25 E3
     ['kbGetSearchConfig',              function () { return kbGetSearchConfig(); }],
     ['kbSaveSearchConfig',             function () { return kbSaveSearchConfig([]); }],
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
@@ -6818,6 +6819,8 @@ function test_managerGates_rejectNonManager() {
     kbGetRevisions: 1, kbRevertItem: 1, kbPublishItem: 1,
     // Batch M1 — the procedures manual import + bulk publish (authoring tier).
     kbImportManual: 1, kbPublishManual: 1,
+    // Cycle 25 E3 — the handbook feedback export, beside the import it answers.
+    exportHandbookFeedback: 1,
     // #8 — search-synonym config (authoring-adjacent).
     kbGetSearchConfig: 1, kbSaveSearchConfig: 1,
     // Reference data tables + editor file ingest (operator 2026-08-25) — both

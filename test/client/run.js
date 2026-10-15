@@ -7930,7 +7930,7 @@ test('batch-3: visual-fixture payload shapes match the server field names', () =
   const coachRows = mock.split('\n').filter((l) => /coachId/.test(l));
   assert.ok(coachRows.length && /patientTRX: 'TRX-/.test(mock) && coachRows.every((l) => !/patientTrx:/.test(l)),
     'coaching fixture rows carry patientTRX (server casing) — the lowercase drift hid the TRX chip from every shot');
-  const rd = /kbGetReviewDue:\s*\{[^\n]*\}/.exec(mock);
+  const rd = /kbGetReviewDue:\s*\{[\s\S]*?dueDays: \d+ \}/.exec(mock);   // cycle 25 E3: the fixture spans lines
   assert.ok(rd && /views:/.test(rd[0]) && !/usage30/.test(rd[0]) && /total:/.test(rd[0]),
     'kbGetReviewDue fixture uses `views` + carries total (the F18 cap-note path is renderable)');
   assert.ok(/kbGetContentRequests:\s*\{ open: \[/.test(mock),
@@ -27645,10 +27645,11 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // The guarded set, named — a new raw-text writer must be added here on purpose.
   // Cycle 23 HR-1 + CN-7 added the coaching/doc text columns and the note edit.
   // Cycle 25 F6 added the cold-archive mover and the call-notes export: the
-  // note text columns stay '@' wherever a note row is copied to.
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  // note text columns stay '@' wherever a note row is copied to. Cycle 25 E3
+  // added the handbook feedback export: section titles and reps' notes.
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known ten');
+    'the raw plain-text writers are exactly the known eleven');
   assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7) and the intake account backup row (cycle 25 F49)');
@@ -30386,7 +30387,7 @@ function m1Importer_(book, fileText, who, extra) {
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImagesRows_',
     'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_',
-    'kbImageTabHeaderOk_', 'kbImageTabLedger_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
+    'kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualReviewOnUpdate_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   // M4-FU3: the file arrives as text. The tests keep naming it M1_LINK; the
   // wrapper hands the importer that file's text, as the browser does.
@@ -30419,7 +30420,7 @@ test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-
   assert.deepStrictEqual(led[0], ['Id', 'SourceHash', 'BodyHash', 'ImportedAt', 'ImportedBy'], 'the ledger tab is provisioned with its header');
   assert.deepStrictEqual(led.slice(1).map((r) => r[0]), ['man-0-1', 'man-0-2', 'man-c-0']);
   assert.ok(led.slice(1).every((r) => /^[0-9a-f]{64}$/.test(r[2]) && r[1] === M1_HASH && r[4] === 'admin@ums.com'), 'SourceHash, a SHA-256 BodyHash, who');
-  assert.ok(/^KbManualImport total=3; created=3; updated=0; unchanged=0; skipped=0; repaired=0; orphaned=0; removed=0; meta=same$/.test(imp.audits[0]), 'a counts-only audit row: ' + imp.audits[0]);
+  assert.ok(/^KbManualImport total=3; created=3; updated=0; unchanged=0; skipped=0; repaired=0; reviewed=0; orphaned=0; removed=0; meta=same$/.test(imp.audits[0]), 'a counts-only audit row: ' + imp.audits[0]);
   // Re-import the same file: NOTHING is written, not even the cache.
   book.writes.length = 0;
   const r2 = imp.ctx.kbImportManual(M1_LINK, {});
@@ -30427,6 +30428,7 @@ test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-
   assert.deepStrictEqual(book.writes, [], 'a re-import of unchanged source changes nothing');
   // Publish one (not an edit), edit another in the app, and change the third's source.
   kb.filter((r) => r[0] === 'man-0-1')[0][12] = 'published';
+  kb.filter((r) => r[0] === 'man-0-1')[0].splice(10, 2, '2026-01-01 00:00:00', 'mgr@ums.com');   // E3: a manager's older review
   kb.filter((r) => r[0] === 'man-0-2')[0][4] = 'two — edited by an admin\n';
   const arts3 = arts.map((a) => (a.Id === 'man-0-1' ? Object.assign({}, a, { BodyMd: '- first, revised\n', SourceHash: 'b'.repeat(64) })
     : (a.Id === 'man-0-2' ? Object.assign({}, a, { BodyMd: 'two, revised\n', SourceHash: 'c'.repeat(64) }) : a)));
@@ -30437,6 +30439,10 @@ test('M1-S5: kbImportManual (driven over a fake book) — drafts arrive, a hand-
   assert.strictEqual(kb.filter((r) => r[0] === 'man-0-2')[0][4], 'two — edited by an admin\n', 'and NOT overwritten');
   const u = kb.filter((r) => r[0] === 'man-0-1')[0];
   assert.deepStrictEqual([u[4], u[12]], ['- first, revised\n', 'published'], 'the update lands and a published article stays published');
+  // E3 (cycle 25): new TEXT is the section's review — its open feedback closes.
+  assert.strictEqual(r3.reviewed, 1, 'the import counts the changed section as reviewed');
+  assert.deepStrictEqual([u[10] === u[8], u[10] !== '2026-01-01 00:00:00', u[11]], [true, true, 'admin@ums.com'], 'ReviewedAt/By are the import\'s, so earlier flags are no longer newer than the review');
+  assert.ok(/; reviewed=1;/.test(imp.audits[0]), 'and the audit row says how many');
   assert.deepStrictEqual(imp.revisions, ['man-0-1:manual-import'], 'the prior content is snapshotted (revertible)');
   assert.strictEqual(led.filter((r) => r[0] === 'man-0-1')[0][1], 'b'.repeat(64), 'the ledger row is rewritten in place');
   assert.strictEqual(led.filter((r) => r[0] === 'man-0-2')[0][1], M1_HASH, 'the skipped article keeps its old ledger row');
@@ -37746,6 +37752,219 @@ test('F23 + F35 (cycle 25): Clear Note never binds plain Ctrl/⌘+Backspace; the
   assert.strictEqual(note(hint, 'a:b|all', 3), '', 'nor another filter');
   assert.strictEqual(note(null, 'a:b|action', 3), '');
   assert.ok(/The other 1 is older/.test(note({ key: 'k', label: 'All', count: 2 }, 'k', 1)), 'singular');
+});
+
+// ── Cycle 25 E3 (G2 + ST3, operator 2026-10-15): the handbook loop ─────────
+console.log('\nCycle 25 E3 — the handbook feedback export and the Issue field\'s handbook strip');
+const E3_ROOT = path.join(__dirname, '../..');
+
+const e3Ctx_ = (extra, fns, consts) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Object, Array, Math, Date, JSON, RegExp, console }, extra || {}));
+  vm.runInContext((consts || []).map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
+    (fns || []).map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  return ctx;
+};
+const E3_FB_CONSTS = ['KB_MANUAL_ID_RE', 'KB_FEEDBACK_KINDS', 'KB_FEEDBACK_NOTED', 'KB_FEEDBACK_NOTE_MAX', 'KB_FEEDBACK_TAB', 'KB_FEEDBACK_HEADERS',
+  'KBF', 'KB_FEEDBACK_MAX_SCAN', 'KB', 'KB_HEADERS', 'KB_STATUS_DRAFT', 'KB_STATUS_PUBLISHED'];
+// A fake sheet over a grid (row 1 = header), enough for getLastRow/getRange reads.
+const e3Sheet_ = (grid) => ({ grid, getLastRow: () => grid.length,
+  getRange: (r, c, n, w) => ({ getValues: () => grid.slice(r - 1, r - 1 + n).map((row) => row.slice(c - 1, c - 1 + w)) }) });
+
+test('E3 (cycle 25): kbFlagItem — "Suggest an edit" is its own kind, for handbook sections only, with the rep\'s words REFUSED when empty or too long, never cut; "out of date" is unchanged (driven)', () => {
+  const rows = [], audits = [];
+  const ctx = e3Ctx_({ getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann', email: 'a@x' }),
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    getOrCreateKbFeedbackSheet_: () => ({ appendRow: (r) => rows.push(r) }), sheetSafeRow_: (r) => r,
+    fmtDate_: () => '2026-10-15', fmtTime_: () => '10:00:00', writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n) },
+  ['kbFlagItem'], E3_FB_CONSTS);
+  const res = (a) => JSON.parse(JSON.stringify(a));
+  assert.deepStrictEqual(res(ctx.kbFlagItem('kb-7', 'suggest', 'x')), { success: false, error: 'Suggested edits are for handbook sections.' });
+  assert.deepStrictEqual(res(ctx.kbFlagItem('man-5-9', 'suggest', '   ')), { success: false, error: 'Write the change you suggest.' });
+  assert.ok(/at most 500 characters/.test(ctx.kbFlagItem('man-5-9', 'suggest', 'y'.repeat(501)).error), 'too long is refused');
+  assert.strictEqual(rows.length, 0, 'a refused suggestion writes nothing');
+  assert.strictEqual(ctx.kbFlagItem('man-5-9', 'suggest', '  The fee is now $85  ').success, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[0])), ['2026-10-15 10:00:00', 'man-5-9', 'E1', 'Ann', 'suggest', 'The fee is now $85']);
+  assert.deepStrictEqual(audits, ['KbItemFlagged id=man-5-9; kind=suggest'], 'audited by id and kind — never the words');
+  ctx.kbFlagItem('kb-7', 'stale', 'z'.repeat(600));
+  assert.deepStrictEqual([rows[1][4], rows[1][5].length, audits[1]], ['stale', 500, 'KbItemFlagged id=kb-7'], 'an out-of-date note keeps its old cap and audit row');
+  ctx.kbFlagItem('man-5-9', 'helpful', 'ignored');
+  assert.deepStrictEqual([rows[2][5], audits.length], ['', 2], 'a vote keeps no note and writes no audit row');
+  assert.ok(/Unknown feedback kind/.test(ctx.kbFlagItem('man-5-9', 'banana', '').error));
+});
+
+test('E3 (cycle 25): the review queue counts a suggested edit APART from "out of date" — both open until the next review, both sort a section to the top, each keeps its latest note (driven over kbStaleFlags_ + kbGetReviewDue)', () => {
+  const fb = [['h'], ['2026-10-01 09:00:00', 'man-5-9', 'E1', 'Ann', 'suggest', 'old wording'],
+    ['2026-10-10 09:00:00', 'man-5-9', 'E2', 'Bob', 'suggest', 'fee is $85'],
+    ['2026-10-11 09:00:00', 'man-5-9', 'E2', 'Bob', 'stale', 'phone changed'],
+    ['2026-09-01 09:00:00', 'man-5-1', 'E1', 'Ann', 'suggest', 'before the review'],
+    ['2026-10-12 09:00:00', 'kb-7', 'E1', 'Ann', 'helpful', '']];
+  const kb = [['h'],
+    ['man-5-1', 'Ch 5', '5.1 Scope', 'article', 'b', '', '', 1, '2026-10-14', 'x', '2026-09-05 00:00:00', 'm', 'published'],
+    ['man-5-9', 'Ch 5', '5.9 Fees', 'article', 'b', '', '', 9, '2026-10-14', 'x', '2026-10-05 00:00:00', 'm', 'published'],
+    ['kb-7', 'Billing', 'Busy', 'article', 'b', '', '', 1, '2026-10-14', 'x', '2026-10-05 00:00:00', 'm', 'published']];
+  const ctx = e3Ctx_({ getEmployeeInfo_: () => ({ isManager: true }), CONFIG: { KB: { REVIEW_DUE_DAYS: 90 } },
+    getKbSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC', getSheetByName: () => e3Sheet_(fb) }), getOrCreateKbSheet_: () => e3Sheet_(kb),
+    kbUsageCounts_: () => ({ map: { 'kb-7': { count: 50 } } }), KB_USAGE_WINDOW_DAYS: 30, KB_REVIEW_DUE_CAP: 50,
+    kbFeedbackCounts_: () => ({ map: {} }), kbCommentCounts_: () => ({ map: {} }), fmtDate_: () => '2026-10-15',
+    cnIsoToDayNum_: (iso) => Math.round(Date.parse(iso + 'T00:00:00Z') / 864e5),
+    Utilities: { formatDate: (d) => d.toISOString() } },
+  ['kbRowStatus_', 'kbCellTs_', 'kbCellDateIso_', 'kbStaleFlags_', 'kbGetReviewDue'], E3_FB_CONSTS);
+  const out = JSON.parse(JSON.stringify(ctx.kbGetReviewDue()));
+  assert.deepStrictEqual(out.items.map((i) => i.id), ['man-5-9'], 'the flagged section is due; a suggestion older than its review is closed; a young unflagged item is not due');
+  assert.deepStrictEqual([out.items[0].staleFlags, out.items[0].staleNote, out.items[0].suggestFlags, out.items[0].suggestNote],
+    [1, 'phone changed', 1, 'fee is $85'], 'two kinds, two counts, each with its latest note — the suggestion older than the review is closed');
+  // A suggestion alone still puts a section at the top of a due list.
+  kb.push(['kb-8', 'Billing', 'Old', 'article', 'b', '', '', 1, '2025-01-01', 'x', '2025-01-01 00:00:00', 'm', 'published']);
+  fb.splice(3, 1); fb.splice(1, 1);   // man-5-9 keeps only its open suggestion
+  const out2 = JSON.parse(JSON.stringify(ctx.kbGetReviewDue()));
+  assert.deepStrictEqual(out2.items.map((i) => i.id + ':' + i.suggestFlags + '/' + i.staleFlags), ['man-5-9:1/0', 'kb-8:0/0'], 'a suggested edit sorts above an item that is merely old');
+});
+
+test('E3 (cycle 25): an import that changes a section\'s TEXT is its review — ReviewedAt/By become the import\'s; a title-only change keeps the old review (driven)', () => {
+  const ctx = e3Ctx_({}, ['kbManualReviewOnUpdate_'], ['KB']);
+  const row = ['man-5-9', 'Ch 5', '5.9 Fees', 'article', 'old body', '', '', 9, 'u', 'x', '2026-09-01 00:00:00', 'mgr@x', 'published'];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.kbManualReviewOnUpdate_(row, 'new body', '2026-10-15 10:00:00', 'admin@x'))),
+    { changed: true, at: '2026-10-15 10:00:00', by: 'admin@x' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.kbManualReviewOnUpdate_(row, 'old body', '2026-10-15 10:00:00', 'admin@x'))),
+    { changed: false, at: '2026-09-01 00:00:00', by: 'mgr@x' }, 'same text (a retitle or a reorder) keeps the manager\'s review');
+  const imp = stripJsComments_(extractRawFunction('Code.js', 'kbImportManual'));
+  assert.strictEqual((imp.match(/kbManualReviewOnUpdate_\(/g) || []).length, 2, 'the count and the write share ONE rule');
+  assert.ok(/now, emp\.email, rv\.at, rv\.by, kbRowStatus_/.test(imp), 'the update row carries the helper\'s review');
+  // The count runs before `now` is declared: it must not read it (a TDZ ReferenceError under the lock).
+  const countCall = /reviewed: plan\.update\.filter\(function \(it\) \{ return kbManualReviewOnUpdate_\(([^)]*)\)/.exec(imp);
+  assert.ok(countCall && !/\bnow\b/.test(countCall[1]), 'the summary count passes no `now`');
+});
+
+test('E3 (cycle 25): every handbook article id maps back to the source heading it was exported from — derived from manual/src, the inverse of export_reference.py\'s article_id()', () => {
+  const ctx = e3Ctx_({}, ['kbManualSourceRef_'], ['KB_MANUAL_ID_RE']);
+  const py = fs.readFileSync(path.join(E3_ROOT, 'manual', 'export_reference.py'), 'utf8');
+  assert.ok(/def article_id\(sec\)/.test(py), 'export_reference.py still defines article_id');
+  const srcDir = path.join(E3_ROOT, 'manual', 'src');
+  let n = 0;
+  fs.readdirSync(srcDir).filter((f) => /^(p\d+|appendix_[abc])\.md$/.test(f)).forEach((f) => {
+    fs.readFileSync(path.join(srcDir, f), 'utf8').split('\n').forEach((line) => {
+      const m = /^## §([0-9A-C]+)-([0-9A-Za-z]+)\b/.exec(line);
+      if (!m) return;
+      if (m[1] === 'A') return;   // the glossary is ONE article, man-a
+      const id = 'man-' + (m[1] + '-' + m[2]).toLowerCase();
+      assert.strictEqual(ctx.kbManualSourceRef_(id), 'src/' + f + ' §' + m[1] + '-' + m[2].toUpperCase(), id + ' → ' + f);
+      n++;
+    });
+  });
+  assert.ok(n > 50, 'the walk saw the handbook (' + n + ' sections)');
+  assert.deepStrictEqual(['man-a', 'man-howto', 'kb-7', ''].map((id) => ctx.kbManualSourceRef_(id)),
+    ['src/appendix_a.md', 'build.py HOWTO', '', '']);
+});
+
+test('E3 (cycle 25): the export\'s rows — votes cumulative, open items only after the last review, a suggestion labelled apart, notes on one line, no rep names, in chapter order (driven)', () => {
+  const ctx = e3Ctx_({}, ['kbManualSourceRef_', 'kbHandbookFeedbackRows_'], ['KB_MANUAL_ID_RE', 'KB_FEEDBACK_NOTED']);
+  const rows = JSON.parse(JSON.stringify(ctx.kbHandbookFeedbackRows_([
+    { id: 'man-5-9', title: '5.9 Fees', department: 'Chapter 05', sortOrder: 9, reviewedTs: '2026-10-05 00:00:00' },
+    { id: 'man-5-1', title: '5.1 Scope', department: 'Chapter 05', sortOrder: 1, reviewedTs: '' },
+    { id: 'man-c-5', title: 'Card 5', department: 'Appendix C', sortOrder: 5, reviewedTs: '' },
+  ], [
+    { ts: '2026-10-01 09:00:00', id: 'man-5-9', kind: 'suggest', note: 'before the review' },
+    { ts: '2026-10-10 09:00:00', id: 'man-5-9', kind: 'suggest', note: 'fee is\n  $85' },
+    { ts: '2026-10-11 09:00:00', id: 'man-5-9', kind: 'stale', note: '' },
+    { ts: '2026-10-11 09:00:00', id: 'man-5-9', kind: 'helpful', note: '' },
+    { ts: '2026-09-01 09:00:00', id: 'man-5-9', kind: 'notHelpful', note: '' },
+    { ts: '2026-10-11 09:00:00', id: 'kb-7', kind: 'suggest', note: 'not the handbook' },
+  ], { 'man-5-1': 2 })));
+  assert.deepStrictEqual(rows.map((r) => r.id), ['man-c-5', 'man-5-1', 'man-5-9'], 'by chapter, then the order within it');
+  const fees = rows[2];
+  assert.deepStrictEqual([fees.source, fees.helpful, fees.notHelpful, fees.suggest, fees.stale], ['src/p5.md §5-9', 1, 1, 1, 1],
+    'votes count whenever they were cast; flags only after the review');
+  assert.deepStrictEqual(fees.open, ['2026-10-10 · suggested edit · fee is $85', '2026-10-11 · out of date · (no note)']);
+  assert.strictEqual(rows[1].comments, 2);
+  assert.ok(!JSON.stringify(rows).includes('Ann') && Object.keys(fees).every((k) => !/rep|name/i.test(k)), 'no rep names reach the export');
+});
+
+test('E3 (cycle 25): exportHandbookFeedback — admin-gated before any read; no handbook or an unreadable comment tab is an {error}, never an empty export; the sheet\'s text cells are \'@\', the About tab says how far the feedback was read, the audit row carries counts (driven)', () => {
+  const reads = [], audits = [], fmts = [], writes = [];
+  let comments = { map: { 'man-5-9': 1 } };
+  const mkSheet = (name) => ({ name, setName(n) { this.name = n; }, getMaxRows: () => 1000, insertRowsAfter() {}, setFrozenRows() {},
+    getRange: (r, c, n, w) => {
+      const rg = { setValues: (v) => { writes.push([name, r, c, v]); return rg; }, setFontWeight: () => rg,
+        setNumberFormat: (f) => { fmts.push([name, r, c, n, w, f]); return rg; } };
+      return rg;
+    } });
+  const feedSheet = mkSheet('Feedback'), aboutSheet = mkSheet('About');
+  const ctx = e3Ctx_({ getEmployeeInfo_: () => who,
+    kbHandbookFeedbackInputs_: () => { reads.push('inputs'); return inputs; }, kbCommentCounts_: () => comments,
+    createPinnedSpreadsheet_: (name) => ({ name, getActiveSheet: () => feedSheet, insertSheet: () => aboutSheet, getUrl: () => 'https://sheet/x', getId: () => 'SHEETID', addEditor() {} }),
+    sheetSafeRows_: (x) => x, sheetTextRows_: (x) => x, SpreadsheetApp: { flush() {} },
+    Session: { getEffectiveUser: () => ({ getEmail: () => 'deployer@x' }) },
+    fmtDate_: () => '2026-10-15', fmtTime_: () => '10:15:00', writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n) },
+  ['kbManualSourceRef_', 'kbHandbookFeedbackRows_', 'exportHandbookFeedback'], ['KB_MANUAL_ID_RE', 'KB_FEEDBACK_NOTED', 'KB_FEEDBACK_MAX_SCAN', 'KB_HANDBOOK_FEEDBACK_HEADERS']);
+  let who = { isManager: true, isAdmin: false, email: 'm@x' };
+  let inputs = { sections: [], feedback: [], windowFrom: '', truncated: false };
+  assert.strictEqual(ctx.exportHandbookFeedback().error, 'Admin access required.');
+  assert.strictEqual(reads.length, 0, 'a manager is refused before anything is read');
+  who = { isManager: true, isAdmin: true, email: 'admin@x' };
+  assert.ok(/not been imported/.test(ctx.exportHandbookFeedback().error), 'no handbook, no export');
+  inputs = { sections: [{ id: 'man-5-9', title: '=5.9 Fees', department: 'Chapter 05', sortOrder: 9, reviewedTs: '' }],
+    feedback: [{ ts: '2026-04-01 09:00:00', id: 'man-5-9', kind: 'suggest', note: '+1 more fee' }], windowFrom: '2026-04-01', truncated: true };
+  comments = { map: {}, unavailable: true };
+  assert.ok(/comments/.test(ctx.exportHandbookFeedback().error), 'an unreadable comment tab refuses rather than exporting zeros');
+  assert.strictEqual(writes.length, 0, 'and creates no sheet');
+  comments = { map: { 'man-5-9': 1 } };
+  const r = JSON.parse(JSON.stringify(ctx.exportHandbookFeedback()));
+  assert.deepStrictEqual([r.success, r.url, r.sections, r.open, r.truncated, r.windowFrom], [true, 'https://sheet/x', 1, 1, true, '2026-04-01']);
+  const head = JSON.parse(JSON.stringify(writes.find((w) => w[0] === 'Feedback' && w[1] === 1)[3][0]));
+  assert.deepStrictEqual(head, ['Section', 'Chapter', 'Source', 'Id', 'Open suggestions', 'Open out of date', 'Helpful', 'Not helpful', 'Comments', 'Last reviewed', 'Open items']);
+  const body = JSON.parse(JSON.stringify(writes.find((w) => w[0] === 'Feedback' && w[1] === 2)[3][0]));
+  assert.deepStrictEqual(body, ['=5.9 Fees', 'Chapter 05', 'src/p5.md §5-9', 'man-5-9', 1, 0, 0, 0, 1, '', '2026-04-01 · suggested edit · +1 more fee']);
+  assert.deepStrictEqual(fmts.filter((f) => f[0] === 'Feedback').map((f) => f[2] + ':' + f[5]).sort(), ['11:@', '1:@', '2:@', '3:@', '4:@'],
+    'the title, chapter, source, id and the reps\' notes are \'@\' cells — written raw, never parsed as a formula (g144)');
+  const about = writes.find((w) => w[0] === 'About')[3];
+  assert.ok(about.some((row) => row[0] === 'Feedback read from' && /2026-04-01 — the newest 4000 rows/.test(row[1])), 'a cut tail is said (g152)');
+  assert.ok(about.some((row) => /feedback_report\.py/.test(row[1])), 'the About tab names the worklist script');
+  assert.deepStrictEqual(audits, ['KbHandbookFeedbackExport sections=1; open=1; truncated=1 → SHEETID'], 'a counts-only audit row');
+});
+
+test('E3 (cycle 25): the client — the export\'s answer is a link (never window.open after the RPC) and a cut window is said; a suggestion\'s limit mirrors the server; the review queue shows "suggested edit" apart; the Issue strip offers only published handbook sections, one per section, three at most, escaped (driven)', () => {
+  ['kbManualExportFeedbackHtml_', 'kbHbStripPicks_', 'kbHbStripWorthIt_', 'kbHbStripHtml_', 'kbIsManualId_'].forEach((f) => loadFunction(sb, 'kb/script_kb.html', f));
+  vm.runInContext('var KB_HB_STRIP_MIN_TOKENS = 2;', sb);
+  const ok = sb.kbManualExportFeedbackHtml_({ success: true, url: 'https://x/"><b>', sections: 160, open: 1, truncated: true, windowFrom: '2026-04-01' });
+  assert.ok(/160 sections · 1 open item<\/b>/.test(ok) && /href="https:\/\/x\/&quot;&gt;&lt;b&gt;"/.test(ok), 'counts, and the url escaped');
+  assert.ok(/Votes are counted from 2026-04-01/.test(ok) && /kb-man-res warn/.test(ok), 'a cut window is said, in the warn tone');
+  assert.ok(/kb-man-res bad/.test(sb.kbManualExportFeedbackHtml_({ error: 'Admin access required.' })) && /The export failed/.test(sb.kbManualExportFeedbackHtml_(null)));
+  const kbSrc = fs.readFileSync(path.join(E3_ROOT, 'web-app', 'kb', 'script_kb.html'), 'utf8');
+  const ex = stripJsComments_(extractFunction('kb/script_kb.html', 'kbManualExportFeedback_'));
+  assert.ok(!/window\.open/.test(ex) && /btn\.disabled = true/.test(ex), 'disabled in flight; the link is shown, never opened after the RPC (g135)');
+  assert.strictEqual(Number(/var KB_SUGGEST_MAX = (\d+);/.exec(kbSrc)[1]), Number(/const KB_FEEDBACK_NOTE_MAX = (\d+);/.exec(serverSource())[1]), 'the prompt\'s limit is the server\'s');
+  // The queue's chip.
+  const land = stripJsComments_(extractFunction('kb/script_kb.html', 'kbLandingBlocksHtml_'));
+  assert.ok(/suggested edit · ' \+ it\.suggestFlags/.test(land) && /it\.suggestNote/.test(land), 'a suggested edit is its own chip, with its note');
+  // The strip's picks.
+  const picks = JSON.parse(JSON.stringify(sb.kbHbStripPicks_([
+    { id: 'kb-7', title: 'Not handbook' }, { id: 'man-5-9', title: '5.9 Fees', anchor: '5.9.2', heading: '5.9.2 Late fees' },
+    { id: 'man-5-9', title: '5.9 Fees', anchor: '5.9.3' }, { id: 'man-1-1', title: '1.1 Draft', status: 'draft' },
+    { id: 'man-0-1', title: '0.1 A' }, { id: 'man-0-2', title: '0.2 B' }, { id: 'man-0-3', title: '0.3 C' }], 3)));
+  assert.deepStrictEqual(picks.map((p) => p.id + '#' + p.anchor), ['man-5-9#5.9.2', 'man-0-1#', 'man-0-2#'],
+    'handbook only, one per section at its best part, no draft, three at most');
+  assert.deepStrictEqual(['', 'fee', 'oxygen fee', 'a b c'].map((t) => sb.kbHbStripWorthIt_(t)), [false, false, true, false], 'two real words before any search');
+  const html = sb.kbHbStripHtml_([{ id: 'man-5-9', title: '5.9 <b>Fees</b>', anchor: '5.9.2', heading: 'x"y' }]);
+  assert.ok(/data-kb-id="man-5-9" data-kb-anchor="5\.9\.2" title="x&quot;y"/.test(html) && /5\.9 &lt;b&gt;Fees&lt;\/b&gt;/.test(html), 'data-* only, escaped');
+  assert.ok(/aria-label="Turn off handbook suggestions"/.test(html), 'the off switch is labelled');
+  assert.strictEqual(sb.kbHbStripHtml_([]), '', 'nothing to offer hides the strip');
+  // Wiring: the host sits under the Issue field; Clear Note refreshes it; the search sends only published sections and is guarded by its sequence.
+  const cn = fs.readFileSync(path.join(E3_ROOT, 'web-app', 'cn', 'script_callnotes.html'), 'utf8');
+  assert.ok(/id="cn-fld-issue"[\s\S]{0,400}?<div class="cn-hb-suggest" id="cn-hb-suggest"[^>]*hidden><\/div>\s*<\/div>/.test(cn), 'the host sits in the Issue row, hidden');
+  assert.ok(/kbHbStripRefresh_\(\)/.test(stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnClearActiveForm_'))), 'Clear Note refreshes the strip');
+  const rf = stripJsComments_(extractFunction('kb/script_kb.html', 'kbHbStripRefresh_'));
+  assert.ok(/\.searchReference\(text\.substring\(0, 250\), \{ publishedOnly: true \}\)/.test(rf) && /if \(seq !== KB_HB_STRIP\.seq\) return;/.test(rf), 'published only; a stale answer is dropped');
+  assert.ok(!/errorStateHtml_|logClientError|beacon/i.test(rf), 'a failure never beacons the patient\'s words (g146)');
+});
+
+test('E3 (cycle 25): manual/feedback_report.py — the worklist\'s self-test passes, CI runs it, and the README names it (a missing python3 is a failure, not a skip — F66)', () => {
+  const r = require('child_process').spawnSync('python3', [path.join(E3_ROOT, 'manual', 'feedback_report.py'), '--check'], { encoding: 'utf8' });
+  assert.ok(!r.error, 'python3 must be available: ' + (r.error && r.error.message));
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.ok(/self-test passed/.test(r.stdout));
+  const wf = fs.readdirSync(path.join(E3_ROOT, '.github', 'workflows')).map((f) => fs.readFileSync(path.join(E3_ROOT, '.github', 'workflows', f), 'utf8')).join('\n');
+  assert.ok(/python feedback_report\.py --check/.test(wf), 'CI runs the self-test');
+  assert.ok(/feedback_report\.py/.test(fs.readFileSync(path.join(E3_ROOT, 'manual', 'README.md'), 'utf8')), 'the manual README names the script');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -1325,8 +1325,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         changelog: REAL_META.changelog.filter(function (c) { return c.id === 'man-0-11'; }).slice(0, 1)
           .map(function (c) { return Object.assign({}, c, { date: daysAgo(40) }); }) };
     },
+    // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
+    exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
+      sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
     kbImportManual: function (source, opts) {   // M4-FU3: source is {text} — the file, not a Drive link
-      return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153,
+      return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153, reviewed: 2,
         skipped: [{ id: 'man-5-9', title: '5.9 Equipment guide', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Difficult calls', reason: 'deleted' }],
         images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toStore: 160, removed: 0 }
           : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' } };
@@ -1764,7 +1767,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // contentRequests uses the real {open, resolved, openCount} shape; the
     // coaching rows carry the server's exact TRX field casing (the drifted
     // lowercase form meant no screenshot could ever render the TRX chip).
-    kbGetReviewDue: { items: [{ id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', comments: 2 }], total: 1, cap: 40, dueDays: 90 },
+    kbGetReviewDue: { items: [
+      // Cycle 25 E3: a handbook section with a rep's suggested edit, labelled apart from "out of date".
+      { id: 'man-5-2', title: '5.2 PAK (Pre-Appointment Kit)', department: 'Chapter 05 — Power Mobility', ageDays: 12, views: 31, staleFlags: 0, suggestFlags: 2, suggestNote: 'The PAK now goes out with the delivery ticket, not a day before', comments: 1 },
+      { id: 'kb-2', title: 'OOP payment policy', department: 'Billing', ageDays: 120, views: 14, staleFlags: 1, staleNote: 'Rates changed in July', suggestFlags: 0, comments: 2 }], total: 2, cap: 40, dueDays: 90 },
     kbGetUsageStats: { items: [{ id: 'kb-1', title: 'HIPAA refresher', count: 22, drawerCount: 9, helpful: 4, notHelpful: 0, comments: 2 }], windowDays: 30 },
     // Cycle 21 (operator report 2026-09-21): the three LOOKUP endpoints had no
     // fixture at all, so no scenario could ever render a RESULT — only empty

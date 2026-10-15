@@ -2125,6 +2125,19 @@
   /* F(cycle-8 M-10): active-filter pill on the History stack (the quick-chip
      "jump filtered" target) — mirrors the Search exact-mode badge vocabulary. */
   /* F35 (cycle 25): the "N of M — the rest are older" line under an all-time chip. */
+  /* E3 (cycle 25, ST3): handbook sections for the Issue text — one quiet line
+     that wraps; a pick is a link-weight chip, never a primary action. */
+  /* It is the row's third grid child: it sits under the FIELD in every layout
+     (the last column — the only column once the row stacks on a phone). */
+  .cn-hb-suggest { grid-column: -2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: -4px; font-size: 12px; min-width: 0; }
+  .cn-hb-suggest[hidden] { display: none; }
+  .cn-hb-lbl { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-weight: 600; }
+  .cn-hb-pick { font: inherit; font-size: 12px; color: var(--ink); background: var(--paper-2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 9px; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cn-hb-pick:hover, .cn-hb-pick:focus-visible { border-color: var(--accent); }
+  .cn-hb-off { font: inherit; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0;
+    background: none; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; }
+  .cn-hb-off:hover, .cn-hb-off:focus-visible { color: var(--ink); background: var(--paper-2); }
   .cn-history-chipnote { font-size: 12px; color: var(--muted); margin: 4px 0 8px; line-height: 1.4; }
   .cn-hist-filterpill {
     display: inline-block; margin-left: 8px; padding: 1px 8px;
@@ -3136,6 +3149,7 @@ function cnRenderActiveForm_() {
             <div class="ce ce-tall empty" contenteditable="true" id="cn-fld-issue"
                  data-field="issue" data-placeholder="Why did they call?"
                  role="textbox" aria-multiline="true" aria-label="Issue" tabindex="0"></div>
+            <div class="cn-hb-suggest" id="cn-hb-suggest" role="group" aria-label="Handbook sections that may help" hidden></div>
           </div>
           <div class="cnv-row full">
             <div class="lbl">Resolution${cnVoiceMicMarkup_('cn-fld-resolution')}</div>
@@ -3694,6 +3708,7 @@ function cnClearActiveForm_(opts) {
   if (tagIn) tagIn.value = '';
   cnClearStickyFormDraft_();
   cnFormTimerReset_();
+  if (typeof kbHbStripRefresh_ === 'function') kbHbStripRefresh_();   // E3: no input event fires for a cleared field
   // Auto-tag session state is per NOTE: a fresh form starts with no applied
   // set and no dismissals (the dismissal was an answer about the old note).
   CN_STATE.autoTagApplied = [];

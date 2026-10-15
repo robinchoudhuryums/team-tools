@@ -3759,8 +3759,11 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   Open-¶ jumps. Cached per issue-text (`KB_DRAWER.suggestCache`) with a
   sequence guard; instant first paint comes from the client-side TITLE
   match (`kbSuggestMatches_`) while the content search runs, and a
-  failed RPC silently keeps the title matches. Rendered only inside the
-  drawer and behind a per-rep toggle (`umsKbPanel.suggest`, default on). Reuses the three
+  failed RPC silently keeps the title matches. Rendered inside the
+  drawer and behind a per-rep toggle (`umsKbPanel.suggest`, default on) —
+  and since cycle 25 E3 the same toggle also governs the Log's handbook
+  strip under the Issue field (see "The handbook's feedback reaches its
+  source"). Reuses the three
   enrolled-employee KB read endpoints — no new read surface. Pinned by
   the `kbRecentsPush_` / `kbSuggestMatches_` Node tests.
 - <a id="kb-usage-feedback-loop-most-referenced-during-calls"></a>**KB usage feedback loop ("most referenced during calls").** Every
@@ -5539,3 +5542,45 @@ pick them up without re-deriving the context.
   automated export must still run — the checklist informs, it does not hold
   payroll); a second, checklist-only period rule (the export and the card must
   agree on what "the period" is).
+
+- <a id="the-handbook-s-feedback-reaches-its-source"></a>**The handbook's feedback reaches its source, and a section's new text is its review; the Log offers handbook sections for the Issue text (cycle 25 E3, G2 + ST3, operator 2026-10-15)**
+  The handbook is edited in the repo and imported read-only, so a rep's
+  "Suggest an edit" was only useful once it reached `manual/src` — and it
+  could not: it was written as an "out of date" flag, it sat in a manager
+  queue keyed to app ids, and fixing the source and re-importing left the
+  flag open until someone clicked Reviewed. Three changes close the loop.
+  **A suggestion is its own kind** (`suggest`): handbook sections only,
+  refused (never cut) when empty or over 500 characters, counted apart from
+  "out of date" in Review due (a blue chip with its words, where out of date
+  stays red), and open on the same strictly-newer-than-the-review rule.
+  **A section whose TEXT an import changed counts as reviewed** — ReviewedAt/By
+  become the import's — so whatever was raised before the fix closes; Check
+  says how many would. A retitle or reorder alone keeps the old review,
+  because it is not a fix. **Admin → Reference → Handbook → Export feedback**
+  writes a new Google Sheet (the call-note and payroll export pattern — the
+  app has no download path, and a Sheet is something the operator can read
+  before it reaches the repo): one row per section with its source
+  (`src/p5.md §5-9`, `kbManualSourceRef_`, derived against the real headings),
+  votes, comment count, last review and the open items, text cells '@'; an
+  About tab says how far back the feedback tab was read. No rep names: the
+  worklist is about the text, and it may be committed beside it.
+  `manual/feedback_report.py` turns the tab's CSV into a Markdown worklist by
+  source file (`--check` runs in CI). Rejected: a JSON download (a new
+  pattern for one admin button), writing the worklist into the repo from the
+  app (the app has no repo access, by design), and clearing flags on ANY
+  re-import (an unchanged section was not fixed).
+  **ST3 — the Log's handbook strip.** The drawer already suggested articles
+  from the Issue text, but only while it was open. A slim "Handbook:" line now
+  sits under the Issue field: 700 ms after the rep stops typing (two real words
+  at least) it asks `searchReference(text, {publishedOnly: true})` — the
+  drawer's own path, our server only, never logged — and offers up to three
+  published handbook sections, one per section at its best-matching part; a
+  chip opens the drawer at that section, × turns suggestions off (the same
+  `umsKbPanel.suggest` the drawer's box sets). A stale answer is dropped, one
+  text is searched once, Clear Note empties it, and a failure shows nothing —
+  the strip is an offer, so its absence claims nothing (unlike g53's
+  reassuring absences), and a message could only say something by quoting the
+  patient's words (g146). Rejected: a "Find in handbook" button (one more step
+  mid-call), and ranking handbook sections first inside the drawer only (still
+  invisible until the drawer is opened).
+

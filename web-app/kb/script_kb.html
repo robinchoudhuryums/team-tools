@@ -717,7 +717,9 @@
   .kb-land-rd-open:hover .kb-land-t { color: var(--accent); }
   /* #2 — stale-flag marker (rep "out of date") sits red vs the neutral age dot. */
   .kb-land-dot.stale { background: var(--danger); }
+  .kb-land-dot.sugg { background: var(--info); }   /* E3: a suggestion alone is not an alarm */
   .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  .kb-land-flag.kb-land-sugg { background: var(--info-soft); color: var(--info); }   /* E3: a suggested edit is a request, not an alarm */
   /* C17 batch-4: the note is a flex CHILD of the .kb-land-rd-open row, so its
      display:block never gave it its own line — at 390px the quote overlapped
      the Reviewed button (screenshot-verified in the cycle-17 scan). Wrap the
@@ -4545,6 +4547,7 @@ function kbManualBarVote_(btn) {
     .withFailureHandler(function (err) { fail((err && err.message) || 'try again'); })
     .kbFlagItem(id, kind, '');
 }
+var KB_SUGGEST_MAX = 500;   // mirrors KB_FEEDBACK_NOTE_MAX (the E3 pin compares them)
 function kbSuggestEdit_(btn) {
   var id = btn.getAttribute('data-kb-id'), title = btn.getAttribute('data-kb-title') || 'this section';
   uiPrompt({
@@ -4552,7 +4555,12 @@ function kbSuggestEdit_(btn) {
     message: 'What should change in ' + title + '? It goes to the handbook’s review queue.\n\nDescribe the procedure — do NOT include patient names, TRX, or other PHI.',
     placeholder: 'e.g. the fee is now $85, not $75',
     confirmLabel: 'Send suggestion',
-    validator: function (v) { return String(v || '').trim() ? '' : 'Say what should change.'; },
+    // E3: the server refuses an over-long suggestion rather than cutting the
+    // rep's words, so the prompt says so before it is sent.
+    validator: function (v) {
+      var t = String(v || '').trim();
+      return !t ? 'Say what should change.' : (t.length > KB_SUGGEST_MAX ? 'Keep it under ' + KB_SUGGEST_MAX + ' characters (' + t.length + ' now).' : '');
+    },
   }).then(function (note) {
     if (note === null) return;
     google.script.run
@@ -4561,7 +4569,7 @@ function kbSuggestEdit_(btn) {
         else showToast((r && r.error) || 'Could not send', 'toast-error');
       })
       .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not send', 'toast-error'); })
-      .kbFlagItem(id, 'stale', String(note).trim());
+      .kbFlagItem(id, 'suggest', String(note).trim());   // E3: its own kind — the queue and the export tell it from "out of date"
   });
 }
 
@@ -5035,6 +5043,13 @@ function kbOpenManualImport_() {
       '<p class="kb-man-note kb-man-gate" id="kb-man-gate">Import unlocks after a clean <b>Check</b> of this file.</p>' +
       '<div id="kb-man-result" role="status" aria-live="polite"></div>' +
       '<div class="kb-man-pub" id="kb-man-pub">' + kbManualPubHtml_(depts) + '</div>' +
+      // E3 (cycle 25, G2): the feedback goes back to the people who edit the source.
+      '<div class="kb-man-pub">' +
+        '<div class="kb-man-lbl">Feedback for the handbook’s editors</div>' +
+        '<p class="kb-man-note">Every section’s votes, comments and open suggestions, with the source file each comes from, in a new Google Sheet. Download its Feedback tab as CSV and run <code>manual/feedback_report.py</code> on it for a worklist by file.</p>' +
+        '<div class="kb-man-pubrow"><button class="kb-btn" id="kb-man-fbx-go" onclick="kbManualExportFeedback_()">' + icon('download', 13) + ' Export feedback</button></div>' +
+        '<div id="kb-man-fbx-res" role="status" aria-live="polite"></div>' +
+      '</div>' +
     '</div></div>';
   ov.addEventListener('click', function (ev) { if (ev.target.closest && ev.target.closest('[data-kb-manclose]')) closeOverlay(ov); });
   KB_MANUAL_FILE = null;
@@ -5048,6 +5063,35 @@ function kbOpenManualImport_() {
     rd.onerror = function () { kbManualSetFile_(null); var o = document.getElementById('kb-man-result'); if (o) o.innerHTML = kbManualResultHtml_({ success: false, error: 'Could not read that file on this computer.' }); };
     rd.readAsText(f);
   });
+}
+/** E3 (cycle 25, G2) — export the handbook's feedback to a new Sheet. The
+ *  link is SHOWN, never window.open-ed after the RPC (g135: a blocker returns
+ *  null outside the click). Disabled in flight; a failure keeps the button. */
+function kbManualExportFeedback_() {
+  var btn = document.getElementById('kb-man-fbx-go');
+  var out = document.getElementById('kb-man-fbx-res');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  if (out) out.innerHTML = '<div class="kb-man-meta">Exporting…</div>';
+  var done = function (html) {
+    btn.disabled = false;
+    var o = document.getElementById('kb-man-fbx-res');   // the dialog may have been closed meanwhile
+    if (o) o.innerHTML = html;
+  };
+  google.script.run
+    .withSuccessHandler(function (r) { done(kbManualExportFeedbackHtml_(r)); })
+    .withFailureHandler(function (e) { done(kbManualExportFeedbackHtml_({ error: (e && e.message) || 'The export failed.' })); })
+    .exportHandbookFeedback();
+}
+/** Pure (Node-pinned) — the export's answer. */
+function kbManualExportFeedbackHtml_(r) {
+  if (!r || r.error || !r.url) return '<div class="kb-man-res bad"><b>' + esc((r && r.error) || 'The export failed.') + '</b></div>';
+  var pl = function (n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); };
+  return '<div class="kb-man-res' + (r.truncated ? ' warn' : '') + '">' +
+    '<b>' + esc(pl(r.sections || 0, 'section') + ' · ' + pl(r.open || 0, 'open item')) + '</b> ' +
+    '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">Open the sheet</a>' +
+    (r.truncated ? '<div class="kb-man-meta">' + esc('Votes are counted from ' + r.windowFrom + ' — the feedback tab is read over its newest rows.') + '</div>' : '') +
+    '</div>';
 }
 /** The "Publish handbook drafts" block, from the draft chapters in the tree.
  *  Rebuilt after an import (operator testing 2026-10-08: it kept the state it
@@ -5139,9 +5183,15 @@ function kbManualResultHtml_(r, dryRun) {
   var metaLine = r.hasMeta
     ? 'Version ' + (r.version || '—') + ' · call router and changelog ' + (r.metaUpdated ? (dryRun ? 'would be updated' : 'updated') : 'unchanged')
     : 'No call router or changelog in this file — rebuild with the current export to include them.';
+  // E3 (cycle 25): a section whose text changes counts as reviewed, so its
+  // open flags and suggestions close — say how many, before and after.
+  var reviewedLine = r.reviewed
+    ? '<div class="kb-man-meta">' + esc(r.reviewed + ' section' + (r.reviewed === 1 ? '' : 's') + ' with new text ' +
+        (dryRun ? 'would count' : (r.reviewed === 1 ? 'counts' : 'count')) + ' as reviewed — open feedback raised before the change closes.') + '</div>'
+    : '';
   var im = kbManualImagesLine_(r.images, dryRun);
   return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
-    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + im.html +
+    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + reviewedLine + im.html +
     (skipped.length
       ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
           return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
@@ -6552,16 +6602,19 @@ function kbLandingBlocksHtml_() {
       rd.forEach(function (it) {
         var age = (it.ageDays == null) ? 'never reviewed'
           : (it.basedOnUpdate ? ('edited ' + it.ageDays + 'd ago') : ('reviewed ' + it.ageDays + 'd ago'));
-        var flagged = it.staleFlags > 0;
+        var suggested = it.suggestFlags > 0;   // E3: a suggested edit, labelled apart from "out of date"
+        var flagged = it.staleFlags > 0 || suggested;
         h += '<div class="kb-land-row kb-land-rd">' +
-          '<span class="kb-land-dot' + (flagged ? ' stale' : '') + '" title="' + (flagged ? 'Flagged out of date by a rep' : 'Review due') + '"></span>' +
+          '<span class="kb-land-dot' + (it.staleFlags > 0 ? ' stale' : (suggested ? ' sugg' : '')) + '" title="' + (it.staleFlags > 0 ? 'Flagged out of date by a rep' : (suggested ? 'A rep suggested an edit' : 'Review due')) + '"></span>' +
           '<button class="kb-land-rd-open" data-kb-id="' + esc(it.id) + '" onclick="kbOpenItem_(this.getAttribute(\'data-kb-id\'))">' +
             '<span class="kb-land-t">' + esc(it.title) +
-              (flagged ? '<span class="kb-land-flag">out of date · ' + it.staleFlags + '</span>' : '') + '</span>' +
+              (it.staleFlags > 0 ? '<span class="kb-land-flag">out of date · ' + it.staleFlags + '</span>' : '') +
+              (suggested ? '<span class="kb-land-flag kb-land-sugg">suggested edit · ' + it.suggestFlags + '</span>' : '') + '</span>' +
             '<span class="kb-land-meta">' + esc(age) + (it.views ? ' · ' + it.views + ' view' + (it.views === 1 ? '' : 's') : '') + kbFbCountHtml_(it) + '</span>' +
-            (flagged && it.staleNote ? '<span class="kb-land-note">“' + esc(it.staleNote) + '”</span>' : '') +
+            (it.staleFlags > 0 && it.staleNote ? '<span class="kb-land-note">“' + esc(it.staleNote) + '”</span>' : '') +
+            (suggested && it.suggestNote ? '<span class="kb-land-note">' + icon('flag', 11) + ' “' + esc(it.suggestNote) + '”</span>' : '') +
           '</button>' +
-          '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (clears rep out-of-date flags + resets the staleness clock, no edit)" ' +
+          '<button class="kb-btn" data-kb-id="' + esc(it.id) + '" title="Mark reviewed (clears rep out-of-date flags and suggested edits + resets the staleness clock, no edit)" ' +
             'onclick="kbMarkReviewedClick_(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Reviewed</button>' +
         '</div>';
       });
@@ -8219,7 +8272,9 @@ function kbBookmarkBtnHtml_(item, extraClass) {
 // PURE: score KB tree items against free text (the rep's in-progress Issue
 // field). Tokens are 4+ char words; an item scores 1 per distinct token its
 // title contains. Top `cap` scorers, best first. Deliberately title-only and
-// client-side: zero extra RPCs, and the note text never leaves the browser.
+// client-side: zero extra RPCs — THIS function never sends the note text. The
+// drawer's content search (kbDrawerFetchSuggest_) and the Log's handbook strip
+// (kbHbStrip*, cycle 25 E3) do send it, to OUR server's searchReference only.
 function kbSuggestMatches_(tree, text, cap) {
   cap = cap || 3;
   var raw = String(text || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [];
@@ -8549,11 +8604,112 @@ function kbDrawerFetchSuggest_(issue) {
     .withFailureHandler(function () {})   // keep the title matches on failure
     .searchReference(issue.substring(0, 250));
 }
+// ── E3 (cycle 25, ST3, operator 2026-10-15): handbook sections suggested on
+// the Log itself. The drawer's suggestions (above) appear only while it is
+// open; this strip sits under the Issue field and offers up to three handbook
+// sections a moment after the rep stops typing — a click opens the drawer AT
+// that section. The same per-rep setting (umsKbPanel.suggest) turns both off.
+// The Issue text goes to OUR server's searchReference only (the drawer's
+// existing path, never a vendor, never logged), and a failed or empty search
+// shows nothing: the strip is an offer, so its absence claims nothing, and a
+// failure message would have to quote the patient's words to say anything (g146).
+var KB_HB_STRIP = { seq: 0, text: '', results: null, timer: null, inflight: '' };
+var KB_HB_STRIP_MAX = 3, KB_HB_STRIP_DEBOUNCE = 700, KB_HB_STRIP_MIN_TOKENS = 2;
+
+/** PURE — the strip's picks from a searchReference answer: handbook sections
+ *  only, one per section (its best-ranked hit, so the anchor is the part the
+ *  text matched), at most `cap`, in the server's order. */
+function kbHbStripPicks_(results, cap) {
+  var out = [], seen = {};
+  (results || []).forEach(function (r) {
+    if (out.length >= cap || !r || !kbIsManualId_(r.id) || seen[r.id]) return;
+    if (r.status === 'draft') return;   // a draft is not the handbook yet (publishedOnly already drops them)
+    seen[r.id] = 1;
+    out.push({ id: String(r.id), title: String(r.title || r.id), anchor: String(r.anchor || ''), heading: String(r.heading || '') });
+  });
+  return out;
+}
+/** PURE — is this Issue text worth a search? Two words of 3+ characters. */
+function kbHbStripWorthIt_(text) {
+  return (String(text || '').toLowerCase().match(/[a-z0-9]{3,}/g) || []).length >= KB_HB_STRIP_MIN_TOKENS;
+}
+/** PURE — the strip's markup ('' hides it). Ids and anchors ride data-*. */
+function kbHbStripHtml_(picks) {
+  if (!picks || !picks.length) return '';
+  return '<span class="cn-hb-lbl">' + icon('fileText', 12) + ' Handbook:</span>' +
+    picks.map(function (p) {
+      return '<button type="button" class="cn-hb-pick" data-kb-id="' + esc(p.id) + '" data-kb-anchor="' + esc(p.anchor) + '"' +
+        (p.heading ? ' title="' + esc(p.heading) + '"' : '') + ' onclick="kbHbStripOpen_(this)">' + esc(p.title) + '</button>';
+    }).join('') +
+    '<button type="button" class="cn-hb-off" aria-label="Turn off handbook suggestions" ' +
+      'title="Turn off suggestions (turn them back on in the Ctrl/⌘+K drawer)" onclick="kbHbStripOff_()">' + icon('x', 11) + '</button>';
+}
+function kbHbStripPaint_(picks) {
+  var host = document.getElementById('cn-hb-suggest');
+  if (!host) return;
+  var html = kbHbStripHtml_(picks);
+  // A focused pick keeps focus: an identical repaint is skipped (g141).
+  if (host.getAttribute('data-hb-sig') === html) return;
+  host.setAttribute('data-hb-sig', html);
+  host.innerHTML = html;
+  host.hidden = !html;
+}
+/** Re-read the Issue field and bring the strip up to date — on input (after
+ *  the debounce), and from any flow that sets the field without typing
+ *  (Clear Note, a restored draft). */
+function kbHbStripRefresh_() {
+  clearTimeout(KB_HB_STRIP.timer);
+  var text = '';
+  try { text = (typeof cnGetFieldValue_ === 'function' ? (cnGetFieldValue_('cn-fld-issue') || '') : '').trim(); } catch (e) {}
+  if (kbPanelPrefs_().suggest === false || !kbHbStripWorthIt_(text)) {
+    KB_HB_STRIP.seq++;   // an answer still in flight is for text that is gone
+    KB_HB_STRIP.text = ''; KB_HB_STRIP.results = null; KB_HB_STRIP.inflight = '';
+    kbHbStripPaint_([]);
+    return;
+  }
+  if (text === KB_HB_STRIP.text && KB_HB_STRIP.results) { kbHbStripPaint_(KB_HB_STRIP.results); return; }
+  if (text === KB_HB_STRIP.inflight) return;   // this text is already being searched
+  var seq = ++KB_HB_STRIP.seq;
+  KB_HB_STRIP.inflight = text;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== KB_HB_STRIP.seq) return;   // a newer text was sent, or the field emptied
+      KB_HB_STRIP.inflight = '';
+      var picks = (res && !res.error) ? kbHbStripPicks_(res.results, KB_HB_STRIP_MAX) : [];
+      KB_HB_STRIP.text = text; KB_HB_STRIP.results = picks;
+      kbHbStripPaint_(picks);
+    })
+    .withFailureHandler(function () { if (seq === KB_HB_STRIP.seq) { KB_HB_STRIP.inflight = ''; kbHbStripPaint_([]); } })
+    .searchReference(text.substring(0, 250), { publishedOnly: true });
+}
+function kbHbStripOpen_(btn) {
+  var id = btn.getAttribute('data-kb-id'), anchor = btn.getAttribute('data-kb-anchor') || '';
+  if (!id) return;
+  kbDrawerOpen_();
+  kbDrawerOpenItem_(id, anchor);
+}
+function kbHbStripOff_() {
+  var prefs = kbPanelPrefs_();
+  prefs.suggest = false;
+  kbPanelSave_(prefs);
+  kbHbStripRefresh_();
+  if (typeof showToast === 'function') showToast('Handbook suggestions off — turn them back on in the Ctrl/⌘+K drawer', 'toast-info');
+  var issue = document.getElementById('cn-fld-issue');
+  if (issue) issue.focus();   // the button that had focus is gone
+}
+// Typing in the Issue field (input bubbles from the contenteditable div).
+document.addEventListener('input', function (e) {
+  if (!e.target || e.target.id !== 'cn-fld-issue') return;
+  clearTimeout(KB_HB_STRIP.timer);
+  KB_HB_STRIP.timer = setTimeout(kbHbStripRefresh_, KB_HB_STRIP_DEBOUNCE);
+});
+
 function kbDrawerSuggestToggle_(on) {
   var prefs = kbPanelPrefs_();
   prefs.suggest = !!on;
   kbPanelSave_(prefs);
   kbDrawerRenderSuggest_();
+  kbHbStripRefresh_();   // E3: one setting for both
 }
 
 function kbDrawerSetSearching_(on) {

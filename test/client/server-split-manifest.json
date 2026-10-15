@@ -2882,6 +2882,39 @@
     "planOpenPunchCheck_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "cycle 25 E3: the handbook feedback export (exportHandbookFeedback + kbHandbookFeedbackRows_ + kbManualSourceRef_ + KB_HANDBOOK_FEEDBACK_HEADERS), the suggest kind's KB_FEEDBACK_NOTED, and the import's review helper kbManualReviewOnUpdate_",
+   "added": [
+    "KB_FEEDBACK_NOTED",
+    "KB_HANDBOOK_FEEDBACK_HEADERS",
+    "exportHandbookFeedback",
+    "kbHandbookFeedbackRows_",
+    "kbManualReviewOnUpdate_",
+    "kbManualSourceRef_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_FEEDBACK_KINDS",
+    "kbFlagItem",
+    "kbGetReviewDue",
+    "kbImportManual",
+    "kbStaleFlags_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "cycle 25 E3: the handbook feedback export, its read helper, the suggest kind's KB_FEEDBACK_NOTED, and the import's review helper",
+   "added": [
+    "kbHandbookFeedbackInputs_"
+   ],
+   "removed": [],
+   "changed": [
+    "exportHandbookFeedback"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4034,12 +4067,17 @@
   "KB_FEEDBACK_KINDS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "cdf0b9a21efede5a"
+   "sha": "51efee36adca9664"
   },
   "KB_FEEDBACK_MAX_SCAN": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "55741f4261892628"
+  },
+  "KB_FEEDBACK_NOTED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "479aedb8803de93e"
   },
   "KB_FEEDBACK_NOTE_MAX": {
    "file": "00_config.js",
@@ -4055,6 +4093,11 @@
    "file": "70_kb.js",
    "kind": "const",
    "sha": "7d93f95db63bca83"
+  },
+  "KB_HANDBOOK_FEEDBACK_HEADERS": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "67925a06a1f8cf36"
   },
   "KB_HEADERS": {
    "file": "00_config.js",
@@ -6891,6 +6934,11 @@
    "kind": "function",
    "sha": "d293c84556a37d55"
   },
+  "exportHandbookFeedback": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "653981af8af81fb6"
+  },
   "featureFlagDef_": {
    "file": "10_core.js",
    "kind": "function",
@@ -8629,7 +8677,7 @@
   "kbFlagItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "e32a90bea675632e"
+   "sha": "830a143e5d25e73c"
   },
   "kbGeneration_": {
    "file": "70_kb.js",
@@ -8694,7 +8742,7 @@
   "kbGetReviewDue": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2485a7890d4eb0cd"
+   "sha": "41aa36fbc224c703"
   },
   "kbGetRevisions": {
    "file": "70_kb.js",
@@ -8710,6 +8758,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "a3195057a272f5ec"
+  },
+  "kbHandbookFeedbackInputs_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9003fd81baf4a0da"
+  },
+  "kbHandbookFeedbackRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d95f2a5f71ac0e8e"
   },
   "kbHashStr_": {
    "file": "70_kb.js",
@@ -8754,7 +8812,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "28ea49cdad83ccf8"
+   "sha": "321ba0b473223a33"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -8850,6 +8908,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "74e11c952b712e55"
+  },
+  "kbManualReviewOnUpdate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "b6c144d2764a3855"
+  },
+  "kbManualSourceRef_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "53b8b1ca4fd2d94a"
   },
   "kbManualValidate_": {
    "file": "70_kb.js",
@@ -9019,7 +9087,7 @@
   "kbStaleFlags_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "fff640f948304ee2"
+   "sha": "942ca4dbd2026fce"
   },
   "kbStem_": {
    "file": "70_kb.js",

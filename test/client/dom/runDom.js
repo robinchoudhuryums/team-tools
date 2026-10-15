@@ -5225,10 +5225,116 @@ test('M2 DOM: a manual section opens its WHOLE PART — one fetch per part, a cl
   h.dispatchKey('Enter', { target: input });
   await tick();
   assert.strictEqual(h.run.pending('kbFlagItem').length, 0, 'an empty suggestion is not sent');
+  // E3 (cycle 25): an over-long suggestion is caught in the prompt — the server refuses rather than cuts it.
+  input.value = 'x'.repeat(501);
+  h.dispatchKey('Enter', { target: input });
+  await tick();
+  assert.strictEqual(h.run.pending('kbFlagItem').length, 0, 'a 501-character suggestion is not sent');
+  assert.ok(/under 500 characters \(501 now\)/.test(h.$('.ui-dialog').textContent), 'the prompt says how long it may be');
   input.value = 'The fee is now $85';
   h.dispatchKey('Enter', { target: input });
   await tick();
-  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'stale', 'The fee is now $85']]);
+  assert.deepStrictEqual(h.run.pending('kbFlagItem').map((c) => c.args), [['man-0-11', 'suggest', 'The fee is now $85']],
+    'E3: a suggested edit is its own kind, never an "out of date" flag');
+});
+
+test('E3 DOM (cycle 25, ST3): handbook sections for the Issue text — a search after the rep pauses, published only; a stale answer is dropped; up to three sections; a click opens the drawer AT the section; Clear Note and the off switch hide it; a failure shows nothing', () => {
+  // bootLog's shell leaves a deferred landing on Clock in the timer queue, so
+  // the shell's timers run FIRST here and the debounce is then flushed alone.
+  const h = boot();
+  h.bootShell();
+  h.flushTimers();
+  h.window.enterTool('callNotes');
+  h.run.flushSuccess({ departments: [], suggestionsByDept: {}, defaultSuggestions: [], flags: {}, emailTemplates: [], externalLinks: [] }, 'getCallNotesDepartments');
+  h.run.flushSuccess({ notes: [], autoCopyFormat: '', timezone: 'Asia/Kolkata' }, 'getMyCallNotes');
+  h.flushTimers();
+  assert.strictEqual(h.read('currentView'), 'callNotes', 'on the Log');
+  const strip = h.$('#cn-hb-suggest');
+  assert.ok(strip && strip.hidden && strip.closest('.cnv-row').contains(h.$('#cn-fld-issue')), 'a hidden host in the Issue row');
+  h.setField('cn-fld-issue', 'fee');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'one word is not worth a search');
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee');
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'nothing is sent while the rep is typing');
+  h.flushTimers();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('searchReference').map((c) => c.args))),
+    [['Patient called about the oxygen fee', { publishedOnly: true }]], 'after the pause: the Issue text, published sections only');
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee waiver');
+  h.flushTimers();
+  h.run.flushSuccess({ results: [{ id: 'man-1-1', title: '1.1 Stale answer' }] }, 'searchReference');
+  assert.ok(strip.hidden, 'the answer for the OLD text is dropped');
+  h.run.flushSuccess({ results: [{ id: 'kb-7', title: 'Not the handbook' }, { id: 'man-8-2', title: '8.2 Oxygen fees', anchor: '8.2.1' },
+    { id: 'man-8-2', title: '8.2 Oxygen fees', anchor: '8.2.4' }, { id: 'man-10-3', title: '10.3 Waivers' },
+    { id: 'man-0-1', title: '0.1 Start' }, { id: 'man-0-2', title: '0.2 Status' }] }, 'searchReference');
+  assert.ok(!strip.hidden, 'the strip shows');
+  const picks = h.$$('#cn-hb-suggest .cn-hb-pick');
+  assert.deepStrictEqual(picks.map((b) => b.textContent), ['8.2 Oxygen fees', '10.3 Waivers', '0.1 Start'], 'handbook only, one per section, three at most');
+  assert.strictEqual(picks[0].getAttribute('onclick'), 'kbHbStripOpen_(this)');
+  h.read('kbHbStripOpen_')(picks[0]);   // jsdom does not run inline handlers
+  assert.strictEqual(h.read('KB_DRAWER.open'), true, 'the drawer opens');
+  assert.deepStrictEqual([h.read('KB_DRAWER.view'), h.read('KB_DRAWER.itemId')], ['item', 'man-8-2'], 'at that section');
+  // Opening the drawer paints its home first, whose own suggestions search
+  // the Issue text (the drawer's existing path, no publishedOnly); that answer
+  // arrives after the section opened and is dropped by the drawer's view guard.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('searchReference').map((c) => c.args))), [['Patient called about the oxygen fee waiver']]);
+  h.run.flushSuccess({ results: [] }, 'searchReference');
+  assert.strictEqual(h.read('KB_DRAWER.view'), 'item', 'still at the section');
+  h.read('kbDrawerClose_')();
+  // The same text again asks nothing new.
+  h.setField('cn-fld-issue', 'Patient called about the oxygen fee waiver');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'the answer for this text is reused');
+  // Clear Note empties the field without typing — the strip still goes.
+  h.dispatchKey('Backspace', { ctrl: true, shift: true, target: h.$('#cn-fld-issue') });
+  assert.ok(strip.hidden && !strip.innerHTML, 'Clear Note hides it');
+  // A failure shows nothing — no message that would have to quote the patient.
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling question');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 1, 'one search per text, however many timers fire');
+  h.run.flushFailure('quota', 'searchReference');
+  assert.ok(strip.hidden, 'a failed search shows nothing');
+  // The off switch is the drawer's per-rep "suggest" setting.
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling again');
+  h.flushTimers();
+  h.run.flushSuccess({ results: [{ id: 'man-6-1', title: '6.1 Repairs' }] }, 'searchReference');
+  assert.ok(!strip.hidden);
+  h.read('kbHbStripOff_')();
+  assert.ok(strip.hidden, 'off hides it');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem(h.read('KB_PANEL_LS_KEY'))).suggest, false, 'and is the one per-rep setting');
+  h.setField('cn-fld-issue', 'Wheelchair repair scheduling once more');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('searchReference').length, 0, 'off means nothing is sent');
+});
+
+test('E3 DOM (cycle 25, G2): the review queue shows a suggested edit apart from "out of date", with its words; the Handbook dialog exports the feedback — disabled in flight, a link on success, the button back on failure', () => {
+  const h = m4Boot_();
+  const st = h.read('KB_STATE');
+  st.isManager = true;
+  st.reviewDue = { items: [{ id: 'man-5-9', title: '5.9 Fees', ageDays: 10, views: 3, staleFlags: 0, suggestFlags: 2, suggestNote: 'The fee is <b>$85</b>' },
+    { id: 'kb-2', title: 'Old', ageDays: 120, views: 1, staleFlags: 1, staleNote: 'Phone changed', suggestFlags: 0 }], total: 2, dueDays: 90 };
+  h.read('kbRenderLanding_')();
+  const rows = h.$$('.kb-land-rd');
+  assert.strictEqual(rows.length, 2);
+  assert.ok(/suggested edit · 2/.test(rows[0].textContent) && !/out of date/.test(rows[0].textContent), 'a suggestion reads as one');
+  assert.ok(/“The fee is <b>\$85<\/b>”/.test(rows[0].textContent) && !rows[0].querySelector('.kb-land-note b'), 'its words, escaped');
+  assert.ok(/out of date · 1/.test(rows[1].textContent) && !/suggested/.test(rows[1].textContent), 'an out-of-date flag reads as before');
+  // The export.
+  h.read('kbOpenManualImport_')();
+  const btn = h.$('#kb-man-fbx-go');
+  assert.ok(btn && btn.getAttribute('onclick') === 'kbManualExportFeedback_()', 'the dialog carries the export');
+  h.read('kbManualExportFeedback_')();
+  assert.ok(btn.disabled, 'disabled in flight');
+  h.read('kbManualExportFeedback_')();
+  assert.strictEqual(h.run.pending('exportHandbookFeedback').length, 1, 'a second press sends nothing');
+  h.run.flushFailure('timeout', 'exportHandbookFeedback');
+  assert.ok(!btn.disabled && /timeout/.test(h.$('#kb-man-fbx-res').textContent), 'a failure says so and gives the button back');
+  h.read('kbManualExportFeedback_')();
+  h.run.flushSuccess({ success: true, url: 'https://docs.google.com/spreadsheets/d/X/edit', sections: 160, open: 7, truncated: false }, 'exportHandbookFeedback');
+  const link = h.$('#kb-man-fbx-res a');
+  assert.ok(link && link.getAttribute('href') === 'https://docs.google.com/spreadsheets/d/X/edit' && link.getAttribute('target') === '_blank', 'the sheet is a link');
+  assert.ok(/160 sections · 7 open items/.test(h.$('#kb-man-fbx-res').textContent));
+  // An import says how many sections it counted as reviewed.
+  h.read('kbManualRun_')(true);
 });
 
 test('M3 DOM: a manual diagram draws inside its section as real SVG — scoped, themed, with its section numbers as cross-references that open like any other', async () => {
