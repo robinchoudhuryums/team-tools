@@ -13363,7 +13363,7 @@ console.log('\nround-2 follow-ons — dashboard claim pill / visual fixtures / s
       'the cross-partial call is typeof-guarded');
     assert.ok(/spanishClaimPillHtml_\(r, \(pendingRes && pendingRes\.self\) \|\| ''\)/.test(card),
       'the pill takes the previewed item + the payload self');
-    assert.ok(/ago<\/span>' \+ claimPill \+ '<\/div>/.test(card),
+    assert.ok(/ago<\/span>' \+ claimPill \+/.test(card),   // E4 (G5): the escalated pill follows it in the same line
       'the pill lands in the .dash-sp-from preview line');
     const clkCss = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
     assert.ok(/\.dash-sp-from \.sp-claim-pill \{/.test(clkCss), 'the inline-pill spacing rule exists');
@@ -15143,6 +15143,7 @@ const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is
 ];
 const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixture would only fake a success
     'acknowledgeCoaching', 'acknowledgeDoc', 'addEmployee', 'appendCallNoteFeedback', 'archiveCallNoteTag',
+    'answerDeptReplyLook',   // E4 (cycle 25): the Replies-to-check answer — no scenario presses it
     'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall', 'deleteCallNote',
     'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote', 'fixPtoReconciliation',
     'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPAP', 'intakeSendPMD', 'intakeSendPPD', 'issueDoc',
@@ -24031,8 +24032,8 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(codeSrc);
   // (a) Store.
-  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 \}/.test(code), 'DR.PATIENT_TRX is slot 13; the 22post D reply columns trail it');
-  assert.ok(/'NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict'\]/.test(code), 'DR_HEADERS: PatientTrx, then the 22post D reply columns');
+  assert.ok(/RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17, REPLY_REASON:18 \}/.test(code), 'DR.PATIENT_TRX is slot 13; the 22post D reply columns trail it');
+  assert.ok(/'NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict','ReplyReason'\]/.test(code), 'DR_HEADERS: PatientTrx, then the 22post D reply columns (and E4\'s ReplyReason)');
   assert.ok(/const DR_PATIENT_TRX_MAX = 120;/.test(code), 'capped');
   const send = nc(extractRawFunction('Code.js', 'emailFromCallNote'));
   assert.ok(/noteId,\s*'',\s*String\(note\.patientAndTrx \|\| ''\)\.slice\(0, DR_PATIENT_TRX_MAX\),\s*drThreadId,\s*'', '', '',\s*\]\)\);/.test(send),
@@ -29003,7 +29004,7 @@ test('F14 (cycle 25): ONE Spanish pending window — Needs-you, the scheduled au
     const ctx = vm.createContext({ String, Object, Date, Error,
       SPANISH_PENDING_WINDOW_DAYS: windowDays, canSeeSpanishInbox_: () => true, getSpanishInboxAddress_: () => 'sp@x',
       spanishClaimsMap_: () => ({ old: { by: 'ana@x', atMs: 1000, assignedBy: '' } }),
-      spanishPendingIdsGet_: () => null, spanishPendingFloorsGet_: () => ({}),
+      spanishPendingIdsGet_: () => null, spanishPendingFloorsGet_: () => ({}), spanishPendingEscalatedGet_: () => ({}), SPANISH_ESCALATE_DAYS: 7,
       getSpanishInboxPending: (d) => { asked.push(d); return { pending: pend.filter((p) => p.ageDays <= d) }; },
       spanishClaimLive_: (c) => c, Utilities: { formatDate: () => 'Oct 4, 9:00 AM' } });
     vm.runInContext(extractRawFunction('Code.js', 'spanishMyOpenClaims_'), ctx);
@@ -29732,8 +29733,8 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(/spanishBustClaimants_\(\[c\.by\]\)/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'a resolve refreshes');
   const auto = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
   assert.ok(auto.indexOf('lock.releaseLock()') < auto.indexOf('spanishNotifyAssignees_(picks, emp)'), 'auto-assign emails after the lock, one summary per assignee');
-  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\), floors\)/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
-    'the cached set is thread ids ONLY (SP-2: and their claim floors, which are timestamps)');
+  assert.ok(/spanishPendingIdsPut_\(d, out\.map\(function \(x\) \{ return x\.threadId; \}\), floors,\s*out\.filter\(function \(x\) \{ return x\.escalated; \}\)\.map\(function \(x\) \{ return x\.threadId; \}\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
+    'the cached set is thread ids ONLY (SP-2: and their claim floors, which are timestamps; E4: and which of them are escalated)');
   assert.ok(/if \(x\.claimFloorMs\) floors\[x\.threadId\] = x\.claimFloorMs;/.test(stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'))),
     'the floors map is built from the cards — a number per id, no content');
   const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
@@ -29796,7 +29797,7 @@ function drDCtx_(extra) {
   const ctx = vm.createContext(Object.assign({ String, Number, Object, Math, JSON, Date, isFinite,
     DR_REPLY_VERDICTS: ['resolved', 'needs-look'], DR_THREAD_IDS_MAX: 3 }, extra || {}));
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drThreadIdsMerge_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_']
+  ['drThreadIdsMerge_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -29970,7 +29971,7 @@ test('D-2: the hourly scan reads only open, threaded, recent requests; resolves 
   // Date must still construct real dates inside the core.
   ctx.Date = Date; ctx.Date.now = () => now;
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const origNow = Date.now; Date.now = () => now;
   let r;
@@ -32959,7 +32960,7 @@ const c23DrScan_ = (rows, threads, now) => {
     drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
   ctx.Date = Date;   // real dates inside the core (the D-2 pin's step); Date.now is pinned below
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const orig = Date.now; Date.now = () => now;
   try { ctx.drReplyScanCore_(); } finally { Date.now = orig; }
@@ -35095,7 +35096,8 @@ test('SP-2 (cycle 23 Batch 13): the message roles — the requester writing agai
 
 const b13Pending_ = (threads, manual, claims) => {
   const puts = [];
-  const ctx = b13Ctx_(['spanishPendingCore_', 'spanishThreadRoles_', 'spanishManualStamps_', 'spanishEpisodes_', 'spanishClaimLive_'], {
+  const ctx = b13Ctx_(['spanishPendingCore_', 'spanishThreadRoles_', 'spanishManualStamps_', 'spanishEpisodes_', 'spanishClaimLive_', 'spanishEscalated_'], {
+    SPANISH_ESCALATE_DAYS: 7,
     getSpanishInboxAddress_: () => 'es@x', getSpanishInboxMembers_: () => ({ 'm@x': true, 'm2@x': true }),
     GmailApp: { search: () => threads }, spanishSearchQuery_: () => 'q', SPANISH_THREAD_SCAN_MAX: 200,
     spanishManualResolvedMap_: () => manual || {}, spanishClaimsMap_: () => claims || {}, emailAddrOnly_: b13Addr_,
@@ -37965,6 +37967,255 @@ test('E3 (cycle 25): manual/feedback_report.py — the worklist\'s self-test pas
   const wf = fs.readdirSync(path.join(E3_ROOT, '.github', 'workflows')).map((f) => fs.readFileSync(path.join(E3_ROOT, '.github', 'workflows', f), 'utf8')).join('\n');
   assert.ok(/python feedback_report\.py --check/.test(wf), 'CI runs the self-test');
   assert.ok(/feedback_report\.py/.test(fs.readFileSync(path.join(E3_ROOT, 'manual', 'README.md'), 'utf8')), 'the manual README names the script');
+});
+
+// ── Cycle 25 E4 (ST1 + G5, operator 2026-10-15): request triage ─────────────
+console.log('\nCycle 25 E4 — the reply check\'s review queue and the Spanish escalation');
+const E4_DR = Object.assign({}, DR_D_ENUM, { REPLY_REASON: 18 });
+const e4Row_ = (o) => { const r = new Array(19).fill(''); Object.keys(o).forEach((k) => { r[E4_DR[k]] = o[k]; }); return r; };
+
+test('E4 (cycle 25): rule 4 is NAMED — each hold says which test held it (question / asks / not-done / ack / empty / unattributed), a finished reply says nothing, and the pick carries the reason (driven grid)', () => {
+  const c = drDCtx_();
+  const grid = [['Done, refunded today.', ''], ['Thanks!', ''], ['Is this the right patient', 'question'], ['Which order?', 'question'],
+    ['Please send the TRX number.', 'asks'], ['This is on hold until Monday.', 'asks'], ['Will do.', 'not-done'], ['We cannot process this.', 'not-done'],
+    ['Received.', 'ack'], ['Got it, thanks', 'ack']];
+  grid.forEach(([t, want]) => assert.strictEqual(c.drReplyHoldReason_(t), want, JSON.stringify(t) + ' → ' + (want || '(resolves)')));
+  assert.ok(grid.every(([t, want]) => c.drReplyAsksOrHolds_(t) === !!want), 'drReplyAsksOrHolds_ is exactly "has a reason"');
+  const ctx = { afterMs: 0, excluded: {}, deptAddrs: { 'dana@ums.com': 1 }, deptDomains: {} };
+  const m = (body, ms) => ({ fromAddr: 'dana@ums.com', ms: ms || 10, subject: 'Re: L', body });
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(c.drReplyVerdictFull_(m('> quoted only'), ctx)), { verdict: 'needs-look', reason: 'empty' }, 'no new text: empty');
+  assert.deepStrictEqual(J(c.drReplyVerdictFull_(m('Done.'), ctx)), { verdict: 'resolved', reason: '' });
+  assert.deepStrictEqual(J(c.drReplyVerdictFull_(m('Done.'), Object.assign({ token: 'REQ-A', sharedTokens: ['REQ-B'] }, ctx))), { verdict: 'needs-look', reason: 'unattributed' },
+    'a shared thread, naming neither request');
+  assert.strictEqual(c.drReplyVerdict_(m('Will do.'), ctx), 'needs-look', 'drReplyVerdict_ is the verdict alone');
+  assert.strictEqual(c.drReplyPick_([m('Done.', 10), m('Wait — which patient?', 20)], ctx).reason, 'question', 'the pick carries the latest reply\'s reason');
+  // Every code the rule can name has a label (the row and the report say WHY).
+  const reasons = extractConstDecl_('DR_REPLY_REASONS');
+  ['question', 'asks', 'not-done', 'ack', 'empty', 'unattributed'].forEach((k) => assert.ok(new RegExp("(^|[\\s{])'?" + k + "'?: '").test(reasons), k + ' is labelled'));
+});
+
+const e4Scan_ = (rows, threads, now) => {
+  const sh = drDSheet_(rows);
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date, isFinite, console,
+    DR: E4_DR, DR_HEADERS: new Array(19).fill('h'), DR_MAX_SCAN: 4000, DR_REPLY_SCAN_DAYS: 30, DR_REPLY_SCAN_MAX: 150,
+    DR_REPLY_VERDICTS: ['resolved', 'needs-look', 'kept-open'], CONFIG: { TIMEZONE: 'UTC' },
+    getOrCreateDeptRequestsSheet_: () => sh, parseTimestampMs_: (s) => (s ? Date.parse(s + 'Z') : 0),
+    drReplyDirectory_: () => ({ byDept: { billing: { addrs: ['dana@ums.com'], domains: [] } }, names: {} }),
+    drReplyExcludedBase_: () => ({}),
+    GmailApp: { getThreadById: (id) => (threads[id] ? { getMessages: () => threads[id] } : null) },
+    Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 19) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, writeAuditLog_: () => {}, drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const origNow = Date.now; Date.now = () => now;
+  let r;
+  try { r = ctx.drReplyScanCore_(); } finally { Date.now = origNow; }
+  return { sh, r, row: (id) => sh.grid.filter((x) => x[0] === id)[0] };
+};
+
+test('E4 (cycle 25): the scan writes the REASON beside the verdict, and a reply a person answered "Still open" is never raised again — only a LATER reply is read afresh (driven over a fake sheet)', () => {
+  const now = Date.parse('2026-10-15T15:00:00Z');
+  const iso = (h) => new Date(now - h * 3600000).toISOString().slice(0, 19);
+  const msg = (h, body) => ({ getFrom: () => 'Dana <dana@ums.com>', getDate: () => new Date(now - h * 3600000), getSubject: () => 'Re: L', getHeader: () => '', getPlainBody: () => body });
+  const base = { BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(10), STATUS: 'open', LABEL: 'L' };
+  const s1 = e4Scan_([e4Row_(Object.assign({ REQ_ID: 'B', THREAD_ID: 'tB' }, base)),
+    e4Row_(Object.assign({ REQ_ID: 'K', THREAD_ID: 'tK', REPLIED_AT: iso(3), REPLY_VERDICT: 'kept-open', REPLY_REASON: 'question' }, base)),
+    e4Row_(Object.assign({ REQ_ID: 'L', THREAD_ID: 'tL', REPLIED_AT: iso(5), REPLY_VERDICT: 'kept-open', REPLY_REASON: 'ack' }, base))],
+  { tB: [msg(2, 'Received.')], tK: [msg(3, 'Which patient?')], tL: [msg(5, 'Received.'), msg(1, 'Please confirm the delivery address.')] }, now);
+  assert.deepStrictEqual([s1.row('B')[E4_DR.REPLY_VERDICT], s1.row('B')[E4_DR.REPLY_REASON]], ['needs-look', 'ack'], 'the reason rides beside the verdict');
+  assert.deepStrictEqual([s1.row('K')[E4_DR.REPLY_VERDICT], s1.row('K')[E4_DR.REPLIED_AT]], ['kept-open', iso(3)], 'THE SAME reply a person kept open is not raised again');
+  assert.deepStrictEqual([s1.row('L')[E4_DR.REPLY_VERDICT], s1.row('L')[E4_DR.REPLY_REASON], s1.row('L')[E4_DR.REPLIED_AT]], ['needs-look', 'asks', iso(1)],
+    'a LATER reply is read afresh, with its own reason');
+  assert.ok(!s1.sh.writes.some((w) => w[0] === 3), 'no write at all to the kept-open row');
+  const reopen = stripJsComments_(extractRawFunction('Code.js', 'reopenDeptRequest'));
+  assert.ok(/DR\.REOPENED_AT \+ 1, 1, 4\)\.setValues\(sheetSafeRows_\(\[\[drNowTs_\(\), '', '', ''\]\]\)\)/.test(reopen), 'a reopen clears the reason with the verdict');
+});
+
+test('E4 (cycle 25): answerDeptReplyLook — the resolve rule decides who, the answer must be Resolved or Still open, a reply already settled is "already answered", Still open keeps it open as kept-open, Resolved resolves in-app, and each answer is logged PHI-free (driven)', () => {
+  const reviews = [], resolves = [], audits = [];
+  let canAct = true;
+  const sh = drDSheet_([e4Row_({ REQ_ID: 'A', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: 'needs-look', REPLY_REASON: 'question', PATIENT_TRX: 'Pat Doe TRX 1' }),
+    e4Row_({ REQ_ID: 'B', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: 'needs-look', REPLY_REASON: 'not-done' }),
+    e4Row_({ REQ_ID: 'C', BY_ID: 'E1', STATUS: 'open', REPLY_VERDICT: '' })]);
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date, console,
+    DR: E4_DR, DR_HEADERS: new Array(19).fill('h'),
+    getEmployeeInfo_: () => ({ id: 'E2', email: 'bo@ums.com' }), getOrCreateDeptRequestsSheet_: () => sh,
+    drCanAct_: () => canAct, LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, drNowTs_: () => '2026-10-15T10:00:00',
+    getOrCreateDeptReplyReviewsSheet_: () => 'REVIEWS', appendRowsSafe_: (s, rows) => reviews.push([s].concat(rows[0])),
+    drBumpCacheGen_() {}, pendingTasksBust_() {}, getActiveUserEmail_: () => '',
+    markDeptRequestResolved_: (id, by, via) => { resolves.push([id, by, via]); return { found: true }; },
+    writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n) });
+  vm.runInContext(['DR_REPLY_REASONS', 'DR_REVIEW_ANSWERS'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), ctx);
+  ['drStatus_', 'drFindRowByReqId_', 'drReplyReasonOf_', 'answerDeptReplyLook'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.ok(/Resolved or Still open/.test(ctx.answerDeptReplyLook('A', 'maybe').error));
+  canAct = false;
+  assert.ok(/Only the sender/.test(ctx.answerDeptReplyLook('A', 'open').error) && reviews.length === 0, 'refused before any write');
+  canAct = true;
+  assert.deepStrictEqual(J(ctx.answerDeptReplyLook('C', 'open')).stale, true, 'a request that is not waiting on a look is "already answered"');
+  const r1 = J(ctx.answerDeptReplyLook('A', 'open'));
+  assert.deepStrictEqual([r1.success, r1.reason, sh.grid[1][E4_DR.REPLY_VERDICT], sh.grid[1][E4_DR.STATUS]], [true, 'question', 'kept-open', 'open'], 'Still open: kept-open, still open');
+  assert.deepStrictEqual(reviews[0], ['REVIEWS', '2026-10-15T10:00:00', 'A', 'question', 'open', 'bo@ums.com'], 'logged: id, rule, answer, who — no patient, no reply');
+  assert.strictEqual(resolves.length, 0);
+  assert.strictEqual(J(ctx.answerDeptReplyLook('A', 'resolved')).stale, true, 'a second answer to the same reply is refused');
+  ctx.answerDeptReplyLook('B', 'resolved');
+  assert.deepStrictEqual(J(resolves), [['B', 'bo@ums.com', 'app']], 'Resolved: the shared resolve writer, in-app (untimed)');
+  assert.deepStrictEqual(reviews[1].slice(2, 5), ['B', 'not-done', 'resolved']);
+  assert.ok(audits.every((a) => /^DeptReplyLookAnswered reqId=[AB]; reason=[a-z-]+; answer=(open|resolved)$/.test(a)) && !audits.join('').includes('Pat'), 'audited by id, rule and answer');
+});
+
+test('E4 (cycle 25): the review report — per rule, waiting / answered Resolved / answered Still open and the override share; no answers is "no answers yet", never 0%; a reason from before the column is its own row; answers outside the window are not counted; and the endpoint is admin-gated before any read (driven)', () => {
+  const ctx = b10Ctx_(['drReplyReviewReport_']);
+  vm.runInContext(extractConstDecl_('DR_REPLY_REASONS').replace(/^const /, 'var '), ctx);
+  const rows = b10J(ctx.drReplyReviewReport_([
+    { ms: 100, reason: 'ack', answer: 'resolved' }, { ms: 100, reason: 'ack', answer: 'resolved' }, { ms: 100, reason: 'ack', answer: 'open' },
+    { ms: 5, reason: 'ack', answer: 'open' },   // before the window
+    { ms: 100, reason: 'question', answer: 'open' }], ['question', 'unattributed', ''], 50));
+  const by = (k) => rows.filter((r) => r.reason === k)[0];
+  assert.deepStrictEqual([by('ack').waiting, by('ack').resolved, by('ack').open, by('ack').overridePct], [0, 2, 1, 67]);
+  assert.deepStrictEqual([by('question').waiting, by('question').overridePct], [1, 0], 'a rule people backed every time is 0%');
+  assert.deepStrictEqual([by('unattributed').waiting, by('unattributed').overridePct], [1, null], 'waiting with no answers: null, never 0%');
+  assert.ok(by('') && /before the reason was kept/.test(by('').label), 'a held row from before the column is its own, named row');
+  assert.ok(!by('asks') && !by('empty'), 'a rule with nothing to report is not listed');
+  const reads = [];
+  const g = b10Ctx_(['getDeptReplyReviewStats'], { getEmployeeInfo_: () => ({ isManager: true, isAdmin: false }),
+    getDeptRequestsSS_: () => { reads.push('ss'); return {}; }, getOrCreateDeptRequestsSheet_: () => { reads.push('sheet'); return {}; } });
+  assert.strictEqual(g.getDeptReplyReviewStats().error, 'Admin access required.');
+  assert.strictEqual(reads.length, 0, 'a manager is refused before anything is read');
+});
+
+test('E4 (cycle 25): the Dept Requests tab — "Replies to check" lists every open request waiting on a look, once, longest-waiting first; a kept-open or resolved one leaves; each row says WHY and offers Resolved / Still open by data-*; the card\'s tooltip carries the reason (driven)', () => {
+  ['drLooksToCheck_', 'drLookRowHtml_', 'drLooksHtml_'].forEach((f) => loadFunction(sb, 'metrics/script_deptrequests.html', f));
+  const it = (id, o) => Object.assign({ requestId: id, status: 'open', toDept: 'Billing', label: 'Close Order', replyVerdict: 'needs-look', repliedAt: 'x', repliedMs: 5 }, o || {});
+  // The display strings would sort the wrong way round ("Oct 15, 11:00 AM" < "Oct 15, 9:00 AM") — the order is by repliedMs.
+  const data = { mine: [it('a', { repliedAt: 'Oct 15, 9:00 AM', repliedMs: 2000 }), it('kept', { replyVerdict: 'kept-open' }), it('res', { status: 'resolved' })],
+    incoming: [it('b', { repliedAt: 'Oct 15, 11:00 AM', repliedMs: 1000, replyReasonLabel: 'the reply asks a <b>question</b>' })], allOpen: [it('a', { repliedAt: 'Oct 15, 9:00 AM', repliedMs: 2000 })] };
+  assert.deepStrictEqual(b10J(sb.drLooksToCheck_(data)).map((r) => r.requestId), ['b', 'a'], 'once each, the longest-waiting first; kept-open and resolved are out');
+  const html = sb.drLooksHtml_(data);
+  assert.ok(/Replies to check · 2/.test(html) && /id="dr-looks"/.test(html));
+  assert.ok(/Held back because the reply asks a &lt;b&gt;question&lt;\/b&gt;\./.test(html), 'the server\'s reason, escaped');
+  assert.ok(/Held back because the reply did not clearly say it was done\./.test(html), 'a row with no reason still says something true');
+  assert.ok(/data-req="b" data-dr-look="resolved" onclick="drLookAnswerClick_\(this\)"/.test(html) && /data-dr-look="open"/.test(html), 'two answers, by data-*');
+  assert.strictEqual(sb.drLooksHtml_({ mine: [it('kept', { replyVerdict: 'kept-open' })] }), '<div id="dr-looks"></div>', 'nothing waiting: an empty anchor, no heading');
+  const status = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drCardStatusHtml_'));
+  assert.ok(/item\.replyReasonLabel/.test(status), 'the card\'s needs-a-look tooltip names the reason');
+  const render = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drRender_'));
+  assert.ok(/head \+ intro \+ trunc \+ looks \+ body/.test(render), 'the group leads the page');
+  const handler = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drLookAnswerClick_'));
+  assert.ok(/\.answerDeptReplyLook\(id, ans\)/.test(handler) && /r\.replyVerdict = 'kept-open'/.test(handler) && /drApplyResolved_\(id\)/.test(handler), 'the answer patches the cached payload both ways');
+  const tc = fs.readFileSync(path.join(__dirname, '../../web-app/20_timeclock.js'), 'utf8');
+  assert.ok(!/needs-look|replyVerdict/.test(tc), 'the operator chose the tab ONLY — Needs you carries no reply-check item');
+});
+
+test('E4 (cycle 25): Admin → System — the reply check report says what to do with an over-firing rule; no answers reads "no answers yet"; a rule people mostly override (5+ answers, 50%+) is amber; the check being OFF is said; a failed read is an error state (driven)', () => {
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderReplyReviews_');
+  const html = sb.cnRenderReplyReviews_({ days: 90, flagOn: false, rows: [
+    { reason: 'ack', label: 'the reply only acknowledges the email', waiting: 1, resolved: 6, open: 2, answered: 8, overridePct: 75 },
+    { reason: 'question', label: 'the reply asks a question', waiting: 0, resolved: 1, open: 1, answered: 2, overridePct: 50 },
+    { reason: 'unattributed', label: 'x', waiting: 1, resolved: 0, open: 0, answered: 0, overridePct: null }] });
+  assert.ok(/never loosens itself/.test(html) && /The reply check is OFF/.test(html));
+  assert.ok(/color:var\(--warning-deep\);font-weight:600">75%/.test(html), 'a rule people override, with enough answers, is amber');
+  assert.ok(/<span style="">50%/.test(html), 'two answers are not enough to call it');
+  assert.ok(/no answers yet/.test(html), 'null is "no answers yet"');
+  assert.ok(/Reply check report unavailable/.test(sb.cnRenderReplyReviews_({ error: 'boom' })));
+  const sys = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/<div id="cn-admin-replyreviews"><\/div>/.test(sys) && /cnLoadReplyReviews_\(\);/.test(sys), 'the panel sits on System and loads on its own');
+});
+
+test('E4 (cycle 25, G5): a Spanish request is escalated at 7 CALENDAR days — the flag rides each pending item (email and voicemail), the cached set carries the escalated ids for Needs-you, and the payload names the rule (driven)', () => {
+  const ctx = b10Ctx_(['spanishEscalated_'], { SPANISH_ESCALATE_DAYS: 7 });
+  assert.deepStrictEqual([ctx.spanishEscalated_(7 * 86400000 - 1), ctx.spanishEscalated_(7 * 86400000), ctx.spanishEscalated_(0)], [false, true, false], 'the boundary is 7 days by the clock');
+  assert.ok(/const SPANISH_ESCALATE_DAYS = 7;/.test(serverSource()), 'seven days, named once');
+  const core = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
+  assert.strictEqual((core.match(/escalated: spanishEscalated_\(nowMs - (open|r)\.reqMs\)/g) || []).length, 2, 'both the email and the voicemail item carry it');
+  assert.ok(/escalateDays: SPANISH_ESCALATE_DAYS/.test(core), 'the payload names the rule');
+  const NOW = Date.now(), D = 86400000;
+  const msg = (from, ms, body) => ({ getFrom: () => from, getDate: () => new Date(ms), getSubject: () => 'Ayuda', getPlainBody: () => body, getHeader: () => '' });
+  const p = b13Pending_([b13Th_('old', [msg('ana@cust.com', NOW - 9 * D, 'hola')]), b13Th_('new', [msg('bo@cust.com', NOW - 2 * D, 'hola')])]);
+  assert.deepStrictEqual(p.res.pending.map((x) => x.threadId + ':' + x.escalated), ['old:true', 'new:false']);
+});
+
+test('E4 (cycle 25, G5): Needs-you — a claimed request waiting 7+ days turns the Spanish item OVERDUE and says how many; none escalated stays as it was (driven over the real Needs-you block)', () => {
+  const tc = fs.readFileSync(path.join(__dirname, '../../web-app/20_timeclock.js'), 'utf8');
+  const a = tc.indexOf('    // spanish — 22post C-8'), b = tc.indexOf('\n    var sorted = pendingTasksSort_(items);', a);
+  const run = (esc) => {
+    const ctx = vm.createContext({ String, Object, Date, Error, SPANISH_PENDING_WINDOW_DAYS: 30, SPANISH_ESCALATE_DAYS: 7,
+      canSeeSpanishInbox_: () => true, getSpanishInboxAddress_: () => 'sp@x',
+      spanishClaimsMap_: () => ({ t1: { by: 'ana@x', atMs: 1000, assignedBy: '' }, t2: { by: 'ana@x', atMs: 2000, assignedBy: '' } }),
+      spanishPendingIdsGet_: () => ['t1', 't2'], spanishPendingFloorsGet_: () => ({}), spanishPendingEscalatedGet_: () => esc,
+      getSpanishInboxPending: () => { throw new Error('no live read on a cache hit'); },
+      spanishClaimLive_: (c) => c, Utilities: { formatDate: () => 'Oct 4, 9:00 AM' } });
+    vm.runInContext(extractRawFunction('Code.js', 'spanishMyOpenClaims_'), ctx);
+    vm.runInContext('function nyBlock_(emp, tz, items, unavailable) {\n' + tc.slice(a, b) + '\n}', ctx);
+    const items = [], unavailable = [];
+    ctx.nyBlock_({ email: 'Ana@x' }, 'America/Chicago', items, unavailable);
+    return b10J(items)[0];
+  };
+  const hot = run({ t1: true });
+  assert.deepStrictEqual([hot.overdue, /^1 waiting 7\+ days · /.test(hot.detail)], [true, true], 'overdue, and it says how many');
+  const calm = run({});
+  assert.deepStrictEqual([calm.overdue, /waiting/.test(calm.detail)], [false, false]);
+});
+
+test('E4 (cycle 25, G5): the 8am escalation digest — managers get the escalated requests (age, kind, who has it, the Gmail link) and NOTHING of the request\'s content; none is an "empty" log and no mail; an unread inbox is a FAILED run, never "none escalated"; a failed send is logged failed; it rides runDailyChecks with its own key (driven)', () => {
+  const rows = (pend, names) => b10J(b10Ctx_(['spanishEscalationRows_']).spanishEscalationRows_(pend, names));
+  const pend = [
+    { threadId: 'a', escalated: true, ageHours: 200, subject: 'Pat Doe TRX 9', snippet: 'Mi madre…', requester: 'x@cust.com', permalink: 'https://mail/a', claim: { by: 'ANA@ums.com' } },
+    { threadId: 'b', escalated: true, ageHours: 400, kind: 'voicemail', subject: 's', snippet: 's', requester: '555', permalink: 'https://mail/b', claim: null },
+    { threadId: 'c', escalated: false, ageHours: 20 }];
+  const r = rows(pend, { 'ana@ums.com': 'Ana Ruiz' });
+  assert.deepStrictEqual(r, [{ ageDays: 16, kind: 'Voicemail', claimant: '', link: 'https://mail/b' }, { ageDays: 8, kind: 'Email', claimant: 'Ana Ruiz', link: 'https://mail/a' }],
+    'escalated only, oldest first, the claimant by roster name — no subject, snippet or requester');
+  const body = b10Ctx_(['spanishEscalationBody_'], { SPANISH_ESCALATE_DAYS: 7, esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') })
+    .spanishEscalationBody_([{ ageDays: 8, kind: 'Email', claimant: '<b>Ana</b>', link: 'https://mail/a?x="1"' }], { truncated: true });
+  assert.ok(/1 Spanish Inbox request has waited 7 days or more/.test(body.html) && /&lt;b&gt;Ana/.test(body.html) && /href="https:\/\/mail\/a\?x=&quot;1&quot;"/.test(body.html), 'escaped');
+  assert.ok(/stopped at its cap/.test(body.text), 'a capped read is said');
+  // The job, driven.
+  const sent = [], logs = [];
+  let addr = 'es@x', mgrs = ['m@x'], readRes = { pending: pend, truncated: false }, mailThrows = false;
+  const job = b10Ctx_(['spanishEscalationRows_', 'spanishEscalationBody_', 'sendSpanishEscalationDigest'], {
+    SPANISH_ESCALATE_DAYS: 7, SPANISH_ESCALATE_READ_DAYS: 90, EMP: { NAME: 1 }, _SYSTEM_AUDIT_EMP_: { email: 'system' }, Logger: { log() {} },
+    assertManagerCaller_() {}, runAutomationJob_: (k, fn) => ({ key: k, out: fn() }), automationOutcome_: (s, m) => ({ status: s, message: m || '' }),
+    stampDigestLastRun_() {}, getSpanishInboxAddress_: () => addr, getManagerEmails_: () => mgrs, getEmployeeInfo_: () => null,
+    spanishPendingCore_: (d) => { if (d !== 90) throw new Error('reads the tab\'s widest window'); return readRes; },
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ana Ruiz', 'ana@ums.com']], empRosterEmail_: (row) => row[2],
+    esc_: (x) => String(x), buildBrandedEmailHtml_: (h, b) => b,
+    appSendMail_: (m) => { if (mailThrows) throw new Error('quota'); sent.push(m); },
+    logDigestDelivery_: (k, to, status, n, why) => logs.push([k, status, n, why]) });
+  let o = b10J(job.sendSpanishEscalationDigest());
+  assert.deepStrictEqual([o.key, o.out.outcome.status, sent.length], ['SpanishEscalationDigest', 'ok', 1]);
+  assert.ok(/2 Spanish Inbox requests waiting 7\+ days/.test(sent[0].subject) && !/Pat Doe|Mi madre|cust\.com/.test(sent[0].body + sent[0].htmlBody), 'the mail carries no request content');
+  assert.deepStrictEqual(logs.pop(), ['spanishEscalation', 'sent', 2, '']);
+  readRes = { pending: [pend[2]], truncated: false };
+  o = b10J(job.sendSpanishEscalationDigest());
+  assert.deepStrictEqual([o.out.outcome.status, sent.length, logs.pop()[1]], ['ok', 1, 'empty'], 'none: logged empty, no mail');
+  readRes = { error: 'Gmail is not available' };
+  assert.throws(() => job.sendSpanishEscalationDigest(), /Gmail is not available/, 'an unread inbox throws — the contract records a FAILED run');
+  readRes = { pending: pend, truncated: true }; mailThrows = true;
+  o = b10J(job.sendSpanishEscalationDigest());
+  assert.deepStrictEqual([o.out.outcome.status, logs.pop()[1]], ['failed', 'failed']);
+  addr = '';
+  assert.strictEqual(b10J(job.sendSpanishEscalationDigest()).out.outcome.status, 'idle', 'no inbox configured: idle, no read');
+  // Wiring.
+  const cfg = stripJsComments_(serverSource());
+  assert.ok(/runDailyChecks:\s*\['checkOpenPunches', 'sendCallNotesUrgentDigest', 'sendSpanishEscalationDigest'\]/.test(cfg), 'it rides the 8am dispatcher (no new trigger)');
+  assert.ok(/sendSpanishEscalationDigest:\s*'SpanishEscalationDigest'/.test(cfg) && /spanishEscalation: 'SpanishEscalationDigest'/.test(cfg) && /spanishEscalation: 26/.test(cfg), 'its job key, error key and stale window');
+});
+
+test('E4 (cycle 25, G5): the tab card and the Dashboard card draw the server\'s flag — "Escalated · N days" with a stripe; the Dashboard counts them; nothing when not escalated (driven)', () => {
+  loadFunction(sb, 'metrics/script_metrics.html', 'spanishEscalatedPillHtml_');
+  assert.strictEqual(sb.spanishEscalatedPillHtml_({ escalated: false, ageHours: 400 }), '', 'the client never decides — only the server\'s flag draws');
+  assert.ok(/Escalated · 9 days/.test(sb.spanishEscalatedPillHtml_({ escalated: true, ageHours: 9 * 24 + 5 })));
+  const card = stripJsComments_(extractFunction('metrics/script_metrics.html', 'spanishTaskCard_'));
+  assert.ok(/\(t\.escalated \? ' sp-escalated' : ''\)/.test(card) && /spanishEscalatedPillHtml_\(t\)/.test(card));
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  assert.ok(/\.sp-esc-pill \{/.test(styles) && /\.sp-task\.sp-escalated \{/.test(styles), 'both classes have rules');
+  const dash = stripJsComments_(extractFunction('tc/script_clock.html', 'clkDashSpanishCard_'));
+  assert.ok(/p && p\.escalated/.test(dash) && /' escalated<\/span>'/.test(dash) && /typeof spanishEscalatedPillHtml_ === 'function'/.test(dash), 'the Dashboard counts and draws them (typeof-guarded)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

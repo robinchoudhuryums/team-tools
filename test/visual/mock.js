@@ -993,7 +993,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       incoming: [
         { requestId: 'r5', toDept: 'Billing', label: 'Close Order', patientTrx: 'S. Alvarez · TRX 48230', createdAt: daysAgo(0) + ' 08:30', createdMs: new Date(daysAgo(0) + 'T08:30:00').getTime(), byName: 'Nina Patel', status: 'open', elapsedMin: 122, elapsedWallMin: 320, slaBusiness: true, slaStatus: 'ontime', slaDays: 1,
           // 22post D: the department replied with a question — still open, flagged for a look.
-          threadTracked: true, replyVerdict: 'needs-look', repliedAt: daysAgo(0) + ' 10:15' }],
+          threadTracked: true, replyVerdict: 'needs-look', repliedAt: daysAgo(0) + ' 10:15', repliedMs: new Date(daysAgo(0) + 'T10:15:00').getTime(),
+          // E4 (cycle 25, ST1): WHY the check held it back — the server's label, never the reply.
+          replyReason: 'question', replyReasonLabel: 'the reply asks a question' }],
       // 22post D: requests the caller may reopen (not their own), resolved in the last reopenDays.
       recentResolved: [
         { requestId: 'r9', toDept: 'Billing', label: 'OOP Order', patientTrx: 'T. Okafor · TRX 48170', createdAt: daysAgo(1) + ' 13:10', createdMs: new Date(daysAgo(1) + 'T13:10:00').getTime(), byName: 'Sam Ortiz', status: 'resolved', elapsedMin: 95, elapsedWallMin: 95, slaBusiness: true, resolvedBy: 'Priya Raman', resolvedVia: 'reply', threadTracked: true, replyVerdict: 'resolved', repliedAt: daysAgo(1) + ' 14:45', resolvedMs: new Date(daysAgo(1) + 'T14:45:00').getTime(), slaDays: 1 }],
@@ -1005,6 +1007,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // 22post A-7: a manager's summary cards are team-wide (drTeamKpis_'s shape).
       teamKpis: { open: 5, overdue: 2, resolved: 16, total: 21, medianMin: 220, manualCount: 3 },
       deptStats: [{ dept: 'Billing', open: 2, resolved: 14, overdueOpen: 1, slaDays: 1, avgMinutes: 340, medianMinutes: 220, manualResolved: 3, untrackedResolved: 2, timed: 9 }] },
+    // E4 (cycle 25, ST1): drReplyReviewReport_'s rows — a rule people mostly
+    // override (amber), one they back, and one with no answers yet.
+    getDeptReplyReviewStats: { days: 90, flagOn: true, rows: [
+      { reason: 'ack', label: 'the reply only acknowledges the email', waiting: 1, resolved: 6, open: 2, answered: 8, overridePct: 75 },
+      { reason: 'question', label: 'the reply asks a question', waiting: 2, resolved: 1, open: 9, answered: 10, overridePct: 10 },
+      { reason: 'unattributed', label: 'the thread is shared with another request and the reply does not name this one', waiting: 1, resolved: 0, open: 0, answered: 0, overridePct: null }] },
     getMyTraining: { items: [
       { itemId: 'kb-1', title: 'HIPAA refresher', type: 'article', itemType: 'kb', status: 'pending', dueDate: daysAgo(-6), assignedAt: ts(daysAgo(3), '09:00:00'), attempts: 0 },
       { itemId: 'quiz-1', title: 'CPAP resupply quiz', type: 'quiz', itemType: 'quiz', status: 'done', quiz: { questionCount: 5, passPct: 80 }, attempts: 2, completedAt: ts(daysAgo(1), '11:00:00') }] },
@@ -1226,13 +1234,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getSpanishInboxPending: { pending: [
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
-      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 29, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
+      // E4 (cycle 25, G5): it has waited 9 days — escalated (the server's flag), so the pill and stripe are on camera on the tab and the Dashboard card.
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
       { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
       { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
       { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
-      medianMinutes: 45, truncated: false,
+      medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
       self: 'avery@umsupply.com' },
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h

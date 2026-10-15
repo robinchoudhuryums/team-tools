@@ -506,13 +506,18 @@ function drReplyNewText_(body) {
  *  puts the request on hold. A "?" anywhere, or a question / hold phrase. */
 const DR_REPLY_HOLD_RE_ = /\b(can you|could you|would you|will you|do you|please (?:confirm|send|provide|advise|clarify|verify|let (?:me|us) know)|need (?:more )?(?:info|information|details)|need (?:the|a|an|your)\b|will look into|looking into|working on|in progress|pending|following up|follow up|get back to you|on hold|waiting (?:on|for))\b/i;
 const DR_REPLY_QUESTION_LINE_RE_ = /^[ \t]*(is|are|was|were|do|does|did|should|shall|may|which|what|when|where|why|how|who)\b/im;
-function drReplyAsksOrHolds_(text) {
+function drReplyAsksOrHolds_(text) { return !!drReplyHoldReason_(text); }
+/** PURE (Node-pinned) — E4 (cycle 25, ST1): rule 4's negative, NAMED. '' when
+ *  the new text neither asks nor holds; else the DR_REPLY_REASONS code of the
+ *  first test it meets, in this order: question, asks, not-done, ack. */
+function drReplyHoldReason_(text) {
   const t = String(text || '');
   // A question often arrives without its "?" — "Is this the right patient" —
   // so a LINE that opens with a question word counts too. A false match only
   // means "needs a look", the safe direction; a missed one resolves a request
   // that is not done.
-  if (t.indexOf('?') >= 0 || DR_REPLY_HOLD_RE_.test(t) || DR_REPLY_QUESTION_LINE_RE_.test(t)) return true;
+  if (t.indexOf('?') >= 0 || DR_REPLY_QUESTION_LINE_RE_.test(t)) return 'question';
+  if (DR_REPLY_HOLD_RE_.test(t)) return 'asks';
   // F2 (cycle 25): the hold list knew "working on" and "waiting for", so "Not
   // yet, still waiting", "On it!", "Will do", "I'll take care of it today",
   // "Let me check with the warehouse" and "We cannot process this" all
@@ -520,12 +525,12 @@ function drReplyAsksOrHolds_(text) {
   // refuses, or passes the request on is a look — the same over-match the
   // question test makes on purpose (g159).
   const notDone = /\b(?:not yet|not (?:done|complete|completed|finished|processed)|still (?:waiting|working|checking|looking|pending|processing|open)|waiting|(?:i|we)(?:'ll|’ll| will| shall)|will (?:do|update|check|send|process|confirm|review|handle|ship|call|reach|let|get|follow|fix|take|work)|let (?:me|us) (?:check|see|look|confirm|verify|ask|find)|on it|checking (?:on|with|into|in)|looking (?:at|for)|reviewing|processing|investigating|researching|shortly|asap|cannot|can(?:'|’)?t|can not|unable|not able|won(?:'|’)?t|not possible|denied|rejected|declined?|escalat\w*)\b/i;
-  if (notDone.test(t)) return true;
+  if (notDone.test(t)) return 'not-done';
   // An acknowledgement and nothing else ("Received.", "Got it, thanks") says
   // the mail arrived, not that the work is done. A bare thank-you stays a
   // resolution: it is how a department signs off after the answer (DR-2).
   const ackOnly = /^(?:(?:ok(?:ay)?|got it|received|noted|acknowledged|copy(?: that)?|sure|thanks?|thank you|ty)\b[\s,.!-]*)+$/i;
-  return ackOnly.test(t.trim()) && /\b(?:ok(?:ay)?|got it|received|noted|acknowledged|copy|sure)\b/i.test(t);
+  return (ackOnly.test(t.trim()) && /\b(?:ok(?:ay)?|got it|received|noted|acknowledged|copy|sure)\b/i.test(t)) ? 'ack' : '';
 }
 /** PURE (Node-pinned) — rule 2's automatic-sender half: a bounce, a no-reply
  *  sender, an auto-reply or out-of-office subject, or an Auto-Submitted /
@@ -552,15 +557,21 @@ function drReplyIsAutomatic_(m) {
  *  Failing only rule 4 is 'needs-look'. The verdict literals are
  *  DR_REPLY_VERDICTS. DR-1 (cycle 23) adds `ctx.token` / `ctx.sharedTokens`:
  *  on a thread another request shares, see the block at the end. */
-function drReplyVerdict_(m, ctx) {
-  if (!m || !ctx) return '';
-  if (!(Number(m.ms) > Number(ctx.afterMs || 0))) return '';
+function drReplyVerdict_(m, ctx) { return drReplyVerdictFull_(m, ctx).verdict; }
+/** PURE (Node-pinned) — E4 (cycle 25, ST1): drReplyVerdict_ with the REASON a
+ *  'needs-look' was held back ({verdict, reason}; reason '' unless needs-look).
+ *  The one rule set; drReplyVerdict_ is its verdict alone. */
+function drReplyVerdictFull_(m, ctx) {
+  const none = { verdict: '', reason: '' };
+  if (!m || !ctx) return none;
+  if (!(Number(m.ms) > Number(ctx.afterMs || 0))) return none;
   const addr = String(m.fromAddr || '').toLowerCase();
-  if (!addr || (ctx.excluded || {})[addr] || drReplyIsAutomatic_(m)) return '';
+  if (!addr || (ctx.excluded || {})[addr] || drReplyIsAutomatic_(m)) return none;
   const dom = addr.slice(addr.indexOf('@') + 1);
-  if (!(ctx.deptAddrs || {})[addr] && !(ctx.deptDomains || {})[dom]) return '';
+  if (!(ctx.deptAddrs || {})[addr] && !(ctx.deptDomains || {})[dom]) return none;
   const text = drReplyNewText_(m.body);
-  const verdict = (text && !drReplyAsksOrHolds_(text)) ? DR_REPLY_VERDICTS[0] : DR_REPLY_VERDICTS[1];
+  const hold = text ? drReplyHoldReason_(text) : 'empty';
+  const verdict = hold ? { verdict: DR_REPLY_VERDICTS[1], reason: hold } : { verdict: DR_REPLY_VERDICTS[0], reason: '' };
   // DR-1 (cycle 23): two requests can share ONE Gmail thread (Gmail threads
   // same-subject mail), and one department reply then resolved both. On a
   // shared thread a reply counts for THIS request only when it names it — the
@@ -571,8 +582,8 @@ function drReplyVerdict_(m, ctx) {
   if (others.length && ctx.token) {
     const body = String(m.body || '');
     if (body.indexOf(ctx.token) < 0) {
-      if (others.some(function (t) { return t && body.indexOf(t) >= 0; })) return '';
-      return DR_REPLY_VERDICTS[1];
+      if (others.some(function (t) { return t && body.indexOf(t) >= 0; })) return none;
+      return { verdict: DR_REPLY_VERDICTS[1], reason: 'unattributed' };
     }
   }
   return verdict;
@@ -590,8 +601,8 @@ function drReplyPick_(msgs, ctx) {
   const sorted = (msgs || []).slice().sort(function (a, b) { return Number(a.ms) - Number(b.ms); });
   const seen = [];
   for (let i = 0; i < sorted.length; i++) {
-    const v = drReplyVerdict_(sorted[i], ctx);
-    if (v) seen.push({ verdict: v, msg: sorted[i] });
+    const v = drReplyVerdictFull_(sorted[i], ctx);
+    if (v.verdict) seen.push({ verdict: v.verdict, msg: sorted[i], reason: v.reason });   // E4: the reason rides along
   }
   if (!seen.length) return null;
   const last = seen[seen.length - 1];
@@ -710,9 +721,12 @@ function drReplyScanCore_() {
         deptAddrs: deptAddrs, deptDomains: deptDomains, token: c.reqId, sharedTokens: Object.keys(shared) });
       if (!pick) return;
       const at = Utilities.formatDate(new Date(pick.msg.ms), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
-      if (pick.verdict === 'needs-look' && String(r[DR.REPLY_VERDICT] || '') === 'needs-look' &&
-          parseMs(r[DR.REPLIED_AT]) === parseMs(at)) return;   // already recorded
-      decisions.push({ reqId: c.reqId, verdict: pick.verdict, at: at, reopened: String(r[DR.REOPENED_AT] || ''),
+      // Already recorded — or a person already answered THIS reply "Still open"
+      // (E4: 'kept-open'); only a later reply asks again.
+      const stored = String(r[DR.REPLY_VERDICT] || '');
+      if (pick.verdict === 'needs-look' && (stored === 'needs-look' || stored === 'kept-open') &&
+          parseMs(r[DR.REPLIED_AT]) === parseMs(at)) return;
+      decisions.push({ reqId: c.reqId, verdict: pick.verdict, reason: pick.reason || '', at: at, reopened: String(r[DR.REOPENED_AT] || ''),
         by: dir.names[pick.msg.fromAddr] || pick.msg.fromAddr, byAddr: pick.msg.fromAddr });
     } catch (e) { out.errors++; console.warn('drReplyScanCore_: ' + c.reqId + ': ' + e.message); }
   });
@@ -725,7 +739,7 @@ function drReplyScanCore_() {
       const hit = drFindRowByReqId_(sh, d.reqId);
       if (!hit || drStatus_(hit.row) !== 'open' || String(hit.row[DR.REOPENED_AT] || '') !== d.reopened) return;
       const ri = hit.rowIndex;
-      sh.getRange(ri, DR.REPLIED_AT + 1, 1, 2).setValues(sheetSafeRows_([[d.at, d.verdict]]));
+      sh.getRange(ri, DR.REPLIED_AT + 1, 1, 3).setValues(sheetSafeRows_([[d.at, d.verdict, d.reason]]));   // E4: + ReplyReason
       if (d.verdict === 'resolved') {
         sh.getRange(ri, DR.STATUS + 1).setValue(sheetSafe_('resolved'));
         sh.getRange(ri, DR.RESOLVED_AT + 1, 1, 2).setValues(sheetSafeRows_([[d.at, d.by]]));
@@ -785,7 +799,7 @@ function reopenDeptRequest(requestId) {
       if (drStatus_(row) !== 'resolved') return { success: true, already: true };
       sh.getRange(hit.rowIndex, DR.STATUS + 1, 1, 3).setValues(sheetSafeRows_([['open', '', '']]));   // Status, ResolvedAt, ResolvedBy
       sh.getRange(hit.rowIndex, DR.RESOLVED_VIA + 1).setValue(sheetSafe_(''));
-      sh.getRange(hit.rowIndex, DR.REOPENED_AT + 1, 1, 3).setValues(sheetSafeRows_([[drNowTs_(), '', '']]));
+      sh.getRange(hit.rowIndex, DR.REOPENED_AT + 1, 1, 4).setValues(sheetSafeRows_([[drNowTs_(), '', '', '']]));   // E4: + ReplyReason
       drBumpCacheGen_();
     } finally { lock.releaseLock(); }
     pendingTasksBust_(String(row[DR.BY_ID] || ''));
@@ -794,6 +808,126 @@ function reopenDeptRequest(requestId) {
       '; was=' + (drResolvedVia_(row) || 'unrecorded')); } catch (e) {}
     return { success: true, already: false };
   } catch (err) { return { success: false, error: err.message }; }
+}
+// ── E4 (cycle 25, ST1, operator 2026-10-15): the reply scan's review queue.
+// A 'needs-look' row tells the Dept Requests tab WHY the scan held back; a
+// person answers it Resolved or Still open from the "Replies to check" group;
+// every answer is logged with the rule that held the reply back, and Admin →
+// System counts how often people overrode each rule. The scan never loosens
+// itself from those answers — a wrong automatic resolve hides unfinished work
+// (g159); the report is for a person to decide a rule change.
+
+/** THE one reader of the ReplyReason cell: a known code, else ''. */
+function drReplyReasonOf_(row) {
+  const v = String((row && row[DR.REPLY_REASON]) || '').trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(DR_REPLY_REASONS, v) ? v : '';
+}
+function getOrCreateDeptReplyReviewsSheet_() {
+  const ss = getDeptRequestsSS_();
+  let sh = ss.getSheetByName(DR_REVIEWS_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(DR_REVIEWS_TAB);
+    sh.appendRow(sheetSafeRow_(DR_REVIEWS_HEADERS));
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+/** Answer a "needs a look": `answer` 'resolved' (the reply did finish it —
+ *  resolved in-app, untimed like any manual clear) or 'open' (it did not — the
+ *  verdict becomes 'kept-open', so the same reply is never raised again).
+ *  drCanAct_'s people only. Refused unless the row is still open AND still
+ *  'needs-look' when the lock is held (another person, or the scan, may have
+ *  settled it). Logged per answer, PHI-free; audited by id. */
+function answerDeptReplyLook(requestId, answer) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false, error: 'Your account is not registered.' };
+    const ans = String(answer || '').trim().toLowerCase();
+    if (DR_REVIEW_ANSWERS.indexOf(ans) < 0) return { success: false, error: 'Answer Resolved or Still open.' };
+    const sh = getOrCreateDeptRequestsSheet_();
+    const first = drFindRowByReqId_(sh, requestId);
+    if (!first) return { success: false, error: 'Request not found.' };
+    if (!drCanAct_(emp, first.row))
+      return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can answer this.' };
+    const id = String(first.row[DR.REQ_ID]);
+    let reason = '';
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const hit = drFindRowByReqId_(sh, id);   // re-read under the lock
+      if (!hit || drStatus_(hit.row) !== 'open' || String(hit.row[DR.REPLY_VERDICT] || '').trim().toLowerCase() !== 'needs-look')
+        return { success: false, stale: true, error: 'This reply was already answered — the list will refresh.' };
+      reason = drReplyReasonOf_(hit.row);
+      if (ans === 'open') {
+        hit.row[DR.REPLY_VERDICT] = 'kept-open';
+        sh.getRange(hit.rowIndex, DR.REPLY_VERDICT + 1).setValue(sheetSafe_('kept-open'));
+      }
+      appendRowsSafe_(getOrCreateDeptReplyReviewsSheet_(), sheetSafeRows_([[drNowTs_(), id, reason, ans, emp.email || '']]));
+      drBumpCacheGen_();
+    } finally { lock.releaseLock(); }
+    if (ans === 'resolved') {
+      // The shared resolve writer (its own lock): Status, ResolvedAt/By, via 'app'.
+      const res = markDeptRequestResolved_(id, emp.email || getActiveUserEmail_() || '', 'app');
+      if (!res.found) return { success: false, error: 'Request not found.' };
+    }
+    pendingTasksBust_(String(first.row[DR.BY_ID] || ''));
+    pendingTasksBust_(emp.id);
+    try { writeAuditLog_(emp, 'DeptReplyLookAnswered', '', '', false, 0, 'reqId=' + id + '; reason=' + (reason || 'unrecorded') + '; answer=' + ans); } catch (e) {}
+    return { success: true, answer: ans, reason: reason };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+/** PURE (Node-pinned) — the review report from the answer rows and the open
+ *  'needs-look' rows: per reason, how many are waiting, how many people
+ *  answered Resolved (the rule held back a reply that HAD finished the
+ *  request) and Still open (the rule was right), and the override share.
+ *  `reviews` = [{ms, reason, answer}], `openReasons` = [reason], `sinceMs`. */
+function drReplyReviewReport_(reviews, openReasons, sinceMs) {
+  const by = {};
+  Object.keys(DR_REPLY_REASONS).concat(['']).forEach(function (k) {
+    by[k] = { reason: k, label: DR_REPLY_REASONS[k] || 'reason not recorded (held before the reason was kept)', waiting: 0, resolved: 0, open: 0 };
+  });
+  (openReasons || []).forEach(function (k) { (by[k] || by['']).waiting++; });
+  (reviews || []).forEach(function (r) {
+    if (!(Number(r.ms) >= Number(sinceMs || 0))) return;
+    const b = by[r.reason] || by[''];
+    if (r.answer === 'resolved') b.resolved++; else if (r.answer === 'open') b.open++;
+  });
+  return Object.keys(by).map(function (k) { return by[k]; }).filter(function (b) { return b.waiting || b.resolved || b.open; })
+    .map(function (b) {
+      const n = b.resolved + b.open;
+      b.answered = n;
+      b.overridePct = n ? Math.round(100 * b.resolved / n) : null;   // null: no answers yet — never "0%"
+      return b;
+    });
+}
+/** Admin — the reply scan's review report (Admin → System). Admin-gated before
+ *  any read; read-only. The answers over DR_REVIEW_REPORT_DAYS, the waiting
+ *  rows over the request tab's tail. A failed read is an {error}, never an
+ *  empty report (g53). */
+function getDeptReplyReviewStats() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const sinceMs = Date.now() - DR_REVIEW_REPORT_DAYS * 86400000;
+    const reviews = [];
+    const rsh = getDeptRequestsSS_().getSheetByName(DR_REVIEWS_TAB);
+    if (rsh && rsh.getLastRow() >= 2) {
+      rsh.getRange(2, 1, rsh.getLastRow() - 1, DR_REVIEWS_HEADERS.length).getValues().forEach(function (v) {
+        const ms = (v[0] instanceof Date) ? v[0].getTime() : (parseTimestampMs_(String(v[0] || ''), CONFIG.TIMEZONE) || 0);
+        reviews.push({ ms: ms, reason: String(v[2] || '').trim().toLowerCase(), answer: String(v[3] || '').trim().toLowerCase() });
+      });
+    }
+    const sh = getOrCreateDeptRequestsSheet_();
+    const last = sh.getLastRow();
+    const open = [];
+    if (last >= 2) {
+      const first = Math.max(2, last - DR_MAX_SCAN + 1);
+      sh.getRange(first, 1, last - first + 1, DR_HEADERS.length).getValues().forEach(function (r) {
+        if (r[DR.REQ_ID] && drStatus_(r) === 'open' && String(r[DR.REPLY_VERDICT] || '').trim().toLowerCase() === 'needs-look') open.push(drReplyReasonOf_(r));
+      });
+    }
+    return { rows: drReplyReviewReport_(reviews, open, sinceMs), days: DR_REVIEW_REPORT_DAYS, flagOn: !!getFlag_('deptReplyResolve') };
+  } catch (err) { return { error: err.message }; }
 }
 function drCacheGen_() {
   try { return CacheService.getScriptCache().get('dr_gen_v1') || '0'; } catch (_) { return '0'; }
@@ -943,7 +1077,11 @@ function getDeptRequests() {
         // `resolvedMs` orders the Recently resolved list.
         threadTracked: !!String(r[DR.THREAD_ID] || '').trim(),
         replyVerdict: DR_REPLY_VERDICTS.indexOf(replyVerdictRaw) >= 0 ? replyVerdictRaw : '',
+        // E4 (ST1): why the scan held a reply back — the label, never the text.
+        replyReason: drReplyReasonOf_(r),
+        replyReasonLabel: DR_REPLY_REASONS[drReplyReasonOf_(r)] || '',
         repliedAt: fmtTs(parseMs(r[DR.REPLIED_AT])),
+        repliedMs: parseMs(r[DR.REPLIED_AT]) || null,   // E4: "Replies to check" orders by it (repliedAt is a display string)
         reopenedAt: fmtTs(parseMs(r[DR.REOPENED_AT])),
         resolvedMs: resolvedMs || null,
       };

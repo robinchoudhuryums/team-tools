@@ -10154,6 +10154,7 @@ function enterCallNotesAdminView(area) {
       '<div id="cn-admin-formulas">' + cnRenderFormulaScanPanel_(null) + '</div>' +
       '<div id="cn-admin-health"></div>' +
       '<div id="cn-admin-digests"></div>' +   // G3 (cycle 25 E1) — beside Automation Health
+      '<div id="cn-admin-replyreviews"></div>' +   // E4 (cycle 25, ST1) — how people answered the reply check
     '</div>' +
     '<div class="cn-admin-pane" data-pane="tags" style="' + paneStyle('tags') + '">' +
       '<div id="cn-admin-augment"></div>' +
@@ -10202,6 +10203,8 @@ function enterCallNotesAdminView(area) {
   // G3 (cycle 25 E1) — the digest delivery log. Independent load; failure
   // stays contained to its own slot.
   cnLoadDigestDeliveries_();
+  // E4 (cycle 25, ST1) — the reply check's review report. Independent load.
+  cnLoadReplyReviews_();
   // #1 — Storage Health: one pane over every spreadsheet (configured /
   // reachable / tz-vs-CONFIG). Independent load; failure stays contained.
   cnLoadStoragePanel_();
@@ -11867,6 +11870,54 @@ function cnLoadDigestDeliveries_() {
     .getDigestDeliveries({});
 }
 
+// ── E4 (cycle 25, ST1, operator 2026-10-15): the reply check's review report.
+// Per rule that held a department reply back: how many wait for an answer, and
+// how often people answered Resolved (the rule held back a reply that HAD
+// finished the request) or Still open. The check never changes itself — this
+// is for the operator to ask for a rule change.
+function cnRenderReplyReviews_(res) {
+  var wrap = function (inner) {
+    return '<div class="panel" id="cn-sys-sec-replyreviews" style="margin-bottom:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept Request reply check</div>' + inner + '</div>';
+  };
+  if (!res) return wrap('<div style="padding:10px 0">' + loSweep() + '</div>');
+  if (res.error) return wrap(errorStateHtml_('Reply check report unavailable: ' + String(res.error)));   // K10: no second esc()
+  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">When a department replies to a request, the hourly check resolves it — unless the reply asks, holds, refuses or only acknowledges, when it waits under “Replies to check” on the Dept Requests tab. ' +
+    'Below, per rule, how people answered in the last ' + esc(String(res.days)) + ' days. A rule people mostly answer <b>Resolved</b> is holding back finished work; the check never loosens itself — ask for the rule to change.' +
+    (res.flagOn === false ? ' <b style="color:var(--warning-deep)">The reply check is OFF (Config → Features → deptReplyResolve).</b>' : '') + '</div>';
+  var table = mtRenderTable_({
+    columns: [
+      { key: 'label', label: 'Held back because', cell: function (r) { return '<span class="cn-dd-reason">' + esc(r.label) + '</span>'; } },
+      { key: 'waiting', label: 'Waiting', numeric: true, cell: function (r) { return esc(String(r.waiting)); } },
+      { key: 'resolved', label: 'Answered Resolved', numeric: true, cell: function (r) { return esc(String(r.resolved)); } },
+      { key: 'open', label: 'Answered Still open', numeric: true, cell: function (r) { return esc(String(r.open)); } },
+      { key: 'overridePct', label: 'Overridden', numeric: true, cell: function (r) {
+        if (r.overridePct == null) return '<span style="color:var(--muted)">no answers yet</span>';
+        return '<span style="' + (r.answered >= 5 && r.overridePct >= 50 ? 'color:var(--warning-deep);font-weight:600' : '') + '">' + esc(String(r.overridePct)) + '%</span>';
+      } },
+    ],
+    rows: res.rows || [],
+    tableClass: 'cn-dd-table', dataLabels: true,
+    empty: '<div class="m-empty">No reply has been held back, and nobody has answered one, in the last ' + esc(String(res.days)) + ' days.</div>',
+  });
+  return wrap(intro + table);
+}
+function cnLoadReplyReviews_() {
+  var slot = document.getElementById('cn-admin-replyreviews');
+  if (!slot) return;
+  slot.innerHTML = cnRenderReplyReviews_(null);
+  var requestedView = currentView;
+  var paint = function (res) {
+    if (currentView !== requestedView) return;
+    var live = document.getElementById('cn-admin-replyreviews');
+    if (live) live.innerHTML = cnRenderReplyReviews_(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { paint(res || { error: 'load failed' }); })
+    .withFailureHandler(function (err) { paint({ error: (err && err.message) || 'load failed' }); })
+    .getDeptReplyReviewStats();
+}
+
 /** Design handoff A3 — ONE derivation of "what needs attention" from the two
  *  health payloads. Pure (no DOM, no globals) so it is Node-testable; the
  *  findings list, the three Overview cards and the System tab badge all
@@ -12311,6 +12362,7 @@ var CN_DIGEST_LABELS_ = {
   missedPunch: 'Daily missed-punch alerts',
   exportCheck: 'Daily ADP export check',
   automationHealth: 'Automation-health failure digest',
+  spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
   spanishAutoAssign: 'Spanish Inbox auto-assign',
   deptReplyScan: 'Dept Request reply scan',
 };
@@ -12626,6 +12678,7 @@ function cnRenderHealthPanel_(res) {
     missedPunch: { label: 'Daily missed-punch alerts', expect: 'daily 8am — stale past 26h; heartbeats even on a morning with no missed punch' },
     exportCheck: { label: 'Daily ADP export check', expect: 'daily 12pm — stale past 26h; the export itself lands only at a period end (AdpExportAuto)' },
     automationHealth: { label: 'Automation-health failure digest', expect: 'daily 9am — stale past 26h; heartbeats on an all-clear morning too, and its own failure is stamped' },
+    spanishEscalation: { label: 'Spanish Inbox escalation digest', expect: 'daily 8am — requests waiting 7+ days, to managers; heartbeats on a morning with none; stale past 26h' },   // E4 (cycle 25, G5)
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

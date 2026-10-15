@@ -874,6 +874,18 @@ entry says which it is.
   (`SPANISH_PENDING_IDS_PREFIX`) carries each reopened thread's claim floor
   beside its id — timestamps only. Nothing to set; tell the members.
 
+  **Cycle 25 E4 (G5, 2026-10-15) — escalation.** A pending request that has
+  waited **7 calendar days** (`SPANISH_ESCALATE_DAYS`) is escalated: an
+  "Escalated · N days" pill and stripe on the tab and the Dashboard card, its
+  claimant's Needs-you item turns overdue, and the **8am escalation digest**
+  (`sendSpanishEscalationDigest`, riding `runDailyChecks` — no new trigger, so
+  re-running `installAutomationTriggers` is not required) emails the managers
+  the escalated requests: age, email or voicemail, who has it, and the Gmail
+  link — never the subject, text or requester. It reads the tab's widest
+  window (90 days), heartbeats as `spanishEscalation` (stale past 26 h), logs
+  each decision under Admin → System → Email deliveries, and a morning with
+  none sends nothing. It does nothing while `SPANISH_INBOX_ADDRESS` is unset.
+
 <a id="operator-elapsed-time-is-business-hours-and-one-pure-core-computes-it"></a>
 - **Elapsed time is BUSINESS hours, and ONE pure core computes it (operator
   2026-08-31).** The operator asked whether the Spanish-inbox median counted
@@ -2541,6 +2553,19 @@ entry says which it is.
   (DR-1). **One-time check:** in the DeptRequests tab, look for two rows with
   the same ThreadId value — those requests share a Gmail conversation, and
   their unnamed replies will now ask for a look instead of resolving both.
+  **Cycle 25 E4 (ST1, 2026-10-15) — the review queue.** A held reply now waits
+  under **Replies to check** at the top of the Dept Requests tab with the
+  reason the check held it back, and **Resolved** / **Still open** buttons
+  (whoever may resolve the request may answer). Still open keeps the request
+  open and the check never raises that same reply again — only the
+  department's next reply. **Store:** the DeptRequests tab gains a trailing
+  **ReplyReason** column (a code, never the reply's text; the header
+  self-heals), and a new **DeptReplyReviews** tab (Timestamp, RequestId,
+  Reason, Answer, By — PHI-free, auto-provisioned beside DeptRequests) logs
+  every answer. **Admin → System → Dept Request reply check** counts, per
+  rule, how often people overrode it over 90 days; the check never changes
+  itself — a rule people mostly answer Resolved is one to ask to change.
+  Requests held before the deploy show "reason not recorded".
 
 <a id="operator-script-property-dash-team-layouts-22post-e"></a>
 - **Script Property `DASH_TEAM_LAYOUTS` (22post E, 2026-09-28; auto-managed).**

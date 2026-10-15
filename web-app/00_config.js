@@ -496,7 +496,7 @@ const AUDIT = { TS:0, EMP_ID:1, EMP_NAME:2, ACTOR:3, ACTION:4, PUNCH_DATE:5, PUN
 // and never dedupe; new auto-logged rows carry the source noteId so a re-send of
 // the same note to the same dept reuses the open row's token instead of opening a
 // second request. Same back-compat posture as CN_HEADERS / FS_HEADERS.
-const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17 };
+const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CREATED_AT:6, STATUS:7, RESOLVED_AT:8, RESOLVED_BY:9, LABEL:10, NOTE_ID:11, RESOLVED_VIA:12, PATIENT_TRX:13, THREAD_ID:14, REOPENED_AT:15, REPLIED_AT:16, REPLY_VERDICT:17, REPLY_REASON:18 };
 // RESOLVED_VIA (trailing, operator 2026-09-10 — back-compat like NOTE_ID; the
 // header self-heals): HOW the row was resolved — 'email' = the recipient
 // clicked the resolve link in the department email (a real response time),
@@ -514,7 +514,7 @@ const DR = { REQ_ID:0, BY_ID:1, BY_NAME:2, BY_EMAIL:3, TO_DEPT:4, TO_EMAIL:5, CR
 // the daily SLA reminder EMAIL and the shared AuditLog stay LABEL-ONLY —
 // `deptRequestsOverdueOpen_` deliberately never reads this column, and no
 // audit row carries it (INV-32's discipline for the shared trail).
-const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict'];
+const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','ToDept','ToEmail','CreatedAt','Status','ResolvedAt','ResolvedBy','Label','NoteId','ResolvedVia','PatientTrx','ThreadId','ReopenedAt','RepliedAt','ReplyVerdict','ReplyReason'];
 // 22post D (operator 2026-09-27) — reply = resolution. Four trailing columns
 // (the header self-heals; a legacy row reads them blank):
 //   ThreadId     the department email's Gmail thread id(s) in the DEPLOYER's
@@ -537,7 +537,28 @@ const DR_HEADERS = ['RequestId','CreatedById','CreatedByName','CreatedByEmail','
 // mailbox, a MAIL_BCC_ALL address, or a roster member outside the receiving
 // department. Untimed like 'self': only the department's click is a response.
 const DR_RESOLVED_VIA_VALUES = ['email', 'app', 'reply', 'self', 'copy'];
-const DR_REPLY_VERDICTS = ['resolved', 'needs-look'];
+// E4 (cycle 25, ST1, operator 2026-10-15): 'kept-open' — a person answered a
+// 'needs-look' with "Still open". The scan never re-raises the SAME reply, and a
+// later department reply is read afresh. The order is load-bearing: [0] and [1]
+// are the scan's own verdicts.
+const DR_REPLY_VERDICTS = ['resolved', 'needs-look', 'kept-open'];
+// ReplyReason (trailing, E4 — the header self-heals): WHICH part of rule 4 held
+// a reply back, so the "Replies to check" row can say why and the review report
+// can count how often people overrode each rule. A code, never the reply's text.
+const DR_REPLY_REASONS = {
+  question: 'the reply asks a question',
+  asks: 'the reply asks for something, or says the request is on hold',
+  'not-done': 'the reply says it is not done yet, promises work, or refuses',
+  ack: 'the reply only acknowledges the email',
+  empty: 'the reply has no new text of its own',
+  unattributed: 'the thread is shared with another request and the reply does not name this one',
+};
+// The answers people give a 'needs-look' (E4): one row each, PHI-free — the
+// request id, the rule that held the reply back, the answer and who gave it.
+const DR_REVIEWS_TAB = 'DeptReplyReviews';
+const DR_REVIEWS_HEADERS = ['Timestamp', 'RequestId', 'Reason', 'Answer', 'By'];
+const DR_REVIEW_ANSWERS = ['resolved', 'open'];
+const DR_REVIEW_REPORT_DAYS = 90;
 const DR_THREAD_IDS_MAX = 3;
 const DR_REPLY_SCAN_MAX = 150;      // threads read per hourly run (Gmail read quota + the six-minute limit)
 const DR_REPLY_SCAN_DAYS = 30;      // an open request older than this is no longer scanned for replies
@@ -1093,6 +1114,7 @@ const DIGEST_ERROR_KEYS = {
   deptReqReminder: 'DeptRequestReminderDigest', managerBrief: 'ManagerDailyBrief', coachingRecap: 'CoachingRecapDigest',
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
+  spanishEscalation: 'SpanishEscalationDigest',   // E4 (cycle 25, G5)
 };
 // The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
 // tabled key takes the table's label). ONE map, shipped on each stamp by
@@ -1108,6 +1130,7 @@ const AUTOMATION_ERROR_LABELS = {
   AutomationHealthDigest: 'Automation-health failure digest',
   OpenPunchCheck: 'Daily open-punch check',
   NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
+  SpanishEscalationDigest: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
 };
 // ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
 // Every installable-trigger job — the standalone TARGETS and every handler a
@@ -1155,6 +1178,7 @@ const DIGEST_DELIVERY_LABELS = {
   eod: 'End-of-day flag reminder (to the rep)', coachingRecap: 'Weekly coaching recap (to the agent)',
   missedPunchRep: 'Missed clock-out reminder (to the rep)', trainingOverdueRep: 'Overdue-documents reminder (to the employee)',
   selfTest: 'Nightly self-test failure alert', clientErrSpike: 'Client-error spike alert',
+  spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
 };
 // A delivery row that could not be WRITTEN is counted here — {count, firstMs,
 // lastMs, lastError} — and the Admin panel says so for a failure inside its
@@ -1369,7 +1393,7 @@ const TRIGGER_GROUPS = {
   // a standalone trigger of its own, so the group is COUNT-NEUTRAL against the
   // quota that already bit this deployment once (RETIRED_TRIGGER_HANDLERS is
   // derived from these lists, so a re-install removes its old trigger).
-  runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest'],
+  runDailyChecks:   ['checkOpenPunches', 'sendCallNotesUrgentDigest', 'sendSpanishEscalationDigest'],   // E4 (cycle 25, G5): count-neutral
 };
 // Seams F3 (cycle 24) — the KEY each grouped handler's failures live under
 // (it used the raw handler name, which no label map or heartbeat knew). Since
@@ -1391,6 +1415,7 @@ const TRIGGER_HANDLER_JOB_KEYS = {
   purgeArchivedCallNotes:            'CallNotesArchivePurge',
   checkOpenPunches:                  'OpenPunchCheck',
   sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
+  sendSpanishEscalationDigest:       'SpanishEscalationDigest',
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
@@ -1563,6 +1588,14 @@ const SPANISH_STATE_SPAN_DAYS = 180;
 // claimed request left 8+ days dropped off its owner's Needs-you while the tab
 // still listed it pending, and the scheduled run never assigned it.
 const SPANISH_PENDING_WINDOW_DAYS = 30;
+// E4 (cycle 25, G5, operator 2026-10-15): a pending Spanish request is ESCALATED
+// once it has waited this many CALENDAR days (wall clock — the tab's own age
+// measure). It reads "Escalated · N days" on the tab and the Dashboard card,
+// its claimant's Needs-you item turns overdue, and the 8am escalation digest
+// lists it to the managers. The digest reads the tab's widest window, so a
+// request older than the 30-day default is still escalated, not forgotten.
+const SPANISH_ESCALATE_DAYS = 7;
+const SPANISH_ESCALATE_READ_DAYS = 90;
 // 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
 // getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
 // list can tell which of a rep's claims are still pending WITHOUT a Gmail read

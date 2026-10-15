@@ -2725,6 +2725,15 @@ function spanishSetClaimLocal_(tid, claim) {
   spanishRenderList_();
 }
 
+/** PURE (Node-pinned) — E4 (cycle 25, G5): the server's escalation flag as a
+ *  pill ("Escalated · N days"), '' otherwise. The server decides (7 calendar
+ *  days, SPANISH_ESCALATE_DAYS); the client only draws it. */
+function spanishEscalatedPillHtml_(t) {
+  if (!t || !t.escalated) return '';
+  var d = Math.floor(Number(t.ageHours) / 24);
+  return '<span class="sp-esc-pill" title="Waiting ' + esc(String(d)) + ' days — escalated to the managers\' 8am digest">' +
+    icon('warning', 11) + ' Escalated · ' + esc(String(d)) + ' days</span>';
+}
 function spanishTaskCard_(t) {
   var aged = t.ageHours >= 24 ? (Math.floor(t.ageHours / 24) + 'd ' + (t.ageHours % 24) + 'h') : (t.ageHours + 'h');
   var tone = t.ageHours >= 24 ? 'var(--danger-deep)' : (t.ageHours >= 4 ? 'var(--warning-deep)' : 'var(--muted)');
@@ -2748,8 +2757,9 @@ function spanishTaskCard_(t) {
   var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
   var claimPill = spanishClaimPillHtml_(t, pd.self || '');
   var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
-  return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + '">' +
+  return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + (t.escalated ? ' sp-escalated' : '') + '">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + spanishFollowUpPillHtml_(t) + claimPill +
+      spanishEscalatedPillHtml_(t) +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +

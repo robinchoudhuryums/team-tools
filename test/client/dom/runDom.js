@@ -4940,6 +4940,72 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   h.read('cnCloseScratchpadModal_')();
 });
 
+test('E4 DOM (cycle 25, ST1): "Replies to check" leads the Dept Requests tab — each held reply says why; Still open keeps it open and takes it off the list, Resolved closes the request, both answers lock while in flight, a reply someone else answered first refreshes the view, and a failure gives the buttons back', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const item = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'L-' + id, createdAt: 'Oct 14', createdMs: 1000, byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: ['Billing'], departments: ['Billing'],
+    mine: [item('m1', { replyVerdict: 'needs-look', repliedAt: 'Oct 15, 9:00 AM', repliedMs: Date.parse('2026-10-15T09:00:00'), replyReason: 'not-done', replyReasonLabel: 'the reply says it is not done yet, promises work, or refuses' })],
+    incoming: [item('i1', { replyVerdict: 'needs-look', repliedAt: 'Oct 14, 10:15 AM', repliedMs: Date.parse('2026-10-14T10:15:00'), replyReason: 'question', replyReasonLabel: 'the reply asks a question' }),
+      item('i2', { replyVerdict: 'needs-look', repliedAt: 'Oct 15, 11:00 AM', repliedMs: Date.parse('2026-10-15T11:00:00'), replyReason: 'ack', replyReasonLabel: 'the reply only acknowledges the email' })],
+    recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 2 };
+  let reads = 0;
+  h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const looks = () => h.$$('#dr-looks .dr-look');
+  const body = h.$('#dr-body').textContent;
+  assert.ok(body.indexOf('Replies to check · 3') >= 0 && body.indexOf('Replies to check') < body.indexOf('Incoming ·'), 'the group leads the page');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['i1', 'm1', 'i2'], 'longest-waiting first');
+  assert.ok(/Held back because the reply asks a question\./.test(looks()[0].textContent), 'each row says why');
+  const btn = (id, ans) => h.$('#dr-looks .dr-look[data-req="' + id + '"] button[data-dr-look="' + ans + '"]');
+  assert.strictEqual(btn('i1', 'open').getAttribute('onclick'), 'drLookAnswerClick_(this)');
+  // Still open.
+  h.read('drLookAnswerClick_')(btn('i1', 'open'));
+  assert.ok(btn('i1', 'open').disabled && btn('i1', 'resolved').disabled, 'both answers lock while in flight');
+  h.read('drLookAnswerClick_')(btn('i1', 'resolved'));
+  assert.deepStrictEqual(h.run.pending('answerDeptReplyLook').map((c) => Array.from(c.args)), [['i1', 'open']], 'one answer is sent');
+  h.run.flushSuccess({ success: true, answer: 'open', reason: 'question' }, 'answerDeptReplyLook');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['m1', 'i2'], 'kept open: it leaves the list');
+  const i1 = h.$$('.sp-task[data-req="i1"]:not(.dr-look)')[0];
+  assert.ok(i1 && !i1.querySelector('.dr-needs-look') && i1.querySelector('.sp-resolve'), 'its card is plainly open again, Mark resolved still there');
+  // Resolved.
+  h.read('drLookAnswerClick_')(btn('m1', 'resolved'));
+  h.run.flushSuccess({ success: true, answer: 'resolved', reason: 'not-done' }, 'answerDeptReplyLook');
+  assert.deepStrictEqual(looks().map((n) => n.getAttribute('data-req')), ['i2']);
+  assert.ok(/marked in app/.test(h.$$('.sp-task[data-req="m1"]:not(.dr-look)')[0].textContent), 'Resolved closes the request (an in-app resolve)');
+  // A failure gives the buttons back.
+  h.read('drLookAnswerClick_')(btn('i2', 'open'));
+  h.run.flushFailure('quota', 'answerDeptReplyLook');
+  assert.ok(!btn('i2', 'open').disabled && !btn('i2', 'resolved').disabled && looks().length === 1, 'the row stays, answerable');
+  // Someone else answered first: the view refreshes.
+  const before = reads;
+  h.read('drLookAnswerClick_')(btn('i2', 'resolved'));
+  h.run.flushSuccess({ success: false, stale: true, error: 'This reply was already answered — the list will refresh.' }, 'answerDeptReplyLook');
+  h.flushTimers();
+  assert.ok(reads > before, 'a stale answer re-reads the tab');
+});
+
+test('E4 DOM (cycle 25, G5): an escalated Spanish request reads "Escalated · N days" with a stripe on the tab; one that is not escalated carries neither', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: 2, resolved: 0, avgMinutes: null, medianMinutes: null,
+    avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
+    membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: [
+    { threadId: 'old', requester: 'a@x.com', ageHours: 9 * 24 + 3, escalated: true, subject: 'Ayuda', snippet: 's', hasMore: false, permalink: 'https://mail/old', claim: null },
+    { threadId: 'new', requester: 'b@x.com', ageHours: 30, escalated: false, subject: 'Hola', snippet: 's', hasMore: false, permalink: 'https://mail/new', claim: null }],
+    members: ['me@x.com'], self: 'me@x.com', truncated: false }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
+  assert.ok(card('old').classList.contains('sp-escalated') && /Escalated · 9 days/.test(card('old').querySelector('.sp-esc-pill').textContent));
+  assert.ok(!card('new').classList.contains('sp-escalated') && !card('new').querySelector('.sp-esc-pill'), 'a day-old request is not escalated, however late it is');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -4954,7 +5020,8 @@ test('22post D DOM: a reply-resolved card says so and credits the replier, a nee
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
   h.window.enterTool('metrics', 'metricsDeptReq');
   h.flushTimers();
-  const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
+  // E4 (cycle 25): the request CARDS — a "Replies to check" row (.dr-look) carries the same data-req.
+  const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
   assert.ok(/replied · 3h 5m/.test(card('m1').querySelector('.sp-task-age').textContent), 'a reply resolve is timed and says "replied"');
   assert.ok(/Resolved by Dana <b>W<\/b> \(by reply\)/.test(card('m1').textContent) && !card('m1').querySelector('.sp-task-body b'), 'credited to the replier, escaped');
   const look = card('i1').querySelector('.dr-needs-look');

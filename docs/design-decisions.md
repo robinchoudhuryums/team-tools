@@ -5027,6 +5027,14 @@ pick them up without re-deriving the context.
   that request's id, which the resolve link carries and a reply quotes; one that
   names only another sharer is not this request's, and one that names none
   cannot be attributed, so it is a look, never a resolve.
+  **AMENDED (cycle 25 E4, ST1, 2026-10-15): a look is answered, and the
+  answers are counted.** A held reply names the rule that held it
+  (`drReplyHoldReason_`: question, asks, not-done, ack, empty, unattributed)
+  and waits under "Replies to check" until a person answers Resolved or Still
+  open; Still open is `kept-open`, so that reply is never raised again. The
+  answers are counted per rule for the operator, never fed back into the rules
+  — see "A held reply waits for a person, and the answers are counted, not
+  learned from".
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
@@ -5583,4 +5591,37 @@ pick them up without re-deriving the context.
   patient's words (g146). Rejected: a "Find in handbook" button (one more step
   mid-call), and ranking handbook sections first inside the drawer only (still
   invisible until the drawer is opened).
+
+- <a id="a-held-reply-waits-for-a-person"></a>**A held reply waits for a person, and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)**
+  **ST1.** The reply check marked a held reply "Responded — needs a look" on its
+  card and nowhere else, with no reason and no way to say "yes, it's done" other
+  than Mark resolved, and no record of how often each rule held back finished
+  work. Now the scan names the rule that held the reply (`drReplyHoldReason_` —
+  the same tests, in the same order, so no verdict changed) and stores the code
+  in a trailing ReplyReason column; the Dept Requests tab opens with "Replies to
+  check", one row per held reply, longest-waiting first, saying why, with
+  **Resolved** (the shared in-app resolve, untimed) and **Still open**
+  (`kept-open`: the scan never raises that reply again; the department's next
+  reply is read afresh). Every answer is logged to DeptReplyReviews (id, rule,
+  answer, who — no reply text, no patient), and Admin → System counts per rule
+  how often people overrode it. The operator chose the tab only (no Needs-you
+  item), and that the check **never loosens itself**: an automatic loosening
+  turns "people often say this kind of reply was fine" into closed requests
+  nobody looked at, the exact failure g159 exists to prevent — the report
+  tells a person which rule to ask about. Rejected: admin phrase lists (an
+  allowlist of user text with its own drift), and a Needs-you item per look.
+  **G5.** A Spanish request had no age past which anything happened; the tab
+  toned anything over a day red and stopped there. At 7 calendar days (the
+  tab's own wall-clock age, the operator's choice over 5 working days) the
+  server flags it `escalated`; the tab and Dashboard draw the flag (the client
+  never decides), the claimant's Needs-you item turns overdue, and an 8am
+  digest — riding `runDailyChecks`, so no trigger is added against a quota that
+  has bitten once — lists them to the managers with age, kind, claimant and the
+  Gmail link, and nothing of the request's content: the inbox's gate stays the
+  only way to read it. An unread inbox throws (a failed run, never "none
+  escalated", g53); a morning with none logs `empty` and sends nothing. It reads
+  the tab's widest window (90 days) so a request older than the 30-day default
+  is not dropped from the very list meant to catch it. Rejected: a section in
+  the manager daily brief (off by default), and the tab's own 24-hour red as the
+  threshold (it would email every morning).
 

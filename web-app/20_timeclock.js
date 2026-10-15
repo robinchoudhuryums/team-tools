@@ -8764,23 +8764,30 @@ function getMyPendingTasks() {
         if (anyMine) {
           var spIds = spanishPendingIdsGet_(SPANISH_PENDING_WINDOW_DAYS);
           var spFloors = spanishPendingFloorsGet_(SPANISH_PENDING_WINDOW_DAYS);   // SP-2 — a reopened request comes back unclaimed
+          var spEsc = spanishPendingEscalatedGet_(SPANISH_PENDING_WINDOW_DAYS);   // E4 (G5)
           if (!spIds) {
             var spRes = getSpanishInboxPending(SPANISH_PENDING_WINDOW_DAYS);
             if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
             spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
-            spFloors = {};
-            (spRes.pending || []).forEach(function (p) { if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs; });
+            spFloors = {}; spEsc = {};
+            (spRes.pending || []).forEach(function (p) {
+              if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs;
+              if (p.escalated) spEsc[p.threadId] = true;
+            });
           }
           var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spFloors);
           if (spOpen.length) {
             var spOldest = spOpen[0];
             var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
+            // E4 (cycle 25, G5): a claimed request waiting 7+ days makes the item OVERDUE.
+            var spEscN = spOpen.filter(function (o) { return spEsc[o.threadId]; }).length;
             items.push({
               kind: 'spanish',
               title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
-              detail: (spAssigned ? spAssigned + ' assigned to you · ' : '') +
+              detail: (spEscN ? spEscN + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days · ' : '') +
+                (spAssigned ? spAssigned + ' assigned to you · ' : '') +
                 (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
-              dueIso: '', overdue: false, action: 'Open',
+              dueIso: '', overdue: spEscN > 0, action: 'Open',
               route: { tool: 'metrics', tab: 'metricsSpanish' },
             });
           }

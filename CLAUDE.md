@@ -586,6 +586,7 @@ for the reasoning, which is usually the part that matters.
 - [Digest deliveries are logged per manager, PHI-free, on the ADP sheet, for 90 days (cycle 25 E1, G3, operator 2026-10-15)](docs/design-decisions.md#digest-deliveries-are-logged-per-manager)
 - [A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)](docs/design-decisions.md#a-pay-period-closes-against-one-checklist)
 - [The handbook's feedback reaches its source, a section's new text is its review, and the Log offers handbook sections for the Issue text (cycle 25 E3, G2 + ST3, operator 2026-10-15)](docs/design-decisions.md#the-handbook-s-feedback-reaches-its-source)
+- [A held reply waits for a person under "Replies to check", and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)](docs/design-decisions.md#a-held-reply-waits-for-a-person)
 
 ## Operator State Checklist
 
@@ -603,7 +604,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by every timesheet range reader** through `timesheetRowsInRange_` since cycle 23 TC2-9; the export since F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), DigestDeliveries (the automated-email delivery log — PHI-free, 90 days, cycle 25 E1 G3 + follow-ups), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable), Dashboard Standards (H2 — the answer target / amber band / team-avg excludes this app tones and benchmarks against, `getCdrDashboardStandard_`; no tab = no standard, never a fallback number). **Since Batch 3 the Storage Health CDR row states which calendar and which standard are LIVE, with a CDR-area finding for every fallback state** | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
-| Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its `PatientTrx` column names a patient, operator testing note 6; then ThreadId, ReopenedAt, RepliedAt, ReplyVerdict for the reply scan, 22post D — no reply text is stored) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
+| Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its `PatientTrx` column names a patient, operator testing note 6; then ThreadId, ReopenedAt, RepliedAt, ReplyVerdict for the reply scan, 22post D, and ReplyReason, cycle 25 E4 — no reply text is stored), DeptReplyReviews (cycle 25 E4 — each answer to a held reply: id, rule, answer, who; PHI-free) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, QuizResets (the retry limit's manager resets — ids only, cycle 23 TRN-1), **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE** (and also shown verbatim, as an `area` chip on each price result — seams F16 corrected "not displayed") — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — headers in ROW 1; `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16. Since T7 (2026-09-22) the city rows DECIDE for an item whose Area Eligibility says `listed cities`, and a tab that yields nothing usable is a named finding rather than an empty registry), ManualImport (the procedures-manual import ledger — per `man-…` id the export's SourceHash and the hash of what the import wrote, 22post M1) and ManualMeta (the manual's version, call router, changelog and — since M5b — the glossary's search synonyms, as JSON in A2, 22post M2) and ManualImages (the manual's images themselves — base64 split across rows by key and part, with the content hash; M4-FU3, since the domain disables Apps Script's Drive) and KbImages (article images — the same row shape, APPEND-ONLY and keyed by content hash; cycle 23 DRV-3) | PHI-free by policy | kept | `getKbSS_` |
 | Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
@@ -944,18 +945,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1343 | `node test/client/run.js` |
-| DOM harness tests | 258 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 168 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1353 | `node test/client/run.js` |
+| DOM harness tests | 260 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 171 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
-| Admin-tier endpoints (INV-136) | 56 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 100 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Admin-tier endpoints (INV-136) | 57 | `'Admin access required.'` in the server source |
+| Manager-gated endpoints | 101 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
-| Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
+| Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 366 | `.cycle/config.md` |
-| Regression scenarios (S*) | 136 | `.cycle/config.md` |
+| Invariant library entries | 367 | `.cycle/config.md` |
+| Regression scenarios (S*) | 137 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

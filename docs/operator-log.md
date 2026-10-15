@@ -10,6 +10,29 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — request triage: held replies are answered from the tab; Spanish requests escalate at 7 days (cycle 25 E4)
+
+**Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New
+version). No new trigger: the escalation digest rides the 8am daily-checks
+dispatcher, so `installAutomationTriggers` does not need re-running. Your
+decisions of 2026-10-15:
+- **Replies to check** (Metrics → Dept Requests): when a department replies but
+  the hourly check is not sure the reply finished the request, it now waits at
+  the top of the tab with the reason ("the reply asks a question", "only
+  acknowledges the email", …) and two buttons. **Resolved** closes it;
+  **Still open** keeps it open, and the check waits for the department's next
+  reply instead of asking about the same one again. Nothing on Needs you.
+- **Admin → System → Dept Request reply check** shows, per rule, how often
+  people overrode it in the last 90 days. The check never changes itself: if a
+  rule is mostly answered Resolved, ask for that rule to change. Two new places
+  in the Dept Requests spreadsheet hold this: a ReplyReason column and a
+  DeptReplyReviews tab (no reply text, no patient names).
+- **Spanish escalation:** a request waiting 7 days or more reads "Escalated · N
+  days" on the Spanish Inbox tab and the Dashboard card, turns its claimant's
+  Needs-you item overdue, and is listed in a new 8am email to managers (age,
+  email or voicemail, who has it, a Gmail link — no message text). It appears
+  under Email deliveries like the other digests. Tell the Spanish team.
+
 ## 2026-10-15 — the handbook loop: suggested edits reach the source, and the Log offers handbook sections (cycle 25 E3)
 
 **Adds NO operator state** (the `suggest` kind rides the existing KbFeedback tab).

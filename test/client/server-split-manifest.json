@@ -2915,6 +2915,63 @@
     "exportHandbookFeedback"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "cycle 25 E4: the reply check's review queue (reason codes, the answer endpoint + log, the admin report) and the Spanish escalation (flag, cached set, the 8am digest)",
+   "added": [
+    "DR_REPLY_REASONS",
+    "DR_REVIEWS_HEADERS",
+    "DR_REVIEWS_TAB",
+    "DR_REVIEW_ANSWERS",
+    "DR_REVIEW_REPORT_DAYS",
+    "SPANISH_ESCALATE_DAYS",
+    "SPANISH_ESCALATE_READ_DAYS",
+    "answerDeptReplyLook",
+    "drReplyHoldReason_",
+    "drReplyReasonOf_",
+    "drReplyReviewReport_",
+    "drReplyVerdictFull_",
+    "getDeptReplyReviewStats",
+    "getOrCreateDeptReplyReviewsSheet_",
+    "sendSpanishEscalationDigest",
+    "spanishEscalated_",
+    "spanishEscalationBody_",
+    "spanishEscalationRows_",
+    "spanishPendingEscalatedGet_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_DELIVERY_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "DR",
+    "DR_HEADERS",
+    "DR_REPLY_VERDICTS",
+    "TRIGGER_GROUPS",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "computeAutomationHealth_",
+    "drReplyAsksOrHolds_",
+    "drReplyPick_",
+    "drReplyScanCore_",
+    "drReplyVerdict_",
+    "getDeptRequests",
+    "getMyPendingTasks",
+    "reopenDeptRequest",
+    "spanishPendingCore_",
+    "spanishPendingIdsPut_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "cycle 25 E4: getDeptRequests ships repliedMs (the Replies-to-check order)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getDeptRequests"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -2972,7 +3029,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "572591aadaa1c8b7"
+   "sha": "d1a43a7bc1326b8a"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -3462,7 +3519,7 @@
   "DIGEST_DELIVERY_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0ee7b484e43b9b0a"
+   "sha": "aba6b56d0c5dc866"
   },
   "DIGEST_DELIVERY_REASON_MAX": {
    "file": "00_config.js",
@@ -3492,7 +3549,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "89d34316c2f32eea"
+   "sha": "29bca763bf685464"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -3502,7 +3559,7 @@
   "DR": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "03ed1559e2cae2f5"
+   "sha": "bea796166ec934ae"
   },
   "DRIVE_ACCESS_CACHE_KEY": {
    "file": "00_config.js",
@@ -3532,7 +3589,7 @@
   "DR_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b6f22faf8422f31a"
+   "sha": "b710d9d42807ef6a"
   },
   "DR_LIST_CAP": {
    "file": "00_config.js",
@@ -3564,6 +3621,11 @@
    "kind": "const",
    "sha": "10b6a075d976224e"
   },
+  "DR_REPLY_REASONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6216464e7450e7e2"
+  },
   "DR_REPLY_SCAN_DAYS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3577,7 +3639,7 @@
   "DR_REPLY_VERDICTS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "55953c85fd7cfaf1"
+   "sha": "79634dd4411f8e79"
   },
   "DR_RESOLVED_VIA_VALUES": {
    "file": "00_config.js",
@@ -3588,6 +3650,26 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "ac5bb06d6b9fe632"
+  },
+  "DR_REVIEWS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "60a6a78e0776ef1e"
+  },
+  "DR_REVIEWS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "62f608596a7427e6"
+  },
+  "DR_REVIEW_ANSWERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54faa62594f95df6"
+  },
+  "DR_REVIEW_REPORT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5c6b78868fb2d937"
   },
   "DR_THREAD_IDS_MAX": {
    "file": "00_config.js",
@@ -4984,6 +5066,16 @@
    "kind": "const",
    "sha": "f82191b6f51d522a"
   },
+  "SPANISH_ESCALATE_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3e8dee185403fef1"
+  },
+  "SPANISH_ESCALATE_READ_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4cfb3d5510265f55"
+  },
   "SPANISH_PENDING_IDS_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
@@ -5202,12 +5294,12 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "dacdbe9c4c9b1f09"
+   "sha": "7c698612c32d8487"
   },
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b8bc93ecd021b896"
+   "sha": "976df472abb4acab"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -5573,6 +5665,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "028010dccb532cae"
+  },
+  "answerDeptReplyLook": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ce09a7204b31e2be"
   },
   "appSendMail_": {
    "file": "10_core.js",
@@ -6347,7 +6444,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "63511850b2b68362"
+   "sha": "0ef4c9ecfd011601"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -6647,7 +6744,7 @@
   "drReplyAsksOrHolds_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "0cb8d11609d1ce39"
+   "sha": "5757bf2f2d7eb2dc"
   },
   "drReplyDirectory_": {
    "file": "50_deptrequests.js",
@@ -6658,6 +6755,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "e4147731f497b724"
+  },
+  "drReplyHoldReason_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "749a3bb33dd96c57"
   },
   "drReplyIsAutomatic_": {
    "file": "50_deptrequests.js",
@@ -6672,17 +6774,32 @@
   "drReplyPick_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "d44fd5592a5f3220"
+   "sha": "00d73a597672598c"
+  },
+  "drReplyReasonOf_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "7739189d32581122"
+  },
+  "drReplyReviewReport_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "652013bae2e4819b"
   },
   "drReplyScanCore_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "b9a3e12805926e37"
+   "sha": "95bd5cba0df9050f"
+  },
+  "drReplyVerdictFull_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "eaad62733abcd49f"
   },
   "drReplyVerdict_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "6abaa32f125e0006"
+   "sha": "755841585934d2c7"
   },
   "drResolveCtaHtml_": {
    "file": "50_deptrequests.js",
@@ -7319,6 +7436,11 @@
    "kind": "function",
    "sha": "b70aa64e80c1db91"
   },
+  "getDeptReplyReviewStats": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "190f82f783a5ba7d"
+  },
   "getDeptRequestDetail": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -7347,7 +7469,7 @@
   "getDeptRequests": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "19fd15f66cfd440f"
+   "sha": "c9668bffc728035c"
   },
   "getDeptRequestsSS_": {
    "file": "50_deptrequests.js",
@@ -7642,7 +7764,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9f72eb94be5225fb"
+   "sha": "f3a115bc1e57e825"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -7728,6 +7850,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "c55ec5b69434238d"
+  },
+  "getOrCreateDeptReplyReviewsSheet_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "3346fc7065e234ff"
   },
   "getOrCreateDeptRequestsSheet_": {
    "file": "50_deptrequests.js",
@@ -10257,7 +10384,7 @@
   "reopenDeptRequest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "5d0fc9680938a4d2"
+   "sha": "e8d7c8b71dd1f160"
   },
   "repSenderFrom_": {
    "file": "10_core.js",
@@ -10674,6 +10801,11 @@
    "kind": "function",
    "sha": "7ffaae34596c66e5"
   },
+  "sendSpanishEscalationDigest": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "c103903c6819c130"
+  },
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
@@ -10834,6 +10966,21 @@
    "kind": "function",
    "sha": "b9c6dc5147d09daa"
   },
+  "spanishEscalated_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "bd3a0d3c5d453336"
+  },
+  "spanishEscalationBody_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "edc6d2cbc6286f44"
+  },
+  "spanishEscalationRows_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "37329c00643864ce"
+  },
   "spanishIsCourtesyOnly_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -10872,7 +11019,12 @@
   "spanishPendingCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "9bfd14aa6db70a82"
+   "sha": "b19bc9b780753d0d"
+  },
+  "spanishPendingEscalatedGet_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "069d5da8435d4671"
   },
   "spanishPendingFloorsGet_": {
    "file": "51_spanish.js",
@@ -10892,7 +11044,7 @@
   "spanishPendingIdsPut_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "ab09c742cecf0bc7"
+   "sha": "76c72f71fda5da24"
   },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",

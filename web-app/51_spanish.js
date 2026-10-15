@@ -611,6 +611,7 @@ function spanishPendingCore_(days, emp) {
         threadId: tid,
         requester: requester,
         ageHours: Math.round((nowMs - open.reqMs) / 3600000),
+        escalated: spanishEscalated_(nowMs - open.reqMs),   // E4 (G5): 7+ calendar days
         subject: req.getSubject() || '(no subject)',
         snippet: bodyRaw.slice(0, 240),
         hasMore: bodyRaw.length > 240,
@@ -649,6 +650,7 @@ function spanishPendingCore_(days, emp) {
         kind: 'voicemail',
         requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
         ageHours: Math.round((nowMs - r.reqMs) / 3600000),
+        escalated: spanishEscalated_(nowMs - r.reqMs),   // E4 (G5)
         subject: r.subject || '(no subject)',
         snippet: vmText.slice(0, 240),
         hasMore: vmText.length > 240,
@@ -662,12 +664,13 @@ function spanishPendingCore_(days, emp) {
     out.sort(function (a, b) { return b.ageHours - a.ageHours; });
     const floors = {};
     out.forEach(function (x) { if (x.claimFloorMs) floors[x.threadId] = x.claimFloorMs; });
-    spanishPendingIdsPut_(d, out.map(function (x) { return x.threadId; }), floors);   // 22post C-8 — ids (and SP-2 claim floors) only, never content
+    spanishPendingIdsPut_(d, out.map(function (x) { return x.threadId; }), floors,
+      out.filter(function (x) { return x.escalated; }).map(function (x) { return x.threadId; }));   // E4: + the escalated ids   // 22post C-8 — ids (and SP-2 claim floors) only, never content
     // Round 2 additive fields: `members` (the assign-select options — the same
     // internal team emails getSpanishInboxResolved already ships behind this
     // gate) and `self` (the caller's lowercased email, so the client can tell
     // "claimed by me" apart without a second identity source).
-    return { address: addr, days: d, pending: out,
+    return { address: addr, days: d, pending: out, escalateDays: SPANISH_ESCALATE_DAYS,   // E4 (G5): the client names the rule from here
       truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmTruncated,
       // SP4 — what the gate HID, and the threshold it hid it at. A filter
       // nobody can see is a filter that can fail silently forever.
@@ -1139,11 +1142,27 @@ function spanishBustClaimants_(emails) {
 /** SP-2 (cycle 23 Batch 13): `floors` ({threadId: ms}) rides beside the ids —
  *  the claim floor of every reopened request, so Needs-you drops the claim of
  *  the request that was answered exactly as the list does. Timestamps only. */
-function spanishPendingIdsPut_(days, ids, floors) {
+function spanishPendingIdsPut_(days, ids, floors, escalated) {
   try {
     CacheService.getScriptCache().put(SPANISH_PENDING_IDS_PREFIX + days,
-      JSON.stringify({ atMs: Date.now(), ids: ids || [], floors: floors || {} }), SPANISH_PENDING_IDS_TTL);
+      JSON.stringify({ atMs: Date.now(), ids: ids || [], floors: floors || {}, escalated: escalated || [] }), SPANISH_PENDING_IDS_TTL);
   } catch (e) {}
+}
+/** E4 (G5) — the escalated thread ids cached beside the ids ({} when none, or unread). */
+function spanishPendingEscalatedGet_(days) {
+  try {
+    const hit = CacheService.getScriptCache().get(SPANISH_PENDING_IDS_PREFIX + days);
+    const v = hit ? JSON.parse(hit) : null;
+    const out = {};
+    ((v && Array.isArray(v.escalated)) ? v.escalated : []).forEach(function (t) { out[t] = true; });
+    return out;
+  } catch (e) { return {}; }
+}
+/** PURE (Node-pinned) — E4 (cycle 25, G5): a pending request is escalated once
+ *  it has waited SPANISH_ESCALATE_DAYS calendar days (wall clock, the tab's own
+ *  age measure). `waitedMs` = now − the request's time. */
+function spanishEscalated_(waitedMs) {
+  return Number(waitedMs) >= SPANISH_ESCALATE_DAYS * 86400000;
 }
 /** SP-1 (cycle 23): a resolved thread leaves the cached id list Needs-you
  *  reads at once, rather than at the TTL — the list is that view's ONLY
@@ -1314,6 +1333,83 @@ function autoAssignSpanishThreads(days) {
     return spanishAutoAssignCore_(emp, days);
   } catch (err) { return { success: false, error: 'Auto-assign failed: ' + err.message }; }
 }
+// ── E4 (cycle 25, G5, operator 2026-10-15): the Spanish escalation digest ──
+// Every morning at 8am (runDailyChecks — count-neutral, no trigger of its own),
+// the managers get the pending Spanish requests that have waited
+// SPANISH_ESCALATE_DAYS+ days: age, kind, who has it, and the Gmail link. No
+// subject, snippet or requester — the request's content stays behind the
+// inbox's own gate. Logged as a digest delivery (G3); a morning with none
+// heartbeats and logs 'empty', never sends.
+
+/** PURE (Node-pinned) — the digest's rows from a pending read: escalated only,
+ *  oldest first; the claimant's roster name when known, else the address;
+ *  never the subject, snippet or requester. */
+function spanishEscalationRows_(pending, names) {
+  return (pending || []).filter(function (p) { return p && p.escalated; })
+    .sort(function (a, b) { return Number(b.ageHours) - Number(a.ageHours); })
+    .map(function (p) {
+      const by = p.claim && p.claim.by ? String(p.claim.by).toLowerCase() : '';
+      return { ageDays: Math.floor(Number(p.ageHours) / 24), kind: p.kind === 'voicemail' ? 'Voicemail' : 'Email',
+        claimant: by ? ((names && names[by]) || by) : '', link: String(p.permalink || '') };
+    });
+}
+/** PURE (Node-pinned) — the digest body (HTML + text) from its rows. */
+function spanishEscalationBody_(rows, opts) {
+  opts = opts || {};
+  const n = rows.length;
+  const lead = n + ' Spanish Inbox request' + (n === 1 ? ' has' : 's have') + ' waited ' + SPANISH_ESCALATE_DAYS +
+    ' days or more without an answer. Open Metrics → Spanish Inbox to work or reassign ' + (n === 1 ? 'it' : 'them') + '.';
+  const tail = opts.truncated ? ' The inbox read stopped at its cap, so older requests may be missing from this list.' : '';
+  let html = '<p style="margin:0 0 10px;">' + esc_(lead + tail) + '</p><ul style="margin:0;padding-left:18px;">';
+  rows.slice(0, 50).forEach(function (r) {
+    html += '<li style="margin:3px 0;">' + esc_(r.ageDays + ' days · ' + r.kind + ' · ' + (r.claimant ? 'with ' + r.claimant : 'unclaimed')) +
+      (r.link ? ' — <a href="' + esc_(r.link) + '">open in Gmail</a>' : '') + '</li>';
+  });
+  html += '</ul>' + (n > 50 ? '<p style="margin:8px 0 0;">… and ' + (n - 50) + ' more in the inbox.</p>' : '');
+  const text = lead + tail + '\n\n' + rows.slice(0, 50).map(function (r) {
+    return '  • ' + r.ageDays + ' days · ' + r.kind + ' · ' + (r.claimant ? 'with ' + r.claimant : 'unclaimed') + (r.link ? ' — ' + r.link : '');
+  }).join('\n') + (n > 50 ? '\n  … and ' + (n - 50) + ' more.' : '');
+  return { html: html, text: text };
+}
+function sendSpanishEscalationDigest() {
+  assertManagerCaller_('sendSpanishEscalationDigest');  // see sendDailyMissedPunchAlerts note
+  return runAutomationJob_('SpanishEscalationDigest', function () {
+    stampDigestLastRun_('spanishEscalation');   // the trigger ran — a dead one stays detectable
+    if (!getSpanishInboxAddress_()) { Logger.log('Spanish inbox not configured — no escalation digest.'); return { outcome: automationOutcome_('idle') }; }
+    const mgrEmails = getManagerEmails_();
+    if (!mgrEmails.length) { Logger.log('No manager emails — skipping the Spanish escalation digest.'); return { outcome: automationOutcome_('idle') }; }
+    // The trigger runs as its installer, who passes the trigger gate but may
+    // not be an inbox member: the UNGATED core (SP-4).
+    const res = spanishPendingCore_(SPANISH_ESCALATE_READ_DAYS, getEmployeeInfo_() || _SYSTEM_AUDIT_EMP_);
+    if (!res || res.error) throw new Error((res && res.error) || 'the Spanish inbox could not be read');   // never "nothing escalated" (g53)
+    const names = {};
+    const roster = getEmployeeRosterRows_();
+    for (let i = 1; i < roster.length; i++) {
+      const em = empRosterEmail_(roster[i]);
+      if (em) names[em.toLowerCase()] = String(roster[i][EMP.NAME] || '').trim();
+    }
+    const rows = spanishEscalationRows_(res.pending, names);
+    if (!rows.length) {
+      logDigestDelivery_('spanishEscalation', mgrEmails, 'empty', 0, res.truncated ? 'none escalated in what was read (the read hit its cap)' : 'nothing waiting ' + SPANISH_ESCALATE_DAYS + '+ days');
+      return { outcome: res.truncated ? automationOutcome_('partial', 'the Spanish inbox read hit its cap — older requests were not read') : automationOutcome_('ok') };
+    }
+    const body = spanishEscalationBody_(rows, { truncated: res.truncated });
+    try {
+      appSendMail_({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — ' + rows.length + ' Spanish Inbox request' + (rows.length === 1 ? '' : 's') + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days',
+        body: body.text,
+        htmlBody: buildBrandedEmailHtml_('Spanish Inbox — escalated requests', body.html, { tone: 'warn', subLabel: 'Spanish Inbox' }),
+      });
+    } catch (mailErr) {
+      logDigestDelivery_('spanishEscalation', mgrEmails, 'failed', rows.length, mailErr.message);
+      return { outcome: automationOutcome_('failed', rows.length + ' escalated request(s) found but the digest could not be sent: ' + mailErr.message) };
+    }
+    logDigestDelivery_('spanishEscalation', mgrEmails, 'sent', rows.length, res.truncated ? 'the inbox read hit its cap' : '');
+    return { outcome: res.truncated ? automationOutcome_('partial', 'sent, but the Spanish inbox read hit its cap — older requests were not read') : automationOutcome_('ok') };
+  });
+}
+
 function autoAssignSpanishThreadsScheduled() {
   assertManagerCaller_('autoAssignSpanishThreadsScheduled');  // see sendDailyMissedPunchAlerts note
   return runAutomationJob_('SpanishAutoAssign', function () {

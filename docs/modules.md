@@ -605,6 +605,16 @@ not restate it. Server endpoints live in the fourteen server files
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
 
+     **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
+     **Replies to check**: each department reply the hourly check held back,
+     with the rule that held it ("asks a question", "only acknowledges", …) and
+     Resolved / Still open; Still open stops the same reply being raised again,
+     and Admin → System counts per rule how often people overrode it (the check
+     never loosens itself). In the Spanish Inbox a request waiting 7 calendar
+     days is **escalated** — a pill and stripe on the tab and the Dashboard card,
+     an overdue Needs-you item for its claimant, and an 8am digest to managers
+     carrying no request content.
+
      **Cycle 23 Batch 10 (2026-10-02):** the range hero's rate is call-weighted
      (Σanswered / Σ(answered + missed)) and is never compared with itself: My Stats
      on a range shows the baseline with no delta, and Team Metrics draws a delta

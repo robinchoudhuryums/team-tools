@@ -205,6 +205,8 @@ const SCENARIOS = [
   // table) STACKS in the pop-out; and the sort + date controls in dark mode.
   ['deptreq-light-compact', { tool: 'metrics', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
   ['deptreq-dark-wide',     { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
+  ['deptreq-looks-light-mobile', { tool: 'metrics', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
   // 22post A-2a — the Scratchpad with the standard modal buttons.
   ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
@@ -447,6 +449,11 @@ const SCENARIOS = [
   ['admin-system-light-mobile',      { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '', "cnAdminTab_('system')"],
   ['admin-system-light-wide',        { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '', "cnAdminTab_('system')"],
   ['admin-system-dark-wide',         { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'dark', '', "cnAdminTab_('system')"],
+  // Cycle 25 E4 (ST1): the reply check's review report, scrolled into view (an over-fired rule in amber).
+  ['admin-system-replycheck-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '',
+    "cnAdminTab_('system'); setTimeout(function(){ var p=document.getElementById('cn-sys-sec-replyreviews'); if(p) p.scrollIntoView(); }, 700)"],
+  ['admin-system-replycheck-light-mobile', { tool: 'manage', tab: 'callNotesAdmin' }, MOBILE, 'light', '',
+    "cnAdminTab_('system'); setTimeout(function(){ var p=document.getElementById('cn-sys-sec-replyreviews'); if(p) p.scrollIntoView(); }, 700)"],
   ['admin-system-allclear-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?fixture=empty', "cnAdminTab_('system')"],
   ['admin-system-error-light-wide',  { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '?failrpc=getAutomationHealth', "cnAdminTab_('system')"],
   // The Drive grant the operator was actually missing (2026-09-09) — the

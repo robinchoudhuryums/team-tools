@@ -1860,7 +1860,7 @@ function computeAutomationHealth_(opts) {
     // no heartbeat either — the missed-punch alerts, the ADP export check and
     // this failure digest itself — could die silently. Each stamps here now.
     const DIGEST_STALE_HOURS = { eod: 2, urgent: 26, weekly: 192, trainingOverdue: 26, deptReqReminder: 26, managerBrief: 26, selfTest: 26, coachingRecap: 192, spanishAutoAssign: 2, deptReplyScan: 2,
-                                 missedPunch: 26, exportCheck: 26, automationHealth: 26 };
+                                 missedPunch: 26, exportCheck: 26, automationHealth: 26, spanishEscalation: 26 };
     let digestMap = {};
     try {
       digestMap = JSON.parse(PropertiesService.getScriptProperties()
