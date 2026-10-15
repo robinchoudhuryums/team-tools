@@ -4109,15 +4109,20 @@ function sendCallNotesEodDigest() {
       } catch (e) {
         Logger.log(`sendCallNotesEodDigest: skipped ${empObj.id} (${e.message})`);
         unread++; lastError = e.message; unreadNames.push(empObj.name || empObj.id);
+        logDigestDelivery_('eod', empObj.email, 'failed', null, 'their Call Notes Sheet could not be read');   // E1 follow-ups
         continue;
       }
       if (unresolved.length === 0) continue;
+      // E1 follow-ups: a reminder that went (or did not) is a row; a rep with
+      // nothing flagged gets none — an hourly "empty" per rep would bury the log.
       try {
         sendOneRepEodDigest_(empObj, unresolved);
         sentCount++;
+        logDigestDelivery_('eod', empObj.email, 'sent', unresolved.length, '');
       } catch (e) {
         Logger.log(`Failed to email rep ${empObj.email} EOD digest: ${e.message}`);
         sendFailed++; lastError = e.message;
+        logDigestDelivery_('eod', empObj.email, 'failed', unresolved.length, e.message);
       }
     }
     stampDigestLastRun_('eod');

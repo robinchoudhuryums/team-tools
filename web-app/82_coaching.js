@@ -732,6 +732,9 @@ function sendCoachingRecapDigest() {
             { tone: 'info', subLabel: 'Training · Coaching', statusLabel: 'Weekly recap', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
       } catch (e) { console.warn('coaching recap to ' + who.email + ' failed: ' + e.message); }
       if (ok) sent++; else failed++;
+      // E1 follow-ups: coachSendMail_ returns false and logs its own reason, so
+      // the row names the failure without the error text.
+      logDigestDelivery_('coachingRecap', who.email, ok ? 'sent' : 'failed', list.length, ok ? '' : 'the recap email could not be sent');
     });
     stampDigestLastRun_('coachingRecap');
     Logger.log('sendCoachingRecapDigest: agents=' + Object.keys(buckets).length + ' sent=' + sent + ' failed=' + failed + ' noEmail=' + skipped);

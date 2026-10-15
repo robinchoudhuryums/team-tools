@@ -1142,6 +1142,25 @@ const DIGEST_DELIVERY_RETENTION_DAYS = 90;
 const DIGEST_DELIVERY_SCAN_MAX = 4000;    // the Admin view's tail bound (INV-13 spirit)
 const DIGEST_DELIVERY_VIEW_DAYS = 14;     // the Admin view's default window
 const DIGEST_DELIVERY_REASON_MAX = 200;
+// E1 follow-ups (cycle 25, operator 2026-10-15): every AUTOMATED mail is logged,
+// not only the manager digests — the rep- and agent-facing reminders and the two
+// alerts too. ONE map names every key the log is written under (pinned against
+// every logDigestDelivery_ literal in the server) and ships with the Admin read,
+// so the panel keeps no label copy of its own. The manager digests reuse their
+// heartbeat keys; a mail with no heartbeat of its own gets a key here.
+const DIGEST_DELIVERY_LABELS = {
+  weekly: 'Weekly training/review digests', urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief',
+  trainingOverdue: 'Training-overdue digest', deptReqReminder: 'Dept-request SLA reminder',
+  automationHealth: 'Automation-health failure digest', missedPunch: 'Missed-punch summary (to managers)',
+  eod: 'End-of-day flag reminder (to the rep)', coachingRecap: 'Weekly coaching recap (to the agent)',
+  missedPunchRep: 'Missed clock-out reminder (to the rep)', trainingOverdueRep: 'Overdue-documents reminder (to the employee)',
+  selfTest: 'Nightly self-test failure alert', clientErrSpike: 'Client-error spike alert',
+};
+// A delivery row that could not be WRITTEN is counted here — {count, firstMs,
+// lastMs, lastError} — and the Admin panel says so for a failure inside its
+// window, so a missing row is never read as "nothing was sent". Auto-managed;
+// delete the property to reset the count.
+const DIGEST_DELIVERY_FAIL_PROP = 'DIGEST_DELIVERY_LOG_FAILS';
 const CN_EMAIL_PALETTE = {
   paperCard:    '#ffffff',
   paper:        '#f6f7f9',

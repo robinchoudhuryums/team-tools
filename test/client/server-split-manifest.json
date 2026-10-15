@@ -2841,6 +2841,28 @@
     "stampAutomationError_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "Cycle 25 E1 follow-ups: every automated email logged (DIGEST_DELIVERY_LABELS), the delivery log's write failures counted (DIGEST_DELIVERY_FAIL_PROP, noteDigestDeliveryWriteFailure_, digestDeliveryWriteFailuresView_)",
+   "added": [
+    "DIGEST_DELIVERY_FAIL_PROP",
+    "DIGEST_DELIVERY_LABELS",
+    "digestDeliveryWriteFailuresView_",
+    "noteDigestDeliveryWriteFailure_"
+   ],
+   "removed": [],
+   "changed": [
+    "clientErrSpikeAlert_",
+    "getDigestDeliveries",
+    "logDigestDelivery_",
+    "selfTestFailureEmail_",
+    "sendCallNotesEodDigest",
+    "sendCoachingRecapDigest",
+    "sendDailyMissedPunchAlerts",
+    "sendTrainingOverdueDigest"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3375,10 +3397,20 @@
    "kind": "const",
    "sha": "8329547ca7e535a5"
   },
+  "DIGEST_DELIVERY_FAIL_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ebb9718fc9304266"
+  },
   "DIGEST_DELIVERY_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "80d76f8f298adcd1"
+  },
+  "DIGEST_DELIVERY_LABELS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ee7b484e43b9b0a"
   },
   "DIGEST_DELIVERY_REASON_MAX": {
    "file": "00_config.js",
@@ -6008,7 +6040,7 @@
   "clientErrSpikeAlert_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8e8c8e28e9e04949"
+   "sha": "1af2d87481e503b6"
   },
   "clientErrorsSummary_": {
    "file": "10_core.js",
@@ -6454,6 +6486,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "f1096ae70946383a"
+  },
+  "digestDeliveryWriteFailuresView_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a25782d8ba5a5454"
   },
   "digestNeverRanOverdue_": {
    "file": "10_core.js",
@@ -7248,7 +7285,7 @@
   "getDigestDeliveries": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b3250123407c8fde"
+   "sha": "354e5a973416bb96"
   },
   "getDocsDashboard": {
    "file": "81_empdocs.js",
@@ -9018,7 +9055,7 @@
   "logDigestDelivery_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "7abc742fae3426af"
+   "sha": "775dbbdb14eeb531"
   },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
@@ -9224,6 +9261,11 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "3654ab2ba4f67118"
+  },
+  "noteDigestDeliveryWriteFailure_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "21ddc92bf240c0cb"
   },
   "notifyEmpDocIssued_": {
    "file": "81_empdocs.js",
@@ -10438,7 +10480,7 @@
   "selfTestFailureEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "c2bad1096f53a814"
+   "sha": "a6475b2c2f07dfad"
   },
   "selfUndoLaterPunch_": {
    "file": "20_timeclock.js",
@@ -10458,7 +10500,7 @@
   "sendCallNotesEodDigest": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "e17a48d485618151"
+   "sha": "3c98dbe79ec36bc4"
   },
   "sendCallNotesUrgentDigest": {
    "file": "30_callnotes.js",
@@ -10473,12 +10515,12 @@
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "ce7bad86c21bb528"
+   "sha": "ca5d1c9d48560cc8"
   },
   "sendDailyMissedPunchAlerts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0c4fab05b777098c"
+   "sha": "25555365f4f5c06a"
   },
   "sendDeptRequestReminderDigest": {
    "file": "50_deptrequests.js",
@@ -10523,7 +10565,7 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "64e47e92c414432f"
+   "sha": "cfdd68e7f27414ad"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",

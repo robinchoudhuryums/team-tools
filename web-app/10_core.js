@@ -777,13 +777,21 @@ function clientErrSpikeAlert_() {
     const htmlBody = buildBrandedEmailHtml_('Client errors are spiking', inner,
       { tone: 'danger', subLabel: 'Diagnostics',
         ctaUrl: safeWebAppUrl_('callNotesAdmin'), ctaLabel: 'Open Automation Health' });
-    appSendMail_({
-      to: recipients.join(','),
-      subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
-      body: n + ' client error(s) in the last hour.\n\n' + rowsText +
-        '\nFull detail: Manage → Admin → Automation Health → Client errors.',
-      htmlBody: htmlBody,
-    });
+    try {
+      appSendMail_({
+        to: recipients.join(','),
+        subject: '⚠ UMS Team Tools — client errors spiking (' + n + ' in the last hour)',
+        body: n + ' client error(s) in the last hour.\n\n' + rowsText +
+          '\nFull detail: Manage → Admin → Automation Health → Client errors.',
+        htmlBody: htmlBody,
+      });
+    } catch (e) {
+      logDigestDelivery_('clientErrSpike', recipients, 'failed', n, e.message);   // E1 follow-ups
+      throw e;
+    }
+    // The cooldown and the threshold are not logged — they decide per beacon,
+    // and a row per beacon would bury the log; only a SEND decision is a row.
+    logDigestDelivery_('clientErrSpike', recipients, 'sent', n, 'errors in the last hour');   // E1 follow-ups
   } catch (e) { Logger.log('clientErrSpikeAlert_ skipped: ' + e.message); }
 }
 function getOrCreateViewUsageSheet_() {
@@ -1124,8 +1132,35 @@ function logDigestDelivery_(digest, recipients, status, items, reason) {
     return rows.length;
   } catch (e) {
     Logger.log('logDigestDelivery_(' + digest + ') failed: ' + e.message);
+    noteDigestDeliveryWriteFailure_(e);   // E1 follow-ups: a lost row is counted, so the panel can say so
     return 0;
   }
+}
+/** E1 follow-ups (cycle 25) — counts a delivery row that could not be written
+ *  (DIGEST_DELIVERY_FAIL_PROP). Best-effort and lock-free like its caller (A8):
+ *  a lost increment under a race undercounts a counter that only has to be
+ *  non-zero to be shown. Never throws. */
+function noteDigestDeliveryWriteFailure_(err) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = null;
+    try { rec = JSON.parse(props.getProperty(DIGEST_DELIVERY_FAIL_PROP)); } catch (_) {}
+    if (!rec || typeof rec !== 'object') rec = { count: 0, firstMs: Date.now() };
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastMs = Date.now();
+    rec.lastError = String((err && err.message) || err || '').slice(0, 200);
+    propSetBounded_(DIGEST_DELIVERY_FAIL_PROP, JSON.stringify(rec), { mode: 'degrade', shrink: propShrinkStripFields_(['lastError']) });
+  } catch (e) { /* best-effort — the Logger line above is the floor */ }
+}
+/** PURE (Node-pinned): the write-failure record as the panel shows it — only
+ *  when its latest failure falls inside the view window; else null. */
+function digestDeliveryWriteFailuresView_(raw, cutoffMs) {
+  let rec = null;
+  try { rec = JSON.parse(raw); } catch (_) { return null; }
+  if (!rec || typeof rec !== 'object') return null;
+  const last = Number(rec.lastMs), n = Number(rec.count);
+  if (!(n > 0) || !isFinite(last) || last < cutoffMs) return null;
+  return { count: n, lastMs: last, lastError: String(rec.lastError || '') };
 }
 /** PURE (Node-pinned): the Admin view of the raw tab rows — inside the window
  *  (a stamp that will not parse is KEPT, never silently dropped), newest
@@ -1155,14 +1190,19 @@ function getDigestDeliveries(opts) {
     let days = parseInt(opts && opts.days, 10);
     if (!(days >= 1)) days = DIGEST_DELIVERY_VIEW_DAYS;
     days = Math.min(days, DIGEST_DELIVERY_RETENTION_DAYS);
-    const base = { rows: [], days: days, retentionDays: DIGEST_DELIVERY_RETENTION_DAYS, truncated: false, missing: false };
+    const cutoff = Date.now() - days * 86400000;
+    // E1 follow-ups: the labels ride the payload (the client keeps no copy),
+    // and a row that could not be written inside the window is named.
+    let failRaw = null;
+    try { failRaw = PropertiesService.getScriptProperties().getProperty(DIGEST_DELIVERY_FAIL_PROP); } catch (_) {}
+    const base = { rows: [], days: days, retentionDays: DIGEST_DELIVERY_RETENTION_DAYS, truncated: false, missing: false,
+                   labels: DIGEST_DELIVERY_LABELS, writeFailures: digestDeliveryWriteFailuresView_(failRaw, cutoff) };
     const sheet = getAdpSS_().getSheetByName(DIGEST_DELIVERIES_TAB);
     if (!sheet) { base.missing = true; return base; }
     const last = sheet.getLastRow();
     if (last < 2) return base;
     const start = Math.max(2, last - DIGEST_DELIVERY_SCAN_MAX + 1);
     const vals = sheet.getRange(start, 1, last - start + 1, DIGEST_DELIVERY_HEADERS.length).getValues();
-    const cutoff = Date.now() - days * 86400000;
     base.rows = digestDeliveriesView_(vals, cutoff);
     if (start > 2) {
       const firstMs = diagTsMs_(vals[0][0]);
@@ -2252,12 +2292,18 @@ function selfTestFailureEmail_(mode, res, names) {
       esc_(String(res.skip)) + ' skipped.</p>' +
       (items ? '<ul style="margin:0;padding-left:18px;">' + items + '</ul>' : '') +
       '<p style="margin:10px 0 0;">Open the Apps Script editor and run the suite for detail.</p>';
-    appSendMail_({
-      to: mgrEmails.join(','),
-      subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
-      body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
-      htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
-    });
+    try {
+      appSendMail_({
+        to: mgrEmails.join(','),
+        subject: 'Team Tools — nightly self-test: ' + res.fail + ' failure(s)',
+        body: 'Nightly self-test (' + mode + '): ' + res.fail + ' failure(s).\n\n' + (names || []).join('\n'),
+        htmlBody: buildBrandedEmailHtml_('Nightly self-test failed', bodyHtml, { tone: 'warn', subLabel: 'Self-Test' }),
+      });
+    } catch (e) {
+      logDigestDelivery_('selfTest', mgrEmails, 'failed', res.fail, e.message);   // E1 follow-ups
+      throw e;
+    }
+    logDigestDelivery_('selfTest', mgrEmails, 'sent', res.fail, mode + ' mode');   // E1 follow-ups
   } catch (e) { Logger.log('selfTestFailureEmail_ failed: ' + e.message); }
 }
 function sendAutomationHealthDigest() {

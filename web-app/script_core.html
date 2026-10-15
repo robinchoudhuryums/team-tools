@@ -2040,6 +2040,9 @@ function mtDateRangeToggle_(scope, rowId) {
 //   sort:    { key, dir } current sort (for the active-column caret) — optional
 //   onSort:  global fn name called as onSort('<colKey>') on a sortable header click
 //   empty:   html shown when rows is empty
+//   tableClass: an extra class on the <table> (charset-restricted) — optional
+//   dataLabels: true → every <td> carries data-label="<column label>", so a
+//            caller's narrow-screen rule can lay a row out as a card — optional
 function mtRenderTable_(opts) {
   opts = opts || {};
   var cols = opts.columns || [];
@@ -2078,7 +2081,8 @@ function mtRenderTable_(opts) {
     var rc = opts.rowClass ? opts.rowClass(r) : '';
     var tr = '<tr' + (rc ? ' class="' + esc(rc) + '"' : '') + '>' + cols.map(function (c) {
       var tdCls = c.numeric ? ' class="m-num"' : (c.name ? ' class="m-name"' : '');
-      return '<td' + tdCls + '>' + (c.cell ? c.cell(r) : '') + '</td>';
+      var dl = opts.dataLabels ? ' data-label="' + esc(c.label) + '"' : '';
+      return '<td' + tdCls + dl + '>' + (c.cell ? c.cell(r) : '') + '</td>';
     }).join('') + '</tr>';
     // Cycle-14 Phase 2 — optional expandable DETAIL row. Additive: a caller
     // that passes neither detailRow nor rowId renders exactly as before. The
@@ -2097,7 +2101,8 @@ function mtRenderTable_(opts) {
     }
     return tr;
   }).join('');
-  return '<div class="m-table-wrap"><table class="m-table"><thead><tr>' + thead +
+  var tcls = opts.tableClass ? ' ' + String(opts.tableClass).replace(/[^\w -]/g, '') : '';
+  return '<div class="m-table-wrap"><table class="m-table' + tcls + '"><thead><tr>' + thead +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
 }
 

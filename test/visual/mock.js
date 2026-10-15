@@ -2264,7 +2264,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // error (the reason column must wrap, not widen the page), a blank count.
     getDigestDeliveries: {
       days: 14, retentionDays: 90, truncated: false, missing: false,
+      // E1 follow-ups: the labels ride the payload; a lost row is named.
+      labels: { weekly: 'Weekly training/review digests', urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief',
+        trainingOverdue: 'Training-overdue digest', automationHealth: 'Automation-health failure digest',
+        eod: 'End-of-day flag reminder (to the rep)', missedPunchRep: 'Missed clock-out reminder (to the rep)' },
+      writeFailures: { count: 2, lastMs: Date.now() - 3600000, lastError: 'Service Spreadsheets timed out while accessing document' },
       rows: [
+        { at: daysAgo(0) + ' 17:00:05', digest: 'eod', recipient: 'jordan.reyes@umsupply.com', status: 'sent', items: 2, reason: '' },
+        { at: daysAgo(0) + ' 09:30:02', digest: 'missedPunchRep', recipient: 'ana.cruz@umsupply.com', status: 'failed', items: 1, reason: 'Invalid email: ana.cruz@umsupply' },
         { at: daysAgo(0) + ' 09:00:14', digest: 'automationHealth', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 1, reason: '' },
         { at: daysAgo(0) + ' 08:00:31', digest: 'managerBrief', recipient: 'ops.manager@umsupply.com', status: 'sent', items: 6, reason: 'incomplete — could not read urgent notes (1 rep Sheet(s) unreadable)' },
         { at: daysAgo(0) + ' 08:00:30', digest: 'managerBrief', recipient: 'floor.lead@umsupply.com', status: 'failed', items: 4, reason: 'Service invoked too many times for one day: email. Try again tomorrow or reduce the number of recipients on this script.' },
@@ -2522,7 +2529,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
     // G3 (cycle 25 E1): a fresh deploy — no digest has written a row yet.
-    getDigestDeliveries: { days: 14, retentionDays: 90, truncated: false, missing: true, rows: [] },
+    getDigestDeliveries: { days: 14, retentionDays: 90, truncated: false, missing: true, rows: [], labels: {}, writeFailures: null },
     // ADM-07 (cycle 23): the Reference-lookups diagnostics now reach "Needs
     // attention", so the all-clear shot needs their CLEAN shape too — every
     // column found, a registry, no unreadable row or value.

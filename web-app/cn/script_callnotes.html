@@ -499,6 +499,18 @@
   /* G3 (cycle 25 E1): a digest delivery's reason can be a whole MailApp error —
      the same nowrap td, the same fix (measured: it ran off the canvas at 1440px). */
   .cn-dd-reason { display: block; min-width: 180px; max-width: 360px; white-space: normal; font-size: 12px; line-height: 1.4; }
+  /* E1 follow-ups: on a phone the delivery table reads as one card per row
+     (label · value) instead of scrolling sideways inside its wrapper. */
+  @media (max-width: 540px) {
+    .m-table.cn-dd-table thead { display: none; }
+    .m-table.cn-dd-table, .m-table.cn-dd-table tbody, .m-table.cn-dd-table tr { display: block; width: 100%; }
+    .m-table.cn-dd-table tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .m-table.cn-dd-table td { display: flex; gap: 8px; padding: 2px 0; border-bottom: 0; white-space: normal; text-align: left; }
+    .m-table.cn-dd-table td::before { content: attr(data-label); flex: 0 0 84px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+    .m-table.cn-dd-table .cn-dd-reason { min-width: 0; max-width: none; }
+    .m-table.cn-dd-table td:empty { display: none; }   /* no blank "Reason" line on a card */
+  }
   .cn-store-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
   .cn-store-detail .fix { color: var(--warning-deep); }
   .cn-store-detail .bad { color: var(--danger-deep); }
@@ -11721,19 +11733,28 @@ var CN_DIGEST_DELIVERY_STATUS_ = {
 function cnRenderDigestDeliveries_(res) {
   var wrap = function (inner) {
     return '<div class="panel" id="cn-sys-sec-digests" style="margin-bottom:20px">' +
-      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Digest deliveries</div>' + inner + '</div>';
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('mail', 14) + ' Email deliveries</div>' + inner + '</div>';
   };
   if (!res) return wrap('<div style="padding:10px 0">' + loSweep() + '</div>');
-  if (res.error) return wrap(errorStateHtml_('Digest deliveries unavailable: ' + String(res.error)));   // K10: no second esc()
-  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Every manager digest decision in the last ' +
-    esc(String(res.days)) + ' days, per recipient — sent, suppressed (it rode the daily brief), failed, or nothing to send. ' +
+  if (res.error) return wrap(errorStateHtml_('Email deliveries unavailable: ' + String(res.error)));   // K10: no second esc()
+  var intro = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Every automated email decision in the last ' +
+    esc(String(res.days)) + ' days, per recipient — the manager digests, the reminders sent to reps, and the two alerts: sent, suppressed (it rode the daily brief), failed, or nothing to send. ' +
     'Rows are kept ' + esc(String(res.retentionDays)) + ' days. A run that could not write its row is not listed here; ' +
     'Automation Health above is each job’s own record.</div>';
+  // E1 follow-ups: a row the log could not WRITE is not in the table — say so,
+  // or a missing row reads as "nothing was sent".
+  var wf = res.writeFailures;
+  var lost = (wf && wf.count > 0)
+    ? '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:8px">' + esc(String(wf.count)) +
+      ' delivery row' + (wf.count === 1 ? '' : 's') + ' could not be written to the log' +
+      (wf.lastError ? ' (latest: ' + esc(wf.lastError) + ')' : '') +
+      ' — those emails are not listed below, whether or not they went out. Check the ADP spreadsheet is reachable.</div>'
+    : '';
   if (res.missing) {
-    return wrap(intro + '<div class="m-empty">No digest has recorded a delivery yet — the log starts with the first digest run after this deploy.</div>');
+    return wrap(intro + lost + '<div class="m-empty">No email has recorded a delivery yet — the log starts with the first automated email after this deploy.</div>');
   }
   var rows = res.rows || [];
-  var label = function (k) { return CN_DIGEST_LABELS_[k] || k; };
+  var label = function (k) { return (res.labels && res.labels[k]) || CN_DIGEST_LABELS_[k] || k; };   // the server's map leads (E1 follow-ups)
   var order = [], by = {};
   rows.forEach(function (r) {
     if (!by[r.digest]) { by[r.digest] = { last: r, n: { sent: 0, suppressed: 0, failed: 0, empty: 0 } }; order.push(r.digest); }
@@ -11759,15 +11780,16 @@ function cnRenderDigestDeliveries_(res) {
         return '<span style="color:' + st.color + ';font-weight:600">' + esc(st.label) + '</span>';
       } },
       { key: 'items', label: 'Items', numeric: true, cell: function (r) { return r.items == null ? '—' : esc(String(r.items)); } },
-      { key: 'reason', label: 'Reason', cell: function (r) { return '<span class="cn-dd-reason">' + esc(r.reason || '') + '</span>'; } },
+      { key: 'reason', label: 'Reason', cell: function (r) { return r.reason ? '<span class="cn-dd-reason">' + esc(r.reason) + '</span>' : ''; } },
     ],
     rows: shown,
-    empty: '<div class="m-empty">No digest decisions in the last ' + esc(String(res.days)) + ' days.</div>',
+    tableClass: 'cn-dd-table', dataLabels: true,   // E1 follow-ups: cards on a phone
+    empty: '<div class="m-empty">No email decisions in the last ' + esc(String(res.days)) + ' days.</div>',
   });
   var notes = '';
   if (rows.length > shown.length) notes += '<div style="font-size:11px;color:var(--muted);margin-top:6px">Showing the newest ' + esc(String(shown.length)) + ' of ' + esc(String(rows.length)) + ' rows.</div>';
   if (res.truncated) notes += '<div style="font-size:11px;color:var(--warning-deep);margin-top:6px">The log is longer than one read reaches — older rows inside this window were not read. Open the DigestDeliveries tab for the full log.</div>';
-  return wrap(intro + (summary ? '<div style="margin-bottom:8px">' + summary + '</div>' : '') + table + notes);
+  return wrap(intro + lost + (summary ? '<div style="margin-bottom:8px">' + summary + '</div>' : '') + table + notes);
 }
 function cnLoadDigestDeliveries_() {
   var slot = document.getElementById('cn-admin-digests');

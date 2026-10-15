@@ -5202,7 +5202,11 @@ function sendDailyMissedPunchAlerts() {
             { accent: CN_EMAIL_PALETTE.warn, subLabel: 'Time Clock', statusLabel: 'Action needed',
               ctaUrl: safeWebAppUrl_('clock'), ctaLabel: 'Fix it in Time Clock' }),
         });
-      } catch (e) { empFailed++; lastSendError = String((e && e.message) || e); Logger.log('Failed to email employee ' + emp.email + ': ' + lastSendError); }
+        logDigestDelivery_('missedPunchRep', emp.email, 'sent', 1, emp.yesterdayStr);   // E1 follow-ups
+      } catch (e) {
+        empFailed++; lastSendError = String((e && e.message) || e); Logger.log('Failed to email employee ' + emp.email + ': ' + lastSendError);
+        logDigestDelivery_('missedPunchRep', emp.email, 'failed', 1, lastSendError);   // E1 follow-ups
+      }
     });
 
     // #2 (INV-151): while the consolidated daily brief is on, the manager

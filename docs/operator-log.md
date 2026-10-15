@@ -29,6 +29,12 @@ NOT needed — no trigger was added, renamed or regrouped.
   sent, suppressed (it rode the daily brief), failed (with the error) or nothing
   to send. The rows live in a new `DigestDeliveries` tab on the ADP spreadsheet,
   created by the first digest after the deploy; PHI-free, kept 90 days.
+- **E1 follow-ups (same day): every automated email is logged**, not only the
+  manager digests — the rep's end-of-day reminder, the missed clock-out reminder,
+  the overdue-documents nudge, the coaching recap, the self-test failure alert and
+  the client-error spike alert. The panel is now **Email deliveries**, reads as
+  cards on a phone, and says when rows could not be written to the log (an
+  auto-managed `DIGEST_DELIVERY_LOG_FAILS` property — delete it to reset).
 - **The nightly diagnostics purge now runs every night** (it trims that tab), so
   a `DiagnosticsPurge` audit row and its Automation detail line appear on a
   deployment where they never did before. That is expected.

@@ -37305,11 +37305,14 @@ test('G3 (cycle 25 E1): the digest delivery rows — one per distinct recipient,
   const w = stripJsComments_(extractRawFunction('Code.js', 'logDigestDelivery_'));
   assert.ok(!/getScriptLock|getUserLock|waitLock/.test(w), 'no lock — it runs inside jobs (A8)');
   assert.ok(/sheet\.appendRow\(sheetSafeRow_\(row\)\)/.test(w), 'appendRow (atomic, grows the grid — g145) through the sheet-safe boundary');
+  const lost = [];
   const wctx = vm.createContext({ String, Array, Math, isFinite, Logger: { log() {} }, fmtDate_: () => '2026-10-15', fmtTime_: () => '08:00:00',
-    getOrCreateDigestDeliveriesSheet_: () => { throw new Error('ADP sheet unreachable'); }, sheetSafeRow_: (r) => r });
+    getOrCreateDigestDeliveriesSheet_: () => { throw new Error('ADP sheet unreachable'); }, sheetSafeRow_: (r) => r,
+    noteDigestDeliveryWriteFailure_: (e) => lost.push(e.message) });
   vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_REASON_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
     extractRawFunction('Code.js', 'digestDeliveryRows_') + '\n' + extractRawFunction('Code.js', 'logDigestDelivery_'), wctx);
   assert.strictEqual(wctx.logDigestDelivery_('urgent', ['m@x'], 'sent', 1, ''), 0, 'a log that cannot be written returns 0 — it never throws into the digest');
+  assert.deepStrictEqual(lost, ['ADP sheet unreachable'], 'and the lost row is COUNTED, so the panel can say so (E1 follow-ups)');
   const written = [];
   wctx.getOrCreateDigestDeliveriesSheet_ = () => ({ appendRow: (r) => written.push(r) });
   assert.strictEqual(wctx.logDigestDelivery_('urgent', ['m@x', 'n@x'], 'sent', 1, ''), 2);
@@ -37320,13 +37323,15 @@ test('G3 (cycle 25 E1): the Admin read — admin-gated before any read, a missin
   const NOW = Date.parse('2026-10-15T12:00:00Z');
   const mk = (emp, sheet, opts) => {
     const reads = [];
-    const ctx = vm.createContext({ String, Number, Math, isFinite, parseInt, Array,
+    const ctx = vm.createContext({ String, Number, Math, isFinite, parseInt, Array, JSON,
       Date: class extends Date { static now() { return NOW; } },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: () => (opts && opts.fails) || null }) },
       getEmployeeInfo_: () => emp, getAdpSS_: () => { reads.push('ss'); return { getSheetByName: () => sheet }; },
       normalizeAuditTs_: (v) => String(v), diagTsMs_: (v) => (/^2026-/.test(String(v)) ? Date.parse(String(v).replace(' ', 'T') + 'Z') : null) });
-    vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_HEADERS', 'DIGEST_DELIVERY_RETENTION_DAYS', 'DIGEST_DELIVERY_SCAN_MAX', 'DIGEST_DELIVERY_VIEW_DAYS', 'DIGEST_DELIVERIES_TAB']
+    vm.runInContext(['DIGEST_DELIVERY_STATUSES', 'DIGEST_DELIVERY_HEADERS', 'DIGEST_DELIVERY_RETENTION_DAYS', 'DIGEST_DELIVERY_SCAN_MAX', 'DIGEST_DELIVERY_VIEW_DAYS', 'DIGEST_DELIVERIES_TAB',
+      'DIGEST_DELIVERY_LABELS', 'DIGEST_DELIVERY_FAIL_PROP']
       .map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + (opts && opts.scan ? '\nDIGEST_DELIVERY_SCAN_MAX = ' + opts.scan + ';' : '') + '\n' +
-      extractRawFunction('Code.js', 'digestDeliveriesView_') + '\n' + extractRawFunction('Code.js', 'getDigestDeliveries'), ctx);
+      ['digestDeliveriesView_', 'digestDeliveryWriteFailuresView_', 'getDigestDeliveries'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
     return { ctx, reads };
   };
   const rowsTab = (rows) => ({ getLastRow: () => rows.length + 1, getRange: (r, c, n) => ({ getValues: () => rows.slice(r - 2, r - 2 + n) }) });
@@ -37345,6 +37350,11 @@ test('G3 (cycle 25 E1): the Admin read — admin-gated before any read, a missin
   assert.deepStrictEqual(res.rows.map((r) => r.digest + ':' + r.status + ':' + r.items), ['urgent:failed:2', 'managerBrief:suppressed:null', 'weekly:failed:null'],
     'newest first; the 14-day window; a blank count stays unknown; an unparseable stamp is KEPT, never silently dropped');
   assert.deepStrictEqual([res.days, res.retentionDays, res.truncated], [14, 90, false]);
+  assert.strictEqual(res.labels.eod, 'End-of-day flag reminder (to the rep)', 'E1 follow-ups: the label map rides the payload — the client keeps no copy');
+  assert.strictEqual(res.writeFailures, null, 'no lost rows recorded → nothing to say');
+  t = mk({ isAdmin: true }, null, { fails: JSON.stringify({ count: 3, firstMs: NOW - 5e8, lastMs: NOW - 3600000, lastError: 'timed out' }) });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({}).writeFailures)), { count: 3, lastMs: NOW - 3600000, lastError: 'timed out' },
+    'a lost row inside the window ships — on a missing tab too, where it matters most');
   assert.strictEqual(JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({ days: 400 }))).days, 90, 'the window never reaches past what is kept');
   t = mk({ isAdmin: true }, rowsTab(R), { scan: 2 });
   res = JSON.parse(JSON.stringify(t.ctx.getDigestDeliveries({})));
@@ -37414,9 +37424,9 @@ test('G3 (cycle 25 E1): the Admin System panel — a failed read is a warn card,
   sb.CN_DIGEST_LABELS_ = { urgent: 'Urgent-flag digest', managerBrief: 'Manager daily brief' };
   const render = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderDigestDeliveries_');
   let h = render({ error: 'Admin access required.' });
-  assert.ok(/Digest deliveries unavailable: Admin access required/.test(h) && /id="cn-sys-sec-digests"/.test(h), 'a failed read is the warn card, in its own panel (INV-175)');
+  assert.ok(/Email deliveries unavailable: Admin access required/.test(h) && /id="cn-sys-sec-digests"/.test(h), 'a failed read is the warn card, in its own panel (INV-175)');
   h = render({ days: 14, retentionDays: 90, missing: true, rows: [] });
-  assert.ok(/No digest has recorded a delivery yet/.test(h), 'a fresh deploy is not "nothing was sent"');
+  assert.ok(/No email has recorded a delivery yet/.test(h), 'a fresh deploy is not "nothing was sent"');
   h = render({ days: 14, retentionDays: 90, truncated: true, rows: [
     { at: '2026-10-15 08:00:30', digest: 'managerBrief', recipient: 'b@x', status: 'failed', items: 4, reason: '<img src=x onerror=alert(1)>' },
     { at: '2026-10-15 08:00:31', digest: 'managerBrief', recipient: 'a@x', status: 'sent', items: 6, reason: '' },
@@ -37429,6 +37439,140 @@ test('G3 (cycle 25 E1): the Admin System panel — a failed read is a warn card,
   assert.ok(/Showing the newest 200 of 205 rows/.test(render({ days: 14, retentionDays: 90, rows: many })), 'a capped list says so');
   // The loader is wired into the Admin enter and the System pane has its slot.
   assert.ok(/'<div id="cn-admin-digests"><\/div>' \+/.test(cn) && /cnLoadHealthPanel_\(\);[\s\S]{0,200}cnLoadDigestDeliveries_\(\);/.test(cn), 'the panel sits beside Automation Health');
+});
+
+// ── cycle 25 E1 follow-ups — every automated email in the delivery log ──
+test('E1 follow-ups (cycle 25): every key the server logs under has a label in ONE map, every label is logged somewhere, and the map rides the Admin payload (derived net + driven)', () => {
+  const code = stripJsComments_(serverSource());
+  const lab = vm.createContext({});
+  vm.runInContext(extractConstDecl_('DIGEST_DELIVERY_LABELS').replace(/^const /, 'var '), lab);
+  const logged = {};
+  (code.match(/logDigestDelivery_\('([A-Za-z]+)'/g) || []).forEach((m) => { logged[m.slice(20, -1)] = true; });
+  assert.ok(Object.keys(logged).length >= 13, 'non-vacuous: ' + Object.keys(logged).join(','));
+  Object.keys(logged).forEach((k) => assert.ok(lab.DIGEST_DELIVERY_LABELS[k], k + ' is logged but has no label — the panel would show a raw key'));
+  Object.keys(lab.DIGEST_DELIVERY_LABELS).forEach((k) => assert.ok(logged[k], k + ' is labelled but nothing logs under it'));
+  ['eod', 'coachingRecap', 'missedPunchRep', 'trainingOverdueRep', 'selfTest', 'clientErrSpike'].forEach((k) =>
+    assert.ok(logged[k], 'THE GAP: ' + k + ' mail went out with no delivery row'));
+  // The client prefers the payload's map, so a new key needs no client edit.
+  sb.CN_DIGEST_LABELS_ = { urgent: 'old label' };
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  ['CN_DIGEST_DELIVERY_SHOW_MAX_', 'CN_DIGEST_DELIVERY_STATUS_'].forEach((k) => vm.runInContext(new RegExp('^var ' + k + ' = [\\s\\S]*?;$', 'm').exec(cn)[0], sb));
+  const render = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderDigestDeliveries_');
+  const h = render({ days: 14, retentionDays: 90, labels: { urgent: 'Urgent-flag digest', missedPunchRep: 'Missed clock-out reminder (to the rep)' },
+    rows: [{ at: 't', digest: 'missedPunchRep', recipient: 'r@x', status: 'sent', items: 1, reason: '' }, { at: 't', digest: 'urgent', recipient: 'm@x', status: 'empty', items: 0, reason: '' }] });
+  assert.ok(/Missed clock-out reminder \(to the rep\)/.test(h) && /Urgent-flag digest/.test(h) && !/old label/.test(h), 'the payload\'s labels lead');
+});
+
+test('E1 follow-ups (cycle 25): the rep- and agent-facing reminders log each send — EOD (and an unreadable Sheet), the missed clock-out reminder, the overdue-documents nudge, the coaching recap — and a rep with nothing due gets no row (driven)', () => {
+  const mk = (extra) => {
+    const ctx = vm.createContext(Object.assign({ String, Date, JSON, Array, Object, Math, console: { warn() {} }, Logger: { log() {} }, __rows: [],
+      assertManagerCaller_() {}, stampDigestLastRun_() {}, stampAutomationError_() {}, clearAutomationError_() {} }, extra));
+    ctx.logDigestDelivery_ = (d, to, st, n, why) => ctx.__rows.push([d, [].concat(to).join(','), st, n, why]);
+    return autoContract_(ctx);
+  };
+  // EOD: Ann's Sheet is unreadable, Bob is sent 1, Cy has nothing flagged, Dee's send fails.
+  const flagged = { B: 1, D: 2 };
+  let c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
+    getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z'], ['c@x', 'C', 'Cy', 'Z'], ['d@x', 'D', 'Dee', 'Z']],
+    cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t, Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
+    getCallNotesSheet_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; },
+    readCallNoteRowsInRange_: (sh) => Array.from({ length: flagged[sh.id] || 0 }, () => ({ row: ['2026-10-15', 'action', ''] })),
+    cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
+    sendOneRepEodDigest_: (e) => { if (e.id === 'D') throw new Error('quota'); } });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), c);
+  c.sendCallNotesEodDigest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.__rows)), [['eod', 'a@x', 'failed', null, 'their Call Notes Sheet could not be read'],
+    ['eod', 'b@x', 'sent', 1, ''], ['eod', 'd@x', 'failed', 2, 'quota']], 'one row per reminder due — none for Cy, who had nothing flagged');
+  // The missed clock-out reminder to each rep (the manager summary is suppressed here).
+  c = mk({ computeMissedClockOuts_: () => [{ name: 'Ann', email: 'a@x', id: 'A', yesterdayStr: '2026-10-14', timezone: 'Z' }, { name: 'Bob', email: 'b@x', id: 'B', yesterdayStr: '2026-10-14', timezone: 'Z' }],
+    appSendMail_: (m) => { if (m.to === 'b@x') throw new Error('Invalid email'); }, buildBrandedEmailHtml_: () => '', esc_: String, tzAbbr_: () => 'IST',
+    safeWebAppUrl_: () => 'u', CN_EMAIL_PALETTE: { muted: '#3', warn: '#b' }, managerBriefSuppressionActive_: () => true, getManagerEmails_: () => ['m@x'] });
+  vm.runInContext(extractRawFunction('Code.js', 'sendDailyMissedPunchAlerts'), c);
+  c.sendDailyMissedPunchAlerts();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.__rows.filter((r) => r[0] === 'missedPunchRep'))),
+    [['missedPunchRep', 'a@x', 'sent', 1, '2026-10-14'], ['missedPunchRep', 'b@x', 'failed', 1, 'Invalid email']]);
+  // The coaching recap: one row per agent, sent or failed (coachSendMail_ returns false, it never throws).
+  c = mk({ CONFIG: { COACHING_RECAP_DAYS: 7 }, EMP: { ID: 0, NAME: 1 }, COACH_TAB: 'Coaching', COACH_HEADERS: ['a'], COACH_SEV_LABELS: {},
+    getOrCreateEmpDocSheet_: () => ({ getLastRow: () => 1 }), coachRecapBuckets_: () => ({ E1: [{ severity: 'praise', createdAt: '2026-10-14' }], E2: [{ severity: 'praise', createdAt: '2026-10-13' }] }),
+    getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann'], ['E2', 'Bob']], empRosterEmail_: (r) => (r[0] === 'E1' ? 'a@x' : 'b@x'),
+    brandedKvRows_: () => '', esc_: String, buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => 'u', coachSendMail_: (m) => m.to === 'a@x' });
+  vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), c);
+  c.sendCoachingRecapDigest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.__rows)), [['coachingRecap', 'a@x', 'sent', 1, ''], ['coachingRecap', 'b@x', 'failed', 1, 'the recap email could not be sent']]);
+  // The overdue-documents nudge: the static shape (the training digest's drive is the HR-3 pin's).
+  const tr = stripJsComments_(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'));
+  assert.ok(/empNudged\+\+;\s*logDigestDelivery_\('trainingOverdueRep', email, 'sent', n, ''\)/.test(tr) &&
+            /logDigestDelivery_\('trainingOverdueRep', email, 'failed', n, lastSendError\)/.test(tr), 'each employee nudge is a row, sent or failed');
+});
+
+test('E1 follow-ups (cycle 25): the two alerts log their send — the self-test failure email and the client-error spike alert — and a beacon that only counts toward the threshold is not a row (driven)', () => {
+  const rows = [];
+  const base = { String, Array, Math, Logger: { log() {} }, esc_: String, buildBrandedEmailHtml_: () => '',
+    logDigestDelivery_: (d, to, st, n, why) => rows.push([d, [].concat(to).join(','), st, n, why]) };
+  let fail = false;
+  let ctx = vm.createContext(Object.assign({}, base, { getManagerEmails_: () => ['m@x'], appSendMail_: () => { if (fail) throw new Error('quota'); } }));
+  vm.runInContext(extractRawFunction('Code.js', 'selfTestFailureEmail_'), ctx);
+  ctx.selfTestFailureEmail_('full', { fail: 3, pass: 300, skip: 1 }, ['a', 'b', 'c']);
+  fail = true;
+  ctx.selfTestFailureEmail_('error', { fail: 1, pass: 0, skip: 0 }, ['boom']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows.splice(0))), [['selfTest', 'm@x', 'sent', 3, 'full mode'], ['selfTest', 'm@x', 'failed', 1, 'quota']],
+    'a sent alert and a failed one — the failure no longer reaches only the Logger');
+  const cache = {};
+  fail = false;
+  ctx = vm.createContext(Object.assign({}, base, { parseInt, getManagerEmails_: () => ['m@x', 'n@x'], appSendMail_: () => { if (fail) throw new Error('quota'); },
+    CacheService: { getScriptCache: () => ({ get: (k) => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
+    getAdpSS_: () => { throw new Error('no detail'); }, CN_EMAIL_PALETTE: { muted: '#3', ink: '#0' }, safeWebAppUrl_: () => 'u' }));
+  vm.runInContext(['CLIENT_ERR_ALERT_MIN', 'CLIENT_ERR_ALERT_WINDOW_SEC', 'CLIENT_ERR_ALERT_COOLDOWN_SEC', 'CLIENT_ERRORS_TAB']
+    .map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' + extractRawFunction('Code.js', 'clientErrSpikeAlert_'), ctx);
+  for (let i = 0; i < 8; i++) ctx.clientErrSpikeAlert_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows.splice(0))), [['clientErrSpike', 'm@x,n@x', 'sent', 5, 'errors in the last hour']],
+    'one row for the one send — the beacons below the threshold and inside the cooldown write nothing');
+  Object.keys(cache).forEach((k) => delete cache[k]);
+  fail = true;
+  for (let i = 0; i < 5; i++) ctx.clientErrSpikeAlert_();
+  assert.deepStrictEqual(rows.map((r) => r[2] + ':' + r[4]), ['failed:quota']);
+});
+
+test('E1 follow-ups (cycle 25): a delivery row that could not be WRITTEN is counted and named on the panel — inside the window only, the missing-tab case included (driven)', () => {
+  let stored = null;
+  const ctx = vm.createContext({ String, Number, JSON, isFinite, Date,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => stored }) },
+    propSetBounded_: (k, v) => { stored = v; }, propShrinkStripFields_: () => null });
+  vm.runInContext(extractConstDecl_('DIGEST_DELIVERY_FAIL_PROP').replace(/^const /, 'var ') + '\n' +
+    extractRawFunction('Code.js', 'noteDigestDeliveryWriteFailure_') + '\n' + extractRawFunction('Code.js', 'digestDeliveryWriteFailuresView_'), ctx);
+  ctx.noteDigestDeliveryWriteFailure_(new Error('timed out'));
+  ctx.noteDigestDeliveryWriteFailure_(new Error('still timed out'));
+  const rec = JSON.parse(stored);
+  assert.deepStrictEqual([rec.count, rec.lastError, rec.firstMs > 0, rec.lastMs >= rec.firstMs], [2, 'still timed out', true, true]);
+  const v = JSON.parse(JSON.stringify(ctx.digestDeliveryWriteFailuresView_(stored, rec.lastMs - 1)));
+  assert.deepStrictEqual([v.count, v.lastError], [2, 'still timed out'], 'a failure inside the window is shown');
+  assert.strictEqual(ctx.digestDeliveryWriteFailuresView_(stored, rec.lastMs + 1), null, 'an old one is not');
+  ['', 'garbage', '{"count":0,"lastMs":9e15}', null].forEach((raw) => assert.strictEqual(ctx.digestDeliveryWriteFailuresView_(raw, 0), null, String(raw)));
+  // The panel: named on a normal read AND on a missing tab (a log that cannot be written may never have created it).
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  ['CN_DIGEST_DELIVERY_SHOW_MAX_', 'CN_DIGEST_DELIVERY_STATUS_'].forEach((k) => vm.runInContext(new RegExp('^var ' + k + ' = [\\s\\S]*?;$', 'm').exec(cn)[0], sb));
+  sb.CN_DIGEST_LABELS_ = {};
+  const render = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderDigestDeliveries_');
+  const wf = { count: 2, lastMs: 1, lastError: '<b>timed out</b>' };
+  let h = render({ days: 14, retentionDays: 90, missing: true, rows: [], writeFailures: wf });
+  assert.ok(/2 delivery rows could not be written to the log/.test(h) && /&lt;b&gt;timed out/.test(h), 'THE GAP: a log that could not be written read as a quiet log');
+  h = render({ days: 14, retentionDays: 90, rows: [{ at: 't', digest: 'urgent', recipient: 'm@x', status: 'sent', items: 1, reason: '' }], writeFailures: wf });
+  assert.ok(/could not be written to the log/.test(h));
+  assert.ok(!/could not be written to the log/.test(render({ days: 14, retentionDays: 90, rows: [], writeFailures: null })), 'and nothing is said when nothing was lost');
+});
+
+test('E1 follow-ups (cycle 25): on a phone the delivery table reads as cards — mtRenderTable_ carries the column label on each cell (opt-in) and one rule under 540px lays a row out as label · value (driven + the rule)', () => {
+  const html = sb.mtRenderTable_({ columns: [{ key: 'a', label: 'When <x>', cell: (r) => sb.esc(r.a) }], rows: [{ a: '1' }], tableClass: 'cn-dd-table" onclick="x', dataLabels: true });
+  assert.ok(/<table class="m-table cn-dd-table onclickx">/.test(html), 'the class is charset-restricted, never an attribute break-out: ' + html.slice(0, 120));
+  assert.ok(/<td data-label="When &lt;x&gt;">1<\/td>/.test(html), 'each cell carries its column label, escaped');
+  const plain = sb.mtRenderTable_({ columns: [{ key: 'a', label: 'A', cell: (r) => r.a }], rows: [{ a: '1' }] });
+  assert.ok(/<table class="m-table">/.test(plain) && !/data-label/.test(plain), 'a caller that passes neither renders exactly as before');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const m = /@media \(max-width: 540px\) \{([\s\S]*?)\n  \}/.exec(cn.slice(cn.indexOf('.cn-dd-reason {')));
+  assert.ok(m && /\.m-table\.cn-dd-table thead \{ display: none; \}/.test(m[1]) && /\.m-table\.cn-dd-table td::before \{ content: attr\(data-label\)/.test(m[1]) &&
+            /\.m-table\.cn-dd-table td \{[^}]*white-space: normal/.test(m[1]), 'the narrow rule hides the header, labels each cell, and lets it wrap');
+  const r = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnRenderDigestDeliveries_'));
+  assert.ok(/tableClass: 'cn-dd-table', dataLabels: true/.test(r), 'the delivery panel opts in');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

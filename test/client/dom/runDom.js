@@ -4438,6 +4438,8 @@ test('G3 DOM (cycle 25 E1): the digest delivery log has a panel beside Automatio
   const txt = panel.textContent;
   assert.ok(/Manager daily brief/.test(txt) && /floor\.lead@x\.com/.test(txt) && /Failed/.test(txt) && /Suppressed/.test(txt), 'each decision, labelled, per recipient');
   assert.ok(/quota <b>exceeded<\/b>/.test(txt) && !panel.querySelector('td b'), 'a server string renders as TEXT, never markup');
+  const cells = panel.querySelectorAll('table.cn-dd-table td[data-label]');
+  assert.ok(cells.length === 12 && cells[0].getAttribute('data-label') === 'When', 'E1 follow-ups: every cell carries its column label, for the phone card layout');
   h.run.respond('getDigestDeliveries', () => { throw new Error('Admin access required.'); });
   h.read('cnLoadDigestDeliveries_')();
   h.flushTimers();

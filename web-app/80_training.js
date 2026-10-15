@@ -258,8 +258,14 @@ function sendTrainingOverdueDigest() {
       (byEmp[key] = byEmp[key] || { name: od.empName, docs: [] }).docs.push(od.doc);
     });
     Object.keys(byEmp).forEach(function (email) {
-      try { sendEmployeeOverdueDocsEmail_(email, byEmp[email].name, byEmp[email].docs, todayIso); empNudged++; }
-      catch (e) { empFailed++; lastSendError = String((e && e.message) || e); console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + lastSendError); }
+      const n = byEmp[email].docs.length;
+      try {
+        sendEmployeeOverdueDocsEmail_(email, byEmp[email].name, byEmp[email].docs, todayIso); empNudged++;
+        logDigestDelivery_('trainingOverdueRep', email, 'sent', n, '');   // E1 follow-ups
+      } catch (e) {
+        empFailed++; lastSendError = String((e && e.message) || e); console.warn('employee overdue-docs nudge to ' + email + ' failed: ' + lastSendError);
+        logDigestDelivery_('trainingOverdueRep', email, 'failed', n, lastSendError);   // E1 follow-ups
+      }
     });
     stampDigestLastRun_('trainingOverdue');   // the trigger ran
     // HR-3 + MAIL-4 (cycle 23): one outcome names everything that went wrong —

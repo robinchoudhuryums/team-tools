@@ -5490,9 +5490,20 @@ pick them up without re-deriving the context.
   and never throws (a digest's delivery must not depend on its own log). Manage →
   Admin → System shows the last 14 days beside Automation Health
   (`getDigestDeliveries`, admin-gated): a summary per digest and the rows, with
-  a cut tail and a fresh deploy stated. Rep- and agent-facing mail (the EOD
-  reminder, the coaching recap) is not logged — the operator asked about manager
-  digests. Rejected: a Script Property ring (the 9KB cap — g07); the AuditLog
+  a cut tail and a fresh deploy stated. **Since the E1 follow-ups (operator
+  2026-10-15) every AUTOMATED email is logged**, not only the manager digests:
+  the rep's end-of-day flag reminder (a row per reminder due, and a failed row
+  for a Sheet that could not be read — never an hourly "empty" per rep), the
+  missed clock-out reminder, the overdue-documents nudge, the agent's coaching
+  recap, the self-test failure alert and the client-error spike alert (a row per
+  SEND — the threshold and the cooldown decide per beacon and are not rows). ONE
+  server map, `DIGEST_DELIVERY_LABELS`, names every key and rides the payload,
+  so the panel (now "Email deliveries") keeps no label copy. A row the log could
+  not WRITE is counted (`DIGEST_DELIVERY_LOG_FAILS`) and named on the panel —
+  on a missing tab too — so a lost row never reads as "nothing was sent". On a
+  phone the table reads as one card per row (`mtRenderTable_`'s opt-in
+  `dataLabels`). Rep-initiated mail (call-note emails, intake sends, form links)
+  stays out: each already has its own audit row. Rejected: a Script Property ring (the 9KB cap — g07); the AuditLog
   (it is the payroll audit trail, and a daily row per manager per digest would
   push the job rows out of its 4,000-row tail — g152); logging only failures (a
   missing row would then mean both "sent" and "never ran").

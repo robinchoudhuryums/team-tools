@@ -1680,6 +1680,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   their failure is said once. Verify: the four ST2 (cycle 25 E1) pins — the
   contract driven, the derived net over every job, the partial reading, and each
   job's status choice.
+  **Cycle 25 E1 follow-ups (2026-10-15): the delivery log's own absence.** A
+  delivery row that could not be written used to reach only the Logger, so a
+  failing log read as "nothing was sent". `logDigestDelivery_` now counts the
+  lost row (`DIGEST_DELIVERY_LOG_FAILS`) and the Email deliveries panel names it
+  — on a missing tab too, the case where it matters most. Verify: the E1
+  follow-ups write-failure pin.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 

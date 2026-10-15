@@ -598,7 +598,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 
 | Store | Script Property (fallback) | Tabs | Class | Retention | Resolver |
 |-------|----------------------------|------|-------|-----------|----------|
-| Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by every timesheet range reader** through `timesheetRowsInRange_` since cycle 23 TC2-9; the export since F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), DigestDeliveries (the manager digest delivery log — PHI-free, 90 days, cycle 25 E1 G3), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
+| Time Clock / ADP | `ADP_SS_ID` (CONFIG placeholder) | Employees (roster), Timesheet, TimesheetArchive (cold tier, INV-153 — **read back by every timesheet range reader** through `timesheetRowsInRange_` since cycle 23 TC2-9; the export since F1), TimeOffRequests, AuditLog, PunchAdjustRequests, ClientErrors (INV-150), ViewUsage (feature-usage telemetry, 2026-08-13), DigestDeliveries (the automated-email delivery log — PHI-free, 90 days, cycle 25 E1 G3 + follow-ups), SpanishManualResolved, SpanishClaims (advisory claim/assign, append-only PHI-free — pilot round 2) | Payroll + shared audit | kept (archive moves, never deletes) | `getAdpSS_` |
 | CDR Report | `CDR_SS_ID` (CONFIG placeholder) | DQE Historical Data, CSR Transfer Historical Data, Agent Alias Overrides, Inbound Calls (the break-coverage demand layer), Company Holidays (H1 — the ONE holiday calendar, `getCompanyHolidays_`; federal fallback only while the tab is absent/empty/unreadable), Dashboard Standards (H2 — the answer target / amber band / team-avg excludes this app tones and benchmarks against, `getCdrDashboardStandard_`; no tab = no standard, never a fallback number). **Since Batch 3 the Storage Health CDR row states which calendar and which standard are LIVE, with a CDR-area finding for every fallback state** | External (read-only) | owned by `call-data-reporting` | `getCdrSS_` |
 | Intake | `INTAKE_SS_ID` (CONFIG placeholder) | Offerings, PPD/PMD/PAPSubmissions | **PHI** | optional purge | `getIntakeSS_` |
 | Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its `PatientTrx` column names a patient, operator testing note 6; then ThreadId, ReopenedAt, RepliedAt, ReplyVerdict for the reply scan, 22post D — no reply text is stored) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
@@ -622,7 +622,7 @@ Test-only twins: `TEST_CDR_SS_ID`, `TEST_INTAKE_SS_ID`, `TEST_HRDOCS_SS_ID`,
 which is the ADP/payroll sheet when `FORMS_SS_ID` is unset). All five are
 auto-provisioned on first use and reported by the suite's `── Suite
 environment ──` block; delete one to force a fresh fixture.
-Auto-managed diagnostics: `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
+Auto-managed diagnostics: `DIGEST_DELIVERY_LOG_FAILS` (cycle 25 E1 follow-ups — `{count, firstMs, lastMs, lastError}`, a delivery-log row that could not be written; named on Admin → System → Email deliveries while its latest failure is inside the view window; delete to reset) `WITNESS_AUDIT_FAILS` (cycle-10 C4 — the
 `{count, lastAt, lastAction}` lost-tamper-witness counter stamped by
 `writeWitnessAuditLog_` after a failed retry; surfaced in Automation Health +
 the failure digest's 48h window; delete the property to reset the counter)
@@ -726,7 +726,7 @@ the dated round entries that used to sit here moved to
 - [Consolidated manager daily brief is OFF by default (INV-151)](docs/operator-state.md#operator-consolidated-manager-daily-brief-is-off-by-default-inv-151)
 - [`ClientErrors` sheet tab](docs/operator-state.md#operator-clienterrors-sheet-tab)
 - [`ViewUsage` sheet tab](docs/operator-state.md#operator-viewusage-sheet-tab)
-- [The `DigestDeliveries` tab (ADP spreadsheet) — the manager digest delivery log, auto-provisioned, PHI-free, kept 90 days (cycle 25 E1, G3)](docs/operator-state.md#operator-the-digestdeliveries-tab-cycle-25)
+- [The `DigestDeliveries` tab (ADP spreadsheet) — the automated-email delivery log, auto-provisioned, PHI-free, kept 90 days; its lost-row counter `DIGEST_DELIVERY_LOG_FAILS` (cycle 25 E1 + follow-ups)](docs/operator-state.md#operator-the-digestdeliveries-tab-cycle-25)
 - [Script Property `WHATSNEW_KB_ID`](docs/operator-state.md#operator-script-property-whatsnew-kb-id)
 - [Script Property `MAIL_BCC_ALL`](docs/operator-state.md#operator-script-property-mail-bcc-all)
 - [Script Property `REP_SENDER_FROM`](docs/operator-state.md#operator-script-property-rep-sender-from)
@@ -942,7 +942,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1325 | `node test/client/run.js` |
+| Pure harness tests | 1330 | `node test/client/run.js` |
 | DOM harness tests | 253 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 159 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
