@@ -1527,6 +1527,32 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       };
     })(),
     getPtoReconciliation: { reps: [] },
+    // G1 + F19 (cycle 25 E2): the pay-period close checklist — an ended period
+    // with an OFFBOARDED rep's open day (editable) and one past the edit window,
+    // pending requests, a current period that is ready, and an orphan request.
+    getPayPeriodClose: {
+      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST',
+      periods: [
+        { cycle: 'Monthly', which: 'previous', start: daysAgo(44), end: daysAgo(14), checkedThrough: daysAgo(14),
+          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1 }, ready: false,
+          reps: [
+            { id: 'E-1042', name: 'Jordan Reyes', offboarded: true, timezone: 'Asia/Kolkata',
+              openDays: [{ date: daysAgo(20), kind: 'no clock-out', editable: true }, { date: daysAgo(36), kind: 'clock-out with no clock-in', editable: false }],
+              pendingTimeOff: [], pendingAdjust: [{ date: daysAgo(20), label: 'ClockOut' }] },
+            { id: 'E-1007', name: 'Avery Blake', offboarded: false, timezone: 'Asia/Kolkata',
+              openDays: [{ date: daysAgo(16), kind: 'no clock-out', editable: true }], pendingTimeOff: [{ date: daysAgo(15), label: 'Full Day' }], pendingAdjust: [] },
+          ] },
+        { cycle: 'Monthly', which: 'current', start: daysAgo(13), end: daysAgo(-17), checkedThrough: daysAgo(2),
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+        { cycle: 'Biweekly', which: 'previous', start: daysAgo(20), end: daysAgo(7), checkedThrough: daysAgo(7),
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+        { cycle: 'Biweekly', which: 'current', start: daysAgo(6), end: daysAgo(-7), checkedThrough: daysAgo(2),
+          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 }, ready: false,
+          reps: [{ id: 'E-1088', name: 'Sam Ortiz', offboarded: false, timezone: 'Asia/Manila',
+            openDays: [{ date: daysAgo(4), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] },
+      ],
+      orphans: [{ id: 'E-0999', name: 'Former Rep', date: daysAgo(18), kind: 'timeOff', label: 'Full Day' }],
+    },
     // Punctuality (operator 2026-08-18 width round — the tab had never been
     // shot). Shape mirrors getPunctualityReport's return block: {from, to,
     // grace, reps[{id,name,tz,startMin,days,onTime,late,onTimePct,avgLate,

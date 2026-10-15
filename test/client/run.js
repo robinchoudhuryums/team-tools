@@ -19693,8 +19693,8 @@ test('A4-4: the Day Edit modal renders, reads and submits N break pairs', () => 
   // The team-calendar pencil still prefills (the optional 3rd arg survived).
   assert.ok(/openDayEditModal\(btn\.getAttribute\('data-tcal-edit'\)[\s\S]{0,120}TEAMCAL\.selDate\)/.test(mgr),
     'the team-calendar pencil still passes its date through');
-  assert.ok(/function openDayEditModal\(empId, empName, prefillDate\)/.test(mgr),
-    'openDayEditModal still takes the prefill date');
+  assert.ok(/function openDayEditModal\(empId, empName, prefillDate(, tzHint)?\)/.test(mgr),
+    'openDayEditModal still takes the prefill date (E2 added an optional 4th tz hint for an offboarded rep)');
 });
 
 
@@ -27064,6 +27064,7 @@ test('F-39: the timesheet client\'s computeRange and the server\'s getCurrentBiw
   sbv.normalizeDate_ = (v) => String(v);
   vm.runInContext(extractRawFunction('Code.js', 'isoFromUtc_'), sbv, { filename: 'Code.js#isoFromUtc_' });
   vm.runInContext(extractRawFunction('Code.js', 'orgBiweeklyAnchor_'), sbv, { filename: 'Code.js#orgBiweeklyAnchor_' });   // F18
+  vm.runInContext(extractRawFunction('Code.js', 'biweeklyRangeFor_'), sbv, { filename: 'Code.js#biweeklyRangeFor_' });   // E2: the one period rule
   vm.runInContext(extractRawFunction('Code.js', 'getCurrentBiweeklyRange_'), sbv, { filename: 'Code.js#getCurrentBiweeklyRange_' });
 
   // Sweep 70 consecutive days across three period boundaries, including the
@@ -37573,6 +37574,158 @@ test('E1 follow-ups (cycle 25): on a phone the delivery table reads as cards —
             /\.m-table\.cn-dd-table td \{[^}]*white-space: normal/.test(m[1]), 'the narrow rule hides the header, labels each cell, and lets it wrap');
   const r = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnRenderDigestDeliveries_'));
   assert.ok(/tableClass: 'cn-dd-table', dataLabels: true/.test(r), 'the delivery panel opts in');
+});
+
+// ── cycle 25 E2 — G1 the pay-period close checklist + the F19 decision ──
+const e2Ctx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Object, Array, Math, Date, JSON,
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } }, extra || {}));
+  const code = serverSource();
+  const dayConsts = /const TIMESHEET_DAY_INCOMPLETE = '([a-z]+)';\s*const TIMESHEET_DAY_ORPHAN = '([a-z]+)';/.exec(stripJsComments_(code));
+  vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = '" + dayConsts[1] + "'; var TIMESHEET_DAY_ORPHAN = '" + dayConsts[2] + "';\n" +
+    ['TO', 'PAR'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
+    ['addDaysIso_', 'isoFromUtc_', 'normalizeDate_', 'biweeklyRangeFor_', 'payPeriodsForClose_', 'planPayPeriodClose_']
+      .map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  ctx.INC = dayConsts[1]; ctx.ORPH = dayConsts[2];
+  return ctx;
+};
+
+test('E2 (cycle 25): the close checklist\'s periods — for each pay cycle that has reps, the period that just ended and the current one; a January rolls back to December; a biweekly pair is contiguous and is the export\'s own period; no anchor is said, never guessed (driven)', () => {
+  const ctx = e2Ctx_();
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.payPeriodsForClose_('2026-01-07', { Monthly: true }, null)),
+    [{ cycle: 'Monthly', which: 'previous', start: '2025-12-01', end: '2025-12-31' }, { cycle: 'Monthly', which: 'current', start: '2026-01-01', end: '2026-01-31' }]);
+  assert.strictEqual(J(ctx.payPeriodsForClose_('2028-03-02', { Monthly: true }, null))[0].end, '2028-02-29', 'a leap February ends on the 29th');
+  const bw = J(ctx.payPeriodsForClose_('2026-10-15', { Biweekly: true }, '2026-09-27'));
+  assert.deepStrictEqual(bw.map((p) => p.which + ':' + p.start + '..' + p.end), ['previous:2026-09-28..2026-10-11', 'current:2026-10-12..2026-10-25'],
+    'contiguous 14-day periods ending on anchor + 14k');
+  assert.deepStrictEqual(J(ctx.biweeklyRangeFor_('2026-09-27', '2026-10-15')), { start: '2026-10-12', end: '2026-10-25' }, 'the export\'s rule, now ONE function');
+  assert.ok(/return biweeklyRangeFor_\(anchor, todayStr\);/.test(extractRawFunction('Code.js', 'getCurrentBiweeklyRange_')), 'the export delegates to it');
+  const noAnchor = J(ctx.payPeriodsForClose_('2026-10-15', { Biweekly: true }, null));
+  assert.ok(noAnchor.length === 1 && /No biweekly PayAnchor/.test(noAnchor[0].error), 'biweekly reps with no anchor are SAID, not silently skipped');
+  assert.deepStrictEqual(J(ctx.payPeriodsForClose_('2026-10-15', {}, null)), [], 'no reps of a cycle, no period for it');
+});
+
+test('E2 + F19 (cycle 25): the close plan — open days through today minus the grace, editable only inside the Day Edit window, pending requests by pay cycle and date, an offboarded rep included and labelled, an unknown id an orphan, ready only when nothing is left (driven)', () => {
+  const ctx = e2Ctx_({ adpSheetTz_: () => 'UTC' });
+  const roster = [
+    { id: 'E1', name: 'Ann', payCycle: 'Monthly', offboarded: false, timezone: 'Asia/Kolkata' },
+    { id: 'E2', name: 'Bob', payCycle: 'Monthly', offboarded: true, timezone: 'Asia/Kolkata' },
+    { id: 'E3', name: 'Cy', payCycle: 'Biweekly', offboarded: false, timezone: 'Asia/Manila' },
+  ];
+  const per = {
+    E1: { '2026-09-03': ctx.INC, '2026-09-04': 8, '2026-10-13': ctx.INC, '2026-10-14': ctx.INC },   // 10-14 is inside the grace
+    E2: { '2026-09-29': ctx.ORPH, '2026-08-30': ctx.INC },                                        // 08-30 is outside both periods
+    E3: { '2026-09-10': ctx.INC },                                                                   // a biweekly rep: not in the Monthly blocks
+  };
+  const toRows = [['h'], ['E1', 'Ann', '2026-10-20', 'Full Day', '', ' Pending ', 's'], ['E1', 'Ann', '2026-09-15', 'Full Day', '', 'Approved', 's'],
+    ['E9', 'Former Rep', '2026-09-18', 'Full Day', '', 'Pending', 's']];
+  const parRows = [['h'], ['r1', 'E2', 'Bob', '2026-09-29', 'ClockIn', '09:00', 'x', 'Pending', 's']];
+  const periods = ctx.payPeriodsForClose_('2026-10-15', { Monthly: true }, null);
+  const out = JSON.parse(JSON.stringify(ctx.planPayPeriodClose_(roster, per, toRows, parRows, periods, '2026-10-15', 30, 2)));
+  const [sep, oct] = out.periods;
+  assert.deepStrictEqual(sep.reps.map((r) => r.id + ':' + r.openDays.map((d) => d.date + '/' + d.editable).join(',')),
+    ['E2:2026-09-29/true', 'E1:2026-09-03/false'], 'September: Bob (most items first) and Ann; a counted day and an out-of-period day are not listed');
+  assert.strictEqual(sep.reps[0].offboarded, true, 'THE F19 GAP: the offboarded rep\'s last-period open day is on the list, labelled');
+  assert.deepStrictEqual(sep.reps[0].pendingAdjust, [{ date: '2026-09-29', label: 'ClockIn' }], 'and their pending adjustment');
+  assert.strictEqual(sep.reps[1].openDays[0].kind, 'no clock-out');
+  assert.strictEqual(sep.reps[1].openDays[0].editable, false, '09-03 is past the 30-day window — a hand-edit, not a Day Edit');
+  assert.deepStrictEqual([sep.counts.openDays, sep.counts.pendingAdjust, sep.counts.pendingTimeOff, sep.ready], [2, 1, 0, false]);
+  assert.strictEqual(sep.reps.some((r) => r.id === 'E3'), false, 'a biweekly rep is never in a monthly period');
+  assert.deepStrictEqual([oct.checkedThrough, oct.reps[0].openDays.map((d) => d.date), oct.reps[0].pendingTimeOff.map((d) => d.date)],
+    ['2026-10-13', ['2026-10-13'], ['2026-10-20']], 'the current period counts through today − grace; a padded " Pending " still counts; an approved one does not');
+  assert.deepStrictEqual(out.orphans, [{ id: 'E9', name: 'Former Rep', date: '2026-09-18', kind: 'timeOff', label: 'Full Day' }],
+    'a pending request for an id no roster row carries is named, never dropped');
+  const clean = JSON.parse(JSON.stringify(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], periods, '2026-10-15', 30, 2)));
+  assert.ok(clean.periods.every((p) => p.ready && p.reps.length === 0), 'nothing left → ready');
+  const err = JSON.parse(JSON.stringify(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], [{ cycle: 'Biweekly', which: 'current', error: 'no anchor' }], '2026-10-15', 30, 2)));
+  assert.deepStrictEqual(err.periods[0], { cycle: 'Biweekly', which: 'current', error: 'no anchor' }, 'an unplaceable period stays an error, never "ready"');
+});
+
+test('E2 + F19 (cycle 25): the endpoint is manager-gated before any read, includes offboarded reps through ONE payroll predicate, and a failed Timesheet read is an {error}, never a ready checklist; the open-punch scan names an offboarded rep too (driven + nets)', () => {
+  const reads = [];
+  const mk = (caller, tsThrows) => {
+    const ctx = e2Ctx_({ adpSheetTz_: () => 'UTC', CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 }, OPEN_PUNCH_GRACE_DAYS: 2,
+      EMP: { ID: 0, NAME: 1, EMAIL: 2, TIMEZONE: 3 }, getEmployeeInfo_: () => caller,
+      getEmployeeRosterRows_: () => { reads.push('roster'); return [['h'], ['E1', 'Ann', 'a@x', 'Asia/Kolkata'], ['E2', 'Bob', '', 'Asia/Kolkata'], ['', 'blank', '', '']]; },
+      orgBiweeklyAnchor_: () => null, empPayCycle_: () => ({ payCycle: 'Monthly' }), safeTimezone_: (t) => t || 'UTC', tzAbbr_: () => 'IST',
+      empRosterEmail_: (r) => String(r[2] || '').trim(), fmtDate_: () => '2026-10-15',
+      workedHoursByEmpForRange_: (a, b) => { reads.push('ts:' + a + '..' + b); if (tsThrows) throw new Error('archive unreadable'); return { perDayByEmp: { E2: { '2026-09-29': ctx.INC } } }; },
+      getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }),
+      getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }) });
+    vm.runInContext(['payrollSubjectId_', 'getPayPeriodClose'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+    return ctx;
+  };
+  let res = JSON.parse(JSON.stringify(mk({ isManager: false }).getPayPeriodClose()));
+  assert.deepStrictEqual([res.error, reads.length], ['Manager access required.', 0], 'a rep is refused before the roster or the Timesheet is read');
+  res = JSON.parse(JSON.stringify(mk({ isManager: true }).getPayPeriodClose()));
+  assert.deepStrictEqual(reads.splice(0), ['roster', 'ts:2026-09-01..2026-10-31'], 'ONE Timesheet range read spanning every period');
+  assert.deepStrictEqual(res.periods[0].reps.map((r) => r.name + ':' + r.offboarded), ['Bob:true'], 'the offboarded rep (no email) is a payroll subject');
+  assert.deepStrictEqual([res.adjustWindowDays, res.graceDays, res.tzAbbr], [30, 2, 'IST']);
+  res = JSON.parse(JSON.stringify(mk({ isManager: true }, true).getPayPeriodClose()));
+  assert.ok(res.error === 'archive unreadable' && !res.periods, 'a short read is an error, never a checklist that reads ready');
+  // The predicate stays narrow: only the two close-out walks use it.
+  const decls = serverDecls().decls;
+  const users = Array.from(decls.keys()).filter((n) => decls.get(n).kind === 'function' && !/Tests\.js|DevTools\.js/.test(decls.get(n).file) && n !== 'payrollSubjectId_' &&
+    /payrollSubjectId_\(/.test(stripJsComments_(extractRawFunction('Code.js', n)))).sort();
+  assert.deepStrictEqual(users, ['checkOpenPunches', 'getPayPeriodClose'], 'every other roster walk stays on INV-183\'s empRosterEmail_');
+  // F19 in the daily open-punch scan: offboarded carried through, and named on the problem line.
+  const op = stripJsComments_(extractRawFunction('Code.js', 'checkOpenPunches'));
+  assert.ok(/const id = payrollSubjectId_\(rows\[i\]\);/.test(op), 'the scan walks payroll subjects');
+  // Driven: the real job, with an offboarded rep's open day in the window.
+  let stamped = null;
+  const sctx = e2Ctx_({ adpSheetTz_: () => 'UTC', Logger: { log() {} }, CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago', ADJUST_WINDOW_DAYS: 30, EMPLOYEE_TAB: 'Employees' },
+    OPEN_PUNCH_GRACE_DAYS: 2, OPEN_PUNCH_EXPIRING_DAYS: 7, EMP: { ID: 0, NAME: 1, EMAIL: 2 }, assertManagerCaller_() {},
+    fmtDateTz_: () => '2026-10-15', empRosterEmail_: (r) => String(r[2] || '').trim(),
+    getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [['h'], ['E1', 'Ann', 'a@x'], ['E2', 'Bob', '']] }) }) }),
+    stampOpenPunchCheck_: (r) => { stamped = r; }, stampAutomationError_() {}, clearAutomationError_() {} });
+  sctx.workedHoursByEmpForRange_ = () => ({ perDayByEmp: { E2: { '2026-10-01': sctx.INC } } });
+  autoContract_(sctx);
+  vm.runInContext(['payrollSubjectId_', 'planOpenPunchCheck_', 'checkOpenPunches'].map((f) => extractRawFunction('Code.js', f)).join('\n'), sctx);
+  sctx.checkOpenPunches();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(stamped.detail.map((d) => d.name + ':' + d.offboarded))), ['Bob:true'],
+    'THE F19 GAP: the offboarded rep\'s open day reaches the daily scan, labelled');
+  vm.runInContext(extractRawFunction('Code.js', 'planOpenPunchCheck_'), sb);
+  vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = 'incomplete'; var TIMESHEET_DAY_ORPHAN = 'orphan';", sb);
+  const found = sb.planOpenPunchCheck_([{ id: 'E2', name: 'Bob', offboarded: true }], { perDayByEmp: { E2: { '2026-10-01': sb.TIMESHEET_DAY_INCOMPLETE } } }, '2026-09-15', '2026-10-13', '2026-09-22');
+  assert.strictEqual(found[0].offboarded, true);
+  const pctx = { String, Object, Date, Number, parseInt, JSON, CONFIG: { TIMEZONE: 'Asia/Kolkata', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '15' : '2026-10') }, AUTOMATION_JOB_CHECKS: [] };
+  vm.createContext(pctx);
+  ['automationJobProblems_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), pctx));
+  const lines = pctx.automationProblems_({ digests: [], automationErrors: {}, openPunches: { days: 1, reps: 1, expiring: 0, detail: [{ name: 'Bob', offboarded: true, count: 1 }] } });
+  assert.ok(lines.some((l) => /Bob, offboarded \(1\)/.test(l)), 'the 9am digest names the offboarded rep as offboarded');
+});
+
+test('E2 (cycle 25): the Pay Period Close card — a failed check is never "ready", a clean period says ready, each open day inside the window is a Day Edit button carrying the rep\'s timezone, an older one is a hand-edit, offboarded is labelled, orphans named, all escaped; the summary row states it (driven)', () => {
+  const card = loadFunction(sb, 'tc/script_manager.html', 'renderPayCloseCard_');
+  const summary = loadFunction(sb, 'tc/script_manager.html', 'payCloseSummary_');
+  let h = card({ error: 'archive unreadable' });
+  assert.ok(/could not run — this is a failed check, not &quot;ready to close&quot;/.test(h) && /archive unreadable/.test(h));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary({ error: 'x' }))), { text: 'check failed', tone: 'warn' });
+  const res = { adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST', orphans: [{ id: 'E9', name: '<i>Former</i>', date: '2026-09-18' }], periods: [
+    { cycle: 'Monthly', which: 'previous', start: '2026-09-01', end: '2026-09-30', checkedThrough: '2026-09-30', ready: false,
+      counts: { openDays: 2, pendingTimeOff: 0, pendingAdjust: 1 },
+      reps: [{ id: 'E2', name: 'Bob <b>O\'Neil</b>', offboarded: true, timezone: 'Asia/Kolkata',
+        openDays: [{ date: '2026-09-29', kind: 'clock-out with no clock-in', editable: true }, { date: '2026-09-03', kind: 'no clock-out', editable: false }],
+        pendingTimeOff: [], pendingAdjust: [{ date: '2026-09-29', label: 'ClockIn' }] }] },
+    { cycle: 'Monthly', which: 'current', start: '2026-10-01', end: '2026-10-31', checkedThrough: '2026-10-13', ready: true, counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, reps: [] }] };
+  h = card(res);
+  assert.ok(/data-emp-id="E2" data-emp-name="Bob &lt;b&gt;O&#39;Neil&lt;\/b&gt;" data-date="2026-09-29" data-tz="Asia\/Kolkata" onclick="mgrPayCloseEdit_\(this\)"/.test(h),
+    'an editable day is a button carrying id, name, date and timezone as data-* (g133 — no name in a handler literal)');
+  assert.ok(!/<b>O'Neil/.test(h) && !/<i>Former/.test(h), 'every server string escaped');
+  assert.ok(/2026-09-03 · no clock-out — past the 30-day edit window: hand-edit the Timesheet/.test(h), 'an older day says what is left to do');
+  assert.ok(/offboarded<\/span>/.test(h), 'the offboarded rep is labelled');
+  assert.ok(/1 pending punch adjustment \(2026-09-29\)/.test(h) && /2 open days · 1 pending adjustment before this period exports cleanly/.test(h));
+  assert.ok(/\(current, checked through 2026-10-13\)/.test(h) && /Ready to close — no open days, no pending requests/.test(h));
+  assert.ok(/no pay period can be placed: &lt;i&gt;Former/.test(h), 'orphans named');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: '4 items · a period that has ended', tone: 'crit' }, 'an ENDED period with work left is critical');
+  res.periods[0].counts = { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }; res.periods[0].ready = true; res.orphans = [];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: 'ready', tone: 'ok' }, 'a clean board still STATES itself (M5)');
+  // Wiring: the loader rides the dashboard render, the summary item exists, and the Day Edit opener takes the tz hint.
+  const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/loadTeamCalendar_\(\); loadPayPeriodClose_\(\);/.test(mgr) && /id="mgr-sum-payclose"/.test(mgr) && /<div id="mgr-pay-close"><\/div>/.test(mgr));
+  assert.ok(/var tz = targetTz \|\| tzHint \|\| empTz\(\);/.test(mgr) && /openDayEditModal\(btn\.dataset\.empId, btn\.dataset\.empName, btn\.dataset\.date, btn\.dataset\.tz \|\| null\)/.test(mgr));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

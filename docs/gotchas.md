@@ -106,6 +106,14 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   authorization check; `getEmployeeInfo_` still identifies the caller. Pinned by
   the F3 tripwire, which bans the raw guard shape ANYWHERE in the server source (derived,
   not a hand list — INV-179) rather than enumerating today's fourteen walks.
+  **Cycle 25 E2 (F19, operator 2026-10-15): a PAYROLL walk is the one exception,
+  and it has a predicate of its own.** The ADP export selects punches by employee
+  ID, so an offboarded rep's last period ships — but every walk that could have
+  flagged their open days skipped them by this predicate, and no Day Edit entry
+  point listed them. `payrollSubjectId_(row)` (the trimmed ID) walks payroll
+  subjects; `empRosterEmail_` still says who is CURRENT, as an `offboarded`
+  label. Only the two close-out walks use it — the open-punch check and the
+  pay-period close checklist — and a pin holds that list.
 
 <a id="g04-a-declared-but-unread-config-key-enum"></a>
 

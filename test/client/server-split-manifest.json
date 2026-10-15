@@ -2863,6 +2863,25 @@
     "sendTrainingOverdueDigest"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "Cycle 25 E2: G1 pay-period close checklist (getPayPeriodClose, planPayPeriodClose_, payPeriodsForClose_), F19 payroll predicate (payrollSubjectId_), the one biweekly period rule (biweeklyRangeFor_)",
+   "added": [
+    "biweeklyRangeFor_",
+    "getPayPeriodClose",
+    "payPeriodsForClose_",
+    "payrollSubjectId_",
+    "planPayPeriodClose_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationProblems_",
+    "checkOpenPunches",
+    "getCurrentBiweeklyRange_",
+    "planOpenPunchCheck_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5650,12 +5669,17 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "2cfb5e9afa1fe28b"
+   "sha": "25970dfedde83963"
   },
   "automationRunKey_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "7d755636e574b28a"
+  },
+  "biweeklyRangeFor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b76b76b63f4f7c1e"
   },
   "bizMinutesLocal_": {
    "file": "10_core.js",
@@ -6000,7 +6024,7 @@
   "checkOpenPunches": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "3d74f37c923c5e6c"
+   "sha": "24f0611398b2c1b3"
   },
   "claimSpanishThread": {
    "file": "51_spanish.js",
@@ -7225,7 +7249,7 @@
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "387420cffb815328"
+   "sha": "7ec9c4b2df39eced"
   },
   "getDashboardMetrics": {
    "file": "40_metrics.js",
@@ -7811,6 +7835,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "6b34dd5a95e8d526"
+  },
+  "getPayPeriodClose": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "abdde657755edeb5"
   },
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -9477,6 +9506,16 @@
    "kind": "function",
    "sha": "00e75f71a7c3946c"
   },
+  "payPeriodsForClose_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "af81eb0624d4d45a"
+  },
+  "payrollSubjectId_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "5a2647d8f19de12c"
+  },
   "pendingTasksBustAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9500,7 +9539,12 @@
   "planOpenPunchCheck_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c76fff4fbbe6d6d9"
+   "sha": "df73895432ba5e98"
+  },
+  "planPayPeriodClose_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "e7bd2c9347d9f169"
   },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",

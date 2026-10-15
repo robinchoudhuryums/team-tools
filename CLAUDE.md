@@ -256,7 +256,7 @@ The recurring shape: a `catch` that returns 0, or a plausible substitute for a m
 
 The payroll-facing rules. Getting one wrong costs money or a balance.
 
-- **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate (cycle-15 F3).** Fires when you read the roster email column to decide who counts as a person. [Detail](docs/gotchas.md#g03-roster-inclusion-goes-through-emprosteremail-row-the)
+- **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate (cycle-15 F3); a PAYROLL walk, which must also see an offboarded rep because the export ships their punches by ID, uses `payrollSubjectId_(row)` and labels them (cycle 25 E2, F19).** Fires when you read the roster email column to decide who counts as a person, or walk the roster for payroll. [Detail](docs/gotchas.md#g03-roster-inclusion-goes-through-emprosteremail-row-the)
 - **Timesheet rows are in APPEND order, not time order.** Fires when you consume same-day punch rows. Verify: `test_getTodayPunches_sortsOutOfOrderBackfill`. [Detail](docs/gotchas.md#g14-timesheet-rows-are-in-append-order-not)
 - **The live punch path enforces the client's own state machine; Day Edit reconciles duplicates (cycle-10 M-1) — and the reconcile is only as lossless as its input: the day ships the OPEN break and every STRAY stamp, or a save deletes them (cycle 22 T1 + F5); the sheet doctor's collapse keeps the stamp the hours count, never just the last appended (cycle 23 TC-08).** Fires when you add a punch path, reconcile a day, or change what the Day Edit prefill carries. Verify: the T1/F5 pins. [Detail](docs/gotchas.md#g15-the-live-punch-path-enforces-the-client)
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO hours — `timeToMins_` drops seconds, so a same-minute in/out compared equal and paid a 24-hour day (Batch 1, 2026-09-17); a REP's adjustment is refused past 16 hours, the AM/PM slip the wrap would pay (cycle 23 TC-05).** Fires when you compare two clock stamps at minute granularity, or add a clock writer. Verify: the A1 equal-minute cases, the `managerClockOrderError_` pin, `calcHours_equalMinuteIsZeroNotADay`. [Detail](docs/gotchas.md#g127-calchours-wraps-out-in-as-overnight)
@@ -584,6 +584,7 @@ for the reasoning, which is usually the part that matters.
 - [A manual section's feedback rides the reader bar, not a row under every section (operator 2026-10-12)](docs/design-decisions.md#manual-feedback-rides-the-reader-bar)
 - [Every automation job ends through ONE run-outcome contract — ok, idle, partial or failed (cycle 25 E1, ST2, operator 2026-10-15)](docs/design-decisions.md#every-automation-job-ends-through-one-run-outcome-contract)
 - [Digest deliveries are logged per manager, PHI-free, on the ADP sheet, for 90 days (cycle 25 E1, G3, operator 2026-10-15)](docs/design-decisions.md#digest-deliveries-are-logged-per-manager)
+- [A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)](docs/design-decisions.md#a-pay-period-closes-against-one-checklist)
 
 ## Operator State Checklist
 
@@ -942,18 +943,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1330 | `node test/client/run.js` |
-| DOM harness tests | 253 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 159 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1334 | `node test/client/run.js` |
+| DOM harness tests | 254 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 162 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 55 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 99 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Manager-gated endpoints | 100 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 11 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 364 | `.cycle/config.md` |
-| Regression scenarios (S*) | 134 | `.cycle/config.md` |
+| Invariant library entries | 365 | `.cycle/config.md` |
+| Regression scenarios (S*) | 135 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

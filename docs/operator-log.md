@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — a pay period closes against a checklist, offboarded reps included (cycle 25 E2)
+
+**Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New
+version); no trigger change.
+- **Pay Period Close** is a new card under Manage Time → Periodic. For each pay
+  cycle it lists, for the period that just ended and the current one, every rep
+  with an open or incomplete day (no clock-out, or a clock-out with no clock-in)
+  and every pending time-off or punch-adjustment request dated inside the period.
+  Each open day inside the 30-day edit window is a button that opens Day Edit; an
+  older one says it needs a hand-edit of the Timesheet. The Periodic summary row
+  says what it found even while the group is collapsed.
+- **Offboarded reps are included** (F19 — your decision: find and fix). The ADP
+  export always shipped an offboarded rep's last period by employee ID; now its
+  open days show here, labelled "offboarded", and Day Edit opens for them. The
+  9am failure digest's open-punch line names them as offboarded too.
+- The checklist informs; it never holds the export. The automated export runs as
+  before.
+
 ## 2026-10-15 — automation jobs say "ran only in part", and digest deliveries are logged (cycle 25 E1)
 
 **Adds ONE auto-provisioned tab and no Script Property.** Deploy the web app

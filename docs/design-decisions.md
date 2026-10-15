@@ -5507,3 +5507,33 @@ pick them up without re-deriving the context.
   (it is the payroll audit trail, and a daily row per manager per digest would
   push the job rows out of its 4,000-row tail — g152); logging only failures (a
   missing row would then mean both "sent" and "never ran").
+
+- <a id="a-pay-period-closes-against-one-checklist"></a>**A pay period closes against ONE checklist — open days and pending requests, offboarded reps included (cycle 25 E2, G1 + F19, operator 2026-10-15)**
+  Nothing said what stood between a pay period and a clean export: the daily
+  open-punch check watched the adjust window, not a period, and nothing named
+  pending requests that a later approval would change. And an offboarded rep was
+  invisible to all of it — offboarding clears the roster email, every walk
+  skipped them by INV-183, and no Day Edit entry point listed them — while the
+  export, which selects punches by employee ID, shipped their half-punched last
+  period (F19). The operator chose: **find and fix** (not "warn at offboarding",
+  not "hold their incomplete days out of the export", which would drop paid hours
+  silently); a **standing card** in Manage Time → Periodic (not inside the export
+  dialog); and **open days plus pending requests** as the contents.
+  `getPayPeriodClose` (manager-gated, read-only, no lock) covers, per pay cycle
+  with reps, the period that just ended and the current one — the calendar month,
+  and the org-anchor biweekly period through `biweeklyRangeFor_`, now the export's
+  own rule too. It lists every payroll subject (`payrollSubjectId_`, offboarded
+  labelled) with an open or incomplete day — counted through today minus the
+  open-punch grace, so a shift in progress is not a defect — and each pending
+  time-off or punch-adjustment request dated inside the period. An open day inside
+  the Day Edit window is a button that opens Day Edit for that rep and date (on the
+  rep's roster timezone, since an offboarded rep has no Live Status card); an older
+  one says it is a hand-edit. A pending request for an ID no roster row carries is
+  named, never dropped. The Periodic summary row states the result: critical for a
+  period that has ENDED with work left, a warning for the current one, "ready"
+  when clean, "check failed" when the read failed — never ready from a failed
+  read. The open-punch check walks payroll subjects too and names an offboarded
+  rep as offboarded in the 9am digest. Rejected: blocking the export (the
+  automated export must still run — the checklist informs, it does not hold
+  payroll); a second, checklist-only period rule (the export and the card must
+  agree on what "the period" is).

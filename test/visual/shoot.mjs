@@ -104,6 +104,11 @@ const SCENARIOS = [
   ['timeoff-dark-wide',     { tool: 'timeClock', tab: 'timeoff' },    WIDE, 'dark',  ''],
   ['manage-light-wide',     { tool: 'manage',    tab: 'manage' },     WIDE, 'light', ''],
   ['manage-dark-wide',      { tool: 'manage',    tab: 'manage' },     WIDE, 'dark',  ''],
+  // G1 + F19 (cycle 25 E2): the pay-period close checklist sits in the
+  // Periodic group, collapsed by default — these open it.
+  ['manage-periodic-light-wide',   { tool: 'manage', tab: 'manage' }, WIDE,   'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  ['manage-periodic-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  ['manage-periodic-error-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?failrpc=getPayPeriodClose', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['cn-log-light-wide',     { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'light', ''],
   ['cn-log-dark-wide',      { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'dark',  ''],
   ['metrics-light-wide',    { tool: 'metrics',   tab: null },         WIDE, 'light', ''],

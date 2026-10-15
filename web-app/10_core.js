@@ -2067,7 +2067,7 @@ function automationProblems_(report, opts) {
         ') — an empty open-punch list below is NOT a clean board.');
     } else if (op.days > 0) {
       const who = (op.detail || []).map(function (d) {
-        return d.name + ' (' + d.count + ')';
+        return d.name + (d.offboarded ? ', offboarded' : '') + ' (' + d.count + ')';   // F19 (cycle 25 E2)
       }).join(', ');
       add('openPunch', 'days', 'Open punches: ' + op.days + ' day(s) across ' + op.reps +
         ' rep(s) have no usable clock-in/clock-out pair — ' + who +

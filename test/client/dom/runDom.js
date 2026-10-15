@@ -2966,6 +2966,46 @@ test('PTO1/PTO2 DOM: the leave balance renders on the live-status card and the c
     'and the contractor chip carries no balance — the SAME gate as the card, because they share one helper');
 });
 
+test('E2 DOM (cycle 25): the Pay Period Close card loads with Manage Time, states itself in the Periodic summary, and an open day opens Day Edit for THAT rep and date — an offboarded rep included, on their own timezone; a failed check says so', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const today = h.read('isoDateTz')('Asia/Kolkata');
+  const back = (n) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getPayPeriodClose', () => ({ adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST', orphans: [], periods: [
+    { cycle: 'Monthly', which: 'previous', start: back(40), end: back(10), checkedThrough: back(10), ready: false,
+      counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 },
+      reps: [{ id: 'E2', name: "Bob O'Neil", offboarded: true, timezone: 'Asia/Kolkata',
+        openDays: [{ date: back(12), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const card = h.window.document.getElementById('mgr-pay-close');
+  assert.ok(card && /Pay Period Close/.test(card.textContent) && /offboarded/.test(card.textContent), 'the card renders, the offboarded rep labelled');
+  const sum = h.window.document.getElementById('mgr-sum-payclose');
+  assert.ok(sum && /a period that has ended/.test(sum.textContent) && sum.getAttribute('data-tone') === 'crit',
+    'the collapsed Periodic group still SAYS an ended period has work left');
+  const btn = card.querySelector('button[data-date]');
+  assert.strictEqual(btn.getAttribute('onclick'), 'mgrPayCloseEdit_(this)', 'the button carries data-* only (g133)');
+  h.read('mgrPayCloseEdit_')(btn);   // jsdom does not run inline handlers — call what the attribute names
+  h.flushTimers();
+  const ov = h.window.document.getElementById('day-edit-overlay');
+  assert.strictEqual(h.read('_deEmpId'), 'E2', 'for the offboarded rep — no Live Status card exists for them');
+  assert.strictEqual(h.window.document.getElementById('de-date').value, back(12), 'on the open day');
+  const load = h.run.calls.filter((c) => c.method === 'getEmployeeTimesheetForManager').pop();
+  assert.deepStrictEqual(load && load.args.slice(0, 1), ['E2'], 'and loads their punches');
+  h.read('closeOverlay')(ov);
+  h.run.respond('getPayPeriodClose', () => { throw new Error('archive unreadable'); });
+  h.read('loadPayPeriodClose_')();
+  h.flushTimers();
+  await tick(); await tick();
+  const txt = h.window.document.getElementById('mgr-pay-close').textContent;
+  assert.ok(/failed check/.test(txt) && /archive unreadable/.test(txt) && !/offboarded/.test(txt), 'a failed check replaces the last read and says it failed');
+  assert.strictEqual(h.window.document.getElementById('mgr-sum-payclose').textContent, 'check failed');
+});
+
 // OOP-A (operator 2026-09-16) — the price lookup on BOTH hosts.
 //
 // A quoted price is a COMMITMENT: the rep takes payment on that call. So the

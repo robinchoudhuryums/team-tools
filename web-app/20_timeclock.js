@@ -765,7 +765,7 @@ function planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso) {
     if (!open.length) return;
     open.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     const expiring = open.filter((d) => d.date < expiringBeforeIso).map((d) => d.date);
-    out.push({ id: emp.id, name: emp.name, days: open, count: open.length, expiring: expiring });
+    out.push({ id: emp.id, name: emp.name, offboarded: !!emp.offboarded, days: open, count: open.length, expiring: expiring });
   });
   out.sort((a, b) => b.count - a.count);
   return out;
@@ -806,9 +806,14 @@ function checkOpenPunches() {
 
       const rows = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB).getDataRange().getValues();
       const roster = [];
+      // F19 (cycle 25 E2): a PAYROLL walk, so an offboarded rep is included —
+      // the export ships their punches by id, and a last-period open day used to
+      // raise nothing. payrollSubjectId_ is the payroll predicate; INV-183's
+      // empRosterEmail_ still decides who is a CURRENT employee (the label).
       for (let i = 1; i < rows.length; i++) {
-        if (!empRosterEmail_(rows[i])) continue;              // INV-183 — the ONE inclusion predicate
-        roster.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
+        const id = payrollSubjectId_(rows[i]);
+        if (!id) continue;
+        roster.push({ id: id, name: String(rows[i][EMP.NAME]).trim(), offboarded: !empRosterEmail_(rows[i]) });
       }
       const idx = workedHoursByEmpForRange_(startIso, endIso);   // throws → caught below, nothing stamped
       const found = planOpenPunchCheck_(roster, idx, startIso, endIso, expiringBeforeIso);
@@ -818,7 +823,7 @@ function checkOpenPunches() {
         reps: found.length,
         days: found.reduce((n, r) => n + r.count, 0),
         expiring: found.reduce((n, r) => n + r.expiring.length, 0),
-        detail: found.map((r) => ({ id: r.id, name: r.name, count: r.count,
+        detail: found.map((r) => ({ id: r.id, name: r.name, offboarded: r.offboarded, count: r.count,
           first: r.days[0].date, last: r.days[r.days.length - 1].date,
           kinds: r.days.map((d) => d.kind).filter((k, i, a) => a.indexOf(k) === i),
           expiring: r.expiring.length })),
@@ -5292,13 +5297,159 @@ function getMonthRange_(date) {
 function getCurrentBiweeklyRange_(todayStr) {
   const anchor = orgBiweeklyAnchor_(getEmployeeRosterRows_());   // F18 — the one org-anchor rule
   if (!anchor) return null;
+  return biweeklyRangeFor_(anchor, todayStr);
+}
+/** PURE (E2, cycle 25 — extracted from getCurrentBiweeklyRange_ so the export
+ *  and the pay-period close checklist share ONE period rule): the 14-day
+ *  period containing `dayIso`, given the org anchor (a period END date). */
+function biweeklyRangeFor_(anchor, dayIso) {
   const anchorMs = new Date(anchor + 'T00:00:00Z').getTime();
-  const todayMs  = new Date(todayStr + 'T00:00:00Z').getTime();
-  const daysDiff = Math.round((todayMs - anchorMs) / 86400000);
+  const dayMs  = new Date(dayIso + 'T00:00:00Z').getTime();
+  const daysDiff = Math.round((dayMs - anchorMs) / 86400000);
   const idx = Math.floor((daysDiff + 13) / 14);
   const endMs = anchorMs + idx * 14 * 86400000;
   const startMs = endMs - 13 * 86400000;
   return { start: isoFromUtc_(new Date(startMs)), end: isoFromUtc_(new Date(endMs)) };
+}
+
+// ── E2 (cycle 25): the pay-period close checklist (G1) + F19 ─────────────────
+/** The PAYROLL predicate (F19, operator 2026-10-15). INV-183's empRosterEmail_
+ *  decides who is a current employee; a payroll walk must ALSO see an
+ *  offboarded rep (email cleared, row kept), because the ADP export selects
+ *  punches by employee id and ships their last period. Returns the trimmed id
+ *  or ''. Used ONLY by the close-out walks (the open-punch check, the close
+ *  checklist) — every other roster walk stays on empRosterEmail_. */
+function payrollSubjectId_(row) {
+  return String((row && row[EMP.ID]) || '').trim();
+}
+/** PURE (Node-pinned): the periods the close checklist covers — for each pay
+ *  cycle that has reps, the period that just ENDED and the current one, oldest
+ *  first. Monthly is the calendar month; Biweekly the org-anchor 14-day period
+ *  (biweeklyRangeFor_), or {error} when biweekly reps exist with no anchor. */
+function payPeriodsForClose_(todayIso, cycles, biweeklyAnchor) {
+  const out = [];
+  if (cycles.Monthly) {
+    const ym = todayIso.slice(0, 7);
+    const y = +ym.slice(0, 4), m = +ym.slice(5, 7);
+    const lastDay = (yy, mm) => new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    const pad = (n) => (n < 10 ? '0' : '') + n;
+    out.push({ cycle: 'Monthly', which: 'previous', start: py + '-' + pad(pm) + '-01', end: py + '-' + pad(pm) + '-' + pad(lastDay(py, pm)) });
+    out.push({ cycle: 'Monthly', which: 'current', start: ym + '-01', end: ym + '-' + pad(lastDay(y, m)) });
+  }
+  if (cycles.Biweekly) {
+    if (!biweeklyAnchor) {
+      out.push({ cycle: 'Biweekly', which: 'current', error: 'No biweekly PayAnchor is set on the roster, so the biweekly pay period cannot be placed — set column ' +
+        'PayAnchor on one biweekly row (the export needs it too).' });
+    } else {
+      const cur = biweeklyRangeFor_(biweeklyAnchor, todayIso);
+      const prev = biweeklyRangeFor_(biweeklyAnchor, addDaysIso_(cur.start, -1));
+      out.push({ cycle: 'Biweekly', which: 'previous', start: prev.start, end: prev.end });
+      out.push({ cycle: 'Biweekly', which: 'current', start: cur.start, end: cur.end });
+    }
+  }
+  return out;
+}
+/** PURE (Node-pinned): what stands between each period and a clean export.
+ *  roster: [{id, name, payCycle, offboarded, timezone}] — every payroll subject.
+ *  perDayByEmp: workedHoursByEmpForRange_'s per-day map. toRows / parRows: the
+ *  TimeOffRequests / PunchAdjustRequests tabs (header row first). An open day
+ *  is counted through `checkedThrough` = min(end, today − graceDays): a day
+ *  still in progress is not a defect. `editable` = inside the Day Edit window
+ *  (older days are hand-edit only). A pending request for an id no roster row
+ *  carries goes to `orphans` — its pay cycle is unknown, so it cannot be put in
+ *  a period, and dropping it would read as one less thing to close. */
+function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, adjustWindowDays, graceDays) {
+  const byId = {};
+  (roster || []).forEach((r) => { byId[r.id] = r; });
+  const checkedThroughMax = addDaysIso_(todayIso, -graceDays);
+  const editableFrom = addDaysIso_(todayIso, -adjustWindowDays);
+  const pending = [];   // {id, name, date, kind, label}
+  (toRows || []).slice(1).forEach((r) => {
+    if (String(r[TO.STATUS]).toLowerCase().trim() !== 'pending') return;
+    pending.push({ id: String(r[TO.EMP_ID]).trim(), name: String(r[TO.EMP_NAME]).trim(), date: normalizeDate_(r[TO.DATE]),
+      kind: 'timeOff', label: String(r[TO.TYPE] || '').trim() });
+  });
+  (parRows || []).slice(1).forEach((r) => {
+    if (String(r[PAR.STATUS]).toLowerCase().trim() !== 'pending') return;
+    pending.push({ id: String(r[PAR.EMP_ID]).trim(), name: String(r[PAR.EMP_NAME]).trim(), date: normalizeDate_(r[PAR.DATE]),
+      kind: 'adjust', label: String(r[PAR.PUNCH_TYPE] || '').trim() });
+  });
+  const orphans = pending.filter((p) => p.date && !byId[p.id]);
+  const out = (periods || []).map((per) => {
+    if (per.error) return { cycle: per.cycle, which: per.which, error: per.error };
+    const through = per.end < checkedThroughMax ? per.end : checkedThroughMax;
+    const reps = {};
+    const repOf = (emp) => (reps[emp.id] = reps[emp.id] || { id: emp.id, name: emp.name, offboarded: !!emp.offboarded,
+      timezone: emp.timezone || '', openDays: [], pendingTimeOff: [], pendingAdjust: [] });
+    (roster || []).forEach((emp) => {
+      if (emp.payCycle !== per.cycle) return;
+      const days = (perDayByEmp && perDayByEmp[emp.id]) || {};
+      Object.keys(days).sort().forEach((d) => {
+        if (d < per.start || d > through) return;
+        const v = days[d];
+        if (v !== TIMESHEET_DAY_INCOMPLETE && v !== TIMESHEET_DAY_ORPHAN) return;
+        repOf(emp).openDays.push({ date: d, kind: v === TIMESHEET_DAY_INCOMPLETE ? 'no clock-out' : 'clock-out with no clock-in',
+          editable: d >= editableFrom });
+      });
+    });
+    pending.forEach((p) => {
+      const emp = byId[p.id];
+      if (!emp || emp.payCycle !== per.cycle || !p.date || p.date < per.start || p.date > per.end) return;
+      repOf(emp)[p.kind === 'timeOff' ? 'pendingTimeOff' : 'pendingAdjust'].push({ date: p.date, label: p.label });
+    });
+    const list = Object.keys(reps).map((k) => reps[k]);
+    list.forEach((r) => {
+      r.pendingTimeOff.sort((a, b) => (a.date < b.date ? -1 : 1));
+      r.pendingAdjust.sort((a, b) => (a.date < b.date ? -1 : 1));
+    });
+    list.sort((a, b) => (b.openDays.length + b.pendingTimeOff.length + b.pendingAdjust.length) -
+      (a.openDays.length + a.pendingTimeOff.length + a.pendingAdjust.length) || (a.name < b.name ? -1 : 1));
+    const sum = (k) => list.reduce((n, r) => n + r[k].length, 0);
+    const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust') };
+    return { cycle: per.cycle, which: per.which, start: per.start, end: per.end, checkedThrough: through,
+      reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust };
+  });
+  return { periods: out, orphans: orphans.map((p) => ({ id: p.id, name: p.name, date: p.date, kind: p.kind, label: p.label })) };
+}
+/** G1 (cycle 25 E2) — MANAGER-gated, read-only, no lock: the pay-period close
+ *  checklist behind Manage Time → Periodic. Every payroll subject (offboarded
+ *  reps included — F19) with an open or incomplete day, or a pending time-off
+ *  or punch-adjustment request, inside the period that just ended and the
+ *  current one, per pay cycle. ONE Timesheet range read (the accrual's reader —
+ *  a failed archive read THROWS, so a short read is never "ready to close"). */
+function getPayPeriodClose() {
+  try {
+    const caller = getEmployeeInfo_();
+    if (!caller || !caller.isManager) return { error: 'Manager access required.' };
+    const rows = getEmployeeRosterRows_();
+    const anchor = orgBiweeklyAnchor_(rows);
+    const roster = [], cycles = {};
+    for (let i = 1; i < rows.length; i++) {
+      const id = payrollSubjectId_(rows[i]);
+      if (!id) continue;
+      const pc = empPayCycle_(rows[i], anchor).payCycle;
+      cycles[pc] = true;
+      roster.push({ id: id, name: String(rows[i][EMP.NAME] || '').trim(), payCycle: pc,
+        offboarded: !empRosterEmail_(rows[i]), timezone: safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim()) });
+    }
+    const todayIso = fmtDate_(new Date());
+    const periods = payPeriodsForClose_(todayIso, cycles, anchor);
+    const dated = periods.filter((p) => !p.error);
+    let perDayByEmp = {};
+    if (dated.length) {
+      const from = dated.reduce((m, p) => (p.start < m ? p.start : m), dated[0].start);
+      const to = dated.reduce((m, p) => (p.end > m ? p.end : m), dated[0].end);
+      perDayByEmp = workedHoursByEmpForRange_(from, to).perDayByEmp;
+    }
+    const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
+    const parRows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
+    const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS);
+    return { periods: plan.periods, orphans: plan.orphans, todayIso: todayIso,
+      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS, graceDays: OPEN_PUNCH_GRACE_DAYS, tzAbbr: tzAbbr_(CONFIG.TIMEZONE) };
+  } catch (err) {
+    return { error: err.message };
+  }
 }
 function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
   const recipients = getManagerEmails_();

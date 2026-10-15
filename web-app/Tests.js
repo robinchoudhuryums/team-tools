@@ -6711,6 +6711,7 @@ function test_managerGates_rejectNonManager() {
     ['getDeployReadiness',             function () { return getDeployReadiness(); }],
     ['getAdminSheetView',              function () { return getAdminSheetView('auditLog'); }],
     ['getDigestDeliveries',            function () { return getDigestDeliveries({}); }],   // G3 (cycle 25 E1)
+    ['getPayPeriodClose',              function () { return getPayPeriodClose(); }],   // G1 (cycle 25 E2)
     ['kbConvertDriveSheet',            function () { return kbConvertDriveSheet({ driveUrl: 'https://docs.google.com/spreadsheets/d/x/edit' }); }],
     ['kbConvertDriveDoc',              function () { return kbConvertDriveDoc({ driveUrl: 'https://docs.google.com/document/d/x/edit' }); }],
     ['kbGetUsageStats',                function () { return kbGetUsageStats(); }],
