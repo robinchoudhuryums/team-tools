@@ -542,6 +542,45 @@ test('C4 (cycle 22): a Save & Compose that switches to External COMPLETES on the
   assert.strictEqual(h.read('CN_STATE.composeFlow'), null);
 });
 
+test('F23 DOM (cycle 25): Clear Note is Ctrl/⌘+SHIFT+Backspace — plain Ctrl/⌘+Backspace is left to the browser (delete the previous word) and never clears the note', () => {
+  const h = bootLog();
+  h.setField('cn-fld-issue', 'Patient called about a refill');
+  const fld = h.$('#cn-fld-issue');
+  ['ctrl', 'meta'].forEach((mod) => {
+    const ev = h.dispatchKey('Backspace', { [mod]: true, target: fld });
+    assert.strictEqual(ev.defaultPrevented, false, 'THE REGRESSION: ' + mod + '+Backspace was taken from the system word-delete');
+    assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), 'Patient called about a refill', mod + '+Backspace does not clear the note');
+  });
+  const ev = h.dispatchKey('Backspace', { ctrl: true, shift: true, target: fld });
+  assert.strictEqual(ev.defaultPrevented, true, 'the new chord is handled');
+  assert.strictEqual(h.read("cnGetFieldValue_('cn-fld-issue')").trim(), '', 'and clears the note (Ctrl+Z still undoes it)');
+  h.window.cnOpenShortcutsOverlay_();
+  const row = h.$$('#cn-shortcuts-overlay tr').filter((tr) => /Clear Note/.test(tr.textContent))[0];
+  assert.ok(row && /Shift\s*\+\s*Backspace/.test(row.textContent), 'the shortcuts sheet names the new chord');
+});
+
+test('F35 DOM (cycle 25): an all-time quick chip opens History on the last 90 days with its filter, and says how many of the counted notes are older — until the range changes', () => {
+  const h = bootLog();
+  h.window.cnUpdateQuickChipRow_({ flagCounts: { all: 120, action: 42 } });
+  const chip = h.$$('.cn-quick-chip').filter((b) => b.dataset.flag === 'action')[0];
+  h.click(chip);
+  assert.strictEqual(h.read('CN_STATE.filter'), 'action');
+  const call = h.run.pending('getMyCallNotesRange')[0];
+  assert.ok(call, 'History loads a range');
+  const [start, end] = call.args;
+  assert.strictEqual(Math.round((Date.parse(end) - Date.parse(start)) / 86400000), 89, 'THE GAP: the last 90 days (the server\'s widest span), not the last-used range');
+  const notes = [1, 2, 3].map((i) => noteFixture({ noteId: 'a' + i, flagType: 'action', dateLocal: end }));
+  notes.push(noteFixture({ noteId: 'x', flagType: '', dateLocal: end }));
+  h.run.flushSuccess({ notes }, 'getMyCallNotesRange');
+  const sum = h.$('#cn-history-summary').textContent;
+  assert.ok(/Showing the last 90 days: 3 of your 42 Action notes\. The other 39 are older/.test(sum) && /use Search/.test(sum),
+    'the count the chip showed is reconciled with what History can show: ' + sum);
+  // Any range change and the claim is gone (it described the chip's range only).
+  h.click(h.$$('.cn-history-preset-btn').filter((b) => b.dataset.preset === 'last7')[0]);
+  h.run.flushSuccess({ notes: notes.slice(0, 1) }, 'getMyCallNotesRange');
+  assert.ok(!/of your 42/.test(h.$('#cn-history-summary').textContent), 'a different range does not carry the chip\'s count');
+});
+
 test('C3 (cycle 22): a failed load for a NEW History range never shows the previous range\'s notes under its label; an over-cap range is refused before the RPC', () => {
   const h = bootLog();
   h.read("CN_STATE.historyDate = '2026-09-14'; CN_STATE.historyEndDate = '2026-09-20'");

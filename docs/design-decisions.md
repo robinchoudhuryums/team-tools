@@ -1844,8 +1844,10 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   2026-06-12 r3 feedback round — too close to the Enter-nav muscle
   memory; plain Ctrl/⌘+Enter is now unbound). Ctrl/⌘+Shift+Enter
   saves & opens the email composer. Ctrl/⌘+1/2/3 toggle
-  action/training/review flags on the active form. Ctrl/⌘+Backspace
-  clears the form. Ctrl/⌘+/ or bare ? opens a shortcuts help
+  action/training/review flags on the active form. Ctrl/⌘+Shift+Backspace
+  clears the form (cycle 25 F23, operator 2026-10-15 — it was plain
+  Ctrl/⌘+Backspace, the system's "delete previous word" / "delete to line
+  start", and a rep editing a word mid-call cleared the whole note). Ctrl/⌘+/ or bare ? opens a shortcuts help
   overlay. Shortcuts only bind in the Log view's active form; the
   ? handler skips when focus is in an input/textarea. The help
   overlay uses the shared `.overlay` pattern (Escape closes it).

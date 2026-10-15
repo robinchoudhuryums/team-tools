@@ -2124,6 +2124,8 @@
   }
   /* F(cycle-8 M-10): active-filter pill on the History stack (the quick-chip
      "jump filtered" target) — mirrors the Search exact-mode badge vocabulary. */
+  /* F35 (cycle 25): the "N of M — the rest are older" line under an all-time chip. */
+  .cn-history-chipnote { font-size: 12px; color: var(--muted); margin: 4px 0 8px; line-height: 1.4; }
   .cn-hist-filterpill {
     display: inline-block; margin-left: 8px; padding: 1px 8px;
     font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
@@ -3001,7 +3003,7 @@ function cnRenderNotesView(area) {
           <tr><td>Bold selection <span style="color:var(--muted)">(**text**)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>B</kbd></td></tr>
           <tr><td>Underline selection <span style="color:var(--muted)">(__text__)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>U</kbd></td></tr>
           <tr><td>Highlight selection <span style="color:var(--muted)">(==text==)</span></td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd></td></tr>
-          <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Backspace</kbd></td></tr>
+          <tr><td>Clear Note</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Backspace</kbd></td></tr>
           <tr><td>Undo Clear / Undo Save</td><td><kbd>${esc(mod)}</kbd> + <kbd>Z</kbd> <span style="color:var(--muted)">(30s, empty form)</span></td></tr>
           <tr><td>Next Field</td><td><kbd>Tab</kbd> or <kbd>Enter</kbd></td></tr>
           <tr><td>New Line (same field)</td><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
@@ -3382,11 +3384,19 @@ function cnWireActiveForm_() {
           return;
         }
       }
+      // F23 (cycle 25, operator 2026-10-15): Clear Note is ${mod}+SHIFT+Backspace.
+      // Plain Ctrl+Backspace is the system's "delete previous word" on Windows
+      // (⌘+Backspace "delete to line start" on a Mac); taking it wiped the whole
+      // note mid-edit. Without Shift it now falls through to the browser.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.key === 'Backspace') {
+        e.preventDefault();
+        if (!e.repeat) cnClearActiveForm_();   // a held chord auto-repeats (the M-3 rule)
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
         if (e.key === '1') { e.preventDefault(); cnFormToggleFlag_('action'); return; }
         if (e.key === '2') { e.preventDefault(); cnFormToggleFlag_('training'); return; }
         if (e.key === '3') { e.preventDefault(); cnFormToggleFlag_('review'); return; }
-        if (e.key === 'Backspace') { e.preventDefault(); cnClearActiveForm_(); return; }
         if (e.key === '/') { e.preventDefault(); cnOpenShortcutsOverlay_(); return; }
       }
       // Operator feedback (2026-06-12): Enter advances to the next field
@@ -7994,6 +8004,7 @@ function cnRenderHistoryView(area) {
         <button type="button" class="cn-history-preset-btn" data-preset="yesterday">Yesterday</button>
         <button type="button" class="cn-history-preset-btn" data-preset="last7">Last 7 Days</button>
         <button type="button" class="cn-history-preset-btn" data-preset="last30">Last 30 Days</button>
+        <button type="button" class="cn-history-preset-btn" data-preset="last90">Last 90 Days</button>
         <button type="button" class="cn-history-preset-btn" data-preset="thisWeek">This Week</button>
         <button type="button" class="cn-history-preset-btn" data-preset="lastWeek">Last Week</button>
       </div>
@@ -8057,6 +8068,10 @@ function cnHistoryPresetRange_(preset) {
       var d30 = toDate(today); d30.setUTCDate(d30.getUTCDate() - 29);
       return { start: fmt(d30), end: today };
     }
+    case 'last90': {   // F35 (cycle 25): the widest span the server serves (CN_HISTORY_MAX_SPAN_DAYS)
+      var d90 = toDate(today); d90.setUTCDate(d90.getUTCDate() - (CN_HISTORY_MAX_SPAN_DAYS - 1));
+      return { start: fmt(d90), end: today };
+    }
     case 'thisWeek': {
       var dow = todayD.getUTCDay();
       var mon = toDate(today); mon.setUTCDate(mon.getUTCDate() - ((dow + 6) % 7));
@@ -8102,6 +8117,11 @@ function cnRenderHistoryStack_() {
     : '<span class="cn-hist-filterpill">Filtered: ' + esc(flt) +
       ' · <a href="#" onclick="CN_STATE.filter=\'all\';cnRenderHistoryStack_();return false;">clear</a></span>';
   const isRange = CN_STATE.historyEndDate && CN_STATE.historyEndDate !== CN_STATE.historyDate;
+  // F35 (cycle 25): opened from an all-time chip — say when the count includes
+  // notes older than the range History can show (only while the range and the
+  // filter are still the ones the chip set; any change and it is gone).
+  const chipNote = cnHistoryChipNoteHtml_(CN_STATE.historyChipHint, curKey + '|' + flt,
+    (CN_STATE.historyNotesKey === curKey) ? notes.length : null);
 
   // M-4 (cycle 10): same typed-edit preservation as cnRenderStack_ — History
   // is the "view & edit prior notes" surface, but an optimistic toggle / QA
@@ -8111,7 +8131,7 @@ function cnRenderHistoryStack_() {
   const editSnap = cnEditSnapshot_();
 
   if (notes.length === 0) {
-    if (summary) summary.innerHTML = fltPill;
+    if (summary) summary.innerHTML = fltPill + chipNote;
     if (CN_STATE.historyRangeRefused && allNotes.length === 0) {
       stack.innerHTML = errorStateHtml_(CN_STATE.historyRangeRefused);
       return;
@@ -8131,7 +8151,7 @@ function cnRenderHistoryStack_() {
     var endLabel = cnFormatDateLabel_(CN_STATE.historyEndDate);
     if (summary) summary.innerHTML = '<div class="cn-history-summary">' +
       esc(startLabel) + ' – ' + esc(endLabel) + ' · ' + notes.length + ' note' + (notes.length !== 1 ? 's' : '') +
-      fltPill + '</div>';
+      fltPill + '</div>' + chipNote;
 
     // Group by dateLocal, newest dates first — each group is collapsible with
     // a metadata header (note count + per-flag-type counts).
@@ -8163,10 +8183,24 @@ function cnRenderHistoryStack_() {
     });
     stack.innerHTML = html;
   } else {
-    if (summary) summary.innerHTML = fltPill;
+    if (summary) summary.innerHTML = fltPill + chipNote;
     stack.innerHTML = notes.map(cnRenderCard_).join('');
   }
   cnEditRestore_(editSnap);   // M-4 — typed edit values survive the re-render
+}
+
+/** F35 (cycle 25) — PURE (Node + DOM pinned). The chip's count spans the rep's
+ *  whole Sheet; History serves at most CN_HISTORY_MAX_SPAN_DAYS. When the chip's
+ *  range + filter are still the current ones and fewer notes loaded than it
+ *  counted, say how many are older and where they are. `shown` is null while
+ *  the range has not loaded (nothing is claimed about notes not yet read). */
+function cnHistoryChipNoteHtml_(hint, curKeyFilter, shown) {
+  if (!hint || hint.key !== curKeyFilter || shown === null || !(hint.count > shown)) return '';
+  var older = hint.count - shown;
+  return '<div class="cn-history-chipnote" role="status">Showing the last ' + CN_HISTORY_MAX_SPAN_DAYS + ' days: ' +
+    shown + ' of your ' + hint.count + ' ' + esc(hint.label) + ' note' + (hint.count === 1 ? '' : 's') + '. The other ' + older +
+    (older === 1 ? ' is' : ' are') + ' older — History shows up to ' + CN_HISTORY_MAX_SPAN_DAYS +
+    ' days at a time, so use Search to find an older note.</div>';
 }
 
 /** Per-flag-type count chips for a History date group. action/training/review
@@ -9810,7 +9844,7 @@ function cnUpdateQuickChipRow_(res) {
   // moves to the counts rather than the counts to the label: a weekly count
   // here would contradict the same numbers everywhere else they appear.
   row.innerHTML = '<span class="cn-quick-chip-row-label">' + icon('chevronRight', 11) + ' Open in History · all time</span>'
-    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" ` +
+    + chips.map(c => `<button type="button" class="cn-quick-chip" data-flag="${esc(c.flag)}" data-label="${esc(c.label)}" data-count="${esc(String(c.count))}" ` +
         `title="Open History filtered to ${esc(c.label)}">${esc(c.label)} ` +
         `<span class="count">${c.count}</span>` +
         `<span class="cn-qc-arrow">${icon('chevronRight', 11)}</span></button>`).join('');
@@ -9822,6 +9856,17 @@ function cnUpdateQuickChipRow_(res) {
       // Map "qa" → "answered" (existing CN filter name for training Q&A)
       const filterName = f === 'qa' ? 'answered' : f;
       CN_STATE.filter = filterName;
+      // F35 (cycle 25, operator 2026-10-15): the count is ALL TIME, but History
+      // kept whatever range was used last, so "Action 42" could open on three.
+      // It opens on the widest range History can show, and remembers the count
+      // for exactly that range + filter so History can say how many are older.
+      const range = cnHistoryPresetRange_('last90');
+      if (range) {
+        CN_STATE.historyDate = range.start;
+        CN_STATE.historyEndDate = range.end;
+        CN_STATE.historyChipHint = { key: range.start + ':' + range.end + '|' + filterName,
+          label: btn.dataset.label || filterName, count: parseInt(btn.dataset.count, 10) || 0 };
+      }
       if (typeof showView === 'function') showView('callNotesHistory');
     });
   });

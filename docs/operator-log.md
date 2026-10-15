@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — Clear Note moves to Shift; History's all-time chips say what they show (cycle 25 F23 + F35)
+
+**Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New
+version); no trigger change. Both are your decisions of 2026-10-15.
+- **Clear Note is Ctrl/⌘+Shift+Backspace** (F23). Ctrl+Backspace (⌥/⌘+Backspace
+  on a Mac) is the system's delete-a-word key again inside the note fields; it
+  used to wipe the whole form. The shortcuts sheet (?) shows the new chord. Tell
+  the team — anyone who learned the old chord will now delete a word instead.
+- **The History chips open the last 90 days** (F35). A quick chip's number counts
+  every note you have; History shows at most 90 days at a time, so clicking a
+  chip now opens the last 90 days with that filter, and when the chip counted
+  more notes than the range holds, History says how many are older and points to
+  Search. History also gains a **Last 90 Days** preset.
+
 ## 2026-10-15 — a pay period closes against a checklist, offboarded reps included (cycle 25 E2)
 
 **Adds NO operator state.** Deploy the web app (`clasp push -f`, then a New

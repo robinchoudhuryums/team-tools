@@ -15135,7 +15135,7 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
     'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
     'getDocsDashboard', 'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission',
-    'getIntakeAgents', 'getMyCallNotesRange', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
+    'getIntakeAgents', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
     'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions', 'intakePreviewPAP',
     'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
     'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
@@ -37726,6 +37726,26 @@ test('E2 (cycle 25): the Pay Period Close card — a failed check is never "read
   const mgr = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_manager.html'), 'utf8');
   assert.ok(/loadTeamCalendar_\(\); loadPayPeriodClose_\(\);/.test(mgr) && /id="mgr-sum-payclose"/.test(mgr) && /<div id="mgr-pay-close"><\/div>/.test(mgr));
   assert.ok(/var tz = targetTz \|\| tzHint \|\| empTz\(\);/.test(mgr) && /openDayEditModal\(btn\.dataset\.empId, btn\.dataset\.empName, btn\.dataset\.date, btn\.dataset\.tz \|\| null\)/.test(mgr));
+});
+
+// ── cycle 25 deferred F23 + F35 (operator 2026-10-15) ──
+test('F23 + F35 (cycle 25): Clear Note never binds plain Ctrl/⌘+Backspace; the chip note claims only what was loaded, for the chip\'s own range and filter, escaped (driven + a net)', () => {
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  const code = cn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const binds = code.match(/e\.key === 'Backspace'[^\n]*cnClearActiveForm_/g) || [];
+  assert.strictEqual(binds.length, 0, 'no one-line Backspace → clear binding (the old plain-modifier shape)');
+  assert.ok(/\(e\.metaKey \|\| e\.ctrlKey\) && e\.shiftKey && !e\.altKey && e\.key === 'Backspace'\)/.test(code), 'the clear chord requires Shift');
+  assert.strictEqual((code.match(/cnClearActiveForm_\(\);/g) || []).length >= 1, true);
+  sb.CN_HISTORY_MAX_SPAN_DAYS = 90;
+  const note = loadFunction(sb, 'cn/script_callnotes.html', 'cnHistoryChipNoteHtml_');
+  const hint = { key: 'a:b|action', label: '<b>Action</b>', count: 42 };
+  assert.ok(/3 of your 42 &lt;b&gt;Action&lt;\/b&gt; notes\. The other 39 are older/.test(note(hint, 'a:b|action', 3)), 'escaped, and the arithmetic stated');
+  assert.strictEqual(note(hint, 'a:b|action', null), '', 'nothing is claimed before the range has loaded');
+  assert.strictEqual(note(hint, 'a:b|action', 42), '', 'nothing to say when every counted note is shown');
+  assert.strictEqual(note(hint, 'a:c|action', 3), '', 'another range is not the chip\'s');
+  assert.strictEqual(note(hint, 'a:b|all', 3), '', 'nor another filter');
+  assert.strictEqual(note(null, 'a:b|action', 3), '');
+  assert.ok(/The other 1 is older/.test(note({ key: 'k', label: 'All', count: 2 }, 'k', 1)), 'singular');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -613,10 +613,11 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    pass read it rather than checking it. Edit the marker only by adding a
    scenario or by accepting a new gap deliberately:**
 
-   VISUAL-GAP-TABS: callNotesForms, callNotesHistory, callNotesSearch, docsManage, intakeSent, myDocs, trainingManage
+   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, docsManage, intakeSent, myDocs, trainingManage
 
-   Of those, `callNotesHistory` / `callNotesSearch` are the same card
-   vocabulary the Log view already shoots, and `myDocs` / `docsManage` /
+   Of those, `callNotesSearch` is the same card vocabulary the Log view
+   already shoots (`callNotesHistory` gained its two scenarios with cycle 25
+   F35, for the all-time chip's note), and `myDocs` / `docsManage` /
    `trainingManage` are the manager/rep halves of Training & Employee Docs.
    Also uncovered and NOT tab-shaped, so the marker cannot see them: **most
    modal/overlay states** (the sched modal, the Reference reader and — since
@@ -2152,7 +2153,8 @@ S115 | Call Notes History — range loads, a failed load, and the 90-day cap (cy
     - Online, set the range to 1 January → today
     - **(cycle 22 C12)** With `CN_NOTE_ARCHIVE_DAYS` set (e.g. 30), load a History range, and the per-rep view, starting before the cutoff with no live notes → the empty state says notes before that date may be in the cold archive and points to Search with "Include archive"; export the same range → the note sits under the link (or in the error). With archiving off → no note anywhere
     - **(cycle 25 F39 + F40)** Return to History within a minute (the instant paint + "Refreshing…" pill) and change the range at once; collapse a date group and let the list refresh
-  Expected: the failed load for the NEW range shows the load-failure message, and NEVER the previous range's notes under the new dates. A failed refresh of the SAME range keeps the notes already on screen (C17-5). The over-cap range reads "History shows up to 90 days at a time — narrow the range." with no request sent. Pinned by the C3 Node + DOM pins (g94). **(cycle 25 F39 + F40)** The pill goes away; the collapsed group stays collapsed.
+    - **(cycle 25 F23 + F35)** On the Log, type in the note field and press Ctrl+Backspace (⌥+Backspace on a Mac), then Ctrl/⌘+Shift+Backspace; open ? (shortcuts). On History, click a quick chip whose count is larger than your last 90 days hold (e.g. All), then pick Last 7
+  Expected: the failed load for the NEW range shows the load-failure message, and NEVER the previous range's notes under the new dates. A failed refresh of the SAME range keeps the notes already on screen (C17-5). The over-cap range reads "History shows up to 90 days at a time — narrow the range." with no request sent. Pinned by the C3 Node + DOM pins (g94). **(cycle 25 F39 + F40)** The pill goes away; the collapsed group stays collapsed. **(cycle 25 F23 + F35)** Ctrl+Backspace deletes one word and leaves the rest of the form; Ctrl/⌘+Shift+Backspace clears the form; the shortcuts sheet names the Shift chord. The chip opens History on the last 90 days with its filter (the date fields read today − 89 days → today), and the summary says how many of the chip's notes are older than 90 days and to use Search; after Last 7 the note is gone. Pinned by the F23 + F35 Node pin and DOM drives.
 
 S116 | Dashboard — the MTD comparison and the run-rate count days of data (cycle 22 M8) | Subsystem: Server, Client (Time Clock views)
   Steps:

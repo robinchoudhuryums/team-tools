@@ -651,6 +651,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       stateTaxRates: {}, stateAbbrToName: {}, deleteWindowSeconds: 300, autoCopyFormat: '',
     },
     getMyCallNotes: { notes: [note(0), note(1), note(2)], autoCopyFormat: '', timezone: 'Asia/Kolkata' },
+    // F35 (cycle 25): History is photographed now (its preset row gained Last 90 Days).
+    getMyCallNotesRange: { notes: [note(0), note(1, { dateLocal: daysAgo(1), timestamp: ts(daysAgo(1), '11:20:00') }),
+      note(2, { dateLocal: daysAgo(3), timestamp: ts(daysAgo(3), '09:05:00'), flagType: 'action' })], archivedBefore: '' },
     getMyPinnedCallNotes: { notes: [note(9, { subformData: { pinned: true, pinnedAt: ts(daysAgo(2), '15:00:00'), flags: [], tags: ['complex-case'] }, dateLocal: daysAgo(2), timestamp: ts(daysAgo(2), '14:58:00'), flagType: '' })] },
     getMyTrainingQA: { items: [], notes: [] },
     // The editor file-drop: a FUNCTION, because the response shape depends on

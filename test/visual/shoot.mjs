@@ -110,6 +110,9 @@ const SCENARIOS = [
   ['manage-periodic-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['manage-periodic-error-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?failrpc=getPayPeriodClose', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['cn-log-light-wide',     { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'light', ''],
+  // F35 (cycle 25): History had never been shot; its preset row gained a button.
+  ['cn-history-light-wide',   { tool: 'callNotes', tab: 'callNotesHistory' }, WIDE,   'light', ''],
+  ['cn-history-light-mobile', { tool: 'callNotes', tab: 'callNotesHistory' }, MOBILE, 'light', ''],
   ['cn-log-dark-wide',      { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'dark',  ''],
   ['metrics-light-wide',    { tool: 'metrics',   tab: null },         WIDE, 'light', ''],
   ['metrics-dark-wide',     { tool: 'metrics',   tab: null },         WIDE, 'dark',  ''],
