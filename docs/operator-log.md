@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-15 — the Reference search signal (cycle 25 E6)
+
+**Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New
+version); no new trigger (the purge rides the nightly diagnostics purge). Your
+decisions of 2026-10-14:
+- **What reps search for, without what they typed.** A search typed into
+  Reference (the box or the drawer) is reduced to the terms your vocabulary
+  already holds — the HCPCS codes in OopPricing, the handbook glossary, the
+  auto-tag rules and the handbook's headings — and only those terms are kept,
+  with no rep's name. Anything else in the search is dropped on the spot. The
+  new `KbSearchSignal` tab on the KB spreadsheet appears with the first one.
+- **Where to see it:** Reference's landing, as an admin, under "What people
+  search for" — the last 90 days, team-wide, a term once it has been searched
+  twice, those that found nothing first. Each content request also says
+  "People searched for terms like …".
+- **To count a word reps use,** add it as an auto-tag rule keyword (Admin →
+  Config → Auto-tag rules); it is counted within the hour.
+
 ## 2026-10-15 — the visual layout gate in CI, and the cycle close-out scripted (cycle 25 E5)
 
 **Adds NO operator settings and changes no `web-app/` file — nothing to deploy.**

@@ -1,0 +1,37 @@
+---BROAD SCAN IMPLEMENTATION SUMMARY---
+Findings implemented: None (an expansion batch)
+New capabilities (G/ST):
+- G4 — the Reference search signal (operator decisions of 2026-10-14): a typed Reference search (the box and the drawer) is reduced to the terms of an ADMIN-authored vocabulary — HCPCS codes from OopPricing, the handbook glossary, the auto-tag rules, published handbook headings — and only those terms are stored, team-level, no rep and no query, in a new KbSearchSignal tab kept 90 days; admins see "What people search for" on the Reference landing (terms that found nothing first, a term once searched twice), and each content request carries a "People searched for terms like …" hint from its topic, replacing the raw query F9 removed.
+Files modified: web-app/00_config.js, web-app/70_kb.js, web-app/10_core.js, web-app/kb/script_kb.html, web-app/Tests.js, test/client/run.js, test/client/dom/runDom.js, test/client/server-split-manifest.json, test/visual/mock.js, test/visual/shoot.mjs, CLAUDE.md, .cycle/config.md, .cycle/STATE.md, docs/design-decisions.md, docs/modules.md, docs/operator-log.md, docs/operator-state.md, docs/test-harness-log.md
+Estimate: M (~1 day ≈ 8 h, the plan's figure) — written before the first edit
+Actual: ~3 h
+
+CHANGES:
+G4 | web-app/00_config.js | KB_SEARCH_SIGNAL_* constants (tab, headers, KBSS, text index, sources and events, 90 days, the threshold of 2, a 6-hour per-person dedupe, scan/show/hint caps) and the vocabulary's cap, heading-length limit, TTL and cache prefix
+G4 | web-app/70_kb.js | PURE: kbSignalNorm_, kbSignalVocab_ (the four sources, HCPCS → glossary → tag → heading precedence, numbering stripped, two-letter terms, bare numbers and long headings dropped), kbSignalTermsOf_ (whole runs of words only, a contained term dropped — nothing else of a query can come out), kbSearchSignalReport_, kbSearchSignalHint_. kbSignalVocabSources_/kbSignalVocabulary_ (cached by code hash + KB generation; a failed source is named and never cached), kbRecordSearchSignal_ (rows [time, term, source, event]; a hashed expiring cache key dedupes; script-lock tryLock that skips when busy; never fails the search), kbSearchSignalRows_ (says when the scan cap cut the window), kbGetSearchSignal (admin-gated before any read). searchReference records only when opts.signal === true and never on publishedOnly; kbGetContentRequests adds searchHint for admins and names a failed read (hintError)
+G4 | web-app/10_core.js | purgeOldDiagnostics purges KbSearchSignal past 90 days every night (an unopenable KB store is a PARTIAL run, named; the audit row carries searchSignalDays / searchSignalRemoved); Storage Health's KB row says "Kept · KbSearchSignal 90d purge"
+G4 | web-app/kb/script_kb.html | the Reference box and the drawer send { signal: true } (the Issue strip, the drawer's Issue suggestions and the AI path do not); admin-only "What people search for" landing block (kbLoadSearchSignalBlock_, kbSearchSignalHtml_ — failure, empty window, cut window and unread vocabulary each said); the request hint on its own line (kbSearchHintHtml_) and "Search hints unavailable" on a failed read; CSS .kb-land-sig, .kb-land-hint
+G4 | web-app/Tests.js | kbGetSearchSignal in the admin gate cases (test_managerGates_rejectNonManager's ADMIN_GATED set)
+Nets | test/client/run.js | S2's appender list gains kbRecordSearchSignal_ and its lock rule accepts a script-lock tryLock; RT-1 pins the purge clause and its partial outcome; ADM-04's context carries KB_SEARCH_SIGNAL_DAYS
+Tests | test/client/run.js, test/client/dom/runDom.js | 7 Node pins (vocabulary, extractor — incl. a property over hostile queries —, recorder, wiring, report, admin gate + hint, vocabulary cache) and 4 DOM drives (the admin block, a non-admin manager, the request hint and its failure, the typed search's signal flag)
+Visual | test/visual/mock.js, shoot.mjs | fixtures for kbGetSearchSignal and a content request with a hint; two scenarios scroll to the request and the block (reference-search-signal-light-wide, -dark-mobile)
+Docs | CLAUDE.md (storage map, inventory, design-decision index, counts incl. admin-tier 58), .cycle/config.md (INV-382, S143, INV-136 names kbGetSearchSignal), docs/operator-state.md (the KbSearchSignal tab), docs/design-decisions.md, docs/modules.md, docs/operator-log.md, docs/test-harness-log.md
+
+TEST RESULTS: passed — pure 1367/0, DOM 264/0, lint:server clean, split manifest current (two recorded revisions), counts --check clean, cycle-closeout --check in step. Visual: the six Reference landing scenarios and the two new ones measure clean; the CI subset (`shoot.mjs --ci`, 24 scenarios) PASSES. Bite-checks: 28 mutations, all red — the extractor's whole-word rule and contained-term drop, the vocabulary's two-letter, numbering and bare-number rules, the recorder's no-rep rows, dedupe, zero rows and busy-lock skip, the publishedOnly and Issue-strip exclusions, the box's opt-in (Node and DOM), the report's order, threshold and source check, the admin gate (driven with a non-admin manager), the admin-only hint and its threshold, the vocabulary's failed-source and generation-key rules, the purge's partial outcome, and the client's failure lines, admin-only load and escaping. One of the 28 ("seen before write") went red because its mutant threw on an undefined variable, so it is not evidence for that ordering; the ordering is still exercised by the "a skipped write was not marked seen" assertion. Regression Scenarios (Test Command manual): S143 (new) and the Reference scenarios S124–S128 NOT WALKED — they need the deployed DEV instance; owed with the deploy.
+REGRESSION RISKS: (1) A search that adds a new signal row now takes the script lock for one append (at most a 1 s wait, skipped when busy) — once per person per term per six hours. (2) The first search after a KB write or an hour rebuilds the vocabulary, which reads OopPricing once (oopCodeIndex_). (3) The KB store's retention line changed, and purgeOldDiagnostics now also opens the KB store; a KB store that cannot be opened turns that nightly run partial (named) instead of ok.
+INVARIANTS AT RISK: INV-136 (admin set — kbGetSearchSignal added, F7/F9 green); INV-185 (fixtures — added); g146/g167 (the PHI boundary — held by construction: only vocabulary terms can be written, pinned as a property); INV-01 (the append holds the script lock). None weakened.
+NET SCORE: 0 production fixes − 0 new failure modes = 0 (1 new capability: G4)
+
+OPERATOR ACTIONS / DEPLOY:
+- Deploy the web app (`cd web-app && clasp push -f`, then Deploy → Manage deployments → New version) | BLOCKS DEPLOY: N
+- Walk S143 on DEV after the deploy | BLOCKS DEPLOY: N
+Deploy: cd web-app && clasp push -f, then New version (the Deploy Command in .cycle/config.md)
+
+FOLLOW-ON ITEMS:
+- Pre-existing, found by the new content-request fixture: a content request's topic and its "Ana Ruiz · 2d ago" meta run together on one line (`.kb-land-req-body` lays its spans inline — "cleaning stepsAna Ruiz · 2d ago"). Not fixed here (outside G4).
+- The vocabulary takes HCPCS codes from OopPricing only; the InsurancePayors code headers are not read (the operator's G4 list named "HCPCS codes"; OopPricing is the one table whose codes the app already indexes, via oopCodeIndex_).
+- A surname that is also a vocabulary word ("Walker") counts as that word — accepted in the design decision (team-level, unlinked).
+
+DOCUMENTATION UPDATES NEEDED:
+- None beyond those made.
+---END BROAD SCAN IMPLEMENTATION SUMMARY---

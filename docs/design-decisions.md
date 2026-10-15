@@ -5651,3 +5651,34 @@ pick them up without re-deriving the context.
   A plain console.error is reported but not gated: an error-state scenario logs
   one on purpose. Rejected: the whole matrix in CI (~12 minutes, and its real
   output is screenshots a person must look at).
+
+- <a id="the-search-signal-counts-vocabulary-terms-only"></a>**The Reference search signal counts admin-vocabulary terms only — team-level, 90 days, admin view; a content request's hint replaces the raw query (cycle 25 E6, G4, operator 2026-10-14)**
+  Reference had no record of what reps search for and fail to find, by design:
+  a query typed mid-call can carry a patient's name, and the self-improving-KB
+  decision chose an explicit "Request an article" over logging queries. F9
+  showed that position leaked anyway (the request carried the raw query), and
+  closed it. The operator then chose to collect a signal, on option (a): a
+  search is reduced to the terms of a vocabulary the ADMIN wrote — HCPCS codes
+  from OopPricing, the handbook glossary, the auto-tag rules, published
+  handbook headings — and only those terms are stored. That makes the store
+  PHI-free by construction rather than by a scrubber: the code cannot write a
+  word the vocabulary does not already hold (the KB-2 lesson, g167, is why the
+  vocabulary is never built from anything a rep typed — their tags, notes or
+  requests). One collision is accepted: a surname that is also a vocabulary
+  word ("Walker") counts as that word — the count is team-level and carries no
+  link to the search or the person. Rejected: hashed queries (countable but
+  unreadable), raw queries in a PHI store (a new PHI dataset with its own
+  retention and access rules). **Granularity:** team-level — no rep id is stored,
+  and one person's repeat within six hours counts once, through an expiring
+  hashed cache key (per-rep counts would turn it into monitoring). **What counts
+  as a search:** only the Reference box and the drawer opt in (`signal: true`);
+  the Issue-field strip and the drawer's Issue suggestions pass rep text about a
+  caller and never count, nor does the AI guidance's retrieval. **Retention and
+  view:** 90 days through the nightly diagnostics purge, shown to admins on the
+  Reference landing, with terms that found nothing first and a term listed once
+  searched at least twice (the default the operator left to build time). **The
+  hint:** an admin sees, under each content request, which vocabulary terms in
+  its TOPIC people searched for — the operator's replacement for the raw query
+  F9 removed. The append takes the script lock with a one-second tryLock and
+  skips when busy, so a search never waits behind a punch.
+

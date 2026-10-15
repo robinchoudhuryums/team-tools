@@ -720,6 +720,11 @@
   .kb-land-dot.sugg { background: var(--info); }   /* E3: a suggestion alone is not an alarm */
   .kb-land-flag { font-family: var(--mono); font-size: 10px; font-weight: 700; background: var(--destructive-soft); color: var(--danger); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
   .kb-land-flag.kb-land-sugg { background: var(--info-soft); color: var(--info); }   /* E3: a suggested edit is a request, not an alarm */
+  /* E6 (cycle 25, G4): the search signal's rows are read, not opened. */
+  .kb-land-row.kb-land-sig { cursor: default; }
+  .kb-land-row.kb-land-sig:hover { background: none; }
+  .kb-land-sig .kb-land-flag { white-space: nowrap; flex-shrink: 0; }
+  .kb-land-hint { display: block; font-size: .78rem; color: var(--muted); margin-top: 2px; }   /* a content request's search hint, on its own line */
   /* C17 batch-4: the note is a flex CHILD of the .kb-land-rd-open row, so its
      display:block never gave it its own line — at 390px the quote overlapped
      the Reviewed button (screenshot-verified in the cycle-17 scan). Wrap the
@@ -1227,7 +1232,7 @@
 //  first so authored content can't inject script). Embeds render the Drive
 //  preview iframe. Managers get inline add/edit/delete.
 // ════════════════════════════════════════════════════════════════════════════
-var KB_STATE = { tree: [], isManager: false, isAdmin: false, currentId: null, landing: false, usage: null, reviewDue: null, contentRequests: null };
+var KB_STATE = { tree: [], isManager: false, isAdmin: false, currentId: null, landing: false, usage: null, reviewDue: null, contentRequests: null, searchSignal: null };
 var KB_EDIT = null;
 
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
@@ -4940,6 +4945,7 @@ function enterReferenceView(area) {
       else if (KB_STATE.landing) kbRenderLanding_();
       kbLoadManualRecentBlock_();
       if (KB_STATE.isManager) { kbLoadUsageBlock_(); kbLoadReviewDueBlock_(); kbLoadContentRequestsBlock_(); }
+      if (KB_STATE.isAdmin) kbLoadSearchSignalBlock_();   // E6 (cycle 25, G4): admin-only
     })
     .withFailureHandler(function (err) { if (currentView === requested) { var el = document.getElementById('kb-tree'); if (el) el.innerHTML = errorStateHtml_(err.message || err); } })   // A12
     .getReferenceTree();
@@ -6658,6 +6664,7 @@ function kbLandingBlocksHtml_() {
             '<span class="kb-land-t">' + esc(rq.topic) + '</span>' +
             '<span class="kb-land-meta">' + meta + '</span>' +
             (rq.note ? '<span class="kb-land-note">“' + esc(rq.note) + '”</span>' : '') +
+            kbSearchHintHtml_(rq.searchHint) +
           '</div>' +
           '<div class="kb-land-req-acts">' +
             '<button class="kb-btn" data-kb-req="' + esc(rq.reqId) + '" title="Mark resolved (e.g. an article now covers it)" ' +
@@ -6667,12 +6674,20 @@ function kbLandingBlocksHtml_() {
           '</div>' +
         '</div>';
       });
+      // E6: the hints could not be computed — say so rather than show requests
+      // with no hint, which reads as "nobody searched for this" (g53).
+      if (KB_STATE.contentRequests.hintError) {
+        h += '<div class="kb-land-none">' + icon('warning', 12) + ' Search hints unavailable — the search signal could not be read.</div>';
+      }
       h += '</div>';
     } else if (KB_STATE.contentRequests && KB_STATE.contentRequests.loadFailed) {
       h += '<div class="kb-land-sec"><div class="kb-land-h">Content requests</div>' +
         '<div class="kb-land-none">Failed to load — retry by re-entering Reference.</div></div>';   // E11
     }
   }
+
+  // E6 (cycle 25, G4): what people search for — admin-only.
+  if (KB_STATE.isAdmin && KB_STATE.searchSignal) h += kbSearchSignalHtml_(KB_STATE.searchSignal);
 
   h += '</div>';
   return h;
@@ -7111,7 +7126,7 @@ function kbDoSearch_(q) {
       if (currentView !== requested || seq !== KB_STATE.searchSeq) return;
       showToast('Reference search failed — check your connection and try again', 'toast-error');
     })
-    .searchReference(q);
+    .searchReference(q, { signal: true });   // E6: a typed search adds its vocabulary terms to the search signal
 }
 
 // #8 — render the (filtered) search results into both the tree column + main
@@ -8767,7 +8782,7 @@ function kbDrawerSearch_(q) {
       kbDrawerSetSearching_(false);
       showToast('Reference search failed — check your connection and try again', 'toast-error');
     })
-    .searchReference(q);
+    .searchReference(q, { signal: true });   // E6: a typed search adds its vocabulary terms to the search signal
 }
 
 function kbDrawerOpenItem_(id, anchor, nav) {
@@ -8966,6 +8981,69 @@ function kbLoadContentRequestsBlock_() {
       if (KB_STATE.landing) kbRenderLanding_();
     })
     .kbGetContentRequests();
+}
+
+/** E6 (cycle 25, G4) — admin-only "What people search for", from
+ *  kbGetSearchSignal → KB_STATE.searchSignal, rendered into the landing.
+ *  Best-effort, like the blocks above: a failure says so. */
+function kbLoadSearchSignalBlock_() {
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested) return;
+      KB_STATE.searchSignal = (res && !res.error) ? res : { terms: [], loadFailed: true };
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
+    .withFailureHandler(function () {
+      if (currentView !== requested) return;
+      KB_STATE.searchSignal = { terms: [], loadFailed: true };
+      if (KB_STATE.landing) kbRenderLanding_();
+    })
+    .kbGetSearchSignal();
+}
+
+var KB_SIGNAL_SOURCE_LABELS = { hcpcs: 'HCPCS', glossary: 'glossary', tag: 'tag', heading: 'heading' };
+
+/** PURE: a content request's hint — "People searched for terms like X (5), Y (2)".
+ *  Nothing when the server sent none (a manager, or no matching term). */
+function kbSearchHintHtml_(hint) {
+  if (!Array.isArray(hint) || !hint.length) return '';
+  return '<span class="kb-land-hint">People searched for terms like ' + hint.map(function (t) {
+    return '\u201c' + esc(t.term) + '\u201d (' + Number(t.searches) + (t.zero ? ', ' + Number(t.zero) + ' found nothing' : '') + ')';
+  }).join(', ') + '</span>';
+}
+
+/** PURE: the admin block. Terms that found nothing lead (the server's order);
+ *  every count is team-level — the signal holds no rep. A failure, an empty
+ *  window, a cut window and a vocabulary source that could not be read are
+ *  each said in words (g53 / g152). */
+function kbSearchSignalHtml_(sig) {
+  var h = '<div class="kb-land-sec"><div class="kb-land-h">What people search for' +
+    (sig.days ? ' <span class="kb-land-sub">· ' + Number(sig.days) + 'd · team-wide</span>' : '') + '</div>';
+  if (sig.loadFailed) return h + '<div class="kb-land-none">Failed to load — retry by re-entering Reference.</div></div>';
+  var terms = sig.terms || [];
+  if (terms.length) {
+    terms.forEach(function (t) {
+      h += '<div class="kb-land-row kb-land-sig">' +
+        '<span class="kb-land-t">' + esc(t.term) + '</span>' +
+        '<span class="kb-land-meta">' + esc(KB_SIGNAL_SOURCE_LABELS[t.source] || t.source) + ' · ' + Number(t.searches) + ' search' + (t.searches === 1 ? '' : 'es') + '</span>' +
+        (t.zero ? '<span class="kb-land-flag">' + Number(t.zero) + ' found nothing</span>' : '') +
+      '</div>';
+    });
+    if (sig.more) h += '<div class="kb-land-none">' + Number(sig.more) + ' more term' + (sig.more === 1 ? '' : 's') + ' not listed.</div>';
+  } else {
+    h += '<div class="kb-land-none">' + (sig.missing || !sig.total ? 'No searches recorded yet.' :
+      'No term searched ' + Number(sig.min) + '+ times yet.') + '</div>';
+  }
+  if (sig.below) h += '<div class="kb-land-none">' + Number(sig.below) + ' term' + (sig.below === 1 ? '' : 's') + ' searched fewer than ' + Number(sig.min) + ' times are not shown.</div>';
+  if (sig.truncated) h += '<div class="kb-land-none">' + icon('warning', 12) + ' Only the newest searches were read — older counts in the window are missing.</div>';
+  var failed = (sig.vocab && sig.vocab.failed) || [];
+  if (failed.length) {
+    h += '<div class="kb-land-none">' + icon('warning', 12) + ' Could not read the ' + esc(failed.map(function (f) { return KB_SIGNAL_SOURCE_LABELS[f] || f; }).join(', ')) +
+      ' vocabulary — searches for those terms are not being counted.</div>';
+  }
+  h += '<div class="kb-land-none">Only terms from the tag taxonomy, the handbook glossary and headings, and the HCPCS codes are counted; nothing else a rep types is kept.</div>';
+  return h + '</div>';
 }
 
 function kbResolveRequestClick_(reqId, action) {

@@ -24348,9 +24348,13 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   assert.ok(/releaseLock\(\)/.test(f) && /finally/.test(f), 'INV-01 finally-release');
   assert.ok(/getSheetByName\(VIEW_USAGE_TAB\)/.test(f) && /getSheetByName\(CLIENT_ERRORS_TAB\)/.test(f) && !/getOrCreate|insertSheet/.test(f),
     'reads with getSheetByName — never provisions a tab (a missing tab = nothing recorded)');
-  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the three diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
-  assert.ok(/return runAutomationJob_\('DiagnosticsPurge'/.test(f) && /outcome: automationOutcome_\('ok'\)/.test(f),
+  assert.ok(!/CONFIG\.ADP_TAB|TimeOffRequests|EMPLOYEE_TAB|getOrCreateAuditSheet_/.test(f), 'touches ONLY the diagnostics tabs (the audit ROW is written, the AuditLog tab is never purged)');
+  assert.ok(/return runAutomationJob_\('DiagnosticsPurge'/.test(f) && /:\s*automationOutcome_\('ok'\)/.test(f),
     'a thrown run is a failed outcome the runner stamps and a clean run clears it (F4 — a returned error reaches nobody; ST2)');
+  // E6 (cycle 25, G4): the search signal (KB store) is purged past its fixed
+  // window every night; a KB store that cannot be opened is a PARTIAL run.
+  assert.ok(/ks = diagPurgeTab_\(getKbSS_\(\)\.getSheetByName\(KB_SEARCH_SIGNAL_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget\)/.test(f) &&
+            /ksError \? automationOutcome_\('partial', [^)]*\['KbSearchSignal'\]\)/.test(f), 'the search signal keeps 90 days; an unopenable KB store is named, partial');
   const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
   assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; digestDeliveryDays=\$\{ddDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}; digestDeliveriesRemoved=\$\{dd\.removed\}/.test(call),
     'counts-only audit note on every run (the INV-161 heartbeat)');
@@ -27638,8 +27642,10 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
     const aAt = body.indexOf('appendRowsTextSafe_(');
     if (aAt >= 0) {
       appenders.push(name);
-      const lAt = body.indexOf('waitLock(');
-      if (lAt < 0 || lAt > aAt) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      // E6 (cycle 25): a best-effort telemetry appender may tryLock and SKIP
+      // when busy — it still holds the SCRIPT lock for the append.
+      const lAt = body.search(/\b(waitLock|tryLock)\(/);
+      if (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
       if (!/appendRowsTextSafe_\([^;]*?, [A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
     }
   }
@@ -27651,9 +27657,9 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
     'the raw plain-text writers are exactly the known eleven');
-  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
-    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7) and the intake account backup row (cycle 25 F49)');
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49) and the search signal (cycle 25 E6)');
   assert.deepStrictEqual(bad, [], bad.join('\n'));
 });
 
@@ -32522,7 +32528,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
       PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] || null) }) },
       CONFIG: { TIMEZONE: 'Asia/Kolkata', ADP_SS_ID: 'YOUR_ADP', CDR_SS_ID: 'YOUR_CDR', INTAKE: { SS_ID: 'YOUR_I' }, KB: { SS_ID: 'YOUR_KB' } },
       SpreadsheetApp: { openById: (id) => { opened.push(id); return { getName: () => 'n-' + id, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSpreadsheetLocale: () => 'en_US', getUrl: () => 'u' }; } },
-      tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
+      tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', KB_SEARCH_SIGNAL_DAYS: 90, cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
       qaReviewRetentionDays_: () => 0, getEmployeeRosterRows_: () => [['h']], cnEnrolledSheetId_: () => '', EMP: { NAME: 0 },
       kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null,
       KB_EMBED_SCAN_CAP: 1, DRIVE_WRITE_SCOPE: 's', DRIVE_REAUTH_HINT: 'h', KB_IMAGES_FOLDER_PROP: 'p' };
@@ -38400,6 +38406,183 @@ test('E5 (cycle 25, ST5): the real tree is in step, CI runs --check, and CLAUDE.
   const wf = fs.readFileSync(path.join(E5_ROOT, '.github', 'workflows', 'client-tests.yml'), 'utf8');
   assert.ok(/node scripts\/cycle-closeout\.mjs --check/.test(wf));
   assert.ok(/cycle-closeout\.mjs\s+--close --write/.test(fs.readFileSync(path.join(E5_ROOT, 'CLAUDE.md'), 'utf8')), 'the procedure names the command');
+});
+
+// ── Cycle 25 E6 (G4, operator 2026-10-14): the Reference search signal ───────
+console.log('\nCycle 25 E6 — the Reference search signal (admin vocabulary terms only)');
+const E6_CONST = ['KB_SEARCH_SIGNAL_SOURCES', 'KB_SEARCH_SIGNAL_EVENTS', 'KB_SEARCH_VOCAB_MAX', 'KB_SEARCH_VOCAB_HEADING_WORDS', 'KBSS',
+  'KB_SEARCH_SIGNAL_TERMS_MAX', 'KB_SEARCH_SIGNAL_TEXT_IDX', 'KB_SEARCH_SIGNAL_DEDUPE_SECS', 'KB_SEARCH_SIGNAL_HEADERS', 'KB_SEARCH_SIGNAL_MIN'];
+const e6Ctx_ = (fns, extra) => {
+  const ctx = b10Ctx_([], extra);
+  const cfg = fs.readFileSync(path.join(__dirname, '../../web-app/00_config.js'), 'utf8');
+  E6_CONST.forEach((n) => {
+    const m = new RegExp('^const ' + n + ' = [^\\n]*', 'm').exec(cfg);
+    assert.ok(m, 'constant ' + n);
+    vm.runInContext(m[0].replace(/^const /, 'var '), ctx);
+  });
+  fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const E6_SRC = {
+  hcpcs: ['E0431', 'K0800'],
+  glossary: [['ABN', 'Advance Beneficiary Notice'], ['PA', 'prior authorization'], ['POC', 'portable oxygen concentrator']],
+  tags: [{ tag: 'oxygen', keywords: ['concentrator', 'walker'] }, { tag: 'resupply-order', keywords: [] }],
+  headings: ['5.1 Scope', '0.10.1 Trx Type', 'Card 5 — Oxygen', 'Oxygen concentrator', '5.2.2', 'A heading far too long for anyone to type into a search box'],
+};
+
+test('E6 (cycle 25, G4): the vocabulary is the FOUR admin sources only — HCPCS first, then the glossary, tags and handbook headings; numbering stripped, two-letter terms and long headings dropped, one entry per term (driven)', () => {
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_']);
+  assert.strictEqual(ctx.kbSignalNorm_('Oxygen-Concentrator!  '), 'oxygen concentrator');
+  const v = b10J(ctx.kbSignalVocab_(E6_SRC));
+  const by = {}; v.forEach((e) => { by[e.norm] = e; });
+  assert.strictEqual(by['e0431'].source, 'hcpcs'); assert.strictEqual(by['e0431'].term, 'E0431');
+  assert.strictEqual(by['abn'].source, 'glossary'); assert.ok(by['advance beneficiary notice']);
+  assert.ok(!by['pa'], 'a two-letter term is too common a fragment ("call me back" is not a Mobility Evaluation)');
+  assert.strictEqual(by['prior authorization'].source, 'glossary', 'the expansion of a two-letter abbreviation still counts');
+  assert.strictEqual(by['resupply order'].source, 'tag', 'a tag reads as its words');
+  assert.strictEqual(by['walker'].source, 'tag', 'an auto-tag keyword is admin-written vocabulary');
+  assert.strictEqual(by['scope'].source, 'heading', '"5.1 Scope" — the number is not the heading');
+  assert.ok(by['trx type'] && !by['0 10 1 trx type']);
+  assert.strictEqual(by['oxygen'].source, 'tag', 'the first source in precedence wins a shared term');
+  assert.ok(!Object.keys(by).some((k) => /far too long/.test(k)), 'a heading nobody types is dropped');
+  assert.ok(!by['5 2 2'] && !by[''], 'a heading that is only its number is dropped');
+  assert.strictEqual(v.length, new Set(v.map((e) => e.norm)).size, 'one entry per term');
+  const big = { hcpcs: Array.from({ length: 5000 }, (_, i) => 'E' + String(1000 + i)) };
+  assert.strictEqual(ctx.kbSignalVocab_(big).length, 4000, 'capped at KB_SEARCH_VOCAB_MAX');
+});
+
+test('E6 (cycle 25, G4): kbSignalTermsOf_ — ONLY vocabulary terms come out of a query, each as a whole run of words; a term inside a longer matched one is dropped; capped (driven, the PHI-free-by-construction rule)', () => {
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbSignalTermsOf_']);
+  const vocab = ctx.kbSignalVocab_(E6_SRC);
+  const T = (q, max) => b10J(ctx.kbSignalTermsOf_(q, vocab, max || 5)).map((t) => t.term);
+  assert.deepStrictEqual(T('Jane Doe 4821133 E0431 portable oxygen concentrator'), ['portable oxygen concentrator', 'E0431'],
+    'a name and a member number never come out — only the admin terms; "oxygen" and "concentrator" sit inside the longer term');
+  assert.deepStrictEqual(T('walkers for mrs smith'), [], '"walker" is not inside "walkers" — whole words only (g156)');
+  assert.deepStrictEqual(T('need an ABN'), ['ABN']);
+  assert.deepStrictEqual(T('oxygen walker abn e0431 k0800 scope', 2).length, 2, 'at most `max`');
+  assert.deepStrictEqual(T('x'), [], 'nothing from a fragment');
+  // The property itself, over hostile text: every term out is a vocabulary entry.
+  const norms = new Set(vocab.map((v) => v.norm));
+  ['Smith, John DOB 3/4/1950 TRX 48211 oxygen', 'call me back re: PA for Jane', '=HYPERLINK("x") walker'].forEach((q) => {
+    b10J(ctx.kbSignalTermsOf_(q, vocab, 5)).forEach((t) => assert.ok(norms.has(t.norm), 'not a vocabulary term: ' + t.term));
+  });
+});
+
+test('E6 (cycle 25, G4): kbRecordSearchSignal_ writes [time, term, source, event] — no rep — once per person per term per window, a "zero" row when the search found nothing, skips when the script lock is busy, and never throws (driven)', () => {
+  const store = {}, rows = [], fmts = [];
+  let lockFree = true, released = 0;
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbSignalTermsOf_', 'kbHashStr_', 'kbRecordSearchSignal_'], {
+    Logger: { log() {} },
+    kbSignalVocabulary_() { return { entries: ctx.kbSignalVocab_(E6_SRC) }; },
+    CacheService: { getScriptCache: () => ({ getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store[k]) o[k] = store[k]; }); return o; },
+      putAll: (o) => Object.assign(store, o) }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => lockFree, releaseLock: () => { released++; } }) },
+    fmtDate_: () => '2026-10-15', fmtTime_: () => '10:00:00',
+    getOrCreateKbSearchSignalSheet_: () => ({}),
+    appendRowsTextSafe_: (sheet, r, idx) => { r.forEach((x) => rows.push(x)); fmts.push(idx); return 2; },
+  });
+  const ana = { id: 'E-ANA', name: 'Ana Ruiz', email: 'ana@ums.com' }, bo = { id: 'E-BO', name: 'Bo', email: 'bo@ums.com' };
+  assert.strictEqual(ctx.kbRecordSearchSignal_(ana, 'Jane Doe E0431', false), 1);
+  assert.deepStrictEqual(b10J(rows), [['2026-10-15 10:00:00', 'E0431', 'hcpcs', 'search']]);
+  assert.ok(!JSON.stringify(rows).match(/Jane|Doe|E-ANA|Ana|ana@/), 'no query word, no rep id, no name, no email in the sheet');
+  assert.deepStrictEqual(b10J(fmts[0]), [1], 'the term column is plain text (KB_SEARCH_SIGNAL_TEXT_IDX)');
+  assert.strictEqual(ctx.kbRecordSearchSignal_(ana, 'e0431 again', false), 0, 'the same person, same term, same window: counted once');
+  assert.strictEqual(ctx.kbRecordSearchSignal_(ana, 'E0431', true), 1, 'a search with it that found nothing adds the zero row once');
+  assert.deepStrictEqual(b10J(rows[rows.length - 1].slice(1)), ['E0431', 'hcpcs', 'zero']);
+  assert.strictEqual(ctx.kbRecordSearchSignal_(bo, 'E0431', false), 1, 'another person counts — the counts are of people, never named');
+  assert.strictEqual(ctx.kbRecordSearchSignal_(bo, 'Jane Doe 48211', false), 0, 'a query with no vocabulary term writes nothing at all');
+  lockFree = false;
+  const before = rows.length;
+  assert.strictEqual(ctx.kbRecordSearchSignal_(bo, 'walker', false), 0, 'a busy lock skips the write — a search never waits');
+  assert.strictEqual(rows.length, before);
+  lockFree = true;
+  assert.strictEqual(ctx.kbRecordSearchSignal_(bo, 'walker', false), 1, 'and a skipped write was not marked seen');
+  assert.strictEqual(released, 4, 'every lock taken is released (the busy one was never taken)');
+  ctx.appendRowsTextSafe_ = () => { throw new Error('sheet gone'); };
+  assert.strictEqual(ctx.kbRecordSearchSignal_(bo, 'scope', false), 0, 'a failure never reaches the search');
+  assert.strictEqual(released, 5, 'and a failed write still releases the lock');
+});
+
+test('E6 (cycle 25, G4): searchReference records ONLY a typed search (opts.signal) and never the publishedOnly path; the Reference box and the drawer opt in, the Issue strip, drawer suggestions and AI guidance do not', () => {
+  const sr = stripJsComments_(extractRawFunction('Code.js', 'searchReference'));
+  assert.ok(/if \(opts && opts\.signal === true && !publishedOnly\) kbRecordSearchSignal_\(emp, query, hits\.length === 0\);\s*return \{ results: hits/.test(sr),
+    'after the hits are final, flagged as zero when nothing came back');
+  const kb = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const calls = [...kb.matchAll(/\.searchReference\(([^)]*(?:\([^)]*\))?[^)]*)\)/g)].map((m) => m[1]);
+  assert.strictEqual(calls.length, 4, 'the four client callers were read');
+  assert.strictEqual(calls.filter((a) => /\{ signal: true \}/.test(a)).length, 2, 'two opt in');
+  const body = (fn) => stripJsComments_(extractFunction('kb/script_kb.html', fn));
+  assert.ok(/\.searchReference\(q, \{ signal: true \}\)/.test(body('kbDoSearch_')) && /\.searchReference\(q, \{ signal: true \}\)/.test(body('kbDrawerSearch_')), 'the Reference box and the drawer');
+  assert.ok(!/signal/.test(body('kbDrawerFetchSuggest_')) && !/signal/.test(body('kbHbStripRefresh_')), 'the Issue-text paths never count (they carry what the rep typed about a caller)');
+  assert.ok(!/opts\.signal/.test(stripJsComments_(extractRawFunction('Code.js', 'kbGetFacetGuidance'))));
+});
+
+test('E6 (cycle 25, G4): kbSearchSignalReport_ — the window, the threshold, terms that found nothing first, unknown rows ignored, and the below-threshold count (driven)', () => {
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSearchSignalReport_']);
+  const R = (ts, term, src, ev) => [ts, term, src, ev];
+  const rows = [
+    R('2026-07-01 09:00:00', 'E0431', 'hcpcs', 'search'),   // outside the window
+    R('2026-10-01 09:00:00', 'E0431', 'hcpcs', 'search'), R('2026-10-02 09:00:00', 'E0431', 'hcpcs', 'search'), R('2026-10-02 09:00:00', 'E0431', 'hcpcs', 'zero'),
+    R('2026-10-03 09:00:00', 'Scope', 'heading', 'search'), R('2026-10-04 09:00:00', 'scope', 'heading', 'search'), R('2026-10-05 09:00:00', 'Scope', 'heading', 'search'),
+    R('2026-10-06 09:00:00', 'walker', 'tag', 'search'),
+    R('2026-10-06 09:00:00', 'walker', 'tag', 'opened'), R('2026-10-06 09:00:00', 'walker', 'rep', 'search'), R('', 'walker', 'tag', 'search'),
+  ];
+  const r = b10J(ctx.kbSearchSignalReport_(rows, '2026-07-17 00:00:00', 2));
+  assert.deepStrictEqual(r.terms, [{ term: 'E0431', source: 'hcpcs', searches: 2, zero: 1 }, { term: 'Scope', source: 'heading', searches: 3, zero: 0 }],
+    'a term that found nothing leads; terms differing only in case are one');
+  assert.strictEqual(r.below, 1, 'walker, searched once, is counted but not shown');
+  assert.strictEqual(r.total, 6, 'searches in the window — an unknown event, an unknown source and a blank stamp are not counted');
+});
+
+test('E6 (cycle 25, G4): the admin report and the request hint — kbGetSearchSignal is admin-gated before any read; the hint names only terms from the request\'s TOPIC that people searched for at least twice; a manager gets requests without hints, and a failed signal read says so (driven + structural)', () => {
+  const g = stripJsComments_(extractRawFunction('Code.js', 'kbGetSearchSignal'));
+  assert.ok(g.indexOf("'Admin access required.'") >= 0 && g.indexOf("'Admin access required.'") < g.indexOf('kbSearchSignalRows_('), 'the gate comes first');
+  assert.ok(/truncated: read\.truncated/.test(g) && /failed: voc\.failed/.test(g), 'a cut window and an unread vocabulary source ship');
+  let read = 0;
+  const gctx = e6Ctx_(['kbGetSearchSignal'], { getEmployeeInfo_: () => ({ id: 'M1', isManager: true, isAdmin: false }),
+    kbSearchSignalRows_: () => { read++; return { rows: [] }; } });
+  assert.strictEqual(b10J(gctx.kbGetSearchSignal()).error, 'Admin access required.', 'a manager who is not an admin is refused (operator decision 4)');
+  assert.strictEqual(read, 0, 'before anything is read');
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbSignalTermsOf_', 'kbSearchSignalHint_']);
+  const vocab = ctx.kbSignalVocab_(E6_SRC);
+  const report = { terms: [{ term: 'portable oxygen concentrator', source: 'glossary', searches: 6, zero: 2 }, { term: 'E0431', source: 'hcpcs', searches: 9, zero: 0 }, { term: 'walker', source: 'tag', searches: 1, zero: 0 }] };
+  assert.deepStrictEqual(b10J(ctx.kbSearchSignalHint_('Cleaning a portable oxygen concentrator (E0431) and a walker', vocab, report, 2, 3)),
+    [{ term: 'E0431', searches: 9, zero: 0 }, { term: 'portable oxygen concentrator', searches: 6, zero: 2 }], 'most searched first; a term under the threshold is not named');
+  assert.deepStrictEqual(b10J(ctx.kbSearchSignalHint_('How do I bill this?', vocab, report, 2, 3)), [], 'no vocabulary term, no hint');
+  const list = stripJsComments_(extractRawFunction('Code.js', 'kbGetContentRequests'));
+  assert.ok(/if \(emp\.isAdmin\) \{\s*try \{/.test(list) && /catch \(e\) \{ hintError = /.test(list) && /if \(hintError\) out\.hintError = hintError;/.test(list),
+    'admin-only, and a failure is named rather than shipped as no hint');
+  assert.ok(/item\.searchHint = kbSearchSignalHint_\(item\.topic, /.test(list) && !/KBR\.QUERY/.test(list), 'from the topic the rep chose to send — never the raw query (F9)');
+  const rows = stripJsComments_(extractRawFunction('Code.js', 'kbSearchSignalRows_'));
+  assert.ok(/normalizeAuditTs_\(r\[KBSS\.TS\]\)/.test(rows), 'a stamp Sheets coerced to a Date is read back as the written string (g11)');
+  assert.ok(/const truncated = start > 2 && !!rows\.length && String\(rows\[0\]\[KBSS\.TS\]\) >= cutoff;/.test(rows), 'the scan cap that cuts the window is said (g152)');
+});
+
+test('E6 (cycle 25, G4): the vocabulary is cached under a key that hashes its code and the KB generation, and a vocabulary with a failed source is NAMED and never cached (driven)', () => {
+  const puts = [];
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbHashStr_', 'kbSignalVocabKey_', 'kbSignalVocabulary_'], {
+    KB_SEARCH_VOCAB_CACHE_PREFIX: 'v:', KB_INDEX_CHUNK: 30000, KB_INDEX_MAX_CHUNKS: 150, KB_SEARCH_VOCAB_TTL: 3600,
+    kbGeneration_: () => '7', hcpcsParse_() {}, kbSignalVocabSources_: null,
+    CacheService: { getScriptCache: () => ({ get: () => null, getAll: () => ({}), putAll: (o) => puts.push(o) }) },
+  });
+  let failed = ['hcpcs'];
+  ctx.kbSignalVocabSources_ = () => ({ src: { hcpcs: [], glossary: E6_SRC.glossary, tags: [], headings: [] }, failed: failed });
+  const a = b10J(ctx.kbSignalVocabulary_());
+  assert.deepStrictEqual(a.failed, ['hcpcs'], 'the source that could not be read is named');
+  assert.strictEqual(a.counts.hcpcs, 0); assert.ok(a.counts.glossary > 0);
+  assert.strictEqual(puts.length, 0, 'g129: a vocabulary missing a source is not cached');
+  failed = [];
+  ctx.kbSignalVocabulary_();
+  assert.strictEqual(puts.length, 1, 'a whole vocabulary is cached');
+  const key = Object.keys(puts[0]).find((k) => /n$/.test(k));
+  assert.ok(/^v:[0-9a-f]{8}:7:n$/.test(key), 'keyed by the code hash and the KB generation (g157): ' + key);
+  const keyFn = stripJsComments_(extractRawFunction('Code.js', 'kbSignalVocabKey_'));
+  ['kbSignalVocab_', 'kbSignalNorm_', 'hcpcsParse_', 'kbSignalVocabSources_'].forEach((f) => assert.ok(keyFn.indexOf('String(' + f + ')') >= 0, 'the key hashes ' + f));
+  const srcFn = stripJsComments_(extractRawFunction('Code.js', 'kbSignalVocabSources_'));
+  assert.ok(/oopCodeIndex_\(\)/.test(srcFn) && /getAutoTagRules_\(\)/.test(srcFn) && /kbManualMetaObj_\(\)\.synonyms/.test(srcFn) &&
+    /KB_MANUAL_ID_RE\.test\(row\.id\) \|\| row\.status !== KB_STATUS_PUBLISHED/.test(srcFn), 'the four admin sources, published handbook sections only');
+  assert.ok(!/getCallNotesTagTaxonomy|getMyCallNotes|KBR\.|KB_REQUESTS_TAB|KbComments|getUpdateSuggestions_/.test(srcFn),
+    'never a vocabulary built from rep text — not the reps\' own tags, notes, requests or comments (g167, KB-2)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

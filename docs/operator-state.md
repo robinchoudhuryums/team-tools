@@ -2247,6 +2247,25 @@ entry says which it is.
   (call-note emails, intake sends, form links) is not logged; each has its own
   audit row.
 
+<a id="operator-the-kbsearchsignal-tab-cycle-25"></a>
+- **The `KbSearchSignal` tab (KB spreadsheet) — the Reference search signal
+  (cycle 25 E6, G4).** **Nothing to set up:** it is auto-provisioned by the
+  first typed Reference search that contains a vocabulary term after the
+  deploy. Columns: Timestamp (CONFIG.TIMEZONE) · Term (plain text) · Source
+  (`hcpcs`, `glossary`, `tag`, `heading`) · Event (`search`, or `zero` — a search
+  with the term that found nothing). **No rep id, name or email, and no query:**
+  a search is reduced to the terms of the ADMIN-authored vocabulary — the HCPCS
+  codes in OopPricing, the handbook glossary, the auto-tag rules (Admin →
+  Config → Auto-tag rules) and published handbook headings — and only those
+  are written; one person's repeat of a term within six hours is written once.
+  Kept 90 days (`KB_SEARCH_SIGNAL_DAYS`) by the nightly diagnostics purge; a KB
+  store the purge cannot open makes that run partial, named on the health dot.
+  Read by admins only: Reference's landing ("What people search for") and the
+  "People searched for terms like …" hint under each content request. **To
+  count a word reps search for**, add it to the vocabulary — an auto-tag rule
+  keyword is the in-app way; a glossary entry or heading comes with the next
+  handbook import; a code with the next OopPricing edit (the vocabulary is
+  cached up to an hour). Do not edit or reorder the tab's columns.
 <a id="operator-script-property-whatsnew-kb-id"></a>
 - **Script Property `WHATSNEW_KB_ID`** (optional — the "What's new" panel,
   INV-152). Set it to the ID of a PUBLISHED Reference **article** (create a

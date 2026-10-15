@@ -8059,3 +8059,82 @@ test('F44 (cycle 25): a quiz with answers picked asks before Escape or Cancel th
   h.dispatchKey('Escape');
   assert.ok(!ov() && !b9Ask(h), 'a submitted attempt is not asked about');
 });
+
+// ── Cycle 25 E6 (G4): the Reference search signal on the landing ─────────────
+const E6_SIGNAL = { days: 90, min: 2, total: 20, more: 0, below: 3, truncated: false, missing: false,
+  vocab: { counts: { hcpcs: 2, glossary: 4, tag: 3, heading: 9 }, size: 18, failed: [] },
+  terms: [{ term: 'E0431', source: 'hcpcs', searches: 5, zero: 3 }, { term: 'Prior <b>authorization</b>', source: 'heading', searches: 9, zero: 0 }] };
+
+test('E6 DOM (cycle 25, G4): an admin\'s Reference landing shows "What people search for" — terms that found nothing flagged, counts team-wide, every string escaped — and a failed load says so', async () => {
+  const h = boot();
+  bootLookups(h);
+  assert.strictEqual(h.run.pending('kbGetSearchSignal').length, 1, 'an admin\'s landing asks for the signal');
+  h.run.flushSuccess(E6_SIGNAL, 'kbGetSearchSignal');
+  const blocks = () => h.$('#kb-land-blocks').textContent;
+  assert.ok(/What people search for/.test(blocks()) && /90d · team-wide/.test(blocks()));
+  const rows = Array.from(h.$('#kb-land-blocks').querySelectorAll('.kb-land-sig'));
+  assert.strictEqual(rows.length, 2);
+  assert.ok(/E0431/.test(rows[0].textContent) && /HCPCS · 5 searches/.test(rows[0].textContent) && rows[0].querySelector('.kb-land-flag').textContent === '3 found nothing');
+  assert.ok(!rows[1].querySelector('.kb-land-flag'), 'a term that always found something has no flag');
+  assert.ok(!h.$('#kb-land-blocks b') && /Prior <b>authorization<\/b>/.test(rows[1].textContent), 'a term is text, never markup');
+  assert.ok(/3 terms searched fewer than 2 times are not shown/.test(blocks()));
+  assert.ok(/nothing else a rep types is kept/.test(blocks()), 'the block says what it does not keep');
+  // A vocabulary source that could not be read, and a cut window, are said.
+  h.read('KB_STATE').searchSignal = Object.assign({}, E6_SIGNAL, { truncated: true, vocab: { counts: {}, size: 0, failed: ['hcpcs'] } });
+  h.read('kbRenderLanding_')();
+  assert.ok(/Could not read the HCPCS vocabulary/.test(blocks()) && /Only the newest searches were read/.test(blocks()));
+  // A failed load is a failure, never "No searches recorded yet".
+  h.read('kbLoadSearchSignalBlock_')();
+  h.run.flushFailure(new Error('x'), 'kbGetSearchSignal');
+  assert.ok(/What people search for/.test(blocks()) && /Failed to load/.test(blocks()) && !/No searches recorded/.test(blocks()));
+  // An empty window is said in words.
+  h.read('KB_STATE').searchSignal = { days: 90, min: 2, total: 0, below: 0, terms: [], missing: true, vocab: { failed: [] } };
+  h.read('kbRenderLanding_')();
+  assert.ok(/No searches recorded yet\./.test(blocks()));
+});
+
+test('E6 DOM (cycle 25, G4): a manager who is not an admin never asks for the signal and sees no block', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: true, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  assert.strictEqual(h.run.pending('kbGetContentRequests').length, 1, 'the manager blocks load');
+  assert.strictEqual(h.run.pending('kbGetSearchSignal').length, 0, 'the signal is admin-only (operator decision 4)');
+  assert.ok(!/What people search for/.test(h.$('#kb-land-blocks').textContent));
+});
+
+test('E6 DOM (cycle 25, G4): a content request carries its "people searched for terms like…" hint, escaped; a failed signal read is said under the requests', () => {
+  const h = boot();
+  bootLookups(h);
+  h.run.flushSuccess({ open: [{ reqId: 'r1', repName: 'Ana', topic: 'Concentrator cleaning', note: '', ageDays: 1, status: 'open',
+    searchHint: [{ term: 'oxygen <i>concentrator</i>', searches: 6, zero: 2 }, { term: 'E0431', searches: 3, zero: 0 }] },
+    { reqId: 'r2', repName: 'Bo', topic: 'Billing codes', note: '', ageDays: 0, status: 'open', searchHint: [] }], resolved: [], openCount: 2 }, 'kbGetContentRequests');
+  const reqs = Array.from(h.$('#kb-land-blocks').querySelectorAll('.kb-land-req'));
+  assert.strictEqual(reqs.length, 2);
+  assert.ok(/People searched for terms like “oxygen <i>concentrator<\/i>” \(6, 2 found nothing\), “E0431” \(3\)/.test(reqs[0].textContent), reqs[0].textContent);
+  assert.ok(!reqs[0].querySelector('i'), 'escaped');
+  assert.ok(!/People searched/.test(reqs[1].textContent), 'no hint when no term matched');
+  assert.ok(!/Search hints unavailable/.test(h.$('#kb-land-blocks').textContent));
+  const st = h.read('KB_STATE');
+  st.contentRequests = Object.assign({}, st.contentRequests, { hintError: 'KB store unreachable' });
+  h.read('kbRenderLanding_')();
+  assert.ok(/Search hints unavailable — the search signal could not be read\./.test(h.$('#kb-land-blocks').textContent),
+    'a request with no hint because the read FAILED must not read as "nobody searched for this" (g53)');
+  assert.ok(!/KB store unreachable/.test(h.$('#kb-land-blocks').textContent), 'the raw server error is not echoed');
+});
+
+test('E6 DOM (cycle 25, G4): a typed Reference search sends { signal: true }; the drawer\'s Issue suggestions do not', () => {
+  const h = boot();
+  bootLookups(h);
+  h.read('kbDoSearch_')('oxygen concentrator');
+  const call = h.run.pending('searchReference').pop();
+  assert.ok(call, 'the search went out');
+  assert.strictEqual(call.args[0], 'oxygen concentrator');
+  assert.strictEqual(call.args[1] && call.args[1].signal, true, 'a typed search opts in');
+  h.run.drain && h.run.drain();
+  h.read('kbDrawerFetchSuggest_')('caller Jane Doe needs her oxygen');
+  const sug = h.run.calls.filter((c) => c.method === 'searchReference').pop();
+  assert.ok(!(sug.args[1] && sug.args[1].signal), 'the Issue text never counts');
+});

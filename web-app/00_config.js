@@ -2043,6 +2043,35 @@ const KB_REQUEST_TOPIC_MAX = 200;
 const KB_REQUEST_NOTE_MAX = 1000;
 const KB_REQUESTS_MAX_SCAN = 2000;
 const KB_REQUESTS_RESOLVED_TAIL = 10;
+// E6 (cycle 25, G4, operator 2026-10-14): the Reference search signal — what
+// reps search for, and what found nothing, without storing what they typed. A
+// typed search (the Reference box and the drawer — never the AI guidance or the
+// Issue-field strip, which carry rep text) is reduced to the terms of an
+// ADMIN-AUTHORED vocabulary: the auto-tag taxonomy, the handbook glossary,
+// published handbook headings and the HCPCS codes in OopPricing. Only those
+// terms are written; everything else is dropped, so the KB store stays
+// PHI-free by construction (g146, g167 — the vocabulary is never built from rep
+// text). No rep id or name is stored: team-level counts only. One person's
+// repeats of a term within KB_SEARCH_SIGNAL_DEDUPE_SECS count once (the box
+// searches as they type). Kept KB_SEARCH_SIGNAL_DAYS by the nightly diagnostics
+// purge; read by the admin-only kbGetSearchSignal and the content-request hint.
+const KB_SEARCH_SIGNAL_TAB = 'KbSearchSignal';
+const KB_SEARCH_SIGNAL_HEADERS = ['Timestamp', 'Term', 'Source', 'Event'];
+const KBSS = { TS: 0, TERM: 1, SOURCE: 2, EVENT: 3 };
+const KB_SEARCH_SIGNAL_TEXT_IDX = [KBSS.TERM];   // a term is kept as typed text ('@' — a heading like "3/4" must not become a date)
+const KB_SEARCH_SIGNAL_SOURCES = ['hcpcs', 'glossary', 'tag', 'heading'];   // also the precedence when two sources share a term
+const KB_SEARCH_SIGNAL_EVENTS = ['search', 'zero'];   // a search with the term; a search with the term that found nothing
+const KB_SEARCH_SIGNAL_DAYS = 90;
+const KB_SEARCH_SIGNAL_MIN = 2;            // a term shows once it was searched at least this often in the window
+const KB_SEARCH_SIGNAL_DEDUPE_SECS = 21600; // CacheService's ceiling (6 h)
+const KB_SEARCH_SIGNAL_TERMS_MAX = 5;      // terms recorded from one search
+const KB_SEARCH_SIGNAL_SCAN_MAX = 20000;   // rows the report reads back (it says when this cuts the window)
+const KB_SEARCH_SIGNAL_SHOW = 40;          // terms the report lists
+const KB_SEARCH_SIGNAL_HINT_MAX = 3;       // terms a content request's hint names
+const KB_SEARCH_VOCAB_MAX = 4000;          // vocabulary entries kept
+const KB_SEARCH_VOCAB_HEADING_WORDS = 6;   // a longer heading is not something a rep types
+const KB_SEARCH_VOCAB_TTL = 3600;          // the vocabulary is cached this long, keyed by its code and the KB generation
+const KB_SEARCH_VOCAB_CACHE_PREFIX = 'kb_signal_vocab:';
 const KB_EMBED_SCAN_CAP = 150;   // #3 — max embeds Drive-probed per Storage Health run
 // #4 — article revision history. One append-only snapshot of the PRIOR content
 // per edit/revert (so a manager can view history + roll back). PHI-free by policy.

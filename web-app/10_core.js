@@ -1215,7 +1215,9 @@ function getDigestDeliveries(opts) {
 }
 /** Daily diagnostics purge (trigger #20). ViewUsage and ClientErrors purge
  *  only while their windows are set (default 0, kept); the DigestDeliveries
- *  log (G3, cycle 25 E1) always keeps DIGEST_DELIVERY_RETENTION_DAYS, so the
+ *  log (G3, cycle 25 E1) always keeps DIGEST_DELIVERY_RETENTION_DAYS, and the
+ *  Reference search signal (G4, cycle 25 E6 — on the KB store) always keeps
+ *  KB_SEARCH_SIGNAL_DAYS, so the
  *  job runs every night and writes its counts-only audit row every night. Its
  *  outcome is recorded by runAutomationJob_ (ST2): a throw stamps
  *  AUTOMATION_LAST_ERRORS (the F4 rule), a clean run clears it. */
@@ -1228,6 +1230,7 @@ function purgeOldDiagnostics() {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
+    let ks = { removed: 0, hitCap: false }, ksError = '';
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1239,17 +1242,27 @@ function purgeOldDiagnostics() {
         budget -= ce.removed;
       }
       dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
+      budget -= dd.removed;
+      // E6: the search signal lives on the KB store. One that cannot be opened
+      // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
+      // a store with no signal tab has nothing to purge.
+      try {
+        ks = diagPurgeTab_(getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget);
+      } catch (e) { ksError = String(e.message || e); }
     } finally {
       lock.releaseLock();
     }
-    const capped = vu.hitCap || ce.hitCap || dd.hitCap;
+    const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
+      `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries row(s)` +
-      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + '.');
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${ks.removed} KbSearchSignal row(s)` +
+      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') + '.');
     return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
-             outcome: automationOutcome_('ok') };
+             searchSignalRemoved: ks.removed,
+             outcome: ksError ? automationOutcome_('partial', 'the search signal was not purged — the KB store could not be opened: ' + ksError, ['KbSearchSignal'])
+                              : automationOutcome_('ok') };
   });
 }
 
@@ -2476,7 +2489,7 @@ function getStorageHealth(opts) {
     // a tz drift here shows a customer a different date than the sheet does.
     const kbStore = probe({ label: 'Knowledge Base + Training',
       role: 'KB, KbViews, Training/Quiz tabs, InsurancePayors, OopPricing, LocationAcceptance',
-      cls: 'PHI-free', retention: 'Kept', prop: 'KB_SS_ID', id: kbId,
+      cls: 'PHI-free', retention: 'Kept · KbSearchSignal ' + KB_SEARCH_SIGNAL_DAYS + 'd purge', prop: 'KB_SS_ID', id: kbId,
       source: kbProp ? 'Script Property' : (kbId ? 'CONFIG' : 'unset'),
       note: kbId ? '' : 'Set KB_SS_ID — Reference + Training fail without it.' });
     stores.push(kbStore);

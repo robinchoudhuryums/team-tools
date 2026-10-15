@@ -577,6 +577,10 @@ function searchReference(query, opts) {
     Array.prototype.push.apply(hits, kbRouterSearchHits_(manualMeta.router, tokens, baseTokens, q, visible));   // M5b
     hits.sort(function (a, b) { return b.score - a.score; });
     if (hits.length > KB_SEARCH_MAX_RESULTS) hits.length = KB_SEARCH_MAX_RESULTS;
+    // E6 (cycle 25, G4): a TYPED search (the Reference box, the drawer) adds to
+    // the search signal — only its admin-vocabulary terms. Never the AI
+    // guidance (publishedOnly) or the Issue-field strip, which pass rep text.
+    if (opts && opts.signal === true && !publishedOnly) kbRecordSearchSignal_(emp, query, hits.length === 0);
     return { results: hits, sectioned: true, terms: kbSearchTerms_(tokens) };
   } catch (err) { return { error: err.message }; }
 }
@@ -3152,6 +3156,18 @@ function kbGetContentRequests() {
     const startRow = Math.max(2, lastRow - KB_REQUESTS_MAX_SCAN + 1);
     const rows = sheet.getRange(startRow, 1, lastRow - startRow + 1, KB_REQUESTS_HEADERS.length).getValues();
     const todayNum = cnIsoToDayNum_(fmtDate_(new Date()));
+    // E6 (cycle 25, G4): for an ADMIN, each open request carries a hint — the
+    // vocabulary terms in its topic that people searched for (the operator's
+    // replacement for the raw query F9 removed). The signal is admin-only, so a
+    // manager gets the list without it. A failed read says so (`hintError`),
+    // never reads as "nobody searched for this" (g53).
+    let hint = null, hintError = '';
+    if (emp.isAdmin) {
+      try {
+        const read = kbSearchSignalRows_();
+        hint = { vocab: kbSignalVocabulary_().entries, report: kbSearchSignalReport_(read.rows, read.cutoff, KB_SEARCH_SIGNAL_MIN) };
+      } catch (e) { hintError = String(e.message || e); }
+    }
     const open = [], resolved = [];
     for (let i = rows.length - 1; i >= 0; i--) {   // newest-first
       const r = rows[i];
@@ -3168,10 +3184,14 @@ function kbGetContentRequests() {
         // it is never shipped to the client.
         createdIso: iso, ageDays: ageDays, status: status,
       };
-      if (status === 'open') open.push(item);
-      else if (resolved.length < KB_REQUESTS_RESOLVED_TAIL) resolved.push(item);
+      if (status === 'open') {
+        if (hint) item.searchHint = kbSearchSignalHint_(item.topic, hint.vocab, hint.report, KB_SEARCH_SIGNAL_MIN, KB_SEARCH_SIGNAL_HINT_MAX);
+        open.push(item);
+      } else if (resolved.length < KB_REQUESTS_RESOLVED_TAIL) resolved.push(item);
     }
-    return { open: open, resolved: resolved, openCount: open.length };
+    const out = { open: open, resolved: resolved, openCount: open.length };
+    if (hintError) out.hintError = hintError;
+    return out;
   } catch (err) { return { error: err.message }; }
 }
 /** #1 — manager resolve/dismiss a content request. Manager-gated (INV-02),
@@ -3201,6 +3221,257 @@ function kbResolveContentRequest(reqId, action) {
     return { success: true, action: act };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+
+// ── E6 (cycle 25, G4, operator 2026-10-14): the Reference search signal ──────
+// See KB_SEARCH_SIGNAL_TAB. The rule that keeps it PHI-free is a SHAPE, not a
+// filter: what is stored is a term the admin vocabulary already holds, so
+// there is nothing of the query to leak. A word a rep typed that the vocabulary
+// lacks never leaves kbSignalTermsOf_.
+
+/** PURE (Node-pinned): lower case, every run of non-letters and non-digits one
+ *  space — so "Oxygen-Concentrator!" and "oxygen concentrator" are one term. */
+function kbSignalNorm_(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/** PURE (Node-pinned): the vocabulary from its four admin-authored sources.
+ *  `src` = { hcpcs: [code], glossary: [[abbr, expansion]], tags: [{tag, keywords}],
+ *  headings: [heading] }. Returns [{ term, norm, source }], one per norm, the
+ *  first source in KB_SEARCH_SIGNAL_SOURCES order winning, capped at
+ *  KB_SEARCH_VOCAB_MAX. A two-character term is dropped (too common a
+ *  fragment — the glossary's own rule), and so is a heading longer than
+ *  KB_SEARCH_VOCAB_HEADING_WORDS words or one that is only its number. */
+function kbSignalVocab_(src) {
+  src = src || {};
+  const out = [], seen = {};
+  const add = function (display, source) {
+    const norm = kbSignalNorm_(display);
+    if (norm.length < 3 || seen[norm] || out.length >= KB_SEARCH_VOCAB_MAX) return;
+    seen[norm] = 1;
+    out.push({ term: String(display).replace(/\s+/g, ' ').trim(), norm: norm, source: source });
+  };
+  const by = {
+    hcpcs: function () { (src.hcpcs || []).forEach(function (c) { add(String(c || '').toUpperCase(), 'hcpcs'); }); },
+    glossary: function () {
+      (src.glossary || []).forEach(function (p) {
+        if (!Array.isArray(p)) return;
+        add(String(p[0] || ''), 'glossary');
+        add(String(p[1] || ''), 'glossary');
+      });
+    },
+    tag: function () {
+      (src.tags || []).forEach(function (r) {
+        if (!r) return;
+        add(String(r.tag || '').replace(/-/g, ' '), 'tag');
+        (Array.isArray(r.keywords) ? r.keywords : []).forEach(function (k) { add(String(k || ''), 'tag'); });
+      });
+    },
+    heading: function () {
+      (src.headings || []).forEach(function (h) {
+        // "5.1 Scope", "0.10.1 Trx Type" — the number is not the heading.
+        const text = String(h || '').replace(/^\s*(?:[A-Z]?\d+(?:\.\d+)*\.?)\s+/, '').trim();
+        if (!/[A-Za-z]/.test(text) || text.split(/\s+/).length > KB_SEARCH_VOCAB_HEADING_WORDS) return;   // a bare number is not a heading
+        add(text, 'heading');
+      });
+    },
+  };
+  KB_SEARCH_SIGNAL_SOURCES.forEach(function (s) { by[s](); });
+  return out;
+}
+
+/** PURE (Node-pinned): the vocabulary terms a query contains — each as a WHOLE
+ *  run of words, never inside a longer word ("cane" is not in "canes", g156),
+ *  and a term that
+ *  sits inside a longer matched term is dropped ("oxygen" inside "oxygen
+ *  concentrator"). Longest first, at most `max`. Nothing of the query that is
+ *  not a vocabulary term can come out. */
+function kbSignalTermsOf_(query, vocab, max) {
+  const q = ' ' + kbSignalNorm_(query) + ' ';
+  if (q.length < 5) return [];
+  const hit = (vocab || []).filter(function (v) { return v && v.norm && q.indexOf(' ' + v.norm + ' ') >= 0; });
+  hit.sort(function (a, b) { return b.norm.length - a.norm.length; });
+  const kept = [];
+  hit.forEach(function (v) {
+    if (kept.some(function (k) { return (' ' + k.norm + ' ').indexOf(' ' + v.norm + ' ') >= 0; })) return;
+    kept.push(v);
+  });
+  return kept.slice(0, Math.max(0, max || 0)).map(function (v) { return { term: v.term, norm: v.norm, source: v.source }; });
+}
+
+/** The vocabulary, cached KB_SEARCH_VOCAB_TTL under a key that hashes the code
+ *  that shapes it and the KB generation (g157: a key that hashes code hashes ALL
+ *  of it). Each source is read on its own; one that fails drops out and is
+ *  NAMED in `failed`, and a vocabulary with a failed source is never cached
+ *  (g129 — a failure is not a value). Returns { entries, counts, failed }. */
+function kbSignalVocabKey_() {
+  return KB_SEARCH_VOCAB_CACHE_PREFIX + kbHashStr_(String(kbSignalVocab_) + String(kbSignalNorm_) + String(hcpcsParse_) +
+    String(kbSignalVocabSources_)) + ':' + kbGeneration_() + ':';
+}
+function kbSignalVocabSources_() {
+  const src = { hcpcs: [], glossary: [], tags: [], headings: [] }, failed = [];
+  try {
+    const ci = oopCodeIndex_();
+    if (ci.error) failed.push('hcpcs'); else src.hcpcs = Object.keys(ci.byToken || {});
+  } catch (e) { failed.push('hcpcs'); }
+  try { src.glossary = kbManualMetaObj_().synonyms || []; } catch (e) { failed.push('glossary'); }
+  try { src.tags = getAutoTagRules_() || []; } catch (e) { failed.push('tag'); }
+  try {
+    kbSearchIndex_().forEach(function (row) {
+      if (!KB_MANUAL_ID_RE.test(row.id) || row.status !== KB_STATUS_PUBLISHED) return;   // published handbook sections only
+      src.headings.push(row.title);
+      (row.sections || []).forEach(function (s) { if (s.heading) src.headings.push(s.heading); });
+    });
+  } catch (e) { failed.push('heading'); }
+  return { src: src, failed: failed };
+}
+function kbSignalVocabulary_() {
+  const cache = CacheService.getScriptCache();
+  const base = kbSignalVocabKey_();
+  try {
+    const n = parseInt(cache.get(base + 'n') || '', 10);
+    if (n > 0) {
+      const keys = [];
+      for (let i = 0; i < n; i++) keys.push(base + i);
+      const got = cache.getAll(keys);
+      if (keys.every(function (k) { return typeof got[k] === 'string'; })) return JSON.parse(keys.map(function (k) { return got[k]; }).join(''));
+    }
+  } catch (e) {}
+  const read = kbSignalVocabSources_();
+  const entries = kbSignalVocab_(read.src);
+  const counts = {};
+  KB_SEARCH_SIGNAL_SOURCES.forEach(function (s) { counts[s] = 0; });
+  entries.forEach(function (v) { counts[v.source]++; });
+  const out = { entries: entries, counts: counts, failed: read.failed };
+  if (!read.failed.length) {
+    try {
+      const json = JSON.stringify(out), put = {};
+      let n = 0;
+      for (let at = 0; at < json.length; at += KB_INDEX_CHUNK) put[base + (n++)] = json.substring(at, at + KB_INDEX_CHUNK);
+      if (n <= KB_INDEX_MAX_CHUNKS) { put[base + 'n'] = String(n); cache.putAll(put, KB_SEARCH_VOCAB_TTL); }
+    } catch (e) {}
+  }
+  return out;
+}
+
+function getOrCreateKbSearchSignalSheet_() {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_SEARCH_SIGNAL_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(KB_SEARCH_SIGNAL_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_SEARCH_SIGNAL_HEADERS));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** Called by searchReference for a typed search. Best-effort end to end: a
+ *  failure here never fails the search. A term is written once per person per
+ *  KB_SEARCH_SIGNAL_DEDUPE_SECS as a `search`, and once more as a `zero` when a
+ *  search with it found nothing. The dedupe key is a hash in the script cache
+ *  that expires — the sheet holds no rep. The append takes the SCRIPT lock (it
+ *  writes at getLastRow() + 1, and the nightly purge deletes rows under that
+ *  lock) but only with a short tryLock: a busy lock SKIPS the write, so a rep's
+ *  search never waits behind a punch or a note. Returns the rows written. */
+function kbRecordSearchSignal_(emp, query, zero) {
+  try {
+    const terms = kbSignalTermsOf_(query, kbSignalVocabulary_().entries, KB_SEARCH_SIGNAL_TERMS_MAX);
+    if (!terms.length) return 0;
+    const day = fmtDate_(new Date());
+    const keyOf = function (t, ev) { return 'kb_signal_seen:' + kbHashStr_(String(emp.id) + '|' + day + '|' + t.norm + '|' + ev); };
+    const want = [];
+    terms.forEach(function (t) {
+      want.push({ t: t, ev: 'search' });
+      if (zero) want.push({ t: t, ev: 'zero' });
+    });
+    const cache = CacheService.getScriptCache();
+    const seen = cache.getAll(want.map(function (w) { return keyOf(w.t, w.ev); })) || {};
+    const fresh = want.filter(function (w) { return !seen[keyOf(w.t, w.ev)]; });
+    if (!fresh.length) return 0;
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) return 0;
+    try {
+      const ts = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
+      const rows = fresh.map(function (w) { return [ts, w.t.term, w.t.source, w.ev]; });
+      appendRowsTextSafe_(getOrCreateKbSearchSignalSheet_(), rows, KB_SEARCH_SIGNAL_TEXT_IDX);
+    } finally { lock.releaseLock(); }
+    const put = {};
+    fresh.forEach(function (w) { put[keyOf(w.t, w.ev)] = '1'; });
+    try { cache.putAll(put, KB_SEARCH_SIGNAL_DEDUPE_SECS); } catch (e) {}
+    return fresh.length;
+  } catch (err) {
+    Logger.log('kbRecordSearchSignal_ failed: ' + err.message);
+    return 0;
+  }
+}
+
+/** PURE (Node-pinned): the window's rows → per-term counts. `rows` are sheet
+ *  rows with the timestamp already as 'yyyy-MM-dd HH:mm:ss' (cutoff in the same
+ *  form, so the compare is chronological). A row whose event or source is not
+ *  one of ours is ignored rather than counted. Returns { terms: [{term, source,
+ *  searches, zero}] — only terms with searches >= min, those that found nothing
+ *  most often first — , below: terms under min, total: searches in the window }. */
+function kbSearchSignalReport_(rows, cutoff, min) {
+  const by = {};
+  let total = 0;
+  (rows || []).forEach(function (r) {
+    const ts = String(r[KBSS.TS] || '');
+    if (!ts || ts < cutoff) return;
+    const ev = String(r[KBSS.EVENT] || ''), src = String(r[KBSS.SOURCE] || '');
+    if (KB_SEARCH_SIGNAL_EVENTS.indexOf(ev) < 0 || KB_SEARCH_SIGNAL_SOURCES.indexOf(src) < 0) return;
+    const term = String(r[KBSS.TERM] || '').trim();
+    const norm = kbSignalNorm_(term);
+    if (!norm) return;
+    if (!by[norm]) by[norm] = { term: term, source: src, searches: 0, zero: 0 };
+    if (ev === 'search') { by[norm].searches++; total++; } else by[norm].zero++;
+  });
+  const all = Object.keys(by).map(function (k) { return by[k]; });
+  const terms = all.filter(function (t) { return t.searches >= min; });
+  terms.sort(function (a, b) { return (b.zero - a.zero) || (b.searches - a.searches) || (a.term < b.term ? -1 : 1); });
+  return { terms: terms, below: all.length - terms.length, total: total };
+}
+
+/** The window's rows, read back from the tab's tail. `truncated` when the scan
+ *  cap cut the window (g152: an absence past the cap is not evidence). */
+function kbSearchSignalRows_() {
+  const cutoff = fmtDate_(new Date(Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000)) + ' 00:00:00';
+  const sheet = getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB);
+  if (!sheet) return { rows: [], cutoff: cutoff, truncated: false, missing: true };
+  const last = sheet.getLastRow();
+  if (last < 2) return { rows: [], cutoff: cutoff, truncated: false, missing: false };
+  const start = Math.max(2, last - KB_SEARCH_SIGNAL_SCAN_MAX + 1);
+  const rows = sheet.getRange(start, 1, last - start + 1, KB_SEARCH_SIGNAL_HEADERS.length).getValues()
+    .map(function (r) { const c = r.slice(); c[KBSS.TS] = normalizeAuditTs_(r[KBSS.TS]); return c; });
+  const truncated = start > 2 && !!rows.length && String(rows[0][KBSS.TS]) >= cutoff;
+  return { rows: rows, cutoff: cutoff, truncated: truncated, missing: false };
+}
+
+/** Admin-only: what reps searched for in the window, by vocabulary term. */
+function kbGetSearchSignal() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const read = kbSearchSignalRows_();
+    const rep = kbSearchSignalReport_(read.rows, read.cutoff, KB_SEARCH_SIGNAL_MIN);
+    const voc = kbSignalVocabulary_();
+    return { terms: rep.terms.slice(0, KB_SEARCH_SIGNAL_SHOW), more: Math.max(0, rep.terms.length - KB_SEARCH_SIGNAL_SHOW),
+             below: rep.below, total: rep.total, days: KB_SEARCH_SIGNAL_DAYS, min: KB_SEARCH_SIGNAL_MIN,
+             truncated: read.truncated, missing: read.missing,
+             vocab: { counts: voc.counts, size: voc.entries.length, failed: voc.failed } };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** PURE (Node-pinned): a content request's hint — the vocabulary terms in its
+ *  TOPIC (the words the rep chose to send; F9 dropped the raw query) that people
+ *  searched for at least `min` times, most searched first. */
+function kbSearchSignalHint_(topic, vocab, report, min, max) {
+  const counts = {};
+  (report && report.terms || []).forEach(function (t) { counts[kbSignalNorm_(t.term)] = t; });
+  return kbSignalTermsOf_(topic, vocab, KB_SEARCH_SIGNAL_TERMS_MAX)
+    .map(function (t) { const c = counts[t.norm]; return c && c.searches >= min ? { term: c.term, searches: c.searches, zero: c.zero } : null; })
+    .filter(Boolean)
+    .sort(function (a, b) { return b.searches - a.searches; })
+    .slice(0, max);
 }
 // ── Manager-gated writes (locked + audited) ──────────────────────────────
 function kbSaveItem(payload) {

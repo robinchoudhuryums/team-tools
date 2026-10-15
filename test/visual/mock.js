@@ -1841,7 +1841,20 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           price: '$2,150.00', prices: [{ label: '', value: '$2,150.00' }], details: [],
           insurance: { verdict: 'no', near: false, why: 'TX is not a listed state.' },
           oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } }] },
-    kbGetContentRequests: { open: [], resolved: [], openCount: 0 },
+    // E6 (cycle 25, G4): an admin's request carries the search hint (the
+    // vocabulary terms in its topic that people searched for).
+    kbGetContentRequests: { open: [
+      { reqId: 'req-1', repName: 'Ana Ruiz', topic: 'Oxygen concentrator cleaning steps', note: '', createdIso: '2026-10-13', ageDays: 2, status: 'open',
+        searchHint: [{ term: 'oxygen concentrator', searches: 6, zero: 2 }] }], resolved: [], openCount: 1 },
+    // E6 (cycle 25, G4): kbSearchSignalReport_'s shape — the terms that found
+    // nothing lead; team-level counts only; one vocabulary source unread.
+    kbGetSearchSignal: { days: 90, min: 2, total: 41, more: 0, below: 7, truncated: false, missing: false,
+      vocab: { counts: { hcpcs: 38, glossary: 64, tag: 22, heading: 412 }, size: 536, failed: [] },
+      terms: [
+        { term: 'E0431', source: 'hcpcs', searches: 5, zero: 3 },
+        { term: 'oxygen concentrator', source: 'glossary', searches: 6, zero: 2 },
+        { term: 'Prior authorization', source: 'heading', searches: 9, zero: 0 },
+        { term: 'resupply', source: 'tag', searches: 4, zero: 0 }] },
     kbGetRelated: { items: [] },
     kbRecordView: { ok: true },
     // Pre-pilot observability (operator 2026-08-13) — fire-and-forget beacons

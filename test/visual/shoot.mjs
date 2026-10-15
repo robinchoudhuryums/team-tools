@@ -44,6 +44,7 @@ const MOBILE = { width: 390, height: 844 };
 // carries RESULTS. Empty boxes are what the matrix photographed for weeks, and
 // empty boxes are not where either 2026-09-21 defect lived.
 const KBD_SEARCH = "kbDrawerOpen_(); setTimeout(function(){ var a=document.getElementById('kb-ins-input-d'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item-d'); var c=document.getElementById('kb-oop-addr-d'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);} }, 10)";
+const E6_SIGNAL_SCROLL = "setTimeout(function(){ var r=document.querySelector('#kb-land-blocks .kb-land-req'); if(r) r.scrollIntoView({ block: 'start' }); }, 300)";
 const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item'); var c=document.getElementById('kb-oop-addr'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);}";
 
 // The acceptance-by-code grid is behind a disclosure, so the codes T3 NAMES
@@ -144,6 +145,11 @@ const SCENARIOS = [
   ['cn-teamnotes-rep-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', '', 'cnMgrLoadRepView_()'],
   ['intake-dark-wide',      { tool: 'intake',    tab: null },         WIDE, 'dark',  ''],
   ['reference-light-wide',  { tool: 'reference', tab: null },         WIDE, 'light', ''],
+  // E6 (cycle 25, G4): the admin's "What people search for" block and a content
+  // request's search hint sit at the bottom of the landing's own scroller, so
+  // the landing shots never reached them — scroll the requests into view.
+  ['reference-search-signal-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', E6_SIGNAL_SCROLL],
+  ['reference-search-signal-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', E6_SIGNAL_SCROLL],
   ['training-light-wide',   { tool: 'develop',   tab: null },         WIDE, 'light', ''],
   ['coaching-light-wide',   { tool: 'develop',   tab: 'coaching' },   WIDE, 'light', ''],
   ['clock-light-compact',   { tool: 'timeClock', tab: 'clock' },      COMPACT, 'light', '?compact=1'],
