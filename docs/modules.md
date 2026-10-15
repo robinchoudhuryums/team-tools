@@ -1358,6 +1358,16 @@ not restate it. Server endpoints live in the fourteen server files
      the search index's cache key covers every function that shapes it, so a
      deploy that changes an anchor is never served from an old cache (F18).
 
+     **Cycle 25 E6 (2026-10-15) — the search signal.** A search typed into
+     Reference or the drawer is counted by the admin-vocabulary terms it
+     contains (HCPCS codes, the handbook glossary, auto-tag rules, handbook
+     headings) and nothing else: `searchReference(q, { signal: true })` →
+     `kbSignalTermsOf_` → the `KbSearchSignal` tab, with no rep and no query.
+     Admins see "What people search for" at the bottom of the landing (90 days,
+     team-wide, terms that found nothing first, a term once searched twice) and
+     a "People searched for terms like …" line under each content request, from
+     the request's topic. The Issue-field strip and the AI guidance never count.
+
 ## Training & Employee Docs
 
    - **Training & Employee Docs** — phased module

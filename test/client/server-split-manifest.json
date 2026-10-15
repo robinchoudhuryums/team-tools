@@ -2972,6 +2972,59 @@
     "getDeptRequests"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "Cycle 25 E6 (G4): searchReference records a typed search's admin-vocabulary terms; kbGetContentRequests carries the admin search hint; purgeOldDiagnostics purges the KB search signal past 90 days",
+   "added": [
+    "KBSS",
+    "KB_SEARCH_SIGNAL_DAYS",
+    "KB_SEARCH_SIGNAL_DEDUPE_SECS",
+    "KB_SEARCH_SIGNAL_EVENTS",
+    "KB_SEARCH_SIGNAL_HEADERS",
+    "KB_SEARCH_SIGNAL_HINT_MAX",
+    "KB_SEARCH_SIGNAL_MIN",
+    "KB_SEARCH_SIGNAL_SCAN_MAX",
+    "KB_SEARCH_SIGNAL_SHOW",
+    "KB_SEARCH_SIGNAL_SOURCES",
+    "KB_SEARCH_SIGNAL_TAB",
+    "KB_SEARCH_SIGNAL_TERMS_MAX",
+    "KB_SEARCH_SIGNAL_TEXT_IDX",
+    "KB_SEARCH_VOCAB_CACHE_PREFIX",
+    "KB_SEARCH_VOCAB_HEADING_WORDS",
+    "KB_SEARCH_VOCAB_MAX",
+    "KB_SEARCH_VOCAB_TTL",
+    "getOrCreateKbSearchSignalSheet_",
+    "kbGetSearchSignal",
+    "kbRecordSearchSignal_",
+    "kbSearchSignalHint_",
+    "kbSearchSignalReport_",
+    "kbSearchSignalRows_",
+    "kbSignalNorm_",
+    "kbSignalTermsOf_",
+    "kbSignalVocabKey_",
+    "kbSignalVocabSources_",
+    "kbSignalVocab_",
+    "kbSignalVocabulary_"
+   ],
+   "removed": [],
+   "changed": [
+    "getStorageHealth",
+    "kbGetContentRequests",
+    "purgeOldDiagnostics",
+    "searchReference"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-15",
+   "why": "Cycle 25 E6 (G4): a heading that is only its number is not vocabulary",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbSignalVocab_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4001,6 +4054,11 @@
    "kind": "const",
    "sha": "c8f905ad23ac67e8"
   },
+  "KBSS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e85645fca3884c15"
+  },
   "KB_AI_CACHE_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
@@ -4491,10 +4549,90 @@
    "kind": "const",
    "sha": "86a944328cc3143e"
   },
+  "KB_SEARCH_SIGNAL_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09846867c7f264df"
+  },
+  "KB_SEARCH_SIGNAL_DEDUPE_SECS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "393bfad306565522"
+  },
+  "KB_SEARCH_SIGNAL_EVENTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "273ab85aaa99c634"
+  },
+  "KB_SEARCH_SIGNAL_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ac6d6414dfd22087"
+  },
+  "KB_SEARCH_SIGNAL_HINT_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f18d72368fc1a71d"
+  },
+  "KB_SEARCH_SIGNAL_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "88fc5c0e331eb3cc"
+  },
+  "KB_SEARCH_SIGNAL_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "92501088d5ff9bb8"
+  },
+  "KB_SEARCH_SIGNAL_SHOW": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b9f177484de8cb70"
+  },
+  "KB_SEARCH_SIGNAL_SOURCES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0ff1eb11b8f7524a"
+  },
+  "KB_SEARCH_SIGNAL_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c68b79139770cb8"
+  },
+  "KB_SEARCH_SIGNAL_TERMS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ddff2f3fff7793ad"
+  },
+  "KB_SEARCH_SIGNAL_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a01e5d1075018a84"
+  },
   "KB_SEARCH_TOKENS_MAX": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "862ef1ac07f02f8d"
+  },
+  "KB_SEARCH_VOCAB_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3db5bfd7fe581d61"
+  },
+  "KB_SEARCH_VOCAB_HEADING_WORDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d5cdfedfa5f00551"
+  },
+  "KB_SEARCH_VOCAB_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c71bf79a53726711"
+  },
+  "KB_SEARCH_VOCAB_TTL": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6c619de418a5a069"
   },
   "KB_SHEET_MAX_COLS": {
    "file": "00_config.js",
@@ -7911,6 +8049,11 @@
    "kind": "function",
    "sha": "85a4a6c1d26810f3"
   },
+  "getOrCreateKbSearchSignalSheet_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2bef921fa84d8725"
+  },
   "getOrCreateKbSheet_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -8144,7 +8287,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a98f6926cd7d30ac"
+   "sha": "8bc68776a6185d47"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -8849,7 +8992,7 @@
   "kbGetContentRequests": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b7a8ebc2ae76f9d4"
+   "sha": "44d72f8422cda1ec"
   },
   "kbGetFacetGuidance": {
    "file": "70_kb.js",
@@ -8880,6 +9023,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "b869f20067f8a7ae"
+  },
+  "kbGetSearchSignal": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f87fd0b6777fa2cd"
   },
   "kbGetUsageStats": {
    "file": "70_kb.js",
@@ -9101,6 +9249,11 @@
    "kind": "function",
    "sha": "0a5541593587a557"
   },
+  "kbRecordSearchSignal_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ec90aeb2f0ce5993"
+  },
   "kbRecordView": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9186,6 +9339,21 @@
    "kind": "function",
    "sha": "5f66a9516c2f5df7"
   },
+  "kbSearchSignalHint_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "33748860017caa76"
+  },
+  "kbSearchSignalReport_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "cf3013e3efe7a654"
+  },
+  "kbSearchSignalRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "143c405b4e162c47"
+  },
   "kbSearchTerms_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9200,6 +9368,36 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "56c963a2f3e1e044"
+  },
+  "kbSignalNorm_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "147b0e3ceabc0c92"
+  },
+  "kbSignalTermsOf_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "463d6e8be45cd4d3"
+  },
+  "kbSignalVocabKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "740dedd89d4058f2"
+  },
+  "kbSignalVocabSources_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "272ca396d2a48ad9"
+  },
+  "kbSignalVocab_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "78632200b1c2bfd5"
+  },
+  "kbSignalVocabulary_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "68dda17f0ff97ac7"
   },
   "kbSlug_": {
    "file": "70_kb.js",
@@ -9879,7 +10077,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "2d0002440a9bffe4"
+   "sha": "669a180408e35da6"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -10709,7 +10907,7 @@
   "searchReference": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "15d6c03b2c8bb11b"
+   "sha": "0ddcd35ff0ddc3f1"
   },
   "selfDeletePunch": {
    "file": "20_timeclock.js",

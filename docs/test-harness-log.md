@@ -2792,3 +2792,32 @@ per-change detail. By delta:
   every remaining module to be pip-installed in the step, pinned. Lesson for the
   procedure: a local green is not CI's — read the workflow run after a push.
 
+## Cycle 25 E6 — the Reference search signal (G4)
+
+- **Pure harness:** seven E6 pins. The vocabulary builder, the term extractor,
+  the recorder, the report and the hint are DRIVEN over stub sources (the
+  recorder over a stub cache and lock, so the dedupe, the busy-lock skip and the
+  lock release are observed); the extractor's PHI rule is pinned as a PROPERTY
+  over hostile queries — every term out is a vocabulary entry — not only by
+  examples. The vocabulary loader is driven to show a failed source is named
+  and never cached, and its key hashes every builder it reaches.
+- **Nets that moved:** S2's appender list gains `kbRecordSearchSignal_`, and
+  its lock rule now accepts a `tryLock` on the SCRIPT lock (a best-effort writer
+  that skips when busy still holds the lock for the append); RT-1 pins the
+  purge's search-signal clause; ADM-04's Storage Health context carries
+  `KB_SEARCH_SIGNAL_DAYS`.
+- **DOM:** four drives — the admin block (flag, escaping, a cut window, an
+  unread source, a failed load, an empty window), a non-admin manager never
+  asking for it, the request hint and its failure line, and the typed search's
+  `{ signal: true }` against the Issue suggestions'.
+- **Visual:** two scenarios scroll the landing to the content request and the
+  signal block, which no shot had reached. The first shot found the request
+  row's topic and meta running together on one line — pre-existing, now a
+  follow-on.
+- **Follow-on (the request row):** fixed in CSS — the topic and its meta are
+  block lines inside `.kb-land-req-body`. A DOM drive was written first and
+  dropped: `boot.js` loads each partial's `<script>`, never its `<style>`, so
+  jsdom's computed style cannot see the rule (the test failed for that reason,
+  not the defect's). The pin is structural and says so; the layout was measured
+  in Chromium (the meta's top below the topic's bottom, both at 1440 and 390).
+

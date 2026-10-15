@@ -24,7 +24,7 @@ Top horizontal priority: Operator-Only State Gaps — the lowest Axis-B category
 | UI/UX & Accessibility | 7.5 |
 
 69 findings (F1–F69) plus G1–G5 and ST1–ST5. Batches 1–9 of its plan, the
-operator-decided F19, F23 and F35, and expansion batches E1–E5 are implemented on
+operator-decided F19, F23 and F35, and expansion batches E1–E6 are implemented on
 `claude/relaxed-newton-ae0s5s` (one block each under `.cycle/blocks/25-*`). Not
 deployed, not reflected — this standing is the scan's measurement, and the
 reflection will score the cycle. The two lines below are generated (cycle 25 E5,
