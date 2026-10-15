@@ -225,6 +225,21 @@ not restate it. Server endpoints live in the fourteen server files
      un-approves today (F19). A grouped automation job that crashes is reported
      under its own, labelled name (F3).
 
+     **Cycle 25 E2 (2026-10-15) — closing a pay period.** Manage Time →
+     Periodic carries a standing **Pay Period Close** card (`getPayPeriodClose`,
+     manager-gated, read-only): for each pay cycle with reps, the period that
+     just ended and the current one, listing every rep with an open or
+     incomplete day (counted up to two days before today, so a shift in
+     progress is not flagged) and every pending time-off or punch-adjustment
+     request dated inside the period. An open day inside the 30-day edit window
+     opens Day Edit; an older one is named as a hand-edit. The collapsed
+     Periodic row says critical / warning / ready / check failed — a failed read
+     never reads as ready. An offboarded rep whose punches the export still
+     ships by ID is found too, labelled (`payrollSubjectId_`, F19), and Day Edit
+     opens for them in their own roster timezone; the open-punch check sees them
+     as well. `biweeklyRangeFor_` is the one biweekly period rule, shared with
+     the automated export.
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each

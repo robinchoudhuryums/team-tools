@@ -3607,6 +3607,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   broken `[[§…]]` reference and a stale generated diagram both reached a green
   commit; CI now runs the browser-free build and fails on any diff to the
   committed diagrams or the diagram partial.
+  **A TWENTY-SECOND (cycle 25 E5, 2026-10-15): the step that closed the
+  twenty-first was itself red for eight pushes, and a pin said it was fine.**
+  The new CI step installed only `markdown`; `make_html.py` imports `bs4`, so
+  every run from Batch 9 to E4 failed at that step. Every batch reported green,
+  because "green" meant the LOCAL harness, where bs4 happened to be installed —
+  and the F29 pin asserted "the ONE Python dependency is pinned", a claim it
+  never measured. The pin now DERIVES the step's third-party imports (following
+  local modules through `manual/`, dropping `sys.stdlib_module_names`) and
+  requires each to be installed and pinned in the step. Two rules: a pin that
+  states a COUNT of dependencies must compute it; and a batch is not green until
+  the workflow run on its pushed commit is — read it after the push.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel

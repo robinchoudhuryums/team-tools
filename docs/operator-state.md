@@ -1134,11 +1134,16 @@ entry says which it is.
   driven by `TRIGGER_GROUPS` (the ONE source for the dispatcher bodies, the
   derived `RETIRED_TRIGGER_HANDLERS` dedupe list, the install email and the
   TQ pins): `runHourlyJobs` (hourly → `sendCallNotesEodDigest`,
-  `autoAssignSpanishThreadsScheduled`), `runWeeklyDigests` (Friday
-  manager-tz 8am → `sendCallNotesWeeklyDigests`, `sendCoachingRecapDigest`)
-  and `runNightlyPurges` (daily manager-tz 2am → `purgeOldDiagnostics`,
-  `purgeOldQaReviews`, `purgeExpiredFormData`, `purgeArchivedCallNotes` — the
-  four DELETE-ONLY retention purges, bounded first, cross-rep walk last).
+  `scanDeptRequestReplies` (22post D), `autoAssignSpanishThreadsScheduled`),
+  `runWeeklyDigests` (Friday manager-tz 8am → `sendCallNotesWeeklyDigests`,
+  `sendCoachingRecapDigest`), `runNightlyPurges` (daily manager-tz 2am →
+  `purgeOldDiagnostics`, `purgeOldQaReviews`, `purgeExpiredFormData`,
+  `purgeArchivedCallNotes` — the four DELETE-ONLY retention purges, bounded
+  first, cross-rep walk last) and `runDailyChecks` (daily manager-tz 8am →
+  `checkOpenPunches`, `sendCallNotesUrgentDigest`, `sendSpanishEscalationDigest`
+  (cycle 25 E4) — the open-punch stamp the 9am health digest reads). The
+  groups' membership is `TRIGGER_GROUPS` and its size is the running-totals
+  block's "Jobs riding a dispatcher" — never a number written here.
   `runTriggerGroup_` runs each job in its own try/catch (a throw is stamped
   under the job's KEY into `AUTOMATION_LAST_ERRORS` — `TRIGGER_HANDLER_JOB_KEYS`
   maps each grouped handler to it since seams F3 (cycle 24), so it is labelled
@@ -1151,7 +1156,7 @@ entry says which it is.
   and `runDailyExportCheck` — and the failure digest itself carry a
   heartbeat too (`AUTOMATION_DIGEST_LAST_RUNS`), so every daily trigger has a
   liveness signal. **Known limit: a group shares one
-  six-minute execution** — all eight grouped jobs are cheap by default (the
+  six-minute execution** — every grouped job is cheap by default (the
   purges no-op while their windows are 0), but a purge enabled against a
   large backlog that runs long is killed WITH the jobs after it; their own
   liveness rows then read stale, which is the signal to re-order or split.

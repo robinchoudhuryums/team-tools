@@ -224,8 +224,10 @@ them): a **dependency-free** pure-helper + parse-guard harness
 that loads the partials into a real `jsdom` window
 (`npm run test:dom` — needs the `jsdom` dev dependency, so run `npm ci`
 first). `npm test` runs both. A third, **static-render visual** harness
-(`test/visual/`) renders the scenario matrix in headless Chromium; it is
-manual / on-demand, NOT in CI. (For how many scenarios — and for every other
+(`test/visual/`) renders the scenario matrix in headless Chromium; the full
+matrix is manual / on-demand, and since cycle 25 E5 a fixed subset runs in CI
+(`node shoot.mjs --ci`) and fails on a layout MEASUREMENT — sideways overflow, a
+page past its content, squeezed text, a missing fixture, an uncaught error. (For how many scenarios — and for every other
 figure these docs used to carry in prose — run `node scripts/counts.mjs`, or
 read the **Running totals** block in `CLAUDE.md`. A hand-carried number here
 had drifted before; CI now fails on drift.) Four small companion harnesses live beside it and
@@ -233,7 +235,10 @@ answer questions a screenshot cannot: `print-check.mjs`, `a11y-names.mjs`,
 `a13-measure.mjs` and `fold-measure.mjs`. A GitHub Action
 (`.github/workflows/client-tests.yml`) runs a `node --check` of every server file /
 `Tests.js` / `DevTools.js` and the dependency-free pure harness FIRST, then
-`npm ci` + the DOM harness, on every push and PR — the project's only
-automated check. (The zero-install steps deliberately run before `npm ci`:
-a registry or jsdom-resolution failure must not stop the only checks that
-need no dependencies from running at all.)
+`npm ci` + the DOM harness, the server identifier lint, the browser-free
+handbook build, the counts block and the cycle close-out check
+(`scripts/cycle-closeout.mjs --check`), on every push and PR; a second job runs
+the visual subset above. These are the project's only automated checks — a
+batch is green when the run on its pushed commit is. (The zero-install steps
+deliberately run before `npm ci`: a registry or jsdom-resolution failure must
+not stop the only checks that need no dependencies from running at all.)
