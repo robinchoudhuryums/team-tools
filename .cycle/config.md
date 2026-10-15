@@ -520,8 +520,8 @@ lens is at diminishing returns here and the interface lens is not.
 Run it as **Stage 1.5**, between the broad pass and the deep dives:
 1. `cd test/visual && node build.mjs && node shoot.mjs` (needs `npm ci` there
    once; Chromium is pre-installed in the web container).
-2. Read `report.json` — TWO machine checks, both printed as a summary at the end
-   of the run:
+2. Read `report.json` — FOUR machine checks, each printed as a summary at the
+   end of the run (the last two added cycle 25 F69):
    - a `missing` entry means the scenario rendered a LOADER, not the real view.
      Add the fixture before trusting that screenshot.
    - **`overflowPx > 0` means the PAGE scrolls sideways** (document
@@ -530,6 +530,14 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
      layout and an overflowing one look IDENTICAL in a screenshot. Content
      inside a legitimate `overflow-x: auto` scroller (the tool tab bar, a wide
      data table in `.m-table-wrap`) correctly does NOT count.
+   - **`verticalRunawayPx` over 200 means the page scrolls PAST its content**
+     (VERTICAL RUNAWAY) — usually an absolutely positioned, visually hidden
+     element that escaped its scroller (F67, g171: 8,245px of page for a 900px
+     window, with no sideways scroll and no console error).
+   - **`narrowText` lists text squeezed narrower than a word** (SQUEEZED TEXT —
+     16+ characters of an element's own text under 48px; SVG labels excluded),
+     the F68 shape (g72). Its first run found the chapter masthead's "In this
+     chapter" index at 37px on mobile.
 3. Actually OPEN the PNGs — every scenario the run just wrote (the count lives
    in ONE place, the matrix's own summary; this step restated it twice and was
    stale twice — seams-18 F5). Compare light vs dark and wide vs compact vs
@@ -691,7 +699,7 @@ S2 | Full integration test suite | Subsystem: Test Suite
     - **(Batch S variant)** Instead run `runAllTestsPartA`, wait for it to finish, then run `runAllTestsPartB` — the split that exists for a mid-shift run, since one long execution makes every live punch queue behind the project ScriptLock
     - **(Batch S)** Read the `Expected:` line and the `── Suite environment ──` block at the top before reading any failure
     - **(Batch Q)** Confirm the `saveEmailTemplates` over-size case passes: it drives the refusal against the live store and restores what was there
-  Expected: **(seams F11)** on an unmarked project the first run refuses before writing anything, naming `allowFullSuiteHere()`; after it, the run proceeds for two hours and the `── Suite environment ──` block reads "the allowFullSuiteHere() override is OPEN"; a project marked `INSTANCE_IS_PROD=true` refuses whatever the override says. `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end, resets test-employee balances to 15 annual / 10 sick, and RE-OFFBOARDS the test accounts (emails cleared) so they stay invisible to real agents between runs; the next run's setup restores the emails itself. **Part A + Part B together are exactly `runAllTests`** — each Part runs its own setup and cleanup in `finally`, and every test at a shard boundary clears its own state, so a Part stands alone; their two `Expected:` lines sum to the whole run's. The expected count is whatever the run prints (316 today). On a prod instance (`INSTANCE_IS_PROD=true`) `runAllTests` REFUSES outright and the environment block above the refusal says why — that is the runbook working, not a fault.
+  Expected: **(seams F11)** on an unmarked project the first run refuses before writing anything, naming `allowFullSuiteHere()`; after it, the run proceeds for two hours and the `── Suite environment ──` block reads "the allowFullSuiteHere() override is OPEN"; a project marked `INSTANCE_IS_PROD=true` refuses whatever the override says. `Failed: 0`. `cleanupTestData()` removes all `TEST_*` rows at the end, resets test-employee balances to 15 annual / 10 sick, and RE-OFFBOARDS the test accounts (emails cleared) so they stay invisible to real agents between runs; the next run's setup restores the emails itself. **Part A + Part B together are exactly `runAllTests`** — each Part runs its own setup and cleanup in `finally`, and every test at a shard boundary clears its own state, so a Part stands alone; their two `Expected:` lines sum to the whole run's. The expected count is whatever the run prints (the running-totals block carries the current registration count). On a prod instance (`INSTANCE_IS_PROD=true`) `runAllTests` REFUSES outright and the environment block above the refusal says why — that is the runbook working, not a fault.
 
 S3 | Employee golden path: clock in → lunch → clock out | Subsystem: Server, Client
   Steps:

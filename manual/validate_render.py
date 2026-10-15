@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Rendered-layout checks. Catches what no text check can: content hidden by other content."""
-import sys
+import sys, pathlib
 from playwright.sync_api import sync_playwright
-path = sys.argv[1]
+# Cycle 25 F28: a RELATIVE path (make_all.sh's default ./dist) made "file://dist/…",
+# which Chromium rejects; resolve it and let pathlib build the URI.
+path = str(pathlib.Path(sys.argv[1]).resolve())
+URL = pathlib.Path(path).as_uri()
 with sync_playwright() as p:
     b = p.chromium.launch()
     pg = b.new_page(viewport={"width": 1500, "height": 900})
-    pg.goto("file://" + path)
+    pg.goto(URL)
     pg.wait_for_timeout(600)
     res = pg.evaluate("""() => {
       const out = {tables: 0, covered: [], cardWidth: [], clipped: 0};
@@ -44,12 +47,19 @@ for e in errors:
 
 # print pagination: one card per page, contents sheet first, and a card's
 # diagram on the page after it (its reverse)
-import subprocess, tempfile, os
+import subprocess, tempfile, os, shutil
+# Cycle 25 F66: only a MISSING TOOL skips this check, and a skip is not a pass —
+# exit 3 ("not run") when nothing else failed. Any other exception is an error.
+print_not_run = not shutil.which("pdfinfo")
+if print_not_run:
+    print("  print checks NOT RUN (pdfinfo not installed)")
 try:
+    if print_not_run:
+        raise StopIteration
     from playwright.sync_api import sync_playwright as _sp
     with _sp() as p:
         b = p.chromium.launch(); pg = b.new_page()
-        pg.goto("file://" + path); pg.wait_for_timeout(600)
+        pg.goto(URL); pg.wait_for_timeout(600)
         pdf = os.path.join(tempfile.gettempdir(), "_cards.pdf")
         pg.pdf(path=pdf, format="Letter", print_background=True, prefer_css_page_size=True)
         b.close()
@@ -60,7 +70,10 @@ try:
     if n != want:
         errors.append(f"print pagination: {n} pages for {want} sheets — cards are splitting")
         print(f"  \u2717 {errors[-1]}")
+except StopIteration:
+    pass
 except Exception as e:
-    print(f"  print check skipped: {type(e).__name__}")
+    errors.append(f"print check failed to run: {type(e).__name__}: {e}")
+    print(f"  \u2717 {errors[-1]}")
 
-sys.exit(1 if errors else 0)
+sys.exit(1 if errors else (3 if print_not_run else 0))

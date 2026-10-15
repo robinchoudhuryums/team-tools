@@ -79,6 +79,18 @@ Claude Code remote-env pre-install) → Playwright's own managed download.
   (`window.__MISSING__`), and the landed view key. **A missing fixture means
   the scenario rendered a loader/error state, not the real view** — add the
   endpoint to `mock.js` before trusting that screenshot.
+- **Three layout measurements** ride every scenario in `report.json`, and the
+  run prints a section for each one that fires — because a squeezed layout, an
+  overflowing one and a runaway one all look fine in a screenshot:
+  - `overflowPx` — the page scrolls SIDEWAYS (the document's scroll width past
+    its client width).
+  - `verticalRunawayPx` (cycle 25 F69) — the document scrolls PAST its content:
+    its scroll height beyond the bottom of everything visibly laid out (a
+    visually hidden box is excluded, since an escaped one is the usual cause —
+    F67, g171). Over 200px prints under VERTICAL RUNAWAY.
+  - `narrowText` (cycle 25 F69) — an element holding a real run of its own text
+    laid out narrower than a word (under 48px); F68's 22px text column at 390px
+    is the shape (g72). Printed under SQUEEZED TEXT.
 - `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)

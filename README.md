@@ -77,13 +77,14 @@ Script project synced via [clasp](https://github.com/google/clasp).
     section-aware full-text search + reader for training/policy docs.
     Markdown articles (rendered with HTML-escape-first) and embedded
     Drive Doc/Sheet/file previews, plus a per-item Doc→article
-    converter with Drive image export and paste-a-screenshot upload
-    in the editor. A Ctrl/⌘+K slide-over drawer gives reps mid-call
+    converter and paste-a-screenshot upload in the editor — article
+    images are stored in the KB spreadsheet's KbImages tab, not Drive
+    (the domain disables Apps Script's Drive). A Ctrl/⌘+K slide-over drawer gives reps mid-call
     lookup from any tool, with an optional AI guidance card
     (Anthropic API, whitelisted call facets only — no note text ever
-    leaves the app; feature-flagged off by default). Managers edit
-    inline; reps browse read-only, and get a usage-sorted "Review due"
-    queue for re-confirming stale articles. Three operator-maintained
+    leaves the app; feature-flagged off by default). Admins author and
+    edit articles; managers get a usage-sorted "Review due" queue for
+    re-confirming stale ones; reps browse read-only. Three operator-maintained
     lookup tables ride the same store and the same two surfaces
     (landing + drawer): an insurance payor check, an out-of-pocket
     price lookup, and an area-eligibility check that takes an address
@@ -120,8 +121,9 @@ Script project synced via [clasp](https://github.com/google/clasp).
     complete; managers see a per-rep completion matrix. Re-assigning
     an item resets its completion (re-certification). Interactive
     quizzes: manager-authored (or imported from a Google Forms quiz),
-    graded server-side (answer keys never reach the browser), unlimited
-    retries with attempt tracking — a pass completes the item.
+    graded server-side (answer keys never reach the browser), with
+    attempt tracking and a retry limit — three failed attempts, then a
+    24-hour wait or a manager's reset — and a pass completes the item.
     Per-employee signable documents (reviews,
     PIPs, policy acknowledgments) live in a dedicated HR spreadsheet:
     content is frozen and hashed at issue, employees sign on a canvas

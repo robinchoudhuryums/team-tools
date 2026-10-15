@@ -73,6 +73,34 @@ jobs:
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js
 
+      # Cycle 25 F29 + F65: the handbook's Python build. It never ran here, so a
+      # broken [[§…]] cross-reference (build.py fails on it) reached a commit
+      # green, and the M3-D1 pin hashes only the generated SVGs — an edited
+      # diagram generator or export transform with stale output passed. This runs
+      # the browser-free half of manual/make_all.sh (no Playwright, no
+      # LibreOffice, no Word render) and then fails if regenerating changed a
+      # committed diagram or the diagram partial the app ships.
+      - name: Set up Python (handbook build)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the handbook (no browser) and check its generated files are current
+        run: |
+          set -e
+          python -m pip install "markdown==3.7"
+          cd manual
+          python roles.py && python footnotes.py
+          python make_diagrams.py && python make_flow_diagrams.py
+          rm -f out/*.md
+          python build.py
+          python make_html.py out/Policies-and-Procedures-Handbook-v3.0.md "$RUNNER_TEMP/handbook.html"
+          python validate_html.py "$RUNNER_TEMP/handbook.html"
+          MANUAL_OUT="$RUNNER_TEMP/manual-dist" python export_reference.py
+          cd ..
+          git diff --exit-code -- manual/diagrams web-app/kb/script_manual_diagrams.html
+        shell: bash
+
       # Batch C: the generated counts block in CLAUDE.md must equal what the
       # tree derives. This runs LAST because it re-runs both harnesses to read
       # their own summary lines — a static count cannot equal either total

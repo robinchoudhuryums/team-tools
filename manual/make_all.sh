@@ -5,6 +5,13 @@ set -e
 cd "$(dirname "$0")"
 OUT="${MANUAL_OUT:-dist}"
 mkdir -p "$OUT/docx" "$OUT/build"
+# Cycle 25 F66: a check whose tool is missing exits 3 ("not run"). It is not a
+# pass, so it is collected and named at the end; MANUAL_STRICT=1 fails the build on it.
+NOT_RUN=""
+check() {
+  set +e; "$@"; rc=$?; set -e
+  if [ "$rc" -eq 3 ]; then NOT_RUN="$NOT_RUN $(basename "$2")"; elif [ "$rc" -ne 0 ]; then exit "$rc"; fi
+}
 python3 roles.py && python3 footnotes.py   # the shared resolvers' own checks
 python3 make_diagrams.py
 python3 make_flow_diagrams.py
@@ -12,7 +19,7 @@ rm -f out/*.md            # a renamed part must not leave a stale extract behind
 python3 build.py
 python3 make_html.py out/Policies-and-Procedures-Handbook-v3.0.md "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
 python3 validate_html.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
-python3 validate_render.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
+check python3 validate_render.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
 python3 check_svg_fit.py "$OUT/Policies-and-Procedures-Handbook-v3.0.html"
 rm -f "$OUT"/docx/*.docx
 python3 rasterize_diagrams.py   # the diagrams as PNGs, so Word (and a PDF of it) shows them
@@ -29,7 +36,7 @@ if command -v soffice >/dev/null 2>&1; then
   if timeout 300 soffice --headless --convert-to pdf --outdir "$OUT/pdf" \
        "$OUT/docx/Policies-and-Procedures-Handbook-v3.0.docx" >/dev/null 2>&1 \
        && [ -s "$OUT/pdf/Policies-and-Procedures-Handbook-v3.0.pdf" ]; then
-    python3 check_pdf.py "$OUT/pdf/Policies-and-Procedures-Handbook-v3.0.pdf"
+    check python3 check_pdf.py "$OUT/pdf/Policies-and-Procedures-Handbook-v3.0.pdf"
   else
     echo "pdf                   : not made (LibreOffice could not convert the Word file here)"
   fi
@@ -39,4 +46,8 @@ fi
 rm -f "$OUT"/build/*.md
 cp out/*.md "$OUT/build/"
 python3 export_reference.py   # Reference articles -> $OUT/reference (team-tools importer)
+if [ -n "$NOT_RUN" ]; then
+  echo "NOT CHECKED (a tool is missing):$NOT_RUN"
+  if [ "${MANUAL_STRICT:-0}" = "1" ]; then echo "MANUAL_STRICT=1 — failing on an unrun check"; exit 1; fi
+fi
 echo "build complete -> $OUT"

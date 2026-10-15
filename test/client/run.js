@@ -25661,6 +25661,15 @@ test('C4: no count that the block carries is restated in the docs (every file th
     'a doc sentence restates a derived total ("' + totals.join('", "') +
     '") — cite the generated block, or state the DELTA this batch added');
 
+  // (e) Cycle 25 F64: "(316 today)" — a total stamped with the day it was true,
+  //     which (a)–(d) all miss because "today" is none of their nouns. It sat in
+  //     S2 for weeks against a block that read 351. Ban the shape outright: a
+  //     live doc has no "today" for a number.
+  const todayN = prose.match(/\(\s*\*{0,2}\d{2,4}\*{0,2}\s+today\s*\)/gi) || [];
+  assert.deepStrictEqual(todayN, [],
+    'a doc sentence stamps a count with "today" ("' + todayN.join('", "') +
+    '") — cite the generated block or the run\'s own `Expected:` line');
+
   // (c) The admin-tier size drifted four times in INV-136's prose.
   const adminN = prose.match(/\d+ Admin-exclusive endpoints|INV-136's (?:count is now )?\d+(?:st|nd|rd|th)?\b/g) || [];
   assert.deepStrictEqual(adminN, [],
@@ -30838,6 +30847,9 @@ test('M3-D1: the diagram partial is CURRENT and SAFE — its source hash matches
   files.forEach((f) => h.update(f + '\n' + fs.readFileSync(path.join(dir, f), 'utf8') + '\n', 'utf8'));
   assert.strictEqual(/diagram-source-sha256: ([0-9a-f]{64})/.exec(M3_DG_SRC)[1], h.digest('hex'),
     'a diagram changed and the partial was not regenerated — run python3 export_reference.py in manual/ and commit web-app/kb/script_manual_diagrams.html');
+  // Cycle 25 F65: this hash sees only the generated SVGs. A changed GENERATOR or
+  // export transform with stale output is caught by CI's handbook step, which
+  // regenerates both and fails on any diff (pinned by "F29 + F65 (cycle 25)").
   // The script is ONE frozen object literal of strings — no other code rides it.
   const script = /<script>([\s\S]*)<\/script>/.exec(M3_DG_SRC)[1];
   assert.ok(/^\s*\/\/[^\n]*\nvar KB_MANUAL_DIAGRAMS = Object\.freeze\(\{\n(?:"[a-z0-9-]+": "(?:[^"\\]|\\.)*",?\n)+\}\);\s*$/.test(script), 'the partial is exactly one frozen map of name → string');
@@ -36962,6 +36974,85 @@ test('F34 (cycle 25): getFormByToken refuses a string that is not shaped like a 
   assert.strictEqual(reads, 0, 'THE REGRESSION: every garbage string read the whole token column');
   ctx.getFormByToken('123e4567-e89b-42d3-a456-426614174000');
   assert.strictEqual(reads, 1, 'a well-formed token is looked up as before');
+});
+
+// ── Cycle 25 Batch 9 — docs, tooling and nets ──────────────────────────────
+console.log('\ncycle 25 Batch 9 — docs, tooling and nets');
+test('F29 + F65 (cycle 25): CI runs the handbook\'s Python build and fails when regenerating changes a committed diagram or the diagram partial', () => {
+  const wf = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
+  const at = wf.indexOf('Build the handbook (no browser)');
+  assert.ok(at > 0 && /actions\/setup-python@v5/.test(wf.slice(0, at)), 'Python is set up before the handbook step');
+  const step = wf.slice(at, wf.indexOf('- name:', at + 10));
+  ['python roles.py', 'python footnotes.py', 'python make_diagrams.py', 'python make_flow_diagrams.py', 'python build.py',
+    'python make_html.py', 'python validate_html.py', 'python export_reference.py'].forEach((c) =>
+    assert.ok(step.indexOf(c) >= 0, 'the handbook step runs ' + c));
+  assert.ok(/set -e/.test(step), 'any failing script fails the step (build.py exits 1 on an UNRESOLVABLE REF)');
+  assert.ok(step.indexOf('python build.py') < step.indexOf('python export_reference.py') &&
+    step.indexOf('python make_diagrams.py') < step.indexOf('python build.py'), 'generate, then build, then export (the make_all.sh order)');
+  assert.ok(/git diff --exit-code -- manual\/diagrams web-app\/kb\/script_manual_diagrams\.html/.test(step),
+    'THE REGRESSION (F65): an edited generator or export transform with stale committed output fails here, not just a hand-edited SVG');
+  assert.ok(/pip install "markdown==\d+\.\d+(\.\d+)?"/.test(step), 'the one Python dependency is pinned to an exact version');
+  assert.ok(!/playwright|soffice|render_docx/.test(step), 'the browser-free half only — no Playwright, LibreOffice or Word render in CI');
+});
+
+test('F28 + F66 (cycle 25): the render checks open a RESOLVED file URI, a check whose tool is missing exits 3 ("not run") — never 0 — and make_all.sh names it', () => {
+  const M = (f) => fs.readFileSync(path.join(__dirname, '../../manual', f), 'utf8');
+  const vr = M('validate_render.py'), fit = M('check_svg_fit.py'), pdf = M('check_pdf.py'), mk = M('make_all.sh');
+  [['validate_render.py', vr], ['check_svg_fit.py', fit]].forEach(([n, src]) => {
+    assert.ok(/pathlib\.Path\(sys\.argv\[1\]\)\.resolve\(\)/.test(src) && /\.as_uri\(\)/.test(src), n + ' resolves its argument and builds the URI with pathlib');
+    assert.ok(!/"file:\/\/" \+/.test(src), 'THE REGRESSION (F28): ' + n + ' concatenated "file://" with a relative ./dist path, which Chromium rejects');
+  });
+  assert.ok(/NOT RUN \(pdftotext not installed\)"\)\n\s*sys\.exit\(3\)/.test(pdf), 'check_pdf.py: a missing pdftotext exits 3');
+  assert.ok(!/skipped[^\n]*\n\s*sys\.exit\(0\)/.test(pdf), 'THE REGRESSION (F66): a missing tool exited 0 — a clean PDF by default');
+  assert.ok(/print_not_run = not shutil\.which\("pdfinfo"\)/.test(vr) && /sys\.exit\(1 if errors else \(3 if print_not_run else 0\)\)/.test(vr),
+    'validate_render.py: only a missing pdfinfo skips the print check, and then it exits 3');
+  assert.ok(/except Exception as e:\n\s*errors\.append\(f"print check failed to run/.test(vr), 'any other exception in the print check is an ERROR, not a skip');
+  assert.ok(/check python3 validate_render\.py/.test(mk) && /check python3 check_pdf\.py/.test(mk), 'make_all.sh runs both through check()');
+  assert.ok(/if \[ "\$rc" -eq 3 \]; then NOT_RUN=/.test(mk) && /NOT CHECKED \(a tool is missing\):/.test(mk) && /MANUAL_STRICT:-0/.test(mk),
+    'a 3 is collected and named at the end, and MANUAL_STRICT=1 fails on it');
+  assert.ok(!/Images folder on Drive/.test(M('export_reference.py')), 'export_reference.py no longer says the images go to Drive (M4-FU3)');
+});
+
+test('F25 + F26 + F27 + F64 (cycle 25): the docs describe the gates, the standing and the features as they are', () => {
+  const R = (f) => fs.readFileSync(path.join(__dirname, '../..', f), 'utf8');
+  const ops = R('docs/operator-state.md');
+  const adminAt = ops.indexOf('<a id="operator-script-property-admin-emails">');
+  const admin = ops.slice(adminAt, ops.indexOf('<a id=', adminAt + 10));
+  assert.ok(!/`getAdminEmails_\(\)`\s*\n?\s*reads/.test(admin) && /`empIsAdmin_`/.test(admin), 'ADMIN_EMAILS names the function that reads it');
+  assert.ok(/EVERY roster\s+manager an admin/.test(admin) && !/falls back to `MANAGER_EMAILS`/.test(admin), 'unset ⇒ every ROSTER manager — never a MANAGER_EMAILS fallback');
+  assert.ok(!/function getAdminEmails_/.test(serverSource()), 'and there really is no getAdminEmails_ (so the doc must not name one as live)');
+  const mgrAt = ops.indexOf('<a id="operator-set-script-property-manager-emails">');
+  const mgr = ops.slice(mgrAt, ops.indexOf('<a id=', mgrAt + 10));
+  assert.ok(/NOT the in-app manager\s+gate/.test(mgr) && /column G/.test(mgr) && /assertManagerCaller_/.test(mgr), 'MANAGER_EMAILS: the in-app gate is roster column G; the list gates triggers and receives mail');
+  assert.ok(!/no one passes the\s+`isManager` check/.test(mgr), 'THE REGRESSION: "without it, no one passes isManager" was false');
+  assert.ok(/const mgrRaw = String\(rows\[i\]\[EMP\.IS_MANAGER\]/.test(extractRawFunction('Code.js', 'getEmployeeInfo_')), 'and the code still reads isManager from the roster (non-vacuous)');
+  const ph = R('PROJECT_HEALTH.md');
+  const cur = ph.slice(ph.indexOf('## Current Standing'), ph.indexOf('## Prior standing'));
+  assert.ok(/^Overall \(weighted avg\): \d/m.test(cur) && /^Top vertical priority: \S/m.test(cur) && /^Top horizontal priority: \S/m.test(cur),
+    'the three labels /cycle-init says portfolio tooling parses are in Current Standing');
+  const cyc = /^Cycle: (\d+\w*)/m.exec(R('.cycle/STATE.md'))[1];
+  assert.ok(new RegExp('Cycle ' + cyc + '\\b').test(cur), 'Current Standing names the cycle STATE.md is on (' + cyc + ')');
+  const metricsCycles = new Set(R('.cycle/metrics.csv').split('\n').slice(1).map((l) => l.split(',')[1]).filter(Boolean));
+  const histCycles = new Set([...ph.matchAll(/^\| \d{4}-\d{2}-\d{2} \| (\w+) \|/gm)].map((m) => m[1]));
+  const missing = [...metricsCycles].filter((c) => !histCycles.has(c));
+  assert.deepStrictEqual(missing, [], 'THE REGRESSION: every reflected cycle in metrics.csv has a Score History row (21post–24 were missing)');
+  const rd = R('README.md');
+  assert.ok(!/unlimited\s+retries/.test(rd) && /three failed attempts/.test(rd), 'README: the quiz retry limit, not unlimited retries');
+  assert.ok(!/Managers edit\s+inline/.test(rd) && /Admins author and\s+edit articles/.test(rd), 'README: KB authoring is admin-only');
+  assert.ok(!/with Drive image export/.test(rd) && /KbImages tab/.test(rd), 'README: article images live in the KbImages tab');
+  assert.ok(!/\(\d+ today\)/.test(R('.cycle/config.md')), 'F64: no "(N today)" count in the cycle config');
+});
+
+test('F69 (cycle 25): the visual matrix measures VERTICAL runaway and SQUEEZED text, not just sideways overflow (structural — the Chromium bite is in the block)', () => {
+  const shoot = fs.readFileSync(path.join(__dirname, '../visual/shoot.mjs'), 'utf8');
+  assert.ok(/verticalRunawayPx: shape\.runaway/.test(shoot) && /narrowText: shape\.narrow/.test(shoot), 'every scenario reports both');
+  assert.ok(/document\.documentElement\.scrollHeight/.test(shoot) && /Math\.max\(bottom, vh\)/.test(shoot), 'runaway = the document\'s scroll height past the visible content (or the window)');
+  assert.ok(/cs\.clip && cs\.clip !== 'auto'/.test(shoot) && /r\.width < 2 \|\| r\.height < 2/.test(shoot), 'a visually hidden box is not content — it is the usual escapee (F67, g171)');
+  assert.ok(/cs\.position === 'fixed'/.test(shoot), 'fixed chrome does not extend the document');
+  assert.ok(/own\.length >= 16 && r\.width < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
+  assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = 200;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
+  const readme = fs.readFileSync(path.join(__dirname, '../visual/README.md'), 'utf8');
+  assert.ok(/verticalRunawayPx/.test(readme) && /narrowText/.test(readme), 'the harness README names both measurements');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -4,14 +4,16 @@
 A page whose text layer is empty AND which carries no image is reported. (The
 operator found page 42 of a PDF of the Word manual blank — a page-break
 paragraph that had landed alone on a page.) Needs poppler's pdftotext and
-pdfimages; without them the check says so and passes.
+pdfimages. Without pdftotext the check is NOT RUN and exits 3 — never 0, so a
+missing tool cannot read as a clean PDF (cycle 25 F66); make_all.sh lists it
+under "not checked", and MANUAL_STRICT=1 fails the build on it.
 """
 import re, shutil, subprocess, sys
 
 pdf = sys.argv[1]
 if not shutil.which("pdftotext"):
-    print("pdf check             : skipped (pdftotext not installed)")
-    sys.exit(0)
+    print("pdf check             : NOT RUN (pdftotext not installed)")
+    sys.exit(3)
 text = subprocess.run(["pdftotext", "-layout", pdf, "-"], capture_output=True, text=True).stdout
 pages = text.split("\f")
 if pages and not pages[-1].strip():

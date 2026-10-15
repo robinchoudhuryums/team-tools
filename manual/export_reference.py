@@ -13,8 +13,9 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
                  section each touched — what the Reference Manual reader draws
                  as "Updated". The importer is `kbImportManual` (70_kb.js).
                  `images` (Batch M3) is every `manimg:<key>` a body cites —
-                 {alt, kind, dataUri} — which the import unpacks into the KB
-                 Images folder on Drive; one upload carries everything.
+                 {alt, kind, dataUri} — which the import stores as rows of
+                 the KB spreadsheet's ManualImages tab (M4-FU3: the domain
+                 disables Apps Script's Drive); one upload carries everything.
 
 and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
 

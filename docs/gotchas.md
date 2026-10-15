@@ -2186,6 +2186,11 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   a container query, never a viewport rule). Measured 22–88 → 250–276px at
   390px, and the bubble 49 → 150px in the pop-out. Pinned in F68 (cycle 25),
   which cannot measure. Re-measure with Chromium after any change to the row.
+  **AMENDED (cycle 25 F69, 2026-10-15): the third lesson is measured too.** Each
+  visual scenario reports `narrowText` — an element with 16+ characters of its
+  own text laid out under 48px wide — and the run prints SQUEEZED TEXT, so a
+  `min-width: 0` column squeezed by an unshrinkable sibling no longer needs an
+  eye on the right screenshot to be found.
 
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
@@ -3556,6 +3561,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the MUTATION — renaming `getQaQueue` to `getQaQueueX` kept the substring the
   gate net matches by `indexOf`, so the mutant was still "covered" (F10's re-
   bite used a name that removes the substring).
+  **A TWENTIETH and TWENTY-FIRST (cycle 25 F66 + F29, 2026-10-15): a check that
+  cannot run must not read as a pass, and a build CI never runs is not
+  checked.** The handbook's `check_pdf.py` and `validate_render.py` print-check
+  "skipped" with exit 0 when a tool was missing — a clean result by default.
+  They now exit 3 ("not run"), `make_all.sh` names them under NOT CHECKED, and
+  `MANUAL_STRICT=1` fails on it. And the Python build had never run in CI, so a
+  broken `[[§…]]` reference and a stale generated diagram both reached a green
+  commit; CI now runs the browser-free build and fails on any diff to the
+  committed diagrams or the diagram partial.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -5857,3 +5871,9 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   (the containing rule, and every separator made only inside a callout). The
   height itself needs Chromium (`document.documentElement.scrollHeight`), which
   is F69's planned matrix check.
+  **AMENDED (cycle 25 F69, 2026-10-15): the matrix measures it now.** The visual
+  harness had only `overflowPx` (sideways), so this runaway was invisible to it.
+  Every scenario now reports `verticalRunawayPx` — the document's scroll height
+  past the bottom of everything visibly laid out, visually hidden boxes
+  excluded — and the run prints VERTICAL RUNAWAY over 200px. Verify: re-open a
+  callout chapter with `.kb-co-sep` un-anchored and the reader scenarios report it.

@@ -513,10 +513,49 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     clientW: document.documentElement.clientWidth,
   }));
   const overflowPx = Math.max(0, layout.scrollW - layout.clientW);
+  // Cycle 25 F69 — the two layout failures overflowPx cannot see.
+  // (1) VERTICAL RUNAWAY (F67): a visually hidden `position:absolute` element
+  //     with no positioned ancestor inside its scroller escaped it and made the
+  //     page 8,245px tall for a 900px window — no sideways scroll, no console
+  //     error, just blank pixels. Measured as the document's scroll height past
+  //     the bottom of everything VISIBLY laid out; a visually hidden box (a clip,
+  //     or under 2px a side) is excluded, because it is exactly the escapee.
+  // (2) SQUEEZED TEXT (F68): an unshrinkable sibling squeezed a card's
+  //     `min-width: 0` text column to 22px at 390px. Any element that holds a
+  //     real run of text (16+ characters of its own) laid out narrower than a
+  //     word is reported.
+  const shape = await page.evaluate(() => {
+    const vh = window.innerHeight;
+    let bottom = 0;
+    const narrow = [];
+    const all = document.body ? document.body.getElementsByTagName('*') : [];
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      if ((cs.clip && cs.clip !== 'auto') || (cs.clipPath && cs.clipPath !== 'none' && /inset\(\s*(50|100)%/.test(cs.clipPath))) continue;
+      if (cs.position === 'fixed') continue;   // fixed chrome never extends the document
+      bottom = Math.max(bottom, r.bottom + window.scrollY);
+      let own = '';
+      for (let n = el.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) own += n.nodeValue;
+      own = own.replace(/\s+/g, ' ').trim();
+      // SVG <text> is drawn, not laid out in a column — a scaled-down diagram's labels are not squeezed text.
+      if (own.length >= 16 && r.width < 48 && cs.display !== 'inline' && !(el instanceof SVGElement) && r.right > 0 && r.left < window.innerWidth) {
+        narrow.push({ tag: el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''),
+          w: Math.round(r.width), text: own.slice(0, 24) });
+      }
+    }
+    const scrollH = document.documentElement.scrollHeight;
+    return { runaway: Math.max(0, Math.round(scrollH - Math.max(bottom, vh))), scrollH, narrow: narrow.slice(0, 5) };
+  });
   report.push({
     name, view, missing,
     viewport: vp.width + 'x' + vp.height,
     overflowPx,
+    verticalRunawayPx: shape.runaway,
+    narrowText: shape.narrow,
     errors: Array.from(new Set(errors)).slice(0, 8),
   });
   await ctx.close();
@@ -528,6 +567,18 @@ const overflowing = report.filter((r) => r.overflowPx > 0);
 if (overflowing.length) {
   console.log('\nHORIZONTAL OVERFLOW (the page scrolls sideways — measure, do not eyeball):');
   overflowing.forEach((r) => console.log('  ' + r.name + '  +' + r.overflowPx + 'px @ ' + r.viewport));
+}
+// F69: a page taller than its content by more than this is a runaway, not a margin.
+const RUNAWAY_PX = 200;
+const runaway = report.filter((r) => r.verticalRunawayPx > RUNAWAY_PX);
+if (runaway.length) {
+  console.log('\nVERTICAL RUNAWAY (the page scrolls past its content — an escaped absolute element?):');
+  runaway.forEach((r) => console.log('  ' + r.name + '  +' + r.verticalRunawayPx + 'px blank @ ' + r.viewport));
+}
+const squeezed = report.filter((r) => r.narrowText.length);
+if (squeezed.length) {
+  console.log('\nSQUEEZED TEXT (a text column laid out narrower than a word):');
+  squeezed.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.narrowText.map((n) => n.tag + ' ' + n.w + 'px "' + n.text + '"').join(' · ')));
 }
 const fixtureGaps = report.filter((r) => r.missing.length);
 if (fixtureGaps.length) {

@@ -587,16 +587,32 @@ entry says which it is.
 <a id="operator-set-script-property-manager-emails"></a>
 - **Set Script Property `MANAGER_EMAILS`** to a comma-separated list
   (e.g. `alice@umsupply.com,bob@umsupply.com`). `getManagerEmails_()`
-  reads this before CONFIG; without it, no one passes the
-  `isManager` check and manager features stay locked out.
+  reads this before `CONFIG.MANAGER_EMAILS`. **It is NOT the in-app manager
+  gate:** who counts as a manager inside the app (`emp.isManager`, every
+  `'Manager access required.'` endpoint, the manager tabs) is the roster's
+  column G, `IsManager` (`TRUE`/`yes`/`y`/`1`), read by `getEmployeeInfo_`.
+  This list does three other jobs: it gates the trigger handlers and
+  `installAutomationTriggers` (`assertManagerCaller_` — a caller not on it is
+  refused), it is the RECIPIENT list for every manager email (the digests, the
+  daily brief, training questions, the fallback for a notice whose owner left —
+  FORM-5 / F41), and the managerSource drift detector compares it with the
+  roster's column G. Unset, the triggers cannot be installed and the manager
+  mail goes nowhere, while in-app manager features still work for anyone
+  marked in column G — keep the two in step (Admin → System names a drift).
+  (Corrected cycle 25 F25: this entry used to say no one passes `isManager`
+  without it.)
   **Since cycle 22 S7 (2026-09-25) offboarding a person REMOVES their address
   from this list** (unless it is the last entry) — see the offboarding entry.
 <a id="operator-script-property-admin-emails"></a>
 - **Script Property `ADMIN_EMAILS`** (optional) — comma-separated list of the
-  above-manager **admin tier** (the Manage module's Admin tab). `getAdminEmails_()`
-  reads it; **UNSET/empty falls back to `MANAGER_EMAILS`** so a fresh deploy never
-  hides Admin from the deployer, and **SET narrows** Admin to exactly that list
-  (admins are a SUBSET of managers — an admin always passes `isManager`). Drives
+  above-manager **admin tier** (the Manage module's Admin tab). `empIsAdmin_`
+  reads it (there is no `getAdminEmails_`); **UNSET/empty makes EVERY roster
+  manager an admin** (column G — not `MANAGER_EMAILS`), so a fresh deploy never
+  hides Admin from the deployer, and **SET narrows** Admin to the listed
+  addresses that are ALSO roster managers (admins are a SUBSET of managers — a
+  listed address whose column G is not set is not an admin; F(M-10)).
+  (Corrected cycle 25 F25: this entry used to name a `getAdminEmails_()` and a
+  fallback to `MANAGER_EMAILS`, neither of which exists.) Drives
   `empState.isAdmin` → the `adminOnly` tab gate. **To restrict the Admin tab to
   just yourself, set `ADMIN_EMAILS=you@umsupply.com`** (otherwise every manager
   keeps Admin access). No redeploy needed to change it. This gates the Admin tab

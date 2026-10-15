@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Flags SVG text that spills outside the box or diamond it sits in."""
-import sys, json
+import sys, json, pathlib
 from playwright.sync_api import sync_playwright
-page = sys.argv[1]
+# Cycle 25 F28: resolve a relative path — "file://dist/…" is not a URL Chromium opens.
+page = pathlib.Path(sys.argv[1]).resolve().as_uri()
 JS = r"""
 () => {
   const out = [];
@@ -39,7 +40,7 @@ JS = r"""
 }"""
 with sync_playwright() as p:
     b = p.chromium.launch(); pg = b.new_page(viewport={"width": 1500, "height": 1000})
-    pg.goto("file://" + page); pg.wait_for_timeout(800)
+    pg.goto(page); pg.wait_for_timeout(800)
     res = pg.evaluate(JS); b.close()
 print(f"{len(res)} text elements overflow their container")
 for r in res: print(f"  svg {r['svg']}: {r['over']:>3}px  {'runs into another box: ' if r.get('into') else ''}{r['text']}")

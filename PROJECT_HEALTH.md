@@ -1,6 +1,45 @@
 # Project Health — team-tools
 
 ## Current Standing
+**Cycle 25 OPEN (broad scan of 2026-10-14) — implementing.** The scan's own
+scores (scan-time, the Cycle-2 convention):
+
+Overall (weighted avg): 7.5
+Top vertical priority: Code Clarity & Docs (6.5, tied with Automation Reliability 6.5) — docs that describe gates and stores that no longer exist (F25–F27)
+Top horizontal priority: Operator-Only State Gaps — the lowest Axis-B category at every reflection since cycle 21 (21, 21post, 22, 22post, 23, 24)
+
+| Dimension | Score at scan |
+|---|---|
+| Correctness | 7.5 |
+| Security & Access Control | 8.5 |
+| Data Integrity | 7 |
+| Timezone Correctness | 8.5 |
+| Concurrency Safety | 8 |
+| Test Coverage | 8 |
+| Code Clarity & Docs | 6.5 |
+| Apps Script Best Practices | 8 |
+| Manager UX | 7 |
+| Employee UX | 7.5 |
+| Automation Reliability | 6.5 |
+| UI/UX & Accessibility | 7.5 |
+
+69 findings (F1–F69) plus G1–G5 and ST1–ST5. Batches 1–9 of its plan are
+implemented on `claude/relaxed-newton-ae0s5s` (one block each under
+`.cycle/blocks/25-*`); F19, F23 and F35 are deferred to operator decisions, and
+the E-batches await a go. Not deployed, not reflected — this standing is the
+scan's measurement, and the reflection will score the cycle.
+
+**Last closed cycle: 24 (Seams & Invariants), reflected 2026-10-06 — net 0**
+(1 production fix − 1 Low new failure mode; 21 defensive). Its most significant
+change was F11: the full editor suite now refuses an unmarked instance, the
+first code-side move against the weakest Axis-B category. Cycles 21post–24 are
+in the Score History below; their reflect blocks are
+`.cycle/blocks/{21post,22,22post,23,24}-a-reflect.md`.
+
+(Corrected cycle 25 F26: this section said Cycle 21 for four cycles, and carried
+none of the labels `/cycle-init` says portfolio tooling parses.)
+
+## Prior standing (Cycle 21 close, 2026-09-21)
 **Cycle 21 CLOSED 2026-09-21 — reflected net +1 (2 production fixes − 1 Low new
 failure mode; 1 capability, 9 defensive). Batch R is DEPLOYED and
 operator-confirmed; batch S changed no `web-app/` file and needed no deploy.**
@@ -651,3 +690,8 @@ backlog was implemented):
 | 2026-09-18 | 19 | net +14 (23 prod fixes − 9 new failure modes; 64 defensive) | *(backfilled — the SUM of five separate reflections, blocks 19-a..19-e, spanning 2026-09-11 → 09-18.)* Headliners across the span: the CDR bridge round (H1 post-holiday zero day, which fired on Labor Day; H2 the published answer standard replacing a hand-carried 85), the Batch D doc split, and the F1/F2 server split into fourteen files. |
 | 2026-09-18 | 20 | net +25 (28 prod fixes − 3 new failure modes; 25 defensive) | *(backfilled.)* The `/broad-scan` of 2026-09-17 and ALL SEVEN batches of its plan — 53 findings, 52 implemented, 1 deferred to the operator. Dominant theme: honest failure (8 fixes in Batch 2 alone), and its matching hazard is the cycle-level new failure mode nobody's batch owned — eight helpers widened to `{value, unavailable}`, so a caller written `if (!x)` now reads an unavailable service as present-but-empty. FOUR corrections to the self-reports, which summed to 30−1. |
 | 2026-09-21 | 21 | net +1 (2 prod fixes − 1 Low new failure mode; 1 capability, 9 defensive) | Two batches: **R** the operator-requested Reference two-panel restructure, **S** the overdue Seams & Invariants round. The High shipped live for a working day — the eligibility panel quoted the PICK-UP price on the surface whose subject is delivery. Batch S found no live defect and is scored 0 fixes for it; its output is the two-sided net shape. **Both self-reports survived strict re-derivation** — the second time in the record. The corrections run against the AUDIT instead: its F2 claimed six drifted lists and one was real. Axis-B moves to **Operator-Only State Gaps** after seven cycles of Test Coverage Quality. |
+| 2026-09-23 | 21post | net +8 (8 prod fixes − 0 new failure modes; 11 capabilities; 11 defensive) | Between-cycles operator work on the Reference lookups and area eligibility, T1–T10 (PRs #264–#268). Most significant: T7 turned Area Eligibility into a small composable rule language that delegates to the delivery table and folds fail-closed. Axis-B lowest: Operator-Only State Gaps. |
+| 2026-09-25 | 22 | net +17 (22 prod fixes − 5 new failure modes; 2 capabilities; 84 defensive) | The 2026-09-23 broad scan (99 findings, 0 Critical / 3 High), all nine batches plus follow-ons and the five operator-decided deferrals; deployed 2026-09-25. Most significant: S2 — every sheet write crosses one boundary (`sheetSafe_` / `sheetText_`) and a lint rule refuses a new unwrapped write. Axis-B lowest: Operator-Only State Gaps. |
+| 2026-09-30 | 22post | net −3 (5 prod fixes − 8 new failure modes; 31 capabilities; 6 defensive) | Between-cycles operator stretch: Batches A–E (testing notes) and M0–M5b (the CSR Procedures Manual into Reference), PRs #274–#282. Most significant: M4-FU3 moved the manual's upload and images off Drive after the domain's Drive block surfaced at the first real import. Axis-B lowest: Operator-Only State Gaps. |
+| 2026-10-05 | 23 | net +10 (13 prod fixes − 3 new failure modes; 3 capabilities; 115 defensive) | The 2026-10-01 broad scan (0 Critical / 5 High), all ten batches plus TC-02, the 4a follow-ons and operator-decided Batches 11–15 (PRs #284, #285); deployed 2026-10-05. Most significant: DRV-3 moved article images into the content-keyed KbImages tab. Axis-B lowest: Operator-Only State Gaps. |
+| 2026-10-06 | 24 | net 0 (1 prod fix − 1 Low new failure mode; 0 capabilities; 21 defensive) | Seams & Invariants audit of 2026-10-05 (21 findings), two batches (PR #287); deployed 2026-10-06. Most significant: F11 — the full editor suite refuses an unmarked instance. Axis-B lowest: Operator-Only State Gaps. |
