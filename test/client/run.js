@@ -39232,6 +39232,50 @@ test('B7: the email\'s colours and rows MIRROR the client — option tones, the 
   assert.ok(cli.length > 0);
 });
 
+// ── 25post B8 (operator 2026-10-16) — the in-app idle alert ─────────────────
+test('B8: repIdleMinutes_ — minutes since the last activity, scheduled breaks taken out, and a rep inside a break is not idle (driven)', () => {
+  const ctx = vm.createContext({ Number, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'repIdleMinutes_'), ctx);
+  const f = ctx.repIdleMinutes_;
+  const breaks = [{ startMin: 630, lenMin: 15 }, { startMin: 750, lenMin: 60 }, { startMin: 900, lenMin: 15 }];   // 10:30, 12:30–13:30, 15:00
+  assert.strictEqual(f(600, 560, breaks), 40, '9:20 → 10:00 is 40 minutes');
+  assert.strictEqual(f(800, 760, breaks), 0, 'inside lunch — not idle');
+  assert.strictEqual(f(830, 745, breaks), 25, '12:25 → 13:50: 85 minutes, 60 of them lunch');
+  assert.strictEqual(f(660, 600, breaks), 45, '10:00 → 11:00 crosses the 15-min break');
+  assert.strictEqual(f(600, 600, breaks), 0, 'activity now');
+  assert.strictEqual(f(600, 700, breaks), 0, 'activity "after" now (a clock skew) is never negative');
+  assert.strictEqual(f(600, 560, []), 40, 'no breaks');
+  assert.strictEqual(f(600, 560, undefined), 40);
+});
+
+test('B8: the manager live view flags only a PUNCHED-IN rep idle IDLE_ALERT_MIN+, measured from the later of the last punch and the last gesture TODAY, breaks out, best-effort (driven); the six-hour stamp rides the same gesture', () => {
+  let schedThrows = false;
+  const fmt = (d, tz, f) => { const x = new Date(d.getTime()); const iso = x.toISOString(); return f === 'HH:mm' ? iso.substring(11, 16) : iso.substring(0, 10); };
+  const ctx = vm.createContext({ Number, Math, String, parseInt, Date, IDLE_ALERT_MIN: 30, Utilities: { formatDate: fmt },
+    empShiftSchedule_: () => { if (schedThrows) throw new Error('x'); return { breaks: [{ startMin: 750, lenMin: 60 }] }; } });
+  ['repIdleMinutes_', 'liveIdleMin_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const e = { id: 'E1', timezone: 'UTC', todayStr: '2026-10-16', scheduleRaw: '' };
+  const now = new Date('2026-10-16T11:00:00Z');
+  const f = (status, lastTime, seenIso) => ctx.liveIdleMin_(e, status, lastTime ? { time: lastTime } : null, now, seenIso ? new Date(seenIso).getTime() : 0);
+  assert.strictEqual(f('clocked_in', '09:00:00', null), 120, 'two hours since the clock-in, no gesture');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-16T10:40:00Z'), null, 'a gesture 20 minutes ago — not idle');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-16T10:25:00Z'), 35, 'a gesture 35 minutes ago — idle 35');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-15T10:59:00Z'), 120, 'yesterday\'s gesture is not today\'s activity');
+  assert.strictEqual(f('clocked_in', '10:45:00', null), null, 'a punch 15 minutes ago is activity');
+  assert.strictEqual(f('on_lunch', '09:00:00', null), null, 'on lunch is never idle');
+  assert.strictEqual(f('not_in', null, null), null, 'activity-in / not in is never measured');
+  const lunchNow = new Date('2026-10-16T13:00:00Z');
+  assert.strictEqual(ctx.liveIdleMin_(e, 'clocked_in', { time: '12:00:00' }, lunchNow, 0), null, 'inside the scheduled lunch — not idle');
+  schedThrows = true;
+  assert.strictEqual(f('clocked_in', '09:00:00', null), null, 'an unmeasurable rep is never flagged');
+  assert.ok(/const idleMin = liveIdleMin_\(e, status, last, now, seenLast\[e\.id\]\);/.test(extractRawFunction('Code.js', 'getManagerDashboard')), 'the live view uses it');
+  assert.ok(/const IDLE_ALERT_MIN = 30;/.test(codeSrc), 'the operator\'s 30 minutes');
+  const rp = extractRawFunction('Code.js', 'recordPresence');
+  assert.ok(/put\(PRESENCE_LAST_PREFIX \+ emp\.id, String\(Date\.now\(\)\), PRESENCE_LAST_TTL_SEC\)/.test(rp), 'the gesture also writes the six-hour stamp');
+  assert.ok(/const PRESENCE_LAST_TTL_SEC = 21600;/.test(codeSrc), 'the cache\'s six-hour ceiling');
+  assert.ok(!/idleMin|liveIdleMin_/.test(extractRawFunction('Code.js', 'getTeammateStatus')), 'never on the peer view (g33)');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

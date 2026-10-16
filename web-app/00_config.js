@@ -947,6 +947,14 @@ const SPLIT_REPAIR_MAX_SPAN_DAYS = 92;
 // true. Gating on the rep's schedule/PTO is a logged follow-on.
 const PRESENCE_CACHE_PREFIX = 'presence_v1:';
 const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip names
+// 25post B8 (operator 2026-10-16) — the in-app idle alert. A second stamp of
+// the same gesture time that outlives the 30-minute presence window (the
+// cache's six-hour ceiling), so the manager view can say how LONG a clocked-in
+// rep has been idle; and the threshold, in minutes of no app activity and no
+// punch, scheduled breaks excluded.
+const PRESENCE_LAST_PREFIX = 'presence_last_v1:';
+const PRESENCE_LAST_TTL_SEC = 21600;
+const IDLE_ALERT_MIN = 30;
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
 // Turns the same per-rep tag scan the taxonomy uses into a weekly time series

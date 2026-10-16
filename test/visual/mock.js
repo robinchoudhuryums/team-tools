@@ -1524,13 +1524,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // presenceDisplay_). Ravi is IN by activity (no punch); Leo is the amber flag.
       function ls(name, status, t, tz, abbr, act) { act = act || {}; return { id: 'E-' + name.length + '0' + t, name: name, status: status,
         punchStatus: act.punchStatus || status, activityIn: !!act.activityIn, activeNotIn: !!act.activeNotIn, lastSeenMgr: act.lastSeenMgr || null,
+        idleMin: act.idleMin != null ? act.idleMin : null,   // 25post B8 — Nina is idle 42 min
         lastPunchType: t, lastPunchTime: '08:0' + (name.length % 6) + ':00', lastPunchTimeMgr: '21:3' + (name.length % 6) + ':00',
         timezone: tz, tzAbbr: abbr, empTzAbbr: abbr, mgrTzAbbr: 'CST', recentHours: rh(), recentTotal: 47.75, recentDays: 6 }; }
       return {
         today: todayIso,
         liveStatus: [ls('Avery Blake', 'clocked_in', 'LunchIn', 'Asia/Kolkata', 'IST'),
                      ls('Sam Ortiz', 'on_lunch', 'LunchOut', 'Asia/Manila', 'PHT'),
-                     ls('Nina Patel', 'clocked_in', 'ClockIn', 'America/Chicago', 'CST'),
+                     ls('Nina Patel', 'clocked_in', 'ClockIn', 'America/Chicago', 'CST', { idleMin: 42 }),
                      ls('Ravi Menon', 'clocked_in', null, 'America/Chicago', 'CST', { punchStatus: 'not_in', activityIn: true, lastSeenMgr: '9:42 AM' }),
                      ls('Leo Kim', 'not_in', 'ClockOut', 'America/Chicago', 'CST', { activeNotIn: true, lastSeenMgr: '9:15 AM' })],
         pending: [{ empId: 'E-1088', empName: 'Sam Ortiz', name: 'Sam Ortiz', date: daysAgo(-4), type: 'Full Day', notes: 'Wedding',

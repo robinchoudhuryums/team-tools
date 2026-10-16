@@ -8478,3 +8478,18 @@ test('B6 DOM: a failed Sales/PAP read is named, the app users still list, and th
   h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPAP');
   assert.strictEqual(h.run.calls.filter((c) => c.method === 'getIntakeAgents').length, n + 1, 'the next preview asks again');
 });
+
+section('Manage Time — the idle alert (25post B8)');
+
+test('B8 DOM: an idle rep gets an amber "idle" chip on their Live Status card and a line under Live Status, longest first; nobody idle, no line', () => {
+  const h = boot();
+  const fn = h.read('mgrIdleSummaryHtml_');
+  const rows = [{ name: 'Ana', idleMin: 42 }, { name: 'Bo <x>', idleMin: 95 }, { name: 'Cy', idleMin: null }];
+  const line = fn(rows);
+  assert.ok(/2 reps have been idle 30\+ min while clocked in: Bo &lt;x&gt; \(1 h 35 min\), Ana \(42 min\)/.test(line), line);
+  assert.strictEqual(fn([{ name: 'Cy', idleMin: null }]), '', 'nobody idle, no line');
+  const chip = h.read('mgrIdleChip_')({ idleMin: 42 });
+  assert.ok(/class="emp-active-chip"/.test(chip) && />idle 42 min</.test(chip), 'the amber caution chip');
+  assert.ok(/A long call or work outside the app reads the same/.test(chip), 'and the tooltip says what idle measures');
+  assert.strictEqual(h.read('mgrIdleChip_')({ idleMin: null }), '', 'no chip when not idle');
+});

@@ -805,6 +805,27 @@ function mgrActiveNotInChip_(e, tzAbbr) {
     + (e.lastSeenMgr ? ' · seen ' + e.lastSeenMgr + (tzAbbr ? ' ' + tzAbbr : '') : '');
   return ' <span class="emp-active-chip" title="' + esc(mgrActivityTip_(e, false)) + '">' + esc(label) + '</span>';
 }
+/** 25post B8 (operator 2026-10-16) — a clocked-in rep idle IDLE_ALERT_MIN+
+ *  minutes (no app activity, no punch, scheduled breaks excluded). Amber, the
+ *  card's caution chip; the tooltip says what "idle" measures, because a rep
+ *  on a long call with the app untouched reads the same. */
+function mgrIdleChip_(e) {
+  if (!e || typeof e.idleMin !== 'number') return '';
+  return ' <span class="emp-active-chip" title="No app activity and no punch for ' + e.idleMin +
+    ' minutes while clocked in (scheduled breaks not counted). A long call or work outside the app reads the same.">idle ' +
+    esc(mgrIdleText_(e.idleMin)) + '</span>';
+}
+function mgrIdleText_(min) {
+  return min >= 60 ? Math.floor(min / 60) + ' h ' + (min % 60) + ' min' : min + ' min';
+}
+/** The Needs-you line under Live Status: who is idle, longest first. */
+function mgrIdleSummaryHtml_(liveStatus) {
+  const idle = (liveStatus || []).filter(e => typeof e.idleMin === 'number').sort((a, b) => b.idleMin - a.idleMin);
+  if (!idle.length) return '';
+  return '<div class="mgr-card-sub" style="color:var(--warning-deep)">' + icon('clock', 12) + ' ' + idle.length +
+    (idle.length === 1 ? ' rep has' : ' reps have') + ' been idle 30+ min while clocked in: ' +
+    idle.map(e => esc(e.name) + ' (' + esc(mgrIdleText_(e.idleMin)) + ')').join(', ') + '</div>';
+}
 function renderManagerView(area, data) {
   const counts = { clocked_in: 0, on_lunch: 0, clocked_out: 0, not_in: 0 };
   // D3 (cycle 10): tolerate an unknown status value — `counts[e.status]++` on
@@ -909,7 +930,7 @@ function renderManagerView(area, data) {
             <div class="emp-avatar ${meta.avCls}">${esc(initials)}</div>
             <div class="emp-name" title="${esc(e.name)}">${esc(e.name)}</div>
           </div>
-          <div class="emp-status-line">${line}${mgrActiveNotInChip_(e, mgrTzAbbr)}</div>
+          <div class="emp-status-line">${line}${mgrActiveNotInChip_(e, mgrTzAbbr)}${mgrIdleChip_(e)}</div>
           ${ptoLine}
           ${sparkSection}
           <div class="emp-card-actions">
@@ -1123,6 +1144,7 @@ function renderManagerView(area, data) {
         <span>Live Status</span>
         <span class="count-pill">${counts.clocked_in}/${totalEmp} in</span>
       </h2>
+      ${mgrIdleSummaryHtml_(data.liveStatus)}
       ${liveHtml}
     </div>
 

@@ -3200,6 +3200,36 @@
     "intakePpdEmailUnits_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B8: in-app idle alert",
+   "added": [
+    "IDLE_ALERT_MIN",
+    "PRESENCE_LAST_PREFIX",
+    "PRESENCE_LAST_TTL_SEC",
+    "presenceLastTimes_",
+    "repIdleMinutes_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "recordPresence"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B8: in-app idle alert",
+   "added": [
+    "liveIdleMin_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "recordPresence"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4088,6 +4118,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "873d7db6b6f268c2"
+  },
+  "IDLE_ALERT_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "459ffe49b2aac1bc"
   },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
@@ -5038,6 +5073,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5fe3759db6b8dfbe"
+  },
+  "PRESENCE_LAST_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b22b6b388c112c5"
+  },
+  "PRESENCE_LAST_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "639cc8f6d90c4602"
   },
   "PRESENCE_TTL_SEC": {
    "file": "00_config.js",
@@ -8082,7 +8127,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "49f12c29974e76fd"
+   "sha": "ae33439a7ffe89f3"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -9744,6 +9789,11 @@
    "kind": "function",
    "sha": "c1119478e3152f94"
   },
+  "liveIdleMin_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f811129fdf72bc77"
+  },
   "locCityMatches_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10258,6 +10308,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "d287591dbfa9dea6"
+  },
+  "presenceLastTimes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "163f465b4e751fac"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -10837,7 +10892,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "dce7dffcd27a1802"
+   "sha": "2083a19d07eeee49"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -10893,6 +10948,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "e8d7c8b71dd1f160"
+  },
+  "repIdleMinutes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6707333b28f90c50"
   },
   "repSenderFrom_": {
    "file": "10_core.js",

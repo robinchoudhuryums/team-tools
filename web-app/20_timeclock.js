@@ -2116,6 +2116,7 @@ function getManagerDashboard() {
       const lb = new Date(now); lb.setDate(lb.getDate() - CONFIG.MISSED_PUNCH_LOOKBACK_DAYS);
       e.lookbackStr = fmtDateTz_(lb, tz);
       e.isPh = empIsPhTeam_(empRows[i]);   // 22post C-3
+      e.scheduleRaw = String(empRows[i][EMP.SCHEDULE] || '').trim();   // 25post B8 — the breaks the idle rule skips
       employees.push(e);
       empById[e.id] = e;
     }
@@ -2150,6 +2151,7 @@ function getManagerDashboard() {
     // 22post C-3 — app activity (the presence beacon: a real gesture within
     // PRESENCE_TTL_SEC), with its time for the "last seen" line.
     const seen = presenceTimes_(employees.map(e => e.id));
+    const seenLast = presenceLastTimes_(employees.map(e => e.id));   // 25post B8
     const liveStatus = employees.map(e => {
       const punches = todayPunchesByEmp[e.id] || [];
       const last = punches.length ? punches[punches.length - 1] : null;
@@ -2166,7 +2168,9 @@ function getManagerDashboard() {
       }
       const present = Object.prototype.hasOwnProperty.call(seen, e.id);
       const disp = presenceDisplay_(status, present, e.isPh, false);
+      const idleMin = liveIdleMin_(e, status, last, now, seenLast[e.id]);   // 25post B8
       return {
+        idleMin: idleMin,
         id: e.id, name: e.name, status: disp.status,
         punchStatus: status,   // the punch-derived status, whatever the display says
         activityIn: disp.activityIn, activeNotIn: disp.activeNotIn,
@@ -4092,6 +4096,8 @@ function recordPresence() {
     // live view can say "last seen 10:42"; presenceMap_ still reads any
     // non-blank value (an older '1' stamp included) as present.
     CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
+    // 25post B8: the gesture time again, kept six hours, for the idle alert.
+    CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
     return { success: true };
   } catch (e) {
     return { success: false };
@@ -4128,6 +4134,58 @@ function presenceTimes_(empIds) {
     });
   } catch (e) { /* best-effort — no stamps */ }
   return out;
+}
+/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp (best-effort,
+ *  like presenceTimes_; a failed read is no stamps, which the idle rule reads
+ *  as "measure from the last punch"). */
+function presenceLastTimes_(empIds) {
+  const out = {};
+  try {
+    const keys = (empIds || []).map(id => PRESENCE_LAST_PREFIX + id);
+    if (!keys.length) return out;
+    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    Object.keys(hits).forEach(k => {
+      const n = Number(hits[k]);
+      if (isFinite(n) && n > 1e12) out[k.slice(PRESENCE_LAST_PREFIX.length)] = n;
+    });
+  } catch (e) { /* best-effort */ }
+  return out;
+}
+/** PURE (25post B8, operator 2026-10-16) — how long a clocked-in rep has gone
+ *  with no app activity and no punch, in minutes, with their scheduled breaks
+ *  taken out: the minutes of [lastActivity, now] that fall inside a break do
+ *  not count, and a rep inside a scheduled break right now is not idle (0).
+ *  Every time is minutes of the day in the REP's timezone. */
+function repIdleMinutes_(nowMin, lastActivityMin, breaks) {
+  if (!(nowMin >= 0) || !(lastActivityMin >= 0) || lastActivityMin >= nowMin) return 0;
+  let idle = nowMin - lastActivityMin;
+  for (let i = 0; i < (breaks || []).length; i++) {
+    const b = breaks[i];
+    const bs = Number(b.startMin), be = Number(b.startMin) + Number(b.lenMin);
+    if (!(be > bs)) continue;
+    if (nowMin >= bs && nowMin < be) return 0;
+    const overlap = Math.min(be, nowMin) - Math.max(bs, lastActivityMin);
+    if (overlap > 0) idle -= overlap;
+  }
+  return Math.max(0, idle);
+}
+/** 25post B8 — the idle minutes for one live-status rep, or null: only a rep
+ *  CLOCKED IN by punch is measured (activity-in and lunch never), from the
+ *  later of the last punch and the last gesture TODAY, in the rep's timezone,
+ *  scheduled breaks excluded, at IDLE_ALERT_MIN. Best-effort: a rep it cannot
+ *  measure is never flagged. */
+function liveIdleMin_(e, status, last, now, lastSeenMs) {
+  if (status !== 'clocked_in' || !last) return null;
+  try {
+    const hmToMin = function (hm) { const p = String(hm || '').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); };
+    const nowMin = hmToMin(Utilities.formatDate(now, e.timezone, 'HH:mm'));
+    let actMin = hmToMin(last.time);
+    if (lastSeenMs && Utilities.formatDate(new Date(lastSeenMs), e.timezone, 'yyyy-MM-dd') === e.todayStr)
+      actMin = Math.max(actMin, hmToMin(Utilities.formatDate(new Date(lastSeenMs), e.timezone, 'HH:mm')));
+    const sched = empShiftSchedule_({ id: e.id, scheduleRaw: e.scheduleRaw }, e.timezone);
+    const m = repIdleMinutes_(nowMin, actMin, sched && sched.breaks);
+    return m >= IDLE_ALERT_MIN ? m : null;
+  } catch (err) { return null; }
 }
 /** 22post C-3 — the Philippines team, by the one roster field that still
  *  separates the teams: PAY_CYCLE biweekly (India is monthly; every roster tz
