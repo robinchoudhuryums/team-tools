@@ -8232,7 +8232,7 @@ test('B1 DOM: only the statements the rep made are attestation rows — PMD 24 +
 test('B1 DOM: example text shows in an empty field, in the form\'s language, and is never a value', () => {
   const en = bootAcct('pmd');
   assert.strictEqual(en.field(2).getAttribute('placeholder'), 'e.g. 555-555-0123');
-  assert.strictEqual(en.field(26).getAttribute('placeholder'), 'e.g. weekday mornings; unavailable 10/18', 'ME Availability');
+  assert.strictEqual(en.h.$('#intk-pmd-q26').getAttribute('placeholder'), 'Special notes — e.g. unavailable 10/18', 'ME Availability\'s notes box');
   assert.strictEqual(en.field(2).value, '', 'a placeholder is not a value');
   assert.strictEqual(en.h.window.intakeCollectAcct_('pmd').answers[2], '', 'the collector cannot see it');
   const es = bootAcct('pmd', 'ES');
@@ -8379,4 +8379,61 @@ test('B4 DOM: the real Day Edit opener clears a stale return ticket, and its sav
   const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/tc/script_manager.html'), 'utf8');
   assert.ok(/var savedEmp = _deEmpId;\s*closeOverlay\(document\.getElementById\('day-edit-overlay'\)\);\s*if \(typeof payStmtReturnAfterEdit_ === 'function'\) payStmtReturnAfterEdit_\(savedEmp\);/.test(src),
     'the save success hands the saved rep to the statement\'s return');
+});
+
+section('Intake — the availability grid (25post B5, operator 2026-10-16)');
+
+test('B5: the availability answer round-trips through its one string shape, and text in any other shape reads back as notes', () => {
+  const h = boot();
+  const ser = h.read('intakeAvailSerialize_'), parse = h.read('intakeAvailParse_');
+  const all = []; ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].forEach((d) => ['AM', 'PM'].forEach((t) => all.push(d + ' ' + t)));
+  assert.strictEqual(ser(all, ''), 'Open (any weekday, any time)');
+  assert.strictEqual(ser(all.filter((k) => k !== 'Fri PM'), 'unavailable 10/18'), 'Any weekday, any time except Fri PM — unavailable 10/18');
+  assert.strictEqual(ser(['Mon AM', 'Wed AM', 'Fri AM', 'Tue PM', 'Thu AM', 'Thu PM'], ''), 'Mon, Wed, Fri · AM; Tue · PM; Thu · AM & PM');
+  assert.strictEqual(ser([], 'call after 2'), 'call after 2', 'notes alone');
+  assert.strictEqual(ser([], ''), '');
+  // Every subset of the ten slots survives the round trip.
+  for (let mask = 0; mask < 1024; mask++) {
+    const slots = all.filter((_, i) => mask & (1 << i));
+    const str = ser(slots, mask % 3 ? 'note — with a dash' : '');
+    const back = parse(str);
+    assert.strictEqual(Array.from(back.slots).join('|'), slots.join('|'), 'slots for mask ' + mask + ': ' + str);
+    assert.strictEqual(back.notes, mask % 3 ? 'note — with a dash' : '', 'notes for mask ' + mask);
+  }
+  const legacy = parse('Mornings only, not Fridays');
+  assert.strictEqual(legacy.slots.length, 0); assert.strictEqual(legacy.notes, 'Mornings only, not Fridays', 'an answer typed before the grid is kept whole as notes');
+  assert.strictEqual(parse('Mon · AM; Sat · PM').notes, 'Mon · AM; Sat · PM', 'a near-miss is notes, never half-read');
+});
+
+test('B5 DOM: Open selects every slot and a click takes one out; the answer, the readout and the ring follow; a restored draft repaints the grid', () => {
+  const { h, root, count } = bootAcct('pmd');
+  const box = root.querySelector('.intk-avail[data-avail-idx="27"]');
+  assert.ok(box, 'PPD Availability is a grid');
+  assert.ok(root.querySelector('.intk-avail[data-avail-idx="26"]'), 'and so is ME Availability');
+  const hid = () => box.querySelector('input[type="hidden"]').value;
+  const open = box.querySelector('.intk-avail-open');
+  const before = count();
+  open.click();
+  assert.strictEqual(box.querySelectorAll('.intk-avail-slot[aria-pressed="true"]').length, 10, 'Open selects all ten');
+  assert.strictEqual(open.getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(hid(), 'Open (any weekday, any time)');
+  assert.ok(/Sends as: Open \(any weekday, any time\)/.test(box.querySelector('.intk-avail-out').textContent));
+  assert.notStrictEqual(count(), before, 'PPD Availability is required, so the ring moved');
+  box.querySelector('.intk-avail-slot[data-slot="Fri PM"]').click();
+  assert.strictEqual(open.getAttribute('aria-pressed'), 'mixed');
+  assert.strictEqual(hid(), 'Any weekday, any time except Fri PM');
+  const notes = box.querySelector('.intk-avail-notes');
+  notes.value = 'daughter present';
+  notes.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(hid(), 'Any weekday, any time except Fri PM — daughter present');
+  assert.strictEqual(h.window.intakeCollectAcct_('pmd').answers[27], 'Any weekday, any time except Fri PM — daughter present', 'the collector sends the one string');
+  box.querySelector('.intk-avail-slot[data-slot="Fri PM"]').click();
+  open.click();
+  assert.strictEqual(box.querySelectorAll('.intk-avail-slot[aria-pressed="true"]').length, 0, 'Open on a full grid clears it');
+  assert.strictEqual(hid(), 'daughter present');
+  // A restore (draft or amend) writes the answer; the grid follows it.
+  h.window.intakeApplyAcctAnswers_('pmd', { 26: 'Mon, Wed · AM — unavailable 10/18' });
+  const me = root.querySelector('.intk-avail[data-avail-idx="26"]');
+  assert.deepStrictEqual(Array.from(me.querySelectorAll('.intk-avail-slot[aria-pressed="true"]')).map((b) => b.getAttribute('data-slot')), ['Mon AM', 'Wed AM']);
+  assert.strictEqual(me.querySelector('.intk-avail-notes').value, 'unavailable 10/18');
 });

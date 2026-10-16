@@ -90,6 +90,19 @@
      restored draft or an amend prefill is coloured without a handler. */
   .intk-row.attest { background: var(--warn-soft); border-radius: var(--radius-sm); padding: 8px 10px; border-top-color: transparent; margin-top: 4px; }
   .intk-row.attest:has(.intk-yn[data-val="TRUE"]) { background: var(--accent-soft); }
+  /* 25post B5 — the availability grid (weekdays × AM/PM, Open selects all). */
+  .intk-avail { display: flex; flex-direction: column; gap: 8px; }
+  .intk-avail-open { align-self: flex-start; appearance: none; font: inherit; font-size: .8rem; padding: 5px 12px; border-radius: 999px; border: 1px dashed var(--line-2); background: var(--paper); color: var(--muted); cursor: pointer; }
+  .intk-avail-open[aria-pressed="true"] { border-style: solid; border-color: var(--accent); background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+  .intk-avail-open[aria-pressed="mixed"] { border-color: var(--accent); color: var(--ink); }
+  .intk-avail-grid { display: grid; grid-template-columns: 34px repeat(5, minmax(0, 1fr)); gap: 4px; align-items: center; }
+  .intk-avail-day { font-size: .72rem; font-weight: 600; color: var(--muted); text-align: center; }
+  .intk-avail-time { font-size: .72rem; font-weight: 600; color: var(--muted); }
+  .intk-avail-slot { appearance: none; height: 32px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--paper); cursor: pointer; padding: 0; }
+  .intk-avail-slot:hover { border-color: var(--accent); }
+  .intk-avail-slot[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+  .intk-avail-slot[aria-pressed="true"]::after { content: '✓'; color: var(--paper-card); font-weight: 700; font-size: .8rem; }
+  .intk-avail-out { font-size: .74rem; color: var(--muted); min-height: 1em; }
   /* Other Notes — its own closing section, label bold. */
   .intk-notes-section .sec-title { display: inline-block; }
   .intk-notes-hint { font-size: .8rem; color: var(--muted); margin: -4px 0 8px; }
@@ -636,6 +649,7 @@ var INTAKE_PMD_CLIENT = {
   selects:    {},
   attest:     [24, 25],
   notes:      28,
+  avail:      [26, 27],   // ME / PPD Availability — the weekday × AM/PM grid (25post B5)
 };
 var INTAKE_PAP_CLIENT = {
   headers:    [0, 7, 11, 18],
@@ -664,11 +678,11 @@ var INTAKE_ACCT_PLACEHOLDERS = (function () {
     pmd: {
       EN: extend(shared.EN, { 15: 'e.g. 5\'4"', 16: 'e.g. 182', 17: 'e.g. walker, cane, none', 18: 'e.g. COPD, osteoarthritis',
         19: 'Home, or the facility\'s name', 20: 'MM/DD/YYYY', 23: 'Date, provider and location',
-        26: 'e.g. weekday mornings; unavailable 10/18', 27: 'e.g. any weekday after 1 pm',
+        26: 'Special notes — e.g. unavailable 10/18', 27: 'Special notes — e.g. family present',
         28: 'Anything about the patient or this order as a whole' }),
       ES: extend(shared.ES, { 15: 'p. ej. 5\'4"', 16: 'p. ej. 182', 17: 'p. ej. andador, bastón, ninguno', 18: 'p. ej. EPOC, osteoartritis',
         19: 'Casa, o el nombre del centro', 20: 'MM/DD/AAAA', 23: 'Fecha, proveedor y lugar',
-        26: 'p. ej. mañanas entre semana; no disponible 10/18', 27: 'p. ej. cualquier día después de la 1 pm',
+        26: 'Notas especiales — p. ej. no disponible 10/18', 27: 'Notas especiales — p. ej. con un familiar',
         28: 'Cualquier dato sobre el paciente o la orden en general' }),
     },
     pap: {
@@ -681,6 +695,161 @@ var INTAKE_ACCT_PLACEHOLDERS = (function () {
     },
   };
 })();
+// ── Availability grid (25post B5, operator 2026-10-16) ─────────────────────
+// ME and PPD Availability on the PMD form are a weekday × AM/PM grid with an
+// "Open" button that selects every slot (click a slot to take it out), plus
+// the free-text box for exceptions ("unavailable 10/18"). The answer is still
+// ONE string in the field — the server, the draft, the Sent tab and the email
+// see text exactly as before — written in a fixed English shape so it can be
+// read back into the grid (a draft restore, an amend). Text that is not in
+// that shape (an answer typed before the grid existed) reads back as notes.
+var INTAKE_AVAIL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+var INTAKE_AVAIL_TIMES = ['AM', 'PM'];
+var INTAKE_AVAIL_OPEN = 'Open (any weekday, any time)';
+
+/** PURE — selected slot keys ('Mon AM', …) + notes → the answer string. */
+function intakeAvailSerialize_(slots, notes) {
+  var on = {};
+  (slots || []).forEach(function (k) { on[k] = true; });
+  var all = [], missing = [];
+  INTAKE_AVAIL_DAYS.forEach(function (d) { INTAKE_AVAIL_TIMES.forEach(function (t) {
+    var k = d + ' ' + t; all.push(k); if (!on[k]) missing.push(k);
+  }); });
+  var n = all.length - missing.length;
+  var head = '';
+  if (n === all.length) head = INTAKE_AVAIL_OPEN;
+  else if (n >= 7) head = 'Any weekday, any time except ' + missing.join(', ');
+  else if (n > 0) {
+    var groups = [], byTimes = {};
+    INTAKE_AVAIL_DAYS.forEach(function (d) {
+      var ts = INTAKE_AVAIL_TIMES.filter(function (t) { return on[d + ' ' + t]; });
+      if (!ts.length) return;
+      var key = ts.join(' & ');
+      if (!byTimes[key]) { byTimes[key] = []; groups.push(key); }
+      byTimes[key].push(d);
+    });
+    head = groups.map(function (key) { return byTimes[key].join(', ') + ' · ' + key; }).join('; ');
+  }
+  notes = String(notes == null ? '' : notes).trim();
+  if (head && notes) return head + ' — ' + notes;
+  return head || notes;
+}
+
+/** PURE — the answer string → { slots: [...], notes }. The inverse of
+ *  intakeAvailSerialize_ for every string it writes; anything else is notes. */
+function intakeAvailParse_(str) {
+  str = String(str == null ? '' : str).trim();
+  var cut = str.indexOf(' — ');
+  var head = cut >= 0 ? str.substring(0, cut) : str;
+  var rest = cut >= 0 ? str.substring(cut + 3) : '';
+  var all = [];
+  INTAKE_AVAIL_DAYS.forEach(function (d) { INTAKE_AVAIL_TIMES.forEach(function (t) { all.push(d + ' ' + t); }); });
+  var slots = null;
+  var DAY = '(?:Mon|Tue|Wed|Thu|Fri)';
+  if (head === INTAKE_AVAIL_OPEN) slots = all.slice();
+  else {
+    var ex = /^Any weekday, any time except (.+)$/.exec(head);
+    if (ex) {
+      var miss = ex[1].split(', ');
+      if (miss.every(function (k) { return all.indexOf(k) >= 0; }))
+        slots = all.filter(function (k) { return miss.indexOf(k) < 0; });
+    } else if (head) {
+      var ok = true, picked = [];
+      head.split('; ').forEach(function (g) {
+        var m = new RegExp('^(' + DAY + '(?:, ' + DAY + ')*) · (AM|PM|AM & PM)$').exec(g);
+        if (!m) { ok = false; return; }
+        m[1].split(', ').forEach(function (d) { m[2].split(' & ').forEach(function (t) { picked.push(d + ' ' + t); }); });
+      });
+      if (ok) slots = all.filter(function (k) { return picked.indexOf(k) >= 0; });
+    }
+  }
+  if (!slots) return { slots: [], notes: str };
+  return { slots: slots, notes: rest };
+}
+
+/** The grid control for one availability row. The hidden input carries the
+ *  answer under data-intk-idx, so the collector, the draft, the amend prefill
+ *  and the progress ring read it like any other field. */
+function intakeAvailHtml_(form, i, label, lang, ph) {
+  var es = lang === 'ES';
+  var dayL = es ? { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie' } : null;
+  var dayFull = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday' };
+  var head = '<span></span>' + INTAKE_AVAIL_DAYS.map(function (d) {
+    return '<span class="intk-avail-day">' + esc(dayL ? dayL[d] : d) + '</span>';
+  }).join('');
+  var cells = INTAKE_AVAIL_TIMES.map(function (t) {
+    return '<span class="intk-avail-time">' + t + '</span>' + INTAKE_AVAIL_DAYS.map(function (d) {
+      return '<button type="button" class="intk-avail-slot" data-slot="' + d + ' ' + t + '" aria-pressed="false" aria-label="' +
+        esc(dayFull[d] + (t === 'AM' ? ' morning' : ' afternoon')) + '"></button>';
+    }).join('');
+  }).join('');
+  return '<div class="intk-avail" data-avail-idx="' + i + '" role="group" aria-label="' + esc(label) + '">' +
+      '<button type="button" class="intk-avail-open" aria-pressed="false">' + esc(es ? 'Abierto — cualquier día, cualquier hora' : 'Open — any day, any time') + '</button>' +
+      '<div class="intk-avail-grid">' + head + cells + '</div>' +
+      '<input type="text" class="intk-avail-notes" autocomplete="off" id="intk-' + form + '-q' + i + '" aria-label="' + esc(label) + (es ? ' — notas' : ' — notes') + '"' +
+        ' placeholder="' + esc(ph || (es ? 'Notas especiales — p. ej. no disponible 10/18' : 'Special notes — e.g. unavailable 10/18')) + '">' +
+      '<div class="intk-avail-out"></div>' +
+      '<input type="hidden" data-intk-idx="' + i + '" value="">' +
+    '</div>';
+}
+
+/** Paint one grid from its hidden answer (after a restore or an amend). */
+function intakeAvailPaint_(box) {
+  var hid = box.querySelector('input[type="hidden"]');
+  var p = intakeAvailParse_(hid ? hid.value : '');
+  box.querySelectorAll('.intk-avail-slot').forEach(function (b) {
+    b.setAttribute('aria-pressed', p.slots.indexOf(b.getAttribute('data-slot')) >= 0 ? 'true' : 'false');
+  });
+  var notes = box.querySelector('.intk-avail-notes');
+  if (notes && document.activeElement !== notes) notes.value = p.notes;
+  intakeAvailReadout_(box, p.slots.length);
+}
+function intakeAvailReadout_(box, n) {
+  var total = INTAKE_AVAIL_DAYS.length * INTAKE_AVAIL_TIMES.length;
+  var open = box.querySelector('.intk-avail-open');
+  if (open) open.setAttribute('aria-pressed', n === total ? 'true' : (n ? 'mixed' : 'false'));
+  var hid = box.querySelector('input[type="hidden"]');
+  var out = box.querySelector('.intk-avail-out');
+  if (out) out.textContent = hid && hid.value ? 'Sends as: ' + hid.value : '';
+}
+/** Write the grid + notes back to the hidden answer, then tell the form (the
+ *  draft autosave and the ring listen for 'input'). */
+function intakeAvailCommit_(box) {
+  var slots = [];
+  box.querySelectorAll('.intk-avail-slot[aria-pressed="true"]').forEach(function (b) { slots.push(b.getAttribute('data-slot')); });
+  var notes = box.querySelector('.intk-avail-notes');
+  var hid = box.querySelector('input[type="hidden"]');
+  if (!hid) return;
+  hid.value = intakeAvailSerialize_(slots, notes ? notes.value : '');
+  intakeAvailReadout_(box, slots.length);
+  hid.dispatchEvent(new Event('input', { bubbles: true }));
+}
+/** One delegated handler per form: a slot toggles; Open selects every slot,
+ *  or clears them all when every slot is already selected. */
+function intakeAvailWire_(root) {
+  if (!root || root._intkAvailWired) return;
+  root._intkAvailWired = true;
+  root.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.intk-avail-slot, .intk-avail-open');
+    if (!b) return;
+    var box = b.closest('.intk-avail');
+    if (!box) return;
+    if (b.classList.contains('intk-avail-open')) {
+      var slots = box.querySelectorAll('.intk-avail-slot');
+      var allOn = Array.prototype.every.call(slots, function (x) { return x.getAttribute('aria-pressed') === 'true'; });
+      slots.forEach(function (x) { x.setAttribute('aria-pressed', allOn ? 'false' : 'true'); });
+    } else {
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    }
+    intakeAvailCommit_(box);
+  });
+  root.addEventListener('input', function (e) {
+    if (!e.target.classList || !e.target.classList.contains('intk-avail-notes')) return;
+    var box = e.target.closest('.intk-avail');
+    if (box) intakeAvailCommit_(box);
+  }, true);   // capture: the hidden answer is current before the form's own input listener saves the draft
+}
+
 function intakeAcctPlaceholder_(form, lang, i) {
   var f = INTAKE_ACCT_PLACEHOLDERS[form] || {};
   var m = f[lang] || f.EN || {};
@@ -2155,6 +2324,7 @@ function intakeEnterAcct_(form, title, area) {
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
   }
+  intakeAvailWire_(f);
   intakeSetupImageUpload_(form);
   intakeRenderGallery_(form);   // images live in memory across a preview and a tool switch
   if (!intakeAmendPending_(form)) intakeRestoreDraft_(form);   // I1 — see enterIntakePpdView
@@ -2238,6 +2408,8 @@ function intakeRenderAcctSections_(form, lang) {
         '<button type="button" class="intk-yn-btn yes" data-set="Yes" role="radio" aria-checked="false" onclick="intakePick_(this)">Yes</button>' +
         '<button type="button" class="intk-yn-btn no" data-set="No" role="radio" aria-checked="false" onclick="intakePick_(this)">No</button>' +
       '</div>';
+    } else if ((L.avail || []).indexOf(i) >= 0) {
+      control = intakeAvailHtml_(form, i, label, lang, ph);
     } else if (L.selects[i]) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
@@ -3238,6 +3410,7 @@ function intakeApplyAcctAnswers_(form, answers) {
       if (el) el.value = answers[idx];
     }
   });
+  root.querySelectorAll('.intk-avail').forEach(intakeAvailPaint_);   // 25post B5 — the grid follows its answer
 }
 
 /** PURE (U6, cycle 22) — how much a Clear would erase: the answered
