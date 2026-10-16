@@ -2009,7 +2009,14 @@ entry says which it is.
 - **`Employees` sheet column R = `AccruedThrough`** (operator 2026-08-18) —
   AUTO-MANAGED `yyyy-MM` stamp: the last month whose accrual has been
   credited. Written only by `creditMonthlyPtoAccruals`; leave it alone.
-  Blank = seeds on the next run (stamps last month, credits nothing).
+  Blank = seeds on the next run (stamps last month, credits nothing) — **for a
+  rep with no credit on record. Since 25post (2026-10-16) a blank or
+  unreadable cell first asks the credit history** (the per-rep ledger copy, then
+  the whole AuditLog, newest first): a rep who has been credited before is
+  planned from the newest month paid for, so a cleared or mistyped cell no
+  longer skips last month. Each resolved blank writes a `PtoAccrualStamp`
+  audit row saying whether it seeded or recovered; `previewPtoAccruals` shows
+  the same before the run.
   Hand-edit ONLY to deliberately re-credit or skip months. **A FORWARD stamp
   (ahead of last month) is honored as a deliberate skip and left alone
   — fixed 2026-08-31; before that fix `accrualMonthsToCredit_` returned

@@ -951,7 +951,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1374 | `node test/client/run.js` |
+| Pure harness tests | 1378 | `node test/client/run.js` |
 | DOM harness tests | 264 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 173 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
@@ -961,7 +961,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 370 | `.cycle/config.md` |
+| Invariant library entries | 371 | `.cycle/config.md` |
 | Regression scenarios (S*) | 138 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second

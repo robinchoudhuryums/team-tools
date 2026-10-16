@@ -5,7 +5,7 @@ Cycle: 25 — closed 2026-10-16 (reflected net +13 (16 prod fixes − 3 new fail
 Phase: idle
 Scope: —
 Test Command: manual
-Estimates: **25post monitoring (operator 2026-10-16, after the first post-deploy health email: (1) a digest or job that a deploy or a setting newly puts under watch is judged from when it was first watched, not from the trigger install or the AuditLog window — spanishEscalation and the diagnostics purge both read "trigger may be missing" the morning of the deploy; (2) the monthly accrual line names the run it can see — a job that ran this month but wrote no credit row is not a missing trigger): S (~2 h)** — written before the first edit, 2026-10-16.
+Estimates: **25post monitoring (operator 2026-10-16, after the first post-deploy health email: (1) a digest or job that a deploy or a setting newly puts under watch is judged from when it was first watched, not from the trigger install or the AuditLog window — spanishEscalation and the diagnostics purge both read "trigger may be missing" the morning of the deploy; (2) the monthly accrual line names the run it can see — a job that ran this month but wrote no credit row is not a missing trigger): S (~2 h)** — written before the first edit, 2026-10-16. · **25post accrual stamp (blank AccruedThrough recovered from the credit history): NOT written before the first edit (missed); retro S (~2 h)**, actual ~1.5 h.
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06) and cycle 25's /reflect (2026-10-16). The cadence is every 4.
 Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs; then the 25post monitoring fix, block `.cycle/blocks/25post-monitoring-broad-implement.md`)
 
@@ -13,6 +13,7 @@ Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs; then t
 - (none — cycle 25 is closed; its record is the top block of `.cycle/HISTORY.md`)
 
 ## Completed this cycle
+- 25post-3 (operator 2026-10-16) | web-app/20_timeclock.js, web-app/Tests.js | a blank or unreadable AccruedThrough plans from the newest credit on record (side ledger + whole AuditLog) instead of seeding, an unreadable history fails the run, and every resolved blank writes a PtoAccrualStamp row — INV-385, four pins (nine mutations bitten), the editor test's step 3b; block `.cycle/blocks/25post-accrual-stamp-broad-implement.md`.
 - 25post-1 + 25post-2 (operator 2026-10-16, after the cycle (25) closed) | web-app/00_config.js, web-app/10_core.js | automation liveness is judged from each check's FIRST WATCH (`AUTOMATION_WATCH_SINCE`, seeded from the install), and the monthly accrual line names a run that wrote no row instead of a missing trigger — INV-384, the six 25post pins. Actual ~1.5 h against S (~2 h).
 
 ## Pending / not yet done
@@ -105,4 +106,4 @@ Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs; then t
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 25 was closed on 2026-10-16 by `scripts/cycle-closeout.mjs --close`. Next: an audit opens the next cycle; the carried Pending items are the operator's open steps. After the close, the 25post monitoring fix (two false "trigger may be missing" classes from the first post-deploy health email) landed on the branch — deploy it with the cycle-25 batches; the next /reflect counts it.
+Cycle 25 was closed on 2026-10-16 by `scripts/cycle-closeout.mjs --close`. Next: an audit opens the next cycle; the carried Pending items are the operator's open steps. After the close, the 25post monitoring fix (two false "trigger may be missing" classes from the first post-deploy health email) and the blank-AccruedThrough recovery landed on the branch — deploy it with the cycle-25 batches; the next /reflect counts it.

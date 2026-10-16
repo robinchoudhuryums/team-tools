@@ -11801,7 +11801,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // The DECISIONS moved into planPtoAccrualRun_ (shared with the read-only
   // preview); the credit is now the writes and their order. Both halves are
   // pinned, so the extraction cannot quietly become two implementations.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/);
   assert.ok(plan, 'planPtoAccrualRun_ exists');
   assert.ok(!/buildTimesheetForEmployee_/.test(h[0] + plan[0]),
     'no per-rep timesheet build inside the locked credit run');
@@ -11813,7 +11813,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // — the diagnostic's whole purpose and the last thing a WRITING caller may
   // do with it. A third argument here would credit an arbitrary month and
   // advance the stamp past it.
-  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths\);/.test(h[0]),
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths, accrualCreditHistory_\);/.test(h[0]),
     'the CREDIT passes an EMPTY inspect month — a diagnostic month here would credit an arbitrary one and advance the stamp past it');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
@@ -12061,7 +12061,7 @@ test('R: the accrual RECONCILES late data — top-up, never claw back, fail clos
   assert.strictEqual((h.match(/planAccrualReconcile_\(/g) || []).length, 1, 'one reconcile pass per run');
   // ONE Timesheet read for the whole run — the reconcile window rides the
   // resolver's range rather than opening a second full read inside the lock.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/)[0];
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/)[0];
   assert.strictEqual((plan.match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
     'still exactly ONE range index build, window included');
   assert.ok(!/workedHoursByEmpForRange_\(/.test(recBlock),
@@ -12095,7 +12095,7 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(serverSource());
   const prev = code.match(/function previewPtoAccruals\(monthYm\) \{[\s\S]*?\n\}/);
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/);
   assert.ok(prev && plan, 'previewPtoAccruals and planPtoAccrualRun_ exist');
 
   // ── ONE resolver, shared. Both callers, and nobody re-deriving the plan.
@@ -22545,6 +22545,7 @@ test('F-46: the accrual job REWRITES the reconcile stamp and clears its error on
       Utilities: { formatDate: () => '2026-09' },
       getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [[]] }) }) }),
       planPtoAccrualRun_: () => ({ entries: entries, basis: 80, perDay: 8, hoursIdx: null }),
+      accrualCreditHistory_: () => ({}),
       stampAccrualReconcile_: (r) => { log.stamp = JSON.parse(JSON.stringify(r)); },
       clearAutomationError_: (k) => log.clr.push(k), stampAutomationError_: () => { throw new Error('must not stamp an error'); } };
     vm.createContext(ctx);
@@ -38721,6 +38722,127 @@ test('25post: computeAutomationHealth_ watches every digest and every CHECKED jo
   const items = ctx.automationProblems_({ automationLastRuns: [{ action: 'PtoAccrualCredit', last: null }], automationErrors: {}, auditWindow: { complete: true },
     jobRanAt: { PtoAccrualCredit: { ms: 1, ym: '2026-10', mgr: '2026-10-15 18:00' } } });
   assert.ok(items.some((t) => /ran on 2026-10-15 18:00 but wrote no row/.test(t)) && !items.some((t) => /may be missing/.test(t)), items.join(' | '));
+});
+
+// 25post (operator 2026-10-16, after the health email): a blank or unreadable
+// AccruedThrough SEEDED — last month taken as paid and never credited — which
+// is the enable-time rule, and was also what happened to a rep who HAD been
+// accruing when the cell was cleared or mistyped. No row said so.
+function p25AccCtx_() {
+  const ctx = vm.createContext({ String, Number, Object, JSON, Math, Array, isFinite, parseInt, parseFloat, Date, PTO_ACCRUAL_CATCHUP_MAX_MONTHS: 12,
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+  vm.runInContext(extractConstDecl_('AUDIT').replace(/^const /, 'var '), ctx);
+  vm.runInContext('var normalizeAuditTs_ = function (v) { return String(v || ""); };', ctx);
+  ['addDaysIso_', 'parseAccrualLedger_', 'accrualMonthsToCredit_', 'accrualStampRecovery_', 'accrualHistoryScan_', 'accrualStampNote_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const p25Row = (ts, id, action, notes) => { const r = new Array(10).fill(''); r[0] = ts; r[1] = id; r[4] = action; r[9] = notes; return r; };
+
+test('25post: accrualStampRecovery_ — a stamp that reads is never second-guessed; a blank one plans from the newest credit on record; with no credit (or an unreadable one) it seeds as before (driven)', () => {
+  const ctx = p25AccCtx_();
+  const r = (st, h) => JSON.parse(JSON.stringify(ctx.accrualStampRecovery_(st, h, '2026-10')));
+  assert.deepStrictEqual(r('2026-08', '2026-09'), { recoveredFrom: '', plan: null }, 'an intact stamp wins, whatever the history says');
+  const back = r('', '2026-08');
+  assert.strictEqual(back.recoveredFrom, '2026-08');
+  assert.deepStrictEqual([back.plan.months, back.plan.newStamp, back.plan.seeded], [1, '2026-09', false],
+    'THE REGRESSION: a cleared cell after August was paid owes September — it used to seed to September and credit nothing');
+  const cur = r('', '2026-09');
+  assert.deepStrictEqual([cur.plan.months, cur.plan.newStamp, cur.plan.seeded], [0, '2026-09', false], 'history through last month: nothing owed, the cell is rewritten');
+  assert.deepStrictEqual(r('', ''), { recoveredFrom: '', plan: null }, 'no credit on record: the enable-time seed');
+  assert.deepStrictEqual(r('', '2026-13'), { recoveredFrom: '', plan: null }, 'a malformed history month is no history');
+});
+
+test('25post: accrualHistoryScan_ — the newest MONTH a rep\'s credit rows name wins, not the newest row (a top-up for an older month is often the last row); a rep settles only once the walk is older than the 1st of best+2; an unfound rep keeps the walk going (driven)', () => {
+  const ctx = p25AccCtx_();
+  const credit = (ym, h) => 'hoursWorked=' + h + '; rate=3.08/80h; ptoHours=1; days=0.5; months=' + ym + '; through=' + ym + '; balance=4';
+  // Sheet order (oldest first). The walk reads bottom-up.
+  const rows = [
+    p25Row('2026-09-01 18:00:04', 'PH0001', 'PtoAccrualCredit', credit('2026-08', 150)),
+    p25Row('2026-10-01 18:00:04', 'PH0001', 'PtoAccrualCredit', credit('2026-09', 140)),
+    p25Row('2026-10-05 18:00:09', 'PH0001', 'PtoAccrualCredit', credit('2026-08', 160) + '; TOP-UP +0.1 day(s)'),
+    p25Row('2026-10-06 09:00:00', 'PH0001', 'PunchIn', ''),
+    p25Row('2026-10-07 18:00:00', 'PH0009', 'PtoAccrualCredit', credit('2026-09', 100)),
+  ];
+  const st = { ids: { PH0001: true }, best: {} };
+  ctx.accrualHistoryScan_(rows, st);
+  assert.strictEqual(st.best.PH0001, '2026-09', 'the top-up for August is the newest row; September is the newest month paid for');
+  // Settling, across chunks fed newest-first: the three newest rows alone cannot
+  // settle (best 2026-08 → settle point 2026-09-29, and no row is older), so the
+  // walk asks for the next chunk; that chunk raises best to 2026-09 and its
+  // 2026-09-01 row is older than 2026-10-30, so the walk stops.
+  const st2 = { ids: { PH0001: true }, best: {} };
+  assert.strictEqual(ctx.accrualHistoryScan_(rows.slice(2), st2), false, 'a chunk with nothing older than the settle point reads on');
+  assert.strictEqual(st2.best.PH0001, '2026-08', 'so far, only the top-up');
+  assert.strictEqual(ctx.accrualHistoryScan_(rows.slice(0, 2), st2), true, 'the next chunk finds September, then a row old enough to settle it');
+  assert.strictEqual(st2.best.PH0001, '2026-09', 'and the answer is September — stopping at the first hit would have re-credited it');
+  const st3 = { ids: { PH0001: true }, best: { PH0001: '2026-08' } };
+  assert.strictEqual(ctx.accrualHistoryScan_([p25Row('2026-09-20 08:00:00', 'X', 'PunchIn', '')], st3), true,
+    'best 2026-08 settles below 2026-09-29: a row from the 20th proves nothing older names September');
+  const st4 = { ids: { PH0001: true, PH0002: true }, best: { PH0001: '2026-08' } };
+  assert.strictEqual(ctx.accrualHistoryScan_([p25Row('2026-01-01 08:00:00', 'X', 'PunchIn', '')], st4), false,
+    'a rep with no hit yet keeps the walk going to the top of the log');
+  const st5 = { ids: { PH0002: true }, best: {} };
+  ctx.accrualHistoryScan_(rows, st5);
+  assert.strictEqual(st5.best.PH0002, undefined, 'only the asked-for reps, and only PtoAccrualCredit rows');
+});
+
+test('25post: planPtoAccrualRun_ asks the credit history ONCE, for the blank-stamp reps only, and plans each from what it returns — the rest seed; a history that throws stops the run (driven over the real planner)', () => {
+  const asked = [];
+  let hist = { PH0001: '2026-08' };
+  const ctx = vm.createContext({ String, Number, Object, JSON, Math, Array, isFinite, parseInt, PTO_ACCRUAL_CATCHUP_MAX_MONTHS: 12,
+    CONFIG: { PTO_ACCRUAL_BASIS_HOURS: 80, PTO_HOURS_PER_DAY: 8 },
+    EMP: { ID: 0, NAME: 1, EMAIL: 2, PTO_ACCRUAL: 3, PTO_ENABLED: 4, ACCRUED_THROUGH: 5 },
+    empRosterEmail_: (r) => r[2], empPtoAccrual_: (v) => (v ? Number(v) : null),
+    workedHoursByEmpForRange_: () => ({ byEmp: {}, archivedRows: 0 }), workedHoursForEmpMonth_: () => ({ hours: 0, incompleteDays: 0, orphanDays: 0 }),
+    accrualEarnedByMonth_: () => ({ days: 0, ptoHours: 0 }), monthEndIso_: (ym) => ym + '-28' });
+  vm.runInContext('var accrualStampYm_ = function (c) { var m = /^(\\d{4}-\\d{2})/.exec(String(c == null ? "" : c).trim()); return m ? m[1] : ""; };', ctx);
+  ['accrualMonthsToCredit_', 'accrualMonthList_', 'accrualStampRecovery_', 'planPtoAccrualRun_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rows = [['ID', 'Name', 'Email', 'Q', 'K', 'R'],
+    ['PH0001', 'Rep One', 'one@example.invalid', 3.08, '', ''],        // cleared after August was paid
+    ['PH0002', 'Rep Two', 'two@example.invalid', 3.08, '', '2026-9'],  // mistyped — reads blank, no history
+    ['PH0003', 'Rep Three', 'three@example.invalid', 3.08, '', '2026-08']];
+  const historyFn = (ids) => { asked.push(ids.slice()); return hist; };
+  const run = ctx.planPtoAccrualRun_(rows, '2026-10', '', [], historyFn);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(asked)), [['PH0001', 'PH0002']], 'asked once, for the two blank stamps only');
+  const by = {}; run.entries.forEach((p) => { by[p.emp.id] = p; });
+  assert.deepStrictEqual([by.PH0001.recoveredFrom, by.PH0001.months.join(','), by.PH0001.plan.newStamp, by.PH0001.plan.seeded], ['2026-08', '2026-09', '2026-09', false],
+    'THE REGRESSION: the cleared cell credits September from the history');
+  assert.strictEqual(by.PH0001.stamp, '', 'and keeps the cell\'s own reading, so the job rewrites it');
+  assert.deepStrictEqual([by.PH0002.recoveredFrom, by.PH0002.months.length, by.PH0002.plan.seeded], ['', 0, true], 'no credit on record: seeds as before');
+  assert.deepStrictEqual([by.PH0003.recoveredFrom, by.PH0003.months.join(',')], ['', '2026-09'], 'an intact stamp is planned as always');
+  asked.length = 0;
+  ctx.planPtoAccrualRun_([rows[0], rows[3]], '2026-10', '', [], historyFn);
+  assert.strictEqual(asked.length, 0, 'no blank stamp: the AuditLog walk never runs');
+  assert.throws(() => ctx.planPtoAccrualRun_(rows, '2026-10', '', [], () => { throw new Error('AuditLog unreadable'); }), /AuditLog unreadable/,
+    'an unreadable history is not "no history" — seeding on it would lose the month the fix exists to keep');
+});
+
+test('25post: the job writes a PtoAccrualStamp row for every blank stamp it resolves, after the credit, and the dry run says which way each went (driven + structural)', () => {
+  const ctx = p25AccCtx_();
+  const rec = ctx.accrualStampNote_({ recoveredFrom: '2026-08', months: ['2026-09'], plan: { newStamp: '2026-09' } });
+  assert.ok(/newest credit on record is 2026-08, so the run planned from it \(owed: 2026-09\) and rewrote the cell to 2026-09/.test(rec), rec);
+  const seed = ctx.accrualStampNote_({ recoveredFrom: '', months: [], plan: { newStamp: '2026-09' } });
+  assert.ok(/no credit is on record, so it was SEEDED to 2026-09: .* that month is NOT credited\. If it is owed, set AccruedThrough one month earlier/.test(seed), seed);
+  const job = stripJsComments_(extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths, accrualCreditHistory_\)/.test(job), 'the credit asks the history');
+  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]*?if \(!p\.stamp\) writeAuditLog_\(p\.emp, 'PtoAccrualStamp', '', '', false, 0, accrualStampNote_\(p\)\);/.test(job),
+    'the stamp row rides the cell write, which follows the credit (credit-before-stamp)');
+  assert.ok(job.indexOf("'PtoAccrualStamp'") > job.indexOf('writeWitnessAuditLog_(p.emp, \'PtoAccrualCredit\''), 'after the credit rows');
+  const prev = stripJsComments_(extractRawFunction('Code.js', 'previewPtoAccruals'));
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, inspectYm, recMonths, accrualCreditHistory_\)/.test(prev) && /recoveredFrom: p\.recoveredFrom \|\| ''/.test(prev),
+    'the dry run plans exactly as the job does, and ships the recovery');
+  const hist = stripJsComments_(extractRawFunction('Code.js', 'accrualCreditHistory_'));
+  assert.ok(!/setValue|appendRow|writeAuditLog_|propSetBounded_/.test(hist), 'the history read writes nothing (the dry run calls it)');
+  const sb = vm.createContext({ String, Number, Math, Array, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'formatPtoAccrualPreview_'), sb);
+  const base = { enabled: true, nowYm: '2026-10', tz: 'America/Chicago', basis: 80, hoursPerDay: 8, range: null, archivedRows: 0 };
+  const row = (o) => Object.assign({ id: 'PH0001', name: 'Rep One', rate: 3.08, stamp: '', months: [], seeds: false, recoveredFrom: '', capped: 0,
+    newStamp: '2026-09', hours: null, incompleteDays: 0, orphanDays: 0, onTimesheet: true, wouldCreditDays: 0, wouldCreditPtoHours: 0, zeroReason: '' }, o);
+  const t1 = sb.formatPtoAccrualPreview_(Object.assign({}, base, { reps: [row({ recoveredFrom: '2026-08', months: ['2026-09'], hours: 150, wouldCreditDays: 0.72, wouldCreditPtoHours: 5.78 })] }));
+  assert.ok(/column R is blank or unreadable; the newest credit on record is 2026-08, so the run plans from it/.test(t1), t1);
+  const t2 = sb.formatPtoAccrualPreview_(Object.assign({}, base, { reps: [row({ seeds: true })] }));
+  assert.ok(/SEEDS to 2026-09 \(blank column R, no credit on record\).*If 2026-09 is owed, set column R one month earlier first/.test(t2), t2);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

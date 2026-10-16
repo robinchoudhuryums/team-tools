@@ -3042,6 +3042,34 @@
     "computeAutomationHealth_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: a blank AccruedThrough is recovered from the credit history, and a seed is recorded",
+   "added": [
+    "accrualCreditHistory_",
+    "accrualHistoryScan_",
+    "accrualStampNote_",
+    "accrualStampRecovery_"
+   ],
+   "removed": [],
+   "changed": [
+    "creditMonthlyPtoAccruals",
+    "formatPtoAccrualPreview_",
+    "planPtoAccrualRun_",
+    "previewPtoAccruals"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: the EMP.ACCRUED_THROUGH note describes the blank-stamp recovery (comment only; the enum shape is unchanged)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "EMP"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3769,7 +3797,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6d7f29a50d56da88"
+   "sha": "5faf10242c45115b"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",
@@ -5646,6 +5674,11 @@
    "kind": "let",
    "sha": "4909866ff927fd5a"
   },
+  "accrualCreditHistory_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "68b278979aadda19"
+  },
   "accrualCreditNote_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5660,6 +5693,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "a83d74fdb8a9a971"
+  },
+  "accrualHistoryScan_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8c3f1316ce3511cb"
   },
   "accrualInspectMonthError_": {
    "file": "20_timeclock.js",
@@ -5700,6 +5738,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8fd0c569c66285bf"
+  },
+  "accrualStampNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6b17706a86f39406"
+  },
+  "accrualStampRecovery_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9fbe7981f500cbfe"
   },
   "accrualStampYm_": {
    "file": "20_timeclock.js",
@@ -6684,7 +6732,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "539242b2104e144f"
+   "sha": "83743adbdb6b5a58"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -7379,7 +7427,7 @@
   "formatPtoAccrualPreview_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ea01b5766f99bdff"
+   "sha": "8eeaf3c6dbb075da"
   },
   "formulaHitsFromGrid_": {
    "file": "10_core.js",
@@ -9974,7 +10022,7 @@
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "51bf7cc942048dc0"
+   "sha": "5b4269f5a3e12908"
   },
   "presenceDisplay_": {
    "file": "20_timeclock.js",
@@ -10004,7 +10052,7 @@
   "previewPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "72cc3da87f039930"
+   "sha": "0b7612bcdd7d0b44"
   },
   "previewPtoAccrualsLastMonth": {
    "file": "20_timeclock.js",

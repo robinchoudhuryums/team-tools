@@ -52,6 +52,84 @@ function accrualStampYm_(cell) {
   const m = /^(\d{4}-\d{2})/.exec(String(cell == null ? '' : cell).trim());
   return m ? m[1] : '';
 }
+/** PURE (25post) — the plan for a rep whose column-R stamp reads blank. With a
+ *  credit on record (`historyYm`, the newest month a PtoAccrualCredit row paid
+ *  for) the plan runs from it, exactly as an intact stamp would; without one it
+ *  is the enable-time seed. A stamp that reads is never second-guessed. */
+function accrualStampRecovery_(stampYm, historyYm, nowYm) {
+  if (stampYm) return { recoveredFrom: '', plan: null };
+  const h = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(historyYm || '')) ? String(historyYm) : '';
+  if (!h) return { recoveredFrom: '', plan: null };
+  const plan = accrualMonthsToCredit_(h, nowYm);
+  return plan ? { recoveredFrom: h, plan: plan } : { recoveredFrom: '', plan: null };
+}
+/** PURE (25post) — one chunk of the credit-history walk. `rows` are AuditLog
+ *  rows in sheet order (the walk feeds chunks newest-first and reads each one
+ *  bottom-up); `state` = {ids: {id: true}, best: {id: ym}} is updated in place.
+ *  The newest month a rep's rows name wins, NOT the newest row's month — a
+ *  top-up for an older month is often the newest row. A rep is settled once the
+ *  walk is older than the 1st of best+2 (less two days of timezone margin):
+ *  month best+1 can only have been credited on or after its own month ended, so
+ *  nothing older can name a later month. Returns true once every rep with a hit
+ *  is settled AND no rep is still unfound — or false to read the next chunk. */
+function accrualHistoryScan_(rows, state) {
+  const settledBefore = function (ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym);
+    let y = +m[1], mo = +m[2] + 2;
+    while (mo > 12) { mo -= 12; y += 1; }
+    return addDaysIso_(y + '-' + String(mo).padStart(2, '0') + '-01', -2);
+  };
+  const ids = Object.keys(state.ids);
+  const allSettled = function (tsDay) {
+    return ids.every(function (id) { return state.best[id] && tsDay && tsDay < settledBefore(state.best[id]); });
+  };
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const tsDay = String(normalizeAuditTs_(rows[i][AUDIT.TS]) || '').slice(0, 10);
+    if (allSettled(tsDay)) return true;
+    if (String(rows[i][AUDIT.ACTION]).trim() !== 'PtoAccrualCredit') continue;
+    const id = String(rows[i][AUDIT.EMP_ID]).trim();
+    if (!state.ids[id]) continue;
+    const led = parseAccrualLedger_(rows[i][AUDIT.NOTES]);
+    if (!led) continue;
+    led.months.forEach(function (ym) { if (!state.best[id] || ym > state.best[id]) state.best[id] = ym; });
+  }
+  return false;
+}
+/** 25post — the newest month each rep has been credited for, for a rep whose
+ *  column R reads blank: the per-rep side ledger (newest 12 months) and the
+ *  WHOLE AuditLog, read newest-first in ledger-sized chunks and stopped as soon
+ *  as every rep is settled. Only a blank stamp calls it, so the full walk is the
+ *  rare path. Throws on a failed read — the caller must not seed on "unknown". */
+function accrualCreditHistory_(ids) {
+  const state = { ids: {}, best: {} };
+  (ids || []).forEach(function (id) { if (id) state.ids[String(id)] = true; });
+  const side = readAccrualSideLedger_();
+  Object.keys(state.ids).forEach(function (id) {
+    Object.keys((side.byEmp && side.byEmp[id]) || {}).forEach(function (ym) {
+      if (/^\d{4}-\d{2}$/.test(ym) && (!state.best[id] || ym > state.best[id])) state.best[id] = ym;
+    });
+  });
+  const sheet = getOrCreateAuditSheet_();
+  const width = AUDIT.NOTES + 1;
+  let end = sheet.getLastRow();
+  while (end >= 2) {
+    const start = Math.max(2, end - ACCRUAL_LEDGER_MAX_ROWS + 1);
+    if (accrualHistoryScan_(sheet.getRange(start, 1, end - start + 1, width).getValues(), state)) break;
+    end = start - 1;
+  }
+  return state.best;
+}
+/** 25post — the audit note for a stamp the run had to resolve: seeded (no
+ *  credit on record) or recovered (planned from the newest credit). */
+function accrualStampNote_(p) {
+  return p.recoveredFrom
+    ? 'AccruedThrough was blank or unreadable; the newest credit on record is ' + p.recoveredFrom +
+      ', so the run planned from it (' + (p.months.length ? 'owed: ' + p.months.join(',') : 'nothing owed') +
+      ') and rewrote the cell to ' + p.plan.newStamp
+    : 'AccruedThrough was blank or unreadable and no credit is on record, so it was SEEDED to ' + p.plan.newStamp +
+      ': the balance is taken as current through ' + p.plan.newStamp + ' and that month is NOT credited. ' +
+      'If it is owed, set AccruedThrough one month earlier before the next run';
+}
 function accrualMonthsToCredit_(stampYm, nowYm) {
   const idx = (ym) => {
     const m = /^(\d{4})-(\d{2})$/.exec(String(ym == null ? '' : ym));
@@ -265,7 +343,7 @@ function workedHoursByEmpForRange_(startIso, endIso) {
  *  Each returned entry carries the plan AND the evidence behind it:
  *    {rowIndex, rate, stamp, plan, months, emp,
  *     totalHours, incompleteDays, orphanDays, onTimesheet, earned} */
-function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
+function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths, creditHistory) {
   const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
 
   // Pass 1 — who owes what, and the widest month range any of them needs.
@@ -285,6 +363,27 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
     const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
     const plan = accrualMonthsToCredit_(stamp, nowYm);
     if (!plan) continue;
+    plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: [], recoveredFrom: '',
+      emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
+      totalHours: 0, incompleteDays: 0, orphanDays: 0, onTimesheet: false, earned: null });
+  }
+  // 25post (operator 2026-10-16): a blank or unreadable column R SEEDS — the
+  // month before is taken as already paid and is never credited. That is the
+  // enable-time rule, and it was also what happened to a rep who HAD been
+  // accruing when the cell was cleared or mistyped ("2026-9"): last month was
+  // lost, and no row said so. A blank stamp now asks the credit history first —
+  // the newest month a PtoAccrualCredit row paid for — and plans from THAT, so
+  // the owed months are credited exactly as an intact stamp would have; only a
+  // rep with no credit on record seeds. `creditHistory(ids)` → {id: 'yyyy-MM'};
+  // a history that cannot be read THROWS (never "no history": that would seed).
+  const blankIds = plans.filter((p) => !p.stamp).map((p) => p.emp.id).filter(Boolean);
+  const history = (blankIds.length && typeof creditHistory === 'function') ? (creditHistory(blankIds) || {}) : {};
+  plans.forEach((p) => {
+    const rec = accrualStampRecovery_(p.stamp, history[p.emp.id], nowYm);
+    if (rec.recoveredFrom) { p.recoveredFrom = rec.recoveredFrom; p.plan = rec.plan; }
+  });
+  plans.forEach((p) => {
+    const stamp = p.recoveredFrom || p.stamp, plan = p.plan;
     // INSPECT mode (operator 2026-09-15): report what ONE named month yields,
     // ignoring the column-R stamp. The stamp closes a month permanently, so
     // once a month is settled the ordinary plan reports "nothing owed" — true,
@@ -295,10 +394,8 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
     // would act on this month or considers it settled.
     const months = inspectYm ? [inspectYm] : accrualMonthList_(stamp, plan);
     if (months.length > 0 && (earliestYm === null || months[0] < earliestYm)) earliestYm = months[0];
-    plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: months,
-      emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
-      totalHours: 0, incompleteDays: 0, orphanDays: 0, onTimesheet: false, earned: null });
-  }
+    p.months = months;
+  });
   if (plans.length === 0) {
     return { entries: [], basis: basis, perDay: perDay, range: null, archivedRows: 0 };
   }
@@ -960,7 +1057,7 @@ function creditMonthlyPtoAccruals() {
       const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
       const rows = sheet.getDataRange().getValues();
       const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
-      const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
+      const run = planPtoAccrualRun_(rows, nowYm, '', recMonths, accrualCreditHistory_);   // throws → caught below, nothing written
       // BOTH come from the resolver. `perDay` was left undeclared when the
       // resolver was extracted (the credit used to compute both itself), and the
       // reconcile call below threw ReferenceError on every run — see g118.
@@ -1007,6 +1104,9 @@ function creditMonthlyPtoAccruals() {
         if (p.stamp !== p.plan.newStamp) {
           sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
           if (p.plan.seeded) seeded++;
+          // 25post: a stamp the run had to resolve says so — a seed used to
+          // write nothing at all, so a lost month left no trace.
+          if (!p.stamp) writeAuditLog_(p.emp, 'PtoAccrualStamp', '', '', false, 0, accrualStampNote_(p));
         }
       });
       if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
@@ -1115,7 +1215,7 @@ function previewPtoAccruals(monthYm) {
     // month being looked at, and two overlapping verdicts on one report is how
     // an operator ends up believing the wrong one.
     const recMonths = inspectYm ? [] : accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
-    const run = planPtoAccrualRun_(rows, nowYm, inspectYm, recMonths);
+    const run = planPtoAccrualRun_(rows, nowYm, inspectYm, recMonths, accrualCreditHistory_);
     const out = {
       success: true,
       enabled: !!getFlag_('enablePtoTracking'),
@@ -1134,6 +1234,7 @@ function previewPtoAccruals(monthYm) {
         stamp: p.stamp,
         months: p.months.slice(),
         seeds: !!p.plan.seeded,
+        recoveredFrom: p.recoveredFrom || '',
         capped: p.plan.capped || 0,
         newStamp: p.plan.newStamp,
         // null (not 0) when no month is owed: there is nothing to read hours
@@ -1149,7 +1250,7 @@ function previewPtoAccruals(monthYm) {
         // it does, the real job will NEVER credit what this report shows
         // without a deliberate stamp rewind — the report must say so rather
         // than let the numbers imply a credit is coming.
-        settled: !!(inspectYm && p.stamp && p.stamp >= inspectYm),
+        settled: !!(inspectYm && (p.recoveredFrom || p.stamp) && (p.recoveredFrom || p.stamp) >= inspectYm),
       })),
     };
     // What the next credit run WOULD reconcile — read-only, through the same
@@ -1232,8 +1333,13 @@ function formatPtoAccrualPreview_(o) {
     totalDays += r.wouldCreditDays;
     const who = r.name + ' [' + r.id + ']';
     if (!o.inspectYm && r.seeds) {
-      L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R): credits nothing, by design.');
+      L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R, no credit on record): credits nothing, by design. ' +
+        'If ' + r.newStamp + ' is owed, set column R one month earlier first.');
       return;
+    }
+    if (!o.inspectYm && r.recoveredFrom) {
+      L.push('  · ' + who + ' — column R is blank or unreadable; the newest credit on record is ' + r.recoveredFrom +
+        ', so the run plans from it and rewrites the cell to ' + r.newStamp + '.');
     }
     if (!r.months.length) {
       L.push('  · ' + who + ' — nothing owed (column R already ' + (r.stamp || '(blank)') + ').');

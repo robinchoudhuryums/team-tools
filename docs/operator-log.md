@@ -22,6 +22,12 @@ missing" until its own window has passed; and the monthly accrual line says
 column-R and `previewPtoAccruals` check — when the job ran without crediting.
 Neither of those lines is fixed by `installAutomationTriggers()`.
 
+Also in this round: a **blank or unreadable AccruedThrough (column R)** no
+longer skips last month for a rep who has been credited before — the run plans
+from the newest credit on record and rewrites the cell. A rep with no credit
+on record still seeds (the enable-time rule). Both now write a
+`PtoAccrualStamp` row to the AuditLog; nothing to set.
+
 ## 2026-10-15 — the Reference search signal (cycle 25 E6)
 
 **Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New

@@ -5437,7 +5437,7 @@ function test_triggerGate_nightlyPurges_nonManagerThrows() {
   }, 'manager access required');
 }
 
-// Seed (blank stamp → restamp only, no credit), one in-arrears credit whose
+// A blank stamp after a credit (recovered from the credit history, 25post), one in-arrears credit whose
 // AMOUNT comes from real punched hours (the operator's rule: PTO hours per
 // hours WORKED — 3.08 per 80 by default), idempotent re-run, and the
 // pto-disabled skip that FREEZES the stamp (so a re-enabled rep gets the
@@ -5503,12 +5503,13 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
     const expectDays = Math.round(((16 * RATE / basis) / perDay) * 100) / 100;
     _assertTrue(expectDays > 0, 'the fixture earns a non-zero, non-trivial credit');
-    // 1. SEED — rate on, stamp blank: restamps to last month, credits nothing.
-    qCell.setValue(RATE); rCell.setValue(''); invalidateRosterCache_();
-    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
-    _assertSuccess(res);
-    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'seeded through last month');
-    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore, 0.001, 'seeding credits nothing');
+    // 1. RATE on. (The blank-stamp SEED used to be step 1; since 25post a blank
+    //    stamp first asks the credit history, and this employee's history is
+    //    every earlier run of this test — so whether it seeded or recovered
+    //    depended on the month of the last run. The no-history seed is driven
+    //    in the Node harness; the recovery is step 3b below, after a credit
+    //    this run wrote itself.)
+    qCell.setValue(RATE); invalidateRosterCache_();
     // 2. CREDIT — stamp one month further back: exactly one in-arrears month,
     //    and the credit equals the hours actually worked in it.
     rCell.setValue(backYm); invalidateRosterCache_();
@@ -5521,6 +5522,15 @@ function test_creditPtoAccrual_seedCreditIdempotent() {
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
     _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
       'idempotent re-run credits nothing');
+    // 3b. BLANK after a credit (25post) — the cell is cleared by hand: the run
+    //     plans from the newest credit on record (the one step 2 just wrote),
+    //     rewrites the cell, and credits nothing twice and skips nothing.
+    rCell.setValue(''); invalidateRosterCache_();
+    _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
+    _assertSuccess(res);
+    _assertEq(accrualStampYm_(rCell.getValue()), lastYm, 'a blank stamp is rewritten from the newest credit on record');
+    _assertEqClose(parseFloat(balCell.getValue()) || 0, balBefore + expectDays, 0.001,
+      'a blank stamp after a credit credits nothing twice');
     // 4. PTO-DISABLED — no credit AND the stamp stays frozen.
     ptoCell.setValue('FALSE'); rCell.setValue(backYm); invalidateRosterCache_();
     _asUser(_TEST_MGR_EMAIL, function () { res = creditMonthlyPtoAccruals(); });
