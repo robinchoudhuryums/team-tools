@@ -3109,6 +3109,16 @@
     "updateCallNote"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B1: PMD secondary row 2 → 3 (the primary phone was drawn as optional)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PMD_LAYOUT"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4066,7 +4076,7 @@
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e575416c0b74b196"
+   "sha": "a8e37c6c32dbeb8a"
   },
   "INTAKE_PMD_Q_EN": {
    "file": "00_config.js",

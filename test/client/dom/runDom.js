@@ -8162,3 +8162,82 @@ test('E6 DOM (cycle 25, G4): a typed Reference search sends { signal: true }; th
   const sug = h.run.calls.filter((c) => c.method === 'searchReference').pop();
   assert.ok(!(sug.args[1] && sug.args[1].signal), 'the Issue text never counts');
 });
+
+section('Intake — account form layout (25post B1, operator 2026-10-16)');
+
+function bootAcct(form, lang) {
+  const h = boot();
+  if (lang) h.read('INTAKE_STATE.' + form + '.lang = "' + lang + '"');
+  const area = h.document.createElement('div');
+  area.id = 'intk-test-area';
+  h.document.body.appendChild(area);
+  h.window.intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account', area);
+  const root = h.$('#intk-' + form + '-form');
+  const field = (i) => root.querySelector('[data-intk-idx="' + i + '"]');
+  const type = (i, v) => { const el = field(i); el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); };
+  const count = () => h.$('#intk-' + form + '-count').textContent;
+  return { h, root, field, type, count };
+}
+
+test('B1 DOM: the PMD form draws the PRIMARY phone as required and the secondary phone as optional, and optional rows never count toward the ring', () => {
+  const { h, root, field, type, count } = bootAcct('pmd');
+  const rowOf = (i) => field(i).closest('.intk-row');
+  assert.ok(!rowOf(2).classList.contains('secondary'), 'index 2 (Patient Primary Contact Phone #) is a required row');
+  assert.ok(rowOf(3).classList.contains('secondary'), 'index 3 (Secondary Contact Ph#) is the optional one');
+  // 29 bank entries − 4 headers − 7 optional = 18 required.
+  assert.strictEqual(count(), '0 / 18', 'the ring counts required fields only');
+  type(3, '555-555-0199');
+  assert.strictEqual(count(), '0 / 18', 'filling an optional field does not move the ring');
+  type(28, 'patient is hard of hearing');
+  assert.strictEqual(count(), '0 / 18', 'nor does Other Notes');
+  type(2, '555-555-0123');
+  assert.strictEqual(count(), '1 / 18', 'a required field does');
+  // The collector still carries the optional answers.
+  const p = h.window.intakeCollectAcct_('pmd');
+  assert.strictEqual(p.answers[3], '555-555-0199');
+  assert.strictEqual(p.answers[28], 'patient is hard of hearing', 'Other Notes is still sent');
+  assert.ok(root, 'form mounted');
+});
+
+test('B1 DOM: Other Notes closes the form as its own bold section with a hint, outside every question row', () => {
+  ['pmd', 'pap'].forEach((form) => {
+    const notesIdx = form === 'pap' ? 27 : 28;
+    const { root, field } = bootAcct(form);
+    const ta = field(notesIdx);
+    assert.strictEqual(ta.tagName, 'TEXTAREA', form + ': Other Notes is a multi-line box');
+    assert.ok(!ta.closest('.intk-row'), form + ': it is not one of the question rows');
+    const sec = ta.closest('.intk-notes-section');
+    assert.ok(sec, form + ': it sits in its own section');
+    assert.strictEqual(sec, root.lastElementChild, form + ': and that section closes the form');
+    assert.strictEqual(sec.querySelector('.sec-title').textContent, 'Other Notes', form + ': titled with the bank label');
+    assert.strictEqual(sec.querySelector('.sec-title').getAttribute('for'), ta.id, form + ': the title is the box\'s label');
+    assert.ok(/whole/.test(sec.querySelector('.intk-notes-hint').textContent), form + ': with the "as a whole" hint');
+  });
+});
+
+test('B1 DOM: only the statements the rep made are attestation rows — PMD 24 + 25, PAP 26; a factual Yes/No (PMD 22, PAP 24) is not', () => {
+  const idxs = (form) => {
+    const { root } = bootAcct(form);
+    return Array.from(root.querySelectorAll('.intk-row.attest .intk-yn')).map((g) => g.getAttribute('data-idx')).join(',');
+  };
+  assert.strictEqual(idxs('pmd'), '24,25');
+  assert.strictEqual(idxs('pap'), '26');
+  // The tint follows the toggle's own data-val (CSS :has), so a restored draft
+  // is coloured without a handler — pin the two rules the tint rests on.
+  const css = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/\.intk-row\.attest \{ background: var\(--warn-soft\)/.test(css), 'amber until answered');
+  assert.ok(/\.intk-row\.attest:has\(\.intk-yn\[data-val="TRUE"\]\) \{ background: var\(--accent-soft\); \}/.test(css), 'green once Yes');
+});
+
+test('B1 DOM: example text shows in an empty field, in the form\'s language, and is never a value', () => {
+  const en = bootAcct('pmd');
+  assert.strictEqual(en.field(2).getAttribute('placeholder'), 'e.g. 555-555-0123');
+  assert.strictEqual(en.field(26).getAttribute('placeholder'), 'e.g. weekday mornings; unavailable 10/18', 'ME Availability');
+  assert.strictEqual(en.field(2).value, '', 'a placeholder is not a value');
+  assert.strictEqual(en.h.window.intakeCollectAcct_('pmd').answers[2], '', 'the collector cannot see it');
+  const es = bootAcct('pmd', 'ES');
+  assert.strictEqual(es.field(2).getAttribute('placeholder'), 'p. ej. 555-555-0123', 'Spanish form, Spanish example');
+  const pap = bootAcct('pap');
+  assert.strictEqual(pap.field(15).getAttribute('placeholder'), 'Street, city, state, ZIP', 'PAP MDO Address');
+  assert.strictEqual(pap.field(19), null, 'a Yes/No toggle has no text field to carry one');
+});

@@ -1936,7 +1936,7 @@ const INTAKE_PAP_Q_EN = [
 const INTAKE_PMD_LAYOUT = {
   HEADER_ROWS:             [1, 8, 12, 22],          // 1-based offset rows (matches original HEADER_ROWS check i+1)
   CHECKBOX_ROWS:           [22, 24, 25],
-  SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28],
+  SECONDARY_QUESTION_ROWS: [3, 10, 19, 20, 23, 26, 28], // 0-based; index 3 is the secondary phone (was 2, the primary — 2026-10-16)
   CHECKBOX_WARN_ROWS:      [22],                     // amber check instead of green
   CONDITIONAL_FORMATTING_ROWS: {},
 };

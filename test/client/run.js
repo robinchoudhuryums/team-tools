@@ -23087,7 +23087,7 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   // Behavioural: the server walk equals the client walk for the same answers.
   const ctx = { String, Object, Array, JSON, INTAKE_PPD_Q_EN: sPpd, INTAKE_PPD_NOTES_EN: vm.runInNewContext('(' + sNotes + ')'),
     INTAKE_PMD_Q_EN: arr(srv, /const INTAKE_PMD_Q_EN = \[\n([\s\S]*?)\n\];/), INTAKE_PAP_Q_EN: arr(srv, /const INTAKE_PAP_Q_EN = \[\n([\s\S]*?)\n\];/),
-    INTAKE_PMD_LAYOUT: { HEADER_ROWS: [1, 8, 12, 22], SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28] },
+    INTAKE_PMD_LAYOUT: { HEADER_ROWS: [1, 8, 12, 22], SECONDARY_QUESTION_ROWS: [3, 10, 19, 20, 23, 26, 28] },
     INTAKE_PAP_LAYOUT: { HEADER_ROWS: [1, 8, 12, 19], SECONDARY_QUESTION_ROWS: [3, 10, 20, 21, 22, 25, 27] } };
   vm.createContext(ctx);
   ['intakePpdRowsEn_', 'intakePpdLabelEn_', 'intakeAcctRowsEn_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
@@ -23105,8 +23105,9 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   assert.strictEqual(acct[5].value, '1950-01-01', 'numeric and string keys both resolve');
   // I8 (cycle 22): this pin asserted the defect. SECONDARY_QUESTION_ROWS is
   // 0-based — the email body builder and the client both read it that way.
-  assert.strictEqual(acct[2].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 2 is secondary)');
-  assert.strictEqual(acct[1].isSecondary, false, 'and index 1 (the patient name) is not');
+  assert.strictEqual(acct[3].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 3, the secondary phone, is secondary)');
+  assert.strictEqual(acct[2].isSecondary, false, 'and index 2 (the primary phone) is not — the 2026-10-16 fix');
+  assert.strictEqual(acct[1].isSecondary, false, 'nor index 1 (the patient name)');
   const pap = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PAP', {})));
   assert.strictEqual(pap.length, ctx.INTAKE_PAP_Q_EN.length); assert.strictEqual(pap[18].isHeader, true, 'PAP Details is a header (row 19)');
   // No send or preview path reads a client label any more.

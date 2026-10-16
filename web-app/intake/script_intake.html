@@ -84,6 +84,16 @@
   .intk-row:first-child { border-top: none; }
   .intk-row .q { font-size: .88rem; color: var(--ink); font-weight: 600; }
   .intk-row.secondary .q { font-weight: 400; font-style: italic; color: var(--muted); padding-left: 18px; }
+  /* Attestations (operator 2026-10-16): a statement the rep made to the
+     patient reads amber until it is answered Yes, then green — the same two
+     colours the email gives it. Driven by the toggle's own data-val, so a
+     restored draft or an amend prefill is coloured without a handler. */
+  .intk-row.attest { background: var(--warn-soft); border-radius: var(--radius-sm); padding: 8px 10px; border-top-color: transparent; margin-top: 4px; }
+  .intk-row.attest:has(.intk-yn[data-val="TRUE"]) { background: var(--accent-soft); }
+  /* Other Notes — its own closing section, label bold. */
+  .intk-notes-section .sec-title { display: block; }
+  .intk-notes-hint { font-size: .8rem; color: var(--muted); margin: -4px 0 8px; }
+  .intk-notes-section textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); resize: vertical; min-height: 72px; }
   .intk-row input[type=text], .intk-row input[type=email], .intk-row input[type=date], .intk-row select, .intk-row textarea { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
 
   /* Yes/No color-coded toggle (PPD + account Yes/No items) */
@@ -600,18 +610,76 @@ var INTAKE_PAP_Q = {
 // a Node tripwire (test_intake_layoutCoupling). headers/checkboxes are 0-based
 // FORM_RANGE indices; selects maps an index → its option strings (the
 // conditional-formatting answer keys, so the email coloring matches).
+//
+// Client-only keys (operator 2026-10-16), not mirrored because the server's
+// email reads them its own way:
+//   attest — the checkboxes that are a statement the rep made to the patient,
+//            tinted green while answered Yes and amber until then. A factual
+//            Yes/No (PMD 22 "already had a PME", PAP 24 "sleep study") is not
+//            one: its "No" is an answer, not a gap.
+//   notes  — "Other Notes", drawn as its own closing section, about the
+//            patient or order as a whole. It is optional (it sits in
+//            `secondary` too), so it never counts toward the progress ring.
+// PMD's secondary list named index 2 (the primary phone) until 2026-10-16,
+// so the REQUIRED phone was drawn as optional and "Secondary Contact Ph#"
+// (index 3) as required; PAP's list was always right.
 var INTAKE_PMD_CLIENT = {
   headers:    [0, 7, 11, 21],
   checkboxes: [22, 24, 25],
-  secondary:  [2, 10, 19, 20, 23, 26, 28],
+  secondary:  [3, 10, 19, 20, 23, 26, 28],
   selects:    {},
+  attest:     [24, 25],
+  notes:      28,
 };
 var INTAKE_PAP_CLIENT = {
   headers:    [0, 7, 11, 18],
   checkboxes: [24, 26],
   secondary:  [3, 10, 20, 21, 22, 25, 27],
   selects:    { 19: ['', 'Yes', 'No'], 21: ['', 'Less than 5 years', 'More than 5 years'] },
+  attest:     [26],
+  notes:      27,
 };
+
+// Example text shown in an empty field and gone as soon as the rep types
+// (operator 2026-10-16). Keyed by bank index, per language; a field with no
+// entry has none. Display only — a placeholder is never a value, so the
+// collector, drafts and the email cannot see it.
+var INTAKE_ACCT_PLACEHOLDERS = (function () {
+  var shared = {
+    EN: { 1: 'First and last name', 2: 'e.g. 555-555-0123', 3: 'e.g. 555-555-0123', 4: 'e.g. name@example.com',
+          5: 'MM/DD/YYYY', 6: 'Street, city, state, ZIP', 8: 'e.g. Medicare · 1EG4-TE5-MK72', 9: 'Plan · member ID',
+          10: 'Only if there are no insurance details', 12: 'Doctor\'s name', 13: 'e.g. 555-555-0123', 14: 'e.g. 555-555-0124' },
+    ES: { 1: 'Nombre y apellido', 2: 'p. ej. 555-555-0123', 3: 'p. ej. 555-555-0123', 4: 'p. ej. nombre@ejemplo.com',
+          5: 'MM/DD/AAAA', 6: 'Calle, ciudad, estado, código postal', 8: 'p. ej. Medicare · 1EG4-TE5-MK72', 9: 'Plan · ID de miembro',
+          10: 'Solo si no hay datos del seguro', 12: 'Nombre del doctor', 13: 'p. ej. 555-555-0123', 14: 'p. ej. 555-555-0124' },
+  };
+  function extend(base, more) { var o = {}; Object.keys(base).forEach(function (k) { o[k] = base[k]; }); Object.keys(more).forEach(function (k) { o[k] = more[k]; }); return o; }
+  return {
+    pmd: {
+      EN: extend(shared.EN, { 15: 'e.g. 5\'4"', 16: 'e.g. 182', 17: 'e.g. walker, cane, none', 18: 'e.g. COPD, osteoarthritis',
+        19: 'Home, or the facility\'s name', 20: 'MM/DD/YYYY', 23: 'Date, provider and location',
+        26: 'e.g. weekday mornings; unavailable 10/18', 27: 'e.g. any weekday after 1 pm',
+        28: 'Anything about the patient or this order as a whole' }),
+      ES: extend(shared.ES, { 15: 'p. ej. 5\'4"', 16: 'p. ej. 182', 17: 'p. ej. andador, bastón, ninguno', 18: 'p. ej. EPOC, osteoartritis',
+        19: 'Casa, o el nombre del centro', 20: 'MM/DD/AAAA', 23: 'Fecha, proveedor y lugar',
+        26: 'p. ej. mañanas entre semana; no disponible 10/18', 27: 'p. ej. cualquier día después de la 1 pm',
+        28: 'Cualquier dato sobre el paciente o la orden en general' }),
+    },
+    pap: {
+      EN: extend(shared.EN, { 15: 'Street, city, state, ZIP', 16: 'e.g. 5\'4"', 17: 'e.g. 182', 20: 'e.g. ResMed AirSense 10',
+        22: 'e.g. ResMed AirFit F20, medium', 25: 'Approximate date and provider',
+        27: 'Anything about the patient or this order as a whole' }),
+      ES: extend(shared.ES, { 15: 'Calle, ciudad, estado, código postal', 16: 'p. ej. 5\'4"', 17: 'p. ej. 182', 20: 'p. ej. ResMed AirSense 10',
+        22: 'p. ej. ResMed AirFit F20, mediana', 25: 'Fecha aproximada y proveedor',
+        27: 'Cualquier dato sobre el paciente o la orden en general' }),
+    },
+  };
+})();
+function intakeAcctPlaceholder_(form, lang, i) {
+  var f = INTAKE_ACCT_PLACEHOLDERS[form] || {};
+  var m = f[lang] || f.EN || {};
+  return m[i] || '';
+}
 
 // ── Operator additions 2026-08-25 ───────────────────────────────────────────
 // PPD free-text notes (the PMD/PAP banks already end with "Other Notes"; PPD
@@ -2086,7 +2154,7 @@ function intakeEnterAcct_(form, title, area) {
   intakeConsumeAmendPrefill_(form);   // amend snapshot AFTER the draft restore
 }
 
-// Progress for the account forms: count answered (non-header) fields and drive
+// Progress for the account forms: count answered required fields and drive
 // the form's ring via the shared updater. Mirrors intakeAcctGetVal_'s element
 // lookup (a .intk-yn group is "answered" only when its data-val is set, so a
 // checkbox's default 'FALSE' doesn't inflate the count).
@@ -2100,6 +2168,9 @@ function intakeAcctUpdateProgress_(form) {
   for (var i = 0; i < qs.length; i++) {
     if (!String(qs[i] || '').trim()) continue;
     if (L.headers.indexOf(i) >= 0) continue;
+    // Optional rows (the secondary list, Other Notes among them) never count:
+    // the ring measures what the form needs, not what it could hold.
+    if (L.secondary.indexOf(i) >= 0) continue;
     total++;
     var grp = root.querySelector('.intk-yn[data-idx="' + i + '"]');
     if (grp) { if (String(grp.getAttribute('data-val') || '')) answered++; }
@@ -2122,10 +2193,25 @@ function intakeRenderAcctSections_(form, lang) {
       rows + '</div>';
     rows = '';
   }
+  var notesHtml = '';
   for (var i = 0; i < qs.length; i++) {
     var label = String(qs[i] || '');
     if (L.headers.indexOf(i) >= 0) { flush(); sectionTitle = label; continue; }
+    var ph = intakeAcctPlaceholder_(form, lang, i);
+    var phAttr = ph ? ' placeholder="' + esc(ph) + '"' : '';
+    if (i === L.notes) {
+      // Other Notes closes the form as its own section, so it reads as notes
+      // about the patient or order as a whole rather than as part of the
+      // availability rows above it (operator 2026-10-16).
+      notesHtml = '<div class="panel intk-section intk-notes-section">' +
+        '<label class="section-kicker sec-title" for="intk-' + form + '-q' + i + '">' + esc(label) + '</label>' +
+        '<div class="intk-notes-hint">' + esc(lang === 'ES' ? 'Sobre el paciente o la orden en general (opcional)' : 'About the patient or this order as a whole (optional)') + '</div>' +
+        '<textarea rows="3" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + phAttr + '></textarea>' +
+      '</div>';
+      continue;
+    }
     var isSecondary = L.secondary.indexOf(i) >= 0;
+    var isAttest = (L.attest || []).indexOf(i) >= 0;
     var control;
     if (L.checkboxes.indexOf(i) >= 0) {
       // Yes/No color-coded toggle storing TRUE/FALSE (preserves the server
@@ -2147,14 +2233,14 @@ function intakeRenderAcctSections_(form, lang) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
-      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">';
+      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + phAttr + '>';
     }
     var isYnSel = L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No';
     var labelFor = (L.checkboxes.indexOf(i) >= 0 || isYnSel) ? '' : ' for="intk-' + form + '-q' + i + '"';
-    rows += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + '"><label class="q"' + labelFor + '>' + esc(label) + '</label>' + control + '</div>';
+    rows += '<div class="intk-row' + (isSecondary ? ' secondary' : '') + (isAttest ? ' attest' : '') + '"><label class="q"' + labelFor + '>' + esc(label) + '</label>' + control + '</div>';
   }
   flush();
-  return out;
+  return out + notesHtml;
 }
 
 // Read a single account answer by index. Any .intk-yn toggle (checkbox →
