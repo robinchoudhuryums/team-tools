@@ -488,6 +488,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `appendRow`; it never throws into the digest. Verify: the G3 rows pin (no
   lock, `appendRow(sheetSafeRow_(row))`, a store that will not open returns 0).
 
+  **25post (operator 2026-10-16, the team rollout): a note save holds its
+  REP's lease, not the project lock.** Every punch and every note save across
+  the team queued on the one ScriptLock, though two reps' notes live in two
+  different Sheets. Apps Script offers no lock per resource here — the web app
+  runs as one user (so the user lock is one lock) and is bound to no document
+  (so there is no document lock) — so the six note actions a rep makes all day
+  (submit, edit, flag, resolve, delete, pin) take a LEASE on their own Sheet:
+  `CN_REP_LEASE_<sheetId>` = {token, until}, checked and set under the
+  ScriptLock for milliseconds, held for the save, released in `finally` by
+  token. **The rule that keeps it correct:** every function that holds the
+  ScriptLock and opens a rep Sheet opens it through
+  `getCallNotesSheetForWrite_`, which first waits out that rep's lease — the
+  manager actions, the email senders, the form submit, the tag transforms and
+  the nightly archive / purge / reconcile — because a lock holder's write
+  through a HELPER (the purge's `purgeSheetRowsOlderThan_`) is invisible to a
+  scan of its own body. A leased action never takes the ScriptLock as well. A
+  killed save's lease expires after 60 seconds. Verify: the 25post lease pins
+  (the derived writer net, driven acquire / release / wait).
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are

@@ -7497,6 +7497,7 @@ test('CDR: the health card tones off likelyMismatches, never the raw lists', () 
   });
   // …and driven behaviourally through the REAL function.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || {};
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const r = fn({ cdr: { ok: true, unmatchedAgents: Array(78).fill('x'), rosterWithNoCdr: Array(12).fill('y'), likelyMismatches: [] } }, null);
   const cdrBad = r.items.filter((f) => f.area === 'cdr' && f.severity !== 'ok');
@@ -20078,6 +20079,7 @@ test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; 
 
 test('PR2-1: cnHealthFindings_ — an all-clear payload yields zero non-ok items; a failed load is a fail finding, never silence', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const worstFn = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindingsWorst_');
   assert.strictEqual(typeof fn, 'function');
@@ -20197,6 +20199,8 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnPropStoreHtml_');     // Q3 sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');  // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaHtml_');
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -22315,6 +22319,7 @@ test('F-08/F-09 server: the CDR Storage Health row carries the standard and the 
 
 test('F-08/F-09 client: the CDR-area findings — a published standard and a listed calendar are the ok facts; every fallback source WARNS and names what the app does meanwhile; an older payload raises neither', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnStandardFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnHolidayFindings_');
@@ -22480,6 +22485,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
 
   // Client: the finding reads the stamp's real field (`message`; it read `error`).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { MissedPunchAlerts: { at: 't', message: 'why it broke' } } }, null).items.find((x) => x.id === 'automationError:MissedPunchAlerts');
   assert.ok(f && f.severity === 'fail' && /why it broke/.test(f.detail), 'the Admin finding shows the stamped message, never "unknown error"');
@@ -22636,6 +22642,11 @@ test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read �
       return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
                getRange: () => ({ setValue() {} }),
                getParent: () => ({ getSheetByName: () => null }) };   // ADM-12: no archive tab here
+    }, getCallNotesSheetForWrite_: (emp) => {
+      if (emp.id === 'E-2') throw new Error('You do not have permission');
+      return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
+               getRange: () => ({ setValue() {} }),
+               getParent: () => ({ getSheetByName: () => null }) };   // ADM-12: no archive tab here
     },
     CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } } };
   vm.createContext(ctx);
@@ -22670,6 +22681,7 @@ test('F-11: the DeptRequests store is PHI-ADJACENT — probed by Storage Health 
   assert.ok(/'DEPT_REQUESTS_SS_ID'/.test(mock) && /key: 'DEPT_REQUESTS_SS_ID'/.test(mock), 'both the Storage Health and deploy-readiness fixtures carry the row (INV-185)');
   // The findings derivation warns on the fallback (it is not a no-fallback store).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'x', stores: [{ label: 'Dept Requests (PHI-adjacent)', cls: 'PHI-adjacent', prop: 'DEPT_REQUESTS_SS_ID', configured: false, note: 'falls back' }] }).items.find((x) => x.id === 'store:DEPT_REQUESTS_SS_ID');
   assert.ok(f && f.severity === 'warn', 'unset Dept Requests store is a WARNING (it falls back onto payroll), never the no-fallback ok');
@@ -23611,6 +23623,7 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
 
 test('DRV-4: the Admin System tab reports Drive — finding + inventory line, and renders nothing when unprobed', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -23655,7 +23668,7 @@ test('DRV-4: the Admin System tab reports Drive — finding + inventory line, an
   assert.ok(/&lt;img/.test(hostile));
   // The line sits ABOVE the table, in the Storage section the cards link to.
   const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
-  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\)[\s\S]{0,120}?hdr \+ table/.test(panel),
+  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\)[\s\S]{0,200}?hdr \+ table/.test(panel),
     'rendered before the inventory table');
   assert.ok(panel.indexOf('cnDriveAccessHtml_') < panel.indexOf('cnMailBccHtml_'),
     'and above the F3 mail-routing line, which joined it as the second capability fact');
@@ -23722,6 +23735,7 @@ test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywh
   // The finding: three states, and the off-domain one BLOCKS.
   const cnCode = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   const sb = vm.createContext({ String, Number, Boolean, Object, Array, JSON, Math, RegExp });
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const findings = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const forBcc = (mb) => (findings(null, { stores: [], mailBcc: mb }).items || [])
     .filter((i) => i.id === 'mailBcc')[0];
@@ -27646,7 +27660,11 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
       // E6 (cycle 25): a best-effort telemetry appender may tryLock and SKIP
       // when busy — it still holds the SCRIPT lock for the append.
       const lAt = body.search(/\b(waitLock|tryLock)\(/);
-      if (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      // 25post: a note save holds its rep's LEASE instead — the lease is what
+      // serialises every writer of that rep's Sheet (cnAcquireRepLease_).
+      const leaseAt = body.search(/\bcnAcquireRepLease_\(/);
+      const leased = leaseAt >= 0 && leaseAt < aAt;
+      if (!leased && (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt)))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
       if (!/appendRowsTextSafe_\([^;]*?, [A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
     }
   }
@@ -27873,6 +27891,7 @@ test('A2: the System tab renders EVERY line the health dot counts — driven: th
   s2.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   vm.runInContext(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8').match(/var CN_SYS_CLIENT_KINDS_ = [\s\S]*?\n\};/)[0]
     .replace(/var /g, 'this.'), s2);
+  loadFunction(s2, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const out = fn(Object.assign({}, report, { problems: items }), null).items.filter((f) => f.area === 'automation' && f.severity !== 'ok');
   const ids = out.map((f) => f.id);
@@ -28014,6 +28033,7 @@ test('A6: a ClientErrors read that FAILED carries an error — the panel and the
   const out = ctx.clientErrorsSummary_('America/Chicago');
   assert.ok(out.count === 0 && /timed out/.test(out.error), 'nothing invented, and the failure rides the summary');
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ clientErrors: { count: 0, last24h: 0, windowDays: 7, error: 'Service Spreadsheets timed out' } }, null).items.find((x) => x.id === 'clientErrors');
   assert.ok(f && f.severity === 'warn' && /could not be read/.test(f.title), 'the finding is a warning, not the all-clear');
@@ -28722,7 +28742,7 @@ test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the
       assertManagerCaller_() {}, getNoteRetentionDays_: () => opts.days,
       getEmployeeRosterRows_: () => roster, cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
       LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
-      getCallNotesSheet_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; },
+      getCallNotesSheet_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; }, getCallNotesSheetForWrite_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; },
       purgeSheetRowsOlderThan_: () => 1,
       writeAuditLog_: (e, a, d, t, x, y, notes) => log.audit.push(notes), _SYSTEM_AUDIT_EMP_: {},
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
@@ -28833,7 +28853,7 @@ test('F57 (cycle 25): the Admin "Reconcile Sheets" button runs the pass WITHOUT 
       assertManagerCaller_() {}, getEmployeeInfo_: () => ({ email: 'mgr@x' }), getEmployeeRosterRows_: () => roster,
       cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
       LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
-      getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
+      getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; }, getCallNotesSheetForWrite_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
       writeAuditLog_: (e, action) => log.audit.push(action),
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
     autoContract_(ctx);
@@ -32055,6 +32075,7 @@ test('DRV-1 + QA-1 (cycle 23): driveAccessStatus_ EXERCISES the service — gran
 
 test('DRV-1 + QA-1 (cycle 23): the System tab reads a disabled service as a FAIL naming every surface, and never advises clearing a folder property that may still hold the images (driven)', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -32178,6 +32199,7 @@ test('DRV-2 (cycle 23): a disabled Drive is not N broken embeds — the scan sto
   const html = panel({ total: 3, reachable: 0, probed: 0, broken: [], driveUnavailable: true, driveError: 'Drive is <off>' });
   assert.ok(/could not be checked/.test(html) && !/all Drive files reachable/.test(html) && !/deleted\/moved/.test(html), html);
   assert.ok(/Drive is &lt;off&gt;/.test(html), 'escaped');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'Asia/Kolkata', stores: [], kbEmbeds: { total: 3, broken: [], driveUnavailable: true, driveError: 'off' } })
     .items.filter((x) => x.id === 'kbEmbeds')[0];
@@ -32449,6 +32471,7 @@ test('4a-FU1 (cycle 23): a stale heartbeat whose job ran and FAILED inside the w
   assert.ok(/the trigger may be disabled/.test(lines({ key: 'urgent', stale: true, last: 'x', failedAt: '' })[0]), 'with no recent failure the trigger is still the suspect');
   // The client finding.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const find = (d) => fn({ digests: [d], automationErrors: {} }, null).items.filter((f) => f.id === 'digest:' + d.key)[0];
   let f = find({ key: 'urgent', stale: true, last: 'x', failedAt: '2026-10-01 08:00:00' });
@@ -32494,6 +32517,7 @@ test('4a-FU3 (cycle 23): every stamped automation failure carries a human LABEL 
   });
   // The readers.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { ManagerDailyBrief: { at: 't', message: 'quota', label: 'Manager daily brief' } }, digests: [] }, null)
     .items.filter((x) => x.id === 'automationError:ManagerDailyBrief')[0];
@@ -32531,7 +32555,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
       SpreadsheetApp: { openById: (id) => { opened.push(id); return { getName: () => 'n-' + id, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSpreadsheetLocale: () => 'en_US', getUrl: () => 'u' }; } },
       tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', KB_SEARCH_SIGNAL_DAYS: 90, cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
       qaReviewRetentionDays_: () => 0, getEmployeeRosterRows_: () => [['h']], cnEnrolledSheetId_: () => '', EMP: { NAME: 0 },
-      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null,
+      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null, mailQuotaStatus_: () => null,
       KB_EMBED_SCAN_CAP: 1, DRIVE_WRITE_SCOPE: 's', DRIVE_REAUTH_HINT: 'h', KB_IMAGES_FOLDER_PROP: 'p' };
     vm.createContext(ctx);
     ['storePlaceholder_', 'getStorageHealth'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
@@ -32556,6 +32580,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
     { digests: [{ key: 'eod', last: 'x', stale: false }], cdr: { ok: true }, problems: [] }, 1).items;
   ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => assert.strictEqual(items.find((i) => i.key === 'store_' + k).status, 'warn', 'readiness warns on the ' + k + ' fallback (it read ok)'));
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const sev = (st) => (fn(null, { configTimezone: 'Asia/Kolkata', stores: [st] }).items.filter((x) => x.id === 'store:FORMS_SS_ID')[0] || {}).severity;
   assert.strictEqual(sev(unset.FORMS_SS_ID), 'warn', 'the System tab warns on the server\'s real fallback shape (the F-11 rule, now reachable)');
@@ -32588,6 +32613,7 @@ test('ADM-09 (cycle 23): deploy readiness reads the ONE problem list the health 
 test('ADM-07 (cycle 23): the Reference-lookups diagnostics are FINDINGS — each warning the panel shows reaches "Needs attention", a failed load is a finding, and a clean table is one ok line (driven)', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnOopFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const ids = (oop) => Array.from(fn(null, null, oop).items.filter((x) => /^oop/.test(x.id)).map((x) => x.id + ':' + x.severity + ':' + x.area));
   assert.deepStrictEqual(fn(null, null, null).items.filter((x) => /^oop/.test(x.id)).length, 0, 'null = not loaded yet: nothing, not a clean verdict');
@@ -34504,7 +34530,7 @@ test('ADM-12 (cycle 23): a cross-rep tag rename writes its STARTED row first, wa
   const ctx = b10Ctx_(['applyTagTransformAcrossReps_', 'cnTagSkippedNote_', 'cnTagAdminStartAudit_', 'renameCallNoteTag', 'sheetSafe_', 'normalizeTagForAdmin_'], {
     EMP: { ID: 0 }, CN: { SUBFORM_DATA: 3 }, CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } },
     getEmployeeRosterRows_: () => [['h'], ['E-1']], cnEnrolledSheetId_: () => 'sheet-1',
-    getCallNotesSheet_: () => live,
+    getCallNotesSheet_: () => live, getCallNotesSheetForWrite_: () => live,
     arraysEqual_: (a, b) => JSON.stringify(a) === JSON.stringify(b),
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }),
@@ -35525,7 +35551,7 @@ test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable 
       getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'EOD'], ['b@x', 'B', 'Bob', 'EOD'], ['c@x', 'C', 'Cy', 'NOT']],
       cnEnrolledSheetId_: () => 'sheet', safeTimezone_: (t) => t,
       Utilities: { formatDate: (d, tz, f) => (f === 'H' ? (tz === 'EOD' && opts.hourMatches ? '17' : '3') : '2026-10-05') },
-      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
+      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; }, getCallNotesSheetForWrite_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
       readCallNoteRowsInRange_: () => [{ row: ['2026-10-05', 'action', ''] }],
       cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
       sendOneRepEodDigest_: (e) => { if (opts.sendFails && e.id === 'B') throw new Error('Service invoked too many times'); },
@@ -36945,7 +36971,9 @@ test('F31 (cycle 25): a training question asked from a card emails the managers 
   let blob = '{}';
   let lockHeld = false;
   ctx.getEmployeeInfo_ = () => ({ id: 'E1', name: 'Ana' });
-  ctx.LockService = { getScriptLock: () => ({ waitLock() { lockHeld = true; }, releaseLock() { lockHeld = false; } }) };
+  // 25post: the card path holds its rep's LEASE, not the ScriptLock — the mail still goes after it.
+  ctx.cnAcquireRepLease_ = () => { lockHeld = true; return { key: 'k', token: 't' }; };
+  ctx.cnReleaseRepLease_ = () => { lockHeld = false; };
   ctx.CN = { FLAG_TYPE: 0, RESOLVED: 1, SUBFORM_DATA: 2, DATE_LOCAL: 3 };
   ctx.CN_FLAG_TYPES = ['action', 'training', 'review']; ctx.CN_HEADERS = [0, 1, 2, 3];
   ctx.sanitizeFlagType_ = (t) => String(t || '').toLowerCase();
@@ -37249,6 +37277,7 @@ test('ST2 (cycle 25 E1): a PARTIAL run reads as one — the stamp keeps its stat
   assert.strictEqual(lines.filter((l) => /open-punch|OpenPunchCheck/i.test(l)).length, 1, 'the open-punch failure is said ONCE — by its own, more specific finding');
   // The System tab.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const items = fn({ digests: [], automationErrors: {
     CallNotesPurge: { at: 't1', message: 'skipped Ana', status: 'partial', label: 'call-note retention purge' },
@@ -37319,7 +37348,7 @@ test('ST2 (cycle 25 E1): each job chooses its status honestly — skipped reps a
     const c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
       getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z']], cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t,
       Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
-      getCallNotesSheet_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; },
+      getCallNotesSheet_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; }, getCallNotesSheetForWrite_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; },
       readCallNoteRowsInRange_: () => [], cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}), sendOneRepEodDigest_() {} });
     vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), c);
     c.sendCallNotesEodDigest();
@@ -37516,7 +37545,7 @@ test('E1 follow-ups (cycle 25): the rep- and agent-facing reminders log each sen
   let c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
     getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z'], ['c@x', 'C', 'Cy', 'Z'], ['d@x', 'D', 'Dee', 'Z']],
     cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t, Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
-    getCallNotesSheet_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; },
+    getCallNotesSheet_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; }, getCallNotesSheetForWrite_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; },
     readCallNoteRowsInRange_: (sh) => Array.from({ length: flagged[sh.id] || 0 }, () => ({ row: ['2026-10-15', 'action', ''] })),
     cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
     sendOneRepEodDigest_: (e) => { if (e.id === 'D') throw new Error('quota'); } });
@@ -38843,6 +38872,163 @@ test('25post: the job writes a PtoAccrualStamp row for every blank stamp it reso
   assert.ok(/column R is blank or unreadable; the newest credit on record is 2026-08, so the run plans from it/.test(t1), t1);
   const t2 = sb.formatPtoAccrualPreview_(Object.assign({}, base, { reps: [row({ seeds: true })] }));
   assert.ok(/SEEDS to 2026-09 \(blank column R, no credit on record\).*If 2026-09 is owed, set column R one month earlier first/.test(t2), t2);
+});
+
+// 25post (operator 2026-10-16, team rollout at ~10 concurrent reps): note
+// saves serialised per rep on a lease rather than the one project ScriptLock,
+// and the day's email allowance on Admin → System.
+console.log('\n25post — per-rep note-save lease, and the daily email allowance');
+
+function p25LeaseCtx_(opts) {
+  const o = opts || {};
+  const clock = { now: 1000000 };
+  const props = Object.assign({}, o.props || {});
+  const log = [];
+  let held = false;
+  const ctx = vm.createContext({ String, Number, Object, JSON, isFinite, console: { warn() {} },
+    Date: { now: () => clock.now },
+    CN_REP_LEASE_PREFIX: 'CN_REP_LEASE_', CN_REP_LEASE_MS: 60000, CN_REP_LEASE_WAIT_MS: 15000, CN_REP_LEASE_POLL_MS: 200,
+    Utilities: { getUuid: () => 'tok-' + (log.length + 1), sleep: (ms) => { clock.now += ms; if (o.onSleep) o.onSleep(clock, props); } },
+    LockService: { getScriptLock: () => ({ waitLock: (ms) => { held = true; log.push('lock ' + ms); }, releaseLock: () => { held = false; log.push('unlock'); } }) },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => (k in props ? props[k] : null),
+      deleteProperty: (k) => { log.push('delete ' + k); delete props[k]; } }) },
+    propSetBounded_: (k, v) => { log.push('set ' + k + (held ? ' (under lock)' : ' (NO LOCK)')); props[k] = v; },
+    getCallNotesSheet_: (emp) => ({ sheetOf: emp.callNotesSheetId }) });
+  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, clock, props, log };
+}
+
+test('25post: cnRepLeaseFree_ — absent, unreadable or expired is free; a lease whose `until` is ahead is held (driven)', () => {
+  const { ctx } = p25LeaseCtx_();
+  assert.strictEqual(ctx.cnRepLeaseFree_(null, 5), true);
+  assert.strictEqual(ctx.cnRepLeaseFree_('{not json', 5), true, 'an unreadable lease never wedges a rep');
+  assert.strictEqual(ctx.cnRepLeaseFree_(JSON.stringify({ token: 'a', until: 6 }), 5), false, 'held until its until');
+  assert.strictEqual(ctx.cnRepLeaseFree_(JSON.stringify({ token: 'a', until: 5 }), 5), true, 'a killed holder\'s lease expires');
+});
+
+test('25post: cnAcquireRepLease_ takes the lease with the ScriptLock held only for the check-and-set, waits for a held lease, and times out with a "Lock timeout" throw — like the waitLock it replaces (driven)', () => {
+  const t1 = p25LeaseCtx_();
+  const lease = JSON.parse(JSON.stringify(t1.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' })));
+  assert.deepStrictEqual(lease.key, 'CN_REP_LEASE_S1');
+  assert.deepStrictEqual(t1.log, ['lock 15000', 'set CN_REP_LEASE_S1 (under lock)', 'unlock'], 'the ScriptLock is held for the check-and-set and released before the save runs');
+  assert.strictEqual(JSON.parse(t1.props.CN_REP_LEASE_S1).until, 1000000 + 60000, 'a 60 s lease');
+  // Another save on the same Sheet: polls until the holder releases.
+  const t2 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 1000000 + 60000 }) },
+    onSleep: (clock, props) => { if (clock.now >= 1000000 + 1000) delete props.CN_REP_LEASE_S1; } });
+  const got = t2.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' });
+  assert.ok(got.key === 'CN_REP_LEASE_S1' && t2.clock.now >= 1001000 && t2.clock.now < 1002000, 'it waited for the holder, then took it (' + (t2.clock.now - 1000000) + ' ms)');
+  assert.ok(t2.log.filter((l) => l === 'unlock').length > 1 && !t2.log.some((l) => /NO LOCK/.test(l)), 'every check-and-set under the lock, released between polls');
+  // A different rep's Sheet is a different key — never waits on S1.
+  const t3 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 9e15 }) } });
+  t3.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S2' });
+  assert.strictEqual(t3.clock.now, 1000000, 'THE POINT: two reps saving at once do not queue on each other');
+  // A holder that never lets go: the wait ends at 15 s with the old error class.
+  const t4 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 9e15 }) } });
+  assert.throws(() => t4.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }), /^Error: Lock timeout: another change to these call notes is still saving/);
+  assert.ok(t4.clock.now - 1000000 >= 15000 && t4.clock.now - 1000000 < 15500, 'after 15 s');
+  // No Sheet: nothing to lease, no lock taken — the body refuses by name.
+  const t5 = p25LeaseCtx_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t5.ctx.cnAcquireRepLease_({}))), { key: '', token: '' });
+  assert.strictEqual(t5.log.length, 0);
+});
+
+test('25post: cnReleaseRepLease_ deletes only its OWN lease, takes no ScriptLock (a lock holder may be waiting on it) and never throws; getCallNotesSheetForWrite_ waits out a save in flight and passes an expired one (driven)', () => {
+  const t = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'mine', until: 9e15 }) } });
+  t.ctx.cnReleaseRepLease_({ key: 'CN_REP_LEASE_S1', token: 'someone-else' });
+  assert.ok('CN_REP_LEASE_S1' in t.props, 'a lease that ran past its time and was retaken is not ours to delete');
+  t.ctx.cnReleaseRepLease_({ key: 'CN_REP_LEASE_S1', token: 'mine' });
+  assert.ok(!('CN_REP_LEASE_S1' in t.props) && !t.log.some((l) => /^lock/.test(l)), 'released, with no lock');
+  t.ctx.cnReleaseRepLease_({ key: '', token: '' }); t.ctx.cnReleaseRepLease_(null);
+  const w = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 1000000 + 60000 }) },
+    onSleep: (clock, props) => { if (clock.now >= 1000000 + 800) delete props.CN_REP_LEASE_S1; } });
+  const sheet = w.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.ok(sheet.sheetOf === 'S1' && w.clock.now - 1000000 >= 800, 'a manager action or nightly job waits for the rep\'s save to finish');
+  const e = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 1000000 - 1 }) } });
+  e.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.strictEqual(e.clock.now, 1000000, 'an expired lease (a killed save) does not hold anyone up');
+  const k = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 9e15 }) } });
+  k.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.ok(k.clock.now - 1000000 >= 61000 && k.clock.now - 1000000 < 61500, 'and the wait is bounded by the lease length');
+});
+
+test('25post: every writer of a rep\'s call-notes Sheet is serialised — the note actions hold the rep lease (no ScriptLock, released in finally), and every ScriptLock holder that writes a rep Sheet opens it through getCallNotesSheetForWrite_ (derived over the server)', () => {
+  const src = serverSource();
+  const re = /^function ([A-Za-z0-9_$]+)\s*\(/gm; let m;
+  const fns = [];
+  while ((m = re.exec(src)) !== null) {
+    const s0 = src.indexOf('{', m.index); let d = 0, k = s0;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    fns.push({ name: m[1], body: stripJsComments_(src.slice(s0, k + 1)) });
+  }
+  const WRITES = /\.(setValues?|appendRow|deleteRows?|setNumberFormat|insertSheet|clearContent)\(|appendRowsTextSafe_\(|appendRowsSafe_\(/;
+  const leased = fns.filter((f) => /cnAcquireRepLease_\(/.test(f.body) && f.name !== 'cnAcquireRepLease_').map((f) => f.name).sort();
+  assert.deepStrictEqual(leased, ['deleteCallNote', 'setCallNoteFlag', 'setCallNotePinned', 'setCallNoteResolved', 'submitCallNote', 'updateCallNote'],
+    'the six note actions a rep makes all day hold the lease');
+  fns.filter((f) => leased.indexOf(f.name) >= 0).forEach((f) => {
+    assert.ok(!/getScriptLock|waitLock|tryLock/.test(f.body), f.name + ' takes no ScriptLock as well — a nested lock would serialise the team again');
+    assert.ok(/const lease = cnAcquireRepLease_\(emp\);/.test(f.body) && /finally \{\s*cnReleaseRepLease_\(lease\);/.test(f.body), f.name + ' releases in finally');
+    assert.ok(f.body.indexOf('cnAcquireRepLease_(') > f.body.indexOf('getEmployeeInfo_()'), f.name + ' checks the caller first (F58)');
+  });
+  // Named exceptions, each with why its writes are not to a rep Sheet.
+  const NOT_A_REP_SHEET_WRITE = { exportCallNotesRange: 'writes a NEW export spreadsheet; it only reads the rep Sheets' };
+  const bad = [];
+  fns.forEach((f) => {
+    if (['getCallNotesSheet_', 'getCallNotesSheetForWrite_'].indexOf(f.name) >= 0 || NOT_A_REP_SHEET_WRITE[f.name]) return;
+    if (!/getCallNotesSheet_\(/.test(f.body) || !WRITES.test(f.body)) return;
+    if (leased.indexOf(f.name) < 0) bad.push(f.name + ' writes a rep Sheet opened with getCallNotesSheet_ and holds no lease');
+  });
+  // A ScriptLock holder that opens a rep Sheet waits for its lease, WRITE OR
+  // NOT: the writes are often in a helper the opener hands the Sheet to (the
+  // retention purge's purgeSheetRowsOlderThan_), which no body scan sees.
+  fns.forEach((f) => {
+    if (/getScriptLock\(\)/.test(f.body) && /getCallNotesSheet_\(/.test(f.body)) bad.push(f.name + ' holds the ScriptLock and opens a rep Sheet without waiting for its lease');
+  });
+  assert.deepStrictEqual(bad, []);
+  // The ScriptLock writers that reach rep Sheets — the set is non-empty, so the net above is not vacuous.
+  const waiters = fns.filter((f) => /getCallNotesSheetForWrite_\(/.test(f.body) && f.name !== 'getCallNotesSheetForWrite_').map((f) => f.name).sort();
+  ['managerDeleteCallNote', 'archiveOldCallNotes', 'purgeOldCallNotes', 'purgeArchivedCallNotes', 'reconcileCallNotesCore_', 'applyTagTransformAcrossReps_',
+   'submitFormByToken', 'setCallNoteTrainingReply', 'emailFromCallNote', 'sendExternalEmail', 'setCallNoteManagerComment', 'appendCallNoteFeedback']
+    .forEach((n) => assert.ok(waiters.indexOf(n) >= 0, n + ' waits for the rep lease'));
+});
+
+test('25post: the day\'s email allowance — mailQuotaStatus_ reads MailApp\'s remaining figure, an unreadable one is UNKNOWN, and Storage Health (admin-gated) ships it (driven + structural)', () => {
+  let rem = 1320, throwIt = false;
+  const ctx = vm.createContext({ String, Number, isFinite, MAIL_QUOTA_WARN_REMAINING: 300,
+    MailApp: { getRemainingDailyQuota: () => { if (throwIt) throw new Error('Service unavailable'); return rem; } },
+    mailBccAll_: () => ['robin@umsupply.com'] });
+  vm.runInContext(extractRawFunction('Code.js', 'mailQuotaStatus_'), ctx);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.mailQuotaStatus_())), { remaining: 1320, warnAt: 300, bccPerSend: 1, error: '' });
+  throwIt = true;
+  const u = ctx.mailQuotaStatus_();
+  assert.ok(u.remaining === null && /Service unavailable/.test(u.error), 'a failed read is null + the reason, never a number');
+  const sh = stripJsComments_(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/if \(!callerEmp \|\| !callerEmp\.isAdmin\) return \{ error: 'Admin access required\.' \};/.test(sh), 'admin-only');
+  assert.ok(sh.indexOf("'Admin access required.'") < sh.indexOf('mailQuotaStatus_()') && /mailQuota: mailQuota \}/.test(sh), 'read after the gate, shipped with the report');
+});
+
+test('25post: the email-allowance verdict — ok normally, warn at or below the threshold, FAIL at zero, warn when unreadable, nothing on an older server; the line escapes, the finding rides the System list (driven)', () => {
+  const sb = buildSandbox(['script_icons.html', 'script_core.html']);
+  ['cnMailQuotaVerdict_', 'cnMailQuotaHtml_'].forEach((n) => loadFunction(sb, 'cn/script_callnotes.html', n));
+  const v = (mq) => sb.cnMailQuotaVerdict_(mq);
+  assert.strictEqual(v(null), null, 'an older server ships no figure — no line, no finding');
+  const ok = v({ remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' });
+  assert.ok(ok.tone === 'ok' && /1,320 recipients left today/.test(ok.detail) && !/BCC/.test(ok.detail), JSON.stringify(ok));
+  const low = v({ remaining: 240, warnAt: 300, bccPerSend: 1, error: '' });
+  assert.ok(low.tone === 'warn' && /running low/.test(low.title) && /MAIL_BCC_ALL adds 1 to every send/.test(low.detail) && /clearing MAIL_BCC_ALL saves 1 recipient on every send/.test(low.fix), JSON.stringify(low));
+  assert.strictEqual(v({ remaining: 300, warnAt: 300 }).tone, 'warn', 'at the threshold is low');
+  const out = v({ remaining: 0, warnAt: 300, bccPerSend: 0 });
+  assert.ok(out.tone === 'fail' && /used up/.test(out.title), 'zero is a failure: every send fails until the reset');
+  const unk = v({ remaining: null, warnAt: 300, error: 'Service unavailable' });
+  assert.ok(unk.tone === 'warn' && /unknown, not fine/.test(unk.detail), 'unreadable is UNKNOWN (INV-187)');
+  const html = sb.cnMailQuotaHtml_({ remaining: null, warnAt: 300, error: '<img src=x onerror=alert(1)>' });
+  assert.ok(!/<img/.test(html) && /&lt;img/.test(html) && /cn-drive-warn/.test(html), 'escaped, warn-toned');
+  assert.ok(/cn-drive-danger/.test(sb.cnMailQuotaHtml_({ remaining: 0, warnAt: 300 })), 'a used-up allowance is the danger tone');
+  const find = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnHealthFindings_'));
+  assert.ok(/var mqv = cnMailQuotaVerdict_\(storage\.mailQuota\);\s*if \(mqv\) add\('mailQuota', 'storage', mqv\.tone, mqv\.title, mqv\.detail, mqv\.fix \|\| undefined\);/.test(find),
+    'the System findings list carries the same verdict');
+  const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
+  assert.ok(/cnMailQuotaHtml_\(res && res\.mailQuota\)/.test(panel), 'and the Storage inventory shows the line');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

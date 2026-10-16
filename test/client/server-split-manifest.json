@@ -3070,6 +3070,45 @@
     "EMP"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: per-rep note-save lease and the daily email-quota readout",
+   "added": [
+    "CN_REP_LEASE_MS",
+    "CN_REP_LEASE_POLL_MS",
+    "CN_REP_LEASE_PREFIX",
+    "CN_REP_LEASE_WAIT_MS",
+    "MAIL_QUOTA_WARN_REMAINING",
+    "cnAcquireRepLease_",
+    "cnReleaseRepLease_",
+    "cnRepLeaseFree_",
+    "getCallNotesSheetForWrite_",
+    "mailQuotaStatus_"
+   ],
+   "removed": [],
+   "changed": [
+    "appendCallNoteFeedback",
+    "applyTagTransformAcrossReps_",
+    "archiveOldCallNotes",
+    "deleteCallNote",
+    "emailFromCallNote",
+    "getStorageHealth",
+    "managerDeleteCallNote",
+    "purgeArchivedCallNotes",
+    "purgeOldCallNotes",
+    "reconcileCallNotesCore_",
+    "sendExternalEmail",
+    "setCallNoteFlag",
+    "setCallNoteManagerComment",
+    "setCallNotePinned",
+    "setCallNoteResolved",
+    "setCallNoteTrainingReply",
+    "submitCallNote",
+    "submitFormByToken",
+    "updateCallNote"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3423,6 +3462,26 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bc625fbaf36ca33f"
+  },
+  "CN_REP_LEASE_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a05a515652e4d3aa"
+  },
+  "CN_REP_LEASE_POLL_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "92425a717b50f530"
+  },
+  "CN_REP_LEASE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "76c2adb2d81af006"
+  },
+  "CN_REP_LEASE_WAIT_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58d1c04b6b39fcec"
   },
   "CN_SUBFORM_MAX_CHARS": {
    "file": "00_config.js",
@@ -4764,6 +4823,11 @@
    "kind": "const",
    "sha": "bf86c0f36d950537"
   },
+  "MAIL_QUOTA_WARN_REMAINING": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b75a2393584e6bed"
+  },
   "MANAGER_BRIEF_HOUR": {
    "file": "00_config.js",
    "kind": "const",
@@ -5887,7 +5951,7 @@
   "appendCallNoteFeedback": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "67788b145e24a505"
+   "sha": "e364f5fd5705d094"
   },
   "appendRowsSafe_": {
    "file": "10_core.js",
@@ -5907,7 +5971,7 @@
   "applyTagTransformAcrossReps_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c3d4e2bf8b085a28"
+   "sha": "ec51012789635b1d"
   },
   "archiveCallNoteTag": {
    "file": "30_callnotes.js",
@@ -5917,7 +5981,7 @@
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "db0fc4f9e85989a1"
+   "sha": "49d41c7adcc6b1db"
   },
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
@@ -6429,6 +6493,11 @@
    "kind": "function",
    "sha": "0c904f2c38a4ce12"
   },
+  "cnAcquireRepLease_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "5f39f63db1144f2f"
+  },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -6528,6 +6597,16 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "e3ef8698c81ca85a"
+  },
+  "cnReleaseRepLease_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "725a62b670869659"
+  },
+  "cnRepLeaseFree_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "36e35b3cbeb7183d"
   },
   "cnTagAdminStartAudit_": {
    "file": "30_callnotes.js",
@@ -6812,7 +6891,7 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "988582f1c624d3ea"
+   "sha": "18f87cb855a75b34"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
@@ -7107,7 +7186,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "66f9f319bfda5ddf"
+   "sha": "dfdccb969a5ee62e"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -7548,6 +7627,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "59fd7b1fd27b2354"
+  },
+  "getCallNotesSheetForWrite_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "33d9076ebeaf3022"
   },
   "getCallNotesSheet_": {
    "file": "30_callnotes.js",
@@ -8367,7 +8451,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8bc68776a6185d47"
+   "sha": "e85a2318980da06a"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -9579,6 +9663,11 @@
    "kind": "function",
    "sha": "a530dcb65e387dac"
   },
+  "mailQuotaStatus_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "dffb62ebf001c4bd"
+  },
   "managerAggregateFlagged_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -9607,7 +9696,7 @@
   "managerDeleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "817d60d4f2db1852"
+   "sha": "ec30dcb327de0b7e"
   },
   "managerGetCallNotes": {
    "file": "30_callnotes.js",
@@ -10142,7 +10231,7 @@
   "purgeArchivedCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "2b1036e5cb6c70f2"
+   "sha": "7e07f01ac69cf7c8"
   },
   "purgeExpiredFormData": {
    "file": "61_forms.js",
@@ -10152,7 +10241,7 @@
   "purgeOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4d05c44d332d22bc"
+   "sha": "9a107baba81daa9a"
   },
   "purgeOldDiagnostics": {
    "file": "10_core.js",
@@ -10582,7 +10671,7 @@
   "reconcileCallNotesCore_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "29cdd59096552a9e"
+   "sha": "12715a3835fda5f9"
   },
   "reconcileCallNotesNow": {
    "file": "30_callnotes.js",
@@ -11052,7 +11141,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "2da4b5a1ae668495"
+   "sha": "01693ff5bc3011c7"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
@@ -11117,27 +11206,27 @@
   "setCallNoteFlag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "160be3eb5a6de54c"
+   "sha": "3da8734a1981e518"
   },
   "setCallNoteManagerComment": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c4953a2a84ad768f"
+   "sha": "ed6db93669edc714"
   },
   "setCallNotePinned": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c61d43a717c6e7b1"
+   "sha": "61b323eaef087984"
   },
   "setCallNoteResolved": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "209dff6d7ea11caa"
+   "sha": "d5092395259757e5"
   },
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "807cf892623b5105"
+   "sha": "bea49a4a0c5ace81"
   },
   "setCoachingFollowUp": {
    "file": "82_coaching.js",
@@ -11452,12 +11541,12 @@
   "submitCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "dc1e648a16caee45"
+   "sha": "d7154a11b6940120"
   },
   "submitFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "eff67fc3ccb8c6a5"
+   "sha": "b16cdd08508fa438"
   },
   "submitIntakeFeedback": {
    "file": "60_intake.js",
@@ -11727,7 +11816,7 @@
   "updateCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "bcc3435f62994a09"
+   "sha": "4c7f40dfe102334f"
   },
   "updateInfoToSubformKey_": {
    "file": "30_callnotes.js",

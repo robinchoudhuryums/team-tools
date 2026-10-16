@@ -2303,6 +2303,15 @@ entry says which it is.
   reads as a fact under "checks passing", never a warning. The report never
   changes what is sent — an address you typed is always honoured, because a
   silent drop would leave you believing in copies you are not getting.
+  **Since 25post (2026-10-16)** the same Storage inventory shows the day's
+  **email allowance** — how many more recipients the deploying account may
+  email today (`MailApp.getRemainingDailyQuota()`; about 1,500 a day on
+  Workspace, 100 on a consumer account; it resets 24 hours after the day's
+  first send). Every email the app sends counts one per recipient, and each
+  `MAIL_BCC_ALL` address adds one to every send, so the line names how many
+  this setting costs. It warns at 300 left (`MAIL_QUOTA_WARN_REMAINING`), is a
+  blocking finding at 0, and reads "could not be read" rather than fine when
+  the mail service does not answer. Admin-only, like the rest of the tab.
 <a id="operator-script-property-rep-sender-from"></a>
 - **Script Property `REP_SENDER_FROM`** (optional — the NEUTRAL shared sender
   for rep-initiated emails; pilot round-1 follow-ons, 2026-08-24; DORMANT

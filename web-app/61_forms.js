@@ -607,7 +607,7 @@ function submitFormByToken(token, formData) {
           }
         }
         if (creatorEmp && creatorEmp.callNotesSheetId) {
-          const cnSheet = getCallNotesSheet_(creatorEmp);
+          const cnSheet = getCallNotesSheetForWrite_(creatorEmp);
           const noteLocated = findCallNoteRow_(cnSheet, noteId);
           if (noteLocated) {
             let subformData = null;

@@ -2673,8 +2673,10 @@ function getStorageHealth(opts) {
     // there). One read, values counted and never returned.
     let propStore = null;
     try { propStore = scriptPropertiesStatus_(); } catch (e) { propStore = null; }
+    // 25post — the deploying account's email allowance left today.
+    const mailQuota = mailQuotaStatus_();
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
-             drive: drive, mailBcc: mailBcc, propStore: propStore };
+             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3555,6 +3557,22 @@ function mailBccStatus_() {
   if (at < 0) return out;                       // can't tell whose domain is ours → external stays null
   out.ownDomain = own.slice(at + 1);
   out.external = list.filter((a) => String(a).toLowerCase().slice(String(a).lastIndexOf('@') + 1) !== out.ownDomain);
+  return out;
+}
+/** 25post (operator 2026-10-16, team rollout) — how many more recipients the
+ *  app may email today. Every send rides the deploying account's MailApp
+ *  allowance (~1,500 recipients a day on Workspace, 100 on a consumer
+ *  account): department notes, intake, digests and reminders alike, each
+ *  recipient counted, a MAIL_BCC_ALL copy included. Google gives the
+ *  remaining figure only, never the total. `remaining: null` with an `error`
+ *  is UNKNOWN — never read as fine (INV-187). */
+function mailQuotaStatus_() {
+  const out = { remaining: null, warnAt: MAIL_QUOTA_WARN_REMAINING, bccPerSend: mailBccAll_().length, error: '' };
+  try {
+    const n = Number(MailApp.getRemainingDailyQuota());
+    if (isFinite(n) && n >= 0) out.remaining = n;
+    else out.error = 'the mail service returned no figure';
+  } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 }
 function mailMergeBcc_(opts) {

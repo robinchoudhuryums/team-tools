@@ -1058,6 +1058,26 @@ const AUTOMATION_TRIGGER_OWNER_PROP = 'AUTOMATION_TRIGGER_OWNER';
 // first write seeds every key with the install time, so shipping this masks
 // nothing that was already watched. Auto-managed; delete it to re-seed.
 const AUTOMATION_WATCH_SINCE_PROP = 'AUTOMATION_WATCH_SINCE';
+// 25post (operator 2026-10-16, team rollout) — a rep's note saves are
+// serialised on a LEASE for that rep's Sheet, not on the one project
+// ScriptLock: two reps saving at once no longer queue behind each other, and
+// a note save no longer holds up a punch. Apps Script has no lock per
+// resource here (the web app runs as one user and is bound to no document, so
+// the user and document locks are useless), so the lease is a Script Property
+// `CN_REP_LEASE_<sheetId>` = {token, until}, taken and checked under the
+// ScriptLock for a few milliseconds. Every writer that holds the ScriptLock
+// and touches a rep's Sheet (manager actions, the email senders, the form
+// submit, the tag transforms, the nightly archive / purge / reconcile) waits
+// for that rep's lease first (`getCallNotesSheetForWrite_`). A lease outlives
+// a killed execution by at most CN_REP_LEASE_MS; a save waits at most
+// CN_REP_LEASE_WAIT_MS for one, the same 15 seconds the ScriptLock gave it.
+const CN_REP_LEASE_PREFIX = 'CN_REP_LEASE_';
+const CN_REP_LEASE_MS = 60000;
+const CN_REP_LEASE_WAIT_MS = 15000;
+const CN_REP_LEASE_POLL_MS = 200;
+// 25post — Admin → System's daily email-quota line warns at or below this many
+// recipients left (MailApp.getRemainingDailyQuota; ~1,500 a day on Workspace).
+const MAIL_QUOTA_WARN_REMAINING = 300;
 // The two gate lists offboarding edits. An address is REMOVED from each, except
 // when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
 // admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler

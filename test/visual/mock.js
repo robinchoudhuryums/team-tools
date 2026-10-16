@@ -2394,6 +2394,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
                      largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 4120, error: '' },
         mailBcc: { prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['robin@umsupply.com'],
                    external: [], ownDomain: 'umsupply.com' },
+        // 25post — mailQuotaStatus_'s shape; a busy afternoon, the warn tone.
+        mailQuota: { remaining: 240, warnAt: 300, bccPerSend: 1, error: '' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -2622,6 +2624,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
                    largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 2100, error: '' },
+      mailQuota: { remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };

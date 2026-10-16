@@ -5682,3 +5682,22 @@ pick them up without re-deriving the context.
   F9 removed. The append takes the script lock with a one-second tryLock and
   skips when busy, so a search never waits behind a punch.
 
+- <a id="note-saves-are-serialised-per-rep"></a>**Note saves are serialised per rep on a lease, not on the project lock; the day's email allowance is on Admin → System (25post, operator 2026-10-16)**
+  The team rollout put about ten reps in the app at once. Every punch and
+  every note save queued on the ONE project ScriptLock, held through a Sheet
+  open, a row write and an audit row, though each rep's notes are a Sheet of
+  their own. Apps Script has no per-resource lock that fits: the web app runs
+  as the deployer, so the user lock is one lock, and it is bound to no
+  document. So the lock is built: a Script Property lease per rep Sheet,
+  check-and-set under the ScriptLock (milliseconds), held for the save. A
+  Script Property rather than CacheService because a cache entry can be
+  evicted while held, which would let two writers into one Sheet — and its
+  writes go through `propSetBounded_`. **Alternatives rejected:** shortening
+  the ScriptLock's hold alone (still one queue for the whole team); a
+  per-rep lease for the six rep actions only, with the other writers left on
+  the ScriptLock (a manager delete or the nightly archive would then run
+  beside a rep's save on the same Sheet) — hence every ScriptLock holder that
+  opens a rep Sheet waits for its lease first. The email allowance reads
+  `MailApp.getRemainingDailyQuota()` on the admin-gated Storage Health call:
+  Google gives the remaining figure only, so the line names what counts
+  (every recipient, a MAIL_BCC_ALL copy included) and warns at 300 left.

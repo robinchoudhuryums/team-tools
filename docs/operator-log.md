@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-16 — team rollout: per-rep note saves, the email allowance (25post)
+
+**Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New
+version) outside shift hours. Two changes for a team of about ten using the app
+at once:
+
+- **A rep's note saves no longer wait on the rest of the team.** Saving,
+  editing, flagging, resolving, deleting and pinning a note now hold a lease on
+  that rep's own Sheet instead of the one lock every punch and note shared.
+  While a save runs, its `CN_REP_LEASE_<sheetId>` Script Property exists; it
+  disappears when the save ends (or after 60 seconds if the save was killed).
+  Leave those entries alone. A manager action, an email send or a nightly job
+  that touches that rep's notes waits for the save to finish first.
+- **Admin → System → Storage inventory shows the day's email allowance** —
+  recipients left today, amber at 300, red at 0, with what `MAIL_BCC_ALL` costs.
+
 ## 2026-10-16 — liveness from the first watch (25post)
 
 **Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New

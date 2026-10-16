@@ -217,7 +217,7 @@ Every one of these guards an `innerHTML` sink or a template injection.
 
 Who waits for whom, and what goes stale.
 
-- **ScriptLock around every mutating op — and a helper that runs INSIDE a locked job's catch takes a different lock, never re-takes and releases the job's (cycle 22 A8); a full-tab read inside the lock is every rep's wait — a bulk approval re-read the Timesheet per request and a range time-off per day (cycle 25 F62); and the CALLER is checked before the lock — seventy endpoints made a refused caller wait on it, then hold it (cycle 25 F58); the digest delivery log, written from inside jobs, takes no lock at all (cycle 25 E1).** Fires when you add a server function that writes to a sheet, or a stamp called from a trigger's error path. [Detail](docs/gotchas.md#g17-scriptlock-around-every-mutating-op)
+- **ScriptLock around every mutating op — and a helper that runs INSIDE a locked job's catch takes a different lock, never re-takes and releases the job's (cycle 22 A8); a full-tab read inside the lock is every rep's wait — a bulk approval re-read the Timesheet per request and a range time-off per day (cycle 25 F62); and the CALLER is checked before the lock — seventy endpoints made a refused caller wait on it, then hold it (cycle 25 F58); the digest delivery log, written from inside jobs, takes no lock at all (cycle 25 E1); a rep's six note actions hold that rep's LEASE instead of the project lock, and every lock holder that opens a rep Sheet waits for it through `getCallNotesSheetForWrite_` (25post).** Fires when you add a server function that writes to a sheet, or a stamp called from a trigger's error path. [Detail](docs/gotchas.md#g17-scriptlock-around-every-mutating-op)
 - **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its 1000-row grid (`appendRow` would have grown it), and a purge that empties a tab throws on its LAST delete — use `appendRowsSafe_` / `appendRowsTextSafe_` (C1, C5, F4, 2026-09-23); a freshly CREATED or CLEARED sheet is the same fixed grid — the payroll export threw past ~998 rows, and the data-table import cleared the live tab before it threw (cycle 23 TC-01 + ADM-05); the QA purge was C5's hand-written sibling, and the shared deleter now deletes contiguous runs (cycle 23 QA-3 + 4a-FU2).** Fires when you write a block at the next free row, into a new spreadsheet, or into a tab you just cleared, or delete rows in bulk. Verify: the F4 derived net + the C1/C5 pins + the TC-01/ADM-05 drives. [Detail](docs/gotchas.md#g145-a-positional-write-at-getlastrow-1)
 - **A row fetched by INDEX after an unlocked column scan must still carry the key it was found by — a purge between the two reads put another patient's token row under the index, and the public form served that prefill (cycle 23 FORM-1); the unlocked Dept Request detail did the same through `findCallNoteRow_` (seams F6, cycle 24), and the pinned-notes read through a SubformData scan (cycle 25 F32).** Fires when you add a scan-then-fetch lookup that can run without the lock. Verify: the FORM-1 drive + the Seams F6 drive. [Detail](docs/gotchas.md#g164-a-row-fetched-by-index-must-carry-its-key)
 - **Roster cache invalidation + key bump.** Fires when you edit an Employees column, or change the `EMP` enum shape. [Detail](docs/gotchas.md#g19-roster-cache-invalidation-key-bump)
@@ -589,6 +589,7 @@ for the reasoning, which is usually the part that matters.
 - [A held reply waits for a person under "Replies to check", and the answers are counted, not learned from; a Spanish request is escalated at 7 calendar days (cycle 25 E4, ST1 + G5, operator 2026-10-15)](docs/design-decisions.md#a-held-reply-waits-for-a-person)
 - [A cycle's standing is derived and its close-out is a command; CI gates on the visual matrix's measurements over a fixed subset (cycle 25 E5, ST4 + ST5)](docs/design-decisions.md#the-close-out-is-a-command-and-the-visual-gate-a-subset)
 - [The Reference search signal counts admin-vocabulary terms only — team-level, 90 days, admin view; a content request's hint replaces the raw query (cycle 25 E6, G4, operator 2026-10-14)](docs/design-decisions.md#the-search-signal-counts-vocabulary-terms-only)
+- [Note saves are serialised per rep on a lease, not on the project lock; the day's email allowance is on Admin → System (25post, operator 2026-10-16)](docs/design-decisions.md#note-saves-are-serialised-per-rep)
 
 ## Operator State Checklist
 
@@ -644,7 +645,7 @@ property to clear a stale flag) `PTO_ACCRUAL_LEDGER_<empId>` + `PTO_ACCRUAL_LEDG
 `{at, error}`, the last daily open-punch scan, stamped by `checkOpenPunches`
 at 8am and read by `automationProblems_` an hour later so the 9am health digest
 emails it. A FAILED scan stamps the error, so an empty finding list is never a
-clean board. Auto-managed — delete to clear) `AUTOMATION_WATCH_SINCE` (25post — `{'digest:<key>' | 'job:<action>': ms}`, when each liveness check was first watched; seeded with the install time, a key added by a deploy or a newly enabled job gets the time it was first read, so its absence counts only from then; auto-managed — delete to re-seed) `AUTOMATION_RUN_<action>` (cycle 22 A1 — one per automation job, `{ts, notes}`, stamped by `writeAuditLog_` beside the job's audit row so liveness never depends on the row staying inside the AuditLog tail; delete one to forget that job's last run) `OFFBOARDED_EMAILS` (cycle 22 S7 — the lowercased addresses `offboardEmployee` removed, capped 100, read by the managerSource detector; auto-managed) `AUTOMATION_TRIGGER_OWNER` (cycle 22 follow-ups — `{email, by, at}`: since cycle 23 CORE-03 `email` is the account the triggers RUN AS and `by` whoever ran `installAutomationTriggers`; read by the triggerOwner detector, and since cycle 25 F60 its `at` dates the install, so a digest with no heartbeat past its window is reported as never run; auto-managed) `QA_SYNC_CONTINUATION` (cycle 22 D3 — `{folderId, token}`, the resume point of a capped QA Drive sync; cleared by a completed walk; delete to restart from the top) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
+clean board. Auto-managed — delete to clear) `CN_REP_LEASE_<sheetId>` (25post — `{token, until}`, a rep's note-save lease, present only while a save runs and gone when it ends; a killed save's lease expires after 60 s — never delete one by hand mid-shift) `AUTOMATION_WATCH_SINCE` (25post — `{'digest:<key>' | 'job:<action>': ms}`, when each liveness check was first watched; seeded with the install time, a key added by a deploy or a newly enabled job gets the time it was first read, so its absence counts only from then; auto-managed — delete to re-seed) `AUTOMATION_RUN_<action>` (cycle 22 A1 — one per automation job, `{ts, notes}`, stamped by `writeAuditLog_` beside the job's audit row so liveness never depends on the row staying inside the AuditLog tail; delete one to forget that job's last run) `OFFBOARDED_EMAILS` (cycle 22 S7 — the lowercased addresses `offboardEmployee` removed, capped 100, read by the managerSource detector; auto-managed) `AUTOMATION_TRIGGER_OWNER` (cycle 22 follow-ups — `{email, by, at}`: since cycle 23 CORE-03 `email` is the account the triggers RUN AS and `by` whoever ran `installAutomationTriggers`; read by the triggerOwner detector, and since cycle 25 F60 its `at` dates the install, so a digest with no heartbeat past its window is reported as never run; auto-managed) `QA_SYNC_CONTINUATION` (cycle 22 D3 — `{folderId, token}`, the resume point of a capped QA Drive sync; cleared by a completed walk; delete to restart from the top) and `SELF_TEST_LAST_RESULT` (INV-162 — the nightly self-test outcome
 `{date, mode, pass, fail, skip[, error]}`; delete to clear a stale failure
 flag after fixing).
 
@@ -951,7 +952,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1378 | `node test/client/run.js` |
+| Pure harness tests | 1384 | `node test/client/run.js` |
 | DOM harness tests | 264 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 173 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
@@ -961,7 +962,7 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 371 | `.cycle/config.md` |
+| Invariant library entries | 373 | `.cycle/config.md` |
 | Regression scenarios (S*) | 138 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
