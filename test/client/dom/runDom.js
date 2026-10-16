@@ -8241,3 +8241,31 @@ test('B1 DOM: example text shows in an empty field, in the form\'s language, and
   assert.strictEqual(pap.field(15).getAttribute('placeholder'), 'Street, city, state, ZIP', 'PAP MDO Address');
   assert.strictEqual(pap.field(19), null, 'a Yes/No toggle has no text field to carry one');
 });
+
+test('B2 DOM: an intake send logs its call note in the standard template — the patient as caller, "Self", the primary phone as callback', () => {
+  const h = boot();
+  const payload = { patientInfo: 'Jane Sample', answers: { 1: 'Jane Sample', 2: '555-555-0123' } };
+  h.window.intakeAutoLogNote_('pmd', payload, 'sales@universalmedsupply.com', null, true);
+  const call = h.run.calls.filter((c) => c.method === 'submitCallNote').pop();
+  assert.ok(call, 'the note is saved to Call Notes');
+  const n = call.args[0];
+  assert.strictEqual(n.callback, '555-555-0123');
+  assert.strictEqual(n.caller, 'Jane Sample');
+  assert.strictEqual(n.relationship, 'Self');
+  assert.strictEqual(n.patientAndTrx, 'Jane Sample');
+  assert.strictEqual(n.issue, 'PMD Account intake submitted');
+  assert.strictEqual(n.resolution, 'Emailed to sales@universalmedsupply.com');
+  assert.deepStrictEqual(Array.from(n.tags), ['intake-pmd']);
+  const text = h.$('#intk-note-box').value;
+  assert.strictEqual(text,
+    'Callback Number: 555-555-0123\nCaller Name: Jane Sample\nRelationship: Self\nPatient & TRX: Jane Sample\n' +
+    'Issue: PMD Account intake submitted\nTransferred To: N/A\nResolution: Emailed to sales@universalmedsupply.com',
+    'the copied text is the standard note template, line for line');
+  // PPD: no phone field, the codes ride the resolution.
+  const f = h.window.intakeNoteFields_('ppd', { patientInfo: 'Jo Doe TRX9', answers: { 2: 'not a phone' } }, 'all@x.com',
+    { complex: [], standard: [{ hcpcs: 'K0823' }] });
+  assert.strictEqual(f.callback, '', 'PPD has no phone field — nothing is guessed');
+  assert.strictEqual(f.resolution, 'Emailed to all@x.com · Rec: K0823');
+  assert.strictEqual(h.window.intakeNoteFields_('pap', { patientInfo: '', answers: {} }, '', null).relationship, '',
+    'no patient, no "Self"');
+});

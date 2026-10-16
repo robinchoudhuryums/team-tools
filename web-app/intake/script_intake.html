@@ -91,7 +91,7 @@
   .intk-row.attest { background: var(--warn-soft); border-radius: var(--radius-sm); padding: 8px 10px; border-top-color: transparent; margin-top: 4px; }
   .intk-row.attest:has(.intk-yn[data-val="TRUE"]) { background: var(--accent-soft); }
   /* Other Notes — its own closing section, label bold. */
-  .intk-notes-section .sec-title { display: block; }
+  .intk-notes-section .sec-title { display: inline-block; }
   .intk-notes-hint { font-size: .8rem; color: var(--muted); margin: -4px 0 8px; }
   .intk-notes-section textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); resize: vertical; min-height: 72px; }
   .intk-row input[type=text], .intk-row input[type=email], .intk-row input[type=date], .intk-row select, .intk-row textarea { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; }
@@ -3261,10 +3261,18 @@ function intakeCloseModal_() {
 // Call Notes history tagged with the intake category (subformData.intakeType →
 // the colored chip on the card). If the rep isn't enrolled in Call Notes the
 // history write fails gracefully and the rep still gets the copyable draft.
-function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
+/** PURE (25post B2, operator 2026-10-16) — the call-note fields an intake
+ *  send logs, in the STANDARD note template's shape: the patient is the caller
+ *  (Relationship "Self"), the account forms' primary phone is the callback,
+ *  and the resolution names the recipient and any recommended codes. The PPD
+ *  form has no phone field and one patient line, so its callback is blank and
+ *  that line is both the caller and the Patient & TRX. */
+function intakeNoteFields_(formType, payload, recipient, recs) {
   var ft = String(formType || '').toLowerCase();
   var label = ft === 'ppd' ? 'PPD' : ft === 'pmd' ? 'PMD Account' : ft === 'pap' ? 'PAP Account' : 'Intake';
-  var patient = (payload && payload.patientInfo) ? String(payload.patientInfo) : '';
+  var patient = (payload && payload.patientInfo) ? String(payload.patientInfo).trim() : '';
+  var answers = (payload && payload.answers) || {};
+  var phone = ft === 'ppd' ? '' : String(answers[2] == null ? '' : answers[2]).trim();
   // PPD preview returns recommendations as { complex:[], standard:[] } of items
   // carrying .hcpcs — surface the qualifying codes in the note (best-effort).
   var codes = [];
@@ -3272,12 +3280,28 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
     var items = [].concat((recs && recs.complex) || [], (recs && recs.standard) || []);
     codes = items.map(function (p) { return p && p.hcpcs; }).filter(Boolean);
   } catch (_) { codes = []; }
-  var recoLine = codes.length ? 'Recommended: ' + codes.join(', ') + '\n' : '';
-  var text =
-    'Intake Form: ' + label + '\n' +
-    'Patient & TRX: ' + (patient || 'N/A') + '\n' +
-    'Emailed To: ' + (recipient || 'N/A') + '\n' +
-    recoLine;
+  return {
+    label: label, ft: ft, codes: codes,
+    callback: phone,
+    caller: patient,
+    relationship: patient ? 'Self' : '',
+    patientAndTrx: patient,
+    issue: label + ' intake submitted',
+    transferredTo: '',
+    resolution: 'Emailed to ' + (recipient || 'N/A') + (codes.length ? ' · Rec: ' + codes.join(', ') : ''),
+  };
+}
+
+function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
+  var f = intakeNoteFields_(formType, payload, recipient, recs);
+  var label = f.label, ft = f.ft;
+  // The copied text is the standard note template, through the ONE formatter
+  // Call Notes copies with, so an intake note pastes into the CRM in the same
+  // shape as every other note.
+  var text = cnFormatNoteForCopy_({
+    callback: f.callback, caller: f.caller, relationship: f.relationship, patientAndTrx: f.patientAndTrx,
+    issue: f.issue, transferredTo: f.transferredTo, resolution: f.resolution,
+  });
 
   intakeCopyText_(text);
   if (onView) intakeShowNoteDraftModal_(label, text);
@@ -3289,10 +3313,12 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
   // (bounded ppd|pmd|pap enum); tags nested inside subformData are dropped
   // (the cycle-9 M-3 regression: both chip + tag silently vanished at submit).
   var notePayload = {
-    caller: '',
-    patientAndTrx: patient,
-    issue: label + ' intake submitted',
-    resolution: 'Emailed to ' + (recipient || 'N/A') + (codes.length ? ' · Rec: ' + codes.join(', ') : ''),
+    callback: f.callback,
+    caller: f.caller,
+    relationship: f.relationship,
+    patientAndTrx: f.patientAndTrx,
+    issue: f.issue,
+    resolution: f.resolution,
     tags: ['intake-' + ft],
     subformData: { intakeType: ft }
   };
@@ -3311,7 +3337,7 @@ function intakeShowNoteDraftModal_(label, text) {
   var body =
     '<p style="margin:0 0 8px;font-size:.84rem;color:var(--muted);">A note was drafted from this ' + esc(label) +
       ' submission, copied to your clipboard, and added to your Call Notes history.</p>' +
-    '<textarea class="intk-note-box" id="intk-note-box" aria-label="Call note text, ready to copy" readonly rows="5">' + esc(text) + '</textarea>' +
+    '<textarea class="intk-note-box" id="intk-note-box" aria-label="Call note text, ready to copy" readonly rows="7">' + esc(text) + '</textarea>' +
     '<div class="intk-note-status" id="intk-note-status">' + icon('clock', 12) + ' Saving to Call Notes…</div>' +
     '<div class="intk-foot">' +
       '<button class="intk-btn" onclick="intakeCopyNoteBox_()">' + icon('copy', 14) + ' Copy again</button>' +
