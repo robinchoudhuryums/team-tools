@@ -3147,6 +3147,59 @@
     "intakeResolveRecipient_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [
+    "INTAKE_PPD_EMAIL_COMBOS",
+    "INTAKE_PPD_EMAIL_PAIN",
+    "INTAKE_PPD_EMAIL_PICKED_QS",
+    "INTAKE_PPD_EMAIL_TONES",
+    "intakeNotesBoxHtml_",
+    "intakePpdAnswerHtml_",
+    "intakePpdEmailUnits_"
+   ],
+   "removed": [
+    "INTAKE_PPD_YESNO_QS"
+   ],
+   "changed": [
+    "CN_EMAIL_PALETTE",
+    "INTAKE_PAP_LAYOUT",
+    "INTAKE_PMD_LAYOUT",
+    "intakeBuildAcctBodyHtml_",
+    "intakeBuildPpdBodyHtml_",
+    "intakeDecodeImages_",
+    "intakeEmailShell_",
+    "intakePpdAnswerStyles_",
+    "intakeSectionRowHtml_",
+    "intakeSendAcct_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeBuildPpdBodyHtml_",
+    "intakeNotesBoxHtml_",
+    "intakePpdAnswerHtml_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PPD_EMAIL_COMBOS",
+    "intakeBuildPpdBodyHtml_",
+    "intakePpdEmailUnits_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3434,7 +3487,7 @@
   "CN_EMAIL_PALETTE": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6b9450eaae2eb67c"
+   "sha": "bad11edb42de1969"
   },
   "CN_EMAIL_TEMPLATE_BODY_MAX": {
    "file": "00_config.js",
@@ -4094,7 +4147,7 @@
   "INTAKE_PAP_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "cc00d98f6bf7719d"
+   "sha": "5c7da3052a30a75f"
   },
   "INTAKE_PAP_Q_EN": {
    "file": "00_config.js",
@@ -4104,12 +4157,32 @@
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a8e37c6c32dbeb8a"
+   "sha": "a5bd6d48fe103002"
   },
   "INTAKE_PMD_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "fd5277eb8ea0fd4b"
+  },
+  "INTAKE_PPD_EMAIL_COMBOS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f206b88680c03068"
+  },
+  "INTAKE_PPD_EMAIL_PAIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "391aa35fb9d7c57c"
+  },
+  "INTAKE_PPD_EMAIL_PICKED_QS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09bfc6e0af64c2d9"
+  },
+  "INTAKE_PPD_EMAIL_TONES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a057e93d85250026"
   },
   "INTAKE_PPD_NOTES_EN": {
    "file": "00_config.js",
@@ -4125,11 +4198,6 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7e2d2ddfcfdea037"
-  },
-  "INTAKE_PPD_YESNO_QS": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "ec555a688c927994"
   },
   "INTAKE_STORE_CELL_MAX": {
    "file": "00_config.js",
@@ -8669,12 +8737,12 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "1cbf55204f99bf14"
+   "sha": "3b0bbf16a9870a6a"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "5a5151a0ce0dec39"
+   "sha": "596ab42ec92192ff"
   },
   "intakeCapLbs_": {
    "file": "60_intake.js",
@@ -8689,7 +8757,7 @@
   "intakeDecodeImages_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "20241aae6a5f0e9f"
+   "sha": "a693e1cdee412332"
   },
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
@@ -8704,7 +8772,7 @@
   "intakeEmailShell_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "2ef74a4ac164f770"
+   "sha": "651dfd4bb135ac7e"
   },
   "intakeExplainFactors_": {
    "file": "60_intake.js",
@@ -8776,20 +8844,35 @@
    "kind": "function",
    "sha": "4849ea455bf958a4"
   },
+  "intakeNotesBoxHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "87030a47ae82bc7b"
+  },
   "intakeParseWeight_": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "e81617c5b41176c6"
   },
+  "intakePpdAnswerHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "35d0eae98d75d917"
+  },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "2cdadb352a48b845"
+   "sha": "e60cea02cf66091d"
   },
   "intakePpdAnswersHash_": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "03c026c8bfc5570d"
+  },
+  "intakePpdEmailUnits_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "601f75513c057c82"
   },
   "intakePpdLabelEn_": {
    "file": "60_intake.js",
@@ -8839,12 +8922,12 @@
   "intakeSectionRowHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "eed5f891b88e016f"
+   "sha": "9b3ef02aa8404b87"
   },
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "14800e32cd2cc9e3"
+   "sha": "b2c340daf3f2c757"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",

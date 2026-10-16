@@ -1270,6 +1270,13 @@ const CN_EMAIL_PALETTE = {
   // sent from the new web app look continuous with the prior tooling.
   brand:        '#223b5d',
   brandSoft:    '#e6f2ff',
+  // 25post B7 (operator 2026-10-16) — the intake mails' light-blue accent,
+  // hand-resolved from the tokens: --info, --info-soft, --info-deep, and
+  // --line-2 for the notes box.
+  intakeAccent: '#1e63b8',
+  intakeTint:   '#e1ecfa',
+  intakeInk:    '#154980',
+  lineStrong:   '#c3c9d3',
   logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
 /** Round-1 #8 follow-on — the NEUTRAL shared sender, dormant until configured
@@ -1948,6 +1955,12 @@ const INTAKE_PMD_LAYOUT = {
   SECONDARY_QUESTION_ROWS: [3, 10, 19, 20, 23, 26, 28], // 0-based; index 3 is the secondary phone (was 2, the primary — 2026-10-16)
   CHECKBOX_WARN_ROWS:      [22],                     // amber check instead of green
   CONDITIONAL_FORMATTING_ROWS: {},
+  // 25post B7 (0-based) — mirrored from the client's attest / avail / notes.
+  ATTEST_ROWS:             [24, 25],
+  AVAIL_ROWS:              [26, 27],
+  NOTES_ROW:               28,
+  MONO_ROWS:               [2, 3, 5, 8, 9, 10, 13, 14],   // phones, DOB, member IDs, SSN
+  IMAGES_BEFORE_ROW:       11,   // the Clinical header — images close the Insurance section
 };
 const INTAKE_PAP_LAYOUT = {
   HEADER_ROWS:             [1, 8, 12, 19],
@@ -1959,6 +1972,11 @@ const INTAKE_PAP_LAYOUT = {
     19: { 'No': { bg: '#e4f5ec', fg: '#0b6e40' }, 'Yes': { bg: '#fbf1d9', fg: '#8a4500' } },
     21: { 'Less than 5 years': { bg: '#fbf1d9', fg: '#8a4500' }, 'More than 5 years': { bg: '#e4f5ec', fg: '#0b6e40' } },
   },
+  ATTEST_ROWS:             [26],
+  AVAIL_ROWS:              [],
+  NOTES_ROW:               27,
+  MONO_ROWS:               [2, 3, 5, 8, 9, 10, 13, 14],
+  IMAGES_BEFORE_ROW:       11,
 };
 // ── Isolated spreadsheet + config getters (Script Property first) ──────────
 var _intakeSsMemo = null;
@@ -1976,7 +1994,23 @@ let _intakeOfferingsCache = null;
 const INTAKE_FEEDBACK_HEADERS = ['Timestamp', 'SubmissionId', 'FormType', 'FromEmail', 'FromName', 'Feedback'];
 const INTAKE_FEEDBACK_MAX_CHARS = 4000;
 const INTAKE_FEEDBACK_SCAN_MAX = 2000;   // bounded tail — feedback is recent-biased
-const INTAKE_PPD_YESNO_QS = ['14','15','16','17','18','19','20','21','22','23','26','27','28','30','31','33','35','36','44'];
+// 25post B7 — how the PPD email groups and colours its answers (the client
+// form's colours). TONES mirrors the `tone` of each option in the client's
+// INTAKE_PPD_CONTROL (25 / 31a / 34); PICKED_QS are the single- and multi-
+// choice questions whose picked option the form shows green. Both are pinned
+// against the client. A plain Yes / No anywhere else is a Yes/No toggle.
+const INTAKE_PPD_EMAIL_TONES = {
+  '25':  { 'No': 'no', 'Hands': 'warn', 'Feet': 'warn', 'Legs': 'warn' },
+  '31a': { 'No': 'no', 'Paralysis Left Arm': 'danger', 'Paralysis Right Arm': 'danger', 'Paralysis Left Leg': 'danger', 'Paralysis Right Leg': 'danger', 'Weakness Left Side': 'warn', 'Weakness Right Side': 'warn' },
+  '34':  { 'No': 'no', 'Left (Above Knee)': 'warn', 'Left (Below Knee)': 'warn', 'Right (Above Knee)': 'warn', 'Right (Below Knee)': 'warn' },
+};
+const INTAKE_PPD_EMAIL_PICKED_QS = ['1', '2', '3', '4', '5', '6', '24', '39', '39a'];
+const INTAKE_PPD_EMAIL_COMBOS = [
+  { qs: ['7', '8', '9'],    label: '7–9. Arms: can move · raise in front · raise above head' },
+  { qs: ['10', '11', '12'], label: '10–12. Legs: can move · extend while sitting · push a door open' },
+  { qs: ['37', '38'],       label: '37–38. Height · weight', units: { '37': 'in.', '38': 'lbs.' } },
+];
+const INTAKE_PPD_EMAIL_PAIN = ['14', '15', '16', '17', '18', '19', '20', '21', '22', '23'];
 // M-5 (cycle 10) — intake PHI-store integrity helpers.
 // The store append is deliberately best-effort AFTER a successful send (the
 // email can't be unsent), but a failure must be LOUD, not a console.warn: the

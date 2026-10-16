@@ -8856,8 +8856,12 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
   const branded = extractRawFunction('Code.js', 'buildBrandedEmailHtml_');
   // The mark sits ON THE CARD over a navy rule — logoUrl is a JPEG with no
   // transparency, so a navy band would frame a white rectangle.
+  // 25post B7 (operator 2026-10-16): the intake mails carry their own light-
+  // blue accent where the branded wrapper is navy — the shape is shared, the
+  // accent is not.
+  assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(branded), 'navy rule under the mark (branded)');
+  assert.ok(/border-bottom:2px solid ' \+ P\.intakeAccent/.test(shell) && !/P\.brand\b/.test(shell), 'the intake rule is the light-blue intake accent');
   [shell, branded].forEach(function (fn, i) {
-    assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(fn), 'navy rule under the mark (' + i + ')');
     assert.ok(/alt="UMS Team Tools"/.test(fn), 'the alt text carries the identity when images are blocked (' + i + ')');
     assert.ok(/font-size:22px/.test(fn), 'the subject is a real heading, not a line beside the logo (' + i + ')');
     assert.ok(/width:46px;height:3px/.test(fn), 'with the short rule under it (' + i + ')');
@@ -8888,7 +8892,7 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
   const band = extractRawFunction('Code.js', 'intakeSectionRowHtml_');
   // A solid navy bar with centred white text was the piece that most made
   // these read as a different product from the rest of the app's mail.
-  assert.ok(/text-transform:uppercase/.test(band) && /P\.navyTint/.test(band), 'section bands are mono-uppercase on a tint');
+  assert.ok(/text-transform:uppercase/.test(band) && /P\.intakeTint/.test(band) && /P\.intakeInk/.test(band), 'section bands are uppercase on the intake tint (light blue since 25post B7)');
   assert.strictEqual(/text-align:center/.test(band), false, 'not centred');
   const ppd = extractRawFunction('Code.js', 'intakeBuildPpdBodyHtml_');
   const acct = extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_');
@@ -8903,7 +8907,9 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
   });
   // The restyle must not have dropped an esc_ — every patient field is escaped
   // and the server-generated justification stays the ONE raw exception.
-  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppd), 'labels and answers are escaped');
+  const ppdAns = extractRawFunction('Code.js', 'intakePpdAnswerHtml_');
+  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppdAns), 'labels and answers are escaped');
+  assert.ok(/esc_\(answerRaw\)/.test(acct), 'account answers are escaped');
 });
 
 console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
@@ -39111,6 +39117,119 @@ test('B6: a team send resolves only to an address the roster produces today; a f
   assert.ok(/catch \(e\) \{ teamError = 'The Sales\/PAP list could not be read from the CDR Report: '/.test(ep), 'the endpoint names a failed read beside the app users (g128)');
   const cached = extractRawFunction('Code.js', 'intakeTeamRoster_');
   assert.ok(cached.indexOf('cache.put') > cached.indexOf('intakeTeamRosterParse_('), 'only a parsed read is cached (g129)');
+});
+
+// ── 25post B7 (operator 2026-10-16) — the intake emails, redesigned ──────────
+function b7EmailCtx_() {
+  const src = serverSource();
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math });
+  const decl = (name) => { const m = new RegExp('const ' + name + ' = ([\\s\\S]*?);\\n').exec(src); assert.ok(m, name); vm.runInContext('var ' + name + ' = ' + m[1] + ';', ctx); };
+  vm.runInContext('var CN_EMAIL_PALETTE = ' + extractConstObject('Code.js', 'CN_EMAIL_PALETTE') + ';', ctx);
+  vm.runInContext('var INTAKE_PMD_LAYOUT = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', ctx);
+  vm.runInContext('var INTAKE_PAP_LAYOUT = ' + extractConstObject('Code.js', 'INTAKE_PAP_LAYOUT') + ';', ctx);
+  vm.runInContext('var INTAKE_PPD_EMAIL_TONES = ' + extractConstObject('Code.js', 'INTAKE_PPD_EMAIL_TONES') + ';', ctx);
+  ['INTAKE_PPD_EMAIL_PICKED_QS', 'INTAKE_PPD_EMAIL_PAIN'].forEach(decl);
+  vm.runInContext('var INTAKE_PPD_EMAIL_COMBOS = ' + /const INTAKE_PPD_EMAIL_COMBOS = (\[[\s\S]*?\n\]);/.exec(src)[1] + ';', ctx);
+  ['esc_', 'cnNlBr_', 'intakeSectionRowHtml_', 'intakePpdAnswerStyles_', 'intakeNotesBoxHtml_', 'intakePpdEmailUnits_',
+   'intakePpdAnswerHtml_', 'intakeBuildPpdBodyHtml_', 'intakeBuildAcctBodyHtml_', 'intakeRecListHtml_', 'intakeHttpOnly_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const b7Acct_ = (answers) => {
+  const bank = vm.runInNewContext(/const INTAKE_PMD_Q_EN = (\[[\s\S]*?\n\]);/.exec(serverSource())[1]);
+  const hdr = [0, 7, 11, 21];
+  return bank.map((label, i) => hdr.indexOf(i) >= 0 ? { qIndex: i, label, isHeader: true } : { qIndex: i, label, value: answers[i] || '', isSecondary: [3, 10, 19, 20, 23, 26, 28].indexOf(i) >= 0 });
+};
+
+test('B7: the PMD email — attestations green when confirmed and amber when not, availability side by side, Other Notes in its own box, identifiers mono, everything escaped (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const html = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 1: 'Jane <b>Q</b>', 2: '555-555-0123', 24: 'TRUE', 25: '', 26: 'Mon, Wed · AM — unavailable 10/18', 27: 'Open (any weekday, any time)', 28: 'Hard of hearing\nCall daughter' }), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(/#e4f5ec[^>]*>.*&#10003; Explained mobility evaluation/.test(html), 'a confirmed attestation is green with a check');
+  assert.ok(/#fbf1d9[^>]*><strong>&#9675; Permission to call &amp; schedule Mobility Evaluation with MDO\?<\/strong> &mdash; <strong>not confirmed<\/strong>/.test(html), 'an unanswered one is amber and says "not confirmed"');
+  const pmdFalse = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 25: 'FALSE' }), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(/answered No/.test(pmdFalse), 'a deliberate No is said as one');
+  assert.ok(/ME Availability<\/div><div[^>]*>Mon, Wed · AM<\/div><div[^>]*>unavailable 10\/18<\/div>/.test(html), 'availability: the grid answer, then its note');
+  assert.ok(/PPD Availability<\/div><div[^>]*>Open \(any weekday, any time\)<\/div>/.test(html));
+  assert.ok(/<td width="50%"[^>]*>.*ME Availability.*<td width="50%"[^>]*>.*PPD Availability/.test(html), 'the two sit side by side');
+  assert.ok(/Other Notes<\/div><div[^>]*>Hard of hearing<br>Call daughter<\/div>/.test(html), 'Other Notes is its own box, line breaks kept');
+  assert.ok(html.lastIndexOf('Other Notes') > html.lastIndexOf('PPD Availability'), 'and it closes the body');
+  assert.ok(/Courier New[^>]*>555-555-0123</.test(html), 'a phone is in the fixed-width face');
+  assert.ok(/Jane &lt;b&gt;Q&lt;\/b&gt;/.test(html) && !/Jane <b>/.test(html), 'patient text is escaped');
+  assert.ok(/#e1ecfa/.test(html) && /#154980/.test(html), 'the section bands are the light-blue intake tint');
+  ['display:flex', 'gap:', 'filter:'].forEach((bad) => assert.strictEqual(html.indexOf(bad), -1, 'email-safe: no ' + bad));
+});
+
+test('B7: insurance-card images sit at the end of the Insurance section, and an email without images has no images section at all (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const imgs = '<tr><td colspan="2">IMAGES</td></tr>';
+  const withImgs = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}), ctx.INTAKE_PMD_LAYOUT, imgs);
+  const at = withImgs.indexOf('IMAGES');
+  assert.ok(at > withImgs.indexOf('SSN #') && at < withImgs.indexOf('Clinical Information'), 'after the last Insurance row, before Clinical');
+  const none = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(!/Insurance card images/.test(none) && !/IMAGES/.test(none), 'no images, no section');
+  const pap = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}).slice(0, 0).concat([{ qIndex: 10, label: 'SSN', value: '' }, { qIndex: 11, label: 'Clinical Information', isHeader: true }]), ctx.INTAKE_PAP_LAYOUT, imgs);
+  assert.ok(pap.indexOf('IMAGES') < pap.indexOf('Clinical Information'), 'PAP too');
+  // The decoder returns an EMPTY block when nothing decodes.
+  const dctx = vm.createContext({ String, CONFIG: { INTAKE: { MAX_IMAGES: 12, MAX_IMAGE_CHARS: 1e6 } }, CN_EMAIL_PALETTE: { line: '#l', muted: '#m' },
+    Utilities: { newBlob: () => ({}), base64Decode: () => [] } });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeDecodeImages_'), dctx);
+  assert.strictEqual(dctx.intakeDecodeImages_(['not a data url']).sectionHtml, '', 'nothing decoded, no section');
+  const one = dctx.intakeDecodeImages_(['data:image/png;base64,AAAA']).sectionHtml;
+  assert.ok(/Insurance card images \(1\)/.test(one) && /cid:attachedImage0/.test(one) && /^<tr>/.test(one), 'one image: a table row with its caption');
+  // The send hashes the image-free body and adds the images only to the final one.
+  const send = extractRawFunction('Code.js', 'intakeSendAcct_');
+  assert.ok(/intakeBodyHash_\(body, subject\) !== expectedBodyHash/.test(send) &&
+    /amendBanner \+ \(imagesHtml \? intakeBuildAcctBodyHtml_\(acctRows, layout, imagesHtml\) : body\)/.test(send), 'the preview contract covers the body without images');
+});
+
+test('B7: the PPD email — one row per question, arms/legs/height-weight combined, pain as two columns, sub-questions under their parent, the form\'s colours (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const bank = vm.runInNewContext(/const INTAKE_PPD_Q_EN = (\[[\s\S]*?\n\]);/.exec(serverSource())[1]);
+  const notesEn = vm.runInNewContext('(' + /const INTAKE_PPD_NOTES_EN = (\{[^\n]*\});/.exec(serverSource())[1] + ')');
+  vm.runInContext('var INTAKE_PPD_Q_EN = ' + JSON.stringify(bank) + '; var INTAKE_PPD_NOTES_EN = ' + JSON.stringify(notesEn) + ';', ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakePpdRowsEn_'), ctx);
+  const answers = { '2': 'Only with assistance', '7': 'Yes', '8': 'Yes', '9': 'No', '14': 'No', '15': 'Yes', '19': 'Yes', '25': 'Feet, Legs', '31': 'Yes', '31a': 'Paralysis Left Arm, Weakness Right Side',
+    '34': 'No', '37': '64', '38': '182', '39': 'Friends/Family', '39a': 'House', notes: 'Hard of <hearing>' };
+  const rows = ctx.intakePpdRowsEn_(answers);
+  const units = JSON.parse(JSON.stringify(ctx.intakePpdEmailUnits_(rows)));
+  const kinds = units.map((u) => u.kind === 'combo' ? 'combo:' + u.parts.map((p) => p.qNum).join('/') : u.kind === 'row' ? 'q' + u.qNum + (u.sub ? '+' + u.sub.qNum : '') : u.kind);
+  assert.ok(kinds.indexOf('combo:7/8/9') >= 0 && kinds.indexOf('combo:10/11/12') >= 0 && kinds.indexOf('combo:37/38') >= 0, kinds.join(','));
+  ['q7', 'q8', 'q9', 'q37', 'q38', 'q14', 'q23', 'q31a', 'q39a'].forEach((k) => assert.ok(kinds.indexOf(k) < 0, k + ' is not a row of its own'));
+  assert.strictEqual(kinds.filter((k) => k === 'pain').length, 1, 'the ten pain sites are one block');
+  assert.ok(kinds.indexOf('q31+31a') >= 0 && kinds.indexOf('q33+33a') >= 0 && kinds.indexOf('q39+39a') >= 0, 'sub-questions ride their parent');
+  assert.ok(kinds.indexOf('q13') >= 0 && kinds.indexOf('q24') >= 0 && kinds.indexOf('q45') >= 0, 'every other question is its own row');
+  assert.strictEqual(units.find((u) => u.kind === 'pain').items.map((i) => i.label).join('|'), '14. Neck|15. Shoulder|16. Elbows|17. Arms|18. Hands|19. Back|20. Hips|21. Knees|22. Legs|23. Ankles');
+  const html = ctx.intakeBuildPpdBodyHtml_('Jane', rows, { complex: [], standard: [] }, null);
+  const chip = (bg, txt) => new RegExp('background-color:' + bg + '[^>]*>' + txt + '<');
+  assert.ok(chip('#e4f5ec', 'Yes').test(html) && chip('#fce5e5', 'No').test(html), 'Yes green, No red');
+  assert.ok(chip('#e4f5ec', 'Only with assistance').test(html) && chip('#e4f5ec', 'House').test(html), 'a picked option is green, as on the form');
+  assert.ok(chip('#fbf1d9', 'Feet').test(html) && chip('#fbf1d9', 'Legs').test(html), 'a warning option is amber');
+  assert.ok(chip('#fce5e5', 'Paralysis Left Arm').test(html) && chip('#fbf1d9', 'Weakness Right Side').test(html), 'paralysis light red, weakness amber');
+  assert.ok(chip('#0f1623', 'No').test(html), 'a "No" among severity options is the dark chip');
+  assert.ok(/<td width="50%"[^>]*>.*14\. Neck.*18\. Hands.*<\/table><\/td><td width="50%"[^>]*>.*19\. Back.*23\. Ankles/.test(html), 'pain: 14–18 in one column, 19–23 in the other');
+  assert.ok(/Additional notes<\/div><div[^>]*>Hard of &lt;hearing&gt;<\/div>/.test(html), 'the notes box, escaped');
+  assert.ok(!/MRADL help|Pain sites/.test(html), 'no summary cards');
+  assert.ok(/64 in\.<\/b>.*182 lbs\.<\/b>/.test(html), 'height and weight carry their units');
+  assert.strictEqual(units.filter((u) => u.kind === 'header' && /Additional Notes/.test(u.label)).length, 0, 'the notes box is not under a band repeating its title');
+});
+
+test('B7: the email\'s colours and rows MIRROR the client — option tones, the picked-choice questions, and the account attest / availability / notes rows', () => {
+  const cli = extractScript('intake/script_intake.html');
+  const ctl = vm.runInNewContext('(' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_CONTROL') + ')');
+  const srvTones = JSON.parse(JSON.stringify(vm.runInNewContext('(' + extractConstObject('Code.js', 'INTAKE_PPD_EMAIL_TONES') + ')')));
+  const cliTones = {};
+  Object.keys(ctl).forEach((q) => { (ctl[q].options || []).forEach((o) => { if (o.tone) (cliTones[q] = cliTones[q] || {})[o.v] = o.tone; }); });
+  assert.deepStrictEqual(srvTones, JSON.parse(JSON.stringify(cliTones)), 'every toned option is coloured the same in the email');
+  const picked = vm.runInNewContext(/const INTAKE_PPD_EMAIL_PICKED_QS = (\[[^\]]*\]);/.exec(serverSource())[1]);
+  const cliPicked = Object.keys(ctl).filter((q) => ['choice', 'multi', 'reveal'].indexOf(ctl[q].kind) >= 0 && !(ctl[q].options || []).some((o) => o.tone));
+  assert.deepStrictEqual(Array.from(picked).sort(), cliPicked.sort(), 'the picked-choice questions are the client\'s untoned choice controls');
+  [['INTAKE_PMD_CLIENT', 'INTAKE_PMD_LAYOUT'], ['INTAKE_PAP_CLIENT', 'INTAKE_PAP_LAYOUT']].forEach(([c, sv]) => {
+    const C = vm.runInNewContext('(' + extractClientObject('intake/script_intake.html', c) + ')');
+    const S = vm.runInNewContext('(' + extractConstObject('Code.js', sv) + ')');
+    assert.deepStrictEqual(Array.from(S.ATTEST_ROWS), Array.from(C.attest), c + ' attest');
+    assert.deepStrictEqual(Array.from(S.AVAIL_ROWS), Array.from(C.avail || []), c + ' avail');
+    assert.strictEqual(S.NOTES_ROW, C.notes, c + ' notes');
+  });
+  assert.ok(cli.length > 0);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
