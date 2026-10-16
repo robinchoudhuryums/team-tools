@@ -5,17 +5,18 @@ Cycle: 25 — closed 2026-10-16 (reflected net +13 (16 prod fixes − 3 new fail
 Phase: idle
 Scope: —
 Test Command: manual
-Estimates: (none yet — each batch's goes here before its first edit)
+Estimates: **25post monitoring (operator 2026-10-16, after the first post-deploy health email: (1) a digest or job that a deploy or a setting newly puts under watch is judged from when it was first watched, not from the trigger install or the AuditLog window — spanishEscalation and the diagnostics purge both read "trigger may be missing" the morning of the deploy; (2) the monthly accrual line names the run it can see — a job that ran this month but wrote no credit row is not a missing trigger): S (~2 h)** — written before the first edit, 2026-10-16.
 Subsystem cycles since last Seams audit: 2 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06) and cycle 25's /reflect (2026-10-16). The cadence is every 4.
-Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs)
+Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs; then the 25post monitoring fix, block `.cycle/blocks/25post-monitoring-broad-implement.md`)
 
 ## In progress (facts to carry forward — NOT judgments)
 - (none — cycle 25 is closed; its record is the top block of `.cycle/HISTORY.md`)
 
 ## Completed this cycle
-- (none yet)
+- 25post-1 + 25post-2 (operator 2026-10-16, after the cycle (25) closed) | web-app/00_config.js, web-app/10_core.js | automation liveness is judged from each check's FIRST WATCH (`AUTOMATION_WATCH_SINCE`, seeded from the install), and the monthly accrual line names a run that wrote no row instead of a missing trigger — INV-384, the six 25post pins. Actual ~1.5 h against S (~2 h).
 
 ## Pending / not yet done
+- **25post deploy (2026-10-16):** `cd web-app && clasp push -f` + New version; the next health email should carry no "trigger may be missing" line for spanishEscalation or the diagnostics purge once each has run. **Operator check from the 2026-10-16 email:** PH0001/PH0002 AccruedThrough (Employees column R) and `previewPtoAccruals('2026-09')` — September may not have been credited (the job ran in October and wrote no credit row).
 - **Cycle 25 deploy + walks (owed at reflection, 2026-10-16):** `cd web-app && clasp push -f`, then a New version; `runSmokeTests` on prod; then the scenario walks each cycle-25 block lists (S138–S143 among them). Nothing in cycle 25 was deployed when it was reflected.
 - **INV-383 (proposed by the cycle-25 reflect, not yet written):** every third-party module the CI handbook step's scripts import is pip-installed there at a pinned version — already pinned by the F29 + F65 pin's derived import walk; write it into the library (and off the HELD NUMBERS line if held there first).
 - **Handbook release (2026-10-13, supersedes the earlier manual deploy/import lines):** `cd web-app && clasp push -f` + New version (the reader's "Policies & Procedures Handbook" labels), then `manual/make_all.sh` → Reference → Handbook → Choose File → Check → Import (tick the removal box) → Publish; section titles changed ("How to use this handbook", "A.1 Handbook terms").
@@ -104,4 +105,4 @@ Updated: 2026-10-16 (close-out of cycle 25 by scripts/cycle-closeout.mjs)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 25 was closed on 2026-10-16 by `scripts/cycle-closeout.mjs --close`. Next: an audit opens the next cycle; the carried Pending items are the operator's open steps.
+Cycle 25 was closed on 2026-10-16 by `scripts/cycle-closeout.mjs --close`. Next: an audit opens the next cycle; the carried Pending items are the operator's open steps. After the close, the 25post monitoring fix (two false "trigger may be missing" classes from the first post-deploy health email) landed on the branch — deploy it with the cycle-25 batches; the next /reflect counts it.

@@ -2538,6 +2538,15 @@ entry says which it is.
   reach far enough, and a monthly job is not called "not run this month" unless
   the window reaches back past the 1st. That is expected, not a fault; it clears
   on each job's next run. Delete one key to forget that job's last run.
+  **25post (2026-10-16): `AUTOMATION_WATCH_SINCE`**, also auto-managed — when
+  each digest and each enabled job was FIRST WATCHED. A digest a deploy adds,
+  or a job a deploy or a setting turns on, is not called "never ran" or "no run
+  on record" until its own window has passed since then (the first record is
+  seeded with the trigger install time, so nothing already watched lost its
+  alarm). The monthly accrual line now reads "ran on … but wrote no row this
+  month" when its job ran without crediting — check column R and
+  `previewPtoAccruals('<last month>')`; reinstalling the trigger will not help.
+  Delete the property to re-seed it from the install.
 <a id="operator-offboarding-edits-the-gate-lists-cycle-22"></a>
 - **Offboarding edits `MANAGER_EMAILS` / `ADMIN_EMAILS` — and records
   `OFFBOARDED_EMAILS` (cycle 22 S7, 2026-09-25).** Manage → Admin → Config →

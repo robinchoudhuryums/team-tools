@@ -2313,6 +2313,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // TRUNCATED window, as on a busy production AuditLog, so the "last seen"
       // rows with no run on record say they cannot confirm.
       auditWindow: { complete: false, startMgr: daysAgo(9) + ' 08:12:40', startMs: Date.now() - 9 * 86400000, rows: 4000 },
+      watchSince: { CallNotesReconcile: { ms: Date.now() - 20 * 86400000, ym: '2026-08' } },
+      jobRanAt: {},
       problems: [{ kind: 'openPunch', key: 'days', text: 'Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
@@ -2582,7 +2584,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
+      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, watchSince: {}, jobRanAt: {}, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
     // G3 (cycle 25 E1): a fresh deploy — no digest has written a row yet.

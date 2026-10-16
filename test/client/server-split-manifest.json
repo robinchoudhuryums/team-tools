@@ -3025,6 +3025,23 @@
     "kbSignalVocab_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: the first-watched record for automation liveness (AUTOMATION_WATCH_SINCE)",
+   "added": [
+    "AUTOMATION_WATCH_SINCE_PROP",
+    "automationWatchMerge_",
+    "automationWatchSince_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_JOB_CHECKS",
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3092,7 +3109,7 @@
   "AUTOMATION_JOB_CHECKS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b11a742b457448b7"
+   "sha": "53d82b14875ebe12"
   },
   "AUTOMATION_OUTCOME_SKIPPED_MAX": {
    "file": "00_config.js",
@@ -3123,6 +3140,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "ca569dffce0f62ab"
+  },
+  "AUTOMATION_WATCH_SINCE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "68b1c21909dd8987"
   },
   "BIZ_MAX_SPAN_DAYS": {
    "file": "00_config.js",
@@ -5927,7 +5949,7 @@
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "13cc892f070188a8"
+   "sha": "f273341db3a6c024"
   },
   "automationLastRunMerge_": {
    "file": "10_core.js",
@@ -5947,12 +5969,22 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "25970dfedde83963"
+   "sha": "b40c1925ac123665"
   },
   "automationRunKey_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "7d755636e574b28a"
+  },
+  "automationWatchMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ff708f3e50f1453d"
+  },
+  "automationWatchSince_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7b337f74cc7d9175"
   },
   "biweeklyRangeFor_": {
    "file": "20_timeclock.js",
@@ -6582,7 +6614,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "0ef4c9ecfd011601"
+   "sha": "5efe2ba4b8eb11e8"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",

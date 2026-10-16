@@ -4958,6 +4958,28 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   dispatcher stamps the job key and never clears one the job owns (that would
   erase the job's own stamp). Verify: the Seams F3 two-sided net.
 
+  **25post (operator 2026-10-16), the first health email after the cycle-25
+  deploy.** Three lines told the operator to re-run `installAutomationTriggers()`
+  and none was a missing trigger. (1) The Spanish escalation digest, added to
+  `runDailyChecks` by E4, was judged "never ran" from the trigger INSTALL three
+  weeks earlier — the deploy landed after that morning's 8am slot, so it had
+  never had a chance to run. (2) The diagnostics purge, watched only since E1
+  made it always-on, was judged from an AuditLog window that reached back past
+  its 30 hours — before the deploy it had never written a row to find. (3) The
+  accrual line said "has not run this month" although the job had run in
+  October (its reconcile stamp, rewritten on every path, carried September)
+  and simply wrote no credit row. **Absence is evidence only from when the
+  check started watching, and a check that can see the run says so.**
+  `AUTOMATION_WATCH_SINCE` records each digest and each enabled job's first
+  watch (seeded with the install time, so shipping it masked nothing); a
+  digest's "never ran" counts from the later of the install and its first
+  watch, a daily job's "no run on record" waits out its stale window from its
+  first watch, and a monthly job first watched this month makes no claim. A
+  job table entry can carry `ranAt` — the accrual's is the reconcile stamp — and
+  a run this month with no row reads "ran on … but wrote no row this month, so
+  its trigger is running", with the remedy (column R, `previewPtoAccruals`).
+  Verify: the six 25post pins.
+
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
 - **A LEADING underscore is not private — `google.script.run` reaches every

@@ -10,6 +10,18 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-16 — liveness from the first watch (25post)
+
+**Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New
+version). One auto-managed Script Property appears on the first health read,
+`AUTOMATION_WATCH_SINCE`. What changes in the health email and the Admin System
+tab: a digest or job that a deploy (or a setting) has only just put under
+watch is not reported as "never ran" / "no run on record — the trigger may be
+missing" until its own window has passed; and the monthly accrual line says
+"ran on … but wrote no row this month, so its trigger is running" — with the
+column-R and `previewPtoAccruals` check — when the job ran without crediting.
+Neither of those lines is fixed by `installAutomationTriggers()`.
+
 ## 2026-10-15 — the Reference search signal (cycle 25 E6)
 
 **Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New

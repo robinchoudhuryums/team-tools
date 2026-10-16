@@ -1047,6 +1047,17 @@ const OFFBOARDED_EMAILS_MAX = 100;
 // account is disabled, so offboarding the installer silently stops every job.
 // Stamped by the installer; read by the triggerOwner detector. Auto-managed.
 const AUTOMATION_TRIGGER_OWNER_PROP = 'AUTOMATION_TRIGGER_OWNER';
+// 25post (operator 2026-10-16) — when each liveness check was FIRST WATCHED:
+// {'digest:<key>' | 'job:<action>': ms}. A digest added by a deploy, or a job a
+// deploy or a setting newly enables, was judged from the trigger install (or
+// the AuditLog window) — so the morning of a deploy, the new Spanish escalation
+// digest and the newly always-on diagnostics purge both read "the trigger may
+// be missing" before either had had a slot to run in. Absence now counts only
+// from the later of the install and the first watch. A key leaves the map when
+// its job is no longer checked, so re-enabling one starts a fresh window; the
+// first write seeds every key with the install time, so shipping this masks
+// nothing that was already watched. Auto-managed; delete it to re-seed.
+const AUTOMATION_WATCH_SINCE_PROP = 'AUTOMATION_WATCH_SINCE';
 // The two gate lists offboarding edits. An address is REMOVED from each, except
 // when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
 // admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler
@@ -1072,9 +1083,19 @@ const OFFBOARD_GATE_LISTS = ['MANAGER_EMAILS', 'ADMIN_EMAILS'];
 const AUTOMATION_JOB_CHECKS = [
   { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile',
     cadence: 'daily', staleHours: 30, enabled: function () { return true; } },
+  // 25post: `ranAt` is when the job last RAN, row or no row — the reconcile
+  // stamp is rewritten on every path. A run this month that wrote no credit row
+  // is not a missing trigger, and the line says what it is instead (g142).
   { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit',
     cadence: 'monthly', graceDays: 3,
-    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); } },
+    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); },
+    ranAt: function () { const r = readAccrualReconcile_(); return (r && Number(r.at)) || null; },
+    noRowHint: function (thisMonth) {
+      const m = /^(\d{4})-(\d{2})$/.exec(String(thisMonth || ''));
+      const prev = m ? (+m[2] === 1 ? (+m[1] - 1) + '-12' : m[1] + '-' + String(+m[2] - 1).padStart(2, '0')) : 'last month';
+      return 'it credits a month only when one is owed. Check each accruing rep\'s AccruedThrough (Employees column R) — ' +
+        'a blank cell is seeded without crediting — and run previewPtoAccruals(\'' + prev + '\') from the editor to see what ' + prev + ' earns';
+    } },
   { action: 'TimesheetArchive', label: 'Timesheet cold-archive',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return getTimesheetArchiveDays_() > 0; } },

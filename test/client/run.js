@@ -28881,7 +28881,7 @@ test('F60 (cycle 25): a digest with no heartbeat is STALE once the triggers have
   assert.ok(items.some((t) => /"missedPunch" digest has no run on record since the triggers were installed \(2026-10-12 09:00:00\).*re-run installAutomationTriggers/.test(t)), items.join(' | '));
   // The server derives it from the install record, and both client surfaces render it.
   const cah = extractRawFunction('Code.js', 'computeAutomationHealth_');
-  assert.ok(/AUTOMATION_TRIGGER_OWNER_PROP/.test(cah) && /neverRan = stale = digestNeverRanOverdue_\(installedMs/.test(cah), 'the health report reads the install time');
+  assert.ok(/AUTOMATION_TRIGGER_OWNER_PROP/.test(cah) && /neverRan = stale = digestNeverRanOverdue_\(\s*\(installedMs !== null && firstWatch > installedMs\) \? firstWatch : installedMs/.test(cah), 'the health report reads the install time');
   const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   assert.ok(/return !d\.last && !d\.stale;/.test(cli), 'the System tab counts only a not-yet-due digest as "no heartbeat yet"');
   assert.ok(/if \(!d\.last && d\.neverRan\)/.test(cli), 'and the Automation Health panel warns for an overdue one');
@@ -38596,6 +38596,131 @@ test('E6 follow-on (cycle 25): a content request\'s topic and its "name · age" 
   const render = stripJsComments_(extractFunction('kb/script_kb.html', 'kbLandingBlocksHtml_'));
   assert.ok(/<div class="kb-land-req-body">' \+\s*'<span class="kb-land-t">' \+ esc\(rq\.topic\) \+ '<\/span>' \+\s*'<span class="kb-land-meta">' \+ meta/.test(render),
     'the rule matches the markup it styles (the topic and meta spans inside .kb-land-req-body)');
+});
+
+// ---------------------------------------------------------------------------
+// 25post (operator 2026-10-16) — the first post-deploy health email named two
+// checks "the trigger may be missing" the morning a deploy put them under watch
+// (the new Spanish escalation digest; the diagnostics purge, always on since
+// E1), and told the operator to reinstall the accrual trigger although the
+// accrual job had run that month and simply written no credit row.
+console.log('\n25post — liveness is judged from the first watch, and a run without a row says so');
+
+function p25JobCtx_(checks) {
+  const ctx = vm.createContext({ console, isFinite, String, Object, JSON, Number });
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.AUTOMATION_JOB_CHECKS = checks;
+  return ctx;
+}
+const P25_NOW = Date.parse('2026-10-16T14:00:00Z');
+const P25_DAILY = { action: 'DiagnosticsPurge', label: 'diagnostics retention purge', cadence: 'daily', staleHours: 30, enabled: () => true };
+
+test('25post: automationWatchMerge_ — the first write seeds every key with the INSTALL time (nothing already watched is masked), a later key gets now, a key no longer checked is dropped, and an unchanged set writes nothing (driven)', () => {
+  const ctx = vm.createContext({ Object, Number, isFinite, Array });
+  vm.runInContext(extractRawFunction('Code.js', 'automationWatchMerge_'), ctx);
+  const m = (prev, keys, now, seed) => JSON.parse(JSON.stringify(ctx.automationWatchMerge_(prev, keys, now, seed)));
+  const INSTALL = P25_NOW - 21 * 86400000;
+  assert.deepStrictEqual(m(null, ['digest:eod', 'job:CallNotesReconcile'], P25_NOW, INSTALL),
+    { map: { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL }, changed: true }, 'no record yet: seeded with the install, so shipping this hides no dead trigger');
+  assert.deepStrictEqual(m(null, ['digest:eod'], P25_NOW, null), { map: { 'digest:eod': 0 }, changed: true }, 'no install record: 0 — no window at all, the old reading');
+  const prev = { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL };
+  assert.deepStrictEqual(m(prev, ['digest:eod', 'job:CallNotesReconcile', 'digest:spanishEscalation', 'job:DiagnosticsPurge'], P25_NOW, INSTALL).map,
+    { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL, 'digest:spanishEscalation': P25_NOW, 'job:DiagnosticsPurge': P25_NOW },
+    'THE REGRESSION: a digest a deploy added and a job a deploy enabled are watched from NOW, not from the install three weeks ago');
+  const dropped = m(prev, ['digest:eod'], P25_NOW, INSTALL);
+  assert.deepStrictEqual(dropped, { map: { 'digest:eod': INSTALL }, changed: true }, 'a job no longer checked leaves the map, so re-enabling it starts a fresh window');
+  assert.strictEqual(m(prev, ['digest:eod', 'job:CallNotesReconcile'], P25_NOW, INSTALL).changed, false, 'the same set writes nothing (the health dot reads this on every page)');
+  assert.strictEqual(m({ 'digest:eod': 'x' }, ['digest:eod'], P25_NOW, INSTALL).map['digest:eod'], P25_NOW, 'an unreadable entry is a new watch, never NaN');
+});
+
+test('25post: automationWatchSince_ writes the Script Property only when the map changed, and survives an unreadable record (driven)', () => {
+  const props = { AUTOMATION_WATCH_SINCE: '{"digest:eod":5}' };
+  const writes = [];
+  const ctx = vm.createContext({ Object, Number, isFinite, Array, JSON, Date: { now: () => P25_NOW },
+    AUTOMATION_WATCH_SINCE_PROP: 'AUTOMATION_WATCH_SINCE',
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null }) },
+    propSetBounded_: (k, v) => { writes.push(k); props[k] = v; } });
+  ['automationWatchMerge_', 'automationWatchSince_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.automationWatchSince_(['digest:eod'], 1);
+  assert.strictEqual(writes.length, 0, 'unchanged: no write');
+  const got = JSON.parse(JSON.stringify(ctx.automationWatchSince_(['digest:eod', 'digest:spanishEscalation'], 1)));
+  assert.deepStrictEqual(got, { 'digest:eod': 5, 'digest:spanishEscalation': P25_NOW }, 'a new digest is watched from now');
+  assert.deepStrictEqual(writes, ['AUTOMATION_WATCH_SINCE'], 'and the change is written once');
+  props.AUTOMATION_WATCH_SINCE = '{not json';
+  assert.strictEqual(ctx.automationWatchSince_(['digest:eod'], 7)['digest:eod'], 7, 'an unreadable record re-seeds from the install');
+});
+
+test('25post: a DAILY job with no run on record is not "missing" inside its stale window from its first watch — past it, or with no watch record, it is (driven)', () => {
+  const ctx = p25JobCtx_([P25_DAILY]);
+  const f = ctx.automationJobProblems_;
+  const none = [{ action: 'DiagnosticsPurge', last: null }];
+  const win = { complete: false, startMgr: '2026-09-20 08:00:00', startMs: P25_NOW - 26 * 86400000, rows: 4000 };
+  const MISSING = /diagnostics retention purge has no run on record/;
+  assert.ok(f(none, {}, P25_NOW, 16, '2026-10', win).some((t) => MISSING.test(t)), 'no watch record: the A1 follow-up reading stands');
+  assert.strictEqual(f(none, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 5 * 3600000, ym: '2026-10' } } }).filter((t) => MISSING.test(t)).length, 0,
+    'THE REGRESSION: enabled by this morning\'s deploy, the nightly purge has not had its 2am slot yet');
+  assert.ok(f(none, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 31 * 3600000, ym: '2026-10' } } }).some((t) => MISSING.test(t)),
+    'watched past its 30h window with still no run: the trigger really may be missing');
+  const stale = [{ action: 'DiagnosticsPurge', last: { timestampMgr: '2026-10-13 02:00:00', ms: P25_NOW - 3 * 86400000 } }];
+  assert.ok(f(stale, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 3600000, ym: '2026-10' } } }).some((t) => /last ran 2026-10-13 02:00:00/.test(t)),
+    'a run ON RECORD that has gone stale is evidence whatever the watch says');
+});
+
+test('25post: the MONTHLY accrual line — a job that RAN this month without a row names that run and the remedy, never "the trigger may be missing"; a job first watched this month makes no claim; a run last month is still "not run" (driven)', () => {
+  const hint = (ym) => 'see ' + ym;
+  const ctx = p25JobCtx_([{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true, noRowHint: hint }]);
+  const f = ctx.automationJobProblems_;
+  const septRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 18:00:04', ms: P25_NOW - 45 * 86400000 } }];
+  const win = { complete: true };
+  const ranOct = { PtoAccrualCredit: { ms: P25_NOW - 86400000, ym: '2026-10', mgr: '2026-10-15 18:00' } };
+  const lines = f(septRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct });
+  assert.strictEqual(lines.length, 1, lines.join(' | '));
+  assert.ok(/monthly PTO accrual credit ran on 2026-10-15 18:00 but wrote no row this month, so its trigger is running — see 2026-10\.$/.test(lines[0]), lines[0]);
+  assert.ok(!/may be missing|installAutomationTriggers/.test(lines[0]), 'THE REGRESSION: the email sent the operator to reinstall a trigger that had run');
+  assert.ok(f(septRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: { PtoAccrualCredit: { ms: P25_NOW - 40 * 86400000, ym: '2026-09', mgr: '2026-09-06 18:00' } } })
+    .some((t) => /has not run this month.*may be missing/.test(t)), 'a last run in an EARLIER month is not this month\'s run');
+  assert.strictEqual(f([{ action: 'PtoAccrualCredit', last: null }], {}, P25_NOW, 16, '2026-10', win, { watchSince: { PtoAccrualCredit: { ms: P25_NOW - 86400000, ym: '2026-10' } } }).length, 0,
+    'first watched on the 15th (a setting turned it on): the 1st was never observed, so no claim this month');
+  assert.ok(f([{ action: 'PtoAccrualCredit', last: null }], {}, P25_NOW, 16, '2026-10', win, { watchSince: { PtoAccrualCredit: { ms: P25_NOW - 40 * 86400000, ym: '2026-09' } } })
+    .some((t) => /has not run this month/.test(t)), 'watched since last month: absence this month is evidence');
+  const octRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-10-01 18:00:04', ms: P25_NOW - 15 * 86400000 } }];
+  assert.strictEqual(f(octRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct }).length, 0, 'a credit row this month is the normal case — nothing to say');
+});
+
+test('25post: the real accrual table entry — `ranAt` reads the reconcile stamp every path rewrites, and the hint names last month (January → December) and the column (driven over the real AUTOMATION_JOB_CHECKS)', () => {
+  let stamp = { at: P25_NOW - 3600000 };
+  const ctx = vm.createContext({ String, Number, readAccrualReconcile_: () => stamp, getFlag_: () => true, rosterHasAccruingRep_: () => true,
+    getTimesheetArchiveDays_: () => 0, getNoteArchiveDays_: () => 0, getNoteRetentionDays_: () => 0, getArchiveRetentionDays_: () => 0,
+    getFormRetentionDays_: () => 0, qaReviewRetentionDays_: () => 0, qaStoreConfigured_: () => false });
+  vm.runInContext(extractConstDecl_('AUTOMATION_JOB_CHECKS').replace(/^const /, 'var '), ctx);
+  const acc = ctx.AUTOMATION_JOB_CHECKS.find((j) => j.action === 'PtoAccrualCredit');
+  assert.strictEqual(acc.ranAt(), P25_NOW - 3600000, 'the reconcile stamp\'s `at`');
+  stamp = null; assert.strictEqual(acc.ranAt(), null, 'no stamp: no run known');
+  assert.ok(/previewPtoAccruals\('2026-09'\) from the editor to see what 2026-09 earns/.test(acc.noRowHint('2026-10')), acc.noRowHint('2026-10'));
+  assert.ok(/previewPtoAccruals\('2025-12'\)/.test(acc.noRowHint('2026-01')), 'January asks about December of the year before');
+  assert.ok(/AccruedThrough \(Employees column R\).*a blank cell is seeded without crediting/.test(acc.noRowHint('2026-10')), 'and names the stamp column and its seeding rule');
+  const stampers = stripJsComments_(extractRawFunction('Code.js', 'accrualNothingToDo_') + extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.ok(/stampAccrualReconcile_\(\{ at: Date\.now\(\)/.test(stampers) && /const rec = \{ at: Date\.now\(\)/.test(stampers) && /stampAccrualReconcile_\(rec\)/.test(stampers),
+    'both paths of the job stamp `at` — which is what makes it a run record');
+});
+
+test('25post: computeAutomationHealth_ watches every digest and every CHECKED job, judges a digest\'s "never ran" from the later of install and first watch, and ships both maps to the problem list (structural + wiring driven)', () => {
+  const cah = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/Object\.keys\(DIGEST_STALE_HOURS\)\.map\(function \(k\) \{ return 'digest:' \+ k; \}\)/.test(cah), 'every digest key is watched (derived from the staleness map)');
+  assert.ok(/if \(on\) watchKeys\.push\('job:' \+ j\.action\)/.test(cah), 'a job is watched only while its check is enabled');
+  assert.ok(/automationWatchSince_\(watchKeys, installedMs\)/.test(cah), 'seeded from the install time');
+  assert.ok(/watchSince: watchSince,/.test(cah) && /jobRanAt: jobRanAt,/.test(cah), 'both maps ride the report');
+  const ap = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/\{ items: true, watchSince: report\.watchSince, ranAt: report\.jobRanAt \}/.test(ap), 'and reach the job checks');
+  // The wiring, driven: the problem list carries the run-without-a-row line.
+  const ctx = vm.createContext({ String, Object, Date, Number, parseInt, JSON, isFinite, CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '16' : '2026-10') },
+    AUTOMATION_JOB_CHECKS: [{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }] });
+  ['automationJobProblems_', 'auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const items = ctx.automationProblems_({ automationLastRuns: [{ action: 'PtoAccrualCredit', last: null }], automationErrors: {}, auditWindow: { complete: true },
+    jobRanAt: { PtoAccrualCredit: { ms: 1, ym: '2026-10', mgr: '2026-10-15 18:00' } } });
+  assert.ok(items.some((t) => /ran on 2026-10-15 18:00 but wrote no row/.test(t)) && !items.some((t) => /may be missing/.test(t)), items.join(' | '));
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
