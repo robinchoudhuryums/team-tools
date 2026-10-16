@@ -8314,3 +8314,69 @@ test('B3 DOM: a pasted image joins the on-screen form — never text pasted into
   paste(h.document.body, ['image/png']);
   assert.strictEqual(h.window.__pasted.length, 2, 'no form on screen, nothing collected');
 });
+
+section('Pay statement — the manager edits a day, and an ADJ day explains itself (25post B4)');
+
+function payStmtFixture(over) {
+  const today = new Date().toISOString().slice(0, 10);
+  const old = '2020-01-06';
+  return Object.assign({
+    period: { start: old, end: today, cycle: 'Monthly', offset: 0 },
+    days: [
+      { date: today, dayLabel: 'Today', isFuture: false, isWeekend: false, hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8, adjClockOut: true },
+      { date: old, dayLabel: 'Old day', isFuture: false, isWeekend: false, hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8 },
+    ],
+    totalHours: 16, daysWorked: 2, incompleteCount: 0, timezone: 'America/Chicago', pto: [], rate: null, estGross: null,
+    archiveNote: false, maxOffset: 6,
+    adjustments: { [today]: [{ punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot <b>to</b> clock out', status: 'Approved', submittedAt: '' }] },
+    adjError: '',
+    viewingOther: { id: 'PH-7', name: 'Ana' },
+  }, over || {});
+}
+
+test('B4 DOM: a manager\'s view of a rep\'s statement offers Edit day inside the window, opens Day Edit for THAT rep and date in the rep\'s timezone, and reopens the statement after a save', () => {
+  const h = boot();
+  h.window.__opened = [];
+  h.read('openDayEditModal = function (id, name, date, tz) { if (typeof PAY_STMT !== "undefined") PAY_STMT.returnAfterEdit = null; window.__opened.push([id, name, date, tz].join("|")); }');
+  h.window.openPayStatement_(0, 'PH-7', 'Ana');
+  const d = payStmtFixture();
+  h.run.flushSuccess(d, 'getMyPayStatement');
+  const edits = Array.from(h.document.querySelectorAll('#pay-stmt-body .pay-stmt-edit'));
+  assert.strictEqual(edits.length, 1, 'only the day inside the edit window has the button');
+  assert.strictEqual(edits[0].getAttribute('data-edit-date'), d.days[0].date);
+  edits[0].click();
+  assert.deepStrictEqual(Array.from(h.window.__opened), ['PH-7|Ana|' + d.days[0].date + '|America/Chicago'], 'Day Edit opens on the rep, the date and the rep\'s timezone');
+  assert.ok(!h.$('#pay-stmt-overlay') || !h.$('#pay-stmt-overlay').classList.contains('open'), 'the statement closed so Day Edit is not painted over');
+  const before = h.run.calls.filter((c) => c.method === 'getMyPayStatement').length;
+  h.window.payStmtReturnAfterEdit_('PH-7');
+  const after = h.run.calls.filter((c) => c.method === 'getMyPayStatement');
+  assert.strictEqual(after.length, before + 1, 'a save reopens the statement');
+  assert.deepStrictEqual([after[after.length - 1].args[0], after[after.length - 1].args[1]], [0, 'PH-7'], 'on the same period and rep');
+  h.window.payStmtReturnAfterEdit_('PH-7');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getMyPayStatement').length, before + 1, 'the ticket is used once');
+});
+
+test('B4 DOM: an ADJ day shows each request\'s reason and status, escaped; a failed read says so; the rep\'s own view has no Edit day', () => {
+  const h = boot();
+  h.window.openPayStatement_(0, 'PH-7', 'Ana');
+  h.run.flushSuccess(payStmtFixture(), 'getMyPayStatement');
+  const body = h.$('#pay-stmt-body');
+  assert.ok(/Adjustment: Clock out → .* · Approved — “Forgot <b>to<\/b> clock out”/.test(body.textContent), body.textContent);
+  assert.ok(/&lt;b&gt;to&lt;\/b&gt;/.test(body.innerHTML), 'escaped');
+  assert.ok(!/could not be read/.test(body.textContent));
+  h.window.openPayStatement_(0, '', '');
+  h.run.flushSuccess(payStmtFixture({ viewingOther: null, adjustments: {}, adjError: 'Adjustment requests could not be read: boom' }), 'getMyPayStatement');
+  assert.strictEqual(h.document.querySelectorAll('#pay-stmt-body .pay-stmt-edit').length, 0, 'a rep never gets Edit day on their own statement');
+  assert.ok(/Adjustment requests could not be read/.test(h.$('#pay-stmt-body').textContent), 'a failed read is named, not shown as "no requests"');
+  assert.ok(!/boom/.test(h.$('#pay-stmt-body').textContent), 'without echoing the raw error');
+});
+
+test('B4 DOM: the real Day Edit opener clears a stale return ticket, and its save hands the rep back to the statement', () => {
+  const h = boot();
+  h.read('PAY_STMT.returnAfterEdit = { offset: 2, repId: "PH-7", repName: "Ana" }');
+  h.window.openDayEditModal('E-9', 'Someone else', '', 'America/Chicago');
+  assert.strictEqual(h.read('PAY_STMT.returnAfterEdit'), null, 'a Day Edit opened from anywhere else never reopens a statement');
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/var savedEmp = _deEmpId;\s*closeOverlay\(document\.getElementById\('day-edit-overlay'\)\);\s*if \(typeof payStmtReturnAfterEdit_ === 'function'\) payStmtReturnAfterEdit_\(savedEmp\);/.test(src),
+    'the save success hands the saved rep to the statement\'s return');
+});

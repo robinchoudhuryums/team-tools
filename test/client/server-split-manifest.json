@@ -3119,6 +3119,18 @@
     "INTAKE_PMD_LAYOUT"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B4: pay statement adjustments (payStmtAdjustments_)",
+   "added": [
+    "payStmtAdjustments_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPayStatement"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8071,7 +8083,7 @@
   "getMyPayStatement": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f4aedfbc373cdf2a"
+   "sha": "b282ad1dbd84f8c0"
   },
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
@@ -10082,6 +10094,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "af81eb0624d4d45a"
+  },
+  "payStmtAdjustments_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "decaf510e241fbda"
   },
   "payrollSubjectId_": {
    "file": "20_timeclock.js",

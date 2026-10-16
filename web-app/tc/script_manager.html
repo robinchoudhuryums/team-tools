@@ -1975,6 +1975,9 @@ function deSetLoading_(on, note) {
   else if (save) { save.disabled = false; save.textContent = 'Save Changes'; }
 }
 function openDayEditModal(empId, empName, prefillDate, tzHint) {
+  // A pay statement's Edit day sets its return ticket AFTER this call; any
+  // other opener clears a stale one (25post B4).
+  if (typeof PAY_STMT !== 'undefined') PAY_STMT.returnAfterEdit = null;
   _deEmpId = empId;
   _deEmpName = empName;
   _deTouched = {};
@@ -2187,7 +2190,9 @@ document.getElementById('de-save').addEventListener('click', function () {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
     if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
+    var savedEmp = _deEmpId;
     closeOverlay(document.getElementById('day-edit-overlay'));
+    if (typeof payStmtReturnAfterEdit_ === 'function') payStmtReturnAfterEdit_(savedEmp);   // 25post B4
     showToast(rangeMode
       ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')
       : (result.changes > 0 ? result.summary : 'No changes needed'), 'toast-success');

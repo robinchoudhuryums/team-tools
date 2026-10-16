@@ -1492,7 +1492,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         incompleteCount: ts.incompleteCount, timezone: ts.timezone,
         pto: [{ date: range.start.substring(0, 8) + '12', type: 'Full Day', days: 1 }],
         rate: rate, estGross: Math.round(ts.totalHours * rate * 100) / 100,
-        archiveNote: false, maxOffset: 6,
+        archiveNote: false,
+        // 25post B4 — a day's adjustment requests with the rep's reason and status.
+        adjustments: (function () { var o = {}; o[range.start.substring(0, 8) + '05'] = [
+          { punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot to clock out after the last call', status: 'Approved', submittedAt: '' },
+          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }]; return o; })(),
+        adjError: '',
+        maxOffset: 6,
         viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,
       };
     },

@@ -1876,6 +1876,17 @@ function getMyPayStatement(offset, repEmpId) {
     }
     pto.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
 
+    // 25post B4 (operator 2026-10-16): every punch-adjustment request filed for
+    // a day of the period, with the rep's reason and where it stands, so the
+    // statement explains an ADJ day instead of only tagging it. A read that
+    // fails says so (adjError) — never an empty list that reads as "no
+    // requests" (g53).
+    let adjustments = {}, adjError = '';
+    try {
+      adjustments = payStmtAdjustments_(getOrCreatePunchAdjustSheet_().getDataRange().getValues(),
+        target.id, ts.startDate, ts.endDate);
+    } catch (e) { adjError = 'Adjustment requests could not be read: ' + e.message; }
+
     const rate = empPayRateById_(target.id);
     // TC2-9 (cycle 23 Batch 14): the builder reads THROUGH the archive now, so
     // the note means what it says — the archive was needed and could not be
@@ -1891,10 +1902,40 @@ function getMyPayStatement(offset, repEmpId) {
       rate: rate,
       estGross: rate != null ? Math.round(ts.totalHours * rate * 100) / 100 : null,
       archiveNote: archiveNote,
+      adjustments: adjustments,
+      adjError: adjError,
       maxOffset: 6,
       viewingOther: viewingOther,
     };
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (25post B4) — the PunchAdjustRequests rows for one rep inside
+ *  [start, end], grouped by date: punch type, requested time, the rep's
+ *  reason, the status and the action (a resume carries its finish time).
+ *  Oldest first within a day, so a re-filed request reads after the one it
+ *  replaced. */
+function payStmtAdjustments_(rows, empId, start, end) {
+  const out = {};
+  for (let i = 1; i < (rows || []).length; i++) {
+    const r = rows[i];
+    if (String(r[PAR.EMP_ID]).trim() !== empId) continue;
+    const date = normalizeDate_(r[PAR.DATE]);
+    if (!date || date < start || date > end) continue;
+    const resume = String(r[PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+    (out[date] = out[date] || []).push({
+      punchType: String(r[PAR.PUNCH_TYPE] || '').trim(),
+      time: normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5),
+      endTime: resume ? normalizeTime_(r[PAR.END_TIME]).trim().substring(0, 5) : '',
+      action: resume ? 'resume' : 'set',
+      reason: String(r[PAR.REASON] || '').slice(0, 500),
+      status: String(r[PAR.STATUS] || '').trim(),
+      submittedAt: normalizeAuditTs_(r[PAR.SUBMITTED_AT]),
+    });
+  }
+  Object.keys(out).forEach(function (d) {
+    out[d].sort(function (a, b) { return String(a.submittedAt).localeCompare(String(b.submittedAt)); });
+  });
+  return out;
 }
 function submitTimeOffRequest(date, type, notes) {
   const emp = getEmployeeInfo_();

@@ -39032,6 +39032,30 @@ test('25post: the email-allowance verdict — ok normally, warn at or below the 
   assert.ok(/cnMailQuotaHtml_\(res && res\.mailQuota\)/.test(panel), 'and the Storage inventory shows the line');
 });
 
+// ── 25post B4 (operator 2026-10-16) — a pay statement explains an ADJ day ──
+test('B4: payStmtAdjustments_ groups ONE rep\'s requests inside the period by date — reason, status, the resume finish — oldest first (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array,
+    PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
+    normalizeDate_: (v) => String(v).substring(0, 10), normalizeTime_: (v) => String(v || ''), normalizeAuditTs_: (v) => String(v || '') });
+  vm.runInContext(extractRawFunction('Code.js', 'payStmtAdjustments_'), ctx);
+  const r = (emp, date, type, time, reason, status, at, action, end) => ['R', emp, 'n', date, type, time, reason, status, at, action || '', end || '', ''];
+  const rows = [['h'],
+    r('E1', '2026-10-05', 'ClockOut', '17:05:00', 'Forgot', 'Approved', '2026-10-06 09:00:00'),
+    r('E1', '2026-10-05', 'LunchIn', '13:00:00', 'Ran over', 'Pending', '2026-10-05 14:00:00'),
+    r('E2', '2026-10-05', 'ClockIn', '08:00:00', 'not mine', 'Pending', '2026-10-05 08:30:00'),
+    r('E1', '2026-09-30', 'ClockIn', '08:00:00', 'before the period', 'Denied', '2026-09-30 08:30:00'),
+    r('E1', '2026-10-07', 'ClockOut', '12:00:00', 'Came back', 'Approved', '2026-10-07 16:00:00', 'resume', '15:30:00')];
+  const out = JSON.parse(JSON.stringify(ctx.payStmtAdjustments_(rows, 'E1', '2026-10-01', '2026-10-31')));
+  assert.deepStrictEqual(Object.keys(out).sort(), ['2026-10-05', '2026-10-07'], 'only this rep, only this period');
+  assert.deepStrictEqual(out['2026-10-05'].map((a) => a.punchType + '|' + a.status + '|' + a.reason), ['LunchIn|Pending|Ran over', 'ClockOut|Approved|Forgot'], 'oldest filed first');
+  assert.strictEqual(out['2026-10-05'][0].time, '13:00');
+  assert.deepStrictEqual([out['2026-10-07'][0].action, out['2026-10-07'][0].endTime], ['resume', '15:30'], 'a resume carries its finish');
+  assert.strictEqual(out['2026-10-05'][1].endTime, '', 'an ordinary request carries none');
+  // The statement reads it inside a try that names a failure (g53).
+  const stmt = extractRawFunction('Code.js', 'getMyPayStatement');
+  assert.ok(/catch \(e\) \{ adjError = 'Adjustment requests could not be read: '/.test(stmt), 'a failed read is named, never an empty map');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
