@@ -962,8 +962,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 373 | `.cycle/config.md` |
-| Regression scenarios (S*) | 138 | `.cycle/config.md` |
+| Invariant library entries | 377 | `.cycle/config.md` |
+| Regression scenarios (S*) | 141 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
