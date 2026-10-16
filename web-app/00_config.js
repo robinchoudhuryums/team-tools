@@ -433,6 +433,15 @@ const CONFIG = {
     ALL_AGENTS_EMAIL:    'robin.choudhury@universalmedsupply.com',
     MAX_IMAGES:          12,           // PMD/PAP inline-attachment count cap
     MAX_IMAGE_CHARS:     7000000,      // ~5MB binary per image (base64) — bounded
+    // 25post B6 (operator 2026-10-16) — the Sales and PAP teams as recipients.
+    // They do not use the app, so they are read from the CDR Report's roster
+    // tab (the Department Dashboard's): department names across row 1 from
+    // column F, one "Name, ext" cell per agent below. Every company address is
+    // first.last@ the org's first domain (CONFIG.ORG_EMAIL_DOMAINS[0]).
+    TEAM_ROSTER_TAB:     'DO NOT EDIT!',
+    TEAM_ROSTER_FIRST_COL: 6,
+    TEAM_DEPTS:          ['Sales', 'PAP'],
+    TEAM_CACHE_SEC:      600,
   },
 
   // ── Reference / Knowledge Base module (Phase 1) ──────────────────────

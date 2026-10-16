@@ -536,8 +536,91 @@ function intakeValidateEmail_(email) {
   return re.test(String(email).toLowerCase());
 }
 // spec: { kind:'agent'|'default'|'all'|'custom', id?, email? }
+// ── Team recipients from the CDR roster (25post B6, operator 2026-10-16) ───
+/** PURE — a roster name → first.last@domain, or '' when the name has no
+ *  first and last word to build one from. A parenthetical nickname is dropped
+ *  ("Roman (Robin) Paulose" → roman.paulose), accents and punctuation other
+ *  than a hyphen are removed, and a trailing Jr/Sr/II/III/IV is not a surname. */
+function intakeTeamEmail_(name, domain) {
+  let n = String(name == null ? '' : name).replace(/\([^)]*\)/g, ' ');
+  try { n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  const words = n.toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
+  while (words.length > 2 && /^(jr|sr|ii|iii|iv)$/.test(words[words.length - 1])) words.pop();
+  if (words.length < 2 || !domain) return '';
+  return words[0] + '.' + words[words.length - 1] + '@' + domain;
+}
+
+/** PURE — the roster block (row 1 = department names from the first roster
+ *  column, stopping at the first blank header, the dashboard's own rule; each
+ *  cell below "Name, ext1, ext2") → the named departments' people, in the
+ *  configured department order, one entry per address per department.
+ *  `skipped` counts names no address could be built from, so the picker can
+ *  say so rather than drop them silently. */
+function intakeTeamRosterParse_(values, depts, domain) {
+  const header = (values && values[0]) || [];
+  const want = {};
+  (depts || []).forEach(function (d, i) { want[String(d).trim().toLowerCase()] = i; });
+  const cols = [];
+  for (let c = 0; c < header.length; c++) {
+    const h = String(header[c] == null ? '' : header[c]).trim();
+    if (!h) break;
+    if (Object.prototype.hasOwnProperty.call(want, h.toLowerCase())) cols.push({ c: c, dept: depts[want[h.toLowerCase()]], order: want[h.toLowerCase()] });
+  }
+  cols.sort(function (a, b) { return a.order - b.order; });
+  const team = [], seen = {}, found = {};
+  let skipped = 0;
+  cols.forEach(function (col) {
+    found[col.dept] = true;
+    const people = [];
+    for (let r = 1; r < values.length; r++) {
+      const cell = String(values[r][col.c] == null ? '' : values[r][col.c]).trim();
+      if (!cell) continue;
+      const name = cell.split(',')[0].trim();
+      if (!name) continue;
+      const email = intakeTeamEmail_(name, domain);
+      if (!email) { skipped++; continue; }
+      const key = col.dept + '|' + email;
+      if (seen[key]) continue;
+      seen[key] = true;
+      people.push({ dept: col.dept, name: name.replace(/\s+/g, ' '), email: email });
+    }
+    people.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    Array.prototype.push.apply(team, people);
+  });
+  const missing = (depts || []).filter(function (d) { return !found[d]; });
+  return { team: team, skipped: skipped, missingDepts: missing };
+}
+
+/** The Sales/PAP people, read from the CDR Report's roster tab and cached for
+ *  TEAM_CACHE_SEC. A read that fails THROWS (the caller names it); only a
+ *  read that succeeded is cached (g129). */
+function intakeTeamRoster_() {
+  const cache = CacheService.getScriptCache();
+  const key = 'intake_team_roster_v1';
+  const hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const sh = getCdrSS_().getSheetByName(CONFIG.INTAKE.TEAM_ROSTER_TAB);
+  if (!sh) throw new Error('The CDR Report has no "' + CONFIG.INTAKE.TEAM_ROSTER_TAB + '" tab.');
+  const first = CONFIG.INTAKE.TEAM_ROSTER_FIRST_COL;
+  const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < first) throw new Error('The "' + CONFIG.INTAKE.TEAM_ROSTER_TAB + '" tab has no department columns.');
+  const values = sh.getRange(1, first, lastRow, lastCol - first + 1).getValues();
+  const out = intakeTeamRosterParse_(values, CONFIG.INTAKE.TEAM_DEPTS, CONFIG.ORG_EMAIL_DOMAINS[0]);
+  try { cache.put(key, JSON.stringify(out), CONFIG.INTAKE.TEAM_CACHE_SEC); } catch (e) {}
+  return out;
+}
+
 function intakeResolveRecipient_(formType, spec) {
   spec = spec || {};
+  if (spec.kind === 'team') {
+    // The address must be one the roster produces today — the picker ships
+    // addresses (they are built from public names), but a send never trusts
+    // the client's copy.
+    const em = String(spec.email || '').trim().toLowerCase();
+    const hit = intakeTeamRoster_().team.some(function (p) { return p.email === em; });
+    if (!hit) throw new Error('That person is no longer on the Sales/PAP roster — preview again to refresh the list.');
+    return em;
+  }
   if (spec.kind === 'default') return formType === 'PAP' ? getIntakeSleepEmail_() : getIntakeSalesEmail_();
   if (spec.kind === 'all')     return getIntakeAllAgentsEmail_();
   if (spec.kind === 'agent') {
@@ -571,7 +654,14 @@ function getIntakeAgents() {
       agents.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     agents.sort((a, b) => a.name.localeCompare(b.name));
-    return { agents };
+    // 25post B6: the Sales and PAP teams (not app users) from the CDR roster.
+    // Their failure is named BESIDE the app users, never as an empty team (g128).
+    let team = null, teamError = '', teamSkipped = 0, teamMissing = [];
+    try {
+      const t = intakeTeamRoster_();
+      team = t.team; teamSkipped = t.skipped; teamMissing = t.missingDepts;
+    } catch (e) { teamError = 'The Sales/PAP list could not be read from the CDR Report: ' + e.message; }
+    return { agents, team, teamError, teamSkipped, teamMissing };
   } catch (err) { return { error: err.message }; }
 }
 // ── Recommendation engine ─────────────────────────────────────────────────

@@ -8034,7 +8034,9 @@ test('F20 (cycle 25): a failed agent-list read is said and NOT cached — the ne
   assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'a transport failure is not cached either');
   h.read('closeOverlay')(h.$('.overlay.open'));
   open('<p>preview</p>', []);
-  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }] }, 'getIntakeAgents');
+  // 25post B6: the server ships the Sales/PAP team beside the app users; a
+  // read that succeeded (even an empty team) is cached like the agents.
+  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }], team: [], teamError: '' }, 'getIntakeAgents');
   assert.ok(/Ana Ruiz/.test(h.$('.overlay.open').innerHTML), 'a real list fills the picker');
   h.read('closeOverlay')(h.$('.overlay.open'));
   open('<p>preview</p>', []);
@@ -8436,4 +8438,43 @@ test('B5 DOM: Open selects every slot and a click takes one out; the answer, the
   const me = root.querySelector('.intk-avail[data-avail-idx="26"]');
   assert.deepStrictEqual(Array.from(me.querySelectorAll('.intk-avail-slot[aria-pressed="true"]')).map((b) => b.getAttribute('data-slot')), ['Mon AM', 'Wed AM']);
   assert.strictEqual(me.querySelector('.intk-avail-notes').value, 'unavailable 10/18');
+});
+
+section('Intake — Sales/PAP recipients (25post B6)');
+
+test('B6 DOM: the Send-to picker lists the Sales and PAP teams above the app users, shows a team address before sending, and sends it as a team spec', () => {
+  const { h } = bootAcct('pmd');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  h.run.flushSuccess({ agents: [{ id: 'E1', name: 'App User' }],
+    team: [{ dept: 'Sales', name: 'Ana Garcia', email: 'ana.garcia@universalmedsupply.com' }, { dept: 'PAP', name: 'Zed Ray', email: 'zed.ray@universalmedsupply.com' }],
+    teamError: '', teamSkipped: 0, teamMissing: [] }, 'getIntakeAgents');
+  const sel = h.$('#intk-acct-recipient');
+  const groups = Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label + ':' + Array.from(g.querySelectorAll('option')).map((o) => o.textContent).join(','));
+  assert.deepStrictEqual(groups, ['Sales team:Ana Garcia', 'PAP team:Zed Ray', 'App users:App User']);
+  assert.strictEqual(sel.options[0].value, 'default', 'the form default stays first');
+  assert.strictEqual(sel.options[sel.options.length - 1].value, 'custom', 'and Custom last');
+  sel.value = 'team:ana.garcia@universalmedsupply.com';
+  sel.dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.$('.intk-rcpt-addr').textContent, 'Sends to ana.garcia@universalmedsupply.com', 'the rep sees the address');
+  h.read('INTAKE_STATE.preview').bodyHash = 'x';
+  h.window.intakeAcctSend_('pmd');
+  const send = h.run.calls.filter((c) => c.method === 'intakeSendPMD').pop();
+  assert.ok(send, 'sent');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(send.args[1])), { kind: 'team', email: 'ana.garcia@universalmedsupply.com' });
+});
+
+test('B6 DOM: a failed Sales/PAP read is named, the app users still list, and the next preview asks again (never cached as an empty team)', () => {
+  const { h } = bootAcct('pap');
+  h.window.intakeAcctPreviewGo_('pap', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPAP');
+  h.run.flushSuccess({ agents: [{ id: 'E1', name: 'App User' }], team: null, teamError: 'The Sales/PAP list could not be read from the CDR Report: boom', teamSkipped: 0, teamMissing: [] }, 'getIntakeAgents');
+  assert.ok(/could not be read from the CDR Report/.test(h.$('#toast-container') ? h.$('#toast-container').textContent : h.document.body.textContent), 'the failure is said');
+  assert.deepStrictEqual(Array.from(h.$('#intk-acct-recipient').querySelectorAll('optgroup')).map((g) => g.label), ['App users']);
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.team'), null, 'nothing cached for the team');
+  h.window.intakeCloseModal_();
+  const n = h.run.calls.filter((c) => c.method === 'getIntakeAgents').length;
+  h.window.intakeAcctPreviewGo_('pap', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPAP');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getIntakeAgents').length, n + 1, 'the next preview asks again');
 });

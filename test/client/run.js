@@ -11032,7 +11032,12 @@ test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)',
   assert.ok(/'<option value="custom">Custom email&hellip;<\/option>'/.test(intake),
     'the PPD picker offers Custom email…');
   const send = nc(extractFunction('intake/script_intake.html', 'intakePpdSend_'));
-  assert.ok(/kind: 'custom', email: custom \? custom\.value\.trim\(\) : ''/.test(send),
+  // 25post B6: both pickers build their spec through ONE helper (the team
+  // kind joined custom/agent there), so the PPD send names it and the helper
+  // builds the kind:custom spec.
+  assert.ok(/intakeRecipientSpec_\(val, document\.getElementById\('intk-ppd-custom'\), 'all'\)/.test(send),
+    'the PPD send builds its spec through the shared helper');
+  assert.ok(/kind: 'custom', email: customEl \? customEl\.value\.trim\(\) : ''/.test(nc(extractFunction('intake/script_intake.html', 'intakeRecipientSpec_'))),
     'the send builds the kind:custom spec the shared resolver already validates');
   assert.ok(/Enter a recipient email\./.test(send), 'an empty custom email is refused client-side');
   // The server side was never the gap: the SHARED resolver validates custom for
@@ -39054,6 +39059,58 @@ test('B4: payStmtAdjustments_ groups ONE rep\'s requests inside the period by da
   // The statement reads it inside a try that names a failure (g53).
   const stmt = extractRawFunction('Code.js', 'getMyPayStatement');
   assert.ok(/catch \(e\) \{ adjError = 'Adjustment requests could not be read: '/.test(stmt), 'a failed read is named, never an empty map');
+});
+
+// ── 25post B6 (operator 2026-10-16) — Sales/PAP recipients from the CDR roster ──
+test('B6: a roster name becomes first.last@ the org domain — nickname, accents, punctuation and suffixes handled; a one-word name builds nothing (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeTeamEmail_'), ctx);
+  const e = (n) => ctx.intakeTeamEmail_(n, 'universalmedsupply.com');
+  assert.strictEqual(e('Ana Garcia'), 'ana.garcia@universalmedsupply.com');
+  assert.strictEqual(e('Roman (Robin) Paulose'), 'roman.paulose@universalmedsupply.com', 'the parenthetical nickname is dropped');
+  assert.strictEqual(e('  José   Núñez '), 'jose.nunez@universalmedsupply.com', 'accents and spacing');
+  assert.strictEqual(e("Mary O'Neil"), 'mary.oneil@universalmedsupply.com');
+  assert.strictEqual(e('Lea Cruz-Lopez'), 'lea.cruz-lopez@universalmedsupply.com', 'a hyphenated surname stays whole');
+  assert.strictEqual(e('Ana M. Garcia'), 'ana.garcia@universalmedsupply.com', 'first and LAST word');
+  assert.strictEqual(e('John Smith Jr.'), 'john.smith@universalmedsupply.com', 'a suffix is not a surname');
+  assert.strictEqual(e('Cher'), '', 'one word builds nothing');
+  assert.strictEqual(e(''), '');
+  assert.strictEqual(ctx.intakeTeamEmail_('Ana Garcia', ''), '', 'no domain, no address');
+});
+
+test('B6: the roster block yields the named departments only, in the configured order, stopping at the first blank header, one entry per address (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array });
+  ['intakeTeamEmail_', 'intakeTeamRosterParse_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const values = [
+    ['PAP', 'Billing', 'sales', '', 'Sales'],
+    ['Zed Ray, 201', 'Bo Bill, 300', 'Ana Garcia, 101, 102', '', 'Not Read, 9'],
+    ['Ana Garcia, 105', '', 'Ana Garcia, 103', '', ''],
+    ['Cher, 210', '', 'Lea Cruz-Lopez', '', ''],
+  ];
+  const out = JSON.parse(JSON.stringify(ctx.intakeTeamRosterParse_(values, ['Sales', 'PAP'], 'universalmedsupply.com')));
+  assert.deepStrictEqual(out.team.map((p) => p.dept + ':' + p.email), [
+    'Sales:ana.garcia@universalmedsupply.com', 'Sales:lea.cruz-lopez@universalmedsupply.com',
+    'PAP:ana.garcia@universalmedsupply.com', 'PAP:zed.ray@universalmedsupply.com'],
+    'Sales first (configured order), names sorted, a duplicate within a department once, a person in both departments in both');
+  assert.ok(!out.team.some((p) => /bill|not\.read/.test(p.email)), 'other departments and anything past the first blank header are not read');
+  assert.strictEqual(out.team[0].dept, 'Sales', 'the department takes its CONFIG spelling, whatever the header case');
+  assert.strictEqual(out.skipped, 1, 'a name no address can be built from is counted, not dropped silently');
+  assert.deepStrictEqual(out.missingDepts, []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.intakeTeamRosterParse_([['Billing']], ['Sales', 'PAP'], 'x.com'))).missingDepts, ['Sales', 'PAP'], 'a missing column is named');
+});
+
+test('B6: a team send resolves only to an address the roster produces today; a failed roster read throws rather than sending (driven)', () => {
+  let roster = { team: [{ dept: 'Sales', name: 'Ana Garcia', email: 'ana.garcia@universalmedsupply.com' }] };
+  const ctx = vm.createContext({ String, intakeTeamRoster_: () => { if (!roster) throw new Error('CDR down'); return roster; } });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeResolveRecipient_'), ctx);
+  assert.strictEqual(ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'Ana.Garcia@universalmedsupply.com' }), 'ana.garcia@universalmedsupply.com');
+  assert.throws(() => ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'someone@gmail.com' }), /no longer on the Sales\/PAP roster/, 'a client-supplied address outside the roster is refused');
+  roster = null;
+  assert.throws(() => ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'ana.garcia@universalmedsupply.com' }), /CDR down/, 'an unreadable roster never sends');
+  const ep = extractRawFunction('Code.js', 'getIntakeAgents');
+  assert.ok(/catch \(e\) \{ teamError = 'The Sales\/PAP list could not be read from the CDR Report: '/.test(ep), 'the endpoint names a failed read beside the app users (g128)');
+  const cached = extractRawFunction('Code.js', 'intakeTeamRoster_');
+  assert.ok(cached.indexOf('cache.put') > cached.indexOf('intakeTeamRosterParse_('), 'only a parsed read is cached (g129)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

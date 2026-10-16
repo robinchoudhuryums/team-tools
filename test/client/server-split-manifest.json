@@ -3131,6 +3131,22 @@
     "getMyPayStatement"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B6: Sales/PAP recipients from the CDR roster",
+   "added": [
+    "intakeTeamEmail_",
+    "intakeTeamRosterParse_",
+    "intakeTeamRoster_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getIntakeAgents",
+    "intakeResolveRecipient_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3613,7 +3629,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e8cf993b26cae6b5"
+   "sha": "b0403b358d5ed5b0"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -7908,7 +7924,7 @@
   "getIntakeAgents": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "9abb3affe054fbf1"
+   "sha": "0c3d42fb684405c3"
   },
   "getIntakeAllAgentsEmail_": {
    "file": "60_intake.js",
@@ -8813,7 +8829,7 @@
   "intakeResolveRecipient_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "525049c88d6602b8"
+   "sha": "e44ced6f02cf793a"
   },
   "intakeSeatKinds_": {
    "file": "60_intake.js",
@@ -8859,6 +8875,21 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "64e64e2e3e30a102"
+  },
+  "intakeTeamEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "82cd2f4f825773f3"
+  },
+  "intakeTeamRosterParse_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "cf637ba4f7050b57"
+  },
+  "intakeTeamRoster_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "0065fa348c4f78cc"
   },
   "intakeTsString_": {
    "file": "60_intake.js",

@@ -282,6 +282,7 @@
   button.intk-drop { width: 100%; background: var(--paper); font: inherit; font-size: .85rem; padding: 18px 12px; }
   button.intk-drop:hover, button.intk-drop:focus-visible { border-color: var(--accent); color: var(--ink); }
   .intk-img-wrap { margin-top: 14px; }
+  .intk-rcpt-addr { font-size: .78rem; color: var(--muted); }
   .intk-img-hint { font-size: .8rem; color: var(--muted); margin: 8px 0 0; line-height: 1.45; }
   .intk-img-note { font-size: .82rem; color: var(--muted); margin: 10px 0 0; }
   .intk-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
@@ -349,7 +350,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 var INTAKE_STATE = {
-  ppd: { lang: 'EN', agents: null },
+  ppd: { lang: 'EN', agents: null, team: null },   // team: the Sales/PAP roster (25post B6), set only by a read that succeeded
   pmd: { lang: 'EN', images: [] },
   pap: { lang: 'EN', images: [] },
   preview: null, // { formType, bodyHash, subject, recommendations, payload }
@@ -2032,8 +2033,61 @@ function intakePpdPreviewGo_(payload) {
     .intakePreviewPPD(payload);
 }
 
+// ── Recipients (25post B6, operator 2026-10-16) ───────────────────────────
+// The Send-to picker lists the Sales and PAP teams from the CDR roster (they do
+// not use the app) above the app users. getIntakeAgents ships both; the team
+// is kept only when it was READ (g129) — a failed read names itself once and
+// the next preview asks again, while the app users and Default/Custom still work.
+function intakeNeedRecipients_() { return !INTAKE_STATE.ppd.agents || !INTAKE_STATE.ppd.team; }
+function intakeStoreRecipients_(r) {
+  if (!r || r.error || !Array.isArray(r.agents)) return false;
+  INTAKE_STATE.ppd.agents = r.agents;
+  if (Array.isArray(r.team) && !r.teamError) INTAKE_STATE.ppd.team = r.team;
+  if (r.teamError) showToast(r.teamError + ' — the app users, Default and Custom still work.', 'toast-warn');
+  else if (r.teamMissing && r.teamMissing.length) showToast('The CDR roster has no ' + r.teamMissing.join(' / ') + ' column — those people are not listed.', 'toast-warn');
+  return true;
+}
+/** The picker's options: the form's default, the Sales/PAP teams (one group
+ *  per department, in the configured order), the app users, then Custom. */
+function intakeRecipientOptionsHtml_(firstOptHtml) {
+  var team = INTAKE_STATE.ppd.team || [];
+  var groups = [], byDept = {};
+  team.forEach(function (p) {
+    if (!byDept[p.dept]) { byDept[p.dept] = []; groups.push(p.dept); }
+    byDept[p.dept].push(p);
+  });
+  var out = firstOptHtml;
+  groups.forEach(function (d) {
+    out += '<optgroup label="' + esc(d + ' team') + '">' + byDept[d].map(function (p) {
+      return '<option value="team:' + esc(p.email) + '">' + esc(p.name) + '</option>';
+    }).join('') + '</optgroup>';
+  });
+  var agents = INTAKE_STATE.ppd.agents || [];
+  if (agents.length) {
+    out += '<optgroup label="App users">' + agents.map(function (a) {
+      return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>';
+    }).join('') + '</optgroup>';
+  }
+  return out + '<option value="custom">Custom email&hellip;</option>';
+}
+/** Under the picker: the address a team member's email goes to, so the rep
+ *  sees it before sending (it is built from the roster name). */
+function intakeRecipientHint_(sel) {
+  var hint = sel && sel.parentNode && sel.parentNode.querySelector('.intk-rcpt-addr');
+  if (!hint) return;
+  var v = String(sel.value || '');
+  hint.textContent = v.indexOf('team:') === 0 ? 'Sends to ' + v.substring(5) : '';
+}
+/** A picker value → the send spec the server resolves. */
+function intakeRecipientSpec_(val, customEl, defaultKind) {
+  if (val === defaultKind) return { kind: defaultKind };
+  if (val === 'custom') return { kind: 'custom', email: customEl ? customEl.value.trim() : '' };
+  if (val.indexOf('team:') === 0) return { kind: 'team', email: val.substring(5) };
+  return { kind: 'agent', id: val.replace(/^agent:/, '') };
+}
+
 function intakeOpenPpdPreviewModal_(html, recs) {
-  if (!INTAKE_STATE.ppd.agents) {
+  if (intakeNeedRecipients_()) {
     // E10 (cycle 10): guard the SECOND async hop too — the preview RPC's
     // handler is view-guarded, but on a cold agents cache this extra fetch
     // wasn't, so a slow getIntakeAgents popped the body-mounted PHI preview
@@ -2050,8 +2104,7 @@ function intakeOpenPpdPreviewModal_(html, recs) {
       intakeBuildPpdModal_(html, recs);
     };
     google.script.run.withSuccessHandler(function (r) {
-      if (!r || r.error || !Array.isArray(r.agents)) { failed((r && r.error) || 'no list returned'); return; }
-      INTAKE_STATE.ppd.agents = r.agents;
+      if (!intakeStoreRecipients_(r)) { failed((r && r.error) || 'no list returned'); return; }
       if (currentView !== requestedView) return;
       intakeBuildPpdModal_(html, recs);
     }).withFailureHandler(function (err) {
@@ -2118,9 +2171,7 @@ function intakeBuildPpdModal_(html, recs) {
   // Custom email… mirrors the PMD/PAP picker (operator 2026-08-17): the shared
   // server resolver has accepted kind:'custom' (validated) all along — this
   // footer was the one send surface that never offered it.
-  var agentOpts = '<option value="all">All Agents</option>' +
-    (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') +
-    '<option value="custom">Custom email&hellip;</option>';
+  var agentOpts = intakeRecipientOptionsHtml_('<option value="all">All Agents</option>');
 
   // Recommendations first (the agent shares these with the patient — image to
   // text, code to open the brochure), email-body preview below.
@@ -2133,6 +2184,7 @@ function intakeBuildPpdModal_(html, recs) {
     '<div class="intk-foot">' +
       '<label for="intk-ppd-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-ppd-recipient">' + agentOpts + '</select>' +
+      '<span class="intk-rcpt-addr" aria-live="polite"></span>' +
       '<input type="email" id="intk-ppd-custom" placeholder="recipient@&hellip;" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
@@ -2143,6 +2195,7 @@ function intakeBuildPpdModal_(html, recs) {
   // The custom input reveals only when chosen — the intk-acct picker's pattern.
   var recSel = document.getElementById('intk-ppd-recipient');
   if (recSel) recSel.addEventListener('change', function () {
+    intakeRecipientHint_(this);
     var c = document.getElementById('intk-ppd-custom');
     if (c) {
       c.style.display = this.value === 'custom' ? 'inline-block' : 'none';
@@ -2255,13 +2308,8 @@ function intakePpdSend_(confirmedExternal) {
   if (!st || st.formType !== 'PPD') { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
   var recEl = document.getElementById('intk-ppd-recipient');
   var val = recEl ? recEl.value : 'all';
-  var spec;
-  if (val === 'all') spec = { kind: 'all' };
-  else if (val === 'custom') {
-    var custom = document.getElementById('intk-ppd-custom');
-    spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
-    if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
-  } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
+  var spec = intakeRecipientSpec_(val, document.getElementById('intk-ppd-custom'), 'all');
+  if (spec.kind === 'custom' && !spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
   if (typeof confirmedExternal === 'string' && confirmedExternal) spec.confirmedExternal = confirmedExternal;   // INT-3
   st.payload.selections = intakeGatherSelections_();
   var btn = document.getElementById('intk-ppd-send');
@@ -2496,13 +2544,13 @@ function intakeAcctPreviewGo_(form, payload) {
 
 function intakeBuildAcctModal_(form, html) {
   var defLabel = form === 'pap' ? 'Default (Sleep)' : 'Default (Sales)';
-  var agentOpts = (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
   var body =
     '<div class="intk-prev">' + html + '</div>' +
     '<p class="intk-img-note" id="intk-img-note">' + intakeImagesNoteText_(form) + '</p>' +
     '<div class="intk-foot">' +
       '<label for="intk-acct-recipient"><strong>Send to:</strong></label>' +
-      '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
+      '<select id="intk-acct-recipient">' + intakeRecipientOptionsHtml_('<option value="default">' + esc(defLabel) + '</option>') + '</select>' +
+      '<span class="intk-rcpt-addr" aria-live="polite"></span>' +
       '<input type="email" id="intk-acct-custom" placeholder="recipient@…" aria-label="Custom recipient email" style="display:none">' +
       '<span class="grow"></span>' +
       '<button class="intk-btn" data-intk-close="1">Cancel</button>' +
@@ -2510,22 +2558,21 @@ function intakeBuildAcctModal_(form, html) {
     '</div>';
   intakeOpenModal_((form.toUpperCase()) + ' Preview & Send', body);
 
-  // load agents lazily (shared cache on ppd.agents) so the dropdown fills
-  if (!INTAKE_STATE.ppd.agents) {
+  // load the recipients lazily (shared cache on ppd.agents / ppd.team) so the
+  // dropdown fills; the list is rebuilt whole, keeping the rep's choice.
+  if (intakeNeedRecipients_()) {
     google.script.run.withSuccessHandler(function (r) {
       // F20 (cycle 25): an {error} is a failure, never an empty list to keep.
-      if (!r || r.error || !Array.isArray(r.agents)) {
+      if (!intakeStoreRecipients_(r)) {
         showToast('Could not load the agent list: ' + ((r && r.error) || 'no list returned'), 'toast-warn');
         return;
       }
-      INTAKE_STATE.ppd.agents = r.agents;
       var sel = document.getElementById('intk-acct-recipient');
       if (sel) {
-        var custom = sel.querySelector('option[value="custom"]');
-        (INTAKE_STATE.ppd.agents || []).forEach(function (a) {
-          var o = document.createElement('option'); o.value = 'agent:' + a.id; o.textContent = a.name;
-          sel.insertBefore(o, custom);
-        });
+        var keep = sel.value;
+        sel.innerHTML = intakeRecipientOptionsHtml_('<option value="default">' + esc(defLabel) + '</option>');
+        if (Array.prototype.some.call(sel.options, function (o) { return o.value === keep; })) sel.value = keep;
+        intakeRecipientHint_(sel);
       }
     }).withFailureHandler(function (err) {
       // INT-4 — surface the failure instead of a silently agent-less picker
@@ -2536,6 +2583,7 @@ function intakeBuildAcctModal_(form, html) {
 
   var recSel = document.getElementById('intk-acct-recipient');
   if (recSel) recSel.addEventListener('change', function () {
+    intakeRecipientHint_(this);
     var c = document.getElementById('intk-acct-custom');
     if (c) c.style.display = this.value === 'custom' ? 'inline-block' : 'none';
   });
@@ -2546,13 +2594,8 @@ function intakeAcctSend_(form, confirmedExternal) {
   if (!st || st.form !== form) { showToast('Preview expired — please preview again.', 'toast-warn'); return; }
   var recSel = document.getElementById('intk-acct-recipient');
   var val = recSel ? recSel.value : 'default';
-  var spec;
-  if (val === 'default') spec = { kind: 'default' };
-  else if (val === 'custom') {
-    var custom = document.getElementById('intk-acct-custom');
-    spec = { kind: 'custom', email: custom ? custom.value.trim() : '' };
-    if (!spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
-  } else spec = { kind: 'agent', id: val.replace(/^agent:/, '') };
+  var spec = intakeRecipientSpec_(val, document.getElementById('intk-acct-custom'), 'default');
+  if (spec.kind === 'custom' && !spec.email) { showToast('Enter a recipient email.', 'toast-warn'); return; }
   if (typeof confirmedExternal === 'string' && confirmedExternal) spec.confirmedExternal = confirmedExternal;   // INT-3
 
   var images = INTAKE_STATE[form].images || [];
