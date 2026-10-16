@@ -265,6 +265,12 @@
   .intk-foot .grow { flex: 1; }
   .intk-foot select, .intk-foot input[type=email] { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; background: var(--paper); color: var(--ink); }
   .intk-drop { border: 2px dashed var(--line-2); border-radius: var(--radius); padding: 12px; text-align: center; color: var(--muted); font-size: .8rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  /* 25post B3 — the drop zone is a real button on the form (keyboard reaches it). */
+  button.intk-drop { width: 100%; background: var(--paper); font: inherit; font-size: .85rem; padding: 18px 12px; }
+  button.intk-drop:hover, button.intk-drop:focus-visible { border-color: var(--accent); color: var(--ink); }
+  .intk-img-wrap { margin-top: 14px; }
+  .intk-img-hint { font-size: .8rem; color: var(--muted); margin: 8px 0 0; line-height: 1.45; }
+  .intk-img-note { font-size: .82rem; color: var(--muted); margin: 10px 0 0; }
   .intk-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
   .intk-gallery { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
   .intk-thumb { position: relative; width: 46px; height: 46px; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
@@ -2132,6 +2138,7 @@ function intakeEnterAcct_(form, title, area) {
     '<div class="intk-ppd-layout">' +
       '<div class="intk-main">' +
         '<div class="intk-sections intk-cat-' + form + '" id="intk-' + form + '-form">' + intakeRenderAcctSections_(form, lang) + '</div>' +
+        intakeImagesSectionHtml_(form, lang) +
       '</div>' +
       '<aside class="intk-rail"><div class="intk-rail-sticky">' +
         '<span class="intk-rail-label">Progress</span>' +
@@ -2148,6 +2155,8 @@ function intakeEnterAcct_(form, title, area) {
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
   }
+  intakeSetupImageUpload_(form);
+  intakeRenderGallery_(form);   // images live in memory across a preview and a tool switch
   if (!intakeAmendPending_(form)) intakeRestoreDraft_(form);   // I1 — see enterIntakePpdView
   intakeAcctUpdateProgress_(form);
   intakeConsumeNavHint_();
@@ -2295,7 +2304,9 @@ function intakeAcctPreview_(form) {
   intakeWarnRecommended_(form).then(function (ok) { if (ok) intakeAcctPreviewGo_(form, payload); });
 }
 function intakeAcctPreviewGo_(form, payload) {
-  INTAKE_STATE[form].images = [];
+  // 25post B3: the images are added on the FORM now, so a preview keeps them
+  // (it used to empty them, which was harmless only while they were added in
+  // the preview itself).
   var requested = currentView;
   var fn = form === 'pap' ? 'intakePreviewPAP' : 'intakePreviewPMD';
   showToast('Building preview…', '');
@@ -2316,9 +2327,7 @@ function intakeBuildAcctModal_(form, html) {
   var agentOpts = (INTAKE_STATE.ppd.agents || []).map(function (a) { return '<option value="agent:' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('');
   var body =
     '<div class="intk-prev">' + html + '</div>' +
-    '<div class="intk-drop" id="intk-drop" tabindex="0">' + icon('upload', 14) + ' Drag, click, or paste — up to 12 images</div>' +
-    '<input type="file" id="intk-file" aria-label="Choose images to attach" accept="image/*" multiple style="display:none">' +
-    '<div class="intk-gallery" id="intk-gallery"></div>' +
+    '<p class="intk-img-note" id="intk-img-note">' + intakeImagesNoteText_(form) + '</p>' +
     '<div class="intk-foot">' +
       '<label for="intk-acct-recipient"><strong>Send to:</strong></label>' +
       '<select id="intk-acct-recipient"><option value="default">' + esc(defLabel) + '</option>' + agentOpts + '<option value="custom">Custom email…</option></select>' +
@@ -2358,7 +2367,6 @@ function intakeBuildAcctModal_(form, html) {
     var c = document.getElementById('intk-acct-custom');
     if (c) c.style.display = this.value === 'custom' ? 'inline-block' : 'none';
   });
-  intakeSetupImageUpload_(form);
 }
 
 function intakeAcctSend_(form, confirmedExternal) {
@@ -2400,6 +2408,33 @@ function intakeAcctSend_(form, confirmedExternal) {
 }
 
 // ── Image upload (PMD/PAP) ────────────────────────────────────────────────
+// 25post B3 (operator 2026-10-16): insurance-card images are added at the
+// bottom of the FORM, with a one-line instruction, instead of only in the
+// preview. They stay in memory (never in the draft — a photo is too big for
+// localStorage and is PHI) until a send, a Clear or a reload.
+function intakeImagesSectionHtml_(form, lang) {
+  var es = lang === 'ES';
+  return '<div class="intk-sections intk-img-wrap intk-cat-' + form + '"><div class="panel intk-section">' +
+    '<div class="section-kicker sec-title">' + esc(es ? 'Imágenes de la tarjeta del seguro' : 'Insurance card images') + '</div>' +
+    '<button type="button" class="intk-drop" id="intk-drop" data-form="' + form + '">' + icon('upload', 14) + ' ' +
+      esc(es ? 'Arrastre las imágenes aquí o haga clic para elegirlas' : 'Drag images here, or click to choose') + '</button>' +
+    '<input type="file" id="intk-file" aria-label="' + esc(es ? 'Elegir imágenes para adjuntar' : 'Choose images to attach') + '" accept="image/*" multiple style="display:none">' +
+    '<p class="intk-img-hint">' + esc(es
+      ? 'También puede pegar una captura de pantalla (Ctrl+V). Frente y reverso de cada tarjeta, hasta 12 imágenes. Se envían con el correo.'
+      : 'You can also paste a screenshot (Ctrl+V). Front and back of each card, up to 12 images. They are sent with the email.') + '</p>' +
+    '<div class="intk-gallery" id="intk-gallery"></div>' +
+  '</div></div>';
+}
+
+/** The preview's line about the images, so the rep sees before sending
+ *  whether any are going (they are added on the form, not here). */
+function intakeImagesNoteText_(form) {
+  var n = ((INTAKE_STATE[form] && INTAKE_STATE[form].images) || []).length;
+  return n
+    ? esc(n + ' insurance card image' + (n === 1 ? '' : 's') + ' will be sent with this email.')
+    : esc('No insurance card images attached — add them at the bottom of the form if you have them.');
+}
+
 function intakeSetupImageUpload_(form) {
   var drop = document.getElementById('intk-drop');
   var fileInput = document.getElementById('intk-file');
@@ -2412,13 +2447,33 @@ function intakeSetupImageUpload_(form) {
   ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function () { drop.classList.add('over'); }); });
   ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function () { drop.classList.remove('over'); }); });
   drop.addEventListener('drop', function (e) { intakeHandleFiles_(form, e.dataTransfer.files); });
-  drop._intkPaste = function (e) {
-    var items = (e.clipboardData || {}).items || [];
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) { intakeProcessImage_(form, items[i].getAsFile()); e.preventDefault(); }
-    }
-  };
-  document.addEventListener('paste', drop._intkPaste);
+  // ONE document-level paste listener for the whole session. It acts only
+  // while a PMD/PAP form's drop zone is on screen, so leaving the view can
+  // never leave it collecting images app-wide (the listener this replaced was
+  // per-modal and had to be removed on every close path).
+  if (!window._intkPasteBound) {
+    window._intkPasteBound = true;
+    document.addEventListener('paste', intakePasteImage_);
+  }
+}
+
+/** The paste handler. An image on the clipboard joins the on-screen form's
+ *  images — unless the rep is pasting TEXT into a field: copying from Word or
+ *  a web page puts an image rendering on the clipboard beside the text, and
+ *  that paste is the text, never an attachment. */
+function intakePasteImage_(e) {
+  var drop = document.getElementById('intk-drop');
+  var form = drop && drop.getAttribute('data-form');
+  if (!form || !INTAKE_STATE[form]) return;
+  var items = (e.clipboardData || {}).items || [];
+  var t = e.target;
+  var inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  var hasText = false;
+  for (var j = 0; j < items.length; j++) { if (items[j].kind === 'string' && items[j].type === 'text/plain') hasText = true; }
+  if (inField && hasText) return;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf('image') !== -1) { intakeProcessImage_(form, items[i].getAsFile()); e.preventDefault(); }
+  }
 }
 
 function intakeHandleFiles_(form, files) {
@@ -3221,9 +3276,9 @@ function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*
 
 // Minimal modal built on the shared .overlay vocabulary. Created via
 // ensureOverlay (script_core) with intakeCloseModal_ as the close hook, so
-// EVERY close path — Escape included — removes the document-level paste
-// listener. (Esc previously only hid the node, leaking the listener app-wide:
-// any image pasted anywhere kept accumulating into INTAKE_STATE silently.)
+// EVERY close path — Escape included — runs it. (It used to remove the
+// preview's paste listener too; since 25post B3 images are added on the form
+// and the one paste listener acts only while a form's drop zone is on screen.)
 // CONTRACT (F4): `title` is esc()'d here, but `bodyHtml` is injected RAW via
 // innerHTML — EVERY caller MUST esc() any user/patient/server-supplied value it
 // places into bodyHtml before passing it in (same load-bearing discipline as
@@ -3250,8 +3305,6 @@ function intakeCloseModal_() {
   // registered close hook owns the close (g130), so returning here keeps the
   // modal open under Close, Escape and the backdrop alike.
   if (INTAKE_STATE.sending) { showToast('Sending — one moment…', 'toast-info'); return; }
-  var drop = document.getElementById('intk-drop');
-  if (drop && drop._intkPaste) document.removeEventListener('paste', drop._intkPaste);
   ov.remove();
 }
 

@@ -8269,3 +8269,48 @@ test('B2 DOM: an intake send logs its call note in the standard template — the
   assert.strictEqual(h.window.intakeNoteFields_('pap', { patientInfo: '', answers: {} }, '', null).relationship, '',
     'no patient, no "Self"');
 });
+
+test('B3 DOM: insurance-card images are added at the bottom of the PMD/PAP form, survive the preview, and the preview says whether any are going', () => {
+  const { h } = bootAcct('pmd');
+  const drop = h.$('#intk-drop');
+  assert.ok(drop && drop.tagName === 'BUTTON', 'the drop zone is a real button on the form');
+  const main = h.$('.intk-main');
+  assert.strictEqual(drop.closest('.intk-img-wrap'), main.lastElementChild, 'it closes the page, after Other Notes');
+  assert.ok(/paste a screenshot/.test(h.$('.intk-img-hint').textContent) && /up to 12 images/.test(h.$('.intk-img-hint').textContent),
+    'with the one-line instruction under it');
+  // An image added on the form survives the preview round trip.
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,AAAA"]');
+  h.read('intakeRenderGallery_')('pmd');
+  assert.strictEqual(h.document.querySelectorAll('#intk-gallery .intk-thumb').length, 1);
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images.length'), 1, 'previewing no longer empties the images');
+  h.run.flushSuccess({ html: '<p>preview</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  assert.ok(/1 insurance card image will be sent/.test(h.$('#intk-img-note').textContent), 'the preview names what is going');
+  assert.strictEqual(h.document.querySelectorAll('.intk-modal #intk-drop').length, 0, 'and has no second drop zone');
+  h.window.intakeCloseModal_();
+  h.read('INTAKE_STATE.pmd.images = []');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>preview</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  assert.ok(/No insurance card images attached/.test(h.$('#intk-img-note').textContent), 'none is said too');
+});
+
+test('B3 DOM: a pasted image joins the on-screen form — never text pasted into a field, and never once the form is gone', () => {
+  const { h } = bootAcct('pap');
+  h.window.__pasted = [];
+  h.read('intakeProcessImage_ = function (form) { window.__pasted.push(form); }');
+  const paste = (target, types) => {
+    const ev = new h.window.Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'clipboardData', { value: { items: types.map((t) => ({ kind: t.indexOf('image') === 0 ? 'file' : 'string', type: t, getAsFile: () => ({}) })) } });
+    target.dispatchEvent(ev);
+  };
+  paste(h.document.body, ['image/png']);
+  assert.deepStrictEqual(Array.from(h.window.__pasted), ['pap'], 'a screenshot pasted on the page is attached to the PAP form');
+  const field = h.$('[data-intk-idx="1"]');
+  paste(field, ['text/plain', 'text/html', 'image/png']);
+  assert.strictEqual(h.window.__pasted.length, 1, 'text copied from a document (with its image rendering) pasted into a field is the text, not an attachment');
+  paste(field, ['image/png']);
+  assert.strictEqual(h.window.__pasted.length, 2, 'an image alone pasted while a field has focus is still attached');
+  h.$('#intk-test-area').innerHTML = '';   // the rep switched tools
+  paste(h.document.body, ['image/png']);
+  assert.strictEqual(h.window.__pasted.length, 2, 'no form on screen, nothing collected');
+});
