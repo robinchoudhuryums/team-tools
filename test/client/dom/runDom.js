@@ -1978,8 +1978,15 @@ test('the resume request states the unpaid gap before it is filed', async () => 
   // reassign the binding itself through the vm bridge.
   h.window.__stubConfirm = (opts) => { asked = opts; return Promise.resolve(false); };
   h.read('uiConfirm = window.__stubConfirm');
-  // A clock-out just after midnight, so the "is it in the past yet" guard is
-  // satisfied whatever time the suite runs at.
+  // The "is it in the past yet" guard compares against the wall clock in the
+  // rep's frame. A clock-out just after midnight was not enough on its own:
+  // with no roster loaded empTz() is Asia/Kolkata, so for the one minute
+  // after 18:30 UTC "now" there reads 00:00 and the guard refused, failing
+  // the suite once a day. Pin the frame's clock to midday instead (restored
+  // below) — the same vm-binding reassignment uiConfirm uses.
+  const realTimeHmTz = h.read('timeHmTz');
+  h.window.__realTimeHmTz = realTimeHmTz;
+  h.read("timeHmTz = function () { return '12:00'; }");
   const OUT = '00:01:00';
 
   h.read('requestResumeShift_')(OUT);
@@ -2006,6 +2013,23 @@ test('the resume request states the unpaid gap before it is filed', async () => 
   h.read('requestResumeShift_')('');
   await tick();
   assert.strictEqual(calls().length, 1, 'no clock-out, no request');
+  h.read('timeHmTz = window.__realTimeHmTz');
+});
+
+test('the resume request refuses a clock-out that is not in the past yet', async () => {
+  // The other side of the pinned clock above: a clock-out at or after "now"
+  // in the rep's frame is refused without a confirm.
+  const h = boot();
+  let asked = false;
+  h.window.__stubConfirm = () => { asked = true; return Promise.resolve(true); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.__realTimeHmTz = h.read('timeHmTz');
+  h.read("timeHmTz = function () { return '00:00'; }");
+  h.read('requestResumeShift_')('00:01:00');
+  await tick();
+  h.read('timeHmTz = window.__realTimeHmTz');
+  assert.strictEqual(asked, false, 'no confirm for a clock-out still ahead of now');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'submitPunchAdjustRequests').length, 0, 'and nothing is filed');
 });
 
 section('Manage Time — Day Edit break list (A4)');
