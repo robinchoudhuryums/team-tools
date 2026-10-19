@@ -1,5 +1,14 @@
 [
   {
+    "date": "2026-10-19",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "The Messages button (which opens a transaction's notes) is along the bottom of the Transaction Workflow window, about a third of the way in from the left — not the bottom right. 0.10, its icon guide and 0.11.1 now say so.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19 (D9)"
+  },
+  {
     "date": "2026-10-12",
     "part": "appx_b",
     "section": "§B-1",
