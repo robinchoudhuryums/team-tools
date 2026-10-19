@@ -8296,6 +8296,27 @@ test('B3 DOM: insurance-card images are added at the bottom of the PMD/PAP form,
   assert.ok(/No insurance card images attached/.test(h.$('#intk-img-note').textContent), 'none is said too');
 });
 
+test('Operator 2026-10-19 DOM: the preview shows the attached images in the slot the server left, in the email\'s own style; no images, no row', () => {
+  const { h } = bootAcct('pmd');
+  const slotHtml = '<table><tr><td>SSN</td></tr><tr data-intk-img-slot="1"></tr><tr><td>Clinical</td></tr></table>';
+  const res = { html: slotHtml, bodyHash: 'x', subject: 's', imgCellStyle: 'padding:1px;', imgCaptionStyle: 'font-size:12px;', imgStyle: 'width:340px;max-width:100%;' };
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"]');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess(res, 'intakePreviewPMD');
+  const slot = h.$('.intk-prev [data-intk-img-slot]');
+  const imgs = slot.querySelectorAll('img');
+  assert.strictEqual(imgs.length, 2, 'both images are in the preview');
+  assert.strictEqual(imgs[0].getAttribute('src'), 'data:image/png;base64,AAAA', 'from the form, in order');
+  assert.ok(/width:340px/.test(imgs[0].getAttribute('style')), 'at the email\'s size');
+  assert.ok(/Insurance card images \(2\)/.test(slot.textContent), 'under the email\'s caption');
+  assert.ok(slot.previousElementSibling.textContent === 'SSN' && slot.nextElementSibling.textContent === 'Clinical', 'where the email puts them');
+  h.window.intakeCloseModal_();
+  h.read('INTAKE_STATE.pmd.images = []');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess(res, 'intakePreviewPMD');
+  assert.strictEqual(h.document.querySelectorAll('.intk-prev [data-intk-img-slot]').length, 0, 'no images: the slot row is removed');
+});
+
 test('B3 DOM: a pasted image joins the on-screen form — never text pasted into a field, and never once the form is gone', () => {
   const { h } = bootAcct('pap');
   h.window.__pasted = [];

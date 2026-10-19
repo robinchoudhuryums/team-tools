@@ -39171,10 +39171,18 @@ test('B7: insurance-card images sit at the end of the Insurance section, and an 
   // The decoder returns an EMPTY block when nothing decodes.
   const dctx = vm.createContext({ String, CONFIG: { INTAKE: { MAX_IMAGES: 12, MAX_IMAGE_CHARS: 1e6 } }, CN_EMAIL_PALETTE: { line: '#l', muted: '#m' },
     Utilities: { newBlob: () => ({}), base64Decode: () => [] } });
+  vm.runInContext('var INTAKE_EMAIL_IMG_WIDTH = ' + /const INTAKE_EMAIL_IMG_WIDTH = (\d+);/.exec(serverSource())[1] + ';', dctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakeEmailImgStyle_'), dctx);
   vm.runInContext(extractRawFunction('Code.js', 'intakeDecodeImages_'), dctx);
   assert.strictEqual(dctx.intakeDecodeImages_(['not a data url']).sectionHtml, '', 'nothing decoded, no section');
   const one = dctx.intakeDecodeImages_(['data:image/png;base64,AAAA']).sectionHtml;
   assert.ok(/Insurance card images \(1\)/.test(one) && /cid:attachedImage0/.test(one) && /^<tr>/.test(one), 'one image: a table row with its caption');
+  // Operator 2026-10-19: a card is drawn at 340px, not the full 560px column — CSS for clients, the attribute for Outlook.
+  assert.ok(/width="340"/.test(one) && /width:340px;max-width:100%/.test(one) && !/max-width:560px/.test(one), 'images are 340px wide');
+  // The preview carries an empty slot where the images go, OUTSIDE the hashed body.
+  const prev = extractRawFunction('Code.js', 'intakePreviewAcct_');
+  assert.ok(/const body = intakeBuildAcctBodyHtml_\(rows, layout\);/.test(prev) && /bodyHash: intakeBodyHash_\(body, subject\)/.test(prev) &&
+    /intakeBuildAcctBodyHtml_\(rows, layout, INTAKE_PREVIEW_IMG_SLOT\)/.test(prev), 'the preview shows the slot, the hash covers the body without it');
   // The send hashes the image-free body and adds the images only to the final one.
   const send = extractRawFunction('Code.js', 'intakeSendAcct_');
   assert.ok(/intakeBodyHash_\(body, subject\) !== expectedBodyHash/.test(send) &&
