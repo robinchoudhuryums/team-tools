@@ -281,10 +281,13 @@
     border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
   .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-article[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
   /* A NAMED step ("Referral", "Open") is a label, not a number: no circle, the body
-     face, a column wide enough for "Documentation Request" (operator 2026-10-19). */
-  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child {
-    width: 11em; padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
-  .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child::before, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child::before { content: none; }
+     face (td.kb-step-name, per row), in a column wide enough for "Documentation
+     Request" whenever the table has one (kb-steps-named) — a numbered row in the
+     same table keeps its circle, centred in the wider column (operator 2026-10-19). */
+  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child { width: 11em; }
+  .kb-article table.kb-steps td.kb-step-name, .kb-man-part .kb-article table.kb-steps td.kb-step-name, .kb-article[data-kb-man] table.kb-steps td.kb-step-name {
+    padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
+  .kb-man-part .kb-article table.kb-steps td.kb-step-name::before, .kb-article[data-kb-man] table.kb-steps td.kb-step-name::before { content: none; }
   /* M5 — a section link is a solid underline; a bare number link reads as a number. */
   .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
   .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
@@ -2885,7 +2888,10 @@ function kbMd_(src) {
         var cells = tableCells(lines[i]);
         tbl += '<tr>';
         for (var ci2 = 0; ci2 < headCells.length; ci2++) {
-          tbl += '<td' + (tone[ci2] ? ' class="' + tone[ci2] + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
+          // A step cell that is a word, not a number, is a label (no circle) — per ROW,
+          // so a numbered table that ends on "Turnaround" keeps its numbers' circles.
+          var tdCls = (tone[ci2] || '') + (stepNamed && ci2 === 0 && !/^\s*\d+[a-z]?\.?\s*$/i.test(cells[0] || '') ? (tone[ci2] ? ' ' : '') + 'kb-step-name' : '');
+          tbl += '<td' + (tdCls ? ' class="' + tdCls + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
             inline(cells[ci2] == null ? '' : cells[ci2]) + '</td>';
         }
         tbl += '</tr>';

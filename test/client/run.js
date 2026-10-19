@@ -35863,12 +35863,19 @@ test('Operator 2026-10-19: a step table whose steps are NAMED draws them as labe
   assert.ok(/^<table class="kb-steps"><thead>/.test(c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2a | Text |\n| 3. | Note |\n')), 'numbered steps keep the circle');
   const named = c.kbMd_('| Step | What\'s happening |\n|---|---|\n| Referral | Order sent |\n| Insurance Verification | Confirmed |\n');
   assert.ok(/^<table class="kb-steps kb-steps-named"><thead>/.test(named), named);
-  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| Validation | b |\n')), 'one named step makes the table a named one');
+  // Per ROW (10.20's EAA steps run 1, 2, 3, then "Turnaround"): a word is a label,
+  // a number in the same table keeps its circle.
+  const mixed = c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| 2 | b |\n| Turnaround | c |\n');
+  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(mixed), 'a table with one named step gets the wider column');
+  assert.deepStrictEqual(mixed.match(/<tr><td[^>]*>[^<]*<\/td>/g), ['<tr><td>1</td>', '<tr><td>2</td>', '<tr><td class="kb-step-name">Turnaround</td>'], 'only the word is drawn as a label: ' + mixed);
+  assert.ok(/<tr><td class="kb-step-name">Referral<\/td>/.test(named), 'every named row is a label');
   assert.ok(/^<table><thead>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| Referral | 1 |\n')), 'never on a table that is not a step table');
-  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child::before \{ content: none; \}/.test(M1_KB_SRC), 'the named form draws no circle');
-  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps\.kb-steps-named td:first-child \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  assert.ok(/table\.kb-steps td\.kb-step-name::before \{ content: none; \}/.test(M1_KB_SRC), 'a named step draws no circle');
+  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps td\.kb-step-name \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child \{ width: 11em; \}/.test(M1_KB_SRC), 'the column is wide enough for "Documentation Request"');
   const mh = MP1_('make_html.py');
-  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /table\.steps\.steps-named td:first-child\{width:10em/.test(mh), 'the HTML build draws the same split');
+  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /td\["class"\] = \(td\.get\("class"\) or \[\]\) \+ \["stepname"\]/.test(mh) &&
+    /table\.steps\.steps-named td:first-child\{width:10em\}/.test(mh) && /table\.steps td\.stepname\{/.test(mh), 'the HTML build draws the same per-row split');
 });
 
 test('Operator 2026-10-19: the HTML handbook\'s tables that fit keep their header row in view below the context bar — measured, screen only; and the reader paints the same (kbManualStickyHeads_)', () => {

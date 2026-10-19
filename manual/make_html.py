@@ -147,9 +147,12 @@ def classify_tables(html):
             stats["steps"] += 1
             # NAMED steps ("Referral", "Open") need a label column, not a number's
             # (operator 2026-10-19) — kbMd_ draws the same split.
-            firsts = [(r.find("td").get_text(" ", strip=True) if r.find("td") else "") for r in body_rows]
-            if any(not re.fullmatch(r"\d+[a-z]?\.?", f, re.I) for f in firsts):
+            named = [r.find("td") for r in body_rows
+                     if r.find("td") and not re.fullmatch(r"\d+[a-z]?\.?", r.find("td").get_text(" ", strip=True), re.I)]
+            if named:
                 extra.append("steps-named")
+                for td in named:   # per row: a numbered row keeps its number's look
+                    td["class"] = (td.get("class") or []) + ["stepname"]
         tone = {i: ("ok" if h.startswith("\u2713") else "no")
                 for i, h in enumerate(heads) if h[:1] in ("\u2713", "\u2717")}
         if tone:
@@ -1178,8 +1181,8 @@ section.start .cb{margin-bottom:10px}
 table.steps tbody tr:nth-child(even){background:transparent}
 table.steps td:first-child{width:3.4em;text-align:center;font-weight:700;color:var(--accent);
  position:relative;vertical-align:middle}
-table.steps.steps-named td:first-child{width:10em;font-size:.92em;line-height:1.35;vertical-align:top;
- padding-bottom:12px;color:var(--ink)}
+table.steps.steps-named td:first-child{width:10em}
+table.steps td.stepname{font-size:.92em;line-height:1.35;vertical-align:top;padding-bottom:12px;color:var(--ink)}
 table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";position:absolute;
  left:50%;bottom:-.8em;transform:translateX(-50%);z-index:1;font-size:15px;line-height:1.3;
  color:var(--muted);background:var(--bg);padding:0 3px}
