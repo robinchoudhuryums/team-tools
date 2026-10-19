@@ -69,8 +69,7 @@ function sanitizeTagsArray_(arr) {
 function submitCallNote(payload) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   let notifyAfter = null;
   try {
 
@@ -124,7 +123,7 @@ function submitCallNote(payload) {
     return { success: true, note: createdNote };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
-    lock.releaseLock();
+    cnReleaseRepLease_(lease);
     // M-7: best-effort mail fires only after the global lock is released.
     if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
   }
@@ -134,8 +133,7 @@ function submitCallNote(payload) {
 function updateCallNote(noteId, payload) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   try {
 
     const cleaned = sanitizeCallNotePayload_(payload || {});
@@ -177,7 +175,7 @@ function updateCallNote(noteId, payload) {
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /** Sets (or clears) the flag type on a note. Pass '' to clear.
  *  Optional trainingQuestion: when flagging as 'training', merges
@@ -185,8 +183,7 @@ function updateCallNote(noteId, payload) {
 function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   let notifyAfter = null;
   try {
     // Round 2 deferred 8e — accept 'urgent' as a card-level toggle. Urgent
@@ -270,7 +267,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
   finally {
-    lock.releaseLock();
+    cnReleaseRepLease_(lease);
     if (notifyAfter) { try { notifyAfter(); } catch (e) { console.warn('post-lock notify failed: ' + e.message); } }
   }
 }
@@ -279,8 +276,7 @@ function setCallNoteFlag(noteId, flagType, trainingQuestion, reviewComment) {
 function setCallNoteResolved(noteId, resolved) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   try {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
@@ -300,7 +296,7 @@ function setCallNoteResolved(noteId, resolved) {
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /** PURE (Node-pinned) — the self-delete window's verdict: null when the note
  *  may be deleted, else the message. CN-2 (cycle 23): a timestamp that cannot
@@ -323,8 +319,7 @@ function cnDeleteWindowError_(noteMs, nowMs, windowSeconds) {
 function deleteCallNote(noteId) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   try {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
@@ -347,7 +342,7 @@ function deleteCallNote(noteId) {
     // (Ambient cache is purely TTL-driven now — see INV-43.)
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /** Manager delete from a rep's history (operator feedback 2026-06-12) —
  *  the path deleteCallNote's own error message always pointed at ("ask
@@ -362,7 +357,7 @@ function managerDeleteCallNote(repEmpId, noteId) {
   try {
     const emp = lookupEmployeeById_(String(repEmpId || '').trim());
     if (!emp || !emp.callNotesSheetId) return { success: false, error: 'Rep not found or not enrolled.' };
-    const sheet = getCallNotesSheet_(emp);
+    const sheet = getCallNotesSheetForWrite_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
     const dateLocal = cnDateLocalString_(located.row[CN.DATE_LOCAL]);
@@ -386,8 +381,7 @@ function managerDeleteCallNote(repEmpId, noteId) {
 function setCallNotePinned(noteId, pinned) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Employee not found.' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(15000);
+  const lease = cnAcquireRepLease_(emp);   // 25post — this rep's Sheet, not the project lock
   try {
     const sheet = getCallNotesSheet_(emp);
     const located = findCallNoteRow_(sheet, noteId);
@@ -449,7 +443,7 @@ function setCallNotePinned(noteId, pinned) {
     const updatedRow = sheet.getRange(located.rowIndex, 1, 1, CN_HEADERS.length).getValues()[0];
     return { success: true, note: callNoteRowToObject_({ row: updatedRow, rowIndex: located.rowIndex }) };
   } catch (err) { return { success: false, error: err.message }; }
-  finally { lock.releaseLock(); }
+  finally { cnReleaseRepLease_(lease); }
 }
 /** Returns the calling rep's pinned notes across all dates (not just today).
  *  Read-only, no lock. Used by the Log view's pinned tray.
@@ -1368,7 +1362,7 @@ function applyTagTransformAcrossReps_(oldTag, transform) {
       callNotesSheetId: sheetId,
     };
     try {
-      const sheet = getCallNotesSheet_(repEmp);
+      const sheet = getCallNotesSheetForWrite_(repEmp);
       // ADM-12 (cycle 23): the cold NotesArchive tab too. It was never walked,
       // so archived notes kept the old tag and still showed under it in an
       // "Include archive" search while the result reported the rename complete.
@@ -2004,7 +1998,7 @@ function setCallNoteManagerComment(repEmpId, noteId, message) {
     if (!target) return { success: false, error: 'Employee not found.' };
     if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
 
-    const sheet = getCallNotesSheet_(target);
+    const sheet = getCallNotesSheetForWrite_(target);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
@@ -2047,7 +2041,7 @@ function appendCallNoteFeedback(noteId, message, kind) {
       return { success: false, error: 'Please type a question before sending.' };
     }
 
-    const sheet = getCallNotesSheet_(emp);
+    const sheet = getCallNotesSheetForWrite_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 
@@ -2433,7 +2427,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const sheet = getCallNotesSheet_(emp);
+    const sheet = getCallNotesSheetForWrite_(emp);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
     const note = callNoteRowToObject_(located);
@@ -3324,7 +3318,7 @@ function sendExternalEmail(payload) {
     const lock = LockService.getScriptLock();
     try {
       lock.waitLock(15000);
-      const sheet = getCallNotesSheet_(emp);
+      const sheet = getCallNotesSheetForWrite_(emp);
       const located = findCallNoteRow_(sheet, noteId);
       if (located) {
         let subformData = null;
@@ -3603,7 +3597,7 @@ function purgeOldCallNotes() {
           callNotesSheetId: sheetId,
         };
         try {
-          const removed = purgeSheetRowsOlderThan_(getCallNotesSheet_(emp), CN.DATE_LOCAL, cutoffMs);
+          const removed = purgeSheetRowsOlderThan_(getCallNotesSheetForWrite_(emp), CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
         } catch (e) {
           skipped.push(emp.name || emp.id);
@@ -3839,7 +3833,7 @@ function archiveOldCallNotes() {
           callNotesSheetId: sheetId,
         };
         try {
-          const live = getCallNotesSheet_(emp);
+          const live = getCallNotesSheetForWrite_(emp);
           const archive = getOrCreateNotesArchiveTab_(live.getParent());
           const moved = archiveSheetRowsOlderThan_(live, archive, CN.DATE_LOCAL, cutoffMs,
             { maxRows: budget, textIdx: CN_TEXT_IDX });   // F6 (cycle 25): the '@' columns stay '@'
@@ -3917,7 +3911,7 @@ function purgeArchivedCallNotes() {
         };
         try {
           // Read-only existence check — never create the archive tab here.
-          const archive = getCallNotesSheet_(emp).getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
+          const archive = getCallNotesSheetForWrite_(emp).getParent().getSheetByName(CONFIG.CALL_NOTES.ARCHIVE_TAB);
           if (!archive) continue;
           const removed = purgeSheetRowsOlderThan_(archive, CN.DATE_LOCAL, cutoffMs);
           if (removed > 0) { notesRemoved += removed; repsTouched++; }
@@ -4005,7 +3999,7 @@ function reconcileCallNotesCore_(callerEmp, auditAction) {
         timezone: String(roster[r][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE,
       };
       try {
-        const sheet = getCallNotesSheet_(emp);
+        const sheet = getCallNotesSheetForWrite_(emp);
         const lastRow = sheet.getLastRow();
         if (lastRow < 2) continue;
         const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
@@ -4733,6 +4727,72 @@ function cnEnrolledSheetId_(row) {
  * sheet). First-touch on any new rep's Sheet provisions the `Notes` tab with
  * the canonical header row (CN_HEADERS).
  */
+/** PURE (25post) — is a stored lease value free at `nowMs`? Free when absent,
+ *  unreadable, or past its `until` (a killed holder's lease expires). */
+function cnRepLeaseFree_(raw, nowMs) {
+  if (!raw) return true;
+  let v = null;
+  try { v = JSON.parse(raw); } catch (_) { return true; }
+  return !(v && Number(v.until) > Number(nowMs));
+}
+/** 25post — take the lease on `emp`'s call-notes Sheet, waiting up to
+ *  CN_REP_LEASE_WAIT_MS. The ScriptLock is held only for the check-and-set (a
+ *  property read and write), never for the save itself. Throws on timeout,
+ *  exactly where `waitLock` used to — so a caller acquires it OUTSIDE its try,
+ *  as it did the lock. A rep with no Sheet gets an empty lease: the body's
+ *  `getCallNotesSheet_` refuses by name, as before. */
+function cnAcquireRepLease_(emp) {
+  const sheetId = String((emp && emp.callNotesSheetId) || '');
+  if (!sheetId) return { key: '', token: '' };
+  const key = CN_REP_LEASE_PREFIX + sheetId;
+  const token = Utilities.getUuid();
+  const props = PropertiesService.getScriptProperties();
+  const deadline = Date.now() + CN_REP_LEASE_WAIT_MS;
+  for (;;) {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(CN_REP_LEASE_WAIT_MS);
+    let got = false;
+    try {
+      if (cnRepLeaseFree_(props.getProperty(key), Date.now())) {
+        propSetBounded_(key, JSON.stringify({ token: token, until: Date.now() + CN_REP_LEASE_MS }));   // refusing: a full store fails the save by name
+        got = true;
+      }
+    } finally { lock.releaseLock(); }
+    if (got) return { key: key, token: token };
+    if (Date.now() >= deadline) {
+      throw new Error('Lock timeout: another change to these call notes is still saving — try again in a moment.');
+    }
+    Utilities.sleep(CN_REP_LEASE_POLL_MS);
+  }
+}
+/** 25post — give the lease back, only if it is still ours (a lease that ran
+ *  past CN_REP_LEASE_MS may already be someone else's). No ScriptLock: a holder
+ *  of the ScriptLock may be waiting on this very lease. Never throws. */
+function cnReleaseRepLease_(lease) {
+  if (!lease || !lease.key) return;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let cur = null;
+    try { cur = JSON.parse(props.getProperty(lease.key) || 'null'); } catch (_) { cur = null; }
+    if (cur && cur.token === lease.token) props.deleteProperty(lease.key);
+  } catch (e) { console.warn('cnReleaseRepLease_: ' + e.message); }
+}
+/** 25post — for a writer that HOLDS the ScriptLock: wait until no rep-lease
+ *  save is in flight on this Sheet, then open it. Holding the ScriptLock means
+ *  no new lease can start meanwhile, and an expired lease is free, so the wait
+ *  is bounded by the current holder (or CN_REP_LEASE_MS for a killed one). */
+function getCallNotesSheetForWrite_(emp) {
+  const sheetId = String((emp && emp.callNotesSheetId) || '');
+  if (sheetId) {
+    const props = PropertiesService.getScriptProperties();
+    const key = CN_REP_LEASE_PREFIX + sheetId;
+    const giveUp = Date.now() + CN_REP_LEASE_MS + 1000;
+    while (!cnRepLeaseFree_(props.getProperty(key), Date.now()) && Date.now() < giveUp) {
+      Utilities.sleep(CN_REP_LEASE_POLL_MS);
+    }
+  }
+  return getCallNotesSheet_(emp);
+}
 function getCallNotesSheet_(emp) {
   if (!emp || !emp.callNotesSheetId) {
     throw new Error('Your call-notes Sheet is not configured. Ask your manager to enroll you.');

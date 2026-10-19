@@ -1492,7 +1492,13 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         incompleteCount: ts.incompleteCount, timezone: ts.timezone,
         pto: [{ date: range.start.substring(0, 8) + '12', type: 'Full Day', days: 1 }],
         rate: rate, estGross: Math.round(ts.totalHours * rate * 100) / 100,
-        archiveNote: false, maxOffset: 6,
+        archiveNote: false,
+        // 25post B4 — a day's adjustment requests with the rep's reason and status.
+        adjustments: (function () { var o = {}; o[range.start.substring(0, 8) + '05'] = [
+          { punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot to clock out after the last call', status: 'Approved', submittedAt: '' },
+          { punchType: 'LunchIn', time: '13:00', endTime: '', action: 'set', reason: 'Break ran over — callback', status: 'Pending', submittedAt: '' }]; return o; })(),
+        adjError: '',
+        maxOffset: 6,
         viewingOther: rid ? { id: rid, name: 'Priya Raman' } : null,
       };
     },
@@ -1518,13 +1524,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // presenceDisplay_). Ravi is IN by activity (no punch); Leo is the amber flag.
       function ls(name, status, t, tz, abbr, act) { act = act || {}; return { id: 'E-' + name.length + '0' + t, name: name, status: status,
         punchStatus: act.punchStatus || status, activityIn: !!act.activityIn, activeNotIn: !!act.activeNotIn, lastSeenMgr: act.lastSeenMgr || null,
+        idleMin: act.idleMin != null ? act.idleMin : null,   // 25post B8 — Nina is idle 42 min
         lastPunchType: t, lastPunchTime: '08:0' + (name.length % 6) + ':00', lastPunchTimeMgr: '21:3' + (name.length % 6) + ':00',
         timezone: tz, tzAbbr: abbr, empTzAbbr: abbr, mgrTzAbbr: 'CST', recentHours: rh(), recentTotal: 47.75, recentDays: 6 }; }
       return {
         today: todayIso,
         liveStatus: [ls('Avery Blake', 'clocked_in', 'LunchIn', 'Asia/Kolkata', 'IST'),
                      ls('Sam Ortiz', 'on_lunch', 'LunchOut', 'Asia/Manila', 'PHT'),
-                     ls('Nina Patel', 'clocked_in', 'ClockIn', 'America/Chicago', 'CST'),
+                     ls('Nina Patel', 'clocked_in', 'ClockIn', 'America/Chicago', 'CST', { idleMin: 42 }),
                      ls('Ravi Menon', 'clocked_in', null, 'America/Chicago', 'CST', { punchStatus: 'not_in', activityIn: true, lastSeenMgr: '9:42 AM' }),
                      ls('Leo Kim', 'not_in', 'ClockOut', 'America/Chicago', 'CST', { activeNotIn: true, lastSeenMgr: '9:15 AM' })],
         pending: [{ empId: 'E-1088', empName: 'Sam Ortiz', name: 'Sam Ortiz', date: daysAgo(-4), type: 'Full Day', notes: 'Wedding',
@@ -2313,6 +2320,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       // TRUNCATED window, as on a busy production AuditLog, so the "last seen"
       // rows with no run on record say they cannot confirm.
       auditWindow: { complete: false, startMgr: daysAgo(9) + ' 08:12:40', startMs: Date.now() - 9 * 86400000, rows: 4000 },
+      watchSince: { CallNotesReconcile: { ms: Date.now() - 20 * 86400000, ym: '2026-08' } },
+      jobRanAt: {},
       problems: [{ kind: 'openPunch', key: 'days', text: 'Open punches: 2 day(s) across 1 rep(s) have no usable clock-in/clock-out pair — Jordan Reyes (2). Those days earn no hours and no PTO until they are fixed (checked 2026-08-16…2026-09-13).' }],
       managerTzAbbr: 'CST',
       auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
@@ -2392,6 +2401,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
                      largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 4120, error: '' },
         mailBcc: { prop: 'MAIL_BCC_ALL', enabled: true, addresses: ['robin@umsupply.com'],
                    external: [], ownDomain: 'umsupply.com' },
+        // 25post — mailQuotaStatus_'s shape; a busy afternoon, the warn tone.
+        mailQuota: { remaining: 240, warnAt: 300, bccPerSend: 1, error: '' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -2582,7 +2593,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         window: { start: '2026-08-16', end: '2026-09-13', adjustWindowDays: 30 } },
       selfTest: { date: daysAgo(0), mode: 'smoke', pass: 74, fail: 0, skip: 0, error: '', note: '', running: false, startedAt: null, stuck: false },
       intakeCatalog: { ok: true, totalRows: 22, errors: [], warnings: [] },
-      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, problems: [],
+      auditScanComplete: true, auditWindow: { complete: true, startMgr: '', startMs: null, rows: 4000 }, watchSince: {}, jobRanAt: {}, problems: [],
       managerTzAbbr: 'CST', auditLogUrl: 'https://docs.google.com/spreadsheets/d/example#gid=3',
     },
     // G3 (cycle 25 E1): a fresh deploy — no digest has written a row yet.
@@ -2620,6 +2631,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       mailBcc: { prop: 'MAIL_BCC_ALL', enabled: false, addresses: [], external: null, ownDomain: '' },
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
                    largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 2100, error: '' },
+      mailQuota: { remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };

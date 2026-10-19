@@ -488,6 +488,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `appendRow`; it never throws into the digest. Verify: the G3 rows pin (no
   lock, `appendRow(sheetSafeRow_(row))`, a store that will not open returns 0).
 
+  **25post (operator 2026-10-16, the team rollout): a note save holds its
+  REP's lease, not the project lock.** Every punch and every note save across
+  the team queued on the one ScriptLock, though two reps' notes live in two
+  different Sheets. Apps Script offers no lock per resource here — the web app
+  runs as one user (so the user lock is one lock) and is bound to no document
+  (so there is no document lock) — so the six note actions a rep makes all day
+  (submit, edit, flag, resolve, delete, pin) take a LEASE on their own Sheet:
+  `CN_REP_LEASE_<sheetId>` = {token, until}, checked and set under the
+  ScriptLock for milliseconds, held for the save, released in `finally` by
+  token. **The rule that keeps it correct:** every function that holds the
+  ScriptLock and opens a rep Sheet opens it through
+  `getCallNotesSheetForWrite_`, which first waits out that rep's lease — the
+  manager actions, the email senders, the form submit, the tag transforms and
+  the nightly archive / purge / reconcile — because a lock holder's write
+  through a HELPER (the purge's `purgeSheetRowsOlderThan_`) is invisible to a
+  scan of its own body. A leased action never takes the ScriptLock as well. A
+  killed save's lease expires after 60 seconds. Verify: the 25post lease pins
+  (the derived writer net, driven acquire / release / wait).
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -4341,6 +4360,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   "send to agent" list stayed empty for the session. Only a list that was read is
   cached now. A failure opens the preview without agents, says so, and the next
   preview asks again. Verify: the F20 (cycle 25) DOM drive.
+  **AMENDED (25post B6, 2026-10-16): the intake Sales/PAP team.** The
+  recipients endpoint now ships the CDR roster's Sales and PAP people beside the
+  app users. A failed roster read is named in `teamError` and the client keeps
+  the team only from a read that succeeded, so the next preview asks again; the
+  server caches the parsed roster only after a read that parsed. Verify: the B6
+  DOM drive (a failed read is said, nothing cached, the next preview re-asks).
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -4957,6 +4982,28 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   each grouped handler to its job key and whether the job OWNS it; the
   dispatcher stamps the job key and never clears one the job owns (that would
   erase the job's own stamp). Verify: the Seams F3 two-sided net.
+
+  **25post (operator 2026-10-16), the first health email after the cycle-25
+  deploy.** Three lines told the operator to re-run `installAutomationTriggers()`
+  and none was a missing trigger. (1) The Spanish escalation digest, added to
+  `runDailyChecks` by E4, was judged "never ran" from the trigger INSTALL three
+  weeks earlier — the deploy landed after that morning's 8am slot, so it had
+  never had a chance to run. (2) The diagnostics purge, watched only since E1
+  made it always-on, was judged from an AuditLog window that reached back past
+  its 30 hours — before the deploy it had never written a row to find. (3) The
+  accrual line said "has not run this month" although the job had run in
+  October (its reconcile stamp, rewritten on every path, carried September)
+  and simply wrote no credit row. **Absence is evidence only from when the
+  check started watching, and a check that can see the run says so.**
+  `AUTOMATION_WATCH_SINCE` records each digest and each enabled job's first
+  watch (seeded with the install time, so shipping it masked nothing); a
+  digest's "never ran" counts from the later of the install and its first
+  watch, a daily job's "no run on record" waits out its stale window from its
+  first watch, and a monthly job first watched this month makes no claim. A
+  job table entry can carry `ranAt` — the accrual's is the reconcile stamp — and
+  a run this month with no row reads "ran on … but wrote no row this month, so
+  its trigger is running", with the remedy (column R, `previewPtoAccruals`).
+  Verify: the six 25post pins.
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
@@ -5925,3 +5972,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   past the bottom of everything visibly laid out, visually hidden boxes
   excluded — and the run prints VERTICAL RUNAWAY over 200px. Verify: re-open a
   callout chapter with `.kb-co-sep` un-anchored and the reader scenarios report it.
+
+<a id="g172-a-presence-stamp-that-expires-at-the-threshold"></a>
+
+- **A stamp that EXPIRES at the threshold you measure against cannot tell you
+  how far past it you are (25post B8, 2026-10-16).** The idle alert asks "how
+  long since this clocked-in rep last used the app?", 30 minutes being the
+  line. The only record of activity was the presence stamp, a CacheService entry
+  that lives exactly `PRESENCE_TTL_SEC` (30 minutes): the moment a rep became
+  idle enough to flag, the evidence of WHEN they were last seen disappeared,
+  and "no stamp" could mean idle 31 minutes, idle 5 hours, or never seen. The
+  same gesture now also writes `PRESENCE_LAST_PREFIX` with the cache's six-hour
+  ceiling, and the measure starts from the later of that stamp and the last
+  punch, so a missing stamp falls back to a real time rather than to nothing.
+  RULE: a reading that decides "more than N" needs a record that outlives N;
+  check the TTL of whatever you measure from against the threshold you compare
+  it with. Fires when you build a "for how long" check on a cache entry, a
+  heartbeat or any expiring stamp. Verify: the B8 pins (the driven
+  `liveIdleMin_` grid, and `recordPresence` writing both stamps).

@@ -536,8 +536,91 @@ function intakeValidateEmail_(email) {
   return re.test(String(email).toLowerCase());
 }
 // spec: { kind:'agent'|'default'|'all'|'custom', id?, email? }
+// ── Team recipients from the CDR roster (25post B6, operator 2026-10-16) ───
+/** PURE — a roster name → first.last@domain, or '' when the name has no
+ *  first and last word to build one from. A parenthetical nickname is dropped
+ *  ("Roman (Robin) Paulose" → roman.paulose), accents and punctuation other
+ *  than a hyphen are removed, and a trailing Jr/Sr/II/III/IV is not a surname. */
+function intakeTeamEmail_(name, domain) {
+  let n = String(name == null ? '' : name).replace(/\([^)]*\)/g, ' ');
+  try { n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  const words = n.toLowerCase().replace(/[^a-z\s-]/g, '').split(/\s+/).filter(Boolean);
+  while (words.length > 2 && /^(jr|sr|ii|iii|iv)$/.test(words[words.length - 1])) words.pop();
+  if (words.length < 2 || !domain) return '';
+  return words[0] + '.' + words[words.length - 1] + '@' + domain;
+}
+
+/** PURE — the roster block (row 1 = department names from the first roster
+ *  column, stopping at the first blank header, the dashboard's own rule; each
+ *  cell below "Name, ext1, ext2") → the named departments' people, in the
+ *  configured department order, one entry per address per department.
+ *  `skipped` counts names no address could be built from, so the picker can
+ *  say so rather than drop them silently. */
+function intakeTeamRosterParse_(values, depts, domain) {
+  const header = (values && values[0]) || [];
+  const want = {};
+  (depts || []).forEach(function (d, i) { want[String(d).trim().toLowerCase()] = i; });
+  const cols = [];
+  for (let c = 0; c < header.length; c++) {
+    const h = String(header[c] == null ? '' : header[c]).trim();
+    if (!h) break;
+    if (Object.prototype.hasOwnProperty.call(want, h.toLowerCase())) cols.push({ c: c, dept: depts[want[h.toLowerCase()]], order: want[h.toLowerCase()] });
+  }
+  cols.sort(function (a, b) { return a.order - b.order; });
+  const team = [], seen = {}, found = {};
+  let skipped = 0;
+  cols.forEach(function (col) {
+    found[col.dept] = true;
+    const people = [];
+    for (let r = 1; r < values.length; r++) {
+      const cell = String(values[r][col.c] == null ? '' : values[r][col.c]).trim();
+      if (!cell) continue;
+      const name = cell.split(',')[0].trim();
+      if (!name) continue;
+      const email = intakeTeamEmail_(name, domain);
+      if (!email) { skipped++; continue; }
+      const key = col.dept + '|' + email;
+      if (seen[key]) continue;
+      seen[key] = true;
+      people.push({ dept: col.dept, name: name.replace(/\s+/g, ' '), email: email });
+    }
+    people.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    Array.prototype.push.apply(team, people);
+  });
+  const missing = (depts || []).filter(function (d) { return !found[d]; });
+  return { team: team, skipped: skipped, missingDepts: missing };
+}
+
+/** The Sales/PAP people, read from the CDR Report's roster tab and cached for
+ *  TEAM_CACHE_SEC. A read that fails THROWS (the caller names it); only a
+ *  read that succeeded is cached (g129). */
+function intakeTeamRoster_() {
+  const cache = CacheService.getScriptCache();
+  const key = 'intake_team_roster_v1';
+  const hit = cache.get(key);
+  if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  const sh = getCdrSS_().getSheetByName(CONFIG.INTAKE.TEAM_ROSTER_TAB);
+  if (!sh) throw new Error('The CDR Report has no "' + CONFIG.INTAKE.TEAM_ROSTER_TAB + '" tab.');
+  const first = CONFIG.INTAKE.TEAM_ROSTER_FIRST_COL;
+  const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < first) throw new Error('The "' + CONFIG.INTAKE.TEAM_ROSTER_TAB + '" tab has no department columns.');
+  const values = sh.getRange(1, first, lastRow, lastCol - first + 1).getValues();
+  const out = intakeTeamRosterParse_(values, CONFIG.INTAKE.TEAM_DEPTS, CONFIG.ORG_EMAIL_DOMAINS[0]);
+  try { cache.put(key, JSON.stringify(out), CONFIG.INTAKE.TEAM_CACHE_SEC); } catch (e) {}
+  return out;
+}
+
 function intakeResolveRecipient_(formType, spec) {
   spec = spec || {};
+  if (spec.kind === 'team') {
+    // The address must be one the roster produces today — the picker ships
+    // addresses (they are built from public names), but a send never trusts
+    // the client's copy.
+    const em = String(spec.email || '').trim().toLowerCase();
+    const hit = intakeTeamRoster_().team.some(function (p) { return p.email === em; });
+    if (!hit) throw new Error('That person is no longer on the Sales/PAP roster — preview again to refresh the list.');
+    return em;
+  }
   if (spec.kind === 'default') return formType === 'PAP' ? getIntakeSleepEmail_() : getIntakeSalesEmail_();
   if (spec.kind === 'all')     return getIntakeAllAgentsEmail_();
   if (spec.kind === 'agent') {
@@ -571,7 +654,14 @@ function getIntakeAgents() {
       agents.push({ id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim() });
     }
     agents.sort((a, b) => a.name.localeCompare(b.name));
-    return { agents };
+    // 25post B6: the Sales and PAP teams (not app users) from the CDR roster.
+    // Their failure is named BESIDE the app users, never as an empty team (g128).
+    let team = null, teamError = '', teamSkipped = 0, teamMissing = [];
+    try {
+      const t = intakeTeamRoster_();
+      team = t.team; teamSkipped = t.skipped; teamMissing = t.missingDepts;
+    } catch (e) { teamError = 'The Sales/PAP list could not be read from the CDR Report: ' + e.message; }
+    return { agents, team, teamError, teamSkipped, teamMissing };
   } catch (err) { return { error: err.message }; }
 }
 // ── Recommendation engine ─────────────────────────────────────────────────
@@ -972,7 +1062,8 @@ function intakeFilterRecommendations_(answers, allProducts) {
 // ── Email body builders (all user fields esc_'d — INV-89 discipline) ──────
 function intakeEmailShell_(title, innerHtml, subLabel) {
   // Chrome matched to buildBrandedEmailHtml_ (the 2026-08-11 restyle) so the
-  // intake mail reads as the same product as the rest of the app's email: the
+  // intake mail reads as the same product as the rest of the app's email —
+  // in the intake mails' own light-blue accent since 25post B7: the
   // UMS mark ON THE CARD over a navy rule (logoUrl is a JPEG with no
   // transparency, so a navy band would frame a white rectangle), a right-
   // aligned mono module label, then the subject as a REAL heading rather than
@@ -987,17 +1078,17 @@ function intakeEmailShell_(title, innerHtml, subLabel) {
           '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
             // The alt text carries the identity when a client blocks remote
             // images, which most do by default.
-            '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';vertical-align:bottom;' +
-              'font-size:15px;font-weight:700;letter-spacing:.4px;color:' + P.brand + ';">' +
+            '<td style="padding-bottom:14px;border-bottom:2px solid ' + P.intakeAccent + ';vertical-align:bottom;' +
+              'font-size:15px;font-weight:700;letter-spacing:.4px;color:' + P.intakeInk + ';">' +
               '<img src="' + P.logoUrl + '" alt="UMS Team Tools" style="display:block;border:0;height:40px;width:auto;">' +
             '</td>' +
-            '<td align="right" style="padding-bottom:14px;border-bottom:2px solid ' + P.brand + ';vertical-align:bottom;' +
+            '<td align="right" style="padding-bottom:14px;border-bottom:2px solid ' + P.intakeAccent + ';vertical-align:bottom;' +
               'font-family:\'Courier New\',monospace;font-size:9px;font-weight:700;letter-spacing:1.6px;' +
               'text-transform:uppercase;color:' + P.muted3 + ';">' + esc_(subLabel || 'Intake') + '</td>' +
           '</tr></table></td></tr>' +
         '<tr><td style="padding:18px 26px 0;font-size:22px;line-height:1.25;font-weight:700;' +
           'letter-spacing:-.01em;color:' + P.ink + ';">' + esc_(title) + '</td></tr>' +
-        '<tr><td style="padding:12px 26px 0;"><div style="width:46px;height:3px;border-radius:2px;background:' + P.brand + ';"></div></td></tr>' +
+        '<tr><td style="padding:12px 26px 0;"><div style="width:46px;height:3px;border-radius:2px;background:' + P.intakeAccent + ';"></div></td></tr>' +
         '<tr><td style="padding:16px 26px 6px;">' + innerHtml + '</td></tr>' +
         '<tr><td style="padding:0 26px 20px;"><div style="border-top:1px solid ' + P.line +
           ';padding-top:14px;font-family:\'Courier New\',monospace;font-size:10px;letter-spacing:1px;' +
@@ -1006,26 +1097,26 @@ function intakeEmailShell_(title, innerHtml, subLabel) {
     '</div></div>'
   );
 }
-/** The section band shared by the PPD and account bodies. The app's table
- *  vocabulary is a mono uppercase header on a tint with a rule under it — not
- *  a solid navy bar with centred white text, which is the one piece of the
- *  pre-web-app look that most made these mails read as a different product. */
+/** The section band shared by the PPD and account bodies: an uppercase label
+ *  on the intake tint (light blue since 25post B7, operator 2026-10-16 — the
+ *  intake mails' own accent, not the navy of the other branded mail). */
 function intakeSectionRowHtml_(label) {
   const P = CN_EMAIL_PALETTE;
-  return '<tr><td colspan="2" style="height:18px;"></td></tr>' +
-    '<tr><td colspan="2" style="padding:7px 10px;background:' + P.navyTint +
-      ';border-bottom:2px solid ' + P.brand + ';font-family:\'Courier New\',monospace;font-size:10px;' +
-      'font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:' + P.brand + ';">' + label + '</td></tr>';
+  return '<tr><td colspan="2" style="height:16px;"></td></tr>' +
+    '<tr><td colspan="2" style="padding:8px 10px;background:' + P.intakeTint +
+      ';font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:' + P.intakeInk + ';">' + label + '</td></tr>';
 }
+/** The answer chips — the form's own colours (25post B7): Yes green, No red,
+ *  a picked option green, a warning option amber, a paralysis option light
+ *  red, a "No" among severity options the dark chip. */
 function intakePpdAnswerStyles_() {
-  // 2nd-pass email_styling.md: map the questionnaire answer chips onto the
-  // shared palette (Yes=green, No=red, severity=amber, None=muted).
   const P = CN_EMAIL_PALETTE;
+  const chip = 'font-weight:bold;border-radius:4px;padding:2px 8px;display:inline-block;margin:1px 2px 1px 0;';
   return {
-    green:  'background-color:' + P.accentSoft + ';color:' + P.accentDeep + ';border:1px solid ' + P.accentBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
-    red:    'background-color:' + P.dangerSoft + ';color:' + P.dangerDeep + ';border:1px solid ' + P.dangerBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
-    gray:   'background-color:' + P.paper + ';color:' + P.muted2 + ';border:1px solid ' + P.line + ';border-radius:4px;padding:4px 8px;display:inline-block;',
-    yellow: 'background-color:' + P.warnSoft + ';color:' + P.warnDeep + ';border:1px solid ' + P.warnBorder + ';font-weight:bold;border-radius:4px;padding:4px 8px;display:inline-block;',
+    green:  'background-color:' + P.accentSoft + ';color:' + P.accentDeep + ';border:1px solid ' + P.accentBorder + ';' + chip,
+    red:    'background-color:' + P.dangerSoft + ';color:' + P.dangerDeep + ';border:1px solid ' + P.dangerBorder + ';' + chip,
+    yellow: 'background-color:' + P.warnSoft + ';color:' + P.warnDeep + ';border:1px solid ' + P.warnBorder + ';' + chip,
+    ink:    'background-color:' + P.ink + ';color:' + P.paperCard + ';border:1px solid ' + P.ink + ';' + chip,
   };
 }
 /** F-27 (2026-09-18): the PPD email rows, built SERVER-SIDE from the English
@@ -1077,52 +1168,136 @@ function intakeAcctRowsEn_(formType, answers) {
   }
   return rows;
 }
+/** PURE (25post B7) — the PPD rows grouped the way the email draws them
+ *  (operator 2026-10-16): one row per question, except the arm questions 7–9
+ *  and leg questions 10–12 on one row each, height and weight on one row, the
+ *  ten pain sites 14–23 as one two-column block, and a lettered sub-question
+ *  (31a, 33a, 39a) under its parent. The notes pseudo-question is its own box. */
+function intakePpdEmailUnits_(rows) {
+  const byQ = {};
+  (rows || []).forEach(function (r) { if (r.qNum) byQ[r.qNum] = r; });
+  const comboAt = {}, inCombo = {};
+  INTAKE_PPD_EMAIL_COMBOS.forEach(function (c) {
+    comboAt[c.qs[0]] = c;
+    c.qs.forEach(function (q) { inCombo[q] = true; });
+  });
+  const pain = {};
+  INTAKE_PPD_EMAIL_PAIN.forEach(function (q) { pain[q] = true; });
+  const units = [];
+  let painDone = false;
+  (rows || []).forEach(function (r) {
+    if (r.isHeader) { units.push({ kind: 'header', label: r.label }); return; }
+    const q = String(r.qNum || '');
+    if (q === 'notes') {
+      // The notes box carries its own title, so the band above it would only
+      // repeat it.
+      if (units.length && units[units.length - 1].kind === 'header') units.pop();
+      units.push({ kind: 'notes', label: r.label, value: r.value });
+      return;
+    }
+    if (pain[q]) {
+      if (painDone) return;
+      painDone = true;
+      units.push({ kind: 'pain', items: INTAKE_PPD_EMAIL_PAIN.map(function (p) {
+        const pr = byQ[p] || {};
+        return { qNum: p, label: String(pr.label || '').replace(/\?\s*$/, ''), value: pr.value || '' };
+      }) });
+      return;
+    }
+    if (comboAt[q]) {
+      const c = comboAt[q];
+      units.push({ kind: 'combo', label: c.label, parts: c.qs.map(function (x) {
+        let v = (byQ[x] || {}).value || '';
+        // A bare number gets its unit back (the form stores 64, says "in.").
+        if (c.units && c.units[x] && /^\d+(\.\d+)?$/.test(String(v).trim())) v = String(v).trim() + ' ' + c.units[x];
+        return { qNum: x, value: v };
+      }) });
+      return;
+    }
+    if (inCombo[q]) return;
+    const sub = /^(\d+)[a-z]$/.exec(q);
+    const prev = units[units.length - 1];
+    if (sub && prev && prev.kind === 'row' && prev.qNum === sub[1] && !prev.sub) {
+      prev.sub = { qNum: q, label: String(r.label || '').trim(), value: r.value };
+      return;
+    }
+    units.push({ kind: 'row', qNum: q, label: r.label, value: r.value });
+  });
+  return units;
+}
+/** One PPD answer as the form colours it. Every value is escaped. */
+function intakePpdAnswerHtml_(qNum, answerRaw) {
+  const P = CN_EMAIL_PALETTE;
+  const s = intakePpdAnswerStyles_();
+  answerRaw = String(answerRaw == null ? '' : answerRaw);
+  if (!answerRaw) return '<span style="color:' + P.muted3 + ';font-style:italic;font-weight:normal;">N/A</span>';
+  const tones = INTAKE_PPD_EMAIL_TONES[qNum];
+  if (tones) {
+    return answerRaw.split(',').map(function (part) {
+      const v = part.trim();
+      const t = tones[v];
+      const st = t === 'no' ? s.ink : t === 'danger' ? s.red : t === 'warn' ? s.yellow : '';
+      return st ? '<span style="' + st + '">' + esc_(v) + '</span>' : '<b>' + esc_(v) + '</b>';
+    }).join(' ');
+  }
+  if (INTAKE_PPD_EMAIL_PICKED_QS.indexOf(qNum) >= 0) {
+    const parts = qNum === '1' ? answerRaw.split(',') : [answerRaw];
+    return parts.map(function (part) { return '<span style="' + s.green + '">' + esc_(part.trim()) + '</span>'; }).join(' ');
+  }
+  if (answerRaw === 'Yes') return '<span style="' + s.green + '">Yes</span>';
+  if (answerRaw === 'No') return '<span style="' + s.red + '">No</span>';
+  return '<b>' + cnNlBr_(esc_(answerRaw)) + '</b>';
+}
 // rows: [{ qNum, label, value, isHeader, isSecondary }] — from intakePpdRowsEn_ (F-27)
 function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
   const P = CN_EMAIL_PALETTE;
-  const s = intakePpdAnswerStyles_();
-  let html = '<table style="border-collapse:collapse;width:100%;font-size:14px;">';
-  let fieldIdx = 0;
-  (rows || []).forEach(function (r) {
-    const label = esc_(r.label || '');
-    if (r.isHeader) { html += intakeSectionRowHtml_(label); return; }
-    const answerRaw = String(r.value == null ? '' : r.value);
-    const qNum = String(r.qNum || '');
-    let displayAnswer;
-    if (!answerRaw) {
-      displayAnswer = '<span style="color:' + P.muted3 + ';font-style:italic;font-weight:normal;">N/A</span>';
-    } else {
-      const escAns = esc_(answerRaw);
-      const lower = answerRaw.toLowerCase();
-      if (qNum && INTAKE_PPD_YESNO_QS.indexOf(qNum) >= 0) {
-        displayAnswer = '<div style="' + (lower.indexOf('no') >= 0 ? s.red : s.green) + '">' + escAns + '</div>';
-      } else if (qNum === '34') {
-        displayAnswer = '<div style="' + (lower.indexOf('no') >= 0 ? s.gray : s.yellow) + '">' + escAns + '</div>';
-      } else if (qNum === '25' || qNum === '31a') {
-        if (lower.indexOf('no') >= 0 && lower.indexOf('weakness') < 0 && lower.indexOf('paralysis') < 0 && lower.indexOf('feet') < 0 && lower.indexOf('hands') < 0) {
-          displayAnswer = '<div style="' + s.gray + '">' + escAns + '</div>';
-        } else {
-          displayAnswer = answerRaw.split(',').map(function (part) { return '<span style="' + s.yellow + ' margin:2px;">' + esc_(part.trim()) + '</span>'; }).join(' ');
-        }
-      } else {
-        displayAnswer = escAns;
-      }
+  const sep = ' <span style="color:' + P.muted2 + ';">&middot;</span> ';
+  let html = '<table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;">';
+  let notesHtml = '';
+  intakePpdEmailUnits_(rows).forEach(function (u) {
+    if (u.kind === 'header') { const label = esc_(u.label || ''); html += intakeSectionRowHtml_(label); return; }
+    if (u.kind === 'notes') {
+      notesHtml = intakeNotesBoxHtml_('Additional notes', u.value);
+      return;
     }
-    const qStyle = r.isSecondary
-      ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:24px;'
-      : 'font-weight:600;color:' + P.ink + ';';
-    // Hairline row separators and a very quiet zebra — the app's ledger table
-    // vocabulary. The old bordered grid with a strong blue zebra was the other
-    // half of the pre-web-app look.
-    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.paper;
-    fieldIdx++;
-    html += '<tr style="background:' + bg + ';">' +
-      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';width:56%;vertical-align:top;' + qStyle + '">' + label + '</td>' +
-      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;font-weight:700;">' + displayAnswer + '</td></tr>';
+    if (u.kind === 'pain') {
+      const col = function (items) {
+        return '<td width="50%" style="vertical-align:top;padding:0 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
+          items.map(function (it) {
+            return '<tr><td style="padding:7px 0;border-bottom:1px solid ' + P.line + ';font-size:14px;font-weight:600;color:' + P.ink + ';">' + esc_(it.label) + '</td>' +
+              '<td align="right" style="padding:7px 0;border-bottom:1px solid ' + P.line + ';font-size:14px;">' + intakePpdAnswerHtml_(it.qNum, it.value) + '</td></tr>';
+          }).join('') + '</table></td>';
+      };
+      const half = Math.ceil(u.items.length / 2);
+      html += '<tr><td colspan="2" style="padding:4px 2px 8px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+        col(u.items.slice(0, half)) + col(u.items.slice(half)) + '</tr></table></td></tr>';
+      return;
+    }
+    const rowHtml = function (labelHtml, valueHtml) {
+      return '<tr>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid ' + P.line + ';width:52%;vertical-align:top;font-weight:600;color:' + P.ink + ';">' + labelHtml + '</td>' +
+        '<td style="padding:8px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;">' + valueHtml + '</td></tr>';
+    };
+    if (u.kind === 'combo') {
+      html += rowHtml(esc_(u.label), u.parts.map(function (pt) { return intakePpdAnswerHtml_(pt.qNum, pt.value); }).join(sep));
+      return;
+    }
+    const r = u;
+    const label = esc_(r.label || '');
+    const answerRaw = String(r.value == null ? '' : r.value);
+    let value = intakePpdAnswerHtml_(String(r.qNum || ''), answerRaw);
+    let labelHtml = label;
+    if (u.sub) {
+      labelHtml += '<div style="margin-top:4px;padding-left:14px;font-weight:normal;font-style:italic;color:' + P.muted2 + ';">' + esc_(u.sub.label) + '</div>';
+      value += '<div style="margin-top:4px;">' + intakePpdAnswerHtml_(u.sub.qNum, u.sub.value) + '</div>';
+    }
+    html += rowHtml(labelHtml, value);
   });
+  html += '</table>' + notesHtml;
 
   // --- Recommendations ---
-  html += intakeSectionRowHtml_('Recommended HCPCS') +
+  html += '<table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;">' +
+    intakeSectionRowHtml_('Recommended HCPCS') +
     '<tr><td colspan="2" style="padding:12px 0 0;">';
   const hasComplex = recData && recData.complex && recData.complex.length > 0;
   const hasStandard = recData && recData.standard && recData.standard.length > 0;
@@ -1130,15 +1305,27 @@ function intakeBuildPpdBodyHtml_(patientInfo, rows, recData, selections) {
     html += '<p style="color:' + P.muted2 + ';font-style:italic;">No products matched all criteria based on the provided answers.</p>';
   } else {
     if (hasComplex) {
-      html += '<h4 style="margin-bottom:5px;color:' + P.brand + ';">Complex Rehab</h4>' + intakeRecListHtml_(recData.complex, selections);
+      html += '<h4 style="margin:0 0 6px;color:' + P.intakeInk + ';">Complex Rehab</h4>' + intakeRecListHtml_(recData.complex, selections);
     }
     if (hasStandard) {
       if (hasComplex) html += '<div style="height:20px;"></div>';
-      html += '<h4 style="margin-bottom:5px;color:' + P.brand + ';">Standard Powerchair</h4>' + intakeRecListHtml_(recData.standard, selections);
+      html += '<h4 style="margin:0 0 6px;color:' + P.intakeInk + ';">Standard Powerchair</h4>' + intakeRecListHtml_(recData.standard, selections);
     }
   }
   html += '</td></tr></table>';
   return html;
+}
+/** The boxed notes block both bodies close with — notes about the patient or
+ *  the order as a whole, kept apart from the rows above (operator 2026-10-16). */
+function intakeNotesBoxHtml_(title, value) {
+  const P = CN_EMAIL_PALETTE;
+  const v = String(value == null ? '' : value).trim();
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 4px;"><tr>' +
+    '<td style="border:1px solid ' + P.lineStrong + ';border-radius:8px;padding:12px 14px;">' +
+      '<div style="font-size:13px;font-weight:700;color:' + P.ink + ';">' + esc_(title) + '</div>' +
+      '<div style="margin-top:4px;font-size:14px;line-height:1.5;color:' + (v ? P.ink : P.muted3) + ';' + (v ? '' : 'font-style:italic;') + '">' +
+        (v ? cnNlBr_(esc_(v)) : 'None') + '</div>' +
+    '</td></tr></table>';
 }
 // selections: { itemId: { status:'accepted'|'rejected'|'undecided'|'none', preferred:bool } }
 // justification is server-generated (trusted) and intentionally carries inline
@@ -1210,18 +1397,56 @@ function intakeRecListHtml_(items, selections) {
 }
 // rows: [{ qIndex, label, value, isHeader, isSecondary }] — account-creation forms.
 // layout: INTAKE_PMD_LAYOUT | INTAKE_PAP_LAYOUT (server-held structural rules).
-function intakeBuildAcctBodyHtml_(rows, layout) {
+// imagesHtml: the insurance-card images block (send only — never in the preview
+// hash); placed at the end of the Insurance section, and nothing at all when
+// no image was attached (operator 2026-10-16).
+// 25post B7: a label/value ledger with identifiers in a fixed-width face; from
+// the attestations down, the statements the rep made are full-width boxes —
+// green when confirmed, amber when not — the availability answers sit side by
+// side, and Other Notes closes the body in its own box.
+function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
   const P = CN_EMAIL_PALETTE;
-  let html = '<table style="border-collapse:collapse;width:100%;font-size:14px;">';
-  let fieldIdx = 0;
+  const attest = layout.ATTEST_ROWS || [], avail = layout.AVAIL_ROWS || [], mono = layout.MONO_ROWS || [];
+  let html = '<table role="presentation" style="border-collapse:collapse;width:100%;font-size:14px;">';
+  let notesHtml = '';
+  let availCells = [];
+  const blank = '<span style="color:' + P.muted3 + ';font-style:italic;font-weight:normal;">N/A</span>';
+  function flushAvail() {
+    if (!availCells.length) return;
+    html += '<tr><td colspan="2" style="padding:10px 10px 8px;border-bottom:1px solid ' + P.line + ';">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' + availCells.join('') + '</tr></table></td></tr>';
+    availCells = [];
+  }
   (rows || []).forEach(function (r) {
     const i = Number(r.qIndex);
     const label = esc_(r.label || '');
     const answerRaw = String(r.value == null ? '' : r.value);
     const isHeader = layout.HEADER_ROWS.indexOf(i + 1) >= 0;
+    if (avail.indexOf(i) < 0) flushAvail();
 
     if (isHeader) {
+      if (i === layout.IMAGES_BEFORE_ROW && imagesHtml) html += imagesHtml;
       html += intakeSectionRowHtml_(label);
+      return;
+    }
+    if (i === layout.NOTES_ROW) { notesHtml = intakeNotesBoxHtml_(r.label || 'Other Notes', answerRaw); return; }
+    if (attest.indexOf(i) >= 0) {
+      const yes = answerRaw === 'TRUE';
+      const tail = yes ? '' : ' &mdash; <strong>' + (answerRaw === 'FALSE' ? 'answered No' : 'not confirmed') + '</strong>';
+      html += '<tr><td colspan="2" style="padding:5px 0;">' +
+        '<div style="padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.45;background:' + (yes ? P.accentSoft : P.warnSoft) +
+          ';border:1px solid ' + (yes ? P.accentBorder : P.warnBorder) + ';color:' + (yes ? P.accentDeep : P.warnDeep) + ';">' +
+          '<strong>' + (yes ? '&#10003; ' : '&#9675; ') + label + '</strong>' + tail + '</div></td></tr>';
+      return;
+    }
+    if (avail.indexOf(i) >= 0) {
+      const cutAt = answerRaw.indexOf(' — ');
+      const head = cutAt >= 0 ? answerRaw.substring(0, cutAt) : answerRaw;
+      const note = cutAt >= 0 ? answerRaw.substring(cutAt + 3) : '';
+      availCells.push('<td width="50%" style="vertical-align:top;padding-right:12px;">' +
+        '<div style="font-size:11px;color:' + P.muted2 + ';">' + label + '</div>' +
+        '<div style="font-size:15px;font-weight:600;color:' + P.ink + ';">' + (head ? esc_(head) : blank) + '</div>' +
+        (note ? '<div style="font-size:13px;color:' + P.muted + ';">' + esc_(note) + '</div>' : '') + '</td>');
       return;
     }
 
@@ -1229,33 +1454,30 @@ function intakeBuildAcctBodyHtml_(rows, layout) {
     const cond = layout.CONDITIONAL_FORMATTING_ROWS[i];
     if (cond && cond[answerRaw]) {
       const rule = cond[answerRaw];
-      displayAnswer = '<div style="background-color:' + rule.bg + ';color:' + rule.fg + ';border:1px solid ' + rule.bg + ';border-radius:4px;padding:5px 8px;font-weight:bold;display:inline-block;">' + esc_(answerRaw) + '</div>';
+      displayAnswer = '<span style="background-color:' + rule.bg + ';color:' + rule.fg + ';border:1px solid ' + rule.bg + ';border-radius:4px;padding:2px 8px;font-weight:bold;display:inline-block;">' + esc_(answerRaw) + '</span>';
     } else if (layout.CHECKBOX_ROWS.indexOf(i) >= 0) {
-      const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? P.warn : P.accent;
-      // I5 (cycle 22): THREE states. An unanswered toggle ('') used to draw the
-      // same empty box as a deliberate "No" ('FALSE'), so the department read a
-      // skipped question as an answer. The client already sends them apart.
+      // I5 (cycle 22): THREE states — a skipped toggle is not a "No".
+      const checkColor = layout.CHECKBOX_WARN_ROWS.indexOf(i) >= 0 ? P.warnDeep : P.accentDeep;
       displayAnswer = (answerRaw === 'TRUE')
-        ? '<div style="width:16px;height:16px;border:1px solid ' + P.muted2 + ';background-color:' + P.paperCard + ';text-align:center;line-height:16px;font-weight:bold;color:' + checkColor + ';display:inline-block;">&#10003;</div>'
+        ? '<span style="font-weight:bold;color:' + checkColor + ';">&#10003; Yes</span>'
         : (answerRaw === 'FALSE'
-          ? '<div style="width:16px;height:16px;border:1px solid ' + P.line + ';background-color:' + P.paper + ';display:inline-block;vertical-align:middle;"></div> <span style="color:' + P.muted2 + ';">No</span>'
+          ? '<span style="font-weight:bold;color:' + P.ink + ';">No</span>'
           : '<span style="color:' + P.muted3 + ';font-style:italic;">Not answered</span>');
+    } else if (!answerRaw) {
+      displayAnswer = blank;
     } else {
-      displayAnswer = !answerRaw ? '<span style="color:' + P.muted3 + ';font-style:italic;">N/A</span>' : esc_(answerRaw);
+      displayAnswer = '<span style="font-weight:600;color:' + P.ink + ';' + (mono.indexOf(i) >= 0 ? 'font-family:\'Courier New\',monospace;font-weight:bold;' : '') + '">' + esc_(answerRaw) + '</span>';
     }
 
     const qStyle = layout.SECONDARY_QUESTION_ROWS.indexOf(i) >= 0
       ? 'font-weight:normal;font-style:italic;color:' + P.muted2 + ';padding-left:24px;'
-      : 'font-weight:600;color:' + P.ink + ';';
-    // Same ledger vocabulary as the PPD body — hairline separators and a quiet
-    // zebra — so the three intake mails do not diverge halfway.
-    const bg = (fieldIdx % 2 === 0) ? P.paperCard : P.paper;
-    fieldIdx++;
-    html += '<tr style="background:' + bg + ';">' +
-      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';width:56%;vertical-align:top;' + qStyle + '">' + label + '</td>' +
-      '<td style="padding:9px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;">' + displayAnswer + '</td></tr>';
+      : 'font-weight:normal;color:' + P.muted + ';';
+    html += '<tr>' +
+      '<td style="padding:8px 10px;border-bottom:1px solid ' + P.line + ';width:44%;vertical-align:top;' + qStyle + '">' + label + '</td>' +
+      '<td style="padding:8px 10px;border-bottom:1px solid ' + P.line + ';vertical-align:top;">' + displayAnswer + '</td></tr>';
   });
-  html += '</table>';
+  flushAvail();
+  html += '</table>' + notesHtml;
   return html;
 }
 // SHA-256 over the body+subject — guards the patient answers between Preview
@@ -1266,7 +1488,11 @@ function intakeDecodeImages_(images) {
   let sectionHtml = '';
   if (!images || !images.length) return { inlineImagesObj: inlineImagesObj, sectionHtml: '' };
   const capped = images.slice(0, CONFIG.INTAKE.MAX_IMAGES);
-  sectionHtml = '<div style="margin-top:20px;border-top:2px dashed ' + CN_EMAIL_PALETTE.line + ';padding-top:20px;text-align:center;"><h3 style="color:' + CN_EMAIL_PALETTE.brand + ';">Attached Images</h3>';
+  // 25post B7: a row INSIDE the body table, at the end of the Insurance
+  // section — the cards beside the member IDs they show. Stacked full width
+  // (side-by-side collapses unevenly in Outlook); returned empty when no
+  // image decodes, so an email without cards has no images section at all.
+  let imgsHtml = '', n = 0;
   capped.forEach(function (b64, index) {
     const str = String(b64 || '');
     if (str.length > CONFIG.INTAKE.MAX_IMAGE_CHARS) throw new Error('An attached image is too large (max ~5MB each).');
@@ -1285,9 +1511,13 @@ function intakeDecodeImages_(images) {
     const data = str.substring(comma + 1);
     const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
     inlineImagesObj[cid] = blob;
-    sectionHtml += '<img src="cid:' + cid + '" style="max-width:100%;border:1px solid ' + CN_EMAIL_PALETTE.line + ';border-radius:4px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto;" />';
+    imgsHtml += '<img src="cid:' + cid + '" alt="Insurance card image ' + (n + 1) + '" style="display:block;width:100%;max-width:560px;height:auto;border:1px solid ' + CN_EMAIL_PALETTE.line + ';border-radius:6px;margin:8px 0 0;" />';
+    n++;
   });
-  sectionHtml += '</div>';
+  if (n) {
+    sectionHtml = '<tr><td colspan="2" style="padding:10px 10px 12px;border-bottom:1px solid ' + CN_EMAIL_PALETTE.line + ';">' +
+      '<div style="font-size:12px;color:' + CN_EMAIL_PALETTE.muted + ';">Insurance card images (' + n + ')</div>' + imgsHtml + '</td></tr>';
+  }
   return { inlineImagesObj: inlineImagesObj, sectionHtml: sectionHtml };
 }
 
@@ -1564,14 +1794,16 @@ function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyH
 
   // Images ride at send only (not part of the preview hash). Append the image
   // section to the inner body, then wrap — no brittle string surgery.
-  let innerBody = amendBanner + body;
-  let inlineImagesObj = {};
+  let inlineImagesObj = {}, imagesHtml = '';
   const imgCount = (images && images.length) ? Math.min(images.length, CONFIG.INTAKE.MAX_IMAGES) : 0;
   if (imgCount > 0) {
     const decoded = intakeDecodeImages_(images);
     inlineImagesObj = decoded.inlineImagesObj;
-    innerBody += decoded.sectionHtml;
+    imagesHtml = decoded.sectionHtml;
   }
+  // 25post B7: the images sit inside the Insurance section, so the final body
+  // is rebuilt with them; the hash above was checked over the image-free body.
+  const innerBody = amendBanner + (imagesHtml ? intakeBuildAcctBodyHtml_(acctRows, layout, imagesHtml) : body);
   // Feedback CTA: id minted pre-send (see intakeSendPPD); the acct forms have
   // no preview-hash over the inner body sections the CTA joins, but the same
   // final-body-only placement keeps the two send paths uniform.

@@ -433,6 +433,15 @@ const CONFIG = {
     ALL_AGENTS_EMAIL:    'robin.choudhury@universalmedsupply.com',
     MAX_IMAGES:          12,           // PMD/PAP inline-attachment count cap
     MAX_IMAGE_CHARS:     7000000,      // ~5MB binary per image (base64) — bounded
+    // 25post B6 (operator 2026-10-16) — the Sales and PAP teams as recipients.
+    // They do not use the app, so they are read from the CDR Report's roster
+    // tab (the Department Dashboard's): department names across row 1 from
+    // column F, one "Name, ext" cell per agent below. Every company address is
+    // first.last@ the org's first domain (CONFIG.ORG_EMAIL_DOMAINS[0]).
+    TEAM_ROSTER_TAB:     'DO NOT EDIT!',
+    TEAM_ROSTER_FIRST_COL: 6,
+    TEAM_DEPTS:          ['Sales', 'PAP'],
+    TEAM_CACHE_SEC:      600,
   },
 
   // ── Reference / Knowledge Base module (Phase 1) ──────────────────────
@@ -460,7 +469,7 @@ const EMP = {
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
   PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate: PTO HOURS EARNED PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS` HOURS WORKED (operator 2026-08-19; PH team = 3.08 per 80). HOURS-DRIVEN, not calendar-driven: creditMonthlyPtoAccruals (daily trigger) credits `hoursWorked(month) × rate / basis / PTO_HOURS_PER_DAY` days into the col-I balance, in arrears. IDEMPOTENT ON HOURS PAID FOR, not on "this month was processed" (INV-205, 2026-09-15): col R still decides which months are OWED, but it no longer closes a month against correction — every run re-values the last PTO_ACCRUAL_RECONCILE_MONTHS completed months against the PtoAccrualCredit audit rows and credits the difference, so a punch approved after the month closed is picked up instead of lost. A month with no worked hours accrues NOTHING *at the time* — that is the rule, not a failure — and it accrues later if hours appear. Blank/garbage = no accrual at all (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
-  ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank = SEEDS on the next run (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
+  ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank (or unreadable) = the run first asks the credit history (25post): with a PtoAccrualCredit on record it plans from the newest month paid for, so a cleared cell loses nothing; with none it SEEDS (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Either way a PtoAccrualStamp audit row says which. Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
 };
 /** Pure month arithmetic for the accrual credit (Node-pinned). IN ARREARS:
  *  month M's accrual is owed on/after the 1st of M+1, so a run in nowYm owes
@@ -938,6 +947,14 @@ const SPLIT_REPAIR_MAX_SPAN_DAYS = 92;
 // true. Gating on the rep's schedule/PTO is a logged follow-on.
 const PRESENCE_CACHE_PREFIX = 'presence_v1:';
 const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip names
+// 25post B8 (operator 2026-10-16) — the in-app idle alert. A second stamp of
+// the same gesture time that outlives the 30-minute presence window (the
+// cache's six-hour ceiling), so the manager view can say how LONG a clocked-in
+// rep has been idle; and the threshold, in minutes of no app activity and no
+// punch, scheduled breaks excluded.
+const PRESENCE_LAST_PREFIX = 'presence_last_v1:';
+const PRESENCE_LAST_TTL_SEC = 21600;
+const IDLE_ALERT_MIN = 30;
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
 // Turns the same per-rep tag scan the taxonomy uses into a weekly time series
@@ -1047,6 +1064,37 @@ const OFFBOARDED_EMAILS_MAX = 100;
 // account is disabled, so offboarding the installer silently stops every job.
 // Stamped by the installer; read by the triggerOwner detector. Auto-managed.
 const AUTOMATION_TRIGGER_OWNER_PROP = 'AUTOMATION_TRIGGER_OWNER';
+// 25post (operator 2026-10-16) — when each liveness check was FIRST WATCHED:
+// {'digest:<key>' | 'job:<action>': ms}. A digest added by a deploy, or a job a
+// deploy or a setting newly enables, was judged from the trigger install (or
+// the AuditLog window) — so the morning of a deploy, the new Spanish escalation
+// digest and the newly always-on diagnostics purge both read "the trigger may
+// be missing" before either had had a slot to run in. Absence now counts only
+// from the later of the install and the first watch. A key leaves the map when
+// its job is no longer checked, so re-enabling one starts a fresh window; the
+// first write seeds every key with the install time, so shipping this masks
+// nothing that was already watched. Auto-managed; delete it to re-seed.
+const AUTOMATION_WATCH_SINCE_PROP = 'AUTOMATION_WATCH_SINCE';
+// 25post (operator 2026-10-16, team rollout) — a rep's note saves are
+// serialised on a LEASE for that rep's Sheet, not on the one project
+// ScriptLock: two reps saving at once no longer queue behind each other, and
+// a note save no longer holds up a punch. Apps Script has no lock per
+// resource here (the web app runs as one user and is bound to no document, so
+// the user and document locks are useless), so the lease is a Script Property
+// `CN_REP_LEASE_<sheetId>` = {token, until}, taken and checked under the
+// ScriptLock for a few milliseconds. Every writer that holds the ScriptLock
+// and touches a rep's Sheet (manager actions, the email senders, the form
+// submit, the tag transforms, the nightly archive / purge / reconcile) waits
+// for that rep's lease first (`getCallNotesSheetForWrite_`). A lease outlives
+// a killed execution by at most CN_REP_LEASE_MS; a save waits at most
+// CN_REP_LEASE_WAIT_MS for one, the same 15 seconds the ScriptLock gave it.
+const CN_REP_LEASE_PREFIX = 'CN_REP_LEASE_';
+const CN_REP_LEASE_MS = 60000;
+const CN_REP_LEASE_WAIT_MS = 15000;
+const CN_REP_LEASE_POLL_MS = 200;
+// 25post — Admin → System's daily email-quota line warns at or below this many
+// recipients left (MailApp.getRemainingDailyQuota; ~1,500 a day on Workspace).
+const MAIL_QUOTA_WARN_REMAINING = 300;
 // The two gate lists offboarding edits. An address is REMOVED from each, except
 // when it is the list's LAST entry: an empty ADMIN_EMAILS makes EVERY manager an
 // admin (empIsAdmin_), and an empty MANAGER_EMAILS stops every trigger handler
@@ -1072,9 +1120,19 @@ const OFFBOARD_GATE_LISTS = ['MANAGER_EMAILS', 'ADMIN_EMAILS'];
 const AUTOMATION_JOB_CHECKS = [
   { action: 'CallNotesReconcile', label: 'nightly Sheets reconcile',
     cadence: 'daily', staleHours: 30, enabled: function () { return true; } },
+  // 25post: `ranAt` is when the job last RAN, row or no row — the reconcile
+  // stamp is rewritten on every path. A run this month that wrote no credit row
+  // is not a missing trigger, and the line says what it is instead (g142).
   { action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit',
     cadence: 'monthly', graceDays: 3,
-    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); } },
+    enabled: function () { return !!getFlag_('enablePtoTracking') && rosterHasAccruingRep_(); },
+    ranAt: function () { const r = readAccrualReconcile_(); return (r && Number(r.at)) || null; },
+    noRowHint: function (thisMonth) {
+      const m = /^(\d{4})-(\d{2})$/.exec(String(thisMonth || ''));
+      const prev = m ? (+m[2] === 1 ? (+m[1] - 1) + '-12' : m[1] + '-' + String(+m[2] - 1).padStart(2, '0')) : 'last month';
+      return 'it credits a month only when one is owed. Check each accruing rep\'s AccruedThrough (Employees column R) — ' +
+        'a blank cell is seeded without crediting — and run previewPtoAccruals(\'' + prev + '\') from the editor to see what ' + prev + ' earns';
+    } },
   { action: 'TimesheetArchive', label: 'Timesheet cold-archive',
     cadence: 'daily', staleHours: 30,
     enabled: function () { return getTimesheetArchiveDays_() > 0; } },
@@ -1220,6 +1278,13 @@ const CN_EMAIL_PALETTE = {
   // sent from the new web app look continuous with the prior tooling.
   brand:        '#223b5d',
   brandSoft:    '#e6f2ff',
+  // 25post B7 (operator 2026-10-16) — the intake mails' light-blue accent,
+  // hand-resolved from the tokens: --info, --info-soft, --info-deep, and
+  // --line-2 for the notes box.
+  intakeAccent: '#1e63b8',
+  intakeTint:   '#e1ecfa',
+  intakeInk:    '#154980',
+  lineStrong:   '#c3c9d3',
   logoUrl:      'https://cdn.jsdelivr.net/gh/robinchoudhuryums/marketing-images@main/UMS%20Presentation%20Logo.jpg',
 };
 /** Round-1 #8 follow-on — the NEUTRAL shared sender, dormant until configured
@@ -1895,9 +1960,15 @@ const INTAKE_PAP_Q_EN = [
 const INTAKE_PMD_LAYOUT = {
   HEADER_ROWS:             [1, 8, 12, 22],          // 1-based offset rows (matches original HEADER_ROWS check i+1)
   CHECKBOX_ROWS:           [22, 24, 25],
-  SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28],
+  SECONDARY_QUESTION_ROWS: [3, 10, 19, 20, 23, 26, 28], // 0-based; index 3 is the secondary phone (was 2, the primary — 2026-10-16)
   CHECKBOX_WARN_ROWS:      [22],                     // amber check instead of green
   CONDITIONAL_FORMATTING_ROWS: {},
+  // 25post B7 (0-based) — mirrored from the client's attest / avail / notes.
+  ATTEST_ROWS:             [24, 25],
+  AVAIL_ROWS:              [26, 27],
+  NOTES_ROW:               28,
+  MONO_ROWS:               [2, 3, 5, 8, 9, 10, 13, 14],   // phones, DOB, member IDs, SSN
+  IMAGES_BEFORE_ROW:       11,   // the Clinical header — images close the Insurance section
 };
 const INTAKE_PAP_LAYOUT = {
   HEADER_ROWS:             [1, 8, 12, 19],
@@ -1909,6 +1980,11 @@ const INTAKE_PAP_LAYOUT = {
     19: { 'No': { bg: '#e4f5ec', fg: '#0b6e40' }, 'Yes': { bg: '#fbf1d9', fg: '#8a4500' } },
     21: { 'Less than 5 years': { bg: '#fbf1d9', fg: '#8a4500' }, 'More than 5 years': { bg: '#e4f5ec', fg: '#0b6e40' } },
   },
+  ATTEST_ROWS:             [26],
+  AVAIL_ROWS:              [],
+  NOTES_ROW:               27,
+  MONO_ROWS:               [2, 3, 5, 8, 9, 10, 13, 14],
+  IMAGES_BEFORE_ROW:       11,
 };
 // ── Isolated spreadsheet + config getters (Script Property first) ──────────
 var _intakeSsMemo = null;
@@ -1926,7 +2002,23 @@ let _intakeOfferingsCache = null;
 const INTAKE_FEEDBACK_HEADERS = ['Timestamp', 'SubmissionId', 'FormType', 'FromEmail', 'FromName', 'Feedback'];
 const INTAKE_FEEDBACK_MAX_CHARS = 4000;
 const INTAKE_FEEDBACK_SCAN_MAX = 2000;   // bounded tail — feedback is recent-biased
-const INTAKE_PPD_YESNO_QS = ['14','15','16','17','18','19','20','21','22','23','26','27','28','30','31','33','35','36','44'];
+// 25post B7 — how the PPD email groups and colours its answers (the client
+// form's colours). TONES mirrors the `tone` of each option in the client's
+// INTAKE_PPD_CONTROL (25 / 31a / 34); PICKED_QS are the single- and multi-
+// choice questions whose picked option the form shows green. Both are pinned
+// against the client. A plain Yes / No anywhere else is a Yes/No toggle.
+const INTAKE_PPD_EMAIL_TONES = {
+  '25':  { 'No': 'no', 'Hands': 'warn', 'Feet': 'warn', 'Legs': 'warn' },
+  '31a': { 'No': 'no', 'Paralysis Left Arm': 'danger', 'Paralysis Right Arm': 'danger', 'Paralysis Left Leg': 'danger', 'Paralysis Right Leg': 'danger', 'Weakness Left Side': 'warn', 'Weakness Right Side': 'warn' },
+  '34':  { 'No': 'no', 'Left (Above Knee)': 'warn', 'Left (Below Knee)': 'warn', 'Right (Above Knee)': 'warn', 'Right (Below Knee)': 'warn' },
+};
+const INTAKE_PPD_EMAIL_PICKED_QS = ['1', '2', '3', '4', '5', '6', '24', '39', '39a'];
+const INTAKE_PPD_EMAIL_COMBOS = [
+  { qs: ['7', '8', '9'],    label: '7–9. Arms: can move · raise in front · raise above head' },
+  { qs: ['10', '11', '12'], label: '10–12. Legs: can move · extend while sitting · push a door open' },
+  { qs: ['37', '38'],       label: '37–38. Height · weight', units: { '37': 'in.', '38': 'lbs.' } },
+];
+const INTAKE_PPD_EMAIL_PAIN = ['14', '15', '16', '17', '18', '19', '20', '21', '22', '23'];
 // M-5 (cycle 10) — intake PHI-store integrity helpers.
 // The store append is deliberately best-effort AFTER a successful send (the
 // email can't be unsent), but a failure must be LOUD, not a console.warn: the

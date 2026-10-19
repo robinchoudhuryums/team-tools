@@ -1658,6 +1658,19 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   than a refused send (the cheap side of the OOP-B question) and because the
   F-27 pin compares the banks by value, so a one-sided edit turns the harness
   red instead of shipping.
+  **AMENDED (25post B7, operator 2026-10-16): the intake mails now carry their
+  own light-blue accent** (`intakeAccent` / `intakeTint` / `intakeInk`, the
+  `--info` tokens) in the header rule and section bands, where the branded
+  wrapper stays navy; the shape is still shared. The bodies were redesigned to
+  the operator-approved mocks: a label/value ledger with identifiers in a
+  fixed-width face, attestations as green (confirmed) or amber ("not confirmed"
+  / "answered No") boxes, availability side by side, Other Notes in its own box,
+  insurance-card images at the end of the Insurance section (none at all when
+  none were attached), and the PPD grouped as on the form — arms 7–9, legs
+  10–12 and height·weight on one row each, pain as two columns, sub-questions
+  under their parent, the form's own answer colours. The option tones and the
+  picked-choice questions are pinned against the client (INV-389). The zebra and
+  the mono section labels are gone; the hairline rows and every `esc_` stay.
 - <a id="department-emails-and-state-tax-rates-are-editable-via-the-a"></a>**Department emails and state tax rates are editable via the Admin
   tab.** Call Notes → Admin (manager-only) reads the current config
   from `getDepartmentEmails_()` / `getStateTaxRates_()` and writes
@@ -5682,3 +5695,55 @@ pick them up without re-deriving the context.
   F9 removed. The append takes the script lock with a one-second tryLock and
   skips when busy, so a search never waits behind a punch.
 
+- <a id="note-saves-are-serialised-per-rep"></a>**Note saves are serialised per rep on a lease, not on the project lock; the day's email allowance is on Admin → System (25post, operator 2026-10-16)**
+  The team rollout put about ten reps in the app at once. Every punch and
+  every note save queued on the ONE project ScriptLock, held through a Sheet
+  open, a row write and an audit row, though each rep's notes are a Sheet of
+  their own. Apps Script has no per-resource lock that fits: the web app runs
+  as the deployer, so the user lock is one lock, and it is bound to no
+  document. So the lock is built: a Script Property lease per rep Sheet,
+  check-and-set under the ScriptLock (milliseconds), held for the save. A
+  Script Property rather than CacheService because a cache entry can be
+  evicted while held, which would let two writers into one Sheet — and its
+  writes go through `propSetBounded_`. **Alternatives rejected:** shortening
+  the ScriptLock's hold alone (still one queue for the whole team); a
+  per-rep lease for the six rep actions only, with the other writers left on
+  the ScriptLock (a manager delete or the nightly archive would then run
+  beside a rep's save on the same Sheet) — hence every ScriptLock holder that
+  opens a rep Sheet waits for its lease first. The email allowance reads
+  `MailApp.getRemainingDailyQuota()` on the admin-gated Storage Health call:
+  Google gives the remaining figure only, so the line names what counts
+  (every recipient, a MAIL_BCC_ALL copy included) and warns at 300 left.
+- <a id="intake-team-recipients-from-the-cdr-roster"></a>**The intake Send-to picker reads the Sales and PAP teams from the CDR roster, builds first.last addresses, and re-checks them at send (25post B6, operator 2026-10-16)**
+  The Sales team receives most PMD/PAP intakes but does not use the app, so
+  the picker (which listed only app users) could not name them. Their names are
+  already maintained in one place: the CDR Report's `DO NOT EDIT!` tab, the
+  Department Dashboard's roster (department names across row 1 from column F,
+  "Name, ext" cells below). The operator confirmed every company address is
+  first.last@universalmedsupply.com, so the address is BUILT from the name
+  (`intakeTeamEmail_`: nickname in parentheses dropped, accents and punctuation
+  removed, a Jr/Sr suffix skipped) rather than stored anywhere new. Because a
+  built address can be wrong for an off-pattern name, the picker shows the
+  address before sending, and a send is refused unless today's roster still
+  produces that address — the client's copy is never trusted. A failed read is
+  named beside the app users and never cached (g129). **Alternatives
+  rejected:** an Admin list of Sales addresses (a second roster to keep in
+  step); the CDR workbook's Access Control tab (it lists dashboard viewers, not
+  the department's people); onboarding Sales as app users (they would never
+  sign in).
+- <a id="the-idle-alert-is-in-app-and-break-aware"></a>**A clocked-in rep idle 30+ minutes is flagged in the app only, measured from the last punch or gesture with scheduled breaks taken out (25post B8, operator 2026-10-16)**
+  The operator asked for a manager-only signal when a team member shows no
+  activity for a while, breaks taken into account, in-app to start, 30 minutes.
+  "Activity" is the only thing the app can see: a punch, or a gesture inside
+  the app (the presence beacon). So the measure is the later of the day's last
+  punch and the last gesture, in the rep's timezone, minus the minutes of that
+  stretch that fall in the rep's scheduled breaks; a rep inside a break is not
+  idle. Only a rep CLOCKED IN by punch is measured — lunch, "in by app activity"
+  and not-in are never flagged — and a rep the rule cannot measure is never
+  flagged (best-effort, the presence posture). It rides the manager dashboard
+  only (`idleMin` on Live Status; g33) as an amber chip and a line under Live
+  Status. The known blind spot is stated in the chip's tooltip: a long call or
+  work outside the app reads as idle. **Alternatives rejected:** an email or
+  digest (a 15-minute trigger, one more installable trigger, and a mail per
+  false alarm — the operator chose in-app first); measuring from the
+  30-minute presence stamp alone (it expires exactly at the threshold, g172).

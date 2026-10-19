@@ -70,6 +70,19 @@ entry says which it is.
   to any other domain is sent only after the rep confirms that domain, and an
   outside copy carries no feedback link. On a DEV instance whose intake
   recipients are a personal inbox, every send asks — by design.
+<a id="operator-the-do-not-edit-roster-tab-feeds-intake-recipients"></a>
+- **The CDR Report's `DO NOT EDIT!` roster tab feeds the intake Sales/PAP recipients (25post B6, operator 2026-10-16).**
+  No new Script Property: the picker reads the tab through `CDR_SS_ID`, with
+  `CONFIG.INTAKE.TEAM_ROSTER_TAB` (`'DO NOT EDIT!'`), `TEAM_ROSTER_FIRST_COL`
+  (6, column F), `TEAM_DEPTS` (`['Sales', 'PAP']`, matched to the row-1 headers
+  in any case; the header row stops at its first blank cell, the dashboard's own
+  rule) and `TEAM_CACHE_SEC` (600). Each "Name, ext" cell becomes
+  `first.last@` the first `CONFIG.ORG_EMAIL_DOMAINS` domain. **Check once
+  after the deploy:** the tab has columns headed "Sales" and "PAP" — a missing
+  one is named in a warning when the picker loads, and its people are simply
+  not listed. Someone whose real address does not follow first.last must be
+  sent to with Custom email. PAP Q (a child department) is not read. A rename of
+  the tab or a moved first column needs a CONFIG edit and a deploy.
 <a id="operator-the-quizresets-tab-cycle-23"></a>
 - **The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger (cycle 23 TRN-1, operator 2026-10-05).**
   Auto-created on first use; append-only; columns ResetAt, QuizId, EmpId,
@@ -2009,7 +2022,14 @@ entry says which it is.
 - **`Employees` sheet column R = `AccruedThrough`** (operator 2026-08-18) —
   AUTO-MANAGED `yyyy-MM` stamp: the last month whose accrual has been
   credited. Written only by `creditMonthlyPtoAccruals`; leave it alone.
-  Blank = seeds on the next run (stamps last month, credits nothing).
+  Blank = seeds on the next run (stamps last month, credits nothing) — **for a
+  rep with no credit on record. Since 25post (2026-10-16) a blank or
+  unreadable cell first asks the credit history** (the per-rep ledger copy, then
+  the whole AuditLog, newest first): a rep who has been credited before is
+  planned from the newest month paid for, so a cleared or mistyped cell no
+  longer skips last month. Each resolved blank writes a `PtoAccrualStamp`
+  audit row saying whether it seeded or recovered; `previewPtoAccruals` shows
+  the same before the run.
   Hand-edit ONLY to deliberately re-credit or skip months. **A FORWARD stamp
   (ahead of last month) is honored as a deliberate skip and left alone
   — fixed 2026-08-31; before that fix `accrualMonthsToCredit_` returned
@@ -2296,6 +2316,15 @@ entry says which it is.
   reads as a fact under "checks passing", never a warning. The report never
   changes what is sent — an address you typed is always honoured, because a
   silent drop would leave you believing in copies you are not getting.
+  **Since 25post (2026-10-16)** the same Storage inventory shows the day's
+  **email allowance** — how many more recipients the deploying account may
+  email today (`MailApp.getRemainingDailyQuota()`; about 1,500 a day on
+  Workspace, 100 on a consumer account; it resets 24 hours after the day's
+  first send). Every email the app sends counts one per recipient, and each
+  `MAIL_BCC_ALL` address adds one to every send, so the line names how many
+  this setting costs. It warns at 300 left (`MAIL_QUOTA_WARN_REMAINING`), is a
+  blocking finding at 0, and reads "could not be read" rather than fine when
+  the mail service does not answer. Admin-only, like the rest of the tab.
 <a id="operator-script-property-rep-sender-from"></a>
 - **Script Property `REP_SENDER_FROM`** (optional — the NEUTRAL shared sender
   for rep-initiated emails; pilot round-1 follow-ons, 2026-08-24; DORMANT
@@ -2538,6 +2567,15 @@ entry says which it is.
   reach far enough, and a monthly job is not called "not run this month" unless
   the window reaches back past the 1st. That is expected, not a fault; it clears
   on each job's next run. Delete one key to forget that job's last run.
+  **25post (2026-10-16): `AUTOMATION_WATCH_SINCE`**, also auto-managed — when
+  each digest and each enabled job was FIRST WATCHED. A digest a deploy adds,
+  or a job a deploy or a setting turns on, is not called "never ran" or "no run
+  on record" until its own window has passed since then (the first record is
+  seeded with the trigger install time, so nothing already watched lost its
+  alarm). The monthly accrual line now reads "ran on … but wrote no row this
+  month" when its job ran without crediting — check column R and
+  `previewPtoAccruals('<last month>')`; reinstalling the trigger will not help.
+  Delete the property to re-seed it from the install.
 <a id="operator-offboarding-edits-the-gate-lists-cycle-22"></a>
 - **Offboarding edits `MANAGER_EMAILS` / `ADMIN_EMAILS` — and records
   `OFFBOARDED_EMAILS` (cycle 22 S7, 2026-09-25).** Manage → Admin → Config →

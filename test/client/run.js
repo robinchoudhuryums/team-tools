@@ -7497,6 +7497,7 @@ test('CDR: the health card tones off likelyMismatches, never the raw lists', () 
   });
   // …and driven behaviourally through the REAL function.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || {};
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const r = fn({ cdr: { ok: true, unmatchedAgents: Array(78).fill('x'), rosterWithNoCdr: Array(12).fill('y'), likelyMismatches: [] } }, null);
   const cdrBad = r.items.filter((f) => f.area === 'cdr' && f.severity !== 'ok');
@@ -8855,8 +8856,12 @@ test('the intake shell uses the same chrome as the branded wrapper', () => {
   const branded = extractRawFunction('Code.js', 'buildBrandedEmailHtml_');
   // The mark sits ON THE CARD over a navy rule — logoUrl is a JPEG with no
   // transparency, so a navy band would frame a white rectangle.
+  // 25post B7 (operator 2026-10-16): the intake mails carry their own light-
+  // blue accent where the branded wrapper is navy — the shape is shared, the
+  // accent is not.
+  assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(branded), 'navy rule under the mark (branded)');
+  assert.ok(/border-bottom:2px solid ' \+ P\.intakeAccent/.test(shell) && !/P\.brand\b/.test(shell), 'the intake rule is the light-blue intake accent');
   [shell, branded].forEach(function (fn, i) {
-    assert.ok(/border-bottom:2px solid ' \+ P\.brand/.test(fn), 'navy rule under the mark (' + i + ')');
     assert.ok(/alt="UMS Team Tools"/.test(fn), 'the alt text carries the identity when images are blocked (' + i + ')');
     assert.ok(/font-size:22px/.test(fn), 'the subject is a real heading, not a line beside the logo (' + i + ')');
     assert.ok(/width:46px;height:3px/.test(fn), 'with the short rule under it (' + i + ')');
@@ -8887,7 +8892,7 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
   const band = extractRawFunction('Code.js', 'intakeSectionRowHtml_');
   // A solid navy bar with centred white text was the piece that most made
   // these read as a different product from the rest of the app's mail.
-  assert.ok(/text-transform:uppercase/.test(band) && /P\.navyTint/.test(band), 'section bands are mono-uppercase on a tint');
+  assert.ok(/text-transform:uppercase/.test(band) && /P\.intakeTint/.test(band) && /P\.intakeInk/.test(band), 'section bands are uppercase on the intake tint (light blue since 25post B7)');
   assert.strictEqual(/text-align:center/.test(band), false, 'not centred');
   const ppd = extractRawFunction('Code.js', 'intakeBuildPpdBodyHtml_');
   const acct = extractRawFunction('Code.js', 'intakeBuildAcctBodyHtml_');
@@ -8902,7 +8907,9 @@ test('intake tables use the app ledger vocabulary, and stay email-safe', () => {
   });
   // The restyle must not have dropped an esc_ — every patient field is escaped
   // and the server-generated justification stays the ONE raw exception.
-  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppd), 'labels and answers are escaped');
+  const ppdAns = extractRawFunction('Code.js', 'intakePpdAnswerHtml_');
+  assert.ok(/esc_\(r\.label/.test(ppd) && /esc_\(answerRaw\)/.test(ppdAns), 'labels and answers are escaped');
+  assert.ok(/esc_\(answerRaw\)/.test(acct), 'account answers are escaped');
 });
 
 console.log('\nkb — decision / task-guide block (operator 2026-08-11)');
@@ -11031,7 +11038,12 @@ test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)',
   assert.ok(/'<option value="custom">Custom email&hellip;<\/option>'/.test(intake),
     'the PPD picker offers Custom email…');
   const send = nc(extractFunction('intake/script_intake.html', 'intakePpdSend_'));
-  assert.ok(/kind: 'custom', email: custom \? custom\.value\.trim\(\) : ''/.test(send),
+  // 25post B6: both pickers build their spec through ONE helper (the team
+  // kind joined custom/agent there), so the PPD send names it and the helper
+  // builds the kind:custom spec.
+  assert.ok(/intakeRecipientSpec_\(val, document\.getElementById\('intk-ppd-custom'\), 'all'\)/.test(send),
+    'the PPD send builds its spec through the shared helper');
+  assert.ok(/kind: 'custom', email: customEl \? customEl\.value\.trim\(\) : ''/.test(nc(extractFunction('intake/script_intake.html', 'intakeRecipientSpec_'))),
     'the send builds the kind:custom spec the shared resolver already validates');
   assert.ok(/Enter a recipient email\./.test(send), 'an empty custom email is refused client-side');
   // The server side was never the gap: the SHARED resolver validates custom for
@@ -11801,7 +11813,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // The DECISIONS moved into planPtoAccrualRun_ (shared with the read-only
   // preview); the credit is now the writes and their order. Both halves are
   // pinned, so the extraction cannot quietly become two implementations.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/);
   assert.ok(plan, 'planPtoAccrualRun_ exists');
   assert.ok(!/buildTimesheetForEmployee_/.test(h[0] + plan[0]),
     'no per-rep timesheet build inside the locked credit run');
@@ -11813,7 +11825,7 @@ test('PTO accrual CREDIT is HOURS-DRIVEN: earned-per-hours-worked, one indexed r
   // — the diagnostic's whole purpose and the last thing a WRITING caller may
   // do with it. A third argument here would credit an arbitrary month and
   // advance the stamp past it.
-  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths\);/.test(h[0]),
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths, accrualCreditHistory_\);/.test(h[0]),
     'the CREDIT passes an EMPTY inspect month — a diagnostic month here would credit an arbitrary one and advance the stamp past it');
   const idx = code.match(/function workedHoursByEmpForRange_\(startIso, endIso\) \{[\s\S]*?\n\}/);
   assert.ok(idx, 'the index helper exists');
@@ -12061,7 +12073,7 @@ test('R: the accrual RECONCILES late data — top-up, never claw back, fail clos
   assert.strictEqual((h.match(/planAccrualReconcile_\(/g) || []).length, 1, 'one reconcile pass per run');
   // ONE Timesheet read for the whole run — the reconcile window rides the
   // resolver's range rather than opening a second full read inside the lock.
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/)[0];
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/)[0];
   assert.strictEqual((plan.match(/workedHoursByEmpForRange_\(/g) || []).length, 1,
     'still exactly ONE range index build, window included');
   assert.ok(!/workedHoursByEmpForRange_\(/.test(recBlock),
@@ -12095,7 +12107,7 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const code = nc(serverSource());
   const prev = code.match(/function previewPtoAccruals\(monthYm\) \{[\s\S]*?\n\}/);
-  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths\) \{[\s\S]*?\n\}/);
+  const plan = code.match(/function planPtoAccrualRun_\(rows, nowYm, inspectYm, reconcileMonths, creditHistory\) \{[\s\S]*?\n\}/);
   assert.ok(prev && plan, 'previewPtoAccruals and planPtoAccrualRun_ exist');
 
   // ── ONE resolver, shared. Both callers, and nobody re-deriving the plan.
@@ -20078,6 +20090,7 @@ test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; 
 
 test('PR2-1: cnHealthFindings_ — an all-clear payload yields zero non-ok items; a failed load is a fail finding, never silence', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const worstFn = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindingsWorst_');
   assert.strictEqual(typeof fn, 'function');
@@ -20197,6 +20210,8 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveAccessHtml_');   // DRV-4 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnPropStoreHtml_');     // Q3 sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');  // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaHtml_');
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -22315,6 +22330,7 @@ test('F-08/F-09 server: the CDR Storage Health row carries the standard and the 
 
 test('F-08/F-09 client: the CDR-area findings — a published standard and a listed calendar are the ok facts; every fallback source WARNS and names what the app does meanwhile; an older payload raises neither', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnStandardFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnHolidayFindings_');
@@ -22480,6 +22496,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
 
   // Client: the finding reads the stamp's real field (`message`; it read `error`).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { MissedPunchAlerts: { at: 't', message: 'why it broke' } } }, null).items.find((x) => x.id === 'automationError:MissedPunchAlerts');
   assert.ok(f && f.severity === 'fail' && /why it broke/.test(f.detail), 'the Admin finding shows the stamped message, never "unknown error"');
@@ -22545,6 +22562,7 @@ test('F-46: the accrual job REWRITES the reconcile stamp and clears its error on
       Utilities: { formatDate: () => '2026-09' },
       getAdpSS_: () => ({ getSheetByName: () => ({ getDataRange: () => ({ getValues: () => [[]] }) }) }),
       planPtoAccrualRun_: () => ({ entries: entries, basis: 80, perDay: 8, hoursIdx: null }),
+      accrualCreditHistory_: () => ({}),
       stampAccrualReconcile_: (r) => { log.stamp = JSON.parse(JSON.stringify(r)); },
       clearAutomationError_: (k) => log.clr.push(k), stampAutomationError_: () => { throw new Error('must not stamp an error'); } };
     vm.createContext(ctx);
@@ -22635,6 +22653,11 @@ test('F-10: a cross-rep tag transform REPORTS the rep Sheets it could not read �
       return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
                getRange: () => ({ setValue() {} }),
                getParent: () => ({ getSheetByName: () => null }) };   // ADM-12: no archive tab here
+    }, getCallNotesSheetForWrite_: (emp) => {
+      if (emp.id === 'E-2') throw new Error('You do not have permission');
+      return { getDataRange: () => ({ getValues: () => [['h'], ['', '', '', JSON.stringify({ tags: ['old', 'keep'] })], ['', '', '', '']] }),
+               getRange: () => ({ setValue() {} }),
+               getParent: () => ({ getSheetByName: () => null }) };   // ADM-12: no archive tab here
     },
     CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } } };
   vm.createContext(ctx);
@@ -22669,6 +22692,7 @@ test('F-11: the DeptRequests store is PHI-ADJACENT — probed by Storage Health 
   assert.ok(/'DEPT_REQUESTS_SS_ID'/.test(mock) && /key: 'DEPT_REQUESTS_SS_ID'/.test(mock), 'both the Storage Health and deploy-readiness fixtures carry the row (INV-185)');
   // The findings derivation warns on the fallback (it is not a no-fallback store).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'x', stores: [{ label: 'Dept Requests (PHI-adjacent)', cls: 'PHI-adjacent', prop: 'DEPT_REQUESTS_SS_ID', configured: false, note: 'falls back' }] }).items.find((x) => x.id === 'store:DEPT_REQUESTS_SS_ID');
   assert.ok(f && f.severity === 'warn', 'unset Dept Requests store is a WARNING (it falls back onto payroll), never the no-fallback ok');
@@ -23074,7 +23098,7 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   // Behavioural: the server walk equals the client walk for the same answers.
   const ctx = { String, Object, Array, JSON, INTAKE_PPD_Q_EN: sPpd, INTAKE_PPD_NOTES_EN: vm.runInNewContext('(' + sNotes + ')'),
     INTAKE_PMD_Q_EN: arr(srv, /const INTAKE_PMD_Q_EN = \[\n([\s\S]*?)\n\];/), INTAKE_PAP_Q_EN: arr(srv, /const INTAKE_PAP_Q_EN = \[\n([\s\S]*?)\n\];/),
-    INTAKE_PMD_LAYOUT: { HEADER_ROWS: [1, 8, 12, 22], SECONDARY_QUESTION_ROWS: [2, 10, 19, 20, 23, 26, 28] },
+    INTAKE_PMD_LAYOUT: { HEADER_ROWS: [1, 8, 12, 22], SECONDARY_QUESTION_ROWS: [3, 10, 19, 20, 23, 26, 28] },
     INTAKE_PAP_LAYOUT: { HEADER_ROWS: [1, 8, 12, 19], SECONDARY_QUESTION_ROWS: [3, 10, 20, 21, 22, 25, 27] } };
   vm.createContext(ctx);
   ['intakePpdRowsEn_', 'intakePpdLabelEn_', 'intakeAcctRowsEn_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
@@ -23092,8 +23116,9 @@ test('F-27: the intake email rows come from the SERVER\'s English bank and the c
   assert.strictEqual(acct[5].value, '1950-01-01', 'numeric and string keys both resolve');
   // I8 (cycle 22): this pin asserted the defect. SECONDARY_QUESTION_ROWS is
   // 0-based — the email body builder and the client both read it that way.
-  assert.strictEqual(acct[2].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 2 is secondary)');
-  assert.strictEqual(acct[1].isSecondary, false, 'and index 1 (the patient name) is not');
+  assert.strictEqual(acct[3].isSecondary, true, 'SECONDARY_QUESTION_ROWS is 0-based (PMD index 3, the secondary phone, is secondary)');
+  assert.strictEqual(acct[2].isSecondary, false, 'and index 2 (the primary phone) is not — the 2026-10-16 fix');
+  assert.strictEqual(acct[1].isSecondary, false, 'nor index 1 (the patient name)');
   const pap = JSON.parse(JSON.stringify(ctx.intakeAcctRowsEn_('PAP', {})));
   assert.strictEqual(pap.length, ctx.INTAKE_PAP_Q_EN.length); assert.strictEqual(pap[18].isHeader, true, 'PAP Details is a header (row 19)');
   // No send or preview path reads a client label any more.
@@ -23610,6 +23635,7 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
 
 test('DRV-4: the Admin System tab reports Drive — finding + inventory line, and renders nothing when unprobed', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -23654,7 +23680,7 @@ test('DRV-4: the Admin System tab reports Drive — finding + inventory line, an
   assert.ok(/&lt;img/.test(hostile));
   // The line sits ABOVE the table, in the Storage section the cards link to.
   const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
-  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\)[\s\S]{0,120}?hdr \+ table/.test(panel),
+  assert.ok(/cnDriveAccessHtml_\(res && res\.drive\)[\s\S]{0,200}?hdr \+ table/.test(panel),
     'rendered before the inventory table');
   assert.ok(panel.indexOf('cnDriveAccessHtml_') < panel.indexOf('cnMailBccHtml_'),
     'and above the F3 mail-routing line, which joined it as the second capability fact');
@@ -23721,6 +23747,7 @@ test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywh
   // The finding: three states, and the off-domain one BLOCKS.
   const cnCode = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   const sb = vm.createContext({ String, Number, Boolean, Object, Array, JSON, Math, RegExp });
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const findings = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const forBcc = (mb) => (findings(null, { stores: [], mailBcc: mb }).items || [])
     .filter((i) => i.id === 'mailBcc')[0];
@@ -27645,7 +27672,11 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
       // E6 (cycle 25): a best-effort telemetry appender may tryLock and SKIP
       // when busy — it still holds the SCRIPT lock for the append.
       const lAt = body.search(/\b(waitLock|tryLock)\(/);
-      if (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      // 25post: a note save holds its rep's LEASE instead — the lease is what
+      // serialises every writer of that rep's Sheet (cnAcquireRepLease_).
+      const leaseAt = body.search(/\bcnAcquireRepLease_\(/);
+      const leased = leaseAt >= 0 && leaseAt < aAt;
+      if (!leased && (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt)))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
       if (!/appendRowsTextSafe_\([^;]*?, [A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
     }
   }
@@ -27872,6 +27903,7 @@ test('A2: the System tab renders EVERY line the health dot counts — driven: th
   s2.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   vm.runInContext(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8').match(/var CN_SYS_CLIENT_KINDS_ = [\s\S]*?\n\};/)[0]
     .replace(/var /g, 'this.'), s2);
+  loadFunction(s2, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const out = fn(Object.assign({}, report, { problems: items }), null).items.filter((f) => f.area === 'automation' && f.severity !== 'ok');
   const ids = out.map((f) => f.id);
@@ -28013,6 +28045,7 @@ test('A6: a ClientErrors read that FAILED carries an error — the panel and the
   const out = ctx.clientErrorsSummary_('America/Chicago');
   assert.ok(out.count === 0 && /timed out/.test(out.error), 'nothing invented, and the failure rides the summary');
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ clientErrors: { count: 0, last24h: 0, windowDays: 7, error: 'Service Spreadsheets timed out' } }, null).items.find((x) => x.id === 'clientErrors');
   assert.ok(f && f.severity === 'warn' && /could not be read/.test(f.title), 'the finding is a warning, not the all-clear');
@@ -28721,7 +28754,7 @@ test('F5 (cycle 25): the call-note retention, archive and reconcile jobs and the
       assertManagerCaller_() {}, getNoteRetentionDays_: () => opts.days,
       getEmployeeRosterRows_: () => roster, cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
       LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
-      getCallNotesSheet_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; },
+      getCallNotesSheet_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; }, getCallNotesSheetForWrite_: (emp) => { if (opts.bad && emp.id === opts.bad) throw new Error('Requested entity was not found.'); return {}; },
       purgeSheetRowsOlderThan_: () => 1,
       writeAuditLog_: (e, a, d, t, x, y, notes) => log.audit.push(notes), _SYSTEM_AUDIT_EMP_: {},
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
@@ -28832,7 +28865,7 @@ test('F57 (cycle 25): the Admin "Reconcile Sheets" button runs the pass WITHOUT 
       assertManagerCaller_() {}, getEmployeeInfo_: () => ({ email: 'mgr@x' }), getEmployeeRosterRows_: () => roster,
       cnEnrolledSheetId_: (r) => 'sheet-' + r[0],
       LockService: { getScriptLock: () => ({ waitLock() { if (opts.lockThrows) throw new Error('Lock timeout'); }, releaseLock() {} }) },
-      getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
+      getCallNotesSheet_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; }, getCallNotesSheetForWrite_: (emp) => { if (emp.id === opts.bad) throw new Error('not found'); return { getLastRow: () => 1 }; },
       writeAuditLog_: (e, action) => log.audit.push(action),
       stampAutomationError_: (k, m) => log.err.push(k + ':' + m), clearAutomationError_: (k) => log.clr.push(k) });
     autoContract_(ctx);
@@ -28881,7 +28914,7 @@ test('F60 (cycle 25): a digest with no heartbeat is STALE once the triggers have
   assert.ok(items.some((t) => /"missedPunch" digest has no run on record since the triggers were installed \(2026-10-12 09:00:00\).*re-run installAutomationTriggers/.test(t)), items.join(' | '));
   // The server derives it from the install record, and both client surfaces render it.
   const cah = extractRawFunction('Code.js', 'computeAutomationHealth_');
-  assert.ok(/AUTOMATION_TRIGGER_OWNER_PROP/.test(cah) && /neverRan = stale = digestNeverRanOverdue_\(installedMs/.test(cah), 'the health report reads the install time');
+  assert.ok(/AUTOMATION_TRIGGER_OWNER_PROP/.test(cah) && /neverRan = stale = digestNeverRanOverdue_\(\s*\(installedMs !== null && firstWatch > installedMs\) \? firstWatch : installedMs/.test(cah), 'the health report reads the install time');
   const cli = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   assert.ok(/return !d\.last && !d\.stale;/.test(cli), 'the System tab counts only a not-yet-due digest as "no heartbeat yet"');
   assert.ok(/if \(!d\.last && d\.neverRan\)/.test(cli), 'and the Automation Health panel warns for an overdue one');
@@ -32054,6 +32087,7 @@ test('DRV-1 + QA-1 (cycle 23): driveAccessStatus_ EXERCISES the service — gran
 
 test('DRV-1 + QA-1 (cycle 23): the System tab reads a disabled service as a FAIL naming every surface, and never advises clearing a folder property that may still hold the images (driven)', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -32177,6 +32211,7 @@ test('DRV-2 (cycle 23): a disabled Drive is not N broken embeds — the scan sto
   const html = panel({ total: 3, reachable: 0, probed: 0, broken: [], driveUnavailable: true, driveError: 'Drive is <off>' });
   assert.ok(/could not be checked/.test(html) && !/all Drive files reachable/.test(html) && !/deleted\/moved/.test(html), html);
   assert.ok(/Drive is &lt;off&gt;/.test(html), 'escaped');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'Asia/Kolkata', stores: [], kbEmbeds: { total: 3, broken: [], driveUnavailable: true, driveError: 'off' } })
     .items.filter((x) => x.id === 'kbEmbeds')[0];
@@ -32448,6 +32483,7 @@ test('4a-FU1 (cycle 23): a stale heartbeat whose job ran and FAILED inside the w
   assert.ok(/the trigger may be disabled/.test(lines({ key: 'urgent', stale: true, last: 'x', failedAt: '' })[0]), 'with no recent failure the trigger is still the suspect');
   // The client finding.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const find = (d) => fn({ digests: [d], automationErrors: {} }, null).items.filter((f) => f.id === 'digest:' + d.key)[0];
   let f = find({ key: 'urgent', stale: true, last: 'x', failedAt: '2026-10-01 08:00:00' });
@@ -32493,6 +32529,7 @@ test('4a-FU3 (cycle 23): every stamped automation failure carries a human LABEL 
   });
   // The readers.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { ManagerDailyBrief: { at: 't', message: 'quota', label: 'Manager daily brief' } }, digests: [] }, null)
     .items.filter((x) => x.id === 'automationError:ManagerDailyBrief')[0];
@@ -32530,7 +32567,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
       SpreadsheetApp: { openById: (id) => { opened.push(id); return { getName: () => 'n-' + id, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSpreadsheetLocale: () => 'en_US', getUrl: () => 'u' }; } },
       tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', KB_SEARCH_SIGNAL_DAYS: 90, cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
       qaReviewRetentionDays_: () => 0, getEmployeeRosterRows_: () => [['h']], cnEnrolledSheetId_: () => '', EMP: { NAME: 0 },
-      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null,
+      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null, mailQuotaStatus_: () => null,
       KB_EMBED_SCAN_CAP: 1, DRIVE_WRITE_SCOPE: 's', DRIVE_REAUTH_HINT: 'h', KB_IMAGES_FOLDER_PROP: 'p' };
     vm.createContext(ctx);
     ['storePlaceholder_', 'getStorageHealth'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
@@ -32555,6 +32592,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
     { digests: [{ key: 'eod', last: 'x', stale: false }], cdr: { ok: true }, problems: [] }, 1).items;
   ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => assert.strictEqual(items.find((i) => i.key === 'store_' + k).status, 'warn', 'readiness warns on the ' + k + ' fallback (it read ok)'));
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const sev = (st) => (fn(null, { configTimezone: 'Asia/Kolkata', stores: [st] }).items.filter((x) => x.id === 'store:FORMS_SS_ID')[0] || {}).severity;
   assert.strictEqual(sev(unset.FORMS_SS_ID), 'warn', 'the System tab warns on the server\'s real fallback shape (the F-11 rule, now reachable)');
@@ -32587,6 +32625,7 @@ test('ADM-09 (cycle 23): deploy readiness reads the ONE problem list the health 
 test('ADM-07 (cycle 23): the Reference-lookups diagnostics are FINDINGS — each warning the panel shows reaches "Needs attention", a failed load is a finding, and a clean table is one ok line (driven)', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnOopFindings_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const ids = (oop) => Array.from(fn(null, null, oop).items.filter((x) => /^oop/.test(x.id)).map((x) => x.id + ':' + x.severity + ':' + x.area));
   assert.deepStrictEqual(fn(null, null, null).items.filter((x) => /^oop/.test(x.id)).length, 0, 'null = not loaded yet: nothing, not a clean verdict');
@@ -34503,7 +34542,7 @@ test('ADM-12 (cycle 23): a cross-rep tag rename writes its STARTED row first, wa
   const ctx = b10Ctx_(['applyTagTransformAcrossReps_', 'cnTagSkippedNote_', 'cnTagAdminStartAudit_', 'renameCallNoteTag', 'sheetSafe_', 'normalizeTagForAdmin_'], {
     EMP: { ID: 0 }, CN: { SUBFORM_DATA: 3 }, CONFIG: { CALL_NOTES: { ARCHIVE_TAB: 'NotesArchive' } },
     getEmployeeRosterRows_: () => [['h'], ['E-1']], cnEnrolledSheetId_: () => 'sheet-1',
-    getCallNotesSheet_: () => live,
+    getCallNotesSheet_: () => live, getCallNotesSheetForWrite_: () => live,
     arraysEqual_: (a, b) => JSON.stringify(a) === JSON.stringify(b),
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }),
@@ -35524,7 +35563,7 @@ test('Seams F2 (cycle 24): the EOD digest stamps a failed send or an unreadable 
       getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'EOD'], ['b@x', 'B', 'Bob', 'EOD'], ['c@x', 'C', 'Cy', 'NOT']],
       cnEnrolledSheetId_: () => 'sheet', safeTimezone_: (t) => t,
       Utilities: { formatDate: (d, tz, f) => (f === 'H' ? (tz === 'EOD' && opts.hourMatches ? '17' : '3') : '2026-10-05') },
-      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
+      getCallNotesSheet_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; }, getCallNotesSheetForWrite_: (e) => { if (opts.unreadable && e.id === 'A') throw new Error('Sheet A gone'); return {}; },
       readCallNoteRowsInRange_: () => [{ row: ['2026-10-05', 'action', ''] }],
       cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
       sendOneRepEodDigest_: (e) => { if (opts.sendFails && e.id === 'B') throw new Error('Service invoked too many times'); },
@@ -36944,7 +36983,9 @@ test('F31 (cycle 25): a training question asked from a card emails the managers 
   let blob = '{}';
   let lockHeld = false;
   ctx.getEmployeeInfo_ = () => ({ id: 'E1', name: 'Ana' });
-  ctx.LockService = { getScriptLock: () => ({ waitLock() { lockHeld = true; }, releaseLock() { lockHeld = false; } }) };
+  // 25post: the card path holds its rep's LEASE, not the ScriptLock — the mail still goes after it.
+  ctx.cnAcquireRepLease_ = () => { lockHeld = true; return { key: 'k', token: 't' }; };
+  ctx.cnReleaseRepLease_ = () => { lockHeld = false; };
   ctx.CN = { FLAG_TYPE: 0, RESOLVED: 1, SUBFORM_DATA: 2, DATE_LOCAL: 3 };
   ctx.CN_FLAG_TYPES = ['action', 'training', 'review']; ctx.CN_HEADERS = [0, 1, 2, 3];
   ctx.sanitizeFlagType_ = (t) => String(t || '').toLowerCase();
@@ -37248,6 +37289,7 @@ test('ST2 (cycle 25 E1): a PARTIAL run reads as one — the stamp keeps its stat
   assert.strictEqual(lines.filter((l) => /open-punch|OpenPunchCheck/i.test(l)).length, 1, 'the open-punch failure is said ONCE — by its own, more specific finding');
   // The System tab.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const items = fn({ digests: [], automationErrors: {
     CallNotesPurge: { at: 't1', message: 'skipped Ana', status: 'partial', label: 'call-note retention purge' },
@@ -37318,7 +37360,7 @@ test('ST2 (cycle 25 E1): each job chooses its status honestly — skipped reps a
     const c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
       getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z']], cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t,
       Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
-      getCallNotesSheet_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; },
+      getCallNotesSheet_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; }, getCallNotesSheetForWrite_: (e) => { if (unreadable.indexOf(e.id) >= 0) throw new Error('gone'); return {}; },
       readCallNoteRowsInRange_: () => [], cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}), sendOneRepEodDigest_() {} });
     vm.runInContext(extractRawFunction('Code.js', 'sendCallNotesEodDigest'), c);
     c.sendCallNotesEodDigest();
@@ -37515,7 +37557,7 @@ test('E1 follow-ups (cycle 25): the rep- and agent-facing reminders log each sen
   let c = mk({ CONFIG: { CALL_NOTES: { EOD_WARNING_HOUR: 17 } }, EMP: { EMAIL: 0, ID: 1, NAME: 2, TIMEZONE: 3 }, CN: { DATE_LOCAL: 0, FLAG_TYPE: 1, RESOLVED: 2 },
     getEmployeeRosterRows_: () => [['h'], ['a@x', 'A', 'Ann', 'Z'], ['b@x', 'B', 'Bob', 'Z'], ['c@x', 'C', 'Cy', 'Z'], ['d@x', 'D', 'Dee', 'Z']],
     cnEnrolledSheetId_: () => 's', safeTimezone_: (t) => t, Utilities: { formatDate: (d, tz, f) => (f === 'H' ? '17' : '2026-10-15') },
-    getCallNotesSheet_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; },
+    getCallNotesSheet_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; }, getCallNotesSheetForWrite_: (e) => { if (e.id === 'A') throw new Error('gone'); return { id: e.id }; },
     readCallNoteRowsInRange_: (sh) => Array.from({ length: flagged[sh.id] || 0 }, () => ({ row: ['2026-10-15', 'action', ''] })),
     cnDateLocalString_: (v) => v, callNoteRowToObject_: () => ({}),
     sendOneRepEodDigest_: (e) => { if (e.id === 'D') throw new Error('quota'); } });
@@ -38596,6 +38638,642 @@ test('E6 follow-on (cycle 25): a content request\'s topic and its "name · age" 
   const render = stripJsComments_(extractFunction('kb/script_kb.html', 'kbLandingBlocksHtml_'));
   assert.ok(/<div class="kb-land-req-body">' \+\s*'<span class="kb-land-t">' \+ esc\(rq\.topic\) \+ '<\/span>' \+\s*'<span class="kb-land-meta">' \+ meta/.test(render),
     'the rule matches the markup it styles (the topic and meta spans inside .kb-land-req-body)');
+});
+
+// ---------------------------------------------------------------------------
+// 25post (operator 2026-10-16) — the first post-deploy health email named two
+// checks "the trigger may be missing" the morning a deploy put them under watch
+// (the new Spanish escalation digest; the diagnostics purge, always on since
+// E1), and told the operator to reinstall the accrual trigger although the
+// accrual job had run that month and simply written no credit row.
+console.log('\n25post — liveness is judged from the first watch, and a run without a row says so');
+
+function p25JobCtx_(checks) {
+  const ctx = vm.createContext({ console, isFinite, String, Object, JSON, Number });
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.AUTOMATION_JOB_CHECKS = checks;
+  return ctx;
+}
+const P25_NOW = Date.parse('2026-10-16T14:00:00Z');
+const P25_DAILY = { action: 'DiagnosticsPurge', label: 'diagnostics retention purge', cadence: 'daily', staleHours: 30, enabled: () => true };
+
+test('25post: automationWatchMerge_ — the first write seeds every key with the INSTALL time (nothing already watched is masked), a later key gets now, a key no longer checked is dropped, and an unchanged set writes nothing (driven)', () => {
+  const ctx = vm.createContext({ Object, Number, isFinite, Array });
+  vm.runInContext(extractRawFunction('Code.js', 'automationWatchMerge_'), ctx);
+  const m = (prev, keys, now, seed) => JSON.parse(JSON.stringify(ctx.automationWatchMerge_(prev, keys, now, seed)));
+  const INSTALL = P25_NOW - 21 * 86400000;
+  assert.deepStrictEqual(m(null, ['digest:eod', 'job:CallNotesReconcile'], P25_NOW, INSTALL),
+    { map: { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL }, changed: true }, 'no record yet: seeded with the install, so shipping this hides no dead trigger');
+  assert.deepStrictEqual(m(null, ['digest:eod'], P25_NOW, null), { map: { 'digest:eod': 0 }, changed: true }, 'no install record: 0 — no window at all, the old reading');
+  const prev = { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL };
+  assert.deepStrictEqual(m(prev, ['digest:eod', 'job:CallNotesReconcile', 'digest:spanishEscalation', 'job:DiagnosticsPurge'], P25_NOW, INSTALL).map,
+    { 'digest:eod': INSTALL, 'job:CallNotesReconcile': INSTALL, 'digest:spanishEscalation': P25_NOW, 'job:DiagnosticsPurge': P25_NOW },
+    'THE REGRESSION: a digest a deploy added and a job a deploy enabled are watched from NOW, not from the install three weeks ago');
+  const dropped = m(prev, ['digest:eod'], P25_NOW, INSTALL);
+  assert.deepStrictEqual(dropped, { map: { 'digest:eod': INSTALL }, changed: true }, 'a job no longer checked leaves the map, so re-enabling it starts a fresh window');
+  assert.strictEqual(m(prev, ['digest:eod', 'job:CallNotesReconcile'], P25_NOW, INSTALL).changed, false, 'the same set writes nothing (the health dot reads this on every page)');
+  assert.strictEqual(m({ 'digest:eod': 'x' }, ['digest:eod'], P25_NOW, INSTALL).map['digest:eod'], P25_NOW, 'an unreadable entry is a new watch, never NaN');
+});
+
+test('25post: automationWatchSince_ writes the Script Property only when the map changed, and survives an unreadable record (driven)', () => {
+  const props = { AUTOMATION_WATCH_SINCE: '{"digest:eod":5}' };
+  const writes = [];
+  const ctx = vm.createContext({ Object, Number, isFinite, Array, JSON, Date: { now: () => P25_NOW },
+    AUTOMATION_WATCH_SINCE_PROP: 'AUTOMATION_WATCH_SINCE',
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null }) },
+    propSetBounded_: (k, v) => { writes.push(k); props[k] = v; } });
+  ['automationWatchMerge_', 'automationWatchSince_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.automationWatchSince_(['digest:eod'], 1);
+  assert.strictEqual(writes.length, 0, 'unchanged: no write');
+  const got = JSON.parse(JSON.stringify(ctx.automationWatchSince_(['digest:eod', 'digest:spanishEscalation'], 1)));
+  assert.deepStrictEqual(got, { 'digest:eod': 5, 'digest:spanishEscalation': P25_NOW }, 'a new digest is watched from now');
+  assert.deepStrictEqual(writes, ['AUTOMATION_WATCH_SINCE'], 'and the change is written once');
+  props.AUTOMATION_WATCH_SINCE = '{not json';
+  assert.strictEqual(ctx.automationWatchSince_(['digest:eod'], 7)['digest:eod'], 7, 'an unreadable record re-seeds from the install');
+});
+
+test('25post: a DAILY job with no run on record is not "missing" inside its stale window from its first watch — past it, or with no watch record, it is (driven)', () => {
+  const ctx = p25JobCtx_([P25_DAILY]);
+  const f = ctx.automationJobProblems_;
+  const none = [{ action: 'DiagnosticsPurge', last: null }];
+  const win = { complete: false, startMgr: '2026-09-20 08:00:00', startMs: P25_NOW - 26 * 86400000, rows: 4000 };
+  const MISSING = /diagnostics retention purge has no run on record/;
+  assert.ok(f(none, {}, P25_NOW, 16, '2026-10', win).some((t) => MISSING.test(t)), 'no watch record: the A1 follow-up reading stands');
+  assert.strictEqual(f(none, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 5 * 3600000, ym: '2026-10' } } }).filter((t) => MISSING.test(t)).length, 0,
+    'THE REGRESSION: enabled by this morning\'s deploy, the nightly purge has not had its 2am slot yet');
+  assert.ok(f(none, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 31 * 3600000, ym: '2026-10' } } }).some((t) => MISSING.test(t)),
+    'watched past its 30h window with still no run: the trigger really may be missing');
+  const stale = [{ action: 'DiagnosticsPurge', last: { timestampMgr: '2026-10-13 02:00:00', ms: P25_NOW - 3 * 86400000 } }];
+  assert.ok(f(stale, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 3600000, ym: '2026-10' } } }).some((t) => /last ran 2026-10-13 02:00:00/.test(t)),
+    'a run ON RECORD that has gone stale is evidence whatever the watch says');
+});
+
+test('25post: the MONTHLY accrual line — a job that RAN this month without a row names that run and the remedy, never "the trigger may be missing"; a job first watched this month makes no claim; a run last month is still "not run" (driven)', () => {
+  const hint = (ym) => 'see ' + ym;
+  const ctx = p25JobCtx_([{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true, noRowHint: hint }]);
+  const f = ctx.automationJobProblems_;
+  const septRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 18:00:04', ms: P25_NOW - 45 * 86400000 } }];
+  const win = { complete: true };
+  const ranOct = { PtoAccrualCredit: { ms: P25_NOW - 86400000, ym: '2026-10', mgr: '2026-10-15 18:00' } };
+  const lines = f(septRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct });
+  assert.strictEqual(lines.length, 1, lines.join(' | '));
+  assert.ok(/monthly PTO accrual credit ran on 2026-10-15 18:00 but wrote no row this month, so its trigger is running — see 2026-10\.$/.test(lines[0]), lines[0]);
+  assert.ok(!/may be missing|installAutomationTriggers/.test(lines[0]), 'THE REGRESSION: the email sent the operator to reinstall a trigger that had run');
+  assert.ok(f(septRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: { PtoAccrualCredit: { ms: P25_NOW - 40 * 86400000, ym: '2026-09', mgr: '2026-09-06 18:00' } } })
+    .some((t) => /has not run this month.*may be missing/.test(t)), 'a last run in an EARLIER month is not this month\'s run');
+  assert.strictEqual(f([{ action: 'PtoAccrualCredit', last: null }], {}, P25_NOW, 16, '2026-10', win, { watchSince: { PtoAccrualCredit: { ms: P25_NOW - 86400000, ym: '2026-10' } } }).length, 0,
+    'first watched on the 15th (a setting turned it on): the 1st was never observed, so no claim this month');
+  assert.ok(f([{ action: 'PtoAccrualCredit', last: null }], {}, P25_NOW, 16, '2026-10', win, { watchSince: { PtoAccrualCredit: { ms: P25_NOW - 40 * 86400000, ym: '2026-09' } } })
+    .some((t) => /has not run this month/.test(t)), 'watched since last month: absence this month is evidence');
+  const octRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-10-01 18:00:04', ms: P25_NOW - 15 * 86400000 } }];
+  assert.strictEqual(f(octRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct }).length, 0, 'a credit row this month is the normal case — nothing to say');
+});
+
+test('25post: the real accrual table entry — `ranAt` reads the reconcile stamp every path rewrites, and the hint names last month (January → December) and the column (driven over the real AUTOMATION_JOB_CHECKS)', () => {
+  let stamp = { at: P25_NOW - 3600000 };
+  const ctx = vm.createContext({ String, Number, readAccrualReconcile_: () => stamp, getFlag_: () => true, rosterHasAccruingRep_: () => true,
+    getTimesheetArchiveDays_: () => 0, getNoteArchiveDays_: () => 0, getNoteRetentionDays_: () => 0, getArchiveRetentionDays_: () => 0,
+    getFormRetentionDays_: () => 0, qaReviewRetentionDays_: () => 0, qaStoreConfigured_: () => false });
+  vm.runInContext(extractConstDecl_('AUTOMATION_JOB_CHECKS').replace(/^const /, 'var '), ctx);
+  const acc = ctx.AUTOMATION_JOB_CHECKS.find((j) => j.action === 'PtoAccrualCredit');
+  assert.strictEqual(acc.ranAt(), P25_NOW - 3600000, 'the reconcile stamp\'s `at`');
+  stamp = null; assert.strictEqual(acc.ranAt(), null, 'no stamp: no run known');
+  assert.ok(/previewPtoAccruals\('2026-09'\) from the editor to see what 2026-09 earns/.test(acc.noRowHint('2026-10')), acc.noRowHint('2026-10'));
+  assert.ok(/previewPtoAccruals\('2025-12'\)/.test(acc.noRowHint('2026-01')), 'January asks about December of the year before');
+  assert.ok(/AccruedThrough \(Employees column R\).*a blank cell is seeded without crediting/.test(acc.noRowHint('2026-10')), 'and names the stamp column and its seeding rule');
+  const stampers = stripJsComments_(extractRawFunction('Code.js', 'accrualNothingToDo_') + extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.ok(/stampAccrualReconcile_\(\{ at: Date\.now\(\)/.test(stampers) && /const rec = \{ at: Date\.now\(\)/.test(stampers) && /stampAccrualReconcile_\(rec\)/.test(stampers),
+    'both paths of the job stamp `at` — which is what makes it a run record');
+});
+
+test('25post: computeAutomationHealth_ watches every digest and every CHECKED job, judges a digest\'s "never ran" from the later of install and first watch, and ships both maps to the problem list (structural + wiring driven)', () => {
+  const cah = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/Object\.keys\(DIGEST_STALE_HOURS\)\.map\(function \(k\) \{ return 'digest:' \+ k; \}\)/.test(cah), 'every digest key is watched (derived from the staleness map)');
+  assert.ok(/if \(on\) watchKeys\.push\('job:' \+ j\.action\)/.test(cah), 'a job is watched only while its check is enabled');
+  assert.ok(/automationWatchSince_\(watchKeys, installedMs\)/.test(cah), 'seeded from the install time');
+  assert.ok(/watchSince: watchSince,/.test(cah) && /jobRanAt: jobRanAt,/.test(cah), 'both maps ride the report');
+  const ap = stripJsComments_(extractRawFunction('Code.js', 'automationProblems_'));
+  assert.ok(/\{ items: true, watchSince: report\.watchSince, ranAt: report\.jobRanAt \}/.test(ap), 'and reach the job checks');
+  // The wiring, driven: the problem list carries the run-without-a-row line.
+  const ctx = vm.createContext({ String, Object, Date, Number, parseInt, JSON, isFinite, CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC', ADJUST_WINDOW_DAYS: 30 },
+    Utilities: { formatDate: (d, tz, f) => (f === 'd' ? '16' : '2026-10') },
+    AUTOMATION_JOB_CHECKS: [{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }] });
+  ['automationJobProblems_', 'auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const items = ctx.automationProblems_({ automationLastRuns: [{ action: 'PtoAccrualCredit', last: null }], automationErrors: {}, auditWindow: { complete: true },
+    jobRanAt: { PtoAccrualCredit: { ms: 1, ym: '2026-10', mgr: '2026-10-15 18:00' } } });
+  assert.ok(items.some((t) => /ran on 2026-10-15 18:00 but wrote no row/.test(t)) && !items.some((t) => /may be missing/.test(t)), items.join(' | '));
+});
+
+// 25post (operator 2026-10-16, after the health email): a blank or unreadable
+// AccruedThrough SEEDED — last month taken as paid and never credited — which
+// is the enable-time rule, and was also what happened to a rep who HAD been
+// accruing when the cell was cleared or mistyped. No row said so.
+function p25AccCtx_() {
+  const ctx = vm.createContext({ String, Number, Object, JSON, Math, Array, isFinite, parseInt, parseFloat, Date, PTO_ACCRUAL_CATCHUP_MAX_MONTHS: 12,
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } });
+  vm.runInContext(extractConstDecl_('AUDIT').replace(/^const /, 'var '), ctx);
+  vm.runInContext('var normalizeAuditTs_ = function (v) { return String(v || ""); };', ctx);
+  ['addDaysIso_', 'parseAccrualLedger_', 'accrualMonthsToCredit_', 'accrualStampRecovery_', 'accrualHistoryScan_', 'accrualStampNote_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const p25Row = (ts, id, action, notes) => { const r = new Array(10).fill(''); r[0] = ts; r[1] = id; r[4] = action; r[9] = notes; return r; };
+
+test('25post: accrualStampRecovery_ — a stamp that reads is never second-guessed; a blank one plans from the newest credit on record; with no credit (or an unreadable one) it seeds as before (driven)', () => {
+  const ctx = p25AccCtx_();
+  const r = (st, h) => JSON.parse(JSON.stringify(ctx.accrualStampRecovery_(st, h, '2026-10')));
+  assert.deepStrictEqual(r('2026-08', '2026-09'), { recoveredFrom: '', plan: null }, 'an intact stamp wins, whatever the history says');
+  const back = r('', '2026-08');
+  assert.strictEqual(back.recoveredFrom, '2026-08');
+  assert.deepStrictEqual([back.plan.months, back.plan.newStamp, back.plan.seeded], [1, '2026-09', false],
+    'THE REGRESSION: a cleared cell after August was paid owes September — it used to seed to September and credit nothing');
+  const cur = r('', '2026-09');
+  assert.deepStrictEqual([cur.plan.months, cur.plan.newStamp, cur.plan.seeded], [0, '2026-09', false], 'history through last month: nothing owed, the cell is rewritten');
+  assert.deepStrictEqual(r('', ''), { recoveredFrom: '', plan: null }, 'no credit on record: the enable-time seed');
+  assert.deepStrictEqual(r('', '2026-13'), { recoveredFrom: '', plan: null }, 'a malformed history month is no history');
+});
+
+test('25post: accrualHistoryScan_ — the newest MONTH a rep\'s credit rows name wins, not the newest row (a top-up for an older month is often the last row); a rep settles only once the walk is older than the 1st of best+2; an unfound rep keeps the walk going (driven)', () => {
+  const ctx = p25AccCtx_();
+  const credit = (ym, h) => 'hoursWorked=' + h + '; rate=3.08/80h; ptoHours=1; days=0.5; months=' + ym + '; through=' + ym + '; balance=4';
+  // Sheet order (oldest first). The walk reads bottom-up.
+  const rows = [
+    p25Row('2026-09-01 18:00:04', 'PH0001', 'PtoAccrualCredit', credit('2026-08', 150)),
+    p25Row('2026-10-01 18:00:04', 'PH0001', 'PtoAccrualCredit', credit('2026-09', 140)),
+    p25Row('2026-10-05 18:00:09', 'PH0001', 'PtoAccrualCredit', credit('2026-08', 160) + '; TOP-UP +0.1 day(s)'),
+    p25Row('2026-10-06 09:00:00', 'PH0001', 'PunchIn', ''),
+    p25Row('2026-10-07 18:00:00', 'PH0009', 'PtoAccrualCredit', credit('2026-09', 100)),
+  ];
+  const st = { ids: { PH0001: true }, best: {} };
+  ctx.accrualHistoryScan_(rows, st);
+  assert.strictEqual(st.best.PH0001, '2026-09', 'the top-up for August is the newest row; September is the newest month paid for');
+  // Settling, across chunks fed newest-first: the three newest rows alone cannot
+  // settle (best 2026-08 → settle point 2026-09-29, and no row is older), so the
+  // walk asks for the next chunk; that chunk raises best to 2026-09 and its
+  // 2026-09-01 row is older than 2026-10-30, so the walk stops.
+  const st2 = { ids: { PH0001: true }, best: {} };
+  assert.strictEqual(ctx.accrualHistoryScan_(rows.slice(2), st2), false, 'a chunk with nothing older than the settle point reads on');
+  assert.strictEqual(st2.best.PH0001, '2026-08', 'so far, only the top-up');
+  assert.strictEqual(ctx.accrualHistoryScan_(rows.slice(0, 2), st2), true, 'the next chunk finds September, then a row old enough to settle it');
+  assert.strictEqual(st2.best.PH0001, '2026-09', 'and the answer is September — stopping at the first hit would have re-credited it');
+  const st3 = { ids: { PH0001: true }, best: { PH0001: '2026-08' } };
+  assert.strictEqual(ctx.accrualHistoryScan_([p25Row('2026-09-20 08:00:00', 'X', 'PunchIn', '')], st3), true,
+    'best 2026-08 settles below 2026-09-29: a row from the 20th proves nothing older names September');
+  const st4 = { ids: { PH0001: true, PH0002: true }, best: { PH0001: '2026-08' } };
+  assert.strictEqual(ctx.accrualHistoryScan_([p25Row('2026-01-01 08:00:00', 'X', 'PunchIn', '')], st4), false,
+    'a rep with no hit yet keeps the walk going to the top of the log');
+  const st5 = { ids: { PH0002: true }, best: {} };
+  ctx.accrualHistoryScan_(rows, st5);
+  assert.strictEqual(st5.best.PH0002, undefined, 'only the asked-for reps, and only PtoAccrualCredit rows');
+});
+
+test('25post: planPtoAccrualRun_ asks the credit history ONCE, for the blank-stamp reps only, and plans each from what it returns — the rest seed; a history that throws stops the run (driven over the real planner)', () => {
+  const asked = [];
+  let hist = { PH0001: '2026-08' };
+  const ctx = vm.createContext({ String, Number, Object, JSON, Math, Array, isFinite, parseInt, PTO_ACCRUAL_CATCHUP_MAX_MONTHS: 12,
+    CONFIG: { PTO_ACCRUAL_BASIS_HOURS: 80, PTO_HOURS_PER_DAY: 8 },
+    EMP: { ID: 0, NAME: 1, EMAIL: 2, PTO_ACCRUAL: 3, PTO_ENABLED: 4, ACCRUED_THROUGH: 5 },
+    empRosterEmail_: (r) => r[2], empPtoAccrual_: (v) => (v ? Number(v) : null),
+    workedHoursByEmpForRange_: () => ({ byEmp: {}, archivedRows: 0 }), workedHoursForEmpMonth_: () => ({ hours: 0, incompleteDays: 0, orphanDays: 0 }),
+    accrualEarnedByMonth_: () => ({ days: 0, ptoHours: 0 }), monthEndIso_: (ym) => ym + '-28' });
+  vm.runInContext('var accrualStampYm_ = function (c) { var m = /^(\\d{4}-\\d{2})/.exec(String(c == null ? "" : c).trim()); return m ? m[1] : ""; };', ctx);
+  ['accrualMonthsToCredit_', 'accrualMonthList_', 'accrualStampRecovery_', 'planPtoAccrualRun_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const rows = [['ID', 'Name', 'Email', 'Q', 'K', 'R'],
+    ['PH0001', 'Rep One', 'one@example.invalid', 3.08, '', ''],        // cleared after August was paid
+    ['PH0002', 'Rep Two', 'two@example.invalid', 3.08, '', '2026-9'],  // mistyped — reads blank, no history
+    ['PH0003', 'Rep Three', 'three@example.invalid', 3.08, '', '2026-08']];
+  const historyFn = (ids) => { asked.push(ids.slice()); return hist; };
+  const run = ctx.planPtoAccrualRun_(rows, '2026-10', '', [], historyFn);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(asked)), [['PH0001', 'PH0002']], 'asked once, for the two blank stamps only');
+  const by = {}; run.entries.forEach((p) => { by[p.emp.id] = p; });
+  assert.deepStrictEqual([by.PH0001.recoveredFrom, by.PH0001.months.join(','), by.PH0001.plan.newStamp, by.PH0001.plan.seeded], ['2026-08', '2026-09', '2026-09', false],
+    'THE REGRESSION: the cleared cell credits September from the history');
+  assert.strictEqual(by.PH0001.stamp, '', 'and keeps the cell\'s own reading, so the job rewrites it');
+  assert.deepStrictEqual([by.PH0002.recoveredFrom, by.PH0002.months.length, by.PH0002.plan.seeded], ['', 0, true], 'no credit on record: seeds as before');
+  assert.deepStrictEqual([by.PH0003.recoveredFrom, by.PH0003.months.join(',')], ['', '2026-09'], 'an intact stamp is planned as always');
+  asked.length = 0;
+  ctx.planPtoAccrualRun_([rows[0], rows[3]], '2026-10', '', [], historyFn);
+  assert.strictEqual(asked.length, 0, 'no blank stamp: the AuditLog walk never runs');
+  assert.throws(() => ctx.planPtoAccrualRun_(rows, '2026-10', '', [], () => { throw new Error('AuditLog unreadable'); }), /AuditLog unreadable/,
+    'an unreadable history is not "no history" — seeding on it would lose the month the fix exists to keep');
+});
+
+test('25post: the job writes a PtoAccrualStamp row for every blank stamp it resolves, after the credit, and the dry run says which way each went (driven + structural)', () => {
+  const ctx = p25AccCtx_();
+  const rec = ctx.accrualStampNote_({ recoveredFrom: '2026-08', months: ['2026-09'], plan: { newStamp: '2026-09' } });
+  assert.ok(/newest credit on record is 2026-08, so the run planned from it \(owed: 2026-09\) and rewrote the cell to 2026-09/.test(rec), rec);
+  const seed = ctx.accrualStampNote_({ recoveredFrom: '', months: [], plan: { newStamp: '2026-09' } });
+  assert.ok(/no credit is on record, so it was SEEDED to 2026-09: .* that month is NOT credited\. If it is owed, set AccruedThrough one month earlier/.test(seed), seed);
+  const job = stripJsComments_(extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, '', recMonths, accrualCreditHistory_\)/.test(job), 'the credit asks the history');
+  assert.ok(/if \(p\.stamp !== p\.plan\.newStamp\) \{[\s\S]*?if \(!p\.stamp\) writeAuditLog_\(p\.emp, 'PtoAccrualStamp', '', '', false, 0, accrualStampNote_\(p\)\);/.test(job),
+    'the stamp row rides the cell write, which follows the credit (credit-before-stamp)');
+  assert.ok(job.indexOf("'PtoAccrualStamp'") > job.indexOf('writeWitnessAuditLog_(p.emp, \'PtoAccrualCredit\''), 'after the credit rows');
+  const prev = stripJsComments_(extractRawFunction('Code.js', 'previewPtoAccruals'));
+  assert.ok(/planPtoAccrualRun_\(rows, nowYm, inspectYm, recMonths, accrualCreditHistory_\)/.test(prev) && /recoveredFrom: p\.recoveredFrom \|\| ''/.test(prev),
+    'the dry run plans exactly as the job does, and ships the recovery');
+  const hist = stripJsComments_(extractRawFunction('Code.js', 'accrualCreditHistory_'));
+  assert.ok(!/setValue|appendRow|writeAuditLog_|propSetBounded_/.test(hist), 'the history read writes nothing (the dry run calls it)');
+  const sb = vm.createContext({ String, Number, Math, Array, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'formatPtoAccrualPreview_'), sb);
+  const base = { enabled: true, nowYm: '2026-10', tz: 'America/Chicago', basis: 80, hoursPerDay: 8, range: null, archivedRows: 0 };
+  const row = (o) => Object.assign({ id: 'PH0001', name: 'Rep One', rate: 3.08, stamp: '', months: [], seeds: false, recoveredFrom: '', capped: 0,
+    newStamp: '2026-09', hours: null, incompleteDays: 0, orphanDays: 0, onTimesheet: true, wouldCreditDays: 0, wouldCreditPtoHours: 0, zeroReason: '' }, o);
+  const t1 = sb.formatPtoAccrualPreview_(Object.assign({}, base, { reps: [row({ recoveredFrom: '2026-08', months: ['2026-09'], hours: 150, wouldCreditDays: 0.72, wouldCreditPtoHours: 5.78 })] }));
+  assert.ok(/column R is blank or unreadable; the newest credit on record is 2026-08, so the run plans from it/.test(t1), t1);
+  const t2 = sb.formatPtoAccrualPreview_(Object.assign({}, base, { reps: [row({ seeds: true })] }));
+  assert.ok(/SEEDS to 2026-09 \(blank column R, no credit on record\).*If 2026-09 is owed, set column R one month earlier first/.test(t2), t2);
+});
+
+// 25post (operator 2026-10-16, team rollout at ~10 concurrent reps): note
+// saves serialised per rep on a lease rather than the one project ScriptLock,
+// and the day's email allowance on Admin → System.
+console.log('\n25post — per-rep note-save lease, and the daily email allowance');
+
+function p25LeaseCtx_(opts) {
+  const o = opts || {};
+  const clock = { now: 1000000 };
+  const props = Object.assign({}, o.props || {});
+  const log = [];
+  let held = false;
+  const ctx = vm.createContext({ String, Number, Object, JSON, isFinite, console: { warn() {} },
+    Date: { now: () => clock.now },
+    CN_REP_LEASE_PREFIX: 'CN_REP_LEASE_', CN_REP_LEASE_MS: 60000, CN_REP_LEASE_WAIT_MS: 15000, CN_REP_LEASE_POLL_MS: 200,
+    Utilities: { getUuid: () => 'tok-' + (log.length + 1), sleep: (ms) => { clock.now += ms; if (o.onSleep) o.onSleep(clock, props); } },
+    LockService: { getScriptLock: () => ({ waitLock: (ms) => { held = true; log.push('lock ' + ms); }, releaseLock: () => { held = false; log.push('unlock'); } }) },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => (k in props ? props[k] : null),
+      deleteProperty: (k) => { log.push('delete ' + k); delete props[k]; } }) },
+    propSetBounded_: (k, v) => { log.push('set ' + k + (held ? ' (under lock)' : ' (NO LOCK)')); props[k] = v; },
+    getCallNotesSheet_: (emp) => ({ sheetOf: emp.callNotesSheetId }) });
+  ['cnRepLeaseFree_', 'cnAcquireRepLease_', 'cnReleaseRepLease_', 'getCallNotesSheetForWrite_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, clock, props, log };
+}
+
+test('25post: cnRepLeaseFree_ — absent, unreadable or expired is free; a lease whose `until` is ahead is held (driven)', () => {
+  const { ctx } = p25LeaseCtx_();
+  assert.strictEqual(ctx.cnRepLeaseFree_(null, 5), true);
+  assert.strictEqual(ctx.cnRepLeaseFree_('{not json', 5), true, 'an unreadable lease never wedges a rep');
+  assert.strictEqual(ctx.cnRepLeaseFree_(JSON.stringify({ token: 'a', until: 6 }), 5), false, 'held until its until');
+  assert.strictEqual(ctx.cnRepLeaseFree_(JSON.stringify({ token: 'a', until: 5 }), 5), true, 'a killed holder\'s lease expires');
+});
+
+test('25post: cnAcquireRepLease_ takes the lease with the ScriptLock held only for the check-and-set, waits for a held lease, and times out with a "Lock timeout" throw — like the waitLock it replaces (driven)', () => {
+  const t1 = p25LeaseCtx_();
+  const lease = JSON.parse(JSON.stringify(t1.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' })));
+  assert.deepStrictEqual(lease.key, 'CN_REP_LEASE_S1');
+  assert.deepStrictEqual(t1.log, ['lock 15000', 'set CN_REP_LEASE_S1 (under lock)', 'unlock'], 'the ScriptLock is held for the check-and-set and released before the save runs');
+  assert.strictEqual(JSON.parse(t1.props.CN_REP_LEASE_S1).until, 1000000 + 60000, 'a 60 s lease');
+  // Another save on the same Sheet: polls until the holder releases.
+  const t2 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 1000000 + 60000 }) },
+    onSleep: (clock, props) => { if (clock.now >= 1000000 + 1000) delete props.CN_REP_LEASE_S1; } });
+  const got = t2.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' });
+  assert.ok(got.key === 'CN_REP_LEASE_S1' && t2.clock.now >= 1001000 && t2.clock.now < 1002000, 'it waited for the holder, then took it (' + (t2.clock.now - 1000000) + ' ms)');
+  assert.ok(t2.log.filter((l) => l === 'unlock').length > 1 && !t2.log.some((l) => /NO LOCK/.test(l)), 'every check-and-set under the lock, released between polls');
+  // A different rep's Sheet is a different key — never waits on S1.
+  const t3 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 9e15 }) } });
+  t3.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S2' });
+  assert.strictEqual(t3.clock.now, 1000000, 'THE POINT: two reps saving at once do not queue on each other');
+  // A holder that never lets go: the wait ends at 15 s with the old error class.
+  const t4 = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'other', until: 9e15 }) } });
+  assert.throws(() => t4.ctx.cnAcquireRepLease_({ callNotesSheetId: 'S1' }), /^Error: Lock timeout: another change to these call notes is still saving/);
+  assert.ok(t4.clock.now - 1000000 >= 15000 && t4.clock.now - 1000000 < 15500, 'after 15 s');
+  // No Sheet: nothing to lease, no lock taken — the body refuses by name.
+  const t5 = p25LeaseCtx_();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(t5.ctx.cnAcquireRepLease_({}))), { key: '', token: '' });
+  assert.strictEqual(t5.log.length, 0);
+});
+
+test('25post: cnReleaseRepLease_ deletes only its OWN lease, takes no ScriptLock (a lock holder may be waiting on it) and never throws; getCallNotesSheetForWrite_ waits out a save in flight and passes an expired one (driven)', () => {
+  const t = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'mine', until: 9e15 }) } });
+  t.ctx.cnReleaseRepLease_({ key: 'CN_REP_LEASE_S1', token: 'someone-else' });
+  assert.ok('CN_REP_LEASE_S1' in t.props, 'a lease that ran past its time and was retaken is not ours to delete');
+  t.ctx.cnReleaseRepLease_({ key: 'CN_REP_LEASE_S1', token: 'mine' });
+  assert.ok(!('CN_REP_LEASE_S1' in t.props) && !t.log.some((l) => /^lock/.test(l)), 'released, with no lock');
+  t.ctx.cnReleaseRepLease_({ key: '', token: '' }); t.ctx.cnReleaseRepLease_(null);
+  const w = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 1000000 + 60000 }) },
+    onSleep: (clock, props) => { if (clock.now >= 1000000 + 800) delete props.CN_REP_LEASE_S1; } });
+  const sheet = w.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.ok(sheet.sheetOf === 'S1' && w.clock.now - 1000000 >= 800, 'a manager action or nightly job waits for the rep\'s save to finish');
+  const e = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 1000000 - 1 }) } });
+  e.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.strictEqual(e.clock.now, 1000000, 'an expired lease (a killed save) does not hold anyone up');
+  const k = p25LeaseCtx_({ props: { CN_REP_LEASE_S1: JSON.stringify({ token: 'x', until: 9e15 }) } });
+  k.ctx.getCallNotesSheetForWrite_({ callNotesSheetId: 'S1' });
+  assert.ok(k.clock.now - 1000000 >= 61000 && k.clock.now - 1000000 < 61500, 'and the wait is bounded by the lease length');
+});
+
+test('25post: every writer of a rep\'s call-notes Sheet is serialised — the note actions hold the rep lease (no ScriptLock, released in finally), and every ScriptLock holder that writes a rep Sheet opens it through getCallNotesSheetForWrite_ (derived over the server)', () => {
+  const src = serverSource();
+  const re = /^function ([A-Za-z0-9_$]+)\s*\(/gm; let m;
+  const fns = [];
+  while ((m = re.exec(src)) !== null) {
+    const s0 = src.indexOf('{', m.index); let d = 0, k = s0;
+    for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
+    fns.push({ name: m[1], body: stripJsComments_(src.slice(s0, k + 1)) });
+  }
+  const WRITES = /\.(setValues?|appendRow|deleteRows?|setNumberFormat|insertSheet|clearContent)\(|appendRowsTextSafe_\(|appendRowsSafe_\(/;
+  const leased = fns.filter((f) => /cnAcquireRepLease_\(/.test(f.body) && f.name !== 'cnAcquireRepLease_').map((f) => f.name).sort();
+  assert.deepStrictEqual(leased, ['deleteCallNote', 'setCallNoteFlag', 'setCallNotePinned', 'setCallNoteResolved', 'submitCallNote', 'updateCallNote'],
+    'the six note actions a rep makes all day hold the lease');
+  fns.filter((f) => leased.indexOf(f.name) >= 0).forEach((f) => {
+    assert.ok(!/getScriptLock|waitLock|tryLock/.test(f.body), f.name + ' takes no ScriptLock as well — a nested lock would serialise the team again');
+    assert.ok(/const lease = cnAcquireRepLease_\(emp\);/.test(f.body) && /finally \{\s*cnReleaseRepLease_\(lease\);/.test(f.body), f.name + ' releases in finally');
+    assert.ok(f.body.indexOf('cnAcquireRepLease_(') > f.body.indexOf('getEmployeeInfo_()'), f.name + ' checks the caller first (F58)');
+  });
+  // Named exceptions, each with why its writes are not to a rep Sheet.
+  const NOT_A_REP_SHEET_WRITE = { exportCallNotesRange: 'writes a NEW export spreadsheet; it only reads the rep Sheets' };
+  const bad = [];
+  fns.forEach((f) => {
+    if (['getCallNotesSheet_', 'getCallNotesSheetForWrite_'].indexOf(f.name) >= 0 || NOT_A_REP_SHEET_WRITE[f.name]) return;
+    if (!/getCallNotesSheet_\(/.test(f.body) || !WRITES.test(f.body)) return;
+    if (leased.indexOf(f.name) < 0) bad.push(f.name + ' writes a rep Sheet opened with getCallNotesSheet_ and holds no lease');
+  });
+  // A ScriptLock holder that opens a rep Sheet waits for its lease, WRITE OR
+  // NOT: the writes are often in a helper the opener hands the Sheet to (the
+  // retention purge's purgeSheetRowsOlderThan_), which no body scan sees.
+  fns.forEach((f) => {
+    if (/getScriptLock\(\)/.test(f.body) && /getCallNotesSheet_\(/.test(f.body)) bad.push(f.name + ' holds the ScriptLock and opens a rep Sheet without waiting for its lease');
+  });
+  assert.deepStrictEqual(bad, []);
+  // The ScriptLock writers that reach rep Sheets — the set is non-empty, so the net above is not vacuous.
+  const waiters = fns.filter((f) => /getCallNotesSheetForWrite_\(/.test(f.body) && f.name !== 'getCallNotesSheetForWrite_').map((f) => f.name).sort();
+  ['managerDeleteCallNote', 'archiveOldCallNotes', 'purgeOldCallNotes', 'purgeArchivedCallNotes', 'reconcileCallNotesCore_', 'applyTagTransformAcrossReps_',
+   'submitFormByToken', 'setCallNoteTrainingReply', 'emailFromCallNote', 'sendExternalEmail', 'setCallNoteManagerComment', 'appendCallNoteFeedback']
+    .forEach((n) => assert.ok(waiters.indexOf(n) >= 0, n + ' waits for the rep lease'));
+});
+
+test('25post: the day\'s email allowance — mailQuotaStatus_ reads MailApp\'s remaining figure, an unreadable one is UNKNOWN, and Storage Health (admin-gated) ships it (driven + structural)', () => {
+  let rem = 1320, throwIt = false;
+  const ctx = vm.createContext({ String, Number, isFinite, MAIL_QUOTA_WARN_REMAINING: 300,
+    MailApp: { getRemainingDailyQuota: () => { if (throwIt) throw new Error('Service unavailable'); return rem; } },
+    mailBccAll_: () => ['robin@umsupply.com'] });
+  vm.runInContext(extractRawFunction('Code.js', 'mailQuotaStatus_'), ctx);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.mailQuotaStatus_())), { remaining: 1320, warnAt: 300, bccPerSend: 1, error: '' });
+  throwIt = true;
+  const u = ctx.mailQuotaStatus_();
+  assert.ok(u.remaining === null && /Service unavailable/.test(u.error), 'a failed read is null + the reason, never a number');
+  const sh = stripJsComments_(extractRawFunction('Code.js', 'getStorageHealth'));
+  assert.ok(/if \(!callerEmp \|\| !callerEmp\.isAdmin\) return \{ error: 'Admin access required\.' \};/.test(sh), 'admin-only');
+  assert.ok(sh.indexOf("'Admin access required.'") < sh.indexOf('mailQuotaStatus_()') && /mailQuota: mailQuota \}/.test(sh), 'read after the gate, shipped with the report');
+});
+
+test('25post: the email-allowance verdict — ok normally, warn at or below the threshold, FAIL at zero, warn when unreadable, nothing on an older server; the line escapes, the finding rides the System list (driven)', () => {
+  const sb = buildSandbox(['script_icons.html', 'script_core.html']);
+  ['cnMailQuotaVerdict_', 'cnMailQuotaHtml_'].forEach((n) => loadFunction(sb, 'cn/script_callnotes.html', n));
+  const v = (mq) => sb.cnMailQuotaVerdict_(mq);
+  assert.strictEqual(v(null), null, 'an older server ships no figure — no line, no finding');
+  const ok = v({ remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' });
+  assert.ok(ok.tone === 'ok' && /1,320 recipients left today/.test(ok.detail) && !/BCC/.test(ok.detail), JSON.stringify(ok));
+  const low = v({ remaining: 240, warnAt: 300, bccPerSend: 1, error: '' });
+  assert.ok(low.tone === 'warn' && /running low/.test(low.title) && /MAIL_BCC_ALL adds 1 to every send/.test(low.detail) && /clearing MAIL_BCC_ALL saves 1 recipient on every send/.test(low.fix), JSON.stringify(low));
+  assert.strictEqual(v({ remaining: 300, warnAt: 300 }).tone, 'warn', 'at the threshold is low');
+  const out = v({ remaining: 0, warnAt: 300, bccPerSend: 0 });
+  assert.ok(out.tone === 'fail' && /used up/.test(out.title), 'zero is a failure: every send fails until the reset');
+  const unk = v({ remaining: null, warnAt: 300, error: 'Service unavailable' });
+  assert.ok(unk.tone === 'warn' && /unknown, not fine/.test(unk.detail), 'unreadable is UNKNOWN (INV-187)');
+  const html = sb.cnMailQuotaHtml_({ remaining: null, warnAt: 300, error: '<img src=x onerror=alert(1)>' });
+  assert.ok(!/<img/.test(html) && /&lt;img/.test(html) && /cn-drive-warn/.test(html), 'escaped, warn-toned');
+  assert.ok(/cn-drive-danger/.test(sb.cnMailQuotaHtml_({ remaining: 0, warnAt: 300 })), 'a used-up allowance is the danger tone');
+  const find = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnHealthFindings_'));
+  assert.ok(/var mqv = cnMailQuotaVerdict_\(storage\.mailQuota\);\s*if \(mqv\) add\('mailQuota', 'storage', mqv\.tone, mqv\.title, mqv\.detail, mqv\.fix \|\| undefined\);/.test(find),
+    'the System findings list carries the same verdict');
+  const panel = extractRawFunction('cn/script_callnotes.html', 'cnRenderStoragePanel_');
+  assert.ok(/cnMailQuotaHtml_\(res && res\.mailQuota\)/.test(panel), 'and the Storage inventory shows the line');
+});
+
+// ── 25post B4 (operator 2026-10-16) — a pay statement explains an ADJ day ──
+test('B4: payStmtAdjustments_ groups ONE rep\'s requests inside the period by date — reason, status, the resume finish — oldest first (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array,
+    PAR: { REQ_ID: 0, EMP_ID: 1, EMP_NAME: 2, DATE: 3, PUNCH_TYPE: 4, REQ_TIME: 5, REASON: 6, STATUS: 7, SUBMITTED_AT: 8, ACTION: 9, END_TIME: 10, BREAK_TARGET: 11 },
+    normalizeDate_: (v) => String(v).substring(0, 10), normalizeTime_: (v) => String(v || ''), normalizeAuditTs_: (v) => String(v || '') });
+  vm.runInContext(extractRawFunction('Code.js', 'payStmtAdjustments_'), ctx);
+  const r = (emp, date, type, time, reason, status, at, action, end) => ['R', emp, 'n', date, type, time, reason, status, at, action || '', end || '', ''];
+  const rows = [['h'],
+    r('E1', '2026-10-05', 'ClockOut', '17:05:00', 'Forgot', 'Approved', '2026-10-06 09:00:00'),
+    r('E1', '2026-10-05', 'LunchIn', '13:00:00', 'Ran over', 'Pending', '2026-10-05 14:00:00'),
+    r('E2', '2026-10-05', 'ClockIn', '08:00:00', 'not mine', 'Pending', '2026-10-05 08:30:00'),
+    r('E1', '2026-09-30', 'ClockIn', '08:00:00', 'before the period', 'Denied', '2026-09-30 08:30:00'),
+    r('E1', '2026-10-07', 'ClockOut', '12:00:00', 'Came back', 'Approved', '2026-10-07 16:00:00', 'resume', '15:30:00')];
+  const out = JSON.parse(JSON.stringify(ctx.payStmtAdjustments_(rows, 'E1', '2026-10-01', '2026-10-31')));
+  assert.deepStrictEqual(Object.keys(out).sort(), ['2026-10-05', '2026-10-07'], 'only this rep, only this period');
+  assert.deepStrictEqual(out['2026-10-05'].map((a) => a.punchType + '|' + a.status + '|' + a.reason), ['LunchIn|Pending|Ran over', 'ClockOut|Approved|Forgot'], 'oldest filed first');
+  assert.strictEqual(out['2026-10-05'][0].time, '13:00');
+  assert.deepStrictEqual([out['2026-10-07'][0].action, out['2026-10-07'][0].endTime], ['resume', '15:30'], 'a resume carries its finish');
+  assert.strictEqual(out['2026-10-05'][1].endTime, '', 'an ordinary request carries none');
+  // The statement reads it inside a try that names a failure (g53).
+  const stmt = extractRawFunction('Code.js', 'getMyPayStatement');
+  assert.ok(/catch \(e\) \{ adjError = 'Adjustment requests could not be read: '/.test(stmt), 'a failed read is named, never an empty map');
+});
+
+// ── 25post B6 (operator 2026-10-16) — Sales/PAP recipients from the CDR roster ──
+test('B6: a roster name becomes first.last@ the org domain — nickname, accents, punctuation and suffixes handled; a one-word name builds nothing (driven)', () => {
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeTeamEmail_'), ctx);
+  const e = (n) => ctx.intakeTeamEmail_(n, 'universalmedsupply.com');
+  assert.strictEqual(e('Ana Garcia'), 'ana.garcia@universalmedsupply.com');
+  assert.strictEqual(e('Roman (Robin) Paulose'), 'roman.paulose@universalmedsupply.com', 'the parenthetical nickname is dropped');
+  assert.strictEqual(e('  José   Núñez '), 'jose.nunez@universalmedsupply.com', 'accents and spacing');
+  assert.strictEqual(e("Mary O'Neil"), 'mary.oneil@universalmedsupply.com');
+  assert.strictEqual(e('Lea Cruz-Lopez'), 'lea.cruz-lopez@universalmedsupply.com', 'a hyphenated surname stays whole');
+  assert.strictEqual(e('Ana M. Garcia'), 'ana.garcia@universalmedsupply.com', 'first and LAST word');
+  assert.strictEqual(e('John Smith Jr.'), 'john.smith@universalmedsupply.com', 'a suffix is not a surname');
+  assert.strictEqual(e('Cher'), '', 'one word builds nothing');
+  assert.strictEqual(e(''), '');
+  assert.strictEqual(ctx.intakeTeamEmail_('Ana Garcia', ''), '', 'no domain, no address');
+});
+
+test('B6: the roster block yields the named departments only, in the configured order, stopping at the first blank header, one entry per address (driven)', () => {
+  const ctx = vm.createContext({ String, Object, Array });
+  ['intakeTeamEmail_', 'intakeTeamRosterParse_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const values = [
+    ['PAP', 'Billing', 'sales', '', 'Sales'],
+    ['Zed Ray, 201', 'Bo Bill, 300', 'Ana Garcia, 101, 102', '', 'Not Read, 9'],
+    ['Ana Garcia, 105', '', 'Ana Garcia, 103', '', ''],
+    ['Cher, 210', '', 'Lea Cruz-Lopez', '', ''],
+  ];
+  const out = JSON.parse(JSON.stringify(ctx.intakeTeamRosterParse_(values, ['Sales', 'PAP'], 'universalmedsupply.com')));
+  assert.deepStrictEqual(out.team.map((p) => p.dept + ':' + p.email), [
+    'Sales:ana.garcia@universalmedsupply.com', 'Sales:lea.cruz-lopez@universalmedsupply.com',
+    'PAP:ana.garcia@universalmedsupply.com', 'PAP:zed.ray@universalmedsupply.com'],
+    'Sales first (configured order), names sorted, a duplicate within a department once, a person in both departments in both');
+  assert.ok(!out.team.some((p) => /bill|not\.read/.test(p.email)), 'other departments and anything past the first blank header are not read');
+  assert.strictEqual(out.team[0].dept, 'Sales', 'the department takes its CONFIG spelling, whatever the header case');
+  assert.strictEqual(out.skipped, 1, 'a name no address can be built from is counted, not dropped silently');
+  assert.deepStrictEqual(out.missingDepts, []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.intakeTeamRosterParse_([['Billing']], ['Sales', 'PAP'], 'x.com'))).missingDepts, ['Sales', 'PAP'], 'a missing column is named');
+});
+
+test('B6: a team send resolves only to an address the roster produces today; a failed roster read throws rather than sending (driven)', () => {
+  let roster = { team: [{ dept: 'Sales', name: 'Ana Garcia', email: 'ana.garcia@universalmedsupply.com' }] };
+  const ctx = vm.createContext({ String, intakeTeamRoster_: () => { if (!roster) throw new Error('CDR down'); return roster; } });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeResolveRecipient_'), ctx);
+  assert.strictEqual(ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'Ana.Garcia@universalmedsupply.com' }), 'ana.garcia@universalmedsupply.com');
+  assert.throws(() => ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'someone@gmail.com' }), /no longer on the Sales\/PAP roster/, 'a client-supplied address outside the roster is refused');
+  roster = null;
+  assert.throws(() => ctx.intakeResolveRecipient_('PMD', { kind: 'team', email: 'ana.garcia@universalmedsupply.com' }), /CDR down/, 'an unreadable roster never sends');
+  const ep = extractRawFunction('Code.js', 'getIntakeAgents');
+  assert.ok(/catch \(e\) \{ teamError = 'The Sales\/PAP list could not be read from the CDR Report: '/.test(ep), 'the endpoint names a failed read beside the app users (g128)');
+  const cached = extractRawFunction('Code.js', 'intakeTeamRoster_');
+  assert.ok(cached.indexOf('cache.put') > cached.indexOf('intakeTeamRosterParse_('), 'only a parsed read is cached (g129)');
+});
+
+// ── 25post B7 (operator 2026-10-16) — the intake emails, redesigned ──────────
+function b7EmailCtx_() {
+  const src = serverSource();
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Math });
+  const decl = (name) => { const m = new RegExp('const ' + name + ' = ([\\s\\S]*?);\\n').exec(src); assert.ok(m, name); vm.runInContext('var ' + name + ' = ' + m[1] + ';', ctx); };
+  vm.runInContext('var CN_EMAIL_PALETTE = ' + extractConstObject('Code.js', 'CN_EMAIL_PALETTE') + ';', ctx);
+  vm.runInContext('var INTAKE_PMD_LAYOUT = ' + extractConstObject('Code.js', 'INTAKE_PMD_LAYOUT') + ';', ctx);
+  vm.runInContext('var INTAKE_PAP_LAYOUT = ' + extractConstObject('Code.js', 'INTAKE_PAP_LAYOUT') + ';', ctx);
+  vm.runInContext('var INTAKE_PPD_EMAIL_TONES = ' + extractConstObject('Code.js', 'INTAKE_PPD_EMAIL_TONES') + ';', ctx);
+  ['INTAKE_PPD_EMAIL_PICKED_QS', 'INTAKE_PPD_EMAIL_PAIN'].forEach(decl);
+  vm.runInContext('var INTAKE_PPD_EMAIL_COMBOS = ' + /const INTAKE_PPD_EMAIL_COMBOS = (\[[\s\S]*?\n\]);/.exec(src)[1] + ';', ctx);
+  ['esc_', 'cnNlBr_', 'intakeSectionRowHtml_', 'intakePpdAnswerStyles_', 'intakeNotesBoxHtml_', 'intakePpdEmailUnits_',
+   'intakePpdAnswerHtml_', 'intakeBuildPpdBodyHtml_', 'intakeBuildAcctBodyHtml_', 'intakeRecListHtml_', 'intakeHttpOnly_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const b7Acct_ = (answers) => {
+  const bank = vm.runInNewContext(/const INTAKE_PMD_Q_EN = (\[[\s\S]*?\n\]);/.exec(serverSource())[1]);
+  const hdr = [0, 7, 11, 21];
+  return bank.map((label, i) => hdr.indexOf(i) >= 0 ? { qIndex: i, label, isHeader: true } : { qIndex: i, label, value: answers[i] || '', isSecondary: [3, 10, 19, 20, 23, 26, 28].indexOf(i) >= 0 });
+};
+
+test('B7: the PMD email — attestations green when confirmed and amber when not, availability side by side, Other Notes in its own box, identifiers mono, everything escaped (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const html = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 1: 'Jane <b>Q</b>', 2: '555-555-0123', 24: 'TRUE', 25: '', 26: 'Mon, Wed · AM — unavailable 10/18', 27: 'Open (any weekday, any time)', 28: 'Hard of hearing\nCall daughter' }), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(/#e4f5ec[^>]*>.*&#10003; Explained mobility evaluation/.test(html), 'a confirmed attestation is green with a check');
+  assert.ok(/#fbf1d9[^>]*><strong>&#9675; Permission to call &amp; schedule Mobility Evaluation with MDO\?<\/strong> &mdash; <strong>not confirmed<\/strong>/.test(html), 'an unanswered one is amber and says "not confirmed"');
+  const pmdFalse = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 25: 'FALSE' }), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(/answered No/.test(pmdFalse), 'a deliberate No is said as one');
+  assert.ok(/ME Availability<\/div><div[^>]*>Mon, Wed · AM<\/div><div[^>]*>unavailable 10\/18<\/div>/.test(html), 'availability: the grid answer, then its note');
+  assert.ok(/PPD Availability<\/div><div[^>]*>Open \(any weekday, any time\)<\/div>/.test(html));
+  assert.ok(/<td width="50%"[^>]*>.*ME Availability.*<td width="50%"[^>]*>.*PPD Availability/.test(html), 'the two sit side by side');
+  assert.ok(/Other Notes<\/div><div[^>]*>Hard of hearing<br>Call daughter<\/div>/.test(html), 'Other Notes is its own box, line breaks kept');
+  assert.ok(html.lastIndexOf('Other Notes') > html.lastIndexOf('PPD Availability'), 'and it closes the body');
+  assert.ok(/Courier New[^>]*>555-555-0123</.test(html), 'a phone is in the fixed-width face');
+  assert.ok(/Jane &lt;b&gt;Q&lt;\/b&gt;/.test(html) && !/Jane <b>/.test(html), 'patient text is escaped');
+  assert.ok(/#e1ecfa/.test(html) && /#154980/.test(html), 'the section bands are the light-blue intake tint');
+  ['display:flex', 'gap:', 'filter:'].forEach((bad) => assert.strictEqual(html.indexOf(bad), -1, 'email-safe: no ' + bad));
+});
+
+test('B7: insurance-card images sit at the end of the Insurance section, and an email without images has no images section at all (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const imgs = '<tr><td colspan="2">IMAGES</td></tr>';
+  const withImgs = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}), ctx.INTAKE_PMD_LAYOUT, imgs);
+  const at = withImgs.indexOf('IMAGES');
+  assert.ok(at > withImgs.indexOf('SSN #') && at < withImgs.indexOf('Clinical Information'), 'after the last Insurance row, before Clinical');
+  const none = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}), ctx.INTAKE_PMD_LAYOUT, '');
+  assert.ok(!/Insurance card images/.test(none) && !/IMAGES/.test(none), 'no images, no section');
+  const pap = ctx.intakeBuildAcctBodyHtml_(b7Acct_({}).slice(0, 0).concat([{ qIndex: 10, label: 'SSN', value: '' }, { qIndex: 11, label: 'Clinical Information', isHeader: true }]), ctx.INTAKE_PAP_LAYOUT, imgs);
+  assert.ok(pap.indexOf('IMAGES') < pap.indexOf('Clinical Information'), 'PAP too');
+  // The decoder returns an EMPTY block when nothing decodes.
+  const dctx = vm.createContext({ String, CONFIG: { INTAKE: { MAX_IMAGES: 12, MAX_IMAGE_CHARS: 1e6 } }, CN_EMAIL_PALETTE: { line: '#l', muted: '#m' },
+    Utilities: { newBlob: () => ({}), base64Decode: () => [] } });
+  vm.runInContext(extractRawFunction('Code.js', 'intakeDecodeImages_'), dctx);
+  assert.strictEqual(dctx.intakeDecodeImages_(['not a data url']).sectionHtml, '', 'nothing decoded, no section');
+  const one = dctx.intakeDecodeImages_(['data:image/png;base64,AAAA']).sectionHtml;
+  assert.ok(/Insurance card images \(1\)/.test(one) && /cid:attachedImage0/.test(one) && /^<tr>/.test(one), 'one image: a table row with its caption');
+  // The send hashes the image-free body and adds the images only to the final one.
+  const send = extractRawFunction('Code.js', 'intakeSendAcct_');
+  assert.ok(/intakeBodyHash_\(body, subject\) !== expectedBodyHash/.test(send) &&
+    /amendBanner \+ \(imagesHtml \? intakeBuildAcctBodyHtml_\(acctRows, layout, imagesHtml\) : body\)/.test(send), 'the preview contract covers the body without images');
+});
+
+test('B7: the PPD email — one row per question, arms/legs/height-weight combined, pain as two columns, sub-questions under their parent, the form\'s colours (driven)', () => {
+  const ctx = b7EmailCtx_();
+  const bank = vm.runInNewContext(/const INTAKE_PPD_Q_EN = (\[[\s\S]*?\n\]);/.exec(serverSource())[1]);
+  const notesEn = vm.runInNewContext('(' + /const INTAKE_PPD_NOTES_EN = (\{[^\n]*\});/.exec(serverSource())[1] + ')');
+  vm.runInContext('var INTAKE_PPD_Q_EN = ' + JSON.stringify(bank) + '; var INTAKE_PPD_NOTES_EN = ' + JSON.stringify(notesEn) + ';', ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakePpdRowsEn_'), ctx);
+  const answers = { '2': 'Only with assistance', '7': 'Yes', '8': 'Yes', '9': 'No', '14': 'No', '15': 'Yes', '19': 'Yes', '25': 'Feet, Legs', '31': 'Yes', '31a': 'Paralysis Left Arm, Weakness Right Side',
+    '34': 'No', '37': '64', '38': '182', '39': 'Friends/Family', '39a': 'House', notes: 'Hard of <hearing>' };
+  const rows = ctx.intakePpdRowsEn_(answers);
+  const units = JSON.parse(JSON.stringify(ctx.intakePpdEmailUnits_(rows)));
+  const kinds = units.map((u) => u.kind === 'combo' ? 'combo:' + u.parts.map((p) => p.qNum).join('/') : u.kind === 'row' ? 'q' + u.qNum + (u.sub ? '+' + u.sub.qNum : '') : u.kind);
+  assert.ok(kinds.indexOf('combo:7/8/9') >= 0 && kinds.indexOf('combo:10/11/12') >= 0 && kinds.indexOf('combo:37/38') >= 0, kinds.join(','));
+  ['q7', 'q8', 'q9', 'q37', 'q38', 'q14', 'q23', 'q31a', 'q39a'].forEach((k) => assert.ok(kinds.indexOf(k) < 0, k + ' is not a row of its own'));
+  assert.strictEqual(kinds.filter((k) => k === 'pain').length, 1, 'the ten pain sites are one block');
+  assert.ok(kinds.indexOf('q31+31a') >= 0 && kinds.indexOf('q33+33a') >= 0 && kinds.indexOf('q39+39a') >= 0, 'sub-questions ride their parent');
+  assert.ok(kinds.indexOf('q13') >= 0 && kinds.indexOf('q24') >= 0 && kinds.indexOf('q45') >= 0, 'every other question is its own row');
+  assert.strictEqual(units.find((u) => u.kind === 'pain').items.map((i) => i.label).join('|'), '14. Neck|15. Shoulder|16. Elbows|17. Arms|18. Hands|19. Back|20. Hips|21. Knees|22. Legs|23. Ankles');
+  const html = ctx.intakeBuildPpdBodyHtml_('Jane', rows, { complex: [], standard: [] }, null);
+  const chip = (bg, txt) => new RegExp('background-color:' + bg + '[^>]*>' + txt + '<');
+  assert.ok(chip('#e4f5ec', 'Yes').test(html) && chip('#fce5e5', 'No').test(html), 'Yes green, No red');
+  assert.ok(chip('#e4f5ec', 'Only with assistance').test(html) && chip('#e4f5ec', 'House').test(html), 'a picked option is green, as on the form');
+  assert.ok(chip('#fbf1d9', 'Feet').test(html) && chip('#fbf1d9', 'Legs').test(html), 'a warning option is amber');
+  assert.ok(chip('#fce5e5', 'Paralysis Left Arm').test(html) && chip('#fbf1d9', 'Weakness Right Side').test(html), 'paralysis light red, weakness amber');
+  assert.ok(chip('#0f1623', 'No').test(html), 'a "No" among severity options is the dark chip');
+  assert.ok(/<td width="50%"[^>]*>.*14\. Neck.*18\. Hands.*<\/table><\/td><td width="50%"[^>]*>.*19\. Back.*23\. Ankles/.test(html), 'pain: 14–18 in one column, 19–23 in the other');
+  assert.ok(/Additional notes<\/div><div[^>]*>Hard of &lt;hearing&gt;<\/div>/.test(html), 'the notes box, escaped');
+  assert.ok(!/MRADL help|Pain sites/.test(html), 'no summary cards');
+  assert.ok(/64 in\.<\/b>.*182 lbs\.<\/b>/.test(html), 'height and weight carry their units');
+  assert.strictEqual(units.filter((u) => u.kind === 'header' && /Additional Notes/.test(u.label)).length, 0, 'the notes box is not under a band repeating its title');
+});
+
+test('B7: the email\'s colours and rows MIRROR the client — option tones, the picked-choice questions, and the account attest / availability / notes rows', () => {
+  const cli = extractScript('intake/script_intake.html');
+  const ctl = vm.runInNewContext('(' + extractClientObject('intake/script_intake.html', 'INTAKE_PPD_CONTROL') + ')');
+  const srvTones = JSON.parse(JSON.stringify(vm.runInNewContext('(' + extractConstObject('Code.js', 'INTAKE_PPD_EMAIL_TONES') + ')')));
+  const cliTones = {};
+  Object.keys(ctl).forEach((q) => { (ctl[q].options || []).forEach((o) => { if (o.tone) (cliTones[q] = cliTones[q] || {})[o.v] = o.tone; }); });
+  assert.deepStrictEqual(srvTones, JSON.parse(JSON.stringify(cliTones)), 'every toned option is coloured the same in the email');
+  const picked = vm.runInNewContext(/const INTAKE_PPD_EMAIL_PICKED_QS = (\[[^\]]*\]);/.exec(serverSource())[1]);
+  const cliPicked = Object.keys(ctl).filter((q) => ['choice', 'multi', 'reveal'].indexOf(ctl[q].kind) >= 0 && !(ctl[q].options || []).some((o) => o.tone));
+  assert.deepStrictEqual(Array.from(picked).sort(), cliPicked.sort(), 'the picked-choice questions are the client\'s untoned choice controls');
+  [['INTAKE_PMD_CLIENT', 'INTAKE_PMD_LAYOUT'], ['INTAKE_PAP_CLIENT', 'INTAKE_PAP_LAYOUT']].forEach(([c, sv]) => {
+    const C = vm.runInNewContext('(' + extractClientObject('intake/script_intake.html', c) + ')');
+    const S = vm.runInNewContext('(' + extractConstObject('Code.js', sv) + ')');
+    assert.deepStrictEqual(Array.from(S.ATTEST_ROWS), Array.from(C.attest), c + ' attest');
+    assert.deepStrictEqual(Array.from(S.AVAIL_ROWS), Array.from(C.avail || []), c + ' avail');
+    assert.strictEqual(S.NOTES_ROW, C.notes, c + ' notes');
+  });
+  assert.ok(cli.length > 0);
+});
+
+// ── 25post B8 (operator 2026-10-16) — the in-app idle alert ─────────────────
+test('B8: repIdleMinutes_ — minutes since the last activity, scheduled breaks taken out, and a rep inside a break is not idle (driven)', () => {
+  const ctx = vm.createContext({ Number, Math });
+  vm.runInContext(extractRawFunction('Code.js', 'repIdleMinutes_'), ctx);
+  const f = ctx.repIdleMinutes_;
+  const breaks = [{ startMin: 630, lenMin: 15 }, { startMin: 750, lenMin: 60 }, { startMin: 900, lenMin: 15 }];   // 10:30, 12:30–13:30, 15:00
+  assert.strictEqual(f(600, 560, breaks), 40, '9:20 → 10:00 is 40 minutes');
+  assert.strictEqual(f(800, 760, breaks), 0, 'inside lunch — not idle');
+  assert.strictEqual(f(830, 745, breaks), 25, '12:25 → 13:50: 85 minutes, 60 of them lunch');
+  assert.strictEqual(f(660, 600, breaks), 45, '10:00 → 11:00 crosses the 15-min break');
+  assert.strictEqual(f(600, 600, breaks), 0, 'activity now');
+  assert.strictEqual(f(600, 700, breaks), 0, 'activity "after" now (a clock skew) is never negative');
+  assert.strictEqual(f(600, 560, []), 40, 'no breaks');
+  assert.strictEqual(f(600, 560, undefined), 40);
+});
+
+test('B8: the manager live view flags only a PUNCHED-IN rep idle IDLE_ALERT_MIN+, measured from the later of the last punch and the last gesture TODAY, breaks out, best-effort (driven); the six-hour stamp rides the same gesture', () => {
+  let schedThrows = false;
+  const fmt = (d, tz, f) => { const x = new Date(d.getTime()); const iso = x.toISOString(); return f === 'HH:mm' ? iso.substring(11, 16) : iso.substring(0, 10); };
+  const ctx = vm.createContext({ Number, Math, String, parseInt, Date, IDLE_ALERT_MIN: 30, Utilities: { formatDate: fmt },
+    empShiftSchedule_: () => { if (schedThrows) throw new Error('x'); return { breaks: [{ startMin: 750, lenMin: 60 }] }; } });
+  ['repIdleMinutes_', 'liveIdleMin_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const e = { id: 'E1', timezone: 'UTC', todayStr: '2026-10-16', scheduleRaw: '' };
+  const now = new Date('2026-10-16T11:00:00Z');
+  const f = (status, lastTime, seenIso) => ctx.liveIdleMin_(e, status, lastTime ? { time: lastTime } : null, now, seenIso ? new Date(seenIso).getTime() : 0);
+  assert.strictEqual(f('clocked_in', '09:00:00', null), 120, 'two hours since the clock-in, no gesture');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-16T10:40:00Z'), null, 'a gesture 20 minutes ago — not idle');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-16T10:25:00Z'), 35, 'a gesture 35 minutes ago — idle 35');
+  assert.strictEqual(f('clocked_in', '09:00:00', '2026-10-15T10:59:00Z'), 120, 'yesterday\'s gesture is not today\'s activity');
+  assert.strictEqual(f('clocked_in', '10:45:00', null), null, 'a punch 15 minutes ago is activity');
+  assert.strictEqual(f('on_lunch', '09:00:00', null), null, 'on lunch is never idle');
+  assert.strictEqual(f('not_in', null, null), null, 'activity-in / not in is never measured');
+  const lunchNow = new Date('2026-10-16T13:00:00Z');
+  assert.strictEqual(ctx.liveIdleMin_(e, 'clocked_in', { time: '12:00:00' }, lunchNow, 0), null, 'inside the scheduled lunch — not idle');
+  schedThrows = true;
+  assert.strictEqual(f('clocked_in', '09:00:00', null), null, 'an unmeasurable rep is never flagged');
+  assert.ok(/const idleMin = liveIdleMin_\(e, status, last, now, seenLast\[e\.id\]\);/.test(extractRawFunction('Code.js', 'getManagerDashboard')), 'the live view uses it');
+  assert.ok(/const IDLE_ALERT_MIN = 30;/.test(codeSrc), 'the operator\'s 30 minutes');
+  const rp = extractRawFunction('Code.js', 'recordPresence');
+  assert.ok(/put\(PRESENCE_LAST_PREFIX \+ emp\.id, String\(Date\.now\(\)\), PRESENCE_LAST_TTL_SEC\)/.test(rp), 'the gesture also writes the six-hour stamp');
+  assert.ok(/const PRESENCE_LAST_TTL_SEC = 21600;/.test(codeSrc), 'the cache\'s six-hour ceiling');
+  assert.ok(!/idleMin|liveIdleMin_/.test(extractRawFunction('Code.js', 'getTeammateStatus')), 'never on the peer view (g33)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

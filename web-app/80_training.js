@@ -64,7 +64,7 @@ function setCallNoteTrainingReply(repEmpId, noteId, reply) {
     if (!target) return { success: false, error: 'Employee not found.' };
     if (!target.callNotesSheetId) return { success: false, error: 'This rep has no call-notes Sheet configured.' };
 
-    const sheet = getCallNotesSheet_(target);
+    const sheet = getCallNotesSheetForWrite_(target);
     const located = findCallNoteRow_(sheet, noteId);
     if (!located) return { success: false, error: 'Note not found.' };
 

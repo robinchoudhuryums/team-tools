@@ -52,6 +52,84 @@ function accrualStampYm_(cell) {
   const m = /^(\d{4}-\d{2})/.exec(String(cell == null ? '' : cell).trim());
   return m ? m[1] : '';
 }
+/** PURE (25post) — the plan for a rep whose column-R stamp reads blank. With a
+ *  credit on record (`historyYm`, the newest month a PtoAccrualCredit row paid
+ *  for) the plan runs from it, exactly as an intact stamp would; without one it
+ *  is the enable-time seed. A stamp that reads is never second-guessed. */
+function accrualStampRecovery_(stampYm, historyYm, nowYm) {
+  if (stampYm) return { recoveredFrom: '', plan: null };
+  const h = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(historyYm || '')) ? String(historyYm) : '';
+  if (!h) return { recoveredFrom: '', plan: null };
+  const plan = accrualMonthsToCredit_(h, nowYm);
+  return plan ? { recoveredFrom: h, plan: plan } : { recoveredFrom: '', plan: null };
+}
+/** PURE (25post) — one chunk of the credit-history walk. `rows` are AuditLog
+ *  rows in sheet order (the walk feeds chunks newest-first and reads each one
+ *  bottom-up); `state` = {ids: {id: true}, best: {id: ym}} is updated in place.
+ *  The newest month a rep's rows name wins, NOT the newest row's month — a
+ *  top-up for an older month is often the newest row. A rep is settled once the
+ *  walk is older than the 1st of best+2 (less two days of timezone margin):
+ *  month best+1 can only have been credited on or after its own month ended, so
+ *  nothing older can name a later month. Returns true once every rep with a hit
+ *  is settled AND no rep is still unfound — or false to read the next chunk. */
+function accrualHistoryScan_(rows, state) {
+  const settledBefore = function (ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(ym);
+    let y = +m[1], mo = +m[2] + 2;
+    while (mo > 12) { mo -= 12; y += 1; }
+    return addDaysIso_(y + '-' + String(mo).padStart(2, '0') + '-01', -2);
+  };
+  const ids = Object.keys(state.ids);
+  const allSettled = function (tsDay) {
+    return ids.every(function (id) { return state.best[id] && tsDay && tsDay < settledBefore(state.best[id]); });
+  };
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const tsDay = String(normalizeAuditTs_(rows[i][AUDIT.TS]) || '').slice(0, 10);
+    if (allSettled(tsDay)) return true;
+    if (String(rows[i][AUDIT.ACTION]).trim() !== 'PtoAccrualCredit') continue;
+    const id = String(rows[i][AUDIT.EMP_ID]).trim();
+    if (!state.ids[id]) continue;
+    const led = parseAccrualLedger_(rows[i][AUDIT.NOTES]);
+    if (!led) continue;
+    led.months.forEach(function (ym) { if (!state.best[id] || ym > state.best[id]) state.best[id] = ym; });
+  }
+  return false;
+}
+/** 25post — the newest month each rep has been credited for, for a rep whose
+ *  column R reads blank: the per-rep side ledger (newest 12 months) and the
+ *  WHOLE AuditLog, read newest-first in ledger-sized chunks and stopped as soon
+ *  as every rep is settled. Only a blank stamp calls it, so the full walk is the
+ *  rare path. Throws on a failed read — the caller must not seed on "unknown". */
+function accrualCreditHistory_(ids) {
+  const state = { ids: {}, best: {} };
+  (ids || []).forEach(function (id) { if (id) state.ids[String(id)] = true; });
+  const side = readAccrualSideLedger_();
+  Object.keys(state.ids).forEach(function (id) {
+    Object.keys((side.byEmp && side.byEmp[id]) || {}).forEach(function (ym) {
+      if (/^\d{4}-\d{2}$/.test(ym) && (!state.best[id] || ym > state.best[id])) state.best[id] = ym;
+    });
+  });
+  const sheet = getOrCreateAuditSheet_();
+  const width = AUDIT.NOTES + 1;
+  let end = sheet.getLastRow();
+  while (end >= 2) {
+    const start = Math.max(2, end - ACCRUAL_LEDGER_MAX_ROWS + 1);
+    if (accrualHistoryScan_(sheet.getRange(start, 1, end - start + 1, width).getValues(), state)) break;
+    end = start - 1;
+  }
+  return state.best;
+}
+/** 25post — the audit note for a stamp the run had to resolve: seeded (no
+ *  credit on record) or recovered (planned from the newest credit). */
+function accrualStampNote_(p) {
+  return p.recoveredFrom
+    ? 'AccruedThrough was blank or unreadable; the newest credit on record is ' + p.recoveredFrom +
+      ', so the run planned from it (' + (p.months.length ? 'owed: ' + p.months.join(',') : 'nothing owed') +
+      ') and rewrote the cell to ' + p.plan.newStamp
+    : 'AccruedThrough was blank or unreadable and no credit is on record, so it was SEEDED to ' + p.plan.newStamp +
+      ': the balance is taken as current through ' + p.plan.newStamp + ' and that month is NOT credited. ' +
+      'If it is owed, set AccruedThrough one month earlier before the next run';
+}
 function accrualMonthsToCredit_(stampYm, nowYm) {
   const idx = (ym) => {
     const m = /^(\d{4})-(\d{2})$/.exec(String(ym == null ? '' : ym));
@@ -265,7 +343,7 @@ function workedHoursByEmpForRange_(startIso, endIso) {
  *  Each returned entry carries the plan AND the evidence behind it:
  *    {rowIndex, rate, stamp, plan, months, emp,
  *     totalHours, incompleteDays, orphanDays, onTimesheet, earned} */
-function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
+function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths, creditHistory) {
   const basis = CONFIG.PTO_ACCRUAL_BASIS_HOURS, perDay = CONFIG.PTO_HOURS_PER_DAY;
 
   // Pass 1 — who owes what, and the widest month range any of them needs.
@@ -285,6 +363,27 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
     const stamp = accrualStampYm_(rows[i][EMP.ACCRUED_THROUGH]);
     const plan = accrualMonthsToCredit_(stamp, nowYm);
     if (!plan) continue;
+    plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: [], recoveredFrom: '',
+      emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
+      totalHours: 0, incompleteDays: 0, orphanDays: 0, onTimesheet: false, earned: null });
+  }
+  // 25post (operator 2026-10-16): a blank or unreadable column R SEEDS — the
+  // month before is taken as already paid and is never credited. That is the
+  // enable-time rule, and it was also what happened to a rep who HAD been
+  // accruing when the cell was cleared or mistyped ("2026-9"): last month was
+  // lost, and no row said so. A blank stamp now asks the credit history first —
+  // the newest month a PtoAccrualCredit row paid for — and plans from THAT, so
+  // the owed months are credited exactly as an intact stamp would have; only a
+  // rep with no credit on record seeds. `creditHistory(ids)` → {id: 'yyyy-MM'};
+  // a history that cannot be read THROWS (never "no history": that would seed).
+  const blankIds = plans.filter((p) => !p.stamp).map((p) => p.emp.id).filter(Boolean);
+  const history = (blankIds.length && typeof creditHistory === 'function') ? (creditHistory(blankIds) || {}) : {};
+  plans.forEach((p) => {
+    const rec = accrualStampRecovery_(p.stamp, history[p.emp.id], nowYm);
+    if (rec.recoveredFrom) { p.recoveredFrom = rec.recoveredFrom; p.plan = rec.plan; }
+  });
+  plans.forEach((p) => {
+    const stamp = p.recoveredFrom || p.stamp, plan = p.plan;
     // INSPECT mode (operator 2026-09-15): report what ONE named month yields,
     // ignoring the column-R stamp. The stamp closes a month permanently, so
     // once a month is settled the ordinary plan reports "nothing owed" — true,
@@ -295,10 +394,8 @@ function planPtoAccrualRun_(rows, nowYm, inspectYm, reconcileMonths) {
     // would act on this month or considers it settled.
     const months = inspectYm ? [inspectYm] : accrualMonthList_(stamp, plan);
     if (months.length > 0 && (earliestYm === null || months[0] < earliestYm)) earliestYm = months[0];
-    plans.push({ rowIndex: i, rate: rate, stamp: stamp, plan: plan, months: months,
-      emp: { id: String(rows[i][EMP.ID]).trim(), name: String(rows[i][EMP.NAME]).trim(), email: empRosterEmail_(rows[i]) },
-      totalHours: 0, incompleteDays: 0, orphanDays: 0, onTimesheet: false, earned: null });
-  }
+    p.months = months;
+  });
   if (plans.length === 0) {
     return { entries: [], basis: basis, perDay: perDay, range: null, archivedRows: 0 };
   }
@@ -960,7 +1057,7 @@ function creditMonthlyPtoAccruals() {
       const sheet = getAdpSS_().getSheetByName(CONFIG.EMPLOYEE_TAB);
       const rows = sheet.getDataRange().getValues();
       const recMonths = accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
-      const run = planPtoAccrualRun_(rows, nowYm, '', recMonths);   // throws → caught below, nothing written
+      const run = planPtoAccrualRun_(rows, nowYm, '', recMonths, accrualCreditHistory_);   // throws → caught below, nothing written
       // BOTH come from the resolver. `perDay` was left undeclared when the
       // resolver was extracted (the credit used to compute both itself), and the
       // reconcile call below threw ReferenceError on every run — see g118.
@@ -1007,6 +1104,9 @@ function creditMonthlyPtoAccruals() {
         if (p.stamp !== p.plan.newStamp) {
           sheet.getRange(p.rowIndex + 1, EMP.ACCRUED_THROUGH + 1).setValue(sheetSafe_(p.plan.newStamp));
           if (p.plan.seeded) seeded++;
+          // 25post: a stamp the run had to resolve says so — a seed used to
+          // write nothing at all, so a lost month left no trace.
+          if (!p.stamp) writeAuditLog_(p.emp, 'PtoAccrualStamp', '', '', false, 0, accrualStampNote_(p));
         }
       });
       if (seeded > 0) invalidateRosterCache_();   // credits already invalidate via adjustLeaveBalance_
@@ -1115,7 +1215,7 @@ function previewPtoAccruals(monthYm) {
     // month being looked at, and two overlapping verdicts on one report is how
     // an operator ends up believing the wrong one.
     const recMonths = inspectYm ? [] : accrualReconcileMonths_(nowYm, PTO_ACCRUAL_RECONCILE_MONTHS);
-    const run = planPtoAccrualRun_(rows, nowYm, inspectYm, recMonths);
+    const run = planPtoAccrualRun_(rows, nowYm, inspectYm, recMonths, accrualCreditHistory_);
     const out = {
       success: true,
       enabled: !!getFlag_('enablePtoTracking'),
@@ -1134,6 +1234,7 @@ function previewPtoAccruals(monthYm) {
         stamp: p.stamp,
         months: p.months.slice(),
         seeds: !!p.plan.seeded,
+        recoveredFrom: p.recoveredFrom || '',
         capped: p.plan.capped || 0,
         newStamp: p.plan.newStamp,
         // null (not 0) when no month is owed: there is nothing to read hours
@@ -1149,7 +1250,7 @@ function previewPtoAccruals(monthYm) {
         // it does, the real job will NEVER credit what this report shows
         // without a deliberate stamp rewind — the report must say so rather
         // than let the numbers imply a credit is coming.
-        settled: !!(inspectYm && p.stamp && p.stamp >= inspectYm),
+        settled: !!(inspectYm && (p.recoveredFrom || p.stamp) && (p.recoveredFrom || p.stamp) >= inspectYm),
       })),
     };
     // What the next credit run WOULD reconcile — read-only, through the same
@@ -1232,8 +1333,13 @@ function formatPtoAccrualPreview_(o) {
     totalDays += r.wouldCreditDays;
     const who = r.name + ' [' + r.id + ']';
     if (!o.inspectYm && r.seeds) {
-      L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R): credits nothing, by design.');
+      L.push('  · ' + who + ' — SEEDS to ' + r.newStamp + ' (blank column R, no credit on record): credits nothing, by design. ' +
+        'If ' + r.newStamp + ' is owed, set column R one month earlier first.');
       return;
+    }
+    if (!o.inspectYm && r.recoveredFrom) {
+      L.push('  · ' + who + ' — column R is blank or unreadable; the newest credit on record is ' + r.recoveredFrom +
+        ', so the run plans from it and rewrites the cell to ' + r.newStamp + '.');
     }
     if (!r.months.length) {
       L.push('  · ' + who + ' — nothing owed (column R already ' + (r.stamp || '(blank)') + ').');
@@ -1770,6 +1876,17 @@ function getMyPayStatement(offset, repEmpId) {
     }
     pto.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
 
+    // 25post B4 (operator 2026-10-16): every punch-adjustment request filed for
+    // a day of the period, with the rep's reason and where it stands, so the
+    // statement explains an ADJ day instead of only tagging it. A read that
+    // fails says so (adjError) — never an empty list that reads as "no
+    // requests" (g53).
+    let adjustments = {}, adjError = '';
+    try {
+      adjustments = payStmtAdjustments_(getOrCreatePunchAdjustSheet_().getDataRange().getValues(),
+        target.id, ts.startDate, ts.endDate);
+    } catch (e) { adjError = 'Adjustment requests could not be read: ' + e.message; }
+
     const rate = empPayRateById_(target.id);
     // TC2-9 (cycle 23 Batch 14): the builder reads THROUGH the archive now, so
     // the note means what it says — the archive was needed and could not be
@@ -1785,10 +1902,40 @@ function getMyPayStatement(offset, repEmpId) {
       rate: rate,
       estGross: rate != null ? Math.round(ts.totalHours * rate * 100) / 100 : null,
       archiveNote: archiveNote,
+      adjustments: adjustments,
+      adjError: adjError,
       maxOffset: 6,
       viewingOther: viewingOther,
     };
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (25post B4) — the PunchAdjustRequests rows for one rep inside
+ *  [start, end], grouped by date: punch type, requested time, the rep's
+ *  reason, the status and the action (a resume carries its finish time).
+ *  Oldest first within a day, so a re-filed request reads after the one it
+ *  replaced. */
+function payStmtAdjustments_(rows, empId, start, end) {
+  const out = {};
+  for (let i = 1; i < (rows || []).length; i++) {
+    const r = rows[i];
+    if (String(r[PAR.EMP_ID]).trim() !== empId) continue;
+    const date = normalizeDate_(r[PAR.DATE]);
+    if (!date || date < start || date > end) continue;
+    const resume = String(r[PAR.ACTION] || '').trim().toLowerCase() === 'resume';
+    (out[date] = out[date] || []).push({
+      punchType: String(r[PAR.PUNCH_TYPE] || '').trim(),
+      time: normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5),
+      endTime: resume ? normalizeTime_(r[PAR.END_TIME]).trim().substring(0, 5) : '',
+      action: resume ? 'resume' : 'set',
+      reason: String(r[PAR.REASON] || '').slice(0, 500),
+      status: String(r[PAR.STATUS] || '').trim(),
+      submittedAt: normalizeAuditTs_(r[PAR.SUBMITTED_AT]),
+    });
+  }
+  Object.keys(out).forEach(function (d) {
+    out[d].sort(function (a, b) { return String(a.submittedAt).localeCompare(String(b.submittedAt)); });
+  });
+  return out;
 }
 function submitTimeOffRequest(date, type, notes) {
   const emp = getEmployeeInfo_();
@@ -1969,6 +2116,7 @@ function getManagerDashboard() {
       const lb = new Date(now); lb.setDate(lb.getDate() - CONFIG.MISSED_PUNCH_LOOKBACK_DAYS);
       e.lookbackStr = fmtDateTz_(lb, tz);
       e.isPh = empIsPhTeam_(empRows[i]);   // 22post C-3
+      e.scheduleRaw = String(empRows[i][EMP.SCHEDULE] || '').trim();   // 25post B8 — the breaks the idle rule skips
       employees.push(e);
       empById[e.id] = e;
     }
@@ -2003,6 +2151,7 @@ function getManagerDashboard() {
     // 22post C-3 — app activity (the presence beacon: a real gesture within
     // PRESENCE_TTL_SEC), with its time for the "last seen" line.
     const seen = presenceTimes_(employees.map(e => e.id));
+    const seenLast = presenceLastTimes_(employees.map(e => e.id));   // 25post B8
     const liveStatus = employees.map(e => {
       const punches = todayPunchesByEmp[e.id] || [];
       const last = punches.length ? punches[punches.length - 1] : null;
@@ -2019,7 +2168,9 @@ function getManagerDashboard() {
       }
       const present = Object.prototype.hasOwnProperty.call(seen, e.id);
       const disp = presenceDisplay_(status, present, e.isPh, false);
+      const idleMin = liveIdleMin_(e, status, last, now, seenLast[e.id]);   // 25post B8
       return {
+        idleMin: idleMin,
         id: e.id, name: e.name, status: disp.status,
         punchStatus: status,   // the punch-derived status, whatever the display says
         activityIn: disp.activityIn, activeNotIn: disp.activeNotIn,
@@ -3945,6 +4096,8 @@ function recordPresence() {
     // live view can say "last seen 10:42"; presenceMap_ still reads any
     // non-blank value (an older '1' stamp included) as present.
     CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
+    // 25post B8: the gesture time again, kept six hours, for the idle alert.
+    CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
     return { success: true };
   } catch (e) {
     return { success: false };
@@ -3981,6 +4134,58 @@ function presenceTimes_(empIds) {
     });
   } catch (e) { /* best-effort — no stamps */ }
   return out;
+}
+/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp (best-effort,
+ *  like presenceTimes_; a failed read is no stamps, which the idle rule reads
+ *  as "measure from the last punch"). */
+function presenceLastTimes_(empIds) {
+  const out = {};
+  try {
+    const keys = (empIds || []).map(id => PRESENCE_LAST_PREFIX + id);
+    if (!keys.length) return out;
+    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    Object.keys(hits).forEach(k => {
+      const n = Number(hits[k]);
+      if (isFinite(n) && n > 1e12) out[k.slice(PRESENCE_LAST_PREFIX.length)] = n;
+    });
+  } catch (e) { /* best-effort */ }
+  return out;
+}
+/** PURE (25post B8, operator 2026-10-16) — how long a clocked-in rep has gone
+ *  with no app activity and no punch, in minutes, with their scheduled breaks
+ *  taken out: the minutes of [lastActivity, now] that fall inside a break do
+ *  not count, and a rep inside a scheduled break right now is not idle (0).
+ *  Every time is minutes of the day in the REP's timezone. */
+function repIdleMinutes_(nowMin, lastActivityMin, breaks) {
+  if (!(nowMin >= 0) || !(lastActivityMin >= 0) || lastActivityMin >= nowMin) return 0;
+  let idle = nowMin - lastActivityMin;
+  for (let i = 0; i < (breaks || []).length; i++) {
+    const b = breaks[i];
+    const bs = Number(b.startMin), be = Number(b.startMin) + Number(b.lenMin);
+    if (!(be > bs)) continue;
+    if (nowMin >= bs && nowMin < be) return 0;
+    const overlap = Math.min(be, nowMin) - Math.max(bs, lastActivityMin);
+    if (overlap > 0) idle -= overlap;
+  }
+  return Math.max(0, idle);
+}
+/** 25post B8 — the idle minutes for one live-status rep, or null: only a rep
+ *  CLOCKED IN by punch is measured (activity-in and lunch never), from the
+ *  later of the last punch and the last gesture TODAY, in the rep's timezone,
+ *  scheduled breaks excluded, at IDLE_ALERT_MIN. Best-effort: a rep it cannot
+ *  measure is never flagged. */
+function liveIdleMin_(e, status, last, now, lastSeenMs) {
+  if (status !== 'clocked_in' || !last) return null;
+  try {
+    const hmToMin = function (hm) { const p = String(hm || '').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); };
+    const nowMin = hmToMin(Utilities.formatDate(now, e.timezone, 'HH:mm'));
+    let actMin = hmToMin(last.time);
+    if (lastSeenMs && Utilities.formatDate(new Date(lastSeenMs), e.timezone, 'yyyy-MM-dd') === e.todayStr)
+      actMin = Math.max(actMin, hmToMin(Utilities.formatDate(new Date(lastSeenMs), e.timezone, 'HH:mm')));
+    const sched = empShiftSchedule_({ id: e.id, scheduleRaw: e.scheduleRaw }, e.timezone);
+    const m = repIdleMinutes_(nowMin, actMin, sched && sched.breaks);
+    return m >= IDLE_ALERT_MIN ? m : null;
+  } catch (err) { return null; }
 }
 /** 22post C-3 — the Philippines team, by the one roster field that still
  *  separates the teams: PAY_CYCLE biweekly (India is monthly; every roster tz

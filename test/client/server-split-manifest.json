@@ -3025,6 +3025,211 @@
     "kbSignalVocab_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: the first-watched record for automation liveness (AUTOMATION_WATCH_SINCE)",
+   "added": [
+    "AUTOMATION_WATCH_SINCE_PROP",
+    "automationWatchMerge_",
+    "automationWatchSince_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_JOB_CHECKS",
+    "automationJobProblems_",
+    "automationProblems_",
+    "computeAutomationHealth_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: a blank AccruedThrough is recovered from the credit history, and a seed is recorded",
+   "added": [
+    "accrualCreditHistory_",
+    "accrualHistoryScan_",
+    "accrualStampNote_",
+    "accrualStampRecovery_"
+   ],
+   "removed": [],
+   "changed": [
+    "creditMonthlyPtoAccruals",
+    "formatPtoAccrualPreview_",
+    "planPtoAccrualRun_",
+    "previewPtoAccruals"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: the EMP.ACCRUED_THROUGH note describes the blank-stamp recovery (comment only; the enum shape is unchanged)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "EMP"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post: per-rep note-save lease and the daily email-quota readout",
+   "added": [
+    "CN_REP_LEASE_MS",
+    "CN_REP_LEASE_POLL_MS",
+    "CN_REP_LEASE_PREFIX",
+    "CN_REP_LEASE_WAIT_MS",
+    "MAIL_QUOTA_WARN_REMAINING",
+    "cnAcquireRepLease_",
+    "cnReleaseRepLease_",
+    "cnRepLeaseFree_",
+    "getCallNotesSheetForWrite_",
+    "mailQuotaStatus_"
+   ],
+   "removed": [],
+   "changed": [
+    "appendCallNoteFeedback",
+    "applyTagTransformAcrossReps_",
+    "archiveOldCallNotes",
+    "deleteCallNote",
+    "emailFromCallNote",
+    "getStorageHealth",
+    "managerDeleteCallNote",
+    "purgeArchivedCallNotes",
+    "purgeOldCallNotes",
+    "reconcileCallNotesCore_",
+    "sendExternalEmail",
+    "setCallNoteFlag",
+    "setCallNoteManagerComment",
+    "setCallNotePinned",
+    "setCallNoteResolved",
+    "setCallNoteTrainingReply",
+    "submitCallNote",
+    "submitFormByToken",
+    "updateCallNote"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B1: PMD secondary row 2 → 3 (the primary phone was drawn as optional)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PMD_LAYOUT"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B4: pay statement adjustments (payStmtAdjustments_)",
+   "added": [
+    "payStmtAdjustments_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPayStatement"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B6: Sales/PAP recipients from the CDR roster",
+   "added": [
+    "intakeTeamEmail_",
+    "intakeTeamRosterParse_",
+    "intakeTeamRoster_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "getIntakeAgents",
+    "intakeResolveRecipient_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [
+    "INTAKE_PPD_EMAIL_COMBOS",
+    "INTAKE_PPD_EMAIL_PAIN",
+    "INTAKE_PPD_EMAIL_PICKED_QS",
+    "INTAKE_PPD_EMAIL_TONES",
+    "intakeNotesBoxHtml_",
+    "intakePpdAnswerHtml_",
+    "intakePpdEmailUnits_"
+   ],
+   "removed": [
+    "INTAKE_PPD_YESNO_QS"
+   ],
+   "changed": [
+    "CN_EMAIL_PALETTE",
+    "INTAKE_PAP_LAYOUT",
+    "INTAKE_PMD_LAYOUT",
+    "intakeBuildAcctBodyHtml_",
+    "intakeBuildPpdBodyHtml_",
+    "intakeDecodeImages_",
+    "intakeEmailShell_",
+    "intakePpdAnswerStyles_",
+    "intakeSectionRowHtml_",
+    "intakeSendAcct_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeBuildPpdBodyHtml_",
+    "intakeNotesBoxHtml_",
+    "intakePpdAnswerHtml_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B7: intake email redesign",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PPD_EMAIL_COMBOS",
+    "intakeBuildPpdBodyHtml_",
+    "intakePpdEmailUnits_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B8: in-app idle alert",
+   "added": [
+    "IDLE_ALERT_MIN",
+    "PRESENCE_LAST_PREFIX",
+    "PRESENCE_LAST_TTL_SEC",
+    "presenceLastTimes_",
+    "repIdleMinutes_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "recordPresence"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-16",
+   "why": "25post B8: in-app idle alert",
+   "added": [
+    "liveIdleMin_"
+   ],
+   "removed": [],
+   "changed": [
+    "getManagerDashboard",
+    "recordPresence"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3092,7 +3297,7 @@
   "AUTOMATION_JOB_CHECKS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b11a742b457448b7"
+   "sha": "53d82b14875ebe12"
   },
   "AUTOMATION_OUTCOME_SKIPPED_MAX": {
    "file": "00_config.js",
@@ -3123,6 +3328,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "ca569dffce0f62ab"
+  },
+  "AUTOMATION_WATCH_SINCE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "68b1c21909dd8987"
   },
   "BIZ_MAX_SPAN_DAYS": {
    "file": "00_config.js",
@@ -3307,7 +3517,7 @@
   "CN_EMAIL_PALETTE": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6b9450eaae2eb67c"
+   "sha": "bad11edb42de1969"
   },
   "CN_EMAIL_TEMPLATE_BODY_MAX": {
    "file": "00_config.js",
@@ -3373,6 +3583,26 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "bc625fbaf36ca33f"
+  },
+  "CN_REP_LEASE_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a05a515652e4d3aa"
+  },
+  "CN_REP_LEASE_POLL_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "92425a717b50f530"
+  },
+  "CN_REP_LEASE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "76c2adb2d81af006"
+  },
+  "CN_REP_LEASE_WAIT_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58d1c04b6b39fcec"
   },
   "CN_SUBFORM_MAX_CHARS": {
    "file": "00_config.js",
@@ -3482,7 +3712,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e8cf993b26cae6b5"
+   "sha": "b0403b358d5ed5b0"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -3747,7 +3977,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6d7f29a50d56da88"
+   "sha": "5faf10242c45115b"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",
@@ -3889,6 +4119,11 @@
    "kind": "const",
    "sha": "873d7db6b6f268c2"
   },
+  "IDLE_ALERT_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "459ffe49b2aac1bc"
+  },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3947,7 +4182,7 @@
   "INTAKE_PAP_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "cc00d98f6bf7719d"
+   "sha": "5c7da3052a30a75f"
   },
   "INTAKE_PAP_Q_EN": {
    "file": "00_config.js",
@@ -3957,12 +4192,32 @@
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e575416c0b74b196"
+   "sha": "a5bd6d48fe103002"
   },
   "INTAKE_PMD_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "fd5277eb8ea0fd4b"
+  },
+  "INTAKE_PPD_EMAIL_COMBOS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f206b88680c03068"
+  },
+  "INTAKE_PPD_EMAIL_PAIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "391aa35fb9d7c57c"
+  },
+  "INTAKE_PPD_EMAIL_PICKED_QS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "09bfc6e0af64c2d9"
+  },
+  "INTAKE_PPD_EMAIL_TONES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a057e93d85250026"
   },
   "INTAKE_PPD_NOTES_EN": {
    "file": "00_config.js",
@@ -3978,11 +4233,6 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7e2d2ddfcfdea037"
-  },
-  "INTAKE_PPD_YESNO_QS": {
-   "file": "00_config.js",
-   "kind": "const",
-   "sha": "ec555a688c927994"
   },
   "INTAKE_STORE_CELL_MAX": {
    "file": "00_config.js",
@@ -4714,6 +4964,11 @@
    "kind": "const",
    "sha": "bf86c0f36d950537"
   },
+  "MAIL_QUOTA_WARN_REMAINING": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b75a2393584e6bed"
+  },
   "MANAGER_BRIEF_HOUR": {
    "file": "00_config.js",
    "kind": "const",
@@ -4818,6 +5073,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5fe3759db6b8dfbe"
+  },
+  "PRESENCE_LAST_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b22b6b388c112c5"
+  },
+  "PRESENCE_LAST_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "639cc8f6d90c4602"
   },
   "PRESENCE_TTL_SEC": {
    "file": "00_config.js",
@@ -5624,6 +5889,11 @@
    "kind": "let",
    "sha": "4909866ff927fd5a"
   },
+  "accrualCreditHistory_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "68b278979aadda19"
+  },
   "accrualCreditNote_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -5638,6 +5908,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "a83d74fdb8a9a971"
+  },
+  "accrualHistoryScan_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "8c3f1316ce3511cb"
   },
   "accrualInspectMonthError_": {
    "file": "20_timeclock.js",
@@ -5678,6 +5953,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8fd0c569c66285bf"
+  },
+  "accrualStampNote_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6b17706a86f39406"
+  },
+  "accrualStampRecovery_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9fbe7981f500cbfe"
   },
   "accrualStampYm_": {
    "file": "20_timeclock.js",
@@ -5817,7 +6102,7 @@
   "appendCallNoteFeedback": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "67788b145e24a505"
+   "sha": "e364f5fd5705d094"
   },
   "appendRowsSafe_": {
    "file": "10_core.js",
@@ -5837,7 +6122,7 @@
   "applyTagTransformAcrossReps_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c3d4e2bf8b085a28"
+   "sha": "ec51012789635b1d"
   },
   "archiveCallNoteTag": {
    "file": "30_callnotes.js",
@@ -5847,7 +6132,7 @@
   "archiveOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "db0fc4f9e85989a1"
+   "sha": "49d41c7adcc6b1db"
   },
   "archiveOldTimesheetRows": {
    "file": "20_timeclock.js",
@@ -5927,7 +6212,7 @@
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "13cc892f070188a8"
+   "sha": "f273341db3a6c024"
   },
   "automationLastRunMerge_": {
    "file": "10_core.js",
@@ -5947,12 +6232,22 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "25970dfedde83963"
+   "sha": "b40c1925ac123665"
   },
   "automationRunKey_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "7d755636e574b28a"
+  },
+  "automationWatchMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ff708f3e50f1453d"
+  },
+  "automationWatchSince_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "7b337f74cc7d9175"
   },
   "biweeklyRangeFor_": {
    "file": "20_timeclock.js",
@@ -6349,6 +6644,11 @@
    "kind": "function",
    "sha": "0c904f2c38a4ce12"
   },
+  "cnAcquireRepLease_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "5f39f63db1144f2f"
+  },
   "cnAppendBounded_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -6448,6 +6748,16 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "e3ef8698c81ca85a"
+  },
+  "cnReleaseRepLease_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "725a62b670869659"
+  },
+  "cnRepLeaseFree_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "36e35b3cbeb7183d"
   },
   "cnTagAdminStartAudit_": {
    "file": "30_callnotes.js",
@@ -6582,7 +6892,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "0ef4c9ecfd011601"
+   "sha": "5efe2ba4b8eb11e8"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -6652,7 +6962,7 @@
   "creditMonthlyPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "539242b2104e144f"
+   "sha": "83743adbdb6b5a58"
   },
   "csrTransferHeaderMismatches_": {
    "file": "40_metrics.js",
@@ -6732,7 +7042,7 @@
   "deleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "988582f1c624d3ea"
+   "sha": "18f87cb855a75b34"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
@@ -7027,7 +7337,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "66f9f319bfda5ddf"
+   "sha": "dfdccb969a5ee62e"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -7347,7 +7657,7 @@
   "formatPtoAccrualPreview_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ea01b5766f99bdff"
+   "sha": "8eeaf3c6dbb075da"
   },
   "formulaHitsFromGrid_": {
    "file": "10_core.js",
@@ -7468,6 +7778,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "59fd7b1fd27b2354"
+  },
+  "getCallNotesSheetForWrite_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "33d9076ebeaf3022"
   },
   "getCallNotesSheet_": {
    "file": "30_callnotes.js",
@@ -7722,7 +8037,7 @@
   "getIntakeAgents": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "9abb3affe054fbf1"
+   "sha": "0c3d42fb684405c3"
   },
   "getIntakeAllAgentsEmail_": {
    "file": "60_intake.js",
@@ -7812,7 +8127,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "49f12c29974e76fd"
+   "sha": "ae33439a7ffe89f3"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -7897,7 +8212,7 @@
   "getMyPayStatement": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f4aedfbc373cdf2a"
+   "sha": "b282ad1dbd84f8c0"
   },
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
@@ -8287,7 +8602,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8bc68776a6185d47"
+   "sha": "e85a2318980da06a"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -8467,12 +8782,12 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "1cbf55204f99bf14"
+   "sha": "3b0bbf16a9870a6a"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "5a5151a0ce0dec39"
+   "sha": "596ab42ec92192ff"
   },
   "intakeCapLbs_": {
    "file": "60_intake.js",
@@ -8487,7 +8802,7 @@
   "intakeDecodeImages_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "20241aae6a5f0e9f"
+   "sha": "a693e1cdee412332"
   },
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
@@ -8502,7 +8817,7 @@
   "intakeEmailShell_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "2ef74a4ac164f770"
+   "sha": "651dfd4bb135ac7e"
   },
   "intakeExplainFactors_": {
    "file": "60_intake.js",
@@ -8574,20 +8889,35 @@
    "kind": "function",
    "sha": "4849ea455bf958a4"
   },
+  "intakeNotesBoxHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "87030a47ae82bc7b"
+  },
   "intakeParseWeight_": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "e81617c5b41176c6"
   },
+  "intakePpdAnswerHtml_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "35d0eae98d75d917"
+  },
   "intakePpdAnswerStyles_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "2cdadb352a48b845"
+   "sha": "e60cea02cf66091d"
   },
   "intakePpdAnswersHash_": {
    "file": "60_intake.js",
    "kind": "function",
    "sha": "03c026c8bfc5570d"
+  },
+  "intakePpdEmailUnits_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "601f75513c057c82"
   },
   "intakePpdLabelEn_": {
    "file": "60_intake.js",
@@ -8627,7 +8957,7 @@
   "intakeResolveRecipient_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "525049c88d6602b8"
+   "sha": "e44ced6f02cf793a"
   },
   "intakeSeatKinds_": {
    "file": "60_intake.js",
@@ -8637,12 +8967,12 @@
   "intakeSectionRowHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "eed5f891b88e016f"
+   "sha": "9b3ef02aa8404b87"
   },
   "intakeSendAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "14800e32cd2cc9e3"
+   "sha": "b2c340daf3f2c757"
   },
   "intakeSendPAP": {
    "file": "60_intake.js",
@@ -8673,6 +9003,21 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "64e64e2e3e30a102"
+  },
+  "intakeTeamEmail_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "82cd2f4f825773f3"
+  },
+  "intakeTeamRosterParse_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "cf637ba4f7050b57"
+  },
+  "intakeTeamRoster_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "0065fa348c4f78cc"
   },
   "intakeTsString_": {
    "file": "60_intake.js",
@@ -9444,6 +9789,11 @@
    "kind": "function",
    "sha": "c1119478e3152f94"
   },
+  "liveIdleMin_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f811129fdf72bc77"
+  },
   "locCityMatches_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9499,6 +9849,11 @@
    "kind": "function",
    "sha": "a530dcb65e387dac"
   },
+  "mailQuotaStatus_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "dffb62ebf001c4bd"
+  },
   "managerAggregateFlagged_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -9527,7 +9882,7 @@
   "managerDeleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "817d60d4f2db1852"
+   "sha": "ec30dcb327de0b7e"
   },
   "managerGetCallNotes": {
    "file": "30_callnotes.js",
@@ -9904,6 +10259,11 @@
    "kind": "function",
    "sha": "af81eb0624d4d45a"
   },
+  "payStmtAdjustments_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "decaf510e241fbda"
+  },
   "payrollSubjectId_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9942,12 +10302,17 @@
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "51bf7cc942048dc0"
+   "sha": "5b4269f5a3e12908"
   },
   "presenceDisplay_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "d287591dbfa9dea6"
+  },
+  "presenceLastTimes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "163f465b4e751fac"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -9972,7 +10337,7 @@
   "previewPtoAccruals": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "72cc3da87f039930"
+   "sha": "0b7612bcdd7d0b44"
   },
   "previewPtoAccrualsLastMonth": {
    "file": "20_timeclock.js",
@@ -10062,7 +10427,7 @@
   "purgeArchivedCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "2b1036e5cb6c70f2"
+   "sha": "7e07f01ac69cf7c8"
   },
   "purgeExpiredFormData": {
    "file": "61_forms.js",
@@ -10072,7 +10437,7 @@
   "purgeOldCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "4d05c44d332d22bc"
+   "sha": "9a107baba81daa9a"
   },
   "purgeOldDiagnostics": {
    "file": "10_core.js",
@@ -10502,7 +10867,7 @@
   "reconcileCallNotesCore_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "29cdd59096552a9e"
+   "sha": "12715a3835fda5f9"
   },
   "reconcileCallNotesNow": {
    "file": "30_callnotes.js",
@@ -10527,7 +10892,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "dce7dffcd27a1802"
+   "sha": "2083a19d07eeee49"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -10583,6 +10948,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "e8d7c8b71dd1f160"
+  },
+  "repIdleMinutes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6707333b28f90c50"
   },
   "repSenderFrom_": {
    "file": "10_core.js",
@@ -10972,7 +11342,7 @@
   "sendExternalEmail": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "2da4b5a1ae668495"
+   "sha": "01693ff5bc3011c7"
   },
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
@@ -11037,27 +11407,27 @@
   "setCallNoteFlag": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "160be3eb5a6de54c"
+   "sha": "3da8734a1981e518"
   },
   "setCallNoteManagerComment": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c4953a2a84ad768f"
+   "sha": "ed6db93669edc714"
   },
   "setCallNotePinned": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "c61d43a717c6e7b1"
+   "sha": "61b323eaef087984"
   },
   "setCallNoteResolved": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "209dff6d7ea11caa"
+   "sha": "d5092395259757e5"
   },
   "setCallNoteTrainingReply": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "807cf892623b5105"
+   "sha": "bea49a4a0c5ace81"
   },
   "setCoachingFollowUp": {
    "file": "82_coaching.js",
@@ -11372,12 +11742,12 @@
   "submitCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "dc1e648a16caee45"
+   "sha": "d7154a11b6940120"
   },
   "submitFormByToken": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "eff67fc3ccb8c6a5"
+   "sha": "b16cdd08508fa438"
   },
   "submitIntakeFeedback": {
    "file": "60_intake.js",
@@ -11647,7 +12017,7 @@
   "updateCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "bcc3435f62994a09"
+   "sha": "4c7f40dfe102334f"
   },
   "updateInfoToSubformKey_": {
    "file": "30_callnotes.js",

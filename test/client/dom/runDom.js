@@ -1978,8 +1978,15 @@ test('the resume request states the unpaid gap before it is filed', async () => 
   // reassign the binding itself through the vm bridge.
   h.window.__stubConfirm = (opts) => { asked = opts; return Promise.resolve(false); };
   h.read('uiConfirm = window.__stubConfirm');
-  // A clock-out just after midnight, so the "is it in the past yet" guard is
-  // satisfied whatever time the suite runs at.
+  // The "is it in the past yet" guard compares against the wall clock in the
+  // rep's frame. A clock-out just after midnight was not enough on its own:
+  // with no roster loaded empTz() is Asia/Kolkata, so for the one minute
+  // after 18:30 UTC "now" there reads 00:00 and the guard refused, failing
+  // the suite once a day. Pin the frame's clock to midday instead (restored
+  // below) — the same vm-binding reassignment uiConfirm uses.
+  const realTimeHmTz = h.read('timeHmTz');
+  h.window.__realTimeHmTz = realTimeHmTz;
+  h.read("timeHmTz = function () { return '12:00'; }");
   const OUT = '00:01:00';
 
   h.read('requestResumeShift_')(OUT);
@@ -2006,6 +2013,23 @@ test('the resume request states the unpaid gap before it is filed', async () => 
   h.read('requestResumeShift_')('');
   await tick();
   assert.strictEqual(calls().length, 1, 'no clock-out, no request');
+  h.read('timeHmTz = window.__realTimeHmTz');
+});
+
+test('the resume request refuses a clock-out that is not in the past yet', async () => {
+  // The other side of the pinned clock above: a clock-out at or after "now"
+  // in the rep's frame is refused without a confirm.
+  const h = boot();
+  let asked = false;
+  h.window.__stubConfirm = () => { asked = true; return Promise.resolve(true); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.__realTimeHmTz = h.read('timeHmTz');
+  h.read("timeHmTz = function () { return '00:00'; }");
+  h.read('requestResumeShift_')('00:01:00');
+  await tick();
+  h.read('timeHmTz = window.__realTimeHmTz');
+  assert.strictEqual(asked, false, 'no confirm for a clock-out still ahead of now');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'submitPunchAdjustRequests').length, 0, 'and nothing is filed');
 });
 
 section('Manage Time — Day Edit break list (A4)');
@@ -8010,7 +8034,9 @@ test('F20 (cycle 25): a failed agent-list read is said and NOT cached — the ne
   assert.strictEqual(h.read('INTAKE_STATE.ppd.agents'), null, 'a transport failure is not cached either');
   h.read('closeOverlay')(h.$('.overlay.open'));
   open('<p>preview</p>', []);
-  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }] }, 'getIntakeAgents');
+  // 25post B6: the server ships the Sales/PAP team beside the app users; a
+  // read that succeeded (even an empty team) is cached like the agents.
+  h.run.flushSuccess({ agents: [{ id: 'E-7', name: 'Ana Ruiz' }], team: [], teamError: '' }, 'getIntakeAgents');
   assert.ok(/Ana Ruiz/.test(h.$('.overlay.open').innerHTML), 'a real list fills the picker');
   h.read('closeOverlay')(h.$('.overlay.open'));
   open('<p>preview</p>', []);
@@ -8137,4 +8163,349 @@ test('E6 DOM (cycle 25, G4): a typed Reference search sends { signal: true }; th
   h.read('kbDrawerFetchSuggest_')('caller Jane Doe needs her oxygen');
   const sug = h.run.calls.filter((c) => c.method === 'searchReference').pop();
   assert.ok(!(sug.args[1] && sug.args[1].signal), 'the Issue text never counts');
+});
+
+section('Intake — account form layout (25post B1, operator 2026-10-16)');
+
+function bootAcct(form, lang) {
+  const h = boot();
+  if (lang) h.read('INTAKE_STATE.' + form + '.lang = "' + lang + '"');
+  const area = h.document.createElement('div');
+  area.id = 'intk-test-area';
+  h.document.body.appendChild(area);
+  h.window.intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account', area);
+  const root = h.$('#intk-' + form + '-form');
+  const field = (i) => root.querySelector('[data-intk-idx="' + i + '"]');
+  const type = (i, v) => { const el = field(i); el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); };
+  const count = () => h.$('#intk-' + form + '-count').textContent;
+  return { h, root, field, type, count };
+}
+
+test('B1 DOM: the PMD form draws the PRIMARY phone as required and the secondary phone as optional, and optional rows never count toward the ring', () => {
+  const { h, root, field, type, count } = bootAcct('pmd');
+  const rowOf = (i) => field(i).closest('.intk-row');
+  assert.ok(!rowOf(2).classList.contains('secondary'), 'index 2 (Patient Primary Contact Phone #) is a required row');
+  assert.ok(rowOf(3).classList.contains('secondary'), 'index 3 (Secondary Contact Ph#) is the optional one');
+  // 29 bank entries − 4 headers − 7 optional = 18 required.
+  assert.strictEqual(count(), '0 / 18', 'the ring counts required fields only');
+  type(3, '555-555-0199');
+  assert.strictEqual(count(), '0 / 18', 'filling an optional field does not move the ring');
+  type(28, 'patient is hard of hearing');
+  assert.strictEqual(count(), '0 / 18', 'nor does Other Notes');
+  type(2, '555-555-0123');
+  assert.strictEqual(count(), '1 / 18', 'a required field does');
+  // The collector still carries the optional answers.
+  const p = h.window.intakeCollectAcct_('pmd');
+  assert.strictEqual(p.answers[3], '555-555-0199');
+  assert.strictEqual(p.answers[28], 'patient is hard of hearing', 'Other Notes is still sent');
+  assert.ok(root, 'form mounted');
+});
+
+test('B1 DOM: Other Notes closes the form as its own bold section with a hint, outside every question row', () => {
+  ['pmd', 'pap'].forEach((form) => {
+    const notesIdx = form === 'pap' ? 27 : 28;
+    const { root, field } = bootAcct(form);
+    const ta = field(notesIdx);
+    assert.strictEqual(ta.tagName, 'TEXTAREA', form + ': Other Notes is a multi-line box');
+    assert.ok(!ta.closest('.intk-row'), form + ': it is not one of the question rows');
+    const sec = ta.closest('.intk-notes-section');
+    assert.ok(sec, form + ': it sits in its own section');
+    assert.strictEqual(sec, root.lastElementChild, form + ': and that section closes the form');
+    assert.strictEqual(sec.querySelector('.sec-title').textContent, 'Other Notes', form + ': titled with the bank label');
+    assert.strictEqual(sec.querySelector('.sec-title').getAttribute('for'), ta.id, form + ': the title is the box\'s label');
+    assert.ok(/whole/.test(sec.querySelector('.intk-notes-hint').textContent), form + ': with the "as a whole" hint');
+  });
+});
+
+test('B1 DOM: only the statements the rep made are attestation rows — PMD 24 + 25, PAP 26; a factual Yes/No (PMD 22, PAP 24) is not', () => {
+  const idxs = (form) => {
+    const { root } = bootAcct(form);
+    return Array.from(root.querySelectorAll('.intk-row.attest .intk-yn')).map((g) => g.getAttribute('data-idx')).join(',');
+  };
+  assert.strictEqual(idxs('pmd'), '24,25');
+  assert.strictEqual(idxs('pap'), '26');
+  // The tint follows the toggle's own data-val (CSS :has), so a restored draft
+  // is coloured without a handler — pin the two rules the tint rests on.
+  const css = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/intake/script_intake.html'), 'utf8');
+  assert.ok(/\.intk-row\.attest \{ background: var\(--warn-soft\)/.test(css), 'amber until answered');
+  assert.ok(/\.intk-row\.attest:has\(\.intk-yn\[data-val="TRUE"\]\) \{ background: var\(--accent-soft\); \}/.test(css), 'green once Yes');
+});
+
+test('B1 DOM: example text shows in an empty field, in the form\'s language, and is never a value', () => {
+  const en = bootAcct('pmd');
+  assert.strictEqual(en.field(2).getAttribute('placeholder'), 'e.g. 555-555-0123');
+  assert.strictEqual(en.h.$('#intk-pmd-q26').getAttribute('placeholder'), 'Special notes — e.g. unavailable 10/18', 'ME Availability\'s notes box');
+  assert.strictEqual(en.field(2).value, '', 'a placeholder is not a value');
+  assert.strictEqual(en.h.window.intakeCollectAcct_('pmd').answers[2], '', 'the collector cannot see it');
+  const es = bootAcct('pmd', 'ES');
+  assert.strictEqual(es.field(2).getAttribute('placeholder'), 'p. ej. 555-555-0123', 'Spanish form, Spanish example');
+  const pap = bootAcct('pap');
+  assert.strictEqual(pap.field(15).getAttribute('placeholder'), 'Street, city, state, ZIP', 'PAP MDO Address');
+  assert.strictEqual(pap.field(19), null, 'a Yes/No toggle has no text field to carry one');
+});
+
+test('B2 DOM: an intake send logs its call note in the standard template — the patient as caller, "Self", the primary phone as callback', () => {
+  const h = boot();
+  const payload = { patientInfo: 'Jane Sample', answers: { 1: 'Jane Sample', 2: '555-555-0123' } };
+  h.window.intakeAutoLogNote_('pmd', payload, 'sales@universalmedsupply.com', null, true);
+  const call = h.run.calls.filter((c) => c.method === 'submitCallNote').pop();
+  assert.ok(call, 'the note is saved to Call Notes');
+  const n = call.args[0];
+  assert.strictEqual(n.callback, '555-555-0123');
+  assert.strictEqual(n.caller, 'Jane Sample');
+  assert.strictEqual(n.relationship, 'Self');
+  assert.strictEqual(n.patientAndTrx, 'Jane Sample');
+  assert.strictEqual(n.issue, 'PMD Account intake submitted');
+  assert.strictEqual(n.resolution, 'Emailed to sales@universalmedsupply.com');
+  assert.deepStrictEqual(Array.from(n.tags), ['intake-pmd']);
+  const text = h.$('#intk-note-box').value;
+  assert.strictEqual(text,
+    'Callback Number: 555-555-0123\nCaller Name: Jane Sample\nRelationship: Self\nPatient & TRX: Jane Sample\n' +
+    'Issue: PMD Account intake submitted\nTransferred To: N/A\nResolution: Emailed to sales@universalmedsupply.com',
+    'the copied text is the standard note template, line for line');
+  // PPD: no phone field, the codes ride the resolution.
+  const f = h.window.intakeNoteFields_('ppd', { patientInfo: 'Jo Doe TRX9', answers: { 2: 'not a phone' } }, 'all@x.com',
+    { complex: [], standard: [{ hcpcs: 'K0823' }] });
+  assert.strictEqual(f.callback, '', 'PPD has no phone field — nothing is guessed');
+  assert.strictEqual(f.resolution, 'Emailed to all@x.com · Rec: K0823');
+  assert.strictEqual(h.window.intakeNoteFields_('pap', { patientInfo: '', answers: {} }, '', null).relationship, '',
+    'no patient, no "Self"');
+});
+
+test('B3 DOM: insurance-card images are added at the bottom of the PMD/PAP form, survive the preview, and the preview says whether any are going', () => {
+  const { h } = bootAcct('pmd');
+  const drop = h.$('#intk-drop');
+  assert.ok(drop && drop.tagName === 'BUTTON', 'the drop zone is a real button on the form');
+  const main = h.$('.intk-main');
+  assert.strictEqual(drop.closest('.intk-img-wrap'), main.lastElementChild, 'it closes the page, after Other Notes');
+  assert.ok(/paste a screenshot/.test(h.$('.intk-img-hint').textContent) && /up to 12 images/.test(h.$('.intk-img-hint').textContent),
+    'with the one-line instruction under it');
+  // An image added on the form survives the preview round trip.
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,AAAA"]');
+  h.read('intakeRenderGallery_')('pmd');
+  assert.strictEqual(h.document.querySelectorAll('#intk-gallery .intk-thumb').length, 1);
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images.length'), 1, 'previewing no longer empties the images');
+  h.run.flushSuccess({ html: '<p>preview</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  assert.ok(/1 insurance card image will be sent/.test(h.$('#intk-img-note').textContent), 'the preview names what is going');
+  assert.strictEqual(h.document.querySelectorAll('.intk-modal #intk-drop').length, 0, 'and has no second drop zone');
+  h.window.intakeCloseModal_();
+  h.read('INTAKE_STATE.pmd.images = []');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>preview</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  assert.ok(/No insurance card images attached/.test(h.$('#intk-img-note').textContent), 'none is said too');
+});
+
+test('B3 DOM: a pasted image joins the on-screen form — never text pasted into a field, and never once the form is gone', () => {
+  const { h } = bootAcct('pap');
+  h.window.__pasted = [];
+  h.read('intakeProcessImage_ = function (form) { window.__pasted.push(form); }');
+  const paste = (target, types) => {
+    const ev = new h.window.Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'clipboardData', { value: { items: types.map((t) => ({ kind: t.indexOf('image') === 0 ? 'file' : 'string', type: t, getAsFile: () => ({}) })) } });
+    target.dispatchEvent(ev);
+  };
+  paste(h.document.body, ['image/png']);
+  assert.deepStrictEqual(Array.from(h.window.__pasted), ['pap'], 'a screenshot pasted on the page is attached to the PAP form');
+  const field = h.$('[data-intk-idx="1"]');
+  paste(field, ['text/plain', 'text/html', 'image/png']);
+  assert.strictEqual(h.window.__pasted.length, 1, 'text copied from a document (with its image rendering) pasted into a field is the text, not an attachment');
+  paste(field, ['image/png']);
+  assert.strictEqual(h.window.__pasted.length, 2, 'an image alone pasted while a field has focus is still attached');
+  h.$('#intk-test-area').innerHTML = '';   // the rep switched tools
+  paste(h.document.body, ['image/png']);
+  assert.strictEqual(h.window.__pasted.length, 2, 'no form on screen, nothing collected');
+});
+
+section('Pay statement — the manager edits a day, and an ADJ day explains itself (25post B4)');
+
+function payStmtFixture(over) {
+  const today = new Date().toISOString().slice(0, 10);
+  const old = '2020-01-06';
+  return Object.assign({
+    period: { start: old, end: today, cycle: 'Monthly', offset: 0 },
+    days: [
+      { date: today, dayLabel: 'Today', isFuture: false, isWeekend: false, hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8, adjClockOut: true },
+      { date: old, dayLabel: 'Old day', isFuture: false, isWeekend: false, hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8 },
+    ],
+    totalHours: 16, daysWorked: 2, incompleteCount: 0, timezone: 'America/Chicago', pto: [], rate: null, estGross: null,
+    archiveNote: false, maxOffset: 6,
+    adjustments: { [today]: [{ punchType: 'ClockOut', time: '17:05', endTime: '', action: 'set', reason: 'Forgot <b>to</b> clock out', status: 'Approved', submittedAt: '' }] },
+    adjError: '',
+    viewingOther: { id: 'PH-7', name: 'Ana' },
+  }, over || {});
+}
+
+test('B4 DOM: a manager\'s view of a rep\'s statement offers Edit day inside the window, opens Day Edit for THAT rep and date in the rep\'s timezone, and reopens the statement after a save', () => {
+  const h = boot();
+  h.window.__opened = [];
+  h.read('openDayEditModal = function (id, name, date, tz) { if (typeof PAY_STMT !== "undefined") PAY_STMT.returnAfterEdit = null; window.__opened.push([id, name, date, tz].join("|")); }');
+  h.window.openPayStatement_(0, 'PH-7', 'Ana');
+  const d = payStmtFixture();
+  h.run.flushSuccess(d, 'getMyPayStatement');
+  const edits = Array.from(h.document.querySelectorAll('#pay-stmt-body .pay-stmt-edit'));
+  assert.strictEqual(edits.length, 1, 'only the day inside the edit window has the button');
+  assert.strictEqual(edits[0].getAttribute('data-edit-date'), d.days[0].date);
+  edits[0].click();
+  assert.deepStrictEqual(Array.from(h.window.__opened), ['PH-7|Ana|' + d.days[0].date + '|America/Chicago'], 'Day Edit opens on the rep, the date and the rep\'s timezone');
+  assert.ok(!h.$('#pay-stmt-overlay') || !h.$('#pay-stmt-overlay').classList.contains('open'), 'the statement closed so Day Edit is not painted over');
+  const before = h.run.calls.filter((c) => c.method === 'getMyPayStatement').length;
+  h.window.payStmtReturnAfterEdit_('PH-7');
+  const after = h.run.calls.filter((c) => c.method === 'getMyPayStatement');
+  assert.strictEqual(after.length, before + 1, 'a save reopens the statement');
+  assert.deepStrictEqual([after[after.length - 1].args[0], after[after.length - 1].args[1]], [0, 'PH-7'], 'on the same period and rep');
+  h.window.payStmtReturnAfterEdit_('PH-7');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getMyPayStatement').length, before + 1, 'the ticket is used once');
+});
+
+test('B4 DOM: an ADJ day shows each request\'s reason and status, escaped; a failed read says so; the rep\'s own view has no Edit day', () => {
+  const h = boot();
+  h.window.openPayStatement_(0, 'PH-7', 'Ana');
+  h.run.flushSuccess(payStmtFixture(), 'getMyPayStatement');
+  const body = h.$('#pay-stmt-body');
+  assert.ok(/Adjustment: Clock out → .* · Approved — “Forgot <b>to<\/b> clock out”/.test(body.textContent), body.textContent);
+  assert.ok(/&lt;b&gt;to&lt;\/b&gt;/.test(body.innerHTML), 'escaped');
+  assert.ok(!/could not be read/.test(body.textContent));
+  h.window.openPayStatement_(0, '', '');
+  h.run.flushSuccess(payStmtFixture({ viewingOther: null, adjustments: {}, adjError: 'Adjustment requests could not be read: boom' }), 'getMyPayStatement');
+  assert.strictEqual(h.document.querySelectorAll('#pay-stmt-body .pay-stmt-edit').length, 0, 'a rep never gets Edit day on their own statement');
+  assert.ok(/Adjustment requests could not be read/.test(h.$('#pay-stmt-body').textContent), 'a failed read is named, not shown as "no requests"');
+  assert.ok(!/boom/.test(h.$('#pay-stmt-body').textContent), 'without echoing the raw error');
+});
+
+test('B4 DOM: the real Day Edit opener clears a stale return ticket, and its save hands the rep back to the statement', () => {
+  const h = boot();
+  h.read('PAY_STMT.returnAfterEdit = { offset: 2, repId: "PH-7", repName: "Ana" }');
+  h.window.openDayEditModal('E-9', 'Someone else', '', 'America/Chicago');
+  assert.strictEqual(h.read('PAY_STMT.returnAfterEdit'), null, 'a Day Edit opened from anywhere else never reopens a statement');
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/tc/script_manager.html'), 'utf8');
+  assert.ok(/var savedEmp = _deEmpId;\s*closeOverlay\(document\.getElementById\('day-edit-overlay'\)\);\s*if \(typeof payStmtReturnAfterEdit_ === 'function'\) payStmtReturnAfterEdit_\(savedEmp\);/.test(src),
+    'the save success hands the saved rep to the statement\'s return');
+});
+
+section('Intake — the availability grid (25post B5, operator 2026-10-16)');
+
+test('B5: the availability answer round-trips through its one string shape, and text in any other shape reads back as notes', () => {
+  const h = boot();
+  const ser = h.read('intakeAvailSerialize_'), parse = h.read('intakeAvailParse_');
+  const all = []; ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].forEach((d) => ['AM', 'PM'].forEach((t) => all.push(d + ' ' + t)));
+  assert.strictEqual(ser(all, ''), 'Open (any weekday, any time)');
+  assert.strictEqual(ser(all.filter((k) => k !== 'Fri PM'), 'unavailable 10/18'), 'Any weekday, any time except Fri PM — unavailable 10/18');
+  assert.strictEqual(ser(['Mon AM', 'Wed AM', 'Fri AM', 'Tue PM', 'Thu AM', 'Thu PM'], ''), 'Mon, Wed, Fri · AM; Tue · PM; Thu · AM & PM');
+  assert.strictEqual(ser([], 'call after 2'), 'call after 2', 'notes alone');
+  assert.strictEqual(ser([], ''), '');
+  // Every subset of the ten slots survives the round trip.
+  for (let mask = 0; mask < 1024; mask++) {
+    const slots = all.filter((_, i) => mask & (1 << i));
+    const str = ser(slots, mask % 3 ? 'note — with a dash' : '');
+    const back = parse(str);
+    assert.strictEqual(Array.from(back.slots).join('|'), slots.join('|'), 'slots for mask ' + mask + ': ' + str);
+    assert.strictEqual(back.notes, mask % 3 ? 'note — with a dash' : '', 'notes for mask ' + mask);
+  }
+  const legacy = parse('Mornings only, not Fridays');
+  assert.strictEqual(legacy.slots.length, 0); assert.strictEqual(legacy.notes, 'Mornings only, not Fridays', 'an answer typed before the grid is kept whole as notes');
+  assert.strictEqual(parse('Mon · AM; Sat · PM').notes, 'Mon · AM; Sat · PM', 'a near-miss is notes, never half-read');
+});
+
+test('B5 DOM: Open selects every slot and a click takes one out; the answer, the readout and the ring follow; a restored draft repaints the grid', () => {
+  const { h, root, count } = bootAcct('pmd');
+  const box = root.querySelector('.intk-avail[data-avail-idx="27"]');
+  assert.ok(box, 'PPD Availability is a grid');
+  assert.ok(root.querySelector('.intk-avail[data-avail-idx="26"]'), 'and so is ME Availability');
+  const hid = () => box.querySelector('input[type="hidden"]').value;
+  const open = box.querySelector('.intk-avail-open');
+  const before = count();
+  open.click();
+  assert.strictEqual(box.querySelectorAll('.intk-avail-slot[aria-pressed="true"]').length, 10, 'Open selects all ten');
+  assert.strictEqual(open.getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(hid(), 'Open (any weekday, any time)');
+  assert.ok(/Sends as: Open \(any weekday, any time\)/.test(box.querySelector('.intk-avail-out').textContent));
+  assert.notStrictEqual(count(), before, 'PPD Availability is required, so the ring moved');
+  box.querySelector('.intk-avail-slot[data-slot="Fri PM"]').click();
+  assert.strictEqual(open.getAttribute('aria-pressed'), 'mixed');
+  assert.strictEqual(hid(), 'Any weekday, any time except Fri PM');
+  const notes = box.querySelector('.intk-avail-notes');
+  notes.value = 'daughter present';
+  notes.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(hid(), 'Any weekday, any time except Fri PM — daughter present');
+  assert.strictEqual(h.window.intakeCollectAcct_('pmd').answers[27], 'Any weekday, any time except Fri PM — daughter present', 'the collector sends the one string');
+  box.querySelector('.intk-avail-slot[data-slot="Fri PM"]').click();
+  open.click();
+  assert.strictEqual(box.querySelectorAll('.intk-avail-slot[aria-pressed="true"]').length, 0, 'Open on a full grid clears it');
+  assert.strictEqual(hid(), 'daughter present');
+  // A restore (draft or amend) writes the answer; the grid follows it.
+  h.window.intakeApplyAcctAnswers_('pmd', { 26: 'Mon, Wed · AM — unavailable 10/18' });
+  const me = root.querySelector('.intk-avail[data-avail-idx="26"]');
+  assert.deepStrictEqual(Array.from(me.querySelectorAll('.intk-avail-slot[aria-pressed="true"]')).map((b) => b.getAttribute('data-slot')), ['Mon AM', 'Wed AM']);
+  assert.strictEqual(me.querySelector('.intk-avail-notes').value, 'unavailable 10/18');
+});
+
+section('Intake — Sales/PAP recipients (25post B6)');
+
+test('B6 DOM: the Send-to picker lists the Sales and PAP teams above the app users, shows a team address before sending, and sends it as a team spec', () => {
+  const { h } = bootAcct('pmd');
+  h.window.intakeAcctPreviewGo_('pmd', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPMD');
+  h.run.flushSuccess({ agents: [{ id: 'E1', name: 'App User' }],
+    team: [{ dept: 'Sales', name: 'Ana Garcia', email: 'ana.garcia@universalmedsupply.com' }, { dept: 'PAP', name: 'Zed Ray', email: 'zed.ray@universalmedsupply.com' }],
+    teamError: '', teamSkipped: 0, teamMissing: [] }, 'getIntakeAgents');
+  const sel = h.$('#intk-acct-recipient');
+  const groups = Array.from(sel.querySelectorAll('optgroup')).map((g) => g.label + ':' + Array.from(g.querySelectorAll('option')).map((o) => o.textContent).join(','));
+  assert.deepStrictEqual(groups, ['Sales team:Ana Garcia', 'PAP team:Zed Ray', 'App users:App User']);
+  assert.strictEqual(sel.options[0].value, 'default', 'the form default stays first');
+  assert.strictEqual(sel.options[sel.options.length - 1].value, 'custom', 'and Custom last');
+  sel.value = 'team:ana.garcia@universalmedsupply.com';
+  sel.dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.$('.intk-rcpt-addr').textContent, 'Sends to ana.garcia@universalmedsupply.com', 'the rep sees the address');
+  h.read('INTAKE_STATE.preview').bodyHash = 'x';
+  h.window.intakeAcctSend_('pmd');
+  const send = h.run.calls.filter((c) => c.method === 'intakeSendPMD').pop();
+  assert.ok(send, 'sent');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(send.args[1])), { kind: 'team', email: 'ana.garcia@universalmedsupply.com' });
+});
+
+test('B6 DOM: a failed Sales/PAP read is named, the app users still list, and the next preview asks again (never cached as an empty team)', () => {
+  const { h } = bootAcct('pap');
+  h.window.intakeAcctPreviewGo_('pap', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPAP');
+  h.run.flushSuccess({ agents: [{ id: 'E1', name: 'App User' }], team: null, teamError: 'The Sales/PAP list could not be read from the CDR Report: boom', teamSkipped: 0, teamMissing: [] }, 'getIntakeAgents');
+  assert.ok(/could not be read from the CDR Report/.test(h.$('#toast-container') ? h.$('#toast-container').textContent : h.document.body.textContent), 'the failure is said');
+  assert.deepStrictEqual(Array.from(h.$('#intk-acct-recipient').querySelectorAll('optgroup')).map((g) => g.label), ['App users']);
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.team'), null, 'nothing cached for the team');
+  h.window.intakeCloseModal_();
+  const n = h.run.calls.filter((c) => c.method === 'getIntakeAgents').length;
+  h.window.intakeAcctPreviewGo_('pap', { patientInfo: 'Jane Sample', answers: {}, rows: [] });
+  h.run.flushSuccess({ html: '<p>p</p>', bodyHash: 'x', subject: 's' }, 'intakePreviewPAP');
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getIntakeAgents').length, n + 1, 'the next preview asks again');
+});
+
+section('Manage Time — the idle alert (25post B8)');
+
+test('B8 DOM: an idle rep gets an amber "idle" chip on their Live Status card and a line under Live Status, longest first; nobody idle, no line', () => {
+  const h = boot();
+  const fn = h.read('mgrIdleSummaryHtml_');
+  const rows = [{ name: 'Ana', idleMin: 42 }, { name: 'Bo <x>', idleMin: 95 }, { name: 'Cy', idleMin: null }];
+  const line = fn(rows);
+  assert.ok(/2 reps have been idle 30\+ min while clocked in: Bo &lt;x&gt; \(1 h 35 min\), Ana \(42 min\)/.test(line), line);
+  assert.strictEqual(fn([{ name: 'Cy', idleMin: null }]), '', 'nobody idle, no line');
+  const chip = h.read('mgrIdleChip_')({ idleMin: 42 });
+  assert.ok(/class="emp-active-chip"/.test(chip) && />idle 42 min</.test(chip), 'the amber caution chip');
+  assert.ok(/A long call or work outside the app reads the same/.test(chip), 'and the tooltip says what idle measures');
+  assert.strictEqual(h.read('mgrIdleChip_')({ idleMin: null }), '', 'no chip when not idle');
+});
+
+test('B9 DOM: a card photo is fitted by the shared image fitter before it is kept; a photo it cannot fit is said, never attached', async () => {
+  const { h } = bootAcct('pmd');
+  h.window.__fitted = [];
+  h.read('kbImgPrepare_ = function (u, cb) { window.__fitted.push(u.slice(0, 11)); cb(null, "data:image/jpeg;base64,FITTED"); }');
+  h.window.intakeProcessImage_('pmd', new h.window.Blob(['raw-bytes'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.read('INTAKE_STATE.pmd.images.length'); i++) await tick();
+  assert.deepStrictEqual(Array.from(h.window.__fitted), ['data:image/'], 'the read photo went through the fitter');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images[0]'), 'data:image/jpeg;base64,FITTED', 'the FITTED image is what is kept and sent');
+  h.read('kbImgPrepare_ = function (u, cb) { cb("Image too large even after shrinking"); }');
+  h.window.intakeProcessImage_('pmd', new h.window.Blob(['huge'], { type: 'image/png' }));
+  for (let i = 0; i < 20; i++) await tick();
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images.length'), 1, 'an image the fitter refuses is not attached');
+  assert.ok(/too large even after shrinking/.test(h.document.body.textContent), 'and the rep is told why');
+  assert.ok(/Large photos are shrunk before they are sent/.test(h.$('.intk-img-hint').textContent), 'the instruction says so');
 });

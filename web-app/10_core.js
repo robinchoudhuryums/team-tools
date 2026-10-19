@@ -1469,25 +1469,42 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
     try { on = !!job.enabled(); } catch (e) { on = false; }
     if (!on) return;                       // not expected to run — never nags
     const last = byAction[job.action];
+    // 25post: when this check was first watched ({ms, ym} — the install time
+    // for anything watched before the record existed), and when the job last
+    // RAN whether or not it wrote a row ({ms, ym, mgr}, only for a job with a
+    // `ranAt`). Absence is evidence only from the first watch on.
+    const watched = (opts && opts.watchSince && opts.watchSince[job.action]) || null;
+    const ran = (opts && opts.ranAt && opts.ranAt[job.action]) || null;
+    const watchedWithin = function (hours) {
+      return !!(watched && watched.ms && isFinite(watched.ms) && (nowMs - watched.ms) <= hours * 3600000);
+    };
     if (job.cadence === 'monthly') {
       // In arrears: a row is expected on/just after the 1st. Before the grace
       // day the absence is normal, so the check simply does not apply yet.
       if (todayDom < (job.graceDays || 3)) return;
       const ranThisMonth = !!(last && last.timestampMgr &&
         String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
-      // A1 (cycle 22): with NO run on record, absence is only evidence when the
-      // AuditLog window read reaches back past the 1st. A truncated window that
-      // starts mid-month cannot tell "did not run" from "scrolled out" — that is
-      // UNKNOWN, rendered as such on the panel row, never a false alarm. A run
-      // on record from an EARLIER month is real evidence either way.
-      if (!ranThisMonth && (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix))) {
+      if (!ranThisMonth && ran && ran.ym === thisMonthPrefix) {
+        // 25post: the job RAN this month and wrote no row — the trigger is
+        // alive, and "may be missing" would send the operator to reinstall it.
+        push('job', job.action, 'The ' + job.label + ' ran on ' + ran.mgr + ' but wrote no row this month, so its trigger is running' +
+          (typeof job.noRowHint === 'function' ? ' — ' + job.noRowHint(thisMonthPrefix) : '') + '.');
+      } else if (!ranThisMonth && watched && watched.ym === thisMonthPrefix) {
+        // 25post: first watched this month, after the 1st it is judged on — a
+        // deploy or a setting started the watch, and the 1st was never seen.
+      } else if (!ranThisMonth && (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix))) {
+        // A1 (cycle 22): with NO run on record, absence is only evidence when the
+        // AuditLog window read reaches back past the 1st. A truncated window that
+        // starts mid-month cannot tell "did not run" from "scrolled out" — that is
+        // UNKNOWN, rendered as such on the panel row, never a false alarm. A run
+        // on record from an EARLIER month is real evidence either way.
         push('job', job.action, 'The ' + job.label + ' has not run this month (expected on the 1st) — ' +
           'the trigger may be missing. Re-run installAutomationTriggers().');
       }
     } else if (last && last.ms && (nowMs - last.ms) > job.staleHours * 3600000) {
       push('job', job.action, 'The ' + job.label + ' last ran ' + last.timestampMgr +
         ' (over ' + job.staleHours + 'h ago) — the trigger may be disabled.');
-    } else if (!last && auditWindowProvesAbsence_(auditWindow, nowMs, job.staleHours)) {
+    } else if (!last && !watchedWithin(job.staleHours) && auditWindowProvesAbsence_(auditWindow, nowMs, job.staleHours)) {
       // Follow-up to A1 (cycle 22): a daily job with NO run on record used to
       // be silent for ever — the stale check needs a last run to age. Absence
       // is evidence only when the rows read reach back past the stale window
@@ -1711,6 +1728,40 @@ function automationDetectorChecks_() {
  *  is overdue once the triggers have been installed for longer than its stale
  *  window. An unknown install time is never overdue (the fresh-deploy
  *  posture: nothing says a trigger should have fired yet). */
+/** PURE (25post) — the first-watched map, kept to the CURRENT set of checks.
+ *  `prev` null (no record yet) seeds every key with `seedMs` — the install
+ *  time — so the first write masks nothing already watched; afterwards a new
+ *  key gets `nowMs` and a key no longer checked is dropped (re-enabling it
+ *  starts a fresh window). Returns {map, changed}. */
+function automationWatchMerge_(prev, keys, nowMs, seedMs) {
+  const fresh = !prev || typeof prev !== 'object' || Array.isArray(prev);
+  const out = {};
+  let changed = fresh;
+  (keys || []).forEach(function (k) {
+    const had = !fresh && Object.prototype.hasOwnProperty.call(prev, k) && isFinite(Number(prev[k]));
+    if (had) { out[k] = Number(prev[k]); return; }
+    out[k] = fresh ? (isFinite(Number(seedMs)) && seedMs !== null ? Number(seedMs) : 0) : Number(nowMs);
+    changed = true;
+  });
+  if (!fresh && Object.keys(prev).some(function (k) { return !Object.prototype.hasOwnProperty.call(out, k); })) changed = true;
+  return { map: out, changed: changed };
+}
+/** Reads, merges and (only when it changed) writes the first-watched map.
+ *  Best-effort: an unreadable record re-seeds, a failed write is retried on the
+ *  next read — a later first-watch only ever WIDENS a window, never narrows one. */
+function automationWatchSince_(keys, seedMs) {
+  let prev = null;
+  let props = null;
+  try {
+    props = PropertiesService.getScriptProperties();
+    prev = JSON.parse(props.getProperty(AUTOMATION_WATCH_SINCE_PROP) || 'null');
+  } catch (_) { prev = null; }
+  const r = automationWatchMerge_(prev, keys, Date.now(), seedMs);
+  if (r.changed && props) {
+    try { propSetBounded_(AUTOMATION_WATCH_SINCE_PROP, JSON.stringify(r.map), { mode: 'degrade' }); } catch (_) { /* next read retries */ }
+  }
+  return r.map;
+}
 function digestNeverRanOverdue_(installedMs, nowMs, staleHours) {
   if (installedMs === null || installedMs === undefined || !isFinite(installedMs)) return false;
   return (Number(nowMs) - Number(installedMs)) > Number(staleHours) * 3600000;
@@ -1893,6 +1944,32 @@ function computeAutomationHealth_(opts) {
         installedAt = convertAuditTs_(String(owner.at), CONFIG.TIMEZONE, mgrTz);
       }
     } catch (_) { installedMs = null; installedAt = ''; }
+    // 25post: what is watched, and since when — every digest, and every job
+    // the table currently checks. A digest's "never ran" counts from the LATER
+    // of the install and its first watch, so a digest a deploy added is not
+    // overdue before it has had a slot to run in.
+    const watchKeys = Object.keys(DIGEST_STALE_HOURS).map(function (k) { return 'digest:' + k; });
+    AUTOMATION_JOB_CHECKS.forEach(function (j) {
+      let on = false;
+      try { on = !!j.enabled(); } catch (_) { on = false; }
+      if (on) watchKeys.push('job:' + j.action);
+    });
+    const watchMap = automationWatchSince_(watchKeys, installedMs);
+    const watchSince = {};
+    AUTOMATION_JOB_CHECKS.forEach(function (j) {
+      const ms = Number(watchMap['job:' + j.action]);
+      if (ms > 0) watchSince[j.action] = { ms: ms, ym: Utilities.formatDate(new Date(ms), mgrTz, 'yyyy-MM') };
+    });
+    // 25post: when a job last RAN, row or no row (a job with a `ranAt`).
+    const jobRanAt = {};
+    AUTOMATION_JOB_CHECKS.forEach(function (j) {
+      if (typeof j.ranAt !== 'function') return;
+      let ms = null;
+      try { ms = Number(j.ranAt()); } catch (_) { ms = null; }
+      if (!(ms > 0)) return;
+      const d = new Date(ms);
+      jobRanAt[j.action] = { ms: ms, ym: Utilities.formatDate(d, mgrTz, 'yyyy-MM'), mgr: Utilities.formatDate(d, mgrTz, 'yyyy-MM-dd HH:mm') };
+    });
     // The reported set is DERIVED from the staleness map (INV-179) — a
     // heartbeat with a window but no row here would be stamped and never read.
     const digestHealth = Object.keys(DIGEST_STALE_HOURS).map(function (k) {
@@ -1904,7 +1981,9 @@ function computeAutomationHealth_(opts) {
           stale = (Date.now() - ms) > DIGEST_STALE_HOURS[k] * 3600000;
         } catch (_) { stale = true; }
       } else {
-        neverRan = stale = digestNeverRanOverdue_(installedMs, Date.now(), DIGEST_STALE_HOURS[k]);
+        const firstWatch = Number(watchMap['digest:' + k]);
+        neverRan = stale = digestNeverRanOverdue_(
+          (installedMs !== null && firstWatch > installedMs) ? firstWatch : installedMs, Date.now(), DIGEST_STALE_HOURS[k]);
       }
       // 4a follow-ons (cycle 23): a stale heartbeat whose job STAMPED a failure
       // inside the same window ran — and failed. Ship that, so the stale line
@@ -1991,6 +2070,8 @@ function computeAutomationHealth_(opts) {
       // automationProblems_ (a monthly job's absence is only evidence when the
       // window reaches the 1st) and by the panel's "last seen" rows.
       auditWindow: { complete: scannedAll, startMgr: auditWindowStartMgr, startMs: auditWindowStartMs, rows: CN_AUDIT_MAX_SCAN },
+      watchSince: watchSince,   // 25post: {action: {ms, ym}} — when each checked job was first watched
+      jobRanAt: jobRanAt,       // 25post: {action: {ms, ym, mgr}} — a job's last RUN, row or no row
       managerTzAbbr: tzAbbr_(mgrTz),
       auditLogUrl: auditLogUrl,
     };
@@ -2049,7 +2130,7 @@ function automationProblems_(report, opts) {
     parseInt(Utilities.formatDate(nowD, mgrTzNow, 'd'), 10),
     Utilities.formatDate(nowD, mgrTzNow, 'yyyy-MM'),
     report.auditWindow,
-    { items: true }
+    { items: true, watchSince: report.watchSince, ranAt: report.jobRanAt }
   ).forEach(function (m) { add(m.kind, m.key, m.text); });
   // F-20 (2026-09-18): a failure stamped under a key OUTSIDE the JOB_CHECKS
   // table — the heartbeat-only jobs (MissedPunchAlerts, DailyExportCheck) and
@@ -2592,8 +2673,10 @@ function getStorageHealth(opts) {
     // there). One read, values counted and never returned.
     let propStore = null;
     try { propStore = scriptPropertiesStatus_(); } catch (e) { propStore = null; }
+    // 25post — the deploying account's email allowance left today.
+    const mailQuota = mailQuotaStatus_();
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
-             drive: drive, mailBcc: mailBcc, propStore: propStore };
+             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -3474,6 +3557,22 @@ function mailBccStatus_() {
   if (at < 0) return out;                       // can't tell whose domain is ours → external stays null
   out.ownDomain = own.slice(at + 1);
   out.external = list.filter((a) => String(a).toLowerCase().slice(String(a).lastIndexOf('@') + 1) !== out.ownDomain);
+  return out;
+}
+/** 25post (operator 2026-10-16, team rollout) — how many more recipients the
+ *  app may email today. Every send rides the deploying account's MailApp
+ *  allowance (~1,500 recipients a day on Workspace, 100 on a consumer
+ *  account): department notes, intake, digests and reminders alike, each
+ *  recipient counted, a MAIL_BCC_ALL copy included. Google gives the
+ *  remaining figure only, never the total. `remaining: null` with an `error`
+ *  is UNKNOWN — never read as fine (INV-187). */
+function mailQuotaStatus_() {
+  const out = { remaining: null, warnAt: MAIL_QUOTA_WARN_REMAINING, bccPerSend: mailBccAll_().length, error: '' };
+  try {
+    const n = Number(MailApp.getRemainingDailyQuota());
+    if (isFinite(n) && n >= 0) out.remaining = n;
+    else out.error = 'the mail service returned no figure';
+  } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 }
 function mailMergeBcc_(opts) {

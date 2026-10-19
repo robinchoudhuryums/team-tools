@@ -11562,7 +11562,7 @@ function cnRenderStoragePanel_(res) {
   return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
     '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
     cnDriveAccessHtml_(res && res.drive) + cnMailBccHtml_(res && res.mailBcc) +
-    cnPropStoreHtml_(res && res.propStore) +
+    cnPropStoreHtml_(res && res.propStore) + cnMailQuotaHtml_(res && res.mailQuota) +
     hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
 }
@@ -11686,6 +11686,43 @@ function cnPropStoreHtml_(ps) {
   }
   return '<div class="cn-drive-line cn-drive-' + tone + '">' +
     icon(tone === 'ok' ? 'check' : 'warning', 12) + '<span>' + body + '</span></div>';
+}
+/** 25post — the day's email allowance as ONE verdict for the line and the
+ *  finding: {tone, title, detail, fix}, or null when the server shipped none
+ *  (deploy skew). ok normally (INV-186), warn at or below `warnAt`, fail at 0,
+ *  warn when it could not be read (INV-187). Plain text; callers escape. */
+function cnMailQuotaVerdict_(mq) {
+  if (!mq) return null;
+  var bcc = Number(mq.bccPerSend) > 0
+    ? ' MAIL_BCC_ALL adds ' + Number(mq.bccPerSend) + ' to every send.' : '';
+  if (mq.remaining === null || mq.remaining === undefined) {
+    return { tone: 'warn', title: 'Email allowance could not be read',
+      detail: (mq.error || 'unknown error') + ' — how many more emails can go out today is unknown, not fine.',
+      fix: 'Retry from the Admin tab.' };
+  }
+  var n = Number(mq.remaining), warnAt = Number(mq.warnAt) || 0;
+  var left = n.toLocaleString() + ' recipient' + (n === 1 ? '' : 's') + ' left today';
+  var basis = 'Every email the app sends counts one per recipient — department notes, intake, digests and reminders. ' +
+    'It resets 24 hours after the day’s first send.' + bcc;
+  if (n <= 0) {
+    return { tone: 'fail', title: 'The daily email allowance is used up',
+      detail: 'No more emails can be sent until it resets. ' + basis,
+      fix: 'Hold non-urgent sends' + (bcc ? ' and clear MAIL_BCC_ALL' : '') + '; reps’ sends fail until the reset.' };
+  }
+  if (n <= warnAt) {
+    return { tone: 'warn', title: 'The daily email allowance is running low',
+      detail: left + '. ' + basis,
+      fix: 'When it reaches 0 every send fails until the reset' + (bcc ? ' — clearing MAIL_BCC_ALL saves ' + Number(mq.bccPerSend) + ' recipient' + (Number(mq.bccPerSend) === 1 ? '' : 's') + ' on every send' : '') + '.' };
+  }
+  return { tone: 'ok', title: 'Email allowance', detail: left + '. ' + basis, fix: '' };
+}
+function cnMailQuotaHtml_(mq) {
+  var v = cnMailQuotaVerdict_(mq);
+  if (!v) return '';
+  var tone = v.tone === 'fail' ? 'danger' : v.tone;
+  return '<div class="cn-drive-line cn-drive-' + tone + '">' +
+    icon(v.tone === 'ok' ? 'check' : 'warning', 12) + '<span><strong>' + esc(v.title) + '.</strong> ' +
+    esc(v.detail) + (v.fix ? ' ' + esc(v.fix) : '') + '</span></div>';
 }
 /** Cycle 25 FU3 — the PTO accrual ledger's per-rep side copies (F17) as a
  *  clause of the Script Properties line: '' when none exist or the server is
@@ -12215,6 +12252,9 @@ function cnHealthFindings_(health, storage, oop) {
     } else if (mb) {
       add('mailBcc', 'storage', 'ok', 'Outgoing email copies', 'no blanket BCC configured');
     }
+    // 25post — the day's email allowance (one verdict, shared with the line).
+    var mqv = cnMailQuotaVerdict_(storage.mailQuota);
+    if (mqv) add('mailQuota', 'storage', mqv.tone, mqv.title, mqv.detail, mqv.fix || undefined);
     // (Batch Q, 2026-09-11) The Script Property store — where every operator
     // blob lives, capped at ~9KB per value and 500KB overall, and reported
     // nowhere until now. An ok FACT on a normal deployment (INV-186).
