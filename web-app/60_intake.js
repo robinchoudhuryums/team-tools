@@ -1402,7 +1402,8 @@ function intakeRecListHtml_(items, selections) {
 // no image was attached (operator 2026-10-16).
 // 25post B7: a label/value ledger with identifiers in a fixed-width face; from
 // the attestations down, the statements the rep made are full-width boxes —
-// green when confirmed, amber when not — the availability answers sit side by
+// green when confirmed, amber when not (a check, a cross for a deliberate No,
+// an empty circle for no answer — operator 2026-10-19) — the availability answers sit side by
 // side, and Other Notes closes the body in its own box.
 function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
   const P = CN_EMAIL_PALETTE;
@@ -1436,7 +1437,7 @@ function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
       html += '<tr><td colspan="2" style="padding:5px 0;">' +
         '<div style="padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.45;background:' + (yes ? P.accentSoft : P.warnSoft) +
           ';border:1px solid ' + (yes ? P.accentBorder : P.warnBorder) + ';color:' + (yes ? P.accentDeep : P.warnDeep) + ';">' +
-          '<strong>' + (yes ? '&#10003; ' : '&#9675; ') + label + '</strong>' + tail + '</div></td></tr>';
+          '<strong>' + (yes ? '&#10003; ' : answerRaw === 'FALSE' ? '&#10007; ' : '&#9675; ') + label + '</strong>' + tail + '</div></td></tr>';
       return;
     }
     if (avail.indexOf(i) >= 0) {

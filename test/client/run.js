@@ -39146,7 +39146,7 @@ test('B7: the PMD email — attestations green when confirmed and amber when not
   assert.ok(/#e4f5ec[^>]*>.*&#10003; Explained mobility evaluation/.test(html), 'a confirmed attestation is green with a check');
   assert.ok(/#fbf1d9[^>]*><strong>&#9675; Permission to call &amp; schedule Mobility Evaluation with MDO\?<\/strong> &mdash; <strong>not confirmed<\/strong>/.test(html), 'an unanswered one is amber and says "not confirmed"');
   const pmdFalse = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 25: 'FALSE' }), ctx.INTAKE_PMD_LAYOUT, '');
-  assert.ok(/answered No/.test(pmdFalse), 'a deliberate No is said as one');
+  assert.ok(/<strong>&#10007; Permission to call[^<]*<\/strong> &mdash; <strong>answered No<\/strong>/.test(pmdFalse), 'a deliberate No is said as one, led by a cross (operator 2026-10-19)');
   assert.ok(/ME Availability<\/div><div[^>]*>Mon, Wed · AM<\/div><div[^>]*>unavailable 10\/18<\/div>/.test(html), 'availability: the grid answer, then its note');
   assert.ok(/PPD Availability<\/div><div[^>]*>Open \(any weekday, any time\)<\/div>/.test(html));
   assert.ok(/<td width="50%"[^>]*>.*ME Availability.*<td width="50%"[^>]*>.*PPD Availability/.test(html), 'the two sit side by side');

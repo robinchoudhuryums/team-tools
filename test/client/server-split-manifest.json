@@ -3230,6 +3230,16 @@
     "recordPresence"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-19",
+   "why": "intake email: a deliberate No attestation leads with a cross, not the empty circle (operator 2026-10-19)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeBuildAcctBodyHtml_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8782,7 +8792,7 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "3b0bbf16a9870a6a"
+   "sha": "f61b063f2c05c20c"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
