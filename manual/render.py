@@ -4,7 +4,7 @@
 Demonstrates the Stage 5 build behaviour: tables are never hand-written in source,
 so a spec can only be wrong in one place.
 """
-import json, os, re, sys
+import html, json, os, re, sys
 
 EQ = json.load(open("data/equipment.json"))
 GLOSSARY = json.load(open("data/glossary.json"))
@@ -225,6 +225,20 @@ def expand(m):
                 out.append(f"> {r['exception']}")
             out.append("")
         return "\n".join(out)
+    if spec.startswith("gallery:"):
+        # A tutorial slideshow (operator 2026-10-19): {{gallery:id|id|...|title=Name}}.
+        # One <figure> of slides — the HTML handbook steps through them, and
+        # Word and print take them one after another (md2model reads each image).
+        parts = spec.split(":", 1)[1].split("|")
+        title = next((p.split("=", 1)[1] for p in parts if p.startswith("title=")), "Slideshow")
+        ids = [p for p in parts if not p.startswith("title=")]
+        cells = []
+        for fid in ids:
+            if fid not in FIGS or fid not in FIGB:
+                raise SystemExit(f"unknown figure in gallery: {fid}")
+            f = FIGS[fid]
+            cells.append(f'<div class="slide"><img src="{FIGB[fid]}" alt="{f["alt"]}"><figcaption>{f["caption"]}</figcaption></div>')
+        return f'<figure class="shot gallery" data-title="{html.escape(title, quote=True)}">' + "".join(cells) + '</figure>'
     if spec.startswith("figure-pair:"):
         ids = spec.split(":", 1)[1].split("|")
         cells = []

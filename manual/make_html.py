@@ -628,6 +628,24 @@ figure.shot img{display:block;max-width:100%;height:auto;margin:0 auto}
 figure.shot.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px}
 figure.shot.pair img{max-height:230px;object-fit:contain}
 figure.shot figcaption{font-size:13px;color:#5D6B7A;margin-top:8px;text-align:center}
+/* a tutorial slideshow (operator 2026-10-19): the script shows one slide at a time
+   with Previous / Next and a dot per slide; without it, and on paper, every slide
+   shows one under another */
+figure.shot.gallery{max-width:760px}
+figure.shot.gallery .slide + .slide{margin-top:16px}
+figure.gallery .galhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+ margin:0 0 8px;font-size:12.5px;color:var(--muted)}
+figure.gallery .galhead b{color:var(--ink);font-weight:600}
+figure.gallery .galhead span{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+figure.gallery.on .slide{display:none;margin-top:0}
+figure.gallery.on .slide.cur{display:block}
+figure.gallery .galnav{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:10px}
+figure.gallery .galnav button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink)}
+figure.gallery .galstep{width:32px;height:32px;border-radius:50%;font-size:16px;line-height:1}
+figure.gallery .galdot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--rule)!important}
+figure.gallery .galdot.cur{background:var(--cur,var(--accent))!important;border-color:transparent}
+figure.gallery:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span{display:none}}
 main > figure.shot{max-width:860px}
 @media print{figure.shot{break-inside:avoid}}
 img.thumb{float:left;width:52px;height:52px;object-fit:contain;margin:1px 12px 2px 0;
@@ -1721,6 +1739,25 @@ const twAll=()=>{ctxH();tws.forEach(twFit);tws.forEach(twMore);};
 twAll();
 window.addEventListener('resize',twAll);
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(twAll);
+// a tutorial slideshow steps one slide at a time (operator 2026-10-19); it wraps
+// at either end, and ← / → step it when it has focus
+mainEl.querySelectorAll('figure.gallery').forEach(g=>{
+ const sl=[...g.querySelectorAll(':scope > .slide')],n=sl.length;if(n<2)return;
+ const head=document.createElement('div');head.className='galhead';
+ const t=document.createElement('b');t.textContent=g.dataset.title||'Slideshow';
+ const c=document.createElement('span');c.setAttribute('aria-live','polite');head.append(t,c);
+ const nav=document.createElement('div');nav.className='galnav';
+ const mk=(cls,txt,lab)=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=txt;b.setAttribute('aria-label',lab);return b;};
+ const prev=mk('galstep','\u2039','Previous slide'),next=mk('galstep','\u203A','Next slide');
+ const dots=sl.map((_,k)=>mk('galdot','','Slide '+(k+1)+' of '+n));
+ nav.append(prev,...dots,next);g.prepend(head);g.append(nav);
+ g.classList.add('on');g.tabIndex=0;g.setAttribute('role','group');g.setAttribute('aria-roledescription','slideshow');g.setAttribute('aria-label',t.textContent);
+ let i=0;const go=k=>{i=((k%n)+n)%n;sl.forEach((s,j)=>s.classList.toggle('cur',j===i));dots.forEach((d,j)=>{d.classList.toggle('cur',j===i);if(j===i)d.setAttribute('aria-current','true');else d.removeAttribute('aria-current');});c.textContent=(i+1)+' / '+n;};
+ prev.addEventListener('click',()=>go(i-1));next.addEventListener('click',()=>go(i+1));
+ dots.forEach((d,k)=>d.addEventListener('click',()=>go(k)));
+ g.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();go(i-1);}else if(e.key==='ArrowRight'){e.preventDefault();go(i+1);}});
+ go(0);
+});
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;

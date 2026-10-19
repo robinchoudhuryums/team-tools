@@ -448,6 +448,24 @@
   .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
   .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
   .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
+  /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
+     Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
+  .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
+  .kb-article .kb-gallery:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kb-gal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: .78rem; color: var(--muted); }
+  .kb-gal-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+  .kb-gal-count { flex: none; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .kb-gal-slide { text-align: center; }
+  .kb-gal-slide.kb-gal-off { display: none; }
+  .kb-article .kb-gal-slide img.kb-manimg-figure { margin: 0 auto; }
+  .kb-gal-cap { margin-top: 6px; font-size: .84rem; color: var(--muted); }
+  .kb-gal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+  .kb-gal-step { appearance: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 50%; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-gal-step:hover { border-color: var(--accent); }
+  .kb-gal-dots { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+  .kb-gal-dot { appearance: none; width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .kb-gal-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+  .kb-gal-dot.on::before { background: var(--accent); }
   /* DRV-3 (cycle 23 Batch 12) — an article image from the KbImages tab, while it
      loads, when it could not load, and once it arrives (an ordinary article image). */
   .kb-article .kb-kbimg[data-ki="loading"] { opacity: .65; }
@@ -2713,12 +2731,14 @@ function kbMd_(src) {
     var dm = info.match(/^decision\b/i);
     var mm = info.match(/^map\b/i);
     var dg = info.match(/^diagram\b\s*(\S*)/i);
+    var gl = info.match(/^gallery\b\s*(.*)$/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
     else if (gm) blocks.push({ glossary: true, body: code });
     else if (dm) blocks.push({ decision: true, body: code });
     else if (mm) blocks.push({ map: true, body: code });
     else if (dg) blocks.push({ diagram: true, name: dg[1], body: code });
+    else if (gl) blocks.push({ gallery: true, label: gl[1].trim(), body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -2821,6 +2841,7 @@ function kbMd_(src) {
       if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
       if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
       if (blk && blk.diagram) { html += kbDiagramHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.gallery) { html += kbGalleryHtml_(blk.label, blk.body, inline); i++; continue; }
       if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
@@ -2951,6 +2972,64 @@ function kbCalloutKind_(line) {
   return KB_CALLOUT_KINDS[word] || 'note';
 }
 
+// A ```gallery fence (the manual export — a tutorial slideshow, operator
+// 2026-10-19): one slide per line, `![alt](manimg:key) caption`, shown one at a
+// time with Previous / Next, a counter and a dot per slide; ← and → step when
+// the gallery has focus, and it wraps at either end. Every slide is in the
+// markup — a slide not on screen is only CLASSED off (kb-gal-off, never the
+// hidden attribute, g73) — so the image hydrator fills them all, search reads
+// every caption, and a printout shows every slide (the print block's rule 7).
+// The body is already escaped by kbMd_; a line that is not an image is dropped,
+// and the image itself goes through inline()'s own manimg chip, so the key
+// charset is the only thing that reaches an attribute.
+function kbGalleryHtml_(label, body, inline) {
+  var slides = String(body || '').split('\n').map(function (ln) {
+    var m = /^\s*(!\[[^\]]*\]\(manimg:(?:icon|thumb|fig)-[a-z0-9-]{1,80}\))\s*(.*)$/.exec(ln);
+    return m ? { img: inline(m[1]), cap: inline(m[2].trim()) } : null;
+  }).filter(Boolean);
+  if (!slides.length) return '';
+  var n = slides.length, name = String(label || '').trim() || 'Slideshow';
+  var dots = '';
+  for (var d = 0; d < n; d++) {
+    dots += '<button type="button" class="kb-gal-dot' + (d ? '' : ' on') + '" onclick="kbGalleryGo_(this,' + d + ')" aria-label="Slide ' + (d + 1) + ' of ' + n + '"' + (d ? '' : ' aria-current="true"') + '></button>';
+  }
+  return '<figure class="kb-gallery" data-i="0" data-n="' + n + '" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="' + name.replace(/"/g, '&quot;') + '" onkeydown="kbGalleryKey_(event)">' +
+    '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-live="polite">1 / ' + n + '</span></div>' +
+    slides.map(function (sl, k) {
+      return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') + '</div>';
+    }).join('') +
+    (n > 1 ? '<div class="kb-gal-nav"><button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,-1)" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
+      '<span class="kb-gal-dots">' + dots + '</span>' +
+      '<button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,1)" aria-label="Next slide">' + icon('chevronRight', 14) + '</button></div>' : '') +
+    '</figure>';
+}
+/** Show slide i of the gallery `el` sits in (wrapping), and say so. */
+function kbGalleryGo_(el, i) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (!fig) return;
+  var slides = fig.querySelectorAll('.kb-gal-slide'), n = slides.length;
+  if (!n) return;
+  i = ((Number(i) || 0) % n + n) % n;
+  for (var k = 0; k < n; k++) slides[k].classList.toggle('kb-gal-off', k !== i);
+  fig.querySelectorAll('.kb-gal-dot').forEach(function (b, k) {
+    b.classList.toggle('on', k === i);
+    if (k === i) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+  var c = fig.querySelector('.kb-gal-count');
+  if (c) c.textContent = (i + 1) + ' / ' + n;
+  fig.setAttribute('data-i', String(i));
+}
+function kbGalleryStep_(el, d) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (fig) kbGalleryGo_(fig, (Number(fig.getAttribute('data-i')) || 0) + d);
+}
+function kbGalleryKey_(e) {
+  if (!e || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  var fig = e.target && e.target.closest ? e.target.closest('.kb-gallery') : null;
+  if (!fig) return;
+  e.preventDefault();
+  kbGalleryStep_(fig, e.key === 'ArrowLeft' ? -1 : 1);
+}
 // A ```diagram fence (the manual export). Batch M3: a name the generated
 // partial knows (KB_MANUAL_DIAGRAMS, kb/script_manual_diagrams.html) draws that
 // diagram. The partial is CODE — allowlisted and pinned at build time — so the

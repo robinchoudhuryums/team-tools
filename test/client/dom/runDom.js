@@ -5767,6 +5767,38 @@ test('Operator 2026-10-19 DOM: a handbook table that FITS drops its scroll box s
   assert.ok(!tws[0].classList.contains('kb-man-tw-fit'), 'measured again, a table that no longer fits scrolls again');
 });
 
+test('Operator 2026-10-19 DOM: a handbook slideshow steps one slide at a time — Next, Previous, a dot, ← and → — wrapping at both ends, with the counter and the current dot in step', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const host = doc.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = h.read('kbMd_')('```gallery Steps\n![A](manimg:fig-a) one\n![B](manimg:fig-b) two\n![C](manimg:fig-c) three\n```');
+  doc.body.appendChild(host);
+  const fig = host.querySelector('.kb-gallery');
+  const shown = () => [...fig.querySelectorAll('.kb-gal-slide')].map((s) => s.classList.contains('kb-gal-off') ? 0 : 1).join('');
+  const count = () => fig.querySelector('.kb-gal-count').textContent;
+  const cur = () => [...fig.querySelectorAll('.kb-gal-dot')].findIndex((d) => d.getAttribute('aria-current') === 'true');
+  assert.strictEqual(shown(), '100'); assert.strictEqual(count(), '1 / 3');
+  // jsdom never compiles inline onclick (runScripts:'outside-only'): call what each attribute names.
+  const press = (btn) => { const m = /^(kbGallery\w+_)\(this,(-?\d+)\)$/.exec(btn.getAttribute('onclick')); assert.ok(m, 'wired: ' + btn.getAttribute('onclick')); h.read(m[1])(btn, Number(m[2])); };
+  const key = (k) => { let stopped = false; h.read('kbGalleryKey_')({ key: k, target: fig, preventDefault: () => { stopped = true; } }); return stopped; };
+  assert.strictEqual(fig.getAttribute('onkeydown'), 'kbGalleryKey_(event)', 'the gallery listens for the arrow keys');
+  const [prev, next] = fig.querySelectorAll('.kb-gal-step');
+  next.click = () => press(next); prev.click = () => press(prev);
+  fig.querySelectorAll('.kb-gal-dot').forEach((d) => { d.click = () => press(d); });
+  next.click();
+  assert.strictEqual(shown(), '010'); assert.strictEqual(count(), '2 / 3'); assert.strictEqual(cur(), 1, 'the dot follows');
+  prev.click(); prev.click();
+  assert.strictEqual(shown(), '001', 'Previous from the first slide wraps to the last'); assert.strictEqual(count(), '3 / 3');
+  next.click();
+  assert.strictEqual(shown(), '100', 'Next from the last wraps to the first');
+  fig.querySelectorAll('.kb-gal-dot')[2].click();
+  assert.strictEqual(shown(), '001', 'a dot goes straight to its slide');
+  assert.ok(key('ArrowRight')); assert.strictEqual(shown(), '100', '→ steps (and wraps), and keeps the page from scrolling');
+  assert.ok(key('ArrowLeft')); assert.strictEqual(shown(), '001', '← steps back');
+  assert.ok(!key('Enter')); assert.strictEqual(shown(), '001', 'any other key does nothing, and is left to the page');
+});
+
 test('MRD-1 DOM (manual reader design Phase 1): a callout opener becomes kicker + title with its text unchanged, punctuation-only and run-on labels are left readable, a two-column table is marked to stack, a bare-number link reads as a number — and decorating twice changes nothing', async () => {
   const h = m4Boot_();
   const doc = h.window.document;

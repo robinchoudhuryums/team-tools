@@ -150,6 +150,23 @@ def figure_md(fid):
             + "\n\n*" + caption + "*")
 
 
+def gallery_md(spec):
+    """A tutorial slideshow (operator 2026-10-19) -> a ```gallery fence the
+    Reference reader steps through: one `![alt](manimg:key) caption` per line.
+    The fence info carries the title."""
+    parts = spec.split("|")
+    title = next((p.split("=", 1)[1] for p in parts if p.startswith("title=")), "Slideshow")
+    lines = []
+    for fid in (p for p in parts if not p.startswith("title=")):
+        if fid not in FIGS or fid not in FIGB:
+            errors.append(f"unknown figure in gallery: {fid}")
+            continue
+        f = FIGS[fid]
+        caption = re.sub(r"<(b|strong)>(.*?)</\1>", r"\2", f["caption"])
+        lines.append(image_ref(f["alt"], "fig-" + slug(fid), "figure", "figures.json:" + fid, FIGB[fid]) + " " + caption)
+    return "```gallery " + title.replace("`", "'") + "\n" + "\n".join(lines) + "\n```"
+
+
 def diagram_md(name):
     path = f"diagrams/{name}.svg"
     if not os.path.exists(path):
@@ -167,6 +184,7 @@ def pre_substitute(text, key):
     """Diagram, figure and (Appendix A) glossary placeholders, before render.py."""
     text = re.sub(r"\{\{diagram:([\w\-]+)\}\}", lambda m: diagram_md(m.group(1)), text)
     text = re.sub(r"\{\{figure:([\w\-]+)\}\}", lambda m: figure_md(m.group(1)), text)
+    text = re.sub(r"\{\{gallery:([^}]+)\}\}", lambda m: gallery_md(m.group(1)), text)
     text = re.sub(r"\{\{figure-pair:([^}]+)\}\}",
                   lambda m: "\n\n".join(figure_md(f) for f in m.group(1).split("|")), text)
     if key == "appx_a":

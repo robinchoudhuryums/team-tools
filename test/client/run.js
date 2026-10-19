@@ -30214,7 +30214,7 @@ function m1Md_() {
   const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
-  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_', 'kbGalleryHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   vm.runInContext('var KB_DIAGRAM_SEQ = 0;', ctx);
   return ctx;
 }
@@ -35881,6 +35881,31 @@ test('Operator 2026-10-19: the HTML handbook\'s tables that fit keep their heade
   assert.ok(/\.kb-man-tw\.kb-man-tw-fit \{ overflow: visible; \}/.test(M1_KB_SRC) &&
     /\.kb-man-tw-fit > table > thead th \{ position: sticky; top: calc\(var\(--kb-man-band\) - 18px\); z-index: 2; background: var\(--paper-card\)/.test(M1_KB_SRC),
     'in the reader, fit drops the scroll box and the header sticks below the band (less the 18px scroller padding, g162), opaque');
+});
+
+test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at a time in the reader, every slide on paper; the source placeholder, the export and the HTML/Word build agree (driven)', () => {
+  const c = m1Md_();
+  const md = '```gallery Creating the <oxygen> ticket\n![Actions menu](manimg:fig-o2-ticket-1) Step 1 — **Actions**\nnot an image line\n![Ticket tab](manimg:fig-o2-ticket-5) Step 5\n![Bad](manimg:../x) nope\n```';
+  const h = c.kbMd_(md);
+  assert.ok(/^<figure class="kb-gallery" data-i="0" data-n="2" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="Creating the &lt;oxygen&gt; ticket" onkeydown="kbGalleryKey_\(event\)">/.test(h), 'one gallery of the two image lines, its title escaped: ' + h.slice(0, 260));
+  const slides = h.match(/<div class="kb-gal-slide[^"]*" data-k="\d">/g);
+  assert.deepStrictEqual(slides, ['<div class="kb-gal-slide" data-k="0">', '<div class="kb-gal-slide kb-gal-off" data-k="1">'], 'the first slide shows, the rest are classed off — never the hidden attribute (g73)');
+  assert.ok(/data-manimg="fig-o2-ticket-1"/.test(h) && /data-manimg="fig-o2-ticket-5"/.test(h), 'each slide is the hydrator\'s keyed image chip');
+  assert.ok(!/not an image line/.test(h) && !/\.\.\/x/.test(h), 'a line that is not a handbook image is dropped, and a bad key never reaches an attribute');
+  assert.ok(/<figcaption class="kb-gal-cap">Step 1 — <strong>Actions<\/strong><\/figcaption>/.test(h), 'the caption keeps its emphasis');
+  assert.ok(/<span class="kb-gal-count" aria-live="polite">1 \/ 2<\/span>/.test(h) && (h.match(/class="kb-gal-dot(?: on)?"/g) || []).length === 2, 'a counter and a dot per slide');
+  assert.ok(!/kb-gal-nav/.test(c.kbMd_('```gallery\n![One](manimg:fig-a) only\n```')), 'one slide needs no buttons');
+  assert.strictEqual(c.kbMd_('```gallery\nnothing here\n```'), '', 'no image, no gallery');
+  // Paper has no Next: the print block's rule 7 shows every slide and drops the buttons.
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const pb = styles.slice(styles.indexOf('@media print {'));
+  assert.ok(/\(7\)[\s\S]*\.kb-gal-slide\.kb-gal-off \{ display: block !important; \}[\s\S]*\.kb-gal-nav, \.kb-gal-count \{ display: none !important; \}/.test(pb), 'every slide prints, without its buttons');
+  // The source side: one placeholder, three readers.
+  assert.ok(/\{\{gallery:o2-ticket-1\|o2-ticket-3\|o2-ticket-4\|o2-ticket-5\|title=/.test(MP1_('src/p8.md')), '8.2.2\'s ticket screenshots are the first gallery');
+  const ex = MP1_('export_reference.py'), rd = MP1_('render.py'), mh = MP1_('make_html.py');
+  assert.ok(/text = re\.sub\(r"\\\{\\\{gallery:\(\[\^\}\]\+\)\\\}\\\}", lambda m: gallery_md\(m\.group\(1\)\), text\)/.test(ex) && /return "```gallery " \+ title/.test(ex), 'the export writes the ```gallery fence the reader draws');
+  assert.ok(/<figure class="shot gallery" data-title=/.test(rd) && /<div class="slide"><img src=/.test(rd), 'the HTML and Word build gets one figure of slides — md2model reads every image in it');
+  assert.ok(/mainEl\.querySelectorAll\('figure\.gallery'\)/.test(mh) && /@media print\{figure\.gallery\.on \.slide\{display:block\}/.test(mh), 'the HTML handbook steps through it on screen and prints every slide');
 });
 
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
