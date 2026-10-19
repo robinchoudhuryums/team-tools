@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-19",
+    "part": "p3",
+    "section": "§3-12",
+    "summary": "3.12.2 is the one compliance table again: each row now carries its HCPCS codes and the models we carry, and the separate item list (3.12.3) is gone.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19 (A5)"
+  },
+  {
+    "date": "2026-10-19",
     "part": "p0",
     "section": "§0-10",
     "summary": "The Messages button (which opens a transaction's notes) is along the bottom of the Transaction Workflow window, about a third of the way in from the left — not the bottom right. 0.10, its icon guide and 0.11.1 now say so.",
