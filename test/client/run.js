@@ -35858,6 +35858,19 @@ test('MP1-1: kbMd_ draws the manual\'s two table conventions — a "Step" table 
     assert.ok(M1_KB_SRC.indexOf('.kb-article ' + sel + ' {') > 0, sel + ' is styled'));
 });
 
+test('Operator 2026-10-19: a step table whose steps are NAMED draws them as labels — no number circle across the word — in the app and the HTML build (driven)', () => {
+  const c = m1Md_();
+  assert.ok(/^<table class="kb-steps"><thead>/.test(c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2a | Text |\n| 3. | Note |\n')), 'numbered steps keep the circle');
+  const named = c.kbMd_('| Step | What\'s happening |\n|---|---|\n| Referral | Order sent |\n| Insurance Verification | Confirmed |\n');
+  assert.ok(/^<table class="kb-steps kb-steps-named"><thead>/.test(named), named);
+  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| Validation | b |\n')), 'one named step makes the table a named one');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| Referral | 1 |\n')), 'never on a table that is not a step table');
+  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child::before \{ content: none; \}/.test(M1_KB_SRC), 'the named form draws no circle');
+  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps\.kb-steps-named td:first-child \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  const mh = MP1_('make_html.py');
+  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /table\.steps\.steps-named td:first-child\{width:10em/.test(mh), 'the HTML build draws the same split');
+});
+
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
   const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
   [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {
