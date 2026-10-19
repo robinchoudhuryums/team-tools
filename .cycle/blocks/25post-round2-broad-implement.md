@@ -11,6 +11,7 @@ New capabilities (G/ST): none from a scan — operator requests:
   B6 Sales and PAP teams as intake recipients from the CDR roster (first.last@universalmedsupply.com)
   B7 the intake emails redesigned (light blue; ledger; attestation boxes; cards in Insurance; the PPD grouped as on the form)
   B8 Manage Time flags a clocked-in rep idle 30+ min, scheduled breaks excluded (in-app)
+  B9 (follow-on, operator 2026-10-19) insurance-card photos fitted in the browser before they are kept (kbImgPrepare_: 1600 px / 1.5 MB)
 Files modified: web-app/00_config.js, web-app/20_timeclock.js, web-app/60_intake.js, web-app/intake/script_intake.html,
   web-app/tc/script_timeoff.html, web-app/tc/script_manager.html, test/client/run.js, test/client/dom/runDom.js,
   test/client/server-split-manifest.json, test/visual/mock.js, CLAUDE.md (counts), .cycle/config.md (INV-388..391, S144..S146), .cycle/STATE.md
@@ -27,6 +28,7 @@ B5 | script_intake.html | intakeAvailSerialize_/Parse_ (pure, 1024-subset round 
 B6 | 00_config.js, 60_intake.js, script_intake.html | intakeTeamEmail_/intakeTeamRosterParse_ (pure), intakeTeamRoster_ (cached on success), kind:'team' resolved against today's roster; optgroups + address hint; intakeRecipientSpec_ shared
 B7 | 00_config.js, 60_intake.js | intake palette (info tokens); new account and PPD builders; intakePpdEmailUnits_ (pure); tones/picked mirrored + pinned; images inside Insurance, none when absent
 B8 | 00_config.js, 20_timeclock.js, script_manager.html, mock.js | PRESENCE_LAST stamp (6 h); repIdleMinutes_ + liveIdleMin_ (pure-ish); idleMin on liveStatus; chip + summary line
+B9 | script_intake.html | intakeProcessImage_ fits each image through kbImgPrepare_ before keeping it; a refused image is toasted, never attached (Estimate S ~1 h, actual ~0.4 h; bitten)
 
 TEST RESULTS: Test Command is manual. Node harness 1394/1394, DOM harness 280/280, lint-server clean, counts --check agrees; every pushed commit's CI read green through B3 at the time of writing (B4–B8 runs to be read). Bite-checks: B0 guard, B1 ring + notes, B6 roster check, B7 images + tones, B8 break overlap — all BITE. Regression scenario walks (S144–S146, and the intake/time-clock scenarios S25, S59–S62, S128, S137) need the deployed app — NOT walked; owed after the deploy.
 REGRESSION RISKS: (1) The intake email is rebuilt — a recipient's mail filter keyed on the old navy layout or the "Attached Images" heading would miss it. (2) A team address is built from the roster name; a person whose real address does not follow first.last is sent to a wrong address — the picker shows the address before sending, and the operator says all follow the pattern. (3) The idle chip reads a long call with the app untouched as idle (stated in its tooltip). (4) The paste listener now acts on the whole PMD/PAP page while its drop zone is on screen.
@@ -40,13 +42,11 @@ OPERATOR ACTIONS / DEPLOY:
 Deploy: cd web-app && clasp push -f, then Apps Script editor → Deploy → Manage deployments → Edit → New version → Deploy
 
 FOLLOW-ON ITEMS:
-- An image shrink step before send (12 full-size photos can exceed the mail size limit) — offered, not approved.
+- (done as B9, 2026-10-19) the image shrink step.
 - The idle alert is in-app only; an email/digest version would need a 15-minute trigger (one more installable trigger) — the operator chose in-app first.
 - PAP Q (a PAP child department on the roster) is not listed — only "Sales" and "PAP" as asked.
 - A visual scenario for the pay statement modal does not exist; B4 was checked by DOM drives only.
 
 DOCUMENTATION UPDATES NEEDED:
-- docs/modules.md (Intake, Time Clock): the availability grid, team recipients, the email redesign, the pay-statement Edit day, the idle chip.
-- docs/operator-state.md: CONFIG.INTAKE.TEAM_* (the CDR roster tab the picker reads) and the PRESENCE_LAST stamp.
-- docs/design-decisions.md: "Intake emails share the app's email chrome" now has its own accent; a line for the team-recipient source.
+- Done by /sync-docs 2026-10-19: modules.md (Intake, Time Clock), operator-state.md (the DO NOT EDIT! roster tab), design-decisions.md (two decisions + the intake-chrome amendment), operator-log.md (2026-10-19), gotchas.md (g129 amendment, new g172).
 ---END BROAD SCAN IMPLEMENTATION SUMMARY---

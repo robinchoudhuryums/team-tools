@@ -240,6 +240,16 @@ not restate it. Server endpoints live in the fourteen server files
      as well. `biweeklyRangeFor_` is the one biweekly period rule, shared with
      the automated export.
 
+     **25post round 2 (operator 2026-10-16):** a manager's view of a rep's
+     pay statement offers **Edit day** inside Day Edit's window (in the rep's
+     timezone); Day Edit opens on that rep and date, and a Save reopens the
+     statement on the same period. Each adjusted day lists its punch-adjustment
+     requests — what was asked, the rep's reason, the status
+     (`payStmtAdjustments_`; a failed read is named). Manage Time's Live Status
+     flags a clocked-in rep idle 30+ minutes — no app activity and no punch,
+     scheduled breaks taken out — with an amber chip and a line under the card
+     (`liveIdleMin_`, INV-391; in-app only).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -804,6 +814,21 @@ not restate it. Server endpoints live in the fourteen server files
      **Cycle 24 seams (2026-10-05):** a custom recipient written with quotes or
      a second @ is refused by name — the org check and the logged domain could
      read such an address two ways (F21).
+
+     **25post round 2 (operator 2026-10-16/19):** the PMD form's required
+     phone is the primary one (index 2 had been the "secondary" row); the ring
+     counts required fields only; Other Notes closes the PMD/PAP form as its own
+     section; attestations (PMD 24/25, PAP 26 — not the factual PMD 22 or PAP
+     24) are amber until Yes, then green; empty fields show EN/ES example text.
+     ME and PPD Availability are a weekday × AM/PM grid with Open plus notes,
+     stored as ONE string in a fixed shape that reads back into the grid
+     (`intakeAvailSerialize_` / `intakeAvailParse_`, INV-390). Insurance-card
+     images are added at the bottom of the PMD/PAP form, survive Preview, and are
+     fitted by `kbImgPrepare_` (1600 px / 1.5 MB) before they are kept. The
+     note logged after a send uses the standard template (`intakeNoteFields_`).
+     The Send-to picker lists the Sales and PAP teams from the CDR roster
+     (`intakeTeamRoster_`, INV-388). The emails were redesigned in light blue
+     (INV-389) — see the intake-email-chrome decision's amendment.
 
 ## Reference
 

@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-19 — intake forms and emails, pay statement edits, the idle alert (25post round 2)
+
+**Adds NO Script Properties.** Deploy the web app (`clasp push -f`, then a New
+version). One check: the CDR Report's `DO NOT EDIT!` tab has columns headed
+"Sales" and "PAP" (see the operator-state entry). What changes:
+
+- **Intake forms.** The PMD form draws the primary phone as required (it was
+  drawn optional, and the secondary phone required); the progress ring counts
+  required fields only; Other Notes is its own closing section; the
+  attestations read amber until answered Yes, then green; empty fields show
+  example text. ME and PPD Availability are a weekday × AM/PM grid with Open
+  (selects every slot) plus a notes box. Insurance-card images are added at the
+  bottom of the PMD/PAP form, survive Preview, and large photos are shrunk in
+  the browser before sending.
+- **Recipients.** The Send-to picker lists a "Sales team" and a "PAP team"
+  from the CDR roster above the app users, and shows the address before
+  sending.
+- **Emails.** The intake emails are light blue and follow the approved mocks;
+  an email without images has no images section.
+- **The logged note** after an intake send uses the standard note template.
+- **Manage Time.** A rep's pay statement offers managers Edit day (opens Day
+  Edit, reopens after Save) and shows each adjusted day's request reason and
+  status. A clocked-in rep idle 30+ minutes (no app activity, no punch,
+  scheduled breaks not counted) gets an amber "idle" chip on Live Status — a
+  long call with the app untouched reads the same.
+
 ## 2026-10-16 — team rollout: per-rep note saves, the email allowance (25post)
 
 **Adds NO operator settings.** Deploy the web app (`clasp push -f`, then a New

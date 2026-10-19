@@ -70,6 +70,19 @@ entry says which it is.
   to any other domain is sent only after the rep confirms that domain, and an
   outside copy carries no feedback link. On a DEV instance whose intake
   recipients are a personal inbox, every send asks — by design.
+<a id="operator-the-do-not-edit-roster-tab-feeds-intake-recipients"></a>
+- **The CDR Report's `DO NOT EDIT!` roster tab feeds the intake Sales/PAP recipients (25post B6, operator 2026-10-16).**
+  No new Script Property: the picker reads the tab through `CDR_SS_ID`, with
+  `CONFIG.INTAKE.TEAM_ROSTER_TAB` (`'DO NOT EDIT!'`), `TEAM_ROSTER_FIRST_COL`
+  (6, column F), `TEAM_DEPTS` (`['Sales', 'PAP']`, matched to the row-1 headers
+  in any case; the header row stops at its first blank cell, the dashboard's own
+  rule) and `TEAM_CACHE_SEC` (600). Each "Name, ext" cell becomes
+  `first.last@` the first `CONFIG.ORG_EMAIL_DOMAINS` domain. **Check once
+  after the deploy:** the tab has columns headed "Sales" and "PAP" — a missing
+  one is named in a warning when the picker loads, and its people are simply
+  not listed. Someone whose real address does not follow first.last must be
+  sent to with Custom email. PAP Q (a child department) is not read. A rename of
+  the tab or a moved first column needs a CONFIG edit and a deploy.
 <a id="operator-the-quizresets-tab-cycle-23"></a>
 - **The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger (cycle 23 TRN-1, operator 2026-10-05).**
   Auto-created on first use; append-only; columns ResetAt, QuizId, EmpId,
