@@ -365,7 +365,7 @@ Nearly all of these were found by MEASUREMENT, not by reading. A squeezed layout
 - **The app has ONE primary-button vocabulary: `--accent` green (V-8, cycle-12).** Fires when you add a primary action. [Detail](docs/gotchas.md#g61-the-app-has-one-primary-button-vocabulary)
 - **A state that can be ZERO must not be painted in a SURFACE colour (V-10, cycle-12).** Fires when a chart state can legitimately be zero. [Detail](docs/gotchas.md#g62-a-state-that-can-be-zero-must)
 - **Two chip rows with the same shape must not do different things (V-12, cycle-12).** Fires when two chip rows share a shape but not a behaviour. [Detail](docs/gotchas.md#g63-two-chip-rows-with-the-same-shape)
-- **The app prints through ONE `@media print` block, and its two non-obvious rules are load-bearing (cycle-18 batch 8); printing ONE subject is rule (4) in the same block, by display, never a second block (22post M4); a Quick Reference Card prints as a card through rule (5), its diagram on the next sheet (manual reader design Phase 8); dark mode prints each palette's light accent through rule (6) (2026-10-12).** Fires when you change what prints, or hide chrome from the printout. Verify: `print-check.mjs` + M4-P1 + MRD-8 + MRD-9. [Detail](docs/gotchas.md#g64-the-app-prints-through-one-media-print)
+- **The app prints through ONE `@media print` block, and its two non-obvious rules are load-bearing (cycle-18 batch 8); printing ONE subject is rule (4) in the same block, by display, never a second block (22post M4); a Quick Reference Card prints as a card through rule (5), its diagram on the next sheet (manual reader design Phase 8); dark mode prints each palette's light accent through rule (6) (2026-10-12); a tutorial slideshow prints every slide through rule (7) (2026-10-19).** Fires when you change what prints, or hide chrome from the printout. Verify: `print-check.mjs` + M4-P1 + MRD-8 + MRD-9. [Detail](docs/gotchas.md#g64-the-app-prints-through-one-media-print)
 - **A pill tab strip must scroll inside itself, or it pushes the whole page sideways (operator 2026-08-11).** Fires when a pill strip can outgrow the viewport. [Detail](docs/gotchas.md#g71-a-pill-tab-strip-must-scroll-inside)
 - **Two layout lessons that only MEASUREMENT found, both from one chip (operator testing note 10, 2026-09-10) — and a third: an unshrinkable sibling squeezed a Call Notes card's `min-width: 0` text column to 22px at 390px (cycle 25 F68), which the matrix now measures as `narrowText` (cycle 25 F69).** Fires when a nowrap pill sits in a `1fr` track, you fight a shared descendant rule, or a flexible column shares a row it cannot wrap with fixed-width controls. [Detail](docs/gotchas.md#g72-two-layout-lessons-that-only-measurement-found)
 - **The `hidden` attribute LOSES to any class rule that sets `display` (operator #2 batch, 2026-08-06 — MEASURED).** Fires when an element carries a display-setting class AND the `hidden` attribute. [Detail](docs/gotchas.md#g73-the-hidden-attribute-loses-to-any-class)
@@ -967,7 +967,7 @@ this block, or the command that prints the number.
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
 | Invariant library entries | 377 | `.cycle/config.md` |
-| Regression scenarios (S*) | 141 | `.cycle/config.md` |
+| Regression scenarios (S*) | 143 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

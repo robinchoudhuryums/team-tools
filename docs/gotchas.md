@@ -1994,6 +1994,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   MRD-9 — and printed cross-references use `--accent-2`. `print-check.mjs`
   measures a link's printed contrast in every palette.
 
+  **Rule (7), 2026-10-19: a tutorial slideshow prints EVERY slide.** A
+  ` ```gallery ` shows one slide at a time on screen by CLASSING the others off
+  (`.kb-gal-off`, never the `hidden` attribute — g73), so the print block can
+  show them all (`display: block !important`) and drop the Previous / Next row
+  and the counter: paper has no Next. Pinned by the 2026-10-19 slideshow pin,
+  which reads the rule inside the one block.
+
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
 - **Read the server through `serverSource()` — never by FILENAME, and never by
