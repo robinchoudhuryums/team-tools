@@ -35858,6 +35858,19 @@ test('MP1-1: kbMd_ draws the manual\'s two table conventions — a "Step" table 
     assert.ok(M1_KB_SRC.indexOf('.kb-article ' + sel + ' {') > 0, sel + ' is styled'));
 });
 
+test('Operator 2026-10-19: a step table whose steps are NAMED draws them as labels — no number circle across the word — in the app and the HTML build (driven)', () => {
+  const c = m1Md_();
+  assert.ok(/^<table class="kb-steps"><thead>/.test(c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2a | Text |\n| 3. | Note |\n')), 'numbered steps keep the circle');
+  const named = c.kbMd_('| Step | What\'s happening |\n|---|---|\n| Referral | Order sent |\n| Insurance Verification | Confirmed |\n');
+  assert.ok(/^<table class="kb-steps kb-steps-named"><thead>/.test(named), named);
+  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| Validation | b |\n')), 'one named step makes the table a named one');
+  assert.ok(/^<table><thead>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| Referral | 1 |\n')), 'never on a table that is not a step table');
+  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child::before \{ content: none; \}/.test(M1_KB_SRC), 'the named form draws no circle');
+  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps\.kb-steps-named td:first-child \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  const mh = MP1_('make_html.py');
+  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /table\.steps\.steps-named td:first-child\{width:10em/.test(mh), 'the HTML build draws the same split');
+});
+
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
   const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
   [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {
@@ -39146,7 +39159,7 @@ test('B7: the PMD email — attestations green when confirmed and amber when not
   assert.ok(/#e4f5ec[^>]*>.*&#10003; Explained mobility evaluation/.test(html), 'a confirmed attestation is green with a check');
   assert.ok(/#fbf1d9[^>]*><strong>&#9675; Permission to call &amp; schedule Mobility Evaluation with MDO\?<\/strong> &mdash; <strong>not confirmed<\/strong>/.test(html), 'an unanswered one is amber and says "not confirmed"');
   const pmdFalse = ctx.intakeBuildAcctBodyHtml_(b7Acct_({ 25: 'FALSE' }), ctx.INTAKE_PMD_LAYOUT, '');
-  assert.ok(/answered No/.test(pmdFalse), 'a deliberate No is said as one');
+  assert.ok(/<strong>&#10007; Permission to call[^<]*<\/strong> &mdash; <strong>answered No<\/strong>/.test(pmdFalse), 'a deliberate No is said as one, led by a cross (operator 2026-10-19)');
   assert.ok(/ME Availability<\/div><div[^>]*>Mon, Wed · AM<\/div><div[^>]*>unavailable 10\/18<\/div>/.test(html), 'availability: the grid answer, then its note');
   assert.ok(/PPD Availability<\/div><div[^>]*>Open \(any weekday, any time\)<\/div>/.test(html));
   assert.ok(/<td width="50%"[^>]*>.*ME Availability.*<td width="50%"[^>]*>.*PPD Availability/.test(html), 'the two sit side by side');
@@ -39171,10 +39184,18 @@ test('B7: insurance-card images sit at the end of the Insurance section, and an 
   // The decoder returns an EMPTY block when nothing decodes.
   const dctx = vm.createContext({ String, CONFIG: { INTAKE: { MAX_IMAGES: 12, MAX_IMAGE_CHARS: 1e6 } }, CN_EMAIL_PALETTE: { line: '#l', muted: '#m' },
     Utilities: { newBlob: () => ({}), base64Decode: () => [] } });
+  vm.runInContext('var INTAKE_EMAIL_IMG_WIDTH = ' + /const INTAKE_EMAIL_IMG_WIDTH = (\d+);/.exec(serverSource())[1] + ';', dctx);
+  vm.runInContext(extractRawFunction('Code.js', 'intakeEmailImgStyle_'), dctx);
   vm.runInContext(extractRawFunction('Code.js', 'intakeDecodeImages_'), dctx);
   assert.strictEqual(dctx.intakeDecodeImages_(['not a data url']).sectionHtml, '', 'nothing decoded, no section');
   const one = dctx.intakeDecodeImages_(['data:image/png;base64,AAAA']).sectionHtml;
   assert.ok(/Insurance card images \(1\)/.test(one) && /cid:attachedImage0/.test(one) && /^<tr>/.test(one), 'one image: a table row with its caption');
+  // Operator 2026-10-19: a card is drawn at 340px, not the full 560px column — CSS for clients, the attribute for Outlook.
+  assert.ok(/width="340"/.test(one) && /width:340px;max-width:100%/.test(one) && !/max-width:560px/.test(one), 'images are 340px wide');
+  // The preview carries an empty slot where the images go, OUTSIDE the hashed body.
+  const prev = extractRawFunction('Code.js', 'intakePreviewAcct_');
+  assert.ok(/const body = intakeBuildAcctBodyHtml_\(rows, layout\);/.test(prev) && /bodyHash: intakeBodyHash_\(body, subject\)/.test(prev) &&
+    /intakeBuildAcctBodyHtml_\(rows, layout, INTAKE_PREVIEW_IMG_SLOT\)/.test(prev), 'the preview shows the slot, the hash covers the body without it');
   // The send hashes the image-free body and adds the images only to the final one.
   const send = extractRawFunction('Code.js', 'intakeSendAcct_');
   assert.ok(/intakeBodyHash_\(body, subject\) !== expectedBodyHash/.test(send) &&

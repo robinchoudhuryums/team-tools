@@ -271,6 +271,11 @@
     width: 24px; height: 24px; margin-left: -12px; box-sizing: border-box; border-radius: 50%;
     border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
   .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-article[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
+  /* A NAMED step ("Referral", "Open") is a label, not a number: no circle, the body
+     face, a column wide enough for "Documentation Request" (operator 2026-10-19). */
+  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child {
+    width: 11em; padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
+  .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child::before, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child::before { content: none; }
   /* M5 — a section link is a solid underline; a bare number link reads as a number. */
   .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
   .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
@@ -2831,7 +2836,14 @@ function kbMd_(src) {
       // a header opening with \u2713 / \u2717 tints its column. The header text is
       // already escaped and neither glyph is touched by the escape.
       var tone = headCells.map(function (c) { return /^\u2713/.test(c) ? 'kb-do' : (/^\u2717/.test(c) ? 'kb-dont' : ''); });
-      var tcls = (/^step$/i.test(headCells[0] || '') ? ['kb-steps'] : [])
+      // A step table whose steps are NAMED ("Referral", "Open") rather than
+      // numbered draws them as centred labels: a word does not fit the number's
+      // circle, so the circle drew across it (operator 2026-10-19).
+      var stepTbl = /^step$/i.test(headCells[0] || ''), stepNamed = false;
+      for (var sj = i + 2; stepTbl && sj < lines.length && /^\s*\|/.test(lines[sj]); sj++) {
+        if (!/^\s*\d+[a-z]?\.?\s*$/i.test(tableCells(lines[sj])[0] || '')) { stepNamed = true; break; }
+      }
+      var tcls = (stepTbl ? ['kb-steps'].concat(stepNamed ? ['kb-steps-named'] : []) : [])
         .concat(tone.some(function (t) { return t; }) ? ['kb-dodont'] : []);
       var tbl = '<table' + (tcls.length ? ' class="' + tcls.join(' ') + '"' : '') + '><thead><tr>';
       headCells.forEach(function (c, ci) {

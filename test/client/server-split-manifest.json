@@ -3230,6 +3230,31 @@
     "recordPresence"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-19",
+   "why": "intake email: a deliberate No attestation leads with a cross, not the empty circle (operator 2026-10-19)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "intakeBuildAcctBodyHtml_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-19",
+   "why": "intake email images at 340px; the preview shows the attached images in a slot outside the hashed body (operator 2026-10-19)",
+   "added": [
+    "INTAKE_EMAIL_IMG_WIDTH",
+    "INTAKE_PREVIEW_IMG_SLOT",
+    "intakeEmailImgStyle_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeDecodeImages_",
+    "intakePreviewAcct_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4149,6 +4174,11 @@
    "kind": "const",
    "sha": "7a6bc47407650baa"
   },
+  "INTAKE_EMAIL_IMG_WIDTH": {
+   "file": "60_intake.js",
+   "kind": "const",
+   "sha": "e1e7b56313db64d8"
+  },
   "INTAKE_FEEDBACK_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4233,6 +4263,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7e2d2ddfcfdea037"
+  },
+  "INTAKE_PREVIEW_IMG_SLOT": {
+   "file": "60_intake.js",
+   "kind": "const",
+   "sha": "2e0d35268eb5b872"
   },
   "INTAKE_STORE_CELL_MAX": {
    "file": "00_config.js",
@@ -8782,7 +8817,7 @@
   "intakeBuildAcctBodyHtml_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "3b0bbf16a9870a6a"
+   "sha": "f61b063f2c05c20c"
   },
   "intakeBuildPpdBodyHtml_": {
    "file": "60_intake.js",
@@ -8802,7 +8837,7 @@
   "intakeDecodeImages_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "a693e1cdee412332"
+   "sha": "40eccc4a2ed3fab2"
   },
   "intakeDeriveClinicalFactors_": {
    "file": "60_intake.js",
@@ -8813,6 +8848,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "cfa4e9727fa57cd7"
+  },
+  "intakeEmailImgStyle_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "34e87b1c8c9621fe"
   },
   "intakeEmailShell_": {
    "file": "60_intake.js",
@@ -8932,7 +8972,7 @@
   "intakePreviewAcct_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "ff46a146d3678325"
+   "sha": "7da5af797c58b1ff"
   },
   "intakePreviewPAP": {
    "file": "60_intake.js",

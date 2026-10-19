@@ -1402,7 +1402,8 @@ function intakeRecListHtml_(items, selections) {
 // no image was attached (operator 2026-10-16).
 // 25post B7: a label/value ledger with identifiers in a fixed-width face; from
 // the attestations down, the statements the rep made are full-width boxes —
-// green when confirmed, amber when not — the availability answers sit side by
+// green when confirmed, amber when not (a check, a cross for a deliberate No,
+// an empty circle for no answer — operator 2026-10-19) — the availability answers sit side by
 // side, and Other Notes closes the body in its own box.
 function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
   const P = CN_EMAIL_PALETTE;
@@ -1436,7 +1437,7 @@ function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
       html += '<tr><td colspan="2" style="padding:5px 0;">' +
         '<div style="padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.45;background:' + (yes ? P.accentSoft : P.warnSoft) +
           ';border:1px solid ' + (yes ? P.accentBorder : P.warnBorder) + ';color:' + (yes ? P.accentDeep : P.warnDeep) + ';">' +
-          '<strong>' + (yes ? '&#10003; ' : '&#9675; ') + label + '</strong>' + tail + '</div></td></tr>';
+          '<strong>' + (yes ? '&#10003; ' : answerRaw === 'FALSE' ? '&#10007; ' : '&#9675; ') + label + '</strong>' + tail + '</div></td></tr>';
       return;
     }
     if (avail.indexOf(i) >= 0) {
@@ -1483,6 +1484,17 @@ function intakeBuildAcctBodyHtml_(rows, layout, imagesHtml) {
 // SHA-256 over the body+subject — guards the patient answers between Preview
 // and Send (the rep may edit the form in between). Mirrors INV-41.
 function intakeBodyHash_(html, subject) { return computeCnEmailHash_(html, subject, ''); }
+// An insurance card is ~3.4 in wide, so 340px reads clearly without filling
+// the email (it was the full 560px column — operator 2026-10-19). The width
+// attribute is for Outlook, which ignores CSS width on an image.
+const INTAKE_EMAIL_IMG_WIDTH = 340;
+function intakeEmailImgStyle_() {
+  return 'display:block;width:' + INTAKE_EMAIL_IMG_WIDTH + 'px;max-width:100%;height:auto;border:1px solid ' + CN_EMAIL_PALETTE.line + ';border-radius:6px;margin:8px 0 0;';
+}
+// The preview's place for the images (operator 2026-10-19): the images never
+// travel at preview, so the browser fills this row from the ones the rep
+// attached. It is outside the hashed body, so the INV-41 contract is untouched.
+const INTAKE_PREVIEW_IMG_SLOT = '<tr data-intk-img-slot="1"></tr>';
 function intakeDecodeImages_(images) {
   const inlineImagesObj = {};
   let sectionHtml = '';
@@ -1511,11 +1523,11 @@ function intakeDecodeImages_(images) {
     const data = str.substring(comma + 1);
     const blob = Utilities.newBlob(Utilities.base64Decode(data), contentType, cid);
     inlineImagesObj[cid] = blob;
-    imgsHtml += '<img src="cid:' + cid + '" alt="Insurance card image ' + (n + 1) + '" style="display:block;width:100%;max-width:560px;height:auto;border:1px solid ' + CN_EMAIL_PALETTE.line + ';border-radius:6px;margin:8px 0 0;" />';
+    imgsHtml += '<img src="cid:' + cid + '" alt="Insurance card image ' + (n + 1) + '" width="' + INTAKE_EMAIL_IMG_WIDTH + '" style="' + intakeEmailImgStyle_() + '" />';
     n++;
   });
   if (n) {
-    sectionHtml = '<tr><td colspan="2" style="padding:10px 10px 12px;border-bottom:1px solid ' + CN_EMAIL_PALETTE.line + ';">' +
+    sectionHtml = '<tr><td colspan="2" style="padding:10px 10px 12px;border-bottom:1px solid ' + CN_EMAIL_PALETTE.line + ';">' +   // mirrored by the preview's imgCellStyle
       '<div style="font-size:12px;color:' + CN_EMAIL_PALETTE.muted + ';">Insurance card images (' + n + ')</div>' + imgsHtml + '</td></tr>';
   }
   return { inlineImagesObj: inlineImagesObj, sectionHtml: sectionHtml };
@@ -1747,9 +1759,12 @@ function intakePreviewAcct_(formType, payload) {
   const dob = String(payload.dob || '').trim();
   const layout = formType === 'PAP' ? INTAKE_PAP_LAYOUT : INTAKE_PMD_LAYOUT;
   const subject = (formType === 'PAP' ? 'PAP' : 'PMD') + ' Account Creation for ' + patientInfo + (dob ? ' ' + dob : '');
-  const body = intakeBuildAcctBodyHtml_(intakeAcctRowsEn_(formType, payload.answers), layout);   // F-27
-  const html = intakeEmailShell_(subject, body, 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
-  return { success: true, html: html, subject: subject, bodyHash: intakeBodyHash_(body, subject) };
+  const rows = intakeAcctRowsEn_(formType, payload.answers);   // F-27
+  const body = intakeBuildAcctBodyHtml_(rows, layout);
+  const html = intakeEmailShell_(subject, intakeBuildAcctBodyHtml_(rows, layout, INTAKE_PREVIEW_IMG_SLOT), 'Intake · ' + (formType === 'PAP' ? 'PAP' : 'PMD'));
+  return { success: true, html: html, subject: subject, bodyHash: intakeBodyHash_(body, subject),
+    imgCellStyle: 'padding:10px 10px 12px;border-bottom:1px solid ' + CN_EMAIL_PALETTE.line + ';',
+    imgCaptionStyle: 'font-size:12px;color:' + CN_EMAIL_PALETTE.muted + ';', imgStyle: intakeEmailImgStyle_() };
 }
 function intakeSendAcct_(formType, payload, recipientSpec, images, expectedBodyHash) {
   const emp = getEmployeeInfo_();
