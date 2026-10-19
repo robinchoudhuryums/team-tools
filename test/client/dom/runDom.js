@@ -8493,3 +8493,19 @@ test('B8 DOM: an idle rep gets an amber "idle" chip on their Live Status card an
   assert.ok(/A long call or work outside the app reads the same/.test(chip), 'and the tooltip says what idle measures');
   assert.strictEqual(h.read('mgrIdleChip_')({ idleMin: null }), '', 'no chip when not idle');
 });
+
+test('B9 DOM: a card photo is fitted by the shared image fitter before it is kept; a photo it cannot fit is said, never attached', async () => {
+  const { h } = bootAcct('pmd');
+  h.window.__fitted = [];
+  h.read('kbImgPrepare_ = function (u, cb) { window.__fitted.push(u.slice(0, 11)); cb(null, "data:image/jpeg;base64,FITTED"); }');
+  h.window.intakeProcessImage_('pmd', new h.window.Blob(['raw-bytes'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.read('INTAKE_STATE.pmd.images.length'); i++) await tick();
+  assert.deepStrictEqual(Array.from(h.window.__fitted), ['data:image/'], 'the read photo went through the fitter');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images[0]'), 'data:image/jpeg;base64,FITTED', 'the FITTED image is what is kept and sent');
+  h.read('kbImgPrepare_ = function (u, cb) { cb("Image too large even after shrinking"); }');
+  h.window.intakeProcessImage_('pmd', new h.window.Blob(['huge'], { type: 'image/png' }));
+  for (let i = 0; i < 20; i++) await tick();
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images.length'), 1, 'an image the fitter refuses is not attached');
+  assert.ok(/too large even after shrinking/.test(h.document.body.textContent), 'and the rep is told why');
+  assert.ok(/Large photos are shrunk before they are sent/.test(h.$('.intk-img-hint').textContent), 'the instruction says so');
+});

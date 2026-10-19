@@ -2635,8 +2635,8 @@ function intakeImagesSectionHtml_(form, lang) {
       esc(es ? 'Arrastre las imágenes aquí o haga clic para elegirlas' : 'Drag images here, or click to choose') + '</button>' +
     '<input type="file" id="intk-file" aria-label="' + esc(es ? 'Elegir imágenes para adjuntar' : 'Choose images to attach') + '" accept="image/*" multiple style="display:none">' +
     '<p class="intk-img-hint">' + esc(es
-      ? 'También puede pegar una captura de pantalla (Ctrl+V). Frente y reverso de cada tarjeta, hasta 12 imágenes. Se envían con el correo.'
-      : 'You can also paste a screenshot (Ctrl+V). Front and back of each card, up to 12 images. They are sent with the email.') + '</p>' +
+      ? 'También puede pegar una captura de pantalla (Ctrl+V). Frente y reverso de cada tarjeta, hasta 12 imágenes. Las fotos grandes se reducen antes de enviarse.'
+      : 'You can also paste a screenshot (Ctrl+V). Front and back of each card, up to 12 images. Large photos are shrunk before they are sent.') + '</p>' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
   '</div></div>';
 }
@@ -2702,12 +2702,23 @@ function intakeProcessImage_(form, file) {
   if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images.', 'toast-warn'); return; }
   var reader = new FileReader();
   reader.onload = function (e) {
-    // INT-3 — re-check inside the async callback: dropping >12 files at once
-    // passed every synchronous check while length was still 0, rendering a
-    // gallery the server then silently sliced to 12 at send.
-    if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images — extra file skipped.', 'toast-warn'); return; }
-    INTAKE_STATE[form].images.push(e.target.result);
-    intakeRenderGallery_(form);
+    // 25post B9 (operator 2026-10-19): a phone photo of a card is often 3–8 MB,
+    // and twelve of them overrun the email size limit. The browser fits each
+    // one BEFORE it is kept — no wider than 1600 px and no more than 1.5 MB,
+    // re-encoded only when it is over either; a small image is kept byte for
+    // byte. ONE rule with the Reference editor's pasted images (kbImgPrepare_,
+    // the same app page), so the two cannot drift.
+    var keep = function (err, dataUrl) {
+      if (err) { showToast(err, 'toast-warn'); return; }
+      // INT-3 — re-check inside the async callback: dropping >12 files at once
+      // passed every synchronous check while length was still 0, rendering a
+      // gallery the server then silently sliced to 12 at send.
+      if ((INTAKE_STATE[form].images || []).length >= max) { showToast('Up to ' + max + ' images — extra file skipped.', 'toast-warn'); return; }
+      INTAKE_STATE[form].images.push(dataUrl);
+      intakeRenderGallery_(form);
+    };
+    if (typeof kbImgPrepare_ === 'function') kbImgPrepare_(e.target.result, keep);
+    else keep(null, e.target.result);
   };
   reader.readAsDataURL(file);
 }
