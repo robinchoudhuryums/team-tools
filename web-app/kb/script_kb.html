@@ -216,6 +216,15 @@
   .kb-man-part .kb-article blockquote { padding: 11px 16px; margin: 1em 0 1.1em; }
   .kb-man-tw { overflow-x: auto; margin: 1em 0 1.25em; }
   .kb-man-tw.kb-man-tw-m { border: 1px solid var(--line); border-radius: 8px; }
+  /* Operator 2026-10-19 — a table that fits keeps its header row in view below the
+     reader's band (kbManualStickyHeads_). The scroll box goes, so the sticky header
+     can stick; the top is the band's height less the scroller's 18px padding (g162),
+     and the header is opaque, with its rule drawn by a shadow (a collapsed border
+     stays behind with the row). */
+  .kb-main { --kb-man-band: 18px; }   /* measured into the scroller's own style by kbManualStickyHeads_ */
+  .kb-man-tw.kb-man-tw-fit { overflow: visible; }
+  .kb-man-part .kb-article .kb-man-tw-fit > table > thead th { position: sticky; top: calc(var(--kb-man-band) - 18px); z-index: 2; background: var(--paper-card); border-bottom-color: transparent; box-shadow: inset 0 -1px 0 var(--line); }
+  .kb-man-part .kb-article .kb-man-tw-fit > table.kb-man-matrix > thead th { background: color-mix(in oklab, var(--man-c) 14%, var(--paper-card)); box-shadow: inset 0 -2px 0 var(--man-c); }
   .kb-man-part .kb-article .kb-man-tw > table { display: table; width: 100%; margin: 0; font-size: .93rem; }
   .kb-man-part .kb-article table.kb-man-compact th { color: var(--ink); font-size: 11px; padding: 6px 14px 7px 0; }
   .kb-man-part .kb-article table.kb-man-compact td { padding: 9px 14px 9px 0; }
@@ -3582,6 +3591,7 @@ function kbManualPaintPart_(main, part, id, anchor, nav) {
   KB_STATE.manualSpyId = null;
   main.innerHTML = kbManualPartHtml_(part);
   kbManualDecorate_(main);
+  kbManualStickyHeads_(main);
   kbGlossaryAnnotate_(main);
   kbLinkHcpcs_(main);
   kbManualPaintMeta_();
@@ -3702,6 +3712,36 @@ function kbManualDecorate_(root) {
   root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
     if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
   });
+}
+/** Operator 2026-10-19 — a table's header row stays in view, below the reader's
+ *  band, until the table scrolls past. A sticky header cannot stick inside a
+ *  scroll box, and every table sits in one (.kb-man-tw scrolls sideways when it
+ *  is wider than the reader), so a table that FITS drops its scroll box
+ *  (kb-man-tw-fit) and its header sticks; a wider one keeps scrolling sideways,
+ *  header and all. Decided by measurement, never assumed: an unmeasured table
+ *  (not laid out yet, width 0) keeps its scroll box, and every size change
+ *  measures again. The band's height (it grows with the Back row) is the
+ *  header's offset, as --kb-man-band on the scroller. */
+function kbManualStickyHeads_(main) {
+  if (!main || !main.querySelectorAll) return;
+  var band = main.querySelector('.kb-man-top');
+  function bandH() { main.style.setProperty('--kb-man-band', (band && band.offsetHeight ? band.offsetHeight : 0) + 'px'); }
+  function fit(w) {
+    if (!w.clientWidth) return;
+    w.classList.remove('kb-man-tw-fit');
+    w.classList.toggle('kb-man-tw-fit', w.scrollWidth <= w.clientWidth + 1);
+  }
+  var tws = [].slice.call(main.querySelectorAll('.kb-man-tw'));
+  bandH();
+  tws.forEach(fit);
+  if (KB_STATE.manualHeadsRo) { try { KB_STATE.manualHeadsRo.disconnect(); } catch (e) {} KB_STATE.manualHeadsRo = null; }
+  if (typeof ResizeObserver !== 'function') return;
+  var ro = new ResizeObserver(function (entries) {
+    entries.forEach(function (en) { if (en.target === band) bandH(); else fit(en.target); });
+  });
+  if (band) ro.observe(band);
+  tws.forEach(function (w) { ro.observe(w); });
+  KB_STATE.manualHeadsRo = ro;
 }
 /** M14 / M19 — a card's body (in a masthead, or its own Appendix C page): the
  *  text goes into one wrapper the columns apply to, and the diagram follows it

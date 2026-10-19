@@ -5739,6 +5739,34 @@ test('MR2 DOM (operator testing 2026-10-08): the reader reads like the HTML manu
   assert.strictEqual(h.read('kbManualTitleHtml_')('10.A Quick <b>'), '<span class="kb-man-sn">10.A</span> Quick &lt;b&gt;', 'the chip and the rest are both escaped');
 });
 
+test('Operator 2026-10-19 DOM: a handbook table that FITS drops its scroll box so its header row sticks below the reader band; a wider one, or one not laid out yet, keeps scrolling', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Notes.\n\n| Item | Code |\n|---|---|\n| Bed | E0260 |\n\n| Model | HCPCS | Allowance | Sizing |\n|---|---|---|---|\n| Wipes | A4335 | 2 packs | 100 |\n\n| Event | Effect |\n|---|---|\n| Moves | Stops |\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const main = doc.getElementById('kb-main');
+  const tws = [...main.querySelectorAll('.kb-man-tw')];
+  assert.strictEqual(tws.length, 3);
+  // jsdom lays nothing out: give each box the widths a browser would measure.
+  const size = (el, cw, sw) => { Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => cw }); Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => sw }); };
+  size(tws[0], 700, 700);   // fits
+  size(tws[1], 350, 620);   // wider than the reader (a phone)
+  size(tws[2], 0, 0);       // not laid out yet
+  const band = main.querySelector('.kb-man-top');
+  Object.defineProperty(band, 'offsetHeight', { configurable: true, get: () => 49 });
+  h.read('kbManualStickyHeads_')(main);
+  assert.ok(tws[0].classList.contains('kb-man-tw-fit'), 'a table that fits drops its scroll box, so its header can stick');
+  assert.ok(!tws[1].classList.contains('kb-man-tw-fit'), 'a wider table keeps scrolling sideways');
+  assert.ok(!tws[2].classList.contains('kb-man-tw-fit'), 'an unmeasured table is never assumed to fit');
+  assert.strictEqual(main.style.getPropertyValue('--kb-man-band'), '49px', 'the band height is the header offset');
+  // A later measurement can take the fit away (the reader got narrower).
+  size(tws[0], 300, 700);
+  h.read('kbManualStickyHeads_')(main);
+  assert.ok(!tws[0].classList.contains('kb-man-tw-fit'), 'measured again, a table that no longer fits scrolls again');
+});
+
 test('MRD-1 DOM (manual reader design Phase 1): a callout opener becomes kicker + title with its text unchanged, punctuation-only and run-on labels are left readable, a two-column table is marked to stack, a bare-number link reads as a number — and decorating twice changes nothing', async () => {
   const h = m4Boot_();
   const doc = h.window.document;

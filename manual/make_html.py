@@ -964,6 +964,14 @@ main > .eyebrow{max-width:74ch}
 @media print{#otp,.eyebrow{display:none}}
 /* headers inside a scrolling table container can't stick to the viewport; keep them in flow */
 .tw th{position:static!important;top:auto!important}
+/* ...so a table that FITS drops its scroll box (.fit, set by measurement in the
+   script) and its header row stays in view below the context bar until the table
+   scrolls past (operator 2026-10-19); a wider table keeps scrolling sideways */
+@media screen{
+ .tw.fit{overflow:visible}
+ .tw.fit th{position:sticky!important;top:var(--ctxh,0px)!important;z-index:3}
+ .tw.fit table.compact th{background:var(--bg)}
+}
 
 /* ============================================ card chrome + print (step 4) === */
 .qrh,.qrf{display:flex;justify-content:space-between;align-items:baseline;
@@ -1703,8 +1711,16 @@ document.getElementById('prcards').addEventListener('click',()=>window.print());
 const tws=[...mainEl.querySelectorAll('.tw')];
 const twMore=t=>t.classList.toggle('more',t.scrollLeft+t.clientWidth<t.scrollWidth-2);
 tws.forEach(t=>{t.addEventListener('scroll',()=>twMore(t),{passive:true});twMore(t);});
-window.addEventListener('resize',()=>tws.forEach(twMore));
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>tws.forEach(twMore));
+// a table that fits loses its scroll box so its header can stick (measured; an
+// unmeasured one keeps scrolling), and the header sits below the context bar
+// where that bar sticks (its own top, 41px under the menu button on a phone)
+const ctxEl=document.getElementById('ctx');
+const twFit=t=>{if(!t.clientWidth)return;t.classList.remove('fit');t.classList.toggle('fit',t.scrollWidth<=t.clientWidth+1);};
+const ctxH=()=>{const cs=ctxEl&&getComputedStyle(ctxEl);document.documentElement.style.setProperty('--ctxh',(cs&&cs.position==='sticky'&&cs.display!=='none'?(parseFloat(cs.top)||0)+ctxEl.offsetHeight:0)+'px');};
+const twAll=()=>{ctxH();tws.forEach(twFit);tws.forEach(twMore);};
+twAll();
+window.addEventListener('resize',twAll);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(twAll);
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;

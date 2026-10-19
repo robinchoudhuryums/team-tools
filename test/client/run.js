@@ -35871,6 +35871,18 @@ test('Operator 2026-10-19: a step table whose steps are NAMED draws them as labe
   assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /table\.steps\.steps-named td:first-child\{width:10em/.test(mh), 'the HTML build draws the same split');
 });
 
+test('Operator 2026-10-19: the HTML handbook\'s tables that fit keep their header row in view below the context bar — measured, screen only; and the reader paints the same (kbManualStickyHeads_)', () => {
+  const mh = MP1_('make_html.py');
+  assert.ok(/@media screen\{\n \.tw\.fit\{overflow:visible\}\n \.tw\.fit th\{position:sticky!important;top:var\(--ctxh,0px\)!important;z-index:3\}/.test(mh), 'a fitting table drops its scroll box and its header sticks, on screen only');
+  assert.ok(/const twFit=t=>\{if\(!t\.clientWidth\)return;t\.classList\.remove\('fit'\);t\.classList\.toggle\('fit',t\.scrollWidth<=t\.clientWidth\+1\);\};/.test(mh), 'fit is measured, and an unmeasured table keeps scrolling');
+  assert.ok(/parseFloat\(cs\.top\)\|\|0\)\+ctxEl\.offsetHeight/.test(mh), 'the offset is where the context bar sticks, plus its height (41px lower on a phone)');
+  assert.ok(/window\.addEventListener\('resize',twAll\)/.test(mh), 'and is measured again on resize');
+  assert.ok(/kbManualDecorate_\(main\);\n  kbManualStickyHeads_\(main\);/.test(M1_KB_SRC), 'the reader measures after it wraps the tables');
+  assert.ok(/\.kb-man-tw\.kb-man-tw-fit \{ overflow: visible; \}/.test(M1_KB_SRC) &&
+    /\.kb-man-tw-fit > table > thead th \{ position: sticky; top: calc\(var\(--kb-man-band\) - 18px\); z-index: 2; background: var\(--paper-card\)/.test(M1_KB_SRC),
+    'in the reader, fit drops the scroll box and the header sticks below the band (less the 18px scroller padding, g162), opaque');
+});
+
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
   const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
   [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {
