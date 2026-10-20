@@ -29,7 +29,11 @@ fence before 8.2.2 arrives, or it shows as a raw code block. What changes:
 - **Handbook content.** The Open items tables match what is pending; D9 (the
   Messages button is along the bottom, a third of the way in); the Chapter 2, 3
   and 7 resource links; 3.12.2 is the one compliance table with HCPCS codes and
-  3.12.3 is gone. The live checklist is the operator's handbook checklist page.
+  3.12.3 is gone; the Chapter 4 Sales answers and B.1's backup; 5.11 and 4.4
+  link the Payor/HCPCS Order Acceptance Sheet in print and HTML, and open the
+  insurance lookup beside the call in the app (`{{lookup:insurance}}`); Sales
+  escalation is the standard process (no per-department section without an
+  exception). The live checklist is the operator's handbook checklist page.
 
 ## 2026-10-19 — intake forms and emails, pay statement edits, the idle alert (25post round 2)
 

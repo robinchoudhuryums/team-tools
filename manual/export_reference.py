@@ -90,6 +90,7 @@ IMAGES = {}          # key -> {alt, kind, source, dataUri}
 GLOSSARY = json.load(open("data/glossary.json", encoding="utf-8"))
 ROSTER = json.load(open("data/roster.json", encoding="utf-8"))
 ICONS = json.load(open("data/icons.json", encoding="utf-8"))
+LOOKUPS = json.load(open("data/lookups.json", encoding="utf-8"))
 THUMBS = json.load(open("data/thumbs.json", encoding="utf-8"))
 FIGS = json.load(open("data/figures.json", encoding="utf-8"))
 FIGB = json.load(open("data/figures_b64.json", encoding="utf-8"))
@@ -180,11 +181,22 @@ def diagram_md(name):
     return f"```diagram {name}\n{label}\n```"
 
 
+def lookup_md(key):
+    """{{lookup:insurance}} — the app's own lookup, not the sheet it searches:
+    a `lookup:` link the Reference reader turns into "open the drawer's lookup"
+    (25post, operator 2026-10-19). render.py writes the sheet link for print."""
+    if key not in LOOKUPS:
+        errors.append(f"unknown lookup {key!r} (data/lookups.json)")
+        return key
+    return f"[{LOOKUPS[key]['app_label']}](lookup:{key})"
+
+
 def pre_substitute(text, key):
     """Diagram, figure and (Appendix A) glossary placeholders, before render.py."""
     text = re.sub(r"\{\{diagram:([\w\-]+)\}\}", lambda m: diagram_md(m.group(1)), text)
     text = re.sub(r"\{\{figure:([\w\-]+)\}\}", lambda m: figure_md(m.group(1)), text)
     text = re.sub(r"\{\{gallery:([^}]+)\}\}", lambda m: gallery_md(m.group(1)), text)
+    text = re.sub(r"\{\{lookup:([\w\-]+)\}\}", lambda m: lookup_md(m.group(1)), text)
     text = re.sub(r"\{\{figure-pair:([^}]+)\}\}",
                   lambda m: "\n\n".join(figure_md(f) for f in m.group(1).split("|")), text)
     if key == "appx_a":
@@ -775,7 +787,7 @@ def scripts_to_snippets(body):
             chunk.append(re.sub(r"^> ?", "", lines[i]))
             i += 1
         text = md_plain("\n".join(chunk).strip())
-        text = re.sub(r"\[([^\]]+)\]\((?:kb|https?|mailto):[^)]+\)", r"\1", text)
+        text = re.sub(r"\[([^\]]+)\]\((?:kb|lookup|https?|mailto):[^)]+\)", r"\1", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
         q = re.fullmatch(r'["\u201c]([^"\u201c\u201d]*)["\u201d]', text)
         if q:                         # one quoted line: copy the words, not the quotes

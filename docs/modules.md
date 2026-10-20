@@ -1329,7 +1329,11 @@ not restate it. Server endpoints live in the fourteen server files
        still scrolls sideways; a ` ```gallery ` fence (`kbGalleryHtml_`, from the
        source's `{{gallery:…}}`) steps through a tutorial slideshow and prints
        every slide (print rule 7); the Service chapter's icon is one wrench. The
-       HTML handbook (`make_html.py`) draws the same three.
+       HTML handbook (`make_html.py`) draws the same three. A `lookup:insurance`
+       (or `lookup:price`) link opens that lookup in the drawer
+       (`kbLookupOpen_`, sharing `kbDrawerLookupsHome_` with a code link) — the
+       handbook's `{{lookup:insurance}}` (4.4, 5.11), where print links the
+       Payor/HCPCS Order Acceptance Sheet itself.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

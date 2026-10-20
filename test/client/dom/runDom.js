@@ -5655,6 +5655,36 @@ test('M4 DOM: HCPCS codes in a manual section are links (not inside code, a head
   assert.ok(!h.$('#kbd-body a.kb-hcpcs'), 'a hand-written article is not the manual');
 });
 
+test('Operator 2026-10-19 DOM: a handbook `lookup:insurance` link opens the drawer\'s lookups with focus in the payor box — a typed payor stays, a search in flight gives way; `lookup:price` focuses the item box', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = '- [Insurance lookup](lookup:insurance) — which payors accept which codes\n- [Price lookup](lookup:price)\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const a = h.$('#kb-man-sec-man-0-11 a.kb-lookup[data-kb-lookup="insurance"]');
+  assert.ok(a, 'the section carries the lookup link');
+  h.click(a);
+  assert.strictEqual(h.read('KB_DRAWER').open, true, 'the drawer opens');
+  h.flushTimers();
+  const ins = doc.getElementById('kb-ins-input-d');
+  assert.ok(ins, 'on its home view, with the lookups');
+  assert.strictEqual(doc.activeElement, ins, 'focus in the payor box');
+  ins.value = 'Aetna';
+  doc.getElementById('kbd-q').value = 'pick up';
+  h.read('kbDrawerSearch_')('pick up');
+  h.click(a);
+  assert.strictEqual(doc.getElementById('kb-ins-input-d'), ins, 'the same payor box');
+  assert.strictEqual(ins.value, 'Aetna', 'keeps what was typed');
+  assert.strictEqual(doc.getElementById('kbd-q').value, '', 'the drawer search gives way');
+  h.run.flushSuccess({ results: [{ id: 'kb-1', title: 'x', chunkMd: 'x' }] }, 'searchReference');
+  assert.ok(doc.getElementById('kb-ins-input-d'), 'the late search result did not replace the lookups');
+  h.click(h.$('#kb-man-sec-man-0-11 a.kb-lookup[data-kb-lookup="price"]'));
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, doc.getElementById('kb-oop-item-d'), 'the price link focuses the item box');
+  assert.strictEqual(h.run.pending('searchOopPricing').length, 0, 'and looks nothing up by itself');
+});
+
 const M4_WN = { id: '', title: "What's new", bodyMd: '', stamp: '|manual:2026-09-28:3', manualRecentTotal: 3, manualRecentDays: 90, manualVersion: 'v3.0',
   manualRecent: [{ date: '2026-09-28', num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name', retraining: true },
     { date: '2026-09-20', num: '0.10.2', id: 'man-0-10', anchor: '0.10.2', summary: 'Check Fax History first', retraining: false }] };

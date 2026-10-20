@@ -35915,6 +35915,27 @@ test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at
   assert.ok(/mainEl\.querySelectorAll\('figure\.gallery'\)/.test(mh) && /@media print\{figure\.gallery\.on \.slide\{display:block\}/.test(mh), 'the HTML handbook steps through it on screen and prints every slide');
 });
 
+test('Operator 2026-10-19: {{lookup:insurance}} — print and HTML link the Payor/HCPCS sheet, the app links its insurance lookup; the reader turns only the two known names into a lookup link (driven)', () => {
+  const c = m1Md_();
+  const h = c.kbMd_('See [Insurance lookup](lookup:insurance) or [prices](lookup:price).');
+  assert.ok(/<a href="#" class="kb-lookup" data-kb-lookup="insurance" title="Opens the insurance lookup beside the call">Insurance lookup<\/a>/.test(h), 'a lookup link: ' + h);
+  assert.ok(/data-kb-lookup="price" title="Opens the price lookup beside the call">prices<\/a>/.test(h), 'the price lookup too');
+  const bad = c.kbMd_('[x](lookup:payroll) [y](lookup:insurance"onmouseover="z) [w](lookup:INSURANCE)');
+  assert.ok(!/kb-lookup|<a|href/.test(bad), 'any other name is plain text — nothing else reaches the attribute: ' + bad);
+  assert.ok(/^<p>x .*w<\/p>$/.test(bad), 'the text stays');
+  // The source side: one placeholder, one data file, two readers.
+  const lk = JSON.parse(MP1_('data/lookups.json'));
+  assert.ok(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/1ziowrKGrrD0izm3__7EzH74L4qArqZJNadoBoXaGMAI\//.test(lk.insurance.url) && lk.insurance.label === 'Payor/HCPCS Order Acceptance Sheet', 'the sheet, named');
+  assert.ok(/^- \{\{lookup:insurance\}\} — /m.test(MP1_('src/p5.md')) && !/§5-11[\s\S]*?`\[PENDING: URLs\]`[\s\S]*?\n---/.test(MP1_('src/p5.md').split('## §5-11')[1].split('\n---')[0]), '5.11 is the lookup, and no longer pending');
+  assert.ok(/\*\*Reference:\*\* \{\{lookup:insurance\}\}, for PMD and scooter acceptance\./.test(MP1_('src/p4.md')), '4.4 too');
+  const ex = MP1_('export_reference.py'), rd = MP1_('render.py');
+  assert.ok(/return f"\[\{LOOKUPS\[key\]\['label'\]\}\]\(\{LOOKUPS\[key\]\['url'\]\}\)"/.test(rd), 'print and HTML link the sheet');
+  assert.ok(/text = re\.sub\(r"\\\{\\\{lookup:\(\[\\w\\-\]\+\)\\\}\\\}", lambda m: lookup_md\(m\.group\(1\)\), text\)/.test(ex) &&
+    /return f"\[\{LOOKUPS\[key\]\['app_label'\]\}\]\(lookup:\{key\}\)"/.test(ex), 'the app gets the lookup link');
+  assert.ok(/\(\?:kb\|lookup\|https\?\|mailto\)/.test(ex), 'a copied script keeps a lookup link\'s words, not its target');
+  assert.ok(/a\.kb-lookup \{ cursor: pointer;/.test(M1_KB_SRC), 'the class has its rule (g140)');
+});
+
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
   const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
   [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {

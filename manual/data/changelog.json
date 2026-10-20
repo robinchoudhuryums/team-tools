@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-19",
+    "part": "p5",
+    "section": "§5-11",
+    "summary": "Additional resources links the Payor/HCPCS Order Acceptance Sheet. In the app, the link (and 4.4's) opens the insurance lookup beside the call — the searchable version of the same sheet.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19"
+  },
+  {
+    "date": "2026-10-19",
     "part": "p4",
     "section": "§4-5",
     "summary": "A lead that is closed shows its reason: tell the caller the lead was closed, and why. A short script says what to tell the caller before the hold while you reach the Sales, PAP or manual wheelchair team.",

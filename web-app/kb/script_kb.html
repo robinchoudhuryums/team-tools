@@ -348,6 +348,8 @@
      a glossary term the one dotted mark (it EXPLAINS). */
   a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
   a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
+  /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
+  a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
   .kb-man-print { white-space: nowrap; }
   .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
   .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
@@ -2808,6 +2810,11 @@ function kbMd_(src) {
       // characters can reach the attributes, and a delegated handler opens it.
       var km = url.match(/^kb:([a-z0-9-]{1,80})(?:#([0-9A-Za-z.]{1,20}))?$/);
       if (km) return keep('<a href="#" class="kb-xref" data-kb-id="' + km[1] + '" data-kb-anchor="' + (km[2] || '') + '">' + emph(txt) + '</a>');
+      // 25post — `lookup:insurance` / `lookup:price` opens that lookup in the
+      // Ctrl/⌘+K drawer (the handbook's link to the payor sheet, in the app).
+      // Only the two names reach the attribute; a delegated handler opens it.
+      var lk = url.match(/^lookup:(insurance|price)$/);
+      if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + emph(txt) + '</a>');
       if (!/^(https?:|mailto:)/i.test(url)) return txt;
       // The top-level escape covers &, <, > but NOT quotes — a `"` in the URL
       // would otherwise break out of the href attribute (attribute injection,
@@ -4431,15 +4438,7 @@ function kbLinkHcpcsInResults_(rootEl) {
 function kbHcpcsOpen_(code) {
   code = String(code || '').trim().toUpperCase();
   if (!/^[ABCDEGHJKLMPQRSTUV][0-9]{4}$/.test(code)) return;
-  kbXrefHide_(true);
-  if (!KB_DRAWER.open) kbDrawerOpen_();
-  // A search or a reader in the drawer gives way to home.
-  var q = document.getElementById('kbd-q');
-  if (q) q.value = '';
-  KB_DRAWER.lastQuery = '';
-  ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over home
-  kbDrawerSetSearching_(false);
-  if (!(KB_DRAWER.view === 'home' && document.getElementById('kb-oop-item-d'))) kbDrawerRenderHome_();
+  kbDrawerLookupsHome_();
   var item = document.getElementById('kb-oop-item-d');
   if (!item) return;
   item.value = code;
@@ -4448,12 +4447,38 @@ function kbHcpcsOpen_(code) {
   var target = (ins && !String(ins.value || '').trim()) ? ins : item;
   setTimeout(function () { try { target.focus(); } catch (e) {} }, 260);   // after kbDrawerOpen_'s own focus move
 }
+/** The drawer open on its home view, where the two lookups live: a search or
+ *  a reader in the drawer gives way to home. Shared by a code link and a
+ *  `lookup:` link. */
+function kbDrawerLookupsHome_() {
+  kbXrefHide_(true);
+  if (!KB_DRAWER.open) kbDrawerOpen_();
+  var q = document.getElementById('kbd-q');
+  if (q) q.value = '';
+  KB_DRAWER.lastQuery = '';
+  ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over home
+  kbDrawerSetSearching_(false);
+  if (!(KB_DRAWER.view === 'home' && document.getElementById('kb-oop-item-d'))) kbDrawerRenderHome_();
+}
+/** A `lookup:` link clicked (25post — 5.11's Payor/HCPCS Order Acceptance
+ *  Sheet is the insurance lookup in the app): the drawer's lookups, focus in
+ *  that lookup's box. Whatever the rep already typed there stays. */
+function kbLookupOpen_(which) {
+  var id = which === 'insurance' ? 'kb-ins-input-d' : which === 'price' ? 'kb-oop-item-d' : '';
+  if (!id) return;
+  kbDrawerLookupsHome_();
+  var box = document.getElementById(id);
+  if (!box) return;
+  setTimeout(function () { try { box.focus(); } catch (e) {} }, 260);   // after kbDrawerOpen_'s own focus move
+}
 (function kbBindHcpcs_() {
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a.kb-hcpcs');
-    if (!a) return;
+    if (a) { e.preventDefault(); kbHcpcsOpen_(a.getAttribute('data-hcpcs')); return; }
+    var l = e.target.closest && e.target.closest('a.kb-lookup');
+    if (!l) return;
     e.preventDefault();
-    kbHcpcsOpen_(a.getAttribute('data-hcpcs'));
+    kbLookupOpen_(l.getAttribute('data-kb-lookup'));
   });
 })();
 
