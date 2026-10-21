@@ -4,12 +4,13 @@
 Demonstrates the Stage 5 build behaviour: tables are never hand-written in source,
 so a spec can only be wrong in one place.
 """
-import json, os, re, sys
+import html, json, os, re, sys
 
 EQ = json.load(open("data/equipment.json"))
 GLOSSARY = json.load(open("data/glossary.json"))
 ROSTER = json.load(open("data/roster.json"))
 FEES = json.load(open("data/fees.json"))
+LOOKUPS = json.load(open("data/lookups.json"))
 BY_ID = {r["id"]: r for r in EQ}
 
 COLS = [
@@ -225,6 +226,28 @@ def expand(m):
                 out.append(f"> {r['exception']}")
             out.append("")
         return "\n".join(out)
+    if spec.startswith("lookup:"):
+        # A sheet the app also offers as a lookup (25post, operator 2026-10-19):
+        # print and HTML link the sheet; export_reference.py writes the app's
+        # `lookup:` link instead, which opens the lookup beside the call.
+        key = spec.split(":", 1)[1]
+        if key not in LOOKUPS:
+            raise SystemExit(f"unknown lookup: {key}")
+        return f"[{LOOKUPS[key]['label']}]({LOOKUPS[key]['url']})"
+    if spec.startswith("gallery:"):
+        # A tutorial slideshow (operator 2026-10-19): {{gallery:id|id|...|title=Name}}.
+        # One <figure> of slides — the HTML handbook steps through them, and
+        # Word and print take them one after another (md2model reads each image).
+        parts = spec.split(":", 1)[1].split("|")
+        title = next((p.split("=", 1)[1] for p in parts if p.startswith("title=")), "Slideshow")
+        ids = [p for p in parts if not p.startswith("title=")]
+        cells = []
+        for fid in ids:
+            if fid not in FIGS or fid not in FIGB:
+                raise SystemExit(f"unknown figure in gallery: {fid}")
+            f = FIGS[fid]
+            cells.append(f'<div class="slide"><img src="{FIGB[fid]}" alt="{f["alt"]}"><figcaption>{f["caption"]}</figcaption></div>')
+        return f'<figure class="shot gallery" data-title="{html.escape(title, quote=True)}">' + "".join(cells) + '</figure>'
     if spec.startswith("figure-pair:"):
         ids = spec.split(":", 1)[1].split("|")
         cells = []

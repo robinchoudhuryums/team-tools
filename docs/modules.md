@@ -829,6 +829,12 @@ not restate it. Server endpoints live in the fourteen server files
      The Send-to picker lists the Sales and PAP teams from the CDR roster
      (`intakeTeamRoster_`, INV-388). The emails were redesigned in light blue
      (INV-389) — see the intake-email-chrome decision's amendment.
+     **25post round 3 (2026-10-19):** a No attestation leads with ✗ in the
+     email (unanswered keeps ○); a blank strongly recommended field is light
+     red; the PMD/PAP preview fills an image slot the server leaves OUTSIDE the
+     hashed body (`INTAKE_PREVIEW_IMG_SLOT`, `intakePreviewFillImages_`), so the
+     preview shows the card images where the email will; email card images are
+     340px (`INTAKE_EMAIL_IMG_WIDTH`, with a width attribute for Outlook).
 
 ## Reference
 
@@ -1316,6 +1322,18 @@ not restate it. Server endpoints live in the fourteen server files
        edit ride the reader bar for the section in view instead of closing every
        section; votes stay per section, a vote sent this session shows pressed,
        and a narrow bar puts its buttons on a second row.
+     - **2026-10-19 (25post round 3):** a step table's word steps are labels
+       per row (`kb-step-name`; numbered rows keep their circles); a table that
+       FITS drops its scroll box and its header row sticks under the reader band
+       (`kbManualStickyHeads_`, measured, `--kb-man-band`), while a wider one
+       still scrolls sideways; a ` ```gallery ` fence (`kbGalleryHtml_`, from the
+       source's `{{gallery:…}}`) steps through a tutorial slideshow and prints
+       every slide (print rule 7); the Service chapter's icon is one wrench. The
+       HTML handbook (`make_html.py`) draws the same three. A `lookup:insurance`
+       (or `lookup:price`) link opens that lookup in the drawer
+       (`kbLookupOpen_`, sharing `kbDrawerLookupsHome_` with a code link) — the
+       handbook's `{{lookup:insurance}}` (4.4, 5.11), where print links the
+       Payor/HCPCS Order Acceptance Sheet itself.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

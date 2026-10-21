@@ -147,9 +147,12 @@ def classify_tables(html):
             stats["steps"] += 1
             # NAMED steps ("Referral", "Open") need a label column, not a number's
             # (operator 2026-10-19) — kbMd_ draws the same split.
-            firsts = [(r.find("td").get_text(" ", strip=True) if r.find("td") else "") for r in body_rows]
-            if any(not re.fullmatch(r"\d+[a-z]?\.?", f, re.I) for f in firsts):
+            named = [r.find("td") for r in body_rows
+                     if r.find("td") and not re.fullmatch(r"\d+[a-z]?\.?", r.find("td").get_text(" ", strip=True), re.I)]
+            if named:
                 extra.append("steps-named")
+                for td in named:   # per row: a numbered row keeps its number's look
+                    td["class"] = (td.get("class") or []) + ["stepname"]
         tone = {i: ("ok" if h.startswith("\u2713") else "no")
                 for i, h in enumerate(heads) if h[:1] in ("\u2713", "\u2717")}
         if tone:
@@ -628,6 +631,24 @@ figure.shot img{display:block;max-width:100%;height:auto;margin:0 auto}
 figure.shot.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px}
 figure.shot.pair img{max-height:230px;object-fit:contain}
 figure.shot figcaption{font-size:13px;color:#5D6B7A;margin-top:8px;text-align:center}
+/* a tutorial slideshow (operator 2026-10-19): the script shows one slide at a time
+   with Previous / Next and a dot per slide; without it, and on paper, every slide
+   shows one under another */
+figure.shot.gallery{max-width:760px}
+figure.shot.gallery .slide + .slide{margin-top:16px}
+figure.gallery .galhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+ margin:0 0 8px;font-size:12.5px;color:var(--muted)}
+figure.gallery .galhead b{color:var(--ink);font-weight:600}
+figure.gallery .galhead span{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+figure.gallery.on .slide{display:none;margin-top:0}
+figure.gallery.on .slide.cur{display:block}
+figure.gallery .galnav{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:10px}
+figure.gallery .galnav button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink)}
+figure.gallery .galstep{width:32px;height:32px;border-radius:50%;font-size:16px;line-height:1}
+figure.gallery .galdot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--rule)!important}
+figure.gallery .galdot.cur{background:var(--cur,var(--accent))!important;border-color:transparent}
+figure.gallery:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span{display:none}}
 main > figure.shot{max-width:860px}
 @media print{figure.shot{break-inside:avoid}}
 img.thumb{float:left;width:52px;height:52px;object-fit:contain;margin:1px 12px 2px 0;
@@ -964,6 +985,14 @@ main > .eyebrow{max-width:74ch}
 @media print{#otp,.eyebrow{display:none}}
 /* headers inside a scrolling table container can't stick to the viewport; keep them in flow */
 .tw th{position:static!important;top:auto!important}
+/* ...so a table that FITS drops its scroll box (.fit, set by measurement in the
+   script) and its header row stays in view below the context bar until the table
+   scrolls past (operator 2026-10-19); a wider table keeps scrolling sideways */
+@media screen{
+ .tw.fit{overflow:visible}
+ .tw.fit th{position:sticky!important;top:var(--ctxh,0px)!important;z-index:3}
+ .tw.fit table.compact th{background:var(--bg)}
+}
 
 /* ============================================ card chrome + print (step 4) === */
 .qrh,.qrf{display:flex;justify-content:space-between;align-items:baseline;
@@ -1152,8 +1181,8 @@ section.start .cb{margin-bottom:10px}
 table.steps tbody tr:nth-child(even){background:transparent}
 table.steps td:first-child{width:3.4em;text-align:center;font-weight:700;color:var(--accent);
  position:relative;vertical-align:middle}
-table.steps.steps-named td:first-child{width:10em;font-size:.92em;line-height:1.35;vertical-align:top;
- padding-bottom:12px;color:var(--ink)}
+table.steps.steps-named td:first-child{width:10em}
+table.steps td.stepname{font-size:.92em;line-height:1.35;vertical-align:top;padding-bottom:12px;color:var(--ink)}
 table.steps tbody tr:not(:last-child) td:first-child::after{content:"\2193";position:absolute;
  left:50%;bottom:-.8em;transform:translateX(-50%);z-index:1;font-size:15px;line-height:1.3;
  color:var(--muted);background:var(--bg);padding:0 3px}
@@ -1703,8 +1732,35 @@ document.getElementById('prcards').addEventListener('click',()=>window.print());
 const tws=[...mainEl.querySelectorAll('.tw')];
 const twMore=t=>t.classList.toggle('more',t.scrollLeft+t.clientWidth<t.scrollWidth-2);
 tws.forEach(t=>{t.addEventListener('scroll',()=>twMore(t),{passive:true});twMore(t);});
-window.addEventListener('resize',()=>tws.forEach(twMore));
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>tws.forEach(twMore));
+// a table that fits loses its scroll box so its header can stick (measured; an
+// unmeasured one keeps scrolling), and the header sits below the context bar
+// where that bar sticks (its own top, 41px under the menu button on a phone)
+const ctxEl=document.getElementById('ctx');
+const twFit=t=>{if(!t.clientWidth)return;t.classList.remove('fit');t.classList.toggle('fit',t.scrollWidth<=t.clientWidth+1);};
+const ctxH=()=>{const cs=ctxEl&&getComputedStyle(ctxEl);document.documentElement.style.setProperty('--ctxh',(cs&&cs.position==='sticky'&&cs.display!=='none'?(parseFloat(cs.top)||0)+ctxEl.offsetHeight:0)+'px');};
+const twAll=()=>{ctxH();tws.forEach(twFit);tws.forEach(twMore);};
+twAll();
+window.addEventListener('resize',twAll);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(twAll);
+// a tutorial slideshow steps one slide at a time (operator 2026-10-19); it wraps
+// at either end, and ← / → step it when it has focus
+mainEl.querySelectorAll('figure.gallery').forEach(g=>{
+ const sl=[...g.querySelectorAll(':scope > .slide')],n=sl.length;if(n<2)return;
+ const head=document.createElement('div');head.className='galhead';
+ const t=document.createElement('b');t.textContent=g.dataset.title||'Slideshow';
+ const c=document.createElement('span');c.setAttribute('aria-live','polite');head.append(t,c);
+ const nav=document.createElement('div');nav.className='galnav';
+ const mk=(cls,txt,lab)=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=txt;b.setAttribute('aria-label',lab);return b;};
+ const prev=mk('galstep','\u2039','Previous slide'),next=mk('galstep','\u203A','Next slide');
+ const dots=sl.map((_,k)=>mk('galdot','','Slide '+(k+1)+' of '+n));
+ nav.append(prev,...dots,next);g.prepend(head);g.append(nav);
+ g.classList.add('on');g.tabIndex=0;g.setAttribute('role','group');g.setAttribute('aria-roledescription','slideshow');g.setAttribute('aria-label',t.textContent);
+ let i=0;const go=k=>{i=((k%n)+n)%n;sl.forEach((s,j)=>s.classList.toggle('cur',j===i));dots.forEach((d,j)=>{d.classList.toggle('cur',j===i);if(j===i)d.setAttribute('aria-current','true');else d.removeAttribute('aria-current');});c.textContent=(i+1)+' / '+n;};
+ prev.addEventListener('click',()=>go(i-1));next.addEventListener('click',()=>go(i+1));
+ dots.forEach((d,k)=>d.addEventListener('click',()=>go(k)));
+ g.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();go(i-1);}else if(e.key==='ArrowRight'){e.preventDefault();go(i+1);}});
+ go(0);
+});
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;

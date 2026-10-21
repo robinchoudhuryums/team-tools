@@ -10,6 +10,34 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-19 — intake polish and the handbook reader (25post round 3)
+
+**Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then
+a New version), THEN re-import the handbook (`manual/make_all.sh` → Reference →
+Handbook → Check → Import → Publish): the reader must know the new slideshow
+fence before 8.2.2 arrives, or it shows as a raw code block. What changes:
+
+- **Intake.** A No attestation leads with ✗ in the email (unanswered keeps ○);
+  a blank strongly recommended field is light red; the PMD/PAP preview shows
+  the attached card images where the email puts them; the thumbnail's ✕ is no
+  longer clipped; email card images are 340px.
+- **Handbook reader (app and HTML).** A step table's word steps ("Referral",
+  "Turnaround") are labels, numbered rows keep their circles; a table that fits
+  keeps its header row in view under the reader bar; tutorial slideshows are a
+  `{{gallery:…}}` the reader steps through (8.2.2's ticket screenshots first);
+  the Service icon is a single wrench.
+- **Handbook content.** The Open items tables match what is pending; D9 (the
+  Messages button is along the bottom, a third of the way in); the Chapter 2, 3
+  and 7 resource links; 3.12.2 is the one compliance table with HCPCS codes and
+  3.12.3 is gone; the Chapter 4 Sales answers and B.1's backup; 5.11 and 4.4
+  link the Payor/HCPCS Order Acceptance Sheet in print and HTML, and open the
+  insurance lookup beside the call in the app (`{{lookup:insurance}}`); Sales
+  escalation is the standard process (no per-department section without an
+  exception); 6.6.1's delivery ticket example and 6.9.3's pick-up ticket
+  slideshow (seven slides, patient details pixelated, provisional captions),
+  6.16's slideshow link, and B.1's Used Equipment Sales Contact (Parth Shah).
+  The live checklist is the operator's handbook checklist page.
+
 ## 2026-10-19 — intake forms and emails, pay statement edits, the idle alert (25post round 2)
 
 **Adds NO Script Properties.** Deploy the web app (`clasp push -f`, then a New

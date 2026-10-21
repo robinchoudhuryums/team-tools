@@ -2456,6 +2456,22 @@ S146 | Manage Time — Edit day and adjustment reasons on the pay statement; the
     - Have a test rep clock in and leave the app untouched for 35 minutes outside their breaks; open Manage Time; then repeat across their scheduled lunch
   Expected: The adjusted day shows "Adjustment: Clock out → … · Approved — “<reason>”". Edit day opens Day Edit on that rep and date; after Save the statement reopens on the same period with the corrected hours; the rep's own statement has no Edit day. The idle rep's card shows "idle 35 min" and the line under Live Status names them; across lunch the lunch minutes do not count and a rep inside their lunch is not flagged. Pinned by INV-391 and the B4 DOM tests.
 
+S147 | The intake polish — a No attestation, the light-red recommended mark, card images in the preview and email, the thumbnail remove button (25post, operator 2026-10-19) | Subsystem: Client (Intake views), Server
+  Steps:
+    - On a PMD Account form, leave a strongly recommended field blank and press Preview; then fill it
+    - Attach two card images (Choose and paste); look at each thumbnail's ✕; remove one, re-add it
+    - Preview: look at the end of the Insurance section; close; remove every image; Preview again
+    - Answer "Permission to call…" No and leave "Explained mobility evaluation…" unanswered; send to yourself
+  Expected: The blank recommended row is light red with a dark-red "Strongly recommended" note, and clears when filled. Each ✕ sits whole on its thumbnail's corner. The preview shows "Insurance card images (2)" and both images after the last Insurance row, at 340px; with no image the preview has no image row. In the email the No attestation's amber box starts with ✗, the unanswered one with ○, and the card images are 340px wide in the Insurance section. Pinned by the 2026-10-19 intake pins and DOM test; the preview hash still covers the image-free body (INV-41's intake mirror).
+
+S148 | The handbook reader — named steps, sticky table headers, the slideshow, the Service wrench (25post, operator 2026-10-19) | Subsystem: Client (Reference views), Manual source
+  Steps:
+    - Deploy FIRST, then re-import the handbook (make_all.sh → Reference → Handbook → Check → Import → Publish)
+    - Open 0.8 and 10.20 (the EAA steps); then 10.14 and 3.8, scroll each table under the reader bar; repeat at 480px (pop-out) and 390px
+    - Open 8.2.2: press Next, Previous, a dot; click the slideshow and use ← / →; press Print on the section
+    - Look at the Service chapter's icon in the tree, the masthead and the HTML handbook
+  Expected: 0.8's steps are labels with arrows (no circle across a word); 10.20's 1, 2, 3 keep their circles and only "Turnaround" is a label. A table that fits keeps its header row pinned under the reader bar until it scrolls past (no gap, no overlap); a table wider than the screen scrolls sideways instead, and nothing scrolls the page sideways. The slideshow shows one slide with "n / 4", wraps at both ends, and the printout shows all four slides without buttons. The Service icon is a single wrench. Pinned by the 2026-10-19 reader pins and DOM tests.
+
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.
 - **To consult them:** `git show 9586b29:incoming/form-generator/filterRecommendations.js` (or `git checkout 9586b29 -- incoming/form-generator` into a scratch worktree). Nothing needs unfreezing to read them.

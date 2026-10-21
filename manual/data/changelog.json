@@ -1,5 +1,95 @@
 [
   {
+    "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-2",
+    "summary": "The oxygen ticket slideshow shows Step 2, searching for the patient by date of birth, with the other patients in the results blurred.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p6",
+    "section": "§6-9",
+    "summary": "Creating a pick-up ticket is shown step by step: the seven tutorial slides as a slideshow (6.9.3), with the Google Slides deck linked under Additional resources (6.16).",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p6",
+    "section": "§6-6",
+    "summary": "A delivery ticket example, with the patient's details blurred (6.6.1).",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The Used Equipment Sales Contact is Parth Shah, the Field Operations Manager.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "p5",
+    "section": "§5-11",
+    "summary": "Additional resources links the Payor/HCPCS Order Acceptance Sheet. In the app, the link (and 4.4's) opens the insurance lookup beside the call — the searchable version of the same sheet.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "p4",
+    "section": "§4-5",
+    "summary": "A lead that is closed shows its reason: tell the caller the lead was closed, and why. A short script says what to tell the caller before the hold while you reach the Sales, PAP or manual wheelchair team.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "p4",
+    "section": "§4-2",
+    "summary": "How someone becomes a lead: interest through an internet ad, a phone call or similar creates a lead, and Sales updates it with whether the insurance is acceptable. The PAP Q and Sales MWC Q follow the same Sales procedures — only the queue differs (4.1).",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The Sales Manager's backup is April Arredondo.",
+    "authority": "Sales",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "p3",
+    "section": "§3-12",
+    "summary": "3.12.2 is the one compliance table again: each row now carries its HCPCS codes, and the separate item list (3.12.3) is gone.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19 (A5)"
+  },
+  {
+    "date": "2026-10-19",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "The Messages button (which opens a transaction's notes) is along the bottom of the Transaction Workflow window, about a third of the way in from the left — not the bottom right. 0.10, its icon guide and 0.11.1 now say so.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-19 (D9)"
+  },
+  {
     "date": "2026-10-12",
     "part": "appx_b",
     "section": "§B-1",

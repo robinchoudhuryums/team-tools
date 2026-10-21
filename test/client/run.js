@@ -30214,7 +30214,7 @@ function m1Md_() {
   const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
-  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_', 'kbGalleryHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   vm.runInContext('var KB_DIAGRAM_SEQ = 0;', ctx);
   return ctx;
 }
@@ -35863,12 +35863,77 @@ test('Operator 2026-10-19: a step table whose steps are NAMED draws them as labe
   assert.ok(/^<table class="kb-steps"><thead>/.test(c.kbMd_('| Step | Action |\n|---|---|\n| 1 | Call |\n| 2a | Text |\n| 3. | Note |\n')), 'numbered steps keep the circle');
   const named = c.kbMd_('| Step | What\'s happening |\n|---|---|\n| Referral | Order sent |\n| Insurance Verification | Confirmed |\n');
   assert.ok(/^<table class="kb-steps kb-steps-named"><thead>/.test(named), named);
-  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| Validation | b |\n')), 'one named step makes the table a named one');
+  // Per ROW (10.20's EAA steps run 1, 2, 3, then "Turnaround"): a word is a label,
+  // a number in the same table keeps its circle.
+  const mixed = c.kbMd_('| Step | x |\n|---|---|\n| 1 | a |\n| 2 | b |\n| Turnaround | c |\n');
+  assert.ok(/^<table class="kb-steps kb-steps-named">/.test(mixed), 'a table with one named step gets the wider column');
+  assert.deepStrictEqual(mixed.match(/<tr><td[^>]*>[^<]*<\/td>/g), ['<tr><td>1</td>', '<tr><td>2</td>', '<tr><td class="kb-step-name">Turnaround</td>'], 'only the word is drawn as a label: ' + mixed);
+  assert.ok(/<tr><td class="kb-step-name">Referral<\/td>/.test(named), 'every named row is a label');
   assert.ok(/^<table><thead>/.test(c.kbMd_('| Team | Line |\n|---|---|\n| Referral | 1 |\n')), 'never on a table that is not a step table');
-  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child::before \{ content: none; \}/.test(M1_KB_SRC), 'the named form draws no circle');
-  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps\.kb-steps-named td:first-child \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  assert.ok(/table\.kb-steps td\.kb-step-name::before \{ content: none; \}/.test(M1_KB_SRC), 'a named step draws no circle');
+  assert.ok(/\.kb-article\[data-kb-man\] table\.kb-steps td\.kb-step-name \{[^}]*font-family: inherit/.test(M1_KB_SRC), 'and outranks the manual\'s mono number face');
+  assert.ok(/table\.kb-steps\.kb-steps-named td:first-child \{ width: 11em; \}/.test(M1_KB_SRC), 'the column is wide enough for "Documentation Request"');
   const mh = MP1_('make_html.py');
-  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /table\.steps\.steps-named td:first-child\{width:10em/.test(mh), 'the HTML build draws the same split');
+  assert.ok(/extra\.append\("steps-named"\)/.test(mh) && /td\["class"\] = \(td\.get\("class"\) or \[\]\) \+ \["stepname"\]/.test(mh) &&
+    /table\.steps\.steps-named td:first-child\{width:10em\}/.test(mh) && /table\.steps td\.stepname\{/.test(mh), 'the HTML build draws the same per-row split');
+});
+
+test('Operator 2026-10-19: the HTML handbook\'s tables that fit keep their header row in view below the context bar — measured, screen only; and the reader paints the same (kbManualStickyHeads_)', () => {
+  const mh = MP1_('make_html.py');
+  assert.ok(/@media screen\{\n \.tw\.fit\{overflow:visible\}\n \.tw\.fit th\{position:sticky!important;top:var\(--ctxh,0px\)!important;z-index:3\}/.test(mh), 'a fitting table drops its scroll box and its header sticks, on screen only');
+  assert.ok(/const twFit=t=>\{if\(!t\.clientWidth\)return;t\.classList\.remove\('fit'\);t\.classList\.toggle\('fit',t\.scrollWidth<=t\.clientWidth\+1\);\};/.test(mh), 'fit is measured, and an unmeasured table keeps scrolling');
+  assert.ok(/parseFloat\(cs\.top\)\|\|0\)\+ctxEl\.offsetHeight/.test(mh), 'the offset is where the context bar sticks, plus its height (41px lower on a phone)');
+  assert.ok(/window\.addEventListener\('resize',twAll\)/.test(mh), 'and is measured again on resize');
+  assert.ok(/kbManualDecorate_\(main\);\n  kbManualStickyHeads_\(main\);/.test(M1_KB_SRC), 'the reader measures after it wraps the tables');
+  assert.ok(/\.kb-man-tw\.kb-man-tw-fit \{ overflow: visible; \}/.test(M1_KB_SRC) &&
+    /\.kb-man-tw-fit > table > thead th \{ position: sticky; top: calc\(var\(--kb-man-band\) - 18px\); z-index: 2; background: var\(--paper-card\)/.test(M1_KB_SRC),
+    'in the reader, fit drops the scroll box and the header sticks below the band (less the 18px scroller padding, g162), opaque');
+});
+
+test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at a time in the reader, every slide on paper; the source placeholder, the export and the HTML/Word build agree (driven)', () => {
+  const c = m1Md_();
+  const md = '```gallery Creating the <oxygen> ticket\n![Actions menu](manimg:fig-o2-ticket-1) Step 1 — **Actions**\nnot an image line\n![Ticket tab](manimg:fig-o2-ticket-5) Step 5\n![Bad](manimg:../x) nope\n```';
+  const h = c.kbMd_(md);
+  assert.ok(/^<figure class="kb-gallery" data-i="0" data-n="2" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="Creating the &lt;oxygen&gt; ticket" onkeydown="kbGalleryKey_\(event\)">/.test(h), 'one gallery of the two image lines, its title escaped: ' + h.slice(0, 260));
+  const slides = h.match(/<div class="kb-gal-slide[^"]*" data-k="\d">/g);
+  assert.deepStrictEqual(slides, ['<div class="kb-gal-slide" data-k="0">', '<div class="kb-gal-slide kb-gal-off" data-k="1">'], 'the first slide shows, the rest are classed off — never the hidden attribute (g73)');
+  assert.ok(/data-manimg="fig-o2-ticket-1"/.test(h) && /data-manimg="fig-o2-ticket-5"/.test(h), 'each slide is the hydrator\'s keyed image chip');
+  assert.ok(!/not an image line/.test(h) && !/\.\.\/x/.test(h), 'a line that is not a handbook image is dropped, and a bad key never reaches an attribute');
+  assert.ok(/<figcaption class="kb-gal-cap">Step 1 — <strong>Actions<\/strong><\/figcaption>/.test(h), 'the caption keeps its emphasis');
+  assert.ok(/<span class="kb-gal-count" aria-live="polite">1 \/ 2<\/span>/.test(h) && (h.match(/class="kb-gal-dot(?: on)?"/g) || []).length === 2, 'a counter and a dot per slide');
+  assert.ok(!/kb-gal-nav/.test(c.kbMd_('```gallery\n![One](manimg:fig-a) only\n```')), 'one slide needs no buttons');
+  assert.strictEqual(c.kbMd_('```gallery\nnothing here\n```'), '', 'no image, no gallery');
+  // Paper has no Next: the print block's rule 7 shows every slide and drops the buttons.
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const pb = styles.slice(styles.indexOf('@media print {'));
+  assert.ok(/\(7\)[\s\S]*\.kb-gal-slide\.kb-gal-off \{ display: block !important; \}[\s\S]*\.kb-gal-nav, \.kb-gal-count \{ display: none !important; \}/.test(pb), 'every slide prints, without its buttons');
+  // The source side: one placeholder, three readers.
+  assert.ok(/\{\{gallery:o2-ticket-1\|o2-ticket-2\|o2-ticket-3\|o2-ticket-4\|o2-ticket-5\|title=/.test(MP1_('src/p8.md')), '8.2.2\'s ticket screenshots are the first gallery');
+  const ex = MP1_('export_reference.py'), rd = MP1_('render.py'), mh = MP1_('make_html.py');
+  assert.ok(/text = re\.sub\(r"\\\{\\\{gallery:\(\[\^\}\]\+\)\\\}\\\}", lambda m: gallery_md\(m\.group\(1\)\), text\)/.test(ex) && /return "```gallery " \+ title/.test(ex), 'the export writes the ```gallery fence the reader draws');
+  assert.ok(/<figure class="shot gallery" data-title=/.test(rd) && /<div class="slide"><img src=/.test(rd), 'the HTML and Word build gets one figure of slides — md2model reads every image in it');
+  assert.ok(/mainEl\.querySelectorAll\('figure\.gallery'\)/.test(mh) && /@media print\{figure\.gallery\.on \.slide\{display:block\}/.test(mh), 'the HTML handbook steps through it on screen and prints every slide');
+});
+
+test('Operator 2026-10-19: {{lookup:insurance}} — print and HTML link the Payor/HCPCS sheet, the app links its insurance lookup; the reader turns only the two known names into a lookup link (driven)', () => {
+  const c = m1Md_();
+  const h = c.kbMd_('See [Insurance lookup](lookup:insurance) or [prices](lookup:price).');
+  assert.ok(/<a href="#" class="kb-lookup" data-kb-lookup="insurance" title="Opens the insurance lookup beside the call">Insurance lookup<\/a>/.test(h), 'a lookup link: ' + h);
+  assert.ok(/data-kb-lookup="price" title="Opens the price lookup beside the call">prices<\/a>/.test(h), 'the price lookup too');
+  const bad = c.kbMd_('[x](lookup:payroll) [y](lookup:insurance"onmouseover="z) [w](lookup:INSURANCE)');
+  assert.ok(!/kb-lookup|<a|href/.test(bad), 'any other name is plain text — nothing else reaches the attribute: ' + bad);
+  assert.ok(/^<p>x .*w<\/p>$/.test(bad), 'the text stays');
+  // The source side: one placeholder, one data file, two readers.
+  const lk = JSON.parse(MP1_('data/lookups.json'));
+  assert.ok(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/1ziowrKGrrD0izm3__7EzH74L4qArqZJNadoBoXaGMAI\//.test(lk.insurance.url) && lk.insurance.label === 'Payor/HCPCS Order Acceptance Sheet', 'the sheet, named');
+  assert.ok(/^- \{\{lookup:insurance\}\} — /m.test(MP1_('src/p5.md')) && !/§5-11[\s\S]*?`\[PENDING: URLs\]`[\s\S]*?\n---/.test(MP1_('src/p5.md').split('## §5-11')[1].split('\n---')[0]), '5.11 is the lookup, and no longer pending');
+  assert.ok(/\*\*Reference:\*\* \{\{lookup:insurance\}\}, for PMD and scooter acceptance\./.test(MP1_('src/p4.md')), '4.4 too');
+  const ex = MP1_('export_reference.py'), rd = MP1_('render.py');
+  assert.ok(/return f"\[\{LOOKUPS\[key\]\['label'\]\}\]\(\{LOOKUPS\[key\]\['url'\]\}\)"/.test(rd), 'print and HTML link the sheet');
+  assert.ok(/text = re\.sub\(r"\\\{\\\{lookup:\(\[\\w\\-\]\+\)\\\}\\\}", lambda m: lookup_md\(m\.group\(1\)\), text\)/.test(ex) &&
+    /return f"\[\{LOOKUPS\[key\]\['app_label'\]\}\]\(lookup:\{key\}\)"/.test(ex), 'the app gets the lookup link');
+  assert.ok(/\(\?:kb\|lookup\|https\?\|mailto\)/.test(ex), 'a copied script keeps a lookup link\'s words, not its target');
+  assert.ok(/a\.kb-lookup \{ cursor: pointer;/.test(M1_KB_SRC), 'the class has its rule (g140)');
 });
 
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {

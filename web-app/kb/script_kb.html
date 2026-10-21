@@ -216,6 +216,15 @@
   .kb-man-part .kb-article blockquote { padding: 11px 16px; margin: 1em 0 1.1em; }
   .kb-man-tw { overflow-x: auto; margin: 1em 0 1.25em; }
   .kb-man-tw.kb-man-tw-m { border: 1px solid var(--line); border-radius: 8px; }
+  /* Operator 2026-10-19 — a table that fits keeps its header row in view below the
+     reader's band (kbManualStickyHeads_). The scroll box goes, so the sticky header
+     can stick; the top is the band's height less the scroller's 18px padding (g162),
+     and the header is opaque, with its rule drawn by a shadow (a collapsed border
+     stays behind with the row). */
+  .kb-main { --kb-man-band: 18px; }   /* measured into the scroller's own style by kbManualStickyHeads_ */
+  .kb-man-tw.kb-man-tw-fit { overflow: visible; }
+  .kb-man-part .kb-article .kb-man-tw-fit > table > thead th { position: sticky; top: calc(var(--kb-man-band) - 18px); z-index: 2; background: var(--paper-card); border-bottom-color: transparent; box-shadow: inset 0 -1px 0 var(--line); }
+  .kb-man-part .kb-article .kb-man-tw-fit > table.kb-man-matrix > thead th { background: color-mix(in oklab, var(--man-c) 14%, var(--paper-card)); box-shadow: inset 0 -2px 0 var(--man-c); }
   .kb-man-part .kb-article .kb-man-tw > table { display: table; width: 100%; margin: 0; font-size: .93rem; }
   .kb-man-part .kb-article table.kb-man-compact th { color: var(--ink); font-size: 11px; padding: 6px 14px 7px 0; }
   .kb-man-part .kb-article table.kb-man-compact td { padding: 9px 14px 9px 0; }
@@ -272,10 +281,13 @@
     border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
   .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-article[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
   /* A NAMED step ("Referral", "Open") is a label, not a number: no circle, the body
-     face, a column wide enough for "Documentation Request" (operator 2026-10-19). */
-  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child {
-    width: 11em; padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
-  .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child::before, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child::before { content: none; }
+     face (td.kb-step-name, per row), in a column wide enough for "Documentation
+     Request" whenever the table has one (kb-steps-named) — a numbered row in the
+     same table keeps its circle, centred in the wider column (operator 2026-10-19). */
+  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child { width: 11em; }
+  .kb-article table.kb-steps td.kb-step-name, .kb-man-part .kb-article table.kb-steps td.kb-step-name, .kb-article[data-kb-man] table.kb-steps td.kb-step-name {
+    padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
+  .kb-man-part .kb-article table.kb-steps td.kb-step-name::before, .kb-article[data-kb-man] table.kb-steps td.kb-step-name::before { content: none; }
   /* M5 — a section link is a solid underline; a bare number link reads as a number. */
   .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
   .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
@@ -336,6 +348,8 @@
      a glossary term the one dotted mark (it EXPLAINS). */
   a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
   a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
+  /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
+  a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
   .kb-man-print { white-space: nowrap; }
   .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
   .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
@@ -439,6 +453,24 @@
   .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
   .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
   .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
+  /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
+     Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
+  .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
+  .kb-article .kb-gallery:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kb-gal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: .78rem; color: var(--muted); }
+  .kb-gal-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+  .kb-gal-count { flex: none; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .kb-gal-slide { text-align: center; }
+  .kb-gal-slide.kb-gal-off { display: none; }
+  .kb-article .kb-gal-slide img.kb-manimg-figure { margin: 0 auto; }
+  .kb-gal-cap { margin-top: 6px; font-size: .84rem; color: var(--muted); }
+  .kb-gal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+  .kb-gal-step { appearance: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 50%; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-gal-step:hover { border-color: var(--accent); }
+  .kb-gal-dots { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+  .kb-gal-dot { appearance: none; width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .kb-gal-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+  .kb-gal-dot.on::before { background: var(--accent); }
   /* DRV-3 (cycle 23 Batch 12) — an article image from the KbImages tab, while it
      loads, when it could not load, and once it arrives (an ordinary article image). */
   .kb-article .kb-kbimg[data-ki="loading"] { opacity: .65; }
@@ -2704,12 +2736,14 @@ function kbMd_(src) {
     var dm = info.match(/^decision\b/i);
     var mm = info.match(/^map\b/i);
     var dg = info.match(/^diagram\b\s*(\S*)/i);
+    var gl = info.match(/^gallery\b\s*(.*)$/i);
     if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
     else if (rm) blocks.push({ roster: true, body: code });
     else if (gm) blocks.push({ glossary: true, body: code });
     else if (dm) blocks.push({ decision: true, body: code });
     else if (mm) blocks.push({ map: true, body: code });
     else if (dg) blocks.push({ diagram: true, name: dg[1], body: code });
+    else if (gl) blocks.push({ gallery: true, label: gl[1].trim(), body: code });
     else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
     return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
   function inline(t) {
@@ -2776,6 +2810,11 @@ function kbMd_(src) {
       // characters can reach the attributes, and a delegated handler opens it.
       var km = url.match(/^kb:([a-z0-9-]{1,80})(?:#([0-9A-Za-z.]{1,20}))?$/);
       if (km) return keep('<a href="#" class="kb-xref" data-kb-id="' + km[1] + '" data-kb-anchor="' + (km[2] || '') + '">' + emph(txt) + '</a>');
+      // 25post — `lookup:insurance` / `lookup:price` opens that lookup in the
+      // Ctrl/⌘+K drawer (the handbook's link to the payor sheet, in the app).
+      // Only the two names reach the attribute; a delegated handler opens it.
+      var lk = url.match(/^lookup:(insurance|price)$/);
+      if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + emph(txt) + '</a>');
       if (!/^(https?:|mailto:)/i.test(url)) return txt;
       // The top-level escape covers &, <, > but NOT quotes — a `"` in the URL
       // would otherwise break out of the href attribute (attribute injection,
@@ -2812,6 +2851,7 @@ function kbMd_(src) {
       if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
       if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
       if (blk && blk.diagram) { html += kbDiagramHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.gallery) { html += kbGalleryHtml_(blk.label, blk.body, inline); i++; continue; }
       if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
     if (/^\s*$/.test(ln)) { i++; continue; }
     var h = ln.match(/^(#{1,6})\s+(.*)$/);
@@ -2855,7 +2895,10 @@ function kbMd_(src) {
         var cells = tableCells(lines[i]);
         tbl += '<tr>';
         for (var ci2 = 0; ci2 < headCells.length; ci2++) {
-          tbl += '<td' + (tone[ci2] ? ' class="' + tone[ci2] + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
+          // A step cell that is a word, not a number, is a label (no circle) — per ROW,
+          // so a numbered table that ends on "Turnaround" keeps its numbers' circles.
+          var tdCls = (tone[ci2] || '') + (stepNamed && ci2 === 0 && !/^\s*\d+[a-z]?\.?\s*$/i.test(cells[0] || '') ? (tone[ci2] ? ' ' : '') + 'kb-step-name' : '');
+          tbl += '<td' + (tdCls ? ' class="' + tdCls + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
             inline(cells[ci2] == null ? '' : cells[ci2]) + '</td>';
         }
         tbl += '</tr>';
@@ -2942,6 +2985,64 @@ function kbCalloutKind_(line) {
   return KB_CALLOUT_KINDS[word] || 'note';
 }
 
+// A ```gallery fence (the manual export — a tutorial slideshow, operator
+// 2026-10-19): one slide per line, `![alt](manimg:key) caption`, shown one at a
+// time with Previous / Next, a counter and a dot per slide; ← and → step when
+// the gallery has focus, and it wraps at either end. Every slide is in the
+// markup — a slide not on screen is only CLASSED off (kb-gal-off, never the
+// hidden attribute, g73) — so the image hydrator fills them all, search reads
+// every caption, and a printout shows every slide (the print block's rule 7).
+// The body is already escaped by kbMd_; a line that is not an image is dropped,
+// and the image itself goes through inline()'s own manimg chip, so the key
+// charset is the only thing that reaches an attribute.
+function kbGalleryHtml_(label, body, inline) {
+  var slides = String(body || '').split('\n').map(function (ln) {
+    var m = /^\s*(!\[[^\]]*\]\(manimg:(?:icon|thumb|fig)-[a-z0-9-]{1,80}\))\s*(.*)$/.exec(ln);
+    return m ? { img: inline(m[1]), cap: inline(m[2].trim()) } : null;
+  }).filter(Boolean);
+  if (!slides.length) return '';
+  var n = slides.length, name = String(label || '').trim() || 'Slideshow';
+  var dots = '';
+  for (var d = 0; d < n; d++) {
+    dots += '<button type="button" class="kb-gal-dot' + (d ? '' : ' on') + '" onclick="kbGalleryGo_(this,' + d + ')" aria-label="Slide ' + (d + 1) + ' of ' + n + '"' + (d ? '' : ' aria-current="true"') + '></button>';
+  }
+  return '<figure class="kb-gallery" data-i="0" data-n="' + n + '" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="' + name.replace(/"/g, '&quot;') + '" onkeydown="kbGalleryKey_(event)">' +
+    '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-live="polite">1 / ' + n + '</span></div>' +
+    slides.map(function (sl, k) {
+      return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') + '</div>';
+    }).join('') +
+    (n > 1 ? '<div class="kb-gal-nav"><button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,-1)" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
+      '<span class="kb-gal-dots">' + dots + '</span>' +
+      '<button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,1)" aria-label="Next slide">' + icon('chevronRight', 14) + '</button></div>' : '') +
+    '</figure>';
+}
+/** Show slide i of the gallery `el` sits in (wrapping), and say so. */
+function kbGalleryGo_(el, i) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (!fig) return;
+  var slides = fig.querySelectorAll('.kb-gal-slide'), n = slides.length;
+  if (!n) return;
+  i = ((Number(i) || 0) % n + n) % n;
+  for (var k = 0; k < n; k++) slides[k].classList.toggle('kb-gal-off', k !== i);
+  fig.querySelectorAll('.kb-gal-dot').forEach(function (b, k) {
+    b.classList.toggle('on', k === i);
+    if (k === i) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+  var c = fig.querySelector('.kb-gal-count');
+  if (c) c.textContent = (i + 1) + ' / ' + n;
+  fig.setAttribute('data-i', String(i));
+}
+function kbGalleryStep_(el, d) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (fig) kbGalleryGo_(fig, (Number(fig.getAttribute('data-i')) || 0) + d);
+}
+function kbGalleryKey_(e) {
+  if (!e || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  var fig = e.target && e.target.closest ? e.target.closest('.kb-gallery') : null;
+  if (!fig) return;
+  e.preventDefault();
+  kbGalleryStep_(fig, e.key === 'ArrowLeft' ? -1 : 1);
+}
 // A ```diagram fence (the manual export). Batch M3: a name the generated
 // partial knows (KB_MANUAL_DIAGRAMS, kb/script_manual_diagrams.html) draws that
 // diagram. The partial is CODE — allowlisted and pinned at build time — so the
@@ -3582,6 +3683,7 @@ function kbManualPaintPart_(main, part, id, anchor, nav) {
   KB_STATE.manualSpyId = null;
   main.innerHTML = kbManualPartHtml_(part);
   kbManualDecorate_(main);
+  kbManualStickyHeads_(main);
   kbGlossaryAnnotate_(main);
   kbLinkHcpcs_(main);
   kbManualPaintMeta_();
@@ -3702,6 +3804,36 @@ function kbManualDecorate_(root) {
   root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
     if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
   });
+}
+/** Operator 2026-10-19 — a table's header row stays in view, below the reader's
+ *  band, until the table scrolls past. A sticky header cannot stick inside a
+ *  scroll box, and every table sits in one (.kb-man-tw scrolls sideways when it
+ *  is wider than the reader), so a table that FITS drops its scroll box
+ *  (kb-man-tw-fit) and its header sticks; a wider one keeps scrolling sideways,
+ *  header and all. Decided by measurement, never assumed: an unmeasured table
+ *  (not laid out yet, width 0) keeps its scroll box, and every size change
+ *  measures again. The band's height (it grows with the Back row) is the
+ *  header's offset, as --kb-man-band on the scroller. */
+function kbManualStickyHeads_(main) {
+  if (!main || !main.querySelectorAll) return;
+  var band = main.querySelector('.kb-man-top');
+  function bandH() { main.style.setProperty('--kb-man-band', (band && band.offsetHeight ? band.offsetHeight : 0) + 'px'); }
+  function fit(w) {
+    if (!w.clientWidth) return;
+    w.classList.remove('kb-man-tw-fit');
+    w.classList.toggle('kb-man-tw-fit', w.scrollWidth <= w.clientWidth + 1);
+  }
+  var tws = [].slice.call(main.querySelectorAll('.kb-man-tw'));
+  bandH();
+  tws.forEach(fit);
+  if (KB_STATE.manualHeadsRo) { try { KB_STATE.manualHeadsRo.disconnect(); } catch (e) {} KB_STATE.manualHeadsRo = null; }
+  if (typeof ResizeObserver !== 'function') return;
+  var ro = new ResizeObserver(function (entries) {
+    entries.forEach(function (en) { if (en.target === band) bandH(); else fit(en.target); });
+  });
+  if (band) ro.observe(band);
+  tws.forEach(function (w) { ro.observe(w); });
+  KB_STATE.manualHeadsRo = ro;
 }
 /** M14 / M19 — a card's body (in a masthead, or its own Appendix C page): the
  *  text goes into one wrapper the columns apply to, and the diagram follows it
@@ -4306,15 +4438,7 @@ function kbLinkHcpcsInResults_(rootEl) {
 function kbHcpcsOpen_(code) {
   code = String(code || '').trim().toUpperCase();
   if (!/^[ABCDEGHJKLMPQRSTUV][0-9]{4}$/.test(code)) return;
-  kbXrefHide_(true);
-  if (!KB_DRAWER.open) kbDrawerOpen_();
-  // A search or a reader in the drawer gives way to home.
-  var q = document.getElementById('kbd-q');
-  if (q) q.value = '';
-  KB_DRAWER.lastQuery = '';
-  ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over home
-  kbDrawerSetSearching_(false);
-  if (!(KB_DRAWER.view === 'home' && document.getElementById('kb-oop-item-d'))) kbDrawerRenderHome_();
+  kbDrawerLookupsHome_();
   var item = document.getElementById('kb-oop-item-d');
   if (!item) return;
   item.value = code;
@@ -4323,12 +4447,38 @@ function kbHcpcsOpen_(code) {
   var target = (ins && !String(ins.value || '').trim()) ? ins : item;
   setTimeout(function () { try { target.focus(); } catch (e) {} }, 260);   // after kbDrawerOpen_'s own focus move
 }
+/** The drawer open on its home view, where the two lookups live: a search or
+ *  a reader in the drawer gives way to home. Shared by a code link and a
+ *  `lookup:` link. */
+function kbDrawerLookupsHome_() {
+  kbXrefHide_(true);
+  if (!KB_DRAWER.open) kbDrawerOpen_();
+  var q = document.getElementById('kbd-q');
+  if (q) q.value = '';
+  KB_DRAWER.lastQuery = '';
+  ++KB_DRAWER.searchSeq;   // a search still in flight must not paint over home
+  kbDrawerSetSearching_(false);
+  if (!(KB_DRAWER.view === 'home' && document.getElementById('kb-oop-item-d'))) kbDrawerRenderHome_();
+}
+/** A `lookup:` link clicked (25post — 5.11's Payor/HCPCS Order Acceptance
+ *  Sheet is the insurance lookup in the app): the drawer's lookups, focus in
+ *  that lookup's box. Whatever the rep already typed there stays. */
+function kbLookupOpen_(which) {
+  var id = which === 'insurance' ? 'kb-ins-input-d' : which === 'price' ? 'kb-oop-item-d' : '';
+  if (!id) return;
+  kbDrawerLookupsHome_();
+  var box = document.getElementById(id);
+  if (!box) return;
+  setTimeout(function () { try { box.focus(); } catch (e) {} }, 260);   // after kbDrawerOpen_'s own focus move
+}
 (function kbBindHcpcs_() {
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a.kb-hcpcs');
-    if (!a) return;
+    if (a) { e.preventDefault(); kbHcpcsOpen_(a.getAttribute('data-hcpcs')); return; }
+    var l = e.target.closest && e.target.closest('a.kb-lookup');
+    if (!l) return;
     e.preventDefault();
-    kbHcpcsOpen_(a.getAttribute('data-hcpcs'));
+    kbLookupOpen_(l.getAttribute('data-kb-lookup'));
   });
 })();
 

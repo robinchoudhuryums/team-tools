@@ -2956,5 +2956,12 @@
     /* A manual cross-reference is text on paper: the deeper accent, in either
        mode (the accent itself reads 4.4:1 on white — measured by print-check). */
     :root .kb-article a.kb-xref { color: var(--accent-2); }
+
+    /* (7) — a tutorial slideshow (```gallery, operator 2026-10-19) prints
+       EVERY slide, one under another, without its buttons: paper has no
+       Next. The off slides are only classed off on screen (never hidden). */
+    .kb-gal-slide.kb-gal-off { display: block !important; }
+    .kb-gal-slide { break-inside: avoid; margin-bottom: 10px; }
+    .kb-gal-nav, .kb-gal-count { display: none !important; }
   }
 </style>

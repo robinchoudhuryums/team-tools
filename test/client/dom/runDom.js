@@ -5655,6 +5655,36 @@ test('M4 DOM: HCPCS codes in a manual section are links (not inside code, a head
   assert.ok(!h.$('#kbd-body a.kb-hcpcs'), 'a hand-written article is not the manual');
 });
 
+test('Operator 2026-10-19 DOM: a handbook `lookup:insurance` link opens the drawer\'s lookups with focus in the payor box — a typed payor stays, a search in flight gives way; `lookup:price` focuses the item box', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = '- [Insurance lookup](lookup:insurance) — which payors accept which codes\n- [Price lookup](lookup:price)\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const a = h.$('#kb-man-sec-man-0-11 a.kb-lookup[data-kb-lookup="insurance"]');
+  assert.ok(a, 'the section carries the lookup link');
+  h.click(a);
+  assert.strictEqual(h.read('KB_DRAWER').open, true, 'the drawer opens');
+  h.flushTimers();
+  const ins = doc.getElementById('kb-ins-input-d');
+  assert.ok(ins, 'on its home view, with the lookups');
+  assert.strictEqual(doc.activeElement, ins, 'focus in the payor box');
+  ins.value = 'Aetna';
+  doc.getElementById('kbd-q').value = 'pick up';
+  h.read('kbDrawerSearch_')('pick up');
+  h.click(a);
+  assert.strictEqual(doc.getElementById('kb-ins-input-d'), ins, 'the same payor box');
+  assert.strictEqual(ins.value, 'Aetna', 'keeps what was typed');
+  assert.strictEqual(doc.getElementById('kbd-q').value, '', 'the drawer search gives way');
+  h.run.flushSuccess({ results: [{ id: 'kb-1', title: 'x', chunkMd: 'x' }] }, 'searchReference');
+  assert.ok(doc.getElementById('kb-ins-input-d'), 'the late search result did not replace the lookups');
+  h.click(h.$('#kb-man-sec-man-0-11 a.kb-lookup[data-kb-lookup="price"]'));
+  h.flushTimers();
+  assert.strictEqual(doc.activeElement, doc.getElementById('kb-oop-item-d'), 'the price link focuses the item box');
+  assert.strictEqual(h.run.pending('searchOopPricing').length, 0, 'and looks nothing up by itself');
+});
+
 const M4_WN = { id: '', title: "What's new", bodyMd: '', stamp: '|manual:2026-09-28:3', manualRecentTotal: 3, manualRecentDays: 90, manualVersion: 'v3.0',
   manualRecent: [{ date: '2026-09-28', num: '0.11', id: 'man-0-11', anchor: '', summary: 'TRX, never a name', retraining: true },
     { date: '2026-09-20', num: '0.10.2', id: 'man-0-10', anchor: '0.10.2', summary: 'Check Fax History first', retraining: false }] };
@@ -5737,6 +5767,66 @@ test('MR2 DOM (operator testing 2026-10-08): the reader reads like the HTML manu
   assert.strictEqual(sec.querySelectorAll('.kb-man-ssn').length, 3, 'nor numbers a heading twice');
   assert.strictEqual(h.read('kbManualTitleHtml_')('Card 3 — Oxygen <x>'), 'Card 3 — Oxygen &lt;x&gt;', 'a title with no section number is escaped as it is');
   assert.strictEqual(h.read('kbManualTitleHtml_')('10.A Quick <b>'), '<span class="kb-man-sn">10.A</span> Quick &lt;b&gt;', 'the chip and the rest are both escaped');
+});
+
+test('Operator 2026-10-19 DOM: a handbook table that FITS drops its scroll box so its header row sticks below the reader band; a wider one, or one not laid out yet, keeps scrolling', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[1].bodyMd = 'Notes.\n\n| Item | Code |\n|---|---|\n| Bed | E0260 |\n\n| Model | HCPCS | Allowance | Sizing |\n|---|---|---|---|\n| Wipes | A4335 | 2 packs | 100 |\n\n| Event | Effect |\n|---|---|\n| Moves | Stops |\n';
+  h.read('kbOpenItem_')('man-0-11');
+  h.run.flushSuccess(part, 'getManualPart');
+  const main = doc.getElementById('kb-main');
+  const tws = [...main.querySelectorAll('.kb-man-tw')];
+  assert.strictEqual(tws.length, 3);
+  // jsdom lays nothing out: give each box the widths a browser would measure.
+  const size = (el, cw, sw) => { Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => cw }); Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => sw }); };
+  size(tws[0], 700, 700);   // fits
+  size(tws[1], 350, 620);   // wider than the reader (a phone)
+  size(tws[2], 0, 0);       // not laid out yet
+  const band = main.querySelector('.kb-man-top');
+  Object.defineProperty(band, 'offsetHeight', { configurable: true, get: () => 49 });
+  h.read('kbManualStickyHeads_')(main);
+  assert.ok(tws[0].classList.contains('kb-man-tw-fit'), 'a table that fits drops its scroll box, so its header can stick');
+  assert.ok(!tws[1].classList.contains('kb-man-tw-fit'), 'a wider table keeps scrolling sideways');
+  assert.ok(!tws[2].classList.contains('kb-man-tw-fit'), 'an unmeasured table is never assumed to fit');
+  assert.strictEqual(main.style.getPropertyValue('--kb-man-band'), '49px', 'the band height is the header offset');
+  // A later measurement can take the fit away (the reader got narrower).
+  size(tws[0], 300, 700);
+  h.read('kbManualStickyHeads_')(main);
+  assert.ok(!tws[0].classList.contains('kb-man-tw-fit'), 'measured again, a table that no longer fits scrolls again');
+});
+
+test('Operator 2026-10-19 DOM: a handbook slideshow steps one slide at a time — Next, Previous, a dot, ← and → — wrapping at both ends, with the counter and the current dot in step', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const host = doc.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = h.read('kbMd_')('```gallery Steps\n![A](manimg:fig-a) one\n![B](manimg:fig-b) two\n![C](manimg:fig-c) three\n```');
+  doc.body.appendChild(host);
+  const fig = host.querySelector('.kb-gallery');
+  const shown = () => [...fig.querySelectorAll('.kb-gal-slide')].map((s) => s.classList.contains('kb-gal-off') ? 0 : 1).join('');
+  const count = () => fig.querySelector('.kb-gal-count').textContent;
+  const cur = () => [...fig.querySelectorAll('.kb-gal-dot')].findIndex((d) => d.getAttribute('aria-current') === 'true');
+  assert.strictEqual(shown(), '100'); assert.strictEqual(count(), '1 / 3');
+  // jsdom never compiles inline onclick (runScripts:'outside-only'): call what each attribute names.
+  const press = (btn) => { const m = /^(kbGallery\w+_)\(this,(-?\d+)\)$/.exec(btn.getAttribute('onclick')); assert.ok(m, 'wired: ' + btn.getAttribute('onclick')); h.read(m[1])(btn, Number(m[2])); };
+  const key = (k) => { let stopped = false; h.read('kbGalleryKey_')({ key: k, target: fig, preventDefault: () => { stopped = true; } }); return stopped; };
+  assert.strictEqual(fig.getAttribute('onkeydown'), 'kbGalleryKey_(event)', 'the gallery listens for the arrow keys');
+  const [prev, next] = fig.querySelectorAll('.kb-gal-step');
+  next.click = () => press(next); prev.click = () => press(prev);
+  fig.querySelectorAll('.kb-gal-dot').forEach((d) => { d.click = () => press(d); });
+  next.click();
+  assert.strictEqual(shown(), '010'); assert.strictEqual(count(), '2 / 3'); assert.strictEqual(cur(), 1, 'the dot follows');
+  prev.click(); prev.click();
+  assert.strictEqual(shown(), '001', 'Previous from the first slide wraps to the last'); assert.strictEqual(count(), '3 / 3');
+  next.click();
+  assert.strictEqual(shown(), '100', 'Next from the last wraps to the first');
+  fig.querySelectorAll('.kb-gal-dot')[2].click();
+  assert.strictEqual(shown(), '001', 'a dot goes straight to its slide');
+  assert.ok(key('ArrowRight')); assert.strictEqual(shown(), '100', '→ steps (and wraps), and keeps the page from scrolling');
+  assert.ok(key('ArrowLeft')); assert.strictEqual(shown(), '001', '← steps back');
+  assert.ok(!key('Enter')); assert.strictEqual(shown(), '001', 'any other key does nothing, and is left to the page');
 });
 
 test('MRD-1 DOM (manual reader design Phase 1): a callout opener becomes kicker + title with its text unchanged, punctuation-only and run-on labels are left readable, a two-column table is marked to stack, a bare-number link reads as a number — and decorating twice changes nothing', async () => {
