@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-2",
+    "summary": "The oxygen ticket slideshow shows Step 2, searching for the patient by date of birth, with the other patients in the results blurred.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
     "part": "p6",
     "section": "§6-9",
     "summary": "Creating a pick-up ticket is shown step by step: the seven tutorial slides as a slideshow (6.9.3), with the Google Slides deck linked under Additional resources (6.16).",

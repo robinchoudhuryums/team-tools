@@ -35908,7 +35908,7 @@ test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at
   const pb = styles.slice(styles.indexOf('@media print {'));
   assert.ok(/\(7\)[\s\S]*\.kb-gal-slide\.kb-gal-off \{ display: block !important; \}[\s\S]*\.kb-gal-nav, \.kb-gal-count \{ display: none !important; \}/.test(pb), 'every slide prints, without its buttons');
   // The source side: one placeholder, three readers.
-  assert.ok(/\{\{gallery:o2-ticket-1\|o2-ticket-3\|o2-ticket-4\|o2-ticket-5\|title=/.test(MP1_('src/p8.md')), '8.2.2\'s ticket screenshots are the first gallery');
+  assert.ok(/\{\{gallery:o2-ticket-1\|o2-ticket-2\|o2-ticket-3\|o2-ticket-4\|o2-ticket-5\|title=/.test(MP1_('src/p8.md')), '8.2.2\'s ticket screenshots are the first gallery');
   const ex = MP1_('export_reference.py'), rd = MP1_('render.py'), mh = MP1_('make_html.py');
   assert.ok(/text = re\.sub\(r"\\\{\\\{gallery:\(\[\^\}\]\+\)\\\}\\\}", lambda m: gallery_md\(m\.group\(1\)\), text\)/.test(ex) && /return "```gallery " \+ title/.test(ex), 'the export writes the ```gallery fence the reader draws');
   assert.ok(/<figure class="shot gallery" data-title=/.test(rd) && /<div class="slide"><img src=/.test(rd), 'the HTML and Word build gets one figure of slides — md2model reads every image in it');
