@@ -118,5 +118,17 @@
     "alt": "Ticket tab: pick-up from, pick-up contact and pickup reason",
     "caption": "Step 7 — the Ticket tab",
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "o2-cyl-m6": {
+    "source": "operator product image 2026-10-21, metric labels converted",
+    "alt": "M6 oxygen cylinder with its measurements",
+    "caption": "<b>M6 cylinder</b> · 14.9 in tall with the valve · 3.2 in across · 2.9 lb",
+    "reviewed": "2026-10-21"
+  },
+  "o2-cyl-e": {
+    "source": "operator product image 2026-10-21, metric labels converted",
+    "alt": "E oxygen cylinder with its measurements",
+    "caption": "<b>E cylinder</b> · 28.9 in tall with the valve · 4.5 in across · 8.7 lb",
+    "reviewed": "2026-10-21"
   }
 }
