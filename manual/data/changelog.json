@@ -2,6 +2,24 @@
   {
     "date": "2026-10-21",
     "part": "p8",
+    "section": "§8-10",
+    "summary": "The Oxygen Instructions patient handout is in the chapter itself — both pages, as the patient receives them.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-4",
+    "summary": "The straight and swivel connectors bill as A4719 (E1399 if A4719 is not accepted). The cylinder table gives each cylinder's weight: M6 2.9 lb, E 8.7 lb.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p8",
     "section": "§8-4",
     "summary": "Product photos for the cylinders, cannula, tubing, connectors, humidifier bottle and carrier bag; Humidifier Adapter Tubing gets its own row. The cylinder photos, with their measurements in inches, sit under the cylinder table (8.5.2).",
     "authority": "Respiratory & Resupply",

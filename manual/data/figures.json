@@ -120,15 +120,27 @@
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
   },
   "o2-cyl-m6": {
-    "source": "operator product image 2026-10-21, metric labels converted",
+    "source": "operator product image 2026-10-21, labels set to the cylinder table's measurements (operator)",
     "alt": "M6 oxygen cylinder with its measurements",
-    "caption": "<b>M6 cylinder</b> · 14.9 in tall with the valve · 3.2 in across · 2.9 lb",
+    "caption": "<b>M6 cylinder</b> · ~12 in long · 4.38 in across · 2.9 lb",
     "reviewed": "2026-10-21"
   },
   "o2-cyl-e": {
-    "source": "operator product image 2026-10-21, metric labels converted",
+    "source": "operator product image 2026-10-21, labels set to the cylinder table's measurements (operator)",
     "alt": "E oxygen cylinder with its measurements",
-    "caption": "<b>E cylinder</b> · 28.9 in tall with the valve · 4.5 in across · 8.7 lb",
+    "caption": "<b>E cylinder</b> · ~25 in long · 4.38 in across · 8.7 lb",
     "reviewed": "2026-10-21"
+  },
+  "o2-handout-1": {
+    "source": "Oxygen_Instructions_General.pdf, page 1 (operator 2026-10-21)",
+    "alt": "Oxygen Instructions patient handout, page 1: prescription, do's and don'ts, the concentrator, alarms, cleaning, travel, when to call",
+    "caption": "Oxygen Instructions — page 1 of the patient handout",
+    "reviewed": "2026-10-21 — no patient information"
+  },
+  "o2-handout-2": {
+    "source": "Oxygen_Instructions_General.pdf, page 2 (operator 2026-10-21)",
+    "alt": "Oxygen Instructions patient handout, page 2: the concentrator and portable oxygen checklist",
+    "caption": "Oxygen Instructions — page 2, the setup checklist",
+    "reviewed": "2026-10-21 — no patient information"
   }
 }

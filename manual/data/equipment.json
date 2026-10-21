@@ -3721,7 +3721,7 @@
       "E0431"
     ],
     "hcpcs_note": null,
-    "product_weight_lbs": null,
+    "product_weight_lbs": 2.9,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
@@ -3758,7 +3758,7 @@
       "E0431"
     ],
     "hcpcs_note": null,
-    "product_weight_lbs": null,
+    "product_weight_lbs": 8.7,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
@@ -3872,24 +3872,25 @@
     "name": "Straight Connector",
     "part": "p8",
     "category": "oxygen-supply",
-    "hcpcs": [],
-    "hcpcs_note": null,
+    "hcpcs": [
+      "A4719"
+    ],
+    "hcpcs_note": "If A4719 is not accepted, E1399 (miscellaneous)",
     "product_weight_lbs": null,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
     "specs": [],
     "allowance": "2–3 / month",
-    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
+    "notes": "If A4719 is not accepted, use E1399 (miscellaneous). Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [
       "o2/connector-straight.jpg"
     ],
-    "verified": "2026-09-15",
+    "verified": "2026-10-21",
     "billing_type": "purchase-resupply",
     "flags": [
-      "bundled-in-rental",
-      "no-hcpcs"
+      "bundled-in-rental"
     ]
   },
   {
@@ -3897,24 +3898,25 @@
     "name": "Swivel Connector",
     "part": "p8",
     "category": "oxygen-supply",
-    "hcpcs": [],
-    "hcpcs_note": null,
+    "hcpcs": [
+      "A4719"
+    ],
+    "hcpcs_note": "If A4719 is not accepted, E1399 (miscellaneous)",
     "product_weight_lbs": null,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
     "specs": [],
     "allowance": "2 / month",
-    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
+    "notes": "If A4719 is not accepted, use E1399 (miscellaneous). Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
     "images": [
       "o2/connector-swivel.jpg"
     ],
-    "verified": "2026-09-15",
+    "verified": "2026-10-21",
     "billing_type": "purchase-resupply",
     "flags": [
-      "bundled-in-rental",
-      "no-hcpcs"
+      "bundled-in-rental"
     ]
   },
   {
