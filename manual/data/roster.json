@@ -302,15 +302,15 @@
     "role": "Used Equipment Sales Contact",
     "part": "p6",
     "type": "individual",
-    "holder": null,
+    "holder": "Parth Shah (Field Operations Manager)",
     "backup": null,
     "queue": null,
     "email": null,
     "email_attn": null,
     "direct_transfer": false,
-    "current_named_individual": "Parth Shah",
+    "current_named_individual": null,
     "note": "Email directly with used-equipment requests.",
-    "source": "Field Ops guide",
+    "source": "Robin, 10/2026 (operator 2026-10-21)",
     "flags": []
   },
   {

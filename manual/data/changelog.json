@@ -1,5 +1,32 @@
 [
   {
+    "date": "2026-10-21",
+    "part": "p6",
+    "section": "§6-9",
+    "summary": "Creating a pick-up ticket is shown step by step: the seven tutorial slides as a slideshow (6.9.3), with the Google Slides deck linked under Additional resources (6.16).",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p6",
+    "section": "§6-6",
+    "summary": "A delivery ticket example, with the patient's details blurred (6.6.1).",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "appx_b",
+    "section": "§B-1",
+    "summary": "The Used Equipment Sales Contact is Parth Shah, the Field Operations Manager.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
     "date": "2026-10-19",
     "part": "p5",
     "section": "§5-11",

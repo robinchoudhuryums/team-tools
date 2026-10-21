@@ -64,5 +64,53 @@
     "alt": "Oxygen conserving device",
     "caption": "<b>Conserver</b> · A9900 · included if the provider orders it — otherwise $320",
     "reviewed": "2026-09-23"
+  },
+  "fo-delivery-ticket": {
+    "source": "operator upload 2026-10-21 (delivery ticket, redacted)",
+    "alt": "A completed delivery ticket, the patient's details blurred",
+    "caption": "A delivery ticket — the patient, physician, contact and serial details are blurred",
+    "reviewed": "2026-10-21 — checked for PHI; the patient's name and ID line, the barcode, contact, address, phone, DOB, physician, NPI and serial numbers pixelated"
+  },
+  "pickup-ticket-1": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 1 (operator upload 2026-10-21)",
+    "alt": "Actions menu, Create Order",
+    "caption": "Step 1 — Actions → Create Order",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "pickup-ticket-2": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 2 (operator upload 2026-10-21)",
+    "alt": "A new Transaction Work Flow, the patient search box",
+    "caption": "Step 2 — the patient search in the new window",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "pickup-ticket-3": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 3 (operator upload 2026-10-21)",
+    "alt": "The patient search by date of birth, the patient selected",
+    "caption": "Step 3 — search by date of birth and select the patient",
+    "reviewed": "2026-10-21 — checked for PHI; the other patients in the search results pixelated"
+  },
+  "pickup-ticket-4": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 4 (operator upload 2026-10-21)",
+    "alt": "Transaction tab: Pick-up type, product category, market and referral source",
+    "caption": "Step 4 — the Transaction tab",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "pickup-ticket-5": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 5 (operator upload 2026-10-21)",
+    "alt": "Selection tab with the item being picked up",
+    "caption": "Step 5 — the Selection tab",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "pickup-ticket-6": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 6 (operator upload 2026-10-21)",
+    "alt": "Claim Prep tab",
+    "caption": "Step 6 — Claim Prep",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "pickup-ticket-7": {
+    "source": "Pick-Up Ticket Creation Tutorial Slides, slide 7 (operator upload 2026-10-21)",
+    "alt": "Ticket tab: pick-up from, pick-up contact and pickup reason",
+    "caption": "Step 7 — the Ticket tab",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only"
   }
 }

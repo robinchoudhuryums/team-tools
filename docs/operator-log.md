@@ -33,7 +33,10 @@ fence before 8.2.2 arrives, or it shows as a raw code block. What changes:
   link the Payor/HCPCS Order Acceptance Sheet in print and HTML, and open the
   insurance lookup beside the call in the app (`{{lookup:insurance}}`); Sales
   escalation is the standard process (no per-department section without an
-  exception). The live checklist is the operator's handbook checklist page.
+  exception); 6.6.1's delivery ticket example and 6.9.3's pick-up ticket
+  slideshow (seven slides, patient details pixelated, provisional captions),
+  6.16's slideshow link, and B.1's Used Equipment Sales Contact (Parth Shah).
+  The live checklist is the operator's handbook checklist page.
 
 ## 2026-10-19 — intake forms and emails, pay statement edits, the idle alert (25post round 2)
 
