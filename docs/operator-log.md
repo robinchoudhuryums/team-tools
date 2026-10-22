@@ -16,7 +16,9 @@ per-property entries); this file keeps the history of how it got there.
 New version), THEN re-import the handbook — as for round 3.
 
 - **Handbook reader (app and HTML).** A screenshot wider than the reading column
-  opens at full size on a click (or Enter); a small one stays as it is.
+  opens at full size on a click (or Enter); a small one stays as it is. Images in
+  hand-written Reference articles do the same (their zoom-in cursor had no click
+  behind it).
 - **Handbook content.** The oxygen product photos (the cylinders on the
   table's measurements, the vendor SKU removed), the cylinders' weights, the
   connectors' A4719 and a Humidifier Adapter Tubing row; the Oxygen Instructions
