@@ -3,6 +3,15 @@
     "date": "2026-10-22",
     "part": "p10",
     "section": "§10-19",
+    "summary": "The Payment Processing Tutorial's screens: processing a payment step by step, the Pre-Pay option, and a negative balance with the payment history that explains it.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-19",
     "summary": "Screenshots for opening invoices (the Edit Patient button, the Invoices tab, an expanded invoice), the Process Payment button, and the Claim Prep tab — as a slideshow showing paid / eligible months and the NU and RR modifiers.",
     "authority": "Billing",
     "retraining": false,

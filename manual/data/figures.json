@@ -214,5 +214,59 @@
     "alt": "The Patient tab at the top of the left menu",
     "caption": "The <b>Patient</b> tab, at the top of the left menu",
     "reviewed": "2026-10-22 — checked for PHI; test patient only"
+  },
+  "pay-type": {
+    "source": "Payment Processing Tutorial slides, slide 5 (operator 2026-10-22)",
+    "alt": "Process Payment, the Payment Type list",
+    "caption": "Process Payment → <b>Payment Type</b>: Invoice, for a billed balance",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-invoice": {
+    "source": "Payment Processing Tutorial slides, slide 6 (operator 2026-10-22)",
+    "alt": "The Invoice ID list",
+    "caption": "<b>Invoice ID</b> — the invoice being paid",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-method": {
+    "source": "Payment Processing Tutorial slides, slide 8 (operator 2026-10-22)",
+    "alt": "The Payment Method list, Credit/Debit Card highlighted",
+    "caption": "<b>Payment Method</b> — most often Credit/Debit Card",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-amount": {
+    "source": "Payment Processing Tutorial slides, slide 9 (operator 2026-10-22)",
+    "alt": "The Amount field and the card fields",
+    "caption": "<b>Amount</b> — check it against the balance, or what the caller wants to pay",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-card": {
+    "source": "Payment Processing Tutorial slides, slide 10 (operator 2026-10-22)",
+    "alt": "The card details filled in, with an email receipt and a note",
+    "caption": "The card details as the caller gives them; <b>Send Email Receipt</b> and a <b>Note</b> if asked",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-result": {
+    "source": "Payment Processing Tutorial slides, slide 11 (operator 2026-10-22)",
+    "alt": "The Payments tab: one attempt Declined, one Approved",
+    "caption": "<b>Payments</b> — each attempt shows Approved or Declined",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-prepay": {
+    "source": "Payment Processing Tutorial slides, slide 7 (operator 2026-10-22)",
+    "alt": "Process Payment with Payment Type Pre Pay and the order's Trx ID",
+    "caption": "<b>Pre-Pay</b> — choose the order's Trx ID instead of an invoice",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-neg-balance": {
+    "source": "Payment Processing Tutorial slides, slide 3 (operator 2026-10-22)",
+    "alt": "The Invoices tab showing a negative balance",
+    "caption": "The invoice shows a <b>negative balance</b>…",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-neg-history": {
+    "source": "Payment Processing Tutorial slides, slide 11 (operator 2026-10-22)",
+    "alt": "The Payments tab: a declined attempt and an approved one on the same day",
+    "caption": "…because the declined attempt and the approved one both show",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
   }
 }

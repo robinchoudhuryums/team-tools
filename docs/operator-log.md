@@ -23,7 +23,8 @@ New version), THEN re-import the handbook — as for round 3.
   table's measurements, the vendor SKU removed), the cylinders' weights, the
   connectors' A4719 and a Humidifier Adapter Tubing row; the Oxygen Instructions
   handout in 8.10; the CRM navigation screenshots in 0.3.1, 0.10 and 10.19
-  (Claim Prep cropped to what it teaches); the E0621 sling is a purchase.
+  (Claim Prep cropped to what it teaches); the Payment Processing Tutorial's
+  screens in 10.19.3 and 10.19.4; the E0621 sling is a purchase.
   Patient details in every screenshot are pixelated.
 
 ## 2026-10-19 — intake polish and the handbook reader (25post round 3)
