@@ -17,12 +17,12 @@ New version), THEN re-import the handbook — as for round 3.
 
 - **Handbook reader (app and HTML).** A screenshot wider than the reading column
   opens at full size on a click (or Enter); a small one stays as it is.
-- **Handbook content.** The delivery ticket (6.6.1), the pick-up ticket slideshow
-  (6.9.3) and its link (6.16); 8.2.2's Step 2; the oxygen product photos, the
-  cylinders' weights and the connectors' A4719; the Oxygen Instructions handout
-  in 8.10; the CRM navigation screenshots in 0.3.1, 0.10 and 10.19 (Claim Prep
-  cropped to what it teaches); the E0621 sling is a purchase; B.1's Used
-  Equipment Sales Contact. Patient details in every screenshot are pixelated.
+- **Handbook content.** The oxygen product photos (the cylinders on the
+  table's measurements, the vendor SKU removed), the cylinders' weights, the
+  connectors' A4719 and a Humidifier Adapter Tubing row; the Oxygen Instructions
+  handout in 8.10; the CRM navigation screenshots in 0.3.1, 0.10 and 10.19
+  (Claim Prep cropped to what it teaches); the E0621 sling is a purchase.
+  Patient details in every screenshot are pixelated.
 
 ## 2026-10-19 — intake polish and the handbook reader (25post round 3)
 
