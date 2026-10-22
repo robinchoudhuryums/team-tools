@@ -142,5 +142,77 @@
     "alt": "Oxygen Instructions patient handout, page 2: the concentrator and portable oxygen checklist",
     "caption": "Oxygen Instructions — page 2, the setup checklist",
     "reviewed": "2026-10-21 — no patient information"
+  },
+  "nav-edit-patient-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_edit-patient-button.png (operator 2026-10-22)",
+    "alt": "The Edit Patient button at the bottom left of the Transaction Workflow",
+    "caption": "<b>Edit Patient</b> — bottom left of the Transaction Workflow",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-invoices": {
+    "source": "UMS Navigation Screenshots pt 1 — edit-patient-window.png (operator 2026-10-22)",
+    "alt": "The Edit Patient window, the Invoices tab highlighted in its left menu",
+    "caption": "The patient window — <b>Invoices</b> is in the left menu",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-invoice-expanded": {
+    "source": "UMS Navigation Screenshots pt 1 — edit-patient-window_invoices_expanded-invoice.png (operator 2026-10-22)",
+    "alt": "An expanded invoice: its lines with HCPCS, deductible and coinsurance, and the balance",
+    "caption": "An expanded invoice — each line's HCPCS, deductible and coinsurance, and the balance",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-process-payment-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_process-payment-button.png (operator 2026-10-22)",
+    "alt": "The Process Payment button along the bottom of the Transaction Workflow",
+    "caption": "<b>Process Payment</b> — along the bottom of the Transaction Workflow",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-claim-prep": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep.png (operator 2026-10-22)",
+    "alt": "The Claim Prep tab: each item's paid / eligible months, and each claim's month and paid amount",
+    "caption": "Claim Prep — each item's (paid / eligible) months, and each claim's month and paid amount",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-claim-prep-purchase": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand.png (operator 2026-10-22)",
+    "alt": "A purchase claim expanded: each line's HCPCS with an NU modifier, and the amount paid",
+    "caption": "A purchase claim expanded — <b>NU</b> on every line",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-claim-prep-rental": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand_RR.png (operator 2026-10-22)",
+    "alt": "A rental claim expanded: the K0003 line with an RR modifier",
+    "caption": "A rental claim expanded — <b>RR</b> on the line",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-messages-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_messages-notes-button.png (operator 2026-10-22)",
+    "alt": "The Messages button along the bottom of the Transaction Workflow",
+    "caption": "Notes — the <b>Messages</b> button",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-transaction-tab": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_menu_transaction_tab.png (operator 2026-10-22)",
+    "alt": "The Transaction tab in the left menu",
+    "caption": "Fax History — open the <b>Transaction</b> tab…",
+    "reviewed": "2026-10-22 — checked for PHI; test patient only"
+  },
+  "nav-fax-history-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_transaction_fax-history-button.png (operator 2026-10-22)",
+    "alt": "The Fax History button inside the Transaction tab",
+    "caption": "…then <b>Fax History</b>, on the right",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-artifacts-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_patient-artifacts-button.png (operator 2026-10-22)",
+    "alt": "The Patient Artifacts button along the bottom of the Transaction Workflow",
+    "caption": "Artifacts — the <b>Patient Artifacts</b> button",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-tab": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_patient_tab.png (operator 2026-10-22)",
+    "alt": "The Patient tab at the top of the left menu",
+    "caption": "The <b>Patient</b> tab, at the top of the left menu",
+    "reviewed": "2026-10-22 — checked for PHI; test patient only"
   }
 }

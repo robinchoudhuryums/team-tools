@@ -1076,14 +1076,14 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "For use with a patient lift. Sizes M–XL; commode-opening option available.",
-    "source": "MM p.17",
+    "notes": "For use with a patient lift. Sizes M–XL; commode-opening option available. Billed as a purchase, bundled with the lift — not a rental.",
+    "source": "MM p.17; operator 2026-10-22",
     "images": [
       "mm/image36.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-22",
     "flags": [],
-    "billing_type": "capped-rental"
+    "billing_type": "purchase"
   },
   {
     "id": "lift-chair",

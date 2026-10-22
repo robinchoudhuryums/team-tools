@@ -1,5 +1,32 @@
 [
   {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-19",
+    "summary": "Screenshots for opening invoices (the Edit Patient button, the Invoices tab, an expanded invoice), the Process Payment button, and the Claim Prep tab — as a slideshow showing paid / eligible months and the NU and RR modifiers.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-2",
+    "summary": "The E0621 patient lift sling is a purchase, bundled with the lift — not a capped rental.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "Screenshots of where Notes (Messages), Fax History (Transaction tab) and Artifacts (Patient Artifacts) are, and of the Patient tab (0.3.1).",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
     "date": "2026-10-21",
     "part": "p8",
     "section": "§8-10",
