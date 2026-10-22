@@ -1334,6 +1334,12 @@ not restate it. Server endpoints live in the fourteen server files
        (`kbLookupOpen_`, sharing `kbDrawerLookupsHome_` with a code link) — the
        handbook's `{{lookup:insurance}}` (4.4, 5.11), where print links the
        Payor/HCPCS Order Acceptance Sheet itself.
+     - **2026-10-22:** a handbook figure drawn smaller than its own pixels
+       (wider than the 720px column — a CRM screenshot) gets a zoom-in cursor
+       and opens at full size on a click or Enter (`kbManimgZoomable_` measures
+       it on load; `kbImageOpen_` shows it in `kb-image-overlay`, set by
+       property, closed through `closeOverlay`). The HTML handbook does the same
+       for `figure.shot img` (`.lb`, never printed).
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

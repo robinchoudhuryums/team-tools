@@ -168,19 +168,19 @@
     "reviewed": "2026-10-22 — checked for PHI"
   },
   "nav-claim-prep": {
-    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep.png (operator 2026-10-22)",
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep.png (operator 2026-10-22), cropped",
     "alt": "The Claim Prep tab: each item's paid / eligible months, and each claim's month and paid amount",
     "caption": "Claim Prep — each item's (paid / eligible) months, and each claim's month and paid amount",
     "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
   },
   "nav-claim-prep-purchase": {
-    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand.png (operator 2026-10-22)",
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand.png (operator 2026-10-22), cropped",
     "alt": "A purchase claim expanded: each line's HCPCS with an NU modifier, and the amount paid",
     "caption": "A purchase claim expanded — <b>NU</b> on every line",
     "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
   },
   "nav-claim-prep-rental": {
-    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand_RR.png (operator 2026-10-22)",
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand_RR.png (operator 2026-10-22), cropped",
     "alt": "A rental claim expanded: the K0003 line with an RR modifier",
     "caption": "A rental claim expanded — <b>RR</b> on the line",
     "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"

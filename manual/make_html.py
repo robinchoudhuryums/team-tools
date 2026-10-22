@@ -648,6 +648,11 @@ figure.gallery .galstep{width:32px;height:32px;border-radius:50%;font-size:16px;
 figure.gallery .galdot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--rule)!important}
 figure.gallery .galdot.cur{background:var(--cur,var(--accent))!important;border-color:transparent}
 figure.gallery:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+figure.shot img.zoom{cursor:zoom-in}
+.lb{position:fixed;inset:0;z-index:1000;background:rgba(15,20,25,.82);overflow:auto;padding:24px;cursor:zoom-out}
+.lb[hidden]{display:none}
+.lb img{display:block;max-width:none;margin:auto;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+@media print{.lb{display:none!important}}
 @media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span{display:none}}
 main > figure.shot{max-width:860px}
 @media print{figure.shot{break-inside:avoid}}
@@ -1761,6 +1766,19 @@ mainEl.querySelectorAll('figure.gallery').forEach(g=>{
  g.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'){e.preventDefault();go(i-1);}else if(e.key==='ArrowRight'){e.preventDefault();go(i+1);}});
  go(0);
 });
+// a screenshot drawn smaller than its own pixels opens at full size on a click
+// or Enter (operator 2026-10-22); a click or Escape closes it
+const lb=document.createElement('div');lb.className='lb';lb.hidden=true;lb.setAttribute('role','dialog');lb.setAttribute('aria-modal','true');
+const lbImg=document.createElement('img');lb.append(lbImg);document.body.append(lb);
+let lbFrom=null;
+const lbClose=()=>{lb.hidden=true;lbImg.removeAttribute('src');if(lbFrom){lbFrom.focus();lbFrom=null;}};
+const lbOpen=img=>{lbFrom=img;lbImg.src=img.src;lbImg.alt=img.alt;lb.setAttribute('aria-label',img.alt||'Image');lb.hidden=false;lb.tabIndex=-1;lb.focus();};
+const zoomable=img=>{const w=img.naturalWidth,sh=img.clientWidth;if((sh&&w>sh+8)||(!sh&&w>760)){img.classList.add('zoom');img.tabIndex=0;img.setAttribute('role','button');img.title='Open at full size';}};
+mainEl.querySelectorAll('figure.shot img').forEach(img=>{if(img.complete)zoomable(img);else img.addEventListener('load',()=>zoomable(img));});
+mainEl.addEventListener('click',e=>{const img=e.target.closest('figure.shot img.zoom');if(img){e.preventDefault();lbOpen(img);}});
+mainEl.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('figure.shot img.zoom')){e.preventDefault();lbOpen(e.target);}});
+lb.addEventListener('click',lbClose);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!lb.hidden)lbClose();});
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;
