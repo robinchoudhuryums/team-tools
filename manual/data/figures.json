@@ -268,5 +268,71 @@
     "alt": "The Payments tab: a declined attempt and an approved one on the same day",
     "caption": "…because the declined attempt and the approved one both show",
     "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pwr-req-additional-docs": {
+    "source": "Power note template screenshots, req-additional-docs.png (operator 2026-10-23)",
+    "alt": "Qualifications notes requesting additional documents",
+    "caption": "Requesting additional documents — the highlighted notes: the status note (documents requested, fax status, attempt, MDO and patient contact) and the T3 → T4 note naming what was received and what is still needed",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-MRx-pending": {
+    "source": "Power note template screenshots, MRx-pending.png (operator 2026-10-23)",
+    "alt": "Qualifications note, Master Rx pending",
+    "caption": "<b>T3 Received → T3 Complete</b> — eligibility checked and a Master Rx pending: the documents are with the Authorization team",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-QL-elig-to-power": {
+    "source": "Power note template screenshots, QL-elig-to-power.png (operator 2026-10-23)",
+    "alt": "Qualified Lead note moving the order to Power",
+    "caption": "A Qualified Lead — the ME paperwork received and the order <b>moving to Power via Eligible</b>, with the T3Q checklist",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-ATP-scheduled": {
+    "source": "Power note template screenshots, ATP-scheduled.png (operator 2026-10-23)",
+    "alt": "ATP visit scheduled note",
+    "caption": "ATP visit scheduled — the ATP assigned, the date and time window, and the address and phone confirmed with the patient",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-final-packet-created": {
+    "source": "Power note template screenshots, final-packet-created.png (operator 2026-10-23)",
+    "alt": "Final packet created note",
+    "caption": "<b>Final packet created</b> — the packet is assembled for the PAR",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-submitted": {
+    "source": "Power note template screenshots, PAR-submitted.png (operator 2026-10-23)",
+    "alt": "PAR submitted note",
+    "caption": "<b>PAR submitted</b> — the method of submission, the codes that need no PAR, the reference number and the average decision time",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-dual-submission": {
+    "source": "Power note template screenshots, PAR-dual-submission.png (operator 2026-10-23)",
+    "alt": "Dual submission note",
+    "caption": "<b>Dual submission</b> — sent to traditional Medicare too, through myCGS (see the dual-submission policy below)",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-approved": {
+    "source": "Power note template screenshots, PAR-approved.png (operator 2026-10-23)",
+    "alt": "PAR approved note",
+    "caption": "<b>PAR approved, pushed to Field Ops</b> — the order validation checklist",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-order-verification": {
+    "source": "Power note template screenshots, order-verification.png (operator 2026-10-23)",
+    "alt": "Completed PWC verification note",
+    "caption": "A completed verification — the finalized chair and model, seat size, joystick side, colour, and the home and eligibility checks",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-mfg-order-placed": {
+    "source": "Power note template screenshots, mfg-order-placed.png (operator 2026-10-23)",
+    "alt": "Order placed with the manufacturer notes",
+    "caption": "Ordered — the call telling the patient, and the order note: make, model, expected wait, size and colour",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-delivery-scheduled": {
+    "source": "Power note template screenshots, delivery-scheduled.png (operator 2026-10-23)",
+    "alt": "Delivery scheduled note",
+    "caption": "<b>Delivery scheduled</b> — the date and time frame, the address and eligibility re-verified, and the patient told about the seat adjustment",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
   }
 }
