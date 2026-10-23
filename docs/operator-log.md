@@ -25,9 +25,9 @@ New version), THEN re-import the handbook — as for round 3.
   handout in 8.10; the CRM navigation screenshots in 0.3.1, 0.10 and 10.19
   (Claim Prep cropped to what it teaches); the Payment Processing Tutorial's
   screens in 10.19.3 and 10.19.4; the E0621 sling is a purchase.
-  The Power note templates through Chapter 5 — Qualifications, the ATP visit,
-  the PAR notes, verification, the manufacturer order and the delivery (5.2.1's
-  PPD and 5.2.2's MA Education screenshots are still to come).
+  The Power note templates through Chapter 5 — the PPD, MA Education, the
+  appointment reminder and F2F confirmation, Qualifications, the ATP visit, the
+  PAR notes, verification, the manufacturer order and the delivery.
   Patient details in every screenshot are pixelated.
 
 ## 2026-10-19 — intake polish and the handbook reader (25post round 3)

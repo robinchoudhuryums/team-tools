@@ -334,5 +334,41 @@
     "alt": "Delivery scheduled note",
     "caption": "<b>Delivery scheduled</b> — the date and time frame, the address and eligibility re-verified, and the patient told about the seat adjustment",
     "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PPD-in-progress": {
+    "source": "Power note template screenshots, part 2, PPD-in-progress.png (operator 2026-10-23)",
+    "alt": "PPD in progress note",
+    "caption": "<b>PPD in progress</b> — waiting on the patient to call back for the interview: the appointment, the provider, the attempt number and what was tried (voicemail, text, email)",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-PPD-completed": {
+    "source": "Power note template screenshots, part 2, PPD-completed.png (operator 2026-10-23)",
+    "alt": "PPD completed note",
+    "caption": "<b>PPD completed</b> — the interview done and the PAK documents generated: the appointment and provider, the recommended equipment and the checklist, then the PPD notes",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-MA-education": {
+    "source": "Power note template screenshots, part 2, MA-education.png (operator 2026-10-23)",
+    "alt": "MA Education note",
+    "caption": "<b>MA Education</b> — the days to the appointment (UPDATE: -2 Day), the provider and MA contact, whether the PAK was confirmed with the facility and gone over with the provider, and the attempt",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-appt-reminder": {
+    "source": "Power note template screenshots, part 2, appt-reminder.png (operator 2026-10-23)",
+    "alt": "Appointment reminder note",
+    "caption": "The appointment reminder — the patient called the day before, and confirmed",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-ME-confirmation": {
+    "source": "Power note template screenshots, part 2, ME-confirmation.png (operator 2026-10-23)",
+    "alt": "F2F confirmation note",
+    "caption": "<b>F2F confirmation</b> — the MDO confirms the patient kept the appointment for the PMD ME",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-pushed-to-qualifications": {
+    "source": "Power note template screenshots, part 2, pushed-to-qualifications.png (operator 2026-10-23)",
+    "alt": "Pushed to Qualifications note",
+    "caption": "<b>T2 Received</b> — the F2F shows power mobility evidence (the pages noted), and the order is pushed to Qualifications",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
   }
 }
