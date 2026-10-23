@@ -5566,6 +5566,108 @@ test('Operator 2026-10-22 DOM: a handbook figure wider than it is drawn opens at
   assert.ok(!doc.getElementById('kb-image-overlay'), 'only a PNG/JPEG data URL is shown');
 });
 
+test('Operator 2026-10-23 DOM: a slide opens as its slideshow at full size — its name, count and caption, Previous / Next and ← / → wrapping, the page slideshow kept in step, a slide still loading named, Close back on the slideshow; a lone figure keeps its caption', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const art = mount_(h, 'r5-gal'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('```gallery The PAR notes\n![Final packet note](manimg:fig-pa1) Final packet created\n![PAR submitted note](manimg:fig-pa2) PAR submitted — the method of submission\n![Dual submission note](manimg:fig-pa3) Dual submission\n```\n\n' +
+    '![The Patient tab](manimg:fig-pt)\n\n*The Patient tab, at the top of the left menu*\n');
+  await tick(); h.flushTimers(); await tick();
+  h.run.flushSuccess({ success: true, images: { 'fig-pa1': PNG, 'fig-pa2': PNG, 'fig-pt': PNG }, missing: ['fig-pa3'], failed: [] }, 'getManualImages');
+  const gal = art.querySelector('.kb-gallery');
+  const first = gal.querySelector('.kb-gal-slide img');
+  Object.defineProperty(first, 'naturalWidth', { value: 300 });   // smaller than the column: a lone image would stay put
+  first.onload();
+  assert.ok(first.classList.contains('kb-zoomable') && first.getAttribute('role') === 'button', 'a slide always opens — the viewer is the slideshow at full size');
+  first.focus();
+  h.click(first);
+  const ov = doc.getElementById('kb-image-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'a click opens the viewer');
+  const st = () => ({ t: ov.querySelector('h3').textContent, n: ov.querySelector('.kb-img-count').textContent, cap: ov.querySelector('.kb-img-cap').textContent,
+    alt: (ov.querySelector('.kb-img-big img') || {}).alt || null, box: ov.querySelector('.kb-img-big').textContent, page: gal.getAttribute('data-i') });
+  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '1 / 3', cap: 'Final packet created', alt: 'Final packet note', box: '', page: '0' }, 'titled by the slideshow, counted, captioned');
+  assert.strictEqual(ov.getAttribute('aria-label'), 'Slideshow — The PAR notes');
+  assert.strictEqual(ov.querySelector('.kb-img-big img').getAttribute('src'), PNG, 'the image by property');
+  const next = ov.querySelector('[data-kb-step="1"]'), prev = ov.querySelector('[data-kb-step="-1"]');
+  assert.ok(next && prev && next.getAttribute('aria-label') === 'Next slide', 'Previous and Next');
+  h.click(next);
+  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '2 / 3', cap: 'PAR submitted — the method of submission', alt: 'PAR submitted note', box: '', page: '1' }, 'Next steps the viewer AND the page');
+  assert.ok(!gal.querySelectorAll('.kb-gal-slide')[1].classList.contains('kb-gal-off'), 'the page shows the same slide');
+  h.click(next);
+  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '3 / 3', cap: 'Dual submission', alt: null, box: 'Dual submission note', page: '2' }, 'a slide whose image is not there yet is named, never blank');
+  ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.strictEqual(st().n, '1 / 3', '→ wraps from the last to the first');
+  ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  assert.strictEqual(st().n, '3 / 3', '← wraps back');
+  h.click(prev);
+  assert.strictEqual(st().n, '2 / 3', 'Previous steps back');
+  h.read('closeOverlay')(ov);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'closes through closeOverlay');
+  assert.strictEqual(doc.activeElement, gal, 'focus lands on the slideshow — the slide it opened from is off-screen now');
+  assert.strictEqual(gal.getAttribute('data-i'), '1', 'and the page is on the slide the viewer was');
+  // A lone figure: its caption, no count and no steps.
+  const pt = art.querySelector('img.kb-manimg-figure[alt="The Patient tab"]');
+  Object.defineProperty(pt, 'naturalWidth', { value: 1290 });
+  pt.onload();
+  h.click(pt);
+  const ov2 = doc.getElementById('kb-image-overlay');
+  assert.strictEqual(ov2.querySelector('h3').textContent, 'The Patient tab');
+  assert.strictEqual(ov2.querySelector('.kb-img-cap').textContent, 'The Patient tab, at the top of the left menu', 'the caption under a figure rides along');
+  assert.ok(!ov2.querySelector('.kb-img-count') && !ov2.querySelector('[data-kb-step]'), 'no count and no steps for one image');
+  h.read('closeOverlay')(ov2);
+});
+
+test('Operator 2026-10-23 DOM: a button the handbook names shows its screenshot on hover, focus or a tap — one popover, the image asked for only when shown and drawn at once from the cache; Escape takes down ONLY the popover; a scroll or a tap elsewhere hides it', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const art = mount_(h, 'r5-peek'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('Transaction Workflow → **[Edit Patient](peek:fig-ep)** (bottom-left), then [Fax History](peek:fig-fh).');
+  await tick(); h.flushTimers(); await tick();
+  assert.strictEqual(h.run.pending('getManualImages').length, 0, 'nothing is fetched until a peek is shown');
+  const ep = art.querySelector('.kb-peek[data-peek="fig-ep"]'), fh = art.querySelector('.kb-peek[data-peek="fig-fh"]');
+  assert.ok(ep && ep.getAttribute('tabindex') === '0' && ep.closest('strong'), 'a focusable span, inside the bold');
+  ep.dispatchEvent(new w.MouseEvent('mouseover', { bubbles: true }));
+  const pop = () => doc.getElementById('kb-peek-pop');
+  assert.ok(!pop() || pop().hidden, 'a pass over the text is not yet a hover');
+  h.flushTimers();
+  assert.ok(pop() && !pop().hidden && pop().getAttribute('role') === 'tooltip', 'a hover shows the popover');
+  assert.strictEqual(pop().parentNode, doc.body, 'ONE popover, on the body — above the drawer and any overlay');
+  assert.ok(pop().querySelector('.kb-manimg[data-manimg="fig-ep"]'), 'holding the image chip');
+  await tick(); h.flushTimers(); await tick();
+  const calls = h.run.pending('getManualImages');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(calls[calls.length - 1].args[0])), ['fig-ep'], 'the image is asked for once it is shown');
+  h.run.flushSuccess({ success: true, images: { 'fig-ep': PNG }, missing: [], failed: [] }, 'getManualImages');
+  assert.strictEqual(pop().querySelector('img').getAttribute('src'), PNG, 'and drawn there, by property');
+  ep.dispatchEvent(new w.MouseEvent('mouseout', { bubbles: true }));
+  h.flushTimers();
+  assert.ok(pop().hidden, 'leaving the text hides it');
+  // Focus (the keyboard) shows it at once.
+  fh.dispatchEvent(new w.FocusEvent('focusin', { bubbles: true }));
+  assert.ok(!pop().hidden && pop().querySelector('.kb-manimg[data-manimg="fig-fh"]'), 'focus shows the other button\'s');
+  // Escape: the popover only — the shell's Escape (which closes the drawer or an overlay) never hears it.
+  let heard = 0;
+  const ear = (e) => { if (e.key === 'Escape') heard++; };
+  doc.addEventListener('keydown', ear);
+  doc.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(pop().hidden && heard === 0, 'Escape takes down the popover and nothing under it');
+  doc.body.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(heard, 1, 'with no popover up, Escape is the page\'s again');
+  doc.removeEventListener('keydown', ear);
+  // A tap: shown at once, the cached image drawn without asking again.
+  const before = h.run.pending('getManualImages').length;
+  h.click(ep);
+  assert.ok(!pop().hidden && pop().querySelector('img') && pop().querySelector('img').getAttribute('src') === PNG, 'a tap shows it, the cached image at once');
+  await tick(); h.flushTimers(); await tick();
+  assert.strictEqual(h.run.pending('getManualImages').length, before, 'and asks for nothing');
+  h.click(doc.body);
+  assert.ok(pop().hidden, 'a tap elsewhere hides it');
+  h.click(ep);
+  w.dispatchEvent(new w.Event('scroll'));
+  assert.ok(pop().hidden, 'a scroll hides it (it is fixed, and would not follow the text)');
+});
+
 test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {
   const h = boot();
   const w = h.window, doc = w.document;

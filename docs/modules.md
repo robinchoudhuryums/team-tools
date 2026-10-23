@@ -1343,6 +1343,22 @@ not restate it. Server endpoints live in the fourteen server files
        carries no zoom cursor (article images had one unconditionally, with no
        handler). The HTML handbook does the same for `figure.shot img` (`.lb`,
        never printed).
+     - **2026-10-23 (25post round 5):** the full-size viewer keeps the figure's
+       caption (`kbImgCaption_`: a slide's own, or the italic line the export
+       writes under a figure), and a slideshow's slide — every slide opens now,
+       whatever its size — opens AS the slideshow: its name, "n / N", Previous /
+       Next and ← / → wrapping (`kbImageSlide_`), the page's slideshow moved to
+       the same slide and focus back on it at Close. A button the handbook names
+       shows its locator screenshot beside the text on hover, focus or a tap: the
+       source's `{{peek:figure|text}}` exports as a `peek:fig-…` link that `kbMd_`
+       draws as a focusable `.kb-peek` span; `kbPeekShow_` fills ONE fixed
+       popover (`#kb-peek-pop`, above the drawer and any overlay) with a manual-
+       image chip the Batch M3 hydrator fills — asked for only when first shown,
+       drawn at once from the cache after — and Escape takes down only the
+       popover, a scroll or a tap elsewhere hides it. The import counts a `peek:`
+       key as a citation (`kbManualImagesValidate_`). The HTML handbook does the
+       same (`#ppop`, each named image carried once in `PEEK` with its size);
+       Word and print keep the words.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

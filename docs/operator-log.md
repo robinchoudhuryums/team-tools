@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-23 — named buttons show where they are; the full-size viewer keeps captions and slideshows (25post round 5)
+
+**Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then a
+New version), THEN re-import the handbook. Imported first, the new button
+mentions read as plain words until the deploy, and nothing breaks; the deploy
+also lets the import check those mentions' images.
+
+- **Buttons named in the text.** Wherever the handbook names a CRM button or
+  tab that has a "where is it" screenshot — Edit Patient, Process Payment,
+  Messages, the Transaction and Patient tabs, Fax History, Patient Artifacts —
+  the name is dotted-underlined, and hovering it, tabbing to it or tapping it
+  shows that screenshot beside the text (20 mentions across Chapters 0, 1, 4,
+  5, 6, 10 and Appendix C). Escape, a scroll or a tap elsewhere hides it.
+- **Full size.** An enlarged screenshot keeps its caption. A slide from a
+  slideshow opens as the slideshow — its name, "2 / 4", the ‹ › buttons and
+  ← / → — and closing it leaves the page's slideshow on the same slide. Every
+  slide can be enlarged, whatever its size. The HTML handbook does both too.
+
 ## 2026-10-22 — handbook images at full size; Chapters 0, 5, 6, 8 and 10 content (25post round 4)
 
 **Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then a

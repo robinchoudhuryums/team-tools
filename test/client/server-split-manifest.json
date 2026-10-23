@@ -3255,6 +3255,16 @@
     "intakePreviewAcct_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-23",
+   "why": "25post round 5 (operator 2026-10-23): a peek: link cites a manual image too, so the import refuses one the file does not carry",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbManualImagesValidate_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -9517,7 +9527,7 @@
   "kbManualImagesValidate_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8b754c6f4bac948e"
+   "sha": "e0365dcb2e7a2aee"
   },
   "kbManualImagesWrite_": {
    "file": "70_kb.js",

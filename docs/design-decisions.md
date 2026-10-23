@@ -5747,3 +5747,23 @@ pick them up without re-deriving the context.
   digest (a 15-minute trigger, one more installable trigger, and a mail per
   false alarm — the operator chose in-app first); measuring from the
   30-minute presence stamp alone (it expires exactly at the threshold, g172).
+- <a id="a-named-button-shows-its-screenshot"></a>**A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)**
+  The operator asked that the screenshots showing where a CRM button is appear
+  where the text names it ("Edit Patient (bottom-left)"), everywhere it is
+  named. The source marks a mention `{{peek:figure|text}}` — the figure is one
+  already in `figures.json`, so there is one image per button and the build
+  refuses an unknown one. The three readers each take what they can show: print
+  and Word keep the words; the HTML handbook carries each named image once
+  (`PEEK`, with its size, so the popover is placed before the image decodes);
+  the app gets a `peek:fig-…` link drawn as a focusable span, and the image is
+  the manual image the import already stores, fetched only when first shown
+  and cited like any `manimg:` key, so the import refuses a file missing one.
+  Only the seven small locator crops are named this way: a full-window
+  screenshot is unreadable at popover size. The popover is a tooltip, never a
+  dialog — it takes no pointer, and Escape takes it down without closing the
+  drawer or overlay under it. In the same round the full-size viewer kept the
+  caption and opened a slide as its slideshow (count, steps, ← / →, the page
+  kept on the same slide), so every slide can be enlarged. **Alternatives
+  rejected:** the image inline in each span (twenty copies of seven images in
+  the HTML); a CSS-only `:hover` popover inside the text (clipped by the
+  scrolling tables the mentions sit in, and nothing on a touch screen).

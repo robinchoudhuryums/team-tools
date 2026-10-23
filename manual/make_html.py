@@ -649,9 +649,31 @@ figure.gallery .galdot{width:10px;height:10px;padding:0;border-radius:50%;backgr
 figure.gallery .galdot.cur{background:var(--cur,var(--accent))!important;border-color:transparent}
 figure.gallery:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 figure.shot img.zoom{cursor:zoom-in}
-.lb{position:fixed;inset:0;z-index:1000;background:rgba(15,20,25,.82);overflow:auto;padding:24px;cursor:zoom-out}
+.lb{position:fixed;inset:0;z-index:1000;background:rgba(15,20,25,.88);display:flex;flex-direction:column;cursor:zoom-out}
 .lb[hidden]{display:none}
+/* the viewer keeps the figure's caption and, for a slideshow, its title, count and steps (operator 2026-10-23) */
+.lb .lbbar{display:flex;align-items:baseline;gap:12px;padding:10px 16px;color:#fff;font-size:14px;cursor:default}
+.lb .lbbar b{flex:1;min-width:0;font-weight:600}
+.lb .lbn{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.8)}
+.lb .lbx{font:inherit;font-size:24px;line-height:1;padding:0 4px;background:none;border:0;color:#fff;cursor:pointer}
+.lb .lbimg{flex:1;min-height:0;overflow:auto;padding:0 60px}
 .lb img{display:block;max-width:none;margin:auto;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.lb .lbcap{padding:10px 60px 16px;color:#fff;font-size:14px;line-height:1.45;text-align:center;cursor:default}
+.lb .lbcap:empty{display:none}
+.lb .lbstep{display:none;position:fixed;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;
+ border:1px solid rgba(255,255,255,.5);background:rgba(0,0,0,.5);color:#fff;font-size:24px;line-height:1;cursor:pointer}
+.lb.multi .lbstep{display:block}
+.lb .lbprev{left:10px}.lb .lbnext{right:10px}
+.lb button:focus-visible{outline:2px solid #fff;outline-offset:2px}
+/* a button named in the text shows its locator screenshot (operator 2026-10-23) */
+.peek[tabindex]{text-decoration:underline dotted;text-decoration-thickness:1px;text-underline-offset:3px;cursor:help}
+.peek[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+#ppop[hidden]{display:none}
+#ppop{position:absolute;z-index:60;max-width:min(460px,calc(100vw - 32px));padding:8px;background:var(--bg);
+ border:1px solid var(--rule);border-radius:6px;box-shadow:0 12px 34px rgba(0,0,0,.18)}
+#ppop img{display:block;max-width:100%;height:auto;border-radius:3px}
+#ppop .ppc{margin-top:6px;font-size:12.5px;line-height:1.4;color:var(--muted)}
+@media print{#ppop{display:none!important}.peek[tabindex]{text-decoration:none}}
 @media print{.lb{display:none!important}}
 @media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span{display:none}}
 main > figure.shot{max-width:860px}
@@ -1269,6 +1291,7 @@ section.qrc h2 .sn{margin-right:0}
 <aside id="otp" aria-label="On this page"><div class="otph">On this page</div><div id="otpl"></div></aside>
 </div>
 <div id="xpop" hidden role="tooltip"></div>
+<div id="ppop" hidden role="tooltip"></div>
 <div id="router" hidden role="dialog" aria-modal="true" aria-label="Call router"><div class="rtbox">
 <div class="rthead"><b>What did the caller say?</b><button id="rtclose" aria-label="Close">&#10005;</button></div>
 <div class="rtbody"><div class="rtleft"><input id="rtq" type="search" placeholder="Filter phrases&hellip;" aria-label="Filter phrases"><div id="rtlist"></div></div>
@@ -1767,18 +1790,76 @@ mainEl.querySelectorAll('figure.gallery').forEach(g=>{
  go(0);
 });
 // a screenshot drawn smaller than its own pixels opens at full size on a click
-// or Enter (operator 2026-10-22); a click or Escape closes it
+// or Enter (operator 2026-10-22), with its caption; a slideshow's slide opens as
+// the slideshow — title, count, ‹ › and ← / →, the page's slideshow kept in step
+// (operator 2026-10-23). A click outside the caption and controls, or Escape, closes it.
 const lb=document.createElement('div');lb.className='lb';lb.hidden=true;lb.setAttribute('role','dialog');lb.setAttribute('aria-modal','true');
-const lbImg=document.createElement('img');lb.append(lbImg);document.body.append(lb);
-let lbFrom=null;
-const lbClose=()=>{lb.hidden=true;lbImg.removeAttribute('src');if(lbFrom){lbFrom.focus();lbFrom=null;}};
-const lbOpen=img=>{lbFrom=img;lbImg.src=img.src;lbImg.alt=img.alt;lb.setAttribute('aria-label',img.alt||'Image');lb.hidden=false;lb.tabIndex=-1;lb.focus();};
-const zoomable=img=>{const w=img.naturalWidth,sh=img.clientWidth;if((sh&&w>sh+8)||(!sh&&w>760)){img.classList.add('zoom');img.tabIndex=0;img.setAttribute('role','button');img.title='Open at full size';}};
+lb.innerHTML='<div class="lbbar"><b class="lbt"></b><span class="lbn" aria-live="polite"></span><button type="button" class="lbx" aria-label="Close">×</button></div>'+
+ '<div class="lbimg"><img alt=""></div><div class="lbcap"></div>'+
+ '<button type="button" class="lbstep lbprev" aria-label="Previous slide">‹</button><button type="button" class="lbstep lbnext" aria-label="Next slide">›</button>';
+document.body.append(lb);
+const lbImg=lb.querySelector('.lbimg img'),lbT=lb.querySelector('.lbt'),lbN=lb.querySelector('.lbn'),lbCap=lb.querySelector('.lbcap');
+let lbFrom=null,lbGal=null,lbSlides=null,lbI=0;
+const capOf=img=>{const cell=img.closest('.slide')||img.closest('figure.shot > div')||img.closest('figure.shot');const fc=cell&&cell.querySelector('figcaption');return fc?fc.innerHTML:'';};
+const lbShow=k=>{const n=lbSlides.length;lbI=((k%n)+n)%n;const im=lbSlides[lbI].querySelector('img');
+ lbImg.src=im.src;lbImg.alt=im.alt;lbCap.innerHTML=capOf(im);lbN.textContent=(lbI+1)+' / '+n;
+ const d=lbGal.querySelectorAll('.galdot')[lbI];if(d)d.click();};
+const lbClose=()=>{lb.hidden=true;lbImg.removeAttribute('src');const back=lbGal||lbFrom;lbFrom=lbGal=lbSlides=null;if(back)back.focus();};
+const lbOpen=img=>{lbFrom=img;lbGal=img.closest('figure.gallery.on');
+ lbSlides=lbGal?[...lbGal.querySelectorAll(':scope > .slide')]:null;
+ lb.classList.toggle('multi',!!(lbSlides&&lbSlides.length>1));
+ lbT.textContent=lbGal?(lbGal.dataset.title||'Slideshow'):(img.alt||'Image');
+ if(lbSlides)lbShow(Math.max(0,lbSlides.findIndex(sl=>sl.contains(img))));
+ else{lbImg.src=img.src;lbImg.alt=img.alt;lbCap.innerHTML=capOf(img);lbN.textContent='';}
+ lb.setAttribute('aria-label',lbT.textContent);lb.hidden=false;lb.tabIndex=-1;lb.focus();};
+const zoomable=img=>{const w=img.naturalWidth,sh=img.clientWidth;if(img.closest('figure.gallery')||(sh&&w>sh+8)||(!sh&&w>760)){img.classList.add('zoom');img.tabIndex=0;img.setAttribute('role','button');img.title='Open at full size';}};
 mainEl.querySelectorAll('figure.shot img').forEach(img=>{if(img.complete)zoomable(img);else img.addEventListener('load',()=>zoomable(img));});
 mainEl.addEventListener('click',e=>{const img=e.target.closest('figure.shot img.zoom');if(img){e.preventDefault();lbOpen(img);}});
 mainEl.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches&&e.target.matches('figure.shot img.zoom')){e.preventDefault();lbOpen(e.target);}});
-lb.addEventListener('click',lbClose);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!lb.hidden)lbClose();});
+lb.addEventListener('click',e=>{
+ const st=e.target.closest('.lbstep');
+ if(st){if(lbSlides)lbShow(lbI+(st.classList.contains('lbprev')?-1:1));return;}
+ if(!e.target.closest('.lbx')&&e.target.closest('.lbbar,.lbcap'))return;
+ lbClose();
+});
+document.addEventListener('keydown',e=>{
+ if(lb.hidden)return;
+ if(e.key==='Escape')lbClose();
+ else if(lbSlides&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();lbShow(lbI+(e.key==='ArrowLeft'?-1:1));}
+});
+// a button named in the text shows where it is on hover, focus or a tap
+// (operator 2026-10-23) — each image is carried once, in PEEK, with its size,
+// so the popover is placed before the image has decoded
+const PEEK=__PEEK__;
+const ppop=document.getElementById('ppop');
+let ppFor=null,ppShow=null,ppHide=null;
+mainEl.querySelectorAll('.peek[data-peek]').forEach(sp=>{if(PEEK[sp.dataset.peek]){sp.tabIndex=0;sp.setAttribute('aria-describedby','ppop');}});
+function peekShow(sp){
+ const p=PEEK[sp.dataset.peek];if(!p)return;
+ clearTimeout(ppHide);clearTimeout(ppShow);
+ const sc=Math.min(1,Math.min(440,document.documentElement.clientWidth-48)/p.w,300/p.h);
+ ppop.innerHTML='';
+ const im=document.createElement('img');im.alt=p.alt;im.width=Math.round(p.w*sc);im.height=Math.round(p.h*sc);im.src=p.src;
+ const c=document.createElement('div');c.className='ppc';c.textContent=p.cap;
+ ppop.append(im,c);ppop.hidden=false;
+ const r=sp.getBoundingClientRect(),w=ppop.offsetWidth,hgt=ppop.offsetHeight;
+ let left=window.scrollX+r.left;left=Math.min(left,window.scrollX+document.documentElement.clientWidth-w-16);left=Math.max(window.scrollX+16,left);
+ const below=r.bottom+hgt+12<window.innerHeight;
+ ppop.style.left=left+'px';ppop.style.top=(below?window.scrollY+r.bottom+6:window.scrollY+r.top-hgt-6)+'px';
+ ppFor=sp;
+}
+const peekOf=t=>t&&t.closest?t.closest('.peek[tabindex]'):null;
+const peekHide=()=>{clearTimeout(ppShow);clearTimeout(ppHide);ppop.hidden=true;ppFor=null;};
+const peekHideSoon=()=>{clearTimeout(ppShow);clearTimeout(ppHide);ppHide=setTimeout(peekHide,160);};
+if(!coarse){
+ document.addEventListener('mouseover',e=>{const sp=peekOf(e.target);if(sp){clearTimeout(ppHide);clearTimeout(ppShow);if(sp!==ppFor)ppShow=setTimeout(()=>peekShow(sp),140);}});
+ document.addEventListener('mouseout',e=>{if(peekOf(e.target))peekHideSoon();});
+}
+document.addEventListener('focusin',e=>{const sp=peekOf(e.target);if(sp)peekShow(sp);});
+document.addEventListener('focusout',e=>{if(peekOf(e.target))peekHideSoon();});
+document.addEventListener('click',e=>{const sp=peekOf(e.target);if(sp)peekShow(sp);else if(!ppop.hidden&&!e.target.closest('#ppop'))peekHide();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!ppop.hidden)peekHide();});
+window.addEventListener('scroll',()=>{if(!ppop.hidden)peekHide();},{passive:true});
 // copy section link
 document.addEventListener('click',e=>{
  const a=e.target.closest('.ah'); if(!a) return;
@@ -1796,7 +1877,35 @@ document.addEventListener('keydown',e=>{
 </script>
 </body></html>"""
 
+def _img_size(uri):
+    """(width, height) of a PNG or JPEG data URI, read from its header."""
+    import base64, struct
+    b = base64.b64decode(uri.split(",", 1)[1])
+    if b[:8] == b"\x89PNG\r\n\x1a\n":
+        return struct.unpack(">II", b[16:24])
+    i = 2
+    while i < len(b) - 9:
+        if b[i] != 0xFF:
+            i += 1
+            continue
+        m, ln = b[i + 1], struct.unpack(">H", b[i + 2:i + 4])[0]
+        if m in (0xC0, 0xC1, 0xC2):
+            h, w = struct.unpack(">HH", b[i + 5:i + 9])
+            return w, h
+        i += 2 + ln
+    raise SystemExit("peek image: not a PNG or JPEG")
+
+
+# the locator screenshots the text's peek spans name (operator 2026-10-23), each carried once
+_FIGS = _json.load(open("data/figures.json"))
+_FIGB = _json.load(open("data/figures_b64.json"))
+PEEK = {}
+for _fid in sorted(set(re.findall(r'<span class="peek" data-peek="([\w-]+)">', body))):
+    _w, _h = _img_size(_FIGB[_fid])
+    PEEK[_fid] = {"src": _FIGB[_fid], "alt": _FIGS[_fid]["alt"], "w": _w, "h": _h,
+                  "cap": html.unescape(re.sub(r"<[^>]+>", "", _FIGS[_fid]["caption"]))}
+
 OWNER = re.search(r'^OWNER = "([^"]+)"', open("build.py").read(), re.M).group(1)
-open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__PDFDOC__", PDFDOC).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__CHAPTERS__", _json.dumps(CHAPTERS_IX, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT))
+open(DST, "w").write(TPL.replace("__PAL_LIGHT__", palette("light")).replace("__PAL_DARK__", palette("dark")).replace("__PDFDOC__", PDFDOC).replace("__OWNER__", html.escape(OWNER)).replace("__NAV__", "\n".join(navhtml)).replace("__BODY__", body).replace("__SEARCH__", _json.dumps(SEARCH, ensure_ascii=False)).replace("__CHAPTERS__", _json.dumps(CHAPTERS_IX, ensure_ascii=False)).replace("__ROUTER__", _json.dumps(ROUTER, ensure_ascii=False)).replace("__BUILT__", BUILT).replace("__PEEK__", _json.dumps(PEEK, ensure_ascii=False)))
 print(f"wrote {DST}  ({len(open(DST).read()):,} bytes)")
 print(f"nav entries: {len(nav)}   callouts styled: {body.count('class=\"cb ')}")
