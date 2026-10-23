@@ -1076,14 +1076,14 @@
     "seat": null,
     "specs": [],
     "allowance": null,
-    "notes": "For use with a patient lift. Sizes M–XL; commode-opening option available.",
-    "source": "MM p.17",
+    "notes": "For use with a patient lift. Sizes M–XL; commode-opening option available. Billed as a purchase, bundled with the lift — not a rental.",
+    "source": "MM p.17; operator 2026-10-22",
     "images": [
       "mm/image36.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-22",
     "flags": [],
-    "billing_type": "capped-rental"
+    "billing_type": "purchase"
   },
   {
     "id": "lift-chair",
@@ -3721,7 +3721,7 @@
       "E0431"
     ],
     "hcpcs_note": null,
-    "product_weight_lbs": null,
+    "product_weight_lbs": 2.9,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
@@ -3742,7 +3742,9 @@
     "allowance": "Per prescription; max 10 per delivery",
     "notes": "Highly portable, fits in a carrier bag. Travel and short outings.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/m6-cylinder.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "oxygen-36-month",
     "flags": []
@@ -3756,7 +3758,7 @@
       "E0431"
     ],
     "hcpcs_note": null,
-    "product_weight_lbs": null,
+    "product_weight_lbs": 8.7,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
@@ -3777,7 +3779,9 @@
     "allowance": "Per prescription; max 10 per delivery",
     "notes": "Larger, typically in a stand or cart. Backup at home and extended use. Patients should always keep at least one E cylinder at home for power outages.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/e-cylinder.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "oxygen-36-month",
     "flags": []
@@ -3799,7 +3803,9 @@
     "allowance": "4 / month",
     "notes": "Supplied in packs of 4, each including 7 ft tubing. Patients do not need to request 7 ft tubing separately. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/nasal-cannula.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "purchase-resupply",
     "flags": [
@@ -3824,7 +3830,9 @@
     "allowance": "2 / month",
     "notes": "Request separately from cannulas. Can be cut to a shorter custom length on request. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/tubing-25ft.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "purchase-resupply",
     "flags": [
@@ -3849,7 +3857,9 @@
     "allowance": "1 / month",
     "notes": "Maximum tubing length is 50 ft. Tubing must not be cut and spliced. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/tubing-50ft.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "purchase-resupply",
     "flags": [
@@ -3862,22 +3872,25 @@
     "name": "Straight Connector",
     "part": "p8",
     "category": "oxygen-supply",
-    "hcpcs": [],
-    "hcpcs_note": null,
+    "hcpcs": [
+      "A4719"
+    ],
+    "hcpcs_note": "If A4719 is not accepted, E1399 (miscellaneous)",
     "product_weight_lbs": null,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
     "specs": [],
     "allowance": "2–3 / month",
-    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
+    "notes": "If A4719 is not accepted, use E1399 (miscellaneous). Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
-    "verified": "2026-09-15",
+    "images": [
+      "o2/connector-straight.jpg"
+    ],
+    "verified": "2026-10-21",
     "billing_type": "purchase-resupply",
     "flags": [
-      "bundled-in-rental",
-      "no-hcpcs"
+      "bundled-in-rental"
     ]
   },
   {
@@ -3885,22 +3898,25 @@
     "name": "Swivel Connector",
     "part": "p8",
     "category": "oxygen-supply",
-    "hcpcs": [],
-    "hcpcs_note": null,
+    "hcpcs": [
+      "A4719"
+    ],
+    "hcpcs_note": "If A4719 is not accepted, E1399 (miscellaneous)",
     "product_weight_lbs": null,
     "capacity_lbs": null,
     "dimensions": null,
     "seat": null,
     "specs": [],
     "allowance": "2 / month",
-    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
+    "notes": "If A4719 is not accepted, use E1399 (miscellaneous). Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
-    "verified": "2026-09-15",
+    "images": [
+      "o2/connector-swivel.jpg"
+    ],
+    "verified": "2026-10-21",
     "billing_type": "purchase-resupply",
     "flags": [
-      "bundled-in-rental",
-      "no-hcpcs"
+      "bundled-in-rental"
     ]
   },
   {
@@ -3920,8 +3936,36 @@
     "allowance": "As needed",
     "notes": "Always add humidifier adapter tubing to the order as well. Overfilling above the max line is the most common cause of water in the tubing. Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/humidifier-bottle.jpg"
+    ],
     "verified": "2026-09-15",
+    "billing_type": "purchase-resupply",
+    "flags": [
+      "bundled-in-rental"
+    ]
+  },
+  {
+    "id": "o2-humidifier-adapter-tubing",
+    "name": "Humidifier Adapter Tubing",
+    "part": "p8",
+    "category": "oxygen-accessory",
+    "hcpcs": [
+      "E1399"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "With each humidifier bottle",
+    "notes": "Connects the humidifier bottle to the concentrator. Add it to the order every time a humidifier bottle is ordered.",
+    "source": "Oxygen guide; operator product photo 2026-10-21",
+    "images": [
+      "o2/humidifier-adapter-tubing.jpg"
+    ],
+    "verified": "2026-10-21",
     "billing_type": "purchase-resupply",
     "flags": [
       "bundled-in-rental"
@@ -3994,7 +4038,9 @@
     "allowance": null,
     "notes": "E cylinder or M6 cylinder options.",
     "source": "Oxygen guide",
-    "images": [],
+    "images": [
+      "o2/cylinder-carrier-bag.jpg"
+    ],
     "verified": "2026-09-15",
     "billing_type": "purchase",
     "flags": []

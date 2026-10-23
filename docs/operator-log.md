@@ -10,6 +10,26 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-22 — handbook images at full size; Chapters 0, 5, 6, 8 and 10 content (25post round 4)
+
+**Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then a
+New version), THEN re-import the handbook — as for round 3.
+
+- **Handbook reader (app and HTML).** A screenshot wider than the reading column
+  opens at full size on a click (or Enter); a small one stays as it is. Images in
+  hand-written Reference articles do the same (their zoom-in cursor had no click
+  behind it).
+- **Handbook content.** The oxygen product photos (the cylinders on the
+  table's measurements, the vendor SKU removed), the cylinders' weights, the
+  connectors' A4719 and a Humidifier Adapter Tubing row; the Oxygen Instructions
+  handout in 8.10; the CRM navigation screenshots in 0.3.1, 0.10 and 10.19
+  (Claim Prep cropped to what it teaches); the Payment Processing Tutorial's
+  screens in 10.19.3 and 10.19.4; the E0621 sling is a purchase.
+  The Power note templates through Chapter 5 — the PPD, MA Education, the
+  appointment reminder and F2F confirmation, Qualifications, the ATP visit, the
+  PAR notes, verification, the manufacturer order and the delivery.
+  Patient details in every screenshot are pixelated.
+
 ## 2026-10-19 — intake polish and the handbook reader (25post round 3)
 
 **Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then

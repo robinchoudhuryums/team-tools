@@ -1,5 +1,86 @@
 [
   {
+    "date": "2026-10-23",
+    "part": "p5",
+    "section": "§5-2",
+    "summary": "Note-template screenshots for the PAK stage: the PPD in progress and completed, MA Education, the appointment reminder, the F2F confirmation, and the order pushed to Qualifications.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "Operator 2026-10-23"
+  },
+  {
+    "date": "2026-10-23",
+    "part": "p5",
+    "section": "§5-3",
+    "summary": "Note-template screenshots through the Power process: Qualifications (documents requested, Master Rx pending, a Qualified Lead moving to Power), the ATP visit scheduled, the Prior Authorization notes (final packet, PAR submitted, dual submission, PAR approved), the completed verification, the manufacturer order and the delivery scheduled.",
+    "authority": "Power Mobility",
+    "retraining": false,
+    "provenance": "Operator 2026-10-23"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-19",
+    "summary": "The Payment Processing Tutorial's screens: processing a payment step by step, the Pre-Pay option, and a negative balance with the payment history that explains it.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-19",
+    "summary": "Screenshots for opening invoices (the Edit Patient button, the Invoices tab, an expanded invoice), the Process Payment button, and the Claim Prep tab — as a slideshow showing paid / eligible months and the NU and RR modifiers.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p10",
+    "section": "§10-2",
+    "summary": "The E0621 patient lift sling is a purchase, bundled with the lift — not a capped rental.",
+    "authority": "Billing",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-22",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "Screenshots of where Notes (Messages), Fax History (Transaction tab) and Artifacts (Patient Artifacts) are, and of the Patient tab (0.3.1).",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-22"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-10",
+    "summary": "The Oxygen Instructions patient handout is in the chapter itself — both pages, as the patient receives them.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-4",
+    "summary": "The straight and swivel connectors bill as A4719 (E1399 if A4719 is not accepted). The cylinder table gives each cylinder's weight: M6 2.9 lb, E 8.7 lb.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
+    "date": "2026-10-21",
+    "part": "p8",
+    "section": "§8-4",
+    "summary": "Product photos for the cylinders, cannula, tubing, connectors, humidifier bottle and carrier bag; Humidifier Adapter Tubing gets its own row. The cylinder photos, with their measurements in inches, sit under the cylinder table (8.5.2).",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-21"
+  },
+  {
     "date": "2026-10-21",
     "part": "p8",
     "section": "§8-2",

@@ -118,5 +118,257 @@
     "alt": "Ticket tab: pick-up from, pick-up contact and pickup reason",
     "caption": "Step 7 — the Ticket tab",
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
+  },
+  "o2-cyl-m6": {
+    "source": "operator product image 2026-10-21, labels set to the cylinder table's measurements (operator)",
+    "alt": "M6 oxygen cylinder with its measurements",
+    "caption": "<b>M6 cylinder</b> · ~12 in long · 4.38 in across · 2.9 lb",
+    "reviewed": "2026-10-21"
+  },
+  "o2-cyl-e": {
+    "source": "operator product image 2026-10-21, labels set to the cylinder table's measurements (operator); the vendor SKU removed",
+    "alt": "E oxygen cylinder with its measurements",
+    "caption": "<b>E cylinder</b> · ~25 in long · 4.38 in across · 8.7 lb",
+    "reviewed": "2026-10-21"
+  },
+  "o2-handout-1": {
+    "source": "Oxygen_Instructions_General.pdf, page 1 (operator 2026-10-21)",
+    "alt": "Oxygen Instructions patient handout, page 1: prescription, do's and don'ts, the concentrator, alarms, cleaning, travel, when to call",
+    "caption": "Oxygen Instructions — page 1 of the patient handout",
+    "reviewed": "2026-10-21 — no patient information"
+  },
+  "o2-handout-2": {
+    "source": "Oxygen_Instructions_General.pdf, page 2 (operator 2026-10-21)",
+    "alt": "Oxygen Instructions patient handout, page 2: the concentrator and portable oxygen checklist",
+    "caption": "Oxygen Instructions — page 2, the setup checklist",
+    "reviewed": "2026-10-21 — no patient information"
+  },
+  "nav-edit-patient-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_edit-patient-button.png (operator 2026-10-22)",
+    "alt": "The Edit Patient button at the bottom left of the Transaction Workflow",
+    "caption": "<b>Edit Patient</b> — bottom left of the Transaction Workflow",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-invoices": {
+    "source": "UMS Navigation Screenshots pt 1 — edit-patient-window.png (operator 2026-10-22)",
+    "alt": "The Edit Patient window, the Invoices tab highlighted in its left menu",
+    "caption": "The patient window — <b>Invoices</b> is in the left menu",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-invoice-expanded": {
+    "source": "UMS Navigation Screenshots pt 1 — edit-patient-window_invoices_expanded-invoice.png (operator 2026-10-22)",
+    "alt": "An expanded invoice: its lines with HCPCS, deductible and coinsurance, and the balance",
+    "caption": "An expanded invoice — each line's HCPCS, deductible and coinsurance, and the balance",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-process-payment-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_process-payment-button.png (operator 2026-10-22)",
+    "alt": "The Process Payment button along the bottom of the Transaction Workflow",
+    "caption": "<b>Process Payment</b> — along the bottom of the Transaction Workflow",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-claim-prep": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep.png (operator 2026-10-22), cropped",
+    "alt": "The Claim Prep tab: each item's paid / eligible months, and each claim's month and paid amount",
+    "caption": "Claim Prep — each item's (paid / eligible) months, and each claim's month and paid amount",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-claim-prep-purchase": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand.png (operator 2026-10-22), cropped",
+    "alt": "A purchase claim expanded: each line's HCPCS with an NU modifier, and the amount paid",
+    "caption": "A purchase claim expanded — <b>NU</b> on every line",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-claim-prep-rental": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_claim-prep_claim-expand_RR.png (operator 2026-10-22), cropped",
+    "alt": "A rental claim expanded: the K0003 line with an RR modifier",
+    "caption": "A rental claim expanded — <b>RR</b> on the line",
+    "reviewed": "2026-10-22 — checked for PHI; the operator's blurs pixelated, and the transaction number, claim and invoice IDs, member numbers, authorization number, prescriber and the list behind the window pixelated too"
+  },
+  "nav-messages-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_messages-notes-button.png (operator 2026-10-22)",
+    "alt": "The Messages button along the bottom of the Transaction Workflow",
+    "caption": "Notes — the <b>Messages</b> button",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-transaction-tab": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_menu_transaction_tab.png (operator 2026-10-22)",
+    "alt": "The Transaction tab in the left menu",
+    "caption": "Fax History — open the <b>Transaction</b> tab…",
+    "reviewed": "2026-10-22 — checked for PHI; test patient only"
+  },
+  "nav-fax-history-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_transaction_fax-history-button.png (operator 2026-10-22)",
+    "alt": "The Fax History button inside the Transaction tab",
+    "caption": "…then <b>Fax History</b>, on the right",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-artifacts-button": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_bottom-left-corner_patient-artifacts-button.png (operator 2026-10-22)",
+    "alt": "The Patient Artifacts button along the bottom of the Transaction Workflow",
+    "caption": "Artifacts — the <b>Patient Artifacts</b> button",
+    "reviewed": "2026-10-22 — checked for PHI"
+  },
+  "nav-patient-tab": {
+    "source": "UMS Navigation Screenshots pt 1 — trx_patient_tab.png (operator 2026-10-22)",
+    "alt": "The Patient tab at the top of the left menu",
+    "caption": "The <b>Patient</b> tab, at the top of the left menu",
+    "reviewed": "2026-10-22 — checked for PHI; test patient only"
+  },
+  "pay-type": {
+    "source": "Payment Processing Tutorial slides, slide 5 (operator 2026-10-22)",
+    "alt": "Process Payment, the Payment Type list",
+    "caption": "Process Payment → <b>Payment Type</b>: Invoice, for a billed balance",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-invoice": {
+    "source": "Payment Processing Tutorial slides, slide 6 (operator 2026-10-22)",
+    "alt": "The Invoice ID list",
+    "caption": "<b>Invoice ID</b> — the invoice being paid",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-method": {
+    "source": "Payment Processing Tutorial slides, slide 8 (operator 2026-10-22)",
+    "alt": "The Payment Method list, Credit/Debit Card highlighted",
+    "caption": "<b>Payment Method</b> — most often Credit/Debit Card",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-amount": {
+    "source": "Payment Processing Tutorial slides, slide 9 (operator 2026-10-22)",
+    "alt": "The Amount field and the card fields",
+    "caption": "<b>Amount</b> — check it against the balance, or what the caller wants to pay",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-card": {
+    "source": "Payment Processing Tutorial slides, slide 10 (operator 2026-10-22)",
+    "alt": "The card details filled in, with an email receipt and a note",
+    "caption": "The card details as the caller gives them; <b>Send Email Receipt</b> and a <b>Note</b> if asked",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-result": {
+    "source": "Payment Processing Tutorial slides, slide 11 (operator 2026-10-22)",
+    "alt": "The Payments tab: one attempt Declined, one Approved",
+    "caption": "<b>Payments</b> — each attempt shows Approved or Declined",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-prepay": {
+    "source": "Payment Processing Tutorial slides, slide 7 (operator 2026-10-22)",
+    "alt": "Process Payment with Payment Type Pre Pay and the order's Trx ID",
+    "caption": "<b>Pre-Pay</b> — choose the order's Trx ID instead of an invoice",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-neg-balance": {
+    "source": "Payment Processing Tutorial slides, slide 3 (operator 2026-10-22)",
+    "alt": "The Invoices tab showing a negative balance",
+    "caption": "The invoice shows a <b>negative balance</b>…",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pay-neg-history": {
+    "source": "Payment Processing Tutorial slides, slide 11 (operator 2026-10-22)",
+    "alt": "The Payments tab: a declined attempt and an approved one on the same day",
+    "caption": "…because the declined attempt and the approved one both show",
+    "reviewed": "2026-10-22 — checked for PHI; the patient's name, ID, date of birth, member and insurance IDs, the transaction, invoice, payment and authorization numbers, and the name on the card pixelated"
+  },
+  "pwr-req-additional-docs": {
+    "source": "Power note template screenshots, req-additional-docs.png (operator 2026-10-23)",
+    "alt": "Qualifications notes requesting additional documents",
+    "caption": "Requesting additional documents — the highlighted notes: the status note (documents requested, fax status, attempt, MDO and patient contact) and the T3 → T4 note naming what was received and what is still needed",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-MRx-pending": {
+    "source": "Power note template screenshots, MRx-pending.png (operator 2026-10-23)",
+    "alt": "Qualifications note, Master Rx pending",
+    "caption": "<b>T3 Received → T3 Complete</b> — eligibility checked and a Master Rx pending: the documents are with the Authorization team",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-QL-elig-to-power": {
+    "source": "Power note template screenshots, QL-elig-to-power.png (operator 2026-10-23)",
+    "alt": "Qualified Lead note moving the order to Power",
+    "caption": "A Qualified Lead — the ME paperwork received and the order <b>moving to Power via Eligible</b>, with the T3Q checklist",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-ATP-scheduled": {
+    "source": "Power note template screenshots, ATP-scheduled.png (operator 2026-10-23)",
+    "alt": "ATP visit scheduled note",
+    "caption": "ATP visit scheduled — the ATP assigned, the date and time window, and the address and phone confirmed with the patient",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-final-packet-created": {
+    "source": "Power note template screenshots, final-packet-created.png (operator 2026-10-23)",
+    "alt": "Final packet created note",
+    "caption": "<b>Final packet created</b> — the packet is assembled for the PAR",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-submitted": {
+    "source": "Power note template screenshots, PAR-submitted.png (operator 2026-10-23)",
+    "alt": "PAR submitted note",
+    "caption": "<b>PAR submitted</b> — the method of submission, the codes that need no PAR, the reference number and the average decision time",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-dual-submission": {
+    "source": "Power note template screenshots, PAR-dual-submission.png (operator 2026-10-23)",
+    "alt": "Dual submission note",
+    "caption": "<b>Dual submission</b> — sent to traditional Medicare too, through myCGS (see the dual-submission policy below)",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PAR-approved": {
+    "source": "Power note template screenshots, PAR-approved.png (operator 2026-10-23)",
+    "alt": "PAR approved note",
+    "caption": "<b>PAR approved, pushed to Field Ops</b> — the order validation checklist",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-order-verification": {
+    "source": "Power note template screenshots, order-verification.png (operator 2026-10-23)",
+    "alt": "Completed PWC verification note",
+    "caption": "A completed verification — the finalized chair and model, seat size, joystick side, colour, and the home and eligibility checks",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-mfg-order-placed": {
+    "source": "Power note template screenshots, mfg-order-placed.png (operator 2026-10-23)",
+    "alt": "Order placed with the manufacturer notes",
+    "caption": "Ordered — the call telling the patient, and the order note: make, model, expected wait, size and colour",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-delivery-scheduled": {
+    "source": "Power note template screenshots, delivery-scheduled.png (operator 2026-10-23)",
+    "alt": "Delivery scheduled note",
+    "caption": "<b>Delivery scheduled</b> — the date and time frame, the address and eligibility re-verified, and the patient told about the seat adjustment",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, address and ID, the transaction numbers, the names of callers and contacts, the doctor's name and office fax, and the list behind the window pixelated"
+  },
+  "pwr-PPD-in-progress": {
+    "source": "Power note template screenshots, part 2, PPD-in-progress.png (operator 2026-10-23)",
+    "alt": "PPD in progress note",
+    "caption": "<b>PPD in progress</b> — waiting on the patient to call back for the interview: the appointment, the provider, the attempt number and what was tried (voicemail, text, email)",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-PPD-completed": {
+    "source": "Power note template screenshots, part 2, PPD-completed.png (operator 2026-10-23)",
+    "alt": "PPD completed note",
+    "caption": "<b>PPD completed</b> — the interview done and the PAK documents generated: the appointment and provider, the recommended equipment and the checklist, then the PPD notes",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-MA-education": {
+    "source": "Power note template screenshots, part 2, MA-education.png (operator 2026-10-23)",
+    "alt": "MA Education note",
+    "caption": "<b>MA Education</b> — the days to the appointment (UPDATE: -2 Day), the provider and MA contact, whether the PAK was confirmed with the facility and gone over with the provider, and the attempt",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-appt-reminder": {
+    "source": "Power note template screenshots, part 2, appt-reminder.png (operator 2026-10-23)",
+    "alt": "Appointment reminder note",
+    "caption": "The appointment reminder — the patient called the day before, and confirmed",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-ME-confirmation": {
+    "source": "Power note template screenshots, part 2, ME-confirmation.png (operator 2026-10-23)",
+    "alt": "F2F confirmation note",
+    "caption": "<b>F2F confirmation</b> — the MDO confirms the patient kept the appointment for the PMD ME",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "pwr-pushed-to-qualifications": {
+    "source": "Power note template screenshots, part 2, pushed-to-qualifications.png (operator 2026-10-23)",
+    "alt": "Pushed to Qualifications note",
+    "caption": "<b>T2 Received</b> — the F2F shows power mobility evidence (the pages noted), and the order is pushed to Qualifications",
+    "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
   }
 }

@@ -35936,6 +35936,24 @@ test('Operator 2026-10-19: {{lookup:insurance}} — print and HTML link the Payo
   assert.ok(/a\.kb-lookup \{ cursor: pointer;/.test(M1_KB_SRC), 'the class has its rule (g140)');
 });
 
+test('Operator 2026-10-22: a handbook figure or article image drawn smaller than its pixels opens at full size — the app measures against the column cap it declares, the HTML handbook hides its viewer by a [hidden] rule (g73) and never prints it', () => {
+  const cap = /img\.kb-manimg-figure \{ max-width: min\(100%, (\d+)px\); \}/.exec(M1_KB_SRC);
+  const fig = /var KB_FIG_MAX = (\d+);/.exec(M1_KB_SRC);
+  assert.ok(cap && fig && cap[1] === fig[1], 'KB_FIG_MAX is the figure column cap (' + (cap && cap[1]) + ')');
+  assert.ok(/if \(kbManimgKind_\(key\) === 'figure'\) img\.onload = function \(\) \{ kbImgZoomable_\(this\); \};\n      img\.src = state;/.test(M1_KB_SRC), 'only a figure is measured, and the handler is set before the src');
+  assert.ok(/img\.className = 'kb-kbimg-img';[\s\S]{0,120}img\.onload = function \(\) \{ kbImgZoomable_\(this\); \};[^\n]*\n      img\.src = state;/.test(M1_KB_SRC), 'an article image is measured the same way, before its src');
+  assert.ok(/\.kb-article img\.kb-zoomable \{ cursor: zoom-in; \}/.test(M1_KB_SRC) && /\.kb-img-modal \.kb-img-big \{/.test(M1_KB_SRC), 'the classes have their rules (g140)');
+  assert.ok(!/img\.kb-kbimg-img \{ cursor: zoom-in; \}/.test(M1_KB_SRC), 'no image promises a zoom it does not have — the cursor rides kb-zoomable only');
+  const z = extractFnFrom(M1_KB_SRC, 'kbImageOpen_');
+  assert.ok(/data:image\\\/\(png\|jpeg\|gif\|webp\);base64/.test(z) && /data:image\\\/\(png\|jpeg\|gif\|webp\);base64/.test(extractFnFrom(M1_KB_SRC, 'kbKbimgApply_')), 'the viewer accepts exactly what the article-image hydrator does');
+  const open = extractFnFrom(M1_KB_SRC, 'kbImageOpen_');
+  assert.ok(/ensureOverlay\('kb-image-overlay'/.test(open) && /big\.src = src;/.test(open) && !/innerHTML[^;]*src/.test(open), 'one overlay (g100), the image set by property — never through markup');
+  const mh = MP1_('make_html.py');
+  assert.ok(/\.lb\[hidden\]\{display:none\}/.test(mh), 'the HTML viewer sets display, so [hidden] needs its own rule (g73)');
+  assert.ok(/@media print\{\.lb\{display:none!important\}\}/.test(mh), 'and it never prints');
+  assert.ok(/mainEl\.querySelectorAll\('figure\.shot img'\)\.forEach\(img=>\{if\(img\.complete\)zoomable\(img\);else img\.addEventListener\('load',\(\)=>zoomable\(img\)\);\}\);/.test(mh), 'every screenshot is measured once it has loaded');
+});
+
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {
   const bd = MP1_('build.py'), ex = MP1_('export_reference.py'), mm = MP1_('md2model.py'), mh = MP1_('make_html.py'), rl = MP1_('roles.py');
   [['build.py', bd], ['export_reference.py', ex]].forEach(([who, src]) => {

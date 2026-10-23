@@ -5517,6 +5517,55 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   assert.ok(c3.some((c) => JSON.stringify(c.args[0]) === '["thumb-z"]'), 'the next render asks for it again (a failure is never cached)');
 });
 
+test('Operator 2026-10-22 DOM: a handbook figure wider than it is drawn opens at full size — a click or Enter, the same image (by property) in an overlay that closes through closeOverlay; a small one stays a plain image', async () => {
+  const h = boot();
+  const w = h.window, doc = w.document;
+  w.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getReferenceTree', () => M2_TREE);
+  w.enterTool('reference', 'reference');
+  h.flushTimers();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const part = JSON.parse(JSON.stringify(M2_PART0));
+  part.sections[0].bodyMd += '\n![The Claim Prep tab](manimg:fig-wide)\n\n![The Patient tab](manimg:fig-small)\n';
+  h.read('kbOpenItem_')('man-0-10');
+  h.run.flushSuccess(part, 'getManualPart');
+  await tick(); h.flushTimers(); await tick();
+  h.run.flushSuccess({ success: true, images: { 'fig-wide': PNG, 'fig-small': PNG }, missing: [], failed: [] }, 'getManualImages');
+  const wide = h.$('#kb-main img.kb-manimg-figure[alt="The Claim Prep tab"]');
+  const small = h.$('#kb-main img.kb-manimg-figure[alt="The Patient tab"]');
+  assert.ok(wide && small && typeof wide.onload === 'function', 'a figure measures itself when it loads');
+  // jsdom loads no pixels: give each its natural width, as the browser would, and fire the load.
+  Object.defineProperty(wide, 'naturalWidth', { value: 1290 });
+  Object.defineProperty(small, 'naturalWidth', { value: 169 });
+  wide.onload(); small.onload();
+  assert.ok(wide.classList.contains('kb-zoomable') && wide.getAttribute('tabindex') === '0' && wide.getAttribute('role') === 'button', 'wider than the 720px column: zoomable, and reachable by keyboard');
+  assert.ok(!small.classList.contains('kb-zoomable') && !small.hasAttribute('tabindex'), 'a small image is left alone');
+  h.click(small);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'clicking a small image opens nothing');
+  h.click(wide);
+  let ov = doc.getElementById('kb-image-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'a click opens the overlay');
+  const big = ov.querySelector('.kb-img-big img');
+  assert.strictEqual(big && big.getAttribute('src'), PNG, 'the same image');
+  assert.strictEqual(ov.querySelector('h3').textContent, 'The Claim Prep tab', 'titled by its alt text');
+  assert.strictEqual(ov.getAttribute('aria-label'), 'Image — The Claim Prep tab');
+  const x = ov.querySelector('button[aria-label="Close"]');
+  assert.ok(x && /^closeOverlay\(document\.getElementById\('kb-image-overlay'\)\)$/.test(x.getAttribute('onclick')), 'Close goes through closeOverlay');
+  h.read('closeOverlay')(doc.getElementById('kb-image-overlay'));   // jsdom runs no inline onclick: call what it names
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'Close removes it');
+  wide.focus();
+  wide.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  ov = doc.getElementById('kb-image-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'Enter on the image opens it too');
+  h.read('closeOverlay')(ov);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'and closeOverlay closes it (Escape and the backdrop go through it, g100)');
+  // A src that is not a handbook data URL is never copied into the overlay.
+  wide.setAttribute('src', 'javascript:alert(1)');
+  h.click(wide);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'only a PNG/JPEG data URL is shown');
+});
+
 test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the call router filters without losing the filter box, and "Read in context" carries the section to its part in the tab', async () => {
   const h = boot();
   const w = h.window, doc = w.document;
@@ -8030,6 +8079,38 @@ test('DRV-3 DOM: an article\'s kbimg chips arrive in ONE batched call and are se
   art3.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ')');
   await tick(); h.flushTimers(); await tick();
   assert.strictEqual(h.run.pending('getKbImages').length, 1, 'a failure was not cached — the next render asks again (g129)');
+});
+
+test('Article images DOM (follow-on, 2026-10-22): a kbimg image drawn smaller than its pixels opens at full size like a handbook figure — a GIF too; one shown at its own size is left alone and promises nothing', async () => {
+  const h = boot();
+  const doc = h.window.document;
+  const GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const kW = 'kbimg-' + 'd'.repeat(24), kS = 'kbimg-' + 'e'.repeat(24);
+  const art = mount_(h, 'zoom-art'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('![Wide shot](kbimg:' + kW + ')\n\n![Small shot](kbimg:' + kS + ')');
+  await tick(); h.flushTimers(); await tick();
+  h.run.flushSuccess({ success: true, images: { [kW]: GIF, [kS]: PNG }, missing: [], failed: [] }, 'getKbImages');
+  const wide = h.$('#zoom-art img.kb-kbimg-img[alt="Wide shot"]');
+  const small = h.$('#zoom-art img.kb-kbimg-img[alt="Small shot"]');
+  assert.ok(wide && small && typeof wide.onload === 'function', 'an article image measures itself when it loads');
+  // jsdom lays nothing out: give each its natural and drawn widths, as the browser would, and fire the load.
+  Object.defineProperty(wide, 'naturalWidth', { value: 1400 });
+  Object.defineProperty(wide, 'clientWidth', { value: 760 });
+  Object.defineProperty(small, 'naturalWidth', { value: 740 });
+  Object.defineProperty(small, 'clientWidth', { value: 740 });
+  wide.onload(); small.onload();
+  assert.ok(wide.classList.contains('kb-zoomable') && wide.getAttribute('role') === 'button' && wide.getAttribute('tabindex') === '0', 'drawn at 760 of its 1400 pixels: zoomable, by keyboard too');
+  assert.ok(!small.classList.contains('kb-zoomable') && !small.hasAttribute('role'), 'shown at its own size (740, past the 720 cap): nothing to enlarge, nothing promised');
+  h.click(small);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'clicking it opens nothing');
+  h.click(wide);
+  const ov = doc.getElementById('kb-image-overlay');
+  assert.ok(ov && ov.classList.contains('open'), 'a click opens the viewer');
+  assert.strictEqual(ov.querySelector('.kb-img-big img').getAttribute('src'), GIF, 'the same image, a GIF included');
+  assert.strictEqual(ov.querySelector('h3').textContent, 'Wide shot', 'titled by its alt text');
+  h.read('closeOverlay')(ov);
+  assert.ok(!doc.getElementById('kb-image-overlay'), 'and closes through closeOverlay');
 });
 
 test('DRV-3 DOM: a pasted screenshot is fitted to 1600 px / 1.5 MB in the browser before it is sent, and the editor gets the kbimg: token', async () => {

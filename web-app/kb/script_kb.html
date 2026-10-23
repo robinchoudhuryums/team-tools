@@ -453,6 +453,11 @@
   .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
   .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
   .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
+  /* 25post (operator 2026-10-22) — a figure or article image drawn smaller than
+     its own pixels opens at full size (kbImgZoomable_ / kbImageOpen_), like a diagram. */
+  .kb-article img.kb-zoomable { cursor: zoom-in; }
+  .kb-img-modal .kb-img-big { overflow: auto; min-height: 0; }
+  .kb-img-modal .kb-img-big img { display: block; max-width: none; height: auto; margin: 0; }
   /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
      Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
   .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
@@ -475,7 +480,6 @@
      loads, when it could not load, and once it arrives (an ordinary article image). */
   .kb-article .kb-kbimg[data-ki="loading"] { opacity: .65; }
   .kb-article .kb-kbimg[data-ki="failed"], .kb-article .kb-kbimg[data-ki="missing"] { border-color: var(--warn); }
-  .kb-article img.kb-kbimg-img { cursor: zoom-in; }
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -3126,6 +3130,7 @@ function kbManimgApply_(key, state) {
       var img = document.createElement('img');
       img.className = 'kb-manimg-img kb-manimg-' + kbManimgKind_(key);
       img.alt = n.textContent;
+      if (kbManimgKind_(key) === 'figure') img.onload = function () { kbImgZoomable_(this); };
       img.src = state;
       if (n.parentNode) n.parentNode.replaceChild(img, n);
     } else {
@@ -3135,6 +3140,50 @@ function kbManimgApply_(key, state) {
     }
   }
 }
+/** 25post (operator 2026-10-22) — a handbook figure or an article image drawn
+ *  smaller than its own pixels (a wide CRM screenshot in the 720px column)
+ *  opens at full size on a click or Enter: the same image in an overlay
+ *  (ensureOverlay / closeOverlay, g100) that scrolls both ways, like a
+ *  diagram's Full size. Measured on load; a slide hidden in a gallery has no
+ *  width yet, so the column cap decides. */
+var KB_FIG_MAX = 720;   // = img.kb-manimg-figure's max-width (pinned)
+function kbImgZoomable_(img) {
+  var w = img.naturalWidth || 0, shown = img.clientWidth || 0;
+  if (!(shown ? w > shown + 8 : w > KB_FIG_MAX)) return;   // drawn smaller than its pixels; not laid out yet → the column cap
+  img.classList.add('kb-zoomable');
+  img.setAttribute('tabindex', '0');
+  img.setAttribute('role', 'button');
+  img.title = 'Open at full size';
+}
+function kbImageOpen_(img) {
+  var src = (img && img.getAttribute('src')) || '';
+  if (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(src)) return;   // what the two hydrators accept
+  var label = img.alt || 'Image';
+  var ov = ensureOverlay('kb-image-overlay', { label: 'Image \u2014 ' + label, extraClass: 'kb-diagram-ov',
+    onClose: function () { var o = document.getElementById('kb-image-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-diagram-modal kb-img-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-image-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kb-img-big" tabindex="0"></div></div>';
+  var big = document.createElement('img');
+  big.alt = label;
+  big.src = src;
+  ov.querySelector('.kb-img-big').appendChild(big);
+}
+(function kbBindImageZoom_() {
+  document.addEventListener('click', function (e) {
+    var img = e.target.closest && e.target.closest('img.kb-zoomable');
+    if (!img) return;
+    e.preventDefault();
+    kbImageOpen_(img);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var img = e.target && e.target.matches && e.target.matches('img.kb-zoomable') ? e.target : null;
+    if (!img) return;
+    e.preventDefault();
+    kbImageOpen_(img);
+  });
+})();
 function kbHydrateManualImages_() {
   KB_MANIMG.timer = null;
   var nodes = document.querySelectorAll('.kb-manimg[data-manimg]:not([data-mi])');
@@ -3195,6 +3244,7 @@ function kbKbimgApply_(key, state) {
       img.className = 'kb-kbimg-img';
       img.alt = n.textContent;
       img.loading = 'lazy';
+      img.onload = function () { kbImgZoomable_(this); };   // a wide one opens at full size (kbImageOpen_)
       img.src = state;
       if (n.parentNode) n.parentNode.replaceChild(img, n);
     } else {
