@@ -2821,3 +2821,34 @@ per-change detail. By delta:
   not the defect's). The pin is structural and says so; the layout was measured
   in Chromium (the meta's top below the topic's bottom, both at 1440 and 390).
 
+## 25post rounds 4–5 — handbook images at full size, button screenshots on hover, the slideshow viewer (2026-10-22 → 10-23)
+
+- **Pure harness:** the full-size pins (the app measures against the column
+  cap it declares, `KB_FIG_MAX` equal to `img.kb-manimg-figure`'s max-width;
+  the HTML viewer hides by `[hidden]` (g73) and never prints); the peek pin
+  DRIVES `kbMd_` — bold round a peek, code inside one, and a hostile key, an
+  icon key, upper case and an 81-character key all left as words — and drives
+  `kbManualImagesValidate_` to refuse a `peek:` key the file does not carry; the
+  HTML viewer's caption, slideshow and focus rules are source-pinned (the HTML
+  handbook's script has no harness — it was driven in Chromium instead). The
+  source pin requires every locator figure to be named somewhere and no bare
+  "Edit Patient", "Process Payment" or "Patient Artifacts" left.
+- **DOM:** the handbook-figure and article-image zoom drives (round 4); the
+  slideshow viewer (name, count, caption, both steps and both arrow keys
+  wrapping, the page slideshow kept in step, a slide still loading named, focus
+  back on the slideshow, a lone figure's caption) and the peek popover (a pass
+  is not a hover, one popover on the body, the image asked for only when shown
+  and drawn at once from the cache, Escape heard by nothing under it, a tap
+  elsewhere and a scroll hiding it).
+- **Bite-checks:** eight, all BITE — the page not kept in step, focus left on
+  the slide, no figure caption, a small slide not openable, Escape reaching the
+  shell, the cache not used, the peek key charset loosened, and the server not
+  counting a peek as a citation.
+- **Visual:** `reference-manual-peek-light-wide` and
+  `reference-manual-viewer-dark-wide`; the matrix's manual fixtures are
+  refreshed from the round-5 export (0.2 and 0.10 carry peeks, 5.2 a
+  slideshow). A peek shown in the same tick as `scrollIntoView` was hidden by
+  the scroll that followed — the scenario shows it after the scroll settles,
+  which is the rule working, not a defect.
+- **Server manifest:** `kbManualImagesValidate_` revised (`split-manifest.mjs
+  --why`).

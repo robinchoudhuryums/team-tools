@@ -2686,7 +2686,13 @@ entry says which it is.
   used by the manual). **Diagrams (M3) are code:** after
   changing one in `manual/diagrams/`, re-run the export — it rewrites
   `web-app/kb/script_manual_diagrams.html` — then commit that file and deploy.
-  The import does not carry diagrams. **Recently changed (M4):** the changelog's
+  The import does not carry diagrams. **A new reader feature is a deploy
+  too (25post rounds 3–5):** the ` ```gallery ` fence, the `lookup:` link and
+  the `peek:` link are drawn by app code, so deploy before importing a
+  `manual.json` that uses one for the first time — imported first, a slideshow
+  reads as a code block and a link as plain words until the deploy, and nothing
+  breaks. The import counts a `peek:` image as a citation, so a file missing one
+  is refused like a missing figure. **Recently changed (M4):** the changelog's
   recent entries show on the Reference landing and in What's new without any
   setting; a section only appears once published.
   **The October 2026 renumber (cycle 24 manual update):** sections are now
