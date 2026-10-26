@@ -25,6 +25,13 @@ only.
   "Chapter 10" (`nav_label` in `make_html.py`).
 - **Crutches (E0114) leave the photo backlog** — rarely processed, and then out
   of pocket. Chapter 2's open items are now empty.
+- **Three cross-references point at the sub-section they mean** (the
+  cross-reference report's list, each checked by hand): the call router's
+  Spanish row → 1.7.1 Inbound; 3.4's "subject to compliance" → 3.12.2 What
+  each item requires; 7.1's "Scheduling and delivery" → 6.1.1 Two queues. The
+  report's other nine suggestions were wrong for their link — the section's
+  opening is the part meant (the 7.3 repair table, 6.9's never-promise rule,
+  10.15's fee amounts) — so those links stay, and the report now lists 27.
 
 ## 2026-10-26 — the Lead Resolutions Update Tutorial in 4.6 (25post round 6)
 
