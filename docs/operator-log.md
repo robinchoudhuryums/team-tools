@@ -10,6 +10,19 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-26 — the Lead Resolutions Update Tutorial in 4.6 (25post round 6)
+
+**Adds NO Script Properties and changes no app code** — re-import the handbook
+only (a deploy is needed only if round 5 is not deployed yet: the slideshow's
+full-size view and the button previews ride round 5).
+
+- **4.6 Leads with no order yet** shows the tutorial as a three-step slideshow:
+  open the lead from the global search (Leads → ≈), press New Note in Lead
+  View, write the note in the standard template and Submit. 4.9 links to it, so
+  the handbook carries no `[PENDING]` marker and a release build passes.
+  The search text, the lead rows, the lead id and the patient names behind the
+  window are pixelated.
+
 ## 2026-10-23 — named buttons show where they are; the full-size viewer keeps captions and slideshows (25post round 5)
 
 **Adds NO Script Properties.** Deploy the web app FIRST (`clasp push -f`, then a

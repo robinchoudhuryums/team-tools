@@ -370,5 +370,23 @@
     "alt": "Pushed to Qualifications note",
     "caption": "<b>T2 Received</b> — the F2F shows power mobility evidence (the pages noted), and the order is pushed to Qualifications",
     "reviewed": "2026-10-23 — checked for PHI; the patient's name, date of birth, phone, email, address and ID, the transaction numbers, the provider's name, phone, fax and email, the MDO contacts' names, the height, weight and diagnoses in the PPD notes, and the list behind the window pixelated"
+  },
+  "lead-res-search": {
+    "source": "Lead Resolutions Update Tutorial screenshots, lr-1-search.png (operator 2026-10-26)",
+    "alt": "Global search, the Leads results",
+    "caption": "Search for the patient at the top. Under <b>Leads</b>, open the lead with its ≈ icon",
+    "reviewed": "2026-10-26 — checked for PHI; the search text, the lead rows (name, email, phone, id), the lead id in the title and in every note, and the patient names behind the window pixelated; the note shown is test data"
+  },
+  "lead-res-new-note": {
+    "source": "Lead Resolutions Update Tutorial screenshots, lr-2-new-note.png (operator 2026-10-26)",
+    "alt": "Lead View, the New Note button",
+    "caption": "In <b>Lead View</b>, press <b>New Note</b>",
+    "reviewed": "2026-10-26 — checked for PHI; the search text, the lead rows (name, email, phone, id), the lead id in the title and in every note, and the patient names behind the window pixelated; the note shown is test data"
+  },
+  "lead-res-submit": {
+    "source": "Lead Resolutions Update Tutorial screenshots, lr-3-note.png (operator 2026-10-26)",
+    "alt": "The New Note window",
+    "caption": "Write the note in the standard template — or pick one from <b>Select Template</b> — and press <b>Submit</b>",
+    "reviewed": "2026-10-26 — checked for PHI; the search text, the lead rows (name, email, phone, id), the lead id in the title and in every note, and the patient names behind the window pixelated; the note shown is test data"
   }
 }
