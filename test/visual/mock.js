@@ -562,6 +562,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
  "recent": [
   {
    "date": "2026-10-26",
+   "num": "9.1",
+   "id": "man-9-1",
+   "anchor": "",
+   "summary": "Who covers after hours: the on-call duty is assigned to one person, who is given the on-call cell phone. The directory names who holds it now.",
+   "retraining": false
+  },
+  {
+   "date": "2026-10-26",
    "num": "4.6",
    "id": "man-4-6",
    "anchor": "",
@@ -574,14 +582,6 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
    "id": "man-5-3",
    "anchor": "",
    "summary": "Note-template screenshots through the Power process: Qualifications (documents requested, Master Rx pending, a Qualified Lead moving to Power), the ATP visit scheduled, the Prior Authorization notes (final packet, PAR submitted, dual submission, PAR approved), the completed verification, the manufacturer order and the delivery scheduled.",
-   "retraining": false
-  },
-  {
-   "date": "2026-10-23",
-   "num": "5.2",
-   "id": "man-5-2",
-   "anchor": "",
-   "summary": "Note-template screenshots for the PAK stage: the PPD in progress and completed, MA Education, the appointment reminder, the F2F confirmation, and the order pushed to Qualifications.",
    "retraining": false
   }
  ]

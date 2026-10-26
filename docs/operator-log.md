@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
+
+**Adds NO Script Properties and changes no app code** — re-import the handbook
+only.
+
+- **9.1 names who covers after hours:** the on-call duty is assigned to one
+  person, who is given the on-call cell phone. A new directory role,
+  **After-Hours Duty Holder** (`ah-duty` in `roster.json`, currently Robin
+  Choudhury), carries the name, so a change of holder is a roster edit. The
+  before-the-shift checklist now says "the on-call cell phone".
+- **D10:** in the standalone HTML handbook's sidebar and printed contents, the
+  second half of Chapter 10 reads "10 · Billing reference" rather than a second
+  "Chapter 10" (`nav_label` in `make_html.py`).
+- **Crutches (E0114) leave the photo backlog** — rarely processed, and then out
+  of pocket. Chapter 2's open items are now empty.
+
 ## 2026-10-26 — the Lead Resolutions Update Tutorial in 4.6 (25post round 6)
 
 **Adds NO Script Properties and changes no app code** — re-import the handbook

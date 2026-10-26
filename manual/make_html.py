@@ -477,8 +477,23 @@ for _lvl, _txt, _tid, _p in nav:
         CHAPTERS_IX.append({"ch": int(_m.group(1)), "i": _tid,
                             "t": html.unescape(_txt).replace("#", "").strip()})
 
+def nav_label(txt, seen):
+    """A chapter's label in the sidebar and the contents. Chapter 10's second half
+    has its own heading, so it reads "10 · Billing reference" there rather than
+    a second "Chapter 10" (D10, operator 2026-10-26)."""
+    t = html.unescape(txt)
+    m = re.match(r"Chapter (\d+) — (.*)$", t)
+    if not m:
+        return t
+    if m.group(1) in seen:
+        return f"{m.group(1)} · {m.group(2)}"
+    seen.add(m.group(1))
+    return t
+
+
 navhtml = []
 open_part = None
+_seen = set()
 for lvl, txt, tid, p in nav:
     if lvl == 1 and tid == "top":
         navhtml.append(f'<a class="ntop" href="#top">Front matter &amp; how to use</a>')
@@ -487,7 +502,7 @@ for lvl, txt, tid, p in nav:
         if open_part is not None:
             navhtml.append("</div></details>")
         navhtml.append(f'<details class="ng {p or ""}"><summary class="n1 {p or ""}">'
-                       f'{chapter_icon(p, "nic", 15)}<a href="#{tid}">{html.escape(html.unescape(txt))}</a></summary><div class="ngb">')
+                       f'{chapter_icon(p, "nic", 15)}<a href="#{tid}">{html.escape(nav_label(txt, _seen))}</a></summary><div class="ngb">')
         open_part = p
     else:
         t2 = html.unescape(txt)
@@ -505,8 +520,9 @@ if open_part is not None:
 # (make_review_pdfs.py) marks the other chapters' rows .pdf-skip and names its
 # chapter in #pdfsub.
 pdftoc = []
+_seen = set()
 for lvl, txt, tid, p in nav:
-    t = html.escape(html.unescape(txt))
+    t = html.escape(nav_label(txt, _seen) if lvl == 1 else html.unescape(txt))
     if lvl == 1 and tid == "top":
         pdftoc.append(f'<li class="t1 top" data-part="top"><a href="#howto">How to use this handbook</a></li>')
     elif lvl == 1:

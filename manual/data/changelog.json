@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-26",
+    "part": "p9",
+    "section": "§9-1",
+    "summary": "Who covers after hours: the on-call duty is assigned to one person, who is given the on-call cell phone. The directory names who holds it now.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-26"
+  },
+  {
+    "date": "2026-10-26",
     "part": "p4",
     "section": "§4-6",
     "summary": "The Lead Resolutions Update Tutorial is in 4.6 as three screenshots: open the lead from the search, press New Note in Lead View, write the note in the standard template and Submit.",
