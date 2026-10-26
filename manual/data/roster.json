@@ -350,6 +350,24 @@
     "lead_of": "After Hours"
   },
   {
+    "id": "ah-duty",
+    "role": "After-Hours Duty Holder",
+    "part": "p9",
+    "type": "individual",
+    "holder": "Robin Choudhury (Customer Service Manager)",
+    "backup": null,
+    "queue": null,
+    "email": null,
+    "email_attn": null,
+    "direct_transfer": false,
+    "current_named_individual": null,
+    "phone": null,
+    "location": null,
+    "note": "Assigned the after-hours on-call duty and given the on-call cell phone. Chapter 9 is written for this person.",
+    "source": "Robin, 2026-10-26",
+    "flags": []
+  },
+  {
     "id": "oncall-dme-dfw",
     "role": "On-Call DME Technician — Irving office",
     "part": "p9",
