@@ -20,8 +20,14 @@ full-size view and the button previews ride round 5).
   open the lead from the global search (Leads → ≈), press New Note in Lead
   View, write the note in the standard template and Submit. 4.9 links to it, so
   the handbook carries no `[PENDING]` marker and a release build passes.
-  The search text, the lead rows, the lead id and the patient names behind the
-  window are pixelated.
+  The search text, the lead rows and the lead id are pixelated.
+- **Every pixelated detail in the handbook's screenshots is labelled** — a small
+  italic grey "(Phone)", "(Name)", "(DOB)", "(Trx #)" on a white pill over the
+  hidden field, so a reader can tell what was there and that it is not
+  something the CRM shows. All 37 redacted figures (the Power note templates,
+  the payment and pick-up slides, the CRM navigation shots, the delivery ticket
+  and the three Lead Resolutions steps); a patient first name left readable in
+  the PPD-completed note's summary is pixelated too.
 
 ## 2026-10-23 — named buttons show where they are; the full-size viewer keeps captions and slideshows (25post round 5)
 

@@ -415,7 +415,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
 };
   var REAL_META = {
  "version": "v3.0",
- "built": "10/23/2026",
+ "built": "10/26/2026",
  "router": [
   {
    "g": "Status and timing",
@@ -561,6 +561,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
  ],
  "recent": [
   {
+   "date": "2026-10-26",
+   "num": "4.6",
+   "id": "man-4-6",
+   "anchor": "",
+   "summary": "The Lead Resolutions Update Tutorial is in 4.6 as three screenshots: open the lead from the search, press New Note in Lead View, write the note in the standard template and Submit.",
+   "retraining": false
+  },
+  {
    "date": "2026-10-23",
    "num": "5.3",
    "id": "man-5-3",
@@ -574,14 +582,6 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
    "id": "man-5-2",
    "anchor": "",
    "summary": "Note-template screenshots for the PAK stage: the PPD in progress and completed, MA Education, the appointment reminder, the F2F confirmation, and the order pushed to Qualifications.",
-   "retraining": false
-  },
-  {
-   "date": "2026-10-23",
-   "num": "0.10",
-   "id": "man-0-10",
-   "anchor": "",
-   "summary": "Where the handbook names a CRM button or tab that has a screenshot — Edit Patient, Process Payment, Messages, the Transaction and Patient tabs, Fax History, Patient Artifacts — hovering, tabbing to or tapping the name shows where it is. An enlarged screenshot keeps its caption, and a slideshow's slide opens as the slideshow.",
    "retraining": false
   }
  ]
