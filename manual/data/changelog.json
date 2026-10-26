@@ -1,6 +1,15 @@
 [
   {
     "date": "2026-10-23",
+    "part": "p0",
+    "section": "§0-10",
+    "summary": "Where the handbook names a CRM button or tab that has a screenshot — Edit Patient, Process Payment, Messages, the Transaction and Patient tabs, Fax History, Patient Artifacts — hovering, tabbing to or tapping the name shows where it is. An enlarged screenshot keeps its caption, and a slideshow's slide opens as the slideshow.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-23"
+  },
+  {
+    "date": "2026-10-23",
     "part": "p5",
     "section": "§5-2",
     "summary": "Note-template screenshots for the PAK stage: the PPD in progress and completed, MA Education, the appointment reminder, the F2F confirmation, and the order pushed to Qualifications.",

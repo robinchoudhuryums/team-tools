@@ -29,7 +29,7 @@ In a standalone extract, only the cards for Chapter 0, Chapter 1 and that chapte
 
 ### Where to look
 - `Eligibility` — whose order it is · `Ticket` — when it's coming · `Pat. Resp.` — what's owed before delivery (billed: *Invoices*)
-- **Notes** are behind *Messages*; **Fax History** is inside *Transaction*; signed documents are behind the *Artifacts* buttons — [[§0-10]]
+- **Notes** are behind *{{peek:nav-messages-button|Messages}}*; **{{peek:nav-fax-history-button|Fax History}}** is inside *{{peek:nav-transaction-tab|Transaction}}*; signed documents are behind the *Artifacts* buttons — [[§0-10]]
 
 **Never** — quote a delivery date not in the system · promise a callback window you don't control · cold transfer
 

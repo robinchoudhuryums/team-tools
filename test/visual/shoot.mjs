@@ -326,6 +326,12 @@ const SCENARIOS = [
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var f=document.querySelector('figure.kb-diagram'); if(f) f.scrollIntoView(); }, 300)"],
   ['reference-manual-diagram-full-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
     "kbOpenItem_('man-0-10'); setTimeout(function(){ var b=document.querySelector('figure.kb-diagram .kb-diagram-full'); if(b) kbDiagramOpen_(b); }, 400)"],
+  // Operator 2026-10-23 — a named button's screenshot beside the text (0.10's
+  // Messages), and a 5.2 slide open as its slideshow at full size.
+  ['reference-manual-peek-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
+    "kbOpenItem_('man-0-10'); setTimeout(function(){ var p=document.querySelector('.kb-peek[data-peek=\"fig-nav-messages-button\"]'); if(p){ p.scrollIntoView({ block: 'center' }); setTimeout(function(){ kbPeekShow_(p); }, 300); } }, 600)"],
+  ['reference-manual-viewer-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',
+    "kbOpenItem_('man-5-2'); setTimeout(function(){ var i=document.querySelector('.kb-gallery .kb-gal-slide img'); if(i) kbImageOpen_(i); }, 700)"],
   ['reference-manual-images-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',
     "kbOpenItem_('man-0-11'); setTimeout(function(){ var h=document.getElementById('kb-h-0-11-3-what-to-include-in-the-body'); if(h) h.scrollIntoView(); }, 600)"],
   ['reference-manual-images-dark-wide', { tool: 'reference', tab: null }, WIDE, 'dark', '',

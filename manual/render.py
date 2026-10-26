@@ -248,6 +248,17 @@ def expand(m):
             f = FIGS[fid]
             cells.append(f'<div class="slide"><img src="{FIGB[fid]}" alt="{f["alt"]}"><figcaption>{f["caption"]}</figcaption></div>')
         return f'<figure class="shot gallery" data-title="{html.escape(title, quote=True)}">' + "".join(cells) + '</figure>'
+    if spec.startswith("peek:"):
+        # A button named in the text shows its locator screenshot on hover
+        # (operator 2026-10-23): {{peek:figure-id|text}}. Only the id rides the
+        # span — make_html.py carries each image once and draws the popover;
+        # Word and print keep the text.
+        fid, _, text = spec.split(":", 1)[1].partition("|")
+        if fid not in FIGS or fid not in FIGB:
+            raise SystemExit(f"unknown figure in peek: {fid}")
+        if not text.strip():
+            raise SystemExit(f"peek with no text: {fid}")
+        return f'<span class="peek" data-peek="{fid}">{text}</span>'
     if spec.startswith("figure-pair:"):
         ids = spec.split(":", 1)[1].split("|")
         cells = []

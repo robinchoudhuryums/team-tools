@@ -35932,7 +35932,7 @@ test('Operator 2026-10-19: {{lookup:insurance}} — print and HTML link the Payo
   assert.ok(/return f"\[\{LOOKUPS\[key\]\['label'\]\}\]\(\{LOOKUPS\[key\]\['url'\]\}\)"/.test(rd), 'print and HTML link the sheet');
   assert.ok(/text = re\.sub\(r"\\\{\\\{lookup:\(\[\\w\\-\]\+\)\\\}\\\}", lambda m: lookup_md\(m\.group\(1\)\), text\)/.test(ex) &&
     /return f"\[\{LOOKUPS\[key\]\['app_label'\]\}\]\(lookup:\{key\}\)"/.test(ex), 'the app gets the lookup link');
-  assert.ok(/\(\?:kb\|lookup\|https\?\|mailto\)/.test(ex), 'a copied script keeps a lookup link\'s words, not its target');
+  assert.ok(/\(\?:kb\|lookup\|peek\|https\?\|mailto\)/.test(ex), 'a copied script keeps a lookup (or peek) link\'s words, not its target');
   assert.ok(/a\.kb-lookup \{ cursor: pointer;/.test(M1_KB_SRC), 'the class has its rule (g140)');
 });
 
@@ -35952,6 +35952,49 @@ test('Operator 2026-10-22: a handbook figure or article image drawn smaller than
   assert.ok(/\.lb\[hidden\]\{display:none\}/.test(mh), 'the HTML viewer sets display, so [hidden] needs its own rule (g73)');
   assert.ok(/@media print\{\.lb\{display:none!important\}\}/.test(mh), 'and it never prints');
   assert.ok(/mainEl\.querySelectorAll\('figure\.shot img'\)\.forEach\(img=>\{if\(img\.complete\)zoomable\(img\);else img\.addEventListener\('load',\(\)=>zoomable\(img\)\);\}\);/.test(mh), 'every screenshot is measured once it has loaded');
+});
+
+test('Operator 2026-10-23: {{peek:figure|text}} — a button the handbook names shows its locator screenshot: the app draws a peek: link as a focusable span and nothing else reaches its attribute (driven); print and Word keep the words; the HTML carries each named image once; the import refuses one the file does not carry (driven)', () => {
+  const c = m1Md_();
+  const h = c.kbMd_('Transaction Workflow → **[Edit Patient](peek:fig-nav-edit-patient-button)** (bottom-left); open the [`Transaction`](peek:fig-nav-transaction-tab) tab.');
+  assert.ok(/<strong><span class="kb-peek" tabindex="0" data-peek="fig-nav-edit-patient-button" aria-describedby="kb-peek-pop">Edit Patient<\/span><\/strong>/.test(h), 'bold round a peek: ' + h);
+  assert.ok(/<span class="kb-peek" tabindex="0" data-peek="fig-nav-transaction-tab" aria-describedby="kb-peek-pop"><code>Transaction<\/code><\/span>/.test(h), 'code inside one: ' + h);
+  const bad = c.kbMd_('[a](peek:fig-x"onmouseover="z) [b](peek:icon-a) [c](peek:FIG-A) [d](peek:fig-' + 'a'.repeat(81) + ')');
+  assert.ok(!/kb-peek|data-peek|<span|onmouseover/.test(bad), 'only a figure key of the manual-image charset becomes a peek: ' + bad);
+  assert.ok(/^<p>a b c d<\/p>$/.test(bad), 'the words stay: ' + bad);
+  assert.ok(/\.kb-peek \{ cursor: help;/.test(M1_KB_SRC) && /\.kb-peek-pop \{ position: fixed;/.test(M1_KB_SRC) && /\.kb-peek-pop\[hidden\] \{ display: none; \}/.test(M1_KB_SRC),
+    'the classes have their rules (g140), and the popover hides by [hidden] (g73)');
+  // The build: one placeholder, three readers.
+  const rd = MP1_('render.py'), ex = MP1_('export_reference.py'), mh = MP1_('make_html.py'), mm = MP1_('md2model.py');
+  assert.ok(/return f'<span class="peek" data-peek="\{fid\}">\{text\}<\/span>'/.test(rd) && /raise SystemExit\(f"unknown figure in peek: \{fid\}"\)/.test(rd), 'print and HTML get a span naming the figure — an unknown one stops the build');
+  assert.ok(/text = re\.sub\(r"\\\{\\\{peek:\(\[\^\}\]\+\)\\\}\\\}", lambda m: peek_md\(m\.group\(1\)\), text\)/.test(ex) &&
+    /image_ref\(f\["alt"\], key, "figure", "figures\.json:" \+ fid, FIGB\[fid\]\)\n    return f"\[\{text\}\]\(peek:\{key\}\)"/.test(ex), 'the app gets a peek: link, and the image rides the bundle under the figure\'s own key');
+  assert.ok(/re\.findall\(r'<span class="peek" data-peek="\(\[\\w-\]\+\)">', body\)/.test(mh) && /const PEEK=__PEEK__;/.test(mh) && /\.replace\("__PEEK__", _json\.dumps\(PEEK, ensure_ascii=False\)\)/.test(mh),
+    'the HTML carries each named image once, with its size');
+  assert.ok(/#ppop\[hidden\]\{display:none\}/.test(mh) && /@media print\{#ppop\{display:none!important\}/.test(mh), 'its popover hides by [hidden] (g73) and never prints');
+  assert.ok(/def _text\(s\):[\s\S]{0,120}s = re\.sub\(r"<\[\^>\]\+>", "", s\)/.test(mm), 'Word keeps the words — every tag is stripped before emphasis');
+  // The sources: every locator screenshot is named somewhere, 10.19.2 the operator's example, and no bare mention left of the three that have no other sense.
+  const SRC = ['p0', 'p1', 'p4', 'p5', 'p6', 'p10', 'appendix_c'].map((k) => MP1_('src/' + k + '.md')).join('\n');
+  ['nav-edit-patient-button', 'nav-process-payment-button', 'nav-messages-button', 'nav-transaction-tab', 'nav-fax-history-button', 'nav-patient-artifacts-button', 'nav-patient-tab']
+    .forEach((id) => assert.ok(SRC.indexOf('{{peek:' + id + '|') >= 0, id + ' is shown where it is named'));
+  assert.ok(/Transaction Workflow → \*\*\{\{peek:nav-edit-patient-button\|Edit Patient\}\}\*\* \(bottom-left\)/.test(MP1_('src/p10.md')), '10.19.2\'s Edit Patient');
+  const bare = SRC.replace(/\{\{peek:[^}]*\}\}/g, '').replace(/\{\{gallery:[^}]*\}\}/g, '').split('\n## Open items')[0];
+  ['Edit Patient', 'Process Payment', 'Patient Artifacts'].forEach((w) => assert.ok(bare.indexOf(w) < 0, w + ' is never named without its screenshot'));
+  // The import: a peek is a citation like any other.
+  const imp = m1Importer_(m1Book_([], null), '[]');
+  const V = (images, arts) => J2(imp.ctx.kbManualImagesValidate_(images, arts || [], m3Sha_));
+  assert.deepStrictEqual(V({ 'fig-a': { alt: 'A', kind: 'figure', dataUri: M3_PNG } }, [{ id: 'man-10-19', body: '**[Edit Patient](peek:fig-a)**' }]).errors, [], 'a carried image is fine');
+  const r = V({ 'fig-a': { alt: 'A', kind: 'figure', dataUri: M3_PNG } }, [{ id: 'man-10-19', body: '[Edit Patient](peek:fig-gone)' }]);
+  assert.ok(r.items === null && r.errors.some((e) => /man-10-19 shows image "fig-gone", which the file does not carry/.test(e)), 'one the file does not carry refuses the file: ' + JSON.stringify(r.errors));
+});
+
+test('Operator 2026-10-23: the HTML handbook\'s full-size viewer keeps the caption, and a slideshow\'s slide opens as the slideshow — count, steps, ← / →, the page kept in step', () => {
+  const mh = MP1_('make_html.py');
+  assert.ok(/const capOf=img=>\{const cell=img\.closest\('\.slide'\)\|\|img\.closest\('figure\.shot > div'\)\|\|img\.closest\('figure\.shot'\)/.test(mh), 'the caption is the figure\'s own, a slide\'s or a pair cell\'s');
+  assert.ok(/lbGal=img\.closest\('figure\.gallery\.on'\)/.test(mh) && /const d=lbGal\.querySelectorAll\('\.galdot'\)\[lbI\];if\(d\)d\.click\(\);/.test(mh), 'a slide opens its slideshow, and stepping moves the page\'s too');
+  assert.ok(/e\.key==='ArrowLeft'\|\|e\.key==='ArrowRight'/.test(mh.split('const lbShow')[1]) && /\.lb\.multi \.lbstep\{display:block\}/.test(mh), 'arrow keys step it, and the steps show only for a slideshow');
+  assert.ok(/if\(img\.closest\('figure\.gallery'\)\|\|\(sh&&w>sh\+8\)/.test(mh), 'every slide opens — the viewer is the slideshow at full size');
+  assert.ok(/const back=lbGal\|\|lbFrom/.test(mh), 'focus returns to the slideshow, not a slide that may be off-screen now');
 });
 
 test('MP1-2: the build, the export and the Word model resolve [ROLE:] through ONE resolver (exact name first) and footnotes through ONE transform; a role links to its directory ROW', () => {

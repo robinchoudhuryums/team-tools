@@ -593,6 +593,7 @@ for the reasoning, which is usually the part that matters.
 - [Note saves are serialised per rep on a lease, not on the project lock; the day's email allowance is on Admin → System (25post, operator 2026-10-16)](docs/design-decisions.md#note-saves-are-serialised-per-rep)
 - [The intake Send-to picker reads the Sales and PAP teams from the CDR roster, builds first.last addresses, and re-checks them at send (25post B6, operator 2026-10-16)](docs/design-decisions.md#intake-team-recipients-from-the-cdr-roster)
 - [A clocked-in rep idle 30+ minutes is flagged in the app only, measured from the last punch or gesture with scheduled breaks taken out (25post B8, operator 2026-10-16)](docs/design-decisions.md#the-idle-alert-is-in-app-and-break-aware)
+- [A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)](docs/design-decisions.md#a-named-button-shows-its-screenshot)
 
 ## Operator State Checklist
 
@@ -956,9 +957,9 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1399 | `node test/client/run.js` |
-| DOM harness tests | 287 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 173 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1401 | `node test/client/run.js` |
+| DOM harness tests | 289 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 175 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 58 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 101 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
@@ -967,7 +968,7 @@ this block, or the command that prints the number.
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 20 | `ums…` literals in `web-app/` |
 | Invariant library entries | 377 | `.cycle/config.md` |
-| Regression scenarios (S*) | 143 | `.cycle/config.md` |
+| Regression scenarios (S*) | 144 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

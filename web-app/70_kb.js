@@ -3928,8 +3928,8 @@ function kbManualBundle_(data) {
 // ── Batch M3 — the manual's images ──────────────────────────────────────────
 /** Pure (Node-pinned) — the bundle's images, validated, each with the SHA-256
  *  of its base64 (hashFn). `images` null (an M2 file) → items null: nothing to
- *  import. Any bad image, and any manimg: key an article cites that the file
- *  does not carry, refuses the WHOLE file like any other bad entry. */
+ *  import. Any bad image, and any manimg: or peek: key an article cites that
+ *  the file does not carry, refuses the WHOLE file like any other bad entry. */
 function kbManualImagesValidate_(images, articles, hashFn) {
   if (images == null) return { items: null, errors: [] };
   if (typeof images !== 'object' || Array.isArray(images)) return { items: null, errors: ['The file\'s images are not a key → image map.'] };
@@ -3953,7 +3953,7 @@ function kbManualImagesValidate_(images, articles, hashFn) {
   });
   const told = {};
   (articles || []).forEach(function (a) {
-    const re = /\]\(manimg:([^)\s]*)\)/g;
+    const re = /\]\((?:manimg|peek):([^)\s]*)\)/g;   // an image shown, or one a named button shows on hover (25post)
     let m;
     while ((m = re.exec(String((a && a.body) || ''))) !== null) {
       if (!have[m[1]] && !told[m[1]] && !(m[1] in images)) {

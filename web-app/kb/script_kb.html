@@ -350,6 +350,16 @@
   a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
   /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
   a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
+  /* 25post (operator 2026-10-23) — a button the handbook names, and the popover
+     that shows where it is (kbPeekShow_). Above the drawer and any overlay, since
+     a section can be read in either; never printed. */
+  .kb-peek { cursor: help; text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .kb-peek:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .kb-peek-pop { position: fixed; z-index: 1000; max-width: min(460px, calc(100vw - 24px)); padding: 8px; background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); pointer-events: none; }
+  .kb-peek-pop[hidden] { display: none; }
+  .kb-peek-pop img { display: block; max-width: 100%; max-height: 300px; width: auto; height: auto; margin: 0; border-radius: 3px; }
+  .kb-peek-pop .kb-img-pending { margin: 0; }
+  @media print { .kb-peek-pop { display: none !important; } .kb-peek { text-decoration: none; } }
   .kb-man-print { white-space: nowrap; }
   .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
   .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
@@ -458,6 +468,11 @@
   .kb-article img.kb-zoomable { cursor: zoom-in; }
   .kb-img-modal .kb-img-big { overflow: auto; min-height: 0; }
   .kb-img-modal .kb-img-big img { display: block; max-width: none; height: auto; margin: 0; }
+  /* operator 2026-10-23 — the viewer keeps the caption; a slideshow keeps its count and steps */
+  .kb-img-modal .kb-img-count { flex: none; margin-left: auto; margin-right: 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .8rem; color: var(--muted); }
+  .kb-img-modal .kb-img-cap { margin: 8px 0 0; font-size: .86rem; color: var(--muted); text-align: center; }
+  .kb-img-modal .kb-img-cap:empty { display: none; }
+  .kb-img-modal .kb-img-nav { margin-top: 8px; }
   /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
      Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
   .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
@@ -2819,6 +2834,11 @@ function kbMd_(src) {
       // Only the two names reach the attribute; a delegated handler opens it.
       var lk = url.match(/^lookup:(insurance|price)$/);
       if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + emph(txt) + '</a>');
+      // 25post (operator 2026-10-23) — `peek:fig-…`: a button the handbook
+      // names shows its locator screenshot on hover, focus or a tap
+      // (kbPeekShow_). Only the manual-image key charset reaches the attribute.
+      var pk = url.match(/^peek:(fig-[a-z0-9-]{1,80})$/);
+      if (pk) return keep('<span class="kb-peek" tabindex="0" data-peek="' + pk[1] + '" aria-describedby="kb-peek-pop">' + emph(txt) + '</span>');
       if (!/^(https?:|mailto:)/i.test(url)) return txt;
       // The top-level escape covers &, <, > but NOT quotes — a `"` in the URL
       // would otherwise break out of the href attribute (attribute injection,
@@ -3145,29 +3165,93 @@ function kbManimgApply_(key, state) {
  *  opens at full size on a click or Enter: the same image in an overlay
  *  (ensureOverlay / closeOverlay, g100) that scrolls both ways, like a
  *  diagram's Full size. Measured on load; a slide hidden in a gallery has no
- *  width yet, so the column cap decides. */
+ *  width yet, so the column cap decides — and a slideshow's slides always open
+ *  (operator 2026-10-23), since the viewer is the slideshow at full size. */
 var KB_FIG_MAX = 720;   // = img.kb-manimg-figure's max-width (pinned)
 function kbImgZoomable_(img) {
   var w = img.naturalWidth || 0, shown = img.clientWidth || 0;
-  if (!(shown ? w > shown + 8 : w > KB_FIG_MAX)) return;   // drawn smaller than its pixels; not laid out yet → the column cap
+  var inGallery = !!(img.closest && img.closest('.kb-gallery'));
+  if (!inGallery && !(shown ? w > shown + 8 : w > KB_FIG_MAX)) return;   // drawn smaller than its pixels; not laid out yet → the column cap
   img.classList.add('kb-zoomable');
   img.setAttribute('tabindex', '0');
   img.setAttribute('role', 'button');
   img.title = 'Open at full size';
 }
+/** Pure on the DOM it is given — a figure's caption as text: a slide's own, or
+ *  the italic line the export writes under a figure (export_reference.py's
+ *  figure_md: the image, a blank line, then *caption*). '' when there is none. */
+function kbImgCaption_(img) {
+  var slide = img && img.closest ? img.closest('.kb-gal-slide') : null;
+  if (slide) { var c = slide.querySelector('.kb-gal-cap'); return c ? c.textContent.trim() : ''; }
+  var p = img && img.parentElement, nx = p && p.tagName === 'P' ? p.nextElementSibling : null;
+  if (nx && nx.tagName === 'P' && nx.children.length === 1 && nx.children[0].tagName === 'EM' &&
+      nx.textContent.trim() === nx.children[0].textContent.trim()) return nx.textContent.trim();
+  return '';
+}
+/** 25post (operator 2026-10-23) — the viewer keeps the caption, and a slide
+ *  opens as its slideshow: the slideshow's name, "n / N", Previous / Next and
+ *  ← / →, wrapping like the page's, and the page's slideshow kept on the same
+ *  slide so closing lands where the viewer was. */
 function kbImageOpen_(img) {
   var src = (img && img.getAttribute('src')) || '';
   if (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(src)) return;   // what the two hydrators accept
-  var label = img.alt || 'Image';
-  var ov = ensureOverlay('kb-image-overlay', { label: 'Image \u2014 ' + label, extraClass: 'kb-diagram-ov',
+  var gal = img.closest ? img.closest('.kb-gallery') : null;
+  var many = !!(gal && gal.querySelectorAll('.kb-gal-slide').length > 1);
+  var label = many ? (gal.getAttribute('aria-label') || 'Slideshow') : (img.alt || 'Image');
+  var ov = ensureOverlay('kb-image-overlay', { label: (many ? 'Slideshow' : 'Image') + ' — ' + label, extraClass: 'kb-diagram-ov',
     onClose: function () { var o = document.getElementById('kb-image-overlay'); if (o) o.remove(); } });
   ov.innerHTML = '<div class="modal kb-diagram-modal kb-img-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    (many ? '<span class="kb-img-count" aria-live="polite"></span>' : '') +
     '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-image-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
-    '<div class="kb-img-big" tabindex="0"></div></div>';
+    '<div class="kb-img-big" tabindex="0"></div><p class="kb-img-cap"></p>' +
+    (many ? '<div class="kb-gal-nav kb-img-nav"><button type="button" class="kb-gal-step" data-kb-step="-1" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
+      '<button type="button" class="kb-gal-step" data-kb-step="1" aria-label="Next slide">' + icon('chevronRight', 14) + '</button></div>' : '') +
+    '</div>';
   var big = document.createElement('img');
-  big.alt = label;
+  big.alt = img.alt || label;
   big.src = src;
   ov.querySelector('.kb-img-big').appendChild(big);
+  ov.querySelector('.kb-img-cap').textContent = kbImgCaption_(img);
+  if (!many) return;
+  ov._kbGal = gal;
+  ov._restoreFocus = gal;   // the slide it opened from may be off-screen by Close; the slideshow is not
+  var slides = gal.querySelectorAll('.kb-gal-slide');
+  for (var k = 0; k < slides.length; k++) if (slides[k].contains(img)) kbImageSlide_(ov, k);
+  ov.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-kb-step]');
+    if (b) kbImageSlide_(ov, (ov._kbI || 0) + Number(b.getAttribute('data-kb-step')));
+  });
+  ov.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    kbImageSlide_(ov, (ov._kbI || 0) + (e.key === 'ArrowLeft' ? -1 : 1));
+  });
+}
+/** Show slide i (wrapping) of the viewer's slideshow: its image by property —
+ *  re-checked as a data URL, or its name while it is still loading — its
+ *  caption as text, the count, and the page's slideshow moved to match. */
+function kbImageSlide_(ov, i) {
+  var gal = ov && ov._kbGal;
+  var slides = gal ? gal.querySelectorAll('.kb-gal-slide') : [], n = slides.length;
+  if (!n) return;
+  i = ((Number(i) || 0) % n + n) % n;
+  ov._kbI = i;
+  var im = slides[i].querySelector('img'), src = (im && im.getAttribute('src')) || '';
+  var box = ov.querySelector('.kb-img-big');
+  box.textContent = '';
+  if (/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(src)) {
+    var big = document.createElement('img');
+    big.alt = im.alt || '';
+    big.src = src;
+    box.appendChild(big);
+  } else {
+    box.textContent = (slides[i].querySelector('.kb-manimg') || {}).textContent || 'Image';
+  }
+  var cap = slides[i].querySelector('.kb-gal-cap');
+  ov.querySelector('.kb-img-cap').textContent = cap ? cap.textContent.trim() : '';
+  var c = ov.querySelector('.kb-img-count');
+  if (c) c.textContent = (i + 1) + ' / ' + n;
+  kbGalleryGo_(gal, i);
 }
 (function kbBindImageZoom_() {
   document.addEventListener('click', function (e) {
@@ -3183,6 +3267,72 @@ function kbImageOpen_(img) {
     e.preventDefault();
     kbImageOpen_(img);
   });
+})();
+// 25post (operator 2026-10-23) — a button the handbook names (a `peek:` link →
+// `.kb-peek`) shows its locator screenshot beside the text on hover, focus or a
+// tap: ONE fixed popover, above the drawer and any overlay, holding a manual-
+// image chip the Batch M3 hydrator fills (a cached image at once). Escape, a
+// scroll anywhere, or a tap elsewhere hides it; it never takes the pointer.
+var KB_PEEK = { el: null, show: null, hide: null };
+function kbPeekPop_() {
+  var pop = document.getElementById('kb-peek-pop');
+  if (pop) return pop;
+  pop = document.createElement('div');
+  pop.id = 'kb-peek-pop';
+  pop.className = 'kb-peek-pop';
+  pop.setAttribute('role', 'tooltip');
+  pop.hidden = true;
+  pop.addEventListener('load', function () { if (KB_PEEK.el) kbPeekPlace_(KB_PEEK.el, pop); }, true);   // re-placed once the image has its size
+  document.body.appendChild(pop);
+  return pop;
+}
+function kbPeekShow_(el) {
+  var key = (el && el.getAttribute('data-peek')) || '';
+  if (!/^fig-[a-z0-9-]{1,80}$/.test(key)) return;
+  clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide);
+  var pop = kbPeekPop_();
+  if (KB_PEEK.el !== el || pop.hidden) {
+    pop.innerHTML = '<span class="kb-img-pending kb-manimg" data-manimg="' + key + '">' + esc(el.textContent || 'Handbook image') + '</span>';
+    if (KB_MANIMG.cache[key]) kbManimgApply_(key, KB_MANIMG.cache[key]); else kbManimgSchedule_();
+  }
+  pop.hidden = false;
+  KB_PEEK.el = el;
+  kbPeekPlace_(el, pop);
+}
+/** Below the text when it fits, else above; never off either side. */
+function kbPeekPlace_(el, pop) {
+  var r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+  var w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, vw - w - 8)) + 'px';
+  pop.style.top = (r.bottom + h + 12 < vh ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
+}
+function kbPeekHide_() {
+  clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide);
+  var pop = document.getElementById('kb-peek-pop');
+  if (pop) pop.hidden = true;
+  KB_PEEK.el = null;
+}
+(function kbBindPeek_() {
+  var of = function (t) { return t && t.closest ? t.closest('.kb-peek') : null; };
+  var later = function () { clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide); KB_PEEK.hide = setTimeout(kbPeekHide_, 160); };
+  document.addEventListener('mouseover', function (e) {
+    var el = of(e.target);
+    if (!el) return;
+    clearTimeout(KB_PEEK.hide); clearTimeout(KB_PEEK.show);
+    if (el !== KB_PEEK.el) KB_PEEK.show = setTimeout(function () { kbPeekShow_(el); }, 140);
+  });
+  document.addEventListener('mouseout', function (e) { if (of(e.target)) later(); });
+  document.addEventListener('focusin', function (e) { var el = of(e.target); if (el) kbPeekShow_(el); });
+  document.addEventListener('focusout', function (e) { if (of(e.target)) later(); });
+  document.addEventListener('click', function (e) { var el = of(e.target); if (el) kbPeekShow_(el); else if (KB_PEEK.el) kbPeekHide_(); });
+  // Escape takes the popover down FIRST, and only it — the drawer or overlay
+  // under it stays open (the shell's Escape would close that too).
+  window.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !KB_PEEK.el) return;
+    e.stopPropagation();
+    kbPeekHide_();
+  }, true);
+  window.addEventListener('scroll', function () { if (KB_PEEK.el) kbPeekHide_(); }, true);
 })();
 function kbHydrateManualImages_() {
   KB_MANIMG.timer = null;

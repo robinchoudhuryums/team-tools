@@ -168,6 +168,23 @@ def gallery_md(spec):
     return "```gallery " + title.replace("`", "'") + "\n" + "\n".join(lines) + "\n```"
 
 
+def peek_md(spec):
+    """{{peek:figure-id|text}} -> a `peek:` link the Reference reader shows the
+    figure beside on hover or focus (operator 2026-10-23). The image rides the
+    bundle under the figure's own key, so a peek is one more citation of it."""
+    fid, _, text = spec.partition("|")
+    if fid not in FIGS or fid not in FIGB:
+        errors.append(f"unknown figure in peek: {fid}")
+        return text
+    if not text.strip() or "]" in text:
+        errors.append(f"peek {fid}: its text must be non-empty and hold no ']'")
+        return text
+    f = FIGS[fid]
+    key = "fig-" + slug(fid)
+    image_ref(f["alt"], key, "figure", "figures.json:" + fid, FIGB[fid])
+    return f"[{text}](peek:{key})"
+
+
 def diagram_md(name):
     path = f"diagrams/{name}.svg"
     if not os.path.exists(path):
@@ -197,6 +214,7 @@ def pre_substitute(text, key):
     text = re.sub(r"\{\{figure:([\w\-]+)\}\}", lambda m: figure_md(m.group(1)), text)
     text = re.sub(r"\{\{gallery:([^}]+)\}\}", lambda m: gallery_md(m.group(1)), text)
     text = re.sub(r"\{\{lookup:([\w\-]+)\}\}", lambda m: lookup_md(m.group(1)), text)
+    text = re.sub(r"\{\{peek:([^}]+)\}\}", lambda m: peek_md(m.group(1)), text)
     text = re.sub(r"\{\{figure-pair:([^}]+)\}\}",
                   lambda m: "\n\n".join(figure_md(f) for f in m.group(1).split("|")), text)
     if key == "appx_a":
@@ -787,7 +805,7 @@ def scripts_to_snippets(body):
             chunk.append(re.sub(r"^> ?", "", lines[i]))
             i += 1
         text = md_plain("\n".join(chunk).strip())
-        text = re.sub(r"\[([^\]]+)\]\((?:kb|lookup|https?|mailto):[^)]+\)", r"\1", text)
+        text = re.sub(r"\[([^\]]+)\]\((?:kb|lookup|peek|https?|mailto):[^)]+\)", r"\1", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
         q = re.fullmatch(r'["\u201c]([^"\u201c\u201d]*)["\u201d]', text)
         if q:                         # one quoted line: copy the words, not the quotes

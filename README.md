@@ -96,7 +96,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
     reads as one page with cross-references and previews, a section
     number typed into search jumps to it, and the drawer carries the
     manual's call router. Its diagrams draw in place (with a Full size
-    view) and its images are stored in the KB spreadsheet by the import
+    view); a screenshot wider than the column opens at full size with its
+    caption, a tutorial slideshow opens as the slideshow, and a CRM
+    button the text names shows where it is on hover or a tap. Its
+    images are stored in the KB spreadsheet by the import
     (the domain disables Apps Script's Drive, so `manual.json` is chosen
     from the computer). Its recent changes show on the landing and in
     What's new, an HCPCS code opens the drawer's lookups, previews work
