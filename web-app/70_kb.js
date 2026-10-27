@@ -1899,6 +1899,13 @@ function oopEligibilityForPayment_(rule, payingOop) {
   return r;
 }
 
+/** PURE (Node-pinned) — a distance as the card shows it: at most one
+ *  decimal ("12", "1,380.6"), with a thousands separator. */
+function oopMilesFmt_(d) {
+  const r = Math.round(Number(d) * 10) / 10;
+  const parts = String(r).split('.');
+  return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (parts[1] ? '.' + parts[1] : '');
+}
 /** PURE (Node-pinned) — B3: the short name a rule goes by on the card, one
  *  per branch of a union ("Distance", "City list"). */
 function oopRuleLabel_(rule) {
@@ -1972,12 +1979,16 @@ function oopEligibilityCheck_(rule, loc) {
       return { verdict: 'unknown', near: false,
         why: 'Could not measure the distance to ' + names.join(' or ') + '.' };
     }
-    const shown = Math.round(best * 10) / 10;
+    // Operator 2026-10-27: the distance and the limit in one short phrase —
+    // "1,380.6 mi from Dallas (>100 mi)". The header already says the
+    // distances are straight-line; only a near-boundary yes repeats it, because
+    // that is the one answer the straight line can get wrong.
+    const shown = oopMilesFmt_(best);
     if (best <= miles) {
       const near = best > miles * OOP_ELIG_NEAR_BAND;
       return { verdict: 'yes', near: near,
-        why: shown + ' mi from ' + bestName + ' (limit ' + miles + ' mi)' +
-          (near ? ' — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' : '.') +
+        why: shown + ' mi from ' + bestName + ' (within ' + miles + ' mi)' +
+          (near ? ' — close to the limit, and the drive is longer than this straight line. Check before committing.' : '.') +
           (anyUnplaced ? ' One warehouse could not be placed.' : '') };
     }
     // Straight-line already exceeds the limit, so the drive does too — but
@@ -1988,11 +1999,11 @@ function oopEligibilityCheck_(rule, loc) {
     // ANY-warehouse rule spans the whole registry and makes it far likelier.
     if (anyUnplaced) {
       return { verdict: 'unknown', near: false,
-        why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit — but a warehouse could not be ' +
+        why: shown + ' mi from ' + bestName + ' (>' + miles + ' mi), but a warehouse could not be ' +
           'placed and might be nearer. Fix its address in LocationAcceptance to get a firm answer.' };
     }
     return { verdict: 'no', near: false,
-      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' };
+      why: shown + ' mi from ' + bestName + ' (>' + miles + ' mi).' };
   }
 
   if (r.kind === 'cities') {

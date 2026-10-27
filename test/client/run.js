@@ -14770,7 +14770,7 @@ vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
 // Cycle 22 Batch 5: the parser's helpers (K1/K3 clause parser, the word-bounded
 // registry matcher) and the K4 state/city normalisers ride the same sandbox.
 vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), _vmCtx);
-['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_', 'oopRuleLabel_'].forEach((f) =>
+['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_', 'oopRuleLabel_', 'oopMilesFmt_'].forEach((f) =>
   vm.runInContext(extractRawFunction('Code.js', f), _vmCtx, { filename: f }));
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
@@ -14883,6 +14883,10 @@ test('ELIG: oopEligibilityCheck_ — a radius NO is CERTAIN and a radius YES nea
   assert.strictEqual(out.verdict, 'no');
   assert.strictEqual(out.near, false, 'a NO is certain — no hedge');
   assert.ok(/140/.test(out.why) && /Dallas/.test(out.why), 'and it shows the nearest, not an arbitrary one');
+  // Operator 2026-10-27: the concise form — the distance and the limit in one phrase.
+  assert.strictEqual(out.why, '140 mi from Dallas (>100 mi).');
+  assert.strictEqual(C(RAD, { state: 'NY', miles: { Dallas: 1380.64, 'San Antonio': 1500 } }).why, '1,380.6 mi from Dallas (>100 mi).', 'a thousands separator, one decimal');
+  assert.strictEqual(near.why, '30 mi from Dallas (within 100 mi).');
 
   // Unplaceable warehouses: UNKNOWN when none could be measured, and a NOTE
   // when only some could — a partial answer must not read as a whole one.
@@ -23102,7 +23106,7 @@ test('T7-2: EITHER branch of a union qualifies, an UNKNOWN branch outranks a NO 
   // Neither — and BOTH reasons are spoken, so the rep knows both were checked.
   const nope = Object.assign({}, base, { city: 'Lubbock', cityMatches: [], miles: { Dallas: 320, 'San Antonio': 380 } });
   assert.strictEqual(V(nope, false).verdict, 'no');
-  assert.match(V(nope, false).why, /over the 100 mi limit/);
+  assert.match(V(nope, false).why, /\(>100 mi\)/);
   assert.match(V(nope, false).why, /not one of the listed service cities/);
 
   // One branch UNMEASURABLE and the other a plain NO is UNKNOWN, never NO —
@@ -23242,7 +23246,7 @@ test('B2/B3 (operator 2026-10-27): no city from Google → the borough, else the
   const far = U({ state: 'NY', hasCityRows: true, warehouseNames: WH, miles: { Dallas: 1380.6 }, city: '', cityMatches: [], cityUnreadable: [] });
   assert.strictEqual(far.verdict, 'unknown');
   assert.strictEqual(far.parts.map((p) => p.rule + ':' + p.verdict).join(','), 'Distance:no,City list:unknown', 'one part per rule, named, with its own answer');
-  assert.ok(/1380\.6 mi from Dallas/.test(far.parts[0].why) && /Could not determine the city/.test(far.parts[1].why));
+  assert.ok(/1,380\.6 mi from Dallas \(>100 mi\)/.test(far.parts[0].why) && /Could not determine the city/.test(far.parts[1].why));
   assert.strictEqual(far.why, far.parts[0].why + ' ' + far.parts[1].why, '`why` is unchanged for every reader that reads only it');
   const near = U({ state: 'TX', hasCityRows: true, warehouseNames: WH, miles: { Dallas: 20 }, city: 'Irving', cityMatches: [], cityUnreadable: [] });
   assert.ok(near.verdict === 'yes' && !near.parts, 'a yes names the rule that carried it, as before');

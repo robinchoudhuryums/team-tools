@@ -1325,6 +1325,9 @@ not restate it. Server endpoints live in the fourteen server files
      `parts`, `oopRuleLabel_`). The item's facts are a two-column list (Code,
      Effective, then the sheet's own columns) instead of chips, and the Area
      line steps aside wherever a verdict answers it — the price lookup keeps it.
+     A distance reads "1,380.6 mi from Dallas (>100 mi)" / "12 mi from Dallas
+     (within 100 mi)" (`oopMilesFmt_`); only a near-the-limit yes repeats that
+     the drive is longer than the straight line.
 
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED

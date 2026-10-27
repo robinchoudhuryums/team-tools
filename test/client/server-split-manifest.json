@@ -3319,6 +3319,28 @@
     "oopEligibilityCheck_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "operator 2026-10-27: oopMilesFmt_ (70_kb.js) — the concise distance phrase",
+   "added": [
+    "oopMilesFmt_"
+   ],
+   "removed": [],
+   "changed": [
+    "oopEligibilityCheck_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "operator 2026-10-27: oopMilesFmt_ drops a trailing .0",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopMilesFmt_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -10286,7 +10308,7 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ee5054514fd4c6d2"
+   "sha": "a45a88fd5b1b134c"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
@@ -10307,6 +10329,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "df037b2e3e32a22a"
+  },
+  "oopMilesFmt_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3734ffce3bdfd028"
   },
   "oopNameCol_": {
    "file": "70_kb.js",

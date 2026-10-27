@@ -1930,11 +1930,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         // 25post B3: a union that is neither a yes nor a no — one short line per rule.
         { name: 'Island Scooter Program', code: 'K0827', effective: '09/16/2026', eligibility: '100 miles of Honolulu warehouse, or listed cities', rule: 'any',
           price: '$1,480.00', prices: [{ label: '', value: '$1,480.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
-          insurance: { verdict: 'unknown', near: false, why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
-            parts: [{ rule: 'Distance', verdict: 'no', why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still).' },
+          insurance: { verdict: 'unknown', near: false, why: '3,770.2 mi from Honolulu (>100 mi). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3,770.2 mi from Honolulu (>100 mi).' },
               { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] },
-          oop: { verdict: 'unknown', near: false, why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
-            parts: [{ rule: 'Distance', verdict: 'no', why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still).' },
+          oop: { verdict: 'unknown', near: false, why: '3,770.2 mi from Honolulu (>100 mi). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3,770.2 mi from Honolulu (>100 mi).' },
               { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] } }] },
     // E6 (cycle 25, G4): an admin's request carries the search hint (the
     // vocabulary terms in its topic that people searched for).

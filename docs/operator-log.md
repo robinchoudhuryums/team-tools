@@ -59,6 +59,9 @@ Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
   reads its borough as the city, and says so. Each item's answer puts the
   verdict first and one short line per rule under it, and the item details are
   a tidy two-column list.
+- **Distance wording** (round 12 B follow-up): a distance answer reads
+  "1,380.6 mi from Dallas (>100 mi)" or "12 mi from Dallas (within 100 mi)";
+  only a near-the-limit yes still mentions the straight line.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 
