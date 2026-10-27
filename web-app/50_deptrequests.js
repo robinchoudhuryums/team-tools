@@ -646,6 +646,102 @@ function drReplyExcludedBase_() {
     .forEach(function (a) { const v = String(a || '').trim().toLowerCase(); if (v) out[v] = 1; });
   return out;
 }
+/** ONE request's decisive department reply — the reply-scan's per-request
+ *  half, shared by the hourly scan and the card's Show reply (DR-3, operator
+ *  2026-10-27), so the reply a rep reads is always the one the status was
+ *  decided on (g126: two readers of one thing share one reader). Reads the
+ *  request's thread(s) from the mailbox the app runs as and applies the
+ *  rules (drReplyPick_) with this row's context: after the send and any
+ *  reopen, not the agent or the app's own mailboxes, from the department,
+ *  and on a shared thread only a reply that names this request. Returns
+ *  drReplyPick_'s {verdict, msg, reason} or null. Throws on a Gmail failure. */
+function drRequestReplyPick_(r, reqId, createdMs, dir, baseExcl, sharedIds) {
+  const parseMs = function (v) { return (v instanceof Date) ? v.getTime() : (parseTimestampMs_(String(v || ''), CONFIG.TIMEZONE) || 0); };
+  const reopenedMs = parseMs(r[DR.REOPENED_AT]);
+  const excluded = Object.assign({}, baseExcl);
+  const agent = String(r[DR.BY_EMAIL] || '').trim().toLowerCase();
+  if (agent) excluded[agent] = 1;
+  const deptAddrs = {}, deptDomains = {};
+  drSplitDepts_(String(r[DR.TO_DEPT] || '')).forEach(function (d) {
+    const b = dir.byDept[String(d).toLowerCase()];
+    if (!b) return;
+    b.addrs.forEach(function (a) { deptAddrs[a] = 1; });
+    b.domains.forEach(function (x) { deptDomains[x] = 1; });
+  });
+  const msgs = [];
+  String(r[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
+    const th = GmailApp.getThreadById(tid);
+    if (!th) return;
+    th.getMessages().forEach(function (gm) {
+      msgs.push({
+        fromAddr: drAddrOf_(gm.getFrom()), ms: gm.getDate().getTime(), subject: gm.getSubject(),
+        autoSubmitted: gm.getHeader('Auto-Submitted'), xAutoreply: gm.getHeader('X-Autoreply'),
+        precedence: gm.getHeader('Precedence'), body: gm.getPlainBody(),
+      });
+    });
+  });
+  return drReplyPick_(msgs, { afterMs: Math.max(createdMs || 0, reopenedMs || 0), excluded: excluded,
+    deptAddrs: deptAddrs, deptDomains: deptDomains, token: reqId, sharedTokens: sharedIds || [] });
+}
+/** The other request ids that share any of `threadIds`, over the window the
+ *  hourly scan reads (DR_MAX_SCAN rows) — the shared-thread context of DR-1. */
+function drSharedRequestIds_(sh, reqId, threadIds) {
+  const lastRow = sh.getLastRow();
+  const first = Math.max(2, lastRow - DR_MAX_SCAN + 1);
+  if (lastRow < first) return [];
+  const want = {};
+  threadIds.forEach(function (t) { want[t] = 1; });
+  const ids = sh.getRange(first, DR.REQ_ID + 1, lastRow - first + 1, 1).getValues();
+  const tids = sh.getRange(first, DR.THREAD_ID + 1, lastRow - first + 1, 1).getValues();
+  const out = {};
+  for (let i = 0; i < ids.length; i++) {
+    const rid = String(ids[i][0] || '').trim();
+    if (!rid || rid === reqId) continue;
+    if (String(tids[i][0] || '').split(/\s+/).some(function (t) { return want[t]; })) out[rid] = 1;
+  }
+  return Object.keys(out);
+}
+/** DR-3 (operator 2026-10-27) — the department's reply a request's status was
+ *  decided on, read LIVE for the card's Show reply: "Responded — needs a look"
+ *  and "Replies to check" said "check the thread", but the reply sits in the
+ *  sender's Gmail and the app's mailbox only, so a receiving-desk member or a
+ *  manager answering the look could not read it. Gated by drCanAct_ — the
+ *  sender, a member of the receiving department, or a manager: whoever may
+ *  close the request may read what closed it (the detail read's rule). Never
+ *  stored, cached or logged — the reply scan's "nothing of a reply's text is
+ *  stored" holds; the client draws it with the Spanish Inbox's conversation
+ *  renderer. {reply: null, reason} when there is no reply to show, so the
+ *  panel says why (INV-187). */
+function getDeptRequestReply(requestId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const reqId = String(requestId || '').trim();
+    if (!reqId) return { error: 'Request not found.' };
+    const sh = getOrCreateDeptRequestsSheet_();
+    const hit = drFindRowByReqId_(sh, reqId);
+    const row = hit ? hit.row : null;
+    if (!row || !drCanAct_(emp, row)) return { error: 'Request not found.' };
+    const tids = String(row[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean);
+    if (!tids.length) return { requestId: reqId, reply: null, reason: 'This request was sent before replies were tracked — any reply is in the sender\'s Gmail.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const createdMs = (row[DR.CREATED_AT] instanceof Date) ? row[DR.CREATED_AT].getTime()
+      : (parseTimestampMs_(String(row[DR.CREATED_AT] || ''), CONFIG.TIMEZONE) || 0);
+    const dir = drReplyDirectory_();
+    const pick = drRequestReplyPick_(row, reqId, createdMs, dir, drReplyExcludedBase_(), drSharedRequestIds_(sh, reqId, tids));
+    if (!pick) return { requestId: reqId, reply: null, reason: 'No reply from the department in the thread yet.' };
+    const m = pick.msg;
+    return {
+      requestId: reqId,
+      reply: {
+        from: dir.names[m.fromAddr] || m.fromAddr,
+        at: Utilities.formatDate(new Date(m.ms), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a'),
+        verdict: pick.verdict,
+        body: String(m.body || '').trim().slice(0, 8000),
+      },
+    };
+  } catch (err) { return { error: 'Could not read the reply: ' + err.message }; }
+}
 /** Reads the candidate rows (no lock — Gmail reads are slow), decides each,
  *  then applies the writes under the ScriptLock after re-reading every row
  *  (a request resolved, reopened or already marked in the meantime is left
@@ -689,36 +785,12 @@ function drReplyScanCore_() {
   cands.forEach(function (c) {
     try {
       const r = c.row;
-      const reopenedMs = parseMs(r[DR.REOPENED_AT]);
-      const excluded = Object.assign({}, baseExcl);
-      const agent = String(r[DR.BY_EMAIL] || '').trim().toLowerCase();
-      if (agent) excluded[agent] = 1;
-      const deptAddrs = {}, deptDomains = {};
-      drSplitDepts_(String(r[DR.TO_DEPT] || '')).forEach(function (d) {
-        const b = dir.byDept[String(d).toLowerCase()];
-        if (!b) return;
-        b.addrs.forEach(function (a) { deptAddrs[a] = 1; });
-        b.domains.forEach(function (x) { deptDomains[x] = 1; });
-      });
-      const msgs = [];
-      String(r[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
-        const th = GmailApp.getThreadById(tid);
-        if (!th) return;
-        th.getMessages().forEach(function (gm) {
-          msgs.push({
-            fromAddr: drAddrOf_(gm.getFrom()), ms: gm.getDate().getTime(), subject: gm.getSubject(),
-            autoSubmitted: gm.getHeader('Auto-Submitted'), xAutoreply: gm.getHeader('X-Autoreply'),
-            precedence: gm.getHeader('Precedence'), body: gm.getPlainBody(),
-          });
-        });
-      });
-      out.scanned++;
       const shared = {};
       String(r[DR.THREAD_ID] || '').split(/\s+/).filter(Boolean).forEach(function (tid) {
         (byThread[tid] || []).forEach(function (rid) { if (rid !== c.reqId) shared[rid] = 1; });
       });
-      const pick = drReplyPick_(msgs, { afterMs: Math.max(c.createdMs, reopenedMs || 0), excluded: excluded,
-        deptAddrs: deptAddrs, deptDomains: deptDomains, token: c.reqId, sharedTokens: Object.keys(shared) });
+      const pick = drRequestReplyPick_(r, c.reqId, c.createdMs, dir, baseExcl, Object.keys(shared));
+      out.scanned++;
       if (!pick) return;
       const at = Utilities.formatDate(new Date(pick.msg.ms), CONFIG.TIMEZONE, "yyyy-MM-dd'T'HH:mm:ss");
       // Already recorded — or a person already answered THIS reply "Still open"

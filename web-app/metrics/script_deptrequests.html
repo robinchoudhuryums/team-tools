@@ -14,7 +14,7 @@
 // EXPAND cache + open state — the A5 spanishExpand_ shape. State, not the
 // DOM, is the source of truth, so a card repaint keeps an open card open and
 // a second Expand costs no RPC.
-const DR_STATE = { data: null, bodies: {}, expanded: {} };
+const DR_STATE = { data: null, bodies: {}, expanded: {}, replies: {}, replyOpen: {} };
 
 function enterDeptRequestsView(area) {
   stopClock();
@@ -523,14 +523,14 @@ function drRequestCardHtml_(item) {
     '" aria-expanded="' + (isOpen ? 'true' : 'false') + '" aria-controls="' + detailId +
     '" onclick="drExpand_(this)">' + (isOpen ? 'Collapse' : 'Expand') + '</button>';
   const detail = '<div class="dr-detail" id="' + detailId + '"' + (isOpen ? '' : ' hidden') + '>' +
-    (isOpen ? drDetailHtml_(DR_STATE.bodies[item.requestId]) : '') + '</div>';
+    (isOpen ? drDetailHtml_(DR_STATE.bodies[item.requestId]) : '') + '</div>' + drReplyPanelHtml_(item, 'card');
   return '<div class="sp-task js-anim ' + drRowToneCls_(item) + '" data-req="' + esc(item.requestId) + '">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(item.toDept || '—') + '</span>' +
       drCardStatusHtml_(item) + '</div>' +
     '<div class="sp-task-subj">' + subj + '</div>' +
     '<div class="sp-task-body">' + body + '</div>' +
     detail +
-    '<div class="sp-task-actions">' + expandBtn + resolveBtn + '</div>' +
+    '<div class="sp-task-actions">' + expandBtn + drReplyBtnHtml_(item, 'card') + resolveBtn + '</div>' +
   '</div>';
 }
 
@@ -627,6 +627,101 @@ function drExpand_(btn) {
     .getDeptRequestDetail(id);
 }
 
+// ── Show reply (DR-3, operator 2026-10-27) ──────────────────────────────────
+// A request the department answered by email carries a Show reply button: the
+// reply its status was decided on, read live (getDeptRequestReply — the
+// sender, the receiving department or a manager; never stored) and drawn with
+// the Spanish Inbox's conversation renderer (spanishBodyHtml_: the reply on
+// its own, the quoted history folded, signatures and footers hidden). The
+// request card and its "Replies to check" card each keep their own open state
+// (`ctx`), so opening one does not open a second copy of the reply.
+
+/** PURE — did the department answer by email? A reply time, a reply verdict,
+ *  or a resolve by reply. */
+function drHasReply_(item) {
+  return !!(item && (item.repliedAt || item.replyVerdict || item.resolvedVia === 'reply'));
+}
+function drReplyKey_(ctx, id) { return ctx + ':' + id; }
+function drReplyPanelId_(ctx, id) { return 'dr-reply-' + ctx + '-' + String(id || '').replace(/[^A-Za-z0-9_-]/g, '_'); }
+function drReplyIsOpen_(ctx, id) {
+  const st = DR_STATE;
+  return !!(st.replyOpen && st.replyOpen[drReplyKey_(ctx, id)] && st.replies && st.replies[id] != null);
+}
+function drReplyBtnHtml_(item, ctx) {
+  if (!drHasReply_(item)) return '';
+  const open = drReplyIsOpen_(ctx, item.requestId);
+  return '<button type="button" class="sp-more dr-reply-btn" data-req="' + esc(item.requestId) + '" data-dr-ctx="' + esc(ctx) +
+    '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + drReplyPanelId_(ctx, item.requestId) +
+    '" onclick="drReplyToggle_(this)">' + icon('mail', 12) + ' ' + (open ? 'Hide reply' : 'Show reply') + '</button>';
+}
+function drReplyPanelHtml_(item, ctx) {
+  if (!drHasReply_(item)) return '';
+  const open = drReplyIsOpen_(ctx, item.requestId);
+  return '<div class="dr-reply" id="' + drReplyPanelId_(ctx, item.requestId) + '"' + (open ? '' : ' hidden') + '>' +
+    (open ? drReplyInnerHtml_(DR_STATE.replies[item.requestId]) : '') + '</div>';
+}
+/** PURE — the panel from a getDeptRequestReply payload. No reply states the
+ *  server's reason (INV-187). Every string is escaped; the body goes through
+ *  the conversation renderer, which escapes it. */
+function drReplyInnerHtml_(r) {
+  if (!r) return '';
+  if (!r.reply) return '<div class="dr-detail-none">' + icon('info', 12) + ' ' + esc(r.reason || 'No reply to show.') + '</div>';
+  const p = r.reply;
+  return '<div class="dr-reply-head">' + icon('mail', 12) + ' <span class="dr-reply-from">' + esc(p.from || 'The department') + '</span>' +
+    (p.at ? '<span class="dr-reply-at">' + esc(p.at) + '</span>' : '') + '</div>' +
+    spanishBodyHtml_(p.body);
+}
+/** Show ⇄ Hide a card's reply panel — drExpand_'s shape: one RPC per request,
+ *  cached; nav-guarded; a button repainted away mid-fetch falls back to the
+ *  state-driven repaint. */
+function drReplyToggle_(btn) {
+  const id = btn.getAttribute('data-req');
+  const ctx = btn.getAttribute('data-dr-ctx') || 'card';
+  const card = btn.closest('.sp-task');
+  if (!card || !id) return;
+  const st = DR_STATE;
+  st.replies = st.replies || {}; st.replyOpen = st.replyOpen || {};
+  const key = drReplyKey_(ctx, id);
+  const panel = card.querySelector('.dr-reply');
+  const label = function (open) {
+    btn.innerHTML = icon('mail', 12) + ' ' + (open ? 'Hide reply' : 'Show reply');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  if (st.replyOpen[key]) {
+    st.replyOpen[key] = false;
+    if (panel) { panel.hidden = true; panel.innerHTML = ''; }
+    label(false);
+    return;
+  }
+  const open = function () {
+    st.replyOpen[key] = true;
+    if (panel) { panel.innerHTML = drReplyInnerHtml_(st.replies[id]); panel.hidden = false; }
+    label(true);
+  };
+  if (st.replies[id] != null) { open(); return; }   // cached — no second read
+  const requestedView = currentView;
+  btn.disabled = true; btn.textContent = 'Loading…';
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (currentView !== requestedView) return;
+      btn.disabled = false;
+      if (!r || r.error) { label(false); showToast((r && r.error) || 'Could not load the reply', 'toast-error'); return; }
+      st.replies[id] = r;
+      if (document.body.contains(btn)) open();
+      else {
+        st.replyOpen[key] = true;
+        if (ctx === 'look') { const host = document.getElementById('dr-looks'); if (host) host.outerHTML = drLooksHtml_(DR_LAST_DATA); }
+        else drRepaintRequest_(id);
+      }
+    })
+    .withFailureHandler(function (e) {
+      if (currentView !== requestedView) return;
+      btn.disabled = false; label(false);
+      showToast((e && e.message) || 'Could not load the reply', 'toast-error');
+    })
+    .getDeptRequestReply(id);
+}
+
 /** The manager table's "Not timed" cell — the resolved rows that contribute
  *  no duration (note #3). `manualResolved` = marked in the app; `untrackedResolved`
  *  = legacy rows resolved before ResolvedVia existed. Both are REPORTED rather
@@ -720,7 +815,11 @@ function drMgrTeamHtml_(data) {
  *  the id — no value from the payload ever enters a selector string. */
 function drCardNodes_(id) {
   const out = [];
-  const all = document.querySelectorAll('.sp-task[data-req]');
+  // DR-4 (2026-10-27): a "Replies to check" card carries the same class and
+  // data-req, and drRepaintRequest_ replaced it with a full REQUEST card — a
+  // resolved request standing inside the Replies group. Its own renderer
+  // (drLooksHtml_) repaints it.
+  const all = document.querySelectorAll('.sp-task[data-req]:not(.dr-look)');
   for (let i = 0; i < all.length; i++) {
     if (String(all[i].getAttribute('data-req')) === String(id)) out.push(all[i]);
   }
@@ -851,6 +950,9 @@ function drResolveClick_(btn) {
         // next ENTER refetches rather than serving it as fresh.
         DR_STATE.entry = null;
         if (currentView !== requestedView) return;
+        // DR-4: a resolved request leaves "Replies to check" too.
+        const looksHost = document.getElementById('dr-looks');
+        if (looksHost) looksHost.outerHTML = drLooksHtml_(DR_LAST_DATA);
         drRepaintRequest_(id);
         if (DR_LAST_DATA && DR_LAST_DATA.isManager) drReconcile_(requestedView, id);
       } else {
@@ -892,7 +994,8 @@ function drLookRowHtml_(item) {
     '<div class="sp-task-subj">' + subj + '</div>' +
     '<div class="sp-task-body dr-look-why">' + icon('info', 12) + ' ' +
       esc('Held back because ' + (item.replyReasonLabel || 'the reply did not clearly say it was done') + '.') + '</div>' +
-    '<div class="sp-task-actions">' +
+    drReplyPanelHtml_(item, 'look') +
+    '<div class="sp-task-actions">' + drReplyBtnHtml_(item, 'look') +
       '<button type="button" class="sp-more sp-resolve" data-req="' + esc(item.requestId) + '" data-dr-look="resolved" onclick="drLookAnswerClick_(this)">' +
         icon('check', 12) + ' Resolved</button>' +
       '<button type="button" class="sp-more" data-req="' + esc(item.requestId) + '" data-dr-look="open" onclick="drLookAnswerClick_(this)">' +
@@ -1083,6 +1186,14 @@ function drFmtMin_(min) {
     letter-spacing: 0.04em; color: var(--muted); padding-top: 2px; }
   .dr-detail-v { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
   .dr-detail-none { display: flex; align-items: flex-start; gap: 6px; color: var(--muted); }
+  /* DR-3: the department's reply, in the Spanish Inbox's conversation format. */
+  .dr-reply { margin-top: 8px; padding: 8px 10px; background: var(--paper-card);
+    border: 1px solid var(--line); border-left: 3px solid var(--info); border-radius: var(--radius-sm); font-size: 12px; }
+  .dr-reply[hidden] { display: none; }   /* the [hidden] display companion */
+  .dr-reply-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); margin-bottom: 6px; }
+  .dr-reply-from { font-weight: 600; color: var(--ink); }
+  .dr-reply-at { font-size: 11px; }
+  .dr-reply-btn { display: inline-flex; align-items: center; gap: 4px; }
   @media (max-width: 480px) {
     .dr-detail-row { grid-template-columns: 1fr; }
   }

@@ -998,6 +998,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // NOTE's fields, keyed by the request the button names (a FUNCTION of the
     // id, the F14 rule). r6 is a LEGACY row with no NoteId, so the server
     // returns note:null + a named reason — that state is on camera too.
+    // DR-3 (operator 2026-10-27): the department reply a request's status was
+    // decided on, read live — Gmail's plain text with the request quoted under
+    // it, the shape the card's conversation renderer cleans.
+    getDeptRequestReply: function (id) {
+      const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || [], FIXTURES.getDeptRequests.recentResolved || []);
+      const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];
+      if (!r) return { error: 'Request not found.' };
+      if (!(r.repliedAt || r.replyVerdict || r.resolvedVia === 'reply')) return { requestId: r.requestId, reply: null, reason: 'No reply from the department in the thread yet.' };
+      return { requestId: r.requestId, reply: { from: r.resolvedBy || 'Priya Raman', at: r.repliedAt || 'Oct 27, 2026 10:15 AM', verdict: r.replyVerdict || 'resolved',
+        body: ['Is this the patient with the order from the 2nd, or the one from last month? The account shows two', 'open orders and I want to close the right one.', '',
+          'Thanks,', 'Priya Raman', 'Billing Specialist', 'UniversalMed Supply', '*P:* 972-555-0100 Ext. 210 <(972)%20555-0100>', '',
+          'On Mon, Oct 27, 2026 at 8:30 AM ' + (r.byName || 'Nina Patel') + ' <', 'agent@example.com> wrote:', '',
+          '> ' + (r.label || 'Close Order') + ' · ' + (r.patientTrx || ''), '>', '> Please close the order and confirm.', '>',
+          '> The documents accompanying this transmission contain confidential', '> information belonging to the sender.'].join('\n') } };
+    },
     getDeptRequestDetail: function (id) {
       const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || [], FIXTURES.getDeptRequests.recentResolved || []);
       const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];

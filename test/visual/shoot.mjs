@@ -209,6 +209,9 @@ const SCENARIOS = [
   // Operator 2026-09-10 (note 6) — a request card EXPANDED: the source note's
   // fields in the detail panel under a subject carrying patient & TRX.
   ['deptreq-expanded-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
+  // DR-3 (operator 2026-10-27): the department's reply on a Replies-to-check card, drawn as a conversation.
+  ['deptreq-reply-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
+  ['deptreq-reply-dark-mobile', { tool: 'metrics', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
   // 22post A-7 — the manager top row (team-wide cards beside the resolution
   // table) STACKS in the pop-out; and the sort + date controls in dark mode.
   ['deptreq-light-compact', { tool: 'metrics', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],

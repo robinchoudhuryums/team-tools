@@ -13836,7 +13836,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'repaints the card + KPI strip, never the whole view');
     // No payload value is ever concatenated into a selector (INV-193 family).
     const nodes = strip(extractFunction('metrics/script_deptrequests.html', 'drCardNodes_'));
-    assert.ok(/querySelectorAll\('\.sp-task\[data-req\]'\)/.test(nodes) && !/data-req="' \+/.test(nodes),
+    assert.ok(/querySelectorAll\('\.sp-task\[data-req\]:not\(\.dr-look\)'\)/.test(nodes) && !/data-req="' \+/.test(nodes),
       'finds cards by comparing the decoded attribute, not by building a selector from the id');
     // The KPI strip has ONE renderer, shared by the full render and the patch.
     assert.ok((dr.match(/drKpiStripHtml_\(/g) || []).length >= 3, 'the KPI strip is a shared renderer');
@@ -30139,7 +30139,7 @@ test('D-2: the hourly scan reads only open, threaded, recent requests; resolves 
   // Date must still construct real dates inside the core.
   ctx.Date = Date; ctx.Date.now = () => now;
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const origNow = Date.now; Date.now = () => now;
   let r;
@@ -30165,8 +30165,68 @@ test('D-2: the hourly scan reads only open, threaded, recent requests; resolves 
   assert.strictEqual(sh.writes.length, before, 'idempotent — no rewrite of a recorded verdict');
   // The under-lock re-check: a row resolved between the read and the write is left alone.
   const core = stripJsComments_(extractRawFunction('Code.js', 'drReplyScanCore_'));
-  assert.ok(core.indexOf('getThreadById') < core.indexOf('lock.waitLock'), 'Gmail is read BEFORE the lock');
+  // DR-3 (2026-10-27): the per-request read moved into drRequestReplyPick_, shared with the card's Show reply.
+  const pickSrc = stripJsComments_(extractRawFunction('Code.js', 'drRequestReplyPick_'));
+  assert.ok(/getThreadById/.test(pickSrc) && core.indexOf('drRequestReplyPick_(') >= 0 && core.indexOf('drRequestReplyPick_(') < core.indexOf('lock.waitLock'),
+    'Gmail is read BEFORE the lock (through the shared per-request reader)');
   assert.ok(/drStatus_\(hit\.row\) !== 'open' \|\| String\(hit\.row\[DR\.REOPENED_AT\] \|\| ''\) !== d\.reopened/.test(core), 'and every row is re-checked (still open, not reopened since) under it');
+});
+
+test('DR-3 (operator 2026-10-27): getDeptRequestReply returns the department reply the status was decided on — the reply scan\'s own per-request reader — to the sender, the desk or a manager only, never reading Gmail for anyone else; an untracked request, no reply yet and a reply that names another sharer of the thread each say so (driven)', () => {
+  const now = Date.parse('2026-09-28T15:00:00Z');
+  const iso = (h) => new Date(now - h * 3600000).toISOString().slice(0, 19);
+  const sh = drDSheet_([
+    drDRow_({ REQ_ID: 'A', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'resolved', RESOLVED_VIA: 'reply', LABEL: 'L', THREAD_ID: 'tA' }),
+    drDRow_({ REQ_ID: 'B', BY_ID: 'E2', BY_EMAIL: 'bo@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tB' }),
+    drDRow_({ REQ_ID: 'C', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L' }),
+    drDRow_({ REQ_ID: 'F', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tF', REOPENED_AT: iso(1) }),
+    drDRow_({ REQ_ID: 'S1', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+    drDRow_({ REQ_ID: 'S2', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+  ]);
+  const msg = (from, hAgo, body) => ({ getFrom: () => from, getDate: () => new Date(now - hAgo * 3600000), getSubject: () => 'Re: L', getHeader: () => '', getPlainBody: () => body });
+  const threads = {
+    tA: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 3, 'Done, refunded.\n\nOn Mon Ana wrote:\n> please refund')],
+    tB: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 2, 'Can you send the TRX?')],
+    tF: [msg('Dana <dana@ums.com>', 3, 'Done.')],
+    tS: [msg('Dana <dana@ums.com>', 2, 'Done for request S2.')],
+  };
+  const read = [];
+  let allow = true, gmailThrows = false;
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date, isFinite, console,
+    DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_MAX_SCAN: 4000, DR_REPLY_VERDICTS: ['resolved', 'needs-look'], CONFIG: { TIMEZONE: 'UTC' },
+    getEmployeeInfo_: () => ({ id: 'E9', email: 'm@ums.com' }), drCanAct_: () => allow,
+    getOrCreateDeptRequestsSheet_: () => sh,
+    parseTimestampMs_: (x) => (x ? Date.parse(x + 'Z') : 0),
+    drReplyDirectory_: () => ({ byDept: { billing: { addrs: ['billing@ums.com', 'dana@ums.com'], domains: ['ums.com'] } }, names: { 'dana@ums.com': 'Dana Whitfield' } }),
+    drReplyExcludedBase_: () => ({ 'robin@ums.com': 1 }),
+    GmailApp: { getThreadById: (id) => { if (gmailThrows) throw new Error('Gmail quota'); read.push(id); return threads[id] ? { getMessages: () => threads[id] } : null; } },
+    Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 16) },
+  });
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_',
+    'drReplyPick_', 'drRequestReplyPick_', 'drSharedRequestIds_', 'getDeptRequestReply'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (o) => JSON.parse(JSON.stringify(o));
+  allow = false;
+  assert.deepStrictEqual(J(ctx.getDeptRequestReply('B')), { error: 'Request not found.' }, 'a caller who may not act on the request is refused…');
+  assert.deepStrictEqual(read, [], '…before any Gmail read');
+  allow = true;
+  const b = J(ctx.getDeptRequestReply('B'));
+  assert.deepStrictEqual([b.reply.from, b.reply.verdict, b.reply.body], ['Dana Whitfield', 'needs-look', 'Can you send the TRX?'], 'the held reply, from the department, by roster name');
+  const a = J(ctx.getDeptRequestReply('A'));
+  assert.strictEqual(a.reply.verdict, 'resolved');
+  assert.ok(/^Done, refunded\.\n\nOn Mon Ana wrote:\n> please refund$/.test(a.reply.body), 'the WHOLE plain body ships — the card renderer folds the quoted history');
+  assert.ok(/before replies were tracked/.test(J(ctx.getDeptRequestReply('C')).reason), 'no thread recorded: says so');
+  assert.ok(/No reply from the department/.test(J(ctx.getDeptRequestReply('F')).reason), 'a reply before the reopen is not this request\'s reply');
+  assert.strictEqual(J(ctx.getDeptRequestReply('S1')).reply, null, 'on a shared thread, a reply naming the OTHER request is not S1\'s');
+  assert.strictEqual(J(ctx.getDeptRequestReply('S2')).reply.body, 'Done for request S2.', 'and is S2\'s');
+  assert.deepStrictEqual(J(ctx.getDeptRequestReply('nope')), { error: 'Request not found.' });
+  gmailThrows = true;
+  assert.ok(/^Could not read the reply: Gmail quota$/.test(J(ctx.getDeptRequestReply('B')).error), 'a failed read is an error, never "no reply" (g128)');
+  // ONE reader: the scan and the card share it, so they cannot disagree on which reply decided.
+  const scan = stripJsComments_(extractRawFunction('Code.js', 'drReplyScanCore_'));
+  const ep = stripJsComments_(extractRawFunction('Code.js', 'getDeptRequestReply'));
+  assert.ok(/drRequestReplyPick_\(/.test(scan) && /drRequestReplyPick_\(/.test(ep) && !/drReplyPick_\(msgs/.test(scan), 'the scan and the endpoint call the one per-request reader');
+  assert.ok(!/writeAuditLog_|setValue|CacheService|PropertiesService/.test(ep), 'the reply is never stored, cached or logged');
 });
 
 test('D-3: Mark unresolved — the resolve rule decides who, the resolution clears, ReopenedAt is stamped, and a request that is already open is a no-op (driven)', () => {
@@ -33154,7 +33214,7 @@ const c23DrScan_ = (rows, threads, now) => {
     drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
   ctx.Date = Date;   // real dates inside the core (the D-2 pin's step); Date.now is pinned below
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const orig = Date.now; Date.now = () => now;
   try { ctx.drReplyScanCore_(); } finally { Date.now = orig; }
@@ -38369,7 +38429,7 @@ const e4Scan_ = (rows, threads, now) => {
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, writeAuditLog_: () => {}, drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const origNow = Date.now; Date.now = () => now;
   let r;
@@ -38450,7 +38510,9 @@ test('E4 (cycle 25): the review report — per rule, waiting / answered Resolved
 });
 
 test('E4 (cycle 25): the Dept Requests tab — "Replies to check" lists every open request waiting on a look, once, longest-waiting first; a kept-open or resolved one leaves; each row says WHY and offers Resolved / Still open by data-*; the card\'s tooltip carries the reason (driven)', () => {
-  ['drLooksToCheck_', 'drLookRowHtml_', 'drLooksHtml_'].forEach((f) => loadFunction(sb, 'metrics/script_deptrequests.html', f));
+  if (!vm.runInContext('typeof DR_STATE', sb).startsWith('o')) vm.runInContext('var DR_STATE = { replies: {}, replyOpen: {} };', sb);
+  ['drHasReply_', 'drReplyKey_', 'drReplyPanelId_', 'drReplyIsOpen_', 'drReplyBtnHtml_', 'drReplyPanelHtml_', 'drReplyInnerHtml_',
+    'drLooksToCheck_', 'drLookRowHtml_', 'drLooksHtml_'].forEach((f) => loadFunction(sb, 'metrics/script_deptrequests.html', f));
   const it = (id, o) => Object.assign({ requestId: id, status: 'open', toDept: 'Billing', label: 'Close Order', replyVerdict: 'needs-look', repliedAt: 'x', repliedMs: 5 }, o || {});
   // The display strings would sort the wrong way round ("Oct 15, 11:00 AM" < "Oct 15, 9:00 AM") — the order is by repliedMs.
   const data = { mine: [it('a', { repliedAt: 'Oct 15, 9:00 AM', repliedMs: 2000 }), it('kept', { replyVerdict: 'kept-open' }), it('res', { status: 'resolved' })],

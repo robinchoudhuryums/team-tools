@@ -655,6 +655,21 @@ not restate it. Server endpoints live in the fourteen server files
      text (g38); a blank field is left out, and so is a Patient & TRX that only
      repeats the card's subject; a note with nothing to show says so.
 
+     **Show reply (operator 2026-10-27, round 10).** A request the reply scan
+     has read — Replied, Responded — needs a look, or a "Replies to check" card
+     — carries **Show reply**: `getDeptRequestReply` reads the thread live and
+     returns the reply the scan judges, through the scan's own reader
+     (`drRequestReplyPick_` — the same thread ids, cut-off, excluded senders,
+     department addresses and shared-thread token), so the text shown is the one
+     the status was decided on. Gated by `drCanAct_` (sender, receiving-desk
+     member, manager); a refused caller reads "Request not found.". It is drawn
+     by the Spanish conversation renderer (`spanishBodyHtml_`, newest message
+     first, earlier ones folded) under who replied and when, cached for the
+     page only, and never stored, logged or audited. A request sent before
+     replies were tracked, or with no reply yet, says so. Resolving a request
+     from its main card no longer repaints its "Replies to check" card as a
+     second request card (DR-4).
+
      **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
      **Replies to check**: each department reply the hourly check held back,
      with the rule that held it ("asks a question", "only acknowledges", …) and

@@ -3272,6 +3272,56 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
   assert.ok(/predates note linking/.test(p2.textContent), 'the reason is stated (INV-187)');
 });
 
+test('DR-3/DR-4 DOM: Show reply — only on a request the department answered; ONE live read, drawn as the conversation (the reply, its quoted history folded, the footer hidden, escaped); Hide makes no RPC; the request card and its Replies-to-check card keep their own state; resolving from the card takes the request out of Replies to check rather than turning that card into a request card', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const base = { toDept: 'Billing', createdAt: 'Oct 27, 2026 8:30 AM', byName: 'Me', elapsedMin: 30, elapsedWallMin: 30, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 };
+  h.run.respond('getDeptRequests', () => ({ isManager: false, myDepts: [], departments: ['Billing'],
+    mine: [
+      Object.assign({ requestId: 'r1', label: 'Close Order', status: 'open', replyVerdict: 'needs-look', repliedAt: 'Oct 27, 10:15 AM', repliedMs: 5, replyReasonLabel: 'the reply asks a question' }, base),
+      Object.assign({ requestId: 'r2', label: 'Verified Shipping', status: 'open' }, base)],
+    incoming: [], truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 0 }));
+  let replyCalls = 0;
+  h.run.respond('getDeptRequestReply', (id) => { replyCalls++; return { requestId: id, reply: { from: 'Dana <b>W</b>', at: 'Oct 27, 2026 10:15 AM', verdict: 'needs-look',
+    body: 'Which patient — the <img src=x> one?\n\nThanks,\nDana\nBilling Specialist\nUMS\n\nOn Mon, Oct 27, 2026 at 8:30 AM Me <me@x.com> wrote:\n> Please close the order.\n> --\n> You received this message because you are subscribed to the Google Groups "Billing" group.' } }; });
+  h.run.respond('resolveDeptRequest', () => ({ success: true }));
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const look = () => h.$('#dr-looks .dr-look[data-req="r1"]');
+  const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
+  assert.ok(look() && card('r1') && card('r2'), 'the look card and both request cards render');
+  assert.ok(card('r1').querySelector('.dr-reply-btn') && look().querySelector('.dr-reply-btn'), 'a request the department answered offers Show reply, on both cards');
+  assert.strictEqual(card('r2').querySelector('.dr-reply-btn'), null, 'one with no reply does not');
+  const btn = () => card('r1').querySelector('.dr-reply-btn');
+  const panel = () => h.$('#' + btn().getAttribute('aria-controls'));
+  assert.ok(panel() && panel().hidden && btn().getAttribute('aria-expanded') === 'false', 'aria-controls names a hidden panel');
+  const press = (b) => h.read('drReplyToggle_')(b);   // jsdom never compiles an inline onclick
+  press(btn());
+  assert.strictEqual(replyCalls, 1, 'ONE read');
+  assert.strictEqual(panel().hidden, false);
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
+  assert.ok(/Hide reply/.test(btn().textContent));
+  const p = panel();
+  assert.strictEqual(p.querySelector('.dr-reply-from').textContent, 'Dana <b>W</b>', 'the sender, escaped');
+  assert.ok(/Which patient — the <img src=x> one\?/.test(p.querySelector('.sp-msg-text').textContent) && !p.querySelector('img'), 'the reply first, inert');
+  assert.ok(p.querySelector('details.sp-earlier') && /Please close the order\./.test(p.querySelector('details.sp-earlier').textContent), 'the quoted request folded under "earlier"');
+  assert.ok(!/Billing Specialist|You received this message/.test(p.textContent), 'the signature and the group footer are hidden');
+  assert.ok(p.querySelector('.sp-trim-note'), 'and the panel says so');
+  assert.strictEqual(look().querySelector('.dr-reply').hidden, true, 'the look card\'s panel keeps its own state');
+  press(btn());   // Hide
+  assert.strictEqual(replyCalls, 1, 'Hide makes no RPC');
+  assert.strictEqual(panel().hidden, true);
+  press(look().querySelector('.dr-reply-btn'));
+  assert.strictEqual(replyCalls, 1, 'the look card reads the cached reply');
+  assert.strictEqual(look().querySelector('.dr-reply').hidden, false);
+  // DR-4: resolve from the request card — the look card leaves the group, never becoming a request card.
+  h.read('drResolveClick_')(card('r1').querySelector('.sp-resolve'));
+  h.flushTimers();
+  assert.strictEqual(h.$('#dr-looks .sp-task'), null, 'Replies to check no longer holds the resolved request');
+  assert.strictEqual(h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === 'r1').length, 1, 'and there is ONE request card for it, not two');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 section('Operator notes 2026-09-10 — Batch D (N10 presence signal)');
 

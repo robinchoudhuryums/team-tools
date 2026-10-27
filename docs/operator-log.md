@@ -10,10 +10,10 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail (25post rounds 8–9)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply (25post rounds 8–10)
 
-**Adds NO Script Properties and changes no server code** — a deploy (New
-version) and a handbook re-import.
+**Adds NO Script Properties** — a deploy (New version) and a handbook
+re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
 
 - **Expand on a Spanish Inbox request** shows the newest message on its own,
   in paragraphs, with the earlier messages of the thread folded under "N
@@ -30,6 +30,14 @@ version) and a handbook re-import.
   highlight as on the note card (it printed the `**` markers), leaves out
   blank fields instead of drawing "—" rows, and drops a Patient & TRX line that
   only repeats the card's subject.
+- **Show reply on a Dept Request** (round 10): a request the hourly reply
+  check has read, and each "Replies to check" card, has a **Show reply** button
+  that reads the department's reply from the thread and draws it like a
+  Spanish Inbox message — the reply the check judged, with who sent it and
+  when. Only the sender, the receiving department and managers can open it;
+  nothing is stored. Requests sent before replies were tracked say the reply is
+  in the sender's Gmail. Resolving from the main card no longer turns the
+  "Replies to check" card into a duplicate request card.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 
