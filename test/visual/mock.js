@@ -1006,7 +1006,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       if (!r.patientTrx) { base.reason = 'This request predates note linking — open the sender\'s notes for the date instead.'; return base; }
       base.note = { callback: '(555) 201-4477', caller: 'Rosa Delgado', relationship: 'Daughter',
         patientAndTrx: r.patientTrx, issue: 'Patient has not received the replacement cushion ordered on the 2nd; tracking shows delivered.',
-        transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and re-ship if not located by Friday.',
+        transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and **re-ship if not located by Friday**.',
         dateLocal: daysAgo(1) };
       return base;
     },

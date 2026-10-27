@@ -552,24 +552,37 @@ function drIsExpanded_(id) {
 /** The panel's inner markup from a getDeptRequestDetail payload. Every field
  *  is escaped (they are free-typed note text). A `note: null` payload states
  *  the server's REASON (INV-187 — "nothing to show" is said, never an empty
- *  panel that reads as an empty note). */
+ *  panel that reads as an empty note).
+ *  Operator 2026-10-27 (the Spanish Inbox treatment, applied where it fits):
+ *  Issue and Resolution draw the note's own **bold** / __underline__ /
+ *  ==highlight== markers through the note card's renderer, cnFmtHtml_ over the
+ *  ESCAPED text (g38) — the panel printed the stars; a blank field is left out
+ *  rather than drawn as a "—" row, and so is a Patient & TRX that only repeats
+ *  the card's subject. A note with nothing left to show says so. */
 function drDetailHtml_(d) {
   if (!d) return '';
   if (!d.note) {
     return '<div class="dr-detail-none">' + icon('info', 12) + ' ' + esc(d.reason || 'No linked note.') + '</div>';
   }
   const n = d.note;
-  const row = function (label, val) {
+  const str = function (v) { return String(v == null ? '' : v).trim(); };
+  const row = function (label, val, fmt) {
+    if (!str(val)) return '';
+    const v = fmt ? cnFmtHtml_(esc(str(val))) : esc(str(val));
     return '<div class="dr-detail-row"><div class="dr-detail-k">' + esc(label) + '</div>' +
-      '<div class="dr-detail-v">' + (val ? esc(val) : '<span class="dr-detail-blank">—</span>') + '</div></div>';
+      '<div class="dr-detail-v">' + v + '</div></div>';
   };
-  return row('Note date', n.dateLocal) +
+  const caller = str(n.caller) && str(n.relationship) ? str(n.caller) + ' (' + str(n.relationship) + ')'
+    : (str(n.caller) || (str(n.relationship) ? 'The ' + str(n.relationship).toLowerCase() : ''));
+  const pt = str(n.patientAndTrx) && str(n.patientAndTrx) !== str(d.patientTrx) ? n.patientAndTrx : '';
+  const html = row('Note date', n.dateLocal) +
     row('Callback', n.callback) +
-    row('Caller', n.caller + (n.relationship ? ' (' + n.relationship + ')' : '')) +
-    row('Patient & TRX', n.patientAndTrx) +
-    row('Issue', n.issue) +
+    row('Caller', caller) +
+    row('Patient & TRX', pt) +
+    row('Issue', n.issue, true) +
     row('Transferred to', n.transferredTo) +
-    row('Resolution', n.resolution);
+    row('Resolution', n.resolution, true);
+  return html || '<div class="dr-detail-none">' + icon('info', 12) + ' The linked note has nothing filled in.</div>';
 }
 
 /** Expand ⇄ Collapse a request card's detail panel. Nav-guarded on
@@ -1069,7 +1082,6 @@ function drFmtMin_(min) {
   .dr-detail-k { font-family: var(--mono); font-size: 10px; text-transform: uppercase;
     letter-spacing: 0.04em; color: var(--muted); padding-top: 2px; }
   .dr-detail-v { color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .dr-detail-blank { color: var(--muted-3); }
   .dr-detail-none { display: flex; align-items: flex-start; gap: 6px; color: var(--muted); }
   @media (max-width: 480px) {
     .dr-detail-row { grid-template-columns: 1fr; }

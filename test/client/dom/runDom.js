@@ -3223,7 +3223,7 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
     if (id === 'q2') return { requestId: 'q2', label: 'Verified Shipping', patientTrx: '', byName: 'Me', toDept: 'Shipping', note: null, reason: 'This request predates note linking.' };
     return { requestId: 'q1', label: 'Close Order', patientTrx: 'Ana <b>Ruiz</b> · TRX 1', byName: 'Me', toDept: 'Billing', reason: '',
       note: { callback: '555', caller: 'Ana', relationship: 'Self', patientAndTrx: 'Ana <b>Ruiz</b> · TRX 1',
-        issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated', dateLocal: '2026-09-01' } };
+        issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated **today**', dateLocal: '2026-09-01' } };
   });
   h.window.enterTool('metrics', 'metricsDeptReq');
   h.flushTimers();
@@ -3249,6 +3249,9 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
   assert.ok(/Escalated/.test(panel().textContent), 'the note fields render');
   assert.strictEqual(panel().querySelector('img'), null, 'the issue text is escaped — no live element from note text');
   assert.ok(/Bill <img src=x/.test(panel().textContent), 'and reads as text');
+  // Operator 2026-10-27: the note's markers render as on its card; blank and repeated rows are left out.
+  assert.ok(panel().querySelector('.dr-detail-v strong') && panel().querySelector('.dr-detail-v strong').textContent === 'today', 'a **marker** renders bold, through the card renderer');
+  assert.ok(!/Transferred to|Patient & TRX/.test(panel().textContent), 'a blank field and a subject-repeating Patient & TRX are left out');
   press('q1');   // Collapse
   assert.strictEqual(detailCalls, 1, 'Collapse makes no RPC');
   assert.strictEqual(panel().hidden, true);

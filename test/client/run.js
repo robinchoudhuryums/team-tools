@@ -24217,7 +24217,8 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
     'a real Expand button with aria-expanded + aria-controls (INV-173/174)');
   assert.ok(/<div class="dr-detail" id="' \+ detailId \+ '"' \+ \(isOpen \? '' : ' hidden'\)/.test(card), 'the panel renders from STATE — hidden unless expanded');
   const dh = nc(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'));
-  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /esc\(val\)/.test(dh), 'every detail field is escaped');
+  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /fmt \? cnFmtHtml_\(esc\(str\(val\)\)\) : esc\(str\(val\)\)/.test(dh),
+    'every detail field is escaped — the marker renderer only ever sees escaped text (g38); DR-1/DR-2 drives it');
   const ex = nc(extractFunction('metrics/script_deptrequests.html', 'drExpand_'));
   assert.ok(/if \(st\.bodies\[id\] != null\) \{ open\(\); return; \}/.test(ex), 'a cached detail serves the second Expand with no RPC');
   assert.ok(/currentView !== requestedView/.test(ex), 'nav-guarded');
@@ -24237,6 +24238,26 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   // (g) Editor test present + registered.
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
   assert.ok(/function test_deptReq_detailScoped\(/.test(tests) && /_integrationTest\('deptReq_detailScoped'/.test(tests), 'the scoped-detail editor test exists and is registered');
+});
+
+test('DR-1/DR-2 (operator 2026-10-27): the Dept Request detail draws Issue and Resolution with the note card\'s own markers, escaped first; a blank field and a Patient & TRX that repeats the subject are left out; an empty note says so (driven)', () => {
+  const ctx = vm.createContext({ String,
+    esc: (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: () => '<i></i>' });
+  vm.runInContext(/var CN_FMT_RULES = \[[\s\S]*?\];/.exec(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'))[0], ctx);
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnFmtHtml_'), ctx);
+  vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'), ctx);
+  const html = ctx.drDetailHtml_({ patientTrx: 'Ana Ruiz · TRX 1', note: { dateLocal: '2026-10-26', callback: '', caller: 'Rosa', relationship: 'Daughter',
+    patientAndTrx: 'Ana Ruiz · TRX 1', issue: 'Cushion **not received** — <img src=x>', transferredTo: '', resolution: 'Asked to ==re-ship== by __Friday__' } });
+  assert.ok(/Cushion <strong>not received<\/strong> — &lt;img src=x&gt;/.test(html), 'a marker renders, and the note text around it stays inert: ' + html);
+  assert.ok(/<mark class="cn-hl">re-ship<\/mark> by <u>Friday<\/u>/.test(html), 'highlight and underline on the Resolution');
+  assert.ok(/Rosa \(Daughter\)/.test(html), 'caller with relationship');
+  assert.ok(!/Callback|Transferred to/.test(html), 'blank fields are left out, never a "—" row');
+  assert.ok(!/Patient &amp; TRX/.test(html), 'a Patient & TRX that only repeats the card\'s subject is left out');
+  assert.ok(/Patient &amp; TRX/.test(ctx.drDetailHtml_({ patientTrx: 'Ana Ruiz · TRX 1', note: { patientAndTrx: 'Ana Ruiz · TRX 2' } })), 'a different one is shown');
+  assert.ok(/The daughter/.test(ctx.drDetailHtml_({ note: { relationship: 'Daughter' } })), 'a relationship with no name never reads " (Daughter)"');
+  assert.ok(/nothing filled in/.test(ctx.drDetailHtml_({ note: {} })), 'a note with nothing to show says so (INV-187), never an empty panel');
+  assert.ok(!/<strong>/.test(ctx.drDetailHtml_({ note: { callback: '**555**' } })), 'only Issue and Resolution carry markers, as on the note card');
 });
 
 test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), qaCanReviewEmail_ admits roster managers (driven), the assign check routes through it, getAdminConfig ships the list, the Admin card + handlers, fixture, omnibus tier', () => {

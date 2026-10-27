@@ -10,7 +10,7 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups (25post round 8)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail (25post rounds 8–9)
 
 **Adds NO Script Properties and changes no server code** — a deploy (New
 version) and a handbook re-import.
@@ -26,6 +26,10 @@ version) and a handbook re-import.
   phrases, and the section each answer opens with as a small chip.
 - **Re-import the handbook** after deploying: one router answer read "check
   [Fax History](peek:fig-…)"; the new `manual.json` reads "check Fax History".
+- **Expand on a Dept Request** shows the call note's bold, underline and
+  highlight as on the note card (it printed the `**` markers), leaves out
+  blank fields instead of drawing "—" rows, and drops a Patient & TRX line that
+  only repeats the card's subject.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

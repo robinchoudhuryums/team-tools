@@ -646,6 +646,15 @@ not restate it. Server endpoints live in the fourteen server files
      message, not the disclaimer. Client-only: the server's payload is
      unchanged.
 
+     **Dept Requests' Expand, checked against the same treatment (operator
+     2026-10-27).** Its panel was never an email dump — it is the linked call
+     note as labelled fields — so the conversation view does not apply. Two
+     things did: the note's own `**bold**` / `__underline__` / `==highlight==`
+     markers printed as stars, and every blank field drew a "—" row. Issue and
+     Resolution now render through the note card's `cnFmtHtml_` over escaped
+     text (g38); a blank field is left out, and so is a Patient & TRX that only
+     repeats the card's subject; a note with nothing to show says so.
+
      **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
      **Replies to check**: each department reply the hourly check held back,
      with the rule that held it ("asks a question", "only acknowledges", …) and
