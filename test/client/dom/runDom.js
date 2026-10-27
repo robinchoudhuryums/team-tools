@@ -1019,6 +1019,34 @@ test('F3: intakeClearForm_ nulls INTAKE_STATE.preview (drops cached patient PHI)
   assert.strictEqual(h.window.INTAKE_STATE.preview, null, 'cached preview (patient answers) cleared on form clear');
 });
 
+test('A1 DOM (operator 2026-10-27): a Sent PPD shows each recommendation WITH its reason, Complex before Standard, the stored HTML drawn as plain text, the selection beside the code', () => {
+  const h = boot();
+  const host = h.window.document.createElement('div');
+  host.innerHTML = h.window.intakeRenderSentDetail_({
+    formType: 'PPD', submissionId: 'P1', language: 'EN', answers: { '38': '320 lbs' }, feedback: [],
+    recommendations: {
+      complex: [{ hcpcs: 'K0843 (substitute K0862)', justification: 'MPO - <span style="text-decoration: underline;">Provide <strong>K0862</strong> as free upgrade</span>' }],
+      standard: [{ hcpcs: 'K0825', justification: "Captain's Seat | Weight 320 lbs — within this model’s 301–450 lbs range" },
+        { hcpcs: 'K0823', justification: '<img src=x onerror=alert(1)>' }],
+    },
+    selections: { 'K0825': { preferred: true, status: 'accepted' } },
+    factors: [],
+  });
+  const heads = Array.from(host.querySelectorAll('.intk-head')).map((e) => e.textContent);
+  assert.ok(heads.indexOf('Recommendations sent') >= 0, 'the section is there');
+  assert.deepStrictEqual(Array.from(host.querySelectorAll('.intk-sent-grp')).map((e) => e.textContent).join('|'), 'Complex|Standard', 'Complex first, as the email orders them');
+  const recs = Array.from(host.querySelectorAll('.intk-sent-rec'));
+  assert.strictEqual(recs.length, 3);
+  assert.strictEqual(recs[0].querySelector('.intk-sent-why').textContent, 'MPO - Provide K0862 as free upgrade', 'the stored HTML reads as its text');
+  assert.ok(/K0825/.test(recs[1].querySelector('.q').textContent) && recs[1].querySelector('.intk-sent-sel').textContent === '★ preferred · accepted', 'the selection rides under the code');
+  assert.strictEqual(recs[1].querySelector('.intk-sent-why').innerHTML, "Captain's Seat<br>Weight 320 lbs \u2014 within this model\u2019s 301\u2013450 lbs range", 'the A2 weight reason is shown, one reason per line');
+  assert.strictEqual(recs[2].querySelector('.intk-sent-sel'), null, 'no selection, no line');
+  assert.strictEqual(host.querySelector('img'), null, 'a hostile justification stays inert');
+  // Nothing sent → no section.
+  host.innerHTML = h.window.intakeRenderSentDetail_({ formType: 'PPD', submissionId: 'P2', language: 'EN', answers: {}, feedback: [], recommendations: { complex: [], standard: [] }, factors: [] });
+  assert.ok(!/Recommendations sent/.test(host.textContent), 'no recommendations → no empty section');
+});
+
 test('I1 (cycle 22): an amend lands on a BLANK form in the original language — the rep\'s draft never survives into it', () => {
   // The rep has another patient's PPD in progress (a stored draft). They open a
   // Spanish submission for patient A and press Amend. Before I1 the language

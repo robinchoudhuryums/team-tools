@@ -629,7 +629,7 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    pass read it rather than checking it. Edit the marker only by adding a
    scenario or by accepting a new gap deliberately:**
 
-   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, docsManage, intakeSent, myDocs, trainingManage
+   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, docsManage, myDocs, trainingManage
 
    Of those, `callNotesSearch` is the same card vocabulary the Log view
    already shoots (`callNotesHistory` gained its two scenarios with cycle 25

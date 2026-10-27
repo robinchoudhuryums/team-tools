@@ -137,6 +137,8 @@ const SCENARIOS = [
   // module (training queue, review candidates, per-rep, stats).
   ['intake-pmd-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', ''],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
+  // 25post A1: a Sent PPD's detail — each recommendation with its reason.
+  ['intake-sent-detail-light-wide', { tool: 'intake', tab: 'intakeSent' }, WIDE, 'light', '', "intakeOpenSent_(document.querySelector('[data-sent-idx]')); setTimeout(function () { var g = document.querySelector('.intk-sent-grp'); if (g) g.scrollIntoView({ block: 'start' }); }, 250)"],
   ['cn-teamnotes-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', ''],
   // Operator 2026-09-10 — the Per-Rep view: the read-only card with its
   // Coach / Delete actions had never been on camera (the default Team Notes

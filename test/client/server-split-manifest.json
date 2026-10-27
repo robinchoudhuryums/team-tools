@@ -3279,6 +3279,18 @@
     "drReplyScanCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post A2: intakeWeightReason_ (60_intake.js) — the weight reason for a heavy-duty model",
+   "added": [
+    "intakeWeightReason_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeFilterRecommendations_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8931,7 +8943,7 @@
   "intakeFilterRecommendations_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "ba887b69f72e52e5"
+   "sha": "adeb9be048ffa504"
   },
   "intakeGetSubmission": {
    "file": "60_intake.js",
@@ -9117,6 +9129,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "86f8d8feedcbd4a8"
+  },
+  "intakeWeightReason_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9858768c3066b239"
   },
   "invalidateCnAmbientCache_": {
    "file": "30_callnotes.js",

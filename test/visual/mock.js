@@ -994,6 +994,25 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       if (moved && (dr.myDepts || []).indexOf(moved.toDept) >= 0) dr.incoming = [moved].concat(dr.incoming || []);
       return { success: true, already: false };
     },
+    // 25post A1 (operator 2026-10-27): the Intake Sent tab — a list of one
+    // PPD and its detail, whose recommendations carry their REASONS (and the
+    // A2 weight reason on the heavy-duty chair). Fictional patient.
+    intakeListMySubmissions: function () {
+      return { submissions: [
+        { formType: 'PPD', submissionId: 'PPD-1', timestamp: '2026-10-27 10:12', repId: 'E-1001', repName: 'Avery Blake', patientInfo: 'Sample Patient \u00b7 TRX 000000', language: 'EN', recipient: 'power@example.com', amendsId: '', supersededBy: null }],
+        isManager: false, total: 1, cap: 100, failedTypes: [] };
+    },
+    intakeGetSubmission: function (formType, id) {
+      return { formType: 'PPD', submissionId: id, isOwn: true, amendsId: '', supersededBy: null, feedback: [], feedbackUnavailable: false,
+        timestamp: '2026-10-27 10:12', repId: 'E-1001', repName: 'Avery Blake', patientInfo: 'Sample Patient \u00b7 TRX 000000', language: 'EN',
+        answers: { '38': '320 lbs', '35': 'Yes' }, recipient: 'power@example.com',
+        recommendations: {
+          complex: [{ hcpcs: 'K0843 (substitute K0862)', justification: 'MPO - <span style="text-decoration: underline;">Provide <strong>K0862</strong> as free upgrade</span>' }],
+          standard: [{ hcpcs: 'K0824', justification: 'Solid Seat indicated for: Spinal Curvature | Weight 320 lbs \u2014 within this model\u2019s 301\u2013450 lbs range' },
+            { hcpcs: 'K0822', justification: 'Solid Seat indicated for: Spinal Curvature' }] },
+        selections: { 'K0824': { preferred: true, status: 'accepted' } },
+        factors: [{ label: 'Weight', value: '320 lbs' }, { label: 'Spinal curvature (Q35)', value: 'Yes' }] };
+    },
     // Operator testing note 6 (2026-09-10): the Expand detail — the SOURCE
     // NOTE's fields, keyed by the request the button names (a FUNCTION of the
     // id, the F14 rule). r6 is a LEGACY row with no NoteId, so the server

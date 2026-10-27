@@ -875,6 +875,15 @@ not restate it. Server endpoints live in the fourteen server files
      hashed body (`INTAKE_PREVIEW_IMG_SLOT`, `intakePreviewFillImages_`), so the
      preview shows the card images where the email will; email card images are
      340px (`INTAKE_EMAIL_IMG_WIDTH`, with a width attribute for Outlook).
+     **25post round 12 A (2026-10-27):** a Sent PPD lists each recommendation
+     with the reason it was sent with, Complex then Standard, one reason per
+     line, the ★ / status under the code (`intakeSentRecsHtml_`; the stored
+     justification drawn as text, as the preview draws it). A model whose
+     capacity RANGE starts above zero ("301-450") is on the list because of the
+     patient's weight, and its reason now says so — "Weight 320 lbs — within
+     this model's 301–450 lbs range" (`intakeWeightReason_`), in the preview,
+     the email and the Sent record (the call note carries codes only); a plain cap or a range from
+     zero adds nothing. Older submissions keep the reasons they were sent with.
 
 ## Reference
 

@@ -10,7 +10,7 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts (25post rounds 8–11)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
 re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
@@ -42,6 +42,11 @@ re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
   Notes search mark a search word where a word starts — "in" no longer lights
   up inside "billing". A result found only by a match inside a word ("pap" in
   "CPAP", part of a TRX) still has that match marked.
+- **Intake** (round 12 A): a Sent PPD now shows why each model was
+  recommended, as the email does. A heavy-duty model (a weight range like
+  301–450 lbs in the Offerings sheet) recommended because of the patient's
+  weight says so: "Weight 320 lbs — within this model's 301–450 lbs range".
+  Only new sends carry the weight line.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

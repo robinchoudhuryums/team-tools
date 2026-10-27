@@ -2881,7 +2881,8 @@ vm.runInContext(intakeWeightBoundsSrc_(), engineCtx);
 // (I2), the inherently-solid code list (I6) and the weight parse (I3).
 // Cycle 23 INT-1: and the Q43 entry reader.
 // Cycle 25 F46: and the one catalog-capacity reader (intakeCapLbs_).
-['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_', 'intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_', 'intakeCapLbs_'].forEach((n) =>
+// 25post A2: and the weight reason (intakeWeightReason_).
+['intakeSeatKinds_', 'intakeInherentlySolidCodes_', 'intakeParseWeight_', 'intakeNeuroEntryIsDx_', 'intakeNeuroDxEntries_', 'intakeCapLbs_', 'intakeWeightReason_'].forEach((n) =>
   vm.runInContext(extractRawFunction('Code.js', n), engineCtx, { filename: 'Code.js#' + n }));
 vm.runInContext(extractRawFunction('Code.js', 'intakeDeriveClinicalFactors_'), engineCtx,
   { filename: 'Code.js#intakeDeriveClinicalFactors_' });
@@ -2942,6 +2943,31 @@ test('oxygen excludes K0837 (an inherently-solid SPO chair)', () => {
   const offOxy = intakeFilterRecommendations_({ '38': '250', '32': 'yes', '44': 'no' }, oxyCat);
   assert.strictEqual(onOxy.complex.concat(onOxy.standard).length, 0, 'K0837 dropped when on oxygen');
   assert.ok(offOxy.complex.concat(offOxy.standard).map((p) => p.hcpcs).indexOf('K0837') >= 0);
+});
+
+test('A2 (operator 2026-10-27): a model the patient\'s WEIGHT put on the list says so — a heavy-duty range only, never a plain cap, a range from zero or a blank weight', () => {
+  const wr = engineCtx.intakeWeightReason_;
+  assert.strictEqual(wr(320, '301-450'), 'Weight 320 lbs — within this model’s 301–450 lbs range');
+  assert.strictEqual(wr(301, '301 - 450 lbs'), 'Weight 301 lbs — within this model’s 301–450 lbs range', 'the bound itself, with spaces and a unit');
+  assert.strictEqual(wr(320.6, '301-1,000'), 'Weight 321 lbs — within this model’s 301–1000 lbs range', 'rounded; a comma capacity read whole (F46)');
+  assert.strictEqual(wr(250, '350'), '', 'a plain cap: the weight is not why');
+  assert.strictEqual(wr(250, '0-300'), '', 'a range from zero: the weight is not why');
+  assert.strictEqual(wr(0, '301-450'), '', 'no weight entered');
+  assert.strictEqual(wr(280, '301-450'), '', 'outside the range (the engine would have dropped it)');
+  assert.strictEqual(wr(320, 'n/a'), '', 'unreadable');
+  // Through the engine: the heavy-duty chair carries the reason, the standard one does not.
+  const HD = [['Std Captain', 'K0823', '0-300', 'C', 'p823', 'i823'], ['HD Captain', 'K0825', '301-450', 'C', 'p825', 'i825']];
+  const heavy = intakeFilterRecommendations_({ '38': '320 lbs' }, HD);
+  const k825 = heavy.standard.find((p) => p.hcpcs === 'K0825');
+  assert.ok(k825, 'the heavy-duty chair is recommended at 320 lbs');
+  assert.ok(/^Captain's Seat \| Weight 320 lbs/.test(k825.justification), 'with the weight beside its seat: ' + k825.justification);
+  assert.ok(!heavy.standard.some((p) => p.hcpcs === 'K0823'), 'the 0-300 chair is excluded at 320');
+  const light = intakeFilterRecommendations_({ '38': '250 lbs' }, HD);
+  assert.ok(light.standard.every((p) => !/Weight/.test(p.justification)), 'a standard-weight patient gets no weight reason');
+  // Beside another reason it is appended, never replacing it.
+  const solid = intakeFilterRecommendations_({ '38': '320 lbs', '35': 'yes' }, [['HD Solid', 'K0824', '301-450', 'S', 'p', 'i']]);
+  const j = solid.standard.concat(solid.complex)[0].justification;
+  assert.ok(/Solid Seat indicated for: Spinal Curvature \| Weight 320 lbs/.test(j), 'appended after the clinical reason: ' + j);
 });
 
 test('engine never throws on empty answers / empty catalog', () => {
@@ -15298,7 +15324,7 @@ const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is
     'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
     'getDocsDashboard', 'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission',
     'getIntakeAgents', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
-    'getQuizzes', 'getTrainingDashboard', 'intakeGetSubmission', 'intakeListMySubmissions', 'intakePreviewPAP',
+    'getQuizzes', 'getTrainingDashboard', 'intakePreviewPAP',
     'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
     'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
     'searchMyCallNotes', 'verifyDocSignature',
