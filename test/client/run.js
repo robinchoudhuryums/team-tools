@@ -23241,7 +23241,7 @@ test('D5 (operator 2026-10-27): "except <states>" is an INSURANCE exclusion — 
   assert.strictEqual(rad.kind, 'except', 'a radius takes the clause too');
   assert.strictEqual(rad.rule.kind, 'radius');
   // Words that are not states keep the value unknown, and the clause never rescues an unreadable rest.
-  ['Open (except Hawaii, call first)', 'Open except or', 'except Hawaii', 'Open-ish except Hawaii', '100 mi of Houston except Hawaii']
+  ['Open (except Hawaii, call first)', 'Open except or', 'Open except me', 'except Hawaii', 'Open-ish except Hawaii', '100 mi of Houston except Hawaii']
     .forEach((t) => assert.strictEqual(B5P(t).kind, 'unknown', t));
   assert.strictEqual(B5P('100 mi of Houston except Hawaii').noWarehouse, true, 'and the delivery table is still the one blamed (g142)');
   // THE CASE: a scooter near Honolulu.
@@ -23256,6 +23256,8 @@ test('D5 (operator 2026-10-27): "except <states>" is an INSURANCE exclusion — 
   // The rule underneath still decides first: a radius NO is a NO either way.
   const far = both('100 miles of Dallas except Oklahoma', { state: 'TX', miles: { Dallas: 400 }, warehouseNames: ['Dallas'] });
   assert.deepStrictEqual(far.map((v) => v.verdict), ['no', 'no']);
+  const farOk = both('100 miles of Dallas except Oklahoma', { state: 'OK', miles: { Dallas: 400 }, warehouseNames: ['Dallas'] });
+  assert.ok(/400 mi from Dallas/.test(farOk[0].why), 'out of reach AND excluded: the distance is the reason given — ' + farOk[0].why);
   const ok = both('100 miles of Dallas except Oklahoma', { state: 'OK', miles: { Dallas: 60 }, warehouseNames: ['Dallas'] });
   assert.deepStrictEqual(ok.map((v) => v.verdict), ['no', 'yes'], 'Oklahoma within reach: insurance no, out of pocket yes');
   assert.strictEqual(F(rad, true).kind, 'radius', 'out of pocket the van rule is all that is left');
