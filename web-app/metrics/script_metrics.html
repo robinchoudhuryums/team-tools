@@ -2577,6 +2577,14 @@ function spanishSuggestHtml_(text) {
 // render a context banner so the rep keeps the request in view, and — for Call
 // Notes — prefill the Issue field + suggested update type). Context is read from
 // the card DOM (no quote-escaping of email text into the chip's onclick).
+/** An open card's request is the newest message of its thread (its paragraphs
+ *  kept apart — textContent would run them together); a closed one, the snippet. */
+function spanishNavSnippet_(card, read) {
+  var el = card && card.querySelector('[data-thread]');
+  var tid = el ? el.getAttribute('data-thread') : '';
+  if (tid && spanishIsExpanded_(tid)) return spanishBodyPlain_(SPANISH_STATE.bodies[tid]);
+  return read('.sp-task-body');
+}
 function spanishNavTo_(btn) {
   var card = btn.closest('.sp-task');
   var read = function (sel, attr) {
@@ -2590,7 +2598,7 @@ function spanishNavTo_(btn) {
     template: btn.dataset.template || '',
     requester: read('.sp-task-from'),
     subject: read('.sp-task-subj'),
-    snippet: read('.sp-task-body .sp-msg-text') || read('.sp-task-body'),   // an open card: the request itself, not the thread
+    snippet: spanishNavSnippet_(card, read),
     permalink: read('.sp-open', 'href'),
   };
   enterTool(btn.dataset.tool, btn.dataset.tab);
@@ -2895,11 +2903,17 @@ var SPANISH_BODY_CUT_RE = [
   /^to view this discussion/i,
   /^the (?:documents?|information) (?:accompanying|contained in|in) this (?:transmission|e-?mail|message)/i,
   /^confidentiality (?:notice|statement)/i,
-  /^this (?:e-?mail|message|transmission)\b.{0,80}\b(?:confidential|privileged)/i,
   /^my service to you is important/i,
   /^please let my supervisor know/i,
   /^leave us your feedback/i
 ];
+/** "This e-mail is confidential…" opens a disclaimer only when the line also
+ *  reads as one — a rep's "This message is about Sr. Delgado's chair" is not. */
+function spanishIsDisclaimerLine_(line, next) {
+  var t = String(line || '') + ' ' + String(next || '');
+  return /^this (?:e-?mail|message|transmission)\b/i.test(line) && /\bconfidential/i.test(t) &&
+    /\b(?:intended|privileged|recipient|prohibited)/i.test(t);
+}
 var SPANISH_BODY_DROP_RE = [/^sent from my \w+/i, /^enviado desde mi /i, /^get outlook for /i];
 var SPANISH_SIGNOFF_RE = /^(?:(?:thanks|thank you|many thanks|muchas gracias|gracias)(?: (?:and|&) (?:best |kind |warm )?regards)?|(?:best|kind|warm) regards|regards|sincerely|cheers|saludos(?: cordiales)?|atentamente|cordialmente|un saludo)[\s,.!]*$/i;
 var SPANISH_ATTR_END_RE = /(?:wrote|escribió):\s*$/i;
@@ -2919,7 +2933,14 @@ function spanishBodyClean_(lines) {
     var raw = lines[i];
     var t = raw.replace(/\s*<(?:mailto:|tel:|https?:\/\/|\(?\+?\d)[^<>\n]*>/gi, '').replace(/\*([^*\n]+?)\*/g, '$1').replace(/\s+$/, '');
     var bare = t.trim();
-    if (/^--\s*$/.test(bare) || SPANISH_BODY_CUT_RE.some(function (re) { return re.test(bare); })) { trimmed = true; break; }
+    var nextBare = i + 1 < lines.length ? String(lines[i + 1]).trim() : '';
+    if (SPANISH_BODY_CUT_RE.some(function (re) { return re.test(bare); }) || spanishIsDisclaimerLine_(bare, nextBare)) { trimmed = true; break; }
+    // "--" opens a signature or a list footer — but only when what follows is
+    // short or is boilerplate; "--" used as a divider inside a request is text.
+    if (/^--\s*$/.test(bare)) {
+      var rest = lines.slice(i + 1).map(function (l) { return String(l).trim(); }).filter(Boolean);
+      if (rest.length <= 12 || rest.some(function (l) { return SPANISH_BODY_CUT_RE.some(function (re) { return re.test(l); }); })) { trimmed = true; break; }
+    }
     if (SPANISH_BODY_DROP_RE.some(function (re) { return re.test(bare); })) { trimmed = true; continue; }
     if (!bare && raw.trim()) { trimmed = true; continue; }   // a line that was only a link echo
     out.push(t);
@@ -2930,18 +2951,23 @@ function spanishBodyClean_(lines) {
     if (!SPANISH_SIGNOFF_RE.test(out[i].trim())) continue;
     var j = i + 1;
     while (j < out.length && !out[j].trim()) j++;
-    var after = out.slice(j + 1).filter(function (l) { return l.trim(); }).length;
-    if (j < out.length && after > 0 && after <= 15) { out = out.slice(0, j + 1); trimmed = true; }
+    var tail = out.slice(j + 1).filter(function (l) { return l.trim(); });
+    // A signature is short lines — a P.S. or a sentence after the name is the message.
+    var sigLike = tail.every(function (l) { return l.trim().length <= 80 && !/^(?:p\.?\s?s\.?|nota|note)\b/i.test(l.trim()); });
+    if (j < out.length && tail.length > 0 && tail.length <= 15 && sigLike) { out = out.slice(0, j + 1); trimmed = true; }
     break;
   }
   // Join hard-wrapped lines back into paragraphs; keep blank lines and list items.
-  var paras = [];
+  // The test is the previous LINE's length (a hard wrap fills the line), never
+  // the paragraph built so far — that would swallow the short "Gracias," after it.
+  var paras = [], prevLine = '';
   out.forEach(function (l) {
-    var prev = paras.length ? paras[paras.length - 1] : null;
     var lt = l.trim();
-    if (prev != null && prev.trim() && lt && prev.length >= 60 && !/:\s*$/.test(prev) && !/^(?:[-*•]|\d+[.)])\s/.test(lt)) {
-      paras[paras.length - 1] = prev.replace(/\s+$/, '') + ' ' + lt;
+    var pt = prevLine.trim();
+    if (paras.length && pt && lt && pt.length >= 60 && !/:$/.test(pt) && !/^(?:[-*•]|\d+[.)])\s/.test(lt)) {
+      paras[paras.length - 1] = paras[paras.length - 1].replace(/\s+$/, '') + ' ' + lt;
     } else paras.push(lt ? l.replace(/^\s+/, '') : '');
+    prevLine = l;
   });
   var text = paras.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   return { text: text, trimmed: trimmed };
@@ -2958,7 +2984,9 @@ function spanishBodyParse_(body) {
     var L = src[i];
     if (L.d !== cur.depth) {
       if (L.d > cur.depth) {
-        cur = { who: attr ? attr.who : '', when: attr ? attr.when : '', depth: L.d, lines: [] };
+        // A level that held nothing but blank quote lines passes its sender on.
+        var carry = attr || (!cur.lines.some(function (x) { return String(x).trim(); }) && (cur.who || cur.when) ? { who: cur.who, when: cur.when } : null);
+        cur = { who: carry ? carry.who : '', when: carry ? carry.when : '', depth: L.d, lines: [] };
         msgs.push(cur);
       } else {
         for (k = msgs.length - 1; k >= 0 && msgs[k].depth !== L.d; k--) {}
@@ -2981,7 +3009,7 @@ function spanishBodyParse_(body) {
     var isFrom = /^(?:From|De):\s*\S/i.test(line);
     if (fwd || isFrom) {
       var h = fwd ? i + 1 : i, who = '', when = '', ok = false;
-      for (k = h; k < Math.min(src.length, h + 6) && src[k].d === L.d && src[k].t.trim(); k++) {
+      for (k = h; k < Math.min(src.length, h + 8) && src[k].d === L.d && src[k].t.trim(); k++) {
         var hl = src[k].t.trim(), hm;
         if ((hm = /^(?:From|De):\s*(.+)$/i.exec(hl))) who = hm[1].replace(/\s*[<\[][^>\]]*[>\]]/g, '').replace(/"/g, '').trim();
         else if ((hm = /^(?:Sent|Date|Enviado|Fecha):\s*(.+)$/i.exec(hl))) { when = hm[1].trim(); ok = true; }
@@ -3002,6 +3030,10 @@ function spanishBodyParse_(body) {
     if (c.trimmed) trimmed = true;
     if (c.text) messages.push({ who: m.who, when: m.when, text: c.text });
   });
+  // Everything read as boilerplate: hiding it all would show a real email as
+  // "(empty)", so the text is shown as it came (the cleaning failed toward a look).
+  var raw = String(body == null ? '' : body).replace(/\r\n?/g, '\n').trim();
+  if (!messages.length && raw) return { messages: [{ who: '', when: '', text: raw }], trimmed: false };
   return { messages: messages, trimmed: trimmed };
 }
 

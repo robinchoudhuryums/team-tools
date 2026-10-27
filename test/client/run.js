@@ -4544,6 +4544,42 @@ test('spanishBodyHtml_: the newest message open, the earlier ones folded under a
   assert.strictEqual(sb.spanishBodyPlain_(SP_THREAD_FIXTURE).split('\n')[0], 'Hola equipo,', 'the suggestions read the request itself, not the thread');
 });
 
+test('spanishBodyParse_ (review): a short line after a wrapped paragraph stays its own line; nothing left after cleaning shows the text as it came; "--" as a divider, a rep\'s "This message…" and a P.S. are kept', () => {
+  const P = (b) => sb.spanishBodyParse_(b);
+  const wrapped = P('Hola, la paciente pregunta por la entrega de su silla de ruedas y por el\nestado del pedido.\nGracias,\nAna');
+  assert.strictEqual(wrapped.messages[0].text, 'Hola, la paciente pregunta por la entrega de su silla de ruedas y por el estado del pedido.\nGracias,\nAna',
+    'the wrap is joined on the LINE that filled, and "Gracias," is not swallowed by the paragraph');
+  const allBoiler = '> On Mon, Oct 26, 2026 at 3:14 PM A Person <a@x.com> wrote:\n>\n> The documents accompanying this transmission contain confidential';
+  const fb = P(allBoiler);
+  assert.strictEqual(fb.messages.length, 1, 'a body that is all boilerplate is never "(empty)"');
+  assert.strictEqual(fb.messages[0].text, allBoiler, 'it is shown as it came');
+  assert.strictEqual(fb.trimmed, false);
+  const divider = P('Paciente 1: llamar hoy.\n--\nPaciente 2: llamar mañana.\n' + Array.from({ length: 13 }, (_, i) => 'Detalle ' + i + '.').join('\n'));
+  assert.ok(/Paciente 2: llamar mañana\./.test(divider.messages[0].text), '"--" with a long request after it is a divider, not a signature');
+  assert.ok(/Thanks/.test(P('Thanks\n--\nAna Ruiz\nCSR').messages[0].text) && !/CSR/.test(P('Thanks\n--\nAna Ruiz\nCSR').messages[0].text), 'a short block after "--" is a signature');
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is about Sr. Delgado and his chair, please call him.').messages[0].text), 'a rep\'s "This message…" is the request');
+  // One case per condition — a line that fails both proves neither — and each after
+  // a line of text, or a cut would empty the body and the fallback would hide it (g116).
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is confidential to our team: call Sr. Delgado about his chair.').messages[0].text), '"confidential" alone is not a disclaimer');
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is intended for the Spanish team: call Sr. Delgado today.').messages[0].text), '"intended" alone is not a disclaimer');
+  assert.ok(!/intended/.test(P('Hola.\n\nThis e-mail is confidential and intended only for the named recipient.').messages[0].text), 'a disclaimer is cut');
+  const ps = P('Gracias,\nAna\nP.S. el paciente prefiere llamadas por la tarde');
+  assert.ok(/P\.S\./.test(ps.messages[0].text), 'a P.S. after the name is the message, never a signature');
+});
+
+test('spanishNavSnippet_ (review): an open card hands Call Notes the newest message with its line breaks, a closed one the snippet', () => {
+  const tid = 'nav-t1';
+  const prev = { b: sb.SPANISH_STATE.bodies, e: sb.SPANISH_STATE.expanded };
+  sb.SPANISH_STATE.bodies = { [tid]: SP_THREAD_FIXTURE }; sb.SPANISH_STATE.expanded = { [tid]: true };
+  try {
+    const card = { querySelector: (sel) => (sel === '[data-thread]' ? { getAttribute: () => tid } : null) };
+    const got = sb.spanishNavSnippet_(card, () => 'SNIPPET');
+    assert.ok(/^Hola equipo,\n\nPueden llamar/.test(got), 'paragraphs kept apart: ' + JSON.stringify(got.slice(0, 40)));
+    sb.SPANISH_STATE.expanded = {};
+    assert.strictEqual(sb.spanishNavSnippet_(card, () => 'SNIPPET'), 'SNIPPET', 'collapsed → the card text');
+  } finally { sb.SPANISH_STATE.bodies = prev.b; sb.SPANISH_STATE.expanded = prev.e; }
+});
+
 test('spanishSuggestHtml_: empty / whitespace / no-keyword text → no chips', () => {
   assert.strictEqual(spanishSuggestHtml_(''), '');
   assert.strictEqual(spanishSuggestHtml_('   '), '');
