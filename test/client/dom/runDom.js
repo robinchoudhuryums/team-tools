@@ -3315,6 +3315,10 @@ test('DR-3/DR-4 DOM: Show reply — only on a request the department answered; O
   press(look().querySelector('.dr-reply-btn'));
   assert.strictEqual(replyCalls, 1, 'the look card reads the cached reply');
   assert.strictEqual(look().querySelector('.dr-reply').hidden, false);
+  // DR-4 (a): a request-card repaint (the detached-button and reconcile paths) leaves the look card a look card.
+  h.read('drRepaintRequest_')('r1');
+  assert.ok(look() && look().classList.contains('dr-look') && look().querySelector('.dr-reply') && !look().querySelector('.dr-reply').hidden, 'a request-card repaint never touches the look card');
+  assert.strictEqual(h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === 'r1').length, 1, 'still ONE request card');
   // DR-4: resolve from the request card — the look card leaves the group, never becoming a request card.
   h.read('drResolveClick_')(card('r1').querySelector('.sp-resolve'));
   h.flushTimers();
