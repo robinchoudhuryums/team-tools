@@ -123,8 +123,22 @@
   .kbd-router-btn b { color: var(--accent); }
   .kbd-rt-filter { padding: 0 2px 8px; }
   .kbd-rt-filter input { width: 100%; box-sizing: border-box; font: inherit; font-size: .84rem; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
-  .kbd-rt-g { font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 10px 4px 4px; }
-  .kbd-rt-row { flex-direction: column; align-items: flex-start; }
+  /* The call router (operator 2026-10-27): a card per group, hairlines between
+     phrases, the answer's section as a chip. */
+  .kbd-rt-grp { margin-top: 14px; }
+  .kbd-rt-grp:first-child { margin-top: 4px; }
+  .kbd-rt-g { display: flex; align-items: center; gap: 8px; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink); margin: 0 2px 6px; }
+  .kbd-rt-g::after { content: ''; flex: 1; height: 1px; background: var(--line); order: 1; }
+  .kbd-rt-n { order: 2; font-family: var(--mono); font-size: .66rem; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+  .kbd-rt-rows { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); overflow: hidden; }
+  .kbd-body .kbd-rt-row { flex-direction: column; align-items: flex-start; gap: 3px; border-radius: 0; padding: 9px 12px; }
+  .kbd-body .kbd-rt-row + .kbd-rt-row { border-top: 1px solid var(--line); }
+  /* The card clips to its corners, which would clip the global OUTER focus
+     ring off a full-width row — the row draws its ring inside instead. */
+  .kbd-body .kbd-rt-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); border-radius: 0; }
+  .kbd-rt-q { font-weight: 500; color: var(--ink); }
+  .kbd-rt-a { line-height: 1.45; }
+  .kbd-rt-sec { display: inline-block; margin-right: 6px; font-family: var(--mono); font-size: .7rem; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; }
   /* The chapter's colour and icon (operator 2026-10-07): a badge on the part's
      title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
      cue per level), and the icon beside it in the tree. --man-pN are tokens;
@@ -5210,6 +5224,15 @@ function kbRouterRows_(router, q, visible) {
   });
   return groups;
 }
+/** Pure — a router answer with the section it leads with set apart:
+ *  "10.4.1 — the five-step estimate" draws 10.4.1 as a chip and the note after
+ *  it; "0.2, then 6.2 if it's scheduled" draws 0.2 and "then 6.2 if it's
+ *  scheduled". An answer that does not open with a section stays text. */
+function kbRouterAnswerHtml_(a) {
+  var m = /^((?:\d+|[A-C])(?:\.\d+)+|\d+)(?:(?:\s+—\s+|[,;]\s+)([\s\S]+))?$/.exec(String(a || '').trim());
+  if (!m) return '<span class="kb-snip kbd-rt-a">' + esc(a) + '</span>';
+  return '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">' + esc(m[1]) + '</span>' + (m[2] ? esc(m[2]) : '') + '</span>';
+}
 function kbRouterVisible_() {
   var v = {};
   (KB_DRAWER.tree || KB_STATE.tree || []).forEach(function (it) { v[it.id] = 1; });
@@ -5243,12 +5266,16 @@ function kbDrawerOpenRouter_() {
     if (metaFailed) { list.innerHTML = '<div class="kbd-empty">The handbook’s call router could not be loaded — go Back and open it again to retry.</div>'; return; }
     var inp = document.getElementById('kbd-rt-q');
     var groups = kbRouterRows_((KB_STATE.manualMeta || {}).router, inp ? inp.value : '', kbRouterVisible_());
+    // Operator 2026-10-27: each group is a bordered card under its own heading
+    // (with a count), its phrases separated by hairlines, and the section an
+    // answer starts with set apart — a flat run of grey lines read as one list.
     list.innerHTML = groups.length ? groups.map(function (g) {
-      return '<div class="kbd-rt-g">' + esc(g.g) + '</div>' + g.rows.map(function (r) {
+      return '<section class="kbd-rt-grp"><div class="kbd-rt-g"><span>' + esc(g.g) + '</span><span class="kbd-rt-n">' + g.rows.length + '</span></div>' +
+        '<div class="kbd-rt-rows">' + g.rows.map(function (r) {
         return '<button class="kbd-item kbd-rt-row" data-kb-id="' + esc(r.t[0].id) + '" data-kb-anchor="' + esc(r.t[0].anchor || '') + '" ' +
           'onclick="kbDrawerOpenItem_(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
-          '<span>“' + esc(r.q) + '”</span><span class="kb-snip">' + esc(r.a) + '</span></button>';
-      }).join('');
+          '<span class="kbd-rt-q">“' + esc(r.q) + '”</span>' + kbRouterAnswerHtml_(r.a) + '</button>';
+      }).join('') + '</div></section>';
     }).join('') : '<div class="kbd-empty">No phrase matches — try the search box above.</div>';
   };
   kbEnsureManualMeta_(function (m, failed) { metaFailed = !!failed; paint(); });

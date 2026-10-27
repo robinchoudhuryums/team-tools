@@ -630,6 +630,46 @@ not restate it. Server endpoints live in the fourteen server files
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
 
+     **The expanded request reads as a conversation (operator 2026-10-27).**
+     Expand used to drop Gmail's plain text of the request into the card as it
+     came: the whole thread quoted under the reply with `>>>>` markers, each
+     sender's signature, the confidentiality disclaimer and the Spanish Calls
+     group's unsubscribe footer, hard-wrapped at ~76 columns. `spanishBodyParse_`
+     (pure, `script_metrics.html`) now splits it into messages — the newest
+     open, the earlier ones folded under "N earlier messages in this thread",
+     each named by its "On … wrote:" or Outlook "From: … Sent:" line — and
+     hides the boilerplate, the signature after a sign-off (the sign-off and the
+     name stay), "Sent from my iPhone" and Gmail's `<tel:…>` link echoes, joining
+     hard-wrapped lines back into paragraphs. A note under the body says when
+     anything was hidden; Open in Gmail is the full text. The tool suggestions
+     and the context a suggestion chip carries to Call Notes read the newest
+     message, not the disclaimer. Client-only: the server's payload is
+     unchanged.
+
+     **Dept Requests' Expand, checked against the same treatment (operator
+     2026-10-27).** Its panel was never an email dump — it is the linked call
+     note as labelled fields — so the conversation view does not apply. Two
+     things did: the note's own `**bold**` / `__underline__` / `==highlight==`
+     markers printed as stars, and every blank field drew a "—" row. Issue and
+     Resolution now render through the note card's `cnFmtHtml_` over escaped
+     text (g38); a blank field is left out, and so is a Patient & TRX that only
+     repeats the card's subject; a note with nothing to show says so.
+
+     **Show reply (operator 2026-10-27, round 10).** A request the reply scan
+     has read — Replied, Responded — needs a look, or a "Replies to check" card
+     — carries **Show reply**: `getDeptRequestReply` reads the thread live and
+     returns the reply the scan judges, through the scan's own reader
+     (`drRequestReplyPick_` — the same thread ids, cut-off, excluded senders,
+     department addresses and shared-thread token), so the text shown is the one
+     the status was decided on. Gated by `drCanAct_` (sender, receiving-desk
+     member, manager); a refused caller reads "Request not found.". It is drawn
+     by the Spanish conversation renderer (`spanishBodyHtml_`, newest message
+     first, earlier ones folded) under who replied and when, cached for the
+     page only, and never stored, logged or audited. A request sent before
+     replies were tracked, or with no reply yet, says so. Resolving a request
+     from its main card no longer repaints its "Replies to check" card as a
+     second request card (DR-4).
+
      **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
      **Replies to check**: each department reply the hourly check held back,
      with the rule that held it ("asks a question", "only acknowledges", …) and
@@ -1157,6 +1197,13 @@ not restate it. Server endpoints live in the fourteen server files
      say?", the manual's call router (phrases in groups, each naming the sections
      to open), and a drawer result offers "Read in context", which opens the
      whole part in the Reference tab.
+     **The router's groups read as groups (operator 2026-10-27).** Each group
+     is a bordered card under a heading with its phrase count, its phrases are
+     separated by hairlines, and the section an answer opens with is drawn as
+     a chip (`kbRouterAnswerHtml_`) — a flat run of grey lines had read as one
+     list. The export's `md_plain` now keeps a link's words, so an answer that
+     names a button with a hover preview reads "check Fax History", not
+     "[Fax History](peek:fig-…)".
      **22post M3 (2026-09-29): diagrams, images, part order.** The appendices
      now list after Part 10 (the tree, the dialog and the publish order). The
      manual's diagrams draw inside their sections from a generated partial

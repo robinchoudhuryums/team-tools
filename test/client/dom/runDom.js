@@ -2758,11 +2758,14 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   assert.ok(/Collapse the request/.test(name()), 'renamed on expand');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
   assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'the full body replaced the snippet');
+  // Operator 2026-10-27: the open body is drawn as a conversation, not a text dump.
+  assert.ok(h.$('#' + bodyId + ' .sp-thread .sp-msg-text') && h.$('#' + bodyId).classList.contains('is-open'), 'the open body is the formatted thread');
   press();   // Collapse
   assert.strictEqual(bodyCalls, 1, 'Collapse makes no RPC');
   assert.ok(/Show the full request/.test(name()), 'and back again on collapse');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
   assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'the snippet is back, from the payload not the DOM');
+  assert.ok(!h.$('#' + bodyId).classList.contains('is-open') && !h.$('#' + bodyId + ' .sp-thread'), 'and collapsed, it is plain snippet text again');
   press();   // Expand again
   assert.strictEqual(bodyCalls, 1, 'the cached body serves the second Expand');
   assert.ok(/Collapse the request/.test(name()));
@@ -3220,7 +3223,7 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
     if (id === 'q2') return { requestId: 'q2', label: 'Verified Shipping', patientTrx: '', byName: 'Me', toDept: 'Shipping', note: null, reason: 'This request predates note linking.' };
     return { requestId: 'q1', label: 'Close Order', patientTrx: 'Ana <b>Ruiz</b> · TRX 1', byName: 'Me', toDept: 'Billing', reason: '',
       note: { callback: '555', caller: 'Ana', relationship: 'Self', patientAndTrx: 'Ana <b>Ruiz</b> · TRX 1',
-        issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated', dateLocal: '2026-09-01' } };
+        issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated **today**', dateLocal: '2026-09-01' } };
   });
   h.window.enterTool('metrics', 'metricsDeptReq');
   h.flushTimers();
@@ -3246,6 +3249,9 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
   assert.ok(/Escalated/.test(panel().textContent), 'the note fields render');
   assert.strictEqual(panel().querySelector('img'), null, 'the issue text is escaped — no live element from note text');
   assert.ok(/Bill <img src=x/.test(panel().textContent), 'and reads as text');
+  // Operator 2026-10-27: the note's markers render as on its card; blank and repeated rows are left out.
+  assert.ok(panel().querySelector('.dr-detail-v strong') && panel().querySelector('.dr-detail-v strong').textContent === 'today', 'a **marker** renders bold, through the card renderer');
+  assert.ok(!/Transferred to|Patient & TRX/.test(panel().textContent), 'a blank field and a subject-repeating Patient & TRX are left out');
   press('q1');   // Collapse
   assert.strictEqual(detailCalls, 1, 'Collapse makes no RPC');
   assert.strictEqual(panel().hidden, true);
@@ -3264,6 +3270,60 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
   const p2 = card('q2').querySelector('.dr-detail');
   assert.strictEqual(p2.hidden, false);
   assert.ok(/predates note linking/.test(p2.textContent), 'the reason is stated (INV-187)');
+});
+
+test('DR-3/DR-4 DOM: Show reply — only on a request the department answered; ONE live read, drawn as the conversation (the reply, its quoted history folded, the footer hidden, escaped); Hide makes no RPC; the request card and its Replies-to-check card keep their own state; resolving from the card takes the request out of Replies to check rather than turning that card into a request card', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const base = { toDept: 'Billing', createdAt: 'Oct 27, 2026 8:30 AM', byName: 'Me', elapsedMin: 30, elapsedWallMin: 30, slaBusiness: true, slaStatus: 'ontime', slaHours: 48 };
+  h.run.respond('getDeptRequests', () => ({ isManager: false, myDepts: [], departments: ['Billing'],
+    mine: [
+      Object.assign({ requestId: 'r1', label: 'Close Order', status: 'open', replyVerdict: 'needs-look', repliedAt: 'Oct 27, 10:15 AM', repliedMs: 5, replyReasonLabel: 'the reply asks a question' }, base),
+      Object.assign({ requestId: 'r2', label: 'Verified Shipping', status: 'open' }, base)],
+    incoming: [], truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 0 }));
+  let replyCalls = 0;
+  h.run.respond('getDeptRequestReply', (id) => { replyCalls++; return { requestId: id, reply: { from: 'Dana <b>W</b>', at: 'Oct 27, 2026 10:15 AM', verdict: 'needs-look',
+    body: 'Which patient — the <img src=x> one?\n\nThanks,\nDana\nBilling Specialist\nUMS\n\nOn Mon, Oct 27, 2026 at 8:30 AM Me <me@x.com> wrote:\n> Please close the order.\n> --\n> You received this message because you are subscribed to the Google Groups "Billing" group.' } }; });
+  h.run.respond('resolveDeptRequest', () => ({ success: true }));
+  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.flushTimers();
+  const look = () => h.$('#dr-looks .dr-look[data-req="r1"]');
+  const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
+  assert.ok(look() && card('r1') && card('r2'), 'the look card and both request cards render');
+  assert.ok(card('r1').querySelector('.dr-reply-btn') && look().querySelector('.dr-reply-btn'), 'a request the department answered offers Show reply, on both cards');
+  assert.strictEqual(card('r2').querySelector('.dr-reply-btn'), null, 'one with no reply does not');
+  const btn = () => card('r1').querySelector('.dr-reply-btn');
+  const panel = () => h.$('#' + btn().getAttribute('aria-controls'));
+  assert.ok(panel() && panel().hidden && btn().getAttribute('aria-expanded') === 'false', 'aria-controls names a hidden panel');
+  const press = (b) => h.read('drReplyToggle_')(b);   // jsdom never compiles an inline onclick
+  press(btn());
+  assert.strictEqual(replyCalls, 1, 'ONE read');
+  assert.strictEqual(panel().hidden, false);
+  assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
+  assert.ok(/Hide reply/.test(btn().textContent));
+  const p = panel();
+  assert.strictEqual(p.querySelector('.dr-reply-from').textContent, 'Dana <b>W</b>', 'the sender, escaped');
+  assert.ok(/Which patient — the <img src=x> one\?/.test(p.querySelector('.sp-msg-text').textContent) && !p.querySelector('img'), 'the reply first, inert');
+  assert.ok(p.querySelector('details.sp-earlier') && /Please close the order\./.test(p.querySelector('details.sp-earlier').textContent), 'the quoted request folded under "earlier"');
+  assert.ok(!/Billing Specialist|You received this message/.test(p.textContent), 'the signature and the group footer are hidden');
+  assert.ok(p.querySelector('.sp-trim-note'), 'and the panel says so');
+  assert.strictEqual(look().querySelector('.dr-reply').hidden, true, 'the look card\'s panel keeps its own state');
+  press(btn());   // Hide
+  assert.strictEqual(replyCalls, 1, 'Hide makes no RPC');
+  assert.strictEqual(panel().hidden, true);
+  press(look().querySelector('.dr-reply-btn'));
+  assert.strictEqual(replyCalls, 1, 'the look card reads the cached reply');
+  assert.strictEqual(look().querySelector('.dr-reply').hidden, false);
+  // DR-4 (a): a request-card repaint (the detached-button and reconcile paths) leaves the look card a look card.
+  h.read('drRepaintRequest_')('r1');
+  assert.ok(look() && look().classList.contains('dr-look') && look().querySelector('.dr-reply') && !look().querySelector('.dr-reply').hidden, 'a request-card repaint never touches the look card');
+  assert.strictEqual(h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === 'r1').length, 1, 'still ONE request card');
+  // DR-4: resolve from the request card — the look card leaves the group, never becoming a request card.
+  h.read('drResolveClick_')(card('r1').querySelector('.sp-resolve'));
+  h.flushTimers();
+  assert.strictEqual(h.$('#dr-looks .sp-task'), null, 'Replies to check no longer holds the resolved request');
+  assert.strictEqual(h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === 'r1').length, 1, 'and there is ONE request card for it, not two');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -5686,6 +5746,12 @@ test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the 
   const q = doc.getElementById('kbd-rt-q');
   const rows = () => h.$$('#kbd-rt-list .kbd-rt-row');
   assert.strictEqual(rows().length, 2, 'the row whose only target is not visible is dropped');
+  // Operator 2026-10-27: a bordered card per group, under a heading with its count.
+  const grps = h.$$('#kbd-rt-list .kbd-rt-grp');
+  assert.strictEqual(grps.length, 1, 'one group left — the Money row is gone with its target');
+  assert.strictEqual(grps[0].querySelector('.kbd-rt-g').textContent, 'Status and timing2', 'the heading names the group and counts it');
+  assert.strictEqual(grps[0].querySelectorAll('.kbd-rt-rows > .kbd-rt-row').length, 2, 'its rows sit in the card');
+  assert.strictEqual(rows()[1].querySelector('.kbd-rt-sec').textContent, '0.10.2', 'the answer leads with its section as a chip');
   q.value = 'doctor';
   q.dispatchEvent(new w.Event('input', { bubbles: true }));
   assert.strictEqual(rows().length, 1);

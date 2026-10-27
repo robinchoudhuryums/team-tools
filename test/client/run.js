@@ -4472,6 +4472,114 @@ const spanishSuggestHtml_ = sb.spanishSuggestHtml_;
 const appTakeNavHint_ = sb.appTakeNavHint_;
 const appNavHintBannerHtml_ = sb.appNavHintBannerHtml_;
 
+// Operator 2026-10-27 — the expanded request read as a conversation. The full
+// body is Gmail's plain text of one message with the whole thread quoted under
+// it; the card showed it verbatim (">>>>" markers, signatures, the disclaimer,
+// the group's unsubscribe footer) in a quarter-width column.
+const SP_THREAD_FIXTURE = [
+  'Hola equipo,', '',
+  'Pueden llamar a la paciente mañana? Ella pregunta por la entrega de su',
+  'silla de ruedas y no habla inglés.', '',
+  'Gracias,', 'Ana Ruiz', 'Customer Service Representative', 'UniversalMed Supply',
+  '*P:* 972-228-1820 Ext. 140 <(972)%20228-1820>', '',
+  'On Mon, Oct 26, 2026 at 3:14 PM Robert Charania <',
+  'robert.charania@universalmedsupply.com> wrote:', '',
+  '> Forwarding this one to the Spanish team.', '>',
+  '> On Mon, Oct 26, 2026 at 2:58 PM Maria Lopez <maria@example.com> wrote:', '>',
+  '>>>> Necesito ayuda con la entrega de mi silla. Nadie me ha llamado y ya',
+  '>>>> pasó una semana.', '>>>>',
+  '>>>> *Website:* universalmedsupply.com <https://universalmedsupply.com>',
+  '>>>> The documents accompanying this transmission contain confidential',
+  '>>>> information belonging to the sender that is legally privileged.',
+  '>>>> --',
+  '>>>> You received this message because you are subscribed to the Google',
+  '>>>> Groups "Spanish Calls" group.'].join('\r\n');
+
+test('spanishBodyParse_: a quoted thread → messages newest first, each named by its "On … wrote:" line (a wrapped one too), the boilerplate gone', () => {
+  const p = sb.spanishBodyParse_(SP_THREAD_FIXTURE);
+  assert.strictEqual(p.messages.length, 3, 'the reply, the forward, the request');
+  assert.strictEqual(p.messages[1].who + ' | ' + p.messages[1].when, 'Robert Charania | Mon, Oct 26, 2026 at 3:14 PM', 'a two-line attribution is joined and parsed');
+  assert.strictEqual(p.messages[2].who + ' | ' + p.messages[2].when, 'Maria Lopez | Mon, Oct 26, 2026 at 2:58 PM');
+  assert.strictEqual(p.messages[0].who, '', 'the newest message has no attribution — the card head names its sender');
+  assert.ok(/^Hola equipo,\n\nPueden llamar a la paciente mañana\? Ella pregunta por la entrega de su silla de ruedas y no habla inglés\.\n\nGracias,\nAna Ruiz$/.test(p.messages[0].text),
+    'hard wraps joined into a paragraph; the signature after the sign-off cut, the sign-off and the name kept: ' + JSON.stringify(p.messages[0].text));
+  assert.ok(/Nadie me ha llamado y ya pasó una semana\./.test(p.messages[2].text), 'the quote markers are stripped and the wrap joined');
+  const all = p.messages.map((m) => m.text).join('\n');
+  assert.ok(!/>|confidential|unsubscribe|Google|Customer Service Representative|%20|\*/.test(all), 'no markers, disclaimer, footer, signature, link echo or bold stars: ' + all);
+  assert.ok(/Website: universalmedsupply\.com$/m.test(p.messages[2].text), 'a link echo is dropped, the text it echoed stays');
+  assert.strictEqual(p.trimmed, true, 'and it SAYS something was hidden');
+});
+
+test('spanishBodyParse_: a plain request (an 8x8 voicemail notification, a one-line email) passes through untouched and untrimmed', () => {
+  const vm = 'New voicemail from (214) 555-0100\nMailbox: A_Q_Spanish\nDuration: 00:42\nReceived: Oct 26, 2026 3:01 PM';
+  const p = sb.spanishBodyParse_(vm);
+  assert.strictEqual(JSON.stringify(p.messages.map((m) => m.text)), JSON.stringify([vm]), 'short lines are never joined');
+  assert.strictEqual(p.trimmed, false);
+  assert.strictEqual(sb.spanishBodyParse_('').messages.length, 0, 'empty → no messages');
+  assert.strictEqual(sb.spanishBodyParse_(null).messages.length, 0);
+  // "Thanks" mid-message is not a sign-off: nothing after it is cut.
+  const mid = 'Thanks\nCan someone call her back at 3pm today about the walker?\nShe is home all afternoon.';
+  assert.strictEqual(sb.spanishBodyParse_('Hola,\n' + mid + '\n' + 'x\n'.repeat(16)).trimmed, false, 'more than 15 lines after "Thanks" — not a signature');
+});
+
+test('spanishBodyParse_: an Outlook reply ("From: … Sent: …") and a forwarded block start a new message at the same depth', () => {
+  const p = sb.spanishBodyParse_(['See below.', '', 'From: Lucia Diaz <lucia@example.com>', 'Sent: Monday, October 26, 2026 2:10 PM',
+    'To: Spanish Calls', 'Subject: Entrega', '', 'Mi pedido no ha llegado.', '',
+    '---------- Forwarded message ---------', 'From: Pedro Gil [mailto:pedro@example.com]', 'Date: Fri, Oct 23, 2026', '', 'Original text.'].join('\n'));
+  assert.strictEqual(JSON.stringify(p.messages.map((m) => [m.who, m.when, m.text])), JSON.stringify([
+    ['', '', 'See below.'],
+    ['Lucia Diaz', 'Monday, October 26, 2026 2:10 PM', 'Mi pedido no ha llegado.'],
+    ['Pedro Gil', 'Fri, Oct 23, 2026', 'Original text.']]));
+});
+
+test('spanishBodyHtml_: the newest message open, the earlier ones folded under a summary, every string escaped, and a note when anything was hidden', () => {
+  const html = sb.spanishBodyHtml_(SP_THREAD_FIXTURE);
+  assert.ok(/^<div class="sp-thread"><div class="sp-msg"><div class="sp-msg-text"><p>Hola equipo,<\/p><p>Pueden llamar/.test(html), 'the newest first, unfolded, a paragraph per blank-line break');
+  assert.ok(/<details class="sp-earlier"><summary>2 earlier messages in this thread<\/summary>/.test(html), 'the rest behind a summary');
+  assert.ok(/<span class="sp-msg-who">Robert Charania<\/span><span class="sp-msg-when">Mon, Oct 26, 2026 at 3:14 PM<\/span>/.test(html));
+  assert.ok(/class="sp-trim-note">[^<]*Open in Gmail/.test(html), 'what was hidden is one click away, and the card says so');
+  const evil = sb.spanishBodyHtml_('<img src=x onerror=alert(1)>\n\nOn Mon, Oct 26, 2026 at 1:00 PM <b>Eve</b> wrote:\n> <script>x</script>');
+  assert.ok(!/<img|<script|<b>/.test(evil), 'email text never becomes markup: ' + evil);
+  assert.strictEqual(sb.spanishBodyHtml_('Una línea.'), '<div class="sp-thread"><div class="sp-msg"><div class="sp-msg-text"><p>Una línea.</p></div></div></div>', 'a plain request: one message, no fold, no note');
+  assert.strictEqual(sb.spanishBodyPlain_(SP_THREAD_FIXTURE).split('\n')[0], 'Hola equipo,', 'the suggestions read the request itself, not the thread');
+});
+
+test('spanishBodyParse_ (review): a short line after a wrapped paragraph stays its own line; nothing left after cleaning shows the text as it came; "--" as a divider, a rep\'s "This message…" and a P.S. are kept', () => {
+  const P = (b) => sb.spanishBodyParse_(b);
+  const wrapped = P('Hola, la paciente pregunta por la entrega de su silla de ruedas y por el\nestado del pedido.\nGracias,\nAna');
+  assert.strictEqual(wrapped.messages[0].text, 'Hola, la paciente pregunta por la entrega de su silla de ruedas y por el estado del pedido.\nGracias,\nAna',
+    'the wrap is joined on the LINE that filled, and "Gracias," is not swallowed by the paragraph');
+  const allBoiler = '> On Mon, Oct 26, 2026 at 3:14 PM A Person <a@x.com> wrote:\n>\n> The documents accompanying this transmission contain confidential';
+  const fb = P(allBoiler);
+  assert.strictEqual(fb.messages.length, 1, 'a body that is all boilerplate is never "(empty)"');
+  assert.strictEqual(fb.messages[0].text, allBoiler, 'it is shown as it came');
+  assert.strictEqual(fb.trimmed, false);
+  const divider = P('Paciente 1: llamar hoy.\n--\nPaciente 2: llamar mañana.\n' + Array.from({ length: 13 }, (_, i) => 'Detalle ' + i + '.').join('\n'));
+  assert.ok(/Paciente 2: llamar mañana\./.test(divider.messages[0].text), '"--" with a long request after it is a divider, not a signature');
+  assert.ok(/Thanks/.test(P('Thanks\n--\nAna Ruiz\nCSR').messages[0].text) && !/CSR/.test(P('Thanks\n--\nAna Ruiz\nCSR').messages[0].text), 'a short block after "--" is a signature');
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is about Sr. Delgado and his chair, please call him.').messages[0].text), 'a rep\'s "This message…" is the request');
+  // One case per condition — a line that fails both proves neither — and each after
+  // a line of text, or a cut would empty the body and the fallback would hide it (g116).
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is confidential to our team: call Sr. Delgado about his chair.').messages[0].text), '"confidential" alone is not a disclaimer');
+  assert.ok(/Sr\. Delgado/.test(P('Hola.\n\nThis message is intended for the Spanish team: call Sr. Delgado today.').messages[0].text), '"intended" alone is not a disclaimer');
+  assert.ok(!/intended/.test(P('Hola.\n\nThis e-mail is confidential and intended only for the named recipient.').messages[0].text), 'a disclaimer is cut');
+  const ps = P('Gracias,\nAna\nP.S. el paciente prefiere llamadas por la tarde');
+  assert.ok(/P\.S\./.test(ps.messages[0].text), 'a P.S. after the name is the message, never a signature');
+});
+
+test('spanishNavSnippet_ (review): an open card hands Call Notes the newest message with its line breaks, a closed one the snippet', () => {
+  const tid = 'nav-t1';
+  const prev = { b: sb.SPANISH_STATE.bodies, e: sb.SPANISH_STATE.expanded };
+  sb.SPANISH_STATE.bodies = { [tid]: SP_THREAD_FIXTURE }; sb.SPANISH_STATE.expanded = { [tid]: true };
+  try {
+    const card = { querySelector: (sel) => (sel === '[data-thread]' ? { getAttribute: () => tid } : null) };
+    const got = sb.spanishNavSnippet_(card, () => 'SNIPPET');
+    assert.ok(/^Hola equipo,\n\nPueden llamar/.test(got), 'paragraphs kept apart: ' + JSON.stringify(got.slice(0, 40)));
+    sb.SPANISH_STATE.expanded = {};
+    assert.strictEqual(sb.spanishNavSnippet_(card, () => 'SNIPPET'), 'SNIPPET', 'collapsed → the card text');
+  } finally { sb.SPANISH_STATE.bodies = prev.b; sb.SPANISH_STATE.expanded = prev.e; }
+});
+
 test('spanishSuggestHtml_: empty / whitespace / no-keyword text → no chips', () => {
   assert.strictEqual(spanishSuggestHtml_(''), '');
   assert.strictEqual(spanishSuggestHtml_('   '), '');
@@ -13728,7 +13836,7 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
       'repaints the card + KPI strip, never the whole view');
     // No payload value is ever concatenated into a selector (INV-193 family).
     const nodes = strip(extractFunction('metrics/script_deptrequests.html', 'drCardNodes_'));
-    assert.ok(/querySelectorAll\('\.sp-task\[data-req\]'\)/.test(nodes) && !/data-req="' \+/.test(nodes),
+    assert.ok(/querySelectorAll\('\.sp-task\[data-req\]:not\(\.dr-look\)'\)/.test(nodes) && !/data-req="' \+/.test(nodes),
       'finds cards by comparing the decoded attribute, not by building a selector from the id');
     // The KPI strip has ONE renderer, shared by the full render and the patch.
     assert.ok((dr.match(/drKpiStripHtml_\(/g) || []).length >= 3, 'the KPI strip is a shared renderer');
@@ -24109,7 +24217,8 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
     'a real Expand button with aria-expanded + aria-controls (INV-173/174)');
   assert.ok(/<div class="dr-detail" id="' \+ detailId \+ '"' \+ \(isOpen \? '' : ' hidden'\)/.test(card), 'the panel renders from STATE — hidden unless expanded');
   const dh = nc(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'));
-  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /esc\(val\)/.test(dh), 'every detail field is escaped');
+  assert.ok(/esc\(d\.reason/.test(dh) && /esc\(label\)/.test(dh) && /fmt \? cnFmtHtml_\(esc\(str\(val\)\)\) : esc\(str\(val\)\)/.test(dh),
+    'every detail field is escaped — the marker renderer only ever sees escaped text (g38); DR-1/DR-2 drives it');
   const ex = nc(extractFunction('metrics/script_deptrequests.html', 'drExpand_'));
   assert.ok(/if \(st\.bodies\[id\] != null\) \{ open\(\); return; \}/.test(ex), 'a cached detail serves the second Expand with no RPC');
   assert.ok(/currentView !== requestedView/.test(ex), 'nav-guarded');
@@ -24129,6 +24238,26 @@ test('C-N6: Dept Requests — PatientTrx stored + on the card subject, ONE owner
   // (g) Editor test present + registered.
   const tests = fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8');
   assert.ok(/function test_deptReq_detailScoped\(/.test(tests) && /_integrationTest\('deptReq_detailScoped'/.test(tests), 'the scoped-detail editor test exists and is registered');
+});
+
+test('DR-1/DR-2 (operator 2026-10-27): the Dept Request detail draws Issue and Resolution with the note card\'s own markers, escaped first; a blank field and a Patient & TRX that repeats the subject are left out; an empty note says so (driven)', () => {
+  const ctx = vm.createContext({ String,
+    esc: (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: () => '<i></i>' });
+  vm.runInContext(/var CN_FMT_RULES = \[[\s\S]*?\];/.exec(fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8'))[0], ctx);
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnFmtHtml_'), ctx);
+  vm.runInContext(extractFunction('metrics/script_deptrequests.html', 'drDetailHtml_'), ctx);
+  const html = ctx.drDetailHtml_({ patientTrx: 'Ana Ruiz · TRX 1', note: { dateLocal: '2026-10-26', callback: '', caller: 'Rosa', relationship: 'Daughter',
+    patientAndTrx: 'Ana Ruiz · TRX 1', issue: 'Cushion **not received** — <img src=x>', transferredTo: '', resolution: 'Asked to ==re-ship== by __Friday__' } });
+  assert.ok(/Cushion <strong>not received<\/strong> — &lt;img src=x&gt;/.test(html), 'a marker renders, and the note text around it stays inert: ' + html);
+  assert.ok(/<mark class="cn-hl">re-ship<\/mark> by <u>Friday<\/u>/.test(html), 'highlight and underline on the Resolution');
+  assert.ok(/Rosa \(Daughter\)/.test(html), 'caller with relationship');
+  assert.ok(!/Callback|Transferred to/.test(html), 'blank fields are left out, never a "—" row');
+  assert.ok(!/Patient &amp; TRX/.test(html), 'a Patient & TRX that only repeats the card\'s subject is left out');
+  assert.ok(/Patient &amp; TRX/.test(ctx.drDetailHtml_({ patientTrx: 'Ana Ruiz · TRX 1', note: { patientAndTrx: 'Ana Ruiz · TRX 2' } })), 'a different one is shown');
+  assert.ok(/The daughter/.test(ctx.drDetailHtml_({ note: { relationship: 'Daughter' } })), 'a relationship with no name never reads " (Daughter)"');
+  assert.ok(/nothing filled in/.test(ctx.drDetailHtml_({ note: {} })), 'a note with nothing to show says so (INV-187), never an empty panel');
+  assert.ok(!/<strong>/.test(ctx.drDetailHtml_({ note: { callback: '**555**' } })), 'only Issue and Resolution carry markers, as on the note card');
 });
 
 test('C-N8: QA reviewers — saveQaMembers (admin, validated, audited, driven), qaCanReviewEmail_ admits roster managers (driven), the assign check routes through it, getAdminConfig ships the list, the Admin card + handlers, fixture, omnibus tier', () => {
@@ -30010,7 +30139,7 @@ test('D-2: the hourly scan reads only open, threaded, recent requests; resolves 
   // Date must still construct real dates inside the core.
   ctx.Date = Date; ctx.Date.now = () => now;
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const origNow = Date.now; Date.now = () => now;
   let r;
@@ -30036,8 +30165,68 @@ test('D-2: the hourly scan reads only open, threaded, recent requests; resolves 
   assert.strictEqual(sh.writes.length, before, 'idempotent — no rewrite of a recorded verdict');
   // The under-lock re-check: a row resolved between the read and the write is left alone.
   const core = stripJsComments_(extractRawFunction('Code.js', 'drReplyScanCore_'));
-  assert.ok(core.indexOf('getThreadById') < core.indexOf('lock.waitLock'), 'Gmail is read BEFORE the lock');
+  // DR-3 (2026-10-27): the per-request read moved into drRequestReplyPick_, shared with the card's Show reply.
+  const pickSrc = stripJsComments_(extractRawFunction('Code.js', 'drRequestReplyPick_'));
+  assert.ok(/getThreadById/.test(pickSrc) && core.indexOf('drRequestReplyPick_(') >= 0 && core.indexOf('drRequestReplyPick_(') < core.indexOf('lock.waitLock'),
+    'Gmail is read BEFORE the lock (through the shared per-request reader)');
   assert.ok(/drStatus_\(hit\.row\) !== 'open' \|\| String\(hit\.row\[DR\.REOPENED_AT\] \|\| ''\) !== d\.reopened/.test(core), 'and every row is re-checked (still open, not reopened since) under it');
+});
+
+test('DR-3 (operator 2026-10-27): getDeptRequestReply returns the department reply the status was decided on — the reply scan\'s own per-request reader — to the sender, the desk or a manager only, never reading Gmail for anyone else; an untracked request, no reply yet and a reply that names another sharer of the thread each say so (driven)', () => {
+  const now = Date.parse('2026-09-28T15:00:00Z');
+  const iso = (h) => new Date(now - h * 3600000).toISOString().slice(0, 19);
+  const sh = drDSheet_([
+    drDRow_({ REQ_ID: 'A', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'resolved', RESOLVED_VIA: 'reply', LABEL: 'L', THREAD_ID: 'tA' }),
+    drDRow_({ REQ_ID: 'B', BY_ID: 'E2', BY_EMAIL: 'bo@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tB' }),
+    drDRow_({ REQ_ID: 'C', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L' }),
+    drDRow_({ REQ_ID: 'F', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tF', REOPENED_AT: iso(1) }),
+    drDRow_({ REQ_ID: 'S1', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+    drDRow_({ REQ_ID: 'S2', BY_ID: 'E1', BY_EMAIL: 'ana@ums.com', TO_DEPT: 'Billing', CREATED_AT: iso(5), STATUS: 'open', LABEL: 'L', THREAD_ID: 'tS' }),
+  ]);
+  const msg = (from, hAgo, body) => ({ getFrom: () => from, getDate: () => new Date(now - hAgo * 3600000), getSubject: () => 'Re: L', getHeader: () => '', getPlainBody: () => body });
+  const threads = {
+    tA: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 3, 'Done, refunded.\n\nOn Mon Ana wrote:\n> please refund')],
+    tB: [msg('robin@ums.com', 5, 'original'), msg('Dana <dana@ums.com>', 2, 'Can you send the TRX?')],
+    tF: [msg('Dana <dana@ums.com>', 3, 'Done.')],
+    tS: [msg('Dana <dana@ums.com>', 2, 'Done for request S2.')],
+  };
+  const read = [];
+  let allow = true, gmailThrows = false;
+  const ctx = vm.createContext({ String, Number, Object, Math, JSON, Date, isFinite, console,
+    DR: DR_D_ENUM, DR_HEADERS: new Array(18).fill('h'), DR_MAX_SCAN: 4000, DR_REPLY_VERDICTS: ['resolved', 'needs-look'], CONFIG: { TIMEZONE: 'UTC' },
+    getEmployeeInfo_: () => ({ id: 'E9', email: 'm@ums.com' }), drCanAct_: () => allow,
+    getOrCreateDeptRequestsSheet_: () => sh,
+    parseTimestampMs_: (x) => (x ? Date.parse(x + 'Z') : 0),
+    drReplyDirectory_: () => ({ byDept: { billing: { addrs: ['billing@ums.com', 'dana@ums.com'], domains: ['ums.com'] } }, names: { 'dana@ums.com': 'Dana Whitfield' } }),
+    drReplyExcludedBase_: () => ({ 'robin@ums.com': 1 }),
+    GmailApp: { getThreadById: (id) => { if (gmailThrows) throw new Error('Gmail quota'); read.push(id); return threads[id] ? { getMessages: () => threads[id] } : null; } },
+    Utilities: { formatDate: (d) => new Date(d).toISOString().slice(0, 16) },
+  });
+  [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_',
+    'drReplyPick_', 'drRequestReplyPick_', 'drSharedRequestIds_', 'getDeptRequestReply'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (o) => JSON.parse(JSON.stringify(o));
+  allow = false;
+  assert.deepStrictEqual(J(ctx.getDeptRequestReply('B')), { error: 'Request not found.' }, 'a caller who may not act on the request is refused…');
+  assert.deepStrictEqual(read, [], '…before any Gmail read');
+  allow = true;
+  const b = J(ctx.getDeptRequestReply('B'));
+  assert.deepStrictEqual([b.reply.from, b.reply.verdict, b.reply.body], ['Dana Whitfield', 'needs-look', 'Can you send the TRX?'], 'the held reply, from the department, by roster name');
+  const a = J(ctx.getDeptRequestReply('A'));
+  assert.strictEqual(a.reply.verdict, 'resolved');
+  assert.ok(/^Done, refunded\.\n\nOn Mon Ana wrote:\n> please refund$/.test(a.reply.body), 'the WHOLE plain body ships — the card renderer folds the quoted history');
+  assert.ok(/before replies were tracked/.test(J(ctx.getDeptRequestReply('C')).reason), 'no thread recorded: says so');
+  assert.ok(/No reply from the department/.test(J(ctx.getDeptRequestReply('F')).reason), 'a reply before the reopen is not this request\'s reply');
+  assert.strictEqual(J(ctx.getDeptRequestReply('S1')).reply, null, 'on a shared thread, a reply naming the OTHER request is not S1\'s');
+  assert.strictEqual(J(ctx.getDeptRequestReply('S2')).reply.body, 'Done for request S2.', 'and is S2\'s');
+  assert.deepStrictEqual(J(ctx.getDeptRequestReply('nope')), { error: 'Request not found.' });
+  gmailThrows = true;
+  assert.ok(/^Could not read the reply: Gmail quota$/.test(J(ctx.getDeptRequestReply('B')).error), 'a failed read is an error, never "no reply" (g128)');
+  // ONE reader: the scan and the card share it, so they cannot disagree on which reply decided.
+  const scan = stripJsComments_(extractRawFunction('Code.js', 'drReplyScanCore_'));
+  const ep = stripJsComments_(extractRawFunction('Code.js', 'getDeptRequestReply'));
+  assert.ok(/drRequestReplyPick_\(/.test(scan) && /drRequestReplyPick_\(/.test(ep) && !/drReplyPick_\(msgs/.test(scan), 'the scan and the endpoint call the one per-request reader');
+  assert.ok(!/writeAuditLog_|setValue|CacheService|PropertiesService/.test(ep), 'the reply is never stored, cached or logged');
 });
 
 test('D-3: Mark unresolved — the resolve rule decides who, the resolution clears, ReopenedAt is stamped, and a request that is already open is a no-op (driven)', () => {
@@ -30585,7 +30774,7 @@ function m2Kb_() {
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
   vm.runInContext(/var KB_MANUAL_UPDATED_DAYS = [^;]+;/.exec(M1_KB_SRC)[0], ctx);
   ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbIsManualId_', 'kbShiftHeadings_', 'kbManualExcerpt_',
-    'kbManualUpdates_', 'kbManualNumberTarget_', 'kbRouterRows_', 'kbJumpRowHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+    'kbManualUpdates_', 'kbManualNumberTarget_', 'kbRouterRows_', 'kbRouterAnswerHtml_', 'kbJumpRowHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   return ctx;
 }
 const J2 = (x) => JSON.parse(JSON.stringify(x));
@@ -30651,6 +30840,26 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     { id: 'man-5-9', date: '2026-03-01', num: '5.9', summary: 'b' }, { id: 'man-5-1', date: '2026-09-01', num: '5.1', summary: 'c' }];
   assert.deepStrictEqual(J2(c.kbManualUpdates_(cl, 'man-5-9', '2026-09-28', 365)).map((u) => u.summary), ['a', 'b'], 'the last 12 months, newest first, this section only');
   assert.deepStrictEqual(J2(c.kbManualUpdates_(null, 'man-5-9', '2026-09-28', 365)), []);
+});
+
+test('M2-R3b (operator 2026-10-27): a router answer draws the section it opens with as a chip — after " — ", a comma or a semicolon — and stays text otherwise; escaped', () => {
+  const c = m2Kb_();
+  const chip = (a) => c.kbRouterAnswerHtml_(a);
+  assert.strictEqual(chip('10.4.1 — the five-step estimate'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">10.4.1</span>the five-step estimate</span>');
+  assert.strictEqual(chip('0.2, then 6.2 if it\'s scheduled'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">0.2</span>then 6.2 if it&#39;s scheduled</span>');
+  assert.strictEqual(chip('0.2.2; for a power chair 5.6.1'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">0.2.2</span>for a power chair 5.6.1</span>');
+  assert.strictEqual(chip('10.3'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">10.3</span></span>', 'a bare section');
+  assert.strictEqual(chip('B.1 — the directory'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">B.1</span>the directory</span>', 'an appendix');
+  assert.strictEqual(chip('Service'), '<span class="kb-snip kbd-rt-a">Service</span>', 'no section first → plain text');
+  assert.strictEqual(chip('7.2 — <b>x</b>'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">7.2</span>&lt;b&gt;x&lt;/b&gt;</span>', 'escaped');
+});
+
+test('M2-R3c (operator 2026-10-27): the export draws a router answer as plain text — a hover-preview button in it keeps its words, never "[Fax History](peek:…)"', () => {
+  const py = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  const fn = /def md_plain\(s\):[\s\S]*?\n    return [^\n]+\n/.exec(py)[0];
+  const out = require('child_process').execFileSync('python3', ['-c', 'import re\n' + fn +
+    'print(md_plain("[[x]] check {{peek:nav-fax|Fax History}} or [Fax History](peek:fig-nav-fax) and **bold** `code`"))']).toString().trim();
+  assert.strictEqual(out, '[[x]] check Fax History or Fax History and bold code', 'links and peeks keep their text; a [[§…]] reference is not a link');
 });
 
 test('M2-R3: the call router keeps only rows with a target the caller can see, filters on phrase, answer and group, and keeps its group order', () => {
@@ -33005,7 +33214,7 @@ const c23DrScan_ = (rows, threads, now) => {
     drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
   ctx.Date = Date;   // real dates inside the core (the D-2 pin's step); Date.now is pinned below
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const orig = Date.now; Date.now = () => now;
   try { ctx.drReplyScanCore_(); } finally { Date.now = orig; }
@@ -38220,7 +38429,7 @@ const e4Scan_ = (rows, threads, now) => {
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     sheetSafe_: (x) => x, sheetSafeRows_: (x) => x, writeAuditLog_: () => {}, drBumpCacheGen_: () => {}, pendingTasksBust_: () => {} });
   [/const DR_REPLY_HOLD_RE_ = [^\n]+;/, /const DR_REPLY_QUESTION_LINE_RE_ = [^\n]+;/].forEach((re) => vm.runInContext(re.exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
-  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drReplyScanCore_']
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drAddrOf_', 'drReplyNewText_', 'drReplyAsksOrHolds_', 'drReplyHoldReason_', 'drReplyIsAutomatic_', 'drReplyVerdict_', 'drReplyVerdictFull_', 'drReplyPick_', 'drRequestReplyPick_', 'drReplyScanCore_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const origNow = Date.now; Date.now = () => now;
   let r;
@@ -38301,7 +38510,9 @@ test('E4 (cycle 25): the review report — per rule, waiting / answered Resolved
 });
 
 test('E4 (cycle 25): the Dept Requests tab — "Replies to check" lists every open request waiting on a look, once, longest-waiting first; a kept-open or resolved one leaves; each row says WHY and offers Resolved / Still open by data-*; the card\'s tooltip carries the reason (driven)', () => {
-  ['drLooksToCheck_', 'drLookRowHtml_', 'drLooksHtml_'].forEach((f) => loadFunction(sb, 'metrics/script_deptrequests.html', f));
+  if (!vm.runInContext('typeof DR_STATE', sb).startsWith('o')) vm.runInContext('var DR_STATE = { replies: {}, replyOpen: {} };', sb);
+  ['drHasReply_', 'drReplyKey_', 'drReplyPanelId_', 'drReplyIsOpen_', 'drReplyBtnHtml_', 'drReplyPanelHtml_', 'drReplyInnerHtml_',
+    'drLooksToCheck_', 'drLookRowHtml_', 'drLooksHtml_'].forEach((f) => loadFunction(sb, 'metrics/script_deptrequests.html', f));
   const it = (id, o) => Object.assign({ requestId: id, status: 'open', toDept: 'Billing', label: 'Close Order', replyVerdict: 'needs-look', repliedAt: 'x', repliedMs: 5 }, o || {});
   // The display strings would sort the wrong way round ("Oct 15, 11:00 AM" < "Oct 15, 9:00 AM") — the order is by repliedMs.
   const data = { mine: [it('a', { repliedAt: 'Oct 15, 9:00 AM', repliedMs: 2000 }), it('kept', { replyVerdict: 'kept-open' }), it('res', { status: 'resolved' })],

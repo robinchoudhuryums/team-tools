@@ -435,7 +435,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   {
    "g": "Status and timing",
    "q": "You're waiting on my doctor?",
-   "a": "0.2.2 — check [Fax History](peek:fig-nav-fax-history-button)",
+   "a": "0.2.2 — check Fax History",
    "t": [
     {
      "id": "man-0-2",
@@ -998,6 +998,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // NOTE's fields, keyed by the request the button names (a FUNCTION of the
     // id, the F14 rule). r6 is a LEGACY row with no NoteId, so the server
     // returns note:null + a named reason — that state is on camera too.
+    // DR-3 (operator 2026-10-27): the department reply a request's status was
+    // decided on, read live — Gmail's plain text with the request quoted under
+    // it, the shape the card's conversation renderer cleans.
+    getDeptRequestReply: function (id) {
+      const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || [], FIXTURES.getDeptRequests.recentResolved || []);
+      const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];
+      if (!r) return { error: 'Request not found.' };
+      if (!(r.repliedAt || r.replyVerdict || r.resolvedVia === 'reply')) return { requestId: r.requestId, reply: null, reason: 'No reply from the department in the thread yet.' };
+      return { requestId: r.requestId, reply: { from: r.resolvedBy || 'Priya Raman', at: r.repliedAt || 'Oct 27, 2026 10:15 AM', verdict: r.replyVerdict || 'resolved',
+        body: ['Is this the patient with the order from the 2nd, or the one from last month? The account shows two', 'open orders and I want to close the right one.', '',
+          'Thanks,', 'Priya Raman', 'Billing Specialist', 'UniversalMed Supply', '*P:* 972-555-0100 Ext. 210 <(972)%20555-0100>', '',
+          'On Mon, Oct 27, 2026 at 8:30 AM ' + (r.byName || 'Nina Patel') + ' <', 'agent@example.com> wrote:', '',
+          '> ' + (r.label || 'Close Order') + ' · ' + (r.patientTrx || ''), '>', '> Please close the order and confirm.', '>',
+          '> The documents accompanying this transmission contain confidential', '> information belonging to the sender.'].join('\n') } };
+    },
     getDeptRequestDetail: function (id) {
       const rows = [].concat(FIXTURES.getDeptRequests.mine || [], FIXTURES.getDeptRequests.incoming || [], FIXTURES.getDeptRequests.allOpen || [], FIXTURES.getDeptRequests.recentResolved || []);
       const r = rows.filter(function (x) { return String(x.requestId) === String(id); })[0];
@@ -1006,7 +1021,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       if (!r.patientTrx) { base.reason = 'This request predates note linking — open the sender\'s notes for the date instead.'; return base; }
       base.note = { callback: '(555) 201-4477', caller: 'Rosa Delgado', relationship: 'Daughter',
         patientAndTrx: r.patientTrx, issue: 'Patient has not received the replacement cushion ordered on the 2nd; tracking shows delivered.',
-        transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and re-ship if not located by Friday.',
+        transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and **re-ship if not located by Friday**.',
         dateLocal: daysAgo(1) };
       return base;
     },
@@ -1393,7 +1408,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Expand on a pending card (operator 2026-09-10 — Expand ⇄ Collapse): the
     // live thread body, keyed by the thread the button names.
     getSpanishInboxThreadBody: function (threadId) {
-      return { threadId: threadId, body: 'Hola,\n\nEl paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.\n\nGracias,\nMaría' };
+      // A reply with the thread quoted under it, the way Gmail's plain body
+      // carries one (operator 2026-10-27): the card draws the newest message,
+      // folds the rest and hides the signature, disclaimer and group footer.
+      return { threadId: threadId, body: ['Hola,', '', 'El paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una',
+        'impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.', '',
+        'Gracias,', 'María', 'Customer Service Representative', 'UniversalMed Supply', '*P:* 972-555-0100 Ext. 140 <(972)%20555-0100>', '',
+        'On Mon, Oct 26, 2026 at 3:14 PM Pat Example <', 'pat.example@example.com> wrote:', '',
+        '>>>> Can the Spanish team call Sr. Delgado about his intake form? He', '>>>> prefers mornings.', '>>>>',
+        '>>>> Thanks and regards', '>>>>', '>>>> *Pat Example*', '>>>> *Account Coordinator*',
+        '>>>> The documents accompanying this transmission contain confidential', '>>>> information belonging to the sender.',
+        '>>>> --', '>>>> You received this message because you are subscribed to the Google', '>>>> Groups "Spanish Calls" group.'].join('\n') };
     },
     // Operator testing note 4 (2026-09-10) — the manager Auto-assign button.
     // Shape mirrors spanishAutoAssignCore_'s return ({success, unclaimed,

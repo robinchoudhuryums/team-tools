@@ -3265,6 +3265,20 @@
     "kbManualImagesValidate_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "DR-3: drRequestReplyPick_ (the reply scan's per-request read, shared), drSharedRequestIds_ and getDeptRequestReply — the Dept Request card's Show reply",
+   "added": [
+    "drRequestReplyPick_",
+    "drSharedRequestIds_",
+    "getDeptRequestReply"
+   ],
+   "removed": [],
+   "changed": [
+    "drReplyScanCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7282,7 +7296,7 @@
   "drReplyScanCore_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "95bd5cba0df9050f"
+   "sha": "8767aafcfccb2cfa"
   },
   "drReplyVerdictFull_": {
    "file": "50_deptrequests.js",
@@ -7294,6 +7308,11 @@
    "kind": "function",
    "sha": "755841585934d2c7"
   },
+  "drRequestReplyPick_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "e4e710ac561b018f"
+  },
   "drResolveCtaHtml_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -7303,6 +7322,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "eb9c7ae4eb1943d5"
+  },
+  "drSharedRequestIds_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "bba9b4dbad18812f"
   },
   "drSlaAdminView_": {
    "file": "50_deptrequests.js",
@@ -7943,6 +7967,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "5c4cea70934f3691"
+  },
+  "getDeptRequestReply": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "24c77cd9dd4d863b"
   },
   "getDeptRequestSla": {
    "file": "50_deptrequests.js",
