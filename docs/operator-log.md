@@ -10,7 +10,7 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply (25post rounds 8–10)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts (25post rounds 8–11)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
 re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
@@ -38,6 +38,10 @@ re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
   nothing is stored. Requests sent before replies were tracked say the reply is
   in the sender's Gmail. Resolving from the main card no longer turns the
   "Replies to check" card into a duplicate request card.
+- **Search highlighting** (round 11): the Reference tab, the drawer and Call
+  Notes search mark a search word where a word starts — "in" no longer lights
+  up inside "billing". A result found only by a match inside a word ("pap" in
+  "CPAP", part of a TRX) still has that match marked.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

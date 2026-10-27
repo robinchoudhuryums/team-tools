@@ -7375,7 +7375,9 @@ function kbImgFallback_(img) {
   }, true);   // capture — error events don't bubble
 })();
 
-function kbHlRegex_(q, terms) {
+/** PURE — the words a search marks: the query's own (2+ characters) and the
+ *  terms the SERVER matched on, longest first. */
+function kbHlTokens_(q, terms) {
   var toks = String(q || '').toLowerCase().split(/\s+/)
     .map(function (t) { return t.trim(); })
     .filter(function (t) { return t.length >= 2; });
@@ -7384,38 +7386,89 @@ function kbHlRegex_(q, terms) {
   // phrase is marked whole before its words.
   (terms || []).forEach(function (t) { t = String(t || '').toLowerCase(); if (t.length >= 2 && toks.indexOf(t) < 0) toks.push(t); });
   toks.sort(function (a, b) { return b.length - a.length; });
+  return toks;
+}
+function kbHlEsc_(t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/** PURE — every token, wherever it occurs (the test of whether a text node
+ *  holds anything to mark at all). */
+function kbHlRegex_(q, terms) {
+  var toks = kbHlTokens_(q, terms);
   if (!toks.length) return null;
-  var escd = toks.map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
-  return new RegExp('(' + escd.join('|') + ')', 'gi');
+  return new RegExp('(' + toks.map(kbHlEsc_).join('|') + ')', 'gi');
+}
+// KB-HL (operator 2026-10-27): a word is marked where a WORD STARTS — "in" no
+// longer lights up inside "billing", "or" inside "order". The search itself
+// still matches inside words ("pap" finds "cpap", M5b), so a word with no
+// word-start match in a RESULT is marked where it does occur, and the hit is
+// never left unexplained. A word's letters include Latin-1/Extended accents
+// (Spanish text), and a token that does not begin with a letter or digit has
+// no word start to anchor to.
+var KB_HL_WORD = '0-9A-Za-z\\u00c0-\\u024f';
+var KB_HL_UNIT = '.kb-chunk, .kb-chunk-doc, .cn-card';   // one result: a section, a document's head, a note card
+/** PURE — which tokens a result marks at word starts and which anywhere. */
+function kbHlSplit_(toks, text) {
+  var out = { starts: [], anywhere: [] };
+  var lc = String(text || '').toLowerCase();
+  (toks || []).forEach(function (t) {
+    if (!new RegExp('^[' + KB_HL_WORD + ']').test(t)) { out.anywhere.push(t); return; }
+    var atStart = new RegExp('(^|[^' + KB_HL_WORD + '])' + kbHlEsc_(t), 'i').test(lc);
+    if (!atStart && lc.indexOf(t) >= 0) out.anywhere.push(t);
+    else out.starts.push(t);
+  });
+  return out;
+}
+/** PURE — ONE pass over a text node: group 2 is a word-start match (its
+ *  boundary character in group 1, left unmarked), group 3 a mid-word one. */
+function kbHlWordStartRegex_(starts, anywhere) {
+  if (!(starts || []).length && !(anywhere || []).length) return null;
+  var a = starts.length ? starts.map(kbHlEsc_).join('|') : '(?!)';
+  var b = anywhere.length ? anywhere.map(kbHlEsc_).join('|') : '(?!)';
+  return new RegExp('(^|[^' + KB_HL_WORD + '])(' + a + ')|(' + b + ')', 'gi');
 }
 function kbHighlightTerms_(rootEl, query, terms) {
   try {
-    var re = kbHlRegex_(query, terms);
-    if (!re || !rootEl) return;
+    var toks = kbHlTokens_(query, terms);
+    var any = kbHlRegex_(query, terms);
+    if (!any || !rootEl) return;
     var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
-    var targets = [];
+    var units = [];   // [{ el, nodes }] — the word-start choice is made per RESULT
     var n;
     while ((n = walker.nextNode())) {
       var p = n.parentElement;
       if (!p || p.closest('mark, button, a.kb-btn, code, pre')) continue;
-      re.lastIndex = 0;
-      if (re.test(n.nodeValue)) targets.push(n);
+      any.lastIndex = 0;
+      if (!any.test(n.nodeValue)) continue;
+      var u = p.closest(KB_HL_UNIT);
+      if (!u || !rootEl.contains(u)) u = rootEl;
+      var slot = null;
+      for (var i = 0; i < units.length; i++) if (units[i].el === u) { slot = units[i]; break; }
+      if (!slot) { slot = { el: u, nodes: [] }; units.push(slot); }
+      slot.nodes.push(n);
     }
-    targets.forEach(function (textNode) {
-      var s = textNode.nodeValue;
-      var frag = document.createDocumentFragment();
-      var last = 0, m;
-      re.lastIndex = 0;
-      while ((m = re.exec(s))) {
-        if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
-        var mk = document.createElement('mark');
-        mk.className = 'kb-hl';
-        mk.textContent = m[0];
-        frag.appendChild(mk);
-        last = m.index + m[0].length;
-      }
-      if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
-      textNode.parentNode.replaceChild(frag, textNode);
+    units.forEach(function (unit) {
+      var split = kbHlSplit_(toks, unit.nodes.map(function (t) { return t.nodeValue; }).join(' '));
+      var re = kbHlWordStartRegex_(split.starts, split.anywhere);
+      if (!re) return;
+      unit.nodes.forEach(function (textNode) {
+        var s = textNode.nodeValue;
+        var frag = document.createDocumentFragment();
+        var last = 0, m, marked = false;
+        re.lastIndex = 0;
+        while ((m = re.exec(s))) {
+          var hit = m[2] != null ? m[2] : m[3];
+          var at = m[2] != null ? m.index + m[1].length : m.index;
+          if (at > last) frag.appendChild(document.createTextNode(s.slice(last, at)));
+          var mk = document.createElement('mark');
+          mk.className = 'kb-hl';
+          mk.textContent = hit;
+          frag.appendChild(mk);
+          last = at + hit.length;
+          marked = true;
+        }
+        if (!marked) return;
+        if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+        textNode.parentNode.replaceChild(frag, textNode);
+      });
     });
   } catch (_) {}
 }
