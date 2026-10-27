@@ -1399,6 +1399,21 @@
   .sp-task-age { font-family: var(--mono); font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .sp-task-subj { font-weight: 600; font-size: 14px; color: var(--ink); margin-bottom: 4px; }
   .sp-task-body { font-size: 13px; color: var(--muted); line-height: 1.45; white-space: pre-wrap; }
+  /* The expanded request (operator 2026-10-27): the newest message in ink, the
+     earlier ones folded under a summary, each named by sender and time. */
+  .sp-task-body.is-open { white-space: normal; }
+  .sp-thread { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+  .sp-msg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-bottom: 2px; }
+  .sp-msg-who { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .sp-msg-when { font-size: 11px; color: var(--muted); }
+  .sp-msg-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); font-size: 13px; line-height: 1.5; }
+  .sp-msg-text p { margin: 0 0 6px; }
+  .sp-msg-text p:last-child { margin-bottom: 0; }
+  .sp-msg-quoted { border-left: 2px solid var(--line); padding: 2px 0 2px 10px; margin-top: 8px; }
+  .sp-msg-quoted .sp-msg-text { color: var(--muted); }
+  .sp-earlier > summary { cursor: pointer; font-size: 12px; color: var(--accent); width: fit-content; }
+  .sp-earlier > summary:hover { text-decoration: underline; }
+  .sp-trim-note { font-size: 11px; color: var(--muted); font-style: italic; }
   /* flex-wrap (round 2): the claim/assign controls joined this row, and five
      controls at 390px overflow a no-wrap flex — wrapping is intrinsic reflow,
      so no A2 breakpoint is owed. */

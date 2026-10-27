@@ -630,6 +630,22 @@ not restate it. Server endpoints live in the fourteen server files
      click is recorded as "marked by the sender", untimed. Both modules' median
      tiles are true medians (an even count averages the middle two).
 
+     **The expanded request reads as a conversation (operator 2026-10-27).**
+     Expand used to drop Gmail's plain text of the request into the card as it
+     came: the whole thread quoted under the reply with `>>>>` markers, each
+     sender's signature, the confidentiality disclaimer and the Spanish Calls
+     group's unsubscribe footer, hard-wrapped at ~76 columns. `spanishBodyParse_`
+     (pure, `script_metrics.html`) now splits it into messages — the newest
+     open, the earlier ones folded under "N earlier messages in this thread",
+     each named by its "On … wrote:" or Outlook "From: … Sent:" line — and
+     hides the boilerplate, the signature after a sign-off (the sign-off and the
+     name stay), "Sent from my iPhone" and Gmail's `<tel:…>` link echoes, joining
+     hard-wrapped lines back into paragraphs. A note under the body says when
+     anything was hidden; Open in Gmail is the full text. The tool suggestions
+     and the context a suggestion chip carries to Call Notes read the newest
+     message, not the disclaimer. Client-only: the server's payload is
+     unchanged.
+
      **Cycle 25 E4 (2026-10-15) — request triage.** Dept Requests opens with
      **Replies to check**: each department reply the hourly check held back,
      with the rule that held it ("asks a question", "only acknowledges", …) and

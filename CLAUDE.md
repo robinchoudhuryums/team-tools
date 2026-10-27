@@ -957,7 +957,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1401 | `node test/client/run.js` |
+| Pure harness tests | 1405 | `node test/client/run.js` |
 | DOM harness tests | 289 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 175 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |

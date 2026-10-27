@@ -2758,11 +2758,14 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   assert.ok(/Collapse the request/.test(name()), 'renamed on expand');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'true');
   assert.ok(/formulario/.test(h.$('#' + bodyId).textContent), 'the full body replaced the snippet');
+  // Operator 2026-10-27: the open body is drawn as a conversation, not a text dump.
+  assert.ok(h.$('#' + bodyId + ' .sp-thread .sp-msg-text') && h.$('#' + bodyId).classList.contains('is-open'), 'the open body is the formatted thread');
   press();   // Collapse
   assert.strictEqual(bodyCalls, 1, 'Collapse makes no RPC');
   assert.ok(/Show the full request/.test(name()), 'and back again on collapse');
   assert.strictEqual(btn().getAttribute('aria-expanded'), 'false');
   assert.strictEqual(h.$('#' + bodyId).textContent, 'El paciente necesita…', 'the snippet is back, from the payload not the DOM');
+  assert.ok(!h.$('#' + bodyId).classList.contains('is-open') && !h.$('#' + bodyId + ' .sp-thread'), 'and collapsed, it is plain snippet text again');
   press();   // Expand again
   assert.strictEqual(bodyCalls, 1, 'the cached body serves the second Expand');
   assert.ok(/Collapse the request/.test(name()));

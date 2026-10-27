@@ -1393,7 +1393,17 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Expand on a pending card (operator 2026-09-10 — Expand ⇄ Collapse): the
     // live thread body, keyed by the thread the button names.
     getSpanishInboxThreadBody: function (threadId) {
-      return { threadId: threadId, body: 'Hola,\n\nEl paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.\n\nGracias,\nMaría' };
+      // A reply with the thread quoted under it, the way Gmail's plain body
+      // carries one (operator 2026-10-27): the card draws the newest message,
+      // folds the rest and hides the signature, disclaimer and group footer.
+      return { threadId: threadId, body: ['Hola,', '', 'El paciente Sr. Delgado necesita ayuda para completar el formulario de admisión. No tiene acceso a una',
+        'impresora y pregunta si puede firmarlo por teléfono o si alguien puede llamarlo mañana por la mañana.', '',
+        'Gracias,', 'María', 'Customer Service Representative', 'UniversalMed Supply', '*P:* 972-555-0100 Ext. 140 <(972)%20555-0100>', '',
+        'On Mon, Oct 26, 2026 at 3:14 PM Pat Example <', 'pat.example@example.com> wrote:', '',
+        '>>>> Can the Spanish team call Sr. Delgado about his intake form? He', '>>>> prefers mornings.', '>>>>',
+        '>>>> Thanks and regards', '>>>>', '>>>> *Pat Example*', '>>>> *Account Coordinator*',
+        '>>>> The documents accompanying this transmission contain confidential', '>>>> information belonging to the sender.',
+        '>>>> --', '>>>> You received this message because you are subscribed to the Google', '>>>> Groups "Spanish Calls" group.'].join('\n') };
     },
     // Operator testing note 4 (2026-09-10) — the manager Auto-assign button.
     // Shape mirrors spanishAutoAssignCore_'s return ({success, unclaimed,

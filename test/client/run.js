@@ -4472,6 +4472,78 @@ const spanishSuggestHtml_ = sb.spanishSuggestHtml_;
 const appTakeNavHint_ = sb.appTakeNavHint_;
 const appNavHintBannerHtml_ = sb.appNavHintBannerHtml_;
 
+// Operator 2026-10-27 — the expanded request read as a conversation. The full
+// body is Gmail's plain text of one message with the whole thread quoted under
+// it; the card showed it verbatim (">>>>" markers, signatures, the disclaimer,
+// the group's unsubscribe footer) in a quarter-width column.
+const SP_THREAD_FIXTURE = [
+  'Hola equipo,', '',
+  'Pueden llamar a la paciente mañana? Ella pregunta por la entrega de su',
+  'silla de ruedas y no habla inglés.', '',
+  'Gracias,', 'Ana Ruiz', 'Customer Service Representative', 'UniversalMed Supply',
+  '*P:* 972-228-1820 Ext. 140 <(972)%20228-1820>', '',
+  'On Mon, Oct 26, 2026 at 3:14 PM Robert Charania <',
+  'robert.charania@universalmedsupply.com> wrote:', '',
+  '> Forwarding this one to the Spanish team.', '>',
+  '> On Mon, Oct 26, 2026 at 2:58 PM Maria Lopez <maria@example.com> wrote:', '>',
+  '>>>> Necesito ayuda con la entrega de mi silla. Nadie me ha llamado y ya',
+  '>>>> pasó una semana.', '>>>>',
+  '>>>> *Website:* universalmedsupply.com <https://universalmedsupply.com>',
+  '>>>> The documents accompanying this transmission contain confidential',
+  '>>>> information belonging to the sender that is legally privileged.',
+  '>>>> --',
+  '>>>> You received this message because you are subscribed to the Google',
+  '>>>> Groups "Spanish Calls" group.'].join('\r\n');
+
+test('spanishBodyParse_: a quoted thread → messages newest first, each named by its "On … wrote:" line (a wrapped one too), the boilerplate gone', () => {
+  const p = sb.spanishBodyParse_(SP_THREAD_FIXTURE);
+  assert.strictEqual(p.messages.length, 3, 'the reply, the forward, the request');
+  assert.strictEqual(p.messages[1].who + ' | ' + p.messages[1].when, 'Robert Charania | Mon, Oct 26, 2026 at 3:14 PM', 'a two-line attribution is joined and parsed');
+  assert.strictEqual(p.messages[2].who + ' | ' + p.messages[2].when, 'Maria Lopez | Mon, Oct 26, 2026 at 2:58 PM');
+  assert.strictEqual(p.messages[0].who, '', 'the newest message has no attribution — the card head names its sender');
+  assert.ok(/^Hola equipo,\n\nPueden llamar a la paciente mañana\? Ella pregunta por la entrega de su silla de ruedas y no habla inglés\.\n\nGracias,\nAna Ruiz$/.test(p.messages[0].text),
+    'hard wraps joined into a paragraph; the signature after the sign-off cut, the sign-off and the name kept: ' + JSON.stringify(p.messages[0].text));
+  assert.ok(/Nadie me ha llamado y ya pasó una semana\./.test(p.messages[2].text), 'the quote markers are stripped and the wrap joined');
+  const all = p.messages.map((m) => m.text).join('\n');
+  assert.ok(!/>|confidential|unsubscribe|Google|Customer Service Representative|%20|\*/.test(all), 'no markers, disclaimer, footer, signature, link echo or bold stars: ' + all);
+  assert.ok(/Website: universalmedsupply\.com$/m.test(p.messages[2].text), 'a link echo is dropped, the text it echoed stays');
+  assert.strictEqual(p.trimmed, true, 'and it SAYS something was hidden');
+});
+
+test('spanishBodyParse_: a plain request (an 8x8 voicemail notification, a one-line email) passes through untouched and untrimmed', () => {
+  const vm = 'New voicemail from (214) 555-0100\nMailbox: A_Q_Spanish\nDuration: 00:42\nReceived: Oct 26, 2026 3:01 PM';
+  const p = sb.spanishBodyParse_(vm);
+  assert.strictEqual(JSON.stringify(p.messages.map((m) => m.text)), JSON.stringify([vm]), 'short lines are never joined');
+  assert.strictEqual(p.trimmed, false);
+  assert.strictEqual(sb.spanishBodyParse_('').messages.length, 0, 'empty → no messages');
+  assert.strictEqual(sb.spanishBodyParse_(null).messages.length, 0);
+  // "Thanks" mid-message is not a sign-off: nothing after it is cut.
+  const mid = 'Thanks\nCan someone call her back at 3pm today about the walker?\nShe is home all afternoon.';
+  assert.strictEqual(sb.spanishBodyParse_('Hola,\n' + mid + '\n' + 'x\n'.repeat(16)).trimmed, false, 'more than 15 lines after "Thanks" — not a signature');
+});
+
+test('spanishBodyParse_: an Outlook reply ("From: … Sent: …") and a forwarded block start a new message at the same depth', () => {
+  const p = sb.spanishBodyParse_(['See below.', '', 'From: Lucia Diaz <lucia@example.com>', 'Sent: Monday, October 26, 2026 2:10 PM',
+    'To: Spanish Calls', 'Subject: Entrega', '', 'Mi pedido no ha llegado.', '',
+    '---------- Forwarded message ---------', 'From: Pedro Gil [mailto:pedro@example.com]', 'Date: Fri, Oct 23, 2026', '', 'Original text.'].join('\n'));
+  assert.strictEqual(JSON.stringify(p.messages.map((m) => [m.who, m.when, m.text])), JSON.stringify([
+    ['', '', 'See below.'],
+    ['Lucia Diaz', 'Monday, October 26, 2026 2:10 PM', 'Mi pedido no ha llegado.'],
+    ['Pedro Gil', 'Fri, Oct 23, 2026', 'Original text.']]));
+});
+
+test('spanishBodyHtml_: the newest message open, the earlier ones folded under a summary, every string escaped, and a note when anything was hidden', () => {
+  const html = sb.spanishBodyHtml_(SP_THREAD_FIXTURE);
+  assert.ok(/^<div class="sp-thread"><div class="sp-msg"><div class="sp-msg-text"><p>Hola equipo,<\/p><p>Pueden llamar/.test(html), 'the newest first, unfolded, a paragraph per blank-line break');
+  assert.ok(/<details class="sp-earlier"><summary>2 earlier messages in this thread<\/summary>/.test(html), 'the rest behind a summary');
+  assert.ok(/<span class="sp-msg-who">Robert Charania<\/span><span class="sp-msg-when">Mon, Oct 26, 2026 at 3:14 PM<\/span>/.test(html));
+  assert.ok(/class="sp-trim-note">[^<]*Open in Gmail/.test(html), 'what was hidden is one click away, and the card says so');
+  const evil = sb.spanishBodyHtml_('<img src=x onerror=alert(1)>\n\nOn Mon, Oct 26, 2026 at 1:00 PM <b>Eve</b> wrote:\n> <script>x</script>');
+  assert.ok(!/<img|<script|<b>/.test(evil), 'email text never becomes markup: ' + evil);
+  assert.strictEqual(sb.spanishBodyHtml_('Una línea.'), '<div class="sp-thread"><div class="sp-msg"><div class="sp-msg-text"><p>Una línea.</p></div></div></div>', 'a plain request: one message, no fold, no note');
+  assert.strictEqual(sb.spanishBodyPlain_(SP_THREAD_FIXTURE).split('\n')[0], 'Hola equipo,', 'the suggestions read the request itself, not the thread');
+});
+
 test('spanishSuggestHtml_: empty / whitespace / no-keyword text → no chips', () => {
   assert.strictEqual(spanishSuggestHtml_(''), '');
   assert.strictEqual(spanishSuggestHtml_('   '), '');

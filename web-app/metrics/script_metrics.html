@@ -2590,7 +2590,7 @@ function spanishNavTo_(btn) {
     template: btn.dataset.template || '',
     requester: read('.sp-task-from'),
     subject: read('.sp-task-subj'),
-    snippet: read('.sp-task-body'),
+    snippet: read('.sp-task-body .sp-msg-text') || read('.sp-task-body'),   // an open card: the request itself, not the thread
     permalink: read('.sp-open', 'href'),
   };
   enterTool(btn.dataset.tool, btn.dataset.tab);
@@ -2762,8 +2762,8 @@ function spanishTaskCard_(t) {
       spanishEscalatedPillHtml_(t) +
       '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
-    '<div class="sp-task-body" id="' + bodyId + '">' + (isOpen ? esc(SPANISH_STATE.bodies[t.threadId] || '(empty)') : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
-    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (isOpen ? SPANISH_STATE.bodies[t.threadId] : t.snippet) || '') + '</div>' +
+    '<div class="sp-task-body' + (isOpen ? ' is-open' : '') + '" id="' + bodyId + '">' + (isOpen ? spanishBodyHtml_(SPANISH_STATE.bodies[t.threadId]) : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
+    '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (isOpen ? spanishBodyPlain_(SPANISH_STATE.bodies[t.threadId]) : t.snippet) || '') + '</div>' +
     '<div class="sp-task-actions">' + open + ' ' + more + ' ' + resolve + ' ' + claimCtl + '</div>' +
   '</div>';
 }
@@ -2872,6 +2872,163 @@ function spanishIsExpanded_(tid) {
   var st = SPANISH_STATE;
   return !!(st.expanded && st.expanded[tid] && st.bodies && st.bodies[tid] != null);
 }
+/* ── The expanded request, read as a conversation (operator 2026-10-27) ──────
+ * The full body is Gmail's plain text of ONE message, and a reply carries the
+ * whole thread under it: "On … wrote:" lines, ">>>>" quote markers, every
+ * sender's signature, the confidentiality disclaimer and the Spanish Calls
+ * group's unsubscribe footer — hard-wrapped at ~76 columns. Dumped verbatim
+ * into a card a quarter of the page wide, the request itself was a few lines
+ * lost in a screen of boilerplate.
+ *
+ * spanishBodyParse_ splits that text into messages, newest first (quote depth
+ * N is the Nth reply back; an Outlook "From: … Sent:" block starts one too),
+ * names each by its attribution line, and cleans each: the boilerplate and
+ * everything after it, a signature after a sign-off line (the sign-off and the
+ * name stay), "Sent from my iPhone", Gmail's "<tel:…>" / "<https://…>" link
+ * echoes and *bold* stars; hard-wrapped lines are joined back into paragraphs.
+ * PURE — text in, data out. What it hides is never lost: the card's "Open in
+ * Gmail" is the full thread, and the note under the body says so whenever
+ * anything was trimmed. Every string is esc()-ed at render (spanishBodyHtml_). */
+var SPANISH_BODY_CUT_RE = [
+  /^you received this message because you are subscribed to the google/i,
+  /^to unsubscribe from this group/i,
+  /^to view this discussion/i,
+  /^the (?:documents?|information) (?:accompanying|contained in|in) this (?:transmission|e-?mail|message)/i,
+  /^confidentiality (?:notice|statement)/i,
+  /^this (?:e-?mail|message|transmission)\b.{0,80}\b(?:confidential|privileged)/i,
+  /^my service to you is important/i,
+  /^please let my supervisor know/i,
+  /^leave us your feedback/i
+];
+var SPANISH_BODY_DROP_RE = [/^sent from my \w+/i, /^enviado desde mi /i, /^get outlook for /i];
+var SPANISH_SIGNOFF_RE = /^(?:(?:thanks|thank you|many thanks|muchas gracias|gracias)(?: (?:and|&) (?:best |kind |warm )?regards)?|(?:best|kind|warm) regards|regards|sincerely|cheers|saludos(?: cordiales)?|atentamente|cordialmente|un saludo)[\s,.!]*$/i;
+var SPANISH_ATTR_END_RE = /(?:wrote|escribió):\s*$/i;
+
+/** "On Mon, Oct 26, 2026 at 3:14 PM Ana Ruiz <ana@x.com> wrote:" → who + when. */
+function spanishAttrParse_(line) {
+  var inner = String(line || '').replace(/^\s*(?:On|El)\s+/i, '').replace(SPANISH_ATTR_END_RE, '')
+    .replace(/\(?<[^<>]*>\)?/g, '').replace(/\s+/g, ' ').trim().replace(/,$/, '').trim();
+  var m = /^(.*?\d{1,2}:\d{2}(?:\s?[AaPp]\.?\s?[Mm]\.?)?)[,\s]+(.+)$/.exec(inner) || /^(.*?\b\d{4})[,\s]+(.+)$/.exec(inner);
+  return m ? { who: m[2].trim(), when: m[1].trim() } : { who: inner, when: '' };
+}
+
+/** One message's lines → its display text, and whether anything was hidden. */
+function spanishBodyClean_(lines) {
+  var out = [], trimmed = false, i;
+  for (i = 0; i < lines.length; i++) {
+    var raw = lines[i];
+    var t = raw.replace(/\s*<(?:mailto:|tel:|https?:\/\/|\(?\+?\d)[^<>\n]*>/gi, '').replace(/\*([^*\n]+?)\*/g, '$1').replace(/\s+$/, '');
+    var bare = t.trim();
+    if (/^--\s*$/.test(bare) || SPANISH_BODY_CUT_RE.some(function (re) { return re.test(bare); })) { trimmed = true; break; }
+    if (SPANISH_BODY_DROP_RE.some(function (re) { return re.test(bare); })) { trimmed = true; continue; }
+    if (!bare && raw.trim()) { trimmed = true; continue; }   // a line that was only a link echo
+    out.push(t);
+  }
+  // A signature: the sign-off line and the name under it stay, the rest goes.
+  // Only near the end — "Thanks" mid-message is not a sign-off.
+  for (i = out.length - 1; i >= 0; i--) {
+    if (!SPANISH_SIGNOFF_RE.test(out[i].trim())) continue;
+    var j = i + 1;
+    while (j < out.length && !out[j].trim()) j++;
+    var after = out.slice(j + 1).filter(function (l) { return l.trim(); }).length;
+    if (j < out.length && after > 0 && after <= 15) { out = out.slice(0, j + 1); trimmed = true; }
+    break;
+  }
+  // Join hard-wrapped lines back into paragraphs; keep blank lines and list items.
+  var paras = [];
+  out.forEach(function (l) {
+    var prev = paras.length ? paras[paras.length - 1] : null;
+    var lt = l.trim();
+    if (prev != null && prev.trim() && lt && prev.length >= 60 && !/:\s*$/.test(prev) && !/^(?:[-*•]|\d+[.)])\s/.test(lt)) {
+      paras[paras.length - 1] = prev.replace(/\s+$/, '') + ' ' + lt;
+    } else paras.push(lt ? l.replace(/^\s+/, '') : '');
+  });
+  var text = paras.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { text: text, trimmed: trimmed };
+}
+
+function spanishBodyParse_(body) {
+  var src = String(body == null ? '' : body).replace(/\r\n?/g, '\n').split('\n').map(function (l) {
+    var m = /^((?:>[ \t]?)+)/.exec(l);
+    return { d: m ? (m[1].match(/>/g) || []).length : 0, t: m ? l.slice(m[1].length) : l };
+  });
+  var msgs = [], cur = { who: '', when: '', depth: 0, lines: [] }, attr = null, i, k;
+  msgs.push(cur);
+  for (i = 0; i < src.length; i++) {
+    var L = src[i];
+    if (L.d !== cur.depth) {
+      if (L.d > cur.depth) {
+        cur = { who: attr ? attr.who : '', when: attr ? attr.when : '', depth: L.d, lines: [] };
+        msgs.push(cur);
+      } else {
+        for (k = msgs.length - 1; k >= 0 && msgs[k].depth !== L.d; k--) {}
+        if (k >= 0) cur = msgs[k];
+      }
+      attr = null;
+    }
+    var line = L.t.trim();
+    // "On … wrote:" — Gmail wraps a long one over two or three lines.
+    if (/^(?:On|El)\s/i.test(line)) {
+      var joined = line, end = i;
+      for (k = i; k < Math.min(src.length, i + 3) && src[k].d === L.d; k++) {
+        if (k > i) joined += ' ' + src[k].t.trim();
+        if (SPANISH_ATTR_END_RE.test(joined)) { end = k; break; }
+      }
+      if (SPANISH_ATTR_END_RE.test(joined)) { attr = spanishAttrParse_(joined); i = end; continue; }
+    }
+    // An Outlook reply or a forward: "From: …" with "Sent:"/"Date:" under it.
+    var fwd = /^-{2,}\s*(?:original message|forwarded message|mensaje original|mensaje reenviado)\s*-{2,}$/i.test(line);
+    var isFrom = /^(?:From|De):\s*\S/i.test(line);
+    if (fwd || isFrom) {
+      var h = fwd ? i + 1 : i, who = '', when = '', ok = false;
+      for (k = h; k < Math.min(src.length, h + 6) && src[k].d === L.d && src[k].t.trim(); k++) {
+        var hl = src[k].t.trim(), hm;
+        if ((hm = /^(?:From|De):\s*(.+)$/i.exec(hl))) who = hm[1].replace(/\s*[<\[][^>\]]*[>\]]/g, '').replace(/"/g, '').trim();
+        else if ((hm = /^(?:Sent|Date|Enviado|Fecha):\s*(.+)$/i.exec(hl))) { when = hm[1].trim(); ok = true; }
+      }
+      if (ok || fwd) {
+        cur = { who: who, when: when, depth: L.d, lines: [] };
+        msgs.push(cur);
+        i = k - 1;
+        continue;
+      }
+    }
+    cur.lines.push(L.t);
+  }
+  var trimmed = false;
+  var messages = [];
+  msgs.forEach(function (m) {
+    var c = spanishBodyClean_(m.lines);
+    if (c.trimmed) trimmed = true;
+    if (c.text) messages.push({ who: m.who, when: m.when, text: c.text });
+  });
+  return { messages: messages, trimmed: trimmed };
+}
+
+/** The text the request IS — the newest message — for the tool suggestions and
+ *  for the context a suggestion chip carries to Call Notes. */
+function spanishBodyPlain_(body) {
+  var p = spanishBodyParse_(body);
+  return p.messages.length ? p.messages[0].text : '';
+}
+
+function spanishBodyHtml_(body) {
+  var p = spanishBodyParse_(body);
+  if (!p.messages.length) return '<div class="sp-msg-text"><p>(empty)</p></div>';
+  var one = function (m, quoted) {
+    var head = (m.who || m.when) ? '<div class="sp-msg-head">' + (m.who ? '<span class="sp-msg-who">' + esc(m.who) + '</span>' : '') +
+      (m.when ? '<span class="sp-msg-when">' + esc(m.when) + '</span>' : '') + '</div>' : '';
+    return '<div class="sp-msg' + (quoted ? ' sp-msg-quoted' : '') + '">' + head + '<div class="sp-msg-text">' +
+      m.text.split(/\n{2,}/).map(function (para) { return '<p>' + esc(para) + '</p>'; }).join('') + '</div></div>';
+  };
+  var rest = p.messages.slice(1);
+  return '<div class="sp-thread">' + one(p.messages[0], false) +
+    (rest.length ? '<details class="sp-earlier"><summary>' + rest.length + ' earlier message' + (rest.length === 1 ? '' : 's') + ' in this thread</summary>' +
+      rest.map(function (m) { return one(m, true); }).join('') + '</details>' : '') +
+    (p.trimmed ? '<div class="sp-trim-note">Signatures, disclaimers and group footers are hidden — Open in Gmail for the full text.</div>' : '') +
+    '</div>';
+}
+
 function spanishPendingItem_(tid) {
   var pd = SPANISH_STATE.pendingRes;
   var list = pd && pd.pending;
@@ -2926,13 +3083,13 @@ function spanishExpand_(btn) {
     // Collapse — the snippet comes back from the payload, never from the DOM.
     st.expanded[tid] = false;
     var item = spanishPendingItem_(tid);
-    if (bodyEl) bodyEl.textContent = (item ? String(item.snippet || '') : '') + (item && item.hasMore ? '…' : '');
+    if (bodyEl) { bodyEl.classList.remove('is-open'); bodyEl.textContent = (item ? String(item.snippet || '') : '') + (item && item.hasMore ? '…' : ''); }
     spanishToggleBtnState_(btn, 'closed');
     return;
   }
   var open = function (body) {
     st.expanded[tid] = true;
-    if (bodyEl) bodyEl.textContent = body || '(empty)';
+    if (bodyEl) { bodyEl.classList.add('is-open'); bodyEl.innerHTML = spanishBodyHtml_(body); }
     spanishToggleBtnState_(btn, 'open');
   };
   if (st.bodies[tid] != null) { open(st.bodies[tid]); return; }   // cached — a second Expand costs no RPC
@@ -2946,7 +3103,7 @@ function spanishExpand_(btn) {
       // Re-run tool suggestions now that the fuller body text is available.
       var subjEl = card.querySelector('.sp-task-subj');
       var wrap = card.querySelector('.sp-suggest-wrap');
-      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + st.bodies[tid]);
+      if (wrap) wrap.innerHTML = spanishSuggestHtml_((subjEl ? subjEl.textContent : '') + ' ' + spanishBodyPlain_(st.bodies[tid]));
     })
     .withFailureHandler(function (e) { btn.disabled = false; spanishToggleBtnState_(btn, 'closed'); showToast((e && e.message) || 'Error', 'error'); })
     .getSpanishInboxThreadBody(tid);
