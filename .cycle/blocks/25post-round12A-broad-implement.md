@@ -24,7 +24,7 @@ OPERATOR ACTIONS / DEPLOY:
 Deploy: N/A — no Deploy Command configured (manual clasp push + New version)
 
 FOLLOW-ON ITEMS:
-- The mock's Sent detail answers render N/A (the fixture's answer keys are not the bank's question numbers in that shape) — cosmetic, fixture-only.
+- None
 
 DOCUMENTATION UPDATES NEEDED:
 - None beyond those made (modules.md, operator-log.md, STATE, config.md gap list)
