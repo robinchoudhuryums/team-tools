@@ -10,10 +10,10 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied and mapped (25post rounds 8–12)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied and mapped; insurance states and aliases, image loaders, "except Hawaii" (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
-re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
+re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`; round 12 D an admin-only read, `kbSuggestPayorSynonyms`.
 Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
 
 - **Expand on a Spanish Inbox request** shows the newest message on its own,
@@ -68,6 +68,21 @@ Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
   nearest warehouse. No API key or billing. If Apps Script asks the deployer to
   re-authorize after this deploy, accept — the map uses the same Maps service
   as the address lookup.
+- **Insurance lookup** (round 12 D): "uhc tx" now finds "UnitedHealthcare
+  Texas" and the other way round — states match by code or full name. A plan
+  whose name excludes the state you typed ("all states other than TX") is
+  listed last with a **TX excluded** note. Payor nicknames ride the
+  **Synonyms** list (Reference → Synonyms): press **Suggest payor aliases** to
+  add groups built from the payor sheet's names, check them, then **Save** —
+  nothing is saved until you do.
+- **Image loaders** (round 12 D): a handbook or article image that is still
+  loading shows a grey box reading **Loading image…**; one that was never
+  imported says **Image not imported yet**; one that failed says **Couldn't
+  load this image** with a **Retry** button.
+- **"except Hawaii"** (round 12 D): an Area Eligibility cell can now say
+  "Open (except Hawaii)" — the item reads **No** through insurance in Hawaii and
+  **Yes** out of pocket. Add it to the scooter rows after this deploy (before
+  it, the app reads that cell as "cannot tell").
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

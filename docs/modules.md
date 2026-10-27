@@ -946,6 +946,24 @@ not restate it. Server endpoints live in the fourteen server files
      warn; not-accepted/OON bad). The rep's QUERY is never persisted (the
      kbMapDistances posture).
 
+     **States, aliases and excluded states (operator 2026-10-27, round 12 D).**
+     `insPayorMatch_` reads the STATES in a query on their own — by code or full
+     name, either way round, whole words only (`insStatesIn_`: a code counts in
+     a payor NAME only in capitals, and in a query in any case except "in",
+     "or" and "me") — and scores the rest of the query through the old
+     `insPayorScore_`, as typed and as each alias the **Synonyms** list gives it
+     (`KB_SEARCH_SYNONYMS`, the list KB search already reads). So "uhc tx" finds
+     "UnitedHealthcare Texas" and "unitedhealthcare texas" finds "UHC TX". A plan
+     naming the searched state ranks above a national one, which ranks above
+     one for another state; a state alone lists the plans that name it. A plan
+     whose name EXCLUDES the state ("UHC (all states other than TX)" —
+     `insPayorNameStates_`) is still listed, LAST, with a "TX excluded" note
+     (`excludedState`). The Synonyms editor's **Suggest payor aliases**
+     (`kbSuggestPayorSynonyms`, admin, read-only) offers groups from the
+     InsurancePayors names — each `INS_PAYOR_ALIAS_FAMILIES` family one of whose
+     terms a name carries, and each "Long Name (ABC)" the sheet spells out —
+     appended to the box for the admin to review; nothing is saved until Save.
+
      **The acceptance vocabulary explains itself (T2, 2026-09-21).** `INS_TERMS`
      is the ONE source for the legend, for the per-value explanations, and — by
      pin — for agreement with the tone. Each acceptance VALUE the vocabulary
@@ -1237,7 +1255,16 @@ not restate it. Server endpoints live in the fourteen server files
      the file nor the images go through Drive: the admin chooses `manual.json`
      from their computer), and the reader asks `getManualImages` for a page's
      images in one or two calls. A chip shows while one loads, and says "not imported yet" or
-     "could not load" when it cannot draw. A re-import rewrites the tab only
+     "could not load" when it cannot draw. Since round 12 D4 (operator
+     2026-10-27, "I sometimes think I don't have an image uploaded but it is
+     just taking time to load") the chip says so in its own text
+     (`kbImgChipState_`, shared with article images): **Loading image…** over a
+     shimmer the size of the image (a figure, a thumbnail, or a small square for
+     an icon), **Image not imported yet** (an admin is pointed at Reference →
+     Handbook → Import), or **Couldn't load this image** with a **Retry** that
+     asks again (a failure is never cached). An article image reads **Image not
+     stored** for its missing case. The image's name rides `data-alt`, so the
+     image that replaces the chip keeps it as its alt. A re-import rewrites the tab only
      when an image changed or was dropped. The Manual dialog reports the images
      too — what would be stored on a check; what was stored and removed on an
      import, and a failed write with "press Import again".
@@ -1341,6 +1368,17 @@ not restate it. Server endpoints live in the fourteen server files
      since it would zoom the picture out to nothing. One read per address per
      page (a failure is not kept), never cached on the server, and an error
      never quotes the address or the service's own message.
+
+     **"except <state>" is an insurance exclusion (operator 2026-10-27, round 12
+     D5).** "Scooters may be available out of pocket in Hawaii, just not through
+     insurance." An Area Eligibility cell ending in "except Hawaii" (also
+     "(except Hawaii and Alaska)", "excluding", "other than", a code in
+     capitals) is read by `oopExceptStatesClause_` and the rest parsed on its
+     own: `{kind: 'except', states, rule}`. Through insurance the rule
+     underneath answers first and the excluded state is a NO ("Not through
+     insurance in HI"); out of pocket `oopEligibilityForPayment_` lifts it like
+     a state list. Every word after the keyword must be a state, or the value
+     stays unknown (K3), and the clause never rescues an unreadable rest.
 
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED

@@ -492,6 +492,11 @@ entry says which it is.
   manual's abbreviations ("ABN" ↔ "Advance Beneficiary Notice") ride
   `manual.json` into `ManualMeta` instead, and are matched as whole PHRASES.
   Edit those in the manual's glossary, never here.
+  **Payor aliases (25post round 12 D2, 2026-10-27):** the insurance lookup
+  reads these groups too (`insPayorMatch_`), so "uhc" finds "UnitedHealthcare".
+  The modal's **Suggest payor aliases** button (`kbSuggestPayorSynonyms`,
+  admin, read-only) appends groups built from the InsurancePayors names for
+  review — run it once after this deploy, check the lines, then Save.
 <a id="operator-quiz-import-from-google-forms-requires-the-google-forms-oaut"></a>
 - **Quiz import from Google Forms requires the Google Forms OAuth scope.**
   `importQuizFromForm` (Team Training → New quiz → "Import from Google
