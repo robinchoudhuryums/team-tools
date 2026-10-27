@@ -7261,6 +7261,32 @@ test('M5b DOM: results mark what the SERVER matched on (a stem, a glossary phras
   assert.ok(!h.$$('#kb-main mark.kb-hl').some((m) => m.textContent.toLowerCase() === 'deliver'), 'no terms → no stem marks');
 });
 
+test('KB-HL DOM (operator 2026-10-27): the drawer marks a search word where a word starts — never "in" inside "Billing" — and a result found only mid-word still marks it; the choice is per result, and Call Notes search (a substring search) keeps its hit marked', () => {
+  const h = m5aBoot_();
+  const doc = h.window.document;
+  const res = { results: [
+    { id: 'kb-a', title: 'PAP billing', department: 'Billing', type: 'article', heading: 'Billing in brief', anchor: '', chunkMd: 'Billing in the PAP insurance order.' },
+    { id: 'kb-b', title: 'Supplies', department: 'Respiratory', type: 'article', heading: 'Supplies', anchor: '', chunkMd: 'Check the CPAP supplies.' }],
+    terms: [] };
+  h.read('kbDrawerOpen_')();
+  h.read('kbDrawerSearch_')('pap in');
+  h.run.flushSuccess(res, 'searchReference');
+  const chunks = h.$$('#kbd-body .kb-chunk');
+  assert.strictEqual(chunks.length, 2);
+  const shown = (el) => el.querySelector('.kb-chunk-body').innerHTML.replace(/<mark class="kb-hl">([^<]*)<\/mark>/g, '[$1]').replace(/<[^>]+>/g, '');
+  assert.strictEqual(shown(chunks[0]), 'Billing [in] the [PAP] [in]surance order.', 'word starts only — "Billing" is left alone');
+  assert.deepStrictEqual(Array.from(chunks[0].querySelectorAll('.kb-chunk-h mark.kb-hl')).map((m) => m.textContent), ['in'], 'the section heading "Billing in brief" marks only the word "in"');
+  assert.ok(!/Bill\[in\]g|B\[in\]/.test(shown(chunks[0])), 'never mid-word when the result has a word-start match');
+  assert.strictEqual(shown(chunks[1]), 'Check the C[PAP] supplies.', 'a result found only inside "CPAP" still shows why it was found');
+  // Call Notes search matches a substring of the TRX — the hit stays marked.
+  h.read('CN_STATE.searchExact = false');
+  const host = doc.createElement('div'); host.id = 'cn-search-results'; doc.body.appendChild(host);
+  h.read('CN_STATE.searchQuery = "1234"');
+  h.read('CN_STATE.searchResults = [{ noteId: "n1", timestamp: "2026-10-27T10:00:00", caller: "Ana", patientAndTrx: "TRX51234", issue: "Called about TRX51234", resolution: "" }]');
+  h.read('cnRenderSearchResults_')();
+  assert.ok(h.$$('#cn-search-results mark.kb-hl').some((m) => m.textContent === '1234'), 'the substring hit is marked inside the TRX');
+});
+
 // ── Cycle 23 Batch 1 — the copy-failure modal on top; the save toast rides the copy; the draft slot ──
 section('Cycle 23 Batch 1 — overlay stacking (SH-01), the save toast (CNUI-07), the one draft slot (CNUI-01)');
 

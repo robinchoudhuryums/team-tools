@@ -4244,6 +4244,8 @@ test('cnSuggestTagsFromText_: matches own-vocabulary tags whose words appear; sk
   assert.strictEqual(cnSuggestTagsFromText_('a b', vocab, []).length, 0, 'sub-3-char tag words never match');
   assert.strictEqual(cnSuggestTagsFromText_('', vocab, []).length, 0);
 });
+loadFunction(sb, 'kb/script_kb.html', 'kbHlTokens_');
+loadFunction(sb, 'kb/script_kb.html', 'kbHlEsc_');
 const kbHlRegex_ = loadFunction(sb, 'kb/script_kb.html', 'kbHlRegex_');
 test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; null on empty', () => {
   const re = kbHlRegex_('Battery c(1)');
@@ -4252,6 +4254,46 @@ test('kbHlRegex_: token regex matches case-insensitively; escapes regex chars; n
   assert.ok(re.test('code c(1) here'), 'regex metachars escaped, matched literally');
   assert.strictEqual(kbHlRegex_('   '), null);
   assert.strictEqual(kbHlRegex_('a'), null, 'single 1-char token yields no regex');
+});
+test('KB-HL (operator 2026-10-27): a search word is marked where a WORD STARTS — mid-word only when the result has no word-start match for it, so a hit is never unexplained', () => {
+  const kbSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'web-app', 'kb', 'script_kb.html'), 'utf8');
+  vm.runInContext(/var KB_HL_WORD = [^\n]+/.exec(kbSrc)[0], sb);
+  const split = loadFunction(sb, 'kb/script_kb.html', 'kbHlSplit_');
+  const wsRe = loadFunction(sb, 'kb/script_kb.html', 'kbHlWordStartRegex_');
+  // Mark a string the way kbHighlightTerms_ does: [word] where it marks.
+  const mark = (q, text, terms) => {
+    const sp = split(sb.kbHlTokens_(q, terms), text);
+    const re = wsRe(sp.starts, sp.anywhere);
+    if (!re) return text;
+    let out = '', last = 0, m;
+    while ((m = re.exec(text))) {
+      const hit = m[2] != null ? m[2] : m[3];
+      const at = m[2] != null ? m.index + m[1].length : m.index;
+      out += text.slice(last, at) + '[' + hit + ']';
+      last = at + hit.length;
+    }
+    return out + text.slice(last);
+  };
+  // The operator's complaint: a short word lit up inside every longer one.
+  assert.strictEqual(mark('in pap', 'Billing in the PAP insurance order'), 'Billing [in] the [PAP] [in]surance order', '"in" marks a word start, never inside "Billing"');
+  assert.strictEqual(mark('or', 'Order form for the doctor'), '[Or]der form for the doctor', '"or" marks "Order", not "for" or "doctor"');
+  // A stem still marks its forms (the word starts there).
+  assert.strictEqual(mark('delivered', 'Delivery was delivered', ['deliver']), '[Deliver]y was [delivered]');
+  // The search matches inside words (M5b: "pap" finds "cpap") — with no
+  // word-start match in the result, the mid-word one is marked instead.
+  assert.strictEqual(mark('pap', 'Check the CPAP supplies'), 'Check the C[PAP] supplies', 'a result found only mid-word still shows why');
+  assert.strictEqual(mark('pap', 'PAP or CPAP'), '[PAP] or CPAP', 'with a word-start match in the result, the mid-word one is left');
+  // At the very start of the text, after punctuation, and in accented Spanish.
+  assert.strictEqual(mark('cpap', 'CPAP (cpap) "cpap"'), '[CPAP] ([cpap]) "[cpap]"');
+  assert.strictEqual(mark('ion', 'información y ion'), 'información y [ion]', 'an accented letter is a letter — "ó" is not a word start');
+  // A token that does not begin with a letter or digit has no word start to anchor to.
+  assert.strictEqual(mark('(1)', 'code c(1) here'), 'code c[(1)] here');
+  // Codes: a digit run marks at its start; a code found only mid-word still marks.
+  assert.strictEqual(mark('0601', 'E0601 and 0601'), 'E0601 and [0601]');
+  assert.strictEqual(mark('0601', 'Use E0601'), 'Use E[0601]');
+  // The boundary character is never swallowed, and adjacent hits both mark.
+  assert.strictEqual(mark('pap', 'pap pap'), '[pap] [pap]');
+  assert.strictEqual(wsRe([], []), null, 'nothing to mark → no regex');
 });
 
 // T3 — Employee Docs: issue-payload validator (pure, from Code.js), the

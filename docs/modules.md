@@ -1283,6 +1283,15 @@ not restate it. Server endpoints live in the fourteen server files
      section index instead of the whole KB tab — every change made in the app
      is seen at once, a by-hand edit to the sheet within five minutes.
 
+     **Word-start marks (operator 2026-10-27, round 11).** A result marks a
+     search word where a WORD STARTS — "in" no longer lights up inside
+     "billing", nor "or" inside "order". The search still matches inside words,
+     so a result whose only match for a word is mid-word ("pap" in "CPAP")
+     marks it there; the choice is made per result (a section, a note card).
+     One highlighter (`kbHighlightTerms_`) serves the Reference tab, the drawer,
+     the cross-reference preview and the Call Notes searches, whose substring
+     hits (a TRX fragment) keep their mark the same way.
+
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED
      once. **Chapters, not parts:**
