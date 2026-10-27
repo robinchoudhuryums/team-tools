@@ -1899,6 +1899,16 @@ function oopEligibilityForPayment_(rule, payingOop) {
   return r;
 }
 
+/** PURE (Node-pinned) — B3: the short name a rule goes by on the card, one
+ *  per branch of a union ("Distance", "City list"). */
+function oopRuleLabel_(rule) {
+  const k = rule && rule.kind;
+  if (k === 'radius') return 'Distance';
+  if (k === 'cities') return 'City list';
+  if (k === 'states') return 'States';
+  if (k === 'open') return 'Anywhere';
+  return 'Rule';
+}
 /** PURE (Node-pinned): does `rule` cover `loc`?
  *
  *  `loc` is { state: 'TX', miles: { '<warehouse name>': 87.2, … } }, where a
@@ -2009,6 +2019,13 @@ function oopEligibilityCheck_(rule, loc) {
         why: city + ' is listed, but its State cell ("' + (bad[0].stateRaw || '') + '") could not be read. ' +
           'Fix it in LocationAcceptance to get a firm answer.' };
     }
+    // B2: a borough or neighborhood standing in for a city Google did not give
+    // is not a city the list could be expected to name ("Queens" for a list
+    // that says "New York"), so its absence is not a NO.
+    if (where.cityFrom) {
+      return { verdict: 'unknown', near: false,
+        why: 'Google gives no city for this address; its ' + where.cityFrom + ', ' + city + ', is not a listed service city — confirm the city before answering.' };
+    }
     return { verdict: 'no', near: false, why: city + ' is not one of the listed service cities.' };
   }
 
@@ -2035,8 +2052,12 @@ function oopEligibilityCheck_(rule, loc) {
     // measure the distance" does not know the city list was also checked and
     // came back empty, and would go chase the wrong half.
     const unk = subs.some(function (s) { return s.verdict === 'unknown'; });
+    // B3 (operator 2026-10-27): `parts` keeps each branch's answer apart, so
+    // the card draws one short line per rule; `why` stays the joined text for
+    // every reader that has only ever read it.
     return { verdict: unk ? 'unknown' : 'no', near: false,
-      why: subs.map(function (s) { return s.why; }).join(' ') };
+      why: subs.map(function (s) { return s.why; }).join(' '),
+      parts: subs.map(function (s, i) { return { rule: oopRuleLabel_(r.rules[i]), verdict: s.verdict, why: s.why }; }) };
   }
 
   if (r.noWarehouse) {
@@ -2157,7 +2178,7 @@ function checkOopEligibility(address, query) {
     const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
 
     const loc = { state: qGeo.state, miles: milesByName,
-      city: qGeo.city, cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
+      city: qGeo.city, cityFrom: qGeo.cityFrom || '', cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
       cityUnreadable: locCityUnreadable_(loc0.cities, qGeo.city),
       warehouseNames: whNames };
 
@@ -2186,6 +2207,8 @@ function checkOopEligibility(address, query) {
     });
 
     return { success: true, formatted: qGeo.formatted, state: qGeo.state, city: qGeo.city,
+      cityFrom: qGeo.cityFrom || '',          // B2: '' = the city proper; else 'borough' / 'neighborhood'
+      isAdmin: !!emp.isAdmin,                 // B1: an admin sees WHICH delivery-table rows are unusable
       warehouses: whOut, items: items, total: total,
       deliveryCities: cityHits,
       // A registry that could not be read is SURFACED rather than silently
@@ -5095,7 +5118,7 @@ function kbGeocodeOne_(addr) {
     // asked. Not found and partly found are different answers (g128), so it
     // comes back as its own shape and the caller asks for a fuller address.
     if (r.partial_match) return { partial: true, formatted: String(r.formatted_address || '') };
-    let state = '', city = '', country = '';
+    let state = '', city = '', country = '', borough = '', hood = '';
     const comps = r.address_components || [];
     for (let i = 0; i < comps.length; i++) {
       const types = comps[i].types || [];
@@ -5112,9 +5135,18 @@ function kbGeocodeOne_(addr) {
       if (!city && (types.indexOf('locality') >= 0 || types.indexOf('postal_town') >= 0)) {
         city = String(comps[i].long_name || '').trim();
       }
+      // B2 (operator 2026-10-27): where there is NO city — every Queens and
+      // Brooklyn address — the borough, else the neighborhood, stands in, and
+      // `cityFrom` says which, so the matcher and the rep both know it is not
+      // the city proper. A city proper always wins.
+      if (!borough && types.indexOf('sublocality_level_1') >= 0) borough = String(comps[i].long_name || '').trim();
+      if (!hood && types.indexOf('neighborhood') >= 0) hood = String(comps[i].long_name || '').trim();
     }
+    let cityFrom = '';
+    if (!city && borough) { city = borough; cityFrom = 'borough'; }
+    else if (!city && hood) { city = hood; cityFrom = 'neighborhood'; }
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
-      formatted: String(r.formatted_address || ''), state: state, city: city, country: country };
+      formatted: String(r.formatted_address || ''), state: state, city: city, cityFrom: cityFrom, country: country };
   } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
 }
 /** PURE (Node-pinned) — KB2-3 (cycle 23): a geocode whose COUNTRY is known and

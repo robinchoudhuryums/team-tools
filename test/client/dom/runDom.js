@@ -3149,9 +3149,9 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
 
   const out = h.$('#kb-oop-results').textContent;
   assert.ok(/\$129\.00/.test(out), 'the price renders as the SHEET displays it');
-  assert.ok(/effective[:\s]+2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
-  assert.ok(/area[:\s]+AZ NV/.test(out), 'and the area eligibility');
-  assert.ok(/Manufacturer[:\s]+Acme/.test(out), 'an unrecognised column rides along verbatim');
+  assert.ok(/effective[:\s]*2026-09-01/i.test(out), 'with the effective date — a commitment needs its as-of');
+  assert.ok(/area[:\s]*AZ NV/i.test(out), 'and the area eligibility (the price lookup has no verdict, so it keeps the area line — B3)');
+  assert.ok(/Manufacturer[:\s]*Acme/.test(out), 'an unrecognised column rides along verbatim');
 
   // THE ROW WITH NO PRICE. An empty span here reads as free, or as nothing to
   // say; both are worse than saying it plainly.
@@ -3808,10 +3808,13 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   // near-boundary verdict's reason, so a host-wide regex stayed green with the
   // strip's own caveat deleted (found by bite-check).
   const strips = Array.from(host.querySelectorAll('.kb-ins-more'));
-  const distStrip = strips.filter((d) => /Dallas 182\.4 mi/.test(d.textContent))[0];
-  assert.ok(distStrip, 'the distances render once, above the list');
-  assert.ok(/San Antonio 74\.1 mi/.test(distStrip.textContent), 'every placed warehouse, in one strip');
+  // B1 (operator 2026-10-27): the NEAREST on one line, every distance one tap away.
+  const distStrip = strips.filter((d) => /Nearest warehouse/.test(d.textContent))[0];
+  assert.ok(distStrip, 'the nearest warehouse renders once, above the list');
+  assert.ok(/Nearest warehouse: San Antonio \u00b7 74\.1 mi/.test(distStrip.textContent), 'the nearest, not the first listed');
   assert.ok(/straight-line/.test(distStrip.textContent), 'with the caveat that makes them honest');
+  const all = host.querySelector('details.kb-oop-dist');
+  assert.ok(all && !all.open && /Dallas \u00b7 182\.4 mi/.test(all.textContent) && /San Antonio \u00b7 74\.1 mi/.test(all.textContent), 'every placed warehouse, folded');
 
   // An UNPLACEABLE warehouse is surfaced, not silently dropped — a radius
   // answer measured against some of the warehouses is not a whole answer, and
@@ -3932,8 +3935,8 @@ test('R DOM: the eligibility answer renders EVERY priced column, labelled — th
 
   // ONE renderer means the eligibility row keeps everything the price row had.
   assert.ok(/E0294/.test(row.textContent), 'the code rides it');
-  assert.ok(/effective[:\s]+2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
-  assert.ok(/Weight cap[:\s]+450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
+  assert.ok(/effective[:\s]*2026-09-01/i.test(row.textContent), 'and the effective date — a commitment needs its as-of');
+  assert.ok(/Weight cap[:\s]*450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
   // The verdicts still ride it. This fixture's two AGREE, so since T4 they
   // render as one row naming both routes rather than two identical ones — the
   // ELIG DOM pin drives the disagreeing branch.
@@ -4119,11 +4122,13 @@ test('T1 DOM: one meaning, one look — an unclassifiable payor status renders l
   h.read('oopLookupInput_')(item);
   h.flushTimers();
   await tick(); await tick();
-  const chips = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-meta-chip'));
-  assert.strictEqual(chips.length, 5, 'code, effective, area and both details are separate chips — ' +
+  // B3 (operator 2026-10-27): a two-column facts list (key · value), not chips.
+  const keys = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-oop-facts dt')).map((d) => d.textContent);
+  assert.strictEqual(keys.join('|'), 'Code|Effective|Area|Category|Shipping', 'code, effective, area and both details are separate rows — ' +
     'the meta mixes a billing code, a date, a delivery rule, money and colour options, and one ' +
     'sentence made every one equally hard to find');
-  assert.ok(chips.some((c) => /Shipping/.test(c.textContent) && /\$150\.00/.test(c.textContent)),
+  const dts = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-oop-facts dt'));
+  assert.ok(dts.some((d) => d.textContent === 'Shipping' && d.nextElementSibling.textContent === '$150.00'),
     'a detail keeps its key with its value');
 });
 
@@ -4680,9 +4685,10 @@ test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and
   const host = h.$('#kb-oop-results');
   const txt = host.textContent;
 
-  // The dropped row is ON SCREEN, in warn tone, naming the row.
-  assert.ok(/Delivery table:/.test(txt), 'the dropped registry rows are surfaced to the rep');
-  assert.ok(/San Antonio/.test(txt) && /no address/.test(txt), 'naming the row and why it was dropped');
+  // B1 (operator 2026-10-27): a rep sees ONE line — how many rows, and what
+  // it means for a No; the rows by name are an admin's to fix.
+  assert.ok(/1 row in the delivery table can\u2019t be used, so a \u201cNo\u201d may be wrong \u2014 tell a manager\./.test(txt), 'the dropped registry rows are surfaced to the rep, as a count');
+  assert.ok(!/Delivery table:/.test(txt) && !/no address/.test(txt), 'without the row-by-row detail');
 
   // A city-delegated YES names the city, so the rep can see WHICH rule decided.
   const rows = host.querySelectorAll('.kb-ins-row');
@@ -4707,11 +4713,73 @@ test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and
       oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
   }));
   addr.value = '900 Congress Ave, Austin TX';
-  h.read('oopLookupInput_')(addr);
+  h.read('oopAddrConfirm_')(addr);
   h.flushTimers();
   await tick(); await tick();
-  assert.ok(!/Delivery table:/.test(h.$('#kb-oop-results').textContent),
+  assert.ok(/Open Item/.test(h.$('#kb-oop-results').textContent), 'non-vacuity: the clean answer IS the one on screen');
+  assert.ok(!/Delivery table:/.test(h.$('#kb-oop-results').textContent) && !h.$('#kb-oop-results .kb-oop-warn'),
     'a clean delivery table shows NO warning line at all');
+  // An ADMIN gets the rows by name, folded under the same line.
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', city: 'Austin', total: 0, isAdmin: true,
+    warehouses: [{ name: 'Dallas', miles: 182.4 }], deliveryCities: [],
+    locationWarnings: ['"San Antonio" has no address, so no distance can be measured from it.', 'a warehouse row with no name'],
+    items: [{ name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+      insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+      oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
+  }));
+  addr.value = '901 Congress Ave, Austin TX';
+  h.read('oopAddrConfirm_')(addr);                  // K5: a street address runs once CONFIRMED
+  h.flushTimers();
+  await tick(); await tick();
+  const adm = h.$('#kb-oop-results');
+  assert.ok(/2 rows in the delivery table can\u2019t be used, so a \u201cNo\u201d may be wrong \u2014 fix them in LocationAcceptance\./.test(adm.textContent), 'the admin is told where to fix them');
+  const rowsList = Array.from(adm.querySelectorAll('.kb-oop-warn-list > div')).map((d) => d.textContent);
+  assert.ok(rowsList.length === 2 && /San Antonio/.test(rowsList[0]) && /no address/.test(rowsList[0]) && /no name/.test(rowsList[1]), 'naming each row and why it was dropped');
+});
+
+test('B DOM (operator 2026-10-27): the eligibility card — a stand-in city is named, the nearest warehouse leads, a Cannot tell gives one short line per rule, the facts are a two-column list and the area line steps aside for the verdict', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const why = { verdict: 'unknown', near: false,
+    why: '1380.6 mi from Dallas, over the 100 mi limit (straight-line — the drive is longer still). Google gives no city for this address; its borough, Queens, is not a listed service city — confirm the city before answering.',
+    parts: [{ rule: 'Distance', verdict: 'no', why: '1380.6 mi from Dallas, over the 100 mi limit (straight-line — the drive is longer still).' },
+      { rule: 'City list', verdict: 'unknown', why: 'Google gives no city for this address; its borough, Queens, is not a listed service city — <b>confirm</b> the city before answering.' }] };
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: 'Astoria, NY 11104, USA', state: 'NY', city: 'Queens', cityFrom: 'borough', total: 1,
+    warehouses: [{ name: 'Dallas', miles: 1380.6 }, { name: 'Middletown, DE', miles: 151.2 }, { name: 'Brandon, FL', miles: 1003.4 }],
+    deliveryCities: [], locationWarnings: [],
+    items: [{ name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: '100 miles of any warehouse, or listed cities', rule: 'any',
+      prices: [{ label: 'OOP Price - Pick-up', value: '$920.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
+      insurance: why, oop: why }],
+  }));
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '11104';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  // B2 — the stand-in city is named as one.
+  assert.ok(/city read as Queens \(Google gave no city — this is its borough\)/.test(host.textContent), 'the borough is named as a stand-in');
+  // B1 — the nearest warehouse leads; the rest are folded.
+  const lead = Array.from(host.querySelectorAll('.kb-ins-more')).filter((d) => /Nearest warehouse/.test(d.textContent))[0];
+  assert.ok(lead && /Middletown, DE · 151\.2 mi \(straight-line\)/.test(lead.textContent) && !/Dallas/.test(lead.textContent), 'the NEAREST, alone on its line');
+  assert.ok(/All warehouse distances \(3\)/.test(host.querySelector('details.kb-oop-dist summary').textContent), 'the rest one tap away');
+  // B3 — one line per rule, the word and the label above it.
+  const v = host.querySelector('.kb-elig-v.unknown');
+  const parts = Array.from(v.querySelectorAll('.kb-elig-part')).map((p) => p.textContent);
+  assert.strictEqual(parts.length, 2, 'one line per rule');
+  assert.ok(/^Distance: No — 1380\.6 mi from Dallas/.test(parts[0]) && /^City list: Cannot tell — Google gives no city/.test(parts[1]), 'each named, with its own answer: ' + parts.join(' / '));
+  assert.strictEqual(v.querySelector('.kb-elig-part b').textContent, 'Distance:', 'the rule name is the bold lead');
+  assert.ok(/<b>confirm<\/b>/.test(parts[1]) && v.querySelectorAll('b').length === 2, 'a server reason stays text — only the rule names are bold');
+  // B3 — the facts list, without the area line under a verdict.
+  const keys = Array.from(host.querySelectorAll('.kb-oop-facts dt')).map((d) => d.textContent).join('|');
+  assert.strictEqual(keys, 'Code|Effective|Category', 'two-column facts; the area rule is what the verdict answers, so it steps aside');
+  assert.ok(!/100 miles of any warehouse, or listed cities/.test(host.textContent), 'the raw area text is not repeated above its own answer');
 });
 
 test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {

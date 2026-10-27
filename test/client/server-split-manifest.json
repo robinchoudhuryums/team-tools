@@ -3305,6 +3305,20 @@
     "getMyPendingTasks"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post B3: oopRuleLabel_ (70_kb.js) — a union branch's short name on the eligibility card",
+   "added": [
+    "oopRuleLabel_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "kbGeocodeOne_",
+    "oopEligibilityCheck_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6687,7 +6701,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "83b877e3d614b728"
+   "sha": "45d416cb70121ea7"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -9442,7 +9456,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "914bafe75f05ca61"
+   "sha": "81fe7aac06a1f2e1"
   },
   "kbGeocodePartialMsg_": {
    "file": "70_kb.js",
@@ -10272,7 +10286,7 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "90ee8b7183f9dacf"
+   "sha": "ee5054514fd4c6d2"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
@@ -10328,6 +10342,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "c0856406be14769e"
+  },
+  "oopRuleLabel_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "192b99909d5094fd"
   },
   "oopSheet_": {
    "file": "70_kb.js",

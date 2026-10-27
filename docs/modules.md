@@ -1310,6 +1310,22 @@ not restate it. Server endpoints live in the fourteen server files
      the cross-reference preview and the Call Notes searches, whose substring
      hits (a TRX fragment) keep their mark the same way.
 
+     **The eligibility answer, tidied (operator 2026-10-27, round 12 B).** Above
+     the results: the address, the NEAREST warehouse on its own line (every
+     distance folded under "All warehouse distances"), and — when the delivery
+     table has rows it cannot use — one line for a rep ("N rows … a 'No' may be
+     wrong — tell a manager"); an admin gets "fix them in LocationAcceptance"
+     and the rows by name (`isAdmin` on the payload). Where Google gives no city
+     (every Queens and Brooklyn address) the borough, else the neighborhood,
+     stands in and is named as one (`cityFrom`); a stand-in missing from the
+     city list is "Cannot tell", never "No", since the list may name the city
+     proper. On each item the verdict's label and word sit on one line and the
+     reason on its own below; a union's No or Cannot tell gives one short line
+     per rule ("Distance: No — …", "City list: Cannot tell — …", the server's
+     `parts`, `oopRuleLabel_`). The item's facts are a two-column list (Code,
+     Effective, then the sheet's own columns) instead of chips, and the Area
+     line steps aside wherever a verdict answers it — the price lookup keeps it.
+
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED
      once. **Chapters, not parts:**

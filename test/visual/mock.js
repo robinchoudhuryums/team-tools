@@ -1909,8 +1909,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         codes: { raw: 'K0821/23/16', shaped: true, certain: false, tokens: [] },
         price: '', prices: [], details: [] }] },
     checkOopEligibility: { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving',
-      total: 2, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4 }, { name: 'Houston', miles: 225.0 }],
+      total: 3, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4 }, { name: 'Houston', miles: 225.0 }, { name: 'San Antonio', miles: 254.1 }, { name: 'Honolulu', miles: 3770.2 }],
       deliveryCities: [{ name: 'Irving', state: 'TX', accepts: 'POV, scooter' }],
+      // 25post B1: a rep sees the COUNT of unusable delivery-table rows on one line.
+      locationWarnings: ['a warehouse row with no name'], isAdmin: false, cityFrom: '',
       items: [
         { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open', rule: 'open',
           codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
@@ -1924,7 +1926,16 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { name: 'Portable Oxygen Concentrator', code: 'E1392', effective: '06/01/2026', eligibility: 'FL, GA, NC', rule: 'states',
           price: '$2,150.00', prices: [{ label: '', value: '$2,150.00' }], details: [],
           insurance: { verdict: 'no', near: false, why: 'TX is not a listed state.' },
-          oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } }] },
+          oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } },
+        // 25post B3: a union that is neither a yes nor a no — one short line per rule.
+        { name: 'Island Scooter Program', code: 'K0827', effective: '09/16/2026', eligibility: '100 miles of Honolulu warehouse, or listed cities', rule: 'any',
+          price: '$1,480.00', prices: [{ label: '', value: '$1,480.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
+          insurance: { verdict: 'unknown', near: false, why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still).' },
+              { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] },
+          oop: { verdict: 'unknown', near: false, why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3770.2 mi from Honolulu, over the 100 mi limit (straight-line — the drive is longer still).' },
+              { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] } }] },
     // E6 (cycle 25, G4): an admin's request carries the search hint (the
     // vocabulary terms in its topic that people searched for).
     kbGetContentRequests: { open: [

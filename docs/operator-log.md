@@ -10,10 +10,11 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you (25post rounds 8–12)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
 re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
+Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
 
 - **Expand on a Spanish Inbox request** shows the newest message on its own,
   in paragraphs, with the earlier messages of the thread folded under "N
@@ -52,6 +53,12 @@ re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
   replies running late", only while a department has at least 25% of its open
   requests past SLA and more than 3 of them; it names the departments and
   opens Dept Requests. Spanish Inbox assignments still appear.
+- **OOP price & area eligibility** (round 12 B): the address line, then the
+  nearest warehouse (all distances one click away). Unusable delivery-table
+  rows show as one line — admins see which rows. A Queens/Brooklyn address now
+  reads its borough as the city, and says so. Each item's answer puts the
+  verdict first and one short line per rule under it, and the item details are
+  a tidy two-column list.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

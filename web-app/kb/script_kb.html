@@ -555,10 +555,27 @@
     font-size: 12px; color: var(--ink);
   }
   .kb-elig-city-note { color: var(--muted); font-size: 11px; }
+  /* B3 (operator 2026-10-27): the label and the word on one line, the reason
+     on its own full-width line under them — three columns squeezed the reason
+     into the last third of a half-width panel. */
   .kb-elig-v {
-    display: grid; grid-template-columns: auto auto 1fr; gap: 4px 8px;
-    align-items: baseline; margin-top: 4px; font-size: 12px;
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;
+    align-items: baseline; margin-top: 6px; font-size: 12px;
   }
+  .kb-elig-v-why { grid-column: 1 / -1; }
+  .kb-elig-part { display: block; }
+  .kb-elig-part + .kb-elig-part { margin-top: 2px; }
+  .kb-elig-part b { color: var(--ink); font-weight: 600; }
+  /* B3: an item's facts — key · value, two columns. */
+  .kb-oop-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 6px 0 0; font-size: 12px; }
+  .kb-oop-facts dt { color: var(--muted); font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding-top: 2px; }
+  .kb-oop-facts dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+  /* B1: the distances and the unusable rows, folded. */
+  .kb-oop-dist { margin: 2px 0 4px; font-size: 12px; }
+  .kb-oop-dist summary { cursor: pointer; color: var(--muted); }
+  .kb-oop-dist-list { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 4px 0 0 14px; color: var(--muted); }
+  .kb-oop-warn-list { padding: 4px 0 0 14px; color: var(--warning-deep); }
+  .kb-oop-warn { display: flex; gap: 6px; align-items: baseline; margin: 4px 0; font-size: 12px; color: var(--warning-deep); }
   .kb-elig-v-lbl {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
@@ -6214,12 +6231,11 @@ function oopPriceHtml_(m, idx) {
   }).join(' ');
 }
 
-/** One meta chip. `label` may be empty (the bare HCPCS code, which needs no
- *  key — it IS the key). Both halves are escaped here so callers pass RAW. */
-function oopMetaChip_(label, value) {
+/** B3 — one row of an item's facts list. Both halves escaped here, so
+ *  callers pass RAW; a detail with no header keeps its value under "—". */
+function oopFactHtml_(label, value) {
   var l = String(label == null ? '' : label).trim();
-  return '<span class="kb-meta-chip">' +
-    (l ? '<span class="k">' + esc(l) + '</span> ' : '') + esc(value) + '</span>';
+  return '<dt>' + esc(l || '\u2014') + '</dt><dd>' + esc(value) + '</dd>';
 }
 
 /** PURE (Node-pinned): the payor rules ON SCREEN that apply to ONE item.
@@ -6298,11 +6314,16 @@ function oopItemRowHtml_(m, matches, idx) {
   // delivery rule, money and colour options — a rep scans for ONE of them, and
   // a single sentence makes every one of them equally hard to find. No colon:
   // the chip boundary already groups the key with its value.
+  //
+  // B3 (operator 2026-10-27): a two-column list (key · value), not a wrapping
+  // chip row — the chips broke mid-phrase and the eye had no column to run
+  // down. The AREA line is the rule the verdicts below already answer, so it
+  // is left out wherever a verdict is drawn (the price lookup keeps it).
   var bits = [];
-  if (m.code) bits.push(oopMetaChip_('', m.code));
-  if (m.effective) bits.push(oopMetaChip_('effective', m.effective));
-  if (m.eligibility) bits.push(oopMetaChip_('area', m.eligibility));
-  (m.details || []).forEach(function (d) { bits.push(oopMetaChip_(d.label, d.value)); });
+  if (m.code) bits.push(oopFactHtml_('Code', m.code));
+  if (m.effective) bits.push(oopFactHtml_('Effective', m.effective));
+  if (m.eligibility && !m.insurance && !m.oop) bits.push(oopFactHtml_('Area', m.eligibility));
+  (m.details || []).forEach(function (d) { bits.push(oopFactHtml_(d.label, d.value)); });
   // Four DISTINCT blocks, not one paragraph. The name, the prices, the meta and
   // the verdicts answer four different questions, and running them together is
   // what made the panel unreadable at speed: a rep mid-call scans for ONE of
@@ -6311,7 +6332,7 @@ function oopItemRowHtml_(m, matches, idx) {
   return '<div class="kb-ins-row" data-kb-nav tabindex="-1">' +
     '<div class="kb-ins-name">' + esc(m.name) + '</div>' +
     '<div class="kb-oop-prices">' + oopPriceHtml_(m, idx) + '</div>' +
-    (bits.length ? '<div class="kb-ins-meta kb-meta-chips">' + bits.join('') + '</div>' : '') +
+    (bits.length ? '<dl class="kb-oop-facts">' + bits.join('') + '</dl>' : '') +
     oopPayorXrefHtml_(m, matches) +
     eligVerdictsHtml_(m) +
     '</div>';
@@ -6371,8 +6392,23 @@ function eligVerdictHtml_(label, v) {
   return '<div class="kb-elig-v ' + cls + '">' +
     '<span class="kb-elig-v-lbl">' + esc(label) + '</span>' +
     '<span class="kb-elig-v-word">' + esc(word) + '</span>' +
-    '<span class="kb-elig-v-why">' + esc((v && v.why) || '') + '</span>' +
+    eligWhyHtml_(v) +
   '</div>';
+}
+
+/** B3 (operator 2026-10-27): the reason under a verdict — one short line per
+ *  rule when the server kept a union's branches apart (`parts`, on a No or a
+ *  Cannot tell), else its one sentence. Every value escaped. */
+var ELIG_WORD = { yes: 'Yes', no: 'No', unknown: 'Cannot tell' };
+function eligWhyHtml_(v) {
+  var parts = (v && v.verdict !== 'yes' && Array.isArray(v.parts)) ? v.parts : [];
+  if (parts.length > 1) {
+    return '<span class="kb-elig-v-why">' + parts.map(function (p) {
+      return '<span class="kb-elig-part"><b>' + esc(p.rule || 'Rule') + ':</b> ' +
+        esc(ELIG_WORD[p.verdict] || 'Cannot tell') + ' \u2014 ' + esc(p.why || '') + '</span>';
+    }).join('') + '</span>';
+  }
+  return '<span class="kb-elig-v-why">' + esc((v && v.why) || '') + '</span>';
 }
 
 /** The banner above a degraded result. Empty string when nothing degraded, so
@@ -6388,15 +6424,26 @@ function oopDegradedHtml_(why) {
  *  the warehouses are, which delivery cities are listed, and every way the
  *  lookup was incomplete. Only drawn in eligibility mode. */
 function oopEligHeaderHtml_(addr, res) {
+  // B2: a borough or neighborhood standing in for a city Google did not give
+  // is NAMED as such — the city-list verdicts below read it, and a rep must
+  // know it is not the city proper.
+  var cityNote = res.cityFrom && res.city
+    ? ' \u00b7 city read as ' + esc(res.city) + ' (Google gave no city \u2014 this is its ' + esc(res.cityFrom) + ')'
+    : '';
   var html = '<div class="kb-ins-more">' + esc(res.formatted || addr) +
-    (res.state ? ' · ' + esc(res.state) : '') + '</div>';
-  // Warehouse distances, once, above the list — every radius row measures
-  // against the same ones, so repeating them per item would be noise.
-  var wh = (res.warehouses || []).filter(function (w) { return w.miles != null; });
+    (res.state ? ' \u00b7 ' + esc(res.state) : '') + cityNote + '</div>';
+  // B1 (operator 2026-10-27): the NEAREST warehouse on one line, every
+  // distance one tap away — eight warehouses on one line read as noise, and a
+  // radius verdict is decided by the nearest.
+  var wh = (res.warehouses || []).filter(function (w) { return w.miles != null; })
+    .slice().sort(function (a, b) { return a.miles - b.miles; });
   if (wh.length) {
-    html += '<div class="kb-ins-more">' + wh.map(function (w) {
-      return esc(w.name) + ' ' + esc(String(w.miles)) + ' mi';
-    }).join(' · ') + ' (straight-line)</div>';
+    html += '<div class="kb-ins-more">Nearest warehouse: ' + esc(wh[0].name) + ' \u00b7 ' + esc(String(wh[0].miles)) + ' mi (straight-line)</div>';
+    if (wh.length > 1) {
+      html += '<details class="kb-oop-dist"><summary>All warehouse distances (' + wh.length + ')</summary><div class="kb-oop-dist-list">' +
+        wh.map(function (w) { return '<span>' + esc(w.name) + ' \u00b7 ' + esc(String(w.miles)) + ' mi</span>'; }).join('') +
+        '</div></details>';
+    }
   }
   // LISTED DELIVERY CITIES, still ABOVE the items rather than inside any one
   // answer. Since 2026-09-22 this list CAN decide — but only for an item whose
@@ -6424,9 +6471,18 @@ function oopEligHeaderHtml_(addr, res) {
   // Rows the delivery table dropped. These used to reach only an admin endpoint
   // with no caller, so a warehouse missing from the registry looked exactly
   // like an address nobody serves.
-  (res.locationWarnings || []).forEach(function (w) {
-    html += '<div class="kb-ins-more" style="color:var(--warning-deep)">Delivery table: ' + esc(w) + '</div>';
-  });
+  // B1: ONE line for a rep — how many rows the table could not use, and what
+  // that means for a No. An admin, who can fix them, gets the rows by name.
+  var lw = res.locationWarnings || [];
+  if (lw.length) {
+    html += '<div class="kb-oop-warn">' + icon('warning', 12) + ' <span>' + lw.length + ' row' + (lw.length === 1 ? '' : 's') +
+      ' in the delivery table can\u2019t be used, so a \u201cNo\u201d may be wrong \u2014 ' +
+      (res.isAdmin ? 'fix ' + (lw.length === 1 ? 'it' : 'them') + ' in LocationAcceptance.' : 'tell a manager.') + '</span></div>';
+    if (res.isAdmin) {
+      html += '<details class="kb-oop-dist"><summary>Which rows</summary><div class="kb-oop-warn-list">' +
+        lw.map(function (w) { return '<div>Delivery table: ' + esc(w) + '</div>'; }).join('') + '</div></details>';
+    }
+  }
   var unplaced = (res.warehouses || []).filter(function (w) { return w.miles == null; });
   if (unplaced.length) {
     html += '<div class="kb-ins-more" style="color:var(--warning-deep)">Could not place: ' +

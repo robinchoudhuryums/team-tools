@@ -14770,7 +14770,7 @@ vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
 // Cycle 22 Batch 5: the parser's helpers (K1/K3 clause parser, the word-bounded
 // registry matcher) and the K4 state/city normalisers ride the same sandbox.
 vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), _vmCtx);
-['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_'].forEach((f) =>
+['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_', 'oopRuleLabel_'].forEach((f) =>
   vm.runInContext(extractRawFunction('Code.js', f), _vmCtx, { filename: f }));
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
@@ -15118,7 +15118,9 @@ test('ELIG: the client shows both verdicts with three distinct states, and the c
   assert.ok(/Cannot tell/.test(verdict), 'UNKNOWN is its own word, never folded into "No"');
   assert.ok(/v\.near \? 'Yes — check' : 'Yes'/.test(verdict),
     'a near-boundary yes reads differently from a flat yes');
-  assert.ok(/esc\(\(v && v\.why\)/.test(verdict), 'the server reason is escaped before innerHTML');
+  // B3: the reason moved into eligWhyHtml_ — one line per rule of a union.
+  const why = extractFunction('kb/script_kb.html', 'eligWhyHtml_');
+  assert.ok(/eligWhyHtml_\(v\)/.test(verdict) && /esc\(\(v && v\.why\)/.test(why) && /esc\(p\.why/.test(why) && /esc\(p\.rule/.test(why), 'the server reason is escaped before innerHTML, whole or per rule');
 
   // The verdicts moved INTO the shared row renderer with the 2026-09-18 merge,
   // and into their own function with T4's collapse (2026-09-21).
@@ -23210,6 +23212,44 @@ test('K5 (cycle 22): a PARTIAL geocode is not a location — its own shape, its 
     const i = f.indexOf('qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) }');
     assert.ok(i > 0 && i < f.indexOf('Could not find that location'), fn + ' refuses a partial geocode before any distance is measured');
   });
+});
+test('B2/B3 (operator 2026-10-27): no city from Google → the borough, else the neighborhood, NAMED as such, and its absence from the list is "cannot tell", never a no; a union\'s No / Cannot tell keeps one reason per rule', () => {
+  const ctx = vm.createContext({ String: String, Number: Number, Math: Math, JSON: JSON, Object: Object, Array: Array, isFinite: isFinite });
+  vm.runInContext(extractRawFunction('Code.js', 'kbGeocodeOne_'), ctx, { filename: 'kbGeocodeOne_' });
+  const geo = (comps) => {
+    ctx.Maps = { newGeocoder: () => ({ setRegion: function () { return this; },
+      geocode: () => ({ status: 'OK', results: [{ geometry: { location: { lat: 40.76, lng: -73.92 } }, formatted_address: 'Astoria, NY 11104, USA', address_components: comps }] }) }) };
+    const g = ctx.kbGeocodeOne_('11104');
+    return g.city + '|' + g.cityFrom;
+  };
+  const C = (name, types) => ({ long_name: name, short_name: name, types: types });
+  const queens = [C('Astoria', ['neighborhood', 'political']), C('Queens', ['political', 'sublocality', 'sublocality_level_1']), C('NY', ['administrative_area_level_1']), C('US', ['country'])];
+  assert.strictEqual(geo(queens), 'Queens|borough', 'THE CASE: a Queens ZIP had no city at all — the borough stands in, and says so');
+  assert.strictEqual(geo([C('Astoria', ['neighborhood', 'political']), C('NY', ['administrative_area_level_1'])]), 'Astoria|neighborhood', 'no borough → the neighborhood');
+  assert.strictEqual(geo([C('Astoria', ['neighborhood', 'political']), C('Dallas', ['locality', 'political'])]), 'Dallas|', 'a city proper always wins, and is not marked');
+  assert.strictEqual(geo([C('NY', ['administrative_area_level_1'])]), '|', 'nothing at all stays nothing — "could not determine"');
+  // The verdict over a stand-in city.
+  const V = (loc) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityCheck_(' + JSON.stringify({ kind: 'cities' }) + ',' + JSON.stringify(loc) + '))', _vmCtx));
+  const miss = V({ hasCityRows: true, city: 'Queens', cityFrom: 'borough', cityMatches: [], cityUnreadable: [] });
+  assert.strictEqual(miss.verdict, 'unknown', 'a borough missing from a list that may say "New York" is not a NO');
+  assert.ok(/Google gives no city/.test(miss.why) && /borough, Queens/.test(miss.why), 'and it says why: ' + miss.why);
+  assert.strictEqual(V({ hasCityRows: true, city: 'Queens', cityFrom: 'borough', cityMatches: [{ name: 'Queens' }], cityUnreadable: [] }).verdict, 'yes', 'listed by its borough → yes');
+  assert.strictEqual(V({ hasCityRows: true, city: 'Waco', cityFrom: '', cityMatches: [], cityUnreadable: [] }).verdict, 'no', 'a city proper not on the list is still a firm no');
+  // B3: a union's No / Cannot tell keeps each branch apart.
+  const WH = ['Dallas'];
+  const rule = vm.runInContext('JSON.stringify(oopEligibilityParse_(' + JSON.stringify('100 miles of any warehouse, or listed cities') + ',' + JSON.stringify(WH) + '))', _vmCtx);
+  const U = (loc) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityCheck_(' + rule + ',' + JSON.stringify(loc) + '))', _vmCtx));
+  const far = U({ state: 'NY', hasCityRows: true, warehouseNames: WH, miles: { Dallas: 1380.6 }, city: '', cityMatches: [], cityUnreadable: [] });
+  assert.strictEqual(far.verdict, 'unknown');
+  assert.strictEqual(far.parts.map((p) => p.rule + ':' + p.verdict).join(','), 'Distance:no,City list:unknown', 'one part per rule, named, with its own answer');
+  assert.ok(/1380\.6 mi from Dallas/.test(far.parts[0].why) && /Could not determine the city/.test(far.parts[1].why));
+  assert.strictEqual(far.why, far.parts[0].why + ' ' + far.parts[1].why, '`why` is unchanged for every reader that reads only it');
+  const near = U({ state: 'TX', hasCityRows: true, warehouseNames: WH, miles: { Dallas: 20 }, city: 'Irving', cityMatches: [], cityUnreadable: [] });
+  assert.ok(near.verdict === 'yes' && !near.parts, 'a yes names the rule that carried it, as before');
+  const lbl = (k) => vm.runInContext('oopRuleLabel_(' + JSON.stringify({ kind: k }) + ')', _vmCtx);
+  assert.strictEqual(['radius', 'cities', 'states', 'open', 'unknown'].map(lbl).join(','), 'Distance,City list,States,Anywhere,Rule');
+  const ep = stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/cityFrom: qGeo\.cityFrom \|\| ''/.test(ep) && /isAdmin: !!emp\.isAdmin/.test(ep), 'the endpoint ships the stand-in marker and the admin flag');
 });
 test('K9 (cycle 22): a blank OopPricing row is neither an item nor "Cannot read"', () => {
   const ctx = vm.createContext({ String: String });

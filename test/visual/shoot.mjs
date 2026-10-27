@@ -55,6 +55,12 @@ const KBL_CODES = KBL_SEARCH +
   "; (function tick(n){ var b=document.querySelector('#kb-ins-results .kb-ins-det-btn');" +
   " if(b){ insToggleLegend_(b); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(16)";
 
+// 25post B: the eligibility CARDS (verdict lines, facts list) sit below the
+// fold inside the panel's own scroller; poll for the last row, then scroll it in.
+const KBL_ELIG_CARDS = KBL_SEARCH +
+  "; (function tick(n){ var rows=document.querySelectorAll('#kb-oop-results .kb-ins-row');" +
+  " if(rows.length >= 3){ rows[rows.length-1].scrollIntoView({ block: 'end' }); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
+
 // The DRAWER's cross-reference sits under the item row, below the fold at
 // ~340px. That width is exactly where T1/T2's defects lived, so it is shot
 // rather than reasoned about: scroll the drawer body once the results land.
@@ -413,6 +419,8 @@ const SCENARIOS = [
   ['reference-drawer-light-compact',{ tool: 'reference', tab: null }, COMPACT, 'light', '?compact=1', KBD_SEARCH],
   ['reference-results-light-wide',  { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_SEARCH],
   ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
+  ['reference-elig-cards-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_CARDS],
+  ['reference-elig-cards-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_CARDS],
   // T3 — the join, both directions in one frame: the payor's code columns
   // NAMED (and the three states that are not a name), and the item row's
   // cross-reference to the payor on screen.
