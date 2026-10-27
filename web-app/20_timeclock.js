@@ -8897,27 +8897,24 @@ function getMyPendingTasks() {
       }
     } catch (e) { unavailable.push('notes'); }
 
-    // requests — the rep's own OPEN dept requests + the incoming ones their
-    // desk owes (getDeptRequests already scopes both). Overdue = the SLA band.
+    // requests — E1 (operator 2026-10-27): no per-request items any more (a
+    // rep's own and incoming requests live on the Dept Requests tab). A MANAGER
+    // gets ONE item while any department's replies are running late —
+    // drLateDepartments_: at least a quarter of its open requests past SLA and
+    // more than three of them. A rep's list never reads the tracker at all.
     try {
-      var dr = getDeptRequests();
-      if (!dr || dr.error) throw new Error((dr && dr.error) || 'unreadable');
-      var reqRoute = { tool: 'metrics', tab: 'metricsDeptReq' };
-      (dr.mine || []).forEach(function (r) {
-        if (r.status === 'resolved') return;
-        items.push({
-          kind: 'requests', title: 'Request to ' + String(r.toDept || '—') + (r.label ? ' · ' + r.label : ''),
-          detail: 'Sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
-          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
-        });
-      });
-      (dr.incoming || []).forEach(function (r) {
-        items.push({
-          kind: 'requests', title: 'Incoming from ' + String(r.byName || 'a teammate') + (r.label ? ' · ' + r.label : ''),
-          detail: 'For ' + String(r.toDept || '—') + ' · sent ' + pushDate(r.createdAt) + (r.slaStatus === 'overdue' ? ' · past its ' + drSlaDaysLabel_(r.slaDays) + ' SLA' : ''),
-          dueIso: '', overdue: r.slaStatus === 'overdue', action: 'Open', route: reqRoute,
-        });
-      });
+      if (emp.isManager) {
+        var dr = getDeptRequests();
+        if (!dr || dr.error) throw new Error((dr && dr.error) || 'unreadable');
+        var late = drLateDepartments_(dr.deptStats);
+        if (late.length) {
+          items.push({
+            kind: 'requests', title: 'Department replies running late',
+            detail: late.map(function (d) { return d.dept + ' ' + d.late + ' of ' + d.open + ' past SLA'; }).join(' \u00b7 '),
+            dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' },
+          });
+        }
+      }
     } catch (e) { unavailable.push('requests'); }
 
     // sched — the rep's own scheduled call-backs due TODAY (rep tz); a past

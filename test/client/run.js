@@ -21187,6 +21187,53 @@ console.log('\ndesign handoff PR 6 — Time Clock (Needs you, state line, rail o
 
 const pr6nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
 
+test('E1 (operator 2026-10-27): Needs you carries no per-request Dept Request items; a MANAGER gets ONE item while a department has ≥25% of its open requests past SLA and more than three — a rep\'s list never reads the tracker (driven)', () => {
+  const ctx = vm.createContext({ JSON, Math, Date, String, Number, Array, Object, Error });
+  ['DR_LATE_SHARE', 'DR_LATE_MIN'].forEach((k) => {
+    const m = serverSource().match(new RegExp('const ' + k + ' = ([\\d.]+);'));
+    assert.ok(m, k + ' is declared'); vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx);
+  });
+  vm.runInContext(extractRawFunction('Code.js', 'drLateDepartments_'), ctx);
+  const late = (stats) => JSON.stringify(ctx.drLateDepartments_(stats));
+  // The rule: a quarter AND more than three.
+  assert.strictEqual(late([{ dept: 'Billing', open: 12, overdueOpen: 5 }]), '[{"dept":"Billing","late":5,"open":12}]', '5 of 12 (42%) counts');
+  assert.strictEqual(late([{ dept: 'Billing', open: 16, overdueOpen: 4 }]), '[{"dept":"Billing","late":4,"open":16}]', 'exactly 25% and 4 counts');
+  assert.strictEqual(late([{ dept: 'Billing', open: 17, overdueOpen: 4 }]), '[]', 'under a quarter does not');
+  assert.strictEqual(late([{ dept: 'Billing', open: 3, overdueOpen: 3 }]), '[]', '3 of 3 is not MORE than three');
+  assert.strictEqual(late([{ dept: 'Billing', open: 0, overdueOpen: 0 }, null, { dept: 'X' }]), '[]', 'empty and malformed rows are skipped');
+  assert.strictEqual(ctx.drLateDepartments_([{ dept: 'Power', open: 20, overdueOpen: 6 }, { dept: 'Billing', open: 8, overdueOpen: 4 }]).map((d) => d.dept).join(','), 'Billing,Power', 'worst share first (50% before 30%)');
+  // Driven through getMyPendingTasks: every other source is absent here, so it
+  // lands in `unavailable` by its own catch — the requests block is what is read.
+  let drCalls = 0;
+  const stats = [{ dept: 'Billing', open: 12, overdueOpen: 5 }, { dept: 'Shipping', open: 9, overdueOpen: 1 }];
+  const run = (isManager) => {
+    const c = vm.createContext({ JSON, Math, Date, String, Number, Array, Object, Error,
+      PENDING_TASKS_CACHE_PREFIX: 'pt_', PENDING_TASKS_CAP: 30, PENDING_TASKS_CACHE_TTL: 60,
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+      getEmployeeInfo_: () => ({ id: 'E1', timezone: 'America/Chicago', isManager: isManager }),
+      safeTimezone_: (t) => t, prevWorkdayIso_: () => '2026-10-26',
+      Utilities: { formatDate: () => '2026-10-27' },
+      pendingTasksSort_: (x) => x, storeConfigured_: () => false, CONFIG: { KB: {}, HR_DOCS: {} }, canSeeSpanishInbox_: () => false,
+      getDeptRequests: () => { drCalls++; return { mine: [{ status: 'open', toDept: 'Billing' }], incoming: [{ toDept: 'Billing' }], deptStats: stats }; },
+      drLateDepartments_: ctx.drLateDepartments_ });
+    vm.runInContext(extractRawFunction('Code.js', 'getMyPendingTasks'), c);
+    return c.getMyPendingTasks();
+  };
+  const rep = run(false);
+  assert.ok(!rep.error, 'no outer failure: ' + rep.error);
+  assert.strictEqual(drCalls, 0, 'a rep\'s list never reads the tracker');
+  assert.ok(!rep.items.some((i) => i.kind === 'requests') && rep.unavailable.indexOf('requests') < 0, 'no request items, and none "couldn\'t check"');
+  const mgr = run(true);
+  assert.strictEqual(drCalls, 1);
+  const reqs = mgr.items.filter((i) => i.kind === 'requests');
+  assert.strictEqual(reqs.length, 1, 'ONE item for the manager, however many requests');
+  assert.strictEqual(reqs[0].title, 'Department replies running late');
+  assert.strictEqual(reqs[0].detail, 'Billing 5 of 12 past SLA', 'only the department over the bar is named');
+  assert.ok(reqs[0].overdue === true && reqs[0].route.tab === 'metricsDeptReq');
+  stats[0].overdueOpen = 2;
+  assert.ok(!run(true).items.some((i) => i.kind === 'requests'), 'no department over the bar → no item');
+});
+
 test('PR6-1: getMyPendingTasks — six try/catch\'d sources named in `unavailable`, degraded rounds never cached, bare {error} read shape, registered routes, prevWorkdayIso_ + pendingTasksSort_ behavioural', () => {
   const raw = extractRawFunction('Code.js', 'getMyPendingTasks');
   const fn = pr6nc(raw);

@@ -3291,6 +3291,20 @@
     "intakeFilterRecommendations_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post E1: drLateDepartments_ + DR_LATE_SHARE/DR_LATE_MIN (50_deptrequests.js) — the manager Needs-you item",
+   "added": [
+    "DR_LATE_MIN",
+    "DR_LATE_SHARE",
+    "drLateDepartments_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3934,6 +3948,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "b710d9d42807ef6a"
+  },
+  "DR_LATE_MIN": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "6a021f9f22f7401a"
+  },
+  "DR_LATE_SHARE": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "9fada94f7e381ae7"
   },
   "DR_LIST_CAP": {
    "file": "00_config.js",
@@ -7240,6 +7264,11 @@
    "kind": "function",
    "sha": "d9b2cee2490b00a0"
   },
+  "drLateDepartments_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "e2dcdf133adb2cc7"
+  },
   "drNewestOpenFirst_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -8303,7 +8332,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f3a115bc1e57e825"
+   "sha": "075c12bc33ce0a71"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",

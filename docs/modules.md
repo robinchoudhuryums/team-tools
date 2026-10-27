@@ -83,6 +83,15 @@ not restate it. Server endpoints live in the fourteen server files
      through, so the Dashboard is never empty. A manager saves or clears the
      team default from the same panel. A hidden widget loads nothing.
 
+     **25post round 12 E1 (operator 2026-10-27) — Dept Requests leave Needs
+     you.** The list no longer carries one item per open or incoming request (a
+     rep's list does not read the tracker at all). A manager gets ONE item,
+     "Department replies running late", while any department has at least a
+     quarter of its open requests past their SLA and more than three of them
+     (`drLateDepartments_`, `DR_LATE_SHARE` / `DR_LATE_MIN`), naming each such
+     department ("Billing 5 of 12 past SLA"), worst share first, and opening the
+     Dept Requests tab. Spanish Inbox items stay as they were.
+
      **Cycle 23 Batch 6a (2026-10-02) — PTO and punch correctness.** A
      single-date time-off request on a weekend or company holiday is refused by
      name, as the range path already skipped them (rep and manager). An
