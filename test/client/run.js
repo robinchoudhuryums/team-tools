@@ -23196,6 +23196,61 @@ test('K4 (cycle 22): the city list reads "Texas" as TX and "Ft. Worth" as Fort W
   assert.ok(/cityUnreadable: locCityUnreadable_\(loc0\.cities, qGeo\.city\)/.test(stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'))),
     'and the endpoint hands the check the unreadable rows');
 });
+test('C1 (operator 2026-10-27): the eligibility map — a closed ring at the right distance, the nearest warehouse always drawn, a far one counted not drawn; the endpoint draws through the built-in Maps service and never quotes the address in an error (driven)', () => {
+  const ctx = vm.createContext({ Math: Math, isFinite: isFinite, String: String, Number: Number, JSON: JSON, Object: Object, Array: Array });
+  ['OOP_MAP_RING_MILES', 'OOP_MAP_NEARBY_MILES', 'OOP_MAP_RING_POINTS', 'KB_MAP_QUERY_MAX'].forEach((k) => {
+    const m = serverSource().match(new RegExp('const ' + k + ' = (\\d+);'));
+    assert.ok(m, k + ' is declared'); vm.runInContext('var ' + k + ' = ' + m[1] + ';', ctx);
+  });
+  ['oopRingPoints_', 'oopMapPlan_', 'kbHaversineMiles_', 'oopEligibilityMap'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: f }));
+  // The ring.
+  const ring = ctx.oopRingPoints_(32.89, -96.9, 100, 36);
+  assert.strictEqual(ring.length, 37, 'n points plus the closing one');
+  assert.ok(ring[0].lat === ring[36].lat && ring[0].lng === ring[36].lng, 'closed');
+  ring.forEach((p) => { const d = ctx.kbHaversineMiles_(32.89, -96.9, p.lat, p.lng); assert.ok(Math.abs(d - 100) < 0.5, 'every point ~100 mi out: ' + d); });
+  // The plan.
+  const whs = [{ name: 'Honolulu', lat: 21.3, lng: -157.9, miles: 3770 }, { name: 'Dallas', lat: 32.89, lng: -96.9, miles: 12.4 },
+    { name: 'San Antonio', lat: 29.9, lng: -97.9, miles: 254 }, { name: 'Lost' }];
+  const plan = ctx.oopMapPlan_(whs, 100);
+  assert.strictEqual(plan.nearest.name, 'Dallas', 'the nearest, whatever the order');
+  assert.strictEqual(plan.shown.map((w) => w.name).join(','), 'Dallas,San Antonio', 'a warehouse within 300 mi is drawn too');
+  assert.strictEqual(plan.omitted, 1, 'Honolulu is counted, not drawn — it would zoom the map out to nothing');
+  assert.strictEqual(ctx.oopMapPlan_([{ name: 'Lost' }], 100), null, 'nothing placed → nothing to map');
+  // The endpoint, with the Maps service stubbed and its calls recorded.
+  const calls = [];
+  const mk = () => { const m = {}; ['setSize', 'setMapType', 'setPathStyle', 'beginPath', 'endPath', 'setMarkerStyle'].forEach((k) => { m[k] = (...a) => { calls.push(k); return m; }; });
+    m.addPoint = (a, b) => { calls.push('point'); return m; }; m.addMarker = (a, b) => { calls.push('marker:' + a); return m; };
+    m.getBlob = () => ({ getBytes: () => [1, 2, 3] }); return m; };
+  Object.assign(ctx, {
+    getEmployeeInfo_: () => ({ id: 'E1' }),
+    kbGeocodeOne_: () => ({ lat: 32.8, lng: -96.95, state: 'TX', country: 'US' }), kbGeoOutsideUs_: () => false,
+    kbGeocodeUnavailableMsg_: () => 'down', kbGeocodePartialMsg_: () => 'partial', kbGeoOutsideUsMsg_: () => 'outside',
+    getLocationAcceptance_: () => ({ warehouses: { Dallas: '1329 W Walnut Hill Ln', Honolulu: '330 Sand Island' } }),
+    kbGeocodeCached_: () => [{ lat: 32.89, lng: -96.9 }, { lat: 21.3, lng: -157.9 }],
+    Utilities: { base64Encode: () => 'QUJD' },
+    Maps: { newStaticMap: mk, StaticMap: { Type: { ROADMAP: 'r' }, MarkerSize: { MID: 'm' }, Color: { BLUE: 'b', RED: 'r' } } } });
+  const r = ctx.oopEligibilityMap('500 Main St, Irving TX');
+  assert.ok(!r.error, 'drawn: ' + r.error);
+  assert.strictEqual(r.img, 'data:image/png;base64,QUJD');
+  assert.strictEqual(r.nearest.name, 'Dallas'); assert.strictEqual(r.ringMiles, 100); assert.strictEqual(r.omitted, 1);
+  assert.strictEqual(calls.filter((c) => c === 'point').length, 37, 'the ring is drawn as a closed path');
+  assert.ok(calls.indexOf('marker:32.89') >= 0 && calls.indexOf('marker:32.8') > calls.indexOf('marker:32.89'), 'the warehouse, then the address on top');
+  assert.ok(calls.indexOf('marker:21.3') < 0, 'the far warehouse is not drawn');
+  // A failed draw names no part of the request.
+  ctx.Maps.newStaticMap = () => { const m = mk(); m.getBlob = () => { throw new Error('Bad request https://maps.googleapis.com/?markers=32.8,-96.95'); }; return m; };
+  const bad = ctx.oopEligibilityMap('500 Main St, Irving TX');
+  assert.ok(bad.error && !/32\.8|Main|maps\.googleapis/.test(bad.error), 'the service message (which carries the coordinates) is not passed on: ' + bad.error);
+  // Gates.
+  ctx.getEmployeeInfo_ = () => null;
+  assert.strictEqual(ctx.oopEligibilityMap('75038').error, 'Not authorized.');
+  ctx.getEmployeeInfo_ = () => ({ id: 'E1' });
+  assert.ok(/3–/.test(ctx.oopEligibilityMap('ab').error), 'a too-short address is refused before any lookup');
+  ctx.getLocationAcceptance_ = () => ({ warehouses: {} });
+  assert.ok(/nothing to map/.test(ctx.oopEligibilityMap('75038').error), 'an empty delivery table is named');
+  // The eligibility payload now carries each warehouse's address, for the route link.
+  assert.ok(/whOut\.push\(\{ name: n, miles: d, address: wh\[n\] \}\)/.test(stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'))));
+});
+
 test('K5 (cycle 22): a PARTIAL geocode is not a location — its own shape, its own message, never a distance and never cached', () => {
   const ctx = vm.createContext({ String: String, Number: Number, Math: Math, JSON: JSON, Object: Object, Array: Array, isFinite: isFinite,
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => null, setProperty: () => {} }) },

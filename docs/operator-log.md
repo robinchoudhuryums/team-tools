@@ -10,7 +10,7 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied (25post rounds 8–12)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied and mapped (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
 re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
@@ -62,6 +62,12 @@ Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
 - **Distance wording** (round 12 B follow-up): a distance answer reads
   "1,380.6 mi from Dallas (>100 mi)" or "12 mi from Dallas (within 100 mi)";
   only a near-the-limit yes still mentions the straight line.
+- **Eligibility map** (round 12 C): under the nearest warehouse, **Show map**
+  draws the address, nearby warehouses and the 100-mile ring (only when
+  pressed), and **Driving route from …** opens Google Maps directions from the
+  nearest warehouse. No API key or billing. If Apps Script asks the deployer to
+  re-authorize after this deploy, accept — the map uses the same Maps service
+  as the address lookup.
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

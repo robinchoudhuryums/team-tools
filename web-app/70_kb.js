@@ -2176,7 +2176,7 @@ function checkOopEligibility(address, query) {
         const g = geos[i];
         const d = g ? Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 : null;
         if (d != null) milesByName[n] = d;
-        whOut.push({ name: n, miles: d });
+        whOut.push({ name: n, miles: d, address: wh[n] });   // C1: the driving-route link starts here
       });
     }
     // Listed delivery cities for this address, matched ONCE. They are shown as
@@ -2239,6 +2239,86 @@ function checkOopEligibility(address, query) {
       })),
       cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
   } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
+}
+
+// ── C1 (operator 2026-10-27): the eligibility map ─────────────────────────
+// A STATIC picture drawn by Apps Script's built-in Maps service — no API key,
+// no billing — and only when the rep opens it. It shows the address, the
+// nearest warehouse with the network's 100-mile ring, and any other warehouse
+// close enough to matter; a warehouse an ocean away (Honolulu, for a Dallas
+// address) would zoom the picture out to nothing, so it is counted, not drawn.
+const OOP_MAP_RING_MILES = 100;      // the network rule: "100 miles of any warehouse"
+const OOP_MAP_NEARBY_MILES = 300;    // other warehouses drawn when this close to the address
+const OOP_MAP_RING_POINTS = 36;
+/** PURE (Node-pinned) — the ring: `n` points `miles` from (lat, lng), closed. */
+function oopRingPoints_(lat, lng, miles, n) {
+  const R = 3958.8, d = miles / R, p1 = lat * Math.PI / 180, l1 = lng * Math.PI / 180;
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = 2 * Math.PI * (i % n) / n;
+    const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(t));
+    const l2 = l1 + Math.atan2(Math.sin(t) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+    out.push({ lat: Math.round(p2 * 180 / Math.PI * 1e5) / 1e5, lng: Math.round(((l2 * 180 / Math.PI + 540) % 360 - 180) * 1e5) / 1e5 });
+  }
+  return out;
+}
+/** PURE (Node-pinned) — what the map draws. `whs` is [{name, lat, lng, miles}]
+ *  (miles from the address; an unplaced warehouse has no lat). The nearest is
+ *  always drawn with its ring; another only within OOP_MAP_NEARBY_MILES. */
+function oopMapPlan_(whs, ringMiles) {
+  const placed = (whs || []).filter(function (w) { return w && isFinite(w.lat) && isFinite(w.lng) && isFinite(w.miles); })
+    .slice().sort(function (a, b) { return a.miles - b.miles; });
+  if (!placed.length) return null;
+  const nearest = placed[0];
+  const shown = placed.filter(function (w, i) { return i === 0 || w.miles <= OOP_MAP_NEARBY_MILES; });
+  return { nearest: nearest, shown: shown, omitted: placed.length - shown.length,
+    ring: oopRingPoints_(nearest.lat, nearest.lng, ringMiles, OOP_MAP_RING_POINTS) };
+}
+/** Rep-callable, read-only, no lock, never cached (the address is a patient's
+ *  — the kbMapDistances rule). Returns { img: data URL, ringMiles, nearest,
+ *  shown[], omitted } or { error }. An error never quotes the address (g146). */
+function oopEligibilityMap(address) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const addr = String(address || '').trim();
+    if (addr.length < 3 || addr.length > KB_MAP_QUERY_MAX) {
+      return { error: 'Enter an address or ZIP code (3–' + KB_MAP_QUERY_MAX + ' characters).' };
+    }
+    const qGeo = kbGeocodeOne_(addr);
+    if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };
+    if (qGeo && qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) };
+    if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    if (kbGeoOutsideUs_(qGeo)) return { error: kbGeoOutsideUsMsg_() };
+    const loc0 = getLocationAcceptance_();
+    const names = Object.keys(loc0.warehouses || {});
+    const geos = names.length ? kbGeocodeCached_(names.map(function (n) { return loc0.warehouses[n]; })) : [];
+    const whs = names.map(function (n, i) {
+      const g = geos[i];
+      return g ? { name: n, lat: g.lat, lng: g.lng, miles: Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 } : { name: n };
+    });
+    const plan = oopMapPlan_(whs, OOP_MAP_RING_MILES);
+    if (!plan) return { error: 'No warehouse in the delivery table could be placed, so there is nothing to map.' };
+    let bytes;
+    try {
+      const map = Maps.newStaticMap().setSize(640, 400).setMapType(Maps.StaticMap.Type.ROADMAP);
+      map.setPathStyle(2, '0x2E7D32CC', '0x2E7D3226');
+      map.beginPath();
+      plan.ring.forEach(function (pt) { map.addPoint(pt.lat, pt.lng); });
+      map.endPath();
+      map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.BLUE, 'W');
+      plan.shown.forEach(function (w) { map.addMarker(w.lat, w.lng); });
+      map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.RED, 'A');
+      map.addMarker(qGeo.lat, qGeo.lng);
+      bytes = map.getBlob().getBytes();
+    } catch (e) {
+      // The service's own message can carry the request URL, coordinates and all.
+      return { error: 'The map service did not answer — try again, or use the driving-route link.' };
+    }
+    return { img: 'data:image/png;base64,' + Utilities.base64Encode(bytes), ringMiles: OOP_MAP_RING_MILES,
+      nearest: { name: plan.nearest.name, miles: plan.nearest.miles },
+      shown: plan.shown.map(function (w) { return w.name; }), omitted: plan.omitted };
+  } catch (err) { return { error: 'Could not draw the map.' }; }
 }
 
 /** PURE (Node-pinned) — K9 (cycle 22): a row with nothing in any cell. It is

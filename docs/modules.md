@@ -1329,6 +1329,19 @@ not restate it. Server endpoints live in the fourteen server files
      (within 100 mi)" (`oopMilesFmt_`); only a near-the-limit yes repeats that
      the drive is longer than the straight line.
 
+     **The eligibility map (operator 2026-10-27, round 12 C).** Under the
+     nearest-warehouse line: **Show map** and **Driving route from <nearest>**.
+     The route opens Google Maps directions from that warehouse's address to the
+     address Google read — the real drive, where every figure above is a straight
+     line. Show map draws nothing until pressed; `oopEligibilityMap` then has
+     Apps Script's built-in Maps service (no API key, no billing) draw a static
+     picture: the address (A), the nearest warehouse and any other within 300
+     miles (W), and the 100-mile ring round the nearest (`oopMapPlan_`,
+     `oopRingPoints_`); a farther warehouse is counted under the map, not drawn,
+     since it would zoom the picture out to nothing. One read per address per
+     page (a failure is not kept), never cached on the server, and an error
+     never quotes the address or the service's own message.
+
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED
      once. **Chapters, not parts:**

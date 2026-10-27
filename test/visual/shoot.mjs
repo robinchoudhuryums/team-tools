@@ -61,6 +61,13 @@ const KBL_ELIG_CARDS = KBL_SEARCH +
   "; (function tick(n){ var rows=document.querySelectorAll('#kb-oop-results .kb-ins-row');" +
   " if(rows.length >= 3){ rows[rows.length-1].scrollIntoView({ block: 'end' }); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
 
+// 25post C1: the eligibility map, opened — poll for the toggle, press it,
+// scroll the drawn map into view.
+const KBL_ELIG_MAP = KBL_SEARCH +
+  "; (function tick(n){ var b=document.querySelector('#kb-oop-results .kb-oop-mapbtn');" +
+  " if(b){ oopToggleMap_(b); setTimeout(function(){ var m=document.querySelector('#kb-oop-results .kb-oop-map'); if(m) m.scrollIntoView({ block: 'center' }); }, 100); return; }" +
+  " if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
+
 // The DRAWER's cross-reference sits under the item row, below the fold at
 // ~340px. That width is exactly where T1/T2's defects lived, so it is shot
 // rather than reasoned about: scroll the drawer body once the results land.
@@ -421,6 +428,8 @@ const SCENARIOS = [
   ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
   ['reference-elig-cards-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_CARDS],
   ['reference-elig-cards-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_CARDS],
+  ['reference-elig-map-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_MAP],
+  ['reference-elig-map-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_MAP],
   // T3 — the join, both directions in one frame: the payor's code columns
   // NAMED (and the three states that are not a name), and the item row's
   // cross-reference to the payor on screen.

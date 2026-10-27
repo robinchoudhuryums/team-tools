@@ -4782,6 +4782,64 @@ test('B DOM (operator 2026-10-27): the eligibility card — a stand-in city is n
   assert.ok(!/100 miles of any warehouse, or listed cities/.test(host.textContent), 'the raw area text is not repeated above its own answer');
 });
 
+test('C1 DOM (operator 2026-10-27): Show map draws nothing until pressed, reads ONCE per address, keeps a failure out of the cache, refuses a non-PNG source; the driving route runs from the nearest warehouse to the address Google read', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving', total: 1, deliveryCities: [], locationWarnings: [],
+    warehouses: [{ name: 'Houston', miles: 225, address: '1 Port Rd, Houston, TX' }, { name: 'Dallas', miles: 12.4, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }],
+    items: [{ name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+      insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' }, oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
+  }));
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  let mapCalls = 0, fail = true;
+  h.run.respond('oopEligibilityMap', (a) => { mapCalls++; if (fail) return { error: 'The map service did not answer — try again, or use the driving-route link.' };
+    return { img: 'data:image/png;base64,QUJD', ringMiles: 100, nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas'], omitted: 1, asked: a }; });
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '75038';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  // The route: from the NEAREST warehouse's address to the address Google read.
+  const route = host.querySelector('a.kb-oop-route');
+  assert.ok(route && /Driving route from Dallas/.test(route.textContent), 'named for the nearest warehouse');
+  const u = new h.window.URL(route.href);
+  assert.strictEqual(u.searchParams.get('origin'), '1329 W Walnut Hill Ln, Irving, TX 75038');
+  assert.strictEqual(u.searchParams.get('destination'), 'Irving, TX 75038, USA');
+  assert.ok(route.target === '_blank' && /noopener/.test(route.rel));
+  // Nothing drawn until pressed.
+  const btn = host.querySelector('.kb-oop-mapbtn');
+  const mapHost = host.querySelector('.kb-oop-map');
+  assert.strictEqual(btn.getAttribute('onclick'), 'oopToggleMap_(this)', 'the button is wired to the toggle');
+  const press = () => h.read('oopToggleMap_')(btn);
+  assert.strictEqual(mapCalls, 0, 'no map read until it is asked for');
+  assert.ok(mapHost.hidden && btn.getAttribute('aria-expanded') === 'false');
+  // A failure says so, and is not kept.
+  press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 1);
+  assert.ok(/did not answer/.test(mapHost.textContent) && !mapHost.querySelector('img'), 'the failure is stated');
+  press(); press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 2, 'a failure is never cached — reopening asks again');
+  // Success: the picture, its key, and one read for the address.
+  fail = false;
+  press(); press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 3);
+  const img = mapHost.querySelector('img.kb-oop-map-img');
+  assert.ok(img && img.getAttribute('src') === 'data:image/png;base64,QUJD' && /Dallas/.test(img.alt), 'the map, described');
+  assert.ok(/ring: 100 miles round Dallas/.test(mapHost.textContent) && /1 farther warehouse not drawn/.test(mapHost.textContent), 'and its key');
+  assert.strictEqual(btn.textContent.trim(), 'Hide map');
+  press();
+  assert.ok(mapHost.hidden && btn.getAttribute('aria-expanded') === 'false');
+  press(); await tick();
+  assert.strictEqual(mapCalls, 3, 'the same address is read once per page');
+  // Only a PNG data URL is ever a source.
+  assert.ok(/unreadable/.test(h.read('oopMapHtml_')({ img: 'javascript:alert(1)', ringMiles: 100 })) && !/<img/.test(h.read('oopMapHtml_')({ img: 'https://evil/x.png', ringMiles: 100 })));
+});
+
 test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {
   const h = boot();
   h.run.respond('searchOopPricing', () => ({ cap: 8, total: 1, matches: [{

@@ -3341,6 +3341,23 @@
     "oopMilesFmt_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post C1: the eligibility map — oopRingPoints_, oopMapPlan_, oopEligibilityMap + OOP_MAP_* (70_kb.js)",
+   "added": [
+    "OOP_MAP_NEARBY_MILES",
+    "OOP_MAP_RING_MILES",
+    "OOP_MAP_RING_POINTS",
+    "oopEligibilityMap",
+    "oopMapPlan_",
+    "oopRingPoints_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5140,6 +5157,21 @@
    "kind": "const",
    "sha": "f4999711dec09515"
   },
+  "OOP_MAP_NEARBY_MILES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "eb6051a5e8802dbd"
+  },
+  "OOP_MAP_RING_MILES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "00587ed2c360dcfd"
+  },
+  "OOP_MAP_RING_POINTS": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "836ca7d61527feb8"
+  },
   "OOP_MAX_ROWS": {
    "file": "00_config.js",
    "kind": "const",
@@ -6723,7 +6755,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "45d416cb70121ea7"
+   "sha": "8f63cf21c206ae1b"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -10315,6 +10347,11 @@
    "kind": "function",
    "sha": "0a79805bbb740391"
   },
+  "oopEligibilityMap": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "deeb177a309a2ec1"
+  },
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10324,6 +10361,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "30065044fee2478e"
+  },
+  "oopMapPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c4b2b51bba1ff110"
   },
   "oopMatchScore_": {
    "file": "70_kb.js",
@@ -10359,6 +10401,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "69638e8b0321d862"
+  },
+  "oopRingPoints_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8b81d202794ae75f"
   },
   "oopRowIsBlank_": {
    "file": "70_kb.js",
