@@ -2349,6 +2349,27 @@ const US_STATE_NAMES = {
 };
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
+// D2 (operator 2026-10-27): payor alias FAMILIES the Synonyms editor offers
+// when one of their terms appears in the InsurancePayors sheet. A suggestion,
+// never a write: the admin reviews the lines and saves them into
+// KB_SEARCH_SYNONYMS, the one alias list both searches read. A term that is
+// also a state code or an everyday word ("va", "ma", "hip") is left out,
+// because it would read as a state in the payor search or widen KB search.
+const INS_PAYOR_ALIAS_FAMILIES = [
+  ['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
+  ['bcbs', 'blue cross blue shield', 'blue cross and blue shield', 'bluecross blueshield'],
+  ['tricare', 'champus'],
+  ['amerigroup', 'wellpoint'],
+  ['anthem', 'elevance'],
+  ['kaiser', 'kaiser permanente', 'kp'],
+  ['wellcare', 'well care'],
+  ['hcsc', 'health care service corporation'],
+  ['harvard pilgrim', 'hphc'],
+  ['bcn', 'blue care network'],
+  ['hap', 'health alliance plan'],
+  ['superior', 'superior healthplan', 'superior health plan'],
+  ['chip', 'childrens health insurance program'],
+];
 const INS_PAYOR_MAX_ROWS = 5000;
 // ════════════════════════════════════════════════════════════════════════════
 //  REFERENCE DATA TABLES — operator-uploaded CSV → a NAMED KB sheet tab

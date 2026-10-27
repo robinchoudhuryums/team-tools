@@ -5713,7 +5713,7 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   const fig = h.$('#kb-main img.kb-manimg-figure');
   assert.ok(fig && fig.alt === 'Regulator', 'a figure is a figure');
   const gone = h.$('.kb-manimg[data-manimg="icon-gone"]');
-  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /not imported yet/.test(gone.title), '"not imported" is said, on the chip');
+  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /Image not imported yet/.test(gone.textContent) && /Gone icon/.test(gone.title), '"not imported" is said, on the chip (D4: in its text)');
   // A failed call: marked, and NOT cached — the next render asks again, while the successes are remembered.
   h.read('kbOpenItem_')('man-10-1');
   h.run.flushSuccess({ department: 'Chapter 10 — Billing & Denials', sections: [{ id: 'man-10-1', title: '10.1 2026 annual figures', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
@@ -5723,12 +5723,62 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   assert.ok(h.$('#kb-main img.kb-manimg-icon'), 'and draws at once from the cache');
   h.run.flushFailure(new Error('network'), 'getManualImages');
   const z = h.$('.kb-manimg[data-manimg="thumb-z"]');
-  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /could not load/.test(z.title), 'a failed call is said as a failure, not as "not imported"');
+  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /Couldn’t load this image/.test(z.textContent), 'a failed call is said as a failure, not as "not imported" (D4: in its text)');
   const before = h.run.pending('getManualImages').length;
   doc.getElementById('kb-main').insertAdjacentHTML('beforeend', '<div class="kb-article">' + h.read('kbMd_')('![Other](manimg:thumb-z)') + '</div>');
   await tick(); h.flushTimers(); await tick();
   const c3 = h.run.pending('getManualImages').slice(before);
   assert.ok(c3.some((c) => JSON.stringify(c.args[0]) === '["thumb-z"]'), 'the next render asks for it again (a failure is never cached)');
+});
+
+test('D4 DOM (operator 2026-10-27): an image chip says which state it is in — "Loading image…" over a sized placeholder, "not imported yet" (an admin is told where to import), "Couldn’t load" with a Retry that asks again; an article image the same', async () => {
+  const h = boot();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  h.window.eval('KB_STATE.isAdmin = true');
+  const art = mount_(h, 'd4-art'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('![The Log screen](manimg:fig-d4a) ![Gone figure](manimg:fig-d4b) ![Slow one](manimg:fig-d4c)');
+  await tick(); h.flushTimers(); await tick();
+  const chips = art.querySelectorAll('.kb-manimg');
+  assert.strictEqual(chips.length, 3);
+  chips.forEach((c) => {
+    assert.strictEqual(c.getAttribute('data-mi'), 'loading');
+    assert.ok(/^Loading image…/.test(c.textContent), 'says it is loading: ' + c.textContent);
+    assert.strictEqual(c.getAttribute('aria-busy'), 'true');
+  });
+  assert.strictEqual(chips[0].querySelector('.kb-img-alt').textContent, 'The Log screen', 'and keeps its name under it');
+  h.run.flushSuccess({ success: true, images: {}, missing: ['fig-d4b'], failed: ['fig-d4c'] }, 'getManualImages');
+  const gone = art.querySelector('[data-manimg="fig-d4b"]'), slow = art.querySelector('[data-manimg="fig-d4c"]');
+  assert.ok(/Image not imported yet/.test(gone.textContent) && /Reference → Handbook → Import/.test(gone.textContent), 'an admin is told where: ' + gone.textContent);
+  assert.ok(!gone.querySelector('.kb-img-retry'), 'nothing to retry on a missing image');
+  assert.ok(/Couldn’t load this image/.test(slow.textContent), slow.textContent);
+  const retry = slow.querySelector('button.kb-img-retry');
+  assert.ok(retry && retry.textContent === 'Retry' && retry.type === 'button');
+  const before = h.run.pending('getManualImages').length;
+  h.click(retry);
+  await tick(); h.flushTimers(); await tick();
+  const again = h.run.pending('getManualImages').slice(before);
+  assert.ok(again.some((c) => JSON.stringify(c.args[0]) === '["fig-d4c"]'), 'Retry asks for that image again');
+  assert.strictEqual(slow.getAttribute('data-mi'), 'loading', 'and the chip is loading again');
+  h.run.flushSuccess({ success: true, images: { 'fig-d4c': PNG }, missing: [], failed: [] }, 'getManualImages');
+  const img = art.querySelector('img.kb-manimg-figure');
+  assert.ok(img && img.alt === 'Slow one', 'the image arrives with the chip\'s own name as its alt, not the status words');
+  // A rep is not pointed at an admin screen.
+  h.window.eval('KB_STATE.isAdmin = false');
+  const art2 = mount_(h, 'd4-art2'); art2.className = 'kb-article';
+  art2.innerHTML = h.read('kbMd_')('![Gone too](manimg:fig-d4d)');
+  await tick(); h.flushTimers(); await tick();
+  h.run.flushSuccess({ success: true, images: {}, missing: ['fig-d4d'], failed: [] }, 'getManualImages');
+  const g2 = art2.querySelector('.kb-manimg');
+  assert.ok(/Image not imported yet/.test(g2.textContent) && !/Import it/.test(g2.textContent), g2.textContent);
+  // Article (kbimg) images: the same three states.
+  const k = 'kbimg-' + 'a'.repeat(24);
+  const art3 = mount_(h, 'd4-art3'); art3.className = 'kb-article';
+  art3.innerHTML = h.read('kbMd_')('![Shot](kbimg:' + k + ')');
+  await tick(); h.flushTimers(); await tick();
+  const kc = art3.querySelector('.kb-kbimg');
+  assert.ok(kc.getAttribute('data-ki') === 'loading' && /^Loading image…/.test(kc.textContent));
+  h.run.flushFailure(new Error('network'), 'getKbImages');
+  assert.ok(/Couldn’t load this image/.test(kc.textContent) && kc.querySelector('.kb-img-retry'), kc.textContent);
 });
 
 test('Operator 2026-10-22 DOM: a handbook figure wider than it is drawn opens at full size — a click or Enter, the same image (by property) in an overlay that closes through closeOverlay; a small one stays a plain image', async () => {
@@ -5809,7 +5859,7 @@ test('Operator 2026-10-23 DOM: a slide opens as its slideshow at full size — i
   assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '2 / 3', cap: 'PAR submitted — the method of submission', alt: 'PAR submitted note', box: '', page: '1' }, 'Next steps the viewer AND the page');
   assert.ok(!gal.querySelectorAll('.kb-gal-slide')[1].classList.contains('kb-gal-off'), 'the page shows the same slide');
   h.click(next);
-  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '3 / 3', cap: 'Dual submission', alt: null, box: 'Dual submission note', page: '2' }, 'a slide whose image is not there yet is named, never blank');
+  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '3 / 3', cap: 'Dual submission', alt: null, box: 'Dual submission note — not imported yet', page: '2' }, 'a slide whose image is not there yet is named, never blank — and says why (D4)');
   ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   assert.strictEqual(st().n, '1 / 3', '→ wraps from the last to the first');
   ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
@@ -8140,6 +8190,44 @@ test('Seams F4 (cycle 24): the Search synonyms and Revision history × close thr
   });
 });
 
+test('D2/D3 DOM (operator 2026-10-27): a payor plan that excludes the searched state is labelled "TX excluded"; the Synonyms editor appends the payor aliases it is offered, once, for review', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true, isAdmin: true });
+  h.run.drain();
+  const host = mount_(h, 'kb-ins-results');
+  h.read('insRenderResults_')('', 'uhc tx', { total: 2, cap: 8, matches: [
+    { name: 'UnitedHealthcare Texas', networkStatus: 'in-network', details: [] },
+    { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', details: [], excludedState: 'TX' }] });
+  const cards = host.querySelectorAll('.kb-ins-card');
+  assert.strictEqual(cards.length, 2);
+  assert.ok(!cards[0].querySelector('.kb-ins-excl') && !cards[0].classList.contains('is-excl'), 'a plain plan carries no note');
+  const ex = cards[1].querySelector('.kb-ins-excl');
+  assert.ok(ex && ex.textContent === 'TX excluded' && cards[1].classList.contains('is-excl'), 'the excluding plan says so');
+  // Escaped like every other field.
+  h.read('insRenderResults_')('', 'x', { total: 1, cap: 8, matches: [{ name: 'P', details: [], excludedState: '<b>' }] });
+  assert.ok(!host.querySelector('.kb-ins-excl b'), 'the state is text, never markup');
+  // D2: the alias offer.
+  h.read('kbOpenSynonyms_')();
+  h.run.flushSuccess({ synonyms: [['cpap', 'pap']], propBudget: {}, propValueMax: 9000 }, 'kbGetSearchConfig');
+  const ta = h.$('#kb-syn-ta');
+  ta.value = 'cpap, pap\nhcsc, health care service corporation';   // an unsaved line the offer must not repeat
+  const btn = h.$('.kb-syn-seed button');
+  assert.ok(btn && /Suggest payor aliases/.test(btn.textContent));
+  h.read('kbSeedPayorSynonyms_')(btn);
+  assert.ok(btn.disabled, 'busy while it reads');
+  h.run.flushSuccess({ payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare'], ['hcsc', 'health care service corporation']] }, 'kbSuggestPayorSynonyms');
+  assert.strictEqual(ta.value, 'cpap, pap\nhcsc, health care service corporation\nuhc, unitedhealthcare, united healthcare', 'appended at the end, the one already there skipped');
+  assert.ok(/Added 1 alias group at the end/.test(h.$('#kb-syn-seed-msg').textContent));
+  assert.strictEqual(h.run.pending('kbSaveSearchConfig').length, 0, 'nothing is saved until Save');
+  h.read('kbSeedPayorSynonyms_')(btn);
+  h.run.flushSuccess({ payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare']] }, 'kbSuggestPayorSynonyms');
+  assert.ok(/No new aliases/.test(h.$('#kb-syn-seed-msg').textContent), 'a second press adds nothing');
+  h.read('kbSeedPayorSynonyms_')(btn);
+  h.run.flushSuccess({ error: 'There is no "InsurancePayors" tab in the KB spreadsheet to read payor names from.' }, 'kbSuggestPayorSynonyms');
+  assert.ok(/no "InsurancePayors" tab/.test(h.$('#kb-syn-seed-msg').textContent) && !btn.disabled, 'a failure is said');
+});
+
 test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archive could not be read — and says nothing on a clean read', () => {
   const h = boot();
   b9TourSeen(h);
@@ -8413,7 +8501,7 @@ test('DRV-3 DOM: an article\'s kbimg chips arrive in ONE batched call and are se
   assert.strictEqual(imgs.length, 2, 'both mentions become the image');
   assert.ok(imgs.every((im) => im.getAttribute('src') === PNG) && imgs[0].alt === 'Shot A', 'the data URL by property, the alt from the chip');
   const gone = h.$('.kb-kbimg[data-kbimg="' + kGone + '"]');
-  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /not stored/.test(gone.title), '"not stored" is said on the chip');
+  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /Image not stored/.test(gone.textContent), '"not stored" is said on the chip (D4: in its text)');
   // A failed call is marked and NOT cached; the success above IS (no second call for kA).
   const art2 = mount_(h, 'b12-art2'); art2.className = 'kb-article';
   art2.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ') ![A](kbimg:' + kA + ')');

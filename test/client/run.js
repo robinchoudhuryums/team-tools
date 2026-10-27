@@ -14770,7 +14770,7 @@ vm.runInContext('var US_STATE_CODES = ' + JSON.stringify(
 // Cycle 22 Batch 5: the parser's helpers (K1/K3 clause parser, the word-bounded
 // registry matcher) and the K4 state/city normalisers ride the same sandbox.
 vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), _vmCtx);
-['oopRegistryNamesIn_', 'oopRadiusClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_', 'oopRuleLabel_', 'oopMilesFmt_'].forEach((f) =>
+['oopRegistryNamesIn_', 'oopRadiusClause_', 'oopExceptStatesClause_', 'locStateCode_', 'locCityNorm_', 'locCityUnreadable_', 'oopRuleLabel_', 'oopMilesFmt_'].forEach((f) =>
   vm.runInContext(extractRawFunction('Code.js', f), _vmCtx, { filename: f }));
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityParse_'), _vmCtx, { filename: 'oopEligibilityParse_' });
 vm.runInContext(extractRawFunction('Code.js', 'oopEligibilityForPayment_'), _vmCtx, { filename: 'oopEligibilityForPayment_' });
@@ -16251,6 +16251,61 @@ test('insPayorScore_ — substring dominates, all-tokens bonus, zero on no hit',
   assert.ok(sc('Medicaid - Molina', 'molina medicaid') > sc('Medicaid - Superior', 'molina medicaid'), 'all tokens present beats one');
   assert.ok(sc('Aetna Better Health of Ohio (MMP)', 'aetna ohio') > 0, 'scattered tokens still match');
   assert.strictEqual(sc('', 'x'), 0); assert.strictEqual(sc('X', ''), 0);
+});
+
+test('D1–D3 (operator 2026-10-27): the payor lookup reads STATES by code or name either way, aliases from the Synonyms list, and ranks a plan excluding the state last', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
+    (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var ') + '\n' +
+    (serverSource().match(/const INS_PAYOR_ALIAS_FAMILIES = \[[\s\S]*?\n\];/) || [''])[0].replace(/^const /, 'var '), ctx);
+  ['insPayorScore_', 'insStatesIn_', 'insPayorNameStates_', 'insPayorMatch_', 'insPayorAliasSuggest_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'D#' + f }));
+  const J = (e) => JSON.parse(vm.runInContext('JSON.stringify(' + e + ')', ctx));
+  const UHC = [['uhc', 'unitedhealthcare', 'united healthcare']];
+  const M = (n, q, g) => J('insPayorMatch_(' + JSON.stringify(n) + ',' + JSON.stringify(q) + ',' + JSON.stringify(g || UHC) + ')');
+  // States read whole words, code or name; a code in a NAME only in capitals.
+  assert.deepStrictEqual(J('insStatesIn_("uhc tx", true)'), { states: ['TX'], rest: 'uhc' });
+  assert.deepStrictEqual(J('insStatesIn_("UnitedHealthcare New York", false)').states, ['NY']);
+  assert.deepStrictEqual(J('insStatesIn_("Plans in Texas or Ohio", false)').states, ['TX', 'OH'], 'in/or are words in a name');
+  assert.deepStrictEqual(J('insStatesIn_("humana in texas", true)').states, ['TX'], 'and "in" is a word in a query');
+  assert.deepStrictEqual(J('insStatesIn_("Texhoma Plan", false)').states, [], 'whole words only');
+  // THE CASE: "uhc tx" and "unitedhealthcare texas" find each other's spellings.
+  assert.ok(M('UnitedHealthcare Texas', 'uhc tx').score > 0, 'alias + state name');
+  assert.ok(M('UHC TX', 'unitedhealthcare texas').score > 0, 'and the other way round');
+  assert.ok(M('United Healthcare - TX', 'uhc texas').score > 0);
+  assert.strictEqual(M('Aetna Texas', 'uhc tx').score, 0, 'the state alone never matches a different payor');
+  // Ranking: the searched state above a national plan above another state's.
+  const tx = M('UnitedHealthcare Texas', 'uhc tx').score, nat = M('UnitedHealthcare', 'uhc tx').score, ok = M('UnitedHealthcare Oklahoma', 'uhc tx').score;
+  assert.ok(tx > nat && nat > ok && ok > 0, 'state > national > other state: ' + [tx, nat, ok]);
+  // D3: an excluding plan is named, whatever its score.
+  const ex = M('UHC (all states other than TX)', 'uhc tx');
+  assert.strictEqual(ex.excluded, 'TX', JSON.stringify(ex));
+  assert.ok(ex.score > 0, 'still listed');
+  assert.strictEqual(M('UHC (all states other than TX)', 'uhc ohio').excluded, '', 'another state is not excluded');
+  assert.ok(M('UHC (all states other than TX)', 'uhc ohio').score > 0);
+  assert.strictEqual(M('Aetna except Texas and Oklahoma', 'aetna oklahoma').excluded, 'OK', 'full names in the exclusion too');
+  assert.strictEqual(M('UHC (all states other than TX)', 'texas').score, 0, 'a state alone does not list a plan that excludes it');
+  assert.ok(M('BCBS of Texas', 'texas').score > 0, 'a state alone lists plans naming it');
+  // No state, no alias: exactly the old score.
+  assert.strictEqual(M('Medicaid - Molina', 'molina medicaid', []).score, J('insPayorScore_("Medicaid - Molina", "molina medicaid")'));
+  // D2: suggestions from the payor names.
+  const sug = J('insPayorAliasSuggest_(' + JSON.stringify(['UnitedHealthcare Texas', 'Health Care Service Corporation (HCSC)',
+    'Blue Cross Blue Shield of Texas (BCBSTX)', 'Medicaid (TX)', 'Aetna']) + ', [])');
+  assert.ok(sug.some((g) => g.indexOf('uhc') >= 0 && g.indexOf('unitedhealthcare') >= 0), 'the UHC family, seen in a name: ' + JSON.stringify(sug));
+  assert.ok(sug.some((g) => g[0] === 'bcbstx' && g[1] === 'blue cross blue shield of texas'), 'a spelled-out acronym');
+  assert.ok(sug.some((g) => g.indexOf('bcbs') >= 0), 'BCBS family seen');
+  assert.ok(!sug.some((g) => g.indexOf('tx') >= 0), 'a state code in brackets is not an acronym');
+  assert.ok(!sug.some((g) => g.indexOf('tricare') >= 0), 'a family no name carries is not offered');
+  assert.strictEqual(J('insPayorAliasSuggest_(["UnitedHealthcare"], [["uhc", "united"]])').length, 0, 'a family already in the list is not offered again');
+  // The families never carry a state code (it would read as a state in the lookup).
+  J('INS_PAYOR_ALIAS_FAMILIES').forEach((g) => g.forEach((t) =>
+    assert.ok(!(t.length === 2 && J('US_STATE_CODES').indexOf(t.toUpperCase()) >= 0), 'not a state code: ' + t)));
+  // The endpoint is admin-gated and ranks excluded plans last.
+  const ep = extractRawFunction('Code.js', 'kbSuggestPayorSynonyms');
+  assert.ok(/!emp \|\| !emp\.isAdmin\) return \{ error: 'Admin access required\.' \}/.test(ep));
+  const se = stripJsComments_(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/insPayorMatch_\(names\[i\]\[0\], q, groups\)/.test(se) && /\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\)/.test(se), 'the search uses the matcher and sorts excluded last');
+  assert.ok(/o\.excludedState = t\.excluded/.test(se), 'and ships the state');
 });
 
 test('insPayorRowObj_ — columns resolved BY HEADER NAME; everything else is a verbatim detail', () => {
@@ -23156,17 +23211,57 @@ test('K1 (cycle 22): every distance in an Area Eligibility cell governs the name
   assert.deepStrictEqual(withCity.rules.map((x) => x.kind), ['radius', 'radius', 'cities'], 'the city clause joins the union FLAT');
 });
 test('K3 (cycle 22): restriction text is READ — an "except" in an Open parenthetical, or any word a distance rule is not written with, makes the value unknown', () => {
-  ['Open (except Hawaii and Alaska)', 'Open (not available in PR)', 'Open (continental US only)'].forEach((t) =>
+  // D5 (operator 2026-10-27): "except <states>" is now READ — as an insurance
+  // exclusion (its own pin below). Every other restricting parenthetical stays unknown.
+  ['Open (except Hawaii, call first)', 'Open (not available in PR)', 'Open (continental US only)'].forEach((t) =>
     assert.strictEqual(B5P(t).kind, 'unknown', 'THE REGRESSION (' + t + '): the parenthetical was stripped and the value read Open'));
   ['Open (anywhere in the US including Hawaii)', 'Open (no restrictions)', 'Open'].forEach((t) =>
     assert.strictEqual(B5P(t).kind, 'open', t + ' elaborates, it does not restrict'));
-  ['100 miles of Dallas except Oklahoma', '100 miles of Dallas, weekdays only', '100 miles of Dallas (technician setup required)'].forEach((t) =>
+  ['100 miles of Dallas except weekends', '100 miles of Dallas, weekdays only', '100 miles of Dallas (technician setup required)'].forEach((t) =>
     assert.strictEqual(B5P(t).kind, 'unknown', 'THE REGRESSION (' + t + '): the leftover words were dropped and the radius read clean'));
   ['within 100mi of Dallas', '100 mi (Dallas)', 'Dallas/San Antonio — 100 miles', '100 miles of the Dallas TX warehouse',
     '100 miles of any warehouse', '100 miles from our Dallas location', '100 MILES OF DALLAS'].forEach((t) =>
     assert.strictEqual(B5P(t).kind, 'radius', t + ' is still a radius'));
   const F = (rule, oop) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityForPayment_(' + JSON.stringify(rule) + ',' + oop + '))', _vmCtx));
-  assert.strictEqual(F(B5P('Open (except Hawaii and Alaska)'), true).kind, 'unknown', 'and an unread restriction never lifts out of pocket');
+  assert.strictEqual(F(B5P('Open (except Hawaii, call first)'), true).kind, 'unknown', 'and an unread restriction never lifts out of pocket');
+});
+test('D5 (operator 2026-10-27): "except <states>" is an INSURANCE exclusion — insurance says no in Hawaii, out of pocket says yes', () => {
+  const F = (rule, oop) => JSON.parse(vm.runInContext('JSON.stringify(oopEligibilityForPayment_(' + JSON.stringify(rule) + ',' + oop + '))', _vmCtx));
+  const both = (t, loc) => { const r = B5P(t); return [B5V(F(r, false), loc), B5V(F(r, true), loc)]; };
+  // The parse: every spelling the operator is likely to write.
+  [['Open (except Hawaii)', ['HI']], ['Open except Hawaii', ['HI']], ['Open, except HI', ['HI']],
+    ['Open (except Hawaii and Alaska)', ['HI', 'AK']], ['Open (anywhere in the US except Hawaii)', ['HI']],
+    ['Open (other than Hawaii)', ['HI']], ['Open excluding New York', ['NY']]].forEach(([t, st]) => {
+    const r = B5P(t);
+    assert.strictEqual(r.kind, 'except', t + ' reads as an exclusion: ' + JSON.stringify(r));
+    assert.deepStrictEqual(r.states, st, t);
+    assert.strictEqual(r.rule.kind, 'open', t + ': the rule under it is Open');
+  });
+  const rad = B5P('100 miles of Dallas except Oklahoma');
+  assert.strictEqual(rad.kind, 'except', 'a radius takes the clause too');
+  assert.strictEqual(rad.rule.kind, 'radius');
+  // Words that are not states keep the value unknown, and the clause never rescues an unreadable rest.
+  ['Open (except Hawaii, call first)', 'Open except or', 'except Hawaii', 'Open-ish except Hawaii', '100 mi of Houston except Hawaii']
+    .forEach((t) => assert.strictEqual(B5P(t).kind, 'unknown', t));
+  assert.strictEqual(B5P('100 mi of Houston except Hawaii').noWarehouse, true, 'and the delivery table is still the one blamed (g142)');
+  // THE CASE: a scooter near Honolulu.
+  const [ins, oop] = both('Open (except Hawaii)', { state: 'HI' });
+  assert.strictEqual(ins.verdict, 'no', 'insurance: no in Hawaii — ' + ins.why);
+  assert.ok(/Not through insurance in HI/.test(ins.why), ins.why);
+  assert.strictEqual(oop.verdict, 'yes', 'out of pocket: yes — ' + oop.why);
+  assert.ok(/excludes HI for insurance orders only/.test(oop.why), oop.why);
+  // Anywhere else, both yes; an unknown state is unknown through insurance.
+  assert.deepStrictEqual(both('Open (except Hawaii)', { state: 'TX' }).map((v) => v.verdict), ['yes', 'yes']);
+  assert.strictEqual(both('Open (except Hawaii)', {})[0].verdict, 'unknown', 'no state, no insurance answer');
+  // The rule underneath still decides first: a radius NO is a NO either way.
+  const far = both('100 miles of Dallas except Oklahoma', { state: 'TX', miles: { Dallas: 400 }, warehouseNames: ['Dallas'] });
+  assert.deepStrictEqual(far.map((v) => v.verdict), ['no', 'no']);
+  const ok = both('100 miles of Dallas except Oklahoma', { state: 'OK', miles: { Dallas: 60 }, warehouseNames: ['Dallas'] });
+  assert.deepStrictEqual(ok.map((v) => v.verdict), ['no', 'yes'], 'Oklahoma within reach: insurance no, out of pocket yes');
+  assert.strictEqual(F(rad, true).kind, 'radius', 'out of pocket the van rule is all that is left');
+  // A state list beneath keeps its own lift note beside the exclusion.
+  const st = F(B5P('TX, OK except Oklahoma'), true);
+  assert.strictEqual(st.kind, 'open');
 });
 test('K4 (cycle 22): the city list reads "Texas" as TX and "Ft. Worth" as Fort Worth; a State cell nobody can read is "cannot tell", never a confident no', () => {
   const C = (expr) => JSON.parse(vm.runInContext('JSON.stringify(' + expr + ')', _vmCtx));
@@ -32282,7 +32377,7 @@ const c23Elig_ = (() => {
     US_STATE_CODES: vm.runInNewContext(/const US_STATE_CODES = (\[[\s\S]*?\]);/.exec(codeSrc)[1]),
     US_STATE_NAMES: vm.runInNewContext('(' + /const US_STATE_NAMES = (\{[\s\S]*?\});/.exec(codeSrc)[1] + ')'),
     KB_GEO_US_COUNTRIES: m5bConst_('KB_GEO_US_COUNTRIES') });
-  ['oopRegistryNamesIn_', 'oopRadiusClause_', 'oopEligibilityParse_', 'oopEligibilityForPayment_', 'locStateCode_',
+  ['oopRegistryNamesIn_', 'oopRadiusClause_', 'oopExceptStatesClause_', 'oopEligibilityParse_', 'oopEligibilityForPayment_', 'locStateCode_',
     'locCityNorm_', 'locCityMatches_', 'locCityUnreadable_', 'oopBodyHasLine_', 'kbGeoOutsideUs_', 'kbGeoOutsideUsMsg_',
     'locHeaderRole_', 'locRowKind_', 'getLocationAcceptance_', 'kbGeocodeOne_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'c23#' + f }));
@@ -36364,7 +36459,7 @@ test('Operator 2026-10-22: a handbook figure or article image drawn smaller than
   const fig = /var KB_FIG_MAX = (\d+);/.exec(M1_KB_SRC);
   assert.ok(cap && fig && cap[1] === fig[1], 'KB_FIG_MAX is the figure column cap (' + (cap && cap[1]) + ')');
   assert.ok(/if \(kbManimgKind_\(key\) === 'figure'\) img\.onload = function \(\) \{ kbImgZoomable_\(this\); \};\n      img\.src = state;/.test(M1_KB_SRC), 'only a figure is measured, and the handler is set before the src');
-  assert.ok(/img\.className = 'kb-kbimg-img';[\s\S]{0,120}img\.onload = function \(\) \{ kbImgZoomable_\(this\); \};[^\n]*\n      img\.src = state;/.test(M1_KB_SRC), 'an article image is measured the same way, before its src');
+  assert.ok(/img\.className = 'kb-kbimg-img';[\s\S]{0,200}img\.onload = function \(\) \{ kbImgZoomable_\(this\); \};[^\n]*\n      img\.src = state;/.test(M1_KB_SRC), 'an article image is measured the same way, before its src');
   assert.ok(/\.kb-article img\.kb-zoomable \{ cursor: zoom-in; \}/.test(M1_KB_SRC) && /\.kb-img-modal \.kb-img-big \{/.test(M1_KB_SRC), 'the classes have their rules (g140)');
   assert.ok(!/img\.kb-kbimg-img \{ cursor: zoom-in; \}/.test(M1_KB_SRC), 'no image promises a zoom it does not have — the cursor rides kb-zoomable only');
   const z = extractFnFrom(M1_KB_SRC, 'kbImageOpen_');

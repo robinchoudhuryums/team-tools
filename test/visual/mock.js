@@ -1873,7 +1873,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // return sites (INV-185); the OOP rows carry MULTIPLE priced columns,
     // because a single-price item is exactly the shape that hid the prices[0]
     // defect from the operator's own post-deploy check.
-    searchInsurancePayors: { total: 3, cap: 8, matches: [
+    searchInsurancePayors: { total: 4, cap: 8, matches: [
       { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
@@ -1894,8 +1894,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
       { name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] }],
+      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
+      { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+        reimbursement: 'Yes', details: [], excludedState: 'TX' }],
       codeJoin: { attempted: true, error: '' } },
+    // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
+    kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
+      ['hcsc', 'health care service corporation']] },
     searchOopPricing: { total: 2, cap: 8, matches: [
       { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open',
         codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },

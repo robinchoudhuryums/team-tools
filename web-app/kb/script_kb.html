@@ -471,8 +471,29 @@
      once it arrives. Icons sit in table cells beside their name, so they are
      inline and unframed; equipment photos are small and framed; figures are
      the article's full width, like any article image. */
-  .kb-article .kb-manimg[data-mi="loading"] { opacity: .65; }
-  .kb-article .kb-manimg[data-mi="failed"] { border-color: var(--warn); }
+  /* D4 (operator 2026-10-27) — an image chip says WHICH of three things it is
+     waiting on: still loading (a sized shimmer the image's own shape, so a slow
+     one is not read as "no image uploaded"), not imported or stored, or a load
+     that failed (with Retry). Icons stay a small inline square. */
+  .kb-img-pending[data-mi], .kb-img-pending[data-ki] { display: inline-flex; flex-direction: column; gap: 2px; vertical-align: middle; }
+  .kb-img-pending .kb-img-st { font-weight: 600; color: var(--ink); }
+  .kb-img-pending .kb-img-alt { font-size: .76rem; color: var(--muted); }
+  .kb-img-pending .kb-img-note { font-size: .76rem; color: var(--muted); }
+  .kb-img-pending .kb-img-retry { align-self: flex-start; margin-top: 4px; font: inherit; font-size: .76rem; padding: 2px 10px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-img-pending .kb-img-retry:hover { border-color: var(--accent); }
+  .kb-img-pending[data-mi="loading"], .kb-img-pending[data-ki="loading"] {
+    display: flex; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;
+    width: min(100%, 480px); min-height: 160px; border-style: solid; border-color: var(--line);
+    background: linear-gradient(90deg, var(--paper-3) 25%, var(--paper-2) 37%, var(--paper-3) 63%);
+    background-size: 200% 100%; animation: lo-shimmer 1.3s linear infinite; }
+  .kb-manimg[data-manimg^="thumb-"][data-mi="loading"] { width: 140px; min-height: 96px; }
+  .kb-manimg[data-manimg^="icon-"][data-mi] { display: inline-block; width: 22px; min-height: 22px; height: 22px; padding: 0; margin: 0 6px 0 0;
+    overflow: hidden; color: transparent; vertical-align: middle; }
+  .kb-manimg[data-manimg^="icon-"][data-mi] > * { display: none; }
+  .kb-manimg[data-manimg^="icon-"][data-mi="missing"], .kb-manimg[data-manimg^="icon-"][data-mi="failed"] { border-style: dashed; border-color: var(--warn); }
+  .kb-img-pending[data-mi="failed"], .kb-img-pending[data-ki="failed"] { border-color: var(--warn); }
+  .kb-img-pending[data-mi="missing"], .kb-img-pending[data-ki="missing"] { border-color: var(--muted-3); }
   .kb-article img.kb-manimg-img { margin: .6em 0; }
   .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
   .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
@@ -505,10 +526,8 @@
   .kb-gal-dot { appearance: none; width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
   .kb-gal-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
   .kb-gal-dot.on::before { background: var(--accent); }
-  /* DRV-3 (cycle 23 Batch 12) — an article image from the KbImages tab, while it
-     loads, when it could not load, and once it arrives (an ordinary article image). */
-  .kb-article .kb-kbimg[data-ki="loading"] { opacity: .65; }
-  .kb-article .kb-kbimg[data-ki="failed"], .kb-article .kb-kbimg[data-ki="missing"] { border-color: var(--warn); }
+  /* DRV-3 (cycle 23 Batch 12) — an article image from the KbImages tab: its
+     loading / not stored / failed chip is D4's (the .kb-img-pending[data-ki] rules). */
   /* §4 — collapsible department headers (chevron + count) */
   .kb-dept-toggle { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; font: inherit; background: none; border: none; cursor: pointer; padding: 8px 6px 4px; }
   .kb-dept-toggle:hover .kb-dept-name { color: var(--ink); }
@@ -666,6 +685,11 @@
   .kb-ins-card { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 8px; background: var(--paper-card); }
   .kb-ins-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .kb-ins-name { font-weight: 600; font-size: .9rem; }
+  .kb-syn-seed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .kb-syn-seed-msg { font-size: .76rem; color: var(--muted); }
+  /* D3 (operator 2026-10-27): a plan whose name EXCLUDES the searched state. */
+  .kb-ins-excl { font-size: .72rem; font-weight: 600; color: var(--destructive); border: 1px solid currentColor; border-radius: var(--radius-pill); padding: 1px 8px; white-space: nowrap; }
+  .kb-ins-card.is-excl .kb-ins-name { color: var(--muted); }
   .kb-ins-pill { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; border-radius: var(--radius-pill); padding: 2px 9px; white-space: nowrap; }
   .kb-ins-pill.good { background: var(--good-soft); color: var(--success-deep); }
   .kb-ins-pill.bad  { background: var(--danger-soft); color: var(--danger-deep); }
@@ -3179,6 +3203,42 @@ function kbDiagramOpen_(btn) {
 // change with the next import, and a failed call must not blank the images for
 // the rest of the session (g129). An image is set by PROPERTY from a data URL
 // the client re-checks as a PNG/JPEG one — never through markup.
+/** D4 (operator 2026-10-27) — paint an image chip's state, for the manual
+ *  images (`data-mi`) and the article images (`data-ki`) alike: "Loading
+ *  image…" over a sized shimmer, "not imported yet" / "not stored" (an admin is
+ *  told where the handbook import is), or "Couldn't load this image" with a
+ *  Retry. The chip's own text was its alt; it is kept in `data-alt` so the
+ *  image that replaces it — and a retry — still has it. Built by DOM, never
+ *  markup: the alt arrives as text. */
+function kbImgChipState_(n, attr, state) {
+  if (!n.hasAttribute('data-alt')) n.setAttribute('data-alt', n.textContent);
+  var alt = n.getAttribute('data-alt'), manual = attr === 'data-mi';
+  n.setAttribute(attr, state);
+  n.textContent = '';
+  var add = function (cls, text) { var e = document.createElement('span'); e.className = cls; e.textContent = text; n.appendChild(e); return e; };
+  add('kb-img-st', state === 'loading' ? 'Loading image\u2026'
+    : state === 'missing' ? (manual ? 'Image not imported yet' : 'Image not stored') : 'Couldn\u2019t load this image');
+  if (alt) add('kb-img-alt', alt);
+  if (state === 'missing') {
+    if (manual && typeof KB_STATE !== 'undefined' && KB_STATE.isAdmin) add('kb-img-note', 'Import it: Reference \u2192 Handbook \u2192 Import.');
+    else if (!manual) add('kb-img-note', 'It may have been pasted into another copy of this article.');
+  }
+  if (state === 'failed') {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'kb-img-retry'; b.textContent = 'Retry';
+    b.onclick = function (e) { if (e) { e.preventDefault(); e.stopPropagation(); } kbImgRetry_(n, attr); };
+    n.appendChild(b);
+  }
+  n.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+  n.title = (manual ? 'Handbook image' : 'Article image') + (alt ? ' \u2014 ' + alt : '');
+}
+/** D4 — Retry: the chip goes back to waiting and the hydrator asks again
+ *  (nothing failed was cached — g129). */
+function kbImgRetry_(n, attr) {
+  n.removeAttribute(attr);
+  n.textContent = n.getAttribute('data-alt') || '';
+  if (attr === 'data-mi') kbManimgSchedule_(); else kbKbimgSchedule_();
+}
 var KB_MANIMG = { cache: {}, inflight: {}, timer: null };
 var KB_MANIMG_BATCH = 40;   // = the server's KB_MANUAL_IMAGES_BATCH (pinned)
 function kbManimgKind_(key) { return /^icon-/.test(key) ? 'icon' : (/^thumb-/.test(key) ? 'thumb' : 'figure'); }
@@ -3189,14 +3249,12 @@ function kbManimgApply_(key, state) {
     if (typeof state === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
       var img = document.createElement('img');
       img.className = 'kb-manimg-img kb-manimg-' + kbManimgKind_(key);
-      img.alt = n.textContent;
+      img.alt = n.hasAttribute('data-alt') ? n.getAttribute('data-alt') : n.textContent;
       if (kbManimgKind_(key) === 'figure') img.onload = function () { kbImgZoomable_(this); };
       img.src = state;
       if (n.parentNode) n.parentNode.replaceChild(img, n);
     } else {
-      n.setAttribute('data-mi', state === 'missing' ? 'missing' : 'failed');
-      n.title = state === 'missing' ? 'Handbook image \u2014 not imported yet (Reference \u2192 Handbook \u2192 Import)'
-        : 'Handbook image \u2014 could not load it; reopen the section to try again';
+      kbImgChipState_(n, 'data-mi', state === 'missing' ? 'missing' : 'failed');   // D4
     }
   }
 }
@@ -3285,7 +3343,10 @@ function kbImageSlide_(ov, i) {
     big.src = src;
     box.appendChild(big);
   } else {
-    box.textContent = (slides[i].querySelector('.kb-manimg') || {}).textContent || 'Image';
+    // D4: the slide's name and which of the three states its image is in.
+    var chip = slides[i].querySelector('.kb-manimg'), mi = chip && chip.getAttribute('data-mi');
+    box.textContent = ((chip && (chip.getAttribute('data-alt') || chip.textContent)) || 'Image') +
+      (mi === 'missing' ? ' \u2014 not imported yet' : mi === 'failed' ? ' \u2014 couldn\u2019t load' : mi === 'loading' ? ' \u2014 loading\u2026' : '');
   }
   var cap = slides[i].querySelector('.kb-gal-cap');
   ov.querySelector('.kb-img-cap').textContent = cap ? cap.textContent.trim() : '';
@@ -3381,7 +3442,7 @@ function kbHydrateManualImages_() {
   for (var i = 0; i < nodes.length; i++) {
     var key = nodes[i].getAttribute('data-manimg');
     if (KB_MANIMG.cache[key]) { kbManimgApply_(key, KB_MANIMG.cache[key]); continue; }
-    nodes[i].setAttribute('data-mi', 'loading');
+    kbImgChipState_(nodes[i], 'data-mi', 'loading');   // D4: a sized placeholder that says it is loading
     if (!KB_MANIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
   }
   for (var b = 0; b < want.length; b += KB_MANIMG_BATCH) {
@@ -3432,15 +3493,13 @@ function kbKbimgApply_(key, state) {
     if (typeof state === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
       var img = document.createElement('img');
       img.className = 'kb-kbimg-img';
-      img.alt = n.textContent;
+      img.alt = n.hasAttribute('data-alt') ? n.getAttribute('data-alt') : n.textContent;
       img.loading = 'lazy';
       img.onload = function () { kbImgZoomable_(this); };   // a wide one opens at full size (kbImageOpen_)
       img.src = state;
       if (n.parentNode) n.parentNode.replaceChild(img, n);
     } else {
-      n.setAttribute('data-ki', state === 'missing' ? 'missing' : 'failed');
-      n.title = state === 'missing' ? 'Image \u2014 not stored (it may have been pasted into another copy of this article)'
-        : 'Image \u2014 could not load it; reopen the article to try again';
+      kbImgChipState_(n, 'data-ki', state === 'missing' ? 'missing' : 'failed');   // D4
     }
   }
 }
@@ -3451,7 +3510,7 @@ function kbHydrateKbImages_() {
   for (var i = 0; i < nodes.length; i++) {
     var key = nodes[i].getAttribute('data-kbimg');
     if (KB_KBIMG.cache[key]) { kbKbimgApply_(key, KB_KBIMG.cache[key]); continue; }
-    nodes[i].setAttribute('data-ki', 'loading');
+    kbImgChipState_(nodes[i], 'data-ki', 'loading');   // D4
     if (!KB_KBIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
   }
   for (var b = 0; b < want.length; b += KB_KBIMG_BATCH) {
@@ -5416,11 +5475,37 @@ function kbOpenSynonyms_() {
         // close it is. A second tone rule here would be the parallel-source
         // class the codebase bans. Nothing renders without a server budget.
         propBudgetHtml_(synBudget, 'margin-top:6px;margin-bottom:0') +
+        // D2 (operator 2026-10-27): payor aliases live here too, and the
+        // insurance lookup reads them. The button OFFERS groups from the payor
+        // sheet's names — appended for review, saved only by Save.
+        '<div class="kb-syn-seed"><button type="button" class="kb-btn" onclick="kbSeedPayorSynonyms_(this)">' + icon('plus', 12) + ' Suggest payor aliases</button>' +
+          '<span class="kb-syn-seed-msg" id="kb-syn-seed-msg" role="status" aria-live="polite">From the payor sheet’s names — added below for you to review, then Save.</span></div>' +
         '<div class="kb-ed-foot"><button class="kb-btn" data-kb-synclose="1">Cancel</button>' +
         '<button class="kb-btn" style="background:var(--accent);color:var(--paper-card);border-color:var(--accent)" onclick="kbSaveSynonyms_(this)">' + icon('check', 13) + ' Save</button></div>';
     })
     .withFailureHandler(function (e) { var body = document.getElementById('kb-syn-body'); if (body) body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load synonyms'); })   // A12
     .kbGetSearchConfig();
+}
+function kbSeedPayorSynonyms_(btn) {
+  var msg = document.getElementById('kb-syn-seed-msg');
+  if (btn) btn.disabled = true;
+  if (msg) msg.textContent = 'Reading the payor sheet…';
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (btn) btn.disabled = false;
+      var ta = document.getElementById('kb-syn-ta');
+      if (!ta || !msg) return;   // the editor closed while it ran
+      if (!r || r.error) { msg.textContent = (r && r.error) || 'Could not read the payor sheet.'; return; }
+      // Groups already in the box (unsaved typing included) are not added twice.
+      var have = {};
+      ta.value.split(/\n/).forEach(function (line) { line.split(',').forEach(function (t) { t = t.trim().toLowerCase(); if (t) have[t] = 1; }); });
+      var add = (r.groups || []).filter(function (g) { return !g.some(function (t) { return have[t]; }); });
+      if (!add.length) { msg.textContent = 'No new aliases — the ' + (r.payors || 0) + ' payor names add nothing to the list.'; return; }
+      ta.value = ta.value.replace(/\s+$/, '') + (ta.value.trim() ? '\n' : '') + add.map(function (g) { return g.join(', '); }).join('\n');
+      msg.textContent = 'Added ' + add.length + ' alias group' + (add.length === 1 ? '' : 's') + ' at the end — review them, then Save.';
+    })
+    .withFailureHandler(function (e) { if (btn) btn.disabled = false; if (msg) msg.textContent = (e && e.message) || 'Could not read the payor sheet.'; })
+    .kbSuggestPayorSynonyms();
 }
 function kbSaveSynonyms_(btn) {
   var ta = document.getElementById('kb-syn-ta'); if (!ta) return;
@@ -7000,8 +7085,11 @@ function insRenderResults_(suffix, q, res) {
                 : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
           }).join('') + '</div>'
       : '';
-    html += '<div class="kb-ins-card" data-kb-nav tabindex="-1">' +
-      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + pill + '</div>' +
+    // D3: the server ranks a plan that excludes the searched state LAST and
+    // names the state; the card says so beside the name.
+    var excl = m.excludedState ? '<span class="kb-ins-excl" title="This plan’s name excludes ' + esc(m.excludedState) + '">' + esc(m.excludedState) + ' excluded</span>' : '';
+    html += '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
+      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl + pill + '</div>' +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
       detHtml + '</div>';
   });

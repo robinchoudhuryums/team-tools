@@ -3358,6 +3358,30 @@
     "checkOopEligibility"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post round 12 D: payor state matching, alias suggestions, except-states eligibility",
+   "added": [
+    "INS_PAYOR_ALIAS_FAMILIES",
+    "insPayorAliasSuggest_",
+    "insPayorMatch_",
+    "insPayorNameStates_",
+    "insStatesIn_",
+    "kbSuggestPayorSynonyms",
+    "oopExceptStatesClause_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getOopPricingDiagnostics",
+    "oopEligibilityCheck_",
+    "oopEligibilityForPayment_",
+    "oopEligibilityParse_",
+    "oopRuleLabel_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4261,6 +4285,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "459ffe49b2aac1bc"
+  },
+  "INS_PAYOR_ALIAS_FAMILIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb0b9cb41364fb75"
   },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
@@ -6755,7 +6784,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8f63cf21c206ae1b"
+   "sha": "4f21be9a4d1e538e"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -8475,7 +8504,7 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1cb5745f8a672e88"
+   "sha": "86eb2f778ca64250"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -8917,6 +8946,21 @@
    "kind": "function",
    "sha": "f97ae732a91cf1d6"
   },
+  "insPayorAliasSuggest_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0dec995f961d2f17"
+  },
+  "insPayorMatch_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d6c86f97464b0587"
+  },
+  "insPayorNameStates_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c4e6063149f42dcc"
+  },
   "insPayorRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -8926,6 +8970,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "290eae6fc7f1aa39"
+  },
+  "insStatesIn_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a0db0e05a5eec900"
   },
   "installAutomationTriggers": {
    "file": "10_core.js",
@@ -9957,6 +10006,11 @@
    "kind": "function",
    "sha": "ebe6b72c67b694b1"
   },
+  "kbSuggestPayorSynonyms": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f1bd49548a747ec7"
+  },
   "kbTermCount_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10340,12 +10394,12 @@
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "a45a88fd5b1b134c"
+   "sha": "6e4ff8b76496b42f"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0a79805bbb740391"
+   "sha": "c778d638f2a6212b"
   },
   "oopEligibilityMap": {
    "file": "70_kb.js",
@@ -10355,7 +10409,12 @@
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "940df1b89a428175"
+   "sha": "bb47f1f9019d2a55"
+  },
+  "oopExceptStatesClause_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6ab8e8e966522acb"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",
@@ -10420,7 +10479,7 @@
   "oopRuleLabel_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "192b99909d5094fd"
+   "sha": "766c330c395c106e"
   },
   "oopSheet_": {
    "file": "70_kb.js",
@@ -11480,7 +11539,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "09ffcdee7bf7dfb9"
+   "sha": "8e200514995276f4"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

@@ -63,6 +63,13 @@ const KBL_ELIG_CARDS = KBL_SEARCH +
 
 // 25post C1: the eligibility map, opened — poll for the toggle, press it,
 // scroll the drawn map into view.
+// D4 (operator 2026-10-27): the three image-chip states side by side — the
+// mock answers "not imported" for these keys, then one chip is put back to
+// loading and one to failed, so all three (and an article image's "not
+// stored") are in one shot.
+const KBL_IMG_STATES = "var m=document.getElementById('kb-main'); if(m){ m.innerHTML='<div class=\"kb-article\"><h2>Image states</h2>' +" +
+  " kbMd_('![The Log screen](manimg:fig-d4-load)\\n\\n![The New Order button](manimg:fig-d4-gone)\\n\\n![The Patient tab](manimg:fig-d4-fail)\\n\\nRow icon ![Hold icon](manimg:icon-d4-gone) beside its name.\\n\\n![Old screenshot](kbimg:kbimg-000000000000000000000000)') + '</div>';" +
+  " setTimeout(function(){ var c=m.querySelectorAll('.kb-manimg'); if(c[0]) kbImgChipState_(c[0],'data-mi','loading'); if(c[2]) kbImgChipState_(c[2],'data-mi','failed'); }, 600); }";
 const KBL_ELIG_MAP = KBL_SEARCH +
   "; (function tick(n){ var b=document.querySelector('#kb-oop-results .kb-oop-mapbtn');" +
   " if(b){ oopToggleMap_(b); setTimeout(function(){ var m=document.querySelector('#kb-oop-results .kb-oop-map'); if(m) m.scrollIntoView({ block: 'center' }); }, 100); return; }" +
@@ -428,6 +435,8 @@ const SCENARIOS = [
   ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
   ['reference-elig-cards-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_CARDS],
   ['reference-elig-cards-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_CARDS],
+  ['reference-img-states-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_IMG_STATES],
+  ['reference-img-states-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_IMG_STATES],
   ['reference-elig-map-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_MAP],
   ['reference-elig-map-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_MAP],
   // T3 — the join, both directions in one frame: the payor's code columns

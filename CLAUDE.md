@@ -957,11 +957,11 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1416 | `node test/client/run.js` |
-| DOM harness tests | 294 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 182 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1418 | `node test/client/run.js` |
+| DOM harness tests | 296 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 184 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
-| Admin-tier endpoints (INV-136) | 58 | `'Admin access required.'` in the server source |
+| Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 101 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |

@@ -832,6 +832,120 @@ function insPayorScore_(name, query) {
   if (hits === toks.length) score += 30;            // every token present
   return score;
 }
+/** PURE (Node-pinned) — D1 (operator 2026-10-27): the US states a text names,
+ *  as codes, WHOLE WORDS only. A full name reads in any case ("Texas", "new
+ *  york"); a two-letter code only in capitals in a payor NAME ("UHC TX"),
+ *  because a name is prose ("in", "or"). In a typed QUERY a rep writes
+ *  lower case, so a code reads in any case there — except the three that are
+ *  everyday words in a query ("in", "or", "me"), which only count in capitals.
+ *  Returns { states: ['TX', …], rest } — `rest` is the text with the states
+ *  taken out. */
+function insStatesIn_(text, isQuery) {
+  const words = String(text == null ? '' : text).split(/[^A-Za-z0-9&]+/).filter(function (w) { return !!w; });
+  const states = [], rest = [];
+  const add = function (c) { if (states.indexOf(c) < 0) states.push(c); };
+  for (let i = 0; i < words.length; i++) {
+    const two = i + 1 < words.length ? (words[i] + ' ' + words[i + 1]).toLowerCase() : '';
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two]); i++; continue; }
+    const w = words[i], lc = w.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc]); continue; }
+    const up = w.toUpperCase();
+    if (w.length === 2 && US_STATE_CODES.indexOf(up) >= 0 &&
+        (w === up || (isQuery && ['in', 'or', 'me'].indexOf(lc) < 0))) { add(up); continue; }
+    rest.push(w);
+  }
+  return { states: states, rest: rest.join(' ') };
+}
+/** PURE (Node-pinned) — D3: the states a payor NAME excludes ("UHC (all
+ *  states other than TX)", "Aetna except Texas and Oklahoma"), and the states
+ *  it names otherwise. Returns { excluded: [...], named: [...] }. */
+function insPayorNameStates_(name) {
+  const n = String(name == null ? '' : name);
+  const m = n.match(/\b(?:other\s+than|except|excluding|excludes|excl|outside(?:\s+of)?|not\s+in|non)\b[\s.-]*([^)]*)/i);
+  const excluded = m ? insStatesIn_(m[1], false).states : [];
+  const outside = m ? n.slice(0, m.index) + ' ' + n.slice(m.index + m[0].length) : n;
+  return { excluded: excluded, named: insStatesIn_(outside, false).states };
+}
+/** PURE (Node-pinned) — D1–D3 (operator 2026-10-27): score a payor name for
+ *  the payor lookup. The query's STATES are matched on their own — by code or
+ *  full name, either way round ("uhc tx" finds "UnitedHealthcare Texas") — and
+ *  the rest of the query through `insPayorScore_`, tried as typed and as each
+ *  alias the Synonyms list gives it ("uhc" → "unitedhealthcare"). A plan
+ *  naming the searched state ranks above one naming another; one whose name
+ *  EXCLUDES it carries `excluded` and the caller ranks it last. Returns
+ *  { score, excluded: 'TX' | '' }; 0 = no match. */
+function insPayorMatch_(name, query, groups) {
+  const q = insStatesIn_(query, true);
+  const ns = insPayorNameStates_(name);
+  let base;
+  if (!q.states.length) base = insPayorScore_(name, query);
+  else if (q.rest.trim()) base = insPayorScore_(name, q.rest);
+  else base = ns.named.some(function (c) { return q.states.indexOf(c) >= 0; }) ? 40 : 0;   // a state alone
+  // Aliases: every group with a term the rest of the query holds, as whole words.
+  const restLc = ' ' + String(q.states.length ? q.rest : query).toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+  (groups || []).forEach(function (g) {
+    (g || []).forEach(function (term) {
+      const t = String(term || '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim();
+      if (!t || restLc.indexOf(' ' + t + ' ') < 0) return;
+      g.forEach(function (alt) {
+        const a = String(alt || '').toLowerCase().trim();
+        if (!a || a === t) return;
+        const variant = restLc.replace(' ' + t + ' ', ' ' + a + ' ').trim();
+        base = Math.max(base, insPayorScore_(name, variant));
+      });
+    });
+  });
+  if (!(base > 0)) return { score: 0, excluded: '' };
+  if (!q.states.length) return { score: base, excluded: '' };
+  const ex = q.states.filter(function (c) { return ns.excluded.indexOf(c) >= 0; })[0] || '';
+  if (ex) return { score: base, excluded: ex };
+  if (ns.named.some(function (c) { return q.states.indexOf(c) >= 0; })) return { score: base + 40, excluded: '' };
+  if (ns.named.length) return { score: Math.max(1, base - 20), excluded: '' };   // a plan for another state
+  return { score: base, excluded: '' };
+}
+/** PURE (Node-pinned) — D2: the alias groups to OFFER from the payor names —
+ *  each INS_PAYOR_ALIAS_FAMILIES family one of whose terms a name carries, and
+ *  each "Long Name (ABC)" acronym the sheet spells out. A group with a term
+ *  already in the admin's list is not offered again. */
+function insPayorAliasSuggest_(names, existing) {
+  const have = {};
+  (existing || []).forEach(function (g) { (g || []).forEach(function (t) { have[String(t).toLowerCase().trim()] = 1; }); });
+  const norm = function (s) { return ' ' + String(s || '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' '; };
+  const all = (names || []).map(norm);
+  const out = [];
+  const offer = function (g) {
+    if (g.length < 2 || g.some(function (t) { return have[t]; })) return;
+    out.push(g); g.forEach(function (t) { have[t] = 1; });
+  };
+  INS_PAYOR_ALIAS_FAMILIES.forEach(function (fam) {
+    const seen = fam.some(function (t) {
+      const w = ' ' + t.replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+      return all.some(function (n) { return n.indexOf(w) >= 0; });
+    });
+    if (seen) offer(fam.slice());
+  });
+  (names || []).forEach(function (raw) {
+    const m = String(raw || '').match(/^\s*([A-Za-z][A-Za-z .&'-]{5,38}?)\s*\(([A-Z]{2,6})\)/);
+    if (!m || US_STATE_CODES.indexOf(m[2]) >= 0) return;
+    const long = m[1].toLowerCase().replace(/[^a-z0-9& ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const ab = m[2].toLowerCase();
+    if (long && long !== ab) offer([ab, long]);
+  });
+  return out;
+}
+/** Admin-only, read-only — D2: alias groups offered from the InsurancePayors
+ *  names, for the Synonyms editor to append for review. Nothing is saved. */
+function kbSuggestPayorSynonyms() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
+    if (!sh) return { error: 'There is no "' + INS_PAYOR_TAB + '" tab in the KB spreadsheet to read payor names from.' };
+    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+    const names = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
+    return { groups: insPayorAliasSuggest_(names, getKbSearchSynonyms_()), payors: names.filter(function (n) { return String(n).trim(); }).length };
+  } catch (err) { return { error: 'Could not read the payor names: ' + err.message }; }
+}
 /** PURE (Node-pinned): the ONE HCPCS tokenizer. Both operator tables name the
  *  same equipment in the same billing vocabulary — the payor sheet as COLUMN
  *  HEADERS (`K0800`, `K0801`), the pricing sheet as a code CELL (`K0800 (C/C)`)
@@ -1670,6 +1784,42 @@ function oopRadiusClause_(text, warehouseNames) {
     : { kind: 'radius', miles: miles, warehouses: hits };
 }
 
+/** PURE (Node-pinned) — D5 (operator 2026-10-27): a trailing "except <states>"
+ *  clause ("Open (except Hawaii)", "TX, OK except Oklahoma City" is NOT one —
+ *  every word after the keyword must be a state). Returns
+ *  `{ states: ['HI', …], rest }` — the value with the clause removed — or null
+ *  when there is no such clause or its tail is not purely states, which leaves
+ *  the value to the grammar below (and to K3's "unknown" for anything else it
+ *  says). A full name reads in any case; a two-letter code only in capitals,
+ *  because "or", "in" and "me" are words (KB-1). */
+function oopExceptStatesClause_(raw) {
+  const text = String(raw == null ? '' : raw);
+  const m = text.match(/[\s,;\u2013\u2014-]*(\(\s*)?\b(?:except|excluding|excludes|excl|other\s+than|not\s+in|but\s+not)\b\.?\s*(?:for\s+|in\s+)?([^()]*?)\s*\)?\s*\.?\s*$/i);
+  if (!m || !m[2]) return null;
+  const words = m[2].split(/[\s,;/&+]+/).filter(function (w) { return !!w; })
+    .filter(function (w) { return ['and', 'or', 'the', 'state', 'states', 'of'].indexOf(w.toLowerCase()) < 0; });
+  if (!words.length) return null;
+  const states = [];
+  for (let i = 0; i < words.length; i++) {
+    const two = i + 1 < words.length ? (words[i] + ' ' + words[i + 1]).toLowerCase().replace(/[.]/g, '') : '';
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) {
+      if (states.indexOf(US_STATE_NAMES[two]) < 0) states.push(US_STATE_NAMES[two]);
+      i++; continue;
+    }
+    const one = words[i].replace(/[.]/g, '');
+    const lc = one.toLowerCase();
+    let code = Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc) ? US_STATE_NAMES[lc] : null;
+    if (!code && one.length === 2 && one === one.toUpperCase() && US_STATE_CODES.indexOf(one) >= 0) code = one;
+    if (!code) return null;
+    if (states.indexOf(code) < 0) states.push(code);
+  }
+  let rest = text.slice(0, m.index);
+  // "Open (anywhere in the US except Hawaii)": the clause took the closing
+  // parenthesis with it, so the opening one is put back in step.
+  if (!m[1] && (rest.match(/\(/g) || []).length > (rest.match(/\)/g) || []).length) rest += ')';
+  return { states: states, rest: rest.trim() };
+}
+
 /** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
  *
  *  Returns one of:
@@ -1716,6 +1866,25 @@ function oopRadiusClause_(text, warehouseNames) {
 function oopEligibilityParse_(text, warehouseNames) {
   const raw0 = String(text == null ? '' : text).trim();
   if (!raw0) return { kind: 'unknown', raw: '' };
+
+  // ── D5 (operator 2026-10-27): "except <states>" is an INSURANCE exclusion ──
+  // "Scooters may be available out of pocket in Hawaii, just not through
+  // insurance." So the clause is read off first, the rest parsed on its own,
+  // and the two kept apart: the check answers NO through insurance in an
+  // excluded state, and `oopEligibilityForPayment_` lifts it out of pocket
+  // (a state limit is WHO IS PAYING). An unreadable rest is still unknown —
+  // the clause never rescues the value it is attached to (g41).
+  const ex = oopExceptStatesClause_(raw0);
+  if (ex) {
+    if (!ex.rest) return { kind: 'unknown', raw: raw0 };
+    const inner = oopEligibilityParse_(ex.rest, warehouseNames);
+    if (inner.kind === 'unknown') {
+      const u = { kind: 'unknown', raw: raw0 };
+      if (inner.noWarehouse) u.noWarehouse = true;
+      return u;
+    }
+    return { kind: 'except', states: ex.states, rule: inner, raw: raw0 };
+  }
 
   // ── The CITY clause, detected and STRIPPED before anything else ─────────
   // A value may carry it BESIDE another rule ("100 miles of Dallas, or listed
@@ -1884,6 +2053,16 @@ function oopEligibilityForPayment_(rule, payingOop) {
   const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
   if (!payingOop) return r;
   if (r.kind === 'states') return { kind: 'open', liftedFrom: (r.states || []).slice() };
+  // D5: an "except <states>" exclusion is an insurance one, so out of pocket
+  // the rule underneath is all that is left — and an `open` one says which
+  // states the insurance rule left out.
+  if (r.kind === 'except') {
+    const under = oopEligibilityForPayment_(r.rule, true);
+    if (under.kind !== 'open') return under;
+    const o = { kind: 'open', liftedExcept: (r.states || []).slice() };
+    if (under.liftedFrom) o.liftedFrom = under.liftedFrom;
+    return o;
+  }
   // `cities` does NOT lift, and it is the same test the rest of this function
   // applies rather than a special case: a service-city list is HOW IT GETS
   // THERE, not WHO IS PAYING. The operator confirmed it on 2026-09-22 — a
@@ -1914,6 +2093,7 @@ function oopRuleLabel_(rule) {
   if (k === 'cities') return 'City list';
   if (k === 'states') return 'States';
   if (k === 'open') return 'Anywhere';
+  if (k === 'except') return oopRuleLabel_(rule.rule);
   return 'Rule';
 }
 /** PURE (Node-pinned): does `rule` cover `loc`?
@@ -1938,10 +2118,30 @@ function oopEligibilityCheck_(rule, loc) {
   const where = loc || {};
 
   if (r.kind === 'open') {
+    const ins = [];
+    if (r.liftedFrom && r.liftedFrom.length) ins.push('limits insurance orders to ' + r.liftedFrom.join(', '));
+    if (r.liftedExcept && r.liftedExcept.length) ins.push('excludes ' + r.liftedExcept.join(', ') + ' for insurance orders only');
     return { verdict: 'yes', near: false,
-      why: r.liftedFrom && r.liftedFrom.length
-        ? 'Out of pocket there is no state restriction (the sheet limits insurance orders to ' + r.liftedFrom.join(', ') + ').'
+      why: ins.length
+        ? 'Out of pocket there is no state restriction (the sheet ' + ins.join(' and ') + ').'
         : 'Available anywhere in the US.' };
+  }
+
+  // D5: the insurance exclusion. The rule underneath answers first — a NO
+  // there is a NO whatever the state — and then the excluded states say no.
+  if (r.kind === 'except') {
+    const under = oopEligibilityCheck_(r.rule, where);
+    if (under.verdict === 'no') return under;
+    const list = (r.states || []).join(', ');
+    const st = String(where.state || '').trim().toUpperCase();
+    if (!st) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not determine the state for that address — the sheet excludes ' + list + ' for insurance orders.' };
+    }
+    if ((r.states || []).indexOf(st) >= 0) {
+      return { verdict: 'no', near: false, why: 'Not through insurance in ' + st + ' (the sheet excludes ' + list + ').' };
+    }
+    return under;
   }
 
   if (r.kind === 'states') {
@@ -2165,6 +2365,7 @@ function checkOopEligibility(address, query) {
       if (!r) return false;
       if (r.kind === 'radius') return true;
       if (r.kind === 'any') return (r.rules || []).some(ruleNeedsRadius);
+      if (r.kind === 'except') return ruleNeedsRadius(r.rule);   // D5
       return false;
     };
     const needRadius = parsed.some(ruleNeedsRadius);
@@ -2381,7 +2582,7 @@ function getOopPricingDiagnostics() {
     // inferred the rest, so adding a kind made one counter NaN and silently
     // mis-stated the other — an enumerated set that drifts from what the parser
     // can actually return is the failure this project keeps meeting (g137).
-    const elig = { open: 0, states: 0, radius: 0, cities: 0, any: 0, unknown: [] };
+    const elig = { open: 0, states: 0, radius: 0, cities: 0, any: 0, except: 0, unknown: [] };
     let unknownCount = 0;
     if (rows) {
       const all = sh.getRange(2, 1, rows, width).getDisplayValues();
@@ -2415,7 +2616,7 @@ function getOopPricingDiagnostics() {
       locUnreadable: loc.unreadable,
       locNoAddress: loc.noAddress,
       eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
-        cities: elig.cities, any: elig.any,
+        cities: elig.cities, any: elig.any, except: elig.except,
         unknownCount: unknownCount, unknown: elig.unknown },
       sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
   } catch (err) { return { error: String(err.message || err) }; }
@@ -2440,18 +2641,23 @@ function searchInsurancePayors(query) {
     const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
     // Name-column scan for scoring; full rows fetched only for the top N.
     const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    // D1–D3: states matched by code or name, aliases from the Synonyms list,
+    // and a plan that EXCLUDES the searched state ranked after every other.
+    const groups = getKbSearchSynonyms_();
     const scored = [];
     for (let i = 0; i < names.length; i++) {
-      const sc = insPayorScore_(names[i][0], q);
-      if (sc > 0) scored.push({ i: i, score: sc });
+      const sc = insPayorMatch_(names[i][0], q, groups);
+      if (sc.score > 0) scored.push({ i: i, score: sc.score, excluded: sc.excluded });
     }
-    scored.sort(function (a, b) { return b.score - a.score; });
+    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score; });
     const top = scored.slice(0, INS_PAYOR_TOP);
     const matches = top.map(function (t) {
       // getDisplayValues — a foreign-authored sheet's formats are not ours to
       // reinterpret (the INV-64 discipline).
       const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
-      return insPayorRowObj_(headers, row);
+      const o = insPayorRowObj_(headers, row);
+      if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
+      return o;
     });
     // The JOIN (T3). The payor sheet says `K0802 — Not Accepted`, which is a
     // rule about an item the rep cannot name. The pricing tab knows what K0802
