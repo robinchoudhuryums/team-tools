@@ -30657,7 +30657,7 @@ function m2Kb_() {
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
   vm.runInContext(/var KB_MANUAL_UPDATED_DAYS = [^;]+;/.exec(M1_KB_SRC)[0], ctx);
   ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbIsManualId_', 'kbShiftHeadings_', 'kbManualExcerpt_',
-    'kbManualUpdates_', 'kbManualNumberTarget_', 'kbRouterRows_', 'kbJumpRowHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+    'kbManualUpdates_', 'kbManualNumberTarget_', 'kbRouterRows_', 'kbRouterAnswerHtml_', 'kbJumpRowHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   return ctx;
 }
 const J2 = (x) => JSON.parse(JSON.stringify(x));
@@ -30723,6 +30723,26 @@ test('M2-R2: a typed section number names a VISIBLE section — every form the H
     { id: 'man-5-9', date: '2026-03-01', num: '5.9', summary: 'b' }, { id: 'man-5-1', date: '2026-09-01', num: '5.1', summary: 'c' }];
   assert.deepStrictEqual(J2(c.kbManualUpdates_(cl, 'man-5-9', '2026-09-28', 365)).map((u) => u.summary), ['a', 'b'], 'the last 12 months, newest first, this section only');
   assert.deepStrictEqual(J2(c.kbManualUpdates_(null, 'man-5-9', '2026-09-28', 365)), []);
+});
+
+test('M2-R3b (operator 2026-10-27): a router answer draws the section it opens with as a chip — after " — ", a comma or a semicolon — and stays text otherwise; escaped', () => {
+  const c = m2Kb_();
+  const chip = (a) => c.kbRouterAnswerHtml_(a);
+  assert.strictEqual(chip('10.4.1 — the five-step estimate'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">10.4.1</span>the five-step estimate</span>');
+  assert.strictEqual(chip('0.2, then 6.2 if it\'s scheduled'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">0.2</span>then 6.2 if it&#39;s scheduled</span>');
+  assert.strictEqual(chip('0.2.2; for a power chair 5.6.1'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">0.2.2</span>for a power chair 5.6.1</span>');
+  assert.strictEqual(chip('10.3'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">10.3</span></span>', 'a bare section');
+  assert.strictEqual(chip('B.1 — the directory'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">B.1</span>the directory</span>', 'an appendix');
+  assert.strictEqual(chip('Service'), '<span class="kb-snip kbd-rt-a">Service</span>', 'no section first → plain text');
+  assert.strictEqual(chip('7.2 — <b>x</b>'), '<span class="kb-snip kbd-rt-a"><span class="kbd-rt-sec">7.2</span>&lt;b&gt;x&lt;/b&gt;</span>', 'escaped');
+});
+
+test('M2-R3c (operator 2026-10-27): the export draws a router answer as plain text — a hover-preview button in it keeps its words, never "[Fax History](peek:…)"', () => {
+  const py = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  const fn = /def md_plain\(s\):[\s\S]*?\n    return [^\n]+\n/.exec(py)[0];
+  const out = require('child_process').execFileSync('python3', ['-c', 'import re\n' + fn +
+    'print(md_plain("[[x]] check {{peek:nav-fax|Fax History}} or [Fax History](peek:fig-nav-fax) and **bold** `code`"))']).toString().trim();
+  assert.strictEqual(out, '[[x]] check Fax History or Fax History and bold code', 'links and peeks keep their text; a [[§…]] reference is not a link');
 });
 
 test('M2-R3: the call router keeps only rows with a target the caller can see, filters on phrase, answer and group, and keeps its group order', () => {

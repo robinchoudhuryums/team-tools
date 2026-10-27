@@ -435,7 +435,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
   {
    "g": "Status and timing",
    "q": "You're waiting on my doctor?",
-   "a": "0.2.2 — check [Fax History](peek:fig-nav-fax-history-button)",
+   "a": "0.2.2 — check Fax History",
    "t": [
     {
      "id": "man-0-2",

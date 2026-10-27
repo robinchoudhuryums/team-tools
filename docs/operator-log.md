@@ -10,10 +10,10 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation (25post round 8)
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups (25post round 8)
 
 **Adds NO Script Properties and changes no server code** — a deploy (New
-version) is all it needs.
+version) and a handbook re-import.
 
 - **Expand on a Spanish Inbox request** shows the newest message on its own,
   in paragraphs, with the earlier messages of the thread folded under "N
@@ -21,6 +21,11 @@ version) is all it needs.
   markers, signatures, the confidentiality disclaimer and the Spanish Calls
   group's unsubscribe footer are hidden; a note says so, and Open in Gmail
   still has the full text.
+- **The call router in the reference drawer** ("What did the caller say?")
+  shows each group as a card under a heading with its count, a line between
+  phrases, and the section each answer opens with as a small chip.
+- **Re-import the handbook** after deploying: one router answer read "check
+  [Fax History](peek:fig-…)"; the new `manual.json` reads "check Fax History".
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

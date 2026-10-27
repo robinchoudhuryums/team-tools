@@ -1173,6 +1173,13 @@ not restate it. Server endpoints live in the fourteen server files
      say?", the manual's call router (phrases in groups, each naming the sections
      to open), and a drawer result offers "Read in context", which opens the
      whole part in the Reference tab.
+     **The router's groups read as groups (operator 2026-10-27).** Each group
+     is a bordered card under a heading with its phrase count, its phrases are
+     separated by hairlines, and the section an answer opens with is drawn as
+     a chip (`kbRouterAnswerHtml_`) — a flat run of grey lines had read as one
+     list. The export's `md_plain` now keeps a link's words, so an answer that
+     names a button with a hover preview reads "check Fax History", not
+     "[Fax History](peek:fig-…)".
      **22post M3 (2026-09-29): diagrams, images, part order.** The appendices
      now list after Part 10 (the tree, the dialog and the publish order). The
      manual's diagrams draw inside their sections from a generated partial

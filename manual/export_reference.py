@@ -101,7 +101,12 @@ def slug(s):
 
 
 def md_plain(s):
-    """Markdown emphasis and inline code removed — for text drawn raw."""
+    """Markdown emphasis, inline code and links removed — for text drawn raw.
+    A link keeps its text: a router answer that names a button with a hover
+    preview ({{peek:…}}, round 5) read "[Fax History](peek:fig-…)" in the
+    drawer (operator 2026-10-27)."""
+    s = re.sub(r"\{\{peek:[^|}]+\|([^}]+)\}\}", r"\1", s)
+    s = re.sub(r"\[([^\[\]]+)\]\([^()\s]+\)", r"\1", s)
     s = re.sub(r"\*\*([^*]+)\*\*", r"\1", s)
     s = re.sub(r"(^|[^*])\*([^*\s][^*]*)\*", r"\1\2", s)
     return re.sub(r"`([^`]+)`", r"\1", s)

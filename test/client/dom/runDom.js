@@ -5689,6 +5689,12 @@ test('M2 DOM: the drawer — a typed section number jumps (Enter opens it), the 
   const q = doc.getElementById('kbd-rt-q');
   const rows = () => h.$$('#kbd-rt-list .kbd-rt-row');
   assert.strictEqual(rows().length, 2, 'the row whose only target is not visible is dropped');
+  // Operator 2026-10-27: a bordered card per group, under a heading with its count.
+  const grps = h.$$('#kbd-rt-list .kbd-rt-grp');
+  assert.strictEqual(grps.length, 1, 'one group left — the Money row is gone with its target');
+  assert.strictEqual(grps[0].querySelector('.kbd-rt-g').textContent, 'Status and timing2', 'the heading names the group and counts it');
+  assert.strictEqual(grps[0].querySelectorAll('.kbd-rt-rows > .kbd-rt-row').length, 2, 'its rows sit in the card');
+  assert.strictEqual(rows()[1].querySelector('.kbd-rt-sec').textContent, '0.10.2', 'the answer leads with its section as a chip');
   q.value = 'doctor';
   q.dispatchEvent(new w.Event('input', { bubbles: true }));
   assert.strictEqual(rows().length, 1);
