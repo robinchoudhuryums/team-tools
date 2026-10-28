@@ -2262,7 +2262,7 @@
   },
   {
     "id": "sup-sterile-water",
-    "name": "Sterile Water",
+    "name": "Hudson RCI AquaPak Sterile Water 1070mL",
     "part": "p3",
     "category": "suction-supply",
     "hcpcs": [
@@ -2276,13 +2276,15 @@
     "specs": [
       {
         "label": "Unit",
-        "value": "A4217 is billed per 500 mL — a 1,000 mL bottle is 2 units"
+        "value": "1,070 mL bottle; the Item Master counts A4217 as 500 mL per unit"
       }
     ],
     "allowance": "4 bottles / month",
     "notes": null,
-    "source": "Operator 2026-10-28 (UMS public site)",
-    "images": [],
+    "source": "Operator 2026-10-28 (UMS public site; Item Master)",
+    "images": [
+      "rr/sup-sterile-water.jpg"
+    ],
     "verified": "2026-10-28",
     "flags": [
       "ums-published"

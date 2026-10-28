@@ -25,9 +25,11 @@ text.
 - **3.3.3** — nebulizer supplies 2 a month each, the aerosol mask (A7015) 1;
   the nebulizer kit (A7004) has a photo.
 - **3.5.2** — suction tubing (A7002, 8 a month) and sterile water (A4217,
-  4 bottles a month — billed per 500 mL, so a 1,000 mL bottle counts as 2).
+  4 bottles a month — usually the 1,070 mL AquaPak; the Item Master counts
+  A4217 as 500 mL per unit).
 - **3.8.1** — briefs, pullups and liners share ONE Texas Medicaid limit of
-  240 a month; each had read as 240 on its own.
+  240 a month; each had read as 240 on its own. All five incontinence
+  allowances confirmed against TMHP by the operator.
 - **8.4.1** — the Oxygen Cylinder Stand / Rack (E1355) is removed (not in the
   Item Master).
 - **9.1** — the company holidays are listed. The app's business-day

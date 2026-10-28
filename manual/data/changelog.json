@@ -6,13 +6,13 @@
     "summary": "Briefs, pullups and liners share one Texas Medicaid limit of 240 a month between them — not 240 of each. Underpads (120 a month) and wipes (2 packs a month) are limited separately.",
     "authority": "Respiratory & Resupply",
     "retraining": true,
-    "provenance": "Operator 2026-10-28; TMHP limits"
+    "provenance": "Operator 2026-10-28; TMHP limits confirmed"
   },
   {
     "date": "2026-10-28",
     "part": "p3",
     "section": "§3-5.2",
-    "summary": "Suction tubing (A7002, 8 a month) and sterile water (A4217, 4 bottles a month) are listed with the suction supplies. A4217 is billed per 500 mL, so a 1,000 mL bottle counts as 2.",
+    "summary": "Suction tubing (A7002, 8 a month) and sterile water (A4217, 4 bottles a month — usually the 1,070 mL AquaPak; the Item Master counts A4217 as 500 mL per unit) are listed with the suction supplies.",
     "authority": "Respiratory & Resupply",
     "retraining": false,
     "provenance": "Operator 2026-10-28"
