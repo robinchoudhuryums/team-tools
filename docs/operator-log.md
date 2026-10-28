@@ -10,14 +10,29 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-28 — the 6.9.3 pick-up ticket slideshow: new captions and step details
+## 2026-10-28 — handbook round: the 6.9.3 pick-up slideshow, resupply limits, company holidays
 
 **Adds NO operator state** — deploy a New version, then **re-import
 `manual.json`** (build it from `manual/` with `make_all.sh`; Check → Import →
-Publish for chapter 6). Claim Prep is now Step 1 of the pick-up ticket
-slideshow; the Transaction, Selection and Ticket slides carry the field-by-field
-instructions under **Show details** below the image (printed in full). Until
-the re-import the app shows the old captions and order.
+Publish chapters 3, 6, 8, 9 and 10). Until the re-import the app shows the old
+text.
+
+- **6.9.3** — Claim Prep is Step 1 of the pick-up ticket slideshow; the
+  Transaction, Selection and Ticket slides carry the field-by-field
+  instructions under **Show details** below the image (printed in full), and
+  the seven screenshots are cropped to the part that matters. The oxygen
+  ticket's copy of the patient-search screenshot (`o2-ticket-2`) is uncropped.
+- **3.3.3** — nebulizer supplies 2 a month each, the aerosol mask (A7015) 1;
+  the nebulizer kit (A7004) has a photo.
+- **3.5.2** — suction tubing (A7002, 8 a month) and sterile water (A4217,
+  4 bottles a month — billed per 500 mL, so a 1,000 mL bottle counts as 2).
+- **3.8.1** — briefs, pullups and liners share ONE Texas Medicaid limit of
+  240 a month; each had read as 240 on its own.
+- **8.4.1** — the Oxygen Cylinder Stand / Rack (E1355) is removed (not in the
+  Item Master).
+- **9.1** — the company holidays are listed. The app's business-day
+  arithmetic reads the CDR Report's **Company Holidays** tab, not the handbook:
+  the tab should hold the same days, each on the weekday actually taken off.
 
 ## 2026-10-28 — app activity in Day Edit and inferred punches; distance rules judged on the drive (25post round 12 E2)
 
