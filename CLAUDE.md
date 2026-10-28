@@ -594,6 +594,7 @@ for the reasoning, which is usually the part that matters.
 - [The intake Send-to picker reads the Sales and PAP teams from the CDR roster, builds first.last addresses, and re-checks them at send (25post B6, operator 2026-10-16)](docs/design-decisions.md#intake-team-recipients-from-the-cdr-roster)
 - [A clocked-in rep idle 30+ minutes is flagged in the app only, measured from the last punch or gesture with scheduled breaks taken out (25post B8, operator 2026-10-16)](docs/design-decisions.md#the-idle-alert-is-in-app-and-break-aware)
 - [A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)](docs/design-decisions.md#a-named-button-shows-its-screenshot)
+- [The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)](docs/design-decisions.md#the-handbook-rendering-layer-is-a-shared-partial)
 
 ## Operator State Checklist
 
@@ -958,7 +959,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1429 | `node test/client/run.js` |
+| Pure harness tests | 1431 | `node test/client/run.js` |
 | DOM harness tests | 301 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 186 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |

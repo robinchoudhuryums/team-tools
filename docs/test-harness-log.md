@@ -2852,3 +2852,31 @@ per-change detail. By delta:
   which is the rule working, not a defect.
 - **Server manifest:** `kbManualImagesValidate_` revised (`split-manifest.mjs
   --why`).
+
+## Handbook app HB1.1a — the rendering layer moved to a shared partial (2026-10-28)
+
+- **The alias:** `harness.js` gained `CLIENT_ALIASES` and `readWebFile` — a
+  read of `kb/script_kb.html` is `shared/script_manual_render.html` +
+  `kb/script_kb.html`, in include order, so the ~250 pins that name the Reference
+  partial kept working when 110 declarations and 301 style rules moved. The 39
+  raw `fs.readFileSync(... 'kb/script_kb.html')` reads in `run.js` now go
+  through `readWebFile`. The DOM harness keeps its own partial list and loads
+  the two files separately, as `index.html` does.
+- **The contract pin (HB1.1a):** nothing declared in both files, the shared file
+  included first, and the shared layer's references to names Reference declares
+  are exactly `KB_STATE` and `kbXrefOpen_` — a list that only shrinks; HB1.1b
+  turns both into host hooks.
+- **Visual:** all 72 Reference and manual shots taken on the old and the new
+  code and compared pixel by pixel. 39 were identical, and 27 differed only
+  below the noise threshold (the loading bar and anti-aliasing). Of the six with
+  real pixel counts, four were run-to-run noise (a second run of the new code
+  matched the old exactly). Two (`reference-manual-polish-pak-light-wide`,
+  `reference-manual-diagram-full-dark-wide`) differed consistently, by 346 and
+  172 scattered text pixels. A dump of every element's full computed style and
+  box in both scenarios on both builds was IDENTICAL (1,307 and 1,596
+  elements), so that residue is rasterisation, from the page's two extra
+  `<style>`/`<script>` elements, not a style or layout change. Method worth
+  keeping: a computed-style dump settles what a pixel diff cannot.
+- **Left for HB1.1b:** the two `.kb-article .kb-diagram svg.kbdg` rules, plus the
+  mixed selector lists (render and reader selectors in one rule), stay in
+  Reference's styles.

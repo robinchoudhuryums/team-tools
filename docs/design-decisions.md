@@ -5767,3 +5767,24 @@ pick them up without re-deriving the context.
   rejected:** the image inline in each span (twenty copies of seven images in
   the HTML); a CSS-only `:hover` popover inside the text (clipped by the
   scrolling tables the mentions sit in, and nothing on a touch screen).
+- <a id="the-handbook-rendering-layer-is-a-shared-partial"></a>**The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)**
+  The stand-alone handbook web app must draw the handbook exactly as Reference
+  does, and two copies of a renderer drift (g126). The reader was not separable
+  as one block — its 97 declarations reached 48 Reference names, and the
+  transitive closure was almost the whole module — so the operator chose a split
+  along a seam: `web-app/shared/script_manual_render.html` holds the RENDERING
+  layer (`kbMd_` and every block it draws, the image hydrators, the full-size
+  viewer, the peek, footnotes, callouts and their styles, including the base
+  `.kb-article` typography), moved verbatim and in order, and is included BEFORE
+  `kb/script_kb.html`. Its remaining reach into Reference (`kbXrefOpen_`,
+  `KB_STATE`) is a list a pin holds and that only shrinks; HB1.1b replaces it
+  with host hooks and moves the reader screen behind the same contract. The CSS
+  move was checked rule by rule for cascade flips (same specificity, same
+  target, an earlier Reference rule that would now win) — one real one, the
+  editor preview's decision-checklist labels, is held by a preview-scoped rule
+  — and by an old-vs-new pixel comparison of every Reference scenario. Test
+  reads of `kb/script_kb.html` go through the harness's `CLIENT_ALIASES`, the
+  client twin of the server's `'Code.js'` alias (g113), so no pin depends on
+  which file holds a function. **Alternatives rejected:** copying the reader into
+  the new app (two readers that drift); shipping the whole Reference client to
+  the new app with features switched off (6,800 lines and stubbed server calls).

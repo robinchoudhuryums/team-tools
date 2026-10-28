@@ -113,6 +113,18 @@ Both harnesses live outside `web-app/`, so `clasp push` never sees them.
 
 ---
 
+## Reading the Reference client: `kb/script_kb.html` is TWO files
+
+Since handbook app HB1.1a the handbook's rendering layer lives in
+`web-app/shared/script_manual_render.html`, included before
+`kb/script_kb.html`. `harness.js`'s `CLIENT_ALIASES` makes a read of
+`'kb/script_kb.html'` — through `extractScript`, `extractFunction`,
+`loadFunction`, `extractRawFunction` or `readWebFile` — the pair, in include
+order, the client twin of the `'Code.js'` alias below. Read a file directly
+(`fs`) only when the pin is ABOUT the two files apart, as the HB1.1a contract
+pin is. A new raw `fs.readFileSync` of `kb/script_kb.html` would silently miss
+every function that moved.
+
 ## Reading the server: `serverSource()`, never a filename
 
 `harness.js` exports `serverFiles()` and `serverSource()` (Batch F1).

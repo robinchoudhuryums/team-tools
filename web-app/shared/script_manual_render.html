@@ -1,0 +1,2900 @@
+<style>
+  /* The handbook rendering layer's styles (HB1.1a) — every rule that styles what
+     kbMd_ draws, moved verbatim and in order out of kb/script_kb.html, which is
+     included after this file. The article's own reader-screen rules
+     (.kb-man-*) stay with Reference until HB1.1b. */
+  /* rendered markdown - Console document register: display-font headings,
+     mono uppercase kickers for table headers, hairline row separators (the
+     app has no bordered grids anywhere - tables match the ledger/punch-row
+     vocabulary), accent-soft blockquote callouts. */
+  .kb-article { line-height: 1.65; font-size: .95rem; max-width: 760px; color: var(--ink); }
+  .kb-article h1, .kb-article h2, .kb-article h3, .kb-article h4, .kb-article h5, .kb-article h6 {
+    font-family: var(--display); line-height: 1.25; letter-spacing: -.01em; margin: 1.3em 0 .45em; }
+  .kb-article h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; }
+  .kb-article h2 { font-size: 1.2rem; font-weight: 600; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .kb-article h3 { font-size: 1.05rem; font-weight: 600; }
+  .kb-article h4 { font-size: .98rem; font-weight: 600; }
+  .kb-article > h1:first-child, .kb-article > h2:first-child, .kb-article > h3:first-child { margin-top: .2em; }
+  .kb-article p { margin: .6em 0; }
+  .kb-article ul, .kb-article ol { margin: .5em 0; padding-left: 1.5em; }
+  .kb-article li { margin: .25em 0; }
+  .kb-article a { color: var(--accent); text-underline-offset: 2px; }
+  .kb-article code { background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: .88em; }
+  .kb-article pre { background: var(--paper-2); padding: 12px 14px; border-radius: var(--radius); overflow-x: auto; }
+  .kb-article pre code { background: none; padding: 0; }
+  .kb-article blockquote { border-left: 3px solid var(--accent); background: var(--accent-soft); margin: .8em 0; padding: 8px 14px; border-radius: 0 var(--radius) var(--radius) 0; }
+  /* Callouts (Batch M1) — a quote whose first line opens with a bold label,
+     toned by that label: Critical (patient safety / federal law), Policy,
+     Watch-out, Note. A quote holds whole blocks, so its first/last child
+     margins collapse into the callout's own padding. */
+  .kb-article blockquote > :first-child { margin-top: 0; }
+  .kb-article blockquote > :last-child { margin-bottom: 0; }
+  .kb-article blockquote.kb-callout { padding: 10px 14px; }
+  .kb-article blockquote.kb-callout-critical { border-left-color: var(--danger); background: var(--danger-soft); }
+  .kb-article blockquote.kb-callout-policy { border-left-color: var(--info); background: var(--info-soft); }
+  .kb-article blockquote.kb-callout-watch-out { border-left-color: var(--warn); background: var(--warn-soft); }
+  .kb-article blockquote.kb-callout-note { border-left-color: var(--muted-3); background: var(--paper-2); }
+  .kb-article blockquote.kb-callout-script { border-left-color: var(--accent); background: var(--accent-soft); }
+  .kb-article blockquote table { margin: .5em 0; }
+  .kb-article .kb-diagram-pending { margin: 1em 0; padding: 18px 14px; border: 1px dashed var(--muted-3);
+    border-radius: var(--radius-md); background: var(--paper-2); color: var(--muted-2); font-size: var(--text-sm); text-align: center; }
+  .kb-article .kb-diagram-pending b { color: var(--ink); font-weight: 600; }
+  /* Batch M3 — the manual's diagrams (kb/script_manual_diagrams.html, generated
+     by manual/export_reference.py). Each diagram names its colours --dg-*; this
+     is the ONE place they meet the design tokens, so light, dark and the
+     palettes all follow. Text drawn on a --dg-navy box is --dg-bg, so the pair
+     must stay an ink/paper pair in every theme. */
+  .kb-article .kb-diagram { margin: 1.1em 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card);
+    --dg-navy: var(--ink); --dg-ink: var(--ink); --dg-bg: var(--paper-card); --dg-panel: var(--paper-2);
+    --dg-accent: var(--info); --dg-tint: var(--info-soft); --dg-muted: var(--muted); --dg-rule: var(--line);
+    --dg-crit-bg: var(--danger-soft); --dg-crit-ink: var(--danger-deep); --dg-pol-bg: var(--info-soft); --dg-pol-ink: var(--info-deep);
+    --dg-watch-bg: var(--warn-soft); --dg-watch-ink: var(--warning-deep); --dg-scr-bg: var(--accent-soft); --dg-scr-ink: var(--success-deep);
+    --dg-p0: var(--man-p0); --dg-p1: var(--man-p1); --dg-p2: var(--man-p2); --dg-p3: var(--man-p3); --dg-p4: var(--man-p4); --dg-p5: var(--man-p5);
+    --dg-p6: var(--man-p6); --dg-p7: var(--man-p7); --dg-p8: var(--man-p8); --dg-p9: var(--man-p9); --dg-p10: var(--man-p10); }
+  /* A wide flow chart scrolls inside itself rather than shrinking its text
+     past reading size (g71) — below ~600px of width it scrolls. */
+  .kb-article .kb-diagram-scroll { overflow-x: auto; padding: 10px; border-radius: var(--radius-md); }
+  .kb-article .kb-diagram-scroll:focus-visible { outline: 2px solid var(--ring-focus); outline-offset: 2px; }
+  .kb-article .kb-diagram a.kb-xref { cursor: pointer; }
+  /* The button sits in its own bar ABOVE the drawing — an absolutely placed
+     one covered the diagram's own top-right content (measured on the shots). */
+  .kb-article .kb-diagram-bar { display: flex; justify-content: flex-end; padding: 6px 8px 0; }
+  .kb-article .kb-diagram-full { display: inline-flex; align-items: center; gap: 4px;
+    font: inherit; font-size: .72rem; padding: 3px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-card); color: var(--muted); cursor: pointer; }
+  .kb-article .kb-diagram-full:hover { color: var(--ink); border-color: var(--border-strong); }
+  .kb-diagram-modal { width: min(1240px, 96vw); max-width: none; max-height: 92vh; display: flex; flex-direction: column; }
+  .kb-diagram-mhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .kb-diagram-mhead h3 { margin: 0; font-size: 1rem; }
+  .kb-article.kb-diagram-big { max-width: none; overflow: auto; min-height: 0; }
+  .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
+  .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
+  .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
+  .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+  .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
+  .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
+  .kb-callout-watch-out .kb-co-kick { color: var(--warning-deep); }
+  .kb-callout-note .kb-co-kick { color: var(--muted); }
+  .kb-co-sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }   /* kept so the text reads the same */
+  /* F67 (cycle 25): the hidden separator is absolutely positioned, so it needs a
+     positioned ancestor INSIDE the reader's scroller — without one it escaped
+     #kb-main and stretched the whole page (8,245px for a 900px window, measured). */
+  blockquote.kb-callout { position: relative; }
+  .kb-co-title { display: block; margin-top: 4px; font-weight: 600; }
+  .kb-co-title::first-letter { text-transform: uppercase; }
+  /* M5: a code is a chip (it LOOKS UP), a section link a solid underline (it OPENS),
+     a glossary term the one dotted mark (it EXPLAINS). */
+  a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
+  a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
+  /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
+  a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
+  /* 25post (operator 2026-10-23) — a button the handbook names, and the popover
+     that shows where it is (kbPeekShow_). Above the drawer and any overlay, since
+     a section can be read in either; never printed. */
+  .kb-peek { cursor: help; text-decoration: underline dotted; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .kb-peek:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .kb-peek-pop { position: fixed; z-index: 1000; max-width: min(460px, calc(100vw - 24px)); padding: 8px; background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); pointer-events: none; }
+  .kb-peek-pop[hidden] { display: none; }
+  .kb-peek-pop img { display: block; max-width: 100%; max-height: 300px; width: auto; height: auto; margin: 0; border-radius: 3px; }
+  .kb-peek-pop .kb-img-pending { margin: 0; }
+  @media print { .kb-peek-pop { display: none !important; } .kb-peek { text-decoration: none; } }
+  .kb-article a.kb-xref { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
+  .kb-fn-ref { font: inherit; font-size: .8em; font-weight: 700; line-height: 1; vertical-align: .45em; margin-left: 1px; padding: 2px 4px; border: none; border-radius: 4px; background: var(--accent-soft); color: var(--accent-2); cursor: pointer; }
+  .kb-fn-ref:hover, .kb-fn-ref:focus-visible { box-shadow: 0 0 0 2px var(--accent); outline: none; }
+  .kb-article hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
+  .kb-article table { border-collapse: collapse; margin: 1em 0; display: block; max-width: 100%; overflow-x: auto; }
+  .kb-article th { font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 6px 16px 6px 0; border-bottom: 1px solid var(--border-strong); }
+  .kb-article td { padding: 8px 16px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .kb-article tbody tr:last-child td { border-bottom: none; }
+  /* Manual Phase 1 (2026-10-06): the manual's two table conventions, as its HTML draws them.
+     A STEP table (first header "Step") numbers its steps with an arrow down to the next;
+     a header opening with \2713 / \2717 tints its column (the Do's & Don'ts tables). */
+  .kb-article table.kb-steps td:first-child { position: relative; text-align: center; font-weight: 600; color: var(--accent); padding-left: 10px; vertical-align: middle; }
+  .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after { content: "\2193"; position: absolute; left: 50%; bottom: -0.75em; transform: translateX(-50%); z-index: 1; padding: 0 3px; background: var(--paper-card); color: var(--muted); font-weight: 400; line-height: 1.3; }
+  .kb-article table.kb-dodont td, .kb-article table.kb-dodont th { padding-left: 10px; }
+  .kb-article table.kb-dodont th.kb-do { color: var(--good); border-bottom-color: var(--good); }
+  .kb-article table.kb-dodont th.kb-dont { color: var(--danger); border-bottom-color: var(--danger); }
+  .kb-article table.kb-dodont td.kb-do { background: var(--good-soft); }
+  .kb-article table.kb-dodont td.kb-dont { background: var(--danger-soft); }
+  .kb-article img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); display: block; margin: .9em 0; }
+  .kb-article a.kb-img-lnk { display: inline-block; max-width: 100%; }
+  .kb-article .kb-img-pending { display: inline-block; padding: 6px 10px; margin: 4px 0;
+    border: 1px dashed var(--muted-3); border-radius: 6px; color: var(--muted-2);
+    font-size: var(--text-sm); background: var(--paper-2); }
+  /* Batch M3 — a manual image while it loads, when it is not imported yet, and
+     once it arrives. Icons sit in table cells beside their name, so they are
+     inline and unframed; equipment photos are small and framed; figures are
+     the article's full width, like any article image. */
+  /* D4 (operator 2026-10-27) — an image chip says WHICH of three things it is
+     waiting on: still loading (a sized shimmer the image's own shape, so a slow
+     one is not read as "no image uploaded"), not imported or stored, or a load
+     that failed (with Retry). Icons stay a small inline square. */
+  .kb-img-pending[data-mi], .kb-img-pending[data-ki] { display: inline-flex; flex-direction: column; gap: 2px; vertical-align: middle; }
+  .kb-img-pending .kb-img-st { font-weight: 600; color: var(--ink); }
+  .kb-img-pending .kb-img-alt { font-size: .76rem; color: var(--muted); }
+  .kb-img-pending .kb-img-note { font-size: .76rem; color: var(--muted); }
+  .kb-img-pending .kb-img-retry { align-self: flex-start; margin-top: 4px; font: inherit; font-size: .76rem; padding: 2px 10px;
+    border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-img-pending .kb-img-retry:hover { border-color: var(--accent); }
+  .kb-img-pending[data-mi="loading"], .kb-img-pending[data-ki="loading"] {
+    display: flex; justify-content: center; align-items: center; text-align: center; box-sizing: border-box;
+    width: min(100%, 480px); min-height: 160px; border-style: solid; border-color: var(--line);
+    background: linear-gradient(90deg, var(--paper-3) 25%, var(--paper-2) 37%, var(--paper-3) 63%);
+    background-size: 200% 100%; animation: lo-shimmer 1.3s linear infinite; }
+  .kb-manimg[data-manimg^="thumb-"][data-mi="loading"] { width: 140px; min-height: 96px; }
+  .kb-manimg[data-manimg^="icon-"][data-mi] { display: inline-block; width: 22px; min-height: 22px; height: 22px; padding: 0; margin: 0 6px 0 0;
+    overflow: hidden; color: transparent; vertical-align: middle; }
+  .kb-manimg[data-manimg^="icon-"][data-mi] > * { display: none; }
+  .kb-manimg[data-manimg^="icon-"][data-mi="missing"], .kb-manimg[data-manimg^="icon-"][data-mi="failed"] { border-style: dashed; border-color: var(--warn); }
+  .kb-img-pending[data-mi="failed"], .kb-img-pending[data-ki="failed"] { border-color: var(--warn); }
+  .kb-img-pending[data-mi="missing"], .kb-img-pending[data-ki="missing"] { border-color: var(--muted-3); }
+  .kb-article img.kb-manimg-img { margin: .6em 0; }
+  .kb-article img.kb-manimg-icon { display: inline-block; height: 22px; width: auto; margin: 0 6px 0 0; border: 0; border-radius: 0; box-shadow: none; vertical-align: middle; }
+  .kb-article img.kb-manimg-thumb { display: inline-block; max-height: 96px; width: auto; margin: 2px 0; vertical-align: middle; }
+  .kb-article img.kb-manimg-figure { max-width: min(100%, 720px); }
+  /* 25post (operator 2026-10-22) — a figure or article image drawn smaller than
+     its own pixels opens at full size (kbImgZoomable_ / kbImageOpen_), like a diagram. */
+  .kb-article img.kb-zoomable { cursor: zoom-in; }
+  .kb-img-modal .kb-img-big { overflow: auto; min-height: 0; }
+  .kb-img-modal .kb-img-big img { display: block; max-width: none; height: auto; margin: 0; }
+  /* operator 2026-10-23 — the viewer keeps the caption; a slideshow keeps its count and steps */
+  .kb-img-modal .kb-img-count { flex: none; margin-left: auto; margin-right: 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .8rem; color: var(--muted); }
+  .kb-img-modal .kb-img-cap { margin: 8px 0 0; font-size: .86rem; color: var(--muted); text-align: center; }
+  .kb-img-modal .kb-img-cap:empty { display: none; }
+  .kb-img-modal .kb-img-nav { margin-top: 8px; }
+  /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
+     Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
+  .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
+  .kb-article .kb-gallery:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .kb-gal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: .78rem; color: var(--muted); }
+  .kb-gal-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+  .kb-gal-count { flex: none; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .kb-gal-slide { text-align: center; }
+  .kb-gal-slide.kb-gal-off { display: none; }
+  .kb-article .kb-gal-slide img.kb-manimg-figure { margin: 0 auto; }
+  .kb-gal-cap { margin-top: 6px; font-size: .84rem; color: var(--muted); }
+  /* A slide's longer text (operator 2026-10-28): folded under "Show details",
+     below the image — a side panel would shrink a wide screenshot past reading
+     in the 760px column. Classed off, never [hidden] (g73); it prints (rule 7). */
+  .kb-gal-more { appearance: none; display: block; margin: 6px auto 0; font: inherit; font-size: .78rem; font-weight: 600; color: var(--accent); background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 2px 12px; cursor: pointer; }
+  .kb-gal-more:hover { border-color: var(--accent); }
+  .kb-gal-notes { text-align: left; max-width: 680px; margin: 8px auto 0; font-size: .86rem; line-height: 1.5; color: var(--ink); }
+  .kb-gal-notes p { margin: 6px 0; }
+  .kb-gal-notes ul { margin: 4px 0 6px 20px; padding: 0; }
+  .kb-gal-notes.kb-gal-notes-off { display: none; }
+  .kb-gal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+  .kb-gal-step { appearance: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 50%; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-gal-step:hover { border-color: var(--accent); }
+  .kb-gal-dots { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+  .kb-gal-dot { appearance: none; width: 18px; height: 18px; padding: 0; border: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .kb-gal-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+  .kb-gal-dot.on::before { background: var(--accent); }
+  /* Interactive roster block (operator 2026-08-11). Must work at 400px — the
+     Ctrl/⌘+K drawer is the mid-call surface this exists for — so every row
+     wraps and the team grid is intrinsic (auto-fill), never fixed tracks. */
+  .kb-roster { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-ros-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .kb-ros-search {
+    flex: 1 1 180px; min-width: 0; font: inherit; font-size: .86rem;
+    padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--ink);
+  }
+  /* Focus rings come from the ONE global :focus-visible rule in styles.html
+     (box-shadow: var(--ring-focus)) — declaring a per-element outline here
+     would both duplicate it and misuse a shadow value as a colour. */
+  .kb-ros-search:focus { border-color: var(--border-strong); }
+  .kb-ros-count { flex: 0 0 auto; font-family: var(--mono); font-size: .72rem; color: var(--muted-2); }
+  .kb-ros-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .kb-ros-legend-item { font-size: .74rem; color: var(--muted); }
+  .kb-ros-legend-item b { font-family: var(--mono); color: var(--ink); font-weight: 700; }
+  .kb-ros-dept { margin: 0 0 14px; }
+  .kb-ros-dept-name { font-size: .95rem; font-weight: 700; color: var(--ink); margin: 0 0 8px; }
+  .kb-ros-owner { font-weight: 500; font-size: .8rem; color: var(--muted-2); }
+  .kb-ros-owner::before { content: '· '; }
+  /* align-items:start — a 3-person team must not stretch to match a 9-person
+     one beside it (the documented .m-layout / .dash-trk lesson). */
+  .kb-ros-teams { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; align-items: start; }
+  .kb-ros-team { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; min-width: 0; }
+  .kb-ros-team-name { font-size: .74rem; font-family: var(--mono); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+  .kb-ros-sub { color: var(--info-deep); }
+  .kb-ros-sub::before { content: '› '; color: var(--muted-3); }
+  .kb-ros-people { display: flex; flex-direction: column; gap: 4px; }
+  .kb-ros-person { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-width: 0; }
+  .kb-ros-name {
+    appearance: none; border: none; background: none; padding: 0; cursor: pointer;
+    font: inherit; font-size: .86rem; color: var(--ink); text-align: left;
+    border-bottom: 1px dashed transparent;
+  }
+  .kb-ros-name:hover { border-bottom-color: var(--muted-3); }
+  .kb-ros-person.is-lead .kb-ros-name { font-weight: 700; }
+  .kb-ros-tag {
+    position: relative; font-family: var(--mono); font-size: .64rem; font-weight: 700;
+    padding: 1px 5px; border-radius: var(--radius-pill);
+    background: var(--paper-2); color: var(--muted); border: 1px solid var(--line);
+  }
+  .kb-ros-tag[data-tip] { cursor: help; }
+  /* Same tokened tooltip as the Intake help glyph — hover AND keyboard focus,
+     so it is not a mouse-only affordance. */
+  .kb-ros-tag[data-tip]:hover::after, .kb-ros-tag[data-tip]:focus::after {
+    content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px);
+    z-index: 5; white-space: nowrap; font-family: var(--ui); font-weight: 500;
+    font-size: .72rem; padding: 5px 8px; border-radius: 6px;
+    background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm);
+  }
+  .kb-ros-flag { font-family: var(--mono); font-size: .6rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 5px; border-radius: var(--radius-pill); }
+  .kb-ros-flag.is-lead { background: var(--info-soft); color: var(--info-deep); }
+  .kb-ros-flag.is-new { background: var(--warn-soft); color: var(--warning-deep); }
+  .kb-ros-flag.is-badge { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-warn { margin-top: 10px; font-size: .74rem; color: var(--warning-deep); }
+  /* Decision / task-guide block. One question at a time, a walkable trail,
+     and tickable steps at the leaf. */
+  .kb-decision { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-dec-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .kb-dec-step { font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-dec-bar .kb-ros-expand { margin-left: auto; }
+  .kb-dec-trail { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .kb-dec-crumb { appearance: none; text-align: left; cursor: pointer; font: inherit; background: var(--paper-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+  .kb-dec-crumb:hover { border-color: var(--border-strong); }
+  .kb-dec-crumb-q { display: block; font-size: .66rem; color: var(--muted-2); }
+  .kb-dec-crumb-a { display: block; font-size: .78rem; font-weight: 700; color: var(--ink); }
+  .kb-dec-title { margin: 0 0 8px; font-size: 1rem; font-weight: 700; color: var(--ink); }
+  .kb-dec-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .kb-dec-opt { appearance: none; cursor: pointer; font: inherit; font-size: .86rem; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--paper); color: var(--ink); }
+  .kb-dec-opt:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .kb-dec-action { border-left: 3px solid var(--accent); padding-left: 10px; }
+  .kb-dec-todos { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .kb-dec-todos label { display: flex; gap: 8px; align-items: flex-start; font-size: .86rem; cursor: pointer; }
+  .kb-dec-todos li.is-done span { text-decoration: line-through; color: var(--muted-2); }
+  .kb-dec-note { margin: 8px 0 0; font-size: .78rem; color: var(--muted); border-left: 2px solid var(--warn-soft); padding-left: 8px; }
+  @media (max-width: 560px) {
+    .kb-dec-opts { flex-direction: column; align-items: stretch; }
+  }
+  /* Glossary block. */
+  .kb-glossary { border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 12px; margin: 14px 0; }
+  .kb-gloss-list { margin: 0; }
+  .kb-gloss-row { display: grid; grid-template-columns: minmax(96px, 168px) 1fr; gap: 4px 14px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .kb-gloss-row:first-child { border-top: none; }
+  .kb-gloss-term { margin: 0; font-weight: 700; font-size: .84rem; color: var(--ink); }
+  .kb-gloss-aka { display: block; font-weight: 500; font-size: .7rem; color: var(--muted-2); }
+  .kb-gloss-def { margin: 0; font-size: .84rem; color: var(--muted); }
+  /* The in-article mention: quiet enough to read past, obvious enough to try. */
+  .kb-gloss-mark { border-bottom: 1px dotted var(--muted-3); cursor: help; }
+  .kb-gloss-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }   /* M17: it opens the shared card */
+  @media (max-width: 560px) {
+    .kb-gloss-row { grid-template-columns: 1fr; gap: 2px; }
+  }
+  /* Warehouse map block (` ```map `, operator 2026-08-13). Rows are flex-wrap
+     (intrinsic reflow — no fixed grid, so no A2 breakpoint owed); the embed
+     wrapper carries NO display-setting class so the [hidden] attribute works
+     (the [hidden]-vs-display gotcha). */
+  .kb-map-note { font-size: .72rem; color: var(--muted-3); margin: -4px 0 8px; }
+  .kb-map-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--line); }
+  .kb-map-row:first-child { border-top: none; }
+  .kb-map-main { flex: 1 1 220px; min-width: 0; }
+  .kb-map-name { display: block; font-size: .84rem; color: var(--ink); }
+  .kb-map-addr { display: block; font-size: .74rem; color: var(--muted); }
+  .kb-map-dist { font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--info-deep); }
+  .kb-map-open { font-size: .74rem; color: var(--info-deep); }
+  .kb-map-embed-btn { appearance: none; font: inherit; font-size: .72rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-map-embed-btn:hover { border-color: var(--border-strong); }
+  .kb-map-embed { flex: 1 0 100%; }
+  .kb-map-embed iframe { width: 100%; height: 280px; border: 1px solid var(--line); border-radius: 8px; }
+  .kb-map-results:not(:empty) { border: 1px solid var(--line); border-radius: 8px; background: var(--paper-2); padding: 8px 10px; margin-bottom: 8px; font-size: .8rem; }
+  .kb-map-from { font-size: .74rem; color: var(--muted-2); margin-bottom: 4px; }
+  .kb-map-ranks { margin: 0; padding-left: 20px; }
+  .kb-map-ranks li { padding: 2px 0; }
+  .kb-map-rk-na { color: var(--muted-3); }
+  /* Mode switcher — the segmented-pill vocabulary used by the Time/PTO and
+     Coaching toggles, so a stateful toggle looks the same everywhere. */
+  .kb-ros-modes { display: inline-flex; flex: 0 0 auto; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-2); }
+  .kb-ros-mode { appearance: none; border: none; background: none; cursor: pointer; font: inherit; font-size: .74rem; padding: 4px 10px; border-radius: var(--radius-pill); color: var(--muted); }
+  .kb-ros-mode.on { background: var(--paper-card); color: var(--ink); font-weight: 700; box-shadow: var(--shadow-sm); }
+  .kb-ros-n { font-family: var(--mono); color: var(--muted-3); font-weight: 500; }
+  .kb-ros-expand { flex: 0 0 auto; appearance: none; font: inherit; font-size: .74rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-ros-expand:hover { border-color: var(--border-strong); }
+  /* Expanded view: nearly the whole viewport, so the roster stops competing
+     with the height-capped reader panel it normally sits in. */
+  .kb-roster-modal { width: min(1400px, 96vw); max-width: 96vw; max-height: 92vh; overflow: auto; padding: 14px; }
+  .kb-roster-modal-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+  .kb-roster-modal .kb-roster { border: none; padding: 0; margin: 0; }
+  /* The untagged group is usually the biggest; a single narrow column of 30+
+     names is unreadable, so it spans and its rows flow into columns. */
+  .kb-ros-team.is-wide { grid-column: 1 / -1; }
+  .kb-ros-team.is-wide .kb-ros-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 10px; }
+  .kb-ros-where { font-size: .72rem; color: var(--muted-2); }
+  .kb-ros-cap-note { font-size: .72rem; color: var(--muted); margin-bottom: 6px; }
+  .kb-ros-note { margin-top: 10px; font-size: .74rem; color: var(--muted); }
+  /* Person detail panel — answers "where else does this person work", which
+     the team-shaped grid structurally cannot. */
+  .kb-ros-panel { border: 1px solid var(--border-strong); border-radius: 8px; background: var(--paper-2); padding: 10px 12px; margin-bottom: 12px; }
+  .kb-ros-panel[hidden] { display: none; }   /* [hidden] loses to a display rule */
+  .kb-ros-panel-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .kb-ros-panel-head b { font-size: .95rem; }
+  .kb-ros-panel-actions { margin-left: auto; display: flex; gap: 6px; }
+  .kb-ros-panel-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .kb-ros-panel-where { margin-top: 8px; font-size: .8rem; color: var(--muted); }
+  .kb-ros-panel-where ul { margin: 4px 0 0; padding-left: 18px; }
+  .kb-ros-panel-where li { color: var(--ink); }
+  /* Coverage view */
+  .kb-ros-cov-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .kb-ros-tile { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 8px 10px; text-align: center; }
+  .kb-ros-tile b { display: block; font-size: 1.3rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .kb-ros-tile span { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-2); }
+  /* A wide table scrolls INSIDE its own container — the page must never scroll
+     sideways (the Visual Audit Stage's overflow rule). */
+  .kb-ros-tablewrap { overflow-x: auto; }
+  .kb-ros-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .kb-ros-table th, .kb-ros-table td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .kb-ros-table thead th { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-2); font-weight: 700; }
+  /* .kb-article th (the markdown-table ledger header) also matches these cells
+     and sets mono/uppercase — a ROW header is body text, so reset it here
+     rather than leaving capability names shouting in the table body. */
+  .kb-ros-table tbody th { font-family: var(--ui); font-size: .8rem; letter-spacing: 0; text-transform: none; font-weight: 700; color: var(--ink); }
+  .kb-ros-table tbody th .kb-ros-where { display: block; font-weight: 500; }
+  .kb-ros-table tr.is-single td, .kb-ros-table tr.is-single th { background: var(--warn-soft); }
+  /* Chart view. The tree's width is set by its widest VISIBLE row, which under
+     progressive disclosure is one department's team count — never the 46-leaf
+     full expansion. It still scrolls inside ITS OWN container so the page
+     never scrolls sideways (the Visual Audit Stage's overflow rule). */
+  .kb-ros-chartwrap { overflow-x: auto; padding-bottom: 4px; }
+  .kb-ros-tree, .kb-ros-children { list-style: none; margin: 0; padding: 0; }
+  .kb-ros-tree { display: flex; justify-content: flex-start; gap: 14px; padding-top: 4px; }
+  .kb-ros-node { position: relative; }
+  .kb-ros-nodebox { display: inline-block; min-width: 132px; max-width: 210px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 7px 10px; text-align: left; }
+  .kb-ros-nodebox.is-dept { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-ros-toggle { appearance: none; border: none; background: none; padding: 0; cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700; color: var(--ink); text-align: left; display: block; width: 100%; }
+  .kb-ros-toggle::before { content: '▸ '; color: var(--muted-3); font-weight: 400; }
+  .kb-ros-node.open > .kb-ros-nodebox > .kb-ros-toggle::before { content: '▾ '; }
+  .kb-ros-nodemeta { display: block; font-size: .7rem; color: var(--muted-2); margin-top: 2px; }
+  /* Children are hidden until their node is open — this IS the progressive
+     disclosure, so the collapsed tree is only as wide as its top level. */
+  .kb-ros-children { display: none; }
+  .kb-ros-node.open > .kb-ros-children { display: flex; justify-content: flex-start; gap: 12px; padding-top: 18px; }
+  /* Classic connector lines: a stub down from the parent, a horizontal rail
+     across the children, and a stub up into each child. */
+  .kb-ros-node.open > .kb-ros-children > li { position: relative; padding-top: 16px; }
+  .kb-ros-node.open > .kb-ros-children > li::before { content: ''; position: absolute; top: 0; left: 22px; width: 1px; height: 16px; background: var(--line); }
+  .kb-ros-node.open > .kb-ros-children > li::after { content: ''; position: absolute; top: -1px; left: 22px; right: -12px; height: 1px; background: var(--line); }
+  .kb-ros-node.open > .kb-ros-children > li:last-child::after { display: none; }
+  .kb-ros-node.open > .kb-ros-nodebox { position: relative; }
+  .kb-ros-node.open > .kb-ros-nodebox::after { content: ''; position: absolute; left: 22px; bottom: -18px; width: 1px; height: 18px; background: var(--line); }
+  /* People stack VERTICALLY inside their team, so opening a team costs height
+     rather than width — a 9-person team would otherwise be the widest row. */
+  .kb-ros-children.is-leaves { padding-top: 16px; }
+  .kb-ros-node.open > .kb-ros-children.is-leaves { display: block; }
+  .kb-ros-people { border: 1px solid var(--line); border-left: 2px solid var(--accent-soft); border-radius: 8px; background: var(--paper-2); padding: 7px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 132px; }
+  .kb-ros-node.open > .kb-ros-children.is-leaves > li::after { display: none; }
+  .kb-ros-chart.has-overflow .kb-ros-chart-hint { display: block; }
+  /* Flow view — stages left to right with connectors between them. Wraps
+     rather than forcing a scroll, because a process reads fine on two lines
+     but not at all when half of it is off-screen. */
+  .kb-ros-steps { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 22px; }
+  .kb-ros-step { position: relative; }
+  .kb-ros-step + .kb-ros-step > .kb-ros-nodebox::before {
+    content: '→'; position: absolute; left: -18px; top: 12px;
+    color: var(--muted-3); font-size: .9rem;
+  }
+  .kb-ros-nodebox.is-step { background: var(--paper-2); border-style: dashed; }
+  .kb-ros-stepn { display: inline-block; min-width: 16px; margin-right: 4px; font-family: var(--mono); font-size: .64rem; color: var(--muted-2); }
+  .kb-ros-toggle.is-plain { cursor: default; }
+  .kb-ros-flow { margin-bottom: 16px; }
+  /* Process graph: phases are columns, the connector layer sits behind them
+     and is drawn by measuring the boxes CSS already placed. */
+  .kb-ros-procwrap { position: relative; overflow-x: auto; padding-bottom: 22px; }
+  .kb-ros-phases { display: flex; align-items: flex-start; gap: 40px; position: relative; z-index: 1; }
+  .kb-ros-phase { min-width: 176px; }
+  .kb-ros-phase-name { font-size: .74rem; font-family: var(--mono); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted-2); margin: 0 0 8px; padding-bottom: 5px; border-bottom: 2px solid var(--accent-soft); }
+  .kb-ros-phase.is-external .kb-ros-phase-name { border-bottom-color: var(--line); font-style: italic; }
+  .kb-ros-fnodes { display: flex; flex-direction: column; gap: 14px; }
+  .kb-ros-fnode { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 7px 10px; }
+  .kb-ros-fnode.is-team { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-ros-fnode.is-decision { border-style: dashed; border-color: var(--warning-deep); background: var(--warn-soft); }
+  .kb-ros-fnode-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .kb-ros-flag.is-decision { background: var(--paper-2); color: var(--warning-deep); }
+  .kb-ros-flag.is-join { background: var(--accent-soft); color: var(--success-deep); }
+  .kb-ros-joinnote { display: block; margin-top: 4px; font-size: .68rem; color: var(--success-deep); }
+  .kb-ros-routes { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .kb-ros-routes li { font-size: .7rem; color: var(--muted); }
+  .kb-ros-routelbl { font-weight: 700; color: var(--ink); }
+  .kb-ros-edges { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
+  .kb-ros-edge { fill: none; stroke: var(--muted-3); stroke-width: 1.5; }
+  .kb-ros-edge.is-back { stroke: var(--danger-deep); stroke-dasharray: 4 3; }
+  /* A skip passes something it does not visit — drawn distinctly so it cannot
+     be read as the step-by-step path. */
+  .kb-ros-edge.is-skip { stroke: var(--info-deep); stroke-dasharray: 5 3; }
+  .kb-ros-edges marker path { fill: var(--muted-3); }
+  @media (max-width: 700px) {
+    /* Connectors between columns are meaningless once the columns stack, so
+       the phases become an ordered list and the routes carry the structure. */
+    .kb-ros-phases { flex-direction: column; gap: 18px; }
+    .kb-ros-edges { display: none; }
+  }
+  .kb-ros-flowhint { font-family: var(--mono); font-size: .72rem; background: var(--paper-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 8px 0; }
+  .kb-ros-empty { border: 1px dashed var(--line); border-radius: 8px; padding: 14px; color: var(--muted); font-size: .84rem; }
+  .kb-ros-empty b { color: var(--ink); display: block; margin-bottom: 6px; }
+  .kb-ros-empty p { margin: 6px 0; }
+  .kb-ros-chart-hint { display: none; font-size: .72rem; color: var(--muted-2); margin-bottom: 6px; }
+  @media (max-width: 560px) {
+    /* Two department boxes at their wide min-width overflow a 400px viewport
+       before anything is even expanded. */
+    .kb-ros-nodebox { min-width: 104px; max-width: 150px; padding: 6px 8px; }
+    .kb-ros-tree { gap: 10px; }
+  }
+  @media (max-width: 560px) {
+    .kb-ros-teams { grid-template-columns: 1fr; }
+  }
+
+  /* #6 — copyable "canned response" snippet card (rendered by kbMd_). */
+  .kb-snippet { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; margin: 12px 0; background: var(--paper-2); overflow: hidden; }
+  .kb-snippet-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--accent-soft); }
+  .kb-snippet-label { flex: 1; min-width: 0; font-size: .74rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--success-deep); }
+  .kb-snippet-copy { flex-shrink: 0; font: inherit; font-size: .74rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .kb-snippet-copy:hover { background: var(--paper); border-color: var(--border-strong); }
+  .kb-snippet-body { margin: 0; padding: 10px; font: inherit; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+</style>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// The handbook's RENDERING LAYER (handbook app HB1.1a, 2026-10-28) — shared by
+// Team Tools' Reference module and the stand-alone handbook web app.
+//
+// kbMd_ and every block it draws: roster, glossary, decision guide, warehouse
+// map, diagram, slideshow (and a slide's details), callouts, footnotes, HCPCS
+// links, the image chips and their hydrators (manual and article images), the
+// full-size image viewer and the button-screenshot peek. Moved VERBATIM, in
+// its original order, out of kb/script_kb.html, which is now included AFTER
+// this file and keeps the reader screen, the tree, the drawer, the editor and
+// everything else that is Reference's own.
+//
+// This file may reach Reference only through the names the CONTRACT pin in
+// test/client/run.js lists (kbXrefOpen_ — a diagram's "open the section";
+// KB_STATE — the admin check on a missing-image chip). Batch HB1.1b replaces
+// both with host hooks, so the handbook app can supply its own.
+// ─────────────────────────────────────────────────────────────────────────────
+// Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
+// source are inert), then applies a safe subset: headings, bold/italic, inline
+// + fenced code, links (http(s)/mailto only), images (http(s) only), GFM
+// tables, ul/ol, blockquote, hr, paragraphs.
+// Anchor slug for heading ids - MUST stay identical to the server kbSlug_
+// in Code.js (searchReference computes the anchors that kbMd_'s ids must
+// match). The entity de-escape makes the two agree even though kbMd_ slugs
+// ESCAPED source while the server slugs raw markdown. Node parity test.
+function kbSlug_(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// ── Decision / task-guide block (operator 2026-08-11) ─────────────────────
+// "Guide me through a task, with actions at the leaves." A ```decision fence
+// asks ONE question at a time and lands on an action with tickable steps, so a
+// rep mid-call is never reading a branching policy page and holding the branch
+// in their head.
+//
+//   ask|  q1: Does this order need a PT Eval?
+//   opt|  q1: Yes -> q2
+//   opt|  q1: No  -> a1
+//   do|   a1: Send straight to PWC Verification
+//   todo| a1: Confirm the qualification documents are attached
+//   note| a1: Group 3 chairs always need an ATP regardless
+//
+// The first `ask|` is the root. Ids are author-chosen and never shown.
+
+/** PURE. Input is kbMd_-escaped; nothing here unescapes it. */
+function kbDecideParse_(text) {
+  var nodes = {}, order = [], warnings = [], root = '';
+  var line, i;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var m = line.match(/^(ask|opt|do|todo|note)\s*\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var key = m[1].toLowerCase(), rest = m[2];
+    var ci = rest.indexOf(':');
+    if (ci < 0) { warnings.push(line); return; }
+    var id = rest.slice(0, ci).trim();
+    var val = rest.slice(ci + 1).trim();
+    if (!id || !val) { warnings.push(line); return; }
+    var n = nodes[id];
+    if (!n) { n = nodes[id] = { id: id, kind: '', title: '', opts: [], todos: [], notes: [] }; order.push(id); }
+    if (key === 'ask' || key === 'do') {
+      if (n.kind) { warnings.push(line); return; }      // a second title would be ambiguous
+      n.kind = (key === 'ask') ? 'ask' : 'do';
+      n.title = val;
+      if (key === 'ask' && !root) root = id;
+      return;
+    }
+    if (key === 'opt') {
+      // `opt| q1: Yes -> q2`
+      var am = val.match(/\s*-(?:&gt;|>)\s*/);
+      if (!am) { warnings.push(line); return; }
+      n.opts.push({ label: val.slice(0, am.index).trim(), to: val.slice(am.index + am[0].length).trim() });
+      return;
+    }
+    if (key === 'todo') n.todos.push(val);
+    else n.notes.push(val);
+  });
+
+  // A branch that leads nowhere, or a node nothing can reach, is an authoring
+  // error the reader would otherwise hit as a dead end mid-call.
+  var dangling = [], unreachable = [];
+  order.forEach(function (id) {
+    nodes[id].opts.forEach(function (o) { if (!nodes[o.to]) dangling.push(o.to); });
+    if (!nodes[id].kind) warnings.push(id);            // referenced but never defined
+  });
+  if (root) {
+    var seen = {}, stack = [root];
+    while (stack.length) {
+      var cur = stack.pop();
+      if (seen[cur] || !nodes[cur]) continue;
+      seen[cur] = 1;
+      nodes[cur].opts.forEach(function (o) { stack.push(o.to); });
+    }
+    order.forEach(function (id) { if (!seen[id]) unreachable.push(id); });
+  }
+  return { nodes: nodes, order: order, root: root, warnings: warnings,
+           dangling: dangling, unreachable: unreachable };
+}
+
+/** Resolves a stored answer path to the node it lands on, ignoring any step
+ *  that no longer matches (an author can edit the tree under a reader). */
+function kbDecideResolve_(data, path) {
+  var at = data.root, trail = [];
+  (path || []).forEach(function (choice) {
+    var n = data.nodes[at];
+    if (!n || n.kind !== 'ask') return;
+    var hit = null;
+    n.opts.forEach(function (o) { if (o.label === choice) hit = o; });
+    if (!hit || !data.nodes[hit.to]) return;
+    trail.push({ q: n.title, a: hit.label });
+    at = hit.to;
+  });
+  return { at: at, trail: trail };
+}
+
+function kbDecideHtml_(text, path) {
+  var data = kbDecideParse_(text);
+  if (!data.root) {
+    return '<div class="kb-ros-empty"><b>No guide recorded yet.</b>' +
+      '<p>Start with a question and give each answer a destination:</p>' +
+      '<pre class="kb-ros-flowhint">ask|  q1: Does this order need a PT Eval?\n' +
+      'opt|  q1: Yes -&gt; a1\n' +
+      'opt|  q1: No  -&gt; a2\n' +
+      'do|   a1: Schedule the PT Eval\n' +
+      'todo| a1: Book the earliest slot in PT Scheduling</pre>' +
+      '<p>The first <code>ask|</code> is where the guide starts. ' +
+      '<code>todo|</code> adds a tickable step and <code>note|</code> a caveat.</p></div>';
+  }
+  var r = kbDecideResolve_(data, path);
+  var node = data.nodes[r.at] || data.nodes[data.root];
+
+  var trail = r.trail.length
+    ? '<ol class="kb-dec-trail">' + r.trail.map(function (t, i) {
+        return '<li><button type="button" class="kb-dec-crumb" data-step="' + i + '" ' +
+          'onclick="kbDecideBack_(this)" title="Change this answer">' +
+          '<span class="kb-dec-crumb-q">' + t.q + '</span>' +
+          '<span class="kb-dec-crumb-a">' + t.a + '</span></button></li>';
+      }).join('') + '</ol>'
+    : '';
+
+  var body;
+  if (node.kind === 'do') {
+    body = '<div class="kb-dec-action">' +
+      '<h3 class="kb-dec-title">' + node.title + '</h3>' +
+      (node.todos.length
+        ? '<ul class="kb-dec-todos">' + node.todos.map(function (t, i) {
+            return '<li><label><input type="checkbox" onchange="kbDecideTick_(this)"> ' +
+              '<span>' + t + '</span></label></li>';
+          }).join('') + '</ul>'
+        : '') +
+      node.notes.map(function (n) { return '<p class="kb-dec-note">' + n + '</p>'; }).join('') +
+      '</div>';
+  } else {
+    body = '<div class="kb-dec-q">' +
+      '<h3 class="kb-dec-title">' + node.title + '</h3>' +
+      node.notes.map(function (n) { return '<p class="kb-dec-note">' + n + '</p>'; }).join('') +
+      '<div class="kb-dec-opts">' + node.opts.map(function (o) {
+        return '<button type="button" class="kb-dec-opt" data-opt="' + kbRosterAttr_(o.label) + '" ' +
+          'onclick="kbDecideChoose_(this)">' + o.label + '</button>';
+      }).join('') + '</div>' +
+      // A question with no options is a dead end the reader cannot leave.
+      (node.opts.length ? '' : '<p class="kb-ros-warn">This question has no answers recorded.</p>') +
+      '</div>';
+  }
+
+  var problems = [];
+  if (data.dangling.length) problems.push(data.dangling.length + ' answer(s) point at a step that does not exist: ' + data.dangling.join(', '));
+  if (data.unreachable.length) problems.push(data.unreachable.length + ' step(s) cannot be reached from the start: ' + data.unreachable.join(', '));
+
+  return '<div class="kb-decision" data-decision="1" data-src="' + kbRosterAttr_(text) + '"' +
+      ' data-path="' + kbRosterAttr_(JSON.stringify(path || [])) + '">' +
+    (problems.length ? '<div class="kb-ros-warn" role="alert">' + problems.join(' · ') + '</div>' : '') +
+    '<div class="kb-dec-bar">' +
+      '<span class="kb-dec-step">' + (node.kind === 'do' ? 'Action' : 'Step ' + (r.trail.length + 1)) + '</span>' +
+      (r.trail.length ? '<button type="button" class="kb-ros-expand" onclick="kbDecideRestart_(this)">Start over</button>' : '') +
+    '</div>' + trail +
+    '<div class="kb-dec-body" role="group" aria-live="polite">' + body + '</div>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbDecideRoot_(el) { return el && el.closest ? el.closest('.kb-decision') : null; }
+
+function kbDecidePath_(root) {
+  // The stored path decodes on read exactly as data-src does, and its entries
+  // are matched against option labels parsed from the (escaped) source — so
+  // they are re-escaped here or a label containing & < > stops resolving.
+  try {
+    var p = JSON.parse(root.getAttribute('data-path') || '[]');
+    return Array.isArray(p) ? p.map(kbFenceEsc_) : [];
+  }
+  catch (e) { return []; }
+}
+
+/** Re-renders in place from the source + the new path. Ticked boxes are
+ *  deliberately NOT carried across: they belong to the action being shown, and
+ *  restoring them onto a different action would assert work that was not done. */
+function kbDecideRender_(root, path) {
+  var html = kbDecideHtml_(kbFenceSrc_(root), path);
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  var next = tmp.firstChild;
+  root.parentNode.replaceChild(next, root);
+  var focusTarget = next.querySelector('.kb-dec-opt, .kb-dec-todos input, .kb-dec-title');
+  if (focusTarget && focusTarget.focus) { try { focusTarget.focus(); } catch (e) {} }
+}
+
+function kbDecideChoose_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (!root) return;
+  kbDecideRender_(root, kbDecidePath_(root).concat([kbFenceEsc_(btn.getAttribute('data-opt') || '')]));
+}
+
+/** Clicking a crumb returns to that question — a rep who mis-answers must not
+ *  have to start again. */
+function kbDecideBack_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (!root) return;
+  kbDecideRender_(root, kbDecidePath_(root).slice(0, +(btn.getAttribute('data-step') || 0)));
+}
+
+function kbDecideRestart_(btn) {
+  var root = kbDecideRoot_(btn);
+  if (root) kbDecideRender_(root, []);
+}
+
+function kbDecideTick_(input) {
+  var li = input.closest ? input.closest('li') : null;
+  if (li) li.classList.toggle('is-done', !!input.checked);
+}
+
+// ── Glossary block (operator 2026-08-11) ──────────────────────────────────
+// This department runs on acronyms — PPD, PAR, ATP, MDO, PWC, T3Q, GP1–3 — and
+// a new rep meets them mid-call with no way to ask. A ```glossary fence renders
+// a filterable definition list AND teaches the article to explain itself: the
+// first mention of a defined term anywhere else in the same article gets a
+// dotted underline and a hover/focus definition.
+//
+//   PAR (aka Prior Auth)| Prior Authorization Request — payer sign-off before
+//   ATP| Assistive Technology Professional
+//
+// Same safety story as the other blocks: kbMd_ escapes the fence content before
+// the renderer sees it, and the annotation is a DOM TEXT-NODE walk (the
+// kbHighlightTerms_ pattern), never string surgery on rendered HTML.
+
+/** PURE. Input is kbMd_-escaped text; nothing here unescapes it. */
+function kbGlossaryParse_(text) {
+  var terms = [], warnings = [], seen = {};
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var i = line.indexOf('|');
+    if (i < 0) { warnings.push(line); return; }
+    var head = line.slice(0, i).trim();
+    var def = line.slice(i + 1).trim();
+    if (!head || !def) { warnings.push(line); return; }
+    // "PAR (aka Prior Auth, PA)" -> term PAR with two aliases, all pointing at
+    // the same definition.
+    var aliases = [];
+    var am = head.match(/^(.*?)\s*\(\s*aka\s+([^)]*)\)\s*$/i);
+    if (am) {
+      head = am[1].trim();
+      aliases = am[2].split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+    }
+    var k = head.toLowerCase();
+    if (seen[k]) { warnings.push(line); return; }      // a second definition would be ambiguous
+    seen[k] = 1;
+    terms.push({ term: head, aliases: aliases, def: def });
+  });
+  terms.sort(function (a, b) { return a.term.toLowerCase() < b.term.toLowerCase() ? -1 : 1; });
+  return { terms: terms, warnings: warnings };
+}
+
+function kbGlossaryHtml_(text) {
+  var data = kbGlossaryParse_(text);
+  if (!data.terms.length) {
+    return '<div class="kb-ros-empty"><b>No terms yet.</b>' +
+      '<p>Add one per line as <code>Term| Definition</code>. ' +
+      '<code>Term (aka Other, Alt)| …</code> gives a term more than one spelling.</p></div>';
+  }
+  var rows = data.terms.map(function (t) {
+    return '<div class="kb-gloss-row" data-term="' + kbRosterAttr_(t.term) + '"' +
+        ' data-aliases="' + kbRosterAttr_(t.aliases.join('|')) + '"' +
+        ' data-def="' + kbRosterAttr_(t.def) + '"' +
+        ' data-hay="' + kbRosterAttr_((t.term + ' ' + t.aliases.join(' ') + ' ' + t.def).toLowerCase()) + '">' +
+      '<dt class="kb-gloss-term">' + t.term +
+        (t.aliases.length ? '<span class="kb-gloss-aka">' + t.aliases.join(', ') + '</span>' : '') +
+      '</dt><dd class="kb-gloss-def">' + t.def + '</dd></div>';
+  }).join('');
+  return '<div class="kb-glossary" data-glossary="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search kb-gloss-search" placeholder="Filter terms…" ' +
+        'aria-label="Filter glossary terms" oninput="kbGlossaryFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + data.terms.length + ' terms</span>' +
+    '</div>' +
+    '<dl class="kb-gloss-list">' + rows + '</dl>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood (or repeat a term) ' +
+        'and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+function kbGlossaryFilter_(input) {
+  var root = input.closest ? input.closest('.kb-glossary') : null;
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  var rows = root.querySelectorAll('.kb-gloss-row'), shown = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var hit = !q || (rows[i].getAttribute('data-hay') || '').indexOf(q) >= 0;
+    rows[i].style.display = hit ? '' : 'none';
+    if (hit) shown++;
+  }
+  var c = root.querySelector('.kb-ros-count');
+  if (c) c.textContent = shown + (q ? ' matching' : ' terms');
+}
+
+/** Annotates the FIRST mention of each defined term in the surrounding article.
+ *  First-occurrence-only on purpose: marking every mention turns a page into a
+ *  field of dotted underlines and stops reading as emphasis at all.
+ *
+ *  Walks TEXT NODES (the kbHighlightTerms_ pattern) so it can never damage the
+ *  markup kbMd_ produced, and skips the glossary block itself, headings, code
+ *  and existing links. */
+function kbGlossaryAnnotate_(rootEl) {
+  try {
+    if (!rootEl) return;
+    var rows = rootEl.querySelectorAll('.kb-gloss-row');
+    if (!rows.length) return;
+    var defs = [], byKey = {};
+    for (var i = 0; i < rows.length; i++) {
+      var term = rows[i].getAttribute('data-term') || '';
+      var def = rows[i].getAttribute('data-def') || '';
+      var names = [term].concat((rows[i].getAttribute('data-aliases') || '').split('|').filter(Boolean));
+      names.forEach(function (n) {
+        if (!n) return;
+        defs.push(n);
+        byKey[n.toLowerCase()] = { term: term, def: def };
+      });
+    }
+    // Longest first, so "PT Eval" wins over "PT".
+    defs.sort(function (a, b) { return b.length - a.length; });
+    var used = {};
+    defs.forEach(function (name) {
+      var key = name.toLowerCase();
+      if (used[key]) return;
+      // An ALL-CAPS term is an acronym: match case-sensitively so "par" in
+      // ordinary prose is not mistaken for PAR. Mixed-case terms match
+      // case-insensitively.
+      var acronym = name === name.toUpperCase();
+      var re = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', acronym ? '' : 'i');
+      var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+      var n;
+      while ((n = walker.nextNode())) {
+        var p = n.parentElement;
+        if (!p || p.closest('.kb-glossary, code, pre, h1, h2, h3, h4, a, button, .kb-gloss-mark')) continue;
+        var m = re.exec(n.nodeValue);
+        if (!m) continue;
+        var info = byKey[key];
+        var frag = document.createDocumentFragment();
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(0, m.index)));
+        var mark = document.createElement('span');
+        mark.className = 'kb-gloss-mark';
+        mark.setAttribute('tabindex', '0');
+        mark.setAttribute('role', 'button');   // M17: it opens the shared card (click, hover, focus)
+        mark.setAttribute('data-term', info.term);
+        mark.setAttribute('data-def', info.def);
+        mark.setAttribute('aria-label', info.term + ': ' + info.def);
+        mark.textContent = m[0];
+        frag.appendChild(mark);
+        frag.appendChild(document.createTextNode(n.nodeValue.slice(m.index + m[0].length)));
+        p.replaceChild(frag, n);
+        used[key] = 1;
+        break;                      // first mention only
+      }
+    });
+  } catch (e) { /* annotation is decoration — never break the reader */ }
+}
+
+// ── Interactive roster block (operator 2026-08-11) ─────────────────────────
+// An employee/routing map is the one KB content type a static article serves
+// badly: mid-call, the rep's question is "who handles X, and can they take it"
+// — not "show me the org". A ```roster fence renders an interactive directory
+// instead, following the ```snippet precedent exactly: the fence content is
+// already HTML-escaped by kbMd_'s top-level pass, so the APP draws the
+// interactive markup around inert text. Nothing here executes article content.
+//
+// Syntax — deliberately hand-editable, because the operator's plan is for the
+// app to become the source of truth for this data:
+//   legend| lead=Team lead; new=Training / New; P=Standard powerchair
+//   badge|  Parachute access: Rajdeep, Erica, Paula
+//   dept|   PAK — Mary
+//   team|   PPD: Micheal*lead, Sandra, Selena
+//   team|   Medical Review > T3Q: Paula (C & ATP)*lead, Victoria
+// A person is `Name (tags)*flag`; `>` nests a sub-team under a team.
+
+/** PURE parser. Input is kbMd_-escaped text (& < > already entities); this
+ *  never unescapes — the renderer only ever adds quote-escaping for attribute
+ *  contexts, since the top-level pass does NOT cover quotes. */
+function kbRosterParse_(text) {
+  var legend = {}, badges = [], depts = [], flows = [], phases = [], steps = [], warnings = [];
+  var cur = null;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;              // blank / comment
+    var m = line.match(/^(legend|badge|dept|team|flow|phase|step)\s*\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var key = m[1].toLowerCase(), val = m[2].trim();
+    if (key === 'legend') {
+      val.split(';').forEach(function (pair) {
+        var kv = pair.split('=');
+        if (kv.length >= 2 && kv[0].trim()) legend[kv[0].trim()] = kv.slice(1).join('=').trim();
+      });
+      return;
+    }
+    if (key === 'badge') {
+      var bi = val.indexOf(':');
+      if (bi < 0) { warnings.push(line); return; }
+      badges.push({
+        label: val.slice(0, bi).trim(),
+        people: val.slice(bi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean),
+      });
+      return;
+    }
+    if (key === 'phase') {
+      // `phase| Name: Node, Node*decision, Node`. `phase| *: Sales` declares
+      // nodes that sit OUTSIDE the phases (an external feed).
+      var pi = val.indexOf(':');
+      if (pi < 0) { warnings.push(line); return; }
+      var pname = val.slice(0, pi).trim();
+      var nodes = val.slice(pi + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+        .map(function (n) {
+          var dec = false, join = false;
+          // Markers are stripped in a loop so `Name*decision*join` works in
+          // either order, like the person flags.
+          for (var pass = 0; pass < 2; pass++) {
+            n = n.replace(/\*decision\s*$/i, function () { dec = true; return ''; })
+                 .replace(/\*join\s*$/i, function () { join = true; return ''; }).trim();
+          }
+          return { name: n, decision: dec, join: join };
+        });
+      phases.push({ name: pname === '*' ? '' : pname, external: pname === '*', nodes: nodes });
+      return;
+    }
+    if (key === 'step') {
+      // `step| From -> To: label`. The label may itself contain a colon, so
+      // split on the FIRST colon AFTER the arrow.
+      var am = val.match(/\s*-(?:&gt;|>)\s*/);
+      if (!am) { warnings.push(line); return; }
+      var from = val.slice(0, am.index).trim();
+      var afterArrow = val.slice(am.index + am[0].length);
+      var li = afterArrow.indexOf(':');
+      var to = (li >= 0 ? afterArrow.slice(0, li) : afterArrow).trim();
+      var slabel = li >= 0 ? afterArrow.slice(li + 1).trim() : '';
+      if (!from || !to) { warnings.push(line); return; }
+      steps.push({ from: from, to: to, label: slabel });
+      return;
+    }
+    if (key === 'flow') {
+      // `flow| [Label:] Stage -> Stage -> Stage`. The separator is `->` and
+      // NOT `>`, which already nests a sub-team under a team.
+      var lbl = '', rest = val;
+      var ci = val.indexOf(':');
+      if (ci >= 0 && !/-(?:&gt;|>)/.test(val.slice(0, ci))) { lbl = val.slice(0, ci).trim(); rest = val.slice(ci + 1); }
+      var stages = rest.split(/\s*-(?:&gt;|>)\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (stages.length >= 2) flows.push({ label: lbl, stages: stages });
+      else warnings.push(line);
+      return;
+    }
+    if (key === 'dept') {
+      // "PAK — Mary" / "PAK - Mary" / "PAK" (no owner)
+      var dm = val.split(/\s+[—–-]\s+/);
+      cur = { name: dm[0].trim(), owner: (dm[1] || '').trim(), teams: [] };
+      depts.push(cur);
+      return;
+    }
+    // team
+    var ti = val.indexOf(':');
+    if (ti < 0) { warnings.push(line); return; }
+    var head = val.slice(0, ti).trim();
+    var sub = '';
+    // `>` arrives from kbMd_ as `&gt;` (same class as the `&amp;` tag
+    // separator). Match BOTH forms rather than unescaping: decoding to a raw
+    // `>` and later emitting it would undo the escape boundary.
+    var sm = head.match(/\s*(?:&gt;|>)\s*/);
+    if (sm) { sub = head.slice(sm.index + sm[0].length).trim(); head = head.slice(0, sm.index).trim(); }
+    var people = val.slice(ti + 1).split(',').map(function (x) { return x.trim(); }).filter(Boolean)
+      .map(function (tok) {
+        var flags = [];
+        // Strip trailing *flags FIRST so a name containing "*" is not mangled.
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        tok = tok.replace(/\*([a-z]+)\s*$/gi, function (_, f) { flags.push(f.toLowerCase()); return ''; }).trim();
+        var tags = [];
+        var tm = tok.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+        if (tm) {
+          tok = tm[1].trim();
+          // The input is kbMd_-ESCAPED, so an ampersand separator arrives as
+          // `&amp;` — splitting on a bare `&` turns "C & ATP" into "C" and
+          // "amp; ATP". Accept both forms (and a comma).
+          tags = tm[2].split(/\s*(?:&amp;|&|,)\s*/).map(function (t) { return t.trim(); }).filter(Boolean);
+        }
+        return { name: tok, tags: tags, lead: flags.indexOf('lead') >= 0, isNew: flags.indexOf('new') >= 0 };
+      });
+    if (!cur) { cur = { name: '', owner: '', teams: [] }; depts.push(cur); }
+    cur.teams.push({ name: head, sub: sub, people: people });
+  });
+  // Badges are an attribute of a PERSON, not a place — they travel with them
+  // across every team they appear on, which a separate list cannot do.
+  var badgeByPerson = {};
+  badges.forEach(function (b) {
+    b.people.forEach(function (n) {
+      var k = n.toLowerCase();
+      (badgeByPerson[k] = badgeByPerson[k] || []).push(b.label);
+    });
+  });
+  depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      t.people.forEach(function (p) { p.badges = badgeByPerson[p.name.toLowerCase()] || []; });
+    });
+  });
+  // A linear `flow|` is sugar for a chain of steps, so both notations feed ONE
+  // renderer rather than two that could drift.
+  flows.forEach(function (f) {
+    if (!phases.length) {
+      var lin = f.stages.map(function (n) { return { name: n, decision: false }; });
+      phases.push({ name: f.label || '', external: false, nodes: lin, linear: true });
+    }
+    for (var i = 0; i + 1 < f.stages.length; i++) steps.push({ from: f.stages[i], to: f.stages[i + 1], label: '' });
+  });
+  return { legend: legend, badges: badges, depts: depts, flows: flows,
+           phases: phases, steps: steps, warnings: warnings };
+}
+
+/** Renders the parsed roster. `v` values arrive kbMd_-escaped (& < >), so the
+ *  ONLY extra escaping needed is for quotes in attribute contexts — the same
+ *  gap kbMd_'s link/image rules guard (the top-level pass doesn't cover them). */
+/** Normalised lookup key. Values carry kbMd_'s entities, so `A &gt; B` and
+ *  `A > B` must address the same team without either being unescaped. */
+function kbRosterKey_(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ').trim();
+}
+
+// ── Warehouse map block (` ```map `, operator 2026-08-13 — Tier A, no billing) ──
+// `wh| Name: Address` lines render a warehouse directory: open-in-Google-Maps
+// links, a per-warehouse keyless embed (`?q=…&output=embed` — no API key, the
+// operator's no-billing constraint), and a nearest-warehouse lookup. The
+// lookup geocodes SERVER-side through Apps Script's free built-in Maps
+// service and returns straight-line miles; the query is never persisted
+// anywhere (a looked-up address may be a patient's — the placeholder asks for
+// a ZIP for exactly that reason). Distances are LABELED straight-line — the
+// per-result Directions link is the honest path to a drive figure (INV-187:
+// never imply a judgement the data doesn't carry). Fence rules match
+// roster/glossary: content arrives HTML-escaped, attributes get their own
+// quote escaping, values read back off data-attrs are DECODED (so they need
+// esc() before any innerHTML), and unknown lines are counted, never silently
+// dropped.
+var KB_MAP_MAX_WH_CLIENT = 20;
+function kbMapDecode_(s) {
+  // kbMd_'s top-level escape covers exactly these three entities. Decode ONLY
+  // for URL building (encodeURIComponent re-encodes everything, so the result
+  // is attribute-safe); text and attribute contexts keep the escaped form —
+  // the roster lesson: the parser never unescapes into markup.
+  return kbFenceDecode_(s);
+}
+function kbMapParse_(text) {
+  var whs = [], warnings = [], truncated = 0;
+  String(text == null ? '' : text).split('\n').forEach(function (raw) {
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') return;
+    var m = line.match(/^wh\|\s*(.*)$/i);
+    if (!m) { warnings.push(line); return; }
+    var rest = m[1];
+    var ci = rest.indexOf(':');
+    if (ci < 1 || !rest.slice(ci + 1).trim()) { warnings.push(line); return; }
+    if (whs.length >= KB_MAP_MAX_WH_CLIENT) { truncated++; return; }
+    whs.push({ name: rest.slice(0, ci).trim(), addr: rest.slice(ci + 1).trim() });
+  });
+  return { warehouses: whs, warnings: warnings, truncated: truncated };
+}
+function kbMapHtml_(text) {
+  var data = kbMapParse_(text);
+  if (!data.warehouses.length) {
+    return '<div class="kb-ros-empty"><b>No warehouses yet.</b>' +
+      '<p>Add one per line as <code>wh| Name: Street, City, ST ZIP</code>.</p></div>';
+  }
+  var rows = data.warehouses.map(function (w) {
+    var q = encodeURIComponent(kbMapDecode_(w.addr));
+    return '<div class="kb-map-row" data-name="' + kbRosterAttr_(w.name) + '" data-addr="' + kbRosterAttr_(w.addr) + '">' +
+      '<div class="kb-map-main"><b class="kb-map-name">' + w.name + '</b>' +
+        '<span class="kb-map-addr">' + w.addr + '</span></div>' +
+      '<span class="kb-map-dist" data-dist></span>' +
+      '<a class="kb-map-open" href="https://www.google.com/maps?q=' + q + '" target="_blank" rel="noopener">Open ↗</a>' +
+      '<button type="button" class="kb-map-embed-btn" aria-expanded="false" onclick="kbMapToggleEmbed_(this)">Map</button>' +
+      '<div class="kb-map-embed" hidden></div>' +
+    '</div>';
+  }).join('');
+  return '<div class="kb-map" data-map="1">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search kb-map-q" placeholder="ZIP code (or city, state)" ' +
+        'aria-label="Find the nearest warehouse — enter a ZIP code or city" ' +
+        'onkeydown="if(event.key===\'Enter\')kbMapLookup_(this)">' +
+      '<button type="button" class="kb-ros-expand" onclick="kbMapLookup_(this)">Find nearest</button>' +
+      '<span class="kb-ros-count">' + data.warehouses.length + ' warehouse' + (data.warehouses.length === 1 ? '' : 's') + '</span>' +
+    '</div>' +
+    '<div class="kb-map-note">Prefer a ZIP code for patient lookups — the lookup goes to Google’s geocoder. Distances are straight-line estimates; use Directions for drive distance.</div>' +
+    '<div class="kb-map-results" role="status" aria-live="polite"></div>' +
+    '<div class="kb-map-list">' + rows + '</div>' +
+    (data.truncated ? '<div class="kb-ros-warn">Only the first ' + KB_MAP_MAX_WH_CLIENT + ' warehouses are shown (' + data.truncated + ' more in the source).</div>' : '') +
+    (data.warnings.length ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) were not understood and are not shown.</div>' : '') +
+  '</div>';
+}
+function kbMapToggleEmbed_(btn) {
+  var row = btn.closest ? btn.closest('.kb-map-row') : null;
+  if (!row) return;
+  var wrap = row.querySelector('.kb-map-embed');
+  if (!wrap) return;
+  var open = wrap.hasAttribute('hidden');
+  if (open && !wrap.firstChild) {
+    // Lazy — the keyless embed iframe is created on first open only.
+    var f = document.createElement('iframe');
+    f.src = 'https://www.google.com/maps?q=' +
+      encodeURIComponent(kbMapDecode_(row.getAttribute('data-addr') || '')) + '&output=embed';
+    f.setAttribute('loading', 'lazy');
+    f.setAttribute('title', 'Map of ' + (row.getAttribute('data-name') || 'warehouse'));
+    wrap.appendChild(f);
+  }
+  if (open) wrap.removeAttribute('hidden'); else wrap.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function kbMapLookup_(el) {
+  var root = el.closest ? el.closest('.kb-map') : null;
+  if (!root || root.dataset.busy) return;
+  var input = root.querySelector('.kb-map-q');
+  var out = root.querySelector('.kb-map-results');
+  var q = String((input && input.value) || '').trim();
+  if (q.length < 3) { out.textContent = 'Enter a ZIP code or city to look up.'; return; }
+  var rows = root.querySelectorAll('.kb-map-row');
+  var addrs = [], names = [];
+  for (var i = 0; i < rows.length; i++) {
+    addrs.push(kbMapDecode_(rows[i].getAttribute('data-addr') || ''));
+    names.push(rows[i].getAttribute('data-name') || '');   // decoded — esc() before innerHTML
+  }
+  root.dataset.busy = '1';
+  out.textContent = 'Looking up…';
+  var done = function () { delete root.dataset.busy; };
+  var fail = function (msg) { done(); out.textContent = msg || 'Lookup failed — try again.'; };
+  try {
+    google.script.run.withSuccessHandler(function (res) {
+      done();
+      if (!res || res.error) { fail(res && res.error); return; }
+      var list = (res.results || []).slice().sort(function (a, b) {
+        if (a.miles == null) return 1;
+        if (b.miles == null) return -1;
+        return a.miles - b.miles;
+      });
+      var html = '<div class="kb-map-from">Distances from <b>' + esc(res.formatted || q) + '</b></div><ol class="kb-map-ranks">';
+      list.forEach(function (r) {
+        var dir = 'https://www.google.com/maps/dir/' + encodeURIComponent(q) + '/' + encodeURIComponent(addrs[r.i] || '');
+        html += '<li><span class="kb-map-rk-name">' + esc(names[r.i] || ('Warehouse ' + (r.i + 1))) + '</span> — ' +
+          (r.miles == null ? '<span class="kb-map-rk-na">distance unavailable</span>'
+            : '<b>≈ ' + esc(String(r.miles)) + ' mi</b>') +
+          ' · <a href="' + dir + '" target="_blank" rel="noopener">Directions ↗</a></li>';
+      });
+      out.innerHTML = html + '</ol>';
+      for (var i = 0; i < rows.length; i++) {
+        var chip = rows[i].querySelector('[data-dist]'), hitR = null;
+        for (var j = 0; j < list.length; j++) { if (list[j].i === i) { hitR = list[j]; break; } }
+        if (chip) chip.textContent = (hitR && hitR.miles != null) ? '≈ ' + hitR.miles + ' mi' : '';
+      }
+    }).withFailureHandler(function (err) {
+      fail(err && err.message);
+    }).kbMapDistances(q, addrs);
+  } catch (e) { fail(); }
+}
+
+function kbRosterAttr_(v) {
+  return String(v == null ? '' : v).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── The fence-source round-trip boundary ────────────────────────────────────
+// A block that re-renders itself (a roster mode switch, Expand, a decision
+// answer) needs its own fence source back. Storing it in a `data-*` attribute
+// looks safe because kbRosterAttr_ escapes the quotes — but the browser
+// DECODES every entity when the attribute is parsed, so `getAttribute` hands
+// back `<img src=x onerror=...>` where kbMd_ had written `&lt;img …&gt;`.
+// Re-rendering that raw put a LIVE element into the article: the escape-first
+// boundary INV-193 relies on held for the first render only.
+//
+// So: every read of a stored fence source (or of a value that will be COMPARED
+// against parsed source) re-applies kbMd_'s top-level escape, restoring exactly
+// the contract the renderers were written against. The two helpers are inverses
+// over the same three entities kbMd_ escapes — do not let them drift apart.
+function kbFenceEsc_(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function kbFenceDecode_(s) {
+  return String(s == null ? '' : s).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+/** THE one reader of a block's stored fence source. Never call getAttribute
+ *  ('data-src') directly — that is the decoded form, and feeding it back into
+ *  a renderer is the injection above. */
+function kbFenceSrc_(root) {
+  return kbFenceEsc_((root && root.getAttribute ? root.getAttribute('data-src') : '') || '');
+}
+
+/** A URL-safe id fragment, so a person or team is addressable in the DOM. */
+function kbRosterSlug_(v) {
+  return String(v == null ? '' : v).toLowerCase()
+    .replace(/&[a-z]+;/g, ' ')                 // the input is escaped — drop entities
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
+}
+
+/** Folds the parsed roster into a PERSON-centric index: the same person can
+ *  sit on several teams, and "where else does Erica work" is a question the
+ *  team-shaped grid (and the source spreadsheet) cannot answer at all. */
+function kbRosterPeopleIndex_(data) {
+  var byName = {}, order = [];
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      t.people.forEach(function (p) {
+        var k = p.name.toLowerCase();
+        if (!byName[k]) { byName[k] = { name: p.name, tags: [], badges: [], lead: false, isNew: false, places: [] }; order.push(k); }
+        var e = byName[k];
+        e.lead = e.lead || p.lead;
+        e.isNew = e.isNew || p.isNew;
+        p.tags.forEach(function (x) { if (e.tags.indexOf(x) < 0) e.tags.push(x); });
+        (p.badges || []).forEach(function (x) { if (e.badges.indexOf(x) < 0) e.badges.push(x); });
+        e.places.push({ dept: d.name, team: t.name, sub: t.sub });
+      });
+    });
+  });
+  return { byName: byName, order: order };
+}
+
+function kbRosterTagChip_(t, legend, clickable) {
+  var tip = legend[t] || '';
+  var a = ' class="kb-ros-tag"' + (tip ? ' data-tip="' + kbRosterAttr_(tip) + '"' : '');
+  if (!clickable) return '<span' + a + (tip ? ' tabindex="0" aria-label="' + kbRosterAttr_(t + ': ' + tip) + '"' : '') + '>' + t + '</span>';
+  // Clickable => a REAL button (INV-173). The accessible name says what the
+  // click DOES, not just what the tag means.
+  return '<button type="button"' + a + ' data-tag="' + kbRosterAttr_(t) + '" onclick="kbRosterTagFilter_(this)"' +
+    ' aria-label="' + kbRosterAttr_('Show everyone tagged ' + t + (tip ? ' (' + tip + ')' : '')) + '">' + t + '</button>';
+}
+
+function kbRosterFlags_(p, legend) {
+  var out = '';
+  if (p.lead) out += '<span class="kb-ros-flag is-lead"' + (legend.lead ? ' title="' + kbRosterAttr_(legend.lead) + '"' : '') + '>lead</span>';
+  if (p.isNew) out += '<span class="kb-ros-flag is-new"' + (legend['new'] ? ' title="' + kbRosterAttr_(legend['new']) + '"' : '') + '>new</span>';
+  (p.badges || []).forEach(function (b) { out += '<span class="kb-ros-flag is-badge">' + b + '</span>'; });
+  return out;
+}
+
+/** One person row. `hay` carries the searchable text so filtering never has to
+ *  re-read the rendered DOM, and the id makes the person addressable. */
+function kbRosterPersonHtml_(p, legend, ctx, seen) {
+  var hay = [p.name].concat(p.tags, p.badges || [], ctx || []).join(' ').toLowerCase();
+  // A person on two teams renders twice, so the id needs the same -2/-3 dedup
+  // walk kbMd_ and kbSplitSections_ use for repeated headings: duplicate ids
+  // are invalid and would break the very anchors this adds. The FIRST
+  // occurrence keeps the bare slug, so it stays the canonical link target.
+  var id = 'kb-p-' + kbRosterSlug_(p.name);
+  if (seen) { seen[id] = (seen[id] || 0) + 1; if (seen[id] > 1) id += '-' + seen[id]; }
+  return '<span class="kb-ros-person' + (p.lead ? ' is-lead' : '') + (p.isNew ? ' is-new' : '') + '"' +
+      ' id="' + id + '"' +
+      ' data-name="' + kbRosterAttr_(p.name.toLowerCase()) + '"' +
+      // Tags are matched EXACTLY (see the tag: prefix in the filter), so they
+      // ride pipe-delimited rather than as loose text. `allTags` lets the
+      // capability view carry them without re-printing the chips.
+      ' data-tags="|' + kbRosterAttr_((p.allTags || p.tags).join('|').toLowerCase()) + '|"' +
+      ' data-hay="' + kbRosterAttr_(hay) + '">' +
+    '<button type="button" class="kb-ros-name" data-name="' + kbRosterAttr_(p.name) + '" ' +
+      'onclick="kbRosterOpenPerson_(this)" title="Show where ' + kbRosterAttr_(p.name) + ' works">' + p.name + '</button>' +
+    p.tags.map(function (t) { return kbRosterTagChip_(t, legend, true); }).join('') +
+    kbRosterFlags_(p, legend) +
+    // Secondary context (the person's teams, in the capability view) belongs
+    // INSIDE the row: as a sibling it became its own line, doubling the row
+    // count and needing its own hide/show bookkeeping in the filter.
+    (ctx && ctx.length ? '<span class="kb-ros-where">' + ctx.join(', ') + '</span>' : '') +
+    '</span>';
+}
+
+/** VIEW 1 — by team. The org's own shape, and the default. */
+function kbRosterTeamsHtml_(data) {
+  var legend = data.legend, seen = {};
+  return data.depts.map(function (d) {
+    var teams = d.teams.map(function (t) {
+      var label = t.name + (t.sub ? ' <span class="kb-ros-sub">' + t.sub + '</span>' : '');
+      return '<div class="kb-ros-team" id="kb-t-' + kbRosterSlug_(d.name + '-' + t.name + '-' + t.sub) + '"' +
+          ' data-team="' + kbRosterAttr_((t.name + ' ' + t.sub).toLowerCase()) + '">' +
+        '<div class="kb-ros-team-name">' + label + '</div>' +
+        '<div class="kb-ros-people">' +
+          t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+        '</div></div>';
+    }).join('');
+    return '<section class="kb-ros-dept" data-dept="' + kbRosterAttr_(d.name.toLowerCase()) + '">' +
+      '<h3 class="kb-ros-dept-name">' + d.name +
+        (d.owner ? ' <span class="kb-ros-owner">' + d.owner + '</span>' : '') + '</h3>' +
+      '<div class="kb-ros-teams">' + teams + '</div></section>';
+  }).join('');
+}
+
+/** VIEW 2 — by capability. "Who can take a Complex Rehab call" cuts ACROSS
+ *  teams, so the team-shaped sheet cannot answer it; this view is the whole
+ *  reason a structured roster beats a picture of a spreadsheet. */
+function kbRosterCapabilitiesHtml_(data) {
+  var legend = data.legend, idx = kbRosterPeopleIndex_(data), seen = {};
+  var byTag = {}, tagOrder = [], untagged = [];
+  idx.order.forEach(function (k) {
+    var e = idx.byName[k];
+    if (!e.tags.length) { untagged.push(e); return; }
+    e.tags.forEach(function (t) {
+      if (!byTag[t]) { byTag[t] = []; tagOrder.push(t); }
+      byTag[t].push(e);
+    });
+  });
+  tagOrder.sort(function (a, b) { return byTag[b].length - byTag[a].length || (a < b ? -1 : 1); });
+  if (!tagOrder.length) {
+    return '<div class="kb-ros-note">No capability tags in this roster yet — add them as ' +
+      '<code>Name (tag)</code> and a <code>legend|</code> line explaining each.</div>';
+  }
+  var card = function (label, people, note) {
+    return '<div class="kb-ros-team" data-team="' + kbRosterAttr_(label.toLowerCase()) + '">' +
+      '<div class="kb-ros-team-name">' + label + ' <span class="kb-ros-n">' + people.length + '</span></div>' +
+      (note ? '<div class="kb-ros-cap-note">' + note + '</div>' : '') +
+      '<div class="kb-ros-people">' + people.map(function (e) {
+        // In this view the person's TEAMS are the useful secondary detail.
+        var where = e.places.map(function (pl) { return pl.team + (pl.sub ? ' › ' + pl.sub : ''); });
+        return kbRosterPersonHtml_({ name: e.name, tags: [], allTags: e.tags, badges: e.badges, lead: e.lead, isNew: e.isNew }, legend, where, seen);
+      }).join('') + '</div></div>';
+  };
+  var cards = tagOrder.map(function (t) { return card(t, byTag[t], legend[t] || ''); }).join('');
+  if (untagged.length) cards += card('No capability tag', untagged, '').replace('class="kb-ros-team"', 'class="kb-ros-team is-wide"');
+  return '<section class="kb-ros-dept"><div class="kb-ros-teams">' + cards + '</div></section>';
+}
+
+/** VIEW 3 — coverage. FACTS ONLY (counts and single points of contact), never
+ *  a judgement like "understaffed": the block has no idea what the target
+ *  staffing is, and a confident-looking verdict drawn from data that cannot
+ *  support it is the INV-187 failure mode. */
+function kbRosterCoverageHtml_(data) {
+  var legend = data.legend, idx = kbRosterPeopleIndex_(data);
+  var teamCount = 0, noLead = [];
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      teamCount++;
+      if (!t.people.some(function (p) { return p.lead; })) noLead.push((t.name + (t.sub ? ' › ' + t.sub : '')));
+    });
+  });
+  var byTag = {};
+  idx.order.forEach(function (k) {
+    idx.byName[k].tags.forEach(function (t) {
+      if (!byTag[t]) byTag[t] = { people: [], teams: {} };
+      byTag[t].people.push(idx.byName[k].name);
+      idx.byName[k].places.forEach(function (pl) { byTag[t].teams[pl.team + (pl.sub ? ' › ' + pl.sub : '')] = 1; });
+    });
+  });
+  var tags = Object.keys(byTag).sort(function (a, b) { return byTag[b].people.length - byTag[a].people.length || (a < b ? -1 : 1); });
+  var rows = tags.map(function (t) {
+    var e = byTag[t], nTeams = Object.keys(e.teams).length;
+    var only = e.people.length === 1;
+    return '<tr' + (only ? ' class="is-single"' : '') + '><th scope="row">' + t +
+      (legend[t] ? ' <span class="kb-ros-where">' + legend[t] + '</span>' : '') + '</th>' +
+      '<td>' + e.people.length + '</td><td>' + nTeams + '</td>' +
+      '<td class="kb-ros-where">' + e.people.join(', ') + '</td></tr>';
+  }).join('');
+
+  return '<div class="kb-ros-cov">' +
+    '<div class="kb-ros-cov-tiles">' +
+      '<div class="kb-ros-tile"><b>' + idx.order.length + '</b><span>people</span></div>' +
+      '<div class="kb-ros-tile"><b>' + teamCount + '</b><span>teams</span></div>' +
+      '<div class="kb-ros-tile"><b>' + data.depts.length + '</b><span>departments</span></div>' +
+      '<div class="kb-ros-tile"><b>' + tags.length + '</b><span>capabilities</span></div>' +
+    '</div>' +
+    (tags.length
+      ? '<div class="kb-ros-tablewrap"><table class="kb-ros-table"><thead><tr>' +
+          '<th scope="col">Capability</th><th scope="col">People</th><th scope="col">Teams</th><th scope="col">Who</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '') +
+    (tags.some(function (t) { return byTag[t].people.length === 1; })
+      ? '<div class="kb-ros-note">Rows marked in amber have a single point of contact — one person carries that capability.</div>'
+      : '') +
+    (noLead.length
+      ? '<div class="kb-ros-note">No lead marked on: ' + noLead.join(', ') + '.</div>'
+      : '') +
+    '</div>';
+}
+
+/** VIEW 4 — chart. A node-link tree with PROGRESSIVE DISCLOSURE: departments
+ *  collapsed, expand one to see its teams, expand a team to see its people.
+ *
+ *  The whole tree is rendered and hidden with CSS rather than built on demand,
+ *  so expand state lives in the DOM (no re-render, nothing to lose) and the
+ *  filter can simply reveal the branches that match.
+ *
+ *  Why this is legible when a static chart is not: the width of a node-link
+ *  tree is set by its WIDEST VISIBLE ROW. Showing all 46 people at once needs
+ *  ~90px each — about 4100px, unreadable at every viewport this app supports.
+ *  Under disclosure the widest row is the team count of ONE department (9
+ *  here), and people stack VERTICALLY inside their team, so opening a team
+ *  costs height rather than width.
+ *
+ *  It shows STRUCTURE, not reporting lines: the source says who is on which
+ *  team, and does not say who reports to whom. Drawing person-to-person edges
+ *  would assert a relationship the data does not contain. */
+function kbRosterChartHtml_(data) {
+  var legend = data.legend, seen = {};
+  var nodes = data.depts.map(function (d, di) {
+    var nPeople = 0;
+    d.teams.forEach(function (t) { nPeople += t.people.length; });
+    var teams = d.teams.map(function (t, ti) {
+      var tid = 'kb-ch-' + di + '-' + ti;
+      var label = t.name + (t.sub ? ' <span class="kb-ros-sub">' + t.sub + '</span>' : '');
+      var lead = t.people.filter(function (p) { return p.lead; })
+        .map(function (p) { return p.name; }).join(', ');
+      return '<li class="kb-ros-node" role="treeitem" aria-expanded="false">' +
+        '<div class="kb-ros-nodebox is-team">' +
+          '<button type="button" class="kb-ros-toggle" aria-expanded="false" aria-controls="' + tid + '" ' +
+            'onclick="kbRosterToggleNode_(this)">' + label + '</button>' +
+          '<span class="kb-ros-nodemeta">' + t.people.length + ' ' + (t.people.length === 1 ? 'person' : 'people') +
+            (lead ? ' · lead ' + lead : '') + '</span>' +
+        '</div>' +
+        '<ul class="kb-ros-children is-leaves" id="' + tid + '" role="group">' +
+          '<li class="kb-ros-people">' +
+            t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+          '</li>' +
+        '</ul></li>';
+    }).join('');
+    var did = 'kb-ch-' + di;
+    return '<li class="kb-ros-node" role="treeitem" aria-expanded="false">' +
+      '<div class="kb-ros-nodebox is-dept">' +
+        '<button type="button" class="kb-ros-toggle" aria-expanded="false" aria-controls="' + did + '" ' +
+          'onclick="kbRosterToggleNode_(this)">' + d.name + '</button>' +
+        '<span class="kb-ros-nodemeta">' + (d.owner ? d.owner + ' · ' : '') +
+          d.teams.length + ' teams · ' + nPeople + ' people</span>' +
+      '</div>' +
+      '<ul class="kb-ros-children" id="' + did + '" role="group">' + teams + '</ul></li>';
+  }).join('');
+  // The notes sit OUTSIDE the scrolling container: inside it they scrolled
+  // away with the tree, so the one explanation of what the view shows
+  // disappeared exactly when a wide row made it most needed.
+  return '<div class="kb-ros-chart">' +
+    '<div class="kb-ros-note">Structure only — the roster records team membership, ' +
+      'not who reports to whom. Select a department, then a team.</div>' +
+    '<div class="kb-ros-chart-hint">Scroll sideways to see the rest of this row.</div>' +
+    '<div class="kb-ros-chartwrap">' +
+      '<ul class="kb-ros-tree" role="tree" aria-label="Organisation chart">' + nodes + '</ul>' +
+    '</div></div>';
+}
+
+/** Expand/collapse is a CLASS toggle plus the matching aria-expanded on BOTH
+ *  the treeitem and its button — a class alone is invisible to assistive tech
+ *  (INV-174), and these are the disclosure controls the whole view is built
+ *  around. */
+function kbRosterToggleNode_(btn) {
+  var li = btn.closest ? btn.closest('.kb-ros-node') : null;
+  if (!li) return;
+  var open = !li.classList.contains('open');
+  li.classList.toggle('open', open);
+  li.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  kbRosterChartOverflow_(btn);
+  // Opening a node moves every box below it, so the measured edges must be
+  // redrawn or they would point at where things used to be.
+  kbRosterDrawEdges_(kbRosterRoot_(btn));
+}
+
+/** A department with more teams than fit scrolls sideways inside the chart —
+ *  standard for an org chart, but the clipped teams simply looked ABSENT with
+ *  no cue. Flag it only when it is actually true, so the hint is never noise. */
+function kbRosterChartOverflow_(el) {
+  var root = kbRosterRoot_(el);
+  var wrap = root ? root.querySelector('.kb-ros-chartwrap') : null;
+  if (!wrap) return;
+  var chart = root.querySelector('.kb-ros-chart');
+  if (chart) chart.classList.toggle('has-overflow', wrap.scrollWidth > wrap.clientWidth + 1);
+}
+
+/** VIEW 5 — flow. A roster is org-SHAPED; an order moves through STAGES, and
+ *  the two are different questions. A `flow|` line records the sequence, which
+ *  the roster itself does not contain — so this view only exists when someone
+ *  has written the sequence down. It is never inferred from the sheet's
+ *  layout: the order work actually travels in is operational knowledge, and a
+ *  guessed process displayed to reps as fact is worse than no diagram.
+ *
+ *  A stage naming a real team links to it (people count, lead, expandable);
+ *  any other stage renders as a plain step, so a flow can include stages that
+ *  are not teams at all. */
+function kbRosterFlowHtml_(data) {
+  var legend = data.legend, seen = {};
+  if (!data.phases.length) {
+    return '<div class="kb-ros-empty">' +
+      '<b>No process flow recorded yet.</b>' +
+      '<p>This roster describes who is on which team. To show the order work moves in, ' +
+      'add phases and steps — the sequence is yours to state, and is never guessed ' +
+      'from the layout:</p>' +
+      '<pre class="kb-ros-flowhint">phase| 1. Intake: PPD, MA Education\n' +
+      'phase| 2. Qualifications: Qualifications*decision, PT Scheduling\n' +
+      'step| PPD -&gt; MA Education\n' +
+      'step| Qualifications -&gt; PT Scheduling: Route A — PT Eval needed</pre>' +
+      '<p>Mark a branch point with <code>*decision</code>. Use <code>phase| *: Name</code> ' +
+      'for something feeding in from outside the phases. A node matching a team name links ' +
+      'to that team.</p></div>';
+  }
+
+  // Index teams so a node naming one links to its people.
+  var byTeam = {};
+  data.depts.forEach(function (d) {
+    d.teams.forEach(function (t) {
+      byTeam[kbRosterKey_(t.name)] = t;
+      if (t.sub) byTeam[kbRosterKey_(t.name + ' > ' + t.sub)] = t;
+    });
+  });
+  // Route labels are read off the STEPS, so a node can state what leads out of
+  // it without the diagram having to carry the text.
+  var outBy = {};
+  data.steps.forEach(function (st) {
+    var k = kbRosterKey_(st.from);
+    (outBy[k] = outBy[k] || []).push(st);
+  });
+
+  var nodeHtml = function (n, ri, ci) {
+    var t = byTeam[kbRosterKey_(n.name)];
+    var id = 'kb-fn-' + kbRosterSlug_(n.name);
+    var outs = outBy[kbRosterKey_(n.name)] || [];
+    var routes = outs.filter(function (o) { return o.label; });
+    return '<div class="kb-ros-fnode' + (n.decision ? ' is-decision' : '') + (t ? ' is-team' : '') + '"' +
+        ' id="' + id + '" data-col="' + ci + '" data-row="' + ri + '"' +
+        ' data-node="' + kbRosterAttr_(kbRosterKey_(n.name)) + '">' +
+      '<div class="kb-ros-fnode-head">' +
+        (t
+          ? '<button type="button" class="kb-ros-toggle" aria-expanded="false" ' +
+              'aria-controls="' + id + '-p" onclick="kbRosterToggleNode_(this)">' + n.name + '</button>'
+          : '<span class="kb-ros-toggle is-plain">' + n.name + '</span>') +
+        (n.decision ? '<span class="kb-ros-flag is-decision">decision</span>' : '') +
+        (n.join ? '<span class="kb-ros-flag is-join">join</span>' : '') +
+      '</div>' +
+      // An AND-join: several inbound paths, not alternatives. Without this the
+      // diagram reads as "any one path proceeds", which is the opposite of a
+      // stage that waits for every applicable one.
+      (n.join ? '<span class="kb-ros-joinnote">Waits for every applicable path above to complete</span>' : '') +
+      (t ? '<span class="kb-ros-nodemeta">' + t.people.length + ' ' +
+             (t.people.length === 1 ? 'person' : 'people') + '</span>' : '') +
+      (routes.length
+        ? '<ul class="kb-ros-routes">' + routes.map(function (o) {
+            return '<li><span class="kb-ros-routelbl">' + o.label + '</span> → ' + o.to + '</li>';
+          }).join('') + '</ul>'
+        : '') +
+      (t
+        ? '<ul class="kb-ros-children is-leaves" id="' + id + '-p" role="group">' +
+            '<li class="kb-ros-people">' +
+              t.people.map(function (p) { return kbRosterPersonHtml_(p, legend, null, seen); }).join('') +
+            '</li></ul>'
+        : '') +
+      '</div>';
+  };
+
+  var cols = data.phases.map(function (ph, ci) {
+    return '<section class="kb-ros-phase' + (ph.external ? ' is-external' : '') + '">' +
+      '<h3 class="kb-ros-phase-name">' + (ph.name || 'Feeds in') + '</h3>' +
+      '<div class="kb-ros-fnodes">' +
+        ph.nodes.map(function (n, ri) { return nodeHtml(n, ri, ci); }).join('') +
+      '</div></section>';
+  }).join('');
+
+  // The connector layer is drawn AFTER layout, by measuring the boxes CSS has
+  // already placed — so the diagram cannot disagree with what is on screen,
+  // and no layout engine is needed.
+  // A step naming a node no phase declares would just VANISH from the diagram,
+  // which would look complete while missing a connection — the reassuring
+  // failure this codebase names (INV-187). Say so instead.
+  var declared = {};
+  data.phases.forEach(function (ph) { ph.nodes.forEach(function (n) { declared[kbRosterKey_(n.name)] = 1; }); });
+  var seenD = {}, uniqD = [];
+  data.steps.forEach(function (st) {
+    [st.from, st.to].forEach(function (x) {
+      var k = kbRosterKey_(x);
+      if (!declared[k] && !seenD[k]) { seenD[k] = 1; uniqD.push(x); }
+    });
+  });
+
+  return '<div class="kb-ros-proc" data-proc="1">' +
+    '<div class="kb-ros-note">Nodes naming a team open to show its people. ' +
+      'Routes are labelled on the node they leave.</div>' +
+    (uniqD.length
+      ? '<div class="kb-ros-warn" role="alert">' + uniqD.length + ' step(s) name a node no phase declares, ' +
+        'so those connections are not drawn: ' + uniqD.join(', ') + '.</div>'
+      : '') +
+    '<div class="kb-ros-procwrap">' +
+      '<svg class="kb-ros-edges" aria-hidden="true"></svg>' +
+      '<div class="kb-ros-phases">' + cols + '</div>' +
+    '</div></div>';
+}
+
+/** PURE: decides what KIND of connector an edge needs, given the two boxes'
+ *  geometry and their column/row positions. Extracted because every drawing
+ *  bug so far lived in this decision rather than in the path arithmetic —
+ *  same-column steps misread as loop-backs, skips drawn as steps, upward
+ *  edges pointing at the source — and none of it was testable while it sat
+ *  inside a function that needs a real browser layout.
+ *    kind: 'step' | 'skip' | 'phaseSkip' | 'forward' | 'back'
+ *    down: true when the target sits below the source (same column only) */
+function kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal) {
+  // Classify by LEFT edges: a sibling stacked in the same column always sits
+  // left of its parent's RIGHT edge, so a right-vs-left test calls every
+  // vertical step a loop-back.
+  var sameCol = Math.abs(rb.left - ra.left) < 8;
+  if (sameCol) {
+    return {
+      kind: Math.abs(rowB - rowA) === 1 ? 'step' : 'skip',
+      down: rowB > rowA,
+      lane: reciprocal ? (rowB > rowA ? -7 : 7) : 0,
+    };
+  }
+  if (rb.left < ra.left - 8) return { kind: 'back', down: true, lane: 0 };
+  return { kind: (colB - colA) > 1 ? 'phaseSkip' : 'forward', down: true, lane: 0 };
+}
+
+/** Draws the edges by MEASURING the laid-out boxes. Runs after render, on
+ *  resize, and after any expand/collapse, because opening a node moves every
+ *  box below it. */
+function kbRosterDrawEdges_(root) {
+  if (!root) return;
+  var proc = root.querySelector('.kb-ros-proc');
+  var svg = proc && proc.querySelector('.kb-ros-edges');
+  var wrap = proc && proc.querySelector('.kb-ros-procwrap');
+  if (!svg || !wrap) return;
+  var data = kbRosterData_(root);
+  var box = wrap.getBoundingClientRect();
+  svg.setAttribute('width', wrap.scrollWidth);
+  svg.setAttribute('height', wrap.scrollHeight);
+  svg.setAttribute('viewBox', '0 0 ' + wrap.scrollWidth + ' ' + wrap.scrollHeight);
+  // A CSS attribute selector matches the DECODED attribute value, while the
+  // key comes from the (escaped) parse — decode it or a node whose name
+  // carries & < > is never found and its edges silently vanish.
+  var find = function (name) {
+    return proc.querySelector('[data-node="' + kbFenceDecode_(kbRosterKey_(name)).replace(/"/g, '') + '"]');
+  };
+  // A RECIPROCAL pair (A→B and B→A, e.g. an appointment bouncing between two
+  // stages) would draw two opposite arrows on the same line, overlapping into
+  // one ambiguous stroke. Offset each side so both remain readable.
+  var pairKey = {};
+  data.steps.forEach(function (st) { pairKey[kbRosterKey_(st.from) + '\u0000' + kbRosterKey_(st.to)] = 1; });
+  var parts = [];
+  data.steps.forEach(function (st) {
+    var a = find(st.from), b = find(st.to);
+    if (!a || !b) return;                      // a step naming an undeclared node
+    var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    var ax = ra.right - box.left + wrap.scrollLeft, ay = ra.top - box.top + ra.height / 2 + wrap.scrollTop;
+    var bx = rb.left - box.left + wrap.scrollLeft, by = rb.top - box.top + rb.height / 2 + wrap.scrollTop;
+    // Classify by the boxes' LEFT edges, not source-right vs target-left: two
+    // nodes stacked in the SAME column always have target-left < source-right,
+    // so that test called every vertical step a loop-back (8 of 14 here).
+    var colA = +(a.getAttribute('data-col') || 0), colB = +(b.getAttribute('data-col') || 0);
+    var rowA = +(a.getAttribute('data-row') || 0), rowB = +(b.getAttribute('data-row') || 0);
+    var reciprocal = !!pairKey[kbRosterKey_(st.to) + '\u0000' + kbRosterKey_(st.from)];
+    var k = kbRosterEdgeKind_(ra, rb, colA, colB, rowA, rowB, reciprocal);
+    var sameCol = k.kind === 'step' || k.kind === 'skip';
+    var back = k.kind === 'back';
+    var skip = k.kind === 'phaseSkip';
+    var d, cls = '';
+    if (sameCol) {
+      var cx = ra.left - box.left + ra.width / 2 + wrap.scrollLeft + k.lane;
+      var aTop = ra.top - box.top + wrap.scrollTop, aBot = ra.bottom - box.top + wrap.scrollTop;
+      var bTop = rb.top - box.top + wrap.scrollTop, bBot = rb.bottom - box.top + wrap.scrollTop;
+      var down = k.down;
+      if (k.kind === 'step') {
+        // Adjacent siblings: a straight vertical. Drawn source→target so the
+        // arrowhead lands on the TARGET even when the edge runs upward — it
+        // previously always ended at the topmost box, pointing at the source.
+        d = down ? ('M' + cx + ',' + aBot + ' L' + cx + ',' + bTop)
+                 : ('M' + cx + ',' + aTop + ' L' + cx + ',' + bBot);
+      } else {
+        // A SKIP within the column — it passes a node it does not visit, so it
+        // arcs around the side. Drawn as a straight vertical it was
+        // indistinguishable from the step-by-step chain, which is what made
+        // "PAR → Approval" read as "you must pass through Appeals".
+        var sx = ra.right - box.left + wrap.scrollLeft + 12;
+        var y1 = aTop + ra.height / 2, y2 = bTop + rb.height / 2;
+        d = 'M' + (ra.right - box.left + wrap.scrollLeft) + ',' + y1 +
+            ' C' + sx + ',' + y1 + ' ' + sx + ',' + y2 + ' ' + (rb.right - box.left + wrap.scrollLeft) + ',' + y2;
+        cls = ' is-skip';
+      }
+    } else if (skip) {
+      // Bypasses an entire phase (an order entering past the first stage), so
+      // it arcs ABOVE the columns rather than threading between the boxes it
+      // does not touch.
+      var top2 = Math.min(ra.top, rb.top) - box.top + wrap.scrollTop - 16;
+      var axm = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var bxm = rb.left - box.left + rb.width / 2 + wrap.scrollLeft;
+      d = 'M' + axm + ',' + (ra.top - box.top + wrap.scrollTop) +
+          ' C' + axm + ',' + top2 + ' ' + bxm + ',' + top2 + ' ' + bxm + ',' + (rb.top - box.top + wrap.scrollTop);
+      cls = ' is-skip';
+    } else if (back) {
+      // Route a back-edge UNDER both boxes so it cannot be mistaken for a
+      // forward step.
+      var ay2 = ra.bottom - box.top + wrap.scrollTop, by2 = rb.bottom - box.top + wrap.scrollTop;
+      var low = Math.max(ay2, by2) + 14;
+      var axc = ra.left - box.left + ra.width / 2 + wrap.scrollLeft;
+      var bxc = rb.left - box.left + rb.width / 2 + wrap.scrollLeft;
+      d = 'M' + axc + ',' + ay2 + ' L' + axc + ',' + low + ' L' + bxc + ',' + low + ' L' + bxc + ',' + by2;
+    } else {
+      var mid = ax + (bx - ax) / 2;
+      d = 'M' + ax + ',' + ay + ' C' + mid + ',' + ay + ' ' + mid + ',' + by + ' ' + bx + ',' + by;
+    }
+    parts.push('<path d="' + d + '" class="kb-ros-edge' + (back ? ' is-back' : '') + cls + '" marker-end="url(#kb-ros-arrow)"/>');
+  });
+  svg.innerHTML =
+    '<defs><marker id="kb-ros-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">' +
+      '<path d="M0,0 L8,4 L0,8 z"/></marker></defs>' + parts.join('');
+}
+
+function kbRosterBodyHtml_(data, mode) {
+  if (mode === 'capabilities') return kbRosterCapabilitiesHtml_(data);
+  if (mode === 'coverage') return kbRosterCoverageHtml_(data);
+  if (mode === 'chart') return kbRosterChartHtml_(data);
+  if (mode === 'flow') return kbRosterFlowHtml_(data);
+  return kbRosterTeamsHtml_(data);
+}
+
+function kbRosterModeBtn_(mode, key, label) {
+  var on = mode === key;
+  return '<button type="button" class="kb-ros-mode' + (on ? ' on' : '') + '" role="tab" aria-selected="' + on + '"' +
+    ' data-mode="' + key + '" onclick="kbRosterSetMode_(this)">' + label + '</button>';
+}
+
+function kbRosterHtml_(text) {
+  var data = kbRosterParse_(text);
+  var mode = 'teams';
+  var total = kbRosterPeopleIndex_(data).order.length;
+  var legendHtml = Object.keys(data.legend).length
+    ? '<div class="kb-ros-legend">' + Object.keys(data.legend).map(function (k) {
+        return '<span class="kb-ros-legend-item"><b>' + k + '</b> ' + data.legend[k] + '</span>';
+      }).join('') + '</div>'
+    : '';
+  // The SOURCE rides on the root so a mode switch can re-render from the same
+  // parsed data without re-running kbMd_ over the whole article.
+  return '<div class="kb-roster" data-roster="1" data-mode="' + mode + '" data-src="' + kbRosterAttr_(text) + '">' +
+    '<div class="kb-ros-bar">' +
+      '<input type="search" class="kb-ros-search" placeholder="Filter by team, person or tag…" ' +
+        'aria-label="Filter the roster by team, person or tag" oninput="kbRosterFilter_(this)">' +
+      '<span class="kb-ros-count" role="status" aria-live="polite">' + total + ' people</span>' +
+      '<button type="button" class="kb-ros-expand" onclick="kbRosterExpand_(this)" ' +
+        'title="Open this roster full screen">Expand</button>' +
+      '<span class="kb-ros-modes" role="tablist" aria-label="Roster view">' +
+        kbRosterModeBtn_(mode, 'teams', 'Teams') +
+        kbRosterModeBtn_(mode, 'capabilities', 'Capabilities') +
+        kbRosterModeBtn_(mode, 'chart', 'Chart') +
+        (data.phases.length ? kbRosterModeBtn_(mode, 'flow', 'Flow') : '') +
+        kbRosterModeBtn_(mode, 'coverage', 'Coverage') +
+      '</span>' +
+    '</div>' + legendHtml +
+    '<div class="kb-ros-panel" hidden></div>' +
+    '<div class="kb-ros-body">' + kbRosterBodyHtml_(data, mode) + '</div>' +
+    (data.warnings.length
+      ? '<div class="kb-ros-warn">' + data.warnings.length + ' line(s) in this roster block were not understood and are not shown.</div>'
+      : '') +
+    '</div>';
+}
+
+/** The Reference reader is a height-capped panel inside a two-column shell, so
+ *  an interactive block ends up in a small window with its own nested
+ *  scrollbars. Rather than re-architect that shell (it is right for prose),
+ *  the block can open itself nearly full-viewport. The overlay hosts a FRESH
+ *  instance built from the same source, so it carries its own filter and view
+ *  state and closing it leaves the inline copy exactly as it was. */
+function kbRosterExpand_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var src = kbFenceSrc_(root);
+  // ensureOverlay (never a hand-rolled overlay — INV-83) so Escape, the focus
+  // trap and the focus-restore lifecycle all behave; onClose is idempotent.
+  var ov = ensureOverlay('kb-roster-overlay', {
+    label: 'Roster',
+    onClose: function () { var o = document.getElementById('kb-roster-overlay'); if (o) o.remove(); },
+  });
+  ov.innerHTML = '<div class="modal kb-roster-modal">' +
+    '<div class="kb-roster-modal-head">' +
+      '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-roster-overlay\'))">Close</button>' +
+    '</div>' + kbRosterHtml_(src) + '</div>';
+  // The expanded copy has no use for its own Expand button.
+  var dup = ov.querySelector('.kb-ros-expand');
+  if (dup) dup.remove();
+}
+
+function kbRosterRoot_(el) { return el && el.closest ? el.closest('.kb-roster') : null; }
+
+function kbRosterData_(root) {
+  // NOT "exactly what kbMd_ handed the renderer" — the DOM decodes EVERY
+  // entity on read, &lt; included. kbFenceSrc_ restores the escaped form.
+  return kbRosterParse_(kbFenceSrc_(root));
+}
+
+function kbRosterSetMode_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var mode = btn.getAttribute('data-mode') || 'teams';
+  root.setAttribute('data-mode', mode);
+  var btns = root.querySelectorAll('.kb-ros-mode');
+  for (var i = 0; i < btns.length; i++) {
+    var on = btns[i] === btn;
+    btns[i].classList.toggle('on', on);
+    btns[i].setAttribute('aria-selected', on ? 'true' : 'false');   // INV-174
+  }
+  var body = root.querySelector('.kb-ros-body');
+  if (body) body.innerHTML = kbRosterBodyHtml_(kbRosterData_(root), mode);
+  if (mode === 'flow') setTimeout(function () { kbRosterDrawEdges_(root); }, 0);
+  kbRosterClosePanel_(root);
+  var search = root.querySelector('.kb-ros-search');
+  if (search) kbRosterFilter_(search);      // a mode switch keeps the active filter
+  if (typeof animateListSwap_ === 'function') { try { animateListSwap_(body, '.kb-ros-team'); } catch (e) {} }
+}
+
+/** Clicking a person opens a detail panel rather than copying, because "where
+ *  else does this person work" is the question the grid cannot answer. Copy
+ *  moved INTO the panel so both actions stay one click from the name. */
+function kbRosterOpenPerson_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  // Re-escaped to match the index, which is keyed off the parsed source.
+  var name = kbFenceEsc_(btn.getAttribute('data-name') || '');
+  var idx = kbRosterPeopleIndex_(kbRosterData_(root));
+  var e = idx.byName[name.toLowerCase()];
+  var panel = root.querySelector('.kb-ros-panel');
+  if (!panel || !e) return;
+  var legend = kbRosterData_(root).legend;
+  var places = e.places.map(function (pl) {
+    return '<li>' + pl.team + (pl.sub ? ' <span class="kb-ros-sub">' + pl.sub + '</span>' : '') +
+      ' <span class="kb-ros-where">' + pl.dept + '</span></li>';
+  }).join('');
+  panel.innerHTML =
+    '<div class="kb-ros-panel-head">' +
+      '<b>' + e.name + '</b>' + kbRosterFlags_(e, legend) +
+      '<span class="kb-ros-panel-actions">' +
+        '<button type="button" class="kb-btn kb-ros-copy" data-name="' + kbRosterAttr_(e.name) + '" ' +
+          'onclick="kbRosterCopy_(this)">Copy name</button>' +
+        '<button type="button" class="kb-btn" onclick="kbRosterClosePanel_(this)" aria-label="Close details">Close</button>' +
+      '</span>' +
+    '</div>' +
+    (e.tags.length ? '<div class="kb-ros-panel-tags">' +
+      e.tags.map(function (t) { return kbRosterTagChip_(t, legend, true); }).join('') + '</div>' : '') +
+    '<div class="kb-ros-panel-where">On ' + e.places.length + ' team' + (e.places.length === 1 ? '' : 's') +
+      ':<ul>' + places + '</ul></div>';
+  panel.hidden = false;
+  panel.setAttribute('tabindex', '-1');
+  try { panel.focus(); } catch (err) {}
+}
+
+function kbRosterClosePanel_(elOrRoot) {
+  var root = (elOrRoot && elOrRoot.classList && elOrRoot.classList.contains('kb-roster'))
+    ? elOrRoot : kbRosterRoot_(elOrRoot);
+  var panel = root ? root.querySelector('.kb-ros-panel') : null;
+  if (!panel) return;
+  panel.hidden = true;
+  panel.innerHTML = '';
+}
+
+/** Clicking a tag asks "who else can do this" — it drives the same filter box
+ *  the rep would have typed into, so the two paths cannot diverge. */
+function kbRosterTagFilter_(btn) {
+  var root = kbRosterRoot_(btn);
+  if (!root) return;
+  var tag = btn.getAttribute('data-tag') || '';
+  var search = root.querySelector('.kb-ros-search');
+  if (!search) return;
+  // A `tag:` query matches the tag EXACTLY. A bare substring would be far too
+  // loose for the short tags this data uses: filtering on "C" also matches
+  // "Medical Review" and "Insurance Change" — 42 of 46 people.
+  var q = 'tag:' + tag;
+  search.value = (String(search.value || '').trim().toLowerCase() === q.toLowerCase()) ? '' : q;
+  kbRosterFilter_(search);
+  try { search.focus(); } catch (e) {}
+}
+
+/** Filters in place — hiding non-matching people, then teams and departments
+ *  left with nothing. No re-render, so the article around it is untouched. */
+function kbRosterFilter_(input) {
+  var root = kbRosterRoot_(input);
+  if (!root) return;
+  var q = String(input.value || '').trim().toLowerCase();
+  // The coverage view is an aggregate of the WHOLE roster; filtering it to a
+  // subset would report totals that quietly describe only part of the team.
+  var mode = root.getAttribute('data-mode');
+  // Every view that is NOT the dept/team grid must bypass the row-counting
+  // walk, or it reports 0. This is the third time a new view has hit it, so
+  // the condition is now "not the grid" rather than a list of view names.
+  if (mode && mode !== 'teams' && mode !== 'capabilities') {
+    var cnt0 = root.querySelector('.kb-ros-count');
+    if (cnt0) cnt0.textContent = q ? 'filter applies to Teams and Capabilities' : (kbRosterPeopleIndex_(kbRosterData_(root)).order.length + ' people');
+    return;
+  }
+  var shown = 0, seen = {};
+  var tm = q.match(/^tag:\s*(.+)$/);
+  var tagNeedle = tm ? '|' + tm[1].trim() + '|' : '';
+  var depts = root.querySelectorAll('.kb-ros-dept');
+  for (var d = 0; d < depts.length; d++) {
+    var deptName = depts[d].getAttribute('data-dept') || '';
+    var teams = depts[d].querySelectorAll('.kb-ros-team');
+    var deptHit = 0;
+    for (var t = 0; t < teams.length; t++) {
+      var teamName = teams[t].getAttribute('data-team') || '';
+      // A query matching the TEAM (or its department) keeps the whole team —
+      // "who is on PT Eval" is as common a question as "where is Sergio".
+      // In tag mode a TEAM never matches — only the people carrying the tag.
+      var teamMatch = tagNeedle ? false : (!q || teamName.indexOf(q) >= 0 || deptName.indexOf(q) >= 0);
+      var people = teams[t].querySelectorAll('.kb-ros-person');
+      var teamHit = 0;
+      for (var i = 0; i < people.length; i++) {
+        var hit = tagNeedle
+          ? (people[i].getAttribute('data-tags') || '').indexOf(tagNeedle) >= 0
+          : (teamMatch || (people[i].getAttribute('data-hay') || '').indexOf(q) >= 0);
+        people[i].style.display = hit ? '' : 'none';
+        if (hit) { teamHit++; seen[people[i].getAttribute('data-name') || ''] = 1; }
+      }
+      teams[t].style.display = teamHit ? '' : 'none';
+      deptHit += teamHit;
+      shown += teamHit;
+    }
+    depts[d].style.display = deptHit ? '' : 'none';
+  }
+  // Report DISTINCT people in every mode. This previously mixed units —
+  // distinct on first paint, visible ROWS after a filter or mode switch — so
+  // the capability view (a person appears once per tag) read "49 people" for a
+  // 46-person roster.
+  var n = 0;
+  for (var k in seen) { if (Object.prototype.hasOwnProperty.call(seen, k)) n++; }
+  var count = root.querySelector('.kb-ros-count');
+  if (count) count.textContent = n + (q ? ' matching' : ' people');
+}
+
+/** Click a name in the panel to copy it — the rep is usually about to type it
+ *  into the phone system or the CRM. */
+function kbRosterCopy_(btn) {
+  var name = btn && btn.getAttribute ? btn.getAttribute('data-name') : '';
+  if (!name) return;
+  // Was the worst of the six: the promise had NO rejection handler at all, and
+  // the button flashed "copied" on the next line regardless — so a denied
+  // clipboard left the rep typing the previous name into the phone system.
+  copyWithFeedback_(name, { ok: 'Copied ' + name, label: 'Name', el: btn });
+}
+
+function kbMd_(src) {
+  src = String(src == null ? '' : src).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  var blocks = [];
+  var hSeen = {};   // duplicate-heading id dedup - same -2/-3 walk as kbSplitSections_
+  // C17 batch-4: BLOCK fences only — the opening ``` must start a line and
+  // the closing ``` must sit alone on its line. The old any-occurrence regex
+  // also matched a MID-LINE pair of triple-backticks, stashing its content
+  // into a block whose sentinel token then sat mid-paragraph — and only
+  // WHOLE-LINE tokens are re-expanded below, so the content silently vanished
+  // and the paragraph rendered a stray "C0" glyph. An inline pair now stays
+  // literal (escaped) text: content preserved, nothing to re-expand.
+  src = src.replace(/(^|\n)[ \t]*```([^\n]*)\n([\s\S]*?)\n[ \t]*```(?=[ \t]*(?:\n|$))/g, function (_, lead, infoLine, code) {
+    // A `snippet` info-string (```snippet  or  ```snippet: Label) renders a
+    // copy-to-clipboard "canned response" card (#6); any other fence stays a
+    // <pre><code> block (unchanged, incl. the LEGACY body shape — info line +
+    // trailing newline — so existing articles render byte-identically). The
+    // captured content is already HTML-escaped (the top-level escape ran
+    // first), so both paths are inert.
+    var info = infoLine.trim();
+    var sm = info.match(/^snippet\b\s*:?\s*(.*)$/i);
+    // A `roster` fence renders the interactive directory (operator 2026-08-11);
+    // same safety argument as snippet — the content is already escaped, so the
+    // app draws interactive markup around inert text.
+    var rm = info.match(/^roster\b/i);
+    var gm = info.match(/^glossary\b/i);
+    var dm = info.match(/^decision\b/i);
+    var mm = info.match(/^map\b/i);
+    var dg = info.match(/^diagram\b\s*(\S*)/i);
+    var gl = info.match(/^gallery\b\s*(.*)$/i);
+    if (sm) blocks.push({ snippet: true, label: sm[1].trim(), body: code });
+    else if (rm) blocks.push({ roster: true, body: code });
+    else if (gm) blocks.push({ glossary: true, body: code });
+    else if (dm) blocks.push({ decision: true, body: code });
+    else if (mm) blocks.push({ map: true, body: code });
+    else if (dg) blocks.push({ diagram: true, name: dg[1], body: code });
+    else if (gl) blocks.push({ gallery: true, label: gl[1].trim(), body: code });
+    else blocks.push({ snippet: false, body: infoLine + '\n' + code + '\n' });
+    return lead + '\u0000C' + (blocks.length - 1) + '\u0000'; });
+  function inline(t) {
+    // Emphasis / inline-code, factored out so it can run on link TEXT at
+    // generation time (below) while the generated <a>/<img> MARKUP is stashed
+    // past the outer pass (F cycle-8). Previously these ran over the whole
+    // string AFTER link/image generation, so a URL containing ** or a backtick
+    // (e.g. [x](https://h/a**b**c)) got <strong>/<code> injected INSIDE the
+    // href/src attribute → a broken link. Link text keeps its emphasis; the URL
+    // is protected. (Inert regardless — quotes are percent-encoded — but this
+    // renders correctly.)
+    function emph(x) {
+      x = x.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      x = x.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
+      x = x.replace(/`([^`]+)`/g, '<code>$1</code>');
+      return x;
+    }
+    var stash = [];
+    function keep(html) { stash.push(html); return '\u0000L' + (stash.length - 1) + '\u0000'; }
+    // Images BEFORE links (otherwise the link rule renders the [alt](url)
+    // part as an anchor with a stray "!"). http(s) only - no mailto for an
+    // img src. Quotes are percent-encoded in the URL and entity-escaped in
+    // the alt: the top-level escape covers &/</> but NOT quotes, so either
+    // attribute could otherwise be broken out of (same guard as link href).
+    // alt is an attribute → NO emphasis; the whole element is stashed.
+    t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (m, alt, url) {
+      // A converter image token (Phase 2b) has no fetchable URL until Save
+      // exports the blob to Drive — the editor preview used to render its
+      // bare alt text, which read as "the images are missing" (operator
+      // 2026-08-27). Render a visible pending chip instead. Inert by
+      // construction: alt is already top-level-escaped and lands in element
+      // CONTENT (no attribute), and no URL is emitted at all.
+      if (/^kbdoc:/i.test(url)) {
+        return keep('<span class="kb-img-pending">' + (alt || 'Doc image') +
+          ' \u2014 appears after Save</span>');
+      }
+      // DRV-3 (cycle 23 Batch 12): an article image stored in the KbImages tab.
+      // The manual-image shape exactly: a keyed chip the hydrator
+      // (kbHydrateKbImages_) swaps for the image, by property, from a data URL.
+      // Only the key charset reaches the attribute.
+      if (/^kbimg:/i.test(url)) {
+        var ik = url.match(/^kbimg:(kbimg-[a-f0-9]{24})$/);
+        return keep('<span class="kb-img-pending' + (ik ? ' kb-kbimg" data-kbimg="' + ik[1] : '') + '" title="Article image">' +
+          (alt || 'Image') + '</span>');
+      }
+      // A manual image: its alt text as a chip, keyed so the hydrator
+      // (kbHydrateManualImages_, Batch M3) can swap in the image the import
+      // put on Drive. Only the key charset reaches the attribute; no URL is
+      // emitted here at all — the image arrives as a data URL, by property.
+      if (/^manimg:/i.test(url)) {
+        var mk = url.match(/^manimg:((?:icon|thumb|fig)-[a-z0-9-]{1,80})$/);
+        return keep('<span class="kb-img-pending' + (mk ? ' kb-manimg" data-manimg="' + mk[1] : '') + '" title="Handbook image">' +
+          (alt || 'Handbook image') + '</span>');
+      }
+      if (!/^https?:/i.test(url)) return alt;
+      url = url.replace(/"/g, '%22').replace(/'/g, '%27');
+      alt = alt.replace(/"/g, '&quot;');
+      return keep('<a href="' + url + '" target="_blank" rel="noopener" class="kb-img-lnk">' +
+        '<img src="' + url + '" alt="' + alt + '" loading="lazy"></a>');
+    });
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, txt, url) {
+      // Batch M2 — a manual cross-reference (`kb:man-5-9#5.9.2`) becomes a
+      // real link: the id and anchor charsets are restricted, so only these
+      // characters can reach the attributes, and a delegated handler opens it.
+      var km = url.match(/^kb:([a-z0-9-]{1,80})(?:#([0-9A-Za-z.]{1,20}))?$/);
+      if (km) return keep('<a href="#" class="kb-xref" data-kb-id="' + km[1] + '" data-kb-anchor="' + (km[2] || '') + '">' + emph(txt) + '</a>');
+      // 25post — `lookup:insurance` / `lookup:price` opens that lookup in the
+      // Ctrl/⌘+K drawer (the handbook's link to the payor sheet, in the app).
+      // Only the two names reach the attribute; a delegated handler opens it.
+      var lk = url.match(/^lookup:(insurance|price)$/);
+      if (lk) return keep('<a href="#" class="kb-lookup" data-kb-lookup="' + lk[1] + '" title="Opens the ' + (lk[1] === 'insurance' ? 'insurance' : 'price') + ' lookup beside the call">' + emph(txt) + '</a>');
+      // 25post (operator 2026-10-23) — `peek:fig-…`: a button the handbook
+      // names shows its locator screenshot on hover, focus or a tap
+      // (kbPeekShow_). Only the manual-image key charset reaches the attribute.
+      var pk = url.match(/^peek:(fig-[a-z0-9-]{1,80})$/);
+      if (pk) return keep('<span class="kb-peek" tabindex="0" data-peek="' + pk[1] + '" aria-describedby="kb-peek-pop">' + emph(txt) + '</span>');
+      if (!/^(https?:|mailto:)/i.test(url)) return txt;
+      // The top-level escape covers &, <, > but NOT quotes — a `"` in the URL
+      // would otherwise break out of the href attribute (attribute injection,
+      // e.g. an onmouseover handler). Percent-encode both quote characters.
+      url = url.replace(/"/g, '%22').replace(/'/g, '%27');
+      return keep('<a href="' + url + '" target="_blank" rel="noopener">' + emph(txt) + '</a>');
+    });
+    t = emph(t);
+    // Restore the stashed link/image markup (the emphasis pass above can no
+    // longer reach inside its attributes).
+    t = t.replace(/\u0000L(\d+)\u0000/g, function (_, n) { return stash[+n]; });
+    return t;
+  }
+  // Split a GFM table row into cells. \| escapes a literal pipe inside a
+  // cell (the Doc converter emits that); \u0001 can't appear in the escaped
+  // source, so it's a safe sentinel.
+  var LIST_ITEM_RE = /^(\s*)([-*]|\d+\.)\s+(.*)$/;
+  var QUOTE_RE = /^\s*&gt; ?/;
+  function tableCells(row) {
+    row = row.replace(/\\\|/g, '\u0001').trim().replace(/^\|/, '').replace(/\|$/, '');
+    return row.split('|').map(function (c) { return c.replace(/\u0001/g, '|').trim(); });
+  }
+  // The block pass is a function of LINES so a blockquote can hand its own
+  // lines back to it (Batch M1): a callout holds paragraphs, tables and lists,
+  // and everything inside it is drawn by the same rules from the same
+  // already-escaped text — nothing is re-escaped and nothing is unescaped.
+  function blocksHtml(lines) {
+  var html = '', i = 0;
+  while (i < lines.length) {
+    var ln = lines[i];
+    var cm = ln.trim().match(/^\u0000C(\d+)\u0000$/);
+    if (cm) { var blk = blocks[+cm[1]]; if (blk && blk.roster) { html += kbRosterHtml_(blk.body); i++; continue; }
+      if (blk && blk.glossary) { html += kbGlossaryHtml_(blk.body); i++; continue; }
+      if (blk && blk.decision) { html += kbDecideHtml_(blk.body, []); i++; continue; }
+      if (blk && blk.map) { html += kbMapHtml_(blk.body); i++; continue; }
+      if (blk && blk.diagram) { html += kbDiagramHtml_(blk.name, blk.body); i++; continue; }
+      if (blk && blk.gallery) { html += kbGalleryHtml_(blk.label, blk.body, inline); i++; continue; }
+      if (blk && blk.snippet) { html += '<div class="kb-snippet"><div class="kb-snippet-head"><span class="kb-snippet-label">' + (blk.label || 'Snippet') + '</span><button type="button" class="kb-snippet-copy" onclick="kbCopySnippet_(this)">Copy</button></div><pre class="kb-snippet-body">' + blk.body + '</pre></div>'; } else { html += '<pre><code>' + (blk ? blk.body : '') + '</code></pre>'; } i++; continue; }
+    if (/^\s*$/.test(ln)) { i++; continue; }
+    var h = ln.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      var lvl = h[1].length;
+      var hid = kbSlug_(h[2]);
+      if (hid) { hSeen[hid] = (hSeen[hid] || 0) + 1; if (hSeen[hid] > 1) hid += '-' + hSeen[hid]; }
+      html += '<h' + lvl + (hid ? ' id="kb-h-' + hid + '"' : '') + '>' + inline(h[2]) + '</h' + lvl + '>';
+      i++; continue;
+    }
+    // GFM table: a |-prefixed header line followed by a |---|:---:| separator
+    // line (dashes/colons/pipes/spaces only, at least one dash). Body rows
+    // clamp to the header's column count.
+    if (/^\s*\|/.test(ln) && i + 1 < lines.length &&
+        /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+      var headCells = tableCells(ln);
+      var aligns = tableCells(lines[i + 1]).map(function (sep) {
+        var al = /^:/.test(sep), ar = /:$/.test(sep);
+        return al && ar ? 'center' : (ar ? 'right' : (al ? 'left' : ''));
+      });
+      // The manual's conventions (Phase 1): a first header "Step" is a step table;
+      // a header opening with \u2713 / \u2717 tints its column. The header text is
+      // already escaped and neither glyph is touched by the escape.
+      var tone = headCells.map(function (c) { return /^\u2713/.test(c) ? 'kb-do' : (/^\u2717/.test(c) ? 'kb-dont' : ''); });
+      // A step table whose steps are NAMED ("Referral", "Open") rather than
+      // numbered draws them as centred labels: a word does not fit the number's
+      // circle, so the circle drew across it (operator 2026-10-19).
+      var stepTbl = /^step$/i.test(headCells[0] || ''), stepNamed = false;
+      for (var sj = i + 2; stepTbl && sj < lines.length && /^\s*\|/.test(lines[sj]); sj++) {
+        if (!/^\s*\d+[a-z]?\.?\s*$/i.test(tableCells(lines[sj])[0] || '')) { stepNamed = true; break; }
+      }
+      var tcls = (stepTbl ? ['kb-steps'].concat(stepNamed ? ['kb-steps-named'] : []) : [])
+        .concat(tone.some(function (t) { return t; }) ? ['kb-dodont'] : []);
+      var tbl = '<table' + (tcls.length ? ' class="' + tcls.join(' ') + '"' : '') + '><thead><tr>';
+      headCells.forEach(function (c, ci) {
+        tbl += '<th' + (tone[ci] ? ' class="' + tone[ci] + '"' : '') + (aligns[ci] ? ' style="text-align:' + aligns[ci] + '"' : '') + '>' + inline(c) + '</th>';
+      });
+      tbl += '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        var cells = tableCells(lines[i]);
+        tbl += '<tr>';
+        for (var ci2 = 0; ci2 < headCells.length; ci2++) {
+          // A step cell that is a word, not a number, is a label (no circle) — per ROW,
+          // so a numbered table that ends on "Turnaround" keeps its numbers' circles.
+          var tdCls = (tone[ci2] || '') + (stepNamed && ci2 === 0 && !/^\s*\d+[a-z]?\.?\s*$/i.test(cells[0] || '') ? (tone[ci2] ? ' ' : '') + 'kb-step-name' : '');
+          tbl += '<td' + (tdCls ? ' class="' + tdCls + '"' : '') + (aligns[ci2] ? ' style="text-align:' + aligns[ci2] + '"' : '') + '>' +
+            inline(cells[ci2] == null ? '' : cells[ci2]) + '</td>';
+        }
+        tbl += '</tr>';
+        i++;
+      }
+      tbl += '</tbody></table>';
+      html += tbl;
+      continue;
+    }
+    if (LIST_ITEM_RE.test(ln)) { var lst = listHtml(lines, i); html += lst.html; i = lst.next; continue; }
+    // Blockquote. The source was escaped before this pass, so the marker is
+    // `&gt;` — the old test looked for a literal ">" that can no longer exist,
+    // and every quote rendered as a paragraph starting "&gt;" (found by the
+    // manual import, Batch M1). A quote whose first line opens with a bold
+    // label is a CALLOUT, styled by that label.
+    if (QUOTE_RE.test(ln)) {
+      var inner = [];
+      while (i < lines.length && QUOTE_RE.test(lines[i])) { inner.push(lines[i].replace(QUOTE_RE, '')); i++; }
+      var kind = kbCalloutKind_(inner[0]);
+      html += '<blockquote' + (kind ? ' class="kb-callout kb-callout-' + kind + '"' : '') + '>' + blocksHtml(inner) + '</blockquote>';
+      continue;
+    }
+    if (/^\s*(---|\*\*\*|___)\s*$/.test(ln)) { html += '<hr>'; i++; continue; }
+    var para = ln; i++;
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !LIST_ITEM_RE.test(lines[i]) && !QUOTE_RE.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\u0000C\d+\u0000$/.test(lines[i].trim())) { para += ' ' + lines[i]; i++; }
+    html += '<p>' + inline(para) + '</p>';
+  }
+  return html;
+  }
+  // Lists (Batch M1): an item indented deeper than the one above it opens a
+  // NESTED list inside that item; an indented line that is not an item
+  // CONTINUES the item above (the manual wraps long items that way); an
+  // ordered list keeps its first number (`3.` after a callout reads 3, not 1).
+  // A blank line, or anything else unindented, ends the list.
+  function listHtml(lines, from) {
+    var items = [], j = from;
+    while (j < lines.length) {
+      var m = lines[j].match(LIST_ITEM_RE);
+      if (m) {
+        items.push({ indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), num: parseInt(m[2], 10), text: m[3] });
+        j++; continue;
+      }
+      if (items.length && /^\s{2,}\S/.test(lines[j]) && !QUOTE_RE.test(lines[j])) {
+        items[items.length - 1].text += ' ' + lines[j].trim();
+        j++; continue;
+      }
+      break;
+    }
+    var pos = 0;
+    function level(indent, ordered) {
+      var startAt = items[pos].num;
+      var out = ordered ? '<ol' + (startAt > 1 ? ' start="' + startAt + '"' : '') + '>' : '<ul>';
+      while (pos < items.length && items[pos].indent >= indent) {
+        var it = items[pos];
+        if (it.indent > indent) { out += level(it.indent, it.ordered); continue; }
+        if (it.ordered !== ordered) break;           // a marker change starts a new list
+        pos++;
+        out += '<li>' + inline(it.text);
+        if (pos < items.length && items[pos].indent > indent) out += level(items[pos].indent, items[pos].ordered);
+        out += '</li>';
+      }
+      return out + (ordered ? '</ol>' : '</ul>');
+    }
+    var html = '';
+    while (pos < items.length) {
+      var base = items[pos].indent;
+      // items shallower than the first one start their own top-level list
+      html += level(base, items[pos].ordered);
+    }
+    return { html: html, next: j };
+  }
+  return blocksHtml(src.split(/\r?\n/));
+}
+
+// A callout's kind, from the bold label its first line opens with (the
+// manual's five: Critical, Policy, Watch-out, Script, Note). Any OTHER bold
+// opener ("Short version", "Rule of thumb") reads as a Note; a quote with no
+// bold opener is a plain quote (''). Input is the escaped line.
+var KB_CALLOUT_KINDS = { critical: 'critical', policy: 'policy', 'watch-out': 'watch-out', script: 'script', note: 'note' };
+function kbCalloutKind_(line) {
+  var m = String(line || '').match(/^\s*\*\*([^*]+)\*\*/);
+  if (!m) return '';
+  var word = m[1].trim().split(/\s*[—–.:]\s*|\s+-\s+/)[0].trim().toLowerCase();
+  return KB_CALLOUT_KINDS[word] || 'note';
+}
+
+// A ```gallery fence (the manual export — a tutorial slideshow, operator
+// 2026-10-19): one slide per line, `![alt](manimg:key) caption`, shown one at a
+// time with Previous / Next, a counter and a dot per slide; ← and → step when
+// the gallery has focus, and it wraps at either end. Every slide is in the
+// markup — a slide not on screen is only CLASSED off (kb-gal-off, never the
+// hidden attribute, g73) — so the image hydrator fills them all, search reads
+// every caption, and a printout shows every slide (the print block's rule 7).
+// The body is already escaped by kbMd_; a line that is not an image is dropped,
+// and the image itself goes through inline()'s own manimg chip, so the key
+// charset is the only thing that reaches an attribute.
+// A line indented two or more spaces under a slide is that slide's DETAILS
+// (operator 2026-10-28) — "- " a bullet, anything else a paragraph — folded
+// under "Show details" below the image, and printed in full (rule 7).
+var KB_GAL_NOTE_SEQ = 0;
+function kbGalNotesHtml_(notes, inline) {
+  if (!notes.length) return '';
+  var out = '', items = [];
+  var flush = function () { if (items.length) { out += '<ul>' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>'; items = []; } };
+  notes.forEach(function (t) {
+    var b = /^-\s+(.*)$/.exec(t);
+    if (b) { items.push(inline(b[1])); return; }
+    flush();
+    out += '<p>' + inline(t) + '</p>';
+  });
+  flush();
+  var id = 'kb-gal-notes-' + (++KB_GAL_NOTE_SEQ);
+  return '<button type="button" class="kb-gal-more" aria-expanded="false" aria-controls="' + id + '" onclick="kbGalleryNotes_(this)">Show details</button>' +
+    '<div class="kb-gal-notes kb-gal-notes-off" id="' + id + '">' + out + '</div>';
+}
+function kbGalleryNotes_(btn) {
+  var box = btn && document.getElementById(btn.getAttribute('aria-controls') || '');
+  if (!box) return;
+  var shut = box.classList.toggle('kb-gal-notes-off');
+  btn.setAttribute('aria-expanded', shut ? 'false' : 'true');
+  btn.textContent = shut ? 'Show details' : 'Hide details';
+}
+function kbGalleryHtml_(label, body, inline) {
+  var slides = [];
+  String(body || '').split('\n').forEach(function (ln) {
+    var m = /^\s*(!\[[^\]]*\]\(manimg:(?:icon|thumb|fig)-[a-z0-9-]{1,80}\))\s*(.*)$/.exec(ln);
+    if (m) { slides.push({ img: inline(m[1]), cap: inline(m[2].trim()), notes: [] }); return; }
+    var nt = /^ {2,}(\S.*)$/.exec(ln);
+    if (nt && slides.length) slides[slides.length - 1].notes.push(nt[1].trim());
+  });
+  if (!slides.length) return '';
+  var n = slides.length, name = String(label || '').trim() || 'Slideshow';
+  var dots = '';
+  for (var d = 0; d < n; d++) {
+    dots += '<button type="button" class="kb-gal-dot' + (d ? '' : ' on') + '" onclick="kbGalleryGo_(this,' + d + ')" aria-label="Slide ' + (d + 1) + ' of ' + n + '"' + (d ? '' : ' aria-current="true"') + '></button>';
+  }
+  return '<figure class="kb-gallery" data-i="0" data-n="' + n + '" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="' + name.replace(/"/g, '&quot;') + '" onkeydown="kbGalleryKey_(event)">' +
+    '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-live="polite">1 / ' + n + '</span></div>' +
+    slides.map(function (sl, k) {
+      return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') +
+        kbGalNotesHtml_(sl.notes, inline) + '</div>';
+    }).join('') +
+    (n > 1 ? '<div class="kb-gal-nav"><button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,-1)" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
+      '<span class="kb-gal-dots">' + dots + '</span>' +
+      '<button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,1)" aria-label="Next slide">' + icon('chevronRight', 14) + '</button></div>' : '') +
+    '</figure>';
+}
+/** Show slide i of the gallery `el` sits in (wrapping), and say so. */
+function kbGalleryGo_(el, i) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (!fig) return;
+  var slides = fig.querySelectorAll('.kb-gal-slide'), n = slides.length;
+  if (!n) return;
+  i = ((Number(i) || 0) % n + n) % n;
+  for (var k = 0; k < n; k++) slides[k].classList.toggle('kb-gal-off', k !== i);
+  fig.querySelectorAll('.kb-gal-dot').forEach(function (b, k) {
+    b.classList.toggle('on', k === i);
+    if (k === i) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  });
+  var c = fig.querySelector('.kb-gal-count');
+  if (c) c.textContent = (i + 1) + ' / ' + n;
+  fig.setAttribute('data-i', String(i));
+}
+function kbGalleryStep_(el, d) {
+  var fig = el && el.closest ? el.closest('.kb-gallery') : null;
+  if (fig) kbGalleryGo_(fig, (Number(fig.getAttribute('data-i')) || 0) + d);
+}
+function kbGalleryKey_(e) {
+  if (!e || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  var fig = e.target && e.target.closest ? e.target.closest('.kb-gallery') : null;
+  if (!fig) return;
+  e.preventDefault();
+  kbGalleryStep_(fig, e.key === 'ArrowLeft' ? -1 : 1);
+}
+// A ```diagram fence (the manual export). Batch M3: a name the generated
+// partial knows (KB_MANUAL_DIAGRAMS, kb/script_manual_diagrams.html) draws that
+// diagram. The partial is CODE — allowlisted and pinned at build time — so the
+// SVG is inserted as it is; the article body supplies only the NAME, which must
+// match the partial's own key charset and be one of its OWN keys (never a
+// prototype property). An unknown name — a diagram added to the manual but
+// not yet deployed — stays the quiet pending figure. `body` is the diagram's
+// accessible name, already escaped by kbMd_.
+function kbDiagramHtml_(name, body) {
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  var key = String(name || '');
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key) || typeof reg[key] !== 'string') {
+    return kbDiagramPendingHtml_(name, body);
+  }
+  var label = String(body || '').trim() || key;
+  return '<figure class="kb-diagram" data-kb-diagram="' + key + '">' +
+    '<div class="kb-diagram-bar"><button type="button" class="kb-diagram-full" onclick="kbDiagramOpen_(this)" title="Open the diagram at full size">' + icon('popOut', 12) + ' Full size</button></div>' +
+    '<div class="kb-diagram-scroll" tabindex="0" aria-label="' + label.replace(/"/g, '&quot;') + '">' + kbDiagramScopeIds_(reg[key], kbDiagramSeq_()) + '</div></figure>';
+}
+/** Phase 8 (M14) — one diagram can be drawn twice on a page (a chapter's card
+ *  in its masthead and the section it comes from; Full size), and its arrowhead
+ *  MARKERS are found by id. Chromium resolves `url(#id)` to the FIRST element
+ *  with that id, and draws nothing for a marker inside a hidden subtree
+ *  (measured, 2026-10-09) — so a collapsed card, or a section printed alone
+ *  while the card is not, took the arrowheads off the other copy. Pure
+ *  (Node-pinned): every real `id` and every `url(#…)` gets the copy's own
+ *  suffix. `data-kb-id` (a cross-reference) is not an id and is untouched. */
+function kbDiagramScopeIds_(svg, n) {
+  var sfx = '-d' + n;
+  return String(svg == null ? '' : svg)
+    .replace(/(\s)id="([A-Za-z][\w-]*)"/g, function (m, sp, id) { return sp + 'id="' + id + sfx + '"'; })
+    .replace(/url\(#([A-Za-z][\w-]*)\)/g, function (m, id) { return 'url(#' + id + sfx + ')'; });
+}
+var KB_DIAGRAM_SEQ = 0;
+function kbDiagramSeq_() { return ++KB_DIAGRAM_SEQ; }
+/** The reading column is 760px, and a dense flow chart drawn into it puts its
+ *  smallest labels near 6px — so every diagram offers Full size: the same SVG
+ *  at its natural width in an overlay (ensureOverlay / closeOverlay, g100),
+ *  scrolling both ways. A cross-reference clicked there closes the overlay and
+ *  opens where the diagram LIVES (the tab or the drawer), not in a new place. */
+function kbDiagramOpen_(btn) {
+  var fig = btn && btn.closest ? btn.closest('figure.kb-diagram') : null;
+  var key = fig ? fig.getAttribute('data-kb-diagram') : '';
+  var reg = (typeof KB_MANUAL_DIAGRAMS === 'object' && KB_MANUAL_DIAGRAMS) ? KB_MANUAL_DIAGRAMS : null;
+  if (!reg || !/^[a-z0-9-]{1,60}$/.test(key) || !Object.prototype.hasOwnProperty.call(reg, key)) return;
+  var scroll = fig.querySelector('.kb-diagram-scroll');
+  var label = (scroll && scroll.getAttribute('aria-label')) || key;
+  var ov = ensureOverlay('kb-diagram-overlay', { label: 'Diagram — ' + label, extraClass: 'kb-diagram-ov',
+    onClose: function () { var o = document.getElementById('kb-diagram-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-diagram-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-diagram-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kb-article kb-diagram-big"><figure class="kb-diagram"><div class="kb-diagram-scroll" tabindex="0" aria-label="' + esc(label) + '">' + kbDiagramScopeIds_(reg[key], kbDiagramSeq_()) + '</div></figure></div></div>';
+  ov._kbOrigin = fig;
+  ov.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a) return;
+    e.preventDefault(); e.stopPropagation();
+    var origin = ov._kbOrigin;
+    closeOverlay(ov);
+    kbXrefOpen_(a.getAttribute('data-kb-id'), a.getAttribute('data-kb-anchor') || '', origin);
+  });
+}
+// ── Batch M3 — the manual's images ──────────────────────────────────────────
+// kbMd_ leaves a keyed chip (`.kb-manimg[data-manimg]`) wherever a manual
+// section shows an image. One observer on the document notices chips as any
+// render adds them — the part page, the drawer, a preview card, a search chunk
+// — and asks getManualImages for all the missing ones in batches (a part page
+// is one or two calls, not one per image; the server reads only files its
+// ledger names). Only a SUCCESS is cached for the session: "not imported" can
+// change with the next import, and a failed call must not blank the images for
+// the rest of the session (g129). An image is set by PROPERTY from a data URL
+// the client re-checks as a PNG/JPEG one — never through markup.
+/** D4 (operator 2026-10-27) — paint an image chip's state, for the manual
+ *  images (`data-mi`) and the article images (`data-ki`) alike: "Loading
+ *  image…" over a sized shimmer, "not imported yet" / "not stored" (an admin is
+ *  told where the handbook import is), or "Couldn't load this image" with a
+ *  Retry. The chip's own text was its alt; it is kept in `data-alt` so the
+ *  image that replaces it — and a retry — still has it. Built by DOM, never
+ *  markup: the alt arrives as text. */
+function kbImgChipState_(n, attr, state) {
+  if (!n.hasAttribute('data-alt')) n.setAttribute('data-alt', n.textContent);
+  var alt = n.getAttribute('data-alt'), manual = attr === 'data-mi';
+  n.setAttribute(attr, state);
+  n.textContent = '';
+  var add = function (cls, text) { var e = document.createElement('span'); e.className = cls; e.textContent = text; n.appendChild(e); return e; };
+  add('kb-img-st', state === 'loading' ? 'Loading image\u2026'
+    : state === 'missing' ? (manual ? 'Image not imported yet' : 'Image not stored') : 'Couldn\u2019t load this image');
+  if (alt) add('kb-img-alt', alt);
+  if (state === 'missing') {
+    if (manual && typeof KB_STATE !== 'undefined' && KB_STATE.isAdmin) add('kb-img-note', 'Import it: Reference \u2192 Handbook \u2192 Import.');
+    else if (!manual) add('kb-img-note', 'It may have been pasted into another copy of this article.');
+  }
+  if (state === 'failed') {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'kb-img-retry'; b.textContent = 'Retry';
+    b.onclick = function (e) { if (e) { e.preventDefault(); e.stopPropagation(); } kbImgRetry_(n, attr); };
+    n.appendChild(b);
+  }
+  n.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+  n.title = (manual ? 'Handbook image' : 'Article image') + (alt ? ' \u2014 ' + alt : '');
+}
+/** D4 — Retry: the chip goes back to waiting and the hydrator asks again
+ *  (nothing failed was cached — g129). */
+function kbImgRetry_(n, attr) {
+  n.removeAttribute(attr);
+  n.textContent = n.getAttribute('data-alt') || '';
+  if (attr === 'data-mi') kbManimgSchedule_(); else kbKbimgSchedule_();
+}
+var KB_MANIMG = { cache: {}, inflight: {}, timer: null };
+var KB_MANIMG_BATCH = 40;   // = the server's KB_MANUAL_IMAGES_BATCH (pinned)
+function kbManimgKind_(key) { return /^icon-/.test(key) ? 'icon' : (/^thumb-/.test(key) ? 'thumb' : 'figure'); }
+function kbManimgApply_(key, state) {
+  var nodes = document.querySelectorAll('.kb-manimg[data-manimg="' + key + '"]');   // the key charset is [a-z0-9-]
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (typeof state === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
+      var img = document.createElement('img');
+      img.className = 'kb-manimg-img kb-manimg-' + kbManimgKind_(key);
+      img.alt = n.hasAttribute('data-alt') ? n.getAttribute('data-alt') : n.textContent;
+      if (kbManimgKind_(key) === 'figure') img.onload = function () { kbImgZoomable_(this); };
+      img.src = state;
+      if (n.parentNode) n.parentNode.replaceChild(img, n);
+    } else {
+      kbImgChipState_(n, 'data-mi', state === 'missing' ? 'missing' : 'failed');   // D4
+    }
+  }
+}
+/** 25post (operator 2026-10-22) — a handbook figure or an article image drawn
+ *  smaller than its own pixels (a wide CRM screenshot in the 720px column)
+ *  opens at full size on a click or Enter: the same image in an overlay
+ *  (ensureOverlay / closeOverlay, g100) that scrolls both ways, like a
+ *  diagram's Full size. Measured on load; a slide hidden in a gallery has no
+ *  width yet, so the column cap decides — and a slideshow's slides always open
+ *  (operator 2026-10-23), since the viewer is the slideshow at full size. */
+var KB_FIG_MAX = 720;   // = img.kb-manimg-figure's max-width (pinned)
+function kbImgZoomable_(img) {
+  var w = img.naturalWidth || 0, shown = img.clientWidth || 0;
+  var inGallery = !!(img.closest && img.closest('.kb-gallery'));
+  if (!inGallery && !(shown ? w > shown + 8 : w > KB_FIG_MAX)) return;   // drawn smaller than its pixels; not laid out yet → the column cap
+  img.classList.add('kb-zoomable');
+  img.setAttribute('tabindex', '0');
+  img.setAttribute('role', 'button');
+  img.title = 'Open at full size';
+}
+/** Pure on the DOM it is given — a figure's caption as text: a slide's own, or
+ *  the italic line the export writes under a figure (export_reference.py's
+ *  figure_md: the image, a blank line, then *caption*). '' when there is none. */
+function kbImgCaption_(img) {
+  var slide = img && img.closest ? img.closest('.kb-gal-slide') : null;
+  if (slide) { var c = slide.querySelector('.kb-gal-cap'); return c ? c.textContent.trim() : ''; }
+  var p = img && img.parentElement, nx = p && p.tagName === 'P' ? p.nextElementSibling : null;
+  if (nx && nx.tagName === 'P' && nx.children.length === 1 && nx.children[0].tagName === 'EM' &&
+      nx.textContent.trim() === nx.children[0].textContent.trim()) return nx.textContent.trim();
+  return '';
+}
+/** 25post (operator 2026-10-23) — the viewer keeps the caption, and a slide
+ *  opens as its slideshow: the slideshow's name, "n / N", Previous / Next and
+ *  ← / →, wrapping like the page's, and the page's slideshow kept on the same
+ *  slide so closing lands where the viewer was. */
+function kbImageOpen_(img) {
+  var src = (img && img.getAttribute('src')) || '';
+  if (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(src)) return;   // what the two hydrators accept
+  var gal = img.closest ? img.closest('.kb-gallery') : null;
+  var many = !!(gal && gal.querySelectorAll('.kb-gal-slide').length > 1);
+  var label = many ? (gal.getAttribute('aria-label') || 'Slideshow') : (img.alt || 'Image');
+  var ov = ensureOverlay('kb-image-overlay', { label: (many ? 'Slideshow' : 'Image') + ' — ' + label, extraClass: 'kb-diagram-ov',
+    onClose: function () { var o = document.getElementById('kb-image-overlay'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal kb-diagram-modal kb-img-modal"><div class="kb-diagram-mhead"><h3>' + esc(label) + '</h3>' +
+    (many ? '<span class="kb-img-count" aria-live="polite"></span>' : '') +
+    '<button type="button" class="kb-btn" onclick="closeOverlay(document.getElementById(\'kb-image-overlay\'))" aria-label="Close">' + icon('x', 15) + '</button></div>' +
+    '<div class="kb-img-big" tabindex="0"></div><p class="kb-img-cap"></p>' +
+    (many ? '<div class="kb-gal-nav kb-img-nav"><button type="button" class="kb-gal-step" data-kb-step="-1" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
+      '<button type="button" class="kb-gal-step" data-kb-step="1" aria-label="Next slide">' + icon('chevronRight', 14) + '</button></div>' : '') +
+    '</div>';
+  var big = document.createElement('img');
+  big.alt = img.alt || label;
+  big.src = src;
+  ov.querySelector('.kb-img-big').appendChild(big);
+  ov.querySelector('.kb-img-cap').textContent = kbImgCaption_(img);
+  if (!many) return;
+  ov._kbGal = gal;
+  ov._restoreFocus = gal;   // the slide it opened from may be off-screen by Close; the slideshow is not
+  var slides = gal.querySelectorAll('.kb-gal-slide');
+  for (var k = 0; k < slides.length; k++) if (slides[k].contains(img)) kbImageSlide_(ov, k);
+  ov.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-kb-step]');
+    if (b) kbImageSlide_(ov, (ov._kbI || 0) + Number(b.getAttribute('data-kb-step')));
+  });
+  ov.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    kbImageSlide_(ov, (ov._kbI || 0) + (e.key === 'ArrowLeft' ? -1 : 1));
+  });
+}
+/** Show slide i (wrapping) of the viewer's slideshow: its image by property —
+ *  re-checked as a data URL, or its name while it is still loading — its
+ *  caption as text, the count, and the page's slideshow moved to match. */
+function kbImageSlide_(ov, i) {
+  var gal = ov && ov._kbGal;
+  var slides = gal ? gal.querySelectorAll('.kb-gal-slide') : [], n = slides.length;
+  if (!n) return;
+  i = ((Number(i) || 0) % n + n) % n;
+  ov._kbI = i;
+  var im = slides[i].querySelector('img'), src = (im && im.getAttribute('src')) || '';
+  var box = ov.querySelector('.kb-img-big');
+  box.textContent = '';
+  if (/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(src)) {
+    var big = document.createElement('img');
+    big.alt = im.alt || '';
+    big.src = src;
+    box.appendChild(big);
+  } else {
+    // D4: the slide's name and which of the three states its image is in.
+    var chip = slides[i].querySelector('.kb-manimg'), mi = chip && chip.getAttribute('data-mi');
+    box.textContent = ((chip && (chip.getAttribute('data-alt') || chip.textContent)) || 'Image') +
+      (mi === 'missing' ? ' \u2014 not imported yet' : mi === 'failed' ? ' \u2014 couldn\u2019t load' : mi === 'loading' ? ' \u2014 loading\u2026' : '');
+  }
+  var cap = slides[i].querySelector('.kb-gal-cap');
+  ov.querySelector('.kb-img-cap').textContent = cap ? cap.textContent.trim() : '';
+  var c = ov.querySelector('.kb-img-count');
+  if (c) c.textContent = (i + 1) + ' / ' + n;
+  kbGalleryGo_(gal, i);
+}
+(function kbBindImageZoom_() {
+  document.addEventListener('click', function (e) {
+    var img = e.target.closest && e.target.closest('img.kb-zoomable');
+    if (!img) return;
+    e.preventDefault();
+    kbImageOpen_(img);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var img = e.target && e.target.matches && e.target.matches('img.kb-zoomable') ? e.target : null;
+    if (!img) return;
+    e.preventDefault();
+    kbImageOpen_(img);
+  });
+})();
+// 25post (operator 2026-10-23) — a button the handbook names (a `peek:` link →
+// `.kb-peek`) shows its locator screenshot beside the text on hover, focus or a
+// tap: ONE fixed popover, above the drawer and any overlay, holding a manual-
+// image chip the Batch M3 hydrator fills (a cached image at once). Escape, a
+// scroll anywhere, or a tap elsewhere hides it; it never takes the pointer.
+var KB_PEEK = { el: null, show: null, hide: null };
+function kbPeekPop_() {
+  var pop = document.getElementById('kb-peek-pop');
+  if (pop) return pop;
+  pop = document.createElement('div');
+  pop.id = 'kb-peek-pop';
+  pop.className = 'kb-peek-pop';
+  pop.setAttribute('role', 'tooltip');
+  pop.hidden = true;
+  pop.addEventListener('load', function () { if (KB_PEEK.el) kbPeekPlace_(KB_PEEK.el, pop); }, true);   // re-placed once the image has its size
+  document.body.appendChild(pop);
+  return pop;
+}
+function kbPeekShow_(el) {
+  var key = (el && el.getAttribute('data-peek')) || '';
+  if (!/^fig-[a-z0-9-]{1,80}$/.test(key)) return;
+  clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide);
+  var pop = kbPeekPop_();
+  if (KB_PEEK.el !== el || pop.hidden) {
+    pop.innerHTML = '<span class="kb-img-pending kb-manimg" data-manimg="' + key + '">' + esc(el.textContent || 'Handbook image') + '</span>';
+    if (KB_MANIMG.cache[key]) kbManimgApply_(key, KB_MANIMG.cache[key]); else kbManimgSchedule_();
+  }
+  pop.hidden = false;
+  KB_PEEK.el = el;
+  kbPeekPlace_(el, pop);
+}
+/** Below the text when it fits, else above; never off either side. */
+function kbPeekPlace_(el, pop) {
+  var r = el.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+  var w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, vw - w - 8)) + 'px';
+  pop.style.top = (r.bottom + h + 12 < vh ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
+}
+function kbPeekHide_() {
+  clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide);
+  var pop = document.getElementById('kb-peek-pop');
+  if (pop) pop.hidden = true;
+  KB_PEEK.el = null;
+}
+(function kbBindPeek_() {
+  var of = function (t) { return t && t.closest ? t.closest('.kb-peek') : null; };
+  var later = function () { clearTimeout(KB_PEEK.show); clearTimeout(KB_PEEK.hide); KB_PEEK.hide = setTimeout(kbPeekHide_, 160); };
+  document.addEventListener('mouseover', function (e) {
+    var el = of(e.target);
+    if (!el) return;
+    clearTimeout(KB_PEEK.hide); clearTimeout(KB_PEEK.show);
+    if (el !== KB_PEEK.el) KB_PEEK.show = setTimeout(function () { kbPeekShow_(el); }, 140);
+  });
+  document.addEventListener('mouseout', function (e) { if (of(e.target)) later(); });
+  document.addEventListener('focusin', function (e) { var el = of(e.target); if (el) kbPeekShow_(el); });
+  document.addEventListener('focusout', function (e) { if (of(e.target)) later(); });
+  document.addEventListener('click', function (e) { var el = of(e.target); if (el) kbPeekShow_(el); else if (KB_PEEK.el) kbPeekHide_(); });
+  // Escape takes the popover down FIRST, and only it — the drawer or overlay
+  // under it stays open (the shell's Escape would close that too).
+  window.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !KB_PEEK.el) return;
+    e.stopPropagation();
+    kbPeekHide_();
+  }, true);
+  window.addEventListener('scroll', function () { if (KB_PEEK.el) kbPeekHide_(); }, true);
+})();
+function kbHydrateManualImages_() {
+  KB_MANIMG.timer = null;
+  var nodes = document.querySelectorAll('.kb-manimg[data-manimg]:not([data-mi])');
+  var want = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var key = nodes[i].getAttribute('data-manimg');
+    if (KB_MANIMG.cache[key]) { kbManimgApply_(key, KB_MANIMG.cache[key]); continue; }
+    kbImgChipState_(nodes[i], 'data-mi', 'loading');   // D4: a sized placeholder that says it is loading
+    if (!KB_MANIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
+  }
+  for (var b = 0; b < want.length; b += KB_MANIMG_BATCH) {
+    (function (keys) {
+      keys.forEach(function (k) { KB_MANIMG.inflight[k] = 1; });
+      var settle = function (res) {
+        keys.forEach(function (k) {
+          delete KB_MANIMG.inflight[k];
+          var url = res && res.images && res.images[k];
+          if (url) KB_MANIMG.cache[k] = url;
+          kbManimgApply_(k, url || (res && res.missing && res.missing.indexOf(k) >= 0 ? 'missing' : 'failed'));
+        });
+      };
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) { settle(res && !res.error ? res : null); })
+          .withFailureHandler(function () { settle(null); })
+          .getManualImages(keys);
+      } catch (e) { settle(null); }
+    })(want.slice(b, b + KB_MANIMG_BATCH));
+  }
+}
+function kbManimgSchedule_() { if (!KB_MANIMG.timer) KB_MANIMG.timer = setTimeout(kbHydrateManualImages_, 30); }
+(function kbBindManualImages_() {
+  if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || !document.body) return;
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var n = added[j];
+        if (n.nodeType === 1 && ((n.classList && n.classList.contains('kb-manimg')) || (n.querySelector && n.querySelector('.kb-manimg')))) { kbManimgSchedule_(); return; }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ── DRV-3 (cycle 23 Batch 12) — article images from the KbImages tab ────────
+// The manual-image hydrator's rule (Batch M3) for `.kb-kbimg[data-kbimg]`
+// chips: batched getKbImages calls, only a success cached for the session
+// (g129), "not stored" told apart from "could not load", and an image set by
+// PROPERTY from a data URL re-checked here as a PNG/JPEG/GIF/WebP one.
+var KB_KBIMG = { cache: {}, inflight: {}, timer: null };
+var KB_KBIMG_BATCH = 6;   // = the server's KB_IMAGES_BATCH (pinned)
+function kbKbimgApply_(key, state) {
+  var nodes = document.querySelectorAll('.kb-kbimg[data-kbimg="' + key + '"]');   // the key charset is [a-z0-9-]
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (typeof state === 'string' && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+\/=]+$/.test(state)) {
+      var img = document.createElement('img');
+      img.className = 'kb-kbimg-img';
+      img.alt = n.hasAttribute('data-alt') ? n.getAttribute('data-alt') : n.textContent;
+      img.loading = 'lazy';
+      img.onload = function () { kbImgZoomable_(this); };   // a wide one opens at full size (kbImageOpen_)
+      img.src = state;
+      if (n.parentNode) n.parentNode.replaceChild(img, n);
+    } else {
+      kbImgChipState_(n, 'data-ki', state === 'missing' ? 'missing' : 'failed');   // D4
+    }
+  }
+}
+function kbHydrateKbImages_() {
+  KB_KBIMG.timer = null;
+  var nodes = document.querySelectorAll('.kb-kbimg[data-kbimg]:not([data-ki])');
+  var want = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var key = nodes[i].getAttribute('data-kbimg');
+    if (KB_KBIMG.cache[key]) { kbKbimgApply_(key, KB_KBIMG.cache[key]); continue; }
+    kbImgChipState_(nodes[i], 'data-ki', 'loading');   // D4
+    if (!KB_KBIMG.inflight[key] && want.indexOf(key) < 0) want.push(key);
+  }
+  for (var b = 0; b < want.length; b += KB_KBIMG_BATCH) {
+    (function (keys) {
+      keys.forEach(function (k) { KB_KBIMG.inflight[k] = 1; });
+      var settle = function (res) {
+        keys.forEach(function (k) {
+          delete KB_KBIMG.inflight[k];
+          var url = res && res.images && res.images[k];
+          if (url) KB_KBIMG.cache[k] = url;
+          kbKbimgApply_(k, url || (res && res.missing && res.missing.indexOf(k) >= 0 ? 'missing' : 'failed'));
+        });
+      };
+      try {
+        google.script.run
+          .withSuccessHandler(function (res) { settle(res && !res.error ? res : null); })
+          .withFailureHandler(function () { settle(null); })
+          .getKbImages(keys);
+      } catch (e) { settle(null); }
+    })(want.slice(b, b + KB_KBIMG_BATCH));
+  }
+}
+function kbKbimgSchedule_() { if (!KB_KBIMG.timer) KB_KBIMG.timer = setTimeout(kbHydrateKbImages_, 30); }
+(function kbBindKbImages_() {
+  if (typeof MutationObserver !== 'function' || typeof document === 'undefined' || !document.body) return;
+  new MutationObserver(function (records) {
+    for (var i = 0; i < records.length; i++) {
+      var added = records[i].addedNodes;
+      for (var j = 0; j < added.length; j++) {
+        var n = added[j];
+        if (n.nodeType === 1 && ((n.classList && n.classList.contains('kb-kbimg')) || (n.querySelector && n.querySelector('.kb-kbimg')))) { kbKbimgSchedule_(); return; }
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+function kbDiagramPendingHtml_(name, body) {
+  return '<figure class="kb-diagram-pending"><figcaption><b>Diagram</b> — ' +
+    (String(body || '').trim() || name || 'untitled') + '</figcaption></figure>';
+}
+
+/** Pure (Node-pinned) — demote every rendered heading one level, so a
+ *  section's own `## 5.9.2` reads as a sub-heading under the section title. */
+function kbShiftHeadings_(html) {
+  return String(html || '').replace(/<(\/?)h([1-5])(?=[\s>])/g, function (m, sl, n) { return '<' + sl + 'h' + (+n + 1); });
+}
+var KB_CO_ICON = { critical: 'warning', 'watch-out': 'warning', policy: 'fileText', note: 'info' };
+/** M2 (design handoff) — a callout's opener becomes kicker + title, for the
+ *  chapter and (M18) the manual's search results. */
+function kbDecorateCallouts_(root, sel) {
+  // M2 (design handoff): a callout's bold opener becomes kicker + title. The text is
+  // WRAPPED, never changed — the separator stays in the DOM, visually hidden — so the
+  // landing, the previews and search read the same words. Plain-text labels only.
+  root.querySelectorAll(sel).forEach(function (q) {
+    var p = q.firstElementChild, s = p && p.tagName === 'P' ? p.firstElementChild : null;
+    if (!s || s.tagName !== 'STRONG' || s !== p.firstChild || s.children.length) return;
+    var m = /^\s*(Critical|Policy|Watch-out|Note)\b(\s*\u2014\s*)?([\s\S]*)$/.exec(s.textContent);
+    if (!m || (!m[2] && /\w/.test(m[3]))) return;   // a label run straight into words is left as written
+    // "Critical." — punctuation with no title rides the hidden separator
+    var tail = m[2] ? '<span class="kb-co-sep">' + esc(m[2]) + '</span>' + (m[3] ? '<span class="kb-co-title">' + esc(m[3]) + '</span>' : '')
+      : (m[3] ? '<span class="kb-co-sep">' + esc(m[3]) + '</span>' : '');
+    s.innerHTML = '<span class="kb-co-kick">' + icon(KB_CO_ICON[m[1].toLowerCase()], 13) + esc(m[1]) + '</span>' + tail;
+    // "**Note** — If the note reads…" (42 callouts in the source put the dash
+    // OUTSIDE the label): the dash rides the hidden separator too, or the body
+    // opens with a stray "—" under the kicker.
+    var nx = !m[2] && !m[3] ? s.nextSibling : null, dm = nx && nx.nodeType === 3 && /^\s*[\u2014\u2013]\s*/.exec(nx.nodeValue);
+    if (dm) {
+      var sep = document.createElement('span');
+      sep.className = 'kb-co-sep';
+      sep.textContent = dm[0];
+      nx.nodeValue = nx.nodeValue.slice(dm[0].length);
+      p.insertBefore(sep, nx);
+    }
+  });
+}
+
+// ── M17 (design handoff, Phase 4) — footnotes ────────────────────────────────
+var KB_FN_DIGITS = { '\u00b9': '1', '\u00b2': '2', '\u00b3': '3', '\u2074': '4', '\u2075': '5', '\u2076': '6', '\u2077': '7', '\u2078': '8', '\u2079': '9', '\u2070': '0' };
+/** Pure (Node-pinned) — "¹²" → "12". */
+function kbFnNum_(sup) { return String(sup || '').split('').map(function (c) { return KB_FN_DIGITS[c] || ''; }).join(''); }
+/** The build puts a sub-section's notes under a "Notes" paragraph at its END
+ *  (manual/footnotes.py), each opening with its superscript, and the numbers
+ *  restart per sub-section. So a reference pairs with the first note of its
+ *  number AFTER it — never the first on the page. Each reference becomes a
+ *  button (its text unchanged) that opens the note in the shared card;
+ *  references inside the notes, code, links, buttons and diagrams are left. */
+function kbManualFootnotes_(root, sel) {
+  // `sel`: the chapter's section bodies by default; the drawer passes its one article.
+  root.querySelectorAll(sel || '.kb-man-sec .kb-article').forEach(function (art, ai) {
+    var notes = [];
+    [].slice.call(art.querySelectorAll('p')).forEach(function (p) {
+      if (!(p.children.length === 1 && p.firstElementChild.tagName === 'STRONG' && p.textContent.trim() === 'Notes')) return;
+      p.setAttribute('data-fn-h', '');
+      for (var n = p.nextElementSibling; n && n.tagName === 'P'; n = n.nextElementSibling) {
+        var m = /^\s*([\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+)\s/.exec(n.textContent);
+        if (!m) break;
+        n.setAttribute('data-fn-note', m[1]);
+        if (!n.id) n.id = 'kb-fn-' + ((art.closest('.kb-man-sec') || {}).id || 'kbd') + '-' + notes.length;
+        notes.push(n);
+      }
+    });
+    if (!notes.length) return;
+    var walker = document.createTreeWalker(art, NodeFilter.SHOW_TEXT, null), targets = [], t;
+    while ((t = walker.nextNode())) {
+      var pe = t.parentElement;
+      if (!pe || pe.closest('[data-fn-note], [data-fn-h], a, button, code, pre, svg, figure.kb-diagram, h1, h2, h3, h4, h5, h6')) continue;
+      if (/[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]/.test(t.nodeValue)) targets.push(t);
+    }
+    targets.forEach(function (tn) {
+      var frag = document.createDocumentFragment(), str = tn.nodeValue, last = 0, mm, re = /[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+/g;
+      while ((mm = re.exec(str))) {
+        var note = null;
+        for (var k = 0; k < notes.length && !note; k++) {
+          if (notes[k].getAttribute('data-fn-note') === mm[0] && (tn.compareDocumentPosition(notes[k]) & Node.DOCUMENT_POSITION_FOLLOWING)) note = notes[k];
+        }
+        if (!note) continue;   // no note of that number after it: left as written
+        if (mm.index > last) frag.appendChild(document.createTextNode(str.slice(last, mm.index)));
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'kb-fn-ref';
+        b.setAttribute('data-fn-note', note.id);
+        b.setAttribute('aria-label', 'Note ' + kbFnNum_(mm[0]));
+        b.textContent = mm[0];
+        frag.appendChild(b);
+        last = mm.index + mm[0].length;
+      }
+      if (!last) return;
+      if (last < str.length) frag.appendChild(document.createTextNode(str.slice(last)));
+      tn.parentNode.replaceChild(frag, tn);
+    });
+  });
+}
+
+// ── Batch M4 — HCPCS codes in the manual become lookups ──────────────────────
+/** The HCPCS Level II shape: one of the letters CMS assigns, then four digits,
+ *  as a whole word ("E0601", "K0006"; not "BE0601", not "E06011"). */
+var KB_HCPCS_RE = /\b[ABCDEGHJKLMPQRSTUV][0-9]{4}\b/g;
+/** Pure (Node-pinned) — split text into plain runs and codes:
+ *  [{code: false, v: 'Rent '}, {code: true, v: 'E0601'}, …]. */
+function kbHcpcsSplit_(text) {
+  var s = String(text == null ? '' : text), out = [], last = 0, m;
+  var re = new RegExp(KB_HCPCS_RE.source, 'g');
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push({ code: false, v: s.slice(last, m.index) });
+    out.push({ code: true, v: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push({ code: false, v: s.slice(last) });
+  return out;
+}
+/** Wrap every code in a rendered manual body in a link — TEXT NODES only
+ *  (kbHighlightTerms_' discipline: the escape boundary kbMd_ drew is never
+ *  reopened). A code already inside a link, a button, code, a heading or a
+ *  diagram is left alone. Idempotent: a wrapped code is inside a link. */
+function kbLinkHcpcs_(rootEl) {
+  try {
+    if (!rootEl) return;
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    var targets = [], n;
+    while ((n = walker.nextNode())) {
+      var p = n.parentElement;
+      if (!p || p.closest('a, button, code, pre, h1, h2, h3, h4, h5, h6, svg, figure.kb-diagram, .kb-gloss-mark, textarea')) continue;
+      if (new RegExp(KB_HCPCS_RE.source).test(n.nodeValue)) targets.push(n);
+    }
+    targets.forEach(function (textNode) {
+      var frag = document.createDocumentFragment();
+      kbHcpcsSplit_(textNode.nodeValue).forEach(function (part) {
+        if (!part.code) { frag.appendChild(document.createTextNode(part.v)); return; }
+        var a = document.createElement('a');
+        a.href = '#';
+        a.className = 'kb-hcpcs';
+        a.setAttribute('data-hcpcs', part.v);
+        a.title = 'Look up ' + part.v + ' — its price, and a payor’s rules for it';
+        a.textContent = part.v;
+        frag.appendChild(a);
+      });
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+  } catch (_) {}
+}
+
+// #6 — copy a "canned response" snippet to the clipboard. Reads the sibling
+// <pre>'s textContent (the browser decodes the HTML entities kbMd_ escaped back
+// to raw text), so the paste is the original snippet, not the escaped markup.
+function kbCopySnippet_(btn) {
+  var card = btn && btn.closest ? btn.closest('.kb-snippet') : null;
+  var pre = card ? card.querySelector('.kb-snippet-body') : null;
+  var text = pre ? pre.textContent : '';
+  copyText_(text, function (ok) {
+    if (!ok) { manualCopyModal_(text, 'Snippet'); return; }
+    if (!btn.getAttribute('data-lbl')) btn.setAttribute('data-lbl', btn.textContent);
+    btn.textContent = 'Copied ✓';
+    setTimeout(function () { btn.textContent = btn.getAttribute('data-lbl') || 'Copy'; }, 1500);
+  });
+}
+
+// ── Article-image fallback (operator 2026-08-13) ────────────────────────────
+// On this domain Workspace policy blocks the KB Images folder's link sharing,
+// so the Drive thumbnail <img>s kbMd_ renders 403 for reps — the reader shows
+// alt text and the anchor lands on a Workspace "blocked" page. The server CAN
+// read the bytes (it runs as the folder-owning deployer), so a failed
+// thumbnail is swapped for a data URL from kbGetImageData. One document-level
+// CAPTURE-phase listener (error events don't bubble) covers every kbMd_
+// render site — Reference reader, drawer, search chunks, training/empdocs
+// readers, What's new — with zero per-site wiring. Scoped STRICTLY to
+// drive.google.com/thumbnail sources: an external image failing must not send
+// its arbitrary URL to our server. Session-cached per fileId (with a pending
+// fan-out so two <img>s of one file fetch once); a failed fetch caches
+// 'failed' so a broken file can't hammer the server on every re-render.
+var KB_IMG_FB = { cache: {}, pending: {} };
+function kbImgFileId_(src) {
+  src = String(src || '');
+  if (src.indexOf('https://drive.google.com/thumbnail?') !== 0) return null;
+  var m = /[?&]id=([a-zA-Z0-9_-]+)/.exec(src);
+  return m ? m[1] : null;
+}
+function kbImgApplyFallback_(img, dataUrl) {
+  img.src = dataUrl;
+  // Keep the wrapping anchor on the Drive URL — accounts WITH folder access
+  // still get the full-size open path; a data: href would be blocked anyway.
+}
+function kbImgFallback_(img) {
+  if (!img || img.dataset.kbFbTried) return;
+  img.dataset.kbFbTried = '1';
+  var fileId = kbImgFileId_(img.getAttribute('src'));
+  if (!fileId) return;
+  var hit = KB_IMG_FB.cache[fileId];
+  if (hit === 'failed') return;
+  if (hit) { kbImgApplyFallback_(img, hit); return; }
+  if (KB_IMG_FB.pending[fileId]) { KB_IMG_FB.pending[fileId].push(img); return; }
+  KB_IMG_FB.pending[fileId] = [img];
+  var settle = function (dataUrl) {
+    var imgs = KB_IMG_FB.pending[fileId] || [];
+    delete KB_IMG_FB.pending[fileId];
+    KB_IMG_FB.cache[fileId] = dataUrl || 'failed';
+    if (!dataUrl) return;   // leave the alt text — today's degradation
+    for (var i = 0; i < imgs.length; i++) {
+      try { kbImgApplyFallback_(imgs[i], dataUrl); } catch (e) {}
+    }
+  };
+  try {
+    google.script.run
+      .withSuccessHandler(function (res) { settle(res && res.success ? res.dataUrl : null); })
+      .withFailureHandler(function () { settle(null); })
+      .kbGetImageData(fileId);
+  } catch (e) { settle(null); }
+}
+</script>
