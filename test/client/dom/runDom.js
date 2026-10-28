@@ -9272,3 +9272,30 @@ test('B9 DOM: a card photo is fitted by the shared image fitter before it is kep
   assert.ok(/too large even after shrinking/.test(h.document.body.textContent), 'and the rep is told why');
   assert.ok(/Large photos are shrunk before they are sent/.test(h.$('.intk-img-hint').textContent), 'the instruction says so');
 });
+
+section('Reference — slideshow slide details (operator 2026-10-28)');
+
+test('Slideshow details DOM: a slide\'s indented lines render shut under "Show details"; the button opens and shuts them and keeps aria-expanded in step', () => {
+  const h = boot();
+  const md = '```gallery Steps\n![one](manimg:fig-shot-1) Step 1\n  First line.\n  - **Field:** value\n![two](manimg:fig-shot-2) Step 2\n```';
+  const host = h.document.createElement('div');
+  host.innerHTML = h.read('kbMd_')(md);
+  h.document.body.appendChild(host);
+  const btns = host.querySelectorAll('.kb-gal-more');
+  assert.strictEqual(btns.length, 1, 'only the slide WITH notes gets a button');
+  const btn = btns[0];
+  const panel = h.document.getElementById(btn.getAttribute('aria-controls'));
+  assert.ok(panel && panel.classList.contains('kb-gal-notes'), 'the button controls its notes panel');
+  assert.ok(panel.classList.contains('kb-gal-notes-off'), 'shut on arrival');
+  assert.ok(!panel.hasAttribute('hidden'), 'hidden by class, never the hidden attribute (g73)');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
+  assert.ok(/First line\./.test(panel.textContent) && panel.querySelector('li strong'), 'paragraph and bold bullet both render');
+  h.window.kbGalleryNotes_(btn);   // the button's inline onclick
+  assert.ok(!panel.classList.contains('kb-gal-notes-off'), 'opened');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(btn.textContent, 'Hide details');
+  h.window.kbGalleryNotes_(btn);   // the button's inline onclick
+  assert.ok(panel.classList.contains('kb-gal-notes-off'), 'shut again');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(btn.textContent, 'Show details');
+});

@@ -1544,6 +1544,18 @@ not restate it. Server endpoints live in the fourteen server files
        key as a citation (`kbManualImagesValidate_`). The HTML handbook does the
        same (`#ppop`, each named image carried once in `PEEK` with its size);
        Word and print keep the words.
+     - **2026-10-28:** a slideshow slide can carry DETAILS — the field-by-field
+       instructions under a short caption. In the source they are a figure's
+       `notes` in `figures.json` (a `- ` line is a bullet; `**bold**`, `*italic*`);
+       the export writes them as two-space-indented lines under the slide's line
+       in the ` ```gallery ` fence, and `kbGalleryHtml_` draws them below the
+       image, shut, under a "Show details" button (`kbGalNotesHtml_`,
+       `kbGalleryNotes_` — hidden by class, `aria-expanded` kept in step). Below
+       rather than beside, because a CRM screenshot needs the column's whole
+       width. Print rule 7 opens every slide's details and drops the button; the
+       HTML handbook does the same (`.notesbtn`), and Word prints them under each
+       image. An older reader ignores the indented lines. First used by 6.9.3's
+       pick-up ticket slideshow, whose Claim Prep slide is now Step 1.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

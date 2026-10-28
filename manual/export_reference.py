@@ -159,7 +159,9 @@ def figure_md(fid):
 def gallery_md(spec):
     """A tutorial slideshow (operator 2026-10-19) -> a ```gallery fence the
     Reference reader steps through: one `![alt](manimg:key) caption` per line.
-    The fence info carries the title."""
+    The fence info carries the title. A slide's `notes` (operator 2026-10-28)
+    follow its line, each indented two spaces ("  - " a bullet); the reader
+    folds them under "Show details", and an older reader drops them."""
     parts = spec.split("|")
     title = next((p.split("=", 1)[1] for p in parts if p.startswith("title=")), "Slideshow")
     lines = []
@@ -170,6 +172,10 @@ def gallery_md(spec):
         f = FIGS[fid]
         caption = re.sub(r"<(b|strong)>(.*?)</\1>", r"\2", f["caption"])
         lines.append(image_ref(f["alt"], "fig-" + slug(fid), "figure", "figures.json:" + fid, FIGB[fid]) + " " + caption)
+        for note in f.get("notes") or []:
+            note = " ".join(str(note).split())
+            if note:
+                lines.append("  " + note.replace("`", "'"))
     return "```gallery " + title.replace("`", "'") + "\n" + "\n".join(lines) + "\n```"
 
 

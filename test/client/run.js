@@ -30726,7 +30726,8 @@ function m1Md_() {
   const ctx = vm.createContext({ String, Object, Array, JSON, parseInt, Math, icon: (n) => '<i data-icon="' + n + '"></i>',
     kbGlossaryHtml_: (b) => '<GLOSS>' + b + '</GLOSS>', kbRosterHtml_: () => '', kbDecideHtml_: () => '', kbMapHtml_: () => '' });
   vm.runInContext(/var KB_CALLOUT_KINDS = [^\n]+/.exec(M1_KB_SRC)[0], ctx);
-  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_', 'kbGalleryHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbSlug_', 'kbMd_', 'kbCalloutKind_', 'kbDiagramHtml_', 'kbDiagramPendingHtml_', 'kbDiagramScopeIds_', 'kbDiagramSeq_', 'kbGalleryHtml_', 'kbGalNotesHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  vm.runInContext('var KB_GAL_NOTE_SEQ = 0;', ctx);   // a slide's details (operator 2026-10-28)
   vm.runInContext('var KB_DIAGRAM_SEQ = 0;', ctx);
   return ctx;
 }
@@ -36453,8 +36454,39 @@ test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at
   assert.ok(/\{\{gallery:o2-ticket-1\|o2-ticket-2\|o2-ticket-3\|o2-ticket-4\|o2-ticket-5\|title=/.test(MP1_('src/p8.md')), '8.2.2\'s ticket screenshots are the first gallery');
   const ex = MP1_('export_reference.py'), rd = MP1_('render.py'), mh = MP1_('make_html.py');
   assert.ok(/text = re\.sub\(r"\\\{\\\{gallery:\(\[\^\}\]\+\)\\\}\\\}", lambda m: gallery_md\(m\.group\(1\)\), text\)/.test(ex) && /return "```gallery " \+ title/.test(ex), 'the export writes the ```gallery fence the reader draws');
-  assert.ok(/<figure class="shot gallery" data-title=/.test(rd) && /<div class="slide"><img src=/.test(rd), 'the HTML and Word build gets one figure of slides — md2model reads every image in it');
+  assert.ok(/<figure class="shot gallery" data-title=/.test(rd) && /<div class="slide" data-fig="\{html\.escape\(fid, quote=True\)\}"><img src=/.test(rd), 'the HTML and Word build gets one figure of slides — md2model reads every image in it');
   assert.ok(/mainEl\.querySelectorAll\('figure\.gallery'\)/.test(mh) && /@media print\{figure\.gallery\.on \.slide\{display:block\}/.test(mh), 'the HTML handbook steps through it on screen and prints every slide');
+});
+
+test('Operator 2026-10-28: a slideshow slide carries DETAILS — figures.json `notes` become indented lines in the export, a folded "Show details" in the reader and the HTML handbook, and print and Word show them in full (driven)', () => {
+  const c = m1Md_();
+  const md = '```gallery Pick-up\n![A](manimg:fig-a) Step 1 — short\n![B](manimg:fig-b) Step 2 — the Ticket tab\n  Finally, check the <boxes>.\n  - **Pick-Up From:** confirm the address\n  - **Reason:** pick one. *Note:* not Other\n  Do not schedule a date.\n```';
+  const h = c.kbMd_(md);
+  const slides = h.split('<div class="kb-gal-slide');
+  assert.ok(!/kb-gal-more/.test(slides[1]), 'a slide with no details has no toggle');
+  const s2 = slides[2];
+  assert.ok(/<button type="button" class="kb-gal-more" aria-expanded="false" aria-controls="(kb-gal-notes-\d+)" onclick="kbGalleryNotes_\(this\)">Show details<\/button><div class="kb-gal-notes kb-gal-notes-off" id="\1">/.test(s2), 'a toggle naming the folded box, which is classed off — never [hidden] (g73): ' + s2.slice(0, 400));
+  assert.ok(/<p>Finally, check the &lt;boxes&gt;\.<\/p><ul><li><strong>Pick-Up From:<\/strong> confirm the address<\/li><li><strong>Reason:<\/strong> pick one\. <em>Note:<\/em> not Other<\/li><\/ul><p>Do not schedule a date\.<\/p>/.test(s2), 'paragraphs and bullets, escaped, with their emphasis: ' + s2);
+  assert.ok(s2.indexOf('kb-gal-cap') < s2.indexOf('kb-gal-more'), 'below the caption');
+  // An indented line before any image belongs to nothing.
+  assert.ok(!/stray/.test(c.kbMd_('```gallery\n  stray\n![A](manimg:fig-a) one\n```')));
+  // Print: the details print in full, the toggle does not (rule 7).
+  const styles = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
+  const pb = styles.slice(styles.indexOf('@media print {'));
+  assert.ok(/\.kb-gal-notes\.kb-gal-notes-off \{ display: block !important; \}/.test(pb) && /\.kb-gal-more \{ display: none !important; \}/.test(pb));
+  assert.ok(/\.kb-gal-notes\.kb-gal-notes-off \{ display: none; \}/.test(M1_KB_SRC) && /\.kb-gal-more \{/.test(M1_KB_SRC), 'the classes have their rules (g140)');
+  // The source: the operator's captions, Claim Prep first.
+  const figs = JSON.parse(MP1_('data/figures.json'));
+  assert.ok(/\{\{gallery:pickup-ticket-6\|pickup-ticket-1\|pickup-ticket-2\|pickup-ticket-3\|pickup-ticket-4\|pickup-ticket-5\|pickup-ticket-7\|title=/.test(MP1_('src/p6.md')), 'Claim Prep is step 1');
+  assert.ok(/^Step 1 — Claim Prep: first, check if the items are eligible/.test(figs['pickup-ticket-6'].caption) && /^Step 7 — the Ticket tab$/.test(figs['pickup-ticket-7'].caption));
+  assert.ok(figs['pickup-ticket-7'].notes.some((n) => /^Do not schedule a date\. This is done by Field Ops\.$/.test(n)) && figs['pickup-ticket-4'].notes.some((n) => /Referral Source:\*\* “UMS MM & GDME Inbound Call”/.test(n)));
+  assert.ok(!/6\.9\.3 pick-up slideshow — the seven slide captions are provisional/.test(MP1_('src/p6.md')), 'the open item is closed');
+  // The three builders.
+  const ex = MP1_('export_reference.py'), rd = MP1_('render.py'), mh = MP1_('make_html.py'), mm = MP1_('md2model.py');
+  assert.ok(/for note in f\.get\("notes"\) or \[\]:[\s\S]{0,160}lines\.append\("  " \+ note/.test(ex), 'the export indents each note under its slide');
+  assert.ok(/<div class="slide" data-fig=/.test(rd) && /\{slide_notes_html\(f\.get\("notes"\)\)\}/.test(rd), 'the HTML / Word build carries the notes and names the slide\'s figure');
+  assert.ok(/nt\.classList\.add\('shut'\)/.test(mh) && /figure\.gallery \.notes\.shut\{display:none\}/.test(mh) && /figure\.gallery \.notes\.shut\{display:block\}\}/.test(mh), 'the HTML handbook folds them on screen and prints them');
+  assert.ok(/slide_note_blocks\(FIG_NOTES\.get\(slide_ids\[n\]\), cur_part\)/.test(mm), 'Word puts them under the image');
 });
 
 test('Operator 2026-10-19: {{lookup:insurance}} — print and HTML link the Payor/HCPCS sheet, the app links its insurance lookup; the reader turns only the two known names into a lookup link (driven)', () => {

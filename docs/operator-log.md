@@ -10,6 +10,15 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-28 — the 6.9.3 pick-up ticket slideshow: new captions and step details
+
+**Adds NO operator state** — deploy a New version, then **re-import
+`manual.json`** (build it from `manual/` with `make_all.sh`; Check → Import →
+Publish for chapter 6). Claim Prep is now Step 1 of the pick-up ticket
+slideshow; the Transaction, Selection and Ticket slides carry the field-by-field
+instructions under **Show details** below the image (printed in full). Until
+the re-import the app shows the old captions and order.
+
 ## 2026-10-28 — app activity in Day Edit and inferred punches; distance rules judged on the drive (25post round 12 E2)
 
 **Adds NO Script Properties to set** — a deploy (New version). Two things

@@ -519,6 +519,15 @@
   .kb-gal-slide.kb-gal-off { display: none; }
   .kb-article .kb-gal-slide img.kb-manimg-figure { margin: 0 auto; }
   .kb-gal-cap { margin-top: 6px; font-size: .84rem; color: var(--muted); }
+  /* A slide's longer text (operator 2026-10-28): folded under "Show details",
+     below the image — a side panel would shrink a wide screenshot past reading
+     in the 760px column. Classed off, never [hidden] (g73); it prints (rule 7). */
+  .kb-gal-more { appearance: none; display: block; margin: 6px auto 0; font: inherit; font-size: .78rem; font-weight: 600; color: var(--accent); background: var(--paper-card); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 2px 12px; cursor: pointer; }
+  .kb-gal-more:hover { border-color: var(--accent); }
+  .kb-gal-notes { text-align: left; max-width: 680px; margin: 8px auto 0; font-size: .86rem; line-height: 1.5; color: var(--ink); }
+  .kb-gal-notes p { margin: 6px 0; }
+  .kb-gal-notes ul { margin: 4px 0 6px 20px; padding: 0; }
+  .kb-gal-notes.kb-gal-notes-off { display: none; }
   .kb-gal-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
   .kb-gal-step { appearance: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 50%; background: var(--paper-card); color: var(--ink); cursor: pointer; }
   .kb-gal-step:hover { border-color: var(--accent); }
@@ -3084,11 +3093,40 @@ function kbCalloutKind_(line) {
 // The body is already escaped by kbMd_; a line that is not an image is dropped,
 // and the image itself goes through inline()'s own manimg chip, so the key
 // charset is the only thing that reaches an attribute.
+// A line indented two or more spaces under a slide is that slide's DETAILS
+// (operator 2026-10-28) — "- " a bullet, anything else a paragraph — folded
+// under "Show details" below the image, and printed in full (rule 7).
+var KB_GAL_NOTE_SEQ = 0;
+function kbGalNotesHtml_(notes, inline) {
+  if (!notes.length) return '';
+  var out = '', items = [];
+  var flush = function () { if (items.length) { out += '<ul>' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>'; items = []; } };
+  notes.forEach(function (t) {
+    var b = /^-\s+(.*)$/.exec(t);
+    if (b) { items.push(inline(b[1])); return; }
+    flush();
+    out += '<p>' + inline(t) + '</p>';
+  });
+  flush();
+  var id = 'kb-gal-notes-' + (++KB_GAL_NOTE_SEQ);
+  return '<button type="button" class="kb-gal-more" aria-expanded="false" aria-controls="' + id + '" onclick="kbGalleryNotes_(this)">Show details</button>' +
+    '<div class="kb-gal-notes kb-gal-notes-off" id="' + id + '">' + out + '</div>';
+}
+function kbGalleryNotes_(btn) {
+  var box = btn && document.getElementById(btn.getAttribute('aria-controls') || '');
+  if (!box) return;
+  var shut = box.classList.toggle('kb-gal-notes-off');
+  btn.setAttribute('aria-expanded', shut ? 'false' : 'true');
+  btn.textContent = shut ? 'Show details' : 'Hide details';
+}
 function kbGalleryHtml_(label, body, inline) {
-  var slides = String(body || '').split('\n').map(function (ln) {
+  var slides = [];
+  String(body || '').split('\n').forEach(function (ln) {
     var m = /^\s*(!\[[^\]]*\]\(manimg:(?:icon|thumb|fig)-[a-z0-9-]{1,80}\))\s*(.*)$/.exec(ln);
-    return m ? { img: inline(m[1]), cap: inline(m[2].trim()) } : null;
-  }).filter(Boolean);
+    if (m) { slides.push({ img: inline(m[1]), cap: inline(m[2].trim()), notes: [] }); return; }
+    var nt = /^ {2,}(\S.*)$/.exec(ln);
+    if (nt && slides.length) slides[slides.length - 1].notes.push(nt[1].trim());
+  });
   if (!slides.length) return '';
   var n = slides.length, name = String(label || '').trim() || 'Slideshow';
   var dots = '';
@@ -3098,7 +3136,8 @@ function kbGalleryHtml_(label, body, inline) {
   return '<figure class="kb-gallery" data-i="0" data-n="' + n + '" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="' + name.replace(/"/g, '&quot;') + '" onkeydown="kbGalleryKey_(event)">' +
     '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-live="polite">1 / ' + n + '</span></div>' +
     slides.map(function (sl, k) {
-      return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') + '</div>';
+      return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') +
+        kbGalNotesHtml_(sl.notes, inline) + '</div>';
     }).join('') +
     (n > 1 ? '<div class="kb-gal-nav"><button type="button" class="kb-gal-step" onclick="kbGalleryStep_(this,-1)" aria-label="Previous slide">' + icon('chevronLeft', 14) + '</button>' +
       '<span class="kb-gal-dots">' + dots + '</span>' +
