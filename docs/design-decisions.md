@@ -5788,3 +5788,28 @@ pick them up without re-deriving the context.
   which file holds a function. **Alternatives rejected:** copying the reader into
   the new app (two readers that drift); shipping the whole Reference client to
   the new app with features switched off (6,800 lines and stubbed server calls).
+- <a id="the-handbook-reader-reaches-its-host-through-manual-host"></a>**The handbook reader reaches its host only through `MANUAL_HOST`, and keeps its own state on `MANUAL_STATE` (handbook app HB1.1b, operator 2026-10-28)**
+  The reader screen — the chapter masthead and quick cards, the reader bar and
+  its feedback, chapter navigation, the scroll-spy, the trail and resume, the
+  cross-reference previews and footnote/glossary cards, and their pure helpers
+  (block finding, the link scorer, highlighting, natural sort) — moved into the
+  shared partial beside the renderer. It had reached Reference by 17 function
+  names and 27 reads of `KB_STATE`; each became a named HOOK on `MANUAL_HOST`
+  (`state`, `openItem`, `prefs`/`savePrefs`, `markCurrent`, `revealInTree`,
+  `treeUpdated`, `printSection`, `printAllCards`, `publishItem`, `suggestEdit`,
+  `bookmarkBtnHtml`/`bookmarkBtnPatch`, `recordOpen`, `loadComments`,
+  `drawerOpenItem`, `drawerOpen`, `drawerTitle`). Team Tools installs them once
+  at load in `kb/script_kb.html`, LATE-BOUND (each calls the Reference function
+  by name when it runs), so behaviour is unchanged and a test's stub is still
+  what gets called; the handbook app installs its own. Of `KB_STATE`'s fields
+  only four are the host's (`tree`, `isAdmin`, `currentId`, `landing` — through
+  `state()`); the reader's own (`manual*`, `resume*`, `trail`) moved to
+  `MANUAL_STATE`, and Reference reads two of them (`manualMeta`, `manualPart`)
+  there. `install` throws on a misspelt hook rather than ignoring it, and an
+  uninstalled hook is a harmless default. A pin holds both directions: the
+  shared file names nothing Reference declares, and the hooks it calls, the
+  hooks it declares and the hooks Team Tools installs are one set. **Alternative
+  rejected:** passing the host's whole state object and calling Reference's
+  functions directly from the shared file (no seam — the handbook app would have
+  had to define forty Reference names to run it).
+

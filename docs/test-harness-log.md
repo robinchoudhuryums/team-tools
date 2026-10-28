@@ -2880,3 +2880,26 @@ per-change detail. By delta:
 - **Left for HB1.1b:** the two `.kb-article .kb-diagram svg.kbdg` rules, plus the
   mixed selector lists (render and reader selectors in one rule), stay in
   Reference's styles.
+
+## Handbook app HB1.1b — the reader screen behind MANUAL_HOST (2026-10-28)
+
+- **Moved:** 105 declarations (the reader screen, the cross-reference system and
+  their pure helpers) and 179 style rules into `shared/script_manual_render.html`.
+  The CSS order was checked against the file as it stood BEFORE HB1.1a, every
+  pair in both directions (the new rules land after HB1.1a's): all 915 original
+  rules accounted for, no new flip that two rules could both match.
+- **Tests that changed, and why:** five sandboxes now take the real contract
+  through `manualHostInto_`; the tests that seeded `KB_STATE.manualParts` /
+  `.trail` / `.manualMeta` seed `MANUAL_STATE` (the field moved, the behaviour
+  did not); nine assertions on emitted `onclick` and source text read
+  `MANUAL_HOST.printSection(…)` / `.openItem(…)` / `.printAllCards()` /
+  `.savePrefs(…)` / `.prefs()` instead of the Reference names; MRD-7 finds the
+  reader bar's ≤720px rule in the shared file's own block; `extractFnFrom` stops
+  at `</script>`; `scripts/manual-xref-report.mjs` reads the scorer from both
+  partials (`READER_PARTIALS`).
+- **The contract pin (HB1.1a/b):** the shared file names nothing Reference
+  declares and no `KB_STATE`/`KB_DRAWER`; called hooks = declared hooks =
+  installed hooks; a misspelt hook throws and an uninstalled host is idle
+  (driven); Reference reads `MANUAL_STATE` for `manualMeta` and `manualPart`
+  only; the reader's styles moved and the admin import's stayed.
+

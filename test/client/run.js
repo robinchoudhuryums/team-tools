@@ -20015,12 +20015,32 @@ function assertBefore(hay, a, b, msg) {
   assert.ok(ia < ib, msg);
 }
 
+/** HB1.1b — the handbook reader reaches its host only through MANUAL_HOST and
+ *  keeps its own state on MANUAL_STATE. A sandbox that loads reader functions
+ *  gets the REAL contract (the shared file's declarations) and the REAL Team
+ *  Tools install (kb/script_kb.html's MANUAL_HOST.install, late-bound to the
+ *  Reference names, so a sandbox's stubs of kbOpenItem_ / kbPanelPrefs_ … are
+ *  what the reader calls) — never a hand-written stand-in. */
+function manualHostInto_(ctx) {
+  const shared = fs.readFileSync(path.join(__dirname, '../../web-app/shared/script_manual_render.html'), 'utf8');
+  const kbRaw = fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8');
+  const decl = shared.slice(shared.indexOf('var MANUAL_STATE = {};'), shared.indexOf('\n', shared.indexOf('var MANUAL_HOST_IDLE_')) + 1);
+  const at = kbRaw.indexOf('MANUAL_HOST.install({');
+  const inst = kbRaw.slice(at, kbRaw.indexOf('\n});\n', at) + 4);
+  vm.runInContext(decl + inst, ctx);
+  return ctx;
+}
+
 /** Slice a named function out of an already-read client partial. */
 function extractFnFrom(src, name) {
   const i = src.indexOf('function ' + name + '(');
   assert.ok(i >= 0, name + ' exists');
   const j = src.indexOf('\nfunction ', i + 10);
-  return src.slice(i, j > 0 ? j : undefined);
+  // HB1.1b: a source read through CLIENT_ALIASES is two partials, so the last
+  // function of the first one is followed by its </script>, not by a function.
+  const k = src.indexOf('\n</script>', i + 10);
+  const end = [j, k].filter((x) => x > 0);
+  return src.slice(i, end.length ? Math.min.apply(null, end) : undefined);
 }
 
 
@@ -31346,7 +31366,7 @@ test('MR1: the reader paints a chapter from the session cache, previews read fro
   const calls = [], kb = { manualParts: null, manualPartsLoading: false };
   const xref = { cache: {} };
   let success = null;
-  const ctx = vm.createContext({ KB_STATE: kb, KB_XREF: xref, Array,
+  const ctx = vm.createContext({ MANUAL_STATE: kb, KB_XREF: xref, Array,
     google: { script: { run: { withSuccessHandler: (f) => { success = f; return { withFailureHandler: () => ({ getManualParts: () => calls.push('getManualParts') }) }; } } } } });
   ['kbPrefetchManualParts_', 'kbManualCachedPart_', 'kbManualInvalidate_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   ctx.kbPrefetchManualParts_(); ctx.kbPrefetchManualParts_();
@@ -32043,7 +32063,7 @@ test('M5a-C4 (follow-on): the export\'s report runs the APP\'S scorer over the b
   assert.deepStrictEqual(r.warnings.map((w) => [w.from, w.to, w.suggest]), [['man-0-7', 'man-4-11', '4.11.2 Weather']],
     'ONE warning — the only link an anchor could fix — with the sub-section its words point at (a SUGGESTION: no single block had two shared words)');
   const rep = fs.readFileSync(path.join(__dirname, '../../scripts/manual-xref-report.mjs'), 'utf8');
-  assert.ok(/fs\.readFileSync\(path\.join\(ROOT, 'web-app\/kb\/script_kb\.html'\)/.test(rep) && !/function kbBestBlock_|function kbManualBlocks_|function kbNamedRow_/.test(rep), 'the report READS the scorer out of the partial — it has no copy of its own (g126)');
+  assert.ok(/export const READER_PARTIALS = \['web-app\/shared\/script_manual_render\.html', 'web-app\/kb\/script_kb\.html'\];/.test(rep) && /READER_PARTIALS\.map\(\(f\) => fs\.readFileSync\(path\.join\(ROOT, f\), 'utf8'\)\)/.test(rep) && !/function kbBestBlock_|function kbManualBlocks_|function kbNamedRow_/.test(rep), 'the report READS the scorer out of the partial — it has no copy of its own (g126)');
   const py = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
   assert.ok(/json\.dump\(bundle, f[^\n]*\n[\s\S]*?xref_report\(os\.path\.join\(out, "manual\.json"\)\)\n    return 0/.test(py), 'the export reports AFTER writing the file, and returns 0 whatever it says');
   const fnPy = py.slice(py.indexOf('def xref_report('), py.indexOf('\ndef ', py.indexOf('def xref_report(') + 5));
@@ -36801,7 +36821,7 @@ test('MRD-2 (manual reader design Phase 2): the reader bar\'s title split, chapt
   // Print and Bookmark ride the bar; the sections keep only an admin's Publish
   const part = extractFnFrom(kb, 'kbManualPartHtml_');
   assert.ok(!/kbBookmarkBtnHtml_|kbPrintSection/.test(part) && /kbManualBarHtml_\(part\.department\)/.test(part), 'no per-section star or Print');
-  assert.ok(!/function kbPrintSection_\(/.test(kb) && /kbPrintSectionById_\(this\.getAttribute\(\\'data-kb-id\\'\)\)/.test(extractFnFrom(kb, 'kbManualBarHtml_')), 'one Print, by the id of the section in view');
+  assert.ok(!/function kbPrintSection_\(/.test(kb) && /MANUAL_HOST\.printSection\(this\.getAttribute\(\\'data-kb-id\\'\)\)/.test(extractFnFrom(kb, 'kbManualBarHtml_')), 'one Print, by the id of the section in view');
   // M10: the tree row is a number column for a manual section; the chapter toggle keeps its full name in data-dept
   const tree = extractFnFrom(kb, 'kbRenderTree_');
   assert.ok(/kbManualSplitTitle_\(it\.title\)/.test(tree) && /kb-item-num/.test(tree) && /data-dept="' \+ esc\(d\)/.test(tree), 'number column, full name kept in data-dept');
@@ -37035,24 +37055,25 @@ test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its mark
   const ctx = vm.createContext({ String, Object, Number, Array, KB_STATE: {}, icon: (n) => '<i data-icon="' + n + '"></i>',
     esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbMd_: (m) => '<MD>' + m + '</MD>', kbShiftHeadings_: (h) => h, kbPanelPrefs_: () => ctx.__prefs, __prefs: {} });
+  manualHostInto_(ctx);
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualCachedPart_', 'kbManualCardFor_', 'kbManualCardOpen_', 'kbManualMastCardHtml_', 'kbManualMastheadHtml_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
   const P5 = 'Chapter 05 — Power Mobility', AC = 'Appendix C — Quick Reference Cards';
   assert.strictEqual(ctx.kbManualMastHtml_ === undefined && ctx.kbManualCardFor_(P5), null, 'no prefetched manual, no card — never a wait');
-  ctx.KB_STATE.manualParts = { [AC]: { department: AC, sections: [{ id: 'man-c-5', title: 'Card 5 — Power Mobility', bodyMd: 'B <x>' }] }, [P5]: { department: P5, sections: [] } };
+  ctx.MANUAL_STATE.manualParts = { [AC]: { department: AC, sections: [{ id: 'man-c-5', title: 'Card 5 — Power Mobility', bodyMd: 'B <x>' }] }, [P5]: { department: P5, sections: [] } };
   assert.strictEqual(ctx.kbManualCardFor_(P5).id, 'man-c-5', 'card N is chapter N\'s');
   assert.strictEqual(ctx.kbManualCardFor_(AC), null, 'an appendix has no card');
   assert.strictEqual(ctx.kbManualCardFor_('Chapter 06 — Field Operations'), null, 'a chapter whose card is not in the manual has none');
   const m = ctx.kbManualMastheadHtml_(P5, [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }]);
   assert.ok(/<section class="kb-man-card" data-kb-man-card="man-c-5"/.test(m) && /aria-expanded="true" aria-controls="kb-man-card-b"/.test(m) && /CARD 5/.test(m), 'the disclosure, open by default');
   assert.ok(/<MD>B <x><\/MD>/.test(m) && !/kb-man-card-b"[^>]*hidden/.test(m), 'the body is the card article through kbMd_');
-  assert.ok(/onclick="kbManualCardToggle_\(this\)"/.test(m) && /onclick="kbPrintSectionById_\(this\.getAttribute\('data-kb-id'\)\)">/.test(m), 'toggle and Print card carry no name in the onclick (g133)');
+  assert.ok(/onclick="kbManualCardToggle_\(this\)"/.test(m) && /onclick="MANUAL_HOST\.printSection\(this\.getAttribute\('data-kb-id'\)\)">/.test(m), 'toggle and Print card carry no name in the onclick (g133)');
   ctx.__prefs = { cardOpen: { [P5]: false } };
   assert.ok(/aria-expanded="false"/.test(ctx.kbManualMastheadHtml_(P5, [])) && /id="kb-man-card-b" hidden>/.test(ctx.kbManualMastheadHtml_(P5, [])), 'a closed chapter stays closed');
   const ac = ctx.kbManualMastheadHtml_(AC, []);
-  assert.ok(/onclick="kbPrintAllCards_\(\)"/.test(ac) && !/kb-man-card"/.test(ac), 'Appendix C: Print all cards, and no masthead card');
+  assert.ok(/onclick="MANUAL_HOST\.printAllCards\(\)"/.test(ac) && !/kb-man-card"/.test(ac), 'Appendix C: Print all cards, and no masthead card');
   const tg = extractFnFrom(kb, 'kbManualCardToggle_');
-  assert.ok(/kbPanelSave_\(p\)/.test(tg) && /p\.cardOpen = o/.test(tg) && !/localStorage/.test(tg), 'the open state rides umsKbPanel — no new storage key (g112)');
+  assert.ok(/MANUAL_HOST\.savePrefs\(p\)/.test(tg) && /p\.cardOpen = o/.test(tg) && !/localStorage/.test(tg), 'the open state rides umsKbPanel — no new storage key (g112)');
   // (4) a card prints as a card: the flag, the shape, the rules
   assert.ok(/if \(card\) root\.setAttribute\('data-print-card', ''\);/.test(extractFnFrom(kb, 'kbPrintEls_')) && /root\.removeAttribute\('data-print-card'\);/.test(extractFnFrom(kb, 'kbPrintEls_')));
   assert.ok(/kbPrintEls_\(\[sec\], kbIsManualCard_\(id\)\)/.test(extractFnFrom(kb, 'kbPrintSectionById_')), 'a card — from its page or a masthead — sets the flag; a section does not');
@@ -37088,7 +37109,10 @@ test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND 
   rule(':root[data-compact] .kb-side:not(.kb-side-q) #kb-tree', 'display: none;');
   rule(':root[data-compact] .kb-man-bar-nav', 'min-width: 44px; min-height: 44px;');
   const media = (/@media \(max-width: 720px\) \{\n    \.kb-side \{([\s\S]*?)\n  \}/.exec(kb) || [])[0] || '';
-  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }', '.kb-man-bar-nav { min-width: 44px; min-height: 44px;'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤720px block also has ' + r));
+  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤720px block also has ' + r));
+  // HB1.1b: the reader bar's rule moved with the reader into the shared partial's own ≤720px block
+  const shCss = fs.readFileSync(path.join(PA_WEB, 'shared/script_manual_render.html'), 'utf8');
+  assert.ok(/@media \(max-width: 720px\) \{\n[^@]*?\.kb-man-bar-nav \{ min-width: 44px; min-height: 44px;/.test(shCss), 'the ≤720px block also has .kb-man-bar-nav { min-width: 44px; min-height: 44px; — in the shared reader\'s styles');
   assert.ok(/\.kb-toc-btn \{ display: none;/.test(kb), 'a wide Reference keeps its tree and has no Contents button');
   // the search keeps the tree visible for its results
   const ds = extractFnFrom(kb, 'kbDoSearch_');
@@ -37175,7 +37199,7 @@ test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a fi
   assert.ok(!/KB_STATE\.backTo|kbManualBack_|kbManualPaintBack_/.test(kb), 'the single "Back to" chip is gone — the trail replaced it');
   assert.ok(!/KB_STATE\.trail/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')) && /kbDrawerBackToHtml_\(\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer keeps its own Back (operator decision 3)');
   assert.ok(/\{ id: p\.id, h: p\.h, at: now \}/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && /querySelectorAll\('\.kb-article \.kb-man-ssn'\)/.test(extractFnFrom(kb, 'kbManualSpy_')), 'a section id and a heading NUMBER (the .kb-man-ssn chip), never text');
-  assert.ok(/kbPanelPrefs_\(\)/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && !/localStorage/.test(extractFnFrom(kb, 'kbManualResumeNote_')), 'inside umsKbPanel — no new storage key');
+  assert.ok(/MANUAL_HOST\.prefs\(\)/.test(extractFnFrom(kb, 'kbManualResumeNote_')) && !/localStorage/.test(extractFnFrom(kb, 'kbManualResumeNote_')), 'inside umsKbPanel — no new storage key');
   assert.ok(/if \(nav && nav\.chapter\)/.test(extractFnFrom(kb, 'kbOpenManualSection_')), 'only a chapter-level open resumes; an explicit target wins');
   assert.ok(/kbManualFootnotes_\(body, '\.kb-article'\)/.test(extractFnFrom(kb, 'kbDrawerOpenItem_')), 'the drawer runs the footnote pass on a manual section');
   assert.ok(/var band = main\.querySelector\('\.kb-man-top'\), pad = band && band\.offsetHeight \? band\.offsetHeight \+ 12/.test(extractFnFrom(kb, 'kbReaderScroll_')), 'a heading lands below the band\'s REAL height — the trail and the resume line make it taller than a fixed padding (measured: 12px clear at 1440 and 390)');
@@ -37252,12 +37276,13 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   // the masthead, driven
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: {}, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
     esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
+  manualHostInto_(ctx);
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(kb)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_'].forEach((n) => vm.runInContext(extractFnFrom(kb, n), ctx));
   const three = ctx.kbManualMastheadHtml_('Chapter 05 — Power Mobility', [{ id: 'man-5-1', title: '5.1 Scope', status: 'published' }, { id: 'man-5-2', title: '5.2 PAK <b>', status: 'published' }, { id: 'man-5-3', title: '5.3 New', status: 'draft' }]);
   assert.ok(/Policies &amp; Procedures Handbook · Chapter 05/.test(three) && />3 sections</.test(three) && /In this chapter/.test(three), 'kicker, count, index');
   assert.strictEqual((three.match(/class="kb-man-ix"/g) || []).length, 3);
-  assert.strictEqual((three.match(/onclick="kbOpenItem_\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
+  assert.strictEqual((three.match(/onclick="MANUAL_HOST\.openItem\(this\.getAttribute\('data-kb-id'\)\)"/g) || []).length, 3, 'each row opens the section the ordinary way (a fresh start: the Back chip goes)');
   assert.ok(/5\.2<\/span><span class="kb-man-ix-t">PAK &lt;b&gt;/.test(three), 'number and title, escaped');
   assert.ok(/data-kb-ix-upd="man-5-2"/.test(three) && !/data-kb-ix-upd="man-5-3"/.test(three) && /kb-draft-pill/.test(three), 'a draft shows Draft, never Updated');
   const one = ctx.kbManualMastheadHtml_('Appendix A — Glossary', [{ id: 'man-a-1', title: 'Glossary', status: 'published' }]);
@@ -37376,6 +37401,7 @@ test('MP2-4: the reader puts a chapter\'s badge and colour on its title and its 
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: { isAdmin: false }, icon: (n, s) => '<i data-icon="' + n + '" data-s="' + s + '"></i>',
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
     kbShiftHeadings_: (h) => h, kbMd_: (m) => m, kbBookmarkBtnHtml_: () => '', kbIsManualCard_: () => false });
+  manualHostInto_(ctx);
   vm.runInContext(/var KB_MANUAL_CHAPTER_ICONS = Object\.freeze\(\{[\s\S]*?\}\);/.exec(M1_KB_SRC)[0], ctx);
   ['kbManualChapterKey_', 'kbManualChapterIcon_', 'kbManualChapterParts_', 'kbManualSplitTitle_', 'kbManualBarHtml_', 'kbManualMastheadHtml_', 'kbManualMastCardHtml_', 'kbManualCardFor_', 'kbManualPartHtml_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
   // since M9 (design handoff Phase 3) the chapter's title is the masthead's
@@ -40217,38 +40243,57 @@ test('E2b: a radius verdict on the DRIVE — within by any offered route is yes,
   assert.deepStrictEqual([far.verdict, far.why], ['no', '300 mi from Dallas (>100 mi).'], 'a straight line over the limit needs no drive');
 });
 
-console.log('\nHandbook app HB1.1a — the rendering layer is ONE shared partial');
-// The handbook's rendering layer — kbMd_ and every block it draws, the image
-// hydrators, the viewer, the peek — moved out of kb/script_kb.html so the
-// stand-alone handbook app can include the same file. What keeps the split a
-// split: nothing is declared in both files, the shared file is included FIRST,
-// and its reach into Reference is the CONTRACT below, by name. HB1.1b turns both
-// entries into host hooks; until then a new name here is a new coupling, and an
-// entry that stops being used fails too — the list only shrinks.
-test('HB1.1a: the handbook rendering layer lives in shared/script_manual_render.html — included before Reference, nothing declared twice, and its only reach into Reference is the CONTRACT list', () => {
+console.log('\nHandbook app HB1.1a/b — the renderer and the reader are ONE shared partial, behind MANUAL_HOST');
+// The handbook's rendering layer (HB1.1a) and reader screen (HB1.1b) moved out
+// of kb/script_kb.html so the stand-alone handbook app includes the same file.
+// What keeps the split a split: nothing is declared in both files, the shared
+// file is included FIRST, it names NOTHING Reference declares — every call to
+// its host goes through MANUAL_HOST — Team Tools installs exactly the hooks the
+// reader declares and calls, and Reference reaches the reader's own state
+// (MANUAL_STATE) for only the two fields it has always read.
+test('HB1.1a/b: the handbook renderer and reader live in shared/script_manual_render.html — included before Reference, nothing declared twice, Reference reached only through MANUAL_HOST, and every hook installed', () => {
   const W = path.join(__dirname, '../../web-app');
   const raw = (f) => fs.readFileSync(path.join(W, f), 'utf8');   // NOT readWebFile: this pin is about the two files apart
   const shared = raw('shared/script_manual_render.html'), kb = raw('kb/script_kb.html');
   const js = (s) => [...s.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]).join('\n');
   const decls = (s) => new Set([...js(s).matchAll(/^(?:function|var|const|let)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]));
   const S = decls(shared), K = decls(kb);
-  ['kbMd_', 'kbGalleryHtml_', 'kbGalleryNotes_', 'kbDiagramHtml_', 'kbPeekShow_', 'kbHydrateManualImages_', 'kbHydrateKbImages_', 'kbImageOpen_',
-    'kbManualFootnotes_', 'kbDecorateCallouts_', 'kbRosterHtml_', 'kbDecideHtml_', 'kbGlossaryHtml_', 'kbMapHtml_', 'kbLinkHcpcs_']
+  ['kbMd_', 'kbGalleryHtml_', 'kbDiagramHtml_', 'kbPeekShow_', 'kbHydrateManualImages_', 'kbImageOpen_', 'kbManualFootnotes_', 'kbRosterHtml_', 'kbDecideHtml_',
+    'kbOpenManualSection_', 'kbManualPartHtml_', 'kbManualMastheadHtml_', 'kbManualBarHtml_', 'kbManualSpy_', 'kbManualFocus_', 'kbXrefOpen_', 'kbXrefFocus_',
+    'kbTrailPush_', 'kbManualResumeNote_', 'kbBestBlock_', 'kbHighlightTerms_', 'MANUAL_HOST', 'MANUAL_STATE']
     .forEach((n) => assert.ok(S.has(n) && !K.has(n), n + ' is declared in the shared file, and only there'));
   const both = [...S].filter((n) => K.has(n));
   assert.deepStrictEqual(both, [], 'declared in both files: ' + both.join(', '));
   const code = js(shared).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
   const reach = [...K].filter((n) => new RegExp('(^|[^\\w$.])' + n.replace(/\$/g, '\\$') + '(?![\\w$])').test(code)).sort();
-  const CONTRACT = ['KB_STATE', 'kbXrefOpen_'];   // KB_STATE: a missing-image chip's admin note · kbXrefOpen_: a diagram's "open the section"
-  assert.deepStrictEqual(reach, CONTRACT, 'the shared layer reaches into Reference only through the CONTRACT — a new name is a new coupling for HB1.1b to carry');
+  assert.deepStrictEqual(reach, [], 'the shared file names nothing Reference declares — the host is reached through MANUAL_HOST');
+  assert.ok(!/\bKB_STATE\b|\bKB_DRAWER\b/.test(code), 'and none of Reference\'s state');
+  // the contract: what the reader calls ⊆ what it declares = what Team Tools installs
+  const ctx = vm.createContext({ Object, Error });
+  vm.runInContext(code.slice(code.indexOf('var MANUAL_STATE = {};'), code.indexOf('\n', code.indexOf('var MANUAL_HOST_IDLE_')) + 1), ctx);
+  const declared = Object.keys(ctx.MANUAL_HOST).filter((k) => k !== 'install').sort();
+  const called = [...new Set([...code.matchAll(/MANUAL_HOST\.(\w+)/g)].map((m) => m[1]))].filter((k) => k !== 'install').sort();
+  assert.deepStrictEqual(called.filter((k) => declared.indexOf(k) < 0), [], 'every hook the reader calls is declared');
+  assert.deepStrictEqual(declared.filter((k) => called.indexOf(k) < 0), [], 'and every declared hook is used — the contract only carries what the reader needs');
+  const at = kb.indexOf('MANUAL_HOST.install({');
+  const inst = kb.slice(at, kb.indexOf('\n});\n', at));
+  const installed = [...inst.matchAll(/^  (\w+): function/gm)].map((m) => m[1]).sort();
+  assert.deepStrictEqual(installed, declared, 'Team Tools installs exactly the declared hooks');
+  assert.strictEqual(ctx.MANUAL_HOST.state().currentId, null, 'an uninstalled host is harmless: an idle state, no tree');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.MANUAL_HOST.state().tree)), []);
+  assert.throws(() => ctx.MANUAL_HOST.install({ openItme: () => 0 }), /no hook "openItme"/, 'a misspelt hook is refused, never silently ignored');
+  // Reference reaches the reader's own state for the two fields it always read; the reader's fields never sit on KB_STATE
+  const kbCode = js(kb);
+  assert.deepStrictEqual([...new Set([...kbCode.matchAll(/MANUAL_STATE\.(\w+)/g)].map((m) => m[1]))].sort(), ['manualMeta', 'manualPart']);
+  assert.ok(!/KB_STATE\.(?:manual(?!Recent)\w*|resume\w*|trail)\b/.test(kbCode), 'no reader field on KB_STATE (manualRecent is the landing\'s own)');
   const idx = raw('index.html');
-  const at = (n) => idx.indexOf("include('" + n + "')");
-  assert.ok(at('shared/script_manual_render') > 0 && at('shared/script_manual_render') < at('kb/script_kb'), 'index.html includes the shared layer BEFORE Reference');
+  const pos = (n) => idx.indexOf("include('" + n + "')");
+  assert.ok(pos('shared/script_manual_render') > 0 && pos('shared/script_manual_render') < pos('kb/script_kb'), 'index.html includes the shared file BEFORE Reference');
   const css = (s) => s.slice(s.indexOf('<style>'), s.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.ok(/\.kb-gallery\b/.test(css(shared)) && /\.kb-article table\b/.test(css(shared)), 'the styles moved with the renderers');
-  assert.ok(!/\.kb-man-/.test(css(shared)), 'no reader-screen (.kb-man-*) rule in the shared styles — those are HB1.1b');
-  assert.ok(!/^\s*\.kb-(gallery|gal-|peek|ros-|dec-|gloss-|map-|diagram|snippet|manimg|kbimg|zoomable)/m.test(css(kb)), 'no rendering-layer rule left at the top level of Reference\'s styles');
-  assert.ok(/\.kb-ed-prev \.kb-dec-todos label \{ font-size: \.86rem; \}/.test(css(kb)), 'the editor preview keeps the checklist size the old cascade gave it');
+  assert.ok(/\.kb-gallery\b/.test(css(shared)) && /\.kb-article table\b/.test(css(shared)) && /\.kb-man-mast\b/.test(css(shared)) && /#kb-xrefcard\b/.test(css(shared)), 'the styles moved with the code');
+  assert.ok(!/^\s*(\.kb-(gallery|gal-|peek|ros-|dec-|gloss-|map-|diagram|snippet|manimg|kbimg|zoomable|man-mast|man-card|man-chapnav|man-resume|trail)|#kb-xrefcard)/m.test(css(kb)), 'no renderer or reader rule left at the top level of Reference\'s styles');
+  assert.ok(!/\.kb-man-(res|import|check|gate|pub|lbl|chk|overlay|toc-overlay)\b/.test(css(shared)), 'the admin import\'s and Reference\'s own .kb-man-* rules stayed in Reference');
+  assert.ok(/\.kb-ed-prev \.kb-dec-todos label \{ font-size: \.86rem; \}/.test(css(kb)), 'the editor preview keeps the checklist size the old cascade gave it (HB1.1a)');
   assert.deepStrictEqual(CLIENT_ALIASES['kb/script_kb.html'], ['shared/script_manual_render.html', 'kb/script_kb.html'], 'a read of kb/script_kb.html through the harness is the pair, in include order');
 });
 

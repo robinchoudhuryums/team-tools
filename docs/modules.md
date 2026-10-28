@@ -1556,6 +1556,13 @@ not restate it. Server endpoints live in the fourteen server files
        HTML handbook does the same (`.notesbtn`), and Word prints them under each
        image. An older reader ignores the indented lines. First used by 6.9.3's
        pick-up ticket slideshow, whose Claim Prep slide is now Step 1.
+     - **2026-10-28 (handbook app HB1.1a/b):** the renderer (`kbMd_` and its
+       blocks, images, viewer, peek) and the reader screen (masthead, quick
+       cards, reader bar, chapter nav, spy, trail, resume, cross-reference
+       previews) live in `web-app/shared/script_manual_render.html`, included
+       before `kb/script_kb.html`, so the stand-alone handbook app can include the
+       same file. Reference is the reader's host: it installs the `MANUAL_HOST`
+       hooks at load; the reader's own state is `MANUAL_STATE`. No visible change.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

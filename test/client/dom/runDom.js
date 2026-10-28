@@ -6612,7 +6612,7 @@ test('MRD-5 DOM (manual reader design Phase 5): explicit opens build the reading
   const h = m4Boot_();
   const w = h.window, doc = w.document;
   const st = h.read('KB_STATE');
-  const ids = () => JSON.parse(JSON.stringify((st.trail || []).map((e) => e.id)));
+  const ids = () => JSON.parse(JSON.stringify((h.read('MANUAL_STATE').trail || []).map((e) => e.id)));   // the trail is the reader's own state (HB1.1b)
   h.read('kbOpenItem_')('man-0-10');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
   assert.ok(!doc.querySelector('#kb-main .kb-trail'), 'one section: no trail row');
@@ -6797,7 +6797,7 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   let during = null;
   w.print = () => { during = { marked: h.$$('.print-one').map((e) => e.className), card: doc.documentElement.hasAttribute('data-print-card'), one: doc.documentElement.hasAttribute('data-print-one') }; };
   const pr = card().querySelector('.kb-man-card-pr');
-  assert.strictEqual(pr.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  assert.strictEqual(pr.getAttribute('onclick'), "MANUAL_HOST.printSection(this.getAttribute('data-kb-id'))");
   h.read('kbPrintSectionById_')(pr.getAttribute('data-kb-id'));
   assert.deepStrictEqual(during, { marked: ['kb-man-card print-one'], card: true, one: true }, 'the masthead card alone, with the card flag');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6814,7 +6814,7 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   const all = h.$('#kb-main .kb-man-mast-acts button');
   assert.ok(all && /Print all cards/.test(all.textContent));
   during = null;
-  assert.strictEqual(all.getAttribute('onclick'), 'kbPrintAllCards_()');
+  assert.strictEqual(all.getAttribute('onclick'), 'MANUAL_HOST.printAllCards()');
   h.read('kbPrintAllCards_')();
   assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6869,7 +6869,7 @@ test('M4 DOM: Print marks ONLY its own section for the one print block, for exac
   const btn = h.$('#kb-main [data-kb-man-bar] .kb-man-print');
   assert.ok(btn && btn.getAttribute('data-kb-id') === 'man-0-11' && /Print just this section/.test(btn.getAttribute('aria-label')), 'the bar\'s Print names the open section');
   doc.getElementById('kb-man-sec-man-0-10').classList.add('print-one');   // a stale mark from an earlier print
-  assert.strictEqual(btn.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  assert.strictEqual(btn.getAttribute('onclick'), "MANUAL_HOST.printSection(this.getAttribute('data-kb-id'))");
   h.read('kbPrintSectionById_')(btn.getAttribute('data-kb-id'));
   assert.deepStrictEqual(during, { marked: ['man-0-11'], root: true }, 'during print(): this section alone, and the root flag the print rules key on');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6934,7 +6934,7 @@ test('F10 (cycle 25): a search hit\'s slug anchor lands on its sub-heading — t
 
 test('F11 (cycle 25): a failed handbook-meta read answers every waiter as FAILED and is never cached — the next open asks again; "none" is cached; an import forgets the meta, and a read in flight across it is answered but not kept; the call router says it could not load', async () => {
   const h = m4Boot_();
-  const st = h.read('KB_STATE');
+  const st = h.read('MANUAL_STATE');   // the meta is the reader's own state (HB1.1b)
   h.run.pending('getManualMeta').forEach(() => h.run.flushFailure('boot noise', 'getManualMeta'));
   assert.strictEqual(st.manualMeta, undefined, 'a transport failure is not cached');
   const ens = h.read('kbEnsureManualMeta_');
@@ -7436,7 +7436,7 @@ test('M5a DOM: the click lands on that part — the target part loads and the ra
   assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-5-10'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
   assert.strictEqual(chips().length, 1, 'a chip again');
   h.read('kbOpenItem_')('man-5-10');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('MANUAL_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
 });
 
 test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the row; leaving a section by a code, a search or the router offers "Back to" it, which restores the scroll and pops (never pushes); closing the drawer forgets the trail', async () => {

@@ -450,6 +450,246 @@
   .kb-snippet-copy { flex-shrink: 0; font: inherit; font-size: .74rem; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--ink); cursor: pointer; }
   .kb-snippet-copy:hover { background: var(--paper); border-color: var(--border-strong); }
   .kb-snippet-body { margin: 0; padding: 10px; font: inherit; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+  /* The handbook READER SCREEN's styles (HB1.1b) — the chapter colours, the
+     masthead and quick cards, the reader bar, chapter navigation, the trail,
+     resume and the cross-reference card, moved verbatim and in order out of
+     kb/script_kb.html. */
+  .kb-article .kb-diagram svg.kbdg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .kb-article.kb-diagram-big .kb-diagram svg.kbdg { width: 1160px; min-width: 1160px; }
+  /* The chapter's colour and icon (operator 2026-10-07): a badge on the part's
+     title (its stripe went in the design handoff's M6, 2026-10-09 — one colour
+     cue per level), and the icon beside it in the tree. --man-pN are tokens;
+     the badge's icon is the page colour, so it reads in light and dark. */
+  .kb-man-part, .kb-man-bar, .kb-chunk-doc-man, .kb-res-dot, .kbd-man-art { --man-c: var(--muted); }   /* an appendix has no chapter colour; the chapter classes below override */
+  .kb-man-p0 { --man-c: var(--man-p0); } .kb-man-p1 { --man-c: var(--man-p1); } .kb-man-p2 { --man-c: var(--man-p2); } .kb-man-p3 { --man-c: var(--man-p3); } 
+  .kb-man-p4 { --man-c: var(--man-p4); } .kb-man-p5 { --man-c: var(--man-p5); } .kb-man-p6 { --man-c: var(--man-p6); } .kb-man-p7 { --man-c: var(--man-p7); } 
+  .kb-man-p8 { --man-c: var(--man-p8); } .kb-man-p9 { --man-c: var(--man-p9); } .kb-man-p10 { --man-c: var(--man-p10); } 
+  .kb-man-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  /* M9 (design handoff, Phase 3): the chapter's masthead — kicker, the badge at
+     44px, the short name, a meta line (kbManualPaintMeta_) and "In this chapter".
+     The skeleton paints the same masthead from the tree, so nothing jumps. */
+  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; }
+  .kb-man-mast-k { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 10px; }
+  .kb-man-mast-h { display: flex; align-items: center; gap: 14px; margin: 0; font-family: var(--display); font-size: 1.85rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; color: var(--ink); }
+  .kb-man-mast .kb-man-badge { width: 44px; height: 44px; }
+  .kb-man-mast-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: .78rem; color: var(--muted-2); }
+  .kb-man-mast-meta > span:empty { display: none; }
+  .kb-man-mast-ix-h { margin-top: 20px; font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-man-mast-ix { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
+  .kb-man-ix { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: baseline; gap: 6px; text-align: left; font: inherit; padding: 7px 6px; border: none; border-bottom: 1px solid var(--line); background: none; cursor: pointer; color: var(--ink); }
+  .kb-man-ix:hover, .kb-man-ix:focus-visible { background: var(--paper-2); }
+  .kb-man-ix-n { font-family: var(--mono); font-size: .75rem; font-weight: 700; color: var(--man-c); font-variant-numeric: tabular-nums; }
+  .kb-man-ix-t { font-size: .88rem; min-width: 0; }
+  .kb-man-ix .kb-draft-pill { grid-column: 3; }
+  .kb-man-ix-upd:empty { display: none; }
+  /* One column when the reader is narrow — the pop-out, a phone (A2: by container). */
+  @container (max-width: 620px) { .kb-man-mast-ix { grid-template-columns: minmax(0, 1fr); } .kb-man-mast-h { font-size: 1.5rem; } }
+  /* M14 (Phase 8): the chapter's quick card, a disclosure at the foot of its masthead. */
+  .kb-man-mast-acts { margin-top: 14px; }
+  .kb-man-card { margin-top: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; container-type: inline-size; }
+  .kb-man-card-h { display: flex; align-items: center; gap: 8px; padding-right: 10px; background: color-mix(in oklab, var(--man-c) 8%, var(--paper-card)); }
+  .kb-man-card-tog { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 14px; border: none; background: none; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+  .kb-man-card-tog > svg { flex: none; color: var(--muted-2); transition: transform .15s; }
+  .kb-man-card-tog[aria-expanded="false"] > svg { transform: rotate(-90deg); }
+  .kb-man-card-tog:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .kb-man-card-chip { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 3px 8px; border-radius: 4px; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-card-t { font-weight: 600; }
+  .kb-man-card-nm { display: none; }   /* the printed card's title (styles.html print block) */
+  .kb-man-card-pr { flex: none; }
+  .kb-man-card-b { padding: 14px 18px 16px; border-top: 1px solid var(--line); }
+  .kb-man-card-b .kb-man-card-cols { columns: 2; column-gap: 28px; font-size: .9rem; }
+  .kb-man-card-b .kb-article h3, .kb-man-card-b .kb-article h4 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--man-c); margin: 0 0 4px; break-after: avoid; }
+  .kb-man-card-b .kb-article ul { break-inside: avoid; margin: 0 0 12px; }
+  .kb-man-card-b .kb-man-tw, .kb-man-card-b .kb-article table { break-inside: avoid; }
+  :root[data-compact] .kb-man-card-b .kb-man-card-cols { columns: 1; }
+  @container (max-width: 560px) { .kb-man-card-b .kb-man-card-cols { columns: 1; } }
+  /* M14/M19: a card's body (masthead or its own page) — the diagram FOLLOWS the
+     text in the document, the printed reverse; on screen it shows first. */
+  .kb-article.kb-man-card-art { display: flex; flex-direction: column; }
+  .kb-article.kb-man-card-art > * { min-width: 0; }
+  .kb-article.kb-man-card-art > figure { order: -1; margin-top: 0; }
+  .kb-article p.kb-man-never { column-span: all; margin: 12px 0 0; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--ink); }
+  .kb-man-skel-p { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 26px; }
+  .kb-man-skel-p .skel-bar { height: 12px; }
+  /* M11: the chapter's neighbours, after its last section. */
+  .kb-man-chapnav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  .kb-man-chapnav:empty { display: none; }
+  .kb-man-cn { display: flex; align-items: center; gap: 12px; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
+  .kb-man-cn:hover, .kb-man-cn:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
+  .kb-man-cn-next { grid-column: 2; justify-content: flex-end; text-align: right; }
+  .kb-man-cn > svg { flex: none; color: var(--muted-2); }
+  .kb-man-cn-txt { display: flex; flex-direction: column; min-width: 0; }
+  .kb-man-cn-k { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
+  .kb-man-cn-n { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
+  @container (max-width: 520px) { .kb-man-chapnav { grid-template-columns: minmax(0, 1fr); } .kb-man-cn-next { grid-column: auto; } }
+  .kb-man-sec:last-of-type { border-bottom: none; }   /* the chapter cards follow it (M11) */
+  .kb-man-badges:empty { display: none; }
+  /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
+     section number is a chip in the chapter colour beside a rule, sub-section
+     numbers take the colour, the column is wider, and tables follow the HTML
+     manual's two kinds (kbManualDecorate_): a small one keeps the quiet kicker
+     header, a large one (4+ columns or 12+ rows) gets a header in the chapter
+     colour and striped rows. Scoped to manual sections — hand-written articles
+     are unchanged. */
+  .kb-man-part { max-width: 900px; }
+  .kb-man-part .kb-article { max-width: none; font-size: .97rem; line-height: 1.72; }
+  .kb-man-sec { padding: 10px 0 26px; border-bottom: 1px solid var(--line); margin-bottom: 22px; scroll-margin-top: 12px; }
+  /* M6 (design handoff, operator 2026-10-09): one colour cue per level — the
+     number chip over a hairline, no left stripe (the HTML manual's h2 matches). */
+  .kb-man-sec-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; border-bottom: 1px solid var(--line); margin: 4px 0 6px; }
+  .kb-man-sec-h { font-family: var(--display); font-size: 1.5rem; font-weight: 600; line-height: 1.25; letter-spacing: -.015em; margin: 0; flex: 0 1 auto; }
+  .kb-man-sn { display: inline-block; font-family: var(--mono); font-size: .6em; font-weight: 700; letter-spacing: .02em; padding: .24em .55em; border-radius: 5px;
+    background: var(--man-c); color: var(--paper-card); margin-right: .5em; vertical-align: .25em; }
+  .kb-man-part .kb-article h3 { font-size: 1.14rem; font-weight: 650; margin: 1.7em 0 .55em; }
+  .kb-man-part .kb-article h4 { font-size: 1rem; margin: 1.4em 0 .4em; }
+  .kb-man-ssn { color: var(--man-c); font-variant-numeric: tabular-nums; margin-right: .45em; }
+  .kb-man-part .kb-article blockquote { padding: 11px 16px; margin: 1em 0 1.1em; }
+  .kb-man-tw { overflow-x: auto; margin: 1em 0 1.25em; }
+  .kb-man-tw.kb-man-tw-m { border: 1px solid var(--line); border-radius: 8px; }
+/* measured into the scroller's own style by kbManualStickyHeads_ */
+  .kb-man-tw.kb-man-tw-fit { overflow: visible; }
+  .kb-man-part .kb-article .kb-man-tw-fit > table > thead th { position: sticky; top: calc(var(--kb-man-band) - 18px); z-index: 2; background: var(--paper-card); border-bottom-color: transparent; box-shadow: inset 0 -1px 0 var(--line); }
+  .kb-man-part .kb-article .kb-man-tw-fit > table.kb-man-matrix > thead th { background: color-mix(in oklab, var(--man-c) 14%, var(--paper-card)); box-shadow: inset 0 -2px 0 var(--man-c); }
+  .kb-man-part .kb-article .kb-man-tw > table { display: table; width: 100%; margin: 0; font-size: .93rem; }
+  .kb-man-part .kb-article table.kb-man-compact th { color: var(--ink); font-size: 11px; padding: 6px 14px 7px 0; }
+  .kb-man-part .kb-article table.kb-man-compact td { padding: 9px 14px 9px 0; }
+  .kb-man-part .kb-article table.kb-man-matrix th { background: color-mix(in oklab, var(--man-c) 14%, var(--paper-card)); color: var(--ink); border-bottom: 2px solid var(--man-c); padding: 9px 12px; letter-spacing: .06em; }
+  .kb-man-part .kb-article table.kb-man-matrix td { padding: 9px 12px; }
+  .kb-man-part .kb-article table.kb-man-matrix tbody tr:nth-child(even) td { background: var(--paper-2); }
+  @media (max-width: 640px) { .kb-man-sec-h { font-size: 1.28rem; } }
+  .kb-man-part .kb-article td img.kb-manimg-thumb { max-height: 64px; max-width: 96px; margin: 2px 10px 2px 0; }
+  /* Manual reader design handoff, Phase 1 (operator 2026-10-09; the handoff is
+     docs/design_handoff_manual_reader/README.md). Scoped to manual sections. */
+  /* M1 — running text stops at a reading width; tables, diagrams, snippets keep the column. */
+  .kb-man-part .kb-article > p, .kb-man-part .kb-article > ul, .kb-man-part .kb-article > ol, .kb-man-part .kb-article > blockquote { max-width: 68ch; }
+  /* M2 — a callout reads kicker, title, body: a hairline box, the label in mono
+     (kbManualDecorate_ wraps it — text never changes), and only Critical keeps a
+     full-strength border. */
+  .kb-man-part .kb-article blockquote.kb-callout, .kb-article[data-kb-man] blockquote.kb-callout { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px 13px; }
+  .kb-man-part .kb-article blockquote.kb-callout-critical, .kb-article[data-kb-man] blockquote.kb-callout-critical { border: 1.5px solid var(--danger); }
+  .kb-man-part .kb-article blockquote.kb-callout-policy, .kb-article[data-kb-man] blockquote.kb-callout-policy { border-color: color-mix(in oklab, var(--info) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout-watch-out, .kb-article[data-kb-man] blockquote.kb-callout-watch-out { border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
+  .kb-man-part .kb-article blockquote.kb-callout > p:first-child > strong:first-child, .kb-article[data-kb-man] blockquote.kb-callout > p:first-child > strong:first-child { display: block; }
+  .kb-man-part .kb-snippet-label { font-family: var(--mono); letter-spacing: .1em; }
+  /* M3 — a situation → action table: the first column is the row's label, and a
+     two-column table stacks when the READER is narrow — a container query, the one
+     trigger right in the pop-out, on a phone and in the 340px drawer alike (A2). */
+  .kb-man-part .kb-article table.kb-man-compact tr > :first-child { width: 34%; }
+  .kb-man-part .kb-article table.kb-man-compact td:first-child { font-weight: 600; }
+  .kb-man-tw { container-type: inline-size; }
+  @container (max-width: 480px) {
+    .kb-man-part .kb-article table.kb-man-2col thead { display: none; }
+    .kb-man-part .kb-article table.kb-man-2col, .kb-man-part .kb-article table.kb-man-2col tbody,
+    .kb-man-part .kb-article table.kb-man-2col tr, .kb-man-part .kb-article table.kb-man-2col td { display: block; width: auto; }
+    .kb-man-part .kb-article table.kb-man-2col tr { padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .kb-man-part .kb-article table.kb-man-2col td { padding: 0; border: none; }
+    .kb-man-part .kb-article table.kb-man-2col tr > :first-child { width: auto; }   /* outranks the 34% label column */
+  }
+  /* M4b — a step's number sits in a circle in the chapter colour; the arrow to the
+     next step stays (the operator's pick over a plain rail). Still a <table>. */
+  .kb-man-part .kb-article table.kb-steps td:first-child, .kb-article[data-kb-man] table.kb-steps td:first-child { z-index: 0; width: 44px; vertical-align: top; padding-top: 12px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--ink); border-bottom-color: transparent; }
+  .kb-man-part .kb-article table.kb-steps td:first-child::before, .kb-article[data-kb-man] table.kb-steps td:first-child::before { content: ""; position: absolute; z-index: -1; left: 50%; top: 9px;
+    width: 24px; height: 24px; margin-left: -12px; box-sizing: border-box; border-radius: 50%;
+    border: 1.5px solid var(--man-c); background: color-mix(in oklab, var(--man-c) 12%, var(--paper-card)); }
+  .kb-man-part .kb-article table.kb-steps tbody tr:not(:last-child) td:first-child::after, .kb-article[data-kb-man] table.kb-steps tbody tr:not(:last-child) td:first-child::after { color: var(--man-c); }
+  /* A NAMED step ("Referral", "Open") is a label, not a number: no circle, the body
+     face (td.kb-step-name, per row), in a column wide enough for "Documentation
+     Request" whenever the table has one (kb-steps-named) — a numbered row in the
+     same table keeps its circle, centred in the wider column (operator 2026-10-19). */
+  .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-man-part .kb-article table.kb-steps.kb-steps-named td:first-child, .kb-article[data-kb-man] table.kb-steps.kb-steps-named td:first-child { width: 11em; }
+  .kb-article table.kb-steps td.kb-step-name, .kb-man-part .kb-article table.kb-steps td.kb-step-name, .kb-article[data-kb-man] table.kb-steps td.kb-step-name {
+    padding: 8px 14px 12px 4px; vertical-align: top; font-family: inherit; font-size: .92em; font-weight: 600; line-height: 1.35; color: var(--ink); }
+  .kb-man-part .kb-article table.kb-steps td.kb-step-name::before, .kb-article[data-kb-man] table.kb-steps td.kb-step-name::before { content: none; }
+  /* M5 — a section link is a solid underline; a bare number link reads as a number. */
+  .kb-man-part .kb-article a.kb-xref { text-decoration-style: solid; text-decoration-thickness: 1px; text-decoration-color: color-mix(in oklab, var(--accent) 50%, transparent); }
+  .kb-man-part .kb-article a.kb-xref.kb-xref-num { font-family: var(--mono); font-size: .88em; font-weight: 600; }
+  /* M8 (design handoff, Phase 2): ONE sticky band at the top of the reader — the
+     "Back to" row (when a cross-reference left one) above the reader bar, which
+     names the chapter and the section in view and carries Bookmark, Print and
+     previous / next for THAT section (kbManualSpy_). Both ride one sticky box so
+     neither covers the other. top / margin = minus .kb-main's padding (g162). */
+  .kb-man-top { position: sticky; top: -18px; z-index: 3; margin: -18px -22px 14px; background: var(--paper-card); border-bottom: 1px solid var(--line); container-type: inline-size; }
+  .kb-man-bar { display: flex; align-items: center; gap: 9px; padding: 9px 14px 9px 22px; min-width: 0; }
+  .kb-man-bar-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-bar-cn { flex: 0 2 auto; min-width: 0; font-size: .8rem; color: var(--muted-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kb-man-bar-chev { flex: none; display: inline-flex; color: var(--muted-3); }
+  .kb-man-bar-sn { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--man-c); color: var(--paper-card); }
+  .kb-man-bar-sn:empty { display: none; }
+  .kb-man-bar-t { flex: 1 1 auto; min-width: 0; font-size: .84rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kb-man-bar-skel .kb-man-bar-acts { visibility: hidden; }
+  .kb-man-bar-acts { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+  .kb-man-bar .kb-man-bar-ic { width: 30px; height: 30px; padding: 0; justify-content: center; border-color: transparent; background: none; color: var(--muted); }
+  .kb-man-bar .kb-man-bar-ic:hover, .kb-man-bar .kb-man-bar-ic:focus-visible { background: var(--paper-2); color: var(--ink); }
+/* the star keeps its own on-state (.kb-bm.on) inside the quiet icon button */
+  .kb-man-bar-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+  .kb-man-bar-nav { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-card); color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .kb-man-bar-nav:hover:not(:disabled), .kb-man-bar-nav:focus-visible { background: var(--paper-2); color: var(--ink); }
+  .kb-man-bar-nav:disabled { opacity: .4; cursor: default; }
+  /* A narrow reader (the pop-out, a phone) keeps the section, not the chapter name,
+     and ‹ › shrink to their chevrons (the label stays in the tooltip and the
+     accessible name) — at 390px the title had kept five letters. Since the
+     feedback joined the bar (2026-10-12) the buttons take a second row there, or
+     the title kept ONE letter: feedback, star and Print left, ‹ › right. */
+  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
+  /* Helpful / Suggest an edit ride the reader bar for the section in view (operator
+     2026-10-12 — a row closing every sub-section was clutter). A vote sent is
+     pressed and the pair goes quiet; a disabled pair is faded unless pressed. */
+  .kb-man-bar-fb { display: inline-flex; align-items: center; gap: 2px; }
+  .kb-man-bar .kb-man-bar-ic:disabled { cursor: default; }
+  .kb-man-bar .kb-man-bar-ic:disabled:not([aria-pressed="true"]) { opacity: .4; }
+  .kb-man-bar .kb-man-bar-ic[aria-pressed="true"] { color: var(--accent-2); }
+  .kb-man-print { white-space: nowrap; }
+  .kb-man-upd { font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }
+  .kb-man-sec-acts { margin-left: auto; display: inline-flex; gap: 6px; }
+  #kb-xrefcard { position: fixed; z-index: 61; display: none; flex-direction: column; width: min(440px, calc(100vw - 24px)); max-height: 340px;
+    background: var(--paper-card); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 10px 12px; font-size: .84rem; }
+  #kb-xrefcard.show { display: flex; }
+  #kb-xrefcard .xc-h { font-weight: 700; margin-bottom: 4px; }
+  /* M17 — a footnote's or a glossary term's card names its kind. */
+  #kb-xrefcard .xc-k { font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 4px; }
+  #kb-xrefcard .xc-body { font-size: .84rem; line-height: 1.5; max-width: none; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+  #kb-xrefcard .xc-body h3, #kb-xrefcard .xc-body h4, #kb-xrefcard .xc-body h5 { font-size: .9rem; margin: .6em 0 .3em; }
+  #kb-xrefcard .xc-more, #kb-xrefcard .xc-none { color: var(--muted); }
+  #kb-xrefcard .xc-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+  /* Batch M5a — the card names the part of the section the link is about */
+  #kb-xrefcard .xc-focus { font-size: .72rem; color: var(--muted); margin: -2px 0 6px; }
+  #kb-xrefcard .xc-body table { margin: 0; }
+  #kb-xrefcard .xc-body mark.kb-hl { padding: 0 1px; }
+  .kb-man-back:empty { display: none; }
+  /* M5a follow-on: the way back stays in reach — since M8 it is the first row of
+     the reader's one sticky band (.kb-man-top), above the reader bar; since M15
+     (Phase 5) it holds the reading trail, which replaced the one "Back to" chip. */
+  .kb-man-back { padding: 6px 22px; border-bottom: 1px solid var(--line); }
+  .kb-trail { display: flex; align-items: center; gap: 6px; overflow-x: auto; white-space: nowrap; min-width: 0; scrollbar-width: thin; }
+  .kb-trail-k { flex: none; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); margin-right: 2px; }
+  .kb-trail-chip { flex: none; display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: .76rem; padding: 3px 9px 3px 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper-2); color: var(--ink); cursor: pointer; }
+  .kb-trail-chip:hover, .kb-trail-chip:focus-visible { border-color: var(--border-strong); background: var(--paper-card); }
+  .kb-trail-badge { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--man-c); color: var(--paper-card); }
+  .kb-trail-n { font-family: var(--mono); font-size: .92em; font-weight: 700; }
+  .kb-trail-t { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; color: var(--muted); }
+  .kb-trail-cur { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; padding-left: 4px; }
+  .kb-trail-cur .kb-trail-t { color: var(--ink); }
+  .kb-trail > svg { flex: none; color: var(--muted-3); }
+  /* M16: "Back where you left off", under the bar. */
+  .kb-man-resume { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 14px 7px 22px; border-top: 1px solid var(--line); font-size: .78rem; color: var(--muted); background: var(--info-soft); }
+  .kb-man-resume > svg { flex: none; color: var(--info-deep); }
+  .kb-man-resume > span:not(.kb-man-resume-acts) { flex: 1 1 14em; min-width: 0; }   /* it shrinks beside the icon; the buttons wrap below it, together (390px) */
+  .kb-man-resume-acts { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+  .kb-man-resume b { font-family: var(--mono); color: var(--ink); }
+  .kb-man-resume-x { display: inline-flex; padding: 4px; border: none; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+  .kb-man-resume-x:hover, .kb-man-resume-x:focus-visible { background: var(--paper-card); color: var(--ink); }
+  /* A landed callout already has a tinted background, which outranks the flash — ring it instead. */
+  .kb-article blockquote.kb-h-flash { box-shadow: 0 0 0 2px var(--accent); }
+  #kb-xrefcard .lc-btn { font: inherit; font-size: .74rem; padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-2); color: var(--ink); text-decoration: none; }
+  :root[data-compact] .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }
+  @media (max-width: 720px) {
+    .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }
+  }
+  .kb-h-flash { background: var(--accent-soft); border-radius: 4px; transition: background 1.2s ease; }
+  /* Operator feedback (2026-06-12): search-term highlight in result chunks
+     (drawer + Reference compiled view). */
+  mark.kb-hl { background: var(--selection-bg); color: inherit; border-radius: 3px; padding: 0 1px; }
 </style>
 <script>
 // ─────────────────────────────────────────────────────────────────────────────
@@ -460,14 +700,15 @@
 // map, diagram, slideshow (and a slide's details), callouts, footnotes, HCPCS
 // links, the image chips and their hydrators (manual and article images), the
 // full-size image viewer and the button-screenshot peek. Moved VERBATIM, in
-// its original order, out of kb/script_kb.html, which is now included AFTER
-// this file and keeps the reader screen, the tree, the drawer, the editor and
-// everything else that is Reference's own.
+// its original order, out of kb/script_kb.html, which is included AFTER this
+// file and keeps the tree, the drawer, the editor, the landing and everything
+// else that is Reference's own.
 //
-// This file may reach Reference only through the names the CONTRACT pin in
-// test/client/run.js lists (kbXrefOpen_ — a diagram's "open the section";
-// KB_STATE — the admin check on a missing-image chip). Batch HB1.1b replaces
-// both with host hooks, so the handbook app can supply its own.
+// Since HB1.1b the file also holds the handbook READER SCREEN (below the
+// rendering layer), and neither reaches Reference by name: every call to the
+// host goes through MANUAL_HOST, the contract Team Tools' Reference installs
+// in kb/script_kb.html and the handbook app installs for itself. The CONTRACT
+// pin in test/client/run.js holds both directions.
 // ─────────────────────────────────────────────────────────────────────────────
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
 // source are inert), then applies a safe subset: headings, bold/italic, inline
@@ -2359,7 +2600,7 @@ function kbImgChipState_(n, attr, state) {
     : state === 'missing' ? (manual ? 'Image not imported yet' : 'Image not stored') : 'Couldn\u2019t load this image');
   if (alt) add('kb-img-alt', alt);
   if (state === 'missing') {
-    if (manual && typeof KB_STATE !== 'undefined' && KB_STATE.isAdmin) add('kb-img-note', 'Import it: Reference \u2192 Handbook \u2192 Import.');
+    if (manual && MANUAL_HOST.state().isAdmin) add('kb-img-note', 'Import it: Reference \u2192 Handbook \u2192 Import.');
     else if (!manual) add('kb-img-note', 'It may have been pasted into another copy of this article.');
   }
   if (state === 'failed') {
@@ -2896,5 +3137,1652 @@ function kbImgFallback_(img) {
       .withFailureHandler(function () { settle(null); })
       .kbGetImageData(fileId);
   } catch (e) { settle(null); }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The handbook READER SCREEN (handbook app HB1.1b, 2026-10-28) — the chapter
+// masthead and quick cards, the reader bar and its feedback, chapter
+// navigation, the scroll-spy, the reading trail and resume, cross-reference
+// previews and the footnote / glossary cards, and the pure helpers they share
+// (block finding, the link scorer, term highlighting, natural sort). Moved
+// verbatim and in order out of kb/script_kb.html. It reaches its host ONLY
+// through MANUAL_HOST and keeps its own state on MANUAL_STATE.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The reader's own state — the manual's meta and parts caches and their
+ *  generations, the open part, the reader bar's neighbours, the spy, the
+ *  feedback votes, the trail and resume. Created lazily, field by field, as it
+ *  was when these fields lived on Reference's KB_STATE. */
+var MANUAL_STATE = {};
+
+/** The HOST contract. The host calls MANUAL_HOST.install({...}) once at load
+ *  (Team Tools: kb/script_kb.html, after KB_STATE). An uninstalled hook is a
+ *  harmless default; the contract pin requires Team Tools to install every hook
+ *  the reader calls, and the reader to call no host name except through here.
+ *    state()               the host's {tree, isAdmin, currentId, landing}; the
+ *                          reader sets currentId and clears landing
+ *    openItem(id, anchor, nav)   open a section (or any item) in the host
+ *    prefs() / savePrefs(p)      the host's persisted panel prefs (cardOpen, resume)
+ *    markCurrent(id) / revealInTree(id) / treeUpdated()   the host's contents list
+ *    printSection(id) / printAllCards()                   printing
+ *    publishItem(id)             an admin's Publish on a draft section
+ *    suggestEdit(...)            the reader bar's Suggest an edit
+ *    bookmarkBtnHtml(item, cls) / bookmarkBtnPatch(btn, item)   bookmarks
+ *    recordOpen(item, tool)      recently opened
+ *    loadComments(id)            the section's discussion
+ *    drawerOpenItem(id, anchor, nav) / drawerOpen() / drawerTitle()   the
+ *                          host's mid-call drawer, where a link inside it opens */
+var MANUAL_HOST = {
+  state: function () { return MANUAL_HOST_IDLE_; },
+  openItem: function () {}, prefs: function () { return {}; }, savePrefs: function () {},
+  markCurrent: function () {}, revealInTree: function () {}, treeUpdated: function () {},
+  printSection: function () {}, printAllCards: function () {}, publishItem: function () {},
+  suggestEdit: function () {}, bookmarkBtnHtml: function () { return ''; }, bookmarkBtnPatch: function () {},
+  recordOpen: function () {}, loadComments: function () {},
+  drawerOpenItem: function () {}, drawerOpen: function () {}, drawerTitle: function () { return ''; },
+  install: function (hooks) {
+    Object.keys(hooks || {}).forEach(function (k) {
+      if (k === 'install' || typeof MANUAL_HOST[k] !== 'function') throw new Error('MANUAL_HOST has no hook "' + k + '"');
+      MANUAL_HOST[k] = hooks[k];
+    });
+  },
+};
+var MANUAL_HOST_IDLE_ = { tree: [], isAdmin: false, currentId: null, landing: false };
+
+
+// ── Batch M2 — the Manual reader ────────────────────────────────────────────
+// The procedures manual is its own surface, not 160 loose articles: opening
+// any manual section renders its WHOLE PART as one continuous page (the tree
+// is the contents rail; a click inside a loaded part scrolls rather than
+// refetching), `kb:` cross-references are real links with hover previews, and
+// sections are read-only here — the manual source owns them, so the reader
+// offers "Suggest an edit" (the review-queue flag with a note) instead of Edit.
+// Every section is still a KB item, so bookmarks, feedback, comments, usage
+// and review dates keep working per section.
+
+/** Pure — is this a manual section id (the importer's man-… namespace)? */
+function kbIsManualId_(id) { return /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(String(id || '')); }
+
+/** Pure (Node-pinned) — the Markdown a preview shows: from the numbered
+ *  heading `anchor` down to the next heading of the same or a higher level,
+ *  or the article's opening when there is no anchor; cut at a line boundary
+ *  near `max` characters and never inside a fence (an unfinished fence is
+ *  dropped). Returns { md, truncated, found }. */
+function kbManualExcerpt_(bodyMd, anchor, max) {
+  max = max || 700;
+  var lines = String(bodyMd || '').split('\n');
+  var from = 0, level = 7, found = !anchor;
+  if (anchor) {
+    for (var i = 0; i < lines.length; i++) {
+      var h = lines[i].match(/^(#{1,6})\s+(\S+)/);
+      if (h && h[2] === anchor) { from = i + 1; level = h[1].length; found = true; break; }
+    }
+    if (!found) from = 0;
+  }
+  var out = [], len = 0, inFence = false, fenceStart = -1, truncated = false;
+  for (var j = from; j < lines.length; j++) {
+    var ln = lines[j];
+    var hh = ln.match(/^(#{1,6})\s/);
+    if (!inFence && anchor && found && hh && hh[1].length <= level) break;
+    if (/^\s*```/.test(ln)) { inFence = !inFence; if (inFence) fenceStart = out.length; }
+    out.push(ln);
+    len += ln.length + 1;
+    if (len >= max && !inFence) { truncated = j + 1 < lines.length; break; }
+  }
+  if (inFence && fenceStart >= 0) { out = out.slice(0, fenceStart); truncated = true; }
+  return { md: out.join('\n').replace(/^\n+/, '').replace(/\s+$/, ''), truncated: truncated, found: found };
+}
+
+/** Pure (Node-pinned) — the changelog entries that badge one section: dated
+ *  within the last `days` of `todayIso`, newest first. */
+function kbManualUpdates_(changelog, id, todayIso, days) {
+  var cutoff = new Date(String(todayIso) + 'T00:00:00Z').getTime() - (days || 365) * 86400000;
+  return (changelog || []).filter(function (c) {
+    return c && c.id === id && new Date(String(c.date) + 'T00:00:00Z').getTime() >= cutoff;
+  }).sort(function (a, b) { return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0); });
+}
+var KB_MANUAL_UPDATED_DAYS = 365;   // the build's own "Recent updates" window: the last 12 months
+
+// ── Batch M5a — a preview shows the part of the section the link is ABOUT ────
+// Evidence (2026-09-29): 249 of the manual's 466 cross-references carry no
+// heading anchor, so their preview showed the target's OPENING — the "Ramps"
+// row of 0.7's table links to 4.11 FAQ, whose opening row is about cup
+// holders; the ramps row is the answer. The link's own block (its table row,
+// list item, paragraph or callout, minus the link's text) is the CONTEXT; the
+// target splits into the same kinds of block, and the block sharing the
+// context's rarer words wins — but only CLEARLY (a margin over the runner-up).
+// No clear winner → the excerpt exactly as before: fail toward what exists,
+// never a guess in place of the opening. The preview, the click and the
+// card's Open all read the ONE winner from these functions, and the manual
+// export's warning report (scripts/manual-xref-report.mjs) runs these same
+// functions over the whole manual — one scorer, no mirror (g126).
+var KB_CTX_MARGIN = 1.5;
+var KB_CTX_MIN_SHARED = 2;   // one shared word ("insurance") is a coincidence, not a match — measured over the manual's 465 links
+var KB_CTX_STOP = (function () {
+  var o = {};
+  ('the and for you your are with this that from not but can will has have had was were what when who how why ' +
+   'all any see our its into they them their then than there here also only just more most some such each ' +
+   'yes may must should would could use used using does did done been being which while about after before ' +
+   'over under out get got need needs one two per via don dont isn aren ask tell').split(' ')
+    .forEach(function (w) { if (w) o[w] = 1; });
+  return o;
+})();
+
+/** Pure (Node-pinned) — Markdown → the words a reader sees, for scoring and
+ *  for finding the rendered block again: images drop, a link reads as its
+ *  text, a line's list / heading / quote marker and a table's pipes go. */
+function kbMdPlain_(md) {
+  return String(md == null ? '' : md).split('\n').map(function (ln) {
+    if (/^\s*\|?[\s:|-]+\|?\s*$/.test(ln) && /-/.test(ln) && /\|/.test(ln)) return '';   // a table separator
+    return ln.replace(/^\s*>\s?/, '').replace(/^\s*>\s?/, '')
+      .replace(/^\s*#{1,6}\s+/, '').replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '');
+  }).join(' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\\\|/g, '|').replace(/\|/g, ' ');
+}
+/** Pure — lower case, every run of anything but a letter or digit one space. */
+function kbNormText_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+/** Pure (Node-pinned) — the words that can tie a link to a block: three
+ *  letters or more, not a stop word, not a bare number (section numbers are
+ *  the link's target, not its topic), a plural folded ("ramps" = "ramp"). */
+function kbCtxTokens_(s) {
+  var seen = {}, out = [];
+  kbNormText_(s).split(' ').forEach(function (t) {
+    if (t.length < 3 || KB_CTX_STOP[t] || /^\d+$/.test(t)) return;
+    if (t.length > 4 && /s$/.test(t) && !/ss$/.test(t)) t = t.slice(0, -1);
+    if (!seen[t]) { seen[t] = 1; out.push(t); }
+  });
+  return out;
+}
+
+/** Pure (Node-pinned) — a section's Markdown as the blocks a reader sees, in
+ *  kbMd_'s own grouping: a TABLE ROW (rendered with its header), a LIST ITEM
+ *  (its continuation lines included; a nested item is its own block), a
+ *  CALLOUT (the whole quote, tables and lists inside it included) and a
+ *  PARAGRAPH. Fences (diagrams, snippets, glossary) are not blocks. Each is
+ *  { kind, own, md, text, label }: `own` its source lines (where a link's
+ *  context is read), `md` what a preview renders, `text` its plain words, and
+ *  `label` what names it — a row's first cell, else the heading above it. */
+function kbManualBlocks_(md) {
+  var lines = String(md || '').split('\n'), out = [], heading = '', i = 0;
+  var LI = /^(\s*)([-*]|\d+\.)\s+(.*)$/, Q = /^\s*>/;
+  var push = function (kind, own, render, label) {
+    var text = kbMdPlain_(own);
+    if (!kbNormText_(text)) return;
+    out.push({ kind: kind, own: own, md: render, text: text, label: label || heading });
+  };
+  while (i < lines.length) {
+    var ln = lines[i];
+    if (/^\s*```/.test(ln)) { i++; while (i < lines.length && !/^\s*```/.test(lines[i])) i++; i++; continue; }
+    if (/^\s*$/.test(ln) || /^\s*(---|\*\*\*|___)\s*$/.test(ln)) { i++; continue; }
+    var h = ln.match(/^#{1,6}\s+(.*)$/);
+    if (h) { heading = kbMdPlain_(h[1]).trim(); i++; continue; }
+    if (/^\s*\|/.test(ln) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1]) && /-/.test(lines[i + 1])) {
+      var head = ln, sep = lines[i + 1];
+      i += 2;
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        var row = lines[i];
+        var first = row.replace(/\\\|/g, '\u0001').trim().replace(/^\|/, '').split('|')[0].replace(/\u0001/g, '|');
+        push('row', row, head + '\n' + sep + '\n' + row, kbMdPlain_(first).replace(/\s+/g, ' ').trim());
+        i++;
+      }
+      continue;
+    }
+    if (Q.test(ln)) {
+      var q = [];
+      while (i < lines.length && Q.test(lines[i])) { q.push(lines[i]); i++; }
+      push('callout', q.join('\n'), q.join('\n'));
+      continue;
+    }
+    var m = ln.match(LI);
+    if (m) {
+      var own = [ln];
+      i++;
+      while (i < lines.length && !LI.test(lines[i]) && /^\s{2,}\S/.test(lines[i]) && !Q.test(lines[i])) { own.push(lines[i]); i++; }
+      var itemText = [m[3]].concat(own.slice(1).map(function (x) { return x.trim(); })).join(' ');
+      push('item', own.join('\n'), (/\d/.test(m[2]) ? parseInt(m[2], 10) + '. ' : '- ') + itemText);
+      continue;
+    }
+    var p = [ln];
+    i++;
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !LI.test(lines[i]) &&
+           !Q.test(lines[i]) && !/^\s*\|/.test(lines[i]) && !/^\s*```/.test(lines[i])) { p.push(lines[i]); i++; }
+    push('para', p.join('\n'), p.join(' '));
+  }
+  return out;
+}
+
+/** Pure (Node-pinned) — the block `tokens` point at, or null. A shared word
+ *  weighs more the fewer blocks carry it (ln(1 + N/df)); the best block must
+ *  share at least KB_CTX_MIN_SHARED words with the link and beat the runner-up
+ *  by KB_CTX_MARGIN, so a tie, a lone shared word, a word every block shares
+ *  or a one-block section is NO winner. Returns {block, index, score, shared}. */
+function kbBestBlock_(blocks, tokens) {
+  if (!blocks || blocks.length < 2 || !tokens || !tokens.length) return null;
+  var sets = blocks.map(function (b) { var s = {}; kbCtxTokens_(b.text).forEach(function (t) { s[t] = 1; }); return s; });
+  var N = blocks.length, df = {};
+  tokens.forEach(function (t) { df[t] = 0; sets.forEach(function (s) { if (s[t]) df[t]++; }); });
+  var scored = sets.map(function (s, i) {
+    var sc = 0, shared = [];
+    tokens.forEach(function (t) { if (s[t]) { sc += Math.log(1 + N / df[t]); shared.push(t); } });
+    return { i: i, score: sc, shared: shared };
+  }).sort(function (a, b) { return b.score - a.score || a.i - b.i; });
+  var best = scored[0], second = scored[1];
+  if (!(best.score > 0) || best.shared.length < KB_CTX_MIN_SHARED) return null;
+  if (second.score > 0 && best.score < KB_CTX_MARGIN * second.score) return null;
+  return { block: blocks[best.i], index: best.i, score: best.score, shared: best.shared };
+}
+
+/** Pure (Node-pinned) — M5a follow-on: the ROW a link's own text names.
+ *  Appendix B's directory is one section of rows, and the manual links a
+ *  contact by name ("[Qualified Leads](kb:man-b-1)") — the text IS the part.
+ *  Exactly one row whose first cell reads the same words, or null (a text
+ *  that names two rows names neither; a section number or the target's title
+ *  names no row). */
+function kbNamedRow_(blocks, text) {
+  var want = kbNormText_(text);
+  if (!want) return null;
+  var rows = (blocks || []).filter(function (b) { return b.kind === 'row' && kbNormText_(b.label) === want; });
+  return rows.length === 1 ? { block: rows[0], index: blocks.indexOf(rows[0]), score: Infinity, shared: kbCtxTokens_(text) } : null;
+}
+
+/** Pure (Node-pinned) — the block of `bodyMd` a link points at: the row its
+ *  own text names, else the block its context clearly matches; inside the
+ *  anchored sub-section when there is one (the whole of it — the preview's
+ *  length cap is not a scope), else the whole section. */
+function kbXrefFocus_(bodyMd, anchor, ctx, text) {
+  var blocks = kbManualBlocks_(kbManualExcerpt_(bodyMd, anchor, Infinity).md);
+  return kbNamedRow_(blocks, text) || kbBestBlock_(blocks, kbCtxTokens_(ctx));
+}
+
+/** The plain words of a rendered block — cells, items and paragraphs kept
+ *  apart by a space (textContent runs a row's cells together), and an item's
+ *  nested list left out (it is a block of its own, as kbManualBlocks_ has it). */
+function kbElText_(el) {
+  if (!el) return '';
+  var c = el.cloneNode(true);
+  if (el.tagName === 'LI') c.querySelectorAll('ul, ol').forEach(function (x) { x.parentNode.removeChild(x); });
+  c.querySelectorAll('td, th, li, p, br, tr, div, h1, h2, h3, h4, h5, h6').forEach(function (x) { x.appendChild(document.createTextNode(' ')); });
+  return c.textContent || '';
+}
+/** The rendered block a link sits in: a callout whole (as the source groups
+ *  it), else its row, item or paragraph. Null outside an article body (a
+ *  diagram's links have no block). */
+function kbXrefBlockEl_(a) {
+  if (!a || !a.closest || !a.closest('.kb-article')) return null;
+  return a.closest('blockquote') || a.closest('tr, li, p');
+}
+/** A link's context: its block's words without the link's own (the link text
+ *  names the TARGET, which says nothing about which part of it). */
+function kbXrefContext_(a) {
+  var blk = kbXrefBlockEl_(a);
+  if (!blk) return '';
+  var id = a.getAttribute('data-kb-id'), anchor = a.getAttribute('data-kb-anchor') || '';
+  var c = blk.cloneNode(true);
+  c.querySelectorAll('a.kb-xref').forEach(function (x) {
+    if (x.getAttribute('data-kb-id') === id && (x.getAttribute('data-kb-anchor') || '') === anchor) x.parentNode.removeChild(x);
+  });
+  if (blk.tagName === 'LI') c.querySelectorAll('ul, ol').forEach(function (x) { x.parentNode.removeChild(x); });
+  return kbElText_(c);
+}
+/** Where a Back lands: the block the rep left from, as kind + words. */
+function kbXrefLandOf_(a) {
+  var blk = kbXrefBlockEl_(a);
+  var kind = blk && { TR: 'row', LI: 'item', BLOCKQUOTE: 'callout', P: 'para' }[blk.tagName];
+  return kind ? { kind: kind, text: kbElText_(blk) } : null;
+}
+/** The rendered element for a block, inside `host` (after the anchored
+ *  heading `after`, when given — a sub-section's own rows first). Matched by
+ *  its words, exactly; a paragraph inside a callout, item or cell belongs to
+ *  THAT block, so it is never a paragraph candidate. */
+function kbFindBlockEl_(host, block, after) {
+  var sel = block && { row: 'tr', item: 'li', callout: 'blockquote', para: 'p' }[block.kind];
+  var want = block && kbNormText_(block.text);
+  if (!host || !sel || !want) return null;
+  var els = host.querySelectorAll(sel);
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i];
+    if (after && !(after.compareDocumentPosition(el) & 4)) continue;
+    if (block.kind === 'para' && el.parentElement && el.parentElement.closest('blockquote, li, td, th')) continue;
+    if (kbNormText_(kbElText_(el)) === want) return el;
+  }
+  return null;
+}
+/** Scroll a landed block into view and flash it, as a heading landing does. */
+function kbFlashBlock_(el, instant) {
+  kbReaderScroll_(el, 'center', !instant);
+  el.classList.add('kb-h-flash');
+  setTimeout(function () { el.classList.remove('kb-h-flash'); }, 1600);
+}
+/** Scroll the READER (#kb-main) to an element. Not scrollIntoView: that scrolls
+ *  every scrolling ancestor too — the app's own page inside the HtmlService
+ *  iframe — and pushed the reader's top, and since M8 its sticky bar, up under
+ *  the shell's tab strip (measured 2026-10-09: the page moved 136px before the
+ *  bar, 196px with it). 'start' lands below the bar (the reader's
+ *  scroll-padding plus the target's scroll-margin); 'center' mid-reader. An
+ *  element outside the reader (the drawer) keeps scrollIntoView. */
+function kbReaderScroll_(el, block, smooth) {
+  var main = document.getElementById('kb-main');
+  if (!el) return;
+  if (!main || !main.contains(el)) { try { el.scrollIntoView({ block: block, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) {} return; }
+  var mr = main.getBoundingClientRect(), r = el.getBoundingClientRect(), cs = window.getComputedStyle ? getComputedStyle(main) : {};
+  // Below the sticky band's REAL height when there is one — the trail row and the
+  // resume line (Phase 5) make it taller than any fixed scroll-padding.
+  var band = main.querySelector('.kb-man-top'), pad = band && band.offsetHeight ? band.offsetHeight + 12 : (parseFloat(cs.scrollPaddingTop) || 0);
+  var off = block === 'center' ? (main.clientHeight - r.height) / 2
+    : pad + (parseFloat((window.getComputedStyle ? getComputedStyle(el) : {}).scrollMarginTop) || 0);
+  var y = Math.max(0, main.scrollTop + (r.top - mr.top - (main.clientTop || 0)) - off);
+  try { main.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { main.scrollTop = y; }
+}
+/** The element a link with context `ctx` lands on in a rendered section, or null. */
+function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {
+  if (!host || !(ctx || text)) return null;
+  var hit = kbXrefFocus_(bodyMd, anchor, ctx, text);
+  if (!hit) return null;
+  return kbFindBlockEl_(host, hit.block, anchor ? kbFindAnchorHeading_(host, anchor) : null);
+}
+
+/** The first heading inside `host` whose text is the number, or starts with
+ *  it and a space ("5.9.2 Pick-up …"). */
+function kbFindNumberedHeading_(host, num) {
+  if (!host || !num) return null;
+  var hs = host.querySelectorAll('h1,h2,h3,h4,h5,h6');
+  for (var i = 0; i < hs.length; i++) {
+    var t = String(hs[i].textContent || '').trim();
+    if (t === num || t.indexOf(num + ' ') === 0) return hs[i];
+  }
+  return null;
+}
+
+/** F10 (cycle 25) — the heading an anchor names inside `host`: a manual
+ *  cross-reference names a NUMBERED heading ("5.9.2", "A.1"), a search hit a
+ *  slug ("0-10-1-trx-type", kbMd_'s `kb-h-` id). ONE resolver for every open
+ *  path — the reader's focus took only the numbered form, so "Open ¶" on a
+ *  search hit landed on the section top. */
+function kbFindAnchorHeading_(host, anchor) {
+  if (!host || !anchor) return null;
+  return kbFindNumberedHeading_(host, anchor) ||
+    (/^[a-z0-9-]+$/.test(anchor) ? host.querySelector('#kb-h-' + anchor) : null);
+}
+
+function kbManualDeptOf_(id) {
+  var it = (MANUAL_HOST.state().tree || []).filter(function (x) { return x.id === id; })[0];
+  return it ? it.department : '';
+}
+
+/** The manual's meta (version, router, changelog) — fetched once per session;
+ *  `cb(meta, failed)` gets null when there is none or the read failed (the reader
+ *  then simply omits the version line, badges and router — never a stale guess).
+ *  F11 (cycle 25): only an ANSWER is cached. A read that failed — an `{error}`
+ *  or a transport failure — tells every waiter `failed` and caches nothing, so
+ *  the next open asks again (g129: it used to cache the error as "no meta" for
+ *  the session, and a transport failure dropped the waiters unanswered). An
+ *  import or a publish forgets the meta too (kbManualInvalidate_), and a read
+ *  that was in flight across one is answered but not kept. */
+function kbEnsureManualMeta_(cb) {
+  if (MANUAL_STATE.manualMeta !== undefined) { if (cb) cb(MANUAL_STATE.manualMeta, false); return; }
+  (MANUAL_STATE.manualMetaWaiters = MANUAL_STATE.manualMetaWaiters || []).push(cb || function () {});
+  if (MANUAL_STATE.manualMetaWaiters.length > 1) return;
+  var gen = MANUAL_STATE.manualMetaGen || 0;
+  var done = function (m, failed) {
+    if (!failed && gen === (MANUAL_STATE.manualMetaGen || 0)) MANUAL_STATE.manualMeta = m;
+    var ws = MANUAL_STATE.manualMetaWaiters || []; MANUAL_STATE.manualMetaWaiters = [];
+    ws.forEach(function (w) { try { w(m, !!failed); } catch (e) {} });
+  };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && res.error) done(null, true);
+      else done(res && !res.none ? res : null, false);
+    })
+    .withFailureHandler(function () { done(null, true); })   // not cached: a later open retries
+    .getManualMeta();
+}
+
+/** Open a manual section: scroll within the loaded part, or load the part.
+ *  Returns false when the section's part is unknown (the caller falls back to
+ *  the generic reader). */
+function kbOpenManualSection_(id, anchor, nav) {
+  var dept = kbManualDeptOf_(id);
+  if (!dept) return false;
+  // M16: a chapter-level open (a chapter card, ‹ › across chapters) resumes where
+  // the rep left off in that chapter, under a week ago; any explicit target wins.
+  if (nav && nav.chapter) {
+    var ids = (MANUAL_HOST.state().tree || []).filter(function (it) { return it.department === dept; }).map(function (it) { return it.id; });
+    var r = kbResumePick_(MANUAL_HOST.prefs().resume, dept, ids, Date.now(), KB_RESUME_DAYS);
+    if (r && (r.id !== id || r.h)) { MANUAL_STATE.resumeLine = { id: r.id, h: r.h || '', first: id }; id = r.id; anchor = r.h || ''; }
+  }
+  var main = document.getElementById('kb-main'); if (!main) return true;
+  MANUAL_HOST.state().currentId = id; MANUAL_HOST.state().landing = false;
+  MANUAL_HOST.markCurrent(id);
+  if (MANUAL_STATE.manualPart && MANUAL_STATE.manualPart.department === dept && document.getElementById('kb-man-sec-' + id)) {
+    kbManualFocus_(id, anchor, false, nav);
+    return true;
+  }
+  var seq = (MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1);
+  kbEnsureManualMeta_(function () { if (seq === MANUAL_STATE.manualSeq) kbManualPaintMeta_(); });   // the skeleton's masthead too
+  // Operator testing 2026-10-08: a chapter already in the session cache paints
+  // at once — no server call between chapters. The first open still asks for
+  // its one chapter (the fastest read), while the whole manual arrives behind it.
+  var cached = kbManualCachedPart_(dept);
+  if (cached && cached.sections.some(function (s) { return s.id === id; })) { kbManualPaintPart_(main, cached, id, anchor, nav); return true; }
+  kbPrefetchManualParts_();
+  main.innerHTML = kbManualSkeletonHtml_(dept, id);
+  kbManualCardShape_(main);   // a masthead card looks the same before and after the bodies land
+  kbManualPaintMeta_();
+  var requested = currentView;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (currentView !== requested || seq !== MANUAL_STATE.manualSeq || MANUAL_HOST.state().currentId !== id) return;
+      if (!res || res.error) { kbManualLoadFail_(main, (res && res.error) || 'Failed to load this chapter of the handbook'); return; }
+      if (!(res.sections || []).some(function (s) { return s.id === id; })) { kbManualLoadFail_(main, 'That section is not available.'); return; }
+      kbManualPaintPart_(main, res, id, anchor, nav);
+    })
+    .withFailureHandler(function (err) {
+      if (currentView === requested && seq === MANUAL_STATE.manualSeq && MANUAL_HOST.state().currentId === id) kbManualLoadFail_(main, (err && err.message) || 'Failed to load this chapter of the handbook');
+    })
+    .getManualPart(dept);
+  return true;
+}
+
+/** Paint one chapter into the reader and land on the section. Shared by the
+ *  server read and the session cache, so the two cannot paint differently. */
+function kbManualPaintPart_(main, part, id, anchor, nav) {
+  MANUAL_STATE.manualPart = part;
+  MANUAL_STATE.manualSpyId = null;
+  main.innerHTML = kbManualPartHtml_(part);
+  kbManualDecorate_(main);
+  kbManualStickyHeads_(main);
+  kbGlossaryAnnotate_(main);
+  kbLinkHcpcs_(main);
+  kbManualPaintMeta_();
+  kbManualPaintChapNav_(main);
+  kbManualSpyBind_(main);
+  kbManualFocus_(id, anchor, true, nav);
+}
+
+/** Operator testing 2026-10-08 — the whole manual, fetched ONCE per session by
+ *  getManualParts (one sheet read) and kept by chapter. A chapter switch paints
+ *  from it, and a cross-reference preview reads its target from it, so neither
+ *  waits on the server after the first load. A failed read is never cached as
+ *  a value (g129): the reader simply keeps asking per chapter, as before.
+ *  Import and publish clear it (kbManualInvalidate_), so a stale draft or an
+ *  old body never paints. */
+function kbPrefetchManualParts_() {
+  if (MANUAL_STATE.manualParts || MANUAL_STATE.manualPartsLoading) return;
+  MANUAL_STATE.manualPartsLoading = true;
+  var gen = MANUAL_STATE.manualPartsGen = (MANUAL_STATE.manualPartsGen || 0) + 1;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (gen !== MANUAL_STATE.manualPartsGen) return;   // an import or publish cleared the cache mid-flight
+      MANUAL_STATE.manualPartsLoading = false;
+      if (!res || res.error || !Array.isArray(res.parts)) return;
+      var by = {};
+      res.parts.forEach(function (p) {
+        if (!p || !p.department || !Array.isArray(p.sections)) return;
+        by[p.department] = { department: p.department, sections: p.sections, isAdmin: !!res.isAdmin };
+        p.sections.forEach(function (s) {
+          KB_XREF.cache[s.id] = { id: s.id, title: s.title, department: p.department, status: s.status, type: 'article', bodyMd: s.bodyMd };
+        });
+      });
+      MANUAL_STATE.manualParts = by;
+    })
+    .withFailureHandler(function () { if (gen === MANUAL_STATE.manualPartsGen) MANUAL_STATE.manualPartsLoading = false; })
+    .getManualParts();
+}
+/** The cached chapter, or null when the manual has not arrived yet. */
+function kbManualCachedPart_(dept) {
+  var p = MANUAL_STATE.manualParts && MANUAL_STATE.manualParts[dept];
+  return p && Array.isArray(p.sections) ? p : null;
+}
+/** Forget every cached chapter and preview — an import or a publish changed
+ *  what the manual holds (bodies, drafts, statuses). The next open reads fresh. */
+function kbManualInvalidate_() {
+  MANUAL_STATE.manualParts = null;
+  MANUAL_STATE.manualPartsLoading = false;
+  MANUAL_STATE.manualPartsGen = (MANUAL_STATE.manualPartsGen || 0) + 1;
+  MANUAL_STATE.manualPart = null;
+  MANUAL_STATE.manualMeta = undefined;   // F11 (cycle 25): the version, router and changelog came from the import too
+  MANUAL_STATE.manualMetaGen = (MANUAL_STATE.manualMetaGen || 0) + 1;   // and a read in flight across it is answered, never kept
+  KB_XREF.cache = {};
+}
+
+/** Pure (Node-pinned) — a section title with its number as a chip: "3.8
+ *  Incontinence and catheter" → <span class="kb-man-sn">3.8</span> Incontinence
+ *  and catheter. The text stays "3.8 Incontinence…", so every reader of the
+ *  heading's textContent (the Back chip, landing) is unchanged; a title with no
+ *  number (a card, the glossary) is escaped as it is. */
+function kbManualTitleHtml_(title) {
+  var t = kbManualSplitTitle_(title);
+  return t.num ? '<span class="kb-man-sn">' + esc(t.num) + '</span> ' + esc(t.rest) : esc(title || '');
+}
+/** Pure (Node-pinned) — "3.8 Incontinence and catheter" → {num: '3.8', rest:
+ *  'Incontinence and catheter'}; a title with no section number → {num: '',
+ *  rest: title}. The heading chip, the reader bar and the tree rows share it. */
+function kbManualSplitTitle_(title) {
+  var s = String(title == null ? '' : title);
+  var m = /^((?:\d+|[A-C])\.[0-9A-Z]+)\s+(.+)$/.exec(s);
+  return m ? { num: m[1], rest: m[2] } : { num: '', rest: s };
+}
+/** Pure (Node-pinned) — "Chapter 05 — Power Mobility" → {num: '05', name: 'Power
+ *  Mobility', appendix: false}; "Appendix B — Escalation Directory" → {num: 'B',
+ *  name: 'Escalation Directory', appendix: true}; anything else → {num: '', name}. */
+function kbManualChapterParts_(dept) {
+  var s = String(dept == null ? '' : dept);
+  var m = /^(?:Chapter|Part) (\d+) \u2014 (.+)$/.exec(s);
+  if (m) return { num: m[1], name: m[2], appendix: false };
+  m = /^Appendix ([A-Z]) \u2014 (.+)$/.exec(s);
+  return m ? { num: m[1], name: m[2], appendix: true } : { num: '', name: s, appendix: false };
+}
+/** After a chapter paints: a sub-section heading's number takes the chapter
+ *  colour, and each table is classed the way the HTML manual classes it
+ *  (make_html.py classify_tables: 4+ columns or 12+ rows is a MATRIX) and wrapped
+ *  so a wide one scrolls inside itself. The step and ✓/✗ tables keep their own
+ *  look. Text is never changed — landing and search read the same words. */
+function kbManualDecorate_(root) {
+  if (!root || !root.querySelectorAll) return;
+  kbManualCardShape_(root);
+  root.querySelectorAll('.kb-man-sec .kb-article h3, .kb-man-sec .kb-article h4').forEach(function (h) {
+    var first = h.firstChild;
+    if (!first || first.nodeType !== 3 || h.querySelector('.kb-man-ssn')) return;
+    var m = /^\s*((?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*)(\s+)/.exec(first.nodeValue);
+    if (!m) return;
+    var span = document.createElement('span');
+    span.className = 'kb-man-ssn';
+    span.textContent = m[1];
+    first.nodeValue = m[2] + first.nodeValue.slice(m[0].length);
+    h.insertBefore(span, first);
+  });
+  root.querySelectorAll('.kb-man-sec .kb-article table, .kb-man-card-b .kb-article table').forEach(function (t) {
+    if (t.parentElement && t.parentElement.classList.contains('kb-man-tw')) return;
+    var head = t.querySelector('tr');
+    var cols = head ? head.children.length : 0;
+    var rows = t.querySelectorAll('tbody tr').length;
+    var own = t.classList.contains('kb-steps') || t.classList.contains('kb-dodont');
+    var matrix = !own && (cols >= 4 || rows >= 12);
+    if (!own) t.classList.add(matrix ? 'kb-man-matrix' : 'kb-man-compact');
+    if (!own && !matrix && cols === 2) t.classList.add('kb-man-2col');   // M3: stacks when the reader is narrow
+    var w = document.createElement('div');
+    w.className = 'kb-man-tw' + (matrix ? ' kb-man-tw-m' : '');
+    t.parentNode.insertBefore(w, t);
+    w.appendChild(t);
+  });
+  kbDecorateCallouts_(root, '.kb-man-sec blockquote.kb-callout');
+  kbManualFootnotes_(root);
+  // M5: a link whose whole text is a section number reads as a number.
+  root.querySelectorAll('.kb-man-sec .kb-article a.kb-xref').forEach(function (a) {
+    if (!a.closest('svg') && /^(?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*$|^CARD \d+$/.test(a.textContent.trim())) a.classList.add('kb-xref-num');
+  });
+}
+/** Operator 2026-10-19 — a table's header row stays in view, below the reader's
+ *  band, until the table scrolls past. A sticky header cannot stick inside a
+ *  scroll box, and every table sits in one (.kb-man-tw scrolls sideways when it
+ *  is wider than the reader), so a table that FITS drops its scroll box
+ *  (kb-man-tw-fit) and its header sticks; a wider one keeps scrolling sideways,
+ *  header and all. Decided by measurement, never assumed: an unmeasured table
+ *  (not laid out yet, width 0) keeps its scroll box, and every size change
+ *  measures again. The band's height (it grows with the Back row) is the
+ *  header's offset, as --kb-man-band on the scroller. */
+function kbManualStickyHeads_(main) {
+  if (!main || !main.querySelectorAll) return;
+  var band = main.querySelector('.kb-man-top');
+  function bandH() { main.style.setProperty('--kb-man-band', (band && band.offsetHeight ? band.offsetHeight : 0) + 'px'); }
+  function fit(w) {
+    if (!w.clientWidth) return;
+    w.classList.remove('kb-man-tw-fit');
+    w.classList.toggle('kb-man-tw-fit', w.scrollWidth <= w.clientWidth + 1);
+  }
+  var tws = [].slice.call(main.querySelectorAll('.kb-man-tw'));
+  bandH();
+  tws.forEach(fit);
+  if (MANUAL_STATE.manualHeadsRo) { try { MANUAL_STATE.manualHeadsRo.disconnect(); } catch (e) {} MANUAL_STATE.manualHeadsRo = null; }
+  if (typeof ResizeObserver !== 'function') return;
+  var ro = new ResizeObserver(function (entries) {
+    entries.forEach(function (en) { if (en.target === band) bandH(); else fit(en.target); });
+  });
+  if (band) ro.observe(band);
+  tws.forEach(function (w) { ro.observe(w); });
+  MANUAL_STATE.manualHeadsRo = ro;
+}
+/** M14 / M19 — a card's body (in a masthead, or its own Appendix C page): the
+ *  text goes into one wrapper the columns apply to, and the diagram follows it
+ *  in the document. On screen a flex order shows the diagram first (above the
+ *  columns); a printout is a plain block, so the diagram lands AFTER the text,
+ *  on its own page — the card's reverse. The **Never** line is marked for its
+ *  box. Nodes MOVE (nothing is re-parsed or re-escaped); idempotent. */
+function kbManualCardShape_(root) {
+  root.querySelectorAll('.kb-man-card-b > .kb-article, .kb-man-sec[data-kb-id^="man-c-"] > .kb-article').forEach(function (art) {
+    if (art.querySelector(':scope > .kb-man-card-cols')) return;
+    var cols = document.createElement('div'), figs = [];
+    cols.className = 'kb-man-card-cols';
+    [].slice.call(art.childNodes).forEach(function (n) {
+      if (n.nodeType === 1 && /^(?:kb-diagram|kb-diagram-pending)$/.test(n.className) && n.tagName === 'FIGURE') figs.push(n);
+      else cols.appendChild(n);
+    });
+    art.appendChild(cols);
+    figs.forEach(function (f) { art.appendChild(f); });
+    art.classList.add('kb-man-card-art');
+    [].forEach.call(cols.children, function (p) {
+      var b = p.tagName === 'P' ? p.firstChild : null;
+      if (b && b.nodeType === 1 && b.tagName === 'STRONG' && /^Never\b/.test(b.textContent)) p.classList.add('kb-man-never');
+    });
+  });
+}
+/** M18 — a manual hit in the search results reads like the chapter: the same
+ *  callout kicker (the CSS reaches every .kb-article[data-kb-man]: a result
+ *  chunk, and since Phase 6 the drawer's section). */
+function kbDecorateManualResults_(rootEl) {
+  if (rootEl) kbDecorateCallouts_(rootEl, '.kb-chunk-body[data-kb-man] blockquote.kb-callout');
+}
+/** The note a reference opens, in the shared card: "Note ¹ · <section>", its
+ *  text, and Go to note. */
+function kbFnShow_(b) {
+  var note = document.getElementById(b.getAttribute('data-fn-note')); if (!note) return;
+  var key = 'fn:' + note.id;
+  if (KB_XREF.origin === b && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  kbPopTake_(b, key);
+  var sec = b.closest('.kb-man-sec'), h = sec && sec.querySelector('.kb-man-sec-h');
+  var where = h ? h.textContent : (b.closest('#kbd-body') ? MANUAL_HOST.drawerTitle() : '');   // the drawer reads one section
+  var body = note.cloneNode(true), lead = body.firstChild;
+  if (lead && lead.nodeType === 3) lead.nodeValue = lead.nodeValue.replace(/^\s*[\u00b9\u00b2\u00b3\u2074-\u2079\u2070]+\s*/, '');
+  var el = kbXrefEl_();
+  el.innerHTML = '<div class="xc-k">Note ' + esc(b.textContent) + (where ? ' · ' + esc(where) : '') + '</div>' +
+    '<div class="kb-article xc-body">' + body.innerHTML + '</div>' +
+    '<div class="xc-row"><button type="button" class="lc-btn" data-fn-go="' + esc(note.id) + '">Go to note</button></div>';
+  el.classList.add('show');
+  kbTetherPopover_(el, b);
+}
+/** M17 — a glossary mark opens the same card: "Glossary", the term, its
+ *  definition, and Go to glossary (the definition row on the same page). */
+function kbGlossShow_(m) {
+  var term = m.getAttribute('data-term') || m.textContent, key = 'gl:' + term;
+  if (KB_XREF.origin === m && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  kbPopTake_(m, key);
+  var el = kbXrefEl_();
+  el.innerHTML = '<div class="xc-k">Glossary</div><div class="xc-h">' + esc(term) + '</div>' +
+    '<div class="xc-body">' + esc(m.getAttribute('data-def') || '') + '</div>' +
+    (kbGlossRowFor_(m) ? '<div class="xc-row"><button type="button" class="lc-btn" data-gloss-go>Go to glossary</button></div>' : '');
+  el.classList.add('show');
+  kbTetherPopover_(el, m);
+}
+/** The definition row a mark came from: the nearest enclosing page that holds
+ *  a glossary row of that term. */
+function kbGlossRowFor_(m) {
+  var term = m.getAttribute('data-term');
+  for (var host = m.parentElement; host; host = host.parentElement) {
+    var rows = host.querySelectorAll ? host.querySelectorAll('.kb-gloss-row') : [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].getAttribute('data-term') === term) return rows[i];
+  }
+  return null;
+}
+/** The card now describes `origin` (the previous origin is released). */
+function kbPopTake_(origin, key) {
+  if (KB_XREF.origin && KB_XREF.origin !== origin && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
+  KB_XREF.key = key; KB_XREF.origin = origin;
+  origin.setAttribute('aria-describedby', 'kb-xrefcard');
+}
+/** F52 (cycle 25) — the card's keyboard stops, in order: its links and buttons
+ *  (a footnote or glossary mark inside the card is inert, so it is not one). */
+function kbPopFocusables_(card) {
+  return Array.prototype.slice.call(card.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+    .filter(function (x) { return !x.matches('button.kb-fn-ref, .kb-gloss-mark'); });
+}
+/** The one card, for whichever kind of mark asked. */
+function kbPopShow_(el) {
+  if (el.classList.contains('kb-fn-ref')) kbFnShow_(el);
+  else if (el.classList.contains('kb-gloss-mark')) kbGlossShow_(el);
+  else kbXrefShow_(el);
+}
+var KB_POP_SEL = 'a.kb-xref, button.kb-fn-ref, .kb-gloss-mark';
+
+/** Pure-ish — the part page. Section bodies render through kbMd_ (escape
+ *  first) with their headings demoted under the section title. */
+function kbManualPartHtml_(part) {
+  var admin = MANUAL_HOST.state().isAdmin;
+  var secs = part.sections || [];
+  var drafts = secs.filter(function (s) { return s.status === 'draft'; }).length;
+  var ck = kbManualChapterKey_(part.department);
+  var html = kbManualBarHtml_(part.department) + kbManualMastheadHtml_(part.department, secs) +
+    (admin && drafts ? '<div class="kb-draft-banner">' + icon('warning', 13) + ' ' + drafts + ' of ' + secs.length +
+      ' section' + (secs.length === 1 ? '' : 's') + ' in this chapter ' + (drafts === 1 ? 'is a draft' : 'are drafts') + ' — hidden from reps until published (Reference → Handbook).</div>' : '') +
+    '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '">';
+  secs.forEach(function (s) {
+    var draft = s.status === 'draft';
+    var cardN = kbIsManualCard_(s.id) ? Number(String(s.id).replace('man-c-', '')) : -1;   // M19: card N wears chapter N's colour
+    html += '<section class="kb-man-sec' + (cardN >= 0 && cardN <= 10 ? ' kb-man-p' + cardN : '') + '" id="kb-man-sec-' + esc(s.id) + '" data-kb-id="' + esc(s.id) + '">' +
+      '<div class="kb-man-sec-head">' +
+        '<h2 class="kb-man-sec-h">' + kbManualTitleHtml_(s.title) + '</h2>' +
+        (draft ? '<span class="kb-draft-pill">Draft</span>' : '') +
+        '<span class="kb-man-badges" data-kb-badges="' + esc(s.id) + '"></span>' +
+        // M8: Bookmark and Print ride the reader bar, for the section in view; an
+        // admin's Publish stays on the draft it publishes.
+        (admin && draft ? '<span class="kb-man-sec-acts"><button class="kb-btn" data-kb-id="' + esc(s.id) + '" onclick="MANUAL_HOST.publishItem(this.getAttribute(\'data-kb-id\'))">' + icon('check', 13) + ' Publish</button></span>' : '') +
+      '</div>' +
+      '<div class="kb-article">' + kbShiftHeadings_(kbMd_(s.bodyMd || '')) + '</div>' +
+    '</section>';
+  });
+  return html + '<nav class="kb-man-chapnav" data-kb-man-chapnav aria-label="Other chapters"></nav></div>';
+}
+
+/** M9 (design handoff, Phase 3) — the chapter's masthead: kicker, badge, short
+ *  name, a meta line (the section count here; the updated count and the version
+ *  are kbManualPaintMeta_'s), and "In this chapter" — each section a link. ONE
+ *  renderer for the skeleton (from the tree) and the painted chapter, so the page
+ *  does not move when the chapter lands. `secs` are [{id, title, status}]. */
+function kbManualMastheadHtml_(dept, secs) {
+  var ck = kbManualChapterKey_(dept), cp = kbManualChapterParts_(dept);
+  var html = '<header class="kb-man-mast' + (ck ? ' kb-man-' + ck : '') + '">' +
+    '<div class="kb-man-mast-k">Policies &amp; Procedures Handbook' + (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</div>' +
+    '<h2 class="kb-man-mast-h">' + kbManualChapterIcon_(dept, 22, 'kb-man-badge') + '<span>' + esc(cp.name) + '</span></h2>' +
+    '<div class="kb-man-mast-meta"><span>' + secs.length + ' section' + (secs.length === 1 ? '' : 's') + '</span>' +
+      '<span data-kb-man-updcount></span><span data-kb-man-ver></span></div>';
+  if (secs.length > 1) {
+    html += '<div class="kb-man-mast-ix-h">In this chapter</div><div class="kb-man-mast-ix">';
+    secs.forEach(function (s) {
+      var t = kbManualSplitTitle_(s.title);
+      html += '<button type="button" class="kb-man-ix" data-kb-id="' + esc(s.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">' +
+        '<span class="kb-man-ix-n">' + esc(t.num) + '</span><span class="kb-man-ix-t">' + esc(t.rest) + '</span>' +
+        (s.status === 'draft' ? '<span class="kb-draft-pill">Draft</span>' : '<span class="kb-man-ix-upd" data-kb-ix-upd="' + esc(s.id) + '"></span>') + '</button>';
+    });
+    html += '</div>';
+  }
+  if (cp.appendix && cp.num === 'C') {   // M19: the cards' own chapter prints them all at once
+    html += '<div class="kb-man-mast-acts"><button type="button" class="kb-btn" onclick="MANUAL_HOST.printAllCards()">' + icon('printer', 13) + ' Print all cards</button></div>';
+  }
+  return html + kbManualMastCardHtml_(dept) + '</header>';
+}
+/** M14 (design handoff, Phase 8) — the chapter's Quick Reference Card. Card N is
+ *  the Appendix C article man-c-N, read from the session's prefetched manual
+ *  (kbManualCachedPart_): before that arrives the masthead has no card — never
+ *  a wait, never a server call. Pure over the host's state (Node-pinned). */
+function kbManualCardFor_(dept) {
+  var cp = kbManualChapterParts_(dept);
+  if (!cp.num || cp.appendix || !MANUAL_STATE.manualParts) return null;
+  var id = 'man-c-' + Number(cp.num), found = null;
+  Object.keys(MANUAL_STATE.manualParts).some(function (d) {
+    var p = kbManualCachedPart_(d);
+    (p ? p.sections : []).some(function (x) { if (x && x.id === id) found = x; return !!found; });
+    return !!found;
+  });
+  return found;
+}
+/** M14 — open unless this rep closed it for this chapter (umsKbPanel.cardOpen
+ *  keeps only the closed ones; no new storage key — g112). */
+function kbManualCardOpen_(dept) {
+  var o = MANUAL_HOST.prefs().cardOpen;
+  return !(o && typeof o === 'object' && o[dept] === false);
+}
+/** M14 — the disclosure: chevron, the CARD chip in the chapter colour, "Quick
+ *  reference", Print card; the body is the card article through kbMd_, the same
+ *  renderer as its own page. The body is only HIDDEN when closed — the
+ *  diagram's marker ids are per copy (kbDiagramScopeIds_), so a hidden copy
+ *  costs the chapter's own diagram nothing. */
+function kbManualMastCardHtml_(dept) {
+  var card = kbManualCardFor_(dept);
+  if (!card) return '';
+  var open = kbManualCardOpen_(dept), num = card.id.replace('man-c-', '');
+  var cp = kbManualChapterParts_(dept);
+  return '<section class="kb-man-card" data-kb-man-card="' + esc(card.id) + '" aria-label="Quick reference card">' +
+    '<div class="kb-man-card-h">' +
+      '<button type="button" class="kb-man-card-tog" aria-expanded="' + open + '" aria-controls="kb-man-card-b" data-dept="' + esc(dept) + '" onclick="kbManualCardToggle_(this)">' +
+        icon('chevronDown', 14) + '<span class="kb-man-card-chip">CARD ' + esc(num) + '</span>' +
+        '<span class="kb-man-card-t">Quick reference</span><span class="kb-man-card-nm">' + esc(cp.name) + '</span></button>' +
+      '<button type="button" class="kb-btn kb-man-card-pr" data-kb-id="' + esc(card.id) + '" onclick="MANUAL_HOST.printSection(this.getAttribute(\'data-kb-id\'))">' + icon('printer', 13) + ' Print card</button>' +
+    '</div>' +
+    '<div class="kb-man-card-b" id="kb-man-card-b"' + (open ? '' : ' hidden') + '>' +
+      '<div class="kb-article" data-kb-man>' + kbShiftHeadings_(kbMd_(card.bodyMd || '')) + '</div>' +
+    '</div>' +
+  '</section>';
+}
+/** M14 — open or close the card in place (no re-render, so nothing the rep
+ *  typed elsewhere moves — T1) and remember it for this chapter. */
+function kbManualCardToggle_(btn) {
+  var card = btn && btn.closest ? btn.closest('.kb-man-card') : null;
+  var body = card ? card.querySelector('.kb-man-card-b') : null;
+  if (!body) return;
+  var open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', String(open));
+  body.hidden = !open;
+  var dept = btn.getAttribute('data-dept') || '';
+  var p = MANUAL_HOST.prefs();
+  var o = (p.cardOpen && typeof p.cardOpen === 'object' && !Array.isArray(p.cardOpen)) ? p.cardOpen : {};
+  if (open) delete o[dept]; else o[dept] = false;
+  p.cardOpen = o;
+  MANUAL_HOST.savePrefs(p);
+}
+/** M9 — what the reader shows while a chapter loads: the bar and masthead from
+ *  the tree, the target section's heading, and skeleton lines (the app's .skel)
+ *  where the bodies will be. No focus, no open recorded, no comments — those run
+ *  when kbManualPaintPart_ replaces it. */
+function kbManualSkeletonHtml_(dept, id) {
+  var secs = (MANUAL_HOST.state().tree || []).filter(function (it) { return it.department === dept && kbIsManualId_(it.id); });
+  var tgt = secs.filter(function (x) { return x.id === id; })[0] || { title: '' };
+  var ck = kbManualChapterKey_(dept), lines = '';
+  [100, 96, 88, 100, 62].forEach(function (w) { lines += '<div class="skel skel-bar" style="width:' + w + '%"></div>'; });
+  return kbManualBarHtml_(dept, tgt.title) + kbManualMastheadHtml_(dept, secs) +
+    '<div class="kb-man-part' + (ck ? ' kb-man-' + ck : '') + '" data-kb-man-skel aria-busy="true" aria-label="Loading this chapter">' +
+      '<div class="kb-man-sec-head"><h2 class="kb-man-sec-h">' + kbManualTitleHtml_(tgt.title) + '</h2></div>' +
+      '<div class="kb-man-skel-p">' + lines + '</div><div class="kb-man-skel-p">' + lines + '</div>' +
+    '</div>';
+}
+/** A chapter that failed to load keeps its masthead; the error goes where the
+ *  bodies were (or fills the reader when no skeleton is up). */
+function kbManualLoadFail_(main, msg) {
+  MANUAL_STATE.resumeLine = null;
+  var host = main.querySelector('[data-kb-man-skel]');
+  if (host) { host.removeAttribute('aria-busy'); host.removeAttribute('aria-label'); host.innerHTML = errorStateHtml_(msg); }
+  else main.innerHTML = errorStateHtml_(msg);
+}
+/** M11 — after the last section, the neighbouring chapters (their first section,
+ *  as the bar's ‹ › at a chapter's edge). */
+function kbManualPaintChapNav_(main) {
+  var host = main.querySelector('[data-kb-man-chapnav]'); if (!host || !MANUAL_STATE.manualPart) return;
+  var md = kbManualDepts_(), d = md.list.indexOf(MANUAL_STATE.manualPart.department);
+  var card = function (dept, dir) {
+    var first = dept ? md.first(dept) : '';
+    if (!first) return '';
+    var cp = kbManualChapterParts_(dept);
+    var txt = '<span class="kb-man-cn-txt"><span class="kb-man-cn-k">' + (dir < 0 ? 'Previous' : 'Next') +
+      (cp.num ? ' · ' + (cp.appendix ? 'Appendix ' : 'Chapter ') + esc(cp.num) : '') + '</span><span class="kb-man-cn-n">' + esc(cp.name) + '</span></span>';
+    var badge = kbManualChapterIcon_(dept, 15, 'kb-man-badge');
+    return '<button type="button" class="kb-man-cn' + (dir > 0 ? ' kb-man-cn-next' : '') + '" data-kb-id="' + esc(first) + '" title="' + esc(dept) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
+      (dir < 0 ? icon('chevronLeft', 14) + badge + txt : txt + badge + icon('chevronRight', 14)) + '</button>';
+  };
+  host.innerHTML = d < 0 ? '' : card(md.list[d - 1], -1) + card(md.list[d + 1], 1);
+}
+
+// ── M8 (design handoff, Phase 2) — the reader bar and its scroll-spy ─────────
+/** The reader's one sticky band: the reading-trail row (kbManualPaintTrail_) above the
+ *  bar — the chapter, the section in view, and Bookmark / Print / previous /
+ *  next for THAT section. The section half is painted by kbManualBarPaint_. */
+function kbManualBarHtml_(dept, skelTitle) {
+  var ck = kbManualChapterKey_(dept), cp = kbManualChapterParts_(dept);
+  var skel = skelTitle != null, st = kbManualSplitTitle_(skel ? skelTitle : '');   // the skeleton names its target; its buttons wait for the chapter
+  return '<div class="kb-man-top">' +
+    '<div class="kb-man-back" data-kb-man-back></div>' +
+    '<div class="kb-man-bar' + (ck ? ' kb-man-' + ck : '') + (skel ? ' kb-man-bar-skel' : '') + '" data-kb-man-bar>' +
+      kbManualChapterIcon_(dept, 13, 'kb-man-bar-badge') +
+      '<span class="kb-man-bar-cn" title="' + esc(dept) + '">' + esc(cp.name) + '</span>' +
+      '<span class="kb-man-bar-chev" aria-hidden="true">' + icon('chevronRight', 12) + '</span>' +
+      '<span class="kb-man-bar-sn" data-kb-man-bar-sn>' + esc(st.num) + '</span><span class="kb-man-bar-t" data-kb-man-bar-t>' + esc(st.rest) + '</span>' +
+      '<span class="kb-man-bar-acts">' +
+        // Helpful / Not helpful / Suggest an edit for the section in view — painted per
+        // section by kbManualBarFbPaint_ (the row no longer closes every section).
+        '<span class="kb-man-bar-fb" data-kb-man-bar-fb data-kb-id="">' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="helpful" data-kb-id="" aria-pressed="false" title="Helpful" aria-label="Helpful" onclick="kbManualBarVote_(this)" disabled>' + icon('thumbsUp', 15) + '</button>' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="notHelpful" data-kb-id="" aria-pressed="false" title="Not helpful" aria-label="Not helpful" onclick="kbManualBarVote_(this)" disabled>' + icon('thumbsDown', 15) + '</button>' +
+          '<button type="button" class="kb-btn kb-man-bar-ic" data-kb-man-fb="suggest" data-kb-id="" data-kb-title="" title="Suggest an edit" aria-label="Suggest an edit" onclick="MANUAL_HOST.suggestEdit(this)" disabled>' + icon('flag', 15) + '</button>' +
+        '</span>' +
+        '<span class="kb-man-bar-sep" aria-hidden="true"></span>' +
+        MANUAL_HOST.bookmarkBtnHtml({ id: '', title: '' }, 'kb-man-bar-ic') +
+        '<button type="button" class="kb-btn kb-man-bar-ic kb-man-print" data-kb-man-bar-print data-kb-id="" title="Print" aria-label="Print" onclick="MANUAL_HOST.printSection(this.getAttribute(\'data-kb-id\'))">' + icon('printer', 15) + '</button>' +
+        '<span class="kb-man-bar-sep" aria-hidden="true"></span>' +
+        '<button type="button" class="kb-man-bar-nav" data-kb-man-bar-prev onclick="kbManualStep_(-1)" disabled>' + icon('chevronLeft', 12) + '<span></span></button>' +
+        '<button type="button" class="kb-man-bar-nav" data-kb-man-bar-next onclick="kbManualStep_(1)" disabled><span></span>' + icon('chevronRight', 12) + '</button>' +
+      '</span>' +
+    '</div><div data-kb-man-resume></div></div>';
+}
+/** Pure (Node-pinned) — previous / next for the reader bar: the neighbouring
+ *  section of this chapter, or at a chapter's edge the neighbouring chapter (its
+ *  first section, `firstOf(dept)`). `secs` are this chapter's [{id, title}] in
+ *  page order, `depts` the manual's departments in tree order. */
+function kbManualNeighbours_(secs, id, depts, dept, firstOf) {
+  var i = -1;
+  for (var k = 0; k < secs.length; k++) if (secs[k].id === id) i = k;
+  if (i < 0) return { prev: null, next: null };
+  var d = depts.indexOf(dept);
+  var side = function (dir) {
+    var s = secs[i + dir];
+    if (s) {
+      var t = kbManualSplitTitle_(s.title), card = /^Card \d+/.exec(t.rest);
+      return { id: s.id, label: t.num || (card ? card[0] : (dir < 0 ? 'Previous' : 'Next')), title: s.title };
+    }
+    var nd = d < 0 ? '' : depts[d + dir], first = nd ? firstOf(nd) : '';
+    if (!first) return null;
+    var cp = kbManualChapterParts_(nd);
+    return { id: first, label: cp.num ? (cp.appendix ? 'App ' : 'Ch ') + cp.num : nd, title: nd, chapter: true };
+  };
+  return { prev: side(-1), next: side(1) };
+}
+/** The manual's departments in tree order, and each one's first section. */
+function kbManualDepts_() {
+  var seen = {}, out = [];
+  (MANUAL_HOST.state().tree || []).forEach(function (it) {
+    if (kbIsManualId_(it.id) && !seen[it.department]) { seen[it.department] = it.id; out.push(it.department); }
+  });
+  out.sort(kbDeptCompare_);
+  return { list: out, first: function (d) { return Object.prototype.hasOwnProperty.call(seen, d) ? seen[d] : ''; } };
+}
+/** Paint the bar's section half for `id`: number chip, title, the bookmark star,
+ *  Print's target, previous / next — and mark the tree row, kept in view. Never
+ *  records an open or moves the comments (those stay on explicit opens). */
+function kbManualBarPaint_(id) {
+  var bar = document.querySelector('#kb-main [data-kb-man-bar]'); if (!bar) return;
+  var secs = (MANUAL_STATE.manualPart || {}).sections || [];
+  var s = secs.filter(function (x) { return x.id === id; })[0]; if (!s) return;
+  MANUAL_STATE.manualSpyId = id;
+  var t = kbManualSplitTitle_(s.title);
+  bar.querySelector('[data-kb-man-bar-sn]').textContent = t.num;
+  var te = bar.querySelector('[data-kb-man-bar-t]'); te.textContent = t.rest; te.title = s.title;
+  // F51 (cycle 25): patched IN PLACE — the scroll-spy repaints the bar as the
+  // reader scrolls, and replacing the button (outerHTML) dropped keyboard focus
+  // from it on every section boundary (the g141 class; the feedback buttons
+  // beside it were already patched this way).
+  var bm = bar.querySelector('.kb-bm');
+  if (bm) MANUAL_HOST.bookmarkBtnPatch(bm, { id: id, title: s.title });
+  kbManualBarFbPaint_(bar, id, s.title);
+  var pr = bar.querySelector('[data-kb-man-bar-print]');
+  if (pr) {
+    var what = kbIsManualCard_(id) ? 'card' : 'section';
+    pr.setAttribute('data-kb-id', id);
+    pr.title = 'Print just this ' + what;
+    pr.setAttribute('aria-label', 'Print just this ' + what + ': ' + s.title);
+  }
+  var md = kbManualDepts_();
+  var nb = MANUAL_STATE.manualBarNav = kbManualNeighbours_(secs, id, md.list, MANUAL_STATE.manualPart.department, md.first);
+  [['[data-kb-man-bar-prev]', nb.prev, 'Previous'], ['[data-kb-man-bar-next]', nb.next, 'Next']].forEach(function (x) {
+    var b = bar.querySelector(x[0]); if (!b) return;
+    b.disabled = !x[1];
+    b.querySelector('span').textContent = x[1] ? x[1].label : '';
+    b.title = x[1] ? x[2] + (x[1].chapter ? ' chapter: ' : ': ') + x[1].title : 'No ' + x[2].toLowerCase() + ' section';
+    b.setAttribute('aria-label', b.title);
+  });
+  MANUAL_HOST.markCurrent(id);
+  MANUAL_HOST.revealInTree(id);
+}
+function kbManualStep_(dir) {
+  var nb = MANUAL_STATE.manualBarNav || {}, t = dir < 0 ? nb.prev : nb.next;
+  if (t && t.id) MANUAL_HOST.openItem(t.id, '', t.chapter ? { chapter: true } : undefined);   // M16: a chapter step may resume
+}
+/** Pure (Node-pinned) — which section is in view. `tops` are the section
+ *  headings' tops from the reader's top edge: the last heading at or above the
+ *  reading `line` wins, the first before any reaches it. At the foot of the page
+ *  a short last section can never reach the line, so there the section the rep
+ *  OPENED (`openIdx`) wins while its heading is on screen, else the last one. */
+function kbManualSpyPick_(tops, line, atEnd, viewBottom, openIdx) {
+  if (!tops.length) return -1;
+  if (atEnd) return (openIdx >= 0 && tops[openIdx] >= 0 && tops[openIdx] < viewBottom) ? openIdx : tops.length - 1;
+  var pick = 0;
+  for (var i = 0; i < tops.length; i++) if (tops[i] <= line) pick = i;
+  return pick;
+}
+/** The spy is ONE scroll listener on the reader, bound once per element — not an
+ *  IntersectionObserver (the handoff's sketch): an observer fires only when a
+ *  heading crosses its band, so a short last section could never be named, and a
+ *  listener bound once has nothing to disconnect between chapters. It ignores
+ *  every view but a manual chapter, and runs at most once a frame. */
+function kbManualSpyBind_(main) {
+  if (!main || main.__kbSpy) return;
+  main.__kbSpy = true;
+  var queued = false;
+  var raf = window.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+  main.addEventListener('scroll', function () {
+    if (queued) return;
+    queued = true;
+    raf(function () { queued = false; kbManualSpy_(main); });
+  }, { passive: true });
+}
+function kbManualSpy_(main) {
+  if (!main.querySelector('[data-kb-man-bar]') || Date.now() < (MANUAL_STATE.manualSpyHold || 0)) return;
+  var secs = [].slice.call(main.querySelectorAll('.kb-man-sec'));
+  if (!secs.length) return;
+  var top = main.getBoundingClientRect().top, band = main.querySelector('.kb-man-top');
+  var tops = secs.map(function (sec) { var h = sec.querySelector('.kb-man-sec-h') || sec; return h.getBoundingClientRect().top - top; });
+  var line = Math.max((band ? band.offsetHeight : 0) + 40, main.clientHeight * 0.3);
+  var atEnd = main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2;
+  var openIdx = -1;
+  secs.forEach(function (sec, i) { if (sec.getAttribute('data-kb-id') === MANUAL_HOST.state().currentId) openIdx = i; });
+  var i = kbManualSpyPick_(tops, line, atEnd, main.clientHeight, openIdx);
+  var id = i >= 0 ? secs[i].getAttribute('data-kb-id') : '';
+  if (id && id !== MANUAL_STATE.manualSpyId) kbManualBarPaint_(id);
+  if (id) {   // M16: the sub-heading the rep has reached, by its NUMBER only
+    var sub = '';
+    [].forEach.call(secs[i].querySelectorAll('.kb-article .kb-man-ssn'), function (n) { if (n.getBoundingClientRect().top - top <= line) sub = n.textContent; });
+    kbManualResumeNote_(kbManualDeptOf_(id), id, sub);
+  }
+}
+
+// ── Batch M4 — print one section or card ─────────────────────────────────
+/** A Quick Reference Card (Appendix C) — the bar's Print says "card". */
+function kbIsManualCard_(id) { return /^man-c-\d+$/.test(String(id || '')); }
+
+/** Fill the version line and the "Updated" badges from the meta, when it has
+ *  arrived. Idempotent — called on part render and again when the meta lands. */
+function kbManualPaintMeta_() {
+  var meta = MANUAL_STATE.manualMeta;
+  MANUAL_HOST.treeUpdated();
+  var main = document.getElementById('kb-main'); if (!main || !meta) return;
+  var ver = main.querySelector('[data-kb-man-ver]');
+  if (ver && meta.version) {
+    ver.textContent = 'Policies & Procedures Handbook ' + meta.version + (meta.built ? ' · built ' + meta.built : '') +
+      (MANUAL_HOST.state().isAdmin ? ' · read-only here — change it in the handbook source and re-import' : '');
+  }
+  var today = new Date().toISOString().substring(0, 10);
+  var memo = {}, upd = function (id) { return memo[id] || (memo[id] = kbManualUpdates_(meta.changelog, id, today, KB_MANUAL_UPDATED_DAYS)); };
+  // M9: the masthead's index pills and its "N updated" — counted over the
+  // chapter's sections (the index's, or the page's when there is no index).
+  var seen = {}, n = 0;
+  main.querySelectorAll('[data-kb-ix-upd], [data-kb-badges]').forEach(function (el) {
+    var id = el.getAttribute('data-kb-ix-upd') || el.getAttribute('data-kb-badges');
+    if (!seen[id]) { seen[id] = true; if (upd(id).length) n++; }
+    if (el.hasAttribute('data-kb-ix-upd')) el.innerHTML = upd(id).length ? '<span class="kb-man-upd">Updated</span>' : '';
+  });
+  var uc = main.querySelector('[data-kb-man-updcount]');
+  if (uc) uc.textContent = n ? n + ' updated in the last ' + Math.round(KB_MANUAL_UPDATED_DAYS / 30.44) + ' months' : '';
+  main.querySelectorAll('[data-kb-badges]').forEach(function (b) {
+    var ups = upd(b.getAttribute('data-kb-badges'));
+    b.innerHTML = ups.length
+      ? '<span class="kb-man-upd" title="' + esc(ups.map(kbManualUpdLine_).join('\n')) + '">' +
+          'Updated ' + esc(kbManualDateLabel_(ups[0].date)) + (ups.some(function (u) { return u.retraining; }) ? ' · retraining' : '') + '</span>'
+      : '';
+  });
+}
+function kbManualUpdLine_(u) {
+  var n = u.num;
+  return n + ' \u2014 ' + u.summary + (u.retraining ? ' (retraining)' : '');
+}
+function kbManualDateLabel_(iso) {
+  var p = String(iso || '').split('-');
+  return p.length === 3 ? (p[1] + '/' + p[2] + '/' + p[0]) : String(iso || '');
+}
+
+/** Scroll to a section (or a numbered heading inside it), mark it current,
+ *  record the open, and move the ONE comments host under it. */
+function kbManualFocus_(id, anchor, instant, nav) {
+  var sec = document.getElementById('kb-man-sec-' + id); if (!sec) return;
+  MANUAL_HOST.state().currentId = id;
+  // M15: an explicit open joins the trail — a section already on it moves to the
+  // end, so a chip's open (the trail already cut to it) adds nothing.
+  MANUAL_STATE.trail = kbTrailPush_(MANUAL_STATE.trail, { id: id, title: ((sec.querySelector('.kb-man-sec-h') || {}).textContent || id), land: null }, KB_TRAIL_MAX);
+  MANUAL_HOST.markCurrent(id);
+  var dept = sec.closest && sec.closest('.kb-main') ? kbManualDeptOf_(id) : '';
+  // Open the part's tree group, so the rail shows where the reader is.
+  document.querySelectorAll('.kb-dept').forEach(function (box) {
+    var t = box.querySelector('.kb-dept-toggle');
+    if (t && t.getAttribute('data-dept') === dept && box.classList.contains('collapsed')) {
+      box.classList.remove('collapsed'); t.setAttribute('aria-expanded', 'true');
+    }
+  });
+  // M5a: a Back lands on the block the rep left from; a cross-reference on the
+  // block its preview chose; anything else on the numbered heading or the top.
+  var block = null;
+  if (nav && nav.land) block = kbFindBlockEl_(sec, nav.land);
+  if (!block && nav && (nav.ctx || nav.text)) block = kbXrefLandEl_(sec.querySelector('.kb-article'), kbManualSectionMd_(id), anchor, nav.ctx, nav.text);
+  kbManualPaintTrail_();
+  kbManualPaintResume_(id);
+  kbManualResumeNote_(kbManualDeptOf_(id), id, anchor && /^(?:\d+|[A-C])\./.test(anchor) ? anchor : '');
+  MANUAL_STATE.manualSpyHold = instant ? 0 : Date.now() + 800;   // a smooth scroll would name every section it passes
+  kbManualBarPaint_(id);
+  if (block) kbFlashBlock_(block, instant);
+  else {
+    var target = kbFindAnchorHeading_(sec, anchor) || sec.querySelector('.kb-man-sec-h') || sec;
+    kbReaderScroll_(target, 'start', !instant);
+    target.classList.add('kb-h-flash');
+    setTimeout(function () { target.classList.remove('kb-h-flash'); }, 1600);
+  }
+  var host = document.getElementById('kb-comments');
+  if (!host) { host = document.createElement('div'); host.id = 'kb-comments'; }
+  sec.appendChild(host);
+  host.innerHTML = '';
+  var title = (sec.querySelector('.kb-man-sec-h') || {}).textContent || id;
+  MANUAL_HOST.recordOpen({ id: id, title: title, department: kbManualDeptOf_(id), type: 'article' }, 'reference');
+  MANUAL_HOST.loadComments(id);
+}
+
+/** The loaded part's Markdown for one section (the landing re-reads it). */
+function kbManualSectionMd_(id) {
+  var s = ((MANUAL_STATE.manualPart || {}).sections || []).filter(function (x) { return x.id === id; })[0];
+  return s ? (s.bodyMd || '') : '';
+}
+// ── M15 (design handoff, Phase 5) — the reading trail (the tab only; the drawer keeps Back) ──
+var KB_TRAIL_MAX = 5;
+/** Pure (Node-pinned) — push `e` onto the trail: newest last, de-duplicated (an
+ *  entry already on it moves to the end, its newer land kept), at most `max`. */
+function kbTrailPush_(trail, e, max) {
+  var out = (trail || []).filter(function (x) { return x && x.id !== e.id; });
+  out.push(e);
+  return out.slice(-(max || 5));
+}
+/** Pure (Node-pinned) — a chip goes back to entry `i`: the chips after it drop. */
+function kbTrailCut_(trail, i) { return (trail || []).slice(0, Math.max(0, i) + 1); }
+/** The trail row above the bar, once it holds two sections: "Read", a chip per
+ *  earlier section (its chapter badge, number, title), the open one as text. It
+ *  replaced the single "Back to" chip — the trail's previous entry is that place. */
+function kbManualPaintTrail_() {
+  var host = document.querySelector('#kb-main [data-kb-man-back]'); if (!host) return;
+  var t = MANUAL_STATE.trail || [];
+  if (t.length < 2) { host.innerHTML = ''; return; }
+  var chips = '';
+  t.slice(0, -1).forEach(function (e, i) {
+    var st = kbManualSplitTitle_(e.title);
+    chips += '<button type="button" class="kb-trail-chip" data-trail-i="' + i + '" onclick="kbManualTrailGo_(+this.getAttribute(\'data-trail-i\'))" title="Back to ' + esc(e.title) + '">' +
+      kbManualChapterIcon_(kbManualDeptOf_(e.id), 10, 'kb-trail-badge') + (st.num ? '<b class="kb-trail-n">' + esc(st.num) + '</b>' : '') +
+      '<span class="kb-trail-t">' + esc(st.rest) + '</span></button>' + icon('chevronRight', 11);
+  });
+  var cs = kbManualSplitTitle_(t[t.length - 1].title);
+  host.innerHTML = '<nav class="kb-trail" aria-label="Reading trail"><span class="kb-trail-k">Read</span>' + chips +
+    '<span class="kb-trail-cur" aria-current="page">' + (cs.num ? '<b class="kb-trail-n">' + esc(cs.num) + '</b>' : '') + '<span class="kb-trail-t">' + esc(cs.rest) + '</span></span></nav>';
+  try { host.firstChild.scrollLeft = host.firstChild.scrollWidth; } catch (e) {}   // a narrow reader shows the newest end
+}
+/** A chip: back to that section, on the block the rep left from; the chips after it drop. */
+function kbManualTrailGo_(i) {
+  var t = MANUAL_STATE.trail || [], e = t[i]; if (!e) return;
+  MANUAL_STATE.trail = kbTrailCut_(t, i);
+  MANUAL_HOST.openItem(e.id, '', { land: e.land });
+}
+
+// ── M16 (design handoff, Phase 5) — resume where you left off ───────────────
+// Kept inside the umsKbPanel blob (operator 2026-10-09: no new storage key), per
+// chapter: {id, h, at} — a section id and a heading NUMBER, never text.
+var KB_RESUME_DAYS = 7;
+/** Pure (Node-pinned) — where to resume `dept`, or null: an entry under `days`
+ *  old at `now` that names a section the reader can see (`ids`). */
+function kbResumePick_(store, dept, ids, now, days) {
+  var e = store && typeof store === 'object' && Object.prototype.hasOwnProperty.call(store, dept) ? store[dept] : null;
+  if (!e || typeof e.id !== 'string' || (ids || []).indexOf(e.id) < 0) return null;
+  var age = now - Number(e.at || 0);
+  return age >= 0 && age < days * 86400000 ? { id: e.id, h: typeof e.h === 'string' ? e.h : '' } : null;
+}
+/** Pure (Node-pinned) — the store with `dept` set to `entry`, and every entry
+ *  older than `days` dropped (so the blob never grows past the chapters read this week). */
+function kbResumeStore_(store, dept, entry, now, days) {
+  var out = {};
+  Object.keys(store && typeof store === 'object' ? store : {}).forEach(function (k) {
+    var e = store[k];
+    if (e && now - Number(e.at || 0) < days * 86400000) out[k] = e;
+  });
+  out[dept] = entry;
+  return out;
+}
+/** Note the reading point — at most one write every 3 seconds, the latest wins. */
+function kbManualResumeNote_(dept, id, h) {
+  if (!dept || !id) return;
+  var key = dept + '|' + id + '|' + (h || '');
+  if (MANUAL_STATE.resumeKey === key) return;
+  MANUAL_STATE.resumeKey = key;
+  MANUAL_STATE.resumePending = { dept: dept, id: id, h: h || '' };
+  if (MANUAL_STATE.resumeTimer) return;
+  MANUAL_STATE.resumeTimer = setTimeout(function () {
+    MANUAL_STATE.resumeTimer = null;
+    var p = MANUAL_STATE.resumePending; MANUAL_STATE.resumePending = null;
+    if (!p) return;
+    var prefs = MANUAL_HOST.prefs(), now = Date.now();
+    prefs.resume = kbResumeStore_(prefs.resume, p.dept, { id: p.id, h: p.h, at: now }, now, KB_RESUME_DAYS);
+    MANUAL_HOST.savePrefs(prefs);
+  }, 3000);
+}
+/** "Back where you left off — 5.6.2 …" under the bar, after a resumed open. */
+function kbManualPaintResume_(id) {
+  var host = document.querySelector('#kb-main [data-kb-man-resume]'); if (!host) return;
+  var r = MANUAL_STATE.resumeLine; MANUAL_STATE.resumeLine = null;
+  if (!r || r.id !== id) { host.innerHTML = ''; return; }
+  var it = (MANUAL_HOST.state().tree || []).filter(function (x) { return x.id === r.id; })[0], st = kbManualSplitTitle_(it ? it.title : '');
+  host.innerHTML = '<div class="kb-man-resume" role="status">' + icon('clock', 13) +
+    '<span>Back where you left off — <b>' + esc(r.h || st.num) + '</b> ' + esc(st.rest) + '</span>' +
+    '<span class="kb-man-resume-acts"><button type="button" class="kb-btn" data-kb-id="' + esc(r.first) + '" onclick="kbManualResumeStart_(this.getAttribute(\'data-kb-id\'))">Start of chapter</button>' +
+    '<button type="button" class="kb-man-resume-x" aria-label="Dismiss" title="Dismiss" onclick="kbManualResumeDismiss_()">' + icon('x', 12) + '</button></span></div>';
+}
+function kbManualResumeDismiss_() { var host = document.querySelector('#kb-main [data-kb-man-resume]'); if (host) host.innerHTML = ''; }
+function kbManualResumeStart_(firstId) { kbManualResumeDismiss_(); MANUAL_HOST.openItem(firstId); }
+
+/** The reader bar's feedback for section `id`, painted IN PLACE (attributes
+ *  only, so a focused button keeps its focus): Helpful / Not helpful, and
+ *  "Suggest an edit" in place of "Out of date" (the same review-queue flag, with
+ *  a required note). Votes stay per section; what this session already sent is
+ *  remembered by id in MANUAL_STATE.manualFb, so a section scrolled back to reads as
+ *  answered rather than asking again. */
+function kbManualBarFbPaint_(bar, id, title) {
+  var host = bar && bar.querySelector('[data-kb-man-bar-fb]'); if (!host) return;
+  var st = (MANUAL_STATE.manualFb || {})[id] || {};
+  host.setAttribute('data-kb-id', id);
+  host.querySelectorAll('button').forEach(function (b) {
+    var kind = b.getAttribute('data-kb-man-fb');
+    b.setAttribute('data-kb-id', id);
+    if (kind === 'suggest') {
+      b.setAttribute('data-kb-title', title);
+      b.disabled = !id;
+      b.title = 'Suggest an edit to this section';
+      b.setAttribute('aria-label', 'Suggest an edit: ' + title);
+      return;
+    }
+    var on = st.vote === kind, word = kind === 'helpful' ? 'Helpful' : 'Not helpful';
+    b.disabled = !id || !!st.vote || !!st.busy;
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.title = on ? 'You rated this section ' + word.toLowerCase() + ' — thanks' : (st.busy ? 'Saving…' : word);
+    b.setAttribute('aria-label', b.title + ': ' + title);
+  });
+}
+/** A vote from the bar. F-45's contract holds: the pair is disabled while the
+ *  write is in flight, thanks only on success, and a failure says so and gives
+ *  the buttons back. The answer is recorded against the section it was CAST
+ *  for, and repaints the bar only while the bar still shows that section (the
+ *  rep may have scrolled on — g147). */
+function kbManualBarVote_(btn) {
+  var id = btn.getAttribute('data-kb-id'), kind = btn.getAttribute('data-kb-man-fb');
+  if (!id || (kind !== 'helpful' && kind !== 'notHelpful')) return;
+  var fb = MANUAL_STATE.manualFb || (MANUAL_STATE.manualFb = {});
+  var repaint = function () {
+    var bar = document.querySelector('#kb-main [data-kb-man-bar]');
+    var host = bar && bar.querySelector('[data-kb-man-bar-fb]');
+    if (host && host.getAttribute('data-kb-id') === id) {
+      var sug = host.querySelector('[data-kb-man-fb="suggest"]');
+      kbManualBarFbPaint_(bar, id, (sug && sug.getAttribute('data-kb-title')) || '');
+    }
+  };
+  var fail = function (msg) {
+    delete fb[id]; repaint();
+    showToast('Could not record that — ' + (msg || 'try again') + '.', 'toast-error');
+  };
+  fb[id] = { busy: true }; repaint();
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!r || !r.success) { fail((r && r.error) || 'try again'); return; }
+      fb[id] = { vote: kind }; repaint();
+      showToast('Thanks for the feedback', 'toast-success');
+    })
+    .withFailureHandler(function (err) { fail((err && err.message) || 'try again'); })
+    .kbFlagItem(id, kind, '');
+}
+
+// Cross-references. kbMd_ renders a `kb:` link as <a class="kb-xref"> with the
+// target in data attributes (id and anchor charsets are restricted, so nothing
+// executable can ride them); ONE delegated click listener opens it where the
+// link lives — the drawer in the drawer, the tab in the tab, the drawer from
+// anywhere else (a training reader, the preview card).
+var KB_XREF = { el: null, timer: null, hideTimer: null, cache: {}, origin: null, key: '' };
+function kbXrefOpen_(id, anchor, a) {
+  var ctx = (a && a.closest && a.closest('#kb-xrefcard')) ? KB_XREF.origin : a;
+  kbXrefHide_(true);
+  // M5a: the click (and the card's Open) lands on the block the preview chose —
+  // the link's context rides the open, and the landing re-derives the winner.
+  var nav = { ctx: kbXrefContext_(ctx), text: ctx && ctx.textContent || '' };
+  if (ctx && ctx.closest && ctx.closest('#kb-drawer')) { MANUAL_HOST.drawerOpenItem(id, anchor, nav); return; }
+  if (ctx && ctx.closest && ctx.closest('#kb-main')) {
+    // M15: the section the link sits in joins the trail with the block the rep
+    // left from, so its chip lands back there (M5a's "Back to", for any jump).
+    var fromSec = ctx.closest('.kb-man-sec'), fromId = fromSec && fromSec.getAttribute('data-kb-id');
+    if (fromId && kbIsManualId_(id)) {
+      var h = fromSec.querySelector('.kb-man-sec-h');
+      MANUAL_STATE.trail = kbTrailPush_(MANUAL_STATE.trail, { id: fromId, title: h ? h.textContent : fromId, land: kbXrefLandOf_(ctx) }, KB_TRAIL_MAX);
+    }
+    MANUAL_HOST.openItem(id, anchor, nav);
+    return;
+  }
+  MANUAL_HOST.drawerOpen();
+  MANUAL_HOST.drawerOpenItem(id, anchor, nav);
+}
+function kbXrefEl_() {
+  if (KB_XREF.el) return KB_XREF.el;
+  var el = document.createElement('div');
+  el.id = 'kb-xrefcard';
+  el.setAttribute('role', 'tooltip');
+  document.body.appendChild(el);
+  el.addEventListener('mouseenter', function () { clearTimeout(KB_XREF.hideTimer); });
+  el.addEventListener('mouseleave', function () { kbXrefHide_(); });
+  KB_XREF.el = el;
+  return el;
+}
+function kbXrefHide_(now) {
+  clearTimeout(KB_XREF.timer);
+  clearTimeout(KB_XREF.hideTimer);
+  var go = function () {
+    if (KB_XREF.el) KB_XREF.el.classList.remove('show');
+    if (KB_XREF.origin && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
+    KB_XREF.key = '';
+  };
+  if (now) go(); else KB_XREF.hideTimer = setTimeout(go, 220);
+}
+function kbXrefShow_(a) {
+  var id = a.getAttribute('data-kb-id'), anchor = a.getAttribute('data-kb-anchor') || '';
+  var key = id + '#' + anchor;
+  // M5a: the card depends on the LINK (its context), not just the target — two
+  // rows of one table linking to one FAQ preview different answers.
+  if (KB_XREF.origin === a && KB_XREF.key === key && KB_XREF.el && KB_XREF.el.classList.contains('show')) return;
+  if (KB_XREF.origin && KB_XREF.origin !== a && KB_XREF.origin.removeAttribute) KB_XREF.origin.removeAttribute('aria-describedby');
+  KB_XREF.key = key; KB_XREF.origin = a;
+  var el = kbXrefEl_();
+  a.setAttribute('aria-describedby', 'kb-xrefcard');
+  var paint = function (res) {
+    if (KB_XREF.key !== key) return;
+    if (!res || res.error || res.type === 'embed') {
+      el.innerHTML = '<div class="xc-h">' + esc(a.textContent || id) + '</div><div class="xc-none">No preview — open it to read.</div>';
+    } else {
+      // M5a: the part of the target this link is about, when one block clearly
+      // is — else the excerpt exactly as before (never a guess in its place).
+      var manual = kbIsManualId_(id);
+      var hit = manual ? kbXrefFocus_(res.bodyMd, anchor, kbXrefContext_(a), a.textContent) : null;
+      if (hit) {
+        el.innerHTML = '<div class="xc-h">' + esc(res.title) + (hit.block.label ? ' › ' + esc(hit.block.label) : '') + '</div>' +
+          '<div class="xc-focus">The part this link is about — Open goes straight to it</div>' +
+          '<div class="kb-article xc-body">' + kbShiftHeadings_(kbShiftHeadings_(kbMd_(hit.block.md))) + '</div>';
+      } else {
+        var ex = kbManualExcerpt_(res.bodyMd, anchor, 700);
+        el.innerHTML = '<div class="xc-h">' + esc(res.title) + (anchor && ex.found ? ' › ' + esc(anchor) : '') + '</div>' +
+          '<div class="kb-article xc-body">' + kbShiftHeadings_(kbShiftHeadings_(kbMd_(ex.md))) + '</div>' +
+          (ex.truncated ? '<div class="xc-more">…</div>' : '');
+      }
+      var xb = el.querySelector('.xc-body');
+      if (manual) kbLinkHcpcs_(xb);   // M5a: codes are lookups here too — linked BEFORE the marks, so a mark never splits a code
+      if (hit) kbHighlightTerms_(xb, hit.shared.join(' '));
+    }
+    el.insertAdjacentHTML('beforeend', '<div class="xc-row"><a href="#" class="kb-xref lc-btn" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(anchor) + '">Open</a></div>');
+    kbTetherPopover_(el, a);
+  };
+  el.innerHTML = '<div class="xc-h">' + esc(a.textContent || id) + '</div>' + loSweep();
+  el.classList.add('show');
+  kbTetherPopover_(el, a);
+  if (KB_XREF.cache[id]) { paint(KB_XREF.cache[id]); return; }
+  google.script.run
+    .withSuccessHandler(function (res) { if (res && !res.error) KB_XREF.cache[id] = res; paint(res); })
+    .withFailureHandler(function () { paint(null); })
+    .getReferenceItem(id);
+}
+(function kbBindXrefs_() {
+  document.addEventListener('click', function (e) {
+    // M17: a footnote or glossary mark shows its card at once (no target to open);
+    // inside the card they are inert — the card never nests.
+    var mk = e.target.closest && e.target.closest('button.kb-fn-ref, .kb-gloss-mark');
+    if (mk) {
+      e.preventDefault();
+      if (mk.closest('#kb-xrefcard')) return;
+      clearTimeout(KB_XREF.timer); clearTimeout(KB_XREF.hideTimer);
+      kbPopShow_(mk);
+      return;
+    }
+    var go = e.target.closest && e.target.closest('#kb-xrefcard [data-fn-go], #kb-xrefcard [data-gloss-go]');
+    if (go) {
+      var origin = KB_XREF.origin;
+      var dest = go.hasAttribute('data-fn-go') ? document.getElementById(go.getAttribute('data-fn-go')) : (origin && kbGlossRowFor_(origin));
+      kbXrefHide_(true);
+      if (dest) kbFlashBlock_(dest);
+      return;
+    }
+    var a = e.target.closest && e.target.closest('a.kb-xref');
+    if (!a) return;
+    e.preventDefault();
+    kbXrefOpen_(a.getAttribute('data-kb-id'), a.getAttribute('data-kb-anchor') || '', a);
+  });
+  document.addEventListener('mouseover', function (e) {
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
+    if (a && !a.closest('#kb-xrefcard')) {
+      clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
+      KB_XREF.timer = setTimeout(function () { kbPopShow_(a); }, 350);
+    } else if (!(e.target.closest && e.target.closest('#kb-xrefcard'))) {
+      clearTimeout(KB_XREF.timer);
+      if (KB_XREF.el && KB_XREF.el.classList.contains('show')) kbXrefHide_();
+    }
+  });
+  // M4 (operator 2026-09-29): a keyboard reader gets the same preview — Tab
+  // onto a cross-reference and the card shows (the link is described by it);
+  // Tab away and it hides; Escape hides it FIRST, in the capture phase, so the
+  // one Escape that dismisses a preview does not also close the drawer or the
+  // modal underneath (the shell's Escape handler listens in the bubble phase).
+  document.addEventListener('focusin', function (e) {
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
+    if (!a || a.closest('#kb-xrefcard')) return;
+    if (KB_XREF.backTo === a) { KB_XREF.backTo = null; return; }   // F52: focus handed back from the card — let the next Tab move on
+    KB_XREF.backTo = null;
+    clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
+    KB_XREF.timer = setTimeout(function () { if (document.activeElement === a) kbPopShow_(a); }, 350);
+  });
+  document.addEventListener('focusout', function (e) {
+    var a = e.target.closest && e.target.closest(KB_POP_SEL);
+    // F52: focus that leaves the card for anywhere but its origin closes it.
+    var card = KB_XREF.el, to0 = e.relatedTarget;
+    if (card && card.contains(e.target)) {
+      if (!(to0 && (card.contains(to0) || to0 === KB_XREF.origin))) kbXrefHide_();
+      return;
+    }
+    if (!a || a.closest('#kb-xrefcard')) return;
+    var to = e.relatedTarget;
+    if (to && to.closest && to.closest('#kb-xrefcard')) return;
+    if (KB_XREF.origin === a || !(KB_XREF.el && KB_XREF.el.classList.contains('show'))) kbXrefHide_();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !(KB_XREF.el && KB_XREF.el.classList.contains('show'))) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    var back = KB_XREF.el.contains(document.activeElement) ? KB_XREF.origin : null;
+    kbXrefHide_(true);
+    if (back && back.focus) { KB_XREF.backTo = back; back.focus(); }   // F52: Escape inside the card returns to its link
+  }, true);
+  // F52 (cycle 25): the card is appended to <body>, so its Open / Go to note /
+  // Go to glossary buttons came LAST in the tab order — and Tabbing away from
+  // the link hid the card first, so no keyboard reader could ever reach them.
+  // Tab from the link now steps INTO the open card; Tab past its last button,
+  // or Shift+Tab before its first, hides it and returns to the link (and the
+  // next Tab moves on from there, without reopening it).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+    var card = KB_XREF.el, origin = KB_XREF.origin;
+    if (!card || !origin || !card.classList.contains('show')) return;
+    var stops = kbPopFocusables_(card);
+    if (!stops.length) return;
+    if (e.target === origin && !e.shiftKey) {
+      e.preventDefault();
+      clearTimeout(KB_XREF.hideTimer); clearTimeout(KB_XREF.timer);
+      stops[0].focus();
+      return;
+    }
+    if (!card.contains(e.target)) return;
+    var i = stops.indexOf(e.target);
+    if ((e.shiftKey && i <= 0) || (!e.shiftKey && i === stops.length - 1)) {
+      e.preventDefault();
+      KB_XREF.backTo = origin;
+      kbXrefHide_(true);
+      origin.focus();
+    }
+  }, true);
+})();
+
+// ── Batch M2 — section numbers and the call router ──────────────────────────
+/** Pure (Node-pinned) — a section number typed into a search box → the
+ *  section it names, when that section is in `tree` (the caller's visible
+ *  items, so a rep is never sent to a draft): 5.9 · 5-9 · §5-9 · 5.9.2 · 10.B ·
+ *  B.1 · A.2 (the glossary) · card 5 · C-5 / G-5 (cards, and their old
+ *  letter) · part 5. Returns {id, anchor, title, num} or null. */
+function kbManualNumberTarget_(q, tree) {
+  var s = String(q || '').trim().replace(/\s+/g, ' ');
+  if (!s) return null;
+  var byId = {};
+  (tree || []).forEach(function (it) { if (it && it.id) byId[it.id] = it; });
+  var hit = function (id, anchor, num) { var it = byId[id]; return it ? { id: id, anchor: anchor, title: it.title, num: num } : null; };
+  var m;
+  if ((m = s.match(/^card\s*#?\s*(\d{1,2})$/i)) || (m = s.match(/^§?\s*[CG]\s*[-.]\s*(\d{1,2})$/i))) return hit('man-c-' + (+m[1]), '', 'CARD ' + (+m[1]));
+  if ((m = s.match(/^(?:chapter|part)\s*(\d{1,2})$/i))) {
+    var nn = ('0' + (+m[1])).slice(-2);
+    var first = (tree || []).filter(function (it) {
+      var d = String(it.department || '');
+      return kbIsManualId_(it.id) && (d.indexOf('Chapter ' + nn + ' ') === 0 || d.indexOf('Part ' + nn + ' ') === 0);
+    }).sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); })[0];
+    return first ? { id: first.id, anchor: '', title: first.title, num: 'Chapter ' + (+m[1]) } : null;
+  }
+  if ((m = s.match(/^§?\s*([AB])\s*[-.]\s*(\d{1,2})((?:\.\d{1,2})*)$/i))) {
+    var L = m[1].toUpperCase(), n = L + '.' + (+m[2]) + m[3];
+    return L === 'A' ? hit('man-a', n, n) : hit('man-b-' + (+m[2]), m[3] ? n : '', n);
+  }
+  if ((m = s.match(/^§?\s*(\d{1,2})\s*[-.]\s*(\d{1,2}|[A-Za-z])((?:\.\d{1,2})*)$/))) {
+    var letter = /[A-Za-z]/.test(m[2]);
+    var num = (+m[1]) + '.' + (letter ? m[2].toUpperCase() : (+m[2])) + m[3];
+    return hit('man-' + (+m[1]) + '-' + (letter ? m[2].toLowerCase() : (+m[2])), m[3] ? num : '', num);
+  }
+  return null;
+}
+/** Pure — natural order for department names ("Part 2" before "Part 10").
+ *  MIRRORS the server's kbNaturalCompare_ (70_kb.js); the harness drives both
+ *  over one grid. */
+function kbNaturalCompare_(a, b) {
+  var re = /(\d+)|(\D+)/g;
+  var x = String(a == null ? '' : a).toLowerCase().match(re) || [];
+  var y = String(b == null ? '' : b).toLowerCase().match(re) || [];
+  for (var i = 0; i < Math.min(x.length, y.length); i++) {
+    var p = x[i], q = y[i];
+    var pn = /^\d/.test(p), qn = /^\d/.test(q);
+    if (pn && qn) { var d = parseInt(p, 10) - parseInt(q, 10); if (d) return d < 0 ? -1 : 1; continue; }
+    if (p !== q) return p < q ? -1 : 1;
+  }
+  if (x.length !== y.length) return x.length < y.length ? -1 : 1;
+  return 0;
+}
+
+/** Pure — parts, then appendices, then everything else (operator 2026-09-29).
+ *  MIRRORS the server's kbDeptRank_ / kbDeptCompare_ (70_kb.js); the harness
+ *  drives both over one grid. */
+function kbDeptRank_(d) {
+  var s = String(d == null ? '' : d);
+  if (/^(?:Chapter|Part) \d+ \u2014 /.test(s)) return 0;
+  if (/^Appendix [A-Z] \u2014 /.test(s)) return 1;
+  return 2;
+}
+// The manual's chapter icons (operator 2026-10-07), by chapter key — pinned equal
+// to manual/data/chapter_style.json, the source the HTML and Word manuals draw
+// from; each part's colour is its --man-pN token.
+var KB_MANUAL_CHAPTER_ICONS = Object.freeze({
+  p0: 'headset', p1: 'phone', p2: 'walker', p3: 'papMask', p4: 'clipboardList', p5: 'bolt',
+  p6: 'truck', p7: 'repair', p8: 'oxygenTank', p9: 'moon', p10: 'dollar'
+});
+/** "Chapter 05 — Power Mobility" → "p5" (keys are chapter numbers since the
+ *  October 2026 renumber; "Part NN —" still reads, for rows imported before it);
+ *  an appendix or any other department → "". */
+function kbManualChapterKey_(dept) {
+  var m = /^(?:Chapter|Part) (\d+) \u2014 /.exec(String(dept || ''));
+  var k = m ? 'p' + Number(m[1]) : '';
+  return Object.prototype.hasOwnProperty.call(KB_MANUAL_CHAPTER_ICONS, k) ? k : '';
+}
+/** The chapter's icon in a span of the given class, coloured by its part; "" when none. */
+function kbManualChapterIcon_(dept, size, cls) {
+  var k = kbManualChapterKey_(dept);
+  return k ? '<span class="' + cls + ' kb-man-' + k + '" aria-hidden="true">' + icon(KB_MANUAL_CHAPTER_ICONS[k], size) + '</span>' : '';
+}
+
+function kbDeptCompare_(a, b) {
+  return (kbDeptRank_(a) - kbDeptRank_(b)) || kbNaturalCompare_(a, b);
+}
+
+/** Tether a hover-mode popover's modal beside its anchor, clamped to the
+ *  viewport. Mirrors positionDayPopover_ (tc/script_timeoff.html) — the same
+ *  read-then-place shape, because the modal has to be laid out before its size
+ *  can be measured. */
+function kbTetherPopover_(modal, anchor) {
+  if (!modal || !anchor) return;
+  modal.style.visibility = 'hidden';
+  modal.style.top = '0px'; modal.style.left = '0px';
+  var r = anchor.getBoundingClientRect();
+  var mw = modal.offsetWidth, mh = modal.offsetHeight, gap = 10;
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var left = r.left;
+  if (left + mw > vw - 8) left = vw - mw - 8;
+  if (left < 8) left = 8;
+  var top = r.bottom + gap;                       // below the anchor by default
+  if (top + mh > vh - 8) top = r.top - mh - gap;  // flip above when it would run off
+  if (top < 8) top = 8;
+  modal.style.left = left + 'px';
+  modal.style.top = top + 'px';
+  modal.style.visibility = '';
+}
+
+/** PURE — the words a search marks: the query's own (2+ characters) and the
+ *  terms the SERVER matched on, longest first. */
+function kbHlTokens_(q, terms) {
+  var toks = String(q || '').toLowerCase().split(/\s+/)
+    .map(function (t) { return t.trim(); })
+    .filter(function (t) { return t.length >= 2; });
+  // M5b: the terms the SERVER matched on (stems, glossary phrases, synonyms) —
+  // a result found by "deliver" for "delivered" shows why. Longest first, so a
+  // phrase is marked whole before its words.
+  (terms || []).forEach(function (t) { t = String(t || '').toLowerCase(); if (t.length >= 2 && toks.indexOf(t) < 0) toks.push(t); });
+  toks.sort(function (a, b) { return b.length - a.length; });
+  return toks;
+}
+function kbHlEsc_(t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+/** PURE — every token, wherever it occurs (the test of whether a text node
+ *  holds anything to mark at all). */
+function kbHlRegex_(q, terms) {
+  var toks = kbHlTokens_(q, terms);
+  if (!toks.length) return null;
+  return new RegExp('(' + toks.map(kbHlEsc_).join('|') + ')', 'gi');
+}
+// KB-HL (operator 2026-10-27): a word is marked where a WORD STARTS — "in" no
+// longer lights up inside "billing", "or" inside "order". The search itself
+// still matches inside words ("pap" finds "cpap", M5b), so a word with no
+// word-start match in a RESULT is marked where it does occur, and the hit is
+// never left unexplained. A word's letters include Latin-1/Extended accents
+// (Spanish text), and a token that does not begin with a letter or digit has
+// no word start to anchor to.
+var KB_HL_WORD = '0-9A-Za-z\\u00c0-\\u024f';
+var KB_HL_UNIT = '.kb-chunk, .kb-chunk-doc, .cn-card';   // one result: a section, a document's head, a note card
+/** PURE — which tokens a result marks at word starts and which anywhere. */
+function kbHlSplit_(toks, text) {
+  var out = { starts: [], anywhere: [] };
+  var lc = String(text || '').toLowerCase();
+  (toks || []).forEach(function (t) {
+    if (!new RegExp('^[' + KB_HL_WORD + ']').test(t)) { out.anywhere.push(t); return; }
+    var atStart = new RegExp('(^|[^' + KB_HL_WORD + '])' + kbHlEsc_(t), 'i').test(lc);
+    if (!atStart && lc.indexOf(t) >= 0) out.anywhere.push(t);
+    else out.starts.push(t);
+  });
+  return out;
+}
+/** PURE — ONE pass over a text node: group 2 is a word-start match (its
+ *  boundary character in group 1, left unmarked), group 3 a mid-word one. */
+function kbHlWordStartRegex_(starts, anywhere) {
+  if (!(starts || []).length && !(anywhere || []).length) return null;
+  var a = starts.length ? starts.map(kbHlEsc_).join('|') : '(?!)';
+  var b = anywhere.length ? anywhere.map(kbHlEsc_).join('|') : '(?!)';
+  return new RegExp('(^|[^' + KB_HL_WORD + '])(' + a + ')|(' + b + ')', 'gi');
+}
+function kbHighlightTerms_(rootEl, query, terms) {
+  try {
+    var toks = kbHlTokens_(query, terms);
+    var any = kbHlRegex_(query, terms);
+    if (!any || !rootEl) return;
+    var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
+    var units = [];   // [{ el, nodes }] — the word-start choice is made per RESULT
+    var n;
+    while ((n = walker.nextNode())) {
+      var p = n.parentElement;
+      if (!p || p.closest('mark, button, a.kb-btn, code, pre')) continue;
+      any.lastIndex = 0;
+      if (!any.test(n.nodeValue)) continue;
+      var u = p.closest(KB_HL_UNIT);
+      if (!u || !rootEl.contains(u)) u = rootEl;
+      var slot = null;
+      for (var i = 0; i < units.length; i++) if (units[i].el === u) { slot = units[i]; break; }
+      if (!slot) { slot = { el: u, nodes: [] }; units.push(slot); }
+      slot.nodes.push(n);
+    }
+    units.forEach(function (unit) {
+      var split = kbHlSplit_(toks, unit.nodes.map(function (t) { return t.nodeValue; }).join(' '));
+      var re = kbHlWordStartRegex_(split.starts, split.anywhere);
+      if (!re) return;
+      unit.nodes.forEach(function (textNode) {
+        var s = textNode.nodeValue;
+        var frag = document.createDocumentFragment();
+        var last = 0, m, marked = false;
+        re.lastIndex = 0;
+        while ((m = re.exec(s))) {
+          var hit = m[2] != null ? m[2] : m[3];
+          var at = m[2] != null ? m.index + m[1].length : m.index;
+          if (at > last) frag.appendChild(document.createTextNode(s.slice(last, at)));
+          var mk = document.createElement('mark');
+          mk.className = 'kb-hl';
+          mk.textContent = hit;
+          frag.appendChild(mk);
+          last = at + hit.length;
+          marked = true;
+        }
+        if (!marked) return;
+        if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+        textNode.parentNode.replaceChild(frag, textNode);
+      });
+    });
+  } catch (_) {}
+}
+
+/** Pure (Node-pinned) — a chunk heading with a sub-section number ("0.2.2 Fax
+ *  History", "B.1 Directory", "5.9.2.1 Pick-up") → {num, rest}; else {num: ''}. */
+function kbManualSplitHeading_(h) {
+  var s = String(h == null ? '' : h);
+  var m = /^((?:\d+|[A-C])\.[0-9A-Z]+(?:\.\d+)*)\s+(.+)$/.exec(s);
+  return m ? { num: m[1], rest: m[2] } : { num: '', rest: s };
 }
 </script>
