@@ -259,6 +259,26 @@ not restate it. Server endpoints live in the fourteen server files
      scheduled breaks taken out — with an amber chip and a line under the card
      (`liveIdleMin_`, INV-391; in-app only).
 
+     **25post round 12 E2 (operator 2026-10-28): app activity and inferred
+     punches.** Every presence ping (a real gesture, at most one per window per
+     10 minutes) also appends `[time, empId, ms]` to the ADP sheet's
+     **ActivityLog** tab (`activityLogAppend_` — best-effort, unlocked, ids and
+     times only; the nightly diagnostics purge keeps `ACTIVITY_LOG_DAYS`, 60).
+     Day Edit reads the rep's day in their timezone (`managerGetDayActivity`,
+     manager-gated; a binary search on the time column, then only that slice's
+     ids) and draws it as 10-minute blocks. The first ping is offered as Clock
+     In and the last as Clock Out — Out only on a past day, never in range
+     mode, each only for an empty slot. **Apply** fills the slot, which stays
+     editable and is tagged **Inferred (app activity)** while it holds that
+     value; the save sends `slots.inferred` and `managerSaveDay` writes
+     `ADP_INFERRED_MARK` into Timesheet **column J** (`ADP.INFERRED`, past the
+     nine columns the ADP upload copies). The team calendar, the pay statement
+     and Day Edit show the mark (`infClockIn` / `infClockOut` — the shown, last
+     row's); a rep's adjustment or an approval that rewrites the time clears
+     it. The export file is untouched: the inferred punches are listed beside
+     the export link and in the automated export email
+     (`exportInferredLines_`).
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -1379,6 +1399,27 @@ not restate it. Server endpoints live in the fourteen server files
      insurance in HI"); out of pocket `oopEligibilityForPayment_` lifts it like
      a state list. Every word after the keyword must be a state, or the value
      stays unknown (K3), and the clause never rescues an unreadable rest.
+
+     **The drive decides a distance rule (operator 2026-10-28, round 12 E2 b).**
+     For warehouses already within the largest limit in a straight line
+     (nearest first, at most `OOP_DRIVE_MAX_LOOKUPS`), the check asks Apps
+     Script's built-in route lookup for the drive with alternatives on
+     (`oopDrivingRoute_`), and `oopRoutePick_` keeps the SHORTEST route Google
+     offered — the operator's rule: eligible when any offered route is within
+     the limit, even if the fastest is not. The card reads "94 mi drive from
+     Dallas (within 100 mi; the fastest route is 106 mi)"; no road route is a
+     no; a straight line over the limit is still a certain no with no lookup.
+     Every lookup counts against the deployer's daily "Map Direction query"
+     quota, so the app keeps its own 24-hour count (`ROUTE_LOOKUPS_24H`, hourly
+     buckets) and stops at `ROUTE_LOOKUP_CAP` (8,000, under Google's documented
+     10,000 for Workspace); past it, with an unreadable count, or on any failure
+     the check falls back to the straight line and SAYS so — a line above the
+     verdicts and "Driving distance unavailable — straight line shown" on
+     each. The page keeps its drives per address and sends them back with the
+     next check of the same address (a hint is believed only when it is not
+     shorter than the straight line); the map draws the drive it was given and
+     never looks one up. No address is stored. Admin → System shows "Route
+     lookups: N of 8,000 in the last 24 hours" (`routeLookupStatus_`).
 
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED

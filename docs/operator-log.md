@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-28 — app activity in Day Edit and inferred punches; distance rules judged on the drive (25post round 12 E2)
+
+**Adds NO Script Properties to set** — a deploy (New version). Two things
+appear on their own: the **ActivityLog** tab on the ADP sheet (on the first
+presence ping) and the auto-managed `ROUTE_LOOKUPS_24H` counter. Two new
+server reads: `managerGetDayActivity` (manager) and the route lookup inside
+the eligibility check. If Apps Script asks the deployer to re-authorize after
+the deploy, accept — the route lookup is the same Maps service.
+
+- **Day Edit** shows the rep's app activity for the day as a strip of
+  10-minute blocks, with "Suggested from app activity: In 7:56 AM — Apply"
+  (and Out on a past day). Apply fills the time; you can still change it.
+  A time saved that way is marked **Inferred (app activity)** — in the
+  Timesheet tab's new column J, in Day Edit, on the team calendar and on the
+  pay statement. If the rep later adjusts that punch, or an adjustment is
+  approved, the mark goes.
+- **The ADP export file is unchanged.** Inferred punches are listed under
+  the export link and in the automated export email, so you can check them
+  before uploading.
+- **Area eligibility by distance now uses the drive.** If any route Google
+  offers is within the limit, the item is eligible, even when the fastest
+  route is longer; the card says both. The app stops looking up routes at
+  8,000 in 24 hours (Google allows 10,000 a day for a Workspace account);
+  past that, answers use the straight line and say so. Admin → System shows
+  the count.
+
 ## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied and mapped; insurance states and aliases, image loaders, "except Hawaii" (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook

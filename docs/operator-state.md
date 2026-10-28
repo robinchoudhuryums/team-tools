@@ -2242,6 +2242,24 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
+- **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
+  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
+  to set up:** the tab is auto-provisioned on the first presence ping after
+  the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
+  milliseconds — the column Day Edit searches). One row per presence ping —
+  a real gesture, at most one per app window per 10 minutes — so roughly six
+  rows an hour per active rep; ids and times only. The nightly diagnostics
+  purge removes rows older than 60 days (`ACTIVITY_LOG_DAYS`). **Timesheet
+  column J** ("Source", named the first time it is written) carries
+  `Inferred (app activity)` on a Clock In / Clock Out a manager saved from
+  Day Edit's suggestion; the ADP export copies columns A–I only, so the
+  upload file never carries it. Do not type in column J by hand — a rep's
+  adjustment or an approval clears it, and the app reads only that exact
+  phrase. **Auto-managed:** Script Property `ROUTE_LOOKUPS_24H` — the
+  eligibility check's route lookups per hour for the last 24 hours (`{hour:
+  count}`), capped at `ROUTE_LOOKUP_CAP` (8,000); delete it to reset the count.
+
 <a id="operator-the-digestdeliveries-tab-cycle-25"></a>
 - **The `DigestDeliveries` tab (ADP spreadsheet) — the manager digest delivery
   log (cycle 25 E1, G3).** **Nothing to set up:** it is auto-provisioned on the
