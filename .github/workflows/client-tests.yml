@@ -75,6 +75,11 @@ jobs:
       # web-app/ that is not re-synced would ship the handbook app stale, so this
       # fails until `npm run handbook:sync` is run and committed. After `npm ci`:
       # the sync's dependency walk parses with acorn.
+      # The floor above SKIPS (visibly) a pin that needs a package; here, with
+      # the packages installed, REQUIRE_DEPS turns any such skip into a failure.
+      - name: Re-run the pure tests with the dev dependencies (no skips allowed)
+        run: REQUIRE_DEPS=1 node test/client/run.js
+
       - name: Check the handbook app's copies of Team Tools are current
         run: node scripts/handbook-sync.mjs --check
 

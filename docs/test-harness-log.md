@@ -2951,3 +2951,8 @@ per-change detail. By delta:
   What's new ungated, the walk ignoring Handbook.js's declarations, a stale copy.
 - `scripts/lint-server.mjs` now resolves each project's global scope on its own
   (`advancedServiceGlobals(dir)`; the F-50 pin calls it with a directory).
+- **HB1.2 follow-up (CI):** the pushed HB1.2 run failed in the dependency-free
+  floor — HB1.2-a/b spawn the sync, which imports acorn, before `npm ci`. Those
+  two pins now go through `testNeedsDeps`: a visible `SKIPPED` line (and a count
+  under the summary) in the floor, and CI re-runs the harness after the install
+  with `REQUIRE_DEPS=1`, where a missing package fails. HB1.2-a asserts that step.

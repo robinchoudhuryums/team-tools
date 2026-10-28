@@ -19,6 +19,19 @@ function test(name, fn) {
   try { fn(); pass++; console.log('  ✓ ' + name); }
   catch (e) { fail++; console.log('  ✗ ' + name + '\n      ' + (e && e.message)); }
 }
+// HB1.2 follow-up: this harness is CI's dependency-FREE floor (it runs before
+// `npm ci`), so a pin that needs a package cannot run there. It says so — a
+// visible SKIPPED, never a silent pass (g116's twentieth) — and CI runs the
+// harness again after the install with REQUIRE_DEPS=1, where a missing package
+// is a FAILURE. `deps` are package names resolved from the repo root.
+const skipped = [];
+function testNeedsDeps(deps, name, fn) {
+  const missing = deps.filter((d) => { try { require.resolve(d, { paths: [path.join(__dirname, '../..')] }); return false; } catch (e) { return true; } });
+  if (!missing.length) return test(name, fn);
+  if (process.env.REQUIRE_DEPS) return test(name, () => { throw new Error('needs ' + missing.join(', ') + ', which is not installed'); });
+  skipped.push(name);
+  console.log('  - SKIPPED (needs ' + missing.join(', ') + ' — runs again after npm ci): ' + name);
+}
 
 // Parse-guard: every JS-bearing HtmlService partial's <script> block must
 // parse. The per-function harness only brace-matches the slices it loads, so a
@@ -40345,7 +40358,7 @@ function hbSync_(args) {
   return { status: r.status, out: r.stdout || '', err: r.stderr || '', report: json ? JSON.parse(json) : null };
 }
 
-test('HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the four-name environment plus Team Tools\' readers', () => {
+testNeedsDeps(['acorn'], 'HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the four-name environment plus Team Tools\' readers', () => {
   const r = hbSync_(['--check', '--json']);
   assert.strictEqual(r.status, 0, 'the copies are current:\n' + r.err);
   // The environment Handbook.js supplies — Team Tools' roster gate, store and
@@ -40370,11 +40383,13 @@ test('HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the f
   const wf = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
   const ci = wf.indexOf('run: npm ci'), chk = wf.indexOf('run: node scripts/handbook-sync.mjs --check');
   assert.ok(ci >= 0 && chk > ci, 'CI runs the sync check, after `npm ci`');
+  const req = wf.indexOf('run: REQUIRE_DEPS=1 node test/client/run.js');
+  assert.ok(req > ci, 'and re-runs this harness after `npm ci` with REQUIRE_DEPS, so the floor\'s skip of this very pin is made up');
   assert.ok(/^import \* as acorn from 'acorn';$/m.test(fs.readFileSync(HB_SYNC, 'utf8')) &&
     JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'package.json'), 'utf8')).devDependencies.acorn, 'acorn, which the sync imports, is a declared devDependency');
 });
 
-test('HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {
+testNeedsDeps(['acorn'], 'HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hb12-'));
   const W = path.join(HB_ROOT, 'web-app');
   const build = (mutate) => {
@@ -40526,6 +40541,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   assert.deepStrictEqual(clasp.filePushOrder, ['kb_shared.js'].concat(own.sort()), 'the generated file loads first, then every hand-written one');
 });
 
+if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
