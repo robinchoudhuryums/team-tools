@@ -3418,6 +3418,41 @@
     "writeAdjustPunchForEmployee_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2 (b): driving distance for radius rules, route-lookup cap",
+   "added": [
+    "OOP_DRIVE_MAX_LOOKUPS",
+    "ROUTE_LOOKUP_CAP",
+    "ROUTE_LOOKUP_PROP",
+    "oopDriveForCheck_",
+    "oopDrivingRoute_",
+    "oopMaxRadius_",
+    "oopPolylineOk_",
+    "oopRoutePick_",
+    "routeLookupReserve_",
+    "routeLookupStatus_",
+    "routeLookupWindow_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getStorageHealth",
+    "oopEligibilityCheck_",
+    "oopEligibilityMap"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2 (b): the counter writes through propSetBounded_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "routeLookupReserve_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5247,6 +5282,11 @@
    "kind": "const",
    "sha": "e56df5966a5e911f"
   },
+  "OOP_DRIVE_MAX_LOOKUPS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4f02cdeef9896b79"
+  },
   "OOP_ELIG_MAX_ITEMS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5661,6 +5701,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "b54a1f6176ae6cc8"
+  },
+  "ROUTE_LOOKUP_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c0bdffe31a574a4"
+  },
+  "ROUTE_LOOKUP_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f98ea5726538ac78"
   },
   "SC": {
    "file": "00_config.js",
@@ -6880,7 +6930,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4f21be9a4d1e538e"
+   "sha": "ffed830a02bcfb61"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -8920,7 +8970,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e85a2318980da06a"
+   "sha": "d33fdbd7f277ca86"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -10502,10 +10552,20 @@
    "kind": "function",
    "sha": "1e3d158ffcdb7f7a"
   },
+  "oopDriveForCheck_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "21ef27160e84dda3"
+  },
+  "oopDrivingRoute_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6818d44e837369fd"
+  },
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6e4ff8b76496b42f"
+   "sha": "d1b24a459f9ff665"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
@@ -10515,7 +10575,7 @@
   "oopEligibilityMap": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "deeb177a309a2ec1"
+   "sha": "2a2910557c5ce8ef"
   },
   "oopEligibilityParse_": {
    "file": "70_kb.js",
@@ -10542,6 +10602,11 @@
    "kind": "function",
    "sha": "df037b2e3e32a22a"
   },
+  "oopMaxRadius_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "94bb52383086e44a"
+  },
   "oopMilesFmt_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10551,6 +10616,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "d4ee46be714b2662"
+  },
+  "oopPolylineOk_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3e5d01c71f53a556"
   },
   "oopPriceByLabel_": {
    "file": "70_kb.js",
@@ -10576,6 +10646,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "8b81d202794ae75f"
+  },
+  "oopRoutePick_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "abe1d7020b12b997"
   },
   "oopRowIsBlank_": {
    "file": "70_kb.js",
@@ -11431,6 +11506,21 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "1a37be5691c30e7c"
+  },
+  "routeLookupReserve_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8d32becb2b644a6c"
+  },
+  "routeLookupStatus_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e0bb666e4408611b"
+  },
+  "routeLookupWindow_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0a0cdd029e3ca633"
   },
   "runAutomationJob_": {
    "file": "10_core.js",

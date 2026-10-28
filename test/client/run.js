@@ -7674,6 +7674,7 @@ test('CDR: the health card tones off likelyMismatches, never the raw lists', () 
   // …and driven behaviourally through the REAL function.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || {};
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const r = fn({ cdr: { ok: true, unmatchedAgents: Array(78).fill('x'), rosterWithNoCdr: Array(12).fill('y'), likelyMismatches: [] } }, null);
   const cdrBad = r.items.filter((f) => f.area === 'cdr' && f.severity !== 'ok');
@@ -20329,6 +20330,7 @@ test('PR1-5: .tr-complete-btn has hover/focus states; .qa-kbd-hint is readable; 
 test('PR2-1: cnHealthFindings_ — an all-clear payload yields zero non-ok items; a failed load is a fail finding, never silence', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD unresolved-flag digest' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const worstFn = loadFunction(sb, 'cn/script_callnotes.html', 'cnFindingsWorst_');
   assert.strictEqual(typeof fn, 'function');
@@ -20449,7 +20451,9 @@ test('PR2-3: the storage inventory renders through mtRenderTable_ with a detail 
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailBccHtml_');       // F3 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnPropStoreHtml_');     // Q3 sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');  // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaHtml_');
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsHtml_');   // round 12 E2 (b)
   const renderStorage = loadFunction(sb, 'cn/script_callnotes.html', 'cnRenderStoragePanel_');
   const html = renderStorage({ configTimezone: 'Asia/Kolkata', stores: [
     { label: 'ADP', role: 'r', cls: 'Payroll', retention: 'Kept', prop: 'ADP_SS_ID', source: 'Script Property', configured: true, reachable: true, tz: 'Asia/Kolkata', tzMatch: true },
@@ -22616,6 +22620,7 @@ test('F-08/F-09 server: the CDR Storage Health row carries the standard and the 
 test('F-08/F-09 client: the CDR-area findings — a published standard and a listed calendar are the ok facts; every fallback source WARNS and names what the app does meanwhile; an older payload raises neither', () => {
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnStandardFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnHolidayFindings_');
@@ -22782,6 +22787,7 @@ test('F-20: the three heartbeat-only daily jobs stamp a heartbeat and their own 
   // Client: the finding reads the stamp's real field (`message`; it read `error`).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { MissedPunchAlerts: { at: 't', message: 'why it broke' } } }, null).items.find((x) => x.id === 'automationError:MissedPunchAlerts');
   assert.ok(f && f.severity === 'fail' && /why it broke/.test(f.detail), 'the Admin finding shows the stamped message, never "unknown error"');
@@ -22978,6 +22984,7 @@ test('F-11: the DeptRequests store is PHI-ADJACENT — probed by Storage Health 
   // The findings derivation warns on the fallback (it is not a no-fallback store).
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'x', stores: [{ label: 'Dept Requests (PHI-adjacent)', cls: 'PHI-adjacent', prop: 'DEPT_REQUESTS_SS_ID', configured: false, note: 'falls back' }] }).items.find((x) => x.id === 'store:DEPT_REQUESTS_SS_ID');
   assert.ok(f && f.severity === 'warn', 'unset Dept Requests store is a WARNING (it falls back onto payroll), never the no-fallback ok');
@@ -24056,6 +24063,7 @@ test('DRV-3: driveAccessStatus_ is side-effect free, reports unknown as unknown,
 test('DRV-4: the Admin System tab reports Drive — finding + inventory line, and renders nothing when unprobed', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -24168,6 +24176,7 @@ test('F3: MAIL_BCC_ALL is SURFACED — a standing PHI copy with no surface anywh
   const cnCode = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
   const sb = vm.createContext({ String, Number, Boolean, Object, Array, JSON, Math, RegExp });
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const findings = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const forBcc = (mb) => (findings(null, { stores: [], mailBcc: mb }).items || [])
     .filter((i) => i.id === 'mailBcc')[0];
@@ -28345,6 +28354,7 @@ test('A2: the System tab renders EVERY line the health dot counts — driven: th
   vm.runInContext(fs.readFileSync(path.join(B6_WEB, 'cn/script_callnotes.html'), 'utf8').match(/var CN_SYS_CLIENT_KINDS_ = [\s\S]*?\n\};/)[0]
     .replace(/var /g, 'this.'), s2);
   loadFunction(s2, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(s2, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(s2, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const out = fn(Object.assign({}, report, { problems: items }), null).items.filter((f) => f.area === 'automation' && f.severity !== 'ok');
   const ids = out.map((f) => f.id);
@@ -28487,6 +28497,7 @@ test('A6: a ClientErrors read that FAILED carries an error — the panel and the
   assert.ok(out.count === 0 && /timed out/.test(out.error), 'nothing invented, and the failure rides the summary');
   sb.CN_DIGEST_LABELS_ = { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ clientErrors: { count: 0, last24h: 0, windowDays: 7, error: 'Service Spreadsheets timed out' } }, null).items.find((x) => x.id === 'clientErrors');
   assert.ok(f && f.severity === 'warn' && /could not be read/.test(f.title), 'the finding is a warning, not the all-clear');
@@ -32609,6 +32620,7 @@ test('DRV-1 + QA-1 (cycle 23): driveAccessStatus_ EXERCISES the service — gran
 test('DRV-1 + QA-1 (cycle 23): the System tab reads a disabled service as a FAIL naming every surface, and never advises clearing a folder property that may still hold the images (driven)', () => {
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD unresolved-flag digest' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveSurfaces_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnDriveFolderAdvice_');
@@ -32733,6 +32745,7 @@ test('DRV-2 (cycle 23): a disabled Drive is not N broken embeds — the scan sto
   assert.ok(/could not be checked/.test(html) && !/all Drive files reachable/.test(html) && !/deleted\/moved/.test(html), html);
   assert.ok(/Drive is &lt;off&gt;/.test(html), 'escaped');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn(null, { configTimezone: 'Asia/Kolkata', stores: [], kbEmbeds: { total: 3, broken: [], driveUnavailable: true, driveError: 'off' } })
     .items.filter((x) => x.id === 'kbEmbeds')[0];
@@ -33005,6 +33018,7 @@ test('4a-FU1 (cycle 23): a stale heartbeat whose job ran and FAILED inside the w
   // The client finding.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const find = (d) => fn({ digests: [d], automationErrors: {} }, null).items.filter((f) => f.id === 'digest:' + d.key)[0];
   let f = find({ key: 'urgent', stale: true, last: 'x', failedAt: '2026-10-01 08:00:00' });
@@ -33051,6 +33065,7 @@ test('4a-FU3 (cycle 23): every stamped automation failure carries a human LABEL 
   // The readers.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const f = fn({ automationErrors: { ManagerDailyBrief: { at: 't', message: 'quota', label: 'Manager daily brief' } }, digests: [] }, null)
     .items.filter((x) => x.id === 'automationError:ManagerDailyBrief')[0];
@@ -33088,7 +33103,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
       SpreadsheetApp: { openById: (id) => { opened.push(id); return { getName: () => 'n-' + id, getSpreadsheetTimeZone: () => 'Asia/Kolkata', getSpreadsheetLocale: () => 'en_US', getUrl: () => 'u' }; } },
       tzEquivalent_: (a, b) => a === b, diagRetentionText_: () => 'x', KB_SEARCH_SIGNAL_DAYS: 90, cdrStandardProbe_: () => ({}), cdrHolidayProbe_: () => ({}),
       qaReviewRetentionDays_: () => 0, getEmployeeRosterRows_: () => [['h']], cnEnrolledSheetId_: () => '', EMP: { NAME: 0 },
-      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null, mailQuotaStatus_: () => null,
+      kbScanBrokenEmbeds_: () => null, driveAccessStatus_: () => null, mailBccStatus_: () => null, scriptPropertiesStatus_: () => null, mailQuotaStatus_: () => null, routeLookupStatus_: () => null,
       KB_EMBED_SCAN_CAP: 1, DRIVE_WRITE_SCOPE: 's', DRIVE_REAUTH_HINT: 'h', KB_IMAGES_FOLDER_PROP: 'p' };
     vm.createContext(ctx);
     ['storePlaceholder_', 'getStorageHealth'].forEach((n) => vm.runInContext(extractRawFunction('10_core.js', n), ctx));
@@ -33114,6 +33129,7 @@ test('ADM-04 (cycle 23): a store that FALLS BACK onto the ADP sheet is NOT confi
   ['FORMS_SS_ID', 'DEPT_REQUESTS_SS_ID'].forEach((k) => assert.strictEqual(items.find((i) => i.key === 'store_' + k).status, 'warn', 'readiness warns on the ' + k + ' fallback (it read ok)'));
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const sev = (st) => (fn(null, { configTimezone: 'Asia/Kolkata', stores: [st] }).items.filter((x) => x.id === 'store:FORMS_SS_ID')[0] || {}).severity;
   assert.strictEqual(sev(unset.FORMS_SS_ID), 'warn', 'the System tab warns on the server\'s real fallback shape (the F-11 rule, now reachable)');
@@ -33147,6 +33163,7 @@ test('ADM-07 (cycle 23): the Reference-lookups diagnostics are FINDINGS — each
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnOopFindings_');
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const ids = (oop) => Array.from(fn(null, null, oop).items.filter((x) => /^oop/.test(x.id)).map((x) => x.id + ':' + x.severity + ':' + x.area));
   assert.deepStrictEqual(fn(null, null, null).items.filter((x) => /^oop/.test(x.id)).length, 0, 'null = not loaded yet: nothing, not a clean verdict');
@@ -37954,6 +37971,7 @@ test('ST2 (cycle 25 E1): a PARTIAL run reads as one — the stamp keeps its stat
   // The System tab.
   sb.CN_DIGEST_LABELS_ = sb.CN_DIGEST_LABELS_ || { eod: 'EOD' };
   loadFunction(sb, 'cn/script_callnotes.html', 'cnMailQuotaVerdict_');   // 25post sibling
+  loadFunction(sb, 'cn/script_callnotes.html', 'cnRouteLookupsVerdict_');   // round 12 E2 (b) sibling
   const fn = loadFunction(sb, 'cn/script_callnotes.html', 'cnHealthFindings_');
   const items = fn({ digests: [], automationErrors: {
     CallNotesPurge: { at: 't1', message: 'skipped Ana', status: 'partial', label: 'call-note retention purge' },
@@ -39682,7 +39700,7 @@ test('25post: the day\'s email allowance — mailQuotaStatus_ reads MailApp\'s r
   assert.ok(u.remaining === null && /Service unavailable/.test(u.error), 'a failed read is null + the reason, never a number');
   const sh = stripJsComments_(extractRawFunction('Code.js', 'getStorageHealth'));
   assert.ok(/if \(!callerEmp \|\| !callerEmp\.isAdmin\) return \{ error: 'Admin access required\.' \};/.test(sh), 'admin-only');
-  assert.ok(sh.indexOf("'Admin access required.'") < sh.indexOf('mailQuotaStatus_()') && /mailQuota: mailQuota \}/.test(sh), 'read after the gate, shipped with the report');
+  assert.ok(sh.indexOf("'Admin access required.'") < sh.indexOf('mailQuotaStatus_()') && /mailQuota: mailQuota, routeLookups: routeLookups \}/.test(sh), 'read after the gate, shipped with the report');
 });
 
 test('25post: the email-allowance verdict — ok normally, warn at or below the threshold, FAIL at zero, warn when unreadable, nothing on an older server; the line escapes, the finding rides the System list (driven)', () => {
@@ -40073,6 +40091,98 @@ test('E2a: the timesheet, the pay statement and the team calendar carry infClock
   assert.ok(/infClockIn: !!\(pm\.ClockIn && infMap\.ClockIn\)/.test(cal) && /inferred: adpRowInferred_\(r\)/.test(cal), 'the team calendar reads the same mark');
 });
 
+
+test('E2b: Google\'s route answer → the SHORTEST route it offered (any route within the limit qualifies), the fastest route\'s miles, a checked line; no route and a failed lookup are different answers (driven)', () => {
+  const c = vm.createContext({ Math, Number, Array, String });
+  ['oopPolylineOk_', 'oopRoutePick_', 'oopMaxRadius_', 'routeLookupWindow_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const route = (m, line) => ({ legs: [{ distance: { value: m } }], overview_polyline: { points: line } });
+  const r = J(c.oopRoutePick_({ status: 'OK', routes: [route(170590, 'aaa'), route(151278, 'bbb'), route(160934, 'ccc')] }));
+  assert.deepStrictEqual([r.miles, r.fastest, r.poly, r.alternatives], [94, 106, 'bbb', 3], 'THE OPERATOR\'S RULE: the 94-mile alternative, not the 106-mile fastest');
+  assert.deepStrictEqual(J(c.oopRoutePick_({ status: 'ZERO_RESULTS' })), { noRoute: true });
+  assert.deepStrictEqual(J(c.oopRoutePick_({ status: 'OVER_QUERY_LIMIT' })), { error: true }, 'a refusal is not "no road"');
+  assert.deepStrictEqual(J(c.oopRoutePick_({ status: 'OK', routes: [] })), { error: true });
+  assert.strictEqual(c.oopRoutePick_({ status: 'OK', routes: [route(1609.344 * 10, '<script>')] }).poly, '', 'a line outside the polyline alphabet is not kept');
+  assert.deepStrictEqual([c.oopPolylineOk_('_p~iF~ps|U'), c.oopPolylineOk_('a b'), c.oopPolylineOk_(''), c.oopPolylineOk_(5)], [true, false, false, false]);
+  assert.strictEqual(c.oopMaxRadius_([{ kind: 'radius', miles: 50 }, { kind: 'any', rules: [{ kind: 'radius', miles: 120 }] },
+    { kind: 'except', rule: { kind: 'radius', miles: 80 } }, { kind: 'open' }]), 120, 'every radius, nested ones included');
+  const w = J(c.routeLookupWindow_(JSON.stringify({ 100: 5, 90: 7, 76: 9, 101: 3, x: 4 }), 100));
+  assert.deepStrictEqual([w.used, Object.keys(w.buckets).sort()], [12, ['100', '90']], 'the last 24 hours only; a future or junk key is dropped');
+  assert.deepStrictEqual(J(c.routeLookupWindow_('not json', 5)), { buckets: {}, used: 0 });
+});
+test('E2b: the route-lookup cap — under it a reservation is written; past it, or with an unreadable count, nothing is looked up; the cap sits 2,000 under Google\'s documented 10,000 (driven)', () => {
+  let store = {}, throwRead = false;
+  const c = vm.createContext({ Math, Number, Array, String, JSON, Date, Object, parseInt,
+    ROUTE_LOOKUP_CAP: Number(/const ROUTE_LOOKUP_CAP = (\d+);/.exec(codeSrc)[1]), ROUTE_LOOKUP_PROP: 'ROUTE_LOOKUPS_24H',
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => { if (throwRead) throw new Error('busy'); return store[k] || null; } }) },
+    propSetBounded_: (k, v) => { store[k] = v; } });
+  ['routeLookupWindow_', 'routeLookupReserve_', 'routeLookupStatus_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  assert.strictEqual(vm.runInContext('ROUTE_LOOKUP_CAP', c), 8000);
+  const ok = c.routeLookupReserve_(2);
+  assert.ok(ok.ok && ok.used === 2, JSON.stringify(ok));
+  const h = Math.floor(Date.now() / 3600000);
+  store.ROUTE_LOOKUPS_24H = JSON.stringify({ [h]: 7999 });
+  const full = c.routeLookupReserve_(2);
+  assert.ok(!full.ok && !full.error && full.used === 7999, 'past the cap: refused, as the cap');
+  assert.strictEqual(JSON.parse(store.ROUTE_LOOKUPS_24H)[h], 7999, 'and nothing was written');
+  assert.ok(c.routeLookupReserve_(1).ok, 'exactly at the cap is allowed');
+  throwRead = true;
+  const err = c.routeLookupReserve_(1);
+  assert.ok(!err.ok && /busy/.test(err.error), 'an unreadable count is refused — an unknown count is not room');
+  assert.ok(c.routeLookupStatus_().used === null && /busy/.test(c.routeLookupStatus_().error), 'and the Admin line says unknown');
+  const res = stripJsComments_(extractRawFunction('Code.js', 'routeLookupReserve_'));
+  assert.ok(!/LockService/.test(res), 'a rep\'s check never waits on the project lock');
+});
+test('E2b: oopDriveForCheck_ — reuses this page\'s drives, looks up only what is missing after reserving it, and names a cap or a failure; a hint shorter than the straight line is not believed (driven)', () => {
+  const lookups = [];
+  let reserve = { ok: true }, answer = (from) => ({ miles: from.name === 'Dallas' ? 94 : 140, fastest: from.name === 'Dallas' ? 106 : 140, poly: 'abc' });
+  const c = vm.createContext({ Number, Array, Object, isFinite, String,
+    routeLookupReserve_: (k) => { reserve.k = k; return reserve; }, oopDrivingRoute_: (from, to) => { lookups.push(from.name); return answer(from); } });
+  ['oopPolylineOk_', 'oopDriveForCheck_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const cands = [{ name: 'Dallas', lat: 1, lng: 1, straight: 80 }, { name: 'Waco', lat: 2, lng: 2, straight: 95 }];
+  let d = J(c.oopDriveForCheck_({ lat: 0, lng: 0 }, cands, null));
+  assert.deepStrictEqual([d.miles, d.fastest.Dallas, d.looked, lookups, reserve.k], [{ Dallas: 94, Waco: 140 }, 106, 2, ['Dallas', 'Waco'], 2]);
+  lookups.length = 0;
+  d = J(c.oopDriveForCheck_({ lat: 0, lng: 0 }, cands, { miles: { Dallas: 94, Waco: 50 }, fastest: { Dallas: 106 }, poly: { Dallas: 'abc' } }));
+  assert.deepStrictEqual([lookups, d.miles.Dallas, d.poly.Dallas, d.looked], [['Waco'], 94, 'abc', 1], 'Dallas reused; a 50-mile "drive" to a warehouse 95 miles away in a straight line is not believed');
+  reserve = { ok: false, used: 8000 };
+  lookups.length = 0;
+  d = J(c.oopDriveForCheck_({ lat: 0, lng: 0 }, cands, null));
+  assert.deepStrictEqual([d.unavailable, d.reason, lookups], [['Dallas', 'Waco'], 'cap', []], 'past the cap: nothing looked up, and why');
+  reserve = { ok: true };
+  answer = (from) => (from.name === 'Dallas' ? { noRoute: true } : { error: true });
+  d = J(c.oopDriveForCheck_({ lat: 0, lng: 0 }, cands, null));
+  assert.deepStrictEqual([d.noRoute, d.unavailable, d.reason], [['Dallas'], ['Waco'], 'error'], 'no road is an answer; a failure is unavailable');
+  const ce = stripJsComments_(extractRawFunction('Code.js', 'checkOopEligibility'));
+  assert.ok(/milesByName\[n\] <= maxR/.test(ce) && /\.slice\(0, OOP_DRIVE_MAX_LOOKUPS\)/.test(ce), 'only warehouses within the limit in a straight line, nearest first, capped');
+  assert.ok(/oopDriveForCheck_\(\{ lat: qGeo\.lat, lng: qGeo\.lng \}, cands, opts && opts\.drive\)/.test(ce), 'the page\'s earlier drives are the hint');
+  const dr = stripJsComments_(extractRawFunction('Code.js', 'oopDrivingRoute_'));
+  assert.ok(/setAlternatives\(true\)/.test(dr) && /DirectionFinder\.Mode\.DRIVING/.test(dr) && /catch \(e\) \{ return \{ error: true \}; \}/.test(dr), 'alternatives on, driving, and a throw keeps no message');
+  const map = stripJsComments_(extractRawFunction('Code.js', 'oopEligibilityMap'));
+  assert.ok(/oopPolylineOk_\(route\.poly\)/.test(map) && !/DirectionFinder|oopDrivingRoute_|routeLookupReserve_/.test(map), 'the map draws a checked line and never looks a route up itself');
+});
+test('E2b: a radius verdict on the DRIVE — within by any offered route is yes, over by road is no, no road is no; with no drive the straight line answers and SAYS so; without drive data nothing changes (driven)', () => {
+  const R = { kind: 'radius', miles: 100, warehouses: ['Dallas', 'Waco'] };
+  const base = { miles: { Dallas: 80, Waco: 95 }, warehouseNames: ['Dallas', 'Waco'] };
+  const V = (drive) => B5V(R, Object.assign({}, base, drive === undefined ? {} : { drive }));
+  const yes = V({ miles: { Dallas: 94, Waco: 130 }, fastest: { Dallas: 106 } });
+  assert.deepStrictEqual([yes.verdict, yes.near, yes.drive], ['yes', false, true]);
+  assert.strictEqual(yes.why, '94 mi drive from Dallas (within 100 mi; the fastest route is 106 mi).');
+  const no = V({ miles: { Dallas: 112, Waco: 130 }, fastest: {} });
+  assert.deepStrictEqual([no.verdict, no.why], ['no', '112 mi drive from Dallas (>100 mi).']);
+  const capped = V({ miles: {}, fastest: {}, unavailable: ['Dallas', 'Waco'], reason: 'cap' });
+  assert.strictEqual(capped.verdict, 'yes');
+  assert.ok(/^80 mi from Dallas \(within 100 mi\)\. Driving distance unavailable — straight line shown\.$/.test(capped.why), capped.why);
+  const road = V({ miles: {}, fastest: {}, noRoute: ['Dallas', 'Waco'] });
+  assert.deepStrictEqual([road.verdict, road.why], ['no', 'No driving route from Dallas or Waco to this address.']);
+  const mixed = V({ miles: { Waco: 99 }, fastest: { Waco: 99 }, noRoute: ['Dallas'] });
+  assert.deepStrictEqual([mixed.verdict, mixed.why], ['yes', '99 mi drive from Waco (within 100 mi).']);
+  const plain = V(undefined);
+  assert.deepStrictEqual([plain.verdict, plain.why], ['yes', '80 mi from Dallas (within 100 mi).'], 'no drive data: exactly the old answer');
+  const far = B5V(R, { miles: { Dallas: 300, Waco: 400 }, warehouseNames: ['Dallas', 'Waco'], drive: { miles: {}, fastest: {}, unavailable: [] } });
+  assert.deepStrictEqual([far.verdict, far.why], ['no', '300 mi from Dallas (>100 mi).'], 'a straight line over the limit needs no drive');
+});
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

@@ -1927,9 +1927,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // drawn by Apps Script's Maps service), the ring round the nearest, one
     // farther warehouse counted rather than drawn.
     oopEligibilityMap: { img: 'data:image/png;base64,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', ringMiles: 100,
-      nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas', 'Houston', 'San Antonio'], omitted: 1 },
+      nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas', 'Houston', 'San Antonio'], omitted: 1, route: 'Dallas' },   // E2 (b): the drive was drawn
     checkOopEligibility: { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving',
-      total: 3, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }, { name: 'Houston', miles: 225.0 }, { name: 'San Antonio', miles: 254.1 }, { name: 'Honolulu', miles: 3770.2 }],
+      total: 4, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4, driveMiles: 15.8, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }, { name: 'Houston', miles: 225.0, driveMiles: null }, { name: 'San Antonio', miles: 254.1, driveMiles: null }, { name: 'Honolulu', miles: 3770.2, driveMiles: null }],
+      // Round 12 E2 (b): the drives this answer used (checkOopEligibility's `drive`).
+      drive: { miles: { Dallas: 15.8 }, fastest: { Dallas: 17.2 }, poly: { Dallas: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' }, noRoute: [], unavailable: [], reason: '', looked: 1 },
       deliveryCities: [{ name: 'Irving', state: 'TX', accepts: 'POV, scooter' }],
       // 25post B1: a rep sees the COUNT of unusable delivery-table rows on one line.
       locationWarnings: ['a warehouse row with no name'], isAdmin: false, cityFrom: '',
@@ -1947,6 +1949,11 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
           price: '$2,150.00', prices: [{ label: '', value: '$2,150.00' }], details: [],
           insurance: { verdict: 'no', near: false, why: 'TX is not a listed state.' },
           oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } },
+        // Round 12 E2 (b): a radius rule judged on the drive.
+        { name: 'Bariatric Power Chair', code: 'K0861', effective: '09/16/2026', eligibility: '100 miles of Dallas warehouse', rule: 'radius',
+          price: '$3,980.00', prices: [{ label: '', value: '$3,980.00' }], details: [{ label: 'Category', value: 'Power chair' }],
+          insurance: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' },
+          oop: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' } },
         // 25post B3: a union that is neither a yes nor a no — one short line per rule.
         { name: 'Island Scooter Program', code: 'K0827', effective: '09/16/2026', eligibility: '100 miles of Honolulu warehouse, or listed cities', rule: 'any',
           price: '$1,480.00', prices: [{ label: '', value: '$1,480.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
@@ -2511,6 +2518,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
                    external: [], ownDomain: 'umsupply.com' },
         // 25post — mailQuotaStatus_'s shape; a busy afternoon, the warn tone.
         mailQuota: { remaining: 240, warnAt: 300, bccPerSend: 1, error: '' },
+        // Round 12 E2 (b) — routeLookupStatus_'s shape; a busy day, the warn tone.
+        routeLookups: { used: 6720, cap: 8000, hours: 24, error: '' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -2740,6 +2749,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
                    largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 2100, error: '' },
       mailQuota: { remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' },
+      routeLookups: { used: 412, cap: 8000, hours: 24, error: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };

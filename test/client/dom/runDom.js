@@ -4853,6 +4853,70 @@ test('B DOM (operator 2026-10-27): the eligibility card — a stand-in city is n
   assert.ok(!/100 miles of any warehouse, or listed cities/.test(host.textContent), 'the raw area text is not repeated above its own answer');
 });
 
+test('E2b DOM (operator 2026-10-28): the drive is shown beside the straight line, kept for the page and sent back with the next check of the same address, and its line goes to the map; a capped day is SAID above the verdicts', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const sent = [];
+  let reply = 'drive';
+  h.run.respond('checkOopEligibility', (a, q, o) => {
+    sent.push(JSON.parse(JSON.stringify(o || null)));
+    const capped = reply === 'cap';
+    return { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving', total: 1, deliveryCities: [], locationWarnings: [],
+      warehouses: [{ name: 'Dallas', miles: 12.4, driveMiles: capped ? null : 15.8, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }],
+      drive: capped ? { miles: {}, fastest: {}, poly: {}, noRoute: [], unavailable: ['Dallas'], reason: 'cap', looked: 0 }
+        : { miles: { Dallas: 15.8 }, fastest: { Dallas: 17.2 }, poly: { Dallas: '_p~iF~ps|U' }, noRoute: [], unavailable: [], reason: '', looked: 1 },
+      items: [{ name: 'Chair', price: '$10.00', eligibility: '100 miles of Dallas warehouse', rule: 'radius',
+        insurance: capped ? { verdict: 'yes', near: false, why: '12.4 mi from Dallas (within 100 mi). Driving distance unavailable — straight line shown.' }
+          : { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' },
+        oop: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' } }] };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  let mapArgs = null;
+  h.run.respond('oopEligibilityMap', (a, o) => { mapArgs = JSON.parse(JSON.stringify(o || null));
+    return { img: 'data:image/png;base64,QUJD', ringMiles: 100, nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas'], omitted: 0, route: 'Dallas' }; });
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '75038';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers(); await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  assert.strictEqual(sent[0].drive, null, 'the first check of an address has no drives to offer');
+  assert.ok(/Nearest warehouse: Dallas · 12.4 mi \(straight-line\) · 15.8 mi drive/.test(host.textContent), host.textContent.slice(0, 200));
+  assert.ok(/15\.8 mi drive from Dallas \(within 100 mi; the fastest route is 17\.2 mi\)/.test(host.textContent), 'the verdict names the drive');
+  // The same address again (another item): the drive rides back.
+  const item = h.$('#kb-oop-item');
+  item.value = 'chair'; h.read('oopLookupInput_')(item, { now: true });
+  h.flushTimers(); await tick(); await tick();
+  assert.deepStrictEqual(sent[1].drive.miles, { Dallas: 15.8 }, 'kept for the page and sent back');
+  assert.strictEqual(sent[1].drive.poly.Dallas, '_p~iF~ps|U');
+  // The map is asked to draw that drive.
+  const btn = host.querySelector('.kb-oop-mapbtn');
+  h.read('oopToggleMap_')(btn); await tick(); await tick();
+  assert.deepStrictEqual(mapArgs, { route: { name: 'Dallas', poly: '_p~iF~ps|U' } });
+  assert.ok(/blue line: the drive from Dallas/.test(host.querySelector('.kb-oop-map').textContent));
+  // A capped day: said above the verdicts, and an unavailable drive is never kept.
+  reply = 'cap';
+  const h2addr = '75039';
+  addr.value = h2addr; h.read('oopAddrConfirm_')(addr);
+  h.flushTimers(); await tick(); await tick();
+  assert.ok(/route-lookup limit is reached\. Distance answers below use the straight line/.test(h.$('#kb-oop-results').textContent));
+  assert.ok(/Nearest warehouse: Dallas · 12.4 mi \(straight-line\)$/m.test(Array.from(h.$$('#kb-oop-results .kb-ins-more')).map((e) => e.textContent).join('\n')), 'no drive beside the straight line');
+  assert.ok(!(h.read('KB_OOP_DRIVE')[h2addr] && Object.keys(h.read('KB_OOP_DRIVE')[h2addr].miles).length), 'nothing kept for that address');
+});
+
+test('E2b DOM: Admin → System says how many route lookups the last 24 hours spent — ok, close to the cap, at the cap, or unknown', () => {
+  const h = boot();
+  const V = h.read('cnRouteLookupsVerdict_');
+  assert.strictEqual(V(null), null, 'an older server: no line');
+  assert.deepStrictEqual([V({ used: 412, cap: 8000, hours: 24 }).tone, V({ used: 6720, cap: 8000 }).tone, V({ used: 8000, cap: 8000 }).tone, V({ used: null, cap: 8000, error: 'x' }).tone],
+    ['ok', 'warn', 'fail', 'warn']);
+  assert.match(V({ used: 412, cap: 8000, hours: 24 }).title, /Route lookups: 412 of 8,000 in the last 24 hours/);
+  const html = h.read('cnRouteLookupsHtml_')({ used: 8000, cap: 8000, hours: 24 });
+  assert.ok(/cn-drive-danger/.test(html) && /limit reached/.test(html));
+});
+
 test('C1 DOM (operator 2026-10-27): Show map draws nothing until pressed, reads ONCE per address, keeps a failure out of the cache, refuses a non-PNG source; the driving route runs from the nearest warehouse to the address Google read', async () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

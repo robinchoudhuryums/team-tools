@@ -2085,6 +2085,127 @@ function oopMilesFmt_(d) {
   const parts = String(r).split('.');
   return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (parts[1] ? '.' + parts[1] : '');
 }
+/** PURE (Node-pinned) — E2 (b): the largest radius any parsed rule names (0
+ *  when none does) — the straight-line bound for which warehouses to drive. */
+function oopMaxRadius_(rules) {
+  let max = 0;
+  const walk = function (r) {
+    if (!r) return;
+    if (r.kind === 'radius') max = Math.max(max, Number(r.miles) || 0);
+    else if (r.kind === 'any') (r.rules || []).forEach(walk);
+    else if (r.kind === 'except') walk(r.rule);
+  };
+  (rules || []).forEach(walk);
+  return max;
+}
+/** PURE (Node-pinned) — an encoded route line as Google writes it, and
+ *  nothing else (it is drawn on the static map). */
+function oopPolylineOk_(p) {
+  return typeof p === 'string' && p.length > 0 && p.length <= 12000 && /^[\x3f-\x7e]+$/.test(p);
+}
+/** PURE (Node-pinned) — E2 (b): Google's answer → the SHORTEST route it
+ *  offered (the operator's rule: any route within the limit qualifies), the
+ *  first (fastest) route's miles, and the chosen route's line. NO route is an
+ *  answer ({noRoute}) — a different one from a lookup that failed ({error}),
+ *  g128. */
+function oopRoutePick_(res) {
+  const st = res && res.status;
+  if (st === 'ZERO_RESULTS' || st === 'NOT_FOUND') return { noRoute: true };
+  if (st !== 'OK' || !Array.isArray(res.routes) || !res.routes.length) return { error: true };
+  const meters = res.routes.map(function (r) {
+    return (r && Array.isArray(r.legs) && r.legs.length) ? r.legs.reduce(function (a, l) { return a + (Number(l && l.distance && l.distance.value) || 0); }, 0) : 0;
+  });
+  let pick = -1;
+  meters.forEach(function (m, i) { if (m > 0 && (pick < 0 || m < meters[pick])) pick = i; });
+  if (pick < 0) return { error: true };
+  const mi = function (m) { return Math.round(m / 1609.344 * 10) / 10; };
+  const line = res.routes[pick].overview_polyline && res.routes[pick].overview_polyline.points;
+  return { miles: mi(meters[pick]), fastest: mi(meters[0] > 0 ? meters[0] : meters[pick]),
+    poly: oopPolylineOk_(line) ? line : '', alternatives: res.routes.length };
+}
+/** One drive, warehouse → address, alternatives on. Never throws, and a
+ *  failure's own message is not kept (it can carry the coordinates). */
+function oopDrivingRoute_(from, to) {
+  try {
+    const res = Maps.newDirectionFinder().setOrigin(from.lat, from.lng).setDestination(to.lat, to.lng)
+      .setMode(Maps.DirectionFinder.Mode.DRIVING).setAlternatives(true).getDirections();
+    return oopRoutePick_(res);
+  } catch (e) { return { error: true }; }
+}
+/** PURE (Node-pinned) — the route-lookup counter: hourly buckets, keyed by
+ *  hours since the epoch, kept for the last 24. Returns { buckets, used }. */
+function routeLookupWindow_(raw, nowHour) {
+  let b = {};
+  try { const p = JSON.parse(raw || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) b = p; } catch (e) { b = {}; }
+  const kept = {};
+  let used = 0;
+  Object.keys(b).forEach(function (k) {
+    const h = parseInt(k, 10), n = Number(b[k]);
+    if (h > nowHour - 24 && h <= nowHour && n > 0) { kept[h] = n; used += n; }
+  });
+  return { buckets: kept, used: used };
+}
+/** E2 (b) — reserve `k` route lookups against ROUTE_LOOKUP_CAP. { ok, used,
+ *  cap } — `ok: false` past the cap; `error` when the count could not be
+ *  read, which is refused too (an unknown count is not room). Unlocked: two
+ *  checks at once can under-count by a lookup, which the 2,000 below Google's
+ *  quota absorbs; a rep's check never waits on the project lock. */
+function routeLookupReserve_(k) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const nowHour = Math.floor(Date.now() / 3600000);
+    const w = routeLookupWindow_(props.getProperty(ROUTE_LOOKUP_PROP), nowHour);
+    if (w.used + k > ROUTE_LOOKUP_CAP) return { ok: false, used: w.used, cap: ROUTE_LOOKUP_CAP };
+    w.buckets[nowHour] = (w.buckets[nowHour] || 0) + k;
+    propSetBounded_(ROUTE_LOOKUP_PROP, JSON.stringify(w.buckets), { hint: 'the route-lookup counter keeps 24 hourly counts' });
+    return { ok: true, used: w.used + k, cap: ROUTE_LOOKUP_CAP };
+  } catch (e) { return { ok: false, error: String(e.message || e), cap: ROUTE_LOOKUP_CAP }; }
+}
+/** E2 (b) — the count for Admin → System: { used, cap, hours: 24 } or with
+ *  `error` (UNKNOWN, never read as fine). */
+function routeLookupStatus_() {
+  try {
+    const w = routeLookupWindow_(PropertiesService.getScriptProperties().getProperty(ROUTE_LOOKUP_PROP), Math.floor(Date.now() / 3600000));
+    return { used: w.used, cap: ROUTE_LOOKUP_CAP, hours: 24, error: '' };
+  } catch (e) { return { used: null, cap: ROUTE_LOOKUP_CAP, hours: 24, error: String(e.message || e) }; }
+}
+/** E2 (b) — the drives for one check. `cands` = [{name, lat, lng, straight}]
+ *  (already within the limit in a straight line); `hint` = this page's earlier
+ *  answer for the same address, used for a warehouse only when its miles are
+ *  a drive the geometry allows (never shorter than the straight line). A
+ *  forged hint changes only the forger's own screen. */
+function oopDriveForCheck_(dest, cands, hint) {
+  const out = { miles: {}, fastest: {}, poly: {}, noRoute: [], unavailable: [], reason: '', looked: 0 };
+  const h = (hint && typeof hint === 'object') ? hint : {};
+  const need = [];
+  (cands || []).forEach(function (c) {
+    if (Array.isArray(h.noRoute) && h.noRoute.indexOf(c.name) >= 0) { out.noRoute.push(c.name); return; }
+    const hm = Number(h.miles && h.miles[c.name]);
+    if (isFinite(hm) && hm > 0 && hm >= c.straight - 0.5 && hm < 20000) {
+      out.miles[c.name] = hm;
+      const hf = Number(h.fastest && h.fastest[c.name]);
+      out.fastest[c.name] = (isFinite(hf) && hf >= hm) ? hf : hm;
+      if (oopPolylineOk_(h.poly && h.poly[c.name])) out.poly[c.name] = h.poly[c.name];
+      return;
+    }
+    need.push(c);
+  });
+  if (!need.length) return out;
+  const res = routeLookupReserve_(need.length);
+  if (!res.ok) {
+    need.forEach(function (c) { out.unavailable.push(c.name); });
+    out.reason = res.error ? 'error' : 'cap';
+    return out;
+  }
+  out.looked = need.length;
+  need.forEach(function (c) {
+    const r = oopDrivingRoute_(c, dest);
+    if (r.noRoute) out.noRoute.push(c.name);
+    else if (r.error || !(r.miles > 0)) { out.unavailable.push(c.name); out.reason = out.reason || 'error'; }
+    else { out.miles[c.name] = r.miles; out.fastest[c.name] = r.fastest; if (r.poly) out.poly[c.name] = r.poly; }
+  });
+  return out;
+}
 /** PURE (Node-pinned) — B3: the short name a rule goes by on the card, one
  *  per branch of a union ("Distance", "City list"). */
 function oopRuleLabel_(rule) {
@@ -2168,17 +2289,50 @@ function oopEligibilityCheck_(rule, loc) {
       return { verdict: 'unknown', near: false,
         why: 'This item reaches ' + miles + ' miles from any warehouse, but the delivery table has no warehouses in it.' };
     }
-    let best = null, bestName = '';
+    // E2 (b): a warehouse with a DRIVE on file is measured by it (the
+    // shortest route Google offered — the operator's rule: any route within
+    // the limit qualifies); one Google found no road from delivers nowhere by
+    // van; every other is the straight line, as before.
+    const drv = where.drive || null;
+    let best = null, bestName = '', bestDrive = false;
     let anyUnplaced = false;
+    const noRoad = [];
     names.forEach(function (n) {
       const d = (where.miles || {})[n];
       if (d == null || !isFinite(d)) { anyUnplaced = true; return; }
-      if (best === null || d < best) { best = d; bestName = n; }
+      if (drv && (drv.noRoute || []).indexOf(n) >= 0) { noRoad.push(n); return; }
+      const dd = drv && drv.miles ? drv.miles[n] : null;
+      const isDrive = dd != null && isFinite(dd);
+      const use = isDrive ? dd : d;
+      if (best === null || use < best) { best = use; bestName = n; bestDrive = isDrive; }
     });
     if (best === null) {
+      if (noRoad.length && !anyUnplaced) {
+        return { verdict: 'no', near: false, why: 'No driving route from ' + noRoad.join(' or ') + ' to this address.' };
+      }
       return { verdict: 'unknown', near: false,
         why: 'Could not measure the distance to ' + names.join(' or ') + '.' };
     }
+    if (bestDrive) {
+      const shownD = oopMilesFmt_(best);
+      const f = drv.fastest ? drv.fastest[bestName] : null;
+      const via = (f != null && isFinite(f) && f - best >= 0.5) ? '; the fastest route is ' + oopMilesFmt_(f) + ' mi' : '';
+      if (best <= miles) {
+        return { verdict: 'yes', near: false, drive: true,
+          why: shownD + ' mi drive from ' + bestName + ' (within ' + miles + ' mi' + via + ').' +
+            (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+      }
+      if (anyUnplaced) {
+        return { verdict: 'unknown', near: false, drive: true,
+          why: shownD + ' mi drive from ' + bestName + ' (>' + miles + ' mi), but a warehouse could not be ' +
+            'placed and might be nearer. Fix its address in LocationAcceptance to get a firm answer.' };
+      }
+      return { verdict: 'no', near: false, drive: true, why: shownD + ' mi drive from ' + bestName + ' (>' + miles + ' mi).' };
+    }
+    // A straight line inside the limit with no drive behind it: the lookup
+    // was not available (the daily cap, a failure) — SAID, never passed off
+    // as a drive.
+    const noDrive = (drv && best <= miles) ? ' Driving distance unavailable \u2014 straight line shown.' : '';
     // Operator 2026-10-27: the distance and the limit in one short phrase —
     // "1,380.6 mi from Dallas (>100 mi)". The header already says the
     // distances are straight-line; only a near-boundary yes repeats it, because
@@ -2189,7 +2343,7 @@ function oopEligibilityCheck_(rule, loc) {
       return { verdict: 'yes', near: near,
         why: shown + ' mi from ' + bestName + ' (within ' + miles + ' mi)' +
           (near ? ' — close to the limit, and the drive is longer than this straight line. Check before committing.' : '.') +
-          (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+          (anyUnplaced ? ' One warehouse could not be placed.' : '') + noDrive };
     }
     // Straight-line already exceeds the limit, so the drive does too — but
     // only for the warehouses we could PLACE. An unplaced one might be nearer,
@@ -2298,7 +2452,7 @@ function oopEligibilityCheck_(rule, loc) {
  *  ungeocodable address is an ERROR, never an empty eligible list. A list of
  *  zero eligible items and a lookup that did not run look identical on screen,
  *  and only one of them means "do not sell this here". */
-function checkOopEligibility(address, query) {
+function checkOopEligibility(address, query, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
@@ -2371,10 +2525,12 @@ function checkOopEligibility(address, query) {
     const needRadius = parsed.some(ruleNeedsRadius);
     const milesByName = {};
     const whOut = [];
+    const whGeo = {};
     if (needRadius && whNames.length) {
       const geos = kbGeocodeCached_(whNames.map(function (n) { return wh[n]; }));
       whNames.forEach(function (n, i) {
         const g = geos[i];
+        if (g) whGeo[n] = g;
         const d = g ? Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 : null;
         if (d != null) milesByName[n] = d;
         whOut.push({ name: n, miles: d, address: wh[n] });   // C1: the driving-route link starts here
@@ -2389,10 +2545,25 @@ function checkOopEligibility(address, query) {
     // unless the column said to ask it.
     const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
 
+    // E2 (b) (operator 2026-10-28): the DRIVE, for the warehouses a radius
+    // rule could still accept — within the largest limit in a straight line,
+    // nearest first. A straight line over the limit is already a certain no
+    // (no road is shorter), so those cost nothing. `opts.drive` is this page's
+    // earlier answer for the same address, reused rather than looked up again.
+    let drive = null;
+    if (needRadius && whNames.length) {
+      const maxR = oopMaxRadius_(parsed);
+      const cands = whNames.filter(function (n) { return whGeo[n] && milesByName[n] != null && milesByName[n] <= maxR; })
+        .sort(function (a, b) { return milesByName[a] - milesByName[b]; }).slice(0, OOP_DRIVE_MAX_LOOKUPS)
+        .map(function (n) { return { name: n, lat: whGeo[n].lat, lng: whGeo[n].lng, straight: milesByName[n] }; });
+      drive = oopDriveForCheck_({ lat: qGeo.lat, lng: qGeo.lng }, cands, opts && opts.drive);
+      whOut.forEach(function (w) { const m = drive.miles[w.name]; w.driveMiles = (m != null && isFinite(m)) ? m : null; });
+    }
+
     const loc = { state: qGeo.state, miles: milesByName,
       city: qGeo.city, cityFrom: qGeo.cityFrom || '', cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
       cityUnreadable: locCityUnreadable_(loc0.cities, qGeo.city),
-      warehouseNames: whNames };
+      warehouseNames: whNames, drive: drive };
 
     const items = picked.map(function (row, i) {
       const o = oopRowObj_(headers, row);
@@ -2422,6 +2593,12 @@ function checkOopEligibility(address, query) {
       cityFrom: qGeo.cityFrom || '',          // B2: '' = the city proper; else 'borough' / 'neighborhood'
       isAdmin: !!emp.isAdmin,                 // B1: an admin sees WHICH delivery-table rows are unusable
       warehouses: whOut, items: items, total: total,
+      // E2 (b): the drives this answer used — miles (the shortest route Google
+      // offered), the fastest route's miles, each route's line for the map,
+      // the warehouses with no road route, and why any could not be driven
+      // ('cap' | 'error'). The page sends it back for the same address.
+      drive: drive ? { miles: drive.miles, fastest: drive.fastest, poly: drive.poly, noRoute: drive.noRoute,
+        unavailable: drive.unavailable, reason: drive.reason, looked: drive.looked } : null,
       deliveryCities: cityHits,
       // A registry that could not be read is SURFACED rather than silently
       // producing UNKNOWN radius verdicts that read like caution (g02): the
@@ -2478,7 +2655,7 @@ function oopMapPlan_(whs, ringMiles) {
 /** Rep-callable, read-only, no lock, never cached (the address is a patient's
  *  — the kbMapDistances rule). Returns { img: data URL, ringMiles, nearest,
  *  shown[], omitted } or { error }. An error never quotes the address (g146). */
-function oopEligibilityMap(address) {
+function oopEligibilityMap(address, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
@@ -2500,13 +2677,18 @@ function oopEligibilityMap(address) {
     });
     const plan = oopMapPlan_(whs, OOP_MAP_RING_MILES);
     if (!plan) return { error: 'No warehouse in the delivery table could be placed, so there is nothing to map.' };
-    let bytes;
+    let bytes, drewRoute = false;
     try {
       const map = Maps.newStaticMap().setSize(640, 400).setMapType(Maps.StaticMap.Type.ROADMAP);
       map.setPathStyle(2, '0x2E7D32CC', '0x2E7D3226');
       map.beginPath();
       plan.ring.forEach(function (pt) { map.addPoint(pt.lat, pt.lng); });
       map.endPath();
+      // E2 (b): the drive the verdict used, when the page sends its line —
+      // drawn from what the check already looked up, never a lookup of its own.
+      const route = opts && opts.route;
+      drewRoute = !!(route && oopPolylineOk_(route.poly));
+      if (drewRoute) { map.setPathStyle(4, '0x1565C0DD', null); map.addPath(route.poly); }
       map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.BLUE, 'W');
       plan.shown.forEach(function (w) { map.addMarker(w.lat, w.lng); });
       map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.RED, 'A');
@@ -2518,7 +2700,8 @@ function oopEligibilityMap(address) {
     }
     return { img: 'data:image/png;base64,' + Utilities.base64Encode(bytes), ringMiles: OOP_MAP_RING_MILES,
       nearest: { name: plan.nearest.name, miles: plan.nearest.miles },
-      shown: plan.shown.map(function (w) { return w.name; }), omitted: plan.omitted };
+      shown: plan.shown.map(function (w) { return w.name; }), omitted: plan.omitted,
+      route: drewRoute ? String((opts.route && opts.route.name) || '') : '' };
   } catch (err) { return { error: 'Could not draw the map.' }; }
 }
 

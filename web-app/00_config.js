@@ -971,6 +971,19 @@ const ACTIVITY_LOG_TAB = 'ActivityLog';
 const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
 const ACTIVITY_LOG_DAYS = 60;
 const ACTIVITY_BLOCK_MIN = 10;
+// 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
+// radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,
+// no key, no billing) counts against the DEPLOYER's daily "Map Direction
+// query" quota (documented 10,000 a day on Workspace, rolling), so every
+// rep's lookup is the deployer's. The app keeps its own count over the last
+// 24 hours in ROUTE_LOOKUP_PROP and stops at ROUTE_LOOKUP_CAP — 2,000 under
+// Google's — after which (or on any failure) a check falls back to the
+// straight line and says so. Only warehouses already within the limit in a
+// straight line are looked up (a straight line over it is a certain no),
+// nearest first, at most OOP_DRIVE_MAX_LOOKUPS per check.
+const ROUTE_LOOKUP_CAP = 8000;
+const ROUTE_LOOKUP_PROP = 'ROUTE_LOOKUPS_24H';
+const OOP_DRIVE_MAX_LOOKUPS = 3;
 const EXPORT_INFERRED_LIST_MAX = 50;   // the inferred punches an export names beside its link / in its email
 const ACTIVITY_PING_GAP_MIN = 10;   // = the client's PRESENCE_MIN_GAP_MS (pinned): a ping is a sample, at most one per window per gap
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox

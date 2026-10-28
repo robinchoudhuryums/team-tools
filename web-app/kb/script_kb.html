@@ -603,6 +603,7 @@
   .kb-oop-map { margin: 4px 0 8px; }
   .kb-oop-map[hidden] { display: none; }
   .kb-oop-map-img { display: block; width: 100%; max-width: 640px; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+  .kb-oop-map-drive { color: var(--info-deep); font-weight: 600; }
   .kb-oop-map-key { margin-top: 4px; font-size: 11px; color: var(--muted); }
   .kb-elig-v-lbl {
     font-family: var(--mono); font-size: 10px; font-weight: 600;
@@ -6222,6 +6223,7 @@ function oopLookupInput_(inp, opts) {
       .withSuccessHandler(function (res) {
         if (mySeq !== KB_OOP.seq || !kbLookupHostLive_(host)) return;
         if (res && res.error && item.length >= 2) { oopDegraded_(suffix, mySeq, item, res.error); return; }
+        oopKeepDrive_(addr, res && res.drive);
         oopRenderResults_(suffix, { item: item, addr: addr, elig: true }, res);
       })
       .withFailureHandler(function (err) {
@@ -6231,7 +6233,7 @@ function oopLookupInput_(inp, opts) {
         var h = document.getElementById('kb-oop-results' + suffix);
         if (h) h.innerHTML = errorStateHtml_(msg, OOP_ELIG_BEACON);   // KBUI-2
       })
-      .checkOopEligibility(addr, item);
+      .checkOopEligibility(addr, item, { drive: KB_OOP_DRIVE[addr] || null });   // E2 (b): this page's drives for the address
   }, (opts && opts.now) ? 0 : (wantElig ? 700 : 350));
 }
 
@@ -6510,6 +6512,33 @@ function eligWhyHtml_(v) {
  *  is still the one that asked: the host is looked up from the button, and a
  *  repaint that replaced the button drops the answer (g147). */
 var KB_OOP_MAPS = {};
+/** E2 (b) (operator 2026-10-28) — the drives a check looked up, per address,
+ *  for this page only: sent back with the next check of the same address (a
+ *  different item, the drawer) so it is not looked up again, and its route
+ *  line goes to the map. Only drives that were answered are kept — never an
+ *  unavailable one (g129). */
+var KB_OOP_DRIVE = {};
+function oopKeepDrive_(addr, d) {
+  if (!addr || !d || typeof d !== 'object') return;
+  var cur = KB_OOP_DRIVE[addr] || { miles: {}, fastest: {}, poly: {}, noRoute: [] };
+  Object.keys(d.miles || {}).forEach(function (n) {
+    cur.miles[n] = d.miles[n];
+    if (d.fastest && d.fastest[n] != null) cur.fastest[n] = d.fastest[n];
+    if (d.poly && d.poly[n]) cur.poly[n] = d.poly[n];
+  });
+  (d.noRoute || []).forEach(function (n) { if (cur.noRoute.indexOf(n) < 0) cur.noRoute.push(n); });
+  KB_OOP_DRIVE[addr] = cur;
+}
+/** PURE — the route the map draws: the shortest drive this page has for the
+ *  address that carries a line. */
+function oopMapRoute_(d) {
+  var best = null;
+  Object.keys((d && d.miles) || {}).forEach(function (n) {
+    if (!(d.poly && d.poly[n])) return;
+    if (!best || d.miles[n] < d.miles[best]) best = n;
+  });
+  return best ? { name: best, poly: d.poly[best], miles: d.miles[best] } : null;
+}
 function oopToggleMap_(btn) {
   var host = btn.parentNode && btn.parentNode.nextElementSibling;
   if (!host || !host.classList.contains('kb-oop-map')) return;
@@ -6519,20 +6548,22 @@ function oopToggleMap_(btn) {
   host.hidden = !open;
   if (!open) return;
   var addr = btn.getAttribute('data-oop-addr') || '';
-  if (KB_OOP_MAPS[addr]) { host.innerHTML = oopMapHtml_(KB_OOP_MAPS[addr]); return; }
+  var route = oopMapRoute_(KB_OOP_DRIVE[addr]);   // E2 (b)
+  var mapKey = addr + '|' + (route ? route.name : '');
+  if (KB_OOP_MAPS[mapKey]) { host.innerHTML = oopMapHtml_(KB_OOP_MAPS[mapKey]); return; }
   host.innerHTML = '<div class="kb-ins-more">Drawing the map\u2026</div>';
   google.script.run
     .withSuccessHandler(function (r) {
       if (!document.body.contains(btn) || btn.getAttribute('aria-expanded') !== 'true') return;
       if (!r || r.error) { host.innerHTML = '<div class="kb-oop-warn">' + icon('warning', 12) + ' <span>' + esc((r && r.error) || 'Could not draw the map.') + '</span></div>'; return; }
-      KB_OOP_MAPS[addr] = r;
+      KB_OOP_MAPS[mapKey] = r;
       host.innerHTML = oopMapHtml_(r);
     })
     .withFailureHandler(function () {
       if (!document.body.contains(btn)) return;
       host.innerHTML = '<div class="kb-oop-warn">' + icon('warning', 12) + ' <span>Could not draw the map \u2014 try again.</span></div>';
     })
-    .oopEligibilityMap(addr);
+    .oopEligibilityMap(addr, route ? { route: { name: route.name, poly: route.poly } } : null);
 }
 /** C1 — the map and its key. Only a PNG data URL is ever used as a source. */
 function oopMapHtml_(r) {
@@ -6541,7 +6572,8 @@ function oopMapHtml_(r) {
   var near = (r.nearest && r.nearest.name) || 'the nearest warehouse';
   return '<img class="kb-oop-map-img" src="' + esc(src) + '" alt="' + esc('Map of the address, ' + near + ' and its ' + r.ringMiles + '-mile ring') + '">' +
     '<div class="kb-oop-map-key"><b>A</b> the address \u00b7 <b>W</b> warehouse' + ((r.shown || []).length > 1 ? 's' : '') +
-    ' \u00b7 ring: ' + esc(String(r.ringMiles)) + ' miles round ' + esc(near) +
+    ' \u00b7 ring: ' + esc(String(r.ringMiles)) + ' miles round ' + esc(near) + ' (straight line)' +
+    (r.route ? ' \u00b7 <span class="kb-oop-map-drive">blue line</span>: the drive from ' + esc(r.route) : '') +
     (r.omitted ? ' \u00b7 ' + esc(String(r.omitted)) + ' farther warehouse' + (r.omitted === 1 ? '' : 's') + ' not drawn' : '') + '</div>';
 }
 
@@ -6572,10 +6604,12 @@ function oopEligHeaderHtml_(addr, res) {
   var wh = (res.warehouses || []).filter(function (w) { return w.miles != null; })
     .slice().sort(function (a, b) { return a.miles - b.miles; });
   if (wh.length) {
-    html += '<div class="kb-ins-more">Nearest warehouse: ' + esc(wh[0].name) + ' \u00b7 ' + esc(String(wh[0].miles)) + ' mi (straight-line)</div>';
+    // E2 (b): the drive beside the straight line, when one was looked up.
+    var dm = function (w) { return (w.driveMiles != null && isFinite(w.driveMiles)) ? ' \u00b7 ' + esc(String(w.driveMiles)) + ' mi drive' : ''; };
+    html += '<div class="kb-ins-more">Nearest warehouse: ' + esc(wh[0].name) + ' \u00b7 ' + esc(String(wh[0].miles)) + ' mi (straight-line)' + dm(wh[0]) + '</div>';
     if (wh.length > 1) {
       html += '<details class="kb-oop-dist"><summary>All warehouse distances (' + wh.length + ')</summary><div class="kb-oop-dist-list">' +
-        wh.map(function (w) { return '<span>' + esc(w.name) + ' \u00b7 ' + esc(String(w.miles)) + ' mi</span>'; }).join('') +
+        wh.map(function (w) { return '<span>' + esc(w.name) + ' \u00b7 ' + esc(String(w.miles)) + ' mi' + dm(w) + '</span>'; }).join('') +
         '</div></details>';
     }
     // C1 (operator 2026-10-27): the map, drawn only when asked for, and the
@@ -6590,6 +6624,14 @@ function oopEligHeaderHtml_(addr, res) {
         icon('image', 12) + ' <span>Show map</span></button>' +
       (route ? '<a class="kb-oop-route" href="' + esc(route) + '" target="_blank" rel="noopener">Driving route from ' + esc(wh[0].name) + ' \u2197</a>' : '') +
     '</div><div class="kb-oop-map" hidden></div>';
+  }
+  // E2 (b): a drive that could not be looked up is SAID above the verdicts —
+  // they fall back to the straight line, and each one names that too.
+  var dr = res.drive || null;
+  if (dr && (dr.unavailable || []).length) {
+    html += '<div class="kb-oop-warn">' + icon('warning', 12) + ' <span>' + (dr.reason === 'cap'
+      ? 'Driving distance is unavailable \u2014 the app\u2019s daily route-lookup limit is reached'
+      : 'Driving distance could not be looked up just now') + '. Distance answers below use the straight line.</span></div>';
   }
   // LISTED DELIVERY CITIES, still ABOVE the items rather than inside any one
   // answer. Since 2026-09-22 this list CAN decide — but only for an item whose

@@ -2680,8 +2680,9 @@ function getStorageHealth(opts) {
     try { propStore = scriptPropertiesStatus_(); } catch (e) { propStore = null; }
     // 25post — the deploying account's email allowance left today.
     const mailQuota = mailQuotaStatus_();
+    const routeLookups = routeLookupStatus_();   // 25post round 12 E2 (b)
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
-             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota };
+             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota, routeLookups: routeLookups };
   } catch (err) { return { error: err.message }; }
 }
 
