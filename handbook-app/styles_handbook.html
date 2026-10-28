@@ -1,0 +1,92 @@
+<style>
+  /* The handbook app's own page (HB1.3) — the frame around the shared reader.
+     Everything inside #kb-main is styled by the copied partials exactly as in
+     Team Tools; these rules are the page around it, plus the two host rules
+     the reader expects of its page (the reader's scroll box, and .kb-btn,
+     whose rule in Team Tools is Reference's — HB1.1c kept host styling with
+     the host). Tokens only, so dark mode and the palettes follow. */
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  .hb-skip { position: absolute; left: 8px; top: -60px; z-index: 30; background: var(--paper-card); color: var(--ink); padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  .hb-skip:focus { top: 8px; }
+  .hb-head { flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--paper-card); }
+  .hb-brand { font-weight: 700; font-size: 1.02rem; color: var(--ink); text-decoration: none; }
+  .hb-ver { font-size: .76rem; color: var(--muted); font-family: var(--mono); }
+  .hb-dept { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); }
+  .hb-dept select { font: inherit; font-size: .84rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; max-width: 46vw; }
+  .hb-menu { display: none; font: inherit; font-size: .84rem; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); cursor: pointer; }
+  .hb-wrap { flex: 1; min-height: 0; display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; padding: 16px; }
+  .hb-side { min-height: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 10px 8px; }
+  /* The reader's scroll box — Reference's .kb-main rules, for this page. */
+  .kb-main { min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); padding: 18px 22px; overflow-y: auto; display: flex; flex-direction: column; --kb-man-band: 18px; }
+  .kb-main:has(> .kb-man-top) { scroll-padding-top: 60px; }
+  .kb-main:has(> .kb-man-top .kb-man-back:not(:empty)) { scroll-padding-top: 96px; }
+  .kb-main:focus { outline: none; }
+  .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+  .kb-btn:hover { background: var(--paper-2); }
+  /* Section feedback arrives with HB1.4 (routed to each chapter's owner); until
+     then the bar does not offer a vote that cannot be recorded. */
+  .kb-man-bar [data-kb-man-bar-fb] { display: none !important; }
+
+  /* Contents */
+  .hb-toc { display: flex; flex-direction: column; gap: 2px; }
+  .hb-toc-home { font: inherit; font-size: .86rem; font-weight: 600; text-align: left; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
+  .hb-toc-home:hover, .hb-toc-home.on { background: var(--accent-soft); color: var(--success-deep); }
+  .hb-ch { margin-top: 2px; }
+  .hb-ch-t { display: flex; align-items: center; gap: 7px; width: 100%; font: inherit; font-size: .84rem; font-weight: 600; text-align: left; padding: 7px 8px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
+  .hb-ch-t:hover { background: var(--paper-2); }
+  .hb-ch-t .hb-ch-n { flex: 1; min-width: 0; }
+  .hb-ch-t .hb-caret { flex: none; color: var(--muted); transition: transform var(--t) var(--ease); }
+  .hb-ch.open .hb-caret { transform: rotate(90deg); }
+  .hb-ch-ic { flex: none; display: inline-flex; color: var(--man-c); }
+  .hb-ch-list { display: none; flex-direction: column; gap: 1px; padding: 2px 0 6px 12px; }
+  .hb-ch.open .hb-ch-list { display: flex; }
+  .hb-it { display: flex; align-items: baseline; gap: 7px; width: 100%; font: inherit; font-size: .82rem; text-align: left; padding: 5px 8px; border: none; border-radius: 6px; background: none; color: var(--ink); cursor: pointer; }
+  .hb-it:hover { background: var(--paper-2); }
+  .hb-it.on { background: var(--accent-soft); color: var(--success-deep); }
+  .hb-it-n { flex: none; font-family: var(--mono); font-size: .72rem; color: var(--muted); min-width: 3.2em; }
+  .hb-it-t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .hb-new { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--info); align-self: center; }
+
+  /* Home */
+  .hb-home { display: flex; flex-direction: column; gap: 22px; max-width: 980px; }
+  .hb-home h1 { font-size: 1.35rem; margin: 0; }
+  .hb-home h2 { font-size: .74rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .hb-home-sub { color: var(--muted); font-size: .86rem; margin-top: 4px; }
+  .hb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .hb-card { display: flex; align-items: flex-start; gap: 10px; text-align: left; font: inherit; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); cursor: pointer; }
+  .hb-card:hover { border-color: var(--border-strong); background: var(--paper-2); }
+  .hb-card.mine { border-color: var(--accent); background: var(--accent-soft); }
+  .hb-card-ic { flex: none; display: inline-flex; color: var(--man-c); }
+  .hb-card-b { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hb-card-k { font-family: var(--mono); font-size: .7rem; color: var(--muted); }
+  .hb-card-t { font-weight: 600; font-size: .9rem; overflow-wrap: anywhere; }
+  .hb-card-c { font-size: .74rem; color: var(--muted); }
+  .hb-news { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .hb-news-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px solid var(--line); padding: 9px 12px; cursor: pointer; color: var(--ink); }
+  .hb-news-row:last-child { border-bottom: none; }
+  .hb-news-row:hover, .hb-news-row:focus-visible { background: var(--paper-2); }
+  .hb-news-num { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--info-deep); white-space: nowrap; min-width: 4.5em; }
+  .hb-news-sum { font-size: .86rem; flex: 1 1 16em; min-width: 0; overflow-wrap: anywhere; }
+  .hb-news-date { font-size: .74rem; color: var(--muted); white-space: nowrap; margin-left: auto; }
+  .hb-retrain { font-size: .68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warning-deep); }
+  .hb-quiet { color: var(--muted); font-size: .86rem; }
+  .hb-msg { color: var(--muted); font-size: .9rem; margin: auto; text-align: center; max-width: 34em; }
+  .hb-msg.bad { color: var(--danger); }
+
+  /* Narrow: the contents slide over the reader from the Contents button. */
+  @media (max-width: 760px) {
+    .hb-menu { display: inline-block; }
+    .hb-dept { margin-left: 0; width: 100%; }
+    .hb-dept select { flex: 1; max-width: none; }
+    .hb-wrap { grid-template-columns: minmax(0, 1fr); padding: 10px; }
+    .hb-side { display: none; }
+    .hb-wrap.side-open .hb-side { display: block; position: fixed; z-index: 20; inset: 0 auto 0 0; width: min(320px, 86vw); border-radius: 0; box-shadow: var(--shadow-lg); }
+    .kb-main { padding: 14px 14px; }
+  }
+  @media print {
+    .hb-head, .hb-side, .hb-skip { display: none !important; }
+    body { overflow: visible; display: block; }
+    .hb-wrap { display: block; padding: 0; }
+    .kb-main { overflow: visible; border: none; padding: 0; }
+  }
+</style>

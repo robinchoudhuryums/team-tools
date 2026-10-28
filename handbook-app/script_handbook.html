@@ -1,0 +1,403 @@
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  THE HANDBOOK APP'S PAGE (HB1.3, operator 2026-10-28)
+//  The frame around the shared reader: the header, the contents, the home page
+//  with the reader's department first and what changed since their last visit,
+//  the chapters kept in the browser, and section links with a working Back.
+//  The reader itself is Team Tools' shared partial (copied by the sync); this
+//  file is its HOST — it installs the 18 MANUAL_HOST hooks — and declares the
+//  page-shell names the sync's copy must NOT bring (errBeaconSend_: Team Tools'
+//  beacon writes to its ClientErrors tab, and this app writes nothing).
+// ════════════════════════════════════════════════════════════════════════════
+
+/** The host's state — the four fields the reader reads through state(). */
+var HB = { tree: [], isAdmin: false, currentId: null, landing: true };
+var HB_LS_DEPT = 'umsHbDept';      // the reader's chosen department (a chapter)
+var HB_LS_VISIT = 'umsHbVisit';    // { last, prev } — local dates, for "since your last visit"
+var HB_LS_PREFS = 'umsHbReader';   // the reader's own prefs (resume, card state)
+var HB_NEWS_FIRST_DAYS = 30;       // a first visit shows the last month's changes
+var HB_NEWS_MAX = 12;
+var HB_KEPT = { db: 'umsHandbook', store: 'kept', key: 'parts' };
+
+/** No beacon here: Team Tools' writes to its own ClientErrors tab, and the
+ *  handbook app writes nothing. A failure still reaches the browser console. */
+function errBeaconSend_(message) { try { console.warn('[handbook] ' + message); } catch (e) {} }
+
+function hbLs_(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function hbLsSet_(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function hbLsJson_(k) { try { return JSON.parse(hbLs_(k) || 'null'); } catch (e) { return null; } }
+
+/** PURE — a Date as its local calendar day, YYYY-MM-DD. */
+function hbIsoDay_(d) {
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+/** PURE — the visit record after a visit on `today`: the day only moves on a NEW
+ *  day, so reloading the same day keeps "since your last visit" where it was.
+ *  Returns { rec, since } — since is the previous visit's day, or '' for a first. */
+function hbVisitStep_(rec, today) {
+  rec = rec && typeof rec === 'object' ? rec : {};
+  var last = /^\d{4}-\d{2}-\d{2}$/.test(rec.last || '') ? rec.last : '';
+  var prev = /^\d{4}-\d{2}-\d{2}$/.test(rec.prev || '') ? rec.prev : '';
+  if (last !== today) { prev = last; last = today; }
+  return { rec: { last: last, prev: prev }, since: prev };
+}
+/** PURE — the changelog entries to show: published sections only (`visible`),
+ *  dated AFTER `since` (or within `firstDays` of `today` for a first visit),
+ *  newest first, a day's entries in the changelog's order, at most `max`.
+ *  `total` is the uncapped count. A date that is not YYYY-MM-DD is dropped. */
+function hbNews_(changelog, visible, since, today, firstDays, max) {
+  var floor = since;
+  if (!floor) {
+    var t = new Date(today + 'T12:00:00');
+    t.setDate(t.getDate() - firstDays);
+    floor = hbIsoDay_(t);
+  }
+  var out = [];
+  (Array.isArray(changelog) ? changelog : []).forEach(function (c, i) {
+    if (!c || typeof c !== 'object') return;
+    var id = String(c.id || ''), date = String(c.date || '');
+    if (!visible[id] || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date <= floor) return;
+    out.push({ i: i, id: id, date: date, num: String(c.num || ''), anchor: String(c.anchor || ''),
+      summary: String(c.summary || ''), retraining: c.retraining === true });
+  });
+  out.sort(function (a, b) { return a.date < b.date ? 1 : (a.date > b.date ? -1 : a.i - b.i); });
+  return { items: out.slice(0, max), total: out.length, floor: floor };
+}
+/** PURE — the host's tree from a getManualParts answer: one row per section,
+ *  chapters in the reader's order (kbDeptCompare_), sections as served. */
+function hbTreeOf_(res) {
+  var parts = (res && Array.isArray(res.parts) ? res.parts : []).filter(function (p) { return p && p.department && Array.isArray(p.sections); });
+  parts.sort(function (a, b) { return kbDeptCompare_(a.department, b.department); });
+  var tree = [];
+  parts.forEach(function (p) {
+    p.sections.forEach(function (s) {
+      tree.push({ id: s.id, title: String(s.title || ''), department: p.department, sortOrder: s.sortOrder || 0, status: s.status, type: 'article' });
+    });
+  });
+  return tree;
+}
+/** PURE — the `s` a section link carries: the anchor when it is a number
+ *  (6.9.3), else the section's own number (6.9), a card's "card N", or its id. */
+function hbLinkOf_(id, anchor, tree) {
+  if (/^(?:\d+|[A-C])\.[0-9A-Za-z.]+$/.test(anchor || '')) return anchor;
+  var m = /^man-c-(\d+)$/.exec(id || '');
+  if (m) return 'card ' + m[1];
+  var it = (tree || []).filter(function (x) { return x.id === id; })[0];
+  var num = it ? kbManualSplitTitle_(it.title).num : '';
+  return num || id;
+}
+/** PURE — a link's `s` back to {id, anchor}: a section id as it is, else the
+ *  reader's own number resolver (kbManualNumberTarget_); null when unknown. */
+function hbTargetOf_(s, tree) {
+  s = String(s || '').trim();
+  if (!s) return null;
+  if (kbIsManualId_(s)) return (tree || []).some(function (x) { return x.id === s; }) ? { id: s, anchor: '' } : null;
+  var t = kbManualNumberTarget_(s, tree);
+  return t ? { id: t.id, anchor: t.anchor || '' } : null;
+}
+
+// ── The host contract ─────────────────────────────────────────────────────
+MANUAL_HOST.install({
+  state: function () { return HB; },
+  openItem: function (id, anchor, nav) { hbOpen_(id, anchor, nav, true); },
+  prefs: function () { return hbLsJson_(HB_LS_PREFS) || {}; },
+  savePrefs: function (p) { hbLsSet_(HB_LS_PREFS, JSON.stringify(p || {})); },
+  markCurrent: function (id) { hbMarkCurrent_(id); },
+  revealInTree: function (id) { hbRevealInToc_(id); },
+  treeUpdated: function () { hbPaintTocNews_(); },
+  printSection: function (id) { kbPrintSectionById_(id); },
+  printAllCards: function () { kbPrintAllCards_(); },
+  publishItem: function () {},                 // nobody is an admin here, and drafts are never served
+  suggestEdit: function () {},                 // suggested edits arrive with HB5.1
+  bookmarkBtnHtml: function () { return ''; }, // bookmarks arrive with HB2.2
+  bookmarkBtnPatch: function () {},
+  recordOpen: function () {},                  // the handbook app records nothing
+  loadComments: function () {},                // comments are Team Tools'
+  // There is no drawer: this page IS the reader, so a link opens here.
+  drawerOpenItem: function (id, anchor, nav) { hbOpen_(id, anchor, nav, true); },
+  drawerOpen: function () {},
+  drawerTitle: function () { return ''; },
+});
+
+// ── Navigation ────────────────────────────────────────────────────────────
+function hbMain_() { return document.getElementById('kb-main'); }
+
+/** Open a section; `push` records it in the browser's history (a link and
+ *  Back), a Back itself does not push again. */
+function hbOpen_(id, anchor, nav, push) {
+  hbCloseSide_();
+  if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
+  hbMarkHomeBtn_(false);
+  if (push) hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) });
+}
+function hbGoHome_() { hbHome_(true); }
+function hbHome_(push) {
+  hbCloseSide_();
+  HB.currentId = null; HB.landing = true;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over home
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = hbHomeHtml_();
+  main.scrollTop = 0;
+  hbMarkCurrent_(null);
+  hbMarkHomeBtn_(true);
+  if (push) hbHistory_('push', { home: true }, {});
+}
+/** google.script.history — the TOP window's address and its Back button. A
+ *  page served outside HtmlService has neither, and still works without them. */
+function hbHistory_(op, state, params) {
+  try { if (window.google && google.script && google.script.history) google.script.history[op](state, params); } catch (e) {}
+}
+function hbOnHistory_(e) {
+  var st = e && e.state;
+  if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
+  else hbHome_(false);
+}
+
+// ── Contents ──────────────────────────────────────────────────────────────
+function hbChapterLabel_(dept) {
+  var p = kbManualChapterParts_(dept);
+  if (p.appendix) return 'Appendix ' + p.num + ' · ' + p.name;
+  return (p.num ? Number(p.num) + ' · ' : '') + p.name;
+}
+function hbPaintToc_() {
+  var host = document.getElementById('hb-toc'); if (!host) return;
+  var depts = kbManualDepts_().list;
+  var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>';
+  depts.forEach(function (dept) {
+    var secs = HB.tree.filter(function (it) { return it.department === dept; });
+    html += '<div class="hb-ch" data-dept="' + esc(dept) + '">' +
+      '<button type="button" class="hb-ch-t" aria-expanded="false" onclick="hbToggleCh_(this)">' +
+        '<span class="hb-caret">' + icon('chevronRight', 12) + '</span>' + kbManualChapterIcon_(dept, 15, 'hb-ch-ic') +
+        '<span class="hb-ch-n">' + esc(hbChapterLabel_(dept)) + '</span></button>' +
+      '<div class="hb-ch-list">' + secs.map(function (s) {
+        var t = kbManualSplitTitle_(s.title);
+        return '<button type="button" class="hb-it" data-kb-id="' + esc(s.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">' +
+          '<span class="hb-it-n">' + esc(t.num) + '</span><span class="hb-it-t">' + esc(t.rest) + '</span></button>';
+      }).join('') + '</div></div>';
+  });
+  host.innerHTML = html;
+  hbPaintTocNews_();
+}
+function hbToggleCh_(btn) {
+  var box = btn.closest('.hb-ch'); if (!box) return;
+  var open = !box.classList.contains('open');
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function hbMarkCurrent_(id) {
+  document.querySelectorAll('#hb-toc .hb-it').forEach(function (b) {
+    var on = !!id && b.getAttribute('data-kb-id') === id;
+    b.classList.toggle('on', on);
+    if (on) {
+      b.setAttribute('aria-current', 'page');
+      var box = b.closest('.hb-ch');
+      if (box && !box.classList.contains('open')) { box.classList.add('open'); box.querySelector('.hb-ch-t').setAttribute('aria-expanded', 'true'); }
+    } else b.removeAttribute('aria-current');
+  });
+}
+function hbMarkHomeBtn_(on) {
+  var b = document.querySelector('#hb-toc .hb-toc-home');
+  if (b) b.classList.toggle('on', !!on);
+}
+/** Keep the current row in view by scrolling the CONTENTS panel — never
+ *  scrollIntoView, which can scroll the page inside the HtmlService frame. */
+function hbRevealInToc_(id) {
+  var side = document.getElementById('hb-side'); if (!side) return;
+  var row = null;
+  side.querySelectorAll('.hb-it').forEach(function (b) { if (b.getAttribute('data-kb-id') === id) row = b; });
+  if (!row) return;
+  var r = row.getBoundingClientRect(), s = side.getBoundingClientRect();
+  if (r.top < s.top) side.scrollTop -= (s.top - r.top) + 8;
+  else if (r.bottom > s.bottom) side.scrollTop += (r.bottom - s.bottom) + 8;
+}
+/** A dot on every section changed since the last visit (the home page's list). */
+function hbPaintTocNews_() {
+  var meta = MANUAL_STATE.manualMeta;
+  var on = {};
+  if (meta && HB.tree.length) hbNewsNow_().items.forEach(function (n) { on[n.id] = true; });
+  document.querySelectorAll('#hb-toc .hb-it').forEach(function (b) {
+    var dot = b.querySelector('.hb-new');
+    var want = !!on[b.getAttribute('data-kb-id')];
+    if (want && !dot) b.insertAdjacentHTML('beforeend', '<span class="hb-new" title="Changed since your last visit"></span>');
+    else if (!want && dot) dot.remove();
+  });
+}
+function hbToggleSide_() {
+  var wrap = document.querySelector('.hb-wrap'), btn = document.getElementById('hb-menu');
+  var open = !wrap.classList.contains('side-open');
+  wrap.classList.toggle('side-open', open);
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function hbCloseSide_() {
+  var wrap = document.querySelector('.hb-wrap'), btn = document.getElementById('hb-menu');
+  if (wrap) wrap.classList.remove('side-open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// ── Home ──────────────────────────────────────────────────────────────────
+var HB_SINCE = null;   // this visit's "last visit" day ('' for a first), fixed at load
+function hbNewsNow_() {
+  var visible = {};
+  HB.tree.forEach(function (it) { visible[it.id] = true; });
+  var meta = MANUAL_STATE.manualMeta || {};
+  return hbNews_(meta.changelog, visible, HB_SINCE || '', hbIsoDay_(new Date()), HB_NEWS_FIRST_DAYS, HB_NEWS_MAX);
+}
+function hbHomeHtml_() {
+  var meta = MANUAL_STATE.manualMeta;
+  var mine = hbLs_(HB_LS_DEPT) || '';
+  var d = kbManualDepts_();
+  if (d.list.indexOf(mine) < 0) mine = '';
+  var html = '<div class="hb-home"><div><h1>Policies and Procedures Handbook</h1>' +
+    '<div class="hb-home-sub">' + (meta && meta.version ? esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') : '') + '</div></div>';
+  // What's new — since the last visit, or the last month on a first one.
+  if (meta === undefined) html += '<section><h2>What\'s new</h2><div class="hb-quiet">' + loSweep() + '</div></section>';
+  else if (meta) {
+    var n = hbNewsNow_();
+    html += '<section><h2>' + (HB_SINCE ? 'New since your last visit (' + esc(kbManualDateLabel_(HB_SINCE)) + ')' : 'Changed in the last ' + HB_NEWS_FIRST_DAYS + ' days') + '</h2>';
+    if (!n.items.length) html += '<div class="hb-quiet">Nothing has changed' + (HB_SINCE ? ' since then.' : '.') + '</div>';
+    else {
+      html += '<div class="hb-news">' + n.items.map(function (it) {
+        return '<button type="button" class="hb-news-row" data-kb-id="' + esc(it.id) + '" data-kb-anchor="' + esc(it.anchor) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+          '<span class="hb-news-num">' + esc(it.num) + '</span><span class="hb-news-sum">' + esc(it.summary) +
+          (it.retraining ? ' <span class="hb-retrain">Retraining</span>' : '') + '</span>' +
+          '<span class="hb-news-date">' + esc(kbManualDateLabel_(it.date)) + '</span></button>';
+      }).join('') + '</div>';
+      if (n.total > n.items.length) html += '<div class="hb-quiet">and ' + (n.total - n.items.length) + ' more.</div>';
+    }
+    html += '</section>';
+  }
+  var card = function (dept) {
+    var first = d.first(dept), count = HB.tree.filter(function (it) { return it.department === dept; }).length;
+    var p = kbManualChapterParts_(dept);
+    return '<button type="button" class="hb-card' + (dept === mine ? ' mine' : '') + '" data-kb-id="' + esc(first) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
+      kbManualChapterIcon_(dept, 22, 'hb-card-ic') +
+      '<span class="hb-card-b"><span class="hb-card-k">' + esc(p.appendix ? 'Appendix ' + p.num : (p.num ? 'Chapter ' + Number(p.num) : '')) + '</span>' +
+      '<span class="hb-card-t">' + esc(p.name) + '</span>' +
+      '<span class="hb-card-c">' + count + (count === 1 ? ' section' : ' sections') + '</span></span></button>';
+  };
+  if (mine) html += '<section><h2>Your department</h2><div class="hb-cards">' + card(mine) + '</div></section>';
+  html += '<section><h2>' + (mine ? 'All chapters' : 'Chapters') + '</h2><div class="hb-cards">' +
+    d.list.filter(function (x) { return x !== mine; }).map(card).join('') + '</div></section>';
+  if (!mine) html += '<div class="hb-quiet">Choose your department at the top to see its chapter first.</div>';
+  return html + '</div>';
+}
+function hbPaintDeptPicker_() {
+  var sel = document.getElementById('hb-dept-sel'); if (!sel) return;
+  var mine = hbLs_(HB_LS_DEPT) || '';
+  var list = kbManualDepts_().list.filter(function (x) { return !kbManualChapterParts_(x).appendix; });
+  sel.innerHTML = '<option value="">Not chosen</option>' + list.map(function (dept) {
+    return '<option value="' + esc(dept) + '"' + (dept === mine ? ' selected' : '') + '>' + esc(hbChapterLabel_(dept)) + '</option>';
+  }).join('');
+}
+function hbSetDept_(dept) {
+  hbLsSet_(HB_LS_DEPT, dept || '');
+  if (HB.landing) hbHome_(false);
+}
+function hbMsg_(msg, bad) {
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<p class="hb-msg' + (bad ? ' bad' : '') + '" role="' + (bad ? 'alert' : 'status') + '">' + esc(msg) + '</p>';
+}
+function hbPaintVer_() {
+  var el = document.getElementById('hb-ver'), meta = MANUAL_STATE.manualMeta;
+  if (el) el.textContent = meta && meta.version ? String(meta.version) : '';   // the version carries its own "v" (v3.0)
+}
+
+// ── The chapters, kept in the browser ─────────────────────────────────────
+// IndexedDB, one record: { stamp, res } — the last getManualParts answer and
+// the server's stamp of it. A visit asks only for the stamp (getManualStamp);
+// while it matches, the chapters come from the browser and the full read is
+// skipped. Any failure here (private mode, a blocked store) is a miss.
+function hbKeptStore_(mode, fn, fail) {
+  try {
+    var rq = window.indexedDB.open(HB_KEPT.db, 1);
+    rq.onupgradeneeded = function () { rq.result.createObjectStore(HB_KEPT.store); };
+    rq.onsuccess = function () {
+      try { fn(rq.result.transaction(HB_KEPT.store, mode).objectStore(HB_KEPT.store)); } catch (e) { fail(); }
+    };
+    rq.onerror = function () { fail(); };
+  } catch (e) { fail(); }
+}
+function hbKeptGet_(cb) {
+  var done = false, once = function (v) { if (!done) { done = true; cb(v); } };
+  hbKeptStore_('readonly', function (st) {
+    var g = st.get(HB_KEPT.key);
+    g.onsuccess = function () { var v = g.result; once(v && v.stamp && v.res && Array.isArray(v.res.parts) ? v : null); };
+    g.onerror = function () { once(null); };
+  }, function () { once(null); });
+}
+function hbKeptPut_(val) { hbKeptStore_('readwrite', function (st) { try { st.put(val, HB_KEPT.key); } catch (e) {} }, function () {}); }
+
+// ── Start ─────────────────────────────────────────────────────────────────
+function hbBoot_() {
+  currentView = 'handbook';   // the reader drops answers for a view no longer shown
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (overlayEscapeClose_(e)) return;
+    var wrap = document.querySelector('.hb-wrap');
+    if (wrap && wrap.classList.contains('side-open')) { hbCloseSide_(); e.preventDefault(); }
+  });
+  document.addEventListener('focusin', overlayFocusTrap_);
+  // Narrow screens: a tap outside the open contents closes them.
+  document.addEventListener('click', function (e) {
+    var wrap = document.querySelector('.hb-wrap');
+    if (!wrap || !wrap.classList.contains('side-open') || !e.target.closest) return;
+    if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_();
+  });
+  try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
+  var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
+  HB_SINCE = vis.since;
+  hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));
+  var main = hbMain_(); if (main) main.innerHTML = '<div class="hb-msg">' + loSweep() + '</div>';
+  kbEnsureManualMeta_(function () {
+    hbPaintVer_();
+    if (HB.tree.length && HB.landing && HB.currentId === null) hbHome_(false);
+    hbPaintTocNews_();
+  });
+  var kept, stamp, started = false;
+  var next = function () {
+    if (kept === undefined || stamp === undefined || started) return;
+    started = true;
+    if (kept && stamp && kept.stamp === stamp && kbManualPartsAccept_(kept.res)) { hbReady_(kept.res); return; }
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || res.error || !kbManualPartsAccept_(res)) { hbLoadFailed_(kept, res && res.error); return; }
+        hbReady_(res);
+        if (res.stamp) hbKeptPut_({ stamp: res.stamp, res: res });
+      })
+      .withFailureHandler(function (err) { hbLoadFailed_(kept, err && err.message); })
+      .getManualParts();
+  };
+  hbKeptGet_(function (v) { kept = v; next(); });
+  google.script.run
+    .withSuccessHandler(function (r) { stamp = r && !r.error && r.stamp ? r.stamp : null; next(); })
+    .withFailureHandler(function () { stamp = null; next(); })
+    .getManualStamp();
+}
+/** The server could not send the chapters. With a copy kept in the browser,
+ *  read that — and say it may be out of date; without one, say what failed. */
+function hbLoadFailed_(kept, msg) {
+  if (kept && kbManualPartsAccept_(kept.res)) {
+    hbReady_(kept.res);
+    showToast('Could not reach the handbook — showing the copy kept on this device, which may be out of date.', 'toast-warn');
+    return;
+  }
+  hbMsg_('The handbook could not be loaded: ' + String(msg || 'the server did not answer').replace(/\.$/, '') + '. Reload the page to try again.', true);
+}
+function hbReady_(res) {
+  HB.tree = hbTreeOf_(res);
+  hbPaintToc_();
+  hbPaintDeptPicker_();
+  if (!HB.tree.length) { hbMsg_('No handbook has been published yet.'); return; }
+  var asked = (window.HB_PARAMS || {}).s || '';
+  var t = hbTargetOf_(asked, HB.tree);
+  if (asked && !t) showToast('Section ' + asked + ' is not in the handbook — here is the home page.', 'toast-warn');
+  if (t) {
+    hbOpen_(t.id, t.anchor, null, false);
+    hbHistory_('replace', { id: t.id, anchor: t.anchor }, { s: hbLinkOf_(t.id, t.anchor, HB.tree) });
+  } else {
+    hbHome_(false);
+    hbHistory_('replace', { home: true }, {});
+  }
+}
+hbBoot_();
+</script>

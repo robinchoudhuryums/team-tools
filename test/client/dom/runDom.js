@@ -9299,3 +9299,173 @@ test('Slideshow details DOM: a slide\'s indented lines render shut under "Show d
   assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
   assert.strictEqual(btn.textContent, 'Show details');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB1.3 — the handbook app's page, booted whole: index.html with its includes
+// expanded (the copies the sync wrote, the page's own script), over fake
+// server answers, a fake IndexedDB and a fake google.script.history.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB1.3 — the handbook app\'s page');
+
+const path = require('path'), fs = require('fs'), { JSDOM } = require('jsdom');
+const HB_DIR = path.resolve(__dirname, '../../../handbook-app');
+function hbPageHtml_(params) {
+  let html = fs.readFileSync(path.join(HB_DIR, 'index.html'), 'utf8');
+  html = html.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, (m, f) => fs.readFileSync(path.join(HB_DIR, f + '.html'), 'utf8').replace(/<\?[\s\S]*?\?>/g, ''));
+  html = html.replace(/<\?!=\s*JSON\.stringify\(hbParams[\s\S]*?\?>/, JSON.stringify(params || {}));
+  assert.ok(!/<\?/.test(html), 'every scriptlet is expanded');
+  return html;
+}
+const HB_DAY = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+const HB_PARTS = () => ({ isAdmin: false, stamp: 'S1', parts: [
+  { department: 'Chapter 05 — Power Mobility', sections: [{ id: 'man-5-1', title: '5.1 Chairs', status: 'published', sortOrder: 1, bodyMd: 'Chairs roll.' }] },
+  { department: 'Chapter 03 — Respiratory & Resupply', sections: [
+    { id: 'man-3-1', title: '3.1 Oxygen basics', status: 'published', sortOrder: 1, bodyMd: 'Intro.\n\n## 3.1.1 Tanks\n\nTanks hold oxygen.' },
+    { id: 'man-3-2', title: '3.2 Nebulizers', status: 'published', sortOrder: 2, bodyMd: 'Nebs.' }] }] });
+const HB_META = () => ({ version: 'v3.0', built: '10/26/2026', router: [], changelog: [
+  { id: 'man-3-2', date: HB_DAY(2), num: '3.2', summary: 'Nebulizer frequencies' },
+  { id: 'man-9-9', date: HB_DAY(2), num: '9.9', summary: 'A draft nobody here can see' },
+  { id: 'man-5-1', date: HB_DAY(100), num: '5.1', summary: 'Chairs, long ago' }] });
+
+/** A fake IndexedDB over one Map, so a second boot sees what the first kept. */
+function hbFakeIdb_(store) {
+  return { open() {
+    const rq = {};
+    setTimeout(() => {
+      rq.result = { createObjectStore() {}, transaction() { return { objectStore() { return {
+        get(k) { const g = {}; setTimeout(() => { g.result = store.get(k); g.onsuccess && g.onsuccess(); }, 0); return g; },
+        put(v, k) { store.set(k, JSON.parse(JSON.stringify(v))); },
+      }; } }; } };
+      if (!store.__made) { store.__made = true; rq.onupgradeneeded && rq.onupgradeneeded(); }
+      rq.onsuccess && rq.onsuccess();
+    }, 0);
+    return rq;
+  } };
+}
+/** Boot the page. `answers` maps a server function to a value, a function of
+ *  its arguments, or { __fail: message } (the failure handler). */
+async function hbBoot_(opts) {
+  opts = opts || {};
+  const calls = [], hist = [];
+  const answers = Object.assign({ getManualMeta: HB_META(), getManualStamp: { stamp: 'S1' }, getManualParts: HB_PARTS(),
+    getManualImages: { success: true, images: {}, missing: [], failed: [] } }, opts.answers || {});
+  const dom = new JSDOM(hbPageHtml_(opts.params), { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.test/',
+    beforeParse(w) {
+      Object.keys(opts.ls || {}).forEach((k) => w.localStorage.setItem(k, opts.ls[k]));
+      if (opts.idb) w.indexedDB = hbFakeIdb_(opts.idb);
+      w.print = () => {};
+      const chain = () => { const c = { ok: null, bad: null };
+        return new Proxy({}, { get(t, name) {
+          if (name === 'withSuccessHandler') return (f) => { c.ok = f; return p; };
+          if (name === 'withFailureHandler') return (f) => { c.bad = f; return p; };
+          return (...args) => { calls.push(name); setTimeout(() => {
+            let a = answers[name];
+            if (typeof a === 'function') a = a(...args);
+            if (a && a.__fail) { if (c.bad) c.bad(new Error(a.__fail)); }
+            else if (c.ok) c.ok(a === undefined ? { error: 'no fixture for ' + name } : JSON.parse(JSON.stringify(a)));
+          }, 0); };
+        } }); };
+      let p;
+      w.google = { script: {
+        get run() { p = chain(); return p; },
+        // JSON copies: the page's objects are another realm's (g116 — deepStrictEqual compares prototypes)
+        history: { push: (s, q) => hist.push(JSON.parse(JSON.stringify(['push', s, q]))), replace: (s, q) => hist.push(JSON.parse(JSON.stringify(['replace', s, q]))), setChangeHandler: (f) => { w.__hbChange = f; } } } };
+    } });
+  const w = dom.window;
+  const settleAll = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 2)); };
+  await settleAll();
+  return { w, d: w.document, calls, hist, settleAll, main: () => w.document.getElementById('kb-main') };
+}
+
+test('HB1.3 DOM: the home page lists the chapters and what changed — published sections only, in the window — and the contents', async () => {
+  const h = await hbBoot_();
+  const cards = h.d.querySelectorAll('.hb-card');
+  assert.deepStrictEqual([...cards].map((c) => c.querySelector('.hb-card-t').textContent), ['Respiratory & Resupply', 'Power Mobility'], 'chapters in the reader\'s order');
+  const news = [...h.d.querySelectorAll('.hb-news-row .hb-news-num')].map((x) => x.textContent);
+  assert.deepStrictEqual(news, ['3.2'], 'a first visit shows the last month — not a section this reader cannot see, not an old change');
+  assert.ok(/Changed in the last 30 days/i.test(h.main().textContent));
+  assert.strictEqual(h.d.querySelectorAll('#hb-toc .hb-ch').length, 2);
+  assert.ok(h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"] .hb-new'), 'the contents mark the changed section');
+  assert.ok(!h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"] .hb-new'));
+  assert.strictEqual(h.d.getElementById('hb-ver').textContent, 'v3.0', 'the version as the handbook writes it');
+  assert.deepStrictEqual(h.hist, [['replace', { home: true }, {}]], 'the first view replaces the history entry it arrived on');
+  assert.ok(JSON.parse(h.w.localStorage.getItem('umsHbVisit')).last, 'the visit is recorded');
+});
+
+test('HB1.3 DOM: "my department" puts its chapter first, and a later visit counts from the last one', async () => {
+  const h = await hbBoot_({ ls: { umsHbDept: 'Chapter 05 — Power Mobility', umsHbVisit: JSON.stringify({ last: '2020-01-01', prev: '' }) } });
+  const mine = h.d.querySelector('.hb-card.mine');
+  assert.ok(mine && /Power Mobility/.test(mine.textContent), 'the chosen chapter is marked');
+  assert.ok(h.main().textContent.indexOf('Your department') < h.main().textContent.indexOf('All chapters'), 'and comes first');
+  assert.strictEqual(h.d.getElementById('hb-dept-sel').value, 'Chapter 05 — Power Mobility');
+  assert.ok(/New since your last visit/.test(h.main().textContent));
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-news-num')].map((x) => x.textContent), ['3.2', '5.1'], 'everything after the last visit, newest first');
+  const sel = h.d.getElementById('hb-dept-sel');
+  sel.value = 'Chapter 03 — Respiratory & Resupply'; sel.dispatchEvent(new h.w.Event('change'));
+  assert.ok(/Respiratory/.test(h.d.querySelector('.hb-card.mine').textContent), 'changing it repaints home');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), 'Chapter 03 — Respiratory & Resupply');
+});
+
+test('HB1.3 DOM: a contents row opens its section in the reader and pushes a section link; Back and forward come through the change handler', async () => {
+  const h = await hbBoot_();
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"]').click();
+  await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-2'), 'the reader painted the chapter');
+  assert.ok(h.d.querySelector('#hb-toc .hb-it.on[data-kb-id="man-3-2"]'), 'the row is current');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { id: 'man-3-2', anchor: '' }, { s: '3.2' }]);
+  const n = h.hist.length;
+  h.w.__hbChange({ state: { home: true } });
+  assert.ok(h.d.querySelector('.hb-home'), 'Back to home');
+  h.w.__hbChange({ state: { id: 'man-5-1', anchor: '' } });
+  await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-5-1'), 'forward to a section');
+  assert.strictEqual(h.hist.length, n, 'and neither pushes again');
+  assert.ok(!h.calls.includes('getManualPart'), 'every chapter came from the one read');
+});
+
+test('HB1.3 DOM: ?s= opens the section it names (a subsection too); an unknown one says so and shows home', async () => {
+  const h = await hbBoot_({ params: { s: '3.1.1' } });
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'the section that holds 3.1.1');
+  assert.deepStrictEqual(h.hist[0], ['replace', { id: 'man-3-1', anchor: '3.1.1' }, { s: '3.1.1' }]);
+  const u = await hbBoot_({ params: { s: '9.9' } });
+  assert.ok(u.d.querySelector('.hb-home'));
+  assert.ok(/Section 9\.9 is not in the handbook/.test(u.d.getElementById('toast-stack').textContent), 'the toast reached the page\'s stack');
+});
+
+test('HB1.3 DOM: the chapters are kept in the browser — a visit whose stamp matches makes no full read; a new stamp reads again', async () => {
+  const idb = new Map();
+  const a = await hbBoot_({ idb });
+  assert.ok(a.calls.includes('getManualParts'), 'nothing kept yet: a full read');
+  assert.strictEqual(idb.get('parts').stamp, 'S1', 'and the answer is kept with its stamp');
+  const b = await hbBoot_({ idb });
+  assert.ok(b.calls.includes('getManualStamp') && !b.calls.includes('getManualParts'), 'same stamp: the kept copy, no full read');
+  assert.strictEqual(b.d.querySelectorAll('.hb-card').length, 2, 'and it paints the same');
+  const c = await hbBoot_({ idb, answers: { getManualStamp: { stamp: 'S2' }, getManualParts: Object.assign(HB_PARTS(), { stamp: 'S2' }) } });
+  assert.ok(c.calls.includes('getManualParts'), 'a changed handbook is read again');
+  assert.strictEqual(idb.get('parts').stamp, 'S2');
+});
+
+test('HB1.3 DOM: a failed read falls back to the kept copy and says so; with none it names the failure', async () => {
+  const idb = new Map();
+  await hbBoot_({ idb });
+  const down = { getManualStamp: { __fail: 'offline' }, getManualParts: { __fail: 'offline' } };
+  const k = await hbBoot_({ idb, answers: down });
+  assert.strictEqual(k.d.querySelectorAll('.hb-card').length, 2, 'the kept copy');
+  assert.ok(/may be out of date/.test(k.d.getElementById('toast-stack').textContent));
+  const none = await hbBoot_({ answers: { getManualParts: { error: 'The handbook is not set up yet: the HANDBOOK_KB_SS_ID Script Property is not set.' } } });
+  assert.ok(/could not be loaded: The handbook is not set up yet/.test(none.main().textContent), 'the server\'s own words');
+  assert.ok(none.main().querySelector('[role="alert"]'));
+});
+
+test('HB1.3 DOM: Escape closes an open overlay through the copied shell, then the narrow contents', async () => {
+  const h = await hbBoot_();
+  const ov = h.w.ensureOverlay('hb-test-ov');
+  ov.innerHTML = '<div class="modal"><button>OK</button></div>';
+  assert.ok(ov.classList.contains('open'));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!ov.classList.contains('open'), 'the overlay closed');
+  h.w.hbToggleSide_();
+  assert.ok(h.d.querySelector('.hb-wrap.side-open'));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!h.d.querySelector('.hb-wrap.side-open'), 'then the contents');
+});

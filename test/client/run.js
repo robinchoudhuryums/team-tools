@@ -40358,7 +40358,7 @@ function hbSync_(args) {
   return { status: r.status, out: r.stdout || '', err: r.stderr || '', report: json ? JSON.parse(json) : null };
 }
 
-testNeedsDeps(['acorn'], 'HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the four-name environment plus Team Tools\' readers', () => {
+testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the four-name environment plus Team Tools\' readers', () => {
   const r = hbSync_(['--check', '--json']);
   assert.strictEqual(r.status, 0, 'the copies are current:\n' + r.err);
   // The environment Handbook.js supplies — Team Tools' roster gate, store and
@@ -40374,7 +40374,7 @@ testNeedsDeps(['acorn'], 'HB1.2-a: handbook-app/ matches what the sync writes, a
   const pub = [...gen.matchAll(/^function (\w+)\(/gm)].map((m) => m[1]).filter((n) => !/_$/.test(n));
   assert.deepStrictEqual(pub, [], 'the generated file declares no public function');
   // The client copies are the web-app files byte for byte under one banner line.
-  ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html'].forEach((f) => {
+  ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html', 'styles_design_tokens.html', 'styles.html'].forEach((f) => {
     const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8');
     assert.strictEqual(copy.slice(copy.indexOf('\n') + 1), fs.readFileSync(path.join(HB_ROOT, 'web-app', f), 'utf8'), f + ' is a byte copy');
   });
@@ -40389,7 +40389,7 @@ testNeedsDeps(['acorn'], 'HB1.2-a: handbook-app/ matches what the sync writes, a
     JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'package.json'), 'utf8')).devDependencies.acorn, 'acorn, which the sync imports, is a declared devDependency');
 });
 
-testNeedsDeps(['acorn'], 'HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {
+testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hb12-'));
   const W = path.join(HB_ROOT, 'web-app');
   const build = (mutate) => {
@@ -40397,8 +40397,10 @@ testNeedsDeps(['acorn'], 'HB1.2-b: the sync refuses a copied WRITE and a reach i
     ['web-app/shared', 'web-app/kb', 'handbook-app'].forEach((d) => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
     fs.copyFileSync(path.join(W, '.clasp.json'), path.join(tmp, 'web-app/.clasp.json'));
     JSON.parse(fs.readFileSync(path.join(W, '.clasp.json'), 'utf8')).filePushOrder.forEach((f) => fs.copyFileSync(path.join(W, f), path.join(tmp, 'web-app', f)));
-    ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html'].forEach((f) => fs.copyFileSync(path.join(W, f), path.join(tmp, 'web-app', f)));
-    fs.copyFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), path.join(tmp, 'handbook-app/Handbook.js'));
+    ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html', 'styles_design_tokens.html', 'styles.html',
+      'script_core.html', 'kb/script_kb.html'].forEach((f) => fs.copyFileSync(path.join(W, f), path.join(tmp, 'web-app', f)));
+    // The hand-written handbook files (HB1.3: its pages too — the page walk starts from them).
+    ['Handbook.js', 'index.html', 'script_handbook.html', 'styles_handbook.html'].forEach((f) => fs.copyFileSync(path.join(HB_ROOT, 'handbook-app', f), path.join(tmp, 'handbook-app', f)));
     if (mutate) mutate(tmp);
     return hbSync_(['--root', tmp]);
   };
@@ -40425,6 +40427,16 @@ testNeedsDeps(['acorn'], 'HB1.2-b: the sync refuses a copied WRITE and a reach i
     const t = build(edit('handbook-app/Handbook.js', 'return ttGetManualMeta_();', 'return ttGetManualMetta_();'));
     assert.strictEqual(t.status, 1, 'a private copy of nothing is refused');
     assert.ok(/declares no getManualMetta/.test(t.err), t.err);
+    // HB1.3 — the PAGE walk: a page use that reaches Reference's state is refused,
+    // and so is a copied call to a server function the handbook app does not serve.
+    const k = build(edit('handbook-app/script_handbook.html', 'function hbMain_() {', 'function hbKb_() { return kbMarkTreeCurrent_; }\nfunction hbMain_() {'));
+    assert.strictEqual(k.status, 0, 'a Reference helper that does not reach its state is copied');
+    const ks = build(edit('handbook-app/script_handbook.html', 'function hbMain_() {', 'function hbKb_() { return kbOpenItem_; }\nfunction hbMain_() {'));
+    assert.strictEqual(ks.status, 1, 'one that reaches KB_STATE is refused');
+    assert.ok(/reached KB_STATE/.test(ks.err), ks.err);
+    const srv = build(edit('handbook-app/script_handbook.html', 'function errBeaconSend_(message) {', 'function hbBeaconOff_(message) {'));
+    assert.strictEqual(srv.status, 1, 'without the page\'s own beacon, the copied one would call Team Tools\' recordClientError');
+    assert.ok(/errBeaconSend_ \(script_core\.html\) calls the server's recordClientError\(\)/.test(srv.err), srv.err);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
@@ -40450,6 +40462,7 @@ function hbServer_(opts) {
     SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (opts.tabs && opts.tabs[n] ? sheetOf(opts.tabs[n]) : null) }) },
     CacheService: { getScriptCache: () => cache },
     Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+    HtmlService: opts.HtmlService,
   });
   ['kb_shared.js', 'Handbook.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
   sb.__reads = reads;
@@ -40526,7 +40539,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getReferenceItem', 'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances'],
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
   const shared = fs.readFileSync(path.join(HB, 'shared/script_manual_render.html'), 'utf8');
@@ -40539,6 +40552,132 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
     'read-only spreadsheets and the reader\'s address — nothing that writes');
   const clasp = JSON.parse(fs.readFileSync(path.join(HB, '.clasp.json'), 'utf8'));
   assert.deepStrictEqual(clasp.filePushOrder, ['kb_shared.js'].concat(own.sort()), 'the generated file loads first, then every hand-written one');
+});
+
+
+// HB1.3 — the handbook app's frame: its page (script_handbook.html, the host of
+// the shared reader), the page shell the sync copies from script_core and
+// Reference, the stamp the browser's kept chapters are checked against, and
+// the ?s= link the server hands the page. The page is DRIVEN in the DOM
+// harness (runDom.js, "HB1.3 — the handbook app's page"); these hold its
+// pure helpers and contracts.
+console.log('\nHB1.3 — the handbook app\'s frame');
+const HB_PAGE_SRC = () => fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+function hbPageCtx_() {
+  const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  // MANUAL_HOST: a slice up to the next function carries the page's install call along.
+  const ctx = vm.createContext({ Date, Number, String, Array, Object, JSON, RegExp, MANUAL_HOST: { install() {} } });
+  ['kbManualSplitTitle_', 'kbManualNumberTarget_', 'kbIsManualId_', 'kbDeptCompare_', 'kbDeptRank_', 'kbNaturalCompare_'].forEach((n) => vm.runInContext(extractFnFrom(shared, n), ctx));
+  ['hbIsoDay_', 'hbVisitStep_', 'hbNews_', 'hbTreeOf_', 'hbLinkOf_', 'hbTargetOf_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));
+  return ctx;
+}
+const hbJ_ = (v) => JSON.parse(JSON.stringify(v));
+
+test('HB1.3-a: the page\'s pure helpers — the visit moves only on a new day, news is published and after the last visit, and a section link round-trips', () => {
+  const c = hbPageCtx_();
+  // The visit record.
+  assert.deepStrictEqual(hbJ_(c.hbVisitStep_(null, '2026-10-28')), { rec: { last: '2026-10-28', prev: '' }, since: '' }, 'a first visit');
+  assert.deepStrictEqual(hbJ_(c.hbVisitStep_({ last: '2026-10-20', prev: '2026-10-01' }, '2026-10-28')), { rec: { last: '2026-10-28', prev: '2026-10-20' }, since: '2026-10-20' }, 'a new day');
+  assert.deepStrictEqual(hbJ_(c.hbVisitStep_({ last: '2026-10-28', prev: '2026-10-20' }, '2026-10-28')), { rec: { last: '2026-10-28', prev: '2026-10-20' }, since: '2026-10-20' }, 'a reload the same day keeps "since"');
+  assert.strictEqual(c.hbVisitStep_({ last: 'garbage', prev: 7 }, '2026-10-28').since, '', 'an unreadable record is a first visit, never a guess');
+  // News.
+  const log = [{ id: 'a', date: '2026-10-25', num: '1' }, { id: 'b', date: '2026-10-25', num: '2' }, { id: 'x', date: '2026-10-26', num: '9' },
+    { id: 'c', date: '2026-10-20', num: '3' }, { id: 'a', date: 'soon', num: 'bad' }, { id: 'c', date: '2026-09-01', num: 'old' }];
+  const vis = { a: true, b: true, c: true };
+  let n = c.hbNews_(log, vis, '2026-10-20', '2026-10-28', 30, 10);
+  assert.deepStrictEqual(hbJ_(n.items.map((i) => i.num)), ['1', '2'], 'after the last visit only (not ON it), visible only, a day in the changelog\'s order');
+  n = c.hbNews_(log, vis, '', '2026-10-28', 30, 1);
+  assert.deepStrictEqual(hbJ_([n.items.map((i) => i.num), n.total]), [['1'], 3], 'a first visit reads the last 30 days; the cap keeps the total');
+  // Links.
+  const tree = c.hbTreeOf_({ parts: [{ department: 'Appendix C — Quick Reference Cards', sections: [{ id: 'man-c-2', title: 'Card 2' }] },
+    { department: 'Chapter 06 — Field Operations', sections: [{ id: 'man-6-9', title: '6.9 Pick-up tickets' }] }] });
+  assert.deepStrictEqual(hbJ_(tree.map((t) => t.id)), ['man-6-9', 'man-c-2'], 'chapters before appendices');
+  [['man-6-9', '6.9.3', '6.9.3'], ['man-6-9', '', '6.9'], ['man-c-2', '', 'card 2']].forEach(([id, anchor, s]) => {
+    assert.strictEqual(c.hbLinkOf_(id, anchor, tree), s, id + '#' + anchor);
+    assert.deepStrictEqual(hbJ_(c.hbTargetOf_(s, tree)), { id, anchor: /^card/.test(s) ? '' : (anchor || '') }, s + ' comes back');
+  });
+  assert.strictEqual(c.hbTargetOf_('man-6-9', tree).id, 'man-6-9', 'a bare id is accepted');
+  assert.strictEqual(c.hbTargetOf_('man-7-1', tree), null, 'an id not in the handbook is not');
+  assert.strictEqual(c.hbTargetOf_('7.4', tree), null, 'a number not in the handbook is not');
+});
+
+test('HB1.3-b: the page installs EVERY hook the reader declares — none falls through to the idle default', () => {
+  const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  const decl = /var MANUAL_HOST = \{[\s\S]*?\n\};\nvar MANUAL_HOST_IDLE_ = [^\n]*\n/.exec(shared) || /var MANUAL_HOST = \{[\s\S]*?\}\s*\};/.exec(shared);
+  assert.ok(decl, 'the contract declaration is found');
+  const ctx = vm.createContext({ Object, Error });
+  vm.runInContext(decl[0], ctx);
+  const defaults = {};
+  Object.keys(ctx.MANUAL_HOST).forEach((k) => { defaults[k] = ctx.MANUAL_HOST[k]; });
+  const page = HB_PAGE_SRC();
+  const install = /MANUAL_HOST\.install\(\{[\s\S]*?\n\}\);/.exec(page);
+  assert.ok(install, 'the page installs the contract');
+  vm.runInContext(install[0], ctx);
+  const hooks = Object.keys(defaults).filter((k) => k !== 'install');
+  assert.ok(hooks.length >= 18, 'the contract is read, not assumed');
+  assert.deepStrictEqual(hooks.filter((k) => ctx.MANUAL_HOST[k] === defaults[k]), [], 'every hook is the page\'s own');
+  // And the page's state carries the four fields the reader reads.
+  assert.ok(/var HB = \{ tree: \[\], isAdmin: false, currentId: null, landing: true \};/.test(page), 'the host state, never an admin');
+});
+
+test('HB1.3-c: the server stamps the chapters it sends, the stamp moves when a section does, and doGet hands the page only a section-shaped ?s=', () => {
+  let tabs = hbTabs_();
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const parts = sb.getManualParts();
+  assert.ok(/^[0-9a-f]{8}-[0-9a-z]+$/.test(parts.stamp), 'the answer carries its stamp');
+  assert.strictEqual(sb.getManualStamp().stamp, parts.stamp, 'and getManualStamp names the same one');
+  const n = sb.__reads.n;
+  sb.getManualStamp();
+  assert.strictEqual(sb.__reads.n, n, 'a stamp check reads no sheet while the chapters are cached');
+  tabs = hbTabs_(); tabs.KB[1][4] = 'Hello, changed';
+  assert.notStrictEqual(hbServer_(Object.assign({ tabs }, HB_ENV)).getManualStamp().stamp, parts.stamp, 'a changed section is a new stamp');
+  assert.strictEqual(hbServer_({ tabs: hbTabs_(), props: HB_ENV.props }).getManualStamp().error, 'Not authorized.');
+  const seen = [];
+  const HtmlService = { createTemplateFromFile: () => { const t = { evaluate: () => ({ setTitle: () => ({ addMetaTag: () => 'page' }) }) }; seen.push(t); return t; } };
+  const web = hbServer_(Object.assign({ tabs: hbTabs_(), HtmlService }, HB_ENV));
+  [['6.9.3', '6.9.3'], ['card 4', 'card 4'], ['man-6-9', 'man-6-9'], ['<script>x</script>', ''], ['6'.repeat(40), '']].forEach(([inS, out], i) => {
+    web.doGet({ parameter: { s: inS } });
+    assert.strictEqual(seen[i].hbParams.s, out, JSON.stringify(inS));
+  });
+  web.doGet(undefined);
+  assert.strictEqual(seen[seen.length - 1].hbParams.s, '', 'no parameters at all');
+});
+
+test('HB1.3-d: every element id the copied code writes into by a literal lookup is created by that code or present in the page', () => {
+  const HB = path.join(HB_ROOT, 'handbook-app');
+  const code = ['shell_shared.html', 'shared/script_manual_render.html'].map((f) => fs.readFileSync(path.join(HB, f), 'utf8')).join('\n');
+  const page = fs.readFileSync(path.join(HB, 'index.html'), 'utf8');
+  const ids = [...new Set([...code.matchAll(/getElementById\('([\w-]+)'\)/g)].map((m) => m[1]))];
+  assert.ok(ids.length >= 5, 'the lookups are found');
+  const made = (id) => new RegExp("(\\.id = |ensureOverlay\\()'" + id + "'|id=\\\\?[\"']" + id + "\\\\?[\"']").test(code);
+  const missing = ids.filter((id) => !made(id) && !new RegExp('id="' + id + '"').test(page));
+  assert.deepStrictEqual(missing, [], 'the page provides each one the code does not create (toast-stack: without it every toast is dropped)');
+  assert.ok(/id="toast-stack"/.test(page) && /id="kb-main"/.test(page), 'the two the page owns');
+});
+
+testNeedsDeps(['eslint', 'jsdom'], 'HB1.3-e: the assembled handbook page resolves every name — no-undef over its scripts, in include order, against the browser\'s own globals', () => {
+  const HB = path.join(HB_ROOT, 'handbook-app');
+  let html = fs.readFileSync(path.join(HB, 'index.html'), 'utf8')
+    .replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, (m, f) => fs.readFileSync(path.join(HB, f + '.html'), 'utf8'))
+    .replace(/<\?!=\s*JSON\.stringify\(hbParams[\s\S]*?\?>/, '{}');
+  assert.ok(!/<\?/.test(html.replace(/<style[\s\S]*?<\/style>/g, '')), 'no scriptlet left in a script');
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+  assert.ok(scripts.length >= 6, 'every partial\'s script is read');
+  // The browser's globals are DERIVED from jsdom's window (g137 — no hand list);
+  // `google` is the one HtmlService adds.
+  const { JSDOM } = require(path.join(HB_ROOT, 'node_modules/jsdom'));
+  const w = new JSDOM('').window;
+  const globals = { google: 'readonly' };
+  for (let o = w; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) Object.getOwnPropertyNames(o).forEach((n) => { globals[n] = 'readonly'; });
+  Object.getOwnPropertyNames(globalThis).forEach((n) => { globals[n] = 'readonly'; });
+  // Also derived: a partial's `global.X =` / `window.X =` exports (script_icons'
+  // icon), and a name the code FEATURE-TESTS with `typeof` (ResizeObserver,
+  // which jsdom lacks) — optional by the code's own design.
+  const all = scripts.join('\n');
+  [...all.matchAll(/\b(?:global|window)\.(\w+) = /g), ...all.matchAll(/\btypeof (\w+) [!=]==/g)].forEach((m) => { globals[m[1]] = 'readonly'; });
+  const { Linter } = require(path.join(HB_ROOT, 'node_modules/eslint'));
+  const msgs = new Linter().verify(scripts.join('\n;\n'), { languageOptions: { ecmaVersion: 2022, sourceType: 'script', globals }, rules: { 'no-undef': 'error' } });
+  assert.deepStrictEqual(msgs.map((m) => m.message), [], 'a name nothing on the page declares would throw ReferenceError in the browser');
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');

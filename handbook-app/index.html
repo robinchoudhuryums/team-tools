@@ -1,60 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<base target="_top">
-<meta charset="utf-8">
-<style>
-  /* HB1.2's setup check — HB1.3 replaces this page with the app's frame and
-     the shared reader (shared/script_manual_render.html, copied by the sync). */
-  :root { --ink: #1d2433; --muted: #5b6475; --line: #d9dee7; --bg: #f7f8fa; --card: #fff; --bad: #a3271f; }
-  @media (prefers-color-scheme: dark) {
-    :root { --ink: #e6e9ef; --muted: #a3abba; --line: #343b49; --bg: #14171d; --card: #1c2028; --bad: #ff8a80; }
-  }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 20px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
-  ul { margin: 0; padding-left: 20px; }
-  .bad { color: var(--bad); }
-</style>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <?!= include('styles_design_tokens') ?>
+  <?!= include('styles') ?>
+  <?!= include('styles_handbook') ?>
+  <script>
+    // The link's section (?s=6.9.3) — the page cannot read its own address
+    // inside HtmlService (g107), so doGet hands it over. `<` is escaped so a
+    // value can never close this block (the same discipline as Team Tools).
+    window.HB_PARAMS = <?!= JSON.stringify(hbParams || {}).replace(/</g, '\\u003c') ?>;
+    // Dark mode follows the device, before first paint (the tokens partial
+    // keys its dark palette on data-mode).
+    try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-mode', 'dark'); } catch (e) {}
+  </script>
 </head>
 <body>
-<main>
-  <h1>UMS Handbook</h1>
-  <p class="sub" id="hb-sub" role="status">Checking the handbook…</p>
-  <div class="card" id="hb-out" hidden></div>
-</main>
-<script>
-function hbEsc_(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
-function hbCount_(n, noun) { return n + ' ' + noun + (n === 1 ? '' : 's'); }
-function hbFail_(msg) {
-  var sub = document.getElementById('hb-sub');
-  sub.className = 'sub bad';
-  sub.textContent = 'The handbook could not be read: ' + String(msg || 'the server did not answer').replace(/\.$/, '') + '.';
-}
-google.script.run.withSuccessHandler(function (meta) {
-  if (!meta || meta.error) { hbFail_(meta && meta.error); return; }
-  google.script.run.withSuccessHandler(function (res) {
-    if (!res || res.error) { hbFail_(res && res.error); return; }
-    var parts = res.parts || [];
-    var count = 0;
-    parts.forEach(function (p) { count += (p.sections || []).length; });
-    document.getElementById('hb-sub').textContent = meta.none
-      ? 'No handbook has been imported yet.'
-      : 'Version ' + (meta.version || '—') + ' · ' + hbCount_(parts.length, 'chapter') + ' · ' + hbCount_(count, 'published section');
-    if (!parts.length) return;
-    var out = document.getElementById('hb-out');
-    out.innerHTML = '<ul>' + parts.map(function (p) {
-      return '<li>' + hbEsc_(p.department) + ' — ' + hbCount_((p.sections || []).length, 'section') + '</li>';
-    }).join('') + '</ul>';
-    out.hidden = false;
-  }).withFailureHandler(function (e) { hbFail_(e && e.message); }).getManualParts();
-}).withFailureHandler(function (e) { hbFail_(e && e.message); }).getManualMeta();
-</script>
+  <a class="hb-skip" href="#kb-main" onclick="document.getElementById('kb-main').focus(); return false;">Skip to the handbook</a>
+  <header class="hb-head">
+    <button type="button" class="hb-menu" id="hb-menu" aria-controls="hb-side" aria-expanded="false" onclick="hbToggleSide_()">Contents</button>
+    <a class="hb-brand" href="#" onclick="hbGoHome_(); return false;">UMS Handbook</a>
+    <span class="hb-ver" id="hb-ver"></span>
+    <label class="hb-dept">My department
+      <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
+    </label>
+  </header>
+  <div class="hb-wrap">
+    <nav class="hb-side" id="hb-side" aria-label="Contents"><div id="hb-toc" class="hb-toc"></div></nav>
+    <main class="kb-main" id="kb-main" tabindex="-1" aria-live="polite"></main>
+  </div>
+  <!-- showToast writes here; without it every toast is silently dropped. -->
+  <div class="toast-stack" id="toast-stack" role="region" aria-live="polite" aria-label="Notifications"></div>
+
+<?!= include('script_icons') ?>
+<?!= include('shell_shared') ?>
+<?!= include('shared/script_manual_render') ?>
+<?!= include('kb/script_manual_diagrams') ?>
+<?!= include('script_handbook') ?>
 </body>
 </html>

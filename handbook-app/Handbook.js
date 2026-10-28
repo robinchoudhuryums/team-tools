@@ -33,11 +33,17 @@
 
 const HB_KB_SS_PROP = 'HANDBOOK_KB_SS_ID';
 const HB_CACHE_TTL = 300;
-const HB_PARTS_CACHE_KEY = 'hb_parts_v1:';
+const HB_PARTS_CACHE_KEY = 'hb_parts_v2:';   // v2 (HB1.3): the answer carries its stamp
 const HB_NOT_HERE = 'is not available in the handbook app yet.';
 
-function doGet() {
-  return HtmlService.createTemplateFromFile('index').evaluate()
+/** HB1.3: the page, with the link's section (`?s=6.9.3`) — the page cannot
+ *  read its own address (g107), so the server hands it over. Only a value
+ *  shaped like a section number survives; the page resolves it. */
+function doGet(e) {
+  const t = HtmlService.createTemplateFromFile('index');
+  const s = String((e && e.parameter && e.parameter.s) || '').trim();
+  t.hbParams = { s: /^[\w.§ -]{1,24}$/.test(s) ? s : '' };
+  return t.evaluate()
     .setTitle('UMS Handbook')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -112,8 +118,34 @@ function getManualParts() {
   const hit = hbCacheGetJson_(HB_PARTS_CACHE_KEY);
   if (hit) return hit;
   const res = ttGetManualParts_();
-  if (res && !res.error) hbCachePutJson_(HB_PARTS_CACHE_KEY, res);
+  if (res && !res.error) {
+    res.stamp = hbStamp_(JSON.stringify(res.parts));
+    hbCachePutJson_(HB_PARTS_CACHE_KEY, res);
+    try { CacheService.getScriptCache().put(HB_PARTS_CACHE_KEY + 'stamp', res.stamp, HB_CACHE_TTL); } catch (e) {}
+  }
   return res;
+}
+/** HB1.3 — what the browser's kept copy of the chapters is checked against:
+ *  the stamp of the chapters this server would send now. Cheap while the
+ *  parts are cached (one cache read); otherwise it reads them, which the
+ *  next getManualParts then serves from the cache. */
+function getManualStamp() {
+  if (!getEmployeeInfo_()) return { error: 'Not authorized.' };
+  let stamp = null;
+  try { stamp = CacheService.getScriptCache().get(HB_PARTS_CACHE_KEY + 'stamp'); } catch (e) {}
+  if (stamp) return { stamp: stamp };
+  const res = getManualParts();
+  if (!res || res.error || !res.stamp) return { error: (res && res.error) || 'Could not read the handbook.' };
+  try { CacheService.getScriptCache().put(HB_PARTS_CACHE_KEY + 'stamp', res.stamp, HB_CACHE_TTL); } catch (e) {}
+  return { stamp: res.stamp };
+}
+/** PURE — a short, stable fingerprint of a string (FNV-1a over UTF-16 code
+ *  units, with the length, hex). Equal chapters give equal stamps. */
+function hbStamp_(s) {
+  s = String(s);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ('0000000' + h.toString(16)).slice(-8) + '-' + s.length.toString(36);
 }
 function getManualImages(keys) { return ttGetManualImages_(keys); }
 function getKbImages(keys) { return ttGetKbImages_(keys); }
