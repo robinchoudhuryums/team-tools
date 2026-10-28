@@ -2685,7 +2685,13 @@ entry says which it is.
   handbook reader or its server readers change in `web-app/`, run
   `npm run handbook:sync`, commit, and push both projects; CI fails until the
   copies are current. A publish in Team Tools shows in the handbook app within
-  five minutes. HB1.2's page is a setup check; the reader arrives in HB1.3.
+  five minutes. **Since HB1.3 the page is the reader:** contents, a department
+  picker, the home page with what changed since a reader's last visit, and
+  section links — `<the web app URL>?s=6.9.3` opens 6.9.3 (a section, a
+  subsection, `card 4`, or a `man-…` id). Each browser keeps the chapters
+  (IndexedDB) and re-reads them only when the handbook changed; a reader who
+  wants a fresh copy at once can reload after five minutes. Section feedback
+  is not offered until HB1.4.
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>
 - **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`

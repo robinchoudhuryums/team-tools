@@ -5857,3 +5857,35 @@ pick them up without re-deriving the context.
   separately, so the handbook could serve an older reader than Team Tools
   without anything saying so); and copying whole server files (`70_kb.js`
   alone would bring every KB writer and the roster).
+
+- <a id="the-handbook-app-frame-hosts-the-shared-reader"></a>**The handbook app's page hosts the shared reader through the contract, copies Team Tools' page shell, and keeps the chapters in the browser (handbook app HB1.3, operator 2026-10-28)**
+  `handbook-app/script_handbook.html` is the reader's second HOST: it installs
+  all 18 `MANUAL_HOST` hooks (a pin derives the list from the contract, so a
+  hook left to its idle default fails), gives the reader `#kb-main` and
+  `#toast-stack`, and owns the frame — the contents, a department picker
+  (`umsHbDept`), and a home page with that department's chapter first and the
+  changelog entries since the last visit (`umsHbVisit` moves only on a new day,
+  so a reload keeps "since"; a first visit shows 30 days; only sections in the
+  published tree count). **What the page does not own it copies:** the sync
+  extracts the overlay, toast, copy and print functions from `script_core` and
+  Reference (`shell_shared.html`) by the same dependency walk as the server —
+  now SCOPE-ANALYSED (eslint-scope), so a local that shares a top-level name is
+  not a use — and refuses a reach into `KB_STATE` or a call to a server
+  function the app does not serve; the page declares `errBeaconSend_` itself
+  (Team Tools' beacon writes to its ClientErrors tab). Team Tools' two
+  anonymous overlay listeners became `overlayEscapeClose_` / `overlayFocusTrap_`
+  so the page can register them. The tokens and styles partials are copied
+  whole, so the reader looks exactly as in Reference; the page styles only its
+  frame plus `.kb-main` and `.kb-btn`, whose rules are Reference's (the HB1.1c
+  host-styling rule). **The chapters are kept in IndexedDB** as the last
+  `getManualParts` answer with the server's stamp of it; a visit asks only for
+  `getManualStamp` (one cache read while the server's copy is warm) and reads
+  the chapters again only when it moved — a failed read falls back to the kept
+  copy and says it may be out of date. **Links:** `?s=6.9.3` reaches the page
+  through doGet (the page cannot read its own address, g107), resolved by the
+  reader's own `kbManualNumberTarget_`; every open pushes the top window's
+  address through `google.script.history`, and Back/forward come through its
+  change handler; an unknown section says so and shows home. Section feedback
+  is hidden until HB1.4 routes it. **Alternatives rejected:** hand-copying the
+  shell helpers (two copies of the overlay lifecycle — the g100 family), and
+  localStorage for the chapters (a full manual approaches its quota).

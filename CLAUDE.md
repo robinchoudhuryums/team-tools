@@ -89,10 +89,9 @@ tree in cycle 13**, see Frozen Subsystems for what was removed and why) is aband
 because admin policy on the org domain prevents install of Marketplace Add-ons
 without ticket-driven allowlisting; the web-app pattern needs no admin.
 
-**`handbook-app/` (HB1.2)** is a second clasp project: the handbook, read-only, for the
-whole domain. Only `Handbook.js` is hand-written; the rest are COPIES `npm run
-handbook:sync` writes from `web-app/` — never edit one; CI fails until re-synced
-([why](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)).
+**`handbook-app/` (HB1.2)** is a second clasp project: the handbook, read-only, for the whole domain. Its
+hand-written files are `Handbook.js` and the page (`index`, `script_handbook`, `styles_handbook`); the rest are
+COPIES `npm run handbook:sync` writes from `web-app/` — never edit one; CI fails until re-synced ([why](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)).
 
 ## Development
 
@@ -599,6 +598,7 @@ for the reasoning, which is usually the part that matters.
 - [The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)](docs/design-decisions.md#the-handbook-rendering-layer-is-a-shared-partial)
 - [The handbook reader reaches its host only through `MANUAL_HOST`, and keeps its own state on `MANUAL_STATE` (handbook app HB1.1b, operator 2026-10-28)](docs/design-decisions.md#the-handbook-reader-reaches-its-host-through-manual-host)
 - [The handbook app is a second project fed by a derived copy of Team Tools' readers — it supplies the environment and never writes (handbook app HB1.2, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)
+- [The handbook app's page hosts the shared reader through the contract, copies Team Tools' page shell, and keeps the chapters in the browser (handbook app HB1.3, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-frame-hosts-the-shared-reader)
 
 ## Operator State Checklist
 

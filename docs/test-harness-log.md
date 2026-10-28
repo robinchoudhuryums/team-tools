@@ -2956,3 +2956,31 @@ per-change detail. By delta:
   two pins now go through `testNeedsDeps`: a visible `SKIPPED` line (and a count
   under the summary) in the floor, and CI re-runs the harness after the install
   with `REQUIRE_DEPS=1`, where a missing package fails. HB1.2-a asserts that step.
+
+## Handbook app HB1.3 — the frame, driven (2026-10-28)
+
+- **DOM (runDom.js, "HB1.3 — the handbook app's page")** boots the WHOLE page —
+  `handbook-app/index.html` with its includes expanded — in jsdom over an
+  auto-answering fake `google.script.run`, a fake IndexedDB over one Map (so a
+  second boot sees what the first kept) and a fake `google.script.history`
+  (entries JSON-copied: the page's objects are another realm's). Seven drives:
+  home (chapters, news, contents dots, version, the replaced first entry); the
+  department and a later visit; a contents row → reader + pushed `s`, Back and
+  forward without a push; `?s=` incl. a subsection, an unknown one toasting
+  through the page's own stack; the kept copy (no full read on a matching
+  stamp, a re-read on a new one); a failed read falling back to it, or naming
+  the server's error; Escape through the copied shell, then the contents.
+- **Pure (run.js, "HB1.3")** — a: the page's pure helpers (visit step, news,
+  tree, link round trip); b: every contract hook installed (read from the
+  contract, not listed); c: the server's stamp (cache-only while warm, moves
+  with a section) and doGet's `?s=` filter; d: every literal `getElementById`
+  in the copied code is created by it or present in the page; e (eslint +
+  jsdom): no-undef over the assembled page, the browser's globals DERIVED from
+  jsdom's window plus `global.X =` exports and `typeof`-tested names.
+- **HB1.2-b** now also drives the page walk's refusals (a `KB_STATE` reach, an
+  unserved server call) and shows a Reference helper that does not reach its
+  state IS copied. The sync needs `eslint-scope` too (a declared devDependency).
+- **Bites: 12/12** — seven pure (visit, news window, a hook left default, a
+  fixed stamp, any `?s=`, no toast stack, an undeclared page name) and five DOM
+  (kept copy unused, no pushed link, no kept fallback, department not first,
+  Escape unwired).
