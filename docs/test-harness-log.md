@@ -2923,3 +2923,31 @@ per-change detail. By delta:
 - **Sweep:** no tool reads `kb/script_kb.html` for moved code any more; the export's
   xref-report docstring names the shared partial.
 
+
+## Handbook app HB1.2 — the second project, copied and driven (2026-10-28)
+
+- **HB1.2-a** runs `scripts/handbook-sync.mjs --check --json`: the copies are
+  current, the environment Handbook.js supplies is exactly four names, the six
+  `tt…_` renames are the six served endpoints, CONFIG never ships, the
+  generated file declares no public function, the client copies are byte copies
+  under one banner line, and CI runs the check after `npm ci` with acorn declared.
+- **HB1.2-b** builds a temp tree three ways through `--root`: the real tree
+  builds (control); a write added two hops inside a copied reader is refused and
+  named; Handbook.js reaching CONFIG is refused; a `tt…_` name with no original
+  is refused.
+- **HB1.2-c / -d** load `kb_shared.js` + `Handbook.js` into a vm over fake
+  Session / Properties / Spreadsheet / Cache services with a read counter:
+  published handbook sections only (no draft, no Reference article), a draft
+  cross-reference is "Not found.", a Reference one is refused without a read,
+  What's new skips a draft's change; the parts read is served from cache the
+  second time, an anonymous caller is refused before any read, an unset
+  `HANDBOOK_KB_SS_ID` is named and not cached, a missing KB tab is named.
+- **HB1.2-e:** the public surface (every function not ending `_` in the
+  hand-written files) is an exact list that covers every server call the shared
+  reader's SHELL NEEDS header names; the manifest is domain access, run as the
+  deployer, two read-only scopes; `filePushOrder` loads the copy first.
+- **Bites: 9/9** — admin everywhere, the manual-only guard dropped, an error
+  cached, the cache never hit, `setProperty` off the write list, ANYONE access,
+  What's new ungated, the walk ignoring Handbook.js's declarations, a stale copy.
+- `scripts/lint-server.mjs` now resolves each project's global scope on its own
+  (`advancedServiceGlobals(dir)`; the F-50 pin calls it with a directory).

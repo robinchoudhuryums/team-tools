@@ -40365,6 +40365,13 @@ test('HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the f
     const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8');
     assert.strictEqual(copy.slice(copy.indexOf('\n') + 1), fs.readFileSync(path.join(HB_ROOT, 'web-app', f), 'utf8'), f + ' is a byte copy');
   });
+  // Wired: CI runs the check after the install its parser needs (g116's 22nd —
+  // a step whose dependency is missing fails for the wrong reason).
+  const wf = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  const ci = wf.indexOf('run: npm ci'), chk = wf.indexOf('run: node scripts/handbook-sync.mjs --check');
+  assert.ok(ci >= 0 && chk > ci, 'CI runs the sync check, after `npm ci`');
+  assert.ok(/^import \* as acorn from 'acorn';$/m.test(fs.readFileSync(HB_SYNC, 'utf8')) &&
+    JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'package.json'), 'utf8')).devDependencies.acorn, 'acorn, which the sync imports, is a declared devDependency');
 });
 
 test('HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {

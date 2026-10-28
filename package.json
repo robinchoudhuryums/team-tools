@@ -2,14 +2,16 @@
   "name": "team-tools-dev",
   "version": "1.0.0",
   "private": true,
-  "description": "Dev-only tooling for team-tools (client-side test harness). NOT deployed — clasp pushes from web-app/ only.",
+  "description": "Dev-only tooling for team-tools (client-side test harness). NOT deployed — clasp pushes from web-app/ and handbook-app/ only.",
   "scripts": {
     "test": "node test/client/run.js && node test/client/dom/runDom.js",
     "test:client": "node test/client/run.js",
     "test:dom": "node test/client/dom/runDom.js",
     "lint:server": "node scripts/lint-server.mjs",
     "push:dev": "bash scripts/push-env.sh dev",
-    "push:prod": "bash scripts/push-env.sh prod"
+    "push:prod": "bash scripts/push-env.sh prod",
+    "handbook:sync": "node scripts/handbook-sync.mjs",
+    "handbook:push": "node scripts/handbook-sync.mjs --check && cd handbook-app && clasp push -f"
   },
   "devDependencies": {
     "acorn": "^8.19.0",

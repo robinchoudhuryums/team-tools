@@ -31,10 +31,11 @@ function hbEsc_(s) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+function hbCount_(n, noun) { return n + ' ' + noun + (n === 1 ? '' : 's'); }
 function hbFail_(msg) {
   var sub = document.getElementById('hb-sub');
   sub.className = 'sub bad';
-  sub.textContent = 'The handbook could not be read: ' + (msg || 'the server did not answer') + '.';
+  sub.textContent = 'The handbook could not be read: ' + String(msg || 'the server did not answer').replace(/\.$/, '') + '.';
 }
 google.script.run.withSuccessHandler(function (meta) {
   if (!meta || meta.error) { hbFail_(meta && meta.error); return; }
@@ -45,11 +46,11 @@ google.script.run.withSuccessHandler(function (meta) {
     parts.forEach(function (p) { count += (p.sections || []).length; });
     document.getElementById('hb-sub').textContent = meta.none
       ? 'No handbook has been imported yet.'
-      : 'Version ' + (meta.version || '—') + ' · ' + parts.length + ' chapters · ' + count + ' published sections';
+      : 'Version ' + (meta.version || '—') + ' · ' + hbCount_(parts.length, 'chapter') + ' · ' + hbCount_(count, 'published section');
     if (!parts.length) return;
     var out = document.getElementById('hb-out');
     out.innerHTML = '<ul>' + parts.map(function (p) {
-      return '<li>' + hbEsc_(p.department) + ' — ' + (p.sections || []).length + ' sections</li>';
+      return '<li>' + hbEsc_(p.department) + ' — ' + hbCount_((p.sections || []).length, 'section') + '</li>';
     }).join('') + '</ul>';
     out.hidden = false;
   }).withFailureHandler(function (e) { hbFail_(e && e.message); }).getManualParts();

@@ -5822,3 +5822,38 @@ pick them up without re-deriving the context.
   (`.kb-man-bar .kb-bm.on` — the button is `bookmarkBtnHtml`'s) and Reference's
   page layout around the reader (`.kb-main:has(> .kb-man-top)`).
 
+
+- <a id="the-handbook-app-is-a-second-project-fed-by-a-derived-copy"></a>**The handbook app is a second project fed by a derived copy of Team Tools' readers — it supplies the environment and never writes (handbook app HB1.2, operator 2026-10-28)**
+  `handbook-app/` is its own Apps Script project, because its audience (every
+  employee of the domain, ~150) is not Team Tools' roster and a roster gate is
+  the first thing every Team Tools endpoint does. It runs as the deployer with
+  domain access and two scopes (read-only spreadsheets, the reader's address),
+  and reads the same KB spreadsheet by `HANDBOOK_KB_SS_ID`; importing and
+  publishing stay in Team Tools. **What it owns** is `Handbook.js`: four
+  ENVIRONMENT functions under Team Tools' names — `getEmployeeInfo_` (any
+  signed-in caller, never an admin, so drafts are never served),
+  `getKbSS_`, `getOrCreateKbSheet_` (reads; a missing tab is named, never
+  created) and `fmtDate_` (Team Tools' storage timezone) — plus the public
+  endpoints. **What it copies** is written by `scripts/handbook-sync.mjs`: the
+  reader partials byte for byte, and `kb_shared.js` — every name `Handbook.js`
+  uses that Team Tools' server declares, with everything THAT reaches, by an
+  acorn dependency walk that stops at every name `Handbook.js` declares. A name
+  shaped `ttXxx_` copies Team Tools' `xxx` under that private name, so the
+  handbook's public endpoint of the same name decides what is served
+  (`getReferenceItem` answers handbook sections only; `getManualParts` adds a
+  chunked cache). The walk REFUSES a copied write (a sheet, property, lock, mail
+  or Drive mutation) and a reach into `CONFIG` (the values it needs are picked
+  as literals into `HB_TT_CONFIG`); `--check` in CI fails while any copy is
+  stale. The handbook's cache is its own, so Team Tools' clears never reach it:
+  a publish shows there within five minutes (`HB_CACHE_TTL`, and the copied
+  meta cache's `KB_CACHE_TTL`). Feedback, Drive thumbnails and warehouse
+  distances answer "not available in the handbook app yet" in the shape their
+  caller reads as failure; search arrives with its UI in HB1.4, because Team
+  Tools' search writes the search signal and reads synonyms that live in Team
+  Tools' Script Properties. **Alternatives rejected:** a hand-written read-only
+  server (a second copy of the draft rule, the image checks and the meta cache
+  — exactly the two-readers shape of g126); a Library shared between the
+  projects (a library runs in the caller's project but its version is pinned
+  separately, so the handbook could serve an older reader than Team Tools
+  without anything saying so); and copying whole server files (`70_kb.js`
+  alone would bring every KB writer and the roster).

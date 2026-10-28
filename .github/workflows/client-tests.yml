@@ -47,7 +47,7 @@ jobs:
         run: |
           set -e
           shopt -s nullglob
-          files=(web-app/*.js)
+          files=(web-app/*.js handbook-app/*.js)
           if [ ${#files[@]} -eq 0 ]; then echo "no web-app/*.js found"; exit 1; fi
           for f in "${files[@]}"; do echo "node --check $f"; node --check "$f"; done
         shell: bash
@@ -69,6 +69,14 @@ jobs:
       # broken server and prod — the floor above still runs first.
       - name: Resolve every server identifier (no-undef over the one global scope)
         run: node scripts/lint-server.mjs
+
+      # HB1.2: handbook-app/ is a second Apps Script project whose server and
+      # reader are COPIES of Team Tools' (scripts/handbook-sync.mjs). A change to
+      # web-app/ that is not re-synced would ship the handbook app stale, so this
+      # fails until `npm run handbook:sync` is run and committed. After `npm ci`:
+      # the sync's dependency walk parses with acorn.
+      - name: Check the handbook app's copies of Team Tools are current
+        run: node scripts/handbook-sync.mjs --check
 
       - name: Run DOM-lifecycle tests
         run: node test/client/dom/runDom.js

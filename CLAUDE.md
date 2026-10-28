@@ -52,7 +52,7 @@ generated running-totals block below, which CI checks.**
 
 ## Projects
 
-**`web-app/` is the only project directory** and the only clasp project. It is a
+**`web-app/` is Team Tools** (`handbook-app/` is below the map). It is a
 multi-module browser web app served at ONE Web App URL; every module is an entry
 in the `TOOLS` registry in `script_core.html`, and `Object.keys(TOOLS).length` is
 the authority on how many there are (it read "six" in the docs for a whole cycle
@@ -83,18 +83,20 @@ redesigns, the operator rounds that shaped it — is [`docs/modules.md`](docs/mo
 **Adding a new tool:** append an entry to `TOOLS`, drop a partial in
 `web-app/<tool>/script_*.html`, `include()` it from `index.html`, add server
 endpoints to the module's server file (or a new one, listed in `filePushOrder`) —
-and add a row to the map above,
-which the MODULE-MAP pin requires.
+and add a row to the map above, which the MODULE-MAP pin requires.
 The Workspace Add-on path (the old `call-notes/` scaffold — **deleted from the
-tree in cycle 13**, see Frozen Subsystems) is abandoned
-because admin policy on the org domain prevents install of Marketplace
-Add-ons without ticket-driven allowlisting; the web-app pattern works
-today with zero admin involvement. **`web-app/` is now the only project
-directory** — see Frozen Subsystems for what was removed and why.
+tree in cycle 13**, see Frozen Subsystems for what was removed and why) is abandoned
+because admin policy on the org domain prevents install of Marketplace Add-ons
+without ticket-driven allowlisting; the web-app pattern needs no admin.
+
+**`handbook-app/` (HB1.2)** is a second clasp project: the handbook, read-only, for the
+whole domain. Only `Handbook.js` is hand-written; the rest are COPIES `npm run
+handbook:sync` writes from `web-app/` — never edit one; CI fails until re-synced
+([why](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)).
 
 ## Development
 
-`web-app/` is the only clasp project.
+`web-app/` is Team Tools; `npm run handbook:push` checks and pushes `handbook-app/`.
 
 ```bash
 cd <project-name>
@@ -131,8 +133,8 @@ never off a doc — and the `── Suite environment ──` block at the top o
 log names every deployment setting the outcome depends on (instance markers,
 `ADMIN_EMAILS`, `MANAGER_EMAILS`, the fixture properties, the TEST rows).
 
-**Only `web-app/` is clasp-synced / deployed.** Everything else in the repo is
-local-only and never reaches the live Apps Script project: `test/` (the Node
+**Only `web-app/` and `handbook-app/` are clasp-synced / deployed.** Everything else in the repo is
+local-only and never reaches a live Apps Script project: `test/` (the Node
 harnesses) and `docs/` — including **`docs/design_handoff_team_tools_redesign/`**
 (the redesign mockups: `*.dc.html` static mockups, `support.js`, screenshots,
 `icons_snippet.md`). Those design-handoff files are **non-deployed reference
@@ -596,6 +598,7 @@ for the reasoning, which is usually the part that matters.
 - [A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)](docs/design-decisions.md#a-named-button-shows-its-screenshot)
 - [The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)](docs/design-decisions.md#the-handbook-rendering-layer-is-a-shared-partial)
 - [The handbook reader reaches its host only through `MANUAL_HOST`, and keeps its own state on `MANUAL_STATE` (handbook app HB1.1b, operator 2026-10-28)](docs/design-decisions.md#the-handbook-reader-reaches-its-host-through-manual-host)
+- [The handbook app is a second project fed by a derived copy of Team Tools' readers — it supplies the environment and never writes (handbook app HB1.2, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)
 
 ## Operator State Checklist
 
@@ -760,6 +763,7 @@ the dated round entries that used to sit here moved to
 - [The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger: 3 failed attempts, then a 24-hour wait or a manager reset (cycle 23 TRN-1)](docs/operator-state.md#operator-the-quizresets-tab-cycle-23)
 - [The CDR Report's `DO NOT EDIT!` roster tab feeds the intake Sales/PAP recipients — `CONFIG.INTAKE.TEAM_*`, first.last addresses (25post B6)](docs/operator-state.md#operator-the-do-not-edit-roster-tab-feeds-intake-recipients)
 - [The procedures manual import — export, choose `manual.json` from the computer (no Drive — the domain disables it), Check → Import → Publish; the `ManualImport`, `ManualMeta` and `ManualImages` tabs; a diagram change is a deploy; the export's xref report and the search synonyms the file carries; since the cycle 24 renumber, deploy first, tick the removal box and publish by chapter (22post M1–M5b, M4-FU3)](docs/operator-state.md#operator-the-procedures-manual-import-22post-m)
+- [The handbook app (`handbook-app/`, HB1.2) — `clasp create`, the `HANDBOOK_KB_SS_ID` Script Property, a domain-only deployment; re-sync and push it whenever the handbook reader or its server readers change](docs/operator-state.md#operator-the-handbook-app-hb1-2)
 
 Documented ONLY in the operator log, because the round that introduced them is
 the only place they are explained — all three are operator-settable, so they are
@@ -960,7 +964,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1432 | `node test/client/run.js` |
+| Pure harness tests | 1437 | `node test/client/run.js` |
 | DOM harness tests | 301 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 186 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
