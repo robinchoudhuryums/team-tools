@@ -27123,28 +27123,28 @@ test('F-50: the linter\'s ADVANCED-service globals come from appsscript.json, no
   // (b) BEHAVIOURAL: drive the derivation over a manifest the repo does not
   // have. A structural "it reads appsscript.json" assertion would pass for a
   // function that reads the file and returns [] regardless.
-  const src = lint.slice(lint.indexOf('function advancedServiceGlobals()'));
+  const src = lint.slice(lint.indexOf('function advancedServiceGlobals(dir)'));   // HB1.2: per project
   const fn = src.slice(0, src.indexOf('\n}') + 2);
   const written = {};
   const sb = vm.createContext({
     fs: { readFileSync: (p) => written[String(p)] },
     path: { join: (...a) => a.join('/') },
-    WEB_APP: 'W', JSON, console,
+    JSON, console,
   });
   vm.runInContext(fn + '\nthis.advancedServiceGlobals = advancedServiceGlobals;', sb, { filename: 'lint-server#advancedServiceGlobals' });
   written['W/appsscript.json'] = JSON.stringify({ dependencies: {} });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), [],
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals('W'))), [],
     'no enabledAdvancedServices → no advanced globals (the repo\'s current manifest)');
   written['W/appsscript.json'] = JSON.stringify({ dependencies: { enabledAdvancedServices: [
     { userSymbol: 'Drive', serviceId: 'drive', version: 'v3' },
     { userSymbol: 'Docs', serviceId: 'docs', version: 'v1' },
   ] } });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), ['Drive', 'Docs'],
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals('W'))), ['Drive', 'Docs'],
     'enabling a service makes its userSymbol a global — under the SYMBOL, not the serviceId');
   written['W/appsscript.json'] = JSON.stringify({ dependencies: { enabledAdvancedServices: [
     { serviceId: 'drive', version: 'v3' },
   ] } });
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals())), [],
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.advancedServiceGlobals('W'))), [],
     'an entry with no userSymbol declares no global (never `undefined` into the globals map)');
 
   // (c) And the real manifest still agrees with what the linter runs against.
@@ -40328,6 +40328,195 @@ test('HB1.1c: the shared file\'s SHELL NEEDS header names exactly the page globa
     stated[key] = m[2].replace(/\([^)]*\)/g, '').split(',').map((x) => x.trim()).filter(Boolean).sort();
   }
   assert.deepStrictEqual(stated, derived, 'the SHELL NEEDS header and the code agree');
+});
+
+// HB1.2 — the handbook app (handbook-app/): a second Apps Script project whose
+// server is Team Tools' handbook readers COPIED by scripts/handbook-sync.mjs
+// (a dependency walk from what Handbook.js names, stopping at what it declares)
+// and whose reader is the shared partial, copied byte for byte. CI runs the
+// sync's --check; these pins hold what the copy must be and drive the result.
+console.log('\nHB1.2 — the handbook app');
+
+const HB_ROOT = path.join(__dirname, '../..');
+const HB_SYNC = path.join(HB_ROOT, 'scripts/handbook-sync.mjs');
+function hbSync_(args) {
+  const r = require('child_process').spawnSync(process.execPath, [HB_SYNC].concat(args), { encoding: 'utf8' });
+  const json = (r.stdout || '').split('\n').filter((l) => l.charAt(0) === '{').pop();
+  return { status: r.status, out: r.stdout || '', err: r.stderr || '', report: json ? JSON.parse(json) : null };
+}
+
+test('HB1.2-a: handbook-app/ matches what the sync writes, and the copy is the four-name environment plus Team Tools\' readers', () => {
+  const r = hbSync_(['--check', '--json']);
+  assert.strictEqual(r.status, 0, 'the copies are current:\n' + r.err);
+  // The environment Handbook.js supplies — Team Tools' roster gate, store and
+  // KB-tab creator become the handbook's. A NEW name here means a copied reader
+  // now depends on something the handbook replaces: decide it, then list it.
+  assert.deepStrictEqual(r.report.supplied, ['fmtDate_', 'getEmployeeInfo_', 'getKbSS_', 'getOrCreateKbSheet_']);
+  assert.deepStrictEqual(r.report.renames, { getKbImages: 'ttGetKbImages_', getManualImages: 'ttGetManualImages_', getManualMeta: 'ttGetManualMeta_',
+    getManualPart: 'ttGetManualPart_', getManualParts: 'ttGetManualParts_', getReferenceItem: 'ttGetReferenceItem_' });
+  const gen = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/kb_shared.js'), 'utf8');
+  assert.ok(!/^(?:function|const|let|var) CONFIG\b/m.test(gen), 'CONFIG never ships — only the picked values');
+  // No PUBLIC function in the generated file: everything reachable by
+  // google.script.run is declared, on purpose, in Handbook.js (g143).
+  const pub = [...gen.matchAll(/^function (\w+)\(/gm)].map((m) => m[1]).filter((n) => !/_$/.test(n));
+  assert.deepStrictEqual(pub, [], 'the generated file declares no public function');
+  // The client copies are the web-app files byte for byte under one banner line.
+  ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html'].forEach((f) => {
+    const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8');
+    assert.strictEqual(copy.slice(copy.indexOf('\n') + 1), fs.readFileSync(path.join(HB_ROOT, 'web-app', f), 'utf8'), f + ' is a byte copy');
+  });
+});
+
+test('HB1.2-b: the sync refuses a copied WRITE and a reach into CONFIG, and names what it refused', () => {
+  const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'hb12-'));
+  const W = path.join(HB_ROOT, 'web-app');
+  const build = (mutate) => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    ['web-app/shared', 'web-app/kb', 'handbook-app'].forEach((d) => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+    fs.copyFileSync(path.join(W, '.clasp.json'), path.join(tmp, 'web-app/.clasp.json'));
+    JSON.parse(fs.readFileSync(path.join(W, '.clasp.json'), 'utf8')).filePushOrder.forEach((f) => fs.copyFileSync(path.join(W, f), path.join(tmp, 'web-app', f)));
+    ['shared/script_manual_render.html', 'kb/script_manual_diagrams.html', 'script_icons.html'].forEach((f) => fs.copyFileSync(path.join(W, f), path.join(tmp, 'web-app', f)));
+    fs.copyFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), path.join(tmp, 'handbook-app/Handbook.js'));
+    if (mutate) mutate(tmp);
+    return hbSync_(['--root', tmp]);
+  };
+  const edit = (rel, from, to) => (dir) => {
+    const p = path.join(dir, rel), s = fs.readFileSync(p, 'utf8');
+    assert.ok(s.indexOf(from) >= 0, 'the mutation anchor exists: ' + from);
+    fs.writeFileSync(p, s.replace(from, to));
+  };
+  try {
+    // Control: the real tree builds, and writes the generated file.
+    const ok = build(null);
+    assert.strictEqual(ok.status, 0, 'the unmutated tree builds: ' + ok.err);
+    assert.ok(fs.existsSync(path.join(tmp, 'handbook-app/kb_shared.js')));
+    // A write inside a copied reader (two hops from a root).
+    const w = build(edit('web-app/70_kb.js', 'function kbManualRecent_(changelog, visible, todayIso, days, max) {',
+      'function kbManualRecent_(changelog, visible, todayIso, days, max) {\n  if (!changelog) PropertiesService.getScriptProperties().setProperty(\'X\', \'1\');'));
+    assert.strictEqual(w.status, 1, 'a copied write is refused');
+    assert.ok(/kbManualRecent_ \(70_kb\.js\) calls \.setProperty\(\)/.test(w.err), 'and named: ' + w.err);
+    // Handbook.js reaching CONFIG directly.
+    const c = build(edit('handbook-app/Handbook.js', 'function fmtDate_(d) {', 'function hbTz_() { return CONFIG.TIMEZONE; }\nfunction fmtDate_(d) {'));
+    assert.strictEqual(c.status, 1, 'a reach into CONFIG is refused');
+    assert.ok(/reached CONFIG/.test(c.err), c.err);
+    // A tt-name with no Team Tools original.
+    const t = build(edit('handbook-app/Handbook.js', 'return ttGetManualMeta_();', 'return ttGetManualMetta_();'));
+    assert.strictEqual(t.status, 1, 'a private copy of nothing is refused');
+    assert.ok(/declares no getManualMetta/.test(t.err), t.err);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+/** The handbook server in a sandbox: kb_shared.js + Handbook.js over fake
+ *  Apps Script services. `reads` counts sheet reads; tabs is name → rows. */
+function hbServer_(opts) {
+  const reads = { n: 0 };
+  const sheetOf = (rows) => ({
+    getLastRow: () => rows.length,
+    getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
+    getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; } }),
+  });
+  const store = new Map();
+  const cache = {
+    get: (k) => (store.has(k) ? store.get(k) : null),
+    getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; },
+    put: (k, v) => { store.set(k, v); }, putAll: (o) => { Object.keys(o).forEach((k) => store.set(k, o[k])); }, remove: (k) => store.delete(k),
+  };
+  const sb = vm.createContext({
+    console, JSON, Math, Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,
+    Session: { getActiveUser: () => ({ getEmail: () => opts.email || '' }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null }) },
+    SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (opts.tabs && opts.tabs[n] ? sheetOf(opts.tabs[n]) : null) }) },
+    CacheService: { getScriptCache: () => cache },
+    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+  });
+  ['kb_shared.js', 'Handbook.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  sb.__reads = reads;
+  return sb;
+}
+const HB_KB_HEAD = ['Id', 'Department', 'Title', 'Type', 'BodyMd', 'DriveKind', 'DriveFileId', 'SortOrder', 'UpdatedAt', 'UpdatedBy', 'ReviewedAt', 'ReviewedBy', 'Status'];
+const hbRow_ = (id, dept, title, body, status, sort) => [id, dept, title, 'article', body, '', '', sort || 0, '', '', '', '', status || ''];
+const hbTabs_ = () => ({
+  KB: [HB_KB_HEAD,
+    hbRow_('man-1-1', '1 · Intro', '1.1 Welcome', 'Hello', 'published', 1),
+    hbRow_('man-1-2', '1 · Intro', '1.2 Unreleased', 'Secret draft', 'draft', 2),
+    hbRow_('kb-pricing', 'Sales', 'Pricing', 'Team Tools only', 'published', 1),
+    hbRow_('man-2-1', '2 · Mobility', '2.1 Chairs', 'Wheels', '', 1)],
+  ManualMeta: [['Meta'], [JSON.stringify({ version: '3.0', changelog: [
+    { id: 'man-1-1', date: new Date().toISOString().slice(0, 10), num: '1.1', summary: 'New welcome' },
+    { id: 'man-1-2', date: new Date().toISOString().slice(0, 10), num: '1.2', summary: 'Draft change' }] })]],
+});
+const HB_ENV = { email: 'rep@example.org', props: { HANDBOOK_KB_SS_ID: 'ss1' } };
+const hbPlain_ = (v) => JSON.parse(JSON.stringify(v));
+
+test('HB1.2-c: the handbook server serves published handbook sections to any signed-in reader, and nothing else', () => {
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  const parts = hbPlain_(sb.getManualParts());
+  assert.deepStrictEqual(parts.parts.map((p) => [p.department, p.sections.map((s) => s.id)]),
+    [['1 · Intro', ['man-1-1']], ['2 · Mobility', ['man-2-1']]], 'published handbook sections only: no draft, no Reference article');
+  assert.strictEqual(parts.isAdmin, false, 'nobody is an admin in the handbook app');
+  assert.deepStrictEqual(hbPlain_(sb.getManualPart('1 · Intro')).sections.map((s) => s.id), ['man-1-1'], 'one chapter, same rule');
+  assert.strictEqual(hbPlain_(sb.getManualMeta()).version, '3.0');
+  // Cross-references: handbook sections only, a draft is not found, and a
+  // Reference article is answered as Team Tools' without reading the sheet.
+  assert.strictEqual(sb.getReferenceItem('man-2-1').bodyMd, 'Wheels');
+  assert.strictEqual(sb.getReferenceItem('man-1-2').error, 'Not found.', 'a draft is indistinguishable from missing');
+  const before = sb.__reads.n;
+  assert.ok(/Team Tools' Reference/.test(sb.getReferenceItem('kb-pricing').error), 'a Reference article is not served');
+  assert.strictEqual(sb.__reads.n, before, 'and its refusal reads nothing');
+  // What's new: the window's PUBLISHED changes.
+  assert.deepStrictEqual(hbPlain_(sb.getManualRecent()).items.map((i) => i.id), ['man-1-1'], 'a draft\'s change is not news');
+  // The endpoints the handbook does not serve fail in the shape their caller reads as failure.
+  assert.strictEqual(sb.kbFlagItem('man-1-1', 'helpful', '').success, false);
+  assert.strictEqual(sb.kbGetImageData('x').success, false);
+  assert.ok(sb.kbMapDistances('a', []).error);
+});
+
+test('HB1.2-d: the parts read is cached, a refusal or error never is, and setup failures name the setting', () => {
+  // Cached: the second visit reads no sheet.
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  sb.getManualParts();
+  const n = sb.__reads.n;
+  assert.ok(n > 0, 'the first read reads the sheet');
+  assert.strictEqual(hbPlain_(sb.getManualParts()).parts.length, 2);
+  assert.strictEqual(sb.__reads.n, n, 'the second is served from the cache');
+  // Not signed in: refused, before any read.
+  const anon = hbServer_({ tabs: hbTabs_(), props: HB_ENV.props });
+  ['getManualParts', 'getManualMeta', 'getManualRecent', 'getManualPart', 'getManualImages', 'getKbImages', 'getReferenceItem'].forEach((f) => {
+    const r = anon[f](f === 'getReferenceItem' ? 'man-1-1' : f === 'getManualPart' ? '1 · Intro' : ['k']);
+    assert.strictEqual(r.error, 'Not authorized.', f + ' refuses an anonymous caller');
+  });
+  assert.strictEqual(anon.__reads.n, 0, 'without reading the sheet');
+  // The spreadsheet setting unset: said by name — and not cached, so setting it
+  // takes effect on the next visit.
+  const opts = { email: HB_ENV.email, props: {}, tabs: hbTabs_() };
+  const unset = hbServer_(opts);
+  assert.ok(/HANDBOOK_KB_SS_ID Script Property is not set/.test(unset.getManualParts().error));
+  opts.props.HANDBOOK_KB_SS_ID = 'ss1';
+  assert.strictEqual(hbPlain_(unset.getManualParts()).parts.length, 2, 'an error was not cached');
+  // The KB tab missing: named, never created.
+  const noTab = hbServer_(Object.assign({ tabs: { ManualMeta: hbTabs_().ManualMeta } }, HB_ENV));
+  assert.ok(/"KB" tab is missing/.test(noTab.getManualParts().error));
+});
+
+test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server call the shared reader makes is one, and the deployment is domain-only and read-only', () => {
+  const HB = path.join(HB_ROOT, 'handbook-app');
+  const own = fs.readdirSync(HB).filter((f) => f.endsWith('.js') && f !== 'kb_shared.js');
+  const pub = [];
+  own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
+  assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
+    'getManualRecent', 'getReferenceItem', 'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances'],
+    'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
+  // The reader's own statement of the server functions it calls (HB1.1c's header).
+  const shared = fs.readFileSync(path.join(HB, 'shared/script_manual_render.html'), 'utf8');
+  const line = /^\/\/   server[^:]*: ([^\n]+)$/m.exec(shared);
+  assert.ok(line, 'the shared reader states its server needs');
+  line[1].split(',').map((s) => s.trim()).forEach((n) => assert.ok(pub.indexOf(n) >= 0, 'the handbook app answers ' + n));
+  const m = JSON.parse(fs.readFileSync(path.join(HB, 'appsscript.json'), 'utf8'));
+  assert.deepStrictEqual(m.webapp, { executeAs: 'USER_DEPLOYING', access: 'DOMAIN' }, 'any signed-in employee of the domain; runs as the deployer');
+  assert.deepStrictEqual(m.oauthScopes.slice().sort(), ['https://www.googleapis.com/auth/spreadsheets.readonly', 'https://www.googleapis.com/auth/userinfo.email'],
+    'read-only spreadsheets and the reader\'s address — nothing that writes');
+  const clasp = JSON.parse(fs.readFileSync(path.join(HB, '.clasp.json'), 'utf8'));
+  assert.deepStrictEqual(clasp.filePushOrder, ['kb_shared.js'].concat(own.sort()), 'the generated file loads first, then every hand-written one');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

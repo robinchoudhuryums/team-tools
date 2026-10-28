@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  /* HB1.2's setup check — HB1.3 replaces this page with the app's frame and
+     the shared reader (shared/script_manual_render.html, copied by the sync). */
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #d9dee7; --bg: #f7f8fa; --card: #fff; --bad: #a3271f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e6e9ef; --muted: #a3abba; --line: #343b49; --bg: #14171d; --card: #1c2028; --bad: #ff8a80; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  ul { margin: 0; padding-left: 20px; }
+  .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>UMS Handbook</h1>
+  <p class="sub" id="hb-sub" role="status">Checking the handbook…</p>
+  <div class="card" id="hb-out" hidden></div>
+</main>
+<script>
+function hbEsc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function hbFail_(msg) {
+  var sub = document.getElementById('hb-sub');
+  sub.className = 'sub bad';
+  sub.textContent = 'The handbook could not be read: ' + (msg || 'the server did not answer') + '.';
+}
+google.script.run.withSuccessHandler(function (meta) {
+  if (!meta || meta.error) { hbFail_(meta && meta.error); return; }
+  google.script.run.withSuccessHandler(function (res) {
+    if (!res || res.error) { hbFail_(res && res.error); return; }
+    var parts = res.parts || [];
+    var count = 0;
+    parts.forEach(function (p) { count += (p.sections || []).length; });
+    document.getElementById('hb-sub').textContent = meta.none
+      ? 'No handbook has been imported yet.'
+      : 'Version ' + (meta.version || '—') + ' · ' + parts.length + ' chapters · ' + count + ' published sections';
+    if (!parts.length) return;
+    var out = document.getElementById('hb-out');
+    out.innerHTML = '<ul>' + parts.map(function (p) {
+      return '<li>' + hbEsc_(p.department) + ' — ' + (p.sections || []).length + ' sections</li>';
+    }).join('') + '</ul>';
+    out.hidden = false;
+  }).withFailureHandler(function (e) { hbFail_(e && e.message); }).getManualParts();
+}).withFailureHandler(function (e) { hbFail_(e && e.message); }).getManualMeta();
+</script>
+</body>
+</html>
