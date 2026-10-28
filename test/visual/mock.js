@@ -1537,9 +1537,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         days.push({ date: ds, dayLabel: DAY_ABBR[dow] + ', ' + MN[cur.getUTCMonth()] + ' ' + cur.getUTCDate(),
           isWeekend: wk, isToday: isToday, isFuture: future, hasData: has,
           clockIn: has ? '08:02:00' : null, adjClockIn: false,
+          infClockIn: has && cur.getUTCDate() % 7 === 0,   // E2: an inferred Clock In on camera
           lunchOut: has ? '12:00:00' : null, adjLunchOut: false,
           lunchIn: has ? '12:30:00' : null, adjLunchIn: false,
-          clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false,
+          clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false, infClockOut: false,
           // Every break pair, mirroring buildTimesheetForEmployee_ (INV-185).
           breaks: has ? [{ out: '12:00:00', in: '12:30:00' }] : [],
           hoursWorked: hrs, isIncomplete: inc, inProgress: false });
@@ -1787,7 +1788,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return {
         days: [{
           date: start, dayName: 'Tue',
-          clockIn: '08:00:00', clockOut: '21:00:00',
+          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: false, infClockOut: false,
           lunchOut: '12:00:00', lunchIn: '12:30:00',
           breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
           openBreak: null,   // T1: a closed day — the leave-with-no-return field is null
@@ -1800,6 +1801,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Operator 2026-09-03: the queue sits beside Pending Time Off, so the
     // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
     // own push literal — INV-185).
+    // E2 (operator 2026-10-28): Day Edit's app-activity read — a FUNCTION of
+    // the date (F14). Keys mirror managerGetDayActivity's return (INV-185):
+    // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
+    managerGetDayActivity: function (empId, date) {
+      var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
+      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 60,
+        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
+    },
     managerGetPendingAdjustments: { requests: [
       { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
       { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
@@ -1822,9 +1831,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getTeamCalendar: function (month) {
       var y = parseInt(month.slice(0, 4), 10), m = parseInt(month.slice(5, 7), 10);
       var reps = [
-        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, breaks: [{ out: '12:00:00', in: '12:30:00' }], hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
-        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, breaks: [{ out: '11:45:00', in: '12:15:00' }, { out: '15:00:00', in: '15:10:00' }], hours: 8.35, incomplete: false, inProgress: false, punchCount: 6 },
-        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, breaks: [], hours: null, incomplete: true, inProgress: false, punchCount: 1 },
+        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, infClockIn: true, infClockOut: false, breaks: [{ out: '12:00:00', in: '12:30:00' }], hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
+        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, infClockIn: false, infClockOut: false, breaks: [{ out: '11:45:00', in: '12:15:00' }, { out: '15:00:00', in: '15:10:00' }], hours: 8.35, incomplete: false, inProgress: false, punchCount: 6 },
+        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, infClockIn: false, infClockOut: false, breaks: [], hours: null, incomplete: true, inProgress: false, punchCount: 1 },
       ];
       var days = {}, last = new Date(y, m, 0).getDate();
       for (var d = 1; d <= last; d++) {

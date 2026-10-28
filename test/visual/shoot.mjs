@@ -67,6 +67,9 @@ const KBL_ELIG_CARDS = KBL_SEARCH +
 // mock answers "not imported" for these keys, then one chip is put back to
 // loading and one to failed, so all three (and an article image's "not
 // stored") are in one shot.
+const DAYEDIT_ACTIVITY = "openDayEditModal('E-1077', 'Nina Patel', new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10));" +
+  " setTimeout(function(){ ['de-clockin','de-clockout'].forEach(function(id){ var e=document.getElementById(id); e.value=''; e.dispatchEvent(new Event('input')); });" +
+  " deApplySuggestion_('ClockIn'); }, 500)";
 const KBL_IMG_STATES = "var m=document.getElementById('kb-main'); if(m){ m.innerHTML='<div class=\"kb-article\"><h2>Image states</h2>' +" +
   " kbMd_('![The Log screen](manimg:fig-d4-load)\\n\\n![The New Order button](manimg:fig-d4-gone)\\n\\n![The Patient tab](manimg:fig-d4-fail)\\n\\nRow icon ![Hold icon](manimg:icon-d4-gone) beside its name.\\n\\n![Old screenshot](kbimg:kbimg-000000000000000000000000)') + '</div>';" +
   " setTimeout(function(){ var c=m.querySelectorAll('.kb-manimg'); if(c[0]) kbImgChipState_(c[0],'data-mi','loading'); if(c[2]) kbImgChipState_(c[2],'data-mi','failed'); }, 600); }";
@@ -467,6 +470,11 @@ const SCENARIOS = [
     "openDayEditModal('E-1077', 'Nina Patel')"],
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
+  // Round 12 E2 (operator 2026-10-28): the app-activity strip with both
+  // suggestions — a past day, both clock slots cleared, Clock In applied (so
+  // the Inferred tag is on camera beside the Out suggestion still offered).
+  ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
+  ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
   // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
   // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
   // camera; the phone width is where the radio labels wrap.

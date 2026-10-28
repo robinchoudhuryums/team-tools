@@ -1231,6 +1231,7 @@ function purgeOldDiagnostics() {
     lock.waitLock(15000);
     let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
     let ks = { removed: 0, hitCap: false }, ksError = '';
+    let al = { removed: 0, hitCap: false };
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1243,6 +1244,9 @@ function purgeOldDiagnostics() {
       }
       dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
       budget -= dd.removed;
+      // 25post round 12 E2: the app-activity record keeps ACTIVITY_LOG_DAYS.
+      al = diagPurgeTab_(ss.getSheetByName(ACTIVITY_LOG_TAB), Date.now() - ACTIVITY_LOG_DAYS * 86400000, budget);
+      budget -= al.removed;
       // E6: the search signal lives on the KB store. One that cannot be opened
       // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
       // a store with no signal tab has nothing to purge.
@@ -1252,15 +1256,16 @@ function purgeOldDiagnostics() {
     } finally {
       lock.releaseLock();
     }
-    const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap;
+    const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap || al.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
+      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${ks.removed} KbSearchSignal row(s)` +
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s)` +
       (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') + '.');
     return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
-             searchSignalRemoved: ks.removed,
+             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed,
              outcome: ksError ? automationOutcome_('partial', 'the search signal was not purged — the KB store could not be opened: ' + ksError, ['KbSearchSignal'])
                               : automationOutcome_('ok') };
   });

@@ -458,7 +458,12 @@ const CONFIG = {
                            // than this. Editing an item counts as reviewing it.
   },
 };
-const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
+const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8,
+  // 25post round 12 E2 (operator 2026-10-28) — column J, BEYOND the nine the
+  // ADP upload carries (the export copies A..I only): ADP_INFERRED_MARK on a
+  // Clock In / Clock Out a manager saved from the app-activity suggestion.
+  INFERRED:9 };
+const ADP_INFERRED_MARK = 'Inferred (app activity)';
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 // Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {
@@ -955,6 +960,19 @@ const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip na
 const PRESENCE_LAST_PREFIX = 'presence_last_v1:';
 const PRESENCE_LAST_TTL_SEC = 21600;
 const IDLE_ALERT_MIN = 30;
+// 25post round 12 E2 (operator 2026-10-28) — the app-activity RECORD. Each
+// presence ping (a real gesture, at most one per window per
+// PRESENCE_MIN_GAP_MS on the client) also appends [time, empId, ms] to this
+// ADP-sheet tab; the manager's Day Edit charts a day of it in
+// ACTIVITY_BLOCK_MIN blocks and offers the first / last ping as a suggested
+// Clock In / Clock Out. Ids and times only — no page, no content. Rows past
+// ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
+const ACTIVITY_LOG_TAB = 'ActivityLog';
+const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
+const ACTIVITY_LOG_DAYS = 60;
+const ACTIVITY_BLOCK_MIN = 10;
+const EXPORT_INFERRED_LIST_MAX = 50;   // the inferred punches an export names beside its link / in its email
+const ACTIVITY_PING_GAP_MIN = 10;   // = the client's PRESENCE_MIN_GAP_MS (pinned): a ping is a sample, at most one per window per gap
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
 // Turns the same per-rep tag scan the taxonomy uses into a weekly time series

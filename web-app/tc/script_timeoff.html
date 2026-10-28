@@ -841,6 +841,9 @@ function payStmtHtml_(d) {
     const lunch = (x.lunchOut && x.lunchIn) ? ` · lunch ${dispTime(x.lunchOut)}–${dispTime(x.lunchIn)}` : '';
     const adj = (x.adjClockIn || x.adjClockOut || x.adjLunchOut || x.adjLunchIn)
       ? ' <span style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 3px">ADJ</span>' : '';
+    // Round 12 E2: a Clock In / Out a manager set from app activity says so.
+    const infWhich = [x.infClockIn ? 'Clock In' : '', x.infClockOut ? 'Clock Out' : ''].filter(Boolean).join(' and ');
+    const inf = infWhich ? ' <span class="punch-inf-chip" title="' + esc(infWhich) + ' inferred from app activity by a manager">Inferred</span>' : '';
     let right;
     if (typeof x.hoursWorked === 'number') right = `<b>${fmtHrs(x.hoursWorked)}</b>`;
     else if (x.inProgress) right = '<span style="color:var(--muted)">in progress</span>';
@@ -864,7 +867,7 @@ function payStmtHtml_(d) {
     const adjLines = (adjByDate[x.date] || []).map(payStmtAdjLine_).join('');
     rows += `<div class="pay-stmt-row" style="display:flex;align-items:baseline;gap:10px;padding:5px 0;${adjLines ? '' : 'border-bottom:1px dashed var(--line);'}font-size:13px">
       <span style="flex:0 0 84px;color:var(--muted)">${esc(x.dayLabel)}</span>
-      <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
+      <span style="flex:1;min-width:0">${x.hasData ? esc(inOut) + esc(lunch) + adj + inf : ptoBit || '<span style="color:var(--muted-3)">no punches</span>'}${x.hasData && pto ? ' · ' + ptoBit : ''}</span>
       <span style="flex:0 0 auto">${right}${fixBtn}${editBtn}</span>
     </div>` + (adjLines ? `<div style="padding-bottom:5px;border-bottom:1px dashed var(--line)">${adjLines}</div>` : '');
   });

@@ -6714,6 +6714,7 @@ function test_managerGates_rejectNonManager() {
     ['getManagerDashboard',            function () { return getManagerDashboard(); }],
     ['getEmployeesList',               function () { return getEmployeesList(); }],
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
+    ['managerGetDayActivity',          function () { return managerGetDayActivity(_TEST_INDIA_ID, D); }],   // 25post round 12 E2
     // Pay statement (2026-08-17): rep-callable for SELF; the repEmpId branch —
     // viewing ANOTHER rep's hours + rate — is the manager-gated surface. The
     // omnibus runs as the INDIA employee, so the target must be a DIFFERENT id

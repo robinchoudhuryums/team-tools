@@ -3382,6 +3382,42 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2: app-activity record, inferred punches",
+   "added": [
+    "ACTIVITY_BLOCK_MIN",
+    "ACTIVITY_LOG_DAYS",
+    "ACTIVITY_LOG_HEADERS",
+    "ACTIVITY_LOG_TAB",
+    "ACTIVITY_PING_GAP_MIN",
+    "ADP_INFERRED_MARK",
+    "EXPORT_INFERRED_LIST_MAX",
+    "activityDayView_",
+    "activityLogAppend_",
+    "activityLowerBound_",
+    "adpRowInferred_",
+    "adpSetInferred_",
+    "exportInferredLines_",
+    "getOrCreateActivityLogSheet_",
+    "managerGetDayActivity"
+   ],
+   "removed": [],
+   "changed": [
+    "ADP",
+    "buildTimesheetForEmployee_",
+    "exportAdpRange",
+    "generateExportSheet_",
+    "getTeamCalendar",
+    "managerSaveDay",
+    "purgeOldDiagnostics",
+    "recordPresence",
+    "recordPunchCore_",
+    "sendAutomatedExport_",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3406,6 +3442,31 @@
    "kind": "const",
    "sha": "68179aeacaee5fa7"
   },
+  "ACTIVITY_BLOCK_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c7cc886b0ad0d18"
+  },
+  "ACTIVITY_LOG_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b21e39683a05fc7"
+  },
+  "ACTIVITY_LOG_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e505c21fd4c7cd11"
+  },
+  "ACTIVITY_LOG_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee581345428888ca"
+  },
+  "ACTIVITY_PING_GAP_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "46ddb07ec8694106"
+  },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3424,7 +3485,12 @@
   "ADP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "481c8853995f98b9"
+   "sha": "da28af4268944744"
+  },
+  "ADP_INFERRED_MARK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1aa2ab0422a9bbfd"
   },
   "AUDIT": {
    "file": "00_config.js",
@@ -4235,6 +4301,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "41ad9d2f188e970d"
+  },
+  "EXPORT_INFERRED_LIST_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e9709e064da01c77"
   },
   "FEATURE_FLAGS": {
    "file": "00_config.js",
@@ -6191,6 +6262,21 @@
    "kind": "function",
    "sha": "df83ecfc4e87c13a"
   },
+  "activityDayView_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "03292fac00a86c3a"
+  },
+  "activityLogAppend_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ddb5653e1d3ad4cd"
+  },
+  "activityLowerBound_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7403e00a892d6365"
+  },
   "addDaysIso_": {
    "file": "10_core.js",
    "kind": "function",
@@ -6275,6 +6361,16 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "118f9fb9ee8cb5c7"
+  },
+  "adpRowInferred_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "412bc7634984ca10"
+  },
+  "adpSetInferred_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9cccd794604fcf79"
   },
   "adpSheetTz_": {
    "file": "20_timeclock.js",
@@ -6644,7 +6740,7 @@
   "buildTimesheetForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4356b3a08f9d1677"
+   "sha": "fe184a871f78fa35"
   },
   "businessHours_": {
    "file": "10_core.js",
@@ -7699,7 +7795,7 @@
   "exportAdpRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "02eaa7a2128131db"
+   "sha": "eb7a0b3fafd561cc"
   },
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
@@ -7710,6 +7806,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "653981af8af81fb6"
+  },
+  "exportInferredLines_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b95f21d3f52e692d"
   },
   "featureFlagDef_": {
    "file": "10_core.js",
@@ -7884,7 +7985,7 @@
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9ffc6d2b720956ab"
+   "sha": "b51a274aec3efc3c"
   },
   "generateFormToken_": {
    "file": "61_forms.js",
@@ -8506,6 +8607,11 @@
    "kind": "function",
    "sha": "86eb2f778ca64250"
   },
+  "getOrCreateActivityLogSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "71fb74417f40b00a"
+  },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
    "kind": "function",
@@ -8819,7 +8925,7 @@
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e4b50f577934318c"
+   "sha": "0dfcd18c45f20024"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",
@@ -10136,6 +10242,11 @@
    "kind": "function",
    "sha": "94bfdba1c729f2c4"
   },
+  "managerGetDayActivity": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d42b4244adafc606"
+  },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
    "kind": "function",
@@ -10179,7 +10290,7 @@
   "managerSaveDay": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "634cf286cec0efd0"
+   "sha": "a1e05e4a5cf40233"
   },
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
@@ -10719,7 +10830,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "669a180408e35da6"
+   "sha": "6c9eba6a14358197"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -11169,7 +11280,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2083a19d07eeee49"
+   "sha": "d62347fbaf382f9e"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -11179,7 +11290,7 @@
   "recordPunchCore_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ddd62fcfabe55a70"
+   "sha": "6079b68f68103acc"
   },
   "recordViewEnter": {
    "file": "10_core.js",
@@ -11574,7 +11685,7 @@
   "sendAutomatedExport_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d553965779e62f90"
+   "sha": "21e25fe98b53dc21"
   },
   "sendAutomationHealthDigest": {
    "file": "10_core.js",
@@ -12404,7 +12515,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "5c23f738fc2c7a31"
+   "sha": "16982bc14b7bcff4"
   },
   "writeAuditLog_": {
    "file": "10_core.js",

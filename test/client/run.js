@@ -18612,11 +18612,12 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
   // pattern: never re-declare an enum in the test.
   const tcCtx = vm.createContext({});
   ['const EMP = \\{[\\s\\S]*?\\};', 'const ADP = \\{[\\s\\S]*?\\};', 'const TO  = \\{[\\s\\S]*?\\};',
-   "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];"].forEach(re => {
+   "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';"].forEach(re => {
     const m = new RegExp(re).exec(codeSrc);
     assert.ok(m, 'located: ' + re.slice(0, 20));
     vm.runInContext(m[0], tcCtx);
   });
+  vm.runInContext(extractRawFunction('Code.js', 'adpRowInferred_'), tcCtx);   // E2
   vm.runInContext(extractRawFunction('Code.js', 'timeToMins_'), tcCtx);
   vm.runInContext(extractRawFunction('Code.js', 'breakSortKey_'), tcCtx);
   vm.runInContext(extractRawFunction('Code.js', 'breakPairs_'), tcCtx);
@@ -33259,7 +33260,10 @@ test('TC2-2 (cycle 23): a shift-stats CDR read that failed SAYS so — the serve
 
 // ── cycle 23 — TC-02: a break adjustment says WHICH break ──
 const tc02Ctx_ = (extra) => {
-  const ctx = vm.createContext(Object.assign({ String, Object, Array, JSON, Number, Math, Date, Error }, extra || {}));
+  // E2: the in-place writers unmark an inferred row; recorded, not a real sheet.
+  const inferredCalls = [];
+  const ctx = vm.createContext(Object.assign({ String, Object, Array, JSON, Number, Math, Date, Error,
+    adpSetInferred_: (sh, row, on) => { inferredCalls.push([row, on]); }, __inferredCalls: inferredCalls }, extra || {}));
   vm.runInContext("const BREAK_PUNCH_TYPES = ['LunchOut', 'LunchIn']; const BREAK_INTENT_LAST = Object.freeze({ mode: 'last' }); " +
     "const PUNCH_LABELS_ = ['ClockIn','LunchOut','LunchIn','ClockOut']; const ADJUST_MAX_SHIFT_HOURS = 16;", ctx);
   // TC-05 (cycle 23): the adjust paths also run the clock-span check.
@@ -35822,7 +35826,8 @@ console.log('\ncycle 23 Batch 14 — TC2-9 archive-aware timesheet readers');
 // six readers lean on. `env` = { live, arch, archiveThrows, days, cache }.
 const b14Ctx_ = (fns, env, extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, Set, isFinite, parseInt, RegExp, Error, console: { warn() {} } }, extra || {}));
-  ['const ADP = \\{[\\s\\S]*?\\};', "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];"].forEach((re) => vm.runInContext(new RegExp(re).exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['const ADP = \\{[\\s\\S]*?\\};', "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;'].forEach((re) => vm.runInContext(new RegExp(re).exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  vm.runInContext(extractRawFunction('Code.js', 'adpRowInferred_'), ctx);   // E2 — every reader asks it
   const reads = { live: 0, archFull: 0, archCol: 0 };
   const live = env.live, arch = env.arch;
   const archSheet = arch ? {
@@ -39944,6 +39949,130 @@ test('B8: the manager live view flags only a PUNCHED-IN rep idle IDLE_ALERT_MIN+
   assert.ok(/const PRESENCE_LAST_TTL_SEC = 21600;/.test(codeSrc), 'the cache\'s six-hour ceiling');
   assert.ok(!/idleMin|liveIdleMin_/.test(extractRawFunction('Code.js', 'getTeammateStatus')), 'never on the peer view (g33)');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 25post round 12 E2 (operator 2026-10-28) — the app-activity record and the
+// punches a manager sets from it, marked "Inferred (app activity)".
+// ═══════════════════════════════════════════════════════════════════════════
+const e2aCtx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error,
+    console: { warn() {} } }, extra || {}));
+  ['const ADP = \\{[\\s\\S]*?\\};', "const ADP_INFERRED_MARK = '[^']*';", 'const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
+    'const ACTIVITY_LOG_DAYS = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['activityDayView_', 'activityLowerBound_', 'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'E2a#' + f }));
+  return ctx;
+};
+test('E2a: a day of app activity — pings in 10-minute blocks, first and last, out-of-day minutes dropped; the ping gap is the client\'s (driven)', () => {
+  const c = e2aCtx_();
+  const v = JSON.parse(JSON.stringify(c.activityDayView_([486, 476, 487, 1026, -5, 1440, 'x'], 10)));
+  assert.strictEqual(v.pings, 4, 'four minutes of the day; -5, 1440 and a non-number are not');
+  assert.deepStrictEqual([v.first, v.last], ['07:56', '17:06']);
+  assert.strictEqual(v.blocks.length, 144);
+  assert.deepStrictEqual([v.blocks[47], v.blocks[48], v.blocks[102]], [1, 2, 1], '7:56 in 7:50–8:00; 8:06 and 8:07 share a block');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.activityDayView_([], 10))), { pings: 0, first: '', last: '', blocks: new Array(144).fill(0) });
+  assert.deepStrictEqual([c.activityLowerBound_([1, 3, 3, 9], 3), c.activityLowerBound_([1, 3, 3, 9], 10), c.activityLowerBound_([], 5)], [1, 4, 0]);
+  const gap = /var PRESENCE_MIN_GAP_MS = (\d+) \* 60 \* 1000;/.exec(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
+  assert.ok(gap && Number(gap[1]) === vm.runInContext('ACTIVITY_PING_GAP_MIN', c), 'the gap the card states is the client throttle');
+});
+test('E2a: managerGetDayActivity — manager-gated; reads ONLY that rep\'s pings inside the rep\'s day (a binary search on the time column); no tab is zero pings, said (driven)', () => {
+  const H = 3600000, day0 = Date.UTC(2026, 9, 27);
+  const rows = [[day0 - 2 * H, 'E1'], [day0 + 8 * H, 'E1'], [day0 + 8 * H + 6e5, 'E2'], [day0 + 9 * H, 'E1'], [day0 + 17 * H, 'E1'], [day0 + 25 * H, 'E1']];
+  const reads = [];
+  const sheet = { getLastRow: () => rows.length + 1, getRange: (r, col, n) => { reads.push([r, col, n]);
+    return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => [col === 3 ? x[0] : x[1]]) }; } };
+  let tab = sheet, caller = { isManager: true };
+  const c = e2aCtx_({ getEmployeeInfo_: () => caller, lookupEmployeeById_: (id) => (id === 'E1' ? { id: 'E1' } : null), empTz_: () => 'UTC',
+    getAdpSS_: () => ({ getSheetByName: (t) => (t === 'ActivityLog' ? tab : null) }),
+    isoFromUtc_: (d) => d.toISOString().substring(0, 10),
+    Utilities: { parseDate: (s) => new Date(s.replace(' ', 'T') + 'Z'),
+      formatDate: (d, tz, f) => d.toISOString().substring(11, 16) } });
+  const r = JSON.parse(JSON.stringify(c.managerGetDayActivity('E1', '2026-10-27')));
+  assert.deepStrictEqual([r.pings, r.first, r.last], [3, '08:00', '17:00'], 'the day before and after, and E2, are not counted: ' + JSON.stringify([r.pings, r.first, r.last]));
+  assert.deepStrictEqual(reads.map((x) => x[1]), [3, 2], 'the time column, then only the ids of the day\'s slice');
+  assert.deepStrictEqual(reads[1], [3, 2, 4], 'rows 3..6 — the slice, not the tab');
+  assert.strictEqual(r.gapMin, 10);
+  tab = null;
+  const none = JSON.parse(JSON.stringify(c.managerGetDayActivity('E1', '2026-10-27')));
+  assert.ok(none.noLog && none.pings === 0, 'no tab yet: zero pings, and said');
+  caller = { isManager: false };
+  assert.strictEqual(c.managerGetDayActivity('E1', '2026-10-27').error, 'Manager access required.');
+  caller = { isManager: true };
+  assert.ok(/Invalid date/.test(c.managerGetDayActivity('E1', '27/10/2026').error));
+  assert.ok(/not found/.test(c.managerGetDayActivity('E9', '2026-10-27').error));
+});
+test('E2a: every presence ping is also recorded — best-effort, unlocked, ids and times only; the record is purged after ACTIVITY_LOG_DAYS', () => {
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPresence'));
+  assert.ok(/activityLogAppend_\(emp\.id, Date\.now\(\)\)/.test(rp), 'the gesture ping writes the record');
+  const ap = stripJsComments_(extractRawFunction('Code.js', 'activityLogAppend_'));
+  assert.ok(/try \{[\s\S]*appendRow\(sheetSafeRow_\(\[fmtDate_\(d\) \+ ' ' \+ fmtTime_\(d\), String\(empId\), ms\]\)\)[\s\S]*\} catch/.test(ap), 'one row: time, id, ms — inside a try');
+  assert.ok(!/LockService/.test(ap), 'no lock — every rep\'s gesture would queue on it');
+  const appended = [];
+  const c = vm.createContext({ String, Date, console: { warn() {} }, ACTIVITY_LOG_TAB: 'ActivityLog', fmtDate_: () => '2026-10-27', fmtTime_: () => '08:00:00',
+    sheetSafeRow_: (r) => r, getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => appended.push(r) }) });
+  vm.runInContext(extractRawFunction('Code.js', 'activityLogAppend_'), c);
+  assert.strictEqual(c.activityLogAppend_('E1', 1761555600000), true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(appended[0])), ['2026-10-27 08:00:00', 'E1', 1761555600000]);
+  c.getOrCreateActivityLogSheet_ = () => { throw new Error('quota'); };
+  assert.strictEqual(c.activityLogAppend_('E1', 1), false, 'a failure is swallowed — the presence stamp never depends on it');
+  const pg = stripJsComments_(extractRawFunction('Code.js', 'purgeOldDiagnostics'));
+  assert.ok(/diagPurgeTab_\(ss\.getSheetByName\(ACTIVITY_LOG_TAB\), Date\.now\(\) - ACTIVITY_LOG_DAYS \* 86400000, budget\)/.test(pg), 'the nightly purge keeps 60 days');
+  assert.ok(/activityLogRemoved=\$\{al\.removed\}/.test(pg), 'and its audit row counts them');
+});
+test('E2a: the inferred mark is column J, past the ADP upload\'s nine — set and cleared on a real grid, and the export\'s upload rows never carry it (driven)', () => {
+  const c = e2aCtx_({ sheetSafe_: (v) => v });
+  const cells = {}; let maxCols = 9; const inserted = [];
+  const sh = { getMaxColumns: () => maxCols, insertColumnsAfter: (a, n) => { inserted.push([a, n]); maxCols += n; },
+    getRange: (r, col) => ({ getValue: () => cells[r + ':' + col] || '', setValue: (v) => { cells[r + ':' + col] = v; } }) };
+  c.adpSetInferred_(sh, 5, false);
+  assert.deepStrictEqual([inserted.length, Object.keys(cells).length], [0, 0], 'unmarking a tab with no column J writes nothing');
+  c.adpSetInferred_(sh, 5, true);
+  assert.deepStrictEqual(inserted, [[9, 1]], 'marking grows the grid to column J');
+  assert.deepStrictEqual([cells['1:10'], cells['5:10']], ['Source', 'Inferred (app activity)'], 'and names the column');
+  c.adpSetInferred_(sh, 5, false);
+  assert.strictEqual(cells['5:10'], '');
+  const ADPx = vm.runInContext('ADP', c);
+  assert.strictEqual(ADPx.INFERRED, 9);
+  const row = new Array(10).fill(''); row[9] = 'Inferred (app activity)';
+  assert.deepStrictEqual([c.adpRowInferred_(row), c.adpRowInferred_(new Array(9).fill('')), c.adpRowInferred_(null)], [true, false, false]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.exportInferredLines_([{ id: 'E1', name: 'Avery Blake', date: '2026-10-27', time: '07:56', type: 'ClockIn' }], 3))),
+    ['Avery Blake · 2026-10-27 · Clock In 07:56', 'and 2 more']);
+  // The export: the file is the ADP upload, and stays its nine columns.
+  const ex = stripJsComments_(extractRawFunction('Code.js', 'generateExportSheet_'));
+  assert.ok(/const cleaned = r\.slice\(0, 9\);/.test(ex) && !/insertSheet/.test(ex), 'nine columns, no extra tab');
+  assert.ok(/inferredCount: inferred\.length, inferred: inferred\.slice\(0, EXPORT_INFERRED_LIST_MAX\)/.test(ex), 'the inferred punches ride BESIDE the file');
+  const auto = stripJsComments_(extractRawFunction('Code.js', 'sendAutomatedExport_'));
+  assert.ok(/exportInferredLines_\(result\.inferred, result\.inferredCount\)/.test(auto), 'and the automated email names them');
+});
+test('E2a: managerSaveDay marks a clock slot only when the client says it was APPLIED and left as suggested; every other writer of a punch time clears the mark', () => {
+  const sd = stripJsComments_(extractRawFunction('Code.js', 'managerSaveDay'));
+  assert.ok(/inferredIn\[t\] = !!\(slots && slots\.inferred && slots\.inferred\[t\] === true && cleanSlots\[t\]\);/.test(sd), 'only a set slot, and only an explicit true');
+  assert.ok(/if \(u\.type === 'ClockIn' \|\| u\.type === 'ClockOut'\) adpSetInferred_\(sheet, u\.rowIndex, inferredIn\[u\.type\]\);/.test(sd), 'an update sets OR clears');
+  assert.ok(/if \(inferredIn\[a\.type\]\) adpSetInferred_\(sheet, sheet\.getLastRow\(\), true\);/.test(sd), 'an add marks the row it appended');
+  assert.ok(/\(manager add\)\$\{infNote\(a\.type\)\}/.test(sd) && /\(manager edit\)\$\{infNote\(u\.type\)\}/.test(sd), 'the audit row says so');
+  const writer = stripJsComments_(extractRawFunction('Code.js', 'writeAdjustPunchForEmployee_'));
+  assert.ok(/adpSetInferred_\(c\.sheet, target\.rowIndex, false\)/.test(writer), 'an approved adjustment replaces an inferred time');
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPunchCore_'));
+  assert.ok(/adpSetInferred_\(c\.sheet, target\.rowIndex, false\)/.test(rp), 'and so does a rep\'s own adjustment in place');
+});
+test('E2a: the timesheet, the pay statement and the team calendar carry infClockIn / infClockOut — the SHOWN (last) row\'s mark (driven)', () => {
+  const ADPi = vm.runInContext("var ADP = " + /const ADP = (\{[\s\S]*?\});/.exec(codeSrc)[1] + "; ADP", vm.createContext({}));
+  const row = (date, time, type, inf) => { const r = new Array(10).fill(''); r[ADPi.EMP_ID] = 'A1'; r[ADPi.DATE] = date; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type;
+    if (inf) r[ADPi.INFERRED] = 'Inferred (app activity)'; return r; };
+  const live = [['h1'], ['h2'], row('2026-06-01', '07:56:00', 'ADJ-ClockIn', true), row('2026-06-01', '17:00:00', 'ClockOut'),
+    row('2026-06-02', '08:00:00', 'ClockIn', true), row('2026-06-02', '08:05:00', 'ADJ-ClockIn'), row('2026-06-02', '17:06:00', 'ADJ-ClockOut', true)];
+  const tsExtra = { empTz_: () => 'America/Chicago', fmtDateTz_: () => '2026-07-01', daysBetween_: () => 30, isoFromUtc_: (d) => d.toISOString().substring(0, 10),
+    DAY_ABBR: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MONTH_NAMES: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    breakOpenLeave_: () => null, breakStrays_: () => [] };
+  const c = b14Ctx_(['buildTimesheetForEmployee_'], { live, arch: null }, tsExtra);
+  const ts = JSON.parse(JSON.stringify(c.buildTimesheetForEmployee_({ id: 'A1' }, '2026-06-01', '2026-06-02')));
+  assert.deepStrictEqual(ts.days.map((d) => [d.infClockIn, d.infClockOut]), [[true, false], [false, true]],
+    'day 1: the inferred Clock In; day 2: a later re-entry replaced the inferred Clock In, the Clock Out is inferred');
+  const cal = stripJsComments_(extractRawFunction('Code.js', 'getTeamCalendar'));
+  assert.ok(/infClockIn: !!\(pm\.ClockIn && infMap\.ClockIn\)/.test(cal) && /inferred: adpRowInferred_\(r\)/.test(cal), 'the team calendar reads the same mark');
+});
+
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

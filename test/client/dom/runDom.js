@@ -2142,6 +2142,77 @@ test('F5 (cycle 22 follow-on): a STRAY break stamp renders as a flagged half row
   assert.strictEqual(h.run.pending('managerSaveDay').length, 1, 'resolved, the day saves');
 });
 
+test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, offers the first / last ping as Clock In / Out, Apply fills an editable slot tagged Inferred, and the save says which slots are still inferred', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const today = h.read('_deDate'), tz = h.read('empTz')();
+  const blocks = new Array(144).fill(0); for (let b = 47; b <= 102; b++) blocks[b] = (b >= 72 && b <= 75) ? 0 : 1;
+  const act = (date) => ({ date, timezone: tz, blockMin: 10, gapMin: 10, retentionDays: 60, pings: 52, first: '07:56', last: '17:06', blocks });
+  const panel = () => h.document.getElementById('de-act');
+  const ci = h.document.getElementById('de-clockin'), co = h.document.getElementById('de-clockout');
+  const tagIn = h.document.getElementById('de-clockin-inf'), tagOut = h.document.getElementById('de-clockout-inf');
+  assert.ok(panel().hidden, 'nothing until the read lands');
+  h.run.flushSuccess({ days: [{ date: today, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess(act(today), 'managerGetDayActivity');
+  assert.ok(!panel().hidden && panel().querySelectorAll('.de-act-b.on').length > 40, 'the strip shows the active blocks');
+  assert.match(panel().querySelector('.de-act-strip').getAttribute('aria-label'), /from 7:56 AM to 5:06 PM — \d+ of \d+ 10-minute blocks active/);
+  const applyIn = () => panel().querySelector('[data-de-apply="ClockIn"]');
+  assert.ok(applyIn() && /In 7:56 AM/.test(panel().querySelector('.de-act-sug').textContent), 'In is suggested for an empty slot');
+  assert.ok(!panel().querySelector('[data-de-apply="ClockOut"]'), 'Out is NOT suggested on the rep\'s today — they may still be working');
+  applyIn().click();
+  assert.strictEqual(ci.value, '07:56');
+  assert.ok(!tagIn.hidden, 'the slot is tagged Inferred');
+  assert.ok(!applyIn(), 'and its suggestion steps aside');
+  ci.value = '08:10'; ci.dispatchEvent(new h.window.Event('input'));
+  assert.ok(tagIn.hidden, 'typing another time makes it the manager\'s own entry');
+  ci.value = ''; ci.dispatchEvent(new h.window.Event('input'));
+  applyIn().click();
+  h.document.getElementById('de-save').click();
+  const sent = h.run.pending('managerSaveDay')[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sent.args[2].inferred)), { ClockIn: true, ClockOut: false }, 'the save names the inferred slot');
+  // Another day: a late answer for the previous open is dropped; a past day offers Out too.
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const t2 = h2.read('_deDate'), y = h2.read('mgrAddDaysIso_')(t2, -1);
+  const dEl = h2.document.getElementById('de-date');
+  dEl.value = y; dEl.dispatchEvent(new h2.window.Event('change'));
+  h2.run.flushSuccess(act(t2), 'managerGetDayActivity');
+  assert.ok(h2.document.getElementById('de-act').hidden, 'the answer for the day it left never paints');
+  h2.run.flushSuccess(act(y), 'managerGetDayActivity');
+  assert.ok(h2.document.querySelector('#de-act [data-de-apply="ClockOut"]'), 'a past day offers Out');
+  // "To" filled: range mode, no single-day suggestion.
+  const to = h2.document.getElementById('de-date-to');
+  to.value = t2; to.dispatchEvent(new h2.window.Event('change'));
+  assert.ok(!h2.document.querySelector('#de-act [data-de-apply]') && /single day/.test(h2.document.getElementById('de-act').textContent));
+  // A failed read is said, and never blocks the save.
+  const h3 = boot();
+  h3.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const t3 = h3.read('_deDate');
+  h3.run.flushSuccess({ days: [{ date: t3, clockIn: '08:00:00', infClockIn: true, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.ok(!h3.document.getElementById('de-clockin-inf').hidden, 'a SAVED inferred Clock In loads tagged');
+  h3.run.flushFailure(new Error('quota'), 'managerGetDayActivity');
+  assert.match(h3.document.getElementById('de-act').textContent, /could not be read for this day/);
+  assert.ok(!h3.document.getElementById('de-save').disabled, 'Save stays live');
+  // No pings: said as such, no suggestion.
+  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', retentionDays: 60 }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day \(activity is kept 60 days\)/.test(v) && !/data-de-apply/.test(v));
+  // The text comes from the payload only through the HH:mm check.
+  const bad = h3.read('deActivityHtml_')({ pings: 3, first: '<b>x', last: '17:00', blocks: [] }, { clockInEmpty: true });
+  assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');
+});
+
+test('E2 DOM: an inferred punch is marked on the pay statement and in the team calendar', () => {
+  const h = boot();
+  const html = h.read('payStmtHtml_')({ period: { start: '2026-10-01', end: '2026-10-31', cycle: 'Monthly', offset: 0 }, days: [
+    { date: '2026-10-05', dayLabel: 'Mon, Oct 5', hasData: true, clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, hoursWorked: 8.5 },
+    { date: '2026-10-06', dayLabel: 'Tue, Oct 6', hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8.5 }],
+    totalHours: 17, daysWorked: 2, incompleteCount: 0, pto: [], rate: 0, estGross: 0, adjustments: {}, maxOffset: 6 });
+  const box = h.document.createElement('div'); box.innerHTML = html;
+  const chips = box.querySelectorAll('.punch-inf-chip');
+  assert.strictEqual(chips.length, 1, 'one day carries it');
+  assert.strictEqual(chips[0].getAttribute('title'), 'Clock In inferred from app activity by a manager');
+});
+
 test('an older server (scalars only) still prefills its one pair', () => {
   const h = boot();
   h.read('deSetBreaksFromDay_')({ lunchOut: '12:00:00', lunchIn: '12:30:00' });

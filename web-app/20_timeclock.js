@@ -1745,6 +1745,7 @@ function recordPunchCore_(punchType, custom) {
       if (target.rowIndex) {
         c.sheet.getRange(target.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(time));
         c.sheet.getRange(target.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
+        adpSetInferred_(c.sheet, target.rowIndex, false);   // E2: a person's time is no longer an inferred one
       } else {
         appendToAdpSheet_(emp, date, time, dir, commentLabel);
       }
@@ -2602,7 +2603,7 @@ function getTeamCalendar(monthIso) {
       if (!byDay[dateIso]) byDay[dateIso] = {};
       if (!byDay[dateIso][id]) byDay[dateIso][id] = [];
       byDay[dateIso][id].push({ time: normalizeTime_(r[ADP.TIME]), type,
-        isAdjustment: rawType.indexOf('ADJ-') === 0 });
+        isAdjustment: rawType.indexOf('ADJ-') === 0, inferred: adpRowInferred_(r) });
     });
 
     const days = {};                    // dateIso -> { reps: [...], off: [...] }
@@ -2610,8 +2611,9 @@ function getTeamCalendar(monthIso) {
       const repRows = [];
       Object.keys(byDay[dateIso]).forEach(id => {
         const punches = byDay[dateIso][id];
-        const pm = {}, adjMap = {};
-        punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
+        const pm = {}, adjMap = {}, infMap = {};
+        punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment;
+          if (p.type === 'ClockIn' || p.type === 'ClockOut') infMap[p.type] = !!p.inferred; });   // E2: the shown (last) row's mark
         let hours = null, incomplete = false, inProgress = false;
         if (pm.ClockIn) {
           if (pm.ClockOut) {
@@ -2623,6 +2625,7 @@ function getTeamCalendar(monthIso) {
         repRows.push({
           id, name: reps[id].name,
           clockIn: pm.ClockIn || null,    adjClockIn: !!adjMap.ClockIn,
+          infClockIn: !!(pm.ClockIn && infMap.ClockIn),     // E2
           lunchOut: punchFirst_(pm.LunchOut),  adjLunchOut: !!adjMap.LunchOut,
           lunchIn: punchFirst_(pm.LunchIn),    adjLunchIn: !!adjMap.LunchIn,
           // Every break pair, in the order calcHours_ deducts them. Additive:
@@ -2630,6 +2633,7 @@ function getTeamCalendar(monthIso) {
           breaks: breakPairs_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn))
             .map(b => ({ out: b.out, in: b.in })),
           clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
+          infClockOut: !!(pm.ClockOut && infMap.ClockOut),  // E2
           hours, incomplete, inProgress,
           punchCount: punches.length,     // > filled slots ⇒ collapsed extras (multi-lunch / pre-guard duplicates)
         });
@@ -4098,10 +4102,91 @@ function recordPresence() {
     CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
     // 25post B8: the gesture time again, kept six hours, for the idle alert.
     CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
+    activityLogAppend_(emp.id, Date.now());   // round 12 E2 — the durable record (best-effort)
     return { success: true };
   } catch (e) {
     return { success: false };
   }
+}
+// ── 25post round 12 E2 (operator 2026-10-28): the app-activity record ──────
+function getOrCreateActivityLogSheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(ACTIVITY_LOG_TAB);
+    sheet.appendRow(sheetSafeRow_(ACTIVITY_LOG_HEADERS.map(function (h, i) {
+      return i === 0 ? `Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})` : h;
+    })));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** Best-effort and NEVER throws — the presence stamp must not depend on its
+ *  record. No lock: appendRow is atomic, and every rep's gesture would
+ *  otherwise queue on the one project lock (the DigestDeliveries posture). */
+function activityLogAppend_(empId, ms) {
+  try {
+    if (!empId || !(ms > 0)) return false;
+    const d = new Date(ms);
+    getOrCreateActivityLogSheet_().appendRow(sheetSafeRow_([fmtDate_(d) + ' ' + fmtTime_(d), String(empId), ms]));
+    return true;
+  } catch (e) {
+    console.warn('activityLogAppend_ failed: ' + e.message);
+    return false;
+  }
+}
+/** PURE (Node-pinned) — first index in an ASCENDING number list at or past
+ *  `x` (the list's length when none is). */
+function activityLowerBound_(list, x) {
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+/** PURE (Node-pinned) — a day of pings as the Day Edit chart reads it.
+ *  `mins` are minutes of the day in the REP's timezone (any order, 0..1439).
+ *  Returns { pings, first, last, blocks } — `blocks` one count per
+ *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings. */
+function activityDayView_(mins, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const blocks = new Array(Math.ceil(1440 / size)).fill(0);
+  const ok = (mins || []).filter(function (m) { return typeof m === 'number' && m >= 0 && m < 1440; })
+    .map(function (m) { return Math.floor(m); }).sort(function (a, b) { return a - b; });
+  ok.forEach(function (m) { blocks[Math.floor(m / size)]++; });
+  const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks };
+}
+/** Manager-gated, read-only — one rep's app activity on one day of THEIR
+ *  timezone, for Day Edit. `{date, timezone, pings, first, last, blocks,
+ *  blockMin, gapMin}` or `{error}`; a day with no tab yet is zero pings, said
+ *  as such (`noLog`). Rows are append-ordered by time, so the day is found by
+ *  a binary search on the Ms column and only its slice of ids is read. */
+function managerGetDayActivity(empId, date) {
+  try {
+    const caller = getEmployeeInfo_();
+    if (!caller || !caller.isManager) return { error: 'Manager access required.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return { error: 'Invalid date format.' };
+    const target = lookupEmployeeById_(String(empId || '').trim());
+    if (!target) return { error: 'Employee not found.' };
+    const tz = empTz_(target);
+    const startMs = Utilities.parseDate(date + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+    const endMs = Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
+    const sheet = getAdpSS_().getSheetByName(ACTIVITY_LOG_TAB);
+    const last = sheet ? sheet.getLastRow() : 0;
+    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: true });
+    const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
+    const lo = activityLowerBound_(msCol, startMs), hi = activityLowerBound_(msCol, endMs);
+    const mins = [];
+    if (hi > lo) {
+      const ids = sheet.getRange(2 + lo, 2, hi - lo, 1).getValues();
+      for (let i = 0; i < ids.length; i++) {
+        if (String(ids[i][0]).trim() !== target.id) continue;
+        const t = Utilities.formatDate(new Date(msCol[lo + i]), tz, 'HH:mm').split(':');
+        mins.push(parseInt(t[0], 10) * 60 + parseInt(t[1], 10));
+      }
+    }
+    return Object.assign(base, activityDayView_(mins, ACTIVITY_BLOCK_MIN));
+  } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
 }
 /** Best-effort: { empId: true } for every id with a live presence stamp. ONE
  *  getAll over the roster's keys; any failure returns {} — no flags, never a
@@ -4589,6 +4674,14 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
         `A reason is required for edits more than ${CONFIG.OLD_ADJUST_ALERT_DAYS} days back.` };
     }
     const noteSuffix = trimmedReason ? ` — ${trimmedReason}` : '';
+    // Round 12 E2: which clock slots the manager APPLIED from the app-activity
+    // suggestion (and left as suggested). Only a slot that is set can be
+    // inferred; a slot written without the flag is the manager's own entry.
+    const inferredIn = {};
+    ['ClockIn', 'ClockOut'].forEach((t) => {
+      inferredIn[t] = !!(slots && slots.inferred && slots.inferred[t] === true && cleanSlots[t]);
+    });
+    const infNote = (t) => inferredIn[t] ? ' (inferred from app activity)' : '';
 
     // Snapshot current state for this employee/date. M-1 (cycle 10): collect
     // ALL rows per type, not just the last — duplicate same-type rows (stale-
@@ -4630,6 +4723,7 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       const timeFull = u.time + ':00';
       sheet.getRange(u.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
       sheet.getRange(u.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(`ADJ-${u.type}`));
+      if (u.type === 'ClockIn' || u.type === 'ClockOut') adpSetInferred_(sheet, u.rowIndex, inferredIn[u.type]);   // E2
       if (targetEmp.sheetId) {
         try {
           const dir = ['ClockIn', 'LunchIn'].indexOf(u.type) >= 0 ? 'IN' : 'OUT';
@@ -4637,7 +4731,7 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
         } catch (e) {}
       }
       writeAuditLog_(targetEmp, 'PunchEdit', date, timeFull, true, daysBack,
-        `${u.type}: ${u.oldTime} → ${timeFull} (manager edit)${noteSuffix}`, callerEmp.email);
+        `${u.type}: ${u.oldTime} → ${timeFull} (manager edit)${infNote(u.type)}${noteSuffix}`, callerEmp.email);
       changes.push({ type: u.type, action: 'update' });
     });
 
@@ -4656,11 +4750,12 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       const timeFull = a.time + ':00';
       const dir = ['ClockIn', 'LunchIn'].indexOf(a.type) >= 0 ? 'IN' : 'OUT';
       appendToAdpSheet_(targetEmp, date, timeFull, dir, `ADJ-${a.type}`);
+      if (inferredIn[a.type]) adpSetInferred_(sheet, sheet.getLastRow(), true);   // E2 — inside the lock, so the last row is this one
       if (targetEmp.sheetId) {
         try { writeToEmployeeSheet_(targetEmp, date, timeFull, dir, a.type); } catch (e) {}
       }
       writeAuditLog_(targetEmp, 'PunchAdd', date, timeFull, true, daysBack,
-        `${a.type} at ${timeFull} (manager add)${noteSuffix}`, callerEmp.email);
+        `${a.type} at ${timeFull} (manager add)${infNote(a.type)}${noteSuffix}`, callerEmp.email);
       changes.push({ type: a.type, action: 'add' });
     });
 
@@ -4694,7 +4789,8 @@ function exportAdpRange(startDate, endDate) {
       `${result.rowCount} rows → ${result.fileId}` +
       (result.archivedRowCount ? `; archivedRows=${result.archivedRowCount}` : ''));
     return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount,
-      archivedRowCount: result.archivedRowCount || 0 };
+      archivedRowCount: result.archivedRowCount || 0,
+      inferredCount: result.inferredCount || 0, inferred: result.inferred || [] };   // E2
   } catch (err) { return { error: err.message }; }
 }
 
@@ -5694,7 +5790,9 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
       body:
         `Attached: ADP-format export covering ${range.start} to ${range.end}.\n\n` +
         `Employees:  ${result.employeeCount} (${payCycleFilter})\n` +
-        `Rows:       ${result.rowCount}\n\n` +
+        `Rows:       ${result.rowCount}\n` +
+        (result.inferredCount ? `Inferred:   ${result.inferredCount} punch(es) set from app activity — ` +
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ') + '\n' : '') + '\n' +
         `Also accessible as a Google Sheet:\n${result.url}\n\n` +
         `— UMS Time Clock (automated)`,
       htmlBody: buildBrandedEmailHtml_('ADP export ready',
@@ -5702,7 +5800,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         brandedKvRows_([
           ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
           ['Rows', String(result.rowCount)],
-        ]) +
+        ].concat(result.inferredCount ? [['Inferred from app activity',
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ')]] : [])) +
         '',
         { accent: CN_EMAIL_PALETTE.brand, subLabel: 'Payroll', statusLabel: 'Ready',
           ctaUrl: result.url, ctaLabel: 'Open as a Google Sheet' }),
@@ -5872,6 +5971,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
       'Re-try, or narrow the range to recent dates.' };
   }
   const liveCount = read.rows.length - read.archivedRows;   // live rows first, then archive rows
+  const inferred = [];   // E2 — named BESIDE the file (the link, the email); the upload itself is untouched
   read.rows.forEach((r, n) => {
     const rowId = String(r[ADP.EMP_ID]).trim();
     if (!rowId && n >= liveCount) return;   // an archive row with no id was skipped before the move too
@@ -5879,6 +5979,8 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     const cleaned = r.slice(0, 9);
     cleaned[ADP.COMMENTS] = '';
     matched.push(cleaned);
+    if (adpRowInferred_(r)) inferred.push({ id: rowId, name: String(r[ADP.EMP_NAME] || ''), date: normalizeDate_(r[ADP.DATE]),
+      time: normalizeTime_(r[ADP.TIME]).substring(0, 5), type: normalizeType_(String(r[ADP.COMMENTS])) });
   });
   const archivedRowCount = read.archivedRows;
 
@@ -5932,6 +6034,10 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
 
   return { fileId: newSs.getId(), url: newSs.getUrl(), fileName: name,
     rowCount: matched.length, employeeCount,
+    // E2 (operator 2026-10-28): the punches a manager set from app activity.
+    // NOT a tab in the file — the file is the ADP upload, kept exactly its
+    // shape — but named beside it: the export link and the automated email.
+    inferredCount: inferred.length, inferred: inferred.slice(0, EXPORT_INFERRED_LIST_MAX),
     // F1: how many of rowCount came from the cold archive (0 in the normal
     // current-period case). Additive — existing callers ignore it.
     archivedRowCount: archivedRowCount };
@@ -5966,7 +6072,7 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     const type    = normalizeType_(rawType);
     if (!byDate[rowDate]) byDate[rowDate] = [];
     byDate[rowDate].push({ time: normalizeTime_(r[ADP.TIME]), type,
-      isAdjustment: rawType.indexOf('ADJ-') === 0 });
+      isAdjustment: rawType.indexOf('ADJ-') === 0, inferred: adpRowInferred_(r) });
   });
 
   let totalHours = 0, daysWorked = 0, incompleteCount = 0;
@@ -5978,8 +6084,10 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
     const local   = new Date(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate());
     const dow     = local.getDay();
     const punches = byDate[dateStr] || [];
-    const pm = {}, adjMap = {};
-    punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment; });
+    const pm = {}, adjMap = {}, infMap = {};
+    // E2: a clock slot shows its LAST row (punchDayAdd_), so that row's mark is the slot's.
+    punches.forEach(p => { punchDayAdd_(pm, p.type, p.time); adjMap[p.type] = adjMap[p.type] || p.isAdjustment;
+      if (p.type === 'ClockIn' || p.type === 'ClockOut') infMap[p.type] = !!p.inferred; });
 
     let hoursWorked = null, isIncomplete = false, inProgress = false;
     if (pm.ClockIn) {
@@ -6001,6 +6109,7 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       isToday: dateStr === todayStr, isFuture: dateStr > todayStr,
       hasData: punches.length > 0,
       clockIn: pm.ClockIn || null,    adjClockIn: !!adjMap.ClockIn,
+      infClockIn: !!(pm.ClockIn && infMap.ClockIn),     // E2 — inferred from app activity
       lunchOut: punchFirst_(pm.LunchOut),  adjLunchOut: !!adjMap.LunchOut,
       lunchIn: punchFirst_(pm.LunchIn),    adjLunchIn: !!adjMap.LunchIn,
       // Every break pair, in the order calcHours_ deducts them. Additive:
@@ -6014,6 +6123,7 @@ function buildTimesheetForEmployee_(emp, startDate, endDate) {
       // each as a half row the save refuses, so none is deleted unseen.
       strayBreaks: breakStrays_(pm.LunchOut, pm.LunchIn, timeToMins_(pm.ClockIn)),
       clockOut: pm.ClockOut || null,  adjClockOut: !!adjMap.ClockOut,
+      infClockOut: !!(pm.ClockOut && infMap.ClockOut),  // E2
       hoursWorked, isIncomplete, inProgress,
     });
     cur.setUTCDate(cur.getUTCDate() + 1);
@@ -7520,6 +7630,35 @@ function appendToAdpSheet_(emp, date, time, dir, commentValue) {
   getAdpSS_().getSheetByName(CONFIG.ADP_TAB)
     .appendRow(sheetSafeRow_([emp.id, emp.name, date, time, dir, 'None', 'Missing punch', 'SUBMIT', commentValue]));
 }
+/** PURE (Node-pinned) — round 12 E2: the inferred punches an export names,
+ *  one line each ("Avery Blake · 2026-10-27 · Clock In 07:56"), and how many
+ *  more when the list was capped. */
+function exportInferredLines_(list, total) {
+  const label = { ClockIn: 'Clock In', ClockOut: 'Clock Out', LunchOut: 'Break out', LunchIn: 'Break return' };
+  const lines = (list || []).map(function (p) {
+    return [p.name || p.id, p.date, (label[p.type] || p.type) + ' ' + p.time].join(' · ');
+  });
+  const more = (total || 0) - lines.length;
+  if (more > 0) lines.push('and ' + more + ' more');
+  return lines;
+}
+/** 25post round 12 E2 — mark (or unmark) a Timesheet row as inferred from app
+ *  activity, in column J (ADP.INFERRED), past the nine columns the ADP upload
+ *  carries. Unmarking a tab that has no column J is a no-op; marking grows the
+ *  grid and names the column the first time. Callers hold the script lock. */
+function adpSetInferred_(sheet, rowIndex, on) {
+  const col = ADP.INFERRED + 1;
+  if (sheet.getMaxColumns() < col) {
+    if (!on) return;
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
+  }
+  if (on && !String(sheet.getRange(1, col).getValue() || '').trim()) sheet.getRange(1, col).setValue(sheetSafe_('Source'));
+  sheet.getRange(rowIndex, col).setValue(sheetSafe_(on ? ADP_INFERRED_MARK : ''));
+}
+/** PURE (Node-pinned) — is this Timesheet row marked inferred? */
+function adpRowInferred_(row) {
+  return String((row && row[ADP.INFERRED]) || '').trim() === ADP_INFERRED_MARK;
+}
 function openPersonalSs_(sheetId) {
   if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);
   return _personalSsCache[sheetId];
@@ -8237,6 +8376,7 @@ function writeAdjustPunchForEmployee_(targetEmp, date, punchType, time, actorEma
   if (target.rowIndex) {
     c.sheet.getRange(target.rowIndex, ADP.TIME + 1).setValue(sheetSafe_(timeFull));
     c.sheet.getRange(target.rowIndex, ADP.COMMENTS + 1).setValue(sheetSafe_(commentLabel));
+    adpSetInferred_(c.sheet, target.rowIndex, false);   // E2: an approved time replaces an inferred one
     // TC-05 (cycle 23): keep a caller's ctx current, so a later check in the
     // same run (a Clock Out approved after its Clock In) reads this time.
     ((c.all || {})[key] || []).forEach(function (m) { if (m.rowIndex === target.rowIndex) m.time = time; });
