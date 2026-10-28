@@ -5812,4 +5812,13 @@ pick them up without re-deriving the context.
   rejected:** passing the host's whole state object and calling Reference's
   functions directly from the shared file (no seam — the handbook app would have
   had to define forty Reference names to run it).
+  **HB1.1c:** what the file needs from its PAGE beyond the hooks — eleven
+  `script_core` names (`esc`, `showToast`, `ensureOverlay`/`closeOverlay`,
+  `errorStateHtml_`, `loSweep`, the copy helpers, `currentView`, …), `icon`,
+  `KB_MANUAL_DIAGRAMS` and nine server functions — is stated in its header as
+  SHELL NEEDS, and a pin derives the real list from the code, so the handbook
+  app (HB1.2) builds against a list that cannot drift. The rules that style a
+  HOST piece inside the reader stay with the host: the bookmark button in the bar
+  (`.kb-man-bar .kb-bm.on` — the button is `bookmarkBtnHtml`'s) and Reference's
+  page layout around the reader (`.kb-main:has(> .kb-man-top)`).
 

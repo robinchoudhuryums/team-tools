@@ -709,6 +709,15 @@
 // host goes through MANUAL_HOST, the contract Team Tools' Reference installs
 // in kb/script_kb.html and the handbook app installs for itself. The CONTRACT
 // pin in test/client/run.js holds both directions.
+//
+// SHELL NEEDS (HB1.1c) — what the PAGE that includes this file must define,
+// besides MANUAL_HOST's hooks. Team Tools gets them from the partials named;
+// the handbook app must supply each (or include those partials). The pin
+// derives the real list from the code, so this one cannot go stale.
+//   script_core: closeOverlay, copyText_, copyWithFeedback_, currentView, ensureOverlay, errorStateHtml_, esc, loSweep, manualCopyModal_, showToast, animateListSwap_ (optional — typeof-guarded)
+//   script_icons: icon
+//   kb/script_manual_diagrams: KB_MANUAL_DIAGRAMS
+//   server (google.script.run): getKbImages, getManualImages, getManualMeta, getManualPart, getManualParts, getReferenceItem, kbFlagItem, kbGetImageData, kbMapDistances
 // ─────────────────────────────────────────────────────────────────────────────
 // Compact markdown → HTML. Escapes HTML up front (so raw tags/script in the
 // source are inert), then applies a safe subset: headings, bold/italic, inline

@@ -2913,3 +2913,13 @@ per-change detail. By delta:
   computed styles, boxes and text on every element, old and new (959 to 1,604
   elements each). The visual CI gate passes.
 
+## Handbook app HB1.1c — the shell-needs contract (2026-10-28)
+
+- **HB1.1c pin:** the shared file's SHELL NEEDS header must equal what the code
+  uses — the top-level names (and `global.X =` exports) of every other partial
+  `index.html` includes, plus the public server functions called as `.name(` —
+  with one named exception (`pad`, a local that shares `script_core`'s name; the
+  pin re-checks it is still a local).
+- **Sweep:** no tool reads `kb/script_kb.html` for moved code any more; the export's
+  xref-report docstring names the shared partial.
+

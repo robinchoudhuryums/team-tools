@@ -752,7 +752,8 @@ def xref_report(path):
     """Batch M5a — which cross-references preview the target's OPENING (no
     block of it clearly matches the link) and carry no heading anchor to fix
     that. The app's own scorer does the work (scripts/manual-xref-report.mjs
-    reads it out of script_kb.html), so the report is the preview a rep sees.
+    reads it out of the reader's partials — web-app/shared/script_manual_render.html
+    since handbook app HB1.1b), so the report is the preview a rep sees.
     WARNING only: a missing Node or a failed run never fails the export."""
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "manual-xref-report.mjs")
     try:

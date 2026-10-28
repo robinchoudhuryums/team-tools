@@ -40297,6 +40297,39 @@ test('HB1.1a/b: the handbook renderer and reader live in shared/script_manual_re
   assert.deepStrictEqual(CLIENT_ALIASES['kb/script_kb.html'], ['shared/script_manual_render.html', 'kb/script_kb.html'], 'a read of kb/script_kb.html through the harness is the pair, in include order');
 });
 
+// HB1.1c — the shared file's SHELL NEEDS: the page globals and server functions
+// it uses beyond MANUAL_HOST, stated in its header for the handbook app (HB1.2)
+// to supply. Derived here from the code, so the header cannot go stale in
+// either direction: a new use must be listed, and a listed name it no longer
+// uses must go.
+test('HB1.1c: the shared file\'s SHELL NEEDS header names exactly the page globals and server functions its code uses', () => {
+  const W = path.join(__dirname, '../../web-app');
+  const shared = fs.readFileSync(path.join(W, 'shared/script_manual_render.html'), 'utf8');
+  const js = (s) => [...s.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]).join('\n');
+  const decls = (s) => new Set([...js(s).matchAll(/^(?:function|var|const|let)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1])
+    .concat([...s.matchAll(/(?:global|window)\.(\w+) = /g)].map((m) => m[1])));
+  const code = js(shared).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
+  const uses = (n) => new RegExp('(^|[^\\w$.])' + n.replace(/\$/g, '\\$') + '(?![\\w$])').test(code);
+  const own = decls(shared);
+  const LOCAL_NOT_SHELL = { pad: 'a local in kbReaderScroll_ that shares a name with script_core\'s pad()' };
+  const idx = fs.readFileSync(path.join(W, 'index.html'), 'utf8');
+  const derived = {};
+  [...idx.matchAll(/include\('([^']+)'\)/g)].map((m) => m[1]).filter((f) => f !== 'shared/script_manual_render' && fs.existsSync(path.join(W, f + '.html'))).forEach((f) => {
+    const hits = [...decls(fs.readFileSync(path.join(W, f + '.html'), 'utf8'))].filter((n) => !own.has(n) && !LOCAL_NOT_SHELL[n] && uses(n)).sort();
+    if (hits.length) derived[f] = hits;
+  });
+  derived.server = [...new Set([...serverSource().matchAll(/^function ([A-Za-z]\w*[A-Za-z0-9])\(/gm)].map((m) => m[1]))]
+    .filter((n) => new RegExp('\\.' + n + '\\(').test(code)).sort();
+  Object.keys(LOCAL_NOT_SHELL).forEach((n) => assert.ok(new RegExp('var [^;]*\\b' + n + ' =').test(code), n + ' is still a local, so the exception still holds'));
+  const head = shared.slice(shared.indexOf('// SHELL NEEDS'), shared.indexOf('// ─', shared.indexOf('// SHELL NEEDS')));
+  const stated = {};
+  for (const m of head.matchAll(/^\/\/   ([^:\n]+): ([^\n]+)$/gm)) {
+    const key = /^server/.test(m[1]) ? 'server' : m[1].trim();
+    stated[key] = m[2].replace(/\([^)]*\)/g, '').split(',').map((x) => x.trim()).filter(Boolean).sort();
+  }
+  assert.deepStrictEqual(stated, derived, 'the SHELL NEEDS header and the code agree');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
