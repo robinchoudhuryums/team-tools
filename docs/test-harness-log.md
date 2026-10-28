@@ -2902,4 +2902,14 @@ per-change detail. By delta:
   installed hooks; a misspelt hook throws and an uninstalled host is idle
   (driven); Reference reads `MANUAL_STATE` for `manualMeta` and `manualPart`
   only; the reader's styles moved and the admin import's stayed.
+- **Bites:** seven, all BITE — the reader naming a Reference function, reading
+  `KB_STATE`, a hook left out of the install, a declared hook nobody calls,
+  `install` ignoring a misspelt hook, Reference reading a reader field on
+  `KB_STATE`, and (DOM) the `openItem` hook made a no-op, which MRD-5 DOM catches.
+- **Visual:** the 72 Reference and manual shots taken on HB1.1a's code (a git
+  worktree, so the working tree was never stashed) and on HB1.1b's: 43
+  identical, 23 below the noise threshold, one 5-pixel spot, five with text-pixel
+  residue. Those five (codes, compact drawer, HCPCS, polish-pak) have identical
+  computed styles, boxes and text on every element, old and new (959 to 1,604
+  elements each). The visual CI gate passes.
 
