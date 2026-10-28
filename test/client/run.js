@@ -31381,7 +31381,7 @@ test('MR1: the reader paints a chapter from the session cache, previews read fro
   let success = null;
   const ctx = vm.createContext({ MANUAL_STATE: kb, KB_XREF: xref, Array,
     google: { script: { run: { withSuccessHandler: (f) => { success = f; return { withFailureHandler: () => ({ getManualParts: () => calls.push('getManualParts') }) }; } } } } });
-  ['kbPrefetchManualParts_', 'kbManualCachedPart_', 'kbManualInvalidate_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));
+  ['kbPrefetchManualParts_', 'kbManualPartsAccept_', 'kbManualCachedPart_', 'kbManualInvalidate_'].forEach((n) => vm.runInContext(extractFnFrom(M1_KB_SRC, n), ctx));   // HB1.3: the answer is kept by kbManualPartsAccept_
   ctx.kbPrefetchManualParts_(); ctx.kbPrefetchManualParts_();
   assert.deepStrictEqual(calls, ['getManualParts'], 'ONE read per session, however often it is asked for');
   success({ isAdmin: false, parts: [{ department: 'Chapter 06 — Field Operations', sections: [{ id: 'man-6-1', title: '6.1 One', status: 'published', bodyMd: 'b' }] }] });

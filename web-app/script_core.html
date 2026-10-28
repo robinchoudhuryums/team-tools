@@ -3272,18 +3272,23 @@ function topOpenOverlay_() {
 }
 
 // ── Modal accessibility: Escape-to-close + focus trap ─────────────────────
+// HB1.3: the two pieces another page needs are NAMED — the handbook app's
+// shell receives them by the sync's copy and registers them itself.
+/** Escape closes the TOPMOST open overlay, through its close hook so module
+ *  cleanup runs. True when there was one. */
+function overlayEscapeClose_(e) {
+  var open = topOpenOverlay_();
+  if (!open) return false;
+  e.preventDefault();
+  closeOverlay(open);
+  return true;
+}
 document.addEventListener('keydown', function (e) {
-  // Escape closes the TOPMOST open overlay (through its close hook, so module
-  // cleanup runs); with no overlay open it closes the KB drawer instead
-  // (overlays stack above the drawer, so they win).
+  // Escape closes the TOPMOST open overlay; with no overlay open it closes the
+  // KB drawer instead (overlays stack above the drawer, so they win).
   if (e.key === 'Escape') {
-    var open = topOpenOverlay_();
-    if (!open) {
-      if (typeof kbDrawerCloseIfOpen_ === 'function' && kbDrawerCloseIfOpen_()) e.preventDefault();
-      return;
-    }
-    e.preventDefault();
-    closeOverlay(open);
+    if (overlayEscapeClose_(e)) return;
+    if (typeof kbDrawerCloseIfOpen_ === 'function' && kbDrawerCloseIfOpen_()) e.preventDefault();
     return;
   }
   // Ctrl/Cmd + K toggles the KB reference drawer — deliberately works even
@@ -3316,7 +3321,8 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-document.addEventListener('focusin', function (e) {
+document.addEventListener('focusin', overlayFocusTrap_);
+function overlayFocusTrap_(e) {
   // Trap focus in the TOPMOST open overlay (last in DOM order) — ui-dialogs
   // are appended after base modals, so when one stacks over a still-open base
   // modal, focus must stay in the dialog, not the background modal.
@@ -3349,5 +3355,5 @@ document.addEventListener('focusin', function (e) {
   if (modal.contains(e.target)) return;
   var focusable = modal.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])');
   if (focusable.length > 0) focusable[0].focus();
-});
+}
 </script>

@@ -3626,19 +3626,26 @@ function kbPrefetchManualParts_() {
     .withSuccessHandler(function (res) {
       if (gen !== MANUAL_STATE.manualPartsGen) return;   // an import or publish cleared the cache mid-flight
       MANUAL_STATE.manualPartsLoading = false;
-      if (!res || res.error || !Array.isArray(res.parts)) return;
-      var by = {};
-      res.parts.forEach(function (p) {
-        if (!p || !p.department || !Array.isArray(p.sections)) return;
-        by[p.department] = { department: p.department, sections: p.sections, isAdmin: !!res.isAdmin };
-        p.sections.forEach(function (s) {
-          KB_XREF.cache[s.id] = { id: s.id, title: s.title, department: p.department, status: s.status, type: 'article', bodyMd: s.bodyMd };
-        });
-      });
-      MANUAL_STATE.manualParts = by;
+      kbManualPartsAccept_(res);
     })
     .withFailureHandler(function () { if (gen === MANUAL_STATE.manualPartsGen) MANUAL_STATE.manualPartsLoading = false; })
     .getManualParts();
+}
+/** Keep a getManualParts answer as the session's chapters and previews; an
+ *  answer that is not one is ignored (g129). HB1.3: the handbook app hands it
+ *  the copy it kept in the browser, so both paths keep the same shape. */
+function kbManualPartsAccept_(res) {
+  if (!res || res.error || !Array.isArray(res.parts)) return false;
+  var by = {};
+  res.parts.forEach(function (p) {
+    if (!p || !p.department || !Array.isArray(p.sections)) return;
+    by[p.department] = { department: p.department, sections: p.sections, isAdmin: !!res.isAdmin };
+    p.sections.forEach(function (s) {
+      KB_XREF.cache[s.id] = { id: s.id, title: s.title, department: p.department, status: s.status, type: 'article', bodyMd: s.bodyMd };
+    });
+  });
+  MANUAL_STATE.manualParts = by;
+  return true;
 }
 /** The cached chapter, or null when the manual has not arrived yet. */
 function kbManualCachedPart_(dept) {
