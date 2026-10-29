@@ -9594,10 +9594,14 @@ test('HB2.1 DOM: the admin adds a manager and removes a person (after a confirm)
     hbRemovePerson: { success: true, changed: true, view: Object.assign({}, withBoss, { everyone: withBoss.everyone.slice(1) }) } } });
   h.w.hbGoPeople_(); await h.settleAll();
   assert.ok(/No managers yet/.test(h.d.getElementById('hb-pp-admin').textContent));
+  // An unsaved profile choice, then an action that repaints the profile too (the manager list changed).
+  const dept = h.d.getElementById('hb-pp-dept');
+  dept.value = HB_DEPT; dept.dispatchEvent(new h.w.Event('change'));
   const box = h.d.getElementById('hb-pp-add');
   box.value = 'boss@ex.org';
   h.d.getElementById('hb-pp-add-btn').click(); await h.settleAll();
   assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbSetManager').pop(), ['hbSetManager', 'boss@ex.org', true]);
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').value, HB_DEPT, 'the unsaved department survives the repaint (g141)');
   assert.strictEqual(h.d.getElementById('hb-pp-add').value, '', 'the address is cleared once it is saved');
   assert.ok(/Boss/.test(h.d.querySelector('#hb-pp-admin .hb-pp-row').textContent), 'listed as a manager');
   // A refusal keeps what was typed and says why.
@@ -9615,6 +9619,15 @@ test('HB2.1 DOM: the admin adds a manager and removes a person (after a confirm)
   h.d.querySelector('.ui-dialog .ui-dialog-ok').click(); await h.settleAll();
   assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbRemovePerson').pop(), ['hbRemovePerson', 'rep@ex.org']);
   assert.ok(!/rep@ex\.org/.test(h.d.getElementById('hb-pp-admin').textContent), 'gone from the list');
+});
+
+test('HB2.1 DOM: a saved profile\'s department becomes the reading choice on a browser that has none — and never overrides one it has', async () => {
+  const view = hbMeView_({ me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'confirmed' }) });
+  const fresh = await hbBoot_({ answers: { hbGetMe: view } });
+  assert.strictEqual(fresh.w.localStorage.getItem('umsHbDept'), HB_DEPT);
+  assert.strictEqual(fresh.d.getElementById('hb-dept-sel').value, HB_DEPT, 'the header picker shows it');
+  const chosen = await hbBoot_({ answers: { hbGetMe: view }, ls: { umsHbDept: 'Chapter 05 — Power Mobility' } });
+  assert.strictEqual(chosen.w.localStorage.getItem('umsHbDept'), 'Chapter 05 — Power Mobility', 'the browser\'s own choice stands');
 });
 
 test('HB2.1 DOM: no profile store asks nothing (an admin is told the setting); a failed load says so in the view, never on the home page; Back reopens the view', async () => {

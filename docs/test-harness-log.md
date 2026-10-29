@@ -3031,7 +3031,11 @@ per-change detail. By delta:
 - **DOM** — a first visit (prompt, badge, the profile form, Save's arguments, the
   repaint, the reading department set); a manager confirms while an unsaved
   department survives (g141); the admin adds a manager, a refusal keeps the
-  typed address, Remove asks first; unset, a failed load and Back.
+  typed address, Remove asks first, and an unsaved department survives the
+  profile's own repaint; a saved department seeds a browser with no reading
+  choice and never overrides one; unset, a failed load and Back. (The last two
+  were added when their bite-checks reported NO BITE: the confirm action never
+  repaints the profile, so the first drive could not see the dirty guard.)
 - **Visual** — `handbook-people-light-wide`, `handbook-people-dark-mobile`,
   `handbook-firstvisit-light-mobile` over a `HB_PEOPLE_VIEW()` fixture of
   invented people.
