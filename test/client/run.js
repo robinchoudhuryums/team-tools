@@ -40605,7 +40605,7 @@ testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-b: the sync refuses a copied WRI
 /** The handbook server in a sandbox: kb_shared.js + Handbook.js over fake
  *  Apps Script services. `reads` counts sheet reads; tabs is name → rows. */
 function hbServer_(opts) {
-  const reads = { n: 0 }, locks = { n: 0 };
+  const reads = { n: 0 }, locks = { n: 0 }, uuids = { n: 0 };
   const sheetOf = (rows) => ({
     getLastRow: () => rows.length,
     getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
@@ -40638,11 +40638,12 @@ function hbServer_(opts) {
     } },
     LockService: { getScriptLock: () => ({ tryLock: () => { locks.n++; return !opts.lockBusy; }, releaseLock: () => { locks.held = false; } }) },
     CacheService: { getScriptCache: () => cache },
-    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19) : d.toISOString().slice(0, 10)) },
+    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19) : d.toISOString().slice(0, 10)),
+      getUuid: () => 'u' + (++uuids.n).toString(16).padStart(11, '0') + '-0000' },   // HB3.3: new plan / team quiz ids
     HtmlService: opts.HtmlService,
   });
   sb.__email = opts.email || '';
-  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
   sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks;
   return sb;
 }
@@ -40716,7 +40717,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbRemovePerson', 'hbResetQuiz', 'hbSaveProfile', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamQuizLocks',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamQuizLocks', 'hbTeamTraining',
     'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
@@ -41265,6 +41266,153 @@ test('HB3.2-d: Quiz.js reads the Knowledge Base and never writes it; its writes 
   });
   ['quizGrade_', 'quizStripQuestion_', 'quizReview_', 'trainQuizLockout_', 'kbManualQuizzesStored_'].forEach((n) =>
     assert.ok(new RegExp('\\b' + n + '\\b').test(src) && !new RegExp('^function ' + n + '\\(', 'm').test(src), n + ' is Team Tools\', copied — not rewritten here'));
+});
+const hbPlainV_ = (v) => JSON.parse(JSON.stringify(v));
+// HB3.3 — training plans and team quizzes: Training.js (plans, team quizzes,
+// read marks) and Quiz.js taking a team quiz, driven in hbServer_.
+console.log('\nHB3.3 — training plans and team quizzes');
+const HB33_TQ = { title: 'Our intake checks', passPct: 50, questions: [
+  { q: 'First?', options: ['Verify', 'Ship'], correct: 0, explain: 'Verify first.', section: 'man-1-1' },
+  { type: 'truefalse', q: 'Skip it?', correct: 1 }] };
+/** A team: the admin marks boss and other as managers; rep + rep2 on boss's team (Intro, Mobility), rep3 on other's (Intro). */
+function hb33World_(extra) {
+  const sb = hb32Sb_(extra);
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true); sb.hbSetManager('other@ex.org', true);
+  hbAs_(sb, 'rep@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');
+  hbAs_(sb, 'rep2@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org');
+  hbAs_(sb, 'rep3@ex.org').hbSaveProfile('1 · Intro', 'other@ex.org');
+  hbAs_(sb, 'owner@example.org'); ['rep@ex.org', 'rep2@ex.org', 'rep3@ex.org'].forEach((e) => sb.hbConfirmPerson(e, true));
+  return sb;
+}
+
+test('HB3.3-a: the plan helpers — JSON rows (a broken one counted), the latest read mark wins, an author\'s team (admin: everyone; a manager: their confirmed people), recipients by name or department, and every refusal of a plan', () => {
+  const sb = hb32Sb_();
+  const rows = hbPlainV_(sb.hbJsonRows_([['h'], ['pl-aaaaaaaa', 'B@ex.org', '{"title":"T"}', 5, 'live'], ['pl-bbbbbbbb', 'b@ex.org', 'not json', 5, ''], ['bad id', 'b@ex.org', '{}', 5, ''], ['pl-cccccccc', 'b@ex.org', '{"title":"X"}', 6, 'Archived']], /^pl-[a-z0-9]{8,24}$/));
+  assert.deepStrictEqual([rows.rows.map((r) => [r.id, r.author, r.live, r.row]), rows.unreadable], [[['pl-aaaaaaaa', 'b@ex.org', true, 2], ['pl-cccccccc', 'b@ex.org', false, 5]], 2]);
+  const done = hbPlainV_(sb.hbReadDone_([['h'], [100, 'a@ex.org', 'section:man-1-1', 'yes'], [200, 'a@ex.org', 'section:man-1-1', 'no'], [150, 'a@ex.org', 'chapter:1 · Intro', 'YES']]));
+  assert.deepStrictEqual(done, { 'a@ex.org|section:man-1-1': false, 'a@ex.org|chapter:1 · Intro': true }, 'the latest mark wins; Done is a word');
+  const P = (email, manager, dept, status, role) => ({ email, manager, department: dept, status: status || 'confirmed', role: role || '' });
+  const people = [P('boss@ex.org', '', '', '', 'manager'), P('a@ex.org', 'boss@ex.org', 'D1'), P('b@ex.org', 'boss@ex.org', 'D2', 'pending'), P('c@ex.org', 'x@ex.org', 'D1')];
+  assert.deepStrictEqual(sb.hbAuthorTeam_(people, 'boss@ex.org', false).map((p) => p.email), ['a@ex.org'], 'confirmed only');
+  assert.deepStrictEqual(sb.hbAuthorTeam_(people, 'a@ex.org', false).length, 0, 'not a manager: nobody');
+  assert.strictEqual(sb.hbAuthorTeam_(people, 'owner@x', true).length, 4, 'the admin: everyone');
+  assert.deepStrictEqual(hbPlainV_(sb.hbPlanRecipients_({ assign: { people: [], departments: ['D1'] } }, people)), ['a@ex.org', 'c@ex.org']);
+  assert.deepStrictEqual(hbPlainV_(sb.hbPlanRecipients_({ assign: { people: ['b@ex.org'], departments: [] } }, sb.hbAuthorTeam_(people, 'boss@ex.org', false))), [], 'named but not confirmed: not reached');
+  // Validation.
+  const ctx = { departments: ['D1', 'D2'], sectionIds: { 'man-1-1': 1 }, quizIds: { 'q-x': 1 }, team: ['a@ex.org'] };
+  const ok = (d) => Object.assign({ title: 'Onboarding', due: '2026-11-30', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['a@ex.org'] } }, d);
+  const v = hbPlainV_(sb.hbPlanValidate_(ok({ items: [{ kind: 'section', id: 'man-1-1' }, { kind: 'section', id: 'man-1-1' }, { kind: 'quiz', id: 'q-x' }, { kind: 'chapter', id: 'D2' }], assign: { people: ['A@ex.org'], departments: ['D1'] } }), ctx));
+  assert.deepStrictEqual(v.plan.items.map((i) => i.kind + ':' + i.id), ['section:man-1-1', 'quiz:q-x', 'chapter:D2'], 'a repeated item kept once');
+  assert.deepStrictEqual(v.plan.assign, { people: ['a@ex.org'], departments: ['D1'] });
+  const bad = (d) => sb.hbPlanValidate_(ok(d), ctx).error;
+  assert.ok(/needs a title/.test(bad({ title: '' })));
+  assert.ok(/must be a date/.test(bad({ due: 'Friday' })));
+  assert.ok(/needs 1–/.test(bad({ items: [] })));
+  assert.ok(/that section is not one you can assign/.test(bad({ items: [{ kind: 'section', id: 'man-9-9' }] })));
+  assert.ok(/that quiz is not one/.test(bad({ items: [{ kind: 'quiz', id: 'tq-someoneelse' }] })));
+  assert.ok(/not a chapter, section or quiz/.test(bad({ items: [{ kind: 'video', id: 'x' }] })));
+  assert.ok(/your own confirmed team/.test(bad({ assign: { people: ['c@ex.org'] } })));
+  assert.ok(/not a chapter of the handbook/.test(bad({ assign: { departments: ['Nowhere'] } })));
+  assert.ok(/at least one person or department/.test(bad({ assign: {} })));
+  // A team quiz: the engine, and a published section if one is named.
+  assert.strictEqual(sb.hbTeamQuizValidate_(HB33_TQ, { 'man-1-1': 1 }).error, undefined);
+  assert.ok(/that section is not in the handbook/.test(sb.hbTeamQuizValidate_(HB33_TQ, {}).error));
+  assert.deepStrictEqual([sb.hbPlanOverdue_('2026-10-01', '2026-10-29', false), sb.hbPlanOverdue_('2026-10-01', '2026-10-29', true), sb.hbPlanOverdue_('', '2026-10-29', false)], [true, false, false]);
+});
+
+test('HB3.3-b: a manager writes a quiz and a plan for their team in a department — their own people there get it (not another manager\'s), take the team quiz, mark reading done and see their progress; the admin\'s department plan reaches everyone in it (driven)', () => {
+  const sb = hb33World_();
+  const q = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbSaveTeamQuiz(HB33_TQ));
+  assert.strictEqual(q.success, true, JSON.stringify(q));
+  assert.ok(/^tq-[0-9a-f]{12}$/.test(q.id));
+  const plan = hbPlainV_(sb.hbSavePlan({ title: 'Intro week', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }, { kind: 'chapter', id: '1 · Intro' }, { kind: 'quiz', id: q.id }], assign: { departments: ['1 · Intro'] } }));
+  assert.deepStrictEqual([plan.success, plan.reaches], [true, 1], 'boss\'s Intro people: rep only (rep3 is other\'s)');
+  // rep: the plan, its items, overdue.
+  let mine = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMyTraining());
+  assert.deepStrictEqual(mine.plans.map((p) => [p.title, p.done, p.total, p.overdue, p.authorName]), [['Intro week', 0, 3, true, 'Boss']]);
+  assert.deepStrictEqual(mine.plans[0].items.map((i) => [i.kind, i.done]), [['section', false], ['chapter', false], ['quiz', false]]);
+  assert.strictEqual(mine.plans[0].items[2].title, 'Our intake checks');
+  // rep3 (other's team, same department) and rep2 (boss's team, other department): nothing.
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'rep3@ex.org').hbMyTraining()).plans, []);
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'rep2@ex.org').hbMyTraining()).plans, []);
+  // The team quiz: listed and takeable for rep; invisible to rep3.
+  const listed = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbListQuizzes()).quizzes.filter((x) => x.team);
+  assert.deepStrictEqual(listed.map((x) => [x.id, x.title, x.authorName]), [[q.id, 'Our intake checks', 'Boss']]);
+  assert.ok(!/"correct"|Verify first/.test(JSON.stringify(sb.hbGetQuiz(q.id))), 'the key stays on the server');
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'rep3@ex.org').hbListQuizzes()).quizzes.filter((x) => x.team), [], 'not assigned: not listed');
+  assert.strictEqual(sb.hbGetQuiz(q.id).error, 'That quiz is not in the handbook.', 'and not takeable');
+  // rep marks reading done and passes the quiz.
+  hbAs_(sb, 'rep@ex.org');
+  assert.strictEqual(sb.hbMarkRead('section', 'man-1-1', true).success, true);
+  assert.strictEqual(sb.hbMarkRead('chapter', '1 · Intro', true).success, true);
+  const sub = hbPlainV_(sb.hbSubmitQuiz(q.id, [0, 1]));
+  assert.deepStrictEqual([sub.success, sub.passed], [true, true]);
+  mine = hbPlainV_(sb.hbMyTraining());
+  assert.deepStrictEqual([mine.plans[0].done, mine.plans[0].total, mine.plans[0].overdue], [3, 3, false], 'all done: no longer overdue');
+  assert.strictEqual(sb.hbMarkRead('chapter', '1 · Intro', false).success, true);
+  assert.strictEqual(hbPlainV_(sb.hbMyTraining()).plans[0].done, 2, 'unmarked: the latest mark wins');
+  // The admin's plan by department reaches both teams there.
+  const ap = hbPlainV_(hbAs_(sb, 'owner@example.org').hbSavePlan({ title: 'Everyone in Intro', items: [{ kind: 'section', id: 'man-1-1' }], assign: { departments: ['1 · Intro'] } }));
+  assert.strictEqual(ap.reaches, 2);
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'rep3@ex.org').hbMyTraining()).plans.map((p) => p.title), ['Everyone in Intro']);
+  // A new member of boss's team in Intro picks the plan up at read time.
+  hbAs_(sb, 'rep4@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');
+  hbAs_(sb, 'boss@ex.org').hbConfirmPerson('rep4@ex.org', true);
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'rep4@ex.org').hbMyTraining()).plans.map((p) => p.title).sort(), ['Everyone in Intro', 'Intro week']);
+  // Team training, for boss: their quiz (with its key — they wrote it), their plan and who it reaches.
+  const tt = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamTraining());
+  assert.deepStrictEqual([tt.quizzes.map((x) => x.id), tt.plans.map((p) => [p.plan.title, p.reaches]), tt.team.map((p) => p.email).sort()],
+    [[q.id], [['Intro week', 2]], ['rep2@ex.org', 'rep4@ex.org', 'rep@ex.org'].sort()]);
+  assert.strictEqual(tt.quizzes[0].quiz.questions[0].correct, 0, 'the author edits the key');
+  // None of it touched the Knowledge Base.
+  assert.deepStrictEqual(Object.keys(sb.__tabs).sort(), ['KB', 'ManualMeta', 'ManualQuizzes']);
+});
+
+test('HB3.3-c: the gates — a reader cannot write quizzes or plans (refused before the lock), a manager cannot change another\'s or assign outside their team, the admin can; archived reaches nobody; a mark names a published item; unset reads as nothing to do (driven)', () => {
+  const sb = hb33World_();
+  const q = hbAs_(sb, 'boss@ex.org').hbSaveTeamQuiz(HB33_TQ).id;
+  const p = sb.hbSavePlan({ title: 'P', items: [{ kind: 'quiz', id: q }], assign: { people: ['rep@ex.org'] } }).id;
+  const locks0 = sb.__locks.n;
+  hbAs_(sb, 'rep@ex.org');
+  ['hbTeamTraining', 'hbSaveTeamQuiz', 'hbSavePlan', 'hbArchiveTraining'].forEach((f) => assert.strictEqual(sb[f](HB33_TQ).error, 'Handbook manager access required.', f));
+  assert.strictEqual(sb.__locks.n, locks0, 'refused before the lock (g17)');
+  hbAs_(sb, 'other@ex.org');
+  assert.strictEqual(sb.hbSaveTeamQuiz(Object.assign({ id: q }, HB33_TQ)).error, 'Only its author can change this quiz.');
+  assert.strictEqual(sb.hbSavePlan({ id: p, title: 'Mine now', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep3@ex.org'] } }).error, 'Only its author can change this plan.');
+  assert.ok(/your own confirmed team/.test(sb.hbSavePlan({ title: 'Poach', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } }).error));
+  assert.ok(/that quiz is not one you can assign/.test(sb.hbSavePlan({ title: 'Borrow', items: [{ kind: 'quiz', id: q }], assign: { people: ['rep3@ex.org'] } }).error), 'another manager\'s quiz is not theirs to assign');
+  assert.strictEqual(sb.hbArchiveTraining('plan', p, true).error, 'Only its author can archive it.');
+  assert.strictEqual(hbAs_(sb, 'owner@example.org').hbSavePlan({ id: p, title: 'Edited by the admin', items: [{ kind: 'quiz', id: q }], assign: { people: ['rep@ex.org'] } }).success, true, 'the admin may');
+  // Archive the plan: rep loses it and the team quiz with it.
+  assert.strictEqual(hbAs_(sb, 'boss@ex.org').hbArchiveTraining('plan', p, true).success, true);
+  hbAs_(sb, 'rep@ex.org');
+  assert.deepStrictEqual(hbPlainV_(sb.hbMyTraining()).plans, []);
+  assert.strictEqual(sb.hbGetQuiz(q).error, 'That quiz is not in the handbook.');
+  // Restore, then archive the quiz: the plan stays, its quiz item is gone from the listing.
+  hbAs_(sb, 'boss@ex.org').hbArchiveTraining('plan', p, false);
+  sb.hbArchiveTraining('quiz', q, true);
+  assert.strictEqual(hbAs_(sb, 'rep@ex.org').hbGetQuiz(q).error, 'That quiz is not in the handbook.', 'an archived quiz is never offered');
+  const item = hbPlainV_(sb.hbMyTraining()).plans[0].items[0];
+  assert.deepStrictEqual([item.kind, item.done], ['quiz', false]);
+  // Marks.
+  assert.strictEqual(sb.hbMarkRead('section', 'man-1-2', true).error, 'That section is not in the handbook.', 'a draft is not published');
+  assert.strictEqual(sb.hbMarkRead('quiz', q, true).error, 'Only a chapter or a section is marked read.');
+  // Unset store: nothing to do, said as such.
+  const unset = hbServer_({ tabs: hb32Tabs_(), email: 'rep@ex.org', props: { HANDBOOK_KB_SS_ID: 'ss1' } });
+  assert.deepStrictEqual(hbPlainV_(unset.hbMyTraining()), { setUp: false, plans: [] });
+});
+
+test('HB3.3-d: Training.js never writes the Knowledge Base; its writes go through two helpers, inside the app\'s lock, after the caller is checked (structural)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Training.js'), 'utf8'));
+  assert.ok(!/getKbSS_|getOrCreateKbSheet_|hbAppendTab_/.test(src), 'no reach into the KB');
+  const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
+  assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'insertSheet', 'setValues'], 'its writes');
+  ['hbMarkRead', 'hbSaveTeamQuiz', 'hbSavePlan', 'hbArchiveTraining'].forEach((f) => {
+    const b = extractFnFrom(src, f);
+    const gate = Math.max(b.indexOf('getEmployeeInfo_()'), b.indexOf('hbAuthorCall_()')), lock = b.indexOf('hbWithLock_('),
+      write = Math.min.apply(null, ['hbTrainWrite_(', 'hbQuizAppend_('].map((k) => { const i = b.indexOf(k); return i < 0 ? Infinity : i; }));
+    assert.ok(gate >= 0 && gate < lock && lock < write && write < Infinity, f + ': caller, then lock, then write');
+  });
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');

@@ -76,7 +76,9 @@ function hbQuizStanding_(attempts, resets, email, quizId, nowMs) {
 }
 /** PURE — a quiz as a list row: no questions, just what the list shows. */
 function hbQuizSummary_(q) {
-  return { id: q.id, title: q.title, section: q.section, anchor: q.anchor, passPct: q.passPct, count: q.questions.length };
+  const out = { id: q.id, title: q.title, section: q.section, anchor: q.anchor, passPct: q.passPct, count: q.questions.length };
+  if (q.team) { out.team = true; out.authorName = q.authorName; }   // HB3.3
+  return out;
 }
 
 // ── Reads ────────────────────────────────────────────────────────────────
@@ -109,6 +111,13 @@ function hbQuizAppend_(ss, name, headers, row) {
   if (!sheet) { sheet = ss.insertSheet(name); sheet.appendRow(sheetSafeRow_(headers)); }
   sheet.appendRow(sheetSafeRow_(row));
 }
+/** HB3.3 — a quiz the reader may take, by id: an official one, or a team
+ *  quiz they may see (Training.js's rule — their own, the admin's every one,
+ *  or one a live plan assigns them). null when there is none. */
+function hbQuizFor_(ss, email, id) {
+  if (/^q-/.test(id)) return hbQuizzes_().quizzes.filter(function (x) { return x.id === id; })[0] || null;
+  return hbTeamQuizzesVisible_(ss, email).filter(function (x) { return x.id === id; })[0] || null;
+}
 /** May `caller` reset `email`? Their confirmed manager (still a manager), or
  *  an admin. */
 function hbMayReset_(people, caller, email, isAdmin) {
@@ -133,7 +142,8 @@ function hbListQuizzes() {
     // Unset: the quizzes can be listed, not taken (nothing could record them).
     if (!ss) return { setUp: false, unreadable: q.unreadable, quizzes: q.quizzes.map(hbQuizSummary_) };
     const attempts = hbQuizAttempts_(ss), resets = hbQuizResets_(ss), now = Date.now();
-    return { setUp: true, unreadable: q.unreadable, quizzes: q.quizzes.map(function (x) {
+    const all = q.quizzes.concat(hbTeamQuizzesVisible_(ss, emp.email));   // HB3.3: the team quizzes this reader may see
+    return { setUp: true, unreadable: q.unreadable, quizzes: all.map(function (x) {
       return Object.assign(hbQuizSummary_(x), { me: hbQuizStanding_(attempts, resets, emp.email, x.id, now) });
     }) };
   } catch (err) { return { error: err.message }; }
@@ -145,12 +155,12 @@ function hbGetQuiz(quizId) {
   const emp = getEmployeeInfo_();
   if (!emp) return { error: 'Not authorized.' };
   const id = String(quizId || '');
-  if (!KB_MANUAL_QUIZ_ID_RE.test(id)) return { error: 'That is not a quiz.' };
+  if (!HB_QUIZ_ID_RE.test(id)) return { error: 'That is not a quiz.' };
   try {
-    const quiz = hbQuizzes_().quizzes.filter(function (x) { return x.id === id; })[0];
-    if (!quiz) return { error: 'That quiz is not in the handbook.' };
     const st = hbStore_();
     if (st.error) return { error: st.error };
+    const quiz = hbQuizFor_(st.ss, emp.email, id);
+    if (!quiz) return { error: 'That quiz is not in the handbook.' };
     const me = hbQuizStanding_(hbQuizAttempts_(st.ss), hbQuizResets_(st.ss), emp.email, id, Date.now());
     return { quiz: Object.assign(hbQuizSummary_(quiz), { questions: quiz.questions.map(quizStripQuestion_) }), me: me };
   } catch (err) { return { error: err.message }; }
@@ -164,14 +174,14 @@ function hbSubmitQuiz(quizId, answers) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   const id = String(quizId || '');
-  if (!KB_MANUAL_QUIZ_ID_RE.test(id)) return { success: false, error: 'That is not a quiz.' };
+  if (!HB_QUIZ_ID_RE.test(id)) return { success: false, error: 'That is not a quiz.' };
   if (!Array.isArray(answers) || answers.length > TRAIN_QUIZ_MAX_QUESTIONS) return { success: false, error: 'Those are not answers to this quiz.' };
-  let quiz;
-  try { quiz = hbQuizzes_().quizzes.filter(function (x) { return x.id === id; })[0]; } catch (err) { return { success: false, error: err.message }; }
-  if (!quiz) return { success: false, error: 'That quiz is not in the handbook.' };
-  if (answers.length !== quiz.questions.length) return { success: false, error: 'Those are not answers to this quiz — reload it and try again.' };
   const st = hbStore_();
   if (st.error) return { success: false, error: st.error };
+  let quiz;
+  try { quiz = hbQuizFor_(st.ss, emp.email, id); } catch (err) { return { success: false, error: err.message }; }
+  if (!quiz) return { success: false, error: 'That quiz is not in the handbook.' };
+  if (answers.length !== quiz.questions.length) return { success: false, error: 'Those are not answers to this quiz — reload it and try again.' };
   return hbWithLock_(function () {
     try {
       const now = Date.now();
@@ -202,7 +212,7 @@ function hbTeamQuizLocks() {
     const people = hbPeopleRead_(st.ss, false);
     const who = people.filter(function (p) { return hbMayReset_(people, emp.email, p.email, isAdmin); }).map(function (p) { return p.email; });
     if (!who.length) return { locks: [] };
-    const quizzes = hbQuizzes_().quizzes;
+    const quizzes = hbQuizzes_().quizzes.concat(hbTeamQuizRows_(st.ss).rows.filter(function (r) { return r.live; }).map(hbTeamQuizOf_));   // HB3.3
     const attempts = hbQuizAttempts_(st.ss), resets = hbQuizResets_(st.ss), now = Date.now();
     const locks = [];
     who.forEach(function (email) {
@@ -221,7 +231,7 @@ function hbResetQuiz(email, quizId) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   const who = hbEmail_(email), id = String(quizId || '');
-  if (!who || !KB_MANUAL_QUIZ_ID_RE.test(id)) return { success: false, error: 'That is not a person and a quiz.' };
+  if (!who || !HB_QUIZ_ID_RE.test(id)) return { success: false, error: 'That is not a person and a quiz.' };
   const st = hbStore_();
   if (st.error) return { success: false, error: st.error };
   const isAdmin = hbAdmins_().indexOf(emp.email) >= 0;

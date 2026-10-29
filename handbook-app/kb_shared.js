@@ -2,7 +2,7 @@
  * CI fails while this file differs from what the sync would write.
  *
  * Team Tools' handbook readers, verbatim from 00_config.js, 10_core.js, 70_kb.js, 80_training.js,
- * with every declaration they reach (121 in all).
+ * with every declaration they reach (131 in all).
  * Copied under a private name: getKbImages → ttGetKbImages_, getManualImages → ttGetManualImages_, getManualMeta → ttGetManualMeta_, getManualPart → ttGetManualPart_, getManualParts → ttGetManualParts_, getReferenceItem → ttGetReferenceItem_, searchReference → ttSearchReference_.
  * Supplied by Handbook.js instead of copied: fmtDate_, getAutoTagRules_, getEmployeeInfo_, getKbSS_, getKbSearchSynonyms_, getOrCreateKbSheet_, kbRecordSearchSignal_. */
 
@@ -234,6 +234,27 @@ const KB_IMAGE_CACHE_PREFIX = 'kbimg_';
 const KB_AI_GEN_PROP = 'KB_AI_GENERATION';
 
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
+
+const TRAIN_QUIZ_MAX_OPTIONS = 6;
+
+const TRAIN_QUIZ_JSON_MAX = 45000;
+
+// HB3.1 (handbook app plan, operator 2026-10-28): ONE quiz engine for both
+// apps (80_training.js, quiz…_). Team Tools' own quizzes are single-answer; the
+// handbook's official quizzes (manual/data/quizzes.json, mirrored by
+// manual/quizzes.py — pinned equal) may also be multi-select or true/false,
+// and every question explains itself and names the section it tests.
+const QUIZ_TYPES = ['single', 'multi', 'truefalse'];
+
+const QUIZ_TF_OPTIONS = ['True', 'False'];
+
+const QUIZ_TEXT_MAX = 500;
+
+const QUIZ_OPTION_MAX = 200;
+
+const QUIZ_TITLE_MAX = 120;
+
+const QUIZ_EXPLAIN_MAX = 600;
 
 // TRN-1 (cycle 23 Batch 11, operator 2026-10-05): retries are no longer
 // unlimited. A failed attempt now shows WHICH questions were wrong (never the
@@ -1536,6 +1557,86 @@ function ttGetManualParts_() {
     });
     return { parts: parts, isAdmin: !!emp.isAdmin };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── HB3.1 — the quiz engine both apps share ─────────────────────────────────
+// PURE, and nothing here reads CONFIG, a sheet or the clock, so the handbook
+// app's sync can copy it verbatim (scripts/handbook-sync.mjs). Team Tools'
+// trainValidateQuizDef_ / trainGradeQuiz_ / trainStripQuizForRep_ below are
+// this engine with Team Tools' stored shape — byte-identical results for its
+// single-answer quizzes. The retry limit, trainQuizLockout_, was already pure
+// and keyed by nothing: an attempt list is a list, whoever it belongs to.
+
+/** PURE — one question, validated and normalized: { question } or { error }.
+ *  type 'single' (the default; `correct` an option index), 'multi' (`correct`
+ *  the list of right indices — every one must be chosen, and nothing else) or
+ *  'truefalse' (options True, False). `explain` is what a wrong answer is
+ *  shown; `section` / `anchor` the handbook section it tests. opts.types limits
+ *  the types; opts.sectionIds (an id → 1 map), when given, requires every
+ *  question to name one of them. */
+function quizQuestion_(q, i, opts) {
+  q = q || {};
+  opts = opts || {};
+  const n = 'Question ' + (i + 1);
+  const type = q.type == null || q.type === '' ? 'single' : String(q.type);
+  if ((opts.types || ['single']).indexOf(type) < 0) return { error: n + ': "' + type.substring(0, 20) + '" is not a question type here.' };
+  const text = String(q.q || '').trim();
+  if (!text || text.length > QUIZ_TEXT_MAX) return { error: n + ': text is required (max ' + QUIZ_TEXT_MAX + ' chars).' };
+  let options;
+  if (type === 'truefalse') {
+    options = QUIZ_TF_OPTIONS.slice();
+    if (q.options != null && (!Array.isArray(q.options) || q.options.map(function (o) { return String(o).trim(); }).join('\n') !== options.join('\n'))) {
+      return { error: n + ': a true/false question\'s options are True and False.' };
+    }
+  } else {
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > TRAIN_QUIZ_MAX_OPTIONS) {
+      return { error: n + ': needs 2–' + TRAIN_QUIZ_MAX_OPTIONS + ' options.' };
+    }
+    options = [];
+    for (let j = 0; j < q.options.length; j++) {
+      const opt = String(q.options[j] || '').trim();
+      if (!opt || opt.length > QUIZ_OPTION_MAX) return { error: n + ', option ' + (j + 1) + ': text is required (max ' + QUIZ_OPTION_MAX + ' chars).' };
+      options.push(opt);
+    }
+  }
+  let correct;
+  if (type === 'multi') {
+    const list = Array.isArray(q.correct) ? q.correct.map(function (c) { return Math.round(Number(c)); }) : [];
+    const seen = {};
+    const ok = list.length >= 1 && list.every(function (c) { if (!(c >= 0 && c < options.length) || seen[c]) return false; seen[c] = 1; return true; });
+    if (!ok) return { error: n + ': pick the correct options (each once).' };
+    correct = list.slice().sort(function (a, b) { return a - b; });
+  } else {
+    correct = Math.round(Number(q.correct));
+    if (!(correct >= 0 && correct < options.length)) return { error: n + ': pick the correct option.' };
+  }
+  const explain = String(q.explain == null ? '' : q.explain).trim();
+  if (explain.length > QUIZ_EXPLAIN_MAX) return { error: n + ': the explanation is longer than ' + QUIZ_EXPLAIN_MAX + ' characters.' };
+  const section = String(q.section == null ? '' : q.section).trim();
+  const anchor = String(q.anchor == null ? '' : q.anchor).trim();
+  if (opts.sectionIds && !opts.sectionIds[section]) return { error: n + ': it must name the handbook section it tests' + (section ? ' (' + section.substring(0, 30) + ' is not one).' : '.') };
+  return { question: { type: type, q: text, options: options, correct: correct, explain: explain, section: section, anchor: anchor } };
+}
+
+/** PURE — a quiz: title, pass mark and questions. Returns { ok, quiz } or
+ *  { ok:false, error } (the first problem). Whitelist-built: only known fields
+ *  survive; a caller adds its own (Team Tools' kbItemId, the bank's id). */
+function quizValidate_(def, opts) {
+  def = def || {};
+  const title = String(def.title || '').trim();
+  if (!title || title.length > QUIZ_TITLE_MAX) return { ok: false, error: 'Quiz title is required (max ' + QUIZ_TITLE_MAX + ' chars).' };
+  const passPct = Math.round(Number(def.passPct));
+  if (!(passPct >= 0 && passPct <= 100)) return { ok: false, error: 'Pass threshold must be 0–100.' };
+  if (!Array.isArray(def.questions) || def.questions.length < 1 || def.questions.length > TRAIN_QUIZ_MAX_QUESTIONS) {
+    return { ok: false, error: 'A quiz needs 1–' + TRAIN_QUIZ_MAX_QUESTIONS + ' questions.' };
+  }
+  const questions = [];
+  for (let i = 0; i < def.questions.length; i++) {
+    const r = quizQuestion_(def.questions[i], i, opts);
+    if (r.error) return { ok: false, error: r.error };
+    questions.push(r.question);
+  }
+  return { ok: true, quiz: { title: title, passPct: passPct, questions: questions } };
 }
 
 /** PURE — is one answer right? A multi-select answer is right only when it

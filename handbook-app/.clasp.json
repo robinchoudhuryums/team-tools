@@ -15,7 +15,8 @@
     "kb_shared.js",
     "Handbook.js",
     "People.js",
-    "Quiz.js"
+    "Quiz.js",
+    "Training.js"
   ],
   "skipSubdirectories": false
 }
