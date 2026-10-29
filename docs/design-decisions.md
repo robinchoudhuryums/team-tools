@@ -5981,3 +5981,29 @@ pick them up without re-deriving the context.
   JSON cell (it is already near its limit, and every reader would pay for the
   keys it must not see); a separate quiz upload (two files to keep in step);
   writing the bank before HB3.5 (questions need the operator's review first).
+- <a id="quizzes-are-taken-in-the-handbook-app"></a>**Quizzes are taken in the handbook app: shuffled in the browser, graded by the shared engine, attempts and resets in the app's own spreadsheet (handbook app HB3.2, operator plan 2026-10-28)**
+  (1) **The quizzes are read, the attempts are the app's.** `Quiz.js` reads the
+  KB's `ManualQuizzes` (Team Tools publishes it — HB3.1) and appends attempts
+  and resets to `QuizAttempts` / `QuizResets` in the Handbook spreadsheet, under
+  the app's own lock; the reader is named by address, times are numbers and
+  Passed a word (g09). The engine, the retry limit and the tab reader are Team
+  Tools' functions copied by the sync — a pin holds that Quiz.js declares none
+  of them. (2) **The shuffle is the browser's.** The page shuffles questions
+  and options (`hbQuizOrder_`; a true/false keeps True, False) and sends the
+  answers in the quiz's ORIGINAL order (`hbQuizAnswers_`), so the server keeps
+  no sitting between open and submit, and a reload is simply a new shuffle.
+  (3) **TRN-1's rules, unchanged:** three failed attempts, then 24 hours from
+  the last; a pass starts the count over; a submit while locked is refused
+  and NOT recorded; a wrong answer shows its explanation and a link to its
+  section, never the right option. (4) **A reset is the confirmed manager's**
+  (still a manager) **or an admin's** — not a pending request's chosen
+  manager, not another manager's; the attempts are kept, a reset row only
+  starts the count over. The people view lists each manager's own locked-out
+  people. (5) **Honest states:** no Handbook spreadsheet lists the quizzes but
+  cannot take one; an unreachable one is said; a quiz row that will not parse
+  is counted, never served; a failed list load keeps the quiz bar it had and
+  says so in the list (g129); every answer is for its own view (g81).
+  **Alternatives rejected:** recording attempts in Team Tools' QuizAttempts
+  (keyed by roster id, and two projects cannot share its lock); a
+  server-remembered shuffle (state per sitting for no gain); showing the right
+  option after a final attempt (the next 24-hour set would start with the key).

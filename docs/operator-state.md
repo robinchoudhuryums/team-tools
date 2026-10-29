@@ -2713,7 +2713,11 @@ entry says which it is.
   *Managers*, add each manager's address. Readers are then asked, on their next
   visit, for a department and a manager, and each manager confirms their own
   people under *Your team*. Unset, reading works as before and nobody is asked.
-  No new permission is needed. The full picture is
+  No new permission is needed. **Since HB3.2** the same spreadsheet takes the
+  quiz attempts and resets (`QuizAttempts`, `QuizResets` — created by the first
+  one; do not edit their headers). Nothing to set: the quizzes are the ones
+  Team Tools' manual import stores, and a reader's confirmed manager resets a
+  lock-out from Profile → Quiz lock-outs. The full picture is
   [`docs/handbook-app.md`](handbook-app.md).
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>

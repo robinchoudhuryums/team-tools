@@ -3056,3 +3056,27 @@ per-change detail. By delta:
   gains `kbManualQuizzesWrite_`; M2-E1 reads the bundle's `quizzes` field.
 - **Python** — `manual/quizzes.py --check`: the good bank and 20 refusals, run in
   CI's handbook step.
+
+## Handbook app HB3.2 — taking a quiz (2026-10-29)
+
+- **Pure (run.js, "HB3.2")** — a: the helpers (a broken quiz row counted, never
+  served; Passed read as a word; the standing — three fails lock for 24 hours
+  from the last, a pass or a later reset starts over, another quiz's reset does
+  not); b: a reader driven end to end in `hbServer_` (the list, the stripped
+  questions, a wrong submit's review with no key, three fails lock, a fourth
+  refused and NOT recorded, a pass after a reset, the refusals, the KB untouched);
+  c: the reset gate (a pending request's manager, another manager and the reader
+  refused; the confirmed manager and an admin allowed; the attempts kept) and the
+  lock-out list, unset vs unreachable; d: structural — Quiz.js only appends, the
+  KB is read for ManualQuizzes only, caller then lock then append, and the engine
+  is Team Tools', copied. `hbServer_` now loads Quiz.js.
+- **DOM** — the quiz bar on its section only; the list by chapter with the
+  reader's standing and a locked quiz disabled; a sitting (unanswered refused;
+  answers sent in the original order whatever the shuffle; the review's
+  explanation and section link, no option text); the shuffle over a seeded random
+  (permutations, true/false fixed, answers map back); locked, and a manager's
+  lock-outs with Reset; a failed list load, a dropped late answer, Back to a quiz.
+- **Visual** — `handbook-quizzes-light-wide`, `handbook-quiz-take-light-mobile`,
+  `handbook-quiz-result-dark-wide`, `handbook-quizbar-light-mobile`. Reading the
+  first found a raw section id for an unpublished section and an enabled-looking
+  disabled button — both fixed before commit.

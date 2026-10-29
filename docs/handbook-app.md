@@ -33,12 +33,13 @@ under the "handbook app" entries.
 
 ## How it is built
 
-Only five files are written by hand:
+Only six files are written by hand:
 
 | File | Holds |
 |---|---|
 | `Handbook.js` | The server's environment (who is asking, the spreadsheet, today) and its public endpoints |
 | `People.js` | The Handbook spreadsheet's People tab: profiles, managers, confirmations (HB2.1) |
+| `Quiz.js` | Taking a quiz: reads ManualQuizzes, records attempts and resets (HB3.2) |
 | `index.html` | The page template |
 | `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the people view, the browser copy, links |
 | `styles_handbook.html` | The frame's styles |
@@ -103,7 +104,7 @@ one row per person: `Email`, `Department` (a chapter of the handbook),
 
 Unset, nobody is asked anything and the handbook reads as before.
 
-## Quizzes (HB3.1 — the engine and the bank; taking them is HB3.2)
+## Quizzes (HB3.1 — the engine and the bank; HB3.2 — taking them)
 
 The official quizzes are written in the repo, in `manual/data/quizzes.json`,
 beside the sections they test; `manual/quizzes.py` fails the manual export on a
@@ -112,6 +113,17 @@ Tools' Import stores them in the KB spreadsheet's `ManualQuizzes` tab. Both apps
 grade with one engine (`quiz…_` in `web-app/80_training.js`): single-answer,
 multi-select and true/false questions, each with the explanation a wrong answer
 is shown and the section to go back to. The answer key never leaves a server.
+
+**Taking one (HB3.2).** **Quizzes** in the contents lists them by chapter, and a
+section that has one shows a quiz bar. The questions and their options are
+shuffled for each sitting; every question must be answered. The result gives
+the score and, for each wrong answer, its explanation and a link to its section
+— never the right option. Three failed attempts lock the quiz for 24 hours from
+the last (a pass starts the count over). A reader's confirmed manager, or the
+admin, can reset them from **Profile → Quiz lock-outs**. Attempts and resets go
+to the Handbook spreadsheet's `QuizAttempts` and `QuizResets` tabs (created by
+the first one; never edit their headers); without the Handbook spreadsheet the
+quizzes can be read about but not taken.
 
 ## Setup and deploying
 
@@ -144,10 +156,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate.
