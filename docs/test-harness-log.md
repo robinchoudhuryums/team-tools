@@ -3039,3 +3039,20 @@ per-change detail. By delta:
 - **Visual** — `handbook-people-light-wide`, `handbook-people-dark-mobile`,
   `handbook-firstvisit-light-mobile` over a `HB_PEOPLE_VIEW()` fixture of
   invented people.
+
+## Handbook app HB3.1 — the quiz engine and the question bank (2026-10-29)
+
+- **Pure (run.js, "HB3.1")** — a: the engine driven over single, multi-select
+  and true/false (a multi answer right only as exactly the set; the stripped
+  shape whitelist-built; the review gives explanation and section, never the
+  key; the refusals); b: `manual/quizzes.py`'s limits, types and id rule pinned
+  equal to the app's, CI runs its self-test and the export runs the check; c:
+  the import driven over the fake book (a check writes nothing; the tab created
+  with text columns formatted before the write; a re-import writes nothing; an
+  older file keeps the stored quizzes; an empty list clears them; four kinds of
+  bad quiz and a duplicate refuse the file); d: the dialog's quizzes line. The
+  three Team Tools quiz pins and TRN-1 pass unchanged over the delegating
+  functions (their sandboxes now load the engine); S2's raw-text writer list
+  gains `kbManualQuizzesWrite_`; M2-E1 reads the bundle's `quizzes` field.
+- **Python** — `manual/quizzes.py --check`: the good bank and 20 refusals, run in
+  CI's handbook step.

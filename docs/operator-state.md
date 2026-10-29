@@ -2728,7 +2728,14 @@ entry says which it is.
   glossary's abbreviations ("ABN" → "Advance Beneficiary Notice") as search
   synonyms, stored with the router and changelog in `ManualMeta`; a file from
   before M5b imports with none, so **re-export and import once** to turn them
-  on. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
+  on. **Quizzes (HB3.1, 2026-10-29):** the export also carries the official
+  quizzes from `manual/data/quizzes.json` (empty until HB3.5's questions are
+  approved) — a quiz or question naming a section that does not exist fails
+  the export — and the import stores them in a `ManualQuizzes` tab of the KB
+  spreadsheet, rewritten only when they changed; the dialog's "Quizzes:" line
+  says which. Do not edit that tab: it holds the answer keys, and the next
+  import overwrites it. A file from before HB3.1 leaves the stored quizzes as
+  they are. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
   many cross-references preview the part of their target they are about, how
   many show its opening by design (anchored, or no numbered sub-section to point
   at), and WARN about the links an anchor could fix —

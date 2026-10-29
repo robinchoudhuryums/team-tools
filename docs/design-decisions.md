@@ -5952,3 +5952,32 @@ pick them up without re-deriving the context.
   Tools' `MANAGER_EMAILS` (the admin would have to open the editor; g153 is
   the cost of a list nobody sees); asking the reader for a name (the address
   gives one — `maria.lopez` reads as Maria Lopez).
+- <a id="one-quiz-engine-and-the-handbook-s-question-bank"></a>**One quiz engine serves both apps, and the handbook's official quizzes are written in the repo beside the sections they test (handbook app HB3.1, operator plan 2026-10-28)**
+  (1) **One engine.** `80_training.js`'s `quizQuestion_` / `quizValidate_` /
+  `quizGrade_` / `quizStripQuestion_` / `quizReview_` are pure and read no
+  CONFIG, so the handbook app's sync can copy them; Team Tools'
+  `trainValidateQuizDef_`, `trainGradeQuiz_` and `trainStripQuizForRep_` are
+  the same engine in Team Tools' stored shape, with byte-identical results for
+  its single-answer quizzes (their existing pins pass unchanged). The retry
+  limit, `trainQuizLockout_`, was already pure and keyed by nothing — the
+  handbook keys its attempts by address (HB3.2). The engine adds what the plan
+  asked for: multi-select (right only as exactly the right set — partial
+  credit would make "choose all" a guessing game) and true/false, an
+  explanation per question and the section it tests. The stripped shape is
+  whitelist-built (the key, the explanation and the section never leave a
+  server before a submit); `quizReview_` gives a wrong answer its explanation
+  and section, never the right option (TRN-1's rule: no answer key by
+  elimination). (2) **The bank is repo data.** `manual/data/quizzes.json`
+  names sections the way the chapters do (`§8-2.3`), so a quiz changes in the
+  same commit as its section, and `manual/quizzes.py` fails the export on a
+  section that does not exist — the cross-reference rule. Its limits mirror the
+  engine's and are pinned equal (g126: two readers, one rule). (3) **It rides
+  the one upload.** `manual.json` carries the checked quizzes with each section
+  resolved to the app's `{id, anchor}`; Team Tools' Import checks them again
+  with the engine (a section must be one of the file's own articles) and
+  stores them in `ManualQuizzes` — text cells, rewritten only on a change, so
+  a re-import writes nothing (M1's rule). The tab holds the keys and never
+  reaches a client. **Alternatives rejected:** quizzes in `ManualMeta`'s one
+  JSON cell (it is already near its limit, and every reader would pay for the
+  keys it must not see); a separate quiz upload (two files to keep in step);
+  writing the bank before HB3.5 (questions need the operator's review first).

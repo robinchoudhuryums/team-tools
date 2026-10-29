@@ -103,6 +103,16 @@ one row per person: `Email`, `Department` (a chapter of the handbook),
 
 Unset, nobody is asked anything and the handbook reads as before.
 
+## Quizzes (HB3.1 — the engine and the bank; taking them is HB3.2)
+
+The official quizzes are written in the repo, in `manual/data/quizzes.json`,
+beside the sections they test; `manual/quizzes.py` fails the manual export on a
+question whose section does not exist. `manual.json` carries them, and Team
+Tools' Import stores them in the KB spreadsheet's `ManualQuizzes` tab. Both apps
+grade with one engine (`quiz…_` in `web-app/80_training.js`): single-answer,
+multi-select and true/false questions, each with the explanation a wrong answer
+is shown and the section to go back to. The answer key never leaves a server.
+
 ## Setup and deploying
 
 The one-time setup (create the project, set `HANDBOOK_KB_SS_ID`, deploy for the
