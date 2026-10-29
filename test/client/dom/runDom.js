@@ -10063,6 +10063,11 @@ test('HB2.2 DOM: syncing notes — turning it on warns about patient information
   assert.strictEqual(sent.length, 0, 'off at boot: nothing is sent');
   h.w.hbGoSaved_(); await h.settleAll();
   const box = () => h.d.getElementById('hb-sv-sync');
+  // Cancel at the warning: nothing is sent and nothing is turned on.
+  box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  h.d.querySelector('.overlay.open.ui-dialog .ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(sent.length, 0, 'the warning refused: nothing goes up');
+  assert.ok(!h.w.localStorage.getItem('umsHbNotesSync') && !box().checked, 'and sync stays off');
   box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
   const ask = h.d.querySelector('.overlay.open.ui-dialog');
   assert.ok(ask && /Never write patient information/.test(ask.textContent), 'the warning comes first');
