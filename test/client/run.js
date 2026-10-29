@@ -4147,12 +4147,19 @@ test('trainChipHtml_: renders the three statuses; unknown degrades to pending', 
 // answer-key privacy boundary: the rep-facing shape is WHITELIST-built and
 // getQuiz must route through it (source tripwire).
 console.log('\ntraining — quiz validate / grade / strip (T2)');
-['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS'].forEach((name) => {
+['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS', 'QUIZ_TEXT_MAX', 'QUIZ_OPTION_MAX', 'QUIZ_TITLE_MAX', 'QUIZ_EXPLAIN_MAX'].forEach((name) => {
   const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*\\d+);'));
   assert.ok(m, name + ' declaration found in Code.js');
   vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
 });
-['trainValidateQuizDef_', 'trainGradeQuiz_', 'trainStripQuizForRep_'].forEach((fn) => {
+// HB3.1: Team Tools' three are the shared engine's single-answer form.
+['QUIZ_TYPES', 'QUIZ_TF_OPTIONS'].forEach((name) => {
+  const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*\\[[^\\]]*\\]);'));
+  assert.ok(m, name + ' declaration found');
+  vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
+});
+['quizQuestion_', 'quizValidate_', 'quizAnswerRight_', 'quizGrade_', 'quizStripQuestion_', 'quizReview_',
+  'trainValidateQuizDef_', 'trainGradeQuiz_', 'trainStripQuizForRep_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
 });
 const Q2 = { title: 'T', passPct: 80, questions: [
@@ -35379,7 +35386,7 @@ test('Batch 11 TRN-1 (cycle 23): submitQuizAttempt refuses a fourth attempt insi
   const appended = [], audits = [], resetRows = [];
   let prior = [], resets = {};
   const quiz = { title: 'Safety', passPct: 100, questions: [{ q: 'A', options: ['x', 'y'], correct: 0 }, { q: 'B', options: ['x', 'y'], correct: 1 }] };
-  const ctx = b10Ctx_(['trainGradeQuiz_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_', 'submitQuizAttempt', 'resetQuizAttempts'], {
+  const ctx = b10Ctx_(['quizAnswerRight_', 'quizGrade_', 'trainGradeQuiz_', 'trainAttemptStats_', 'trainQuizLockout_', 'coachParseTs_', 'trainQuizAttemptList_', 'trainQuizLockState_', 'submitQuizAttempt', 'resetQuizAttempts'], {
     CONFIG: { TIMEZONE: 'UTC' }, TRAIN_QUIZ_MAX_ATTEMPTS: 3, TRAIN_QUIZ_LOCK_HOURS: 24,
     TRAIN_ATTEMPT_TAB: 'QuizAttempts', TRAIN_ATTEMPT_HEADERS: [], TRAIN_COMPLETE_TAB: 'C', TRAIN_COMPLETE_HEADERS: [],
     TRAIN_QUIZ_RESET_TAB: 'QuizResets', TRAIN_QUIZ_RESET_HEADERS: [], EMP: { ID: 0, NAME: 1 },

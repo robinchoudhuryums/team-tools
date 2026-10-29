@@ -2682,6 +2682,17 @@ const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PA
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
 const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+// HB3.1 (handbook app plan, operator 2026-10-28): ONE quiz engine for both
+// apps (80_training.js, quiz…_). Team Tools' own quizzes are single-answer; the
+// handbook's official quizzes (manual/data/quizzes.json, mirrored by
+// manual/quizzes.py — pinned equal) may also be multi-select or true/false,
+// and every question explains itself and names the section it tests.
+const QUIZ_TYPES = ['single', 'multi', 'truefalse'];
+const QUIZ_TF_OPTIONS = ['True', 'False'];
+const QUIZ_TEXT_MAX = 500;
+const QUIZ_OPTION_MAX = 200;
+const QUIZ_TITLE_MAX = 120;
+const QUIZ_EXPLAIN_MAX = 600;
 // TRN-1 (cycle 23 Batch 11, operator 2026-10-05): retries are no longer
 // unlimited. A failed attempt now shows WHICH questions were wrong (never the
 // right option), and with unlimited retries that is an answer key by

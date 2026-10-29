@@ -110,6 +110,7 @@ jobs:
           python make_html.py out/Policies-and-Procedures-Handbook-v3.0.md "$RUNNER_TEMP/handbook.html"
           python validate_html.py "$RUNNER_TEMP/handbook.html"
           python feedback_report.py --check   # cycle 25 E3: the feedback worklist's self-test
+          python quizzes.py --check           # HB3.1: the question bank's check, self-tested
           MANUAL_OUT="$RUNNER_TEMP/manual-dist" python export_reference.py
           cd ..
           git diff --exit-code -- manual/diagrams web-app/kb/script_manual_diagrams.html

@@ -3481,6 +3481,31 @@
     "saveAutoTagRules"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the shared quiz engine (quiz…_) and its limits",
+   "added": [
+    "QUIZ_EXPLAIN_MAX",
+    "QUIZ_OPTION_MAX",
+    "QUIZ_TEXT_MAX",
+    "QUIZ_TF_OPTIONS",
+    "QUIZ_TITLE_MAX",
+    "QUIZ_TYPES",
+    "quizAnswerRight_",
+    "quizGrade_",
+    "quizQuestion_",
+    "quizReview_",
+    "quizStripQuestion_",
+    "quizValidate_"
+   ],
+   "removed": [],
+   "changed": [
+    "trainGradeQuiz_",
+    "trainStripQuizForRep_",
+    "trainValidateQuizDef_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5729,6 +5754,36 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "eebe6ba6e656e9f8"
+  },
+  "QUIZ_EXPLAIN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5791a1e978d46b12"
+  },
+  "QUIZ_OPTION_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ac7377776cc7376"
+  },
+  "QUIZ_TEXT_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8eeb4c099c0ffdc2"
+  },
+  "QUIZ_TF_OPTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "84ee0f9d0ab98ce8"
+  },
+  "QUIZ_TITLE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58c4b6923a0f152c"
+  },
+  "QUIZ_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "739a5497a86031b1"
   },
   "RETIRED_TRIGGER_HANDLERS": {
    "file": "00_config.js",
@@ -11355,6 +11410,36 @@
    "kind": "function",
    "sha": "e630a3e9b237e555"
   },
+  "quizAnswerRight_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "542262232585b488"
+  },
+  "quizGrade_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b5a7ceb49a58bf4a"
+  },
+  "quizQuestion_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "6538333c19a849ba"
+  },
+  "quizReview_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "75a075bef601235b"
+  },
+  "quizStripQuestion_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "1fff5241391b6f94"
+  },
+  "quizValidate_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "5c42df3d183482c5"
+  },
   "readAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -12428,7 +12513,7 @@
   "trainGradeQuiz_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "8318bcdf8554e44b"
+   "sha": "6a9ed2017087609a"
   },
   "trainKbTitles_": {
    "file": "70_kb.js",
@@ -12493,7 +12578,7 @@
   "trainStripQuizForRep_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "6abf5564f6bca552"
+   "sha": "a5da4f1bbc476e87"
   },
   "trainTodayIso_": {
    "file": "80_training.js",
@@ -12503,7 +12588,7 @@
   "trainValidateQuizDef_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "345d9423410c3cb3"
+   "sha": "d22b99a489a29298"
   },
   "trainingReplyClear_": {
    "file": "80_training.js",
