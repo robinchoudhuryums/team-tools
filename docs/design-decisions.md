@@ -5889,3 +5889,34 @@ pick them up without re-deriving the context.
   is hidden until HB1.4 routes it. **Alternatives rejected:** hand-copying the
   shell helpers (two copies of the overlay lifecycle — the g100 family), and
   localStorage for the chapters (a full manual approaches its quota).
+
+- <a id="the-handbook-app-searches-and-takes-feedback"></a>**The handbook app searches with Team Tools' search and takes section feedback into Team Tools' tab — appending only, with the settings it cannot read mirrored into the spreadsheet (handbook app HB1.4, operator 2026-10-29)**
+  The operator chose three things: feedback goes to the **same KbFeedback tab**
+  (so the existing export and worklist carry it), search uses **mirrored
+  synonyms**, and the app's searches are **counted** in the search signal.
+  What that took: (1) **Writes, by `appendRow` only.** Two Apps Script projects
+  cannot share a ScriptLock, so anything that computes a row position
+  (`getLastRow() + 1`, `appendRowsTextSafe_`) could overwrite the other
+  project's row. `appendRow` is an atomic server-side append, safe beside Team
+  Tools' appends and its purge's deletes. The feedback row is checked by Team
+  Tools' own `kbFeedbackEntry_` (split out of `kbFlagItem`, g126 — one rule for
+  two writers) and names the reader by address (no roster id). (2) **The
+  signal in its own tab, `KbSearchSignalHb`.** Team Tools writes
+  `KbSearchSignal` by position under its lock, so a second writer there could
+  lose rows; the report (`kbSearchSignalRows_`) and the nightly purge read both
+  tabs. The term rides a leading apostrophe — the '@' rule without a position
+  to format. The plan (`kbSearchSignalPlan_`: vocabulary terms, no person,
+  dedupe) is Team Tools' own. (3) **The mirror.** The synonym groups and the
+  auto-tag rules (the signal's vocabulary) live in Team Tools' Script
+  Properties, which are per project; `kbMirrorSearchConfig_` writes them as
+  one JSON to `KbSearchConfig` A2 when either is saved and on every handbook
+  import — only when changed, so a re-import still writes nothing — and the
+  save or import says when it could not. The app supplies
+  `getKbSearchSynonyms_` / `getAutoTagRules_` from it through Team Tools' pure
+  normalizers. (4) **Search** is Team Tools' `searchReference`, copied; the
+  app's wrapper drops ordinary Reference articles (it could not open them).
+  The scope widened from `spreadsheets.readonly` to `spreadsheets`; a pin holds
+  that the hand-written server's only write calls are `appendRow` and creating
+  a tab, onto those two tabs. **Alternatives rejected:** a per-chapter owner
+  email (no owner list exists, and it spends the deployer's mail quota), and
+  writing `KbSearchSignal` directly (the position race above).

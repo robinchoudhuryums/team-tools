@@ -17,6 +17,9 @@ const RUNAWAY_PX = 200;
 // found on. Names are EXACT — a name that matches no scenario fails the run
 // rather than shooting nothing and passing.
 const CI_SCENARIOS = [
+  'handbook-home-light-mobile',     // HB1.4: the handbook app's frame
+  'handbook-search-light-mobile',
+  'handbook-section-light-wide',
   'clock-light-mobile',
   'clock-light-wide',
   'manage-light-mobile',

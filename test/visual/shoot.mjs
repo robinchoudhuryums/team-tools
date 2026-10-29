@@ -10,6 +10,7 @@ import gate from './ci-gate.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(HERE, 'page.html');
+const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: the handbook app (opts.page: 'handbook')
 const OUT = path.join(HERE, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -99,7 +100,25 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
   " copyWithFeedback_('Drive Scout 3 Wheel (W/ Shipping Cost) \u2014 $1,070.00'," +
   " { ok: 'Copied', label: 'Drive Scout 3 Wheel \u00b7 W/ Shipping Cost' });";
 
+const HB_PAGE = { page: 'handbook' };
+const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
+const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
+const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
+
 const SCENARIOS = [
+  // HB1.4 — the handbook app (handbook-app/): its home (first visit, and with a
+  // department chosen), a section by link, search, the phone contents and the
+  // suggest-an-edit dialog. The reader inside is Team Tools' shared partial,
+  // already shot under reference-manual-*; these shoot the frame around it.
+  ['handbook-home-light-wide',     {}, WIDE,   'light', '', '', HB_PAGE],
+  ['handbook-home-dark-wide',      {}, WIDE,   'dark',  '', '', HB_PAGE],
+  ['handbook-home-light-mobile',   {}, MOBILE, 'light', '', '', HB_PAGE],
+  ['handbook-mydept-light-wide',   {}, WIDE,   'light', '', HB_DEPT, HB_PAGE],
+  ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
+  ['handbook-search-light-wide',   {}, WIDE,   'light', '', HB_SEARCH, HB_PAGE],
+  ['handbook-search-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH, HB_PAGE],
+  ['handbook-contents-light-mobile', {}, MOBILE, 'light', '', 'hbToggleSide_()', HB_PAGE],
+  ['handbook-suggest-light-wide',  {}, WIDE,   'light', '?s=3.8', HB_SUGGEST, HB_PAGE],
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
   // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,
@@ -571,7 +590,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (opts && opts.utc) fake.setUTCHours(opts.utc[0], opts.utc[1] || 0, 0, 0);
   else fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift
   await page.clock.install({ time: fake });
-  await page.goto(PAGE + query, { waitUntil: 'load' });
+  await page.goto((opts && opts.page === 'handbook' ? PAGE_HB : PAGE) + query, { waitUntil: 'load' });
   await page.waitForTimeout(1200);
   if (nav.tool) {
     await page.evaluate(([tool, tab]) => { try { window.enterTool(tool, tab || undefined); } catch (e) { console.error('enterTool threw: ' + e.message); } }, [nav.tool, nav.tab]);

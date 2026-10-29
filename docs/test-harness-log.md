@@ -2984,3 +2984,30 @@ per-change detail. By delta:
   fixed stamp, any `?s=`, no toast stack, an undeclared page name) and five DOM
   (kept copy unused, no pushed link, no kept fallback, department not first,
   Escape unwired).
+
+## Handbook app HB1.4 — search and feedback (2026-10-29)
+
+- **Pure (run.js, "HB1.4")** — a: `kbFeedbackEntry_`, the one check both writers
+  apply; b: the app's `kbFlagItem` driven (row shape, tab created with Team
+  Tools' headers, a refusal writes nothing); c: the app's search driven
+  (Reference hits dropped, the mirrored synonyms widen it, the signal in
+  `KbSearchSignalHb` with the apostrophe, never `KbSearchSignal`, deduped, only
+  typed searches); d: structural — the hand-written server's only write calls
+  are `appendRow` and `insertSheet`, onto the two tabs; e: `kbMirrorSearchConfig_`
+  driven (created, text cell, unchanged → no write, a failure → false) and its
+  three callers and three client warnings; f: the signal report over both tabs.
+  `hbServer_`'s fake sheets now record `appendRow` / `insertSheet`, and its
+  `formatDate` honours the time pattern.
+- **DOM** — the search box (handbook-only results, the signal flag, push then
+  replace, a number jump that opens, Back to the results, a failure named);
+  a slow answer dropped for a later search and for a section opened since; the
+  bar's vote reaching `kbFlagItem` and Suggest opening Reference's dialog. The
+  fake server takes `{__delay, value}`; recorded arguments are JSON copies.
+- **Existing pins updated for the splits** (test doubles of the old shape):
+  auto-tag sanitize-on-read, A7, RT-1's purge, S2's text writers (twelve), the
+  import sandbox (`kbMirrorSearchConfig_` stub — a re-import still writes
+  nothing, because the mirror writes only on a change), E3, E6 ×2, X1's
+  shrink-only list (`kbFlagItem` has a fixture now), the manifest.
+- **Visual** — `build.mjs` also writes `page-handbook.html`; nine `handbook-*`
+  scenarios (home light/dark/phone, department, `?s=`, search wide/phone,
+  phone contents, the suggest dialog), three on the CI gate.

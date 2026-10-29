@@ -9346,9 +9346,12 @@ function hbFakeIdb_(store) {
  *  its arguments, or { __fail: message } (the failure handler). */
 async function hbBoot_(opts) {
   opts = opts || {};
-  const calls = [], hist = [];
+  const calls = [], hist = [], argsOf = [];
   const answers = Object.assign({ getManualMeta: HB_META(), getManualStamp: { stamp: 'S1' }, getManualParts: HB_PARTS(),
-    getManualImages: { success: true, images: {}, missing: [], failed: [] } }, opts.answers || {});
+    getManualImages: { success: true, images: {}, missing: [], failed: [] }, kbFlagItem: { success: true },
+    searchReference: (q) => ({ sectioned: true, terms: [String(q)], results: [
+      { id: 'man-3-2', title: '3.2 Nebulizers', department: 'Chapter 03 — Respiratory & Resupply', heading: '', anchor: '', snippet: 'Nebs ship monthly', score: 5 },
+      { id: 'kb-neb', title: 'Nebulizer pricing', department: 'Sales', heading: '', anchor: '', snippet: 'Reference only', score: 4 }] }) }, opts.answers || {});
   const dom = new JSDOM(hbPageHtml_(opts.params), { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.test/',
     beforeParse(w) {
       Object.keys(opts.ls || {}).forEach((k) => w.localStorage.setItem(k, opts.ls[k]));
@@ -9358,12 +9361,14 @@ async function hbBoot_(opts) {
         return new Proxy({}, { get(t, name) {
           if (name === 'withSuccessHandler') return (f) => { c.ok = f; return p; };
           if (name === 'withFailureHandler') return (f) => { c.bad = f; return p; };
-          return (...args) => { calls.push(name); setTimeout(() => {
-            let a = answers[name];
+          return (...args) => { calls.push(name); argsOf.push(JSON.parse(JSON.stringify([name].concat(args)))); let a = answers[name];
             if (typeof a === 'function') a = a(...args);
-            if (a && a.__fail) { if (c.bad) c.bad(new Error(a.__fail)); }
-            else if (c.ok) c.ok(a === undefined ? { error: 'no fixture for ' + name } : JSON.parse(JSON.stringify(a)));
-          }, 0); };
+            const delay = a && a.__delay ? a.__delay : 0;   // HB1.4: a slower answer, to drop a stale one
+            if (a && a.__delay) a = a.value;
+            setTimeout(() => {
+              if (a && a.__fail) { if (c.bad) c.bad(new Error(a.__fail)); }
+              else if (c.ok) c.ok(a === undefined ? { error: 'no fixture for ' + name } : JSON.parse(JSON.stringify(a)));
+            }, delay); };
         } }); };
       let p;
       w.google = { script: {
@@ -9374,7 +9379,7 @@ async function hbBoot_(opts) {
   const w = dom.window;
   const settleAll = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 2)); };
   await settleAll();
-  return { w, d: w.document, calls, hist, settleAll, main: () => w.document.getElementById('kb-main') };
+  return { w, d: w.document, calls, hist, argsOf, settleAll, main: () => w.document.getElementById('kb-main') };
 }
 
 test('HB1.3 DOM: the home page lists the chapters and what changed — published sections only, in the window — and the contents', async () => {
@@ -9468,4 +9473,62 @@ test('HB1.3 DOM: Escape closes an open overlay through the copied shell, then th
   assert.ok(h.d.querySelector('.hb-wrap.side-open'));
   h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.ok(!h.d.querySelector('.hb-wrap.side-open'), 'then the contents');
+});
+
+test('HB1.4 DOM: the search box — results for its request (a Reference article never listed), a section number jumps, a failure says so, and Back returns to the results', async () => {
+  const h = await hbBoot_();
+  const box = h.d.getElementById('hb-q');
+  box.value = 'neb'; box.dispatchEvent(new h.w.Event('input'));
+  await new Promise((r) => setTimeout(r, 350)); await h.settleAll();
+  const hits = [...h.d.querySelectorAll('.hb-results-list .hb-hit')].map((b) => b.getAttribute('data-kb-id'));
+  assert.deepStrictEqual(hits, ['man-3-2'], 'the handbook section only');
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'searchReference').pop().slice(1), ['neb', { signal: true }], 'a typed search adds to the signal');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { search: 'neb' }, {}], 'the first results view is a history entry');
+  h.w.hbSearch_('nebs', true);
+  await h.settleAll();
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['replace', { search: 'nebs' }, {}], 'a refinement replaces it');
+  // A section number jumps.
+  h.w.hbSearch_('3.1.1', true);
+  await h.settleAll();
+  const jump = h.d.querySelector('.hb-hit-jump');
+  assert.ok(jump && jump.getAttribute('data-kb-id') === 'man-3-1' && jump.getAttribute('data-kb-anchor') === '3.1.1', 'the reader\'s own number resolver');
+  jump.click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'and it opens');
+  // Back to the results.
+  h.w.__hbChange({ state: { search: 'neb' } });
+  await h.settleAll();
+  assert.strictEqual(box.value, 'neb');
+  assert.ok(h.d.querySelector('.hb-results-list .hb-hit[data-kb-id="man-3-2"]'), 'Back shows the results again');
+  // A failure is a failure, never "no matches".
+  const f = await hbBoot_({ answers: { searchReference: { error: 'Quota exceeded.' } } });
+  f.w.hbSearch_('neb', true); await f.settleAll();
+  const msg = f.d.querySelector('.hb-results-list [role="alert"]');
+  assert.ok(msg && /The search failed: Quota exceeded\./.test(msg.textContent), 'the server\'s words');
+  assert.ok(!/Nothing in the handbook matches/.test(f.main().textContent));
+});
+
+test('HB1.4 DOM: a slower answer to an earlier search never paints over a later one, nor over a section opened since', async () => {
+  const slow = (q) => (q === 'slow' ? { __delay: 40, value: { results: [{ id: 'man-5-1', title: '5.1 Chairs', snippet: 'old' }], terms: [] } }
+    : { results: [{ id: 'man-3-2', title: '3.2 Nebulizers', snippet: 'new' }], terms: [] });
+  const h = await hbBoot_({ answers: { searchReference: slow } });
+  h.w.hbSearch_('slow', true); h.w.hbSearch_('fast', true);
+  await new Promise((r) => setTimeout(r, 80)); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-hit')].map((b) => b.getAttribute('data-kb-id')), ['man-3-2'], 'the later search\'s results stand');
+  h.w.hbSearch_('slow', true);
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"]').click();
+  await new Promise((r) => setTimeout(r, 80)); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1') && !h.d.querySelector('.hb-results'), 'the section opened since stays');
+});
+
+test('HB1.4 DOM: the reader bar\'s feedback is live here — a vote reaches kbFlagItem for the section in view, and "Suggest an edit" opens the dialog', async () => {
+  const h = await hbBoot_({ params: { s: '3.2' } });
+  await h.settleAll();
+  const up = h.d.querySelector('[data-kb-man-fb="helpful"]');
+  assert.ok(up && !up.disabled && up.getAttribute('data-kb-id') === 'man-3-2', 'the vote names the section in view');
+  up.click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'kbFlagItem').pop(), ['kbFlagItem', 'man-3-2', 'helpful', '']);
+  const sug = h.d.querySelector('[data-kb-man-fb="suggest"]');
+  sug.disabled = false; sug.click(); await h.settleAll();
+  const dlg = h.d.querySelector('.overlay.open');
+  assert.ok(dlg && /Suggest an edit/.test(dlg.textContent), 'Reference\'s dialog, through the host hook');
 });

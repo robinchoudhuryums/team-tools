@@ -1401,6 +1401,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         changelog: REAL_META.changelog.filter(function (c) { return c.id === 'man-0-11'; }).slice(0, 1)
           .map(function (c) { return Object.assign({}, c, { date: daysAgo(40) }); }) };
     },
+    // HB1.4 — the handbook app's own calls (page-handbook.html): the stamp its
+    // browser copy is checked against (a fixed one: every scenario starts with an
+    // empty browser, so the chapters are read in full), and section feedback
+    // like the server's {success}.
+    getManualStamp: { stamp: 'MOCK-STAMP' },
+    kbFlagItem: { success: true },
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
@@ -2784,5 +2790,5 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       },
     });
   }
-  window.google = { script: { get run() { return makeChain(null, null); }, host: { close: function () {} }, history: { push: function () {}, replace: function () {} } } };
+  window.google = { script: { get run() { return makeChain(null, null); }, host: { close: function () {} }, history: { push: function () {}, replace: function () {}, setChangeHandler: function () {} } } };
 })();

@@ -2690,8 +2690,18 @@ entry says which it is.
   section links — `<the web app URL>?s=6.9.3` opens 6.9.3 (a section, a
   subsection, `card 4`, or a `man-…` id). Each browser keeps the chapters
   (IndexedDB) and re-reads them only when the handbook changed; a reader who
-  wants a fresh copy at once can reload after five minutes. Section feedback
-  is not offered until HB1.4.
+  wants a fresh copy at once can reload after five minutes. **Since HB1.4** the
+  app searches (Team Tools' search) and takes section feedback — it now WRITES,
+  by appendRow only, into `KbFeedback` (Team Tools' tab: votes, out-of-date
+  flags and suggested edits, with the reader's address; Export feedback carries
+  them) and its own `KbSearchSignalHb` tab (its searches' vocabulary terms;
+  Admin → Reference's search signal and the nightly purge read it). **After
+  deploying HB1.4:** (1) the app's permission is now "see, edit … your
+  spreadsheets", so open the app once as the deployer and approve it; (2) deploy
+  Team Tools too, then save Reference → Synonyms once (or import the handbook)
+  — that writes the `KbSearchConfig` tab the app reads its search synonyms and
+  vocabulary from. Until then the app searches without your synonyms. The full
+  picture is [`docs/handbook-app.md`](handbook-app.md).
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>
 - **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`

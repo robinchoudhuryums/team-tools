@@ -15356,7 +15356,7 @@ const X1_NO_FIXTURE_WRITES = [  // writes: no scenario performs them, and a fixt
     'cancelTimeOffRequest', 'claimSpanishThread', 'createCoaching', 'createScheduledCall', 'deleteCallNote',
     'deleteEmpDocTemplate', 'deletePunch', 'deleteQuiz', 'emailFromCallNote', 'fixPtoReconciliation',
     'fixTimesheetDuplicates', 'importQuizFromForm', 'intakeSendPAP', 'intakeSendPMD', 'intakeSendPPD', 'issueDoc',
-    'kbConvertDriveDoc', 'kbConvertDriveSheet', 'kbDeleteItem', 'kbFlagItem', 'kbMarkReviewed', 'kbPublishItem',
+    'kbConvertDriveDoc', 'kbConvertDriveSheet', 'kbDeleteItem', 'kbMarkReviewed', 'kbPublishItem',
     'kbRequestArticle', 'kbResolveContentRequest', 'kbRevertItem', 'kbSaveItem', 'kbSaveSearchConfig', 'kbUploadImage',
     'managerDeleteCallNote', 'managerSaveDay', 'managerSaveDayRange', 'managerSubmitTimeOff', 'markTrainingComplete',
     'mergeCallNoteTags', 'nudgeCoaching', 'offboardEmployee', 'provisionCallNotesSheet', 'qaAddComment',
@@ -40455,8 +40455,13 @@ function hbServer_(opts) {
   const sheetOf = (rows) => ({
     getLastRow: () => rows.length,
     getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
-    getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; } }),
+    getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; },
+      getValue: () => { reads.n++; const row = rows[r - 1] || []; return row[c - 1] === undefined ? '' : row[c - 1]; } }),
+    // HB1.4: the app appends (feedback, its search signal) — recorded, and nothing else writes.
+    appendRow: (row) => { rows.push(JSON.parse(JSON.stringify(row))); writes.push(['append', row]); },
   });
+  const writes = [];
+  const tabs = opts.tabs || {};
   const store = new Map();
   const cache = {
     get: (k) => (store.has(k) ? store.get(k) : null),
@@ -40467,13 +40472,14 @@ function hbServer_(opts) {
     console, JSON, Math, Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,
     Session: { getActiveUser: () => ({ getEmail: () => opts.email || '' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null }) },
-    SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (opts.tabs && opts.tabs[n] ? sheetOf(opts.tabs[n]) : null) }) },
+    SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (tabs[n] ? sheetOf(tabs[n]) : null),
+      insertSheet: (n) => { if (tabs[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); tabs[n] = []; writes.push(['insert', n]); return sheetOf(tabs[n]); } }) },
     CacheService: { getScriptCache: () => cache },
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19) : d.toISOString().slice(0, 10)) },
     HtmlService: opts.HtmlService,
   });
   ['kb_shared.js', 'Handbook.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
-  sb.__reads = reads;
+  sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs;
   return sb;
 }
 const HB_KB_HEAD = ['Id', 'Department', 'Title', 'Type', 'BodyMd', 'DriveKind', 'DriveFileId', 'SortOrder', 'UpdatedAt', 'UpdatedBy', 'ReviewedAt', 'ReviewedBy', 'Status'];
@@ -40688,6 +40694,130 @@ testNeedsDeps(['eslint', 'jsdom'], 'HB1.3-e: the assembled handbook page resolve
   const { Linter } = require(path.join(HB_ROOT, 'node_modules/eslint'));
   const msgs = new Linter().verify(scripts.join('\n;\n'), { languageOptions: { ecmaVersion: 2022, sourceType: 'script', globals }, rules: { 'no-undef': 'error' } });
   assert.deepStrictEqual(msgs.map((m) => m.message), [], 'a name nothing on the page declares would throw ReferenceError in the browser');
+});
+
+
+// HB1.4 — search and section feedback in the handbook app. Team Tools' own
+// rules, reached by the app: kbFeedbackEntry_ (the one check both writers
+// apply), searchReference over the same index, the synonyms and auto-tag
+// vocabulary through the KbSearchConfig mirror, the signal into the app's own
+// tab. The app writes by appendRow only — two projects share no ScriptLock.
+console.log('\nHB1.4 — search and feedback in the handbook app');
+
+test('HB1.4-a: kbFeedbackEntry_ — the one check: a vote keeps no note, a suggestion is the reader\'s words (handbook sections only, never cut), an unknown kind is refused', () => {
+  const ctx = vm.createContext({ String, KB_MANUAL_ID_RE: /^man-[a-z0-9]+(?:-[a-z0-9]+)*$/ });
+  vm.runInContext(['KB_FEEDBACK_KINDS', 'KB_FEEDBACK_NOTED', 'KB_FEEDBACK_NOTE_MAX'].map((n) => extractConstDecl_(n).replace(/^const /, 'var ')).join('\n'), ctx);
+  vm.runInContext(extractRawFunction('Code.js', 'kbFeedbackEntry_'), ctx);
+  const f = (...a) => JSON.parse(JSON.stringify(ctx.kbFeedbackEntry_(...a)));
+  assert.deepStrictEqual(f(' man-3-8 ', 'helpful', 'ignored'), { id: 'man-3-8', kind: 'helpful', note: '' }, 'a vote keeps no note');
+  assert.deepStrictEqual(f('man-3-8', 'stale', '  the fee changed  '), { id: 'man-3-8', kind: 'stale', note: 'the fee changed' });
+  assert.deepStrictEqual(f('man-3-8', 'suggest', 'Say $85'), { id: 'man-3-8', kind: 'suggest', note: 'Say $85' });
+  assert.ok(/handbook sections/.test(f('kb-1', 'suggest', 'x').error), 'a suggestion is for handbook sections');
+  assert.ok(/Write the change/.test(f('man-3-8', 'suggest', '  ').error), 'an empty suggestion is refused');
+  assert.ok(/at most/.test(f('man-3-8', 'suggest', 'x'.repeat(501)).error), 'a long one is refused, never cut');
+  assert.ok(/Unknown/.test(f('man-3-8', 'love', '').error));
+  assert.ok(/Missing/.test(f('', 'helpful', '').error));
+});
+
+test('HB1.4-b: the app\'s kbFlagItem appends the checked entry to KbFeedback — [time, id, \'\', address, kind, note] — creating the tab with Team Tools\' headers; a refusal appends nothing', () => {
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  assert.deepStrictEqual(hbPlain_(sb.kbFlagItem('man-1-1', 'suggest', ' Name the form ')), { success: true });
+  const tab = sb.__tabs.KbFeedback;
+  assert.deepStrictEqual(tab[0], ['Timestamp', 'ItemId', 'RepId', 'RepName', 'Kind', 'Note'], 'Team Tools\' headers');
+  assert.ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(tab[1][0]), 'the time as Team Tools writes it');
+  assert.deepStrictEqual(tab[1].slice(1), ['man-1-1', '', 'rep@example.org', 'suggest', 'Name the form'], 'no roster id here — the reader by address');
+  sb.kbFlagItem('man-1-1', 'helpful', 'x');
+  assert.deepStrictEqual(tab[2].slice(1), ['man-1-1', '', 'rep@example.org', 'helpful', ''], 'the tab is reused');
+  const n = sb.__writes.length;
+  assert.ok(/handbook sections/.test(sb.kbFlagItem('kb-pricing', 'helpful', '').error), 'a Reference article is not this app\'s');
+  assert.ok(/Write the change/.test(sb.kbFlagItem('man-1-1', 'suggest', '').error), 'Team Tools\' own check refuses');
+  assert.strictEqual(sb.__writes.length, n, 'and a refusal writes nothing');
+  assert.strictEqual(hbServer_({ tabs: hbTabs_(), props: HB_ENV.props }).kbFlagItem('man-1-1', 'helpful', '').error, 'Not authorized.');
+});
+
+test('HB1.4-c: the app\'s search — handbook sections only, the mirrored synonyms widen it, and its signal lands in KbSearchSignalHb as text, never in Team Tools\' tab', () => {
+  const tabs = hbTabs_();
+  tabs.KB.push(hbRow_('kb-neb', 'Sales', 'Nebulizer pricing', 'Reference nebulizer article', 'published', 1));
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  let res = hbPlain_(sb.searchReference('nebulizer', { signal: false }));
+  assert.ok(!res.error, JSON.stringify(res));
+  assert.ok(!res.results.some((r) => r.id === 'kb-neb'), 'a Reference article is never a handbook result');
+  // Synonyms: none yet (no mirror) → "tank" finds nothing; mirrored → it finds "Wheels".
+  assert.strictEqual(hbPlain_(sb.searchReference('tank')).results.length, 0, 'no mirror, no synonyms — the search still answers');
+  tabs.KbSearchConfig = [['Config'], [JSON.stringify({ synonyms: [['tank', 'wheels']], tags: [{ tag: 'chairs', keywords: ['wheels'] }] })]];
+  const sb2 = hbServer_(Object.assign({ tabs }, HB_ENV));
+  res = hbPlain_(sb2.searchReference('tank', { signal: true }));
+  assert.deepStrictEqual(res.results.map((r) => r.id), ['man-2-1'], 'the mirrored synonym group widens the search');
+  // The signal: "chairs" is an auto-tag (from the mirror) — a vocabulary term.
+  hbPlain_(sb2.searchReference('chairs please', { signal: true }));
+  const sig = sb2.__tabs.KbSearchSignalHb;
+  assert.ok(sig, 'the app\'s own signal tab');
+  assert.deepStrictEqual(sig[0], ['Timestamp', 'Term', 'Source', 'Event']);
+  assert.ok(sig.slice(1).some((r) => r[1] === "'chairs" && r[2] === 'tag' && r[3] === 'search'), 'the term rides an apostrophe (text), no person: ' + JSON.stringify(sig));
+  assert.ok(!sb2.__tabs.KbSearchSignal, 'Team Tools\' tab is never written by this app');
+  const before = sig.length;
+  hbPlain_(sb2.searchReference('chairs please', { signal: true }));
+  assert.strictEqual(sig.length, before, 'one person\'s repeat counts once (Team Tools\' dedupe)');
+  hbPlain_(sb2.searchReference('chairs again'));
+  assert.strictEqual(sig.length, before, 'an untyped search records nothing');
+});
+
+test('HB1.4-d: the app\'s only writes are appendRow — onto KbFeedback and KbSearchSignalHb — and a tab it creates (structural, over the hand-written server)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8'));
+  const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
+  assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'insertSheet'], 'appendRow (atomic — no position, no lock to share) and creating a tab');
+  const tabsAppended = [...src.matchAll(/hbAppendTab_\((KB_\w+),/g)].map((m) => m[1]).sort();
+  assert.strictEqual((src.match(/hbAppendTab_\(/g) || []).length, 3, 'its declaration and the two callers — no other');
+  assert.deepStrictEqual(tabsAppended, ['KB_FEEDBACK_TAB', 'KB_SEARCH_SIGNAL_HB_TAB'], 'onto these two tabs only');
+  const hdr = extractFnFrom(src, 'hbAppendTab_');
+  assert.ok(/insertSheet\(name\)/.test(hdr) && /appendRow\(sheetSafeRow_\(headers\)\)/.test(hdr), 'a new tab gets its headers');
+  assert.strictEqual((src.match(/\.appendRow\(/g) || []).length, 3, 'three appends: the header, a feedback row, a signal row');
+});
+
+test('HB1.4-e: Team Tools mirrors the synonyms and auto-tag rules to KbSearchConfig — as a text cell, only when they changed (a re-import writes nothing), false when it could not', () => {
+  let synonyms = [['neb', 'nebulizer']], tags = [{ tag: 'chairs', keywords: ['wheels'] }];
+  const writes = [];
+  let cell = null, fail = false, made = false;
+  const sheet = { getLastRow: () => (cell === null ? 1 : 2), getRange: () => ({ getValue: () => cell, setNumberFormat: (f) => writes.push('format ' + f), setValue: (v) => { writes.push('value'); cell = v; } }),
+    appendRow: (r) => writes.push('header ' + r.join(',')) };
+  const ss = { getSheetByName: () => { if (fail) throw new Error('denied'); return made ? sheet : null; }, insertSheet: () => { made = true; writes.push('insert'); return sheet; } };
+  const ctx = vm.createContext({ JSON, String, Logger: { log() {} }, getKbSS_: () => ss, getKbSearchSynonyms_: () => synonyms, getAutoTagRules_: () => tags,
+    sheetSafeRow_: (r) => r, sheetText_: (v) => v, KB_SEARCH_CONFIG_TAB: 'KbSearchConfig', KB_SEARCH_CONFIG_HEADERS: ['Config'] });
+  vm.runInContext(extractRawFunction('Code.js', 'kbMirrorSearchConfig_'), ctx);
+  assert.strictEqual(ctx.kbMirrorSearchConfig_(), true);
+  assert.deepStrictEqual(writes, ['insert', 'header Config', 'format @', 'value'], 'created, then A2 as text');
+  assert.deepStrictEqual(JSON.parse(cell), { synonyms, tags });
+  writes.length = 0;
+  assert.strictEqual(ctx.kbMirrorSearchConfig_(), true);
+  assert.deepStrictEqual(writes, [], 'unchanged: nothing written');
+  synonyms = [['neb', 'nebulizer'], ['o2', 'oxygen']];
+  ctx.kbMirrorSearchConfig_();
+  assert.deepStrictEqual(writes, ['format @', 'value'], 'changed: rewritten');
+  fail = true;
+  assert.strictEqual(ctx.kbMirrorSearchConfig_(), false, 'a failure is said, never thrown into the save');
+  // Its three callers, and the three places that tell an admin it failed.
+  const code = serverSource();
+  ['kbSaveSearchConfig', 'saveAutoTagRules', 'kbImportManual'].forEach((f) => assert.ok(/handbookMirrored: kbMirrorSearchConfig_\(\)/.test(extractRawFunction('Code.js', f)), f + ' mirrors'));
+  assert.strictEqual(fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8').split('r.handbookMirrored === false').length - 1, 2, 'the synonyms save and the import say so');
+  assert.ok(/res\.handbookMirrored === false/.test(fs.readFileSync(path.join(HB_ROOT, 'web-app/cn/script_callnotes.html'), 'utf8')), 'the auto-tag save says so');
+  assert.ok(code.indexOf('KB_SEARCH_SIGNAL_HB_TAB') > 0);
+});
+
+test('HB1.4-f: Team Tools\' signal report reads the app\'s tab beside its own — one signal (driven)', () => {
+  const t = (rows) => ({ getLastRow: () => rows.length + 1, getRange: (r, c, n) => ({ getValues: () => rows.slice(r - 2, r - 2 + n) }) });
+  const tabs = { KbSearchSignal: t([['2026-10-20 09:00:00', 'oxygen', 'glossary', 'search']]), KbSearchSignalHb: t([['2026-10-21 09:00:00', 'chairs', 'tag', 'search']]) };
+  const ctx = vm.createContext({ Date, Math, String, getKbSS_: () => ({ getSheetByName: (n) => tabs[n] || null }), fmtDate_: () => '2026-08-01', normalizeAuditTs_: (v) => v,
+    KB_SEARCH_SIGNAL_DAYS: 90, KB_SEARCH_SIGNAL_TAB: 'KbSearchSignal', KB_SEARCH_SIGNAL_HB_TAB: 'KbSearchSignalHb', KB_SEARCH_SIGNAL_SCAN_MAX: 20000,
+    KB_SEARCH_SIGNAL_HEADERS: ['Timestamp', 'Term', 'Source', 'Event'], KBSS: { TS: 0 } });
+  vm.runInContext(extractRawFunction('Code.js', 'kbSearchSignalRows_'), ctx);
+  let r = JSON.parse(JSON.stringify(ctx.kbSearchSignalRows_()));
+  assert.deepStrictEqual(r.rows.map((x) => x[1]), ['oxygen', 'chairs'], 'both tabs');
+  assert.strictEqual(r.missing, false);
+  delete tabs.KbSearchSignal;
+  r = JSON.parse(JSON.stringify(ctx.kbSearchSignalRows_()));
+  assert.deepStrictEqual([r.rows.map((x) => x[1]), r.missing], [['chairs'], false], 'the app\'s tab alone is a signal');
+  delete tabs.KbSearchSignalHb;
+  assert.strictEqual(ctx.kbSearchSignalRows_().missing, true, 'neither tab: missing, as before');
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
