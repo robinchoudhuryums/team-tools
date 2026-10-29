@@ -10130,3 +10130,132 @@ test('HB2.2 DOM: export and import — the export carries each note with its sec
   assert.ok(/not a notes export/.test(h.d.getElementById('toast-stack').textContent));
   assert.strictEqual(h.calls.indexOf('hbSyncNotes'), -1, 'sync off: an import stays here');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.3 — display settings (this browser) and read aloud (the browser's speech).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.3 — display settings and read aloud');
+/** A fake speechSynthesis: records what is spoken; a test ends an utterance by
+ *  calling its onend. */
+function hb23Speech_(w) {
+  const log = [];
+  const speech = { spoken: [], log,
+    speak(u) { this.spoken.push(u); log.push('speak'); },
+    pause() { log.push('pause'); }, resume() { log.push('resume'); }, cancel() { log.push('cancel'); },
+    getVoices() { return [{ name: 'Alex', lang: 'en-US' }, { name: 'Moira', lang: 'en-IE' }]; },
+    addEventListener() {} };
+  w.speechSynthesis = speech;
+  w.SpeechSynthesisUtterance = function (text) { this.text = text; };
+  return speech;
+}
+
+test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and is kept in this browser; the easier-reading font loads only when chosen; Reset clears it all (driven)', async () => {
+  const h = await hbBoot_();
+  const root = h.d.documentElement;
+  assert.strictEqual(h.d.getElementById('hb-easy-font'), null, 'no font download until it is chosen');
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-disp-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  const pick = (name, v) => { const r = ov.querySelector('input[name="hb-disp-' + name + '"][value="' + v + '"]'); r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
+  pick('size', 2); pick('spacing', 1);
+  assert.strictEqual(root.getAttribute('data-hb-size'), '2');
+  assert.strictEqual(root.getAttribute('data-hb-spacing'), '1');
+  const box = (label) => [...ov.querySelectorAll('.hb-disp-check')].filter((l) => l.textContent.indexOf(label) === 0)[0].querySelector('input');
+  [['High contrast', 'data-hb-contrast', 'high'], ['Easier-reading font', 'data-hb-font', 'easy'], ['Reduce motion', 'data-hb-motion', 'reduce']].forEach(([label, attr, val]) => {
+    const b = box(label); b.checked = true; b.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+    assert.strictEqual(root.getAttribute(attr), val, label);
+  });
+  const link = h.d.getElementById('hb-easy-font');
+  assert.ok(link && /Atkinson\+Hyperlegible/.test(link.href), 'the font is loaded once chosen');
+  const kept = JSON.parse(h.w.localStorage.getItem('umsHbDisplay'));
+  assert.deepStrictEqual(kept.attrs, { 'data-hb-size': '2', 'data-hb-spacing': '1', 'data-hb-contrast': 'high', 'data-hb-motion': 'reduce', 'data-hb-font': 'easy' });
+  assert.strictEqual(kept.prefs.size, 2);
+  // Off again, one at a time.
+  const c = box('High contrast'); c.checked = false; c.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(root.hasAttribute('data-hb-contrast'), false);
+  [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Reset')[0].click(); await h.settleAll();
+  ['data-hb-size', 'data-hb-spacing', 'data-hb-contrast', 'data-hb-motion', 'data-hb-font'].forEach((a) => assert.strictEqual(root.hasAttribute(a), false, a + ' cleared'));
+  assert.deepStrictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs, {});
+  assert.ok(h.d.getElementById('hb-disp-ov').querySelector('input[name="hb-disp-size"][value="0"]').checked, 'the panel repaints at the defaults');
+  [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Done')[0].click(); await h.settleAll();
+  assert.ok(!h.d.getElementById('hb-disp-ov'), 'Done closes it');
+});
+
+test('HB2.3 DOM: the head applies the kept settings before the page script runs — only data-hb-* names with plain values; the font comes with them (driven)', async () => {
+  const h = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { size: 3, font: true }, attrs: {
+    'data-hb-size': '3', 'data-hb-font': 'easy', onclick: 'alert(1)', 'data-hb-x': '"><b>', 'data-mode': 'dark' } }) } });
+  const root = h.d.documentElement;
+  assert.strictEqual(root.getAttribute('data-hb-size'), '3');
+  assert.strictEqual(root.getAttribute('data-hb-font'), 'easy');
+  assert.strictEqual(root.hasAttribute('onclick'), false, 'not a data-hb name');
+  assert.strictEqual(root.hasAttribute('data-hb-x'), false, 'not a plain value');
+  assert.strictEqual(root.getAttribute('data-mode'), null, 'the theme is not this setting\'s to change');
+  assert.strictEqual(h.d.querySelectorAll('#hb-easy-font').length, 1, 'the font, once — the page does not add a second');
+  // A broken store is no settings, never a broken page.
+  const b = await hbBoot_({ ls: { umsHbDisplay: '{not json' } });
+  assert.ok(b.d.querySelector('.hb-card'), 'the page still opens');
+});
+
+test('HB2.3 DOM: read aloud — Listen speaks the section a block at a time, marking the one being read; Pause and Resume; Stop and any navigation cancel it; a browser without speech offers no Listen (driven)', async () => {
+  const h = await hbBoot_();
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent.trim()))[0];
+  assert.ok(btn(/^Listen$/), 'offered');
+  btn(/^Listen$/).click(); await h.settleAll();
+  assert.strictEqual(sp.spoken[0].text, '3.1 Oxygen basics', 'the title first');
+  assert.ok(h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-sec-h').classList.contains('hb-ra-on'), 'and it is marked');
+  assert.ok(btn(/^Pause$/) && btn(/^Stop$/));
+  sp.spoken[0].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[1].text, 'Intro.');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 1, 'one block marked at a time');
+  btn(/^Pause$/).click(); await h.settleAll();
+  assert.ok(sp.log.indexOf('pause') >= 0 && btn(/^Resume$/));
+  btn(/^Resume$/).click(); await h.settleAll();
+  assert.ok(sp.log.indexOf('resume') >= 0 && btn(/^Pause$/));
+  sp.spoken[1].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[2].text, '3.1.1 Tanks', 'a heading inside the section');
+  sp.spoken[2].onend(); sp.spoken[3].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[3].text, 'Tanks hold oxygen.');
+  assert.ok(btn(/^Listen$/), 'the end of the section ends the reading');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 0, 'and clears the mark');
+  // Stop, and navigation.
+  btn(/^Listen$/).click(); await h.settleAll();
+  const n = sp.spoken.length;
+  btn(/^Stop$/).click(); await h.settleAll();
+  assert.ok(sp.log.lastIndexOf('cancel') > sp.log.lastIndexOf('speak'), 'Stop cancels');
+  sp.spoken[n - 1].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken.length, n, 'a late end after Stop speaks nothing more');
+  btn(/^Listen$/).click(); await h.settleAll();
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.ok(sp.log.lastIndexOf('cancel') > sp.log.lastIndexOf('speak'), 'leaving the section stops it');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 0);
+  // No speech in this browser: no Listen.
+  const none = await hbBoot_();
+  delete none.w.speechSynthesis;
+  none.w.MANUAL_HOST.openItem('man-3-1'); await none.settleAll();
+  assert.ok(![...none.d.querySelectorAll('#hb-quizbar button')].some((b) => /Listen/.test(b.textContent)));
+});
+
+test('HB2.3 DOM: the read-aloud voice and speed come from the Display panel; a long sentence is spoken in pieces (driven)', async () => {
+  const h = await hbBoot_();
+  const sp = hb23Speech_(h.w);
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const sel = h.d.getElementById('hb-disp-voice');
+  assert.deepStrictEqual([...sel.options].map((o) => o.value), ['', 'Alex', 'Moira'], 'every voice the browser offers');
+  sel.value = 'Moira'; sel.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  const rate = [...h.d.querySelectorAll('#hb-disp-ov select')][1];
+  rate.value = '1.5'; rate.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  h.w.closeOverlay(h.d.getElementById('hb-disp-ov')); await h.settleAll();
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  h.w.hbReadAloud_(); await h.settleAll();
+  assert.strictEqual(sp.spoken[0].voice.name, 'Moira');
+  assert.strictEqual(sp.spoken[0].rate, 1.5);
+  const C = (t, m) => JSON.parse(JSON.stringify(h.w.hbSpeechChunks_(t, m)));
+  assert.deepStrictEqual(C('One. Two!  Three?'), ['One.', 'Two!', 'Three?']);
+  assert.deepStrictEqual(C('alpha beta, gamma delta, epsilon', 14), ['alpha beta,', 'gamma delta,', 'epsilon']);
+  assert.ok(C('x'.repeat(50) + ' ' + 'y'.repeat(50), 40).every((c) => c.length <= 40), 'a run with no punctuation is cut too');
+  assert.deepStrictEqual(C('See 3.1 and 10.4.2 first. It costs $1.50 a day.'), ['See 3.1 and 10.4.2 first.', 'It costs $1.50 a day.'], 'a section number or a price is not a sentence end');
+  assert.deepStrictEqual(C('   '), []);
+});

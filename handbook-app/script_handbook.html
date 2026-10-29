@@ -503,7 +503,7 @@ function hbWhen_(ms) {
 }
 
 var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null };   // seq: the open view's; lseq: the list load's
-function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); }   // every other view leaves Training too (HB3.3)
+function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); hbStopReading_(); }   // and read aloud (HB2.3)   // every other view leaves Training too (HB3.3)
 
 function hbLoadQuizzes_(then) {
   var lseq = ++HB_QZ.lseq;
@@ -526,7 +526,7 @@ function hbPaintQuizBar_(id) {
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
   var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
-  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + mine.map(function (q) {
+  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
     return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
       '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
   }).join('');
@@ -1461,6 +1461,217 @@ function hbBootNotes_() {
   hbSyncNotes_(hbNotes_(), function (ok) { if (ok) { hbPaintQuizBar_(HB.currentId); if (HB_SV.showing) hbPaintSaved_(); } });
 }
 
+// ── Display settings and read aloud (HB2.3) ─────────────────────────────
+// The reader's own display: text size, line spacing, high contrast, reduced
+// motion and an easier-reading font (Atkinson Hyperlegible, loaded only when
+// chosen) — kept in THIS browser (operator 2026-10-29) as data-hb-* attributes
+// on <html>. index.html's head applies the stored attributes before first
+// paint; hbDisplayAttrs_ is the one place that decides them.
+// Read aloud speaks the section in view with the browser's own speech (any
+// voice the browser offers — operator 2026-10-29), a paragraph at a time, the
+// one being read marked; navigating anywhere stops it.
+var HB_LS_DISPLAY = 'umsHbDisplay';   // { prefs: {...}, attrs: { 'data-hb-…': value } }
+var HB_DISPLAY_DEFAULTS = { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1 };
+var HB_DISPLAY_SIZES = ['Default', 'Large', 'Larger', 'Largest'];
+var HB_DISPLAY_SPACINGS = ['Default', 'Relaxed', 'Wide'];
+var HB_READ_RATES = [0.8, 1, 1.2, 1.5];
+var HB_EASY_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap';
+
+/** PURE — stored prefs made safe: every field within its range, anything else
+ *  the default. */
+function hbDisplayClean_(p) {
+  p = p && typeof p === 'object' ? p : {};
+  var int = function (v, max) { v = Number(v); return v >= 0 && v <= max && Math.floor(v) === v ? v : 0; };
+  return { size: int(p.size, HB_DISPLAY_SIZES.length - 1), spacing: int(p.spacing, HB_DISPLAY_SPACINGS.length - 1),
+    contrast: p.contrast === true, motion: p.motion === true, font: p.font === true,
+    voice: typeof p.voice === 'string' ? p.voice.slice(0, 200) : '', rate: HB_READ_RATES.indexOf(Number(p.rate)) >= 0 ? Number(p.rate) : 1 };
+}
+/** PURE — the attributes the prefs put on <html> (an absent one is the
+ *  default). The head script applies exactly these. */
+function hbDisplayAttrs_(p) {
+  var a = {};
+  if (p.size) a['data-hb-size'] = String(p.size);
+  if (p.spacing) a['data-hb-spacing'] = String(p.spacing);
+  if (p.contrast) a['data-hb-contrast'] = 'high';
+  if (p.motion) a['data-hb-motion'] = 'reduce';
+  if (p.font) a['data-hb-font'] = 'easy';
+  return a;
+}
+function hbDisplay_() { var s = hbLsJson_(HB_LS_DISPLAY); return hbDisplayClean_(s && s.prefs); }
+/** Apply prefs to the page and keep them. */
+function hbApplyDisplay_(p, keep) {
+  p = hbDisplayClean_(p);
+  var root = document.documentElement, attrs = hbDisplayAttrs_(p);
+  ['data-hb-size', 'data-hb-spacing', 'data-hb-contrast', 'data-hb-motion', 'data-hb-font'].forEach(function (k) {
+    if (attrs[k]) root.setAttribute(k, attrs[k]); else root.removeAttribute(k);
+  });
+  if (p.font) hbEnsureEasyFont_();
+  if (keep) hbLsSet_(HB_LS_DISPLAY, JSON.stringify({ prefs: p, attrs: attrs }));
+  return p;
+}
+function hbEnsureEasyFont_() {
+  if (document.getElementById('hb-easy-font')) return;
+  var l = document.createElement('link');
+  l.id = 'hb-easy-font'; l.rel = 'stylesheet'; l.href = HB_EASY_FONT_HREF;
+  document.head.appendChild(l);
+}
+/** The Display panel: every change applies at once and is kept. */
+function hbOpenDisplay_() {
+  var ov = ensureOverlay('hb-disp-ov', { labelledBy: 'hb-disp-h', onClose: function () { var o = document.getElementById('hb-disp-ov'); if (o) o.remove(); } });
+  hbPaintDisplay_(ov);
+  var first = ov.querySelector('input'); if (first) first.focus();
+}
+function hbPaintDisplay_(ov) {
+  var p = hbDisplay_();
+  var radios = function (name, labels, cur) {
+    return '<div class="hb-disp-seg" role="radiogroup" aria-label="' + esc(name === 'size' ? 'Text size' : 'Line spacing') + '">' + labels.map(function (l, i) {
+      return '<label class="hb-disp-opt"><input type="radio" name="hb-disp-' + name + '" value="' + i + '"' + (i === cur ? ' checked' : '') + ' onchange="hbSetDisplay_(\'' + name + '\', Number(this.value))"><span>' + esc(l) + '</span></label>';
+    }).join('') + '</div>';
+  };
+  var check = function (key, label, help) {
+    return '<label class="hb-disp-check"><input type="checkbox"' + (p[key] ? ' checked' : '') + ' onchange="hbSetDisplay_(\'' + key + '\', this.checked)"><span><b>' + esc(label) + '</b>' +
+      (help ? '<span class="hb-quiet">' + esc(help) + '</span>' : '') + '</span></label>';
+  };
+  var speech = hbSpeech_();
+  var voices = speech ? speech.getVoices() : [];
+  var voiceSel = !speech ? '<p class="hb-quiet">This browser cannot read aloud.</p>'
+    : '<label class="hb-pp-l">Voice <select class="hb-pp-sel" id="hb-disp-voice" onchange="hbSetDisplay_(\'voice\', this.value)"><option value="">The browser\'s default</option>' +
+      voices.map(function (v) { return '<option value="' + esc(v.name) + '"' + (v.name === p.voice ? ' selected' : '') + '>' + esc(v.name + (v.lang ? ' (' + v.lang + ')' : '')) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="hb-pp-l">Speed <select class="hb-pp-sel" onchange="hbSetDisplay_(\'rate\', Number(this.value))">' +
+      HB_READ_RATES.map(function (r) { return '<option value="' + r + '"' + (r === p.rate ? ' selected' : '') + '>' + (r === 1 ? 'Normal' : r + '×') + '</option>'; }).join('') + '</select></label>';
+  ov.innerHTML = '<div class="modal hb-disp" role="document"><div class="modal-title" id="hb-disp-h">Display</div>' +
+    '<div class="hb-ed-body">' +
+    '<fieldset class="hb-disp-f"><legend>Text size</legend>' + radios('size', HB_DISPLAY_SIZES, p.size) + '</fieldset>' +
+    '<fieldset class="hb-disp-f"><legend>Line spacing</legend>' + radios('spacing', HB_DISPLAY_SPACINGS, p.spacing) + '</fieldset>' +
+    check('contrast', 'High contrast', 'Darker text and lines') +
+    check('font', 'Easier-reading font', 'Atkinson Hyperlegible, made for low-vision readers') +
+    check('motion', 'Reduce motion', 'No animation; always on when your device asks for it') +
+    '<fieldset class="hb-disp-f"><legend>Read aloud</legend>' + voiceSel + '</fieldset>' +
+    '<p class="hb-quiet hb-disp-note">Kept in this browser.</p></div>' +
+    '<div class="modal-footer"><button type="button" class="btn-modal-cancel" onclick="hbResetDisplay_()">Reset</button>' +
+    '<button type="button" class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'hb-disp-ov\'))">Done</button></div></div>';
+}
+function hbSetDisplay_(key, value) {
+  var p = hbDisplay_();
+  p[key] = value;
+  hbApplyDisplay_(p, true);
+}
+/** Voices arrive after the page loads in some browsers: refresh the open
+ *  panel's list in place (the select keeps its node and focus — g141). */
+function hbVoicesChanged_() {
+  var sel = document.getElementById('hb-disp-voice'), sp = hbSpeech_(); if (!sel || !sp) return;
+  var cur = hbDisplay_().voice;
+  sel.innerHTML = '<option value="">The browser\'s default</option>' + sp.getVoices().map(function (v) {
+    return '<option value="' + esc(v.name) + '"' + (v.name === cur ? ' selected' : '') + '>' + esc(v.name + (v.lang ? ' (' + v.lang + ')' : '')) + '</option>';
+  }).join('');
+}
+function hbResetDisplay_() {
+  hbApplyDisplay_(HB_DISPLAY_DEFAULTS, true);
+  var ov = document.getElementById('hb-disp-ov'); if (ov) hbPaintDisplay_(ov);
+}
+
+// — read aloud —
+var HB_RA = { id: null, blocks: [], i: 0, state: 'idle', seq: 0 };
+function hbSpeech_() { try { return window.speechSynthesis && window.SpeechSynthesisUtterance ? window.speechSynthesis : null; } catch (e) { return null; } }
+/** PURE — a block's text in pieces short enough for every browser to speak
+ *  whole (Chrome stops a long utterance part-way): by sentence, a long
+ *  sentence by its commas, a very long run cut at a space. */
+function hbSpeechChunks_(text, max) {
+  max = max || 220;
+  var t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return [];
+  var out = [];
+  var push = function (s) {
+    s = s.trim(); if (!s) return;
+    while (s.length > max) {
+      var cut = s.lastIndexOf(' ', max);
+      if (cut < max / 2) cut = max;
+      out.push(s.slice(0, cut).trim()); s = s.slice(cut).trim();
+    }
+    if (s) out.push(s);
+  };
+  // A sentence ends at . ! or ? followed by a space — never inside "3.1" or "$1.50".
+  t.replace(/([.!?]+["')\]]*)\s+/g, '$1\u0001').split('\u0001').forEach(function (sent) {
+    if (sent.length <= max) { push(sent); return; }
+    var buf = '';
+    sent.replace(/([,;:])\s+/g, '$1\u0000').split('\u0000').forEach(function (part) {
+      if (buf && (buf + ' ' + part).length > max) { push(buf); buf = part; } else buf = buf ? buf + ' ' + part : part;
+    });
+    push(buf);
+  });
+  return out;
+}
+/** The section's readable blocks in order: its title, then every paragraph,
+ *  list item, heading, table row and callout line — nothing hidden, no
+ *  buttons, and never a block inside another chosen one. */
+function hbReadBlocks_(sec) {
+  if (!sec) return [];
+  var picked = [].slice.call(sec.querySelectorAll('.kb-man-sec-h, .kb-article p, .kb-article li, .kb-article h3, .kb-article h4, .kb-article tr, .kb-article figcaption'));
+  return picked.filter(function (el) {
+    if (el.closest('[hidden], .kb-gal-slide:not(.on), button, .kb-sr-only')) return false;
+    if (picked.some(function (o) { return o !== el && o.contains(el); })) return false;
+    return !!hbBlockText_(el);
+  });
+}
+function hbBlockText_(el) {
+  var c = el.cloneNode(true);
+  c.querySelectorAll('button, .kb-sr-only, [aria-hidden="true"], svg').forEach(function (n) { n.remove(); });
+  if (el.tagName === 'TR') return [].map.call(c.children, function (td) { return td.textContent.trim(); }).filter(Boolean).join('. ');
+  return c.textContent.replace(/\s+/g, ' ').trim();
+}
+function hbListenBarHtml_(id) {
+  if (!id || !hbSpeech_()) return '';
+  var mine = HB_RA.id === id && HB_RA.state !== 'idle';
+  if (!mine) return '<button type="button" class="kb-btn hb-ra-btn" onclick="hbReadAloud_()">' + icon('waveform', 13) + ' Listen</button>';
+  return '<span class="hb-ra">' + (HB_RA.state === 'paused'
+    ? '<button type="button" class="kb-btn hb-ra-btn" onclick="hbReadResume_()">' + icon('waveform', 13) + ' Resume</button>'
+    : '<button type="button" class="kb-btn hb-ra-btn on" onclick="hbReadPause_()">' + icon('waveform', 13) + ' Pause</button>') +
+    '<button type="button" class="kb-btn" onclick="hbStopReading_()">Stop</button></span>';
+}
+function hbReadAloud_() {
+  var speech = hbSpeech_(), id = HB.currentId;
+  if (!speech) { showToast('This browser cannot read aloud.', 'toast-warn'); return; }
+  hbStopReading_();
+  var blocks = hbReadBlocks_(document.getElementById('kb-man-sec-' + id));
+  if (!blocks.length) { showToast('Nothing to read in this section.', 'toast-warn'); return; }
+  HB_RA = { id: id, blocks: blocks, i: 0, state: 'playing', seq: HB_RA.seq + 1 };
+  hbPaintQuizBar_(HB.currentId);
+  hbReadBlock_(HB_RA.seq);
+}
+function hbReadBlock_(seq) {
+  if (seq !== HB_RA.seq || HB_RA.state === 'idle') return;
+  var el = HB_RA.blocks[HB_RA.i];
+  if (!el || !el.isConnected) { hbStopReading_(); return; }
+  document.querySelectorAll('.hb-ra-on').forEach(function (n) { n.classList.remove('hb-ra-on'); });
+  el.classList.add('hb-ra-on');
+  try { el.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  var speech = hbSpeech_(), p = hbDisplay_();
+  var voice = p.voice ? speech.getVoices().filter(function (v) { return v.name === p.voice; })[0] : null;
+  var chunks = hbSpeechChunks_(hbBlockText_(el));
+  var k = 0;
+  var next = function () {
+    if (seq !== HB_RA.seq || HB_RA.state === 'idle') return;
+    if (k >= chunks.length) { HB_RA.i++; if (HB_RA.i >= HB_RA.blocks.length) { hbStopReading_(); return; } hbReadBlock_(seq); return; }
+    var u = new window.SpeechSynthesisUtterance(chunks[k++]);
+    if (voice) u.voice = voice;
+    u.rate = p.rate;
+    u.onend = next;
+    u.onerror = function (e) { if (seq !== HB_RA.seq) return; if (e && (e.error === 'interrupted' || e.error === 'canceled')) return; showToast('Reading stopped: the browser\'s speech failed.', 'toast-warn'); hbStopReading_(); };
+    speech.speak(u);
+  };
+  next();
+}
+function hbReadPause_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'playing') return; s.pause(); HB_RA.state = 'paused'; hbPaintQuizBar_(HB.currentId); }
+function hbReadResume_() { var s = hbSpeech_(); if (!s || HB_RA.state !== 'paused') return; s.resume(); HB_RA.state = 'playing'; hbPaintQuizBar_(HB.currentId); }
+/** Stop reading and clear the mark; every navigation calls it. */
+function hbStopReading_() {
+  var was = HB_RA.state !== 'idle';
+  HB_RA.seq++; HB_RA.state = 'idle'; HB_RA.blocks = []; HB_RA.id = null;
+  var s = hbSpeech_(); if (s && was) { try { s.cancel(); } catch (e) {} }
+  document.querySelectorAll('.hb-ra-on').forEach(function (n) { n.classList.remove('hb-ra-on'); });
+  if (was) hbPaintQuizBar_(HB.currentId);
+}
+
 // ── Contents ──────────────────────────────────────────────────────────────
 function hbChapterLabel_(dept) {
   var p = kbManualChapterParts_(dept);
@@ -1662,6 +1873,9 @@ function hbBoot_() {
   hbLoadSignOffs_();  // HB3.4: and the bar's sign-off, the reader's own
   hbLoadBookmarks_(); // HB2.2: the reader's bookmarks, and their notes when kept in the account
   hbBootNotes_();
+  hbApplyDisplay_(hbDisplay_(), false);   // HB2.3: the head applied the stored attributes; this loads the font if it is on
+  var sp = hbSpeech_();
+  if (sp) { try { sp.addEventListener('voiceschanged', hbVoicesChanged_); } catch (e) {} }
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));

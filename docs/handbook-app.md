@@ -152,6 +152,23 @@ Plans, team quizzes and read marks live in the Handbook spreadsheet's `Plans`,
 `TeamQuizzes` and `ReadMarks` tabs (created on first use; never edit their
 headers — a row that will not read is counted and skipped).
 
+## Display and read aloud (HB2.3)
+
+- **Display** in the header opens the reader's display settings: text size
+  (Default, Large, Larger, Largest), line spacing (Default, Relaxed, Wide),
+  **High contrast**, an **easier-reading font** (Atkinson Hyperlegible,
+  downloaded only once it is chosen) and **Reduce motion** (always on anyway
+  when the device asks for it). Each choice applies at once; **Reset** goes
+  back to the defaults. They are kept in this browser and applied before the
+  page appears, so it never flashes the old look.
+- **Listen** in the bar above a section reads it aloud with the browser's own
+  speech — the title, then each paragraph, list item, heading and table row,
+  the one being read marked. **Pause / Resume** and **Stop**; opening anything
+  else stops it. The voice and speed are chosen under Display → Read aloud.
+  Any voice the browser offers may be used; some (Chrome's "Google" voices)
+  speak through Google's servers — the handbook is PHI-free, so that is
+  allowed. A browser with no speech shows no Listen button.
+
 ## Bookmarks and notes (HB2.2)
 
 - **Bookmarks** — the star on the reader bar. They belong to the reader's

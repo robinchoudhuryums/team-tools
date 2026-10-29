@@ -41649,6 +41649,28 @@ test('HB2.2-d: the gates — no account, no answer; the caller is checked before
   assert.ok(!/getKbSS_|getOrCreateKbSheet_/.test(src), 'Saved.js never reaches the KB');
 });
 
+test('HB2.3-a: display prefs are cleaned to their ranges, and the head script applies every attribute the page can produce — and nothing else (a mirror: the page decides, the head applies)', () => {
+  const ctx = vm.createContext({ JSON, Number, String, Object, Array, Math, HB_DISPLAY_SIZES: ['a', 'b', 'c', 'd'], HB_DISPLAY_SPACINGS: ['a', 'b', 'c'], HB_READ_RATES: [0.8, 1, 1.2, 1.5] });
+  ['hbDisplayClean_', 'hbDisplayAttrs_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));
+  const C = (p) => hbPlain_(ctx.hbDisplayClean_(p));
+  assert.deepStrictEqual(C(null), { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1 });
+  assert.deepStrictEqual(C({ size: 9, spacing: -1, contrast: 'yes', motion: true, font: 1, voice: 7, rate: 3 }),
+    { size: 0, spacing: 0, contrast: false, motion: true, font: false, voice: '', rate: 1 }, 'out of range is the default; only true is on');
+  assert.deepStrictEqual(C({ size: 3, spacing: 2, rate: 1.5, voice: 'Moira' }).size, 3);
+  assert.deepStrictEqual(hbPlain_(ctx.hbDisplayAttrs_(C({}))), {}, 'the defaults put nothing on <html>');
+  const all = hbPlain_(ctx.hbDisplayAttrs_(C({ size: 3, spacing: 2, contrast: true, motion: true, font: true })));
+  assert.deepStrictEqual(Object.keys(all).sort(), ['data-hb-contrast', 'data-hb-font', 'data-hb-motion', 'data-hb-size', 'data-hb-spacing']);
+  // The head's filter, read from index.html, admits every one of them.
+  const head = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8');
+  const nameRe = new RegExp(/\/\^(data-hb-\[a-z\]\+)\$\/\.test\(k\)/.exec(head)[1].replace(/^/, '^') + '$');
+  const valRe = new RegExp('^' + /\/\^(\[a-z0-9\]\+)\$\/\.test\(String/.exec(head)[1] + '$');
+  Object.keys(all).forEach((k) => { assert.ok(nameRe.test(k), k); assert.ok(valRe.test(all[k]), all[k]); });
+  // Every attribute the page writes is one the stylesheet styles.
+  const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
+  Object.keys(all).forEach((k) => assert.ok(css.indexOf('[' + k + '="' + all[k] + '"]') >= 0, 'a rule for ' + k + '="' + all[k] + '"'));
+  [1, 2].forEach((n) => assert.ok(css.indexOf('[data-hb-size="' + n + '"]') >= 0 && css.indexOf('[data-hb-spacing="' + n + '"]') >= 0, 'every step has a rule: ' + n));
+});
+
 test('HB2.2-e: the page\'s merge is the server\'s (a mirror whose drift would lose a note — g120); the page reads back only what its export writes', () => {
   const ctx = vm.createContext({ JSON, Number, String, Object, Array, HB_NOTE_MAX: 4000 });
   ['hbNotesMergeLocal_', 'hbNotesFromFile_', 'hbNotesExport_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));

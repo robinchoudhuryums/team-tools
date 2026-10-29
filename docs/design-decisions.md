@@ -6081,3 +6081,27 @@ pick them up without re-deriving the context.
   PHI store); a last-write-wins upload of the whole map (a second computer's
   older copy would erase newer notes); keeping the account's copies when sync
   is turned off (a reader who turned it off to remove them would be surprised).
+- <a id="display-settings-stay-in-the-browser-and-read-aloud-is-the-browsers"></a>**Display settings are attributes on `<html>`, kept in the browser and applied before first paint; read aloud is the browser's own speech, a block at a time (handbook app HB2.3, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's answers: the settings are remembered **in this browser** (no
+  server, no tab); the easier-reading font is **Atkinson Hyperlegible**; read
+  aloud may use **any voice** the browser offers (the handbook is PHI-free, so a
+  network voice is acceptable). Mechanics: each setting is one `data-hb-*`
+  attribute on `<html>`, and `hbDisplayAttrs_` is the ONE place that decides
+  them — the page stores the attributes beside the prefs, and `index.html`'s
+  head applies exactly what was stored (names `data-hb-[a-z]+`, plain values
+  only) before first paint, so the page never flashes the old look; a pin holds
+  the head's filter and the stylesheet to every attribute the page can write.
+  Text size scales the ROOT font size, so the rem-sized reader grows while the
+  px-sized chrome stays put; high contrast re-points the neutral tokens for
+  light and for dark (each scoped, so neither overrides the other); reduced
+  motion is the tokens partial's reduced-motion rule, forced. Read aloud speaks
+  the section's title, then each paragraph, list item, heading, table row and
+  caption — hidden slides, buttons and screen-reader-only text left out — in
+  pieces short enough that Chrome does not cut an utterance off (a sentence
+  ends at punctuation followed by a space, never inside "3.1" or "$1.50");
+  every navigation stops it, and a late `onend` after Stop speaks nothing
+  (a sequence guard). **Alternatives rejected:** the account for the settings
+  (the operator's choice — one more request per visit for something a reader
+  sets once); scaling the whole page with CSS zoom (it breaks the layout's
+  breakpoints); speaking a section as one utterance (Chrome stops a long one
+  part-way).

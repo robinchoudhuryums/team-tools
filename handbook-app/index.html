@@ -17,6 +17,22 @@
     // Dark mode follows the device, before first paint (the tokens partial
     // keys its dark palette on data-mode).
     try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-mode', 'dark'); } catch (e) {}
+    // HB2.3: the reader's display settings (this browser), before first paint —
+    // exactly the attributes the page stored (hbDisplayAttrs_ decides them),
+    // and the easier-reading font's stylesheet when it is on.
+    try {
+      var hbD = JSON.parse(localStorage.getItem('umsHbDisplay') || 'null');
+      var hbA = hbD && hbD.attrs && typeof hbD.attrs === 'object' ? hbD.attrs : {};
+      Object.keys(hbA).forEach(function (k) {
+        if (/^data-hb-[a-z]+$/.test(k) && /^[a-z0-9]+$/.test(String(hbA[k]))) document.documentElement.setAttribute(k, String(hbA[k]));
+      });
+      if (hbA['data-hb-font'] === 'easy') {
+        var hbL = document.createElement('link');
+        hbL.id = 'hb-easy-font'; hbL.rel = 'stylesheet';
+        hbL.href = 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap';
+        document.head.appendChild(hbL);
+      }
+    } catch (e) {}
   </script>
 </head>
 <body>
@@ -27,6 +43,7 @@
     <span class="hb-ver" id="hb-ver"></span>
     <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
       oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
+    <button type="button" class="hb-me-btn" id="hb-disp" onclick="hbOpenDisplay_()" aria-haspopup="dialog">Display</button>
     <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge"></span></button>
     <label class="hb-dept">My department
       <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>

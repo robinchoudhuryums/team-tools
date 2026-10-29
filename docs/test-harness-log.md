@@ -3160,3 +3160,29 @@ per-change detail. By delta:
   CI gate), `handbook-note-light-mobile`. Reading them: "Remove" borrowed the
   star's warning colour, and "Delete note" wrapped in the phone's footer — both
   fixed.
+
+## Handbook app HB2.3 — display settings and read aloud (2026-10-29)
+
+- **Pure (run.js, "HB2.3")** — a: the prefs cleaned to their ranges; the
+  defaults put nothing on `<html>`; every attribute the page can produce passes
+  `index.html`'s head filter (read from the file) and has a rule in the
+  stylesheet — the page decides, the head applies, and neither can drift
+  unseen.
+- **DOM** — the Display panel (each choice on `<html>` at once and kept; the
+  font downloaded only once chosen; Reset clears it all; Done closes); the head
+  applies kept attributes before the page script (and refuses a non-`data-hb`
+  name, a value with markup, the theme attribute; a broken store opens the page
+  anyway); read aloud over a fake `speechSynthesis` (title first, one block
+  marked, Pause/Resume, the end clears, Stop cancels and a late `onend` speaks
+  nothing, navigation stops it, no speech → no Listen); the voice and speed
+  reach the utterance; `hbSpeechChunks_` — sentences, comma splits, a long run
+  cut, and "3.1" / "$1.50" never a sentence end (the drive caught the first
+  version reading section numbers in pieces).
+- **Visual** — `handbook-display-light-mobile` (on the CI gate),
+  `handbook-large-dark-mobile`, `handbook-large-light-wide`,
+  `handbook-reading-light-wide`. The largest text at 390px overflowed 6px
+  through the department picker (a flex item without `min-width: 0`) — fixed;
+  it also squeezes the shared reader's chapter index (`.kb-man-ix-t`), the
+  pre-existing masthead defect already on the follow-on list, so that scenario
+  is not gated. The fake speech is DEFINED on `window` in the shot (Chromium's
+  `speechSynthesis` cannot be assigned).

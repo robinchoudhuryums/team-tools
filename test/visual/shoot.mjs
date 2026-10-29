@@ -107,6 +107,10 @@ const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Ki
 const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ document.querySelectorAll('.hb-qz-q').forEach(function(f){ var i=f.querySelector('input'); if(i) i.checked=true; }); hbSubmitQuiz_(); }, 400)";
 const HB_PROGRESS = "hbGoTraining_(); setTimeout(function(){ var e=document.getElementById('hb-tr-progress'); if(e) e.scrollIntoView(); var d=e && e.querySelector('details'); if(d) d.open=true; }, 500)";
 const HB_NOTES = "try { localStorage.setItem('umsHbNotes', JSON.stringify({ 'man-0-11': { t: 'Read the Ticket State before the note.\\nA split shipment has two tracking numbers — give both.', ms: Date.now() - 3600000 }, 'man-0-10': { t: 'Pat. Resp. is what they owe BEFORE delivery.', ms: Date.now() - 86400000 }, 'man-0-2': { t: '', ms: 5 } })); } catch (e) {} ";
+const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
+const HB_READING = "Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { q: [], speak: function (u) { this.q.push(u); }, pause: function () {}, resume: function () {}, cancel: function () {}, getVoices: function () { return []; }, addEventListener: function () {} } });" +
+  " window.SpeechSynthesisUtterance = function (t) { this.text = t; };" +
+  " setTimeout(function () { hbReadAloud_(); var s = window.speechSynthesis; for (var i = 0; i < 2; i++) { var u = s.q[s.q.length - 1]; if (u && u.onend) u.onend(); } }, 400)";
 const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
 
 const SCENARIOS = [
@@ -138,6 +142,13 @@ const SCENARIOS = [
   ['handbook-training-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoTraining_()', HB_PAGE],
   ['handbook-quiz-editor-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditTeamQuiz_('tq-00000000000a'); }, 400)", HB_PAGE],
   ['handbook-plan-editor-light-mobile', {}, MOBILE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditPlan_('pl-000000000001'); }, 400)", HB_PAGE],
+  // HB2.3 — the Display panel; the largest text with wide spacing, high
+  // contrast and the easier-reading font at phone width; larger text and high
+  // contrast on a desktop; a section being read aloud (the block marked).
+  ['handbook-display-light-mobile', {}, MOBILE, 'light', '?s=0.11', "setTimeout(function(){ hbOpenDisplay_(); }, 300)", HB_PAGE],
+  ['handbook-large-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.11', HB_LARGE('{ size: 3, spacing: 2, contrast: true, font: true }'), HB_PAGE],
+  ['handbook-large-light-wide',    {}, WIDE,   'light', '?s=0.10', HB_LARGE('{ size: 2, contrast: true }'), HB_PAGE],
+  ['handbook-reading-light-wide',  {}, WIDE,   'light', '?s=0.11', HB_READING, HB_PAGE],
   // HB2.2 — Saved (bookmarks, one no longer in the handbook; notes, sync off)
   // and the note editor over a section.
   ['handbook-saved-light-wide',    {}, WIDE,   'light', '', HB_NOTES + 'hbGoSaved_()', HB_PAGE],
