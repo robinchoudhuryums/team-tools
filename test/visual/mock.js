@@ -1438,7 +1438,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153, reviewed: 2,
         skipped: [{ id: 'man-5-9', title: '5.9 Equipment guide', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Difficult calls', reason: 'deleted' }],
         images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toStore: 160, removed: 0 }
-          : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' } };
+          : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' },
+        quizzes: (opts && opts.dryRun) ? { total: 4, questions: 38, changed: true } : { total: 4, questions: 38, changed: true, error: '' } };   // HB3.1
     },
     kbPublishManual: function (opts) {
       const dept = (opts && opts.department) || '';

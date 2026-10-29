@@ -4483,7 +4483,8 @@ function kbManualBundle_(data) {
   if (data.format !== KB_MANUAL_FORMAT) return { error: 'The file\'s format is "' + String(data.format || 'none').substring(0, 40) + '"; this app reads ' + KB_MANUAL_FORMAT + ' — rebuild with the current manual/export_reference.py.' };
   if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
   return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog, synonyms: data.synonyms },
-    images: data.images === undefined ? null : data.images };   // Batch M3 — an M2 file carries none
+    images: data.images === undefined ? null : data.images,     // Batch M3 — an M2 file carries none
+    quizzes: data.quizzes === undefined ? null : data.quizzes };  // HB3.1 — an older file carries none
 }
 
 // ── Batch M3 — the manual's images ──────────────────────────────────────────
@@ -4617,6 +4618,75 @@ function kbManualImagesWrite_(rows) {
   const last = sheet.getLastRow();
   if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_IMAGES_HEADERS.length)).clearContent();
   if (rows.length) appendRowsSafe_(sheet, rows);
+}
+
+// ── HB3.1 — the handbook's official quizzes ─────────────────────────────────
+/** PURE (Node-pinned) — the bundle's quizzes, checked again with the app's
+ *  own quiz engine (manual/quizzes.py checked them at export): an id shaped
+ *  like q-oxygen-basics, used once; a section that is one of THIS file's
+ *  articles, for the quiz and for every question; an explanation on every
+ *  question; the stored JSON within one cell. `quizzes` null (an older file)
+ *  → items null: the stored quizzes are left as they are. Any bad quiz refuses
+ *  the WHOLE file, like any other bad entry. */
+function kbManualQuizzesValidate_(quizzes, articleIds) {
+  if (quizzes == null) return { items: null, errors: [] };
+  if (!Array.isArray(quizzes)) return { items: null, errors: ['The file\'s quizzes are not a list.'] };
+  const errors = [], items = [], seen = {}, ids = {};
+  (articleIds || []).forEach(function (id) { ids[id] = 1; });
+  if (quizzes.length > KB_MANUAL_QUIZZES_MAX) errors.push('The file carries ' + quizzes.length + ' quizzes; at most ' + KB_MANUAL_QUIZZES_MAX + ' are stored.');
+  quizzes.slice(0, KB_MANUAL_QUIZZES_MAX).forEach(function (qz, n) {
+    qz = qz && typeof qz === 'object' ? qz : {};
+    const id = String(qz.id || '');
+    const where = 'Quiz "' + (id || (n + 1)).toString().substring(0, KB_MANUAL_QUIZ_ID_MAX) + '"';
+    if (!KB_MANUAL_QUIZ_ID_RE.test(id) || id.length > KB_MANUAL_QUIZ_ID_MAX) { errors.push(where + ': not a quiz id (q-…).'); return; }
+    if (seen[id]) { errors.push(where + ': its id is used twice.'); return; }
+    seen[id] = 1;
+    const section = String(qz.section || '');
+    if (!ids[section]) { errors.push(where + ': its section is not a section of this file.'); return; }
+    const v = quizValidate_(qz, { types: QUIZ_TYPES, sectionIds: ids });
+    if (!v.ok) { errors.push(where + ': ' + v.error); return; }
+    const noWhy = v.quiz.questions.map(function (q, i) { return q.explain ? 0 : i + 1; }).filter(Boolean);
+    if (noWhy.length) { errors.push(where + ': question ' + noWhy[0] + ' has no explanation.'); return; }
+    const json = JSON.stringify(v.quiz.questions);
+    if (json.length > TRAIN_QUIZ_JSON_MAX) { errors.push(where + ': its questions are too large to store.'); return; }
+    items.push({ id: id, title: v.quiz.title, section: section, anchor: String(qz.anchor || ''), passPct: v.quiz.passPct, questionsJson: json });
+  });
+  return { items: errors.length ? null : items, errors: errors };
+}
+/** PURE — the tab rows for the checked quizzes, in the file's order. */
+function kbManualQuizzesRows_(items) {
+  return (items || []).map(function (q) { return [q.id, q.title, q.section, q.anchor, q.passPct, q.questionsJson]; });
+}
+/** The stored rows, as kbManualQuizzesRows_ would write them ([] before the
+ *  first import). A header that was edited throws — "could not read" is not
+ *  "none stored" (g128), and an import must not plan against a guess. */
+function kbManualQuizzesStored_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return [];
+  const width = KB_MANUAL_QUIZZES_HEADERS.length;
+  const vals = sheet.getRange(1, 1, sheet.getLastRow(), width).getValues();
+  if (vals[0].map(function (h) { return String(h || '').trim(); }).join('|') !== KB_MANUAL_QUIZZES_HEADERS.join('|')) {
+    throw new Error('The ' + KB_MANUAL_QUIZZES_TAB + ' tab\'s header row has been edited.');
+  }
+  return vals.slice(1).filter(function (r) { return String(r[0] || '').trim(); })
+    .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), String(r[3]), Math.round(Number(r[4])) || 0, String(r[5])]; });
+}
+/** The whole tab, rewritten: the header, then every quiz the file carries, as
+ *  text cells (a title or an anchor never coerces — g144). The caller holds
+ *  the lock and writes only when the rows changed. */
+function kbManualQuizzesWrite_(rows) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_QUIZZES_TAB);
+  if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_QUIZZES_TAB); sheet.setFrozenRows(1); }
+  sheet.getRange(1, 1, 1, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_QUIZZES_HEADERS]));
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_QUIZZES_HEADERS.length)).clearContent();
+  if (!rows.length) return;
+  // From row 2, whatever the cleared tab's grid: grown first (g145), the text
+  // columns formatted, then one write.
+  const need = rows.length + 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  KB_MANUAL_QUIZZES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(2, 1, rows.length, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_QUIZZES_TEXT_IDX));
 }
 
 /** Employee — the manual's images as data URLs, by key, in one call: a part
@@ -5035,7 +5105,8 @@ function kbImportManual(source, opts) {
     const v = kbManualValidate_(bundle.articles);
     const mv = bundle.meta ? kbManualMetaValidate_(bundle.meta, v.items.map(function (it) { return it.id; })) : { meta: null, errors: [] };
     const iv = kbManualImagesValidate_(bundle.images, v.items, function (b64) { return kbSha256Hex_(b64); });
-    const problems = v.errors.concat(mv.errors, iv.errors);
+    const qv = kbManualQuizzesValidate_(bundle.quizzes, v.items.map(function (it) { return it.id; }));   // HB3.1
+    const problems = v.errors.concat(mv.errors, iv.errors, qv.errors);
     if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
     const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
     const lock = LockService.getScriptLock();
@@ -5082,6 +5153,15 @@ function kbImportManual(source, opts) {
         imgRemoved = Object.keys(imLed).filter(function (k) { return !inFile[k]; }).length;
         summary.images = { total: iv.items.length, unchanged: imgPlan.unchanged.length, toStore: imgPlan.upload.length, removed: imgRemoved };
       }
+      // HB3.1 — the quizzes: compared with the tab under the lock; written
+      // below only when they differ, so a re-import writes nothing.
+      let quizRows = null;
+      if (qv.items) {
+        quizRows = kbManualQuizzesRows_(qv.items);
+        const stored = kbManualQuizzesStored_(getKbSS_().getSheetByName(KB_MANUAL_QUIZZES_TAB));
+        summary.quizzes = { total: quizRows.length, changed: JSON.stringify(stored) !== JSON.stringify(quizRows),
+          questions: qv.items.reduce(function (n, q) { return n + JSON.parse(q.questionsJson).length; }, 0) };
+      } else summary.quizzes = null;
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
@@ -5147,6 +5227,12 @@ function kbImportManual(source, opts) {
         }
         delete imgs.toStore;
       }
+      if (quizRows && summary.quizzes.changed) {
+        // Like the images: a failed write is said beside the sections (which
+        // are in), and the next Import retries it.
+        summary.quizzes.error = '';
+        try { kbManualQuizzesWrite_(quizRows); } catch (e) { summary.quizzes.error = String(e.message || e).substring(0, 200); }
+      }
       if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
@@ -5157,6 +5243,7 @@ function kbImportManual(source, opts) {
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
+        (summary.quizzes ? '; quizzes=' + summary.quizzes.total + (summary.quizzes.changed ? (summary.quizzes.error ? ' (error)' : ' (stored)') : ' (same)') : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
       // HB1.4: every import refreshes the handbook app's search mirror, so the
       // app follows a settings change without anyone re-saving it.

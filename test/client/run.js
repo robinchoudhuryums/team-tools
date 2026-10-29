@@ -28179,9 +28179,10 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // note text columns stay '@' wherever a note row is copied to. Cycle 25 E3
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known twelve');
+    'the raw plain-text writers are exactly the known thirteen');
   assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49) and the search signal (cycle 25 E6)');
@@ -30980,13 +30981,23 @@ function m1Importer_(book, fileText, who, extra) {
     invalidateKbCache_: () => book.writes.push(['cache', 'bust']),
     writeAuditLog_: (e, a, d, t, adj, h, notes) => audits.push(a + ' ' + notes),
     kbMirrorSearchConfig_: () => true,   // HB1.4: every import refreshes the handbook app's search mirror — a write only on a change (its own pin)
+    // HB3.1 — the quizzes' tab and the engine's limits, read from the source.
+    KB_MANUAL_QUIZZES_TAB: 'ManualQuizzes', KB_MANUAL_QUIZZES_HEADERS: ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'],
+    KB_MANUAL_QUIZZES_TEXT_IDX: [0, 1, 2, 3, 5], KB_MANUAL_QUIZ_ID_RE: /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/, KB_MANUAL_QUIZ_ID_MAX: 48, KB_MANUAL_QUIZZES_MAX: 300,
+    QUIZ_TYPES: ['single', 'multi', 'truefalse'], QUIZ_TF_OPTIONS: ['True', 'False'],
+    ...Object.fromEntries(['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS', 'TRAIN_QUIZ_JSON_MAX', 'QUIZ_TEXT_MAX', 'QUIZ_OPTION_MAX', 'QUIZ_TITLE_MAX', 'QUIZ_EXPLAIN_MAX']
+      .map((n) => [n, Number(new RegExp('const ' + n + ' = (\\d+);').exec(codeSrc)[1])])),
+    sheetTextRows_: (rows) => rows,
     Date, Buffer,
   }, extra || {}));
   ['kbRowStatus_', 'kbSha256Hex_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImagesRows_',
     'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_',
-    'kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualReviewOnUpdate_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
+    'kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualReviewOnUpdate_',
+    // HB3.1: the quizzes the bundle carries, checked by the shared engine.
+    'kbManualQuizzesValidate_', 'kbManualQuizzesRows_', 'kbManualQuizzesStored_', 'kbManualQuizzesWrite_',
+    'quizQuestion_', 'quizValidate_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   // M4-FU3: the file arrives as text. The tests keep naming it M1_LINK; the
   // wrapper hands the importer that file's text, as the browser does.
@@ -31728,6 +31739,140 @@ test('M3-I2 (M4-FU3): the import stores the images IN the ManualImages tab — n
   const r8 = m3Importer_(book8, m3Bundle_(Object.assign({}, imgs, { 'icon-delivered': { kind: 'icon', dataUri: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } }))).ctx.kbImportManual(M1_LINK, {});
   assert.ok(!r8.success && r8.problems.some((p) => /not a PNG or JPEG/.test(p)));
   assert.deepStrictEqual([!!book8.sheets.ManualImages, book8.writes.length], [false, 0], 'a refused file writes nothing');
+});
+// HB3.1 — the handbook's official quizzes: the shared engine's new question
+// types, the bank's limits mirrored by manual/quizzes.py, and the import that
+// stores them in ManualQuizzes.
+console.log('\nHB3.1 — the quiz engine and the handbook\'s question bank');
+function hb31Engine_() {
+  const ctx = vm.createContext({ Math, Number, String, Array, Object, JSON });
+  ['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS', 'TRAIN_QUIZ_JSON_MAX', 'QUIZ_TEXT_MAX', 'QUIZ_OPTION_MAX', 'QUIZ_TITLE_MAX', 'QUIZ_EXPLAIN_MAX'].forEach((n) => {
+    vm.runInContext('var ' + n + ' = ' + /const \w+ = (\d+);/.exec(codeSrc.match(new RegExp('const ' + n + ' = \\d+;'))[0])[1] + ';', ctx);
+  });
+  ['QUIZ_TYPES', 'QUIZ_TF_OPTIONS'].forEach((n) => vm.runInContext('var ' + new RegExp('const (' + n + ' = \\[[^\\]]*\\]);').exec(codeSrc)[1] + ';', ctx));
+  ['quizQuestion_', 'quizValidate_', 'quizAnswerRight_', 'quizGrade_', 'quizStripQuestion_', 'quizReview_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+const HB31_Q = { title: 'Oxygen', passPct: 80, questions: [
+  { q: 'One?', options: ['a', 'b', 'c'], correct: 1, explain: 'Because b.', section: 'man-8-2', anchor: '8.2.3' },
+  { type: 'multi', q: 'All that apply?', options: ['a', 'b', 'c', 'd'], correct: [3, 0], explain: 'a and d.', section: 'man-8-4' },
+  { type: 'truefalse', q: 'True?', correct: 1, explain: 'It is false.', section: 'man-8-2' }] };
+
+test('HB3.1-a: the engine — single, multi-select and true/false validate, grade (a multi answer is right only as exactly the right set), strip without the key, and review a wrong answer with its explanation and section', () => {
+  const e = hb31Engine_();
+  const all = { types: ['single', 'multi', 'truefalse'] };
+  const v = J2(e.quizValidate_(HB31_Q, all));
+  assert.strictEqual(v.ok, true, v.error);
+  assert.deepStrictEqual(v.quiz.questions.map((q) => [q.type, q.correct]), [['single', 1], ['multi', [0, 3]], ['truefalse', 1]], 'multi sorted; the type is filled');
+  assert.deepStrictEqual(v.quiz.questions[2].options, ['True', 'False'], 'true/false options are the engine\'s');
+  const qs = v.quiz.questions;
+  // Grading.
+  assert.deepStrictEqual(J2(e.quizGrade_(qs, [1, [0, 3], 1])), { right: 3, total: 3, perQuestion: [true, true, true], scorePct: 100 });
+  assert.deepStrictEqual(J2(e.quizGrade_(qs, [1, [3, 0, 0], 1])).perQuestion[1], true, 'order and repeats do not matter');
+  assert.deepStrictEqual(J2(e.quizGrade_(qs, [1, [0], 1])).perQuestion[1], false, 'a partial set is wrong');
+  assert.deepStrictEqual(J2(e.quizGrade_(qs, [1, [0, 1, 3], 1])).perQuestion[1], false, 'an extra option is wrong');
+  assert.deepStrictEqual(J2(e.quizGrade_(qs, [1, 0, null])).perQuestion, [true, false, false], 'a single index for a multi question, and a missing answer, are wrong');
+  // Stripping: never the key, the explanation or the section.
+  const s = J2(qs.map(e.quizStripQuestion_));
+  assert.deepStrictEqual(s, [{ q: 'One?', options: ['a', 'b', 'c'] }, { q: 'All that apply?', options: ['a', 'b', 'c', 'd'], type: 'multi' }, { q: 'True?', options: ['True', 'False'], type: 'truefalse' }]);
+  assert.ok(!/correct|explain|section|man-8/.test(JSON.stringify(s)), 'whitelist-built');
+  // Review: the wrong ones only, never the right option.
+  const r = J2(e.quizReview_(qs, [true, false, false]));
+  assert.deepStrictEqual(r, [{ i: 1, explain: 'a and d.', section: 'man-8-4', anchor: '' }, { i: 2, explain: 'It is false.', section: 'man-8-2', anchor: '' }]);
+  // Refusals.
+  const bad = (q, o) => e.quizValidate_({ title: 'T', passPct: 50, questions: [Object.assign({ q: 'Q', options: ['a', 'b'], correct: 0 }, q)] }, o || all).error;
+  assert.ok(/not a question type here/.test(bad({ type: 'multi', correct: [0] }, { types: ['single'] })), 'Team Tools takes single-answer only');
+  assert.ok(/each once/.test(bad({ type: 'multi', correct: [0, 0] })));
+  assert.ok(/each once/.test(bad({ type: 'multi', correct: [] })));
+  assert.ok(/True and False/.test(bad({ type: 'truefalse', options: ['Yes', 'No'] })));
+  assert.ok(/longer than 600/.test(bad({ explain: 'x'.repeat(601) })));
+  assert.ok(/must name the handbook section/.test(bad({ section: 'man-9-9' }, Object.assign({ sectionIds: { 'man-8-2': 1 } }, all))));
+});
+
+test('HB3.1-b: manual/quizzes.py mirrors the engine\'s limits, types and id rule — and CI runs its self-test', () => {
+  const py = fs.readFileSync(path.join(__dirname, '../../manual/quizzes.py'), 'utf8');
+  const num = (name) => Number(new RegExp('^' + name + ' = (\\d+)', 'm').exec(py)[1]);
+  const js = (name) => Number(new RegExp('const ' + name + ' = (\\d+);').exec(codeSrc)[1]);
+  [['MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_QUESTIONS'], ['MAX_OPTIONS', 'TRAIN_QUIZ_MAX_OPTIONS'], ['TEXT_MAX', 'QUIZ_TEXT_MAX'], ['OPTION_MAX', 'QUIZ_OPTION_MAX'],
+    ['TITLE_MAX', 'QUIZ_TITLE_MAX'], ['EXPLAIN_MAX', 'QUIZ_EXPLAIN_MAX'], ['QUIZ_JSON_MAX', 'TRAIN_QUIZ_JSON_MAX'], ['ID_MAX', 'KB_MANUAL_QUIZ_ID_MAX']]
+    .forEach(([p, j]) => assert.strictEqual(num(p), js(j), p + ' == ' + j));
+  const pyTypes = /^TYPES = \(([^)]*)\)/m.exec(py)[1].match(/"(\w+)"/g).map((s) => s.slice(1, -1));
+  assert.deepStrictEqual(pyTypes, JSON.parse(/const QUIZ_TYPES = (\[[^\]]*\]);/.exec(codeSrc)[1].replace(/'/g, '"')));
+  assert.strictEqual(/^ID_RE = re\.compile\(r"([^"]+)"\)/m.exec(py)[1], /const KB_MANUAL_QUIZ_ID_RE = \/([^/]+)\//.exec(codeSrc)[1], 'one id rule');
+  const ci = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
+  assert.ok(/python quizzes\.py --check/.test(ci), 'CI runs the bank check\'s self-test');
+  assert.ok(/quizzes\.check\(/.test(fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8')), 'and the export runs the check');
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(__dirname, '../../manual/data/quizzes.json'), 'utf8')).quizzes.constructor.name, 'Array', 'the bank exists');
+});
+
+test('HB3.1-c: the import checks the bundle\'s quizzes with the engine and stores them in ManualQuizzes as text — only when they changed; an older file leaves them alone, a bad quiz refuses the file (driven)', () => {
+  const arts = [m1Art_({ Id: 'man-8-2', Department: 'Part 08 — Oxygen', Title: '8.2 Concentrators', BodyMd: 'x\n', SortOrder: 2 }),
+    m1Art_({ Id: 'man-8-4', Department: 'Part 08 — Oxygen', Title: '8.4 Tanks', BodyMd: 'y\n', SortOrder: 4 })];
+  const quiz = { id: 'q-oxygen', title: '3/4 Oxygen', section: 'man-8-2', anchor: '', num: '8.2', passPct: 80, questions: HB31_Q.questions };
+  const bundle = (quizzes) => Object.assign({ format: 'ums-manual/1', version: 'v3.0', built: '10/29/2026', router: [], changelog: [], articles: arts }, quizzes === undefined ? {} : { quizzes });
+  const book = m1Book_([], null);
+  const fmt = [];
+  const run = (b, o) => {
+    const imp = m1Importer_(book, JSON.stringify(b));
+    imp.ctx.sheetTextRows_ = (rows) => rows;
+    const ins = book.insertSheet;
+    book.insertSheet = (n) => { const sh = ins(n); const gr = sh.getRange; sh.getRange = (...a) => Object.assign(gr(...a), { setNumberFormat: (f) => fmt.push([n, a[1], f]) }); return sh; };
+    const r = imp.ctx.kbImportManual(M1_LINK, o || {});
+    book.insertSheet = ins;
+    return Object.assign(r, { audits: imp.audits });
+  };
+  // A check: the plan, no tab.
+  const chk = J2(run(bundle([quiz]), { dryRun: true }));
+  assert.deepStrictEqual(chk.quizzes, { total: 1, changed: true, questions: 3 });
+  assert.ok(!book.sheets.ManualQuizzes, 'a check writes nothing');
+  // The import.
+  const r1 = run(bundle([quiz]));
+  assert.strictEqual(r1.success, true, r1.error);
+  assert.deepStrictEqual(J2(r1.quizzes), { total: 1, changed: true, questions: 3, error: '' });
+  const g = book.sheets.ManualQuizzes.grid;
+  assert.deepStrictEqual(g[0], ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson']);
+  assert.deepStrictEqual(g[1].slice(0, 5), ['q-oxygen', '3/4 Oxygen', 'man-8-2', '', 80]);
+  const stored = JSON.parse(g[1][5]);
+  assert.deepStrictEqual(stored.map((q) => [q.type, q.correct, q.section]), [['single', 1, 'man-8-2'], ['multi', [0, 3], 'man-8-4'], ['truefalse', 1, 'man-8-2']], 'the engine\'s normalized questions, key included (this tab never reaches a client)');
+  assert.deepStrictEqual(fmt.map((f) => f[1]).sort(), [1, 2, 3, 4, 6], 'every text column formatted @ before the write — "3/4" stays a title');
+  assert.ok(/; quizzes=1 \(stored\)$/.test(r1.audits[0]), r1.audits[0]);
+  // A re-import of the same quizzes writes nothing at all.
+  book.writes.length = 0;
+  const r2 = run(bundle([quiz]));
+  assert.deepStrictEqual([r2.quizzes.changed, book.writes], [false, []], 'a re-import changes nothing');
+  // An older file (no quizzes field): the stored quizzes stay.
+  const r3 = run(bundle(undefined));
+  assert.strictEqual(r3.quizzes, null);
+  assert.strictEqual(book.sheets.ManualQuizzes.grid.filter((r) => r[0] && r[0] !== 'Id').length, 1, 'kept');
+  // An empty list removes them.
+  const r4 = run(bundle([]));
+  assert.deepStrictEqual([r4.quizzes.total, r4.quizzes.changed], [0, true]);
+  assert.strictEqual(book.sheets.ManualQuizzes.grid.slice(1).filter((r) => r[0]).length, 0, 'cleared');
+  // Refusals: the whole file, nothing written.
+  const refuse = (q, re) => {
+    const before = book.sheets.KB.grid.length;
+    const r = run(bundle([Object.assign({}, quiz, q)]));
+    assert.ok(!r.success && r.problems.some((p) => re.test(p)), JSON.stringify(r.problems));
+    assert.strictEqual(book.sheets.KB.grid.length, before);
+  };
+  refuse({ section: 'man-9-9' }, /its section is not a section of this file/);
+  refuse({ id: 'Oxygen' }, /not a quiz id/);
+  refuse({ questions: [Object.assign({}, HB31_Q.questions[0], { section: 'man-1-1' })] }, /must name the handbook section/);
+  refuse({ questions: [Object.assign({}, HB31_Q.questions[0], { explain: '' })] }, /question 1 has no explanation/);
+  const dup = run(bundle([quiz, quiz]));
+  assert.ok(!dup.success && dup.problems.some((p) => /used twice/.test(p)));
+});
+
+test('HB3.1-d: the import result says what happened to the quizzes — checked, stored, unchanged, a failed write, or an older file (driven)', () => {
+  const ctx = vm.createContext({ esc: (s) => String(s) });
+  vm.runInContext(extractFnFrom(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8'), 'kbManualQuizzesLine_'), ctx);
+  const t = (q, d) => ctx.kbManualQuizzesLine_(q, d).html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  assert.strictEqual(t({ total: 2, questions: 9, changed: true }, true), 'Quizzes: 2 quizzes (9 questions) · would be stored');
+  assert.strictEqual(t({ total: 1, questions: 1, changed: true, error: '' }, false), 'Quizzes: 1 quiz (1 question) · stored');
+  assert.strictEqual(t({ total: 1, questions: 3, changed: false }, false), 'Quizzes: 1 quiz (3 questions) · unchanged');
+  const f = ctx.kbManualQuizzesLine_({ total: 1, questions: 3, changed: true, error: 'Service failed' }, false);
+  assert.ok(f.warn && /NOT stored/.test(f.html) && /press Import again/.test(f.html));
+  assert.ok(/No quizzes in this file — the stored quizzes are left as they are/.test(t(null, false)));
 });
 
 function m3Serve_(rows, cache, who, opts) {
@@ -40395,7 +40540,7 @@ testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-a: handbook-app/ matches what th
   });
   // Wired: CI runs the check after the install its parser needs (g116's 22nd —
   // a step whose dependency is missing fails for the wrong reason).
-  const wf = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  const wf = fs.readFileSync(path.join(__dirname, '../../.github/workflows/client-tests.yml'), 'utf8');
   const ci = wf.indexOf('run: npm ci'), chk = wf.indexOf('run: node scripts/handbook-sync.mjs --check');
   assert.ok(ci >= 0 && chk > ci, 'CI runs the sync check, after `npm ci`');
   const req = wf.indexOf('run: REQUIRE_DEPS=1 node test/client/run.js');
@@ -40816,7 +40961,7 @@ test('HB1.4-e: Team Tools mirrors the synonyms and auto-tag rules to KbSearchCon
   // Its three callers, and the three places that tell an admin it failed.
   const code = serverSource();
   ['kbSaveSearchConfig', 'saveAutoTagRules', 'kbImportManual'].forEach((f) => assert.ok(/handbookMirrored: kbMirrorSearchConfig_\(\)/.test(extractRawFunction('Code.js', f)), f + ' mirrors'));
-  assert.strictEqual(fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8').split('r.handbookMirrored === false').length - 1, 2, 'the synonyms save and the import say so');
+  assert.strictEqual(fs.readFileSync(path.join(__dirname, '../../web-app/kb/script_kb.html'), 'utf8').split('r.handbookMirrored === false').length - 1, 2, 'the synonyms save and the import say so');
   assert.ok(/res\.handbookMirrored === false/.test(fs.readFileSync(path.join(HB_ROOT, 'web-app/cn/script_callnotes.html'), 'utf8')), 'the auto-tag save says so');
   assert.ok(code.indexOf('KB_SEARCH_SIGNAL_HB_TAB') > 0);
 });

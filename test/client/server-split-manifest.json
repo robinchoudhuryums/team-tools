@@ -3506,6 +3506,39 @@
     "trainValidateQuizDef_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the handbook's quizzes on import",
+   "added": [
+    "KB_MANUAL_QUIZZES_HEADERS",
+    "KB_MANUAL_QUIZZES_MAX",
+    "KB_MANUAL_QUIZZES_TAB",
+    "KB_MANUAL_QUIZ_ID_MAX",
+    "KB_MANUAL_QUIZ_ID_RE",
+    "kbManualQuizzesRows_",
+    "kbManualQuizzesStored_",
+    "kbManualQuizzesValidate_",
+    "kbManualQuizzesWrite_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the quizzes tab's text-column list",
+   "added": [
+    "KB_MANUAL_QUIZZES_TEXT_IDX"
+   ],
+   "removed": [],
+   "changed": [
+    "kbManualQuizzesWrite_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5009,6 +5042,36 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "805168d9df518cb4"
+  },
+  "KB_MANUAL_QUIZZES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58bc7a63284f47c2"
+  },
+  "KB_MANUAL_QUIZZES_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cc66350c0c6599f5"
+  },
+  "KB_MANUAL_QUIZZES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ef1ffdef052e123"
+  },
+  "KB_MANUAL_QUIZZES_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8755d9431e6057ac"
+  },
+  "KB_MANUAL_QUIZ_ID_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc07f47774fe70a1"
+  },
+  "KB_MANUAL_QUIZ_ID_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "609993c030c2c834"
   },
   "KB_MANUAL_READONLY_MSG": {
    "file": "00_config.js",
@@ -9938,7 +10001,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4a525823b108d507"
+   "sha": "d1c7f3075245394f"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -9953,7 +10016,7 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6c8812e6fb1ad227"
+   "sha": "6fde7b84f1b4d211"
   },
   "kbManualHashBasis_": {
    "file": "70_kb.js",
@@ -10024,6 +10087,26 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "668d5d721b33f4cc"
+  },
+  "kbManualQuizzesRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8a965d52dd20117c"
+  },
+  "kbManualQuizzesStored_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c91bc7b071923c06"
+  },
+  "kbManualQuizzesValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3cd8b8d2a656c9be"
+  },
+  "kbManualQuizzesWrite_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3cbf7cd3c58b847a"
   },
   "kbManualRecentPayload_": {
    "file": "70_kb.js",

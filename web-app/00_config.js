@@ -2244,6 +2244,17 @@ const KB_MANUAL_READONLY_MSG = 'This section comes from the Policies & Procedure
 // import rewrites the tab only when an image changed. Readers ask
 // getManualImages for a page's images in one call; it reads only this tab.
 const KB_MANUAL_IMAGES_TAB = 'ManualImages';
+// HB3.1 — the handbook's official quizzes (manual/data/quizzes.json, checked
+// by manual/quizzes.py, carried in manual.json): one row per quiz, the
+// questions as JSON with their answer key. The app never sends a client this
+// tab — the handbook app strips the key (quizStripQuestion_) before a quiz
+// leaves its server. Written by the import only, and only when it changed.
+const KB_MANUAL_QUIZZES_TAB = 'ManualQuizzes';
+const KB_MANUAL_QUIZZES_HEADERS = ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'];
+const KB_MANUAL_QUIZZES_TEXT_IDX = [0, 1, 2, 3, 5];   // every column but PassPct is text ('@')
+const KB_MANUAL_QUIZ_ID_RE = /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/;   // mirrors manual/quizzes.py ID_RE (pinned)
+const KB_MANUAL_QUIZ_ID_MAX = 48;
+const KB_MANUAL_QUIZZES_MAX = 300;
 const KB_MANUAL_IMAGES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'];
 const KBMG = { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 };
 const KB_MANUAL_IMAGE_CELL_MAX = 45000;        // base64 characters per row — under the 50,000-character cell limit

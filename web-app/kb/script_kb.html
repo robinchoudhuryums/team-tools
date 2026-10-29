@@ -1219,7 +1219,7 @@ function kbManualImported_(r) {
   var bits = [(r.created || 0) + ' new draft' + (r.created === 1 ? '' : 's'), (r.updated || 0) + ' updated'];
   if (r.removed) bits.push(r.removed + ' removed');
   if ((r.skipped || []).length) bits.push(r.skipped.length + ' skipped');
-  showToast('Handbook imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) ? 'toast-warn' : 'toast-success');
+  showToast('Handbook imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) || (r.quizzes && r.quizzes.error) ? 'toast-warn' : 'toast-success');
   var picked = document.getElementById('kb-man-picked');
   if (picked && KB_MANUAL_FILE) picked.textContent = KB_MANUAL_FILE.name + ' — imported';
   var box = document.getElementById('kb-man-result');
@@ -1292,8 +1292,9 @@ function kbManualResultHtml_(r, dryRun) {
         (dryRun ? 'would count' : (r.reviewed === 1 ? 'counts' : 'count')) + ' as reviewed — open feedback raised before the change closes.') + '</div>'
     : '';
   var im = kbManualImagesLine_(r.images, dryRun);
-  return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
-    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + reviewedLine + im.html +
+  var qz = kbManualQuizzesLine_(r.quizzes, dryRun);   // HB3.1
+  return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn || qz.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
+    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + reviewedLine + im.html + qz.html +
     (skipped.length
       ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
           return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
@@ -1321,6 +1322,16 @@ function kbManualImagesLine_(im, dryRun) {
   var html = '<div class="kb-man-meta">' + esc(pl(im.total || 0, 'image') + ' · ' + (im.stored || 0) + ' stored · ' + (im.unchanged || 0) + ' unchanged' + gone) + '</div>';
   if (im.error) html += '<div class="kb-man-skiph">The images could not be saved (' + esc(im.error) + ') — the sections are in; press Import again to retry the images.</div>';
   return { html: html, warn: !!im.error };
+}
+/** Pure (Node-pinned) — HB3.1: the official quizzes' half of a check or an
+ *  import. null = the file predates quizzes (the stored ones are kept). */
+function kbManualQuizzesLine_(qz, dryRun) {
+  if (!qz) return { html: '<div class="kb-man-meta">No quizzes in this file — the stored quizzes are left as they are.</div>', warn: false };
+  var what = qz.total + ' quiz' + (qz.total === 1 ? '' : 'zes') + ' (' + (qz.questions || 0) + ' question' + (qz.questions === 1 ? '' : 's') + ')';
+  var state = !qz.changed ? 'unchanged' : (dryRun ? 'would be stored' : (qz.error ? 'NOT stored' : 'stored'));
+  var html = '<div class="kb-man-meta">' + esc('Quizzes: ' + what + ' · ' + state) + '</div>';
+  if (!dryRun && qz.error) html += '<div class="kb-man-skiph">The quizzes could not be saved (' + esc(qz.error) + ') — the sections are in; press Import again to retry the quizzes.</div>';
+  return { html: html, warn: !dryRun && !!qz.error };
 }
 function kbManualRun_(dryRun) {
   var inp = document.getElementById('kb-man-file');
