@@ -6034,3 +6034,30 @@ pick them up without re-deriving the context.
   section as done on opening it (proves a click); team quizzes in the Quizzes
   list for everyone (the operator's choice — and a manager's quiz is written
   for one team).
+- <a id="sign-offs-are-versioned-and-reminders-ship-off"></a>**"I've read this" is recorded against the section's version and asks again only for a retraining change; reminder emails ship built but off (handbook app HB3.4, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's two answers: (1) **the sign-off REPLACES HB3.3's Mark as read**
+  — one "I've read this" in the bar above every section and on each reading
+  item in My training, so there is one notion of "read", not two; (2)
+  **reminders are built, and off** — the code and its two permissions ship,
+  nothing is sent until `HANDBOOK_REMINDERS=on` and the trigger is installed.
+  Mechanics: the sign-off appends to `ReadMarks` with the section's VERSION
+  (`hbStamp_` of its text; a chapter's is the stamp of its sections' stamps),
+  so the record says WHAT was read, not only that a button was pressed. **What
+  asks again is the changelog's retraining flag, not the version**: a
+  retraining-flagged entry dated after the day it was signed (in the app's
+  timezone) turns the item to `resign` and its plan item back to not done; a
+  version change without the flag only adds "it has been updated since" — a
+  typo fix must not send the whole team back to re-read. The manager view
+  (`hbTeamProgress`) derives everything from the same context as My training
+  (`hbProgressCtx_` / `hbPlanProgress_`), so the two cannot disagree. Export is
+  **Copy table** (`tsvRow_`, formula-safe — g144) with Download CSV beside it,
+  because a download from inside the Apps Script iframe is not guaranteed.
+  Reminders: `hbSendTrainingReminders` and `installHandbookReminders` are
+  reachable by `google.script.run` (g143), so both refuse any caller whose
+  active user is not the effective user — only the deployer, or the deployer's
+  trigger (g26); one email per reader per day (`HANDBOOK_REMINDERS_LAST`), plan
+  titles escaped, no answers or typed text. **Alternatives rejected:** asking
+  again on every version change (punishes typo fixes); a separate sign-off
+  beside Mark as read (two buttons that mean nearly the same); reminders on by
+  default (they spend the deployer's shared email allowance — the operator's
+  call to make).

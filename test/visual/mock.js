@@ -1464,7 +1464,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, items: [
           { kind: 'section', id: 'man-0-11', key: 'section:man-0-11', done: true },
           { kind: 'section', id: 'man-0-10', key: 'section:man-0-10', done: true },
-          { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false },
+          { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false, sign: { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true } },
           { kind: 'quiz', id: 'q-core-calls', key: 'quiz:q-core-calls', title: 'Taking a call', done: false, quiz: me({ attempts: 1, attemptsLeft: 2, best: 50 }) }] },
         { id: 'pl-000000000002', title: 'Pick-up refresher', authorName: 'Sam Ortiz', due: '', overdue: false, done: 1, total: 1, items: [
           { kind: 'quiz', id: 'tq-00000000000a', key: 'quiz:tq-00000000000a', title: 'Pick-up checks', done: true, quiz: me({ attempts: 1, passed: true, best: 100 }) }] }] };
@@ -1482,6 +1482,25 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
     },
     hbMarkRead: { success: true },
+    // HB3.4 — the reader's sign-offs (0.11 changed for retraining since it was
+    // read; 0.10 signed) and the manager's per-person progress.
+    hbMySignOffs: function () {
+      return { setUp: true, signoffs: {
+        'section:man-0-11': { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true },
+        'section:man-0-10': { state: 'signed', signedMs: Date.now() - 6 * 86400000, changed: false } } };
+    },
+    hbTeamProgress: function () {
+      var R = 'Chapter 03 \u2014 Respiratory & Resupply', P = 'Chapter 05 \u2014 Power Mobility';
+      return { remindersOn: false, people: [
+        { email: 'alex.kim@example.com', name: 'Alex Kim', department: R, overdue: 1, signed: 6, resign: 1,
+          plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 2, total: 4, overdue: true }],
+          quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 50, attempts: 1, passed: false, locked: false },
+            { id: 'q-field-pickup', title: 'Pick-up procedures', best: 40, attempts: 3, passed: false, locked: true }] },
+        { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: R, overdue: 0, signed: 12, resign: 0,
+          plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 4, total: 4, overdue: false }],
+          quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 100, attempts: 1, passed: true, locked: false }] },
+        { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: P, overdue: 0, signed: 0, resign: 0, plans: [], quizzes: [] }] };
+    },
     hbSaveTeamQuiz: { success: true, id: 'tq-00000000000b' },
     hbSavePlan: { success: true, id: 'pl-000000000004', reaches: 2 },
     hbArchiveTraining: { success: true },

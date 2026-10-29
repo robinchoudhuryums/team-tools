@@ -119,6 +119,28 @@
   .hb-tr-act { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; }
   .hb-tr-mark.on { border-color: var(--accent); color: var(--success-deep); }
   .hb-tr-arch .hb-pp-row-n { color: var(--muted); }
+
+  /* Sign-off + team progress (HB3.4) */
+  .hb-so { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+  .hb-so-t { display: inline-flex; align-items: center; gap: 5px; font-size: .84rem; min-width: 0; overflow-wrap: anywhere; }
+  .hb-so-t.ok { color: var(--success-deep); }
+  .hb-so-t.warn { color: var(--warning-deep); font-weight: 600; }
+  .hb-so-undo { font-size: .78rem; }
+  .hb-tr-tablewrap { margin-bottom: 8px; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+  .hb-tr-table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+  .hb-tr-table th, .hb-tr-table td { padding: 7px 10px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+  .hb-tr-table thead th { border-top: none; font-size: .74rem; font-weight: 700; color: var(--muted); background: var(--paper-2); }
+  .hb-tr-table tbody th { font-weight: 600; min-width: 15em; }
+  .hb-tr-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hb-tr-table td:first-of-type { white-space: normal; min-width: 9em; }
+  .hb-tr-table tr.late td:nth-of-type(3) { color: var(--warning-deep); font-weight: 700; }
+  .hb-tr-sub { font-weight: 400; font-size: .76rem; overflow-wrap: anywhere; }
+  .hb-tr-det { margin-top: 4px; font-weight: 400; }
+  .hb-tr-det summary { cursor: pointer; font-size: .78rem; color: var(--info-deep); }
+  .hb-tr-det ul { margin: 4px 0 0; padding-left: 18px; font-size: .8rem; }
+  .hb-tr-rem { margin: 6px 0 0; font-size: .8rem; }
+  .hb-tr-hint { display: none; margin: 0 0 4px; font-size: .78rem; }
+  @media (max-width: 760px) { .hb-tr-hint { display: block; } }
   .modal.hb-ed { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
   .hb-ed-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
   .hb-ed-narrow { flex: none; max-width: 12em; }

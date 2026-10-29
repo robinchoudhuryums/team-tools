@@ -130,8 +130,8 @@ quizzes can be read about but not taken.
 
 **Training** in the contents opens **My training**: every plan assigned to the
 reader, who set it, its due date (and Overdue), a progress bar and its items —
-a chapter or section to open and **Mark as read**, a quiz to take (done when
-passed). A manager, or the admin, also sees **Team training**: their plans
+a chapter or section to open and sign off (**I've read this** — HB3.4), a quiz
+to take (done when passed). A manager, or the admin, also sees **Team training**: their plans
 (with how many people each reaches now) and their own quizzes, with Edit,
 Archive / Restore, **New plan** and **New quiz**.
 
@@ -151,6 +151,31 @@ Archive / Restore, **New plan** and **New quiz**.
 Plans, team quizzes and read marks live in the Handbook spreadsheet's `Plans`,
 `TeamQuizzes` and `ReadMarks` tabs (created on first use; never edit their
 headers — a row that will not read is counted and skipped).
+
+## Sign-offs, team progress and reminders (HB3.4)
+
+- **"I've read this"** sits in the bar above every section, and on each reading
+  item in My training. It is recorded with the section's VERSION (a stamp of
+  its text); a chapter's version is the stamp of its sections'. The bar then
+  says when it was read, with Undo. One sign-off serves every plan that names
+  the section.
+- **Retraining.** When a section changes and the handbook's changelog flags the
+  change for retraining, a reader who signed before that day is asked again —
+  "Changed since you read it — please read it again" — and the plan item goes
+  back to not done until they do. A change not flagged for retraining never
+  asks; the bar only adds "it has been updated since".
+- **Progress** (Team training, for a manager or the admin): one row per person
+  on the team — plans done and overdue, quizzes passed and locked, sections
+  signed and waiting to be re-signed — with Details per plan and quiz.
+  **Copy table** puts it on the clipboard for a spreadsheet; **Download CSV**
+  saves a file where the browser allows it (Copy table is the reliable one).
+- **Reminder emails** are built but OFF. Once on, a daily run at 8am emails each
+  reader with an overdue plan — once a day at most — the plans' titles and due
+  dates and a link. Turning them on is in
+  [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
+
+Sign-offs ride the `ReadMarks` tab (a fifth column, `Version`); a mark written
+before HB3.4 has none and counts as signed.
 
 ## Setup and deploying
 

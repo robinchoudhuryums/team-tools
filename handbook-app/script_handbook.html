@@ -518,12 +518,14 @@ function hbLoadQuizzes_(then) {
     .withFailureHandler(function (err) { take({ error: (err && err.message) || 'The server did not answer.' }); })
     .hbListQuizzes();
 }
-/** The quiz bar: the quizzes on the section in view (none → hidden). */
+/** The bar above the reader: the sign-off for the section in view (HB3.4),
+ *  and its quizzes (none of either → hidden). */
 function hbPaintQuizBar_(id) {
   var bar = document.getElementById('hb-quizbar'); if (!bar) return;
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
-  bar.innerHTML = mine.map(function (q) {
+  var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
+  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + mine.map(function (q) {
     return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
       '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
   }).join('');
@@ -810,30 +812,13 @@ function hbPaintMine_() {
           act = (openId && (it.kind === 'chapter' || HB.tree.some(function (x) { return x.id === it.id; }))
               ? '<button type="button" class="kb-btn" data-kb-id="' + esc(openId) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', ' + (it.kind === 'chapter' ? '{ chapter: true }' : 'null') + ')">Open</button>' : '') +
             '<button type="button" class="kb-btn hb-tr-mark' + (it.done ? ' on' : '') + '" aria-pressed="' + (it.done ? 'true' : 'false') + '" data-kind="' + esc(it.kind) + '" data-id="' + esc(it.id) +
-              '" onclick="hbMarkRead_(this)">' + (it.done ? icon('check', 12) + ' Read' : 'Mark as read') + '</button>';
+              '" data-done="' + (it.done ? '' : '1') + '" onclick="hbSignOff_(this)">' +
+              (it.done ? icon('check', 12) + ' Read' : (it.sign && it.sign.state === 'resign' ? 'Changed — I\'ve read it again' : 'I\'ve read this')) + '</button>';
         }
         return '<li class="hb-tr-it' + (it.done ? ' done' : '') + '"><span class="hb-tr-ic">' + (it.done ? icon('checkCircle', 15) : icon(it.kind === 'quiz' ? 'clipboardList' : 'fileText', 15)) + '</span>' +
           label + '<span class="hb-tr-act">' + act + '</span></li>';
       }).join('') + '</ul></div>';
   }).join('');
-}
-function hbMarkRead_(btn) {
-  var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id');
-  var now = btn.getAttribute('aria-pressed') !== 'true';
-  btn.disabled = true;
-  var done = function (res) {
-    if (btn.isConnected) btn.disabled = false;
-    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-    // Every plan with this item agrees: one mark serves them all.
-    var mine = HB_TR.mine;
-    if (mine && mine.plans) mine.plans.forEach(function (p) {
-      p.items.forEach(function (it) { if (it.kind === kind && it.id === id) it.done = now; });
-      p.done = p.items.filter(function (it) { return it.done; }).length;
-      if (p.done === p.total) p.overdue = false;
-    });
-    hbPaintMine_();
-  };
-  google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbMarkRead(kind, id, now);
 }
 
 function hbPaintTeamTraining_() {
@@ -847,7 +832,7 @@ function hbPaintTeamTraining_() {
       '<button type="button" class="kb-btn" data-kind="' + kind + '" data-id="' + esc(id) + '" data-live="' + (live ? '1' : '') + '" onclick="hbArchive_(this)">' + (live ? 'Archive' : 'Restore') + '</button></div></div>';
   };
   var qs = res.quizzes || [], ps = res.plans || [];
-  host.innerHTML = head + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
+  host.innerHTML = head + '<section id="hb-tr-progress"></section>' + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
     '<h3 class="hb-pp-h3">Plans</h3>' + (ps.length ? ps.map(function (p) {
       var b = p.plan || {};
       return row(b.title, (b.items || []).length + ' item' + ((b.items || []).length === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : '') +
@@ -859,6 +844,7 @@ function hbPaintTeamTraining_() {
       return row(b.title, (b.questions || []).length + ' question' + ((b.questions || []).length === 1 ? '' : 's') + ' · pass mark ' + b.passPct + '%' + (res.isAdmin ? ' · by ' + q.authorName : ''), 'quiz', q.id, q.live);
     }).join('') : '<p class="hb-quiet">No quizzes of your own yet. Plans can also use the handbook\'s official quizzes.</p>') +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditTeamQuiz_(\'\')">' + icon('plus', 12) + ' New quiz</button></div>';
+  hbLoadProgress_();   // HB3.4: each person's progress, above the plans
 }
 function hbArchive_(btn) {
   var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id'), live = !!btn.getAttribute('data-live');
@@ -1039,6 +1025,123 @@ function hbPlanRemoveItem_(btn) {
   ov._hbItems.splice(Number(btn.getAttribute('data-i')), 1);
   overlayMarkDirty_(ov);
   hbPaintPlanItems_();
+}
+
+// ── Sign-offs and team progress (HB3.4) ───────────────────────────────────
+// "I've read this" on the bar above every section (and in My training): it
+// records the section's version, and a change the changelog flags for
+// retraining asks the reader to sign again. A manager (or the admin) sees each
+// person's progress, which copies as a table or downloads as CSV.
+
+var HB_SO = { setUp: undefined, signoffs: {} };
+function hbLoadSignOffs_() {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!r || r.error) return;   // a failure keeps what was loaded (g129); the bar simply offers the button
+      HB_SO.setUp = r.setUp !== false; HB_SO.signoffs = r.signoffs || {};
+      hbPaintQuizBar_(HB.currentId);
+    })
+    .withFailureHandler(function () {})
+    .hbMySignOffs();
+}
+/** PURE — the bar's sign-off part for a section: the button, the date it was
+ *  signed, or the ask to read it again. `so` is the section's sign-off or
+ *  undefined; '' when sign-offs are not set up. */
+function hbSignBarHtml_(id, so, setUp) {
+  if (!id || setUp === false) return '';
+  var btn = function (label, done, cls) {
+    return '<button type="button" class="kb-btn ' + (cls || '') + '" data-kind="section" data-id="' + esc(id) + '" data-done="' + (done ? '1' : '') + '" onclick="hbSignOff_(this)">' + label + '</button>';
+  };
+  if (so && so.state === 'resign') {
+    return '<span class="hb-so-t warn">' + icon('warning', 13) + ' Changed since you read it — please read it again.</span>' + btn("I've read it again", true, 'hb-pp-yes');
+  }
+  if (so && so.state === 'signed') {
+    return '<span class="hb-so-t ok">' + icon('checkCircle', 13) + ' You read this on ' + esc(new Date(so.signedMs).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) +
+      (so.changed ? ' — it has been updated since' : '') + '</span>' + btn('Undo', false, 'hb-so-undo');
+  }
+  return btn("I've read this", true, 'hb-pp-yes');
+}
+/** Sign off (or withdraw) a section or chapter, from the bar or My training. */
+function hbSignOff_(btn) {
+  var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id'), done = !!btn.getAttribute('data-done');
+  btn.disabled = true;
+  var key = kind + ':' + id;
+  var fin = function (res) {
+    if (btn.isConnected) btn.disabled = false;
+    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    var so = done ? { state: 'signed', signedMs: Date.now(), changed: false } : null;
+    if (so) HB_SO.signoffs[key] = so; else delete HB_SO.signoffs[key];
+    // Every plan with this item agrees: one sign-off serves them all.
+    var mine = HB_TR.mine;
+    if (mine && mine.plans) mine.plans.forEach(function (p) {
+      p.items.forEach(function (it) { if (it.kind === kind && it.id === id) { it.done = done; it.sign = so || { state: 'unsigned' }; } });
+      p.done = p.items.filter(function (it) { return it.done; }).length;
+      if (p.done === p.total) p.overdue = false;
+    });
+    hbPaintQuizBar_(HB.currentId);
+    if (HB_TR.showing) hbPaintMine_();
+  };
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done);
+}
+
+// — team progress —
+function hbLoadProgress_() {
+  var host = document.getElementById('hb-tr-progress'); if (!host) return;
+  host.innerHTML = '<h3 class="hb-pp-h3">Progress</h3>' + loSweep();
+  var seq = HB_TR.seq;
+  var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.progress = res; hbPaintProgress_(); };
+  google.script.run.withSuccessHandler(function (r) { take(r || { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); }).hbTeamProgress();
+}
+/** PURE — the progress as rows (a header, then one per person), for the
+ *  table, the copy and the CSV alike. */
+function hbProgressRows_(people) {
+  var head = ['Person', 'Email', 'Department', 'Plans done', 'Overdue plans', 'Quizzes passed', 'Quizzes locked', 'Sections signed', 'To re-sign'];
+  return [head].concat((people || []).map(function (p) {
+    var done = p.plans.filter(function (pl) { return pl.done === pl.total; }).length;
+    return [p.name, p.email, p.department ? hbChapterLabel_(p.department) : '', done + ' of ' + p.plans.length, p.overdue,
+      p.quizzes.filter(function (q) { return q.passed; }).length + ' of ' + p.quizzes.length, p.quizzes.filter(function (q) { return q.locked; }).length, p.signed, p.resign];
+  }));
+}
+/** PURE — one CSV field: quoted when it must be, and never read as a formula
+ *  when the file is opened in a spreadsheet (the tsvCell_ rule). */
+function hbCsvCell_(v) {
+  var s = tsvCell_(v == null ? '' : v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function hbPaintProgress_() {
+  var host = document.getElementById('hb-tr-progress'); if (!host) return;
+  var res = HB_TR.progress, head = '<h3 class="hb-pp-h3">Progress</h3>';
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Progress could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
+  var rows = hbProgressRows_(res.people);
+  var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' : '<b>off</b>.') + '</p>';
+  if (rows.length < 2) { host.innerHTML = head + '<p class="hb-quiet">Nobody on your team yet.</p>' + reminders; return; }
+  host.innerHTML = head + '<p class="hb-quiet hb-tr-hint">Scroll the table sideways for every column.</p><div class="hb-tr-tablewrap"><table class="hb-tr-table"><thead><tr>' + rows[0].filter(function (h, i) { return i !== 1; }).map(function (h) { return '<th scope="col">' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+    res.people.map(function (p, i) {
+      var r = rows[i + 1];
+      var detail = p.plans.map(function (pl) { return esc(pl.title) + ' — ' + pl.done + ' of ' + pl.total + (pl.overdue ? ' <span class="hb-qz-chip lock">Overdue</span>' : ''); })
+        .concat(p.quizzes.map(function (q) { return esc(q.title) + ' — best ' + (q.best == null ? '—' : q.best + '%') + ', ' + q.attempts + ' attempt' + (q.attempts === 1 ? '' : 's') + (q.passed ? ' · passed' : '') + (q.locked ? ' · locked' : ''); }));
+      return '<tr class="' + (p.overdue ? 'late' : '') + '"><th scope="row">' + esc(r[0]) + '<div class="hb-quiet hb-tr-sub">' + esc(p.email) + '</div>' +
+        (detail.length ? '<details class="hb-tr-det"><summary>Details</summary><ul>' + detail.map(function (d) { return '<li>' + d + '</li>'; }).join('') + '</ul></details>' : '') + '</th>' +
+        r.slice(2).map(function (c) { return '<td>' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>' +
+    '<div class="hb-qz-actions"><button type="button" class="kb-btn" onclick="hbCopyProgress_(this)">' + icon('copy', 12) + ' Copy table</button>' +
+    '<button type="button" class="kb-btn" onclick="hbDownloadProgress_()">' + icon('download', 12) + ' Download CSV</button></div>' + reminders;
+}
+function hbCopyProgress_(btn) {
+  var rows = hbProgressRows_((HB_TR.progress || {}).people);
+  copyWithFeedback_(rows.map(tsvRow_).join('\n'), { el: btn, ok: 'Copied — paste it into a spreadsheet', label: 'Team progress' });
+}
+function hbDownloadProgress_() {
+  var rows = hbProgressRows_((HB_TR.progress || {}).people);
+  var csv = rows.map(function (r) { return r.map(hbCsvCell_).join(','); }).join('\r\n');
+  try {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+    a.download = 'handbook-team-progress-' + hbIsoDay_(new Date()) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Downloading — if nothing arrives, use Copy table.', 'toast-success');
+  } catch (e) { showToast('The download did not start — use Copy table.', 'toast-warn'); }
 }
 
 // ── Contents ──────────────────────────────────────────────────────────────
@@ -1238,6 +1341,7 @@ function hbBoot_() {
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
   hbLoadMe_();
   hbLoadQuizzes_();   // HB3.2: the quiz bar needs to know which sections have one
+  hbLoadSignOffs_();  // HB3.4: and the bar's sign-off, the reader's own
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));

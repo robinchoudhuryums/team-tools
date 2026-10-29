@@ -2721,6 +2721,21 @@ entry says which it is.
   training plans, the managers' own quizzes and the readers' "Mark as read"
   ticks (`Plans`, `TeamQuizzes`, `ReadMarks` — created on first use; do not
   edit their headers). Nothing to set: managers build plans under **Training**.
+  **Since HB3.4** `ReadMarks` carries the sign-offs ("I've read this", with the
+  section's version — a fifth column; a tab made by HB3.3 keeps its four-name
+  header and is written to anyway), and the app asks for two NEW permissions —
+  send email and manage its triggers — so **open the app once as the deployer
+  after the push and approve them**. **Reminder emails are OFF** until both:
+  (1) set the Script Property `HANDBOOK_REMINDERS` to `on`; (2) in the Apps
+  Script editor run `installHandbookReminders` once (it installs one daily 8am
+  trigger and replaces any earlier one; run it again to repair). Each run emails
+  every reader with an overdue plan at most once a day, from the deploying
+  account — it shares Team Tools' daily email allowance while both run as the
+  same account. To turn them off, set `HANDBOOK_REMINDERS` to anything but `on`
+  (the trigger then sends nothing). `HANDBOOK_REMINDERS_LAST` is auto-managed
+  (`{email: day}`, the day each reader was last emailed, kept only for people
+  still overdue) — delete it to forget. Both functions refuse anyone but the
+  deploying account.
   The full picture is
   [`docs/handbook-app.md`](handbook-app.md).
 

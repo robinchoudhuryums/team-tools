@@ -3109,3 +3109,27 @@ per-change detail. By delta:
   (on the CI gate), `handbook-quiz-editor-light-wide`,
   `handbook-plan-editor-light-mobile`. Reading the editors found `.hb-pp-l`'s
   row basis (14em) becoming HEIGHT in the editors' column layout — fixed.
+
+## Handbook app HB3.4 — sign-offs, team progress and reminders (2026-10-29)
+
+- **Pure (run.js, "HB3.4")** — a: the helpers (the latest mark with its
+  version; the latest retraining change to a section or a chapter's sections;
+  the three sign-off states; the reminder picks — once a day; the email
+  escaped); b: "I've read this" records the version, a retraining-flagged change
+  after it asks again and the plan item is not done until re-signed, an
+  unflagged change only notes "changed"; c: the manager view per person and the
+  reader refused; d: reminders — refused to anyone but the owner, nothing sent
+  while off, one email per overdue reader per day with the link, a failed send
+  counted, the installer replacing its trigger. `hbServer_` loads Reminders.js
+  and fakes MailApp and ScriptApp; `hb34World_` takes its OWN copy of the
+  Script Properties (a shared one leaked a reminder record between tests).
+- **DOM** — the bar above a section (sign, Undo, the retraining ask, a refusal
+  kept with its toast, no store → no button); My training's "Changed — I've
+  read it again" reaching the server and the bar agreeing; Team training's
+  progress table (overdue marked, the cells, Details, Copy table as formula-safe
+  TSV, `hbCsvCell_`, a failed load said, a reader never asks).
+- **Visual** — `handbook-signed-dark-wide`, `handbook-progress-light-wide`,
+  `handbook-progress-dark-mobile` (on the CI gate); the retraining ask rides
+  `handbook-quizbar-light-mobile`. Reading the wide shot found the table wider
+  than its column (nowrap headers, "To re-sign" clipped) — headers now wrap; the
+  phone shot shows two columns, so a narrow screen says the table scrolls.

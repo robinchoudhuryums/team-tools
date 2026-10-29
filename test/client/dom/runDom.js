@@ -9888,3 +9888,86 @@ test('HB3.3 DOM: hbParseOptions_ — one option per line, "*" marks the right on
   assert.deepStrictEqual(P('* x', 'truefalse'), { options: ['True', 'False'], correct: -1 });
   assert.strictEqual(h.w.hbOptionsText_({ type: 'multi', options: ['a', 'b', 'c'], correct: [0, 2] }), '* a\nb\n* c', 'and back');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.4 — the sign-off ("I've read this", versioned; a retraining change asks
+// again) and the manager's per-person progress with its export.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.4 — sign-offs and team progress');
+const HB34_SO = () => ({ setUp: true, signoffs: { 'section:man-3-1': { state: 'resign', signedMs: Date.UTC(2026, 8, 1), changed: true } } });
+const HB34_PROGRESS = () => ({ remindersOn: false, people: [
+  { email: 'rep@ex.org', name: 'Rep', department: HB_DEPT, overdue: 1, signed: 2, resign: 1,
+    plans: [{ id: 'pl-000000000001', title: 'First week', due: '2000-01-01', done: 1, total: 3, overdue: true }],
+    quizzes: [{ id: 'q-neb', title: 'Nebulizers', best: 60, attempts: 3, passed: false, locked: true }] },
+  { email: 'ann@ex.org', name: '=Ann, "A"', department: '', overdue: 0, signed: 0, resign: 0, plans: [], quizzes: [] }] });
+
+test('HB3.4 DOM: the bar above a section — "I\'ve read this" signs it off at the server and the bar says when; Undo withdraws it; a retraining change asks again; a refusal changes nothing; no sign-offs set up → no button (driven)', async () => {
+  let refuse = '';
+  const h = await hbBoot_({ answers: { hbMySignOffs: HB34_SO(), hbMarkRead: () => (refuse ? { success: false, error: refuse } : { success: true }) } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent))[0];
+  assert.ok(btn(/^I've read this$/), 'an unsigned section offers the sign-off');
+  btn(/^I've read this$/).click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true]);
+  assert.ok(/You read this on/.test(bar().textContent) && btn(/^Undo$/), 'signed: the date, and Undo');
+  btn(/^Undo$/).click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', false]);
+  assert.ok(btn(/^I've read this$/) && !/You read this/.test(bar().textContent), 'withdrawn');
+  // The section a retraining change touched asks again.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.ok(/Changed since you read it/.test(bar().textContent) && btn(/I've read it again/));
+  refuse = 'The handbook is busy.';
+  btn(/I've read it again/).click(); await h.settleAll();
+  assert.ok(/Changed since you read it/.test(bar().textContent), 'a refusal keeps the ask');
+  assert.ok(/Not saved: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent), 'and says so');
+  refuse = '';
+  btn(/I've read it again/).click(); await h.settleAll();
+  assert.ok(/You read this on/.test(bar().textContent));
+  // No sign-off store: nothing to press.
+  const off = await hbBoot_({ answers: { hbMySignOffs: { setUp: false, signoffs: {} } } });
+  off.w.MANUAL_HOST.openItem('man-3-2'); await off.settleAll();
+  assert.strictEqual(off.d.getElementById('hb-quizbar').textContent, '');
+});
+
+test('HB3.4 DOM: My training — a changed item asks to be read again, its sign-off reaches the server and the bar above the section agrees (driven)', async () => {
+  const mine = HB33_MINE();
+  mine.plans.forEach((p) => p.items.forEach((it) => { if (it.id === 'man-3-1') it.sign = { state: 'resign', signedMs: 1, changed: true }; }));
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: mine, hbMySignOffs: HB34_SO(), hbMarkRead: { success: true } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const mark = h.d.querySelector('.hb-tr-plan .hb-tr-mark[data-kind="section"]');
+  assert.strictEqual(mark.textContent, "Changed — I've read it again");
+  mark.click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  assert.ok(/1 of 1 done/.test(h.d.querySelectorAll('.hb-tr-plan')[1].textContent), 'every plan with it agrees');
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.ok(/You read this on/.test(h.d.getElementById('hb-quizbar').textContent), 'the bar no longer asks');
+});
+
+test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked, details per plan and quiz; Copy table is the rows as TSV (formula-safe); a failed load says so; a reader never asks for it (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: HB34_PROGRESS() } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const host = h.d.getElementById('hb-tr-progress');
+  const rows = [...host.querySelectorAll('tbody tr')];
+  assert.strictEqual(rows.length, 2);
+  assert.ok(rows[0].classList.contains('late') && !rows[1].classList.contains('late'), 'an overdue person is marked');
+  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent), ['3 · Respiratory & Resupply', '0 of 1', '1', '0 of 1', '1', '2', '1']);
+  const det = rows[0].querySelector('details').textContent;
+  assert.ok(/First week — 1 of 3/.test(det) && /Nebulizers — best 60%, 3 attempts · locked/.test(det), det);
+  assert.ok(/Reminder emails are off/.test(host.textContent));
+  const copied = [];
+  Object.defineProperty(h.w.navigator, 'clipboard', { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+  [...host.querySelectorAll('button')].filter((b) => /Copy table/.test(b.textContent))[0].click(); await h.settleAll();
+  const lines = copied[0].split('\n');
+  assert.strictEqual(lines[0], ['Person', 'Email', 'Department', 'Plans done', 'Overdue plans', 'Quizzes passed', 'Quizzes locked', 'Sections signed', 'To re-sign'].join('\t'));
+  assert.strictEqual(lines[2].split('\t')[0], '\'=Ann, "A"', 'a cell that would be a formula is not one (g144)');
+  assert.strictEqual(h.w.hbCsvCell_('=Ann, "A"'), '"\'=Ann, ""A"""', 'the CSV quotes it as well');
+  assert.strictEqual(h.w.hbCsvCell_(3), '3');
+  // A failed load says so in the panel.
+  const bad = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: { error: 'Handbook manager access required.' } } });
+  bad.w.hbGoTraining_(); await bad.settleAll();
+  assert.ok(/Progress could not be loaded: Handbook manager access required/.test(bad.d.getElementById('hb-tr-progress').textContent));
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: { setUp: true, plans: [] } } });
+  r.w.hbGoTraining_(); await r.settleAll();
+  assert.strictEqual(r.calls.indexOf('hbTeamProgress'), -1, 'a reader asks for no progress');
+});
