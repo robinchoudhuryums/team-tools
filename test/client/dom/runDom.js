@@ -10238,6 +10238,25 @@ test('HB2.3 DOM: read aloud — Listen speaks the section a block at a time, mar
   assert.ok(![...none.d.querySelectorAll('#hb-quizbar button')].some((b) => /Listen/.test(b.textContent)));
 });
 
+test('HB2.3 DOM: read aloud skips what is hidden, and a late end after Stop inside a long paragraph speaks nothing more (driven)', async () => {
+  const parts = HB_PARTS();
+  parts.parts[1].sections[1].bodyMd = 'First sentence here. Second sentence here.';
+  const h = await hbBoot_({ answers: { getManualParts: parts } });
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.d.querySelector('#kb-man-sec-man-3-2 .kb-article').insertAdjacentHTML('beforeend', '<p hidden>Hidden words</p><p><button>Copy</button></p>');
+  h.w.hbReadAloud_(); await h.settleAll();
+  for (let i = 0; i < 6 && sp.spoken.length > i; i++) { sp.spoken[i].onend(); await h.settleAll(); }
+  assert.deepStrictEqual(sp.spoken.map((u) => u.text), ['3.2 Nebulizers', 'First sentence here.', 'Second sentence here.'], 'nothing hidden, no button label');
+  // Stop in the middle of the paragraph, then the first sentence's end arrives late.
+  h.w.hbReadAloud_(); await h.settleAll();
+  sp.spoken[3].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[4].text, 'First sentence here.');
+  h.w.hbStopReading_(); await h.settleAll();
+  sp.spoken[4].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken.length, 5, 'the second sentence is not spoken after Stop');
+});
+
 test('HB2.3 DOM: the read-aloud voice and speed come from the Display panel; a long sentence is spoken in pieces (driven)', async () => {
   const h = await hbBoot_();
   const sp = hb23Speech_(h.w);
