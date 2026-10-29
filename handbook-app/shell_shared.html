@@ -2,7 +2,7 @@
      edit the source and run `npm run handbook:sync`. -->
 <script>
 // The page shell: Team Tools' declarations the handbook's pages use, verbatim,
-// with every declaration they reach (23 in all).
+// with every declaration they reach (26 in all).
 // Supplied by the handbook's pages instead of copied: errBeaconSend_.
 
 let currentView = 'clock';
@@ -339,6 +339,90 @@ function uiConfirm(opts) {
   });
 }
 
+function uiPrompt(opts) {
+  opts = opts || {};
+  return new Promise(function (resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay open ui-dialog';
+    const dlgTitleId = 'ui-dialog-title-' + (++_uiDialogSeq);
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', dlgTitleId);
+    // F6 (cycle 16): the input had NO accessible name — a screen-reader user
+    // tabbing in heard "edit, blank". The dialog's title and message carry the
+    // meaning but were not associated with the field, and a `placeholder` is
+    // not a name (it is not reliably announced and disappears on first
+    // keystroke). Point aria-labelledby at the title, and aria-describedby at
+    // the message + the error slot so a rejected value is announced too.
+    const dlgMsgId = 'ui-dialog-msg-' + _uiDialogSeq;
+    const dlgErrId = 'ui-dialog-err-' + _uiDialogSeq;
+    const titleHtml = '<div class="modal-title" id="' + dlgTitleId + '">' + esc(opts.title || 'Enter value') + '</div>';
+    const messageHtml = opts.message
+      ? '<div class="ui-dialog-body" id="' + dlgMsgId + '">' + esc(opts.message).replace(/\n/g, '<br>') + '</div>'
+      : '';
+    const describedBy = (opts.message ? dlgMsgId + ' ' : '') + dlgErrId;
+    overlay.innerHTML =
+      '<div class="modal ui-dialog-modal">'
+        + titleHtml
+        + messageHtml
+        + '<div class="field" style="margin-top:8px">'
+          + '<input type="text" class="ui-dialog-input" aria-labelledby="' + dlgTitleId + '"'
+            + ' aria-describedby="' + describedBy + '"'
+            + ' value="' + esc(opts.initialValue || '') + '" placeholder="' + esc(opts.placeholder || '') + '">'
+        + '</div>'
+        // F6: `role="alert"` so a validator rejection is ANNOUNCED. Without it
+        // the dialog stayed open, focus returned to the input, and nothing was
+        // said — it read as a dialog that simply refuses to close. The project
+        // already uses role="alert" for exactly this in form_public.html and
+        // errorStateHtml_; the one dialog that actually validates lacked it.
+        + '<div class="ui-dialog-err" id="' + dlgErrId + '" role="alert" style="display:none"></div>'
+        + '<div class="modal-footer">'
+          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + '<button type="button" class="btn-modal-ok ui-dialog-ok">' + esc(opts.confirmLabel || 'OK') + '</button>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.ui-dialog-input');
+    const errEl = overlay.querySelector('.ui-dialog-err');
+    // A11y batch H — hand focus back to the trigger element on close.
+    const restoreEl = document.activeElement;
+    let resolved = false;
+    const cleanup = function (result) {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+      try { if (restoreEl && restoreEl.isConnected && restoreEl !== document.body) restoreEl.focus(); } catch (_) {}
+      resolve(result);
+    };
+    const submit = function () {
+      const val = input.value;
+      if (typeof opts.validator === 'function') {
+        const err = opts.validator(val);
+        if (err) {
+          errEl.textContent = err;
+          errEl.style.display = '';
+          input.focus();
+          return;
+        }
+      }
+      cleanup(val);
+    };
+    const onKey = function (e) {
+      // F(cycle-8): topmost-only, mirroring uiConfirm's stacked-dialog guard.
+      const dlgs = document.querySelectorAll('.overlay.open.ui-dialog');
+      if (!dlgs.length || dlgs[dlgs.length - 1] !== overlay) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); cleanup(null); }
+      else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); e.stopImmediatePropagation(); submit(); }
+    };
+    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(null); });
+    overlay.querySelector('.ui-dialog-ok').addEventListener('click', submit);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(null); });
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(function () { input.focus(); input.select(); }, 30);
+  });
+}
+
 // ── Shared overlay lifecycle ───────────────────────────────────────────────
 // Dynamically-created overlays own real state (composer slots, document-level
 // listeners). Hiding one by stripping its `open` class — what the Escape
@@ -579,5 +663,32 @@ function kbPrintEls_(els, card) {
   window.addEventListener('afterprint', clear);
   try { window.print(); } catch (e) { clear(); return; }
   setTimeout(clear, 1500);
+}
+
+var KB_SUGGEST_MAX = 500;
+
+function kbSuggestEdit_(btn) {
+  var id = btn.getAttribute('data-kb-id'), title = btn.getAttribute('data-kb-title') || 'this section';
+  uiPrompt({
+    title: 'Suggest an edit',
+    message: 'What should change in ' + title + '? It goes to the handbook’s review queue.\n\nDescribe the procedure — do NOT include patient names, TRX, or other PHI.',
+    placeholder: 'e.g. the fee is now $85, not $75',
+    confirmLabel: 'Send suggestion',
+    // E3: the server refuses an over-long suggestion rather than cutting the
+    // rep's words, so the prompt says so before it is sent.
+    validator: function (v) {
+      var t = String(v || '').trim();
+      return !t ? 'Say what should change.' : (t.length > KB_SUGGEST_MAX ? 'Keep it under ' + KB_SUGGEST_MAX + ' characters (' + t.length + ' now).' : '');
+    },
+  }).then(function (note) {
+    if (note === null) return;
+    google.script.run
+      .withSuccessHandler(function (r) {
+        if (r && r.success) showToast('Suggestion sent — thanks', 'toast-success');
+        else showToast((r && r.error) || 'Could not send', 'toast-error');
+      })
+      .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not send', 'toast-error'); })
+      .kbFlagItem(id, 'suggest', String(note).trim());   // E3: its own kind — the queue and the export tell it from "out of date"
+  });
 }
 </script>

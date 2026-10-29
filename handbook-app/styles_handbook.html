@@ -23,9 +23,18 @@
   .kb-main:focus { outline: none; }
   .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
   .kb-btn:hover { background: var(--paper-2); }
-  /* Section feedback arrives with HB1.4 (routed to each chapter's owner); until
-     then the bar does not offer a vote that cannot be recorded. */
-  .kb-man-bar [data-kb-man-bar-fb] { display: none !important; }
+  /* Search (HB1.4) */
+  .hb-q { flex: 1 1 220px; max-width: 420px; font: inherit; font-size: .88rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px; }
+  .hb-results { display: flex; flex-direction: column; gap: 6px; max-width: 900px; }
+  .hb-results-h { font-size: 1.15rem; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .hb-results-list { display: flex; flex-direction: column; gap: 6px; }
+  .hb-hit { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); cursor: pointer; }
+  .hb-hit:hover, .hb-hit:focus-visible { background: var(--paper-2); border-color: var(--border-strong); }
+  .hb-hit-jump { flex-direction: row; align-items: center; gap: 6px; border-color: var(--accent); background: var(--accent-soft); color: var(--success-deep); }
+  .hb-hit-t { font-weight: 600; font-size: .92rem; overflow-wrap: anywhere; }
+  .hb-hit-n { font-family: var(--mono); font-size: .78rem; font-weight: 700; color: var(--info-deep); margin-right: 4px; }
+  .hb-hit-h { font-size: .8rem; color: var(--info-deep); overflow-wrap: anywhere; }
+  .hb-hit-s { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
 
   /* Contents */
   .hb-toc { display: flex; flex-direction: column; gap: 2px; }
@@ -77,6 +86,7 @@
   @media (max-width: 760px) {
     .hb-menu { display: inline-block; }
     .hb-dept { margin-left: 0; width: 100%; }
+    .hb-q { order: 5; flex-basis: 100%; max-width: none; }
     .hb-dept select { flex: 1; max-width: none; }
     .hb-wrap { grid-template-columns: minmax(0, 1fr); padding: 10px; }
     .hb-side { display: none; }

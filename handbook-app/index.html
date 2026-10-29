@@ -25,6 +25,8 @@
     <button type="button" class="hb-menu" id="hb-menu" aria-controls="hb-side" aria-expanded="false" onclick="hbToggleSide_()">Contents</button>
     <a class="hb-brand" href="#" onclick="hbGoHome_(); return false;">UMS Handbook</a>
     <span class="hb-ver" id="hb-ver"></span>
+    <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
+      oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
     <label class="hb-dept">My department
       <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
     </label>

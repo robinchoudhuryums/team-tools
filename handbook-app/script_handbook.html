@@ -12,6 +12,8 @@
 
 /** The host's state — the four fields the reader reads through state(). */
 var HB = { tree: [], isAdmin: false, currentId: null, landing: true };
+var HB_SEARCH = { seq: 0, q: '', timer: null, showing: false };   // HB1.4: the search view's own state
+var HB_SEARCH_MIN = 2, HB_SEARCH_DEBOUNCE_MS = 300;
 var HB_LS_DEPT = 'umsHbDept';      // the reader's chosen department (a chapter)
 var HB_LS_VISIT = 'umsHbVisit';    // { last, prev } — local dates, for "since your last visit"
 var HB_LS_PREFS = 'umsHbReader';   // the reader's own prefs (resume, card state)
@@ -108,7 +110,7 @@ MANUAL_HOST.install({
   printSection: function (id) { kbPrintSectionById_(id); },
   printAllCards: function () { kbPrintAllCards_(); },
   publishItem: function () {},                 // nobody is an admin here, and drafts are never served
-  suggestEdit: function () {},                 // suggested edits arrive with HB5.1
+  suggestEdit: function (btn) { kbSuggestEdit_(btn); },   // HB1.4: Reference's dialog, into the same feedback tab
   bookmarkBtnHtml: function () { return ''; }, // bookmarks arrive with HB2.2
   bookmarkBtnPatch: function () {},
   recordOpen: function () {},                  // the handbook app records nothing
@@ -126,6 +128,7 @@ function hbMain_() { return document.getElementById('kb-main'); }
  *  Back), a Back itself does not push again. */
 function hbOpen_(id, anchor, nav, push) {
   hbCloseSide_();
+  hbLeaveSearch_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
   hbMarkHomeBtn_(false);
   if (push) hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) });
@@ -133,6 +136,7 @@ function hbOpen_(id, anchor, nav, push) {
 function hbGoHome_() { hbHome_(true); }
 function hbHome_(push) {
   hbCloseSide_();
+  hbLeaveSearch_();
   HB.currentId = null; HB.landing = true;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over home
   var main = hbMain_(); if (!main) return;
@@ -149,8 +153,71 @@ function hbHistory_(op, state, params) {
 }
 function hbOnHistory_(e) {
   var st = e && e.state;
-  if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
+  if (st && st.search) { var box = document.getElementById('hb-q'); if (box) box.value = st.search; hbSearch_(st.search, false); }
+  else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
+}
+
+// ── Search (HB1.4) ────────────────────────────────────────────────────────
+// Team Tools' search, served by this app's copy of searchReference over the
+// same index: a section number jumps (the reader's own resolver), anything
+// else lists the matching sections. Each answer is for ITS request — a slower
+// earlier one never paints over a later one, nor over a section opened since
+// (g81) — and a failure says so, never "no matches" (g53).
+function hbSearchInput_(v) {
+  clearTimeout(HB_SEARCH.timer);
+  var q = String(v || '').trim();
+  if (q.length < HB_SEARCH_MIN) { if (HB_SEARCH.showing && !q) hbHome_(true); return; }
+  HB_SEARCH.timer = setTimeout(function () { hbSearch_(q, true); }, HB_SEARCH_DEBOUNCE_MS);
+}
+function hbSearchKey_(e) {
+  if (e.key === 'Enter') { e.preventDefault(); clearTimeout(HB_SEARCH.timer); var q = String(e.target.value || '').trim(); if (q.length >= HB_SEARCH_MIN) hbSearch_(q, true); }
+  else if (e.key === 'Escape' && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ''; if (HB_SEARCH.showing) hbHome_(true); }
+}
+function hbLeaveSearch_() { HB_SEARCH.showing = false; HB_SEARCH.seq++; clearTimeout(HB_SEARCH.timer); }
+/** Run a search and show its results; `record` puts it in the history (the
+ *  first result view pushes, a refinement replaces, so Back leaves search). */
+function hbSearch_(q, record) {
+  hbCloseSide_();
+  var main = hbMain_(); if (!main) return;
+  var was = HB_SEARCH.showing;
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the results
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_SEARCH.showing = true; HB_SEARCH.q = q;
+  var seq = ++HB_SEARCH.seq;
+  if (record) hbHistory_(was ? 'replace' : 'push', { search: q }, {});
+  var jump = kbManualNumberTarget_(q, HB.tree);
+  main.innerHTML = '<div class="hb-results"><h1 class="hb-results-h">Results for “' + esc(q) + '”</h1>' +
+    (jump ? '<button type="button" class="hb-hit hb-hit-jump" data-kb-id="' + esc(jump.id) + '" data-kb-anchor="' + esc(jump.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+      icon('chevronRight', 14) + ' Go to <b>' + esc(jump.num) + '</b> ' + esc(kbManualSplitTitle_(jump.title).rest) + '</button>' : '') +
+    '<div class="hb-results-list" role="status">' + loSweep() + '</div></div>';
+  main.scrollTop = 0;
+  var done = function (res) {
+    if (seq !== HB_SEARCH.seq || !HB_SEARCH.showing) return;
+    var list = main.querySelector('.hb-results-list'); if (!list) return;
+    if (!res || res.error) { list.innerHTML = '<p class="hb-msg bad" role="alert">The search failed: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
+    // Handbook sections only — the server already drops the rest; this page
+    // could not open one anyway (getReferenceItem refuses it).
+    list.innerHTML = hbResultsHtml_((res.results || []).filter(function (r) { return r && kbIsManualId_(r.id); }), q);
+    try { kbHighlightTerms_(list, q, res.terms); } catch (e) {}
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: (err && err.message) || '' }); })
+    .searchReference(q, { signal: true });
+}
+/** The result rows: the section (its number as a chip), the part of it that
+ *  matched, and a line of it. Router answers ("the caller said …") lead. */
+function hbResultsHtml_(results, q) {
+  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>';
+  return '<p class="hb-quiet">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
+    results.map(function (r) {
+      var t = kbManualSplitTitle_(r.title || '');
+      return '<button type="button" class="hb-hit" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+        '<span class="hb-hit-t">' + (t.num ? '<span class="hb-hit-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</span>' +
+        (r.heading ? '<span class="hb-hit-h">' + esc(r.heading) + '</span>' : '') +
+        (r.router && r.chunkMd ? '<span class="hb-hit-s">' + esc(kbMdPlain_(r.chunkMd)) + '</span>' : (r.snippet ? '<span class="hb-hit-s">' + esc(r.snippet) + '</span>' : '')) +
+        '</button>';
+    }).join('');
 }
 
 // ── Contents ──────────────────────────────────────────────────────────────
