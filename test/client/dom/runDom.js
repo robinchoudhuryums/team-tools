@@ -9532,3 +9532,103 @@ test('HB1.4 DOM: the reader bar\'s feedback is live here — a vote reaches kbFl
   const dlg = h.d.querySelector('.overlay.open');
   assert.ok(dlg && /Suggest an edit/.test(dlg.textContent), 'Reference\'s dialog, through the host hook');
 });
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.1 — the handbook app's people view: the home prompt, the reader's
+// profile, a manager's team and the admin's list, over fake hbGetMe answers.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.1 — the handbook app\'s people');
+const HB_DEPT = 'Chapter 03 — Respiratory & Resupply';
+const hbPerson_ = (email, extra) => Object.assign({ email, name: email.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase()), department: '', manager: '',
+  managerName: '', isManager: false, standing: 'none', requestedMs: 0, confirmedMs: 0 }, extra || {});
+const hbMeView_ = (extra) => Object.assign({ email: 'rep@ex.org', name: 'Rep', setUp: true, isAdmin: false, isManager: false, me: null,
+  managers: [{ email: 'boss@ex.org', name: 'Boss' }] }, extra || {});
+const hbToasts_ = (h) => h.d.getElementById('toast-stack').textContent;
+
+test('HB2.1 DOM: a first visit is asked for a department and a manager — the prompt opens the profile, Save sends both, and the answer says who will confirm', async () => {
+  const saved = hbMeView_({ me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' }) });
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbSaveProfile: { success: true, changed: true, view: saved } } });
+  const prompt = h.d.querySelector('#hb-me-prompt .hb-prompt');
+  assert.ok(prompt && /department and your manager/.test(prompt.textContent), 'the home page asks');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '!', 'and so does the header');
+  prompt.querySelector('button').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { people: true }, {}], 'the view is a history entry');
+  const dept = h.d.getElementById('hb-pp-dept'), mgr = h.d.getElementById('hb-pp-mgr');
+  assert.deepStrictEqual([...dept.options].map((o) => o.value), ['', HB_DEPT, 'Chapter 05 — Power Mobility'], 'the chapters, in the reader\'s order');
+  assert.deepStrictEqual([...mgr.options].map((o) => o.value), ['', 'boss@ex.org']);
+  dept.value = HB_DEPT; dept.dispatchEvent(new h.w.Event('change'));
+  mgr.value = 'boss@ex.org'; mgr.dispatchEvent(new h.w.Event('change'));
+  h.d.querySelector('.hb-pp-save').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbSaveProfile').pop(), ['hbSaveProfile', HB_DEPT, 'boss@ex.org']);
+  assert.ok(/Boss will be asked to confirm/.test(hbToasts_(h)), hbToasts_(h));
+  assert.ok(/Waiting for Boss to confirm/.test(h.d.querySelector('.hb-pp-standing').textContent), 'the form repaints with the answer');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), HB_DEPT, 'the saved department is the reading choice too');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '', 'nothing left to ask');
+  // Home now says who it is waiting for.
+  h.d.querySelector('#hb-toc .hb-toc-home').click(); await h.settleAll();
+  assert.ok(/Waiting for Boss/.test(h.d.getElementById('hb-me-prompt').textContent));
+});
+
+test('HB2.1 DOM: a manager confirms from "Your team" — and an answer never wipes a profile change being made (g141)', async () => {
+  const pend = hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' });
+  const me = hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [pend] });
+  const after = Object.assign({}, me, { team: [Object.assign({}, pend, { standing: 'confirmed' })] });
+  const h = await hbBoot_({ answers: { hbGetMe: me, hbConfirmPerson: { success: true, view: after } } });
+  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '1', 'one request waiting');
+  assert.ok(/1 person is waiting for you/.test(h.d.getElementById('hb-me-prompt').textContent));
+  h.w.hbGoPeople_(); await h.settleAll();
+  const dept = h.d.getElementById('hb-pp-dept');
+  dept.value = 'Chapter 05 — Power Mobility'; dept.dispatchEvent(new h.w.Event('change'));
+  h.d.querySelector('#hb-pp-team .hb-pp-yes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbConfirmPerson').pop(), ['hbConfirmPerson', 'rep@ex.org', true]);
+  assert.ok(/Confirmed by Boss/.test(h.d.getElementById('hb-pp-team').textContent), 'the team repaints');
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').value, 'Chapter 05 — Power Mobility', 'the unsaved choice survives');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '');
+});
+
+test('HB2.1 DOM: the admin adds a manager and removes a person (after a confirm); a refusal says why and changes nothing', async () => {
+  const me = hbMeView_({ email: 'owner@ex.org', name: 'Owner', isAdmin: true, managers: [], everyone: [hbPerson_('rep@ex.org', { department: HB_DEPT })] });
+  const withBoss = Object.assign({}, me, { everyone: me.everyone.concat([hbPerson_('boss@ex.org', { isManager: true })]) });
+  let refuse = false;
+  const h = await hbBoot_({ answers: { hbGetMe: me,
+    hbSetManager: () => (refuse ? { success: false, error: 'That is not an email address.' } : { success: true, changed: true, view: withBoss }),
+    hbRemovePerson: { success: true, changed: true, view: Object.assign({}, withBoss, { everyone: withBoss.everyone.slice(1) }) } } });
+  h.w.hbGoPeople_(); await h.settleAll();
+  assert.ok(/No managers yet/.test(h.d.getElementById('hb-pp-admin').textContent));
+  const box = h.d.getElementById('hb-pp-add');
+  box.value = 'boss@ex.org';
+  h.d.getElementById('hb-pp-add-btn').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbSetManager').pop(), ['hbSetManager', 'boss@ex.org', true]);
+  assert.strictEqual(h.d.getElementById('hb-pp-add').value, '', 'the address is cleared once it is saved');
+  assert.ok(/Boss/.test(h.d.querySelector('#hb-pp-admin .hb-pp-row').textContent), 'listed as a manager');
+  // A refusal keeps what was typed and says why.
+  refuse = true;
+  h.d.getElementById('hb-pp-add').value = 'nonsense';
+  h.d.getElementById('hb-pp-add-btn').click(); await h.settleAll();
+  assert.ok(/Not saved: That is not an email address/.test(hbToasts_(h)), hbToasts_(h));
+  assert.strictEqual(h.d.getElementById('hb-pp-add').value, 'nonsense');
+  // Remove asks first; Cancel sends nothing.
+  const rm = () => [...h.d.querySelectorAll('#hb-pp-admin .hb-pp-danger')].filter((b) => b.getAttribute('data-email') === 'rep@ex.org')[0];
+  rm().click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog .ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(h.calls.indexOf('hbRemovePerson'), -1, 'cancelled: nothing sent');
+  rm().click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog .ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbRemovePerson').pop(), ['hbRemovePerson', 'rep@ex.org']);
+  assert.ok(!/rep@ex\.org/.test(h.d.getElementById('hb-pp-admin').textContent), 'gone from the list');
+});
+
+test('HB2.1 DOM: no profile store asks nothing (an admin is told the setting); a failed load says so in the view, never on the home page; Back reopens the view', async () => {
+  const unset = await hbBoot_({ answers: { hbGetMe: { email: 'owner@ex.org', name: 'Owner', isAdmin: true, setUp: false } } });
+  assert.strictEqual(unset.d.getElementById('hb-me-prompt').textContent, '', 'nothing to ask');
+  assert.strictEqual(unset.d.getElementById('hb-me-badge').textContent, '');
+  unset.w.hbGoPeople_(); await unset.settleAll();
+  assert.ok(/HANDBOOK_SS_ID/.test(unset.d.getElementById('hb-pp-me').textContent), 'the admin is told what to set');
+  const fail = await hbBoot_({ answers: { hbGetMe: { __fail: 'Exceeded maximum execution time' } } });
+  assert.ok(fail.d.querySelector('.hb-card'), 'the handbook still reads');
+  fail.w.hbGoPeople_(); await fail.settleAll();
+  const msg = fail.d.querySelector('#hb-pp-me .hb-msg.bad');
+  assert.ok(msg && /Could not load your profile: Exceeded maximum execution time/.test(msg.textContent));
+  fail.d.querySelector('#hb-toc .hb-toc-home').click(); await fail.settleAll();
+  fail.w.__hbChange({ state: { people: true } }); await fail.settleAll();
+  assert.ok(fail.d.getElementById('hb-pp-me'), 'Back to the people view');
+});

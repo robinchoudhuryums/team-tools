@@ -103,6 +103,7 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
 const HB_PAGE = { page: 'handbook' };
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
+const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
 const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
 
 const SCENARIOS = [
@@ -119,6 +120,11 @@ const SCENARIOS = [
   ['handbook-search-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH, HB_PAGE],
   ['handbook-contents-light-mobile', {}, MOBILE, 'light', '', 'hbToggleSide_()', HB_PAGE],
   ['handbook-suggest-light-wide',  {}, WIDE,   'light', '?s=3.8', HB_SUGGEST, HB_PAGE],
+  // HB2.1 — the people view (profile, "Your team", the admin's lists), and a
+  // first visit's home prompt.
+  ['handbook-people-light-wide',   {}, WIDE,   'light', '', 'hbGoPeople_()', HB_PAGE],
+  ['handbook-people-dark-mobile',  {}, MOBILE, 'dark',  '', 'hbGoPeople_()', HB_PAGE],
+  ['handbook-firstvisit-light-mobile', {}, MOBILE, 'light', '', HB_FIRST, HB_PAGE],
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
   // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,

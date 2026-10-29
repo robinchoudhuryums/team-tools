@@ -304,7 +304,22 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
 // resolve through the failure handler and are logged to window.__MISSING__.
 (function () {
   var todayIso = new Date().toISOString().slice(0, 10);
-  function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+  /** HB2.1 — the handbook app's people view, as hbGetMe answers it. */
+function HB_PEOPLE_VIEW() {
+  var RESP = 'Chapter 03 \u2014 Respiratory & Resupply', POWER = 'Chapter 05 \u2014 Power Mobility';
+  var p = function (email, name, dept, mgr, mgrName, standing, isMgr) {
+    return { email: email, name: name, department: dept, manager: mgr, managerName: mgrName, isManager: !!isMgr, standing: standing, requestedMs: 0, confirmedMs: 0 };
+  };
+  var me = p('dana.reyes@example.com', 'Dana Reyes', RESP, 'sam.ortiz@example.com', 'Sam Ortiz', 'confirmed', true);
+  var team = [p('alex.kim@example.com', 'Alex Kim', RESP, me.email, 'Dana Reyes', 'pending'),
+    p('jordan.lee@example.com', 'Jordan Lee', RESP, me.email, 'Dana Reyes', 'confirmed'),
+    p('casey.nguyen@example.com', 'Casey Nguyen', POWER, me.email, 'Dana Reyes', 'confirmed')];
+  var boss = p('sam.ortiz@example.com', 'Sam Ortiz', POWER, '', '', 'none', true);
+  return { email: me.email, name: me.name, setUp: true, isAdmin: true, isManager: true, me: me,
+    managers: [{ email: boss.email, name: boss.name }], team: team,
+    everyone: [me, boss].concat(team, [p('riley.brooks@example.com', 'Riley Brooks', POWER, 'pat.gone@example.com', 'Pat Gone', 'gone')]) };
+}
+function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
   function ts(dIso, hms) { return dIso + 'T' + hms; }
   function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
@@ -1407,6 +1422,15 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // like the server's {success}.
     getManualStamp: { stamp: 'MOCK-STAMP' },
     kbFlagItem: { success: true },
+    // HB2.1 — the handbook app's people: a reader who manages a team and is the
+    // admin (so the profile, "Your team" and the admin's lists all draw), with
+    // one request waiting. Each action answers with the same view, as the
+    // server does. Invented names; nothing here is a real person.
+    hbGetMe: function () { return HB_PEOPLE_VIEW(); },
+    hbSaveProfile: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    hbConfirmPerson: function () { return { success: true, view: HB_PEOPLE_VIEW() }; },
+    hbSetManager: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    hbRemovePerson: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },

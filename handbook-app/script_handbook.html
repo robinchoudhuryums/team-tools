@@ -14,6 +14,11 @@
 var HB = { tree: [], isAdmin: false, currentId: null, landing: true };
 var HB_SEARCH = { seq: 0, q: '', timer: null, showing: false };   // HB1.4: the search view's own state
 var HB_SEARCH_MIN = 2, HB_SEARCH_DEBOUNCE_MS = 300;
+// HB2.1: who is reading (hbGetMe's answer — undefined while it loads), the
+// people view's state, and the newest answer applied (an older one never
+// overwrites a newer — every action answers with the caller's whole view).
+var HB_ME = undefined;
+var HB_PP = { showing: false, dirty: false, sent: 0, applied: 0 };
 var HB_LS_DEPT = 'umsHbDept';      // the reader's chosen department (a chapter)
 var HB_LS_VISIT = 'umsHbVisit';    // { last, prev } — local dates, for "since your last visit"
 var HB_LS_PREFS = 'umsHbReader';   // the reader's own prefs (resume, card state)
@@ -128,7 +133,7 @@ function hbMain_() { return document.getElementById('kb-main'); }
  *  Back), a Back itself does not push again. */
 function hbOpen_(id, anchor, nav, push) {
   hbCloseSide_();
-  hbLeaveSearch_();
+  hbLeaveSearch_(); HB_PP.showing = false;
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
   hbMarkHomeBtn_(false);
   if (push) hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) });
@@ -136,7 +141,7 @@ function hbOpen_(id, anchor, nav, push) {
 function hbGoHome_() { hbHome_(true); }
 function hbHome_(push) {
   hbCloseSide_();
-  hbLeaveSearch_();
+  hbLeaveSearch_(); HB_PP.showing = false;
   HB.currentId = null; HB.landing = true;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over home
   var main = hbMain_(); if (!main) return;
@@ -154,6 +159,7 @@ function hbHistory_(op, state, params) {
 function hbOnHistory_(e) {
   var st = e && e.state;
   if (st && st.search) { var box = document.getElementById('hb-q'); if (box) box.value = st.search; hbSearch_(st.search, false); }
+  else if (st && st.people) hbPeople_(false);
   else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
 }
@@ -184,7 +190,7 @@ function hbSearch_(q, record) {
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the results
   hbMarkCurrent_(null); hbMarkHomeBtn_(false);
-  HB_SEARCH.showing = true; HB_SEARCH.q = q;
+  HB_SEARCH.showing = true; HB_SEARCH.q = q; HB_PP.showing = false;
   var seq = ++HB_SEARCH.seq;
   if (record) hbHistory_(was ? 'replace' : 'push', { search: q }, {});
   var jump = kbManualNumberTarget_(q, HB.tree);
@@ -218,6 +224,232 @@ function hbResultsHtml_(results, q) {
         (r.router && r.chunkMd ? '<span class="hb-hit-s">' + esc(kbMdPlain_(r.chunkMd)) + '</span>' : (r.snippet ? '<span class="hb-hit-s">' + esc(r.snippet) + '</span>' : '')) +
         '</button>';
     }).join('');
+}
+
+// ── People (HB2.1) ────────────────────────────────────────────────────────
+// Who is reading, from the Handbook spreadsheet (People.js): a first visit is
+// asked for a department and a manager, the manager confirms, and the admin
+// keeps the list of managers. The handbook never waits on any of it — a
+// failure here costs the profile, never the reading. Each section of the
+// people view is painted on its own, so an answer to one action never wipes
+// what is being typed or chosen in another (g141).
+
+/** PURE — what the home page says about the reader's profile: '' when there
+ *  is nothing to ask (or no profile store), else a prompt or a status line. */
+function hbMePromptHtml_(me) {
+  if (!me || me.error || me.setUp === false) return '';
+  var waiting = 0;
+  (me.team || []).forEach(function (p) { if (p.standing === 'pending') waiting++; });
+  var mine = me.me, line = '', act = '';
+  if (!mine || (!mine.department && !mine.manager)) { line = 'Tell us your department and your manager, so your manager can see you on their team.'; act = 'Set up my profile'; }
+  else if (mine.standing === 'declined') { line = mine.managerName + ' said you are not on their team. Choose your manager again.'; act = 'Update my profile'; }
+  else if (mine.standing === 'gone') { line = mine.managerName + ' is no longer a manager here. Choose your manager again.'; act = 'Update my profile'; }
+  var out = '';
+  if (line) out += '<div class="hb-prompt" role="status"><span class="hb-prompt-t">' + esc(line) + '</span><button type="button" class="kb-btn hb-prompt-go" onclick="hbGoPeople_()">' + esc(act) + '</button></div>';
+  else if (mine.standing === 'pending') out += '<div class="hb-quiet hb-prompt-wait">Waiting for ' + esc(mine.managerName) + ' to confirm you are on their team.</div>';
+  if (waiting) out += '<div class="hb-prompt" role="status"><span class="hb-prompt-t">' + waiting + (waiting === 1 ? ' person is' : ' people are') + ' waiting for you to confirm them.</span><button type="button" class="kb-btn hb-prompt-go" onclick="hbGoPeople_()">Review</button></div>';
+  return out;
+}
+/** PURE — the header button's badge: requests waiting on this reader, or '!'
+ *  when their own profile needs them. */
+function hbMeBadge_(me) {
+  if (!me || me.error || me.setUp === false) return '';
+  var n = 0;
+  (me.team || []).forEach(function (p) { if (p.standing === 'pending') n++; });
+  if (n) return String(n);
+  var mine = me.me;
+  if (!mine || (!mine.department && !mine.manager) || mine.standing === 'declined' || mine.standing === 'gone') return '!';
+  return '';
+}
+function hbStandingLabel_(p) {
+  if (!p) return '';
+  if (p.standing === 'confirmed') return 'Confirmed by ' + p.managerName;
+  if (p.standing === 'pending') return 'Waiting for ' + p.managerName + ' to confirm';
+  if (p.standing === 'declined') return p.managerName + ' said "not my team"';
+  if (p.standing === 'gone') return p.managerName + ' is no longer a manager';
+  return 'No manager chosen';
+}
+
+function hbLoadMe_() {
+  var seq = ++HB_PP.sent;
+  google.script.run
+    .withSuccessHandler(function (res) { hbApplyMe_(seq, res && typeof res === 'object' ? res : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (err) { hbApplyMe_(seq, { error: (err && err.message) || 'The server did not answer.' }); })
+    .hbGetMe();
+}
+/** Take a fresh view (the load's, or an action's) unless a newer one already
+ *  arrived. `parts` names the people-view sections to repaint. */
+function hbApplyMe_(seq, me, parts) {
+  if (seq < HB_PP.applied) return false;
+  HB_PP.applied = seq;
+  HB_ME = me;
+  // The profile's department seeds the reading choice, never overrides one.
+  if (me && me.me && me.me.department && !hbLs_(HB_LS_DEPT)) { hbLsSet_(HB_LS_DEPT, me.me.department); hbPaintDeptPicker_(); }
+  hbPaintMeBtn_();
+  var prompt = document.getElementById('hb-me-prompt');
+  if (prompt) prompt.innerHTML = hbMePromptHtml_(me);
+  if (HB_PP.showing) {
+    (parts || ['me', 'team', 'admin']).forEach(function (k) {
+      if (k === 'me') hbPaintPeopleMe_(); else if (k === 'team') hbPaintPeopleTeam_(); else hbPaintPeopleAdmin_();
+    });
+  }
+  return true;
+}
+function hbPaintMeBtn_() {
+  var b = document.getElementById('hb-me-badge'), btn = document.getElementById('hb-me');
+  var badge = hbMeBadge_(HB_ME);
+  if (b) b.textContent = badge;
+  if (btn) btn.setAttribute('aria-label', 'Profile' + (badge === '!' ? ' — needs your answer' : badge ? ' — ' + badge + ' waiting for you' : ''));
+}
+
+function hbGoPeople_() { hbPeople_(true); }
+function hbPeople_(push) {
+  hbCloseSide_();
+  hbLeaveSearch_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the view
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_PP.showing = true; HB_PP.dirty = false;
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-people"><section class="hb-pp" id="hb-pp-me"></section>' +
+    '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
+  main.scrollTop = 0;
+  hbPaintPeopleMe_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_();
+  if (push) hbHistory_('push', { people: true }, {});
+}
+/** "Your profile" — the reader's department and manager. Not repainted while
+ *  the reader has changed it and not saved (g141). */
+function hbPaintPeopleMe_() {
+  var host = document.getElementById('hb-pp-me'); if (!host) return;
+  if (HB_PP.dirty) return;
+  var me = HB_ME;
+  var head = '<h1 class="hb-pp-h">Your profile</h1>';
+  if (me === undefined) { host.innerHTML = head + loSweep(); return; }
+  if (me.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Could not load your profile: ' + esc(String(me.error).replace(/\.$/, '')) + '. Reload the page to try again.</p>'; return; }
+  var who = '<div class="hb-pp-who">' + esc(me.name) + ' <span class="hb-quiet">' + esc(me.email) + '</span>' +
+    (me.isAdmin ? ' <span class="hb-pp-tag">Admin</span>' : '') + (me.isManager ? ' <span class="hb-pp-tag">Manager</span>' : '') + '</div>';
+  if (me.setUp === false) {
+    host.innerHTML = head + who + '<p class="hb-quiet">Profiles are not set up yet' +
+      (me.isAdmin ? ': set the HANDBOOK_SS_ID Script Property to the Handbook spreadsheet (see docs/handbook-app.md).' : '. The handbook\'s admin will turn them on.') + '</p>';
+    return;
+  }
+  var mine = me.me || {};
+  var depts = kbManualDepts_().list.filter(function (x) { return !kbManualChapterParts_(x).appendix; });
+  var deptSel = '<select id="hb-pp-dept" class="hb-pp-sel" onchange="HB_PP.dirty = true">' +
+    '<option value="">Not chosen</option>' + depts.map(function (d) {
+      return '<option value="' + esc(d) + '"' + (d === mine.department ? ' selected' : '') + '>' + esc(hbChapterLabel_(d)) + '</option>';
+    }).join('') + '</select>';
+  var mgrs = (me.managers || []).slice();
+  if (mine.manager && !mgrs.some(function (m) { return m.email === mine.manager; })) mgrs = [];   // gone: not offered again
+  var mgrSel = '<select id="hb-pp-mgr" class="hb-pp-sel" onchange="HB_PP.dirty = true">' +
+    '<option value="">' + (mgrs.length ? 'No manager' : 'No managers have been set up yet') + '</option>' + mgrs.map(function (m) {
+      return '<option value="' + esc(m.email) + '"' + (m.email === mine.manager ? ' selected' : '') + '>' + esc(m.name) + ' (' + esc(m.email) + ')</option>';
+    }).join('') + '</select>';
+  host.innerHTML = head + who +
+    (me.me ? '<p class="hb-pp-standing hb-st-' + esc(mine.standing) + '">' + esc(hbStandingLabel_(mine)) + '</p>' : '<p class="hb-quiet">Choose your department and your manager. Your manager confirms you are on their team.</p>') +
+    '<div class="hb-pp-form"><label class="hb-pp-l">Department ' + deptSel + '</label>' +
+    '<label class="hb-pp-l">Manager ' + mgrSel + '</label>' +
+    '<button type="button" class="kb-btn hb-pp-save" onclick="hbPpSave_(this)">Save</button></div>' +
+    '<p class="hb-quiet hb-pp-note">Changing either asks your manager to confirm again.</p>';
+}
+function hbPersonRowHtml_(p, actions) {
+  return '<div class="hb-pp-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(p.name) + '</span>' +
+    '<span class="hb-quiet">' + esc(p.email) + (p.department ? ' · ' + esc(hbChapterLabel_(p.department)) : '') + '</span>' +
+    '<span class="hb-pp-row-s hb-st-' + esc(p.standing) + '">' + esc(hbStandingLabel_(p)) + '</span></div>' +
+    '<div class="hb-pp-row-a">' + actions + '</div></div>';
+}
+function hbPpBtn_(label, fn, email, extra) {
+  return '<button type="button" class="kb-btn' + (extra ? ' ' + extra : '') + '" data-email="' + esc(email) + '" onclick="' + fn + '">' + esc(label) + '</button>';
+}
+/** "Your team" — for a manager: requests to answer, then the confirmed. */
+function hbPaintPeopleTeam_() {
+  var host = document.getElementById('hb-pp-team'); if (!host) return;
+  var me = HB_ME;
+  if (!me || me.error || !me.isManager) { host.innerHTML = ''; return; }
+  var team = me.team || [];
+  var pending = team.filter(function (p) { return p.standing === 'pending'; });
+  var conf = team.filter(function (p) { return p.standing === 'confirmed'; });
+  var html = '<h2 class="hb-pp-h2">Your team</h2>';
+  if (!team.length) html += '<p class="hb-quiet">Nobody has chosen you as their manager yet.</p>';
+  if (pending.length) html += '<h3 class="hb-pp-h3">Waiting for you</h3>' + pending.map(function (p) {
+    return hbPersonRowHtml_(p, hbPpBtn_('Confirm', 'hbPpAnswer_(this, true)', p.email, 'hb-pp-yes') + hbPpBtn_('Not my team', 'hbPpAnswer_(this, false)', p.email));
+  }).join('');
+  if (conf.length) html += '<h3 class="hb-pp-h3">Confirmed</h3>' + conf.map(function (p) {
+    return hbPersonRowHtml_(p, hbPpBtn_('Remove from my team', 'hbPpAnswer_(this, false)', p.email));
+  }).join('');
+  host.innerHTML = html;
+}
+/** Admin: the managers, and everyone. */
+function hbPaintPeopleAdmin_() {
+  var host = document.getElementById('hb-pp-admin'); if (!host) return;
+  var me = HB_ME;
+  if (!me || me.error || !me.isAdmin || me.setUp === false) { host.innerHTML = ''; return; }
+  var all = me.everyone || [];
+  var mgrs = all.filter(function (p) { return p.isManager; });
+  var typed = document.getElementById('hb-pp-add');   // keep an address being typed (g141)
+  var keep = typed ? typed.value : '', hadFocus = typed && document.activeElement === typed;
+  var html = '<h2 class="hb-pp-h2">Managers</h2>' +
+    (mgrs.length ? mgrs.map(function (p) { return hbPersonRowHtml_(p, hbPpBtn_('Not a manager', 'hbPpSetManager_(this, false)', p.email)); }).join('')
+      : '<p class="hb-quiet">No managers yet. Add the people readers may choose as their manager.</p>') +
+    '<div class="hb-pp-form"><label class="hb-pp-l">Add a manager <input type="email" id="hb-pp-add" class="hb-pp-in" placeholder="name@company.com" autocomplete="off"' +
+      ' onkeydown="if (event.key === \'Enter\') { event.preventDefault(); hbPpAdd_(); }"></label>' +
+    '<button type="button" class="kb-btn hb-pp-save" id="hb-pp-add-btn" onclick="hbPpAdd_()">Make manager</button></div>' +
+    '<h2 class="hb-pp-h2">Everyone <span class="hb-quiet">' + all.length + '</span></h2>' +
+    (all.length ? all.map(function (p) {
+      return hbPersonRowHtml_(p, (p.standing === 'pending' ? hbPpBtn_('Confirm', 'hbPpAnswer_(this, true)', p.email, 'hb-pp-yes') : '') +
+        hbPpBtn_('Remove', 'hbPpRemove_(this)', p.email, 'hb-pp-danger'));
+    }).join('') : '<p class="hb-quiet">Nobody has saved a profile yet.</p>');
+  host.innerHTML = html;
+  var box = document.getElementById('hb-pp-add');
+  if (box && keep) box.value = keep;
+  if (box && hadFocus) box.focus();
+}
+
+/** One action: the button waits, the answer (the caller's whole view) is
+ *  applied unless a newer one arrived, and a failure says what failed. */
+function hbPpCall_(btn, fn, args, parts, okMsg) {
+  if (btn) btn.disabled = true;
+  var seq = ++HB_PP.sent;
+  var done = function (res) {
+    if (btn && btn.isConnected) btn.disabled = false;
+    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    if (okMsg) showToast(typeof okMsg === 'function' ? okMsg(res) : okMsg, 'toast-success');
+    if (res.view) hbApplyMe_(seq, res.view, parts);
+  };
+  var run = google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: err && err.message }); });
+  run[fn].apply(run, args);
+}
+function hbPpSave_(btn) {
+  var d = document.getElementById('hb-pp-dept'), m = document.getElementById('hb-pp-mgr');
+  var dept = d ? d.value : '', mgr = m ? m.value : '';
+  hbPpCall_(btn, 'hbSaveProfile', [dept, mgr], ['me', 'admin'], function (res) {
+    HB_PP.dirty = false;   // saved: the answer repaints the form
+    if (dept) { hbLsSet_(HB_LS_DEPT, dept); hbPaintDeptPicker_(); }
+    var mine = res.view && res.view.me;
+    return mine && mine.standing === 'pending' ? 'Saved — ' + mine.managerName + ' will be asked to confirm.' : 'Saved.';
+  });
+}
+function hbPpAnswer_(btn, ok) {
+  var email = btn.getAttribute('data-email');
+  hbPpCall_(btn, 'hbConfirmPerson', [email, ok === true], ['team', 'admin'], ok === true ? 'Confirmed.' : 'Removed from your team.');
+}
+function hbPpSetManager_(btn, on) {
+  hbPpCall_(btn, 'hbSetManager', [btn.getAttribute('data-email'), on === true], ['admin', 'me'], on === true ? 'Added as a manager.' : 'No longer a manager.');
+}
+function hbPpAdd_() {
+  var box = document.getElementById('hb-pp-add'), btn = document.getElementById('hb-pp-add-btn');
+  var email = box ? String(box.value || '').trim() : '';
+  if (!email) { if (box) box.focus(); return; }
+  hbPpCall_(btn, 'hbSetManager', [email, true], ['admin', 'me'], function () {
+    if (box && box.isConnected) box.value = '';
+    var now = document.getElementById('hb-pp-add'); if (now) now.value = '';
+    return 'Added as a manager.';
+  });
+}
+function hbPpRemove_(btn) {
+  var email = btn.getAttribute('data-email');
+  uiConfirm({ title: 'Remove ' + email + '?', message: 'Their profile is deleted. Anyone they managed is asked to choose again.', confirmLabel: 'Remove', tone: 'danger' })
+    .then(function (yes) { if (yes) hbPpCall_(btn, 'hbRemovePerson', [email], ['team', 'admin', 'me'], 'Removed.'); });
 }
 
 // ── Contents ──────────────────────────────────────────────────────────────
@@ -315,7 +547,8 @@ function hbHomeHtml_() {
   var d = kbManualDepts_();
   if (d.list.indexOf(mine) < 0) mine = '';
   var html = '<div class="hb-home"><div><h1>Policies and Procedures Handbook</h1>' +
-    '<div class="hb-home-sub">' + (meta && meta.version ? esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') : '') + '</div></div>';
+    '<div class="hb-home-sub">' + (meta && meta.version ? esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') : '') + '</div></div>' +
+    '<div id="hb-me-prompt">' + hbMePromptHtml_(HB_ME) + '</div>';
   // What's new — since the last visit, or the last month on a first one.
   if (meta === undefined) html += '<section><h2>What\'s new</h2><div class="hb-quiet">' + loSweep() + '</div></section>';
   else if (meta) {
@@ -411,6 +644,7 @@ function hbBoot_() {
     if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_();
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
+  hbLoadMe_();
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));
@@ -454,6 +688,7 @@ function hbReady_(res) {
   HB.tree = hbTreeOf_(res);
   hbPaintToc_();
   hbPaintDeptPicker_();
+  if (HB_PP.showing) hbPaintPeopleMe_();   // the department list needed the chapters
   if (!HB.tree.length) { hbMsg_('No handbook has been published yet.'); return; }
   var asked = (window.HB_PARAMS || {}).s || '';
   var t = hbTargetOf_(asked, HB.tree);

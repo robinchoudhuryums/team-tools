@@ -27,6 +27,7 @@
     <span class="hb-ver" id="hb-ver"></span>
     <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
       oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
+    <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge"></span></button>
     <label class="hb-dept">My department
       <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
     </label>
