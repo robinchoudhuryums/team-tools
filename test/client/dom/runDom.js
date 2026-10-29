@@ -9763,4 +9763,11 @@ test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar i
   assert.ok(h.d.querySelector('.hb-card') && !h.d.querySelector('.hb-qz-form'), 'home stays home');
   h.w.__hbChange({ state: { quiz: 'q-neb' } }); await new Promise((r) => setTimeout(r, 60)); await h.settleAll();
   assert.ok(h.d.querySelector('.hb-qz-form'), 'Back to the quiz');
+  // The case that bites: a slow answer for quiz A lands while quiz B is open.
+  const two = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(),
+    hbGetQuiz: (id) => (id === 'q-slow' ? { __delay: 40, value: { quiz: Object.assign({}, HB32_QUIZ, { id: 'q-slow', title: 'Slow quiz' }), me: hb32Me_() } } : { quiz: HB32_QUIZ, me: hb32Me_() }) } });
+  two.w.hbTakeQuiz_('q-slow', true);
+  two.w.hbTakeQuiz_('q-neb', true);
+  await new Promise((r) => setTimeout(r, 80)); await two.settleAll();
+  assert.strictEqual(two.d.querySelector('#hb-qz-take h1').textContent, 'Nebulizers', 'the later quiz stays — the earlier answer is dropped');
 });
