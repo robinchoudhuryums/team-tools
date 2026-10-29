@@ -131,6 +131,11 @@ const SCENARIOS = [
   ['handbook-quiz-take-light-mobile', {}, MOBILE, 'light', '', "hbTakeQuiz_('q-core-calls', true)", HB_PAGE],
   ['handbook-quiz-result-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_RESULT, HB_PAGE],
   ['handbook-quizbar-light-mobile', {}, MOBILE, 'light', '?s=0.11', '', HB_PAGE],
+  // HB3.3 — training: My training and Team training; the two editors.
+  ['handbook-training-light-wide', {}, WIDE,   'light', '', 'hbGoTraining_()', HB_PAGE],
+  ['handbook-training-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoTraining_()', HB_PAGE],
+  ['handbook-quiz-editor-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditTeamQuiz_('tq-00000000000a'); }, 400)", HB_PAGE],
+  ['handbook-plan-editor-light-mobile', {}, MOBILE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditPlan_('pl-000000000001'); }, 400)", HB_PAGE],
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
   // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,

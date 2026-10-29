@@ -101,6 +101,45 @@
   .hb-qz-rev { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin-bottom: 6px; }
   .hb-qz-why { font-size: .86rem; color: var(--ink); overflow-wrap: anywhere; }
 
+  /* Training (HB3.3) */
+  .hb-tr { display: flex; flex-direction: column; gap: 22px; max-width: 860px; }
+  .hb-tr-plan { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); margin-bottom: 10px; }
+  .hb-tr-plan.overdue { border-color: var(--warn); }
+  .hb-tr-ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .hb-tr-bar { height: 6px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+  .hb-tr-bar > span { display: block; height: 100%; background: var(--accent); }
+  .hb-tr-count { font-size: .78rem; }
+  .hb-tr-items { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .hb-tr-it { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 4px; border-top: 1px solid var(--line); }
+  .hb-tr-it:first-child { border-top: none; }
+  .hb-tr-it.done .hb-tr-it-t { color: var(--muted); }
+  .hb-tr-ic { flex: none; display: inline-flex; color: var(--muted); }
+  .hb-tr-it.done .hb-tr-ic { color: var(--success-deep); }
+  .hb-tr-it-t { flex: 1 1 14em; min-width: 0; font-size: .88rem; overflow-wrap: anywhere; }
+  .hb-tr-act { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: none; }
+  .hb-tr-mark.on { border-color: var(--accent); color: var(--success-deep); }
+  .hb-tr-arch .hb-pp-row-n { color: var(--muted); }
+  .modal.hb-ed { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }
+  .hb-ed-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px 8px; }
+  .hb-ed-narrow { flex: none; max-width: 12em; }
+  .hb-ed-help { font-size: .8rem; margin: 0; }
+  .hb-ed-q { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .hb-ed-q .hb-pp-l[hidden] { display: none; }   /* g73: the hidden attribute loses to .hb-pp-l's display */
+  /* .hb-pp-l grows along a ROW in the people form; in these COLUMNS that basis would be height. */
+  .hb-ed-body .hb-pp-l { flex: none; }
+  .hb-ed-qrow .hb-pp-sel { width: auto; flex: 1 1 12em; min-width: 0; }
+  .hb-ed-qrow { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+  .hb-ed-text, .hb-ed-optbox, .hb-ed-why { resize: vertical; font-family: inherit; }
+  .hb-ed-msg { color: var(--danger); font-size: .86rem; margin: 0; }
+  .hb-ed-msg:empty { display: none; }
+  .hb-ed-items { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; gap: 4px; }
+  .hb-ed-item { font-size: .88rem; }
+  .hb-ed-item > span { overflow-wrap: anywhere; margin-right: 6px; }
+  .hb-ed-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .hb-ed-add .hb-pp-sel { width: auto; flex: 1 1 12em; min-width: 0; }
+  .hb-ed-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .hb-ed-chk { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; overflow-wrap: anywhere; }
+
   /* Contents */
   .hb-toc { display: flex; flex-direction: column; gap: 2px; }
   .hb-toc-home { font: inherit; font-size: .86rem; font-weight: 600; text-align: left; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }

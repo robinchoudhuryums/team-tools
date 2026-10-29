@@ -2,7 +2,7 @@
      edit the source and run `npm run handbook:sync`. -->
 <script>
 // The page shell: Team Tools' declarations the handbook's pages use, verbatim,
-// with every declaration they reach (26 in all).
+// with every declaration they reach (27 in all).
 // Supplied by the handbook's pages instead of copied: errBeaconSend_.
 
 let currentView = 'clock';
@@ -513,6 +513,24 @@ function ensureOverlay(id, opts) {
     }, 0);
   }
   return overlay;
+}
+
+// ── UI-ESC (cycle 23): an EDITOR asks before it discards ───────────────────
+// The shell's Escape closes the topmost overlay even when the key was pressed
+// inside a textarea (to dismiss an autocomplete, say), and a backdrop click
+// does the same — so the KB article editor, the quiz editor, a fillable HR
+// document and the coaching composer each threw away what was being written,
+// with no question asked. An overlay opened with `unsaved: { what, busy?,
+// dirty? }` is GUARDED: while it is dirty (anything typed into it since this
+// open, a module's overlayMarkDirty_, or its own `dirty()`), every close path
+// that goes through closeOverlay — Escape, the backdrop, a Cancel/× wired to
+// closeOverlay — asks "Discard changes?" first, and refuses until the answer
+// is Discard. `busy()` true means a save is in flight: the hook's own refusal
+// (INV-145) answers instead, since nothing is being discarded. A module's own
+// close after a SAVE calls its hook directly and is never asked.
+function overlayMarkDirty_(el) {
+  if (typeof el === 'string') el = document.getElementById(el);
+  if (el) el._dirty = true;
 }
 
 /** PURE-ish — does this close need the discard question? */

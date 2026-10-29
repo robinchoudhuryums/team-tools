@@ -162,6 +162,7 @@ function hbOnHistory_(e) {
   else if (st && st.people) hbPeople_(false);
   else if (st && st.quizzes) hbQuizList_(false);
   else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
+  else if (st && st.training) hbTraining_(false);
   else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
 }
@@ -501,7 +502,7 @@ function hbWhen_(ms) {
 }
 
 var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null };   // seq: the open view's; lseq: the list load's
-function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; }
+function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); }   // every other view leaves Training too (HB3.3)
 
 function hbLoadQuizzes_(then) {
   var lseq = ++HB_QZ.lseq;
@@ -708,6 +709,338 @@ function hbResetQuiz_(btn) {
     .hbResetQuiz(btn.getAttribute('data-email'), btn.getAttribute('data-quiz'));
 }
 
+// ── Training (HB3.3) ──────────────────────────────────────────────────────
+// One view: My training (the plans assigned to the reader, with progress — a
+// chapter or section is done when the reader marks it read, a quiz when it is
+// passed) and, for a manager or the admin, Team training (their quizzes and
+// plans, written in two editor overlays that ask before discarding — g166).
+// Each answer is for its own view (g81).
+
+/** PURE — a quiz editor's options box: one option per line, a leading "*"
+ *  marks a right one. Returns { options, correct } — `correct` an index for a
+ *  single-answer question, the list for a multi-select, -1 / [] when none is
+ *  marked. A true/false question has its own two options. */
+function hbParseOptions_(text, type) {
+  if (type === 'truefalse') return { options: ['True', 'False'], correct: -1 };
+  var options = [], marked = [];
+  String(text || '').split(/\r?\n/).forEach(function (line) {
+    var t = line.trim();
+    if (!t) return;
+    var star = /^\*\s*/.test(t);
+    if (star) { t = t.replace(/^\*\s*/, ''); marked.push(options.length); }
+    if (t) options.push(t);
+  });
+  return { options: options, correct: type === 'multi' ? marked : (marked.length ? marked[0] : -1) };
+}
+/** PURE — the options box for a stored question (the inverse of the above). */
+function hbOptionsText_(q) {
+  var right = q.type === 'multi' ? (q.correct || []) : [q.correct];
+  return (q.options || []).map(function (o, i) { return (right.indexOf(i) >= 0 ? '* ' : '') + o; }).join('\n');
+}
+/** PURE — a due date as the reader reads it ("Fri, Nov 30"); '' for none. */
+function hbDueLabel_(due) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due || '')) return '';
+  try { return new Date(due + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return due; }
+}
+
+var HB_TR = { seq: 0, showing: false, mine: undefined, team: undefined };
+function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; }
+function hbGoTraining_() { hbTraining_(true); }
+function hbTraining_(push) {
+  hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_(); hbLeaveTraining_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_TR.showing = true;
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-tr"><section id="hb-tr-mine"><h1 class="hb-pp-h">My training</h1>' + loSweep() + '</section>' +
+    '<section id="hb-tr-team"></section></div>';
+  main.scrollTop = 0;
+  if (push) hbHistory_('push', { training: true }, {});
+  hbLoadMine_();
+  hbLoadTeamTraining_();
+}
+function hbLoadMine_() {
+  var seq = HB_TR.seq;
+  var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.mine = res; hbPaintMine_(); };
+  google.script.run.withSuccessHandler(function (r) { take(r || { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); }).hbMyTraining();
+}
+function hbLoadTeamTraining_() {
+  var host = document.getElementById('hb-tr-team'); if (!host) return;
+  var me = HB_ME;
+  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  host.innerHTML = '<h2 class="hb-pp-h2">Team training</h2>' + loSweep();
+  var seq = HB_TR.seq;
+  var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.team = res; hbPaintTeamTraining_(); };
+  google.script.run.withSuccessHandler(function (r) { take(r || { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { take({ error: (e && e.message) || 'The server did not answer.' }); }).hbTeamTraining();
+}
+/** An item's label: a chapter's name, a section's number and title (from the
+ *  contents), a quiz's title. */
+function hbItemLabel_(it) {
+  if (it.kind === 'chapter') return hbChapterLabel_(it.id);
+  if (it.kind === 'section') {
+    var s = HB.tree.filter(function (x) { return x.id === it.id; })[0];
+    return s ? s.title : 'A section no longer in the handbook';
+  }
+  return it.title || 'A quiz no longer available';
+}
+function hbPaintMine_() {
+  var host = document.getElementById('hb-tr-mine'); if (!host) return;
+  var res = HB_TR.mine, head = '<h1 class="hb-pp-h">My training</h1>';
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Your training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
+  if (res.setUp === false) { host.innerHTML = head + '<p class="hb-quiet">Training plans start once the handbook\'s admin sets up the Handbook spreadsheet.</p>'; return; }
+  if (!res.plans.length) { host.innerHTML = head + '<p class="hb-quiet">Nothing is assigned to you right now.</p>'; return; }
+  host.innerHTML = head + res.plans.map(function (p) {
+    var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+    return '<div class="hb-tr-plan' + (p.overdue ? ' overdue' : '') + '"><div class="hb-tr-ph"><span class="hb-pp-row-n">' + esc(p.title) + '</span>' +
+      '<span class="hb-quiet">from ' + esc(p.authorName) + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>' +
+      (p.overdue ? '<span class="hb-qz-chip lock">Overdue</span>' : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : '')) + '</div>' +
+      '<div class="hb-tr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '" aria-label="' + esc(p.title) + ' progress"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done</div>' +
+      '<ul class="hb-tr-items">' + p.items.map(function (it) {
+        var label = '<span class="hb-tr-it-t">' + esc(hbItemLabel_(it)) + '</span>';
+        var act = '';
+        if (it.kind === 'quiz') {
+          act = hbQuizChip_(it.quiz) + (it.missing ? '' : '<button type="button" class="kb-btn" data-quiz="' + esc(it.id) + '"' + (it.quiz && it.quiz.locked ? ' disabled' : '') +
+            ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (it.done ? 'Take again' : 'Take the quiz') + '</button>');
+        } else {
+          var openId = it.kind === 'section' ? it.id : kbManualDepts_().first(it.id);
+          act = (openId && (it.kind === 'chapter' || HB.tree.some(function (x) { return x.id === it.id; }))
+              ? '<button type="button" class="kb-btn" data-kb-id="' + esc(openId) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', ' + (it.kind === 'chapter' ? '{ chapter: true }' : 'null') + ')">Open</button>' : '') +
+            '<button type="button" class="kb-btn hb-tr-mark' + (it.done ? ' on' : '') + '" aria-pressed="' + (it.done ? 'true' : 'false') + '" data-kind="' + esc(it.kind) + '" data-id="' + esc(it.id) +
+              '" onclick="hbMarkRead_(this)">' + (it.done ? icon('check', 12) + ' Read' : 'Mark as read') + '</button>';
+        }
+        return '<li class="hb-tr-it' + (it.done ? ' done' : '') + '"><span class="hb-tr-ic">' + (it.done ? icon('checkCircle', 15) : icon(it.kind === 'quiz' ? 'clipboardList' : 'fileText', 15)) + '</span>' +
+          label + '<span class="hb-tr-act">' + act + '</span></li>';
+      }).join('') + '</ul></div>';
+  }).join('');
+}
+function hbMarkRead_(btn) {
+  var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id');
+  var now = btn.getAttribute('aria-pressed') !== 'true';
+  btn.disabled = true;
+  var done = function (res) {
+    if (btn.isConnected) btn.disabled = false;
+    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    // Every plan with this item agrees: one mark serves them all.
+    var mine = HB_TR.mine;
+    if (mine && mine.plans) mine.plans.forEach(function (p) {
+      p.items.forEach(function (it) { if (it.kind === kind && it.id === id) it.done = now; });
+      p.done = p.items.filter(function (it) { return it.done; }).length;
+      if (p.done === p.total) p.overdue = false;
+    });
+    hbPaintMine_();
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbMarkRead(kind, id, now);
+}
+
+function hbPaintTeamTraining_() {
+  var host = document.getElementById('hb-tr-team'); if (!host) return;
+  var res = HB_TR.team, head = '<h2 class="hb-pp-h2">Team training</h2>';
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
+  var row = function (title, sub, kind, id, live) {
+    return '<div class="hb-pp-row' + (live ? '' : ' hb-tr-arch') + '"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(title) + (live ? '' : ' <span class="hb-qz-chip">Archived</span>') + '</span>' +
+      '<span class="hb-quiet">' + esc(sub) + '</span></div><div class="hb-pp-row-a">' +
+      (live ? '<button type="button" class="kb-btn" data-id="' + esc(id) + '" onclick="hbEdit' + (kind === 'quiz' ? 'TeamQuiz' : 'Plan') + '_(this.getAttribute(\'data-id\'))">Edit</button>' : '') +
+      '<button type="button" class="kb-btn" data-kind="' + kind + '" data-id="' + esc(id) + '" data-live="' + (live ? '1' : '') + '" onclick="hbArchive_(this)">' + (live ? 'Archive' : 'Restore') + '</button></div></div>';
+  };
+  var qs = res.quizzes || [], ps = res.plans || [];
+  host.innerHTML = head + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
+    '<h3 class="hb-pp-h3">Plans</h3>' + (ps.length ? ps.map(function (p) {
+      var b = p.plan || {};
+      return row(b.title, (b.items || []).length + ' item' + ((b.items || []).length === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : '') +
+        (p.live ? ' · reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : '') + (res.isAdmin ? ' · by ' + p.authorName : ''), 'plan', p.id, p.live);
+    }).join('') : '<p class="hb-quiet">No plans yet.</p>') +
+    '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditPlan_(\'\')">' + icon('plus', 12) + ' New plan</button></div>' +
+    '<h3 class="hb-pp-h3">Your quizzes</h3>' + (qs.length ? qs.map(function (q) {
+      var b = q.quiz || {};
+      return row(b.title, (b.questions || []).length + ' question' + ((b.questions || []).length === 1 ? '' : 's') + ' · pass mark ' + b.passPct + '%' + (res.isAdmin ? ' · by ' + q.authorName : ''), 'quiz', q.id, q.live);
+    }).join('') : '<p class="hb-quiet">No quizzes of your own yet. Plans can also use the handbook\'s official quizzes.</p>') +
+    '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditTeamQuiz_(\'\')">' + icon('plus', 12) + ' New quiz</button></div>';
+}
+function hbArchive_(btn) {
+  var kind = btn.getAttribute('data-kind'), id = btn.getAttribute('data-id'), live = !!btn.getAttribute('data-live');
+  var go = function () {
+    btn.disabled = true;
+    var done = function (res) {
+      if (btn.isConnected) btn.disabled = false;
+      if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+      showToast(live ? 'Archived.' : 'Restored.', 'toast-success');
+      hbLoadTeamTraining_();
+    };
+    google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbArchiveTraining(kind, id, live);
+  };
+  if (!live) { go(); return; }
+  uiConfirm({ title: 'Archive this ' + (kind === 'quiz' ? 'quiz' : 'plan') + '?', confirmLabel: 'Archive', tone: 'danger',
+    message: kind === 'quiz' ? 'Nobody can take it while it is archived — plans that use it show it as no longer available. Restore brings it back.'
+      : 'It stops reaching anyone. Progress is kept, and Restore brings it back.' }).then(function (yes) { if (yes) go(); });
+}
+
+// — the quiz editor —
+function hbEditTeamQuiz_(id) {
+  var res = HB_TR.team || {};
+  var rec = id ? (res.quizzes || []).filter(function (q) { return q.id === id; })[0] : null;
+  var b = rec ? rec.quiz : { title: '', passPct: 80, questions: [{ type: 'single', q: '', options: [], correct: -1 }] };
+  var saving = false;
+  var ov = ensureOverlay('hb-tq-ov', { labelledBy: 'hb-tq-h', unsaved: { what: 'this quiz', busy: function () { return saving; } },
+    onClose: function () { if (saving) return; var o = document.getElementById('hb-tq-ov'); if (o) o.remove(); } });
+  ov._hbSave = function (btn) {
+    var def = hbReadQuizEditor_();
+    if (def.error) { hbEdMsg_('hb-tq-msg', def.error); return; }
+    if (id) def.id = id;
+    saving = true; btn.disabled = true;
+    var done = function (r) {
+      saving = false; if (btn.isConnected) btn.disabled = false;
+      if (!r || !r.success) { hbEdMsg_('hb-tq-msg', String((r && r.error) || 'The server did not answer.')); return; }
+      closeOverlay(ov, { discard: true });
+      showToast('Quiz saved.', 'toast-success');
+      hbLoadTeamTraining_();
+    };
+    google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbSaveTeamQuiz(def);
+  };
+  ov.innerHTML = '<div class="modal hb-ed" role="document"><div class="modal-title" id="hb-tq-h">' + (id ? 'Edit quiz' : 'New quiz') + '</div>' +
+    '<div class="hb-ed-body"><label class="hb-pp-l">Title <input class="hb-pp-in" id="hb-tq-title" maxlength="120" value="' + esc(b.title || '') + '"></label>' +
+    '<label class="hb-pp-l hb-ed-narrow">Pass mark (%) <input class="hb-pp-in" id="hb-tq-pass" type="number" min="0" max="100" value="' + esc(String(b.passPct == null ? 80 : b.passPct)) + '"></label>' +
+    '<p class="hb-quiet hb-ed-help">One option per line; start the right one with <b>*</b> (for "choose all that apply", every right one).</p>' +
+    '<div id="hb-tq-qs">' + (b.questions || []).map(hbQuizEditorQHtml_).join('') + '</div>' +
+    '<button type="button" class="kb-btn" onclick="hbAddQuizQuestion_()">' + icon('plus', 12) + ' Add a question</button>' +
+    '<p class="hb-ed-msg" id="hb-tq-msg" role="alert"></p></div>' +
+    '<div class="modal-footer"><button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'hb-tq-ov\'))">Cancel</button>' +
+    '<button type="button" class="btn-modal-ok" onclick="document.getElementById(\'hb-tq-ov\')._hbSave(this)">Save quiz</button></div></div>';
+}
+function hbQuizEditorQHtml_(q) {
+  q = q || { type: 'single', q: '', options: [], correct: -1 };
+  var type = q.type || 'single';
+  var secs = HB.tree.map(function (s) { return '<option value="' + esc(s.id) + '"' + (s.id === q.section ? ' selected' : '') + '>' + esc(s.title) + '</option>'; }).join('');
+  return '<fieldset class="hb-ed-q"><div class="hb-ed-qrow"><select class="hb-pp-sel hb-ed-type" aria-label="Question type" onchange="hbQuizTypeChanged_(this)">' +
+    [['single', 'One answer'], ['multi', 'Choose all that apply'], ['truefalse', 'True or false']].map(function (t) {
+      return '<option value="' + t[0] + '"' + (t[0] === type ? ' selected' : '') + '>' + t[1] + '</option>';
+    }).join('') + '</select><button type="button" class="kb-btn hb-pp-danger" onclick="var f=this.closest(\'.hb-ed-q\'); overlayMarkDirty_(\'hb-tq-ov\'); f.remove();">Remove</button></div>' +
+    '<label class="hb-pp-l">Question <textarea class="hb-pp-in hb-ed-text" rows="2" maxlength="500">' + esc(q.q || '') + '</textarea></label>' +
+    '<label class="hb-pp-l hb-ed-opts"' + (type === 'truefalse' ? ' hidden' : '') + '>Options <textarea class="hb-pp-in hb-ed-optbox" rows="4">' + esc(type === 'truefalse' ? '' : hbOptionsText_(q)) + '</textarea></label>' +
+    '<label class="hb-pp-l hb-ed-tf"' + (type === 'truefalse' ? '' : ' hidden') + '>The answer <select class="hb-pp-sel hb-ed-tfsel"><option value="0"' + (q.correct === 0 ? ' selected' : '') + '>True</option><option value="1"' + (q.correct === 1 ? ' selected' : '') + '>False</option></select></label>' +
+    '<label class="hb-pp-l">Explanation, shown when it is answered wrongly <textarea class="hb-pp-in hb-ed-why" rows="2" maxlength="600">' + esc(q.explain || '') + '</textarea></label>' +
+    '<label class="hb-pp-l">Section to go back to <select class="hb-pp-sel hb-ed-sec"><option value="">None</option>' + secs + '</select></label></fieldset>';
+}
+function hbAddQuizQuestion_() {
+  var host = document.getElementById('hb-tq-qs'); if (!host) return;
+  host.insertAdjacentHTML('beforeend', hbQuizEditorQHtml_(null));
+  overlayMarkDirty_('hb-tq-ov');
+}
+function hbQuizTypeChanged_(sel) {
+  var f = sel.closest('.hb-ed-q'); if (!f) return;
+  var tf = sel.value === 'truefalse';
+  f.querySelector('.hb-ed-opts').hidden = tf;
+  f.querySelector('.hb-ed-tf').hidden = !tf;
+}
+/** The editor's fields as a quiz definition, or { error } for what the page
+ *  can tell before the server (the server checks it all again). */
+function hbReadQuizEditor_() {
+  var title = (document.getElementById('hb-tq-title') || {}).value || '';
+  var passPct = Number((document.getElementById('hb-tq-pass') || {}).value);
+  var qs = [], err = '';
+  document.querySelectorAll('#hb-tq-qs .hb-ed-q').forEach(function (f, i) {
+    if (err) return;
+    var type = f.querySelector('.hb-ed-type').value;
+    var p = hbParseOptions_(f.querySelector('.hb-ed-optbox').value, type);
+    var correct = type === 'truefalse' ? Number(f.querySelector('.hb-ed-tfsel').value) : p.correct;
+    if (type !== 'truefalse' && (type === 'multi' ? !correct.length : correct < 0)) { err = 'Question ' + (i + 1) + ': start the right option with *.'; return; }
+    qs.push({ type: type, q: f.querySelector('.hb-ed-text').value, options: p.options, correct: correct,
+      explain: f.querySelector('.hb-ed-why').value, section: f.querySelector('.hb-ed-sec').value });
+  });
+  if (err) return { error: err };
+  if (!qs.length) return { error: 'Add at least one question.' };
+  return { title: title, passPct: passPct, questions: qs };
+}
+function hbEdMsg_(id, msg) { var el = document.getElementById(id); if (el) el.textContent = String(msg).replace(/\.$/, '') + '.'; }
+
+// — the plan editor —
+function hbEditPlan_(id) {
+  var res = HB_TR.team || {};
+  var rec = id ? (res.plans || []).filter(function (p) { return p.id === id; })[0] : null;
+  var b = rec ? rec.plan : { title: '', due: '', items: [], assign: { people: [], departments: [] } };
+  var saving = false;
+  var ov = ensureOverlay('hb-pl-ov', { labelledBy: 'hb-pl-h', unsaved: { what: 'this plan', busy: function () { return saving; } },
+    onClose: function () { if (saving) return; var o = document.getElementById('hb-pl-ov'); if (o) o.remove(); } });
+  ov._hbItems = (b.items || []).map(function (it) { return { kind: it.kind, id: it.id }; });
+  ov._hbSave = function (btn) {
+    var def = { title: document.getElementById('hb-pl-title').value, due: document.getElementById('hb-pl-due').value, items: ov._hbItems.slice(),
+      assign: { people: [].map.call(document.querySelectorAll('#hb-pl-people input:checked'), function (i) { return i.value; }),
+        departments: [].map.call(document.querySelectorAll('#hb-pl-depts input:checked'), function (i) { return i.value; }) } };
+    if (id) def.id = id;
+    saving = true; btn.disabled = true;
+    var done = function (r) {
+      saving = false; if (btn.isConnected) btn.disabled = false;
+      if (!r || !r.success) { hbEdMsg_('hb-pl-msg', String((r && r.error) || 'The server did not answer.')); return; }
+      closeOverlay(ov, { discard: true });
+      showToast('Plan saved — it reaches ' + r.reaches + (r.reaches === 1 ? ' person' : ' people') + ' now.', 'toast-success');
+      hbLoadTeamTraining_();
+    };
+    google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbSavePlan(def);
+  };
+  var depts = kbManualDepts_().list.filter(function (d) { return !kbManualChapterParts_(d).appendix; });
+  var a = b.assign || {};
+  ov.innerHTML = '<div class="modal hb-ed" role="document"><div class="modal-title" id="hb-pl-h">' + (id ? 'Edit plan' : 'New plan') + '</div>' +
+    '<div class="hb-ed-body"><label class="hb-pp-l">Title <input class="hb-pp-in" id="hb-pl-title" maxlength="120" value="' + esc(b.title || '') + '"></label>' +
+    '<label class="hb-pp-l hb-ed-narrow">Due <input class="hb-pp-in" id="hb-pl-due" type="date" value="' + esc(b.due || '') + '"></label>' +
+    '<h3 class="hb-pp-h3">What to do</h3><ol class="hb-ed-items" id="hb-pl-items"></ol>' +
+    '<div class="hb-ed-add"><select class="hb-pp-sel" id="hb-pl-kind" aria-label="Kind" onchange="hbPlanKindChanged_()"><option value="section">A section</option><option value="chapter">A chapter</option><option value="quiz">A quiz</option></select>' +
+    '<select class="hb-pp-sel" id="hb-pl-pick" aria-label="Which"></select><button type="button" class="kb-btn" onclick="hbPlanAddItem_()">' + icon('plus', 12) + ' Add</button></div>' +
+    '<h3 class="hb-pp-h3">Who</h3><div class="hb-ed-checks" id="hb-pl-depts">' + depts.map(function (d) {
+      return '<label class="hb-ed-chk"><input type="checkbox" value="' + esc(d) + '"' + ((a.departments || []).indexOf(d) >= 0 ? ' checked' : '') + '> ' + esc(hbChapterLabel_(d)) + '</label>';
+    }).join('') + '</div><p class="hb-quiet hb-ed-help">' + (res.isAdmin ? 'A department reaches everyone in it.' : 'A department reaches your confirmed team in it.') + ' Or pick people:</p>' +
+    '<div class="hb-ed-checks" id="hb-pl-people">' + ((res.team || []).length ? res.team.map(function (p) {
+      return '<label class="hb-ed-chk"><input type="checkbox" value="' + esc(p.email) + '"' + ((a.people || []).indexOf(p.email) >= 0 ? ' checked' : '') + '> ' + esc(p.name) +
+        (p.department ? ' <span class="hb-quiet">' + esc(hbChapterLabel_(p.department)) + '</span>' : '') + '</label>';
+    }).join('') : '<span class="hb-quiet">Nobody has been confirmed on your team yet.</span>') + '</div>' +
+    '<p class="hb-ed-msg" id="hb-pl-msg" role="alert"></p></div>' +
+    '<div class="modal-footer"><button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'hb-pl-ov\'))">Cancel</button>' +
+    '<button type="button" class="btn-modal-ok" onclick="document.getElementById(\'hb-pl-ov\')._hbSave(this)">Save plan</button></div></div>';
+  hbPlanKindChanged_();
+  hbPaintPlanItems_();
+}
+/** The choices for the "add" picker: sections and chapters from the
+ *  contents, quizzes official and the author's own (live). */
+function hbPlanChoices_(kind) {
+  if (kind === 'section') return HB.tree.map(function (s) { return { id: s.id, label: s.title }; });
+  if (kind === 'chapter') return kbManualDepts_().list.map(function (d) { return { id: d, label: hbChapterLabel_(d) }; });
+  var res = HB_TR.team || {};
+  return (res.official || []).map(function (q) { return { id: q.id, label: q.title + ' (official)' }; })
+    .concat((res.quizzes || []).filter(function (q) { return q.live; }).map(function (q) { return { id: q.id, label: q.quiz.title }; }));
+}
+function hbPlanKindChanged_() {
+  var sel = document.getElementById('hb-pl-pick'), kind = (document.getElementById('hb-pl-kind') || {}).value;
+  if (!sel) return;
+  var ch = hbPlanChoices_(kind);
+  sel.innerHTML = ch.length ? ch.map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.label) + '</option>'; }).join('') : '<option value="">None available</option>';
+}
+function hbPlanItemLabel_(it) {
+  var c = hbPlanChoices_(it.kind).filter(function (x) { return x.id === it.id; })[0];
+  return ({ section: 'Read ', chapter: 'Read the chapter ', quiz: 'Pass the quiz ' })[it.kind] + (c ? c.label : it.id);
+}
+function hbPaintPlanItems_() {
+  var ov = document.getElementById('hb-pl-ov'), host = document.getElementById('hb-pl-items'); if (!ov || !host) return;
+  host.innerHTML = ov._hbItems.length ? ov._hbItems.map(function (it, i) {
+    return '<li class="hb-ed-item"><span>' + esc(hbPlanItemLabel_(it)) + '</span><button type="button" class="kb-btn" aria-label="Remove" data-i="' + i + '" onclick="hbPlanRemoveItem_(this)">' + icon('x', 12) + '</button></li>';
+  }).join('') : '<li class="hb-quiet">Nothing yet — add sections, chapters or quizzes below.</li>';
+}
+function hbPlanAddItem_() {
+  var ov = document.getElementById('hb-pl-ov'); if (!ov) return;
+  var kind = document.getElementById('hb-pl-kind').value, id = document.getElementById('hb-pl-pick').value;
+  if (!id) return;
+  if (!ov._hbItems.some(function (it) { return it.kind === kind && it.id === id; })) ov._hbItems.push({ kind: kind, id: id });
+  overlayMarkDirty_(ov);
+  hbPaintPlanItems_();
+}
+function hbPlanRemoveItem_(btn) {
+  var ov = document.getElementById('hb-pl-ov'); if (!ov) return;
+  ov._hbItems.splice(Number(btn.getAttribute('data-i')), 1);
+  overlayMarkDirty_(ov);
+  hbPaintPlanItems_();
+}
+
 // ── Contents ──────────────────────────────────────────────────────────────
 function hbChapterLabel_(dept) {
   var p = kbManualChapterParts_(dept);
@@ -718,7 +1051,8 @@ function hbPaintToc_() {
   var host = document.getElementById('hb-toc'); if (!host) return;
   var depts = kbManualDepts_().list;
   var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>' +
-    '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>';   // HB3.2
+    '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>' +   // HB3.2
+    '<button type="button" class="hb-toc-quizzes hb-toc-training" onclick="hbGoTraining_()">' + icon('clipboardList', 14) + ' Training</button>';   // HB3.3
   depts.forEach(function (dept) {
     var secs = HB.tree.filter(function (it) { return it.department === dept; });
     html += '<div class="hb-ch" data-dept="' + esc(dept) + '">' +

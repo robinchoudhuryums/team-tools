@@ -1456,6 +1456,35 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     },
     hbTeamQuizLocks: function () { return { locks: [{ email: 'alex.kim@example.com', name: 'Alex Kim', quizId: 'q-field-pickup', title: 'Pick-up procedures', retryAtMs: Date.now() + 5 * 3600000 }] }; },
     hbResetQuiz: { success: true },
+    // HB3.3 — training: two plans for the reader (one overdue, one finished),
+    // and the manager's team training (a plan, an archived plan, a quiz).
+    hbMyTraining: function () {
+      var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
+      return { setUp: true, plans: [
+        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, items: [
+          { kind: 'section', id: 'man-0-11', key: 'section:man-0-11', done: true },
+          { kind: 'section', id: 'man-0-10', key: 'section:man-0-10', done: true },
+          { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false },
+          { kind: 'quiz', id: 'q-core-calls', key: 'quiz:q-core-calls', title: 'Taking a call', done: false, quiz: me({ attempts: 1, attemptsLeft: 2, best: 50 }) }] },
+        { id: 'pl-000000000002', title: 'Pick-up refresher', authorName: 'Sam Ortiz', due: '', overdue: false, done: 1, total: 1, items: [
+          { kind: 'quiz', id: 'tq-00000000000a', key: 'quiz:tq-00000000000a', title: 'Pick-up checks', done: true, quiz: me({ attempts: 1, passed: true, best: 100 }) }] }] };
+    },
+    hbTeamTraining: function () {
+      return { isAdmin: false, unreadable: 0,
+        quizzes: [{ id: 'tq-00000000000a', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, updatedMs: 0, quiz: { title: 'Pick-up checks', passPct: 80, questions: [
+          { type: 'single', q: 'What do you confirm before a pick-up?', options: ['The address and the equipment', 'The weather'], correct: 0, explain: 'The ticket must match what is collected.', section: 'man-0-11', anchor: '' },
+          { type: 'multi', q: 'Which go on the ticket?', options: ['Serial number', 'Condition', 'Your opinion'], correct: [0, 1], explain: '', section: '', anchor: '' },
+          { type: 'truefalse', q: 'A pick-up can be closed without a signature.', options: ['True', 'False'], correct: 1, explain: '', section: '', anchor: '' }] } }],
+        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, plan: { title: 'New starter: first week', due: daysAgo(-7),
+          items: [{ kind: 'section', id: 'man-0-11' }, { kind: 'quiz', id: 'q-core-calls' }], assign: { people: ['alex.kim@example.com'], departments: ['Chapter 03 \u2014 Respiratory & Resupply'] } } },
+          { id: 'pl-000000000003', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: false, reaches: 0, plan: { title: 'Last quarter\'s refresher', due: '', items: [{ kind: 'section', id: 'man-0-10' }], assign: { people: [], departments: ['Chapter 05 \u2014 Power Mobility'] } } }],
+        team: [{ email: 'alex.kim@example.com', name: 'Alex Kim', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: 'Chapter 05 \u2014 Power Mobility' }],
+        official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
+    },
+    hbMarkRead: { success: true },
+    hbSaveTeamQuiz: { success: true, id: 'tq-00000000000b' },
+    hbSavePlan: { success: true, id: 'pl-000000000004', reaches: 2 },
+    hbArchiveTraining: { success: true },
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
