@@ -40451,17 +40451,23 @@ testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-b: the sync refuses a copied WRI
 /** The handbook server in a sandbox: kb_shared.js + Handbook.js over fake
  *  Apps Script services. `reads` counts sheet reads; tabs is name → rows. */
 function hbServer_(opts) {
-  const reads = { n: 0 };
+  const reads = { n: 0 }, locks = { n: 0 };
   const sheetOf = (rows) => ({
     getLastRow: () => rows.length,
     getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
     getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; },
-      getValue: () => { reads.n++; const row = rows[r - 1] || []; return row[c - 1] === undefined ? '' : row[c - 1]; } }),
-    // HB1.4: the app appends (feedback, its search signal) — recorded, and nothing else writes.
+      getValue: () => { reads.n++; const row = rows[r - 1] || []; return row[c - 1] === undefined ? '' : row[c - 1]; },
+      // HB2.1: the People tab is updated in place (the Handbook spreadsheet is this project's alone).
+      setValues: (vals) => { vals.forEach((v, i) => { rows[r - 1 + i] = JSON.parse(JSON.stringify(v)); }); writes.push(['set', r, vals]); } }),
+    // HB1.4: the app appends (feedback, its search signal) — recorded.
     appendRow: (row) => { rows.push(JSON.parse(JSON.stringify(row))); writes.push(['append', row]); },
+    deleteRow: (r) => { rows.splice(r - 1, 1); writes.push(['delete', r]); },
   });
   const writes = [];
   const tabs = opts.tabs || {};
+  const hbTabs = opts.hbTabs || {};   // HB2.1: the Handbook spreadsheet (HANDBOOK_SS_ID)
+  const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null),
+    insertSheet: (n) => { if (t[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); t[n] = []; writes.push(['insert', n]); return sheetOf(t[n]); } });
   const store = new Map();
   const cache = {
     get: (k) => (store.has(k) ? store.get(k) : null),
@@ -40470,16 +40476,20 @@ function hbServer_(opts) {
   };
   const sb = vm.createContext({
     console, JSON, Math, Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,
-    Session: { getActiveUser: () => ({ getEmail: () => opts.email || '' }) },
+    Session: { getActiveUser: () => ({ getEmail: () => sb.__email }), getEffectiveUser: () => ({ getEmail: () => opts.deployer || 'owner@example.org' }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null }) },
-    SpreadsheetApp: { openById: () => ({ getSheetByName: (n) => (tabs[n] ? sheetOf(tabs[n]) : null),
-      insertSheet: (n) => { if (tabs[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); tabs[n] = []; writes.push(['insert', n]); return sheetOf(tabs[n]); } }) },
+    SpreadsheetApp: { openById: (id) => {
+      if ((opts.openFail || []).indexOf(id) >= 0) throw new Error('You do not have access to the requested document.');
+      return id && id === (opts.props || {}).HANDBOOK_SS_ID ? ssOf(hbTabs) : ssOf(tabs);
+    } },
+    LockService: { getScriptLock: () => ({ tryLock: () => { locks.n++; return !opts.lockBusy; }, releaseLock: () => { locks.held = false; } }) },
     CacheService: { getScriptCache: () => cache },
     Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19) : d.toISOString().slice(0, 10)) },
     HtmlService: opts.HtmlService,
   });
-  ['kb_shared.js', 'Handbook.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
-  sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs;
+  sb.__email = opts.email || '';
+  ['kb_shared.js', 'Handbook.js', 'People.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks;
   return sb;
 }
 const HB_KB_HEAD = ['Id', 'Department', 'Title', 'Type', 'BodyMd', 'DriveKind', 'DriveFileId', 'SortOrder', 'UpdatedAt', 'UpdatedBy', 'ReviewedAt', 'ReviewedBy', 'Status'];
@@ -40552,7 +40562,8 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbConfirmPerson', 'hbGetMe', 'hbRemovePerson', 'hbSaveProfile', 'hbSetManager',
+    'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
   const shared = fs.readFileSync(path.join(HB, 'shared/script_manual_render.html'), 'utf8');
@@ -40818,6 +40829,167 @@ test('HB1.4-f: Team Tools\' signal report reads the app\'s tab beside its own �
   assert.deepStrictEqual([r.rows.map((x) => x[1]), r.missing], [['chairs'], false], 'the app\'s tab alone is a signal');
   delete tabs.KbSearchSignalHb;
   assert.strictEqual(ctx.kbSearchSignalRows_().missing, true, 'neither tab: missing, as before');
+});
+
+// HB2.1 — the handbook app's people: the Handbook spreadsheet (HANDBOOK_SS_ID,
+// this project's own store) and its People tab. People.js is driven in the
+// same sandbox as the rest of the app's server (hbServer_), over a second
+// fake spreadsheet; the page that uses it is driven in runDom.js.
+console.log('\nHB2.1 — the handbook app\'s people');
+const HB_PEOPLE_HEAD = ['Email', 'Department', 'Manager', 'Role', 'Status', 'RequestedMs', 'ConfirmedMs', 'ConfirmedBy', 'UpdatedMs'];
+const HB_PPL_ENV = { props: { HANDBOOK_KB_SS_ID: 'ss1', HANDBOOK_SS_ID: 'hbss' }, deployer: 'owner@example.org' };
+function hbPeopleSb_(extra) {
+  return hbServer_(Object.assign({ tabs: hbTabs_(), hbTabs: {} }, HB_PPL_ENV, extra || {}));
+}
+const hbAs_ = (sb, email) => { sb.__email = email; return sb; };
+
+test('HB2.1-a: the people helpers — an address is the key, a name is read from it, admins default to the deployer, an edited header is unreadable, and a changed choice asks again', () => {
+  const sb = hbPeopleSb_();
+  assert.strictEqual(sb.hbEmail_('  Maria.Lopez@Example.org '), 'maria.lopez@example.org');
+  ['', 'maria', 'a@b', 'x y@ex.org', 'a@b.c,d@e.f'].forEach((v) => assert.strictEqual(sb.hbEmail_(v), '', 'not an address: ' + v));
+  assert.strictEqual(sb.hbNameOf_('maria.lopez@example.org'), 'Maria Lopez');
+  assert.strictEqual(sb.hbNameOf_('jo_ann-smith@example.org'), 'Jo Ann Smith');
+  assert.deepStrictEqual(hbPlain_(sb.hbAdminList_('', 'Owner@Example.org')), ['owner@example.org'], 'unset: the deploying account');
+  assert.deepStrictEqual(hbPlain_(sb.hbAdminList_('a@ex.org, B@ex.org; junk', 'owner@example.org')), ['a@ex.org', 'b@ex.org'], 'set: the list, and only the list');
+  // Parse.
+  const rows = sb.hbPeopleParse_([HB_PEOPLE_HEAD, ['Rep@Ex.org', '2 · Mobility', 'boss@ex.org', '', 'Pending', 5, '', '', 6], ['', 'x'], ['boss@ex.org', '', '', 'Manager', 'weird', '', '', '', '']]);
+  assert.deepStrictEqual(hbPlain_(rows.map((r) => [r.row, r.email, r.manager, r.role, r.status])),
+    [[2, 'rep@ex.org', 'boss@ex.org', '', 'pending'], [4, 'boss@ex.org', '', 'manager', '']], 'a blank address is skipped, rows keep their sheet row, an unknown status is blank');
+  assert.throws(() => sb.hbPeopleParse_([['Email', 'Manager', 'Department'], ['a@ex.org', 'b', 'c']]), /header row has been edited/, 'an edited header is read as nothing');
+  // Standing.
+  const M = { 'boss@ex.org': true };
+  assert.strictEqual(sb.hbStanding_({ manager: '' }, M), 'none');
+  assert.strictEqual(sb.hbStanding_({ manager: 'gone@ex.org', status: 'confirmed' }, M), 'gone', 'a manager who is no longer one');
+  assert.strictEqual(sb.hbStanding_({ manager: 'boss@ex.org', status: '' }, M), 'pending');
+  assert.strictEqual(sb.hbStanding_({ manager: 'boss@ex.org', status: 'confirmed' }, M), 'confirmed');
+  // A profile change.
+  const first = sb.hbProfileApply_(null, 'rep@ex.org', '2 · Mobility', 'boss@ex.org', 100);
+  assert.deepStrictEqual(hbPlain_([first.changed, first.rec.status, first.rec.requestedMs]), [true, 'pending', 100]);
+  const conf = Object.assign({}, first.rec, { status: 'confirmed', confirmedMs: 150, confirmedBy: 'boss@ex.org', role: 'manager' });
+  assert.strictEqual(sb.hbProfileApply_(conf, 'rep@ex.org', '2 · Mobility', 'boss@ex.org', 200).changed, false, 'the same choice keeps the confirmation');
+  const moved = sb.hbProfileApply_(conf, 'rep@ex.org', '1 · Intro', 'boss@ex.org', 200).rec;
+  assert.deepStrictEqual(hbPlain_([moved.status, moved.confirmedMs, moved.confirmedBy, moved.role]), ['pending', 0, '', 'manager'], 'a new department asks again; the role is kept');
+  assert.strictEqual(sb.hbProfileApply_(Object.assign({}, conf, { status: 'declined' }), 'rep@ex.org', '2 · Mobility', 'boss@ex.org', 300).rec.status, 'pending', 'choosing again after "not my team" asks again');
+  assert.strictEqual(sb.hbProfileApply_(conf, 'rep@ex.org', '2 · Mobility', '', 300).rec.status, '', 'no manager, no standing');
+});
+
+test('HB2.1-b: a first visit — the admin marks a manager, a reader picks a department and that manager, the manager confirms or says "not my team" (driven)', () => {
+  const sb = hbPeopleSb_();
+  // Before anyone has saved: no tab, a reader with no profile.
+  const me0 = hbPlain_(hbAs_(sb, 'rep@ex.org').hbGetMe());
+  assert.deepStrictEqual([me0.setUp, me0.me, me0.managers, me0.isAdmin, me0.isManager], [true, null, [], false, false]);
+  assert.strictEqual(sb.__hbTabs.People, undefined, 'reading creates nothing');
+  // The deploying account is the admin; it marks a manager — the tab is created with its header.
+  const set = hbPlain_(hbAs_(sb, 'owner@example.org').hbSetManager('Boss@Ex.org', true));
+  assert.strictEqual(set.success, true, JSON.stringify(set));
+  assert.deepStrictEqual(sb.__hbTabs.People[0], HB_PEOPLE_HEAD);
+  assert.deepStrictEqual(sb.__hbTabs.People[1].slice(0, 5), ['boss@ex.org', '', '', 'manager', '']);
+  assert.deepStrictEqual(set.view.everyone.map((p) => [p.email, p.isManager]), [['boss@ex.org', true]], 'the admin sees everyone');
+  // The reader chooses.
+  const me1 = hbPlain_(hbAs_(sb, 'rep@ex.org').hbGetMe());
+  assert.deepStrictEqual(me1.managers, [{ email: 'boss@ex.org', name: 'Boss' }]);
+  const saved = hbPlain_(sb.hbSaveProfile('2 · Mobility', 'boss@ex.org'));
+  assert.strictEqual(saved.success, true, JSON.stringify(saved));
+  assert.deepStrictEqual([saved.view.me.department, saved.view.me.manager, saved.view.me.standing], ['2 · Mobility', 'boss@ex.org', 'pending']);
+  // The manager sees the request and confirms it.
+  const team = hbPlain_(hbAs_(sb, 'boss@ex.org').hbGetMe());
+  assert.strictEqual(team.isManager, true);
+  assert.deepStrictEqual(team.team.map((p) => [p.email, p.standing]), [['rep@ex.org', 'pending']]);
+  assert.strictEqual(team.everyone, undefined, 'a manager sees their team, not everyone');
+  const ok = hbPlain_(sb.hbConfirmPerson('rep@ex.org', true));
+  assert.deepStrictEqual(ok.view.team.map((p) => p.standing), ['confirmed']);
+  const row = sb.__hbTabs.People.filter((r) => r[0] === 'rep@ex.org')[0];
+  assert.deepStrictEqual([row[4], row[7]], ['confirmed', 'boss@ex.org'], 'stored as a word, with who confirmed');
+  // Saving the same choice writes nothing; a new department asks again.
+  const before = sb.__writes.length;
+  assert.strictEqual(hbAs_(sb, 'rep@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org').changed, false);
+  assert.strictEqual(sb.__writes.length, before, 'no write for an unchanged profile');
+  assert.strictEqual(hbPlain_(sb.hbSaveProfile('1 · Intro', 'boss@ex.org')).view.me.standing, 'pending');
+  // "Not my team": off the manager's list, and the reader is asked to choose again.
+  const no = hbPlain_(hbAs_(sb, 'boss@ex.org').hbConfirmPerson('rep@ex.org', false));
+  assert.deepStrictEqual(no.view.team, [], 'a declined request leaves the team');
+  assert.strictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbGetMe()).me.standing, 'declined');
+  // None of it touched the Knowledge Base.
+  assert.deepStrictEqual(Object.keys(sb.__tabs).sort(), ['KB', 'ManualMeta'], 'no tab added to the Knowledge Base');
+  assert.strictEqual(sb.__tabs.KB.length, hbTabs_().KB.length, 'and no row');
+});
+
+test('HB2.1-c: the gates — admin-only, the manager\'s own team, no self-manager, a real manager and chapter; a refused caller never takes the lock; a busy lock is said', () => {
+  const sb = hbPeopleSb_();
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  hbAs_(sb, 'owner@example.org').hbSetManager('other@ex.org', true);
+  hbAs_(sb, 'rep@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org');
+  const locks0 = sb.__locks.n, w0 = sb.__writes.length;
+  // Refused before the lock.
+  assert.strictEqual(hbAs_(sb, 'rep@ex.org').hbSetManager('rep@ex.org', true).error, 'Handbook admin access required.');
+  assert.strictEqual(sb.hbRemovePerson('boss@ex.org').error, 'Handbook admin access required.');
+  assert.strictEqual(sb.hbSaveProfile('2 · Mobility', 'rep@ex.org').error, 'You cannot be your own manager.');
+  assert.strictEqual(sb.hbSaveProfile('9 · Nowhere', 'boss@ex.org').error, 'That department is not a chapter of the handbook.');
+  assert.strictEqual(sb.hbSaveProfile('2 · Mobility', 'not an address').error, 'That manager is not an email address.');
+  hbAs_(sb, '');
+  ['hbGetMe', 'hbSaveProfile', 'hbConfirmPerson', 'hbSetManager', 'hbRemovePerson'].forEach((f) => assert.strictEqual(sb[f]('a@ex.org', true).error, 'Not authorized.', f));
+  assert.strictEqual(sb.__locks.n, locks0, 'no refused caller took the lock (g17)');
+  // Refused under the lock (it needs the fresh list).
+  assert.strictEqual(hbAs_(sb, 'rep@ex.org').hbSaveProfile('2 · Mobility', 'nobody@ex.org').error, 'That person is not a manager here.');
+  assert.strictEqual(hbAs_(sb, 'other@ex.org').hbConfirmPerson('rep@ex.org', true).error, 'Only their manager can answer this.', 'another manager cannot');
+  assert.strictEqual(sb.__writes.length, w0, 'nothing refused was written');
+  // An admin may answer for anyone; HANDBOOK_ADMIN_EMAILS replaces the deployer.
+  assert.strictEqual(hbAs_(sb, 'owner@example.org').hbConfirmPerson('rep@ex.org', true).success, true);
+  const listed = hbPeopleSb_({ props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_ADMIN_EMAILS: 'hr@ex.org' }) });
+  assert.strictEqual(hbAs_(listed, 'owner@example.org').hbSetManager('x@ex.org', true).error, 'Handbook admin access required.', 'set: the deployer is no longer an admin');
+  assert.strictEqual(hbAs_(listed, 'hr@ex.org').hbSetManager('x@ex.org', true).success, true);
+  // A busy lock is said, and writes nothing.
+  const busy = hbPeopleSb_({ lockBusy: true });
+  const b = hbAs_(busy, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  assert.deepStrictEqual([b.success, /busy/.test(b.error), busy.__hbTabs.People], [false, true, undefined]);
+});
+
+test('HB2.1-d: a manager unmarked leaves their people "choose again"; removing a person deletes their row only; unset, unreachable and an edited header are three different answers', () => {
+  const sb = hbPeopleSb_();
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  hbAs_(sb, 'a@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org');
+  hbAs_(sb, 'b@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', false);
+  assert.strictEqual(hbPlain_(hbAs_(sb, 'a@ex.org').hbGetMe()).me.standing, 'gone', 'derived on read — nothing rewritten');
+  assert.deepStrictEqual(hbPlain_(sb.hbGetMe()).managers, [], 'no longer offered');
+  // Remove the middle person: the right row goes.
+  const r = hbPlain_(hbAs_(sb, 'owner@example.org').hbRemovePerson('a@ex.org'));
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  assert.deepStrictEqual(sb.__hbTabs.People.map((x) => x[0]), ['Email', 'boss@ex.org', 'b@ex.org']);
+  assert.strictEqual(hbAs_(sb, 'owner@example.org').hbRemovePerson('nobody@ex.org').changed, false);
+  // Unset: reading works, the page is told; a save names the property.
+  const unset = hbServer_({ tabs: hbTabs_(), email: 'rep@ex.org', props: { HANDBOOK_KB_SS_ID: 'ss1' } });
+  assert.strictEqual(unset.hbGetMe().setUp, false);
+  assert.ok(/HANDBOOK_SS_ID Script Property is not set/.test(unset.hbSaveProfile('2 · Mobility', '').error));
+  assert.ok(Array.isArray(unset.getManualParts().parts), 'the handbook still reads');
+  // Unreachable: said as such, never as "not set up".
+  const gone = hbPeopleSb_({ openFail: ['hbss'], email: 'rep@ex.org' });
+  const g = hbPlain_(gone.hbGetMe());
+  assert.deepStrictEqual([g.setUp, /Could not open the Handbook spreadsheet/.test(g.error)], [true, true]);
+  // An edited header: an error on read, and a save writes nothing.
+  const bad = hbPeopleSb_({ hbTabs: { People: [['Email', 'Manager', 'Department'], ['a@ex.org', 'b@ex.org', 'x']] }, email: 'a@ex.org' });
+  assert.ok(/header row has been edited/.test(bad.hbGetMe().error));
+  const w = bad.__writes.length;
+  assert.strictEqual(bad.hbSaveProfile('2 · Mobility', '').success, false);
+  assert.strictEqual(bad.__writes.length, w);
+});
+
+test('HB2.1-e: People.js writes only the Handbook spreadsheet, every write holds the app\'s lock, and Handbook.js still only appends to the Knowledge Base (structural)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/People.js'), 'utf8'));
+  assert.ok(!/getKbSS_|getOrCreateKbSheet_|hbAppendTab_/.test(src), 'People.js never reaches the Knowledge Base');
+  const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
+  assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'deleteRow', 'insertSheet', 'setValues'], 'its writes, all on the People tab');
+  // Every public writer checks its caller, then writes only inside hbWithLock_.
+  ['hbSaveProfile', 'hbConfirmPerson', 'hbSetManager', 'hbRemovePerson'].forEach((f) => {
+    const body = extractFnFrom(src, f);
+    const lockAt = body.indexOf('hbWithLock_(');
+    assert.ok(lockAt > 0, f + ' takes the lock');
+    const writeAt = Math.min.apply(null, ['hbPeopleWrite_(', 'deleteRow('].map((k) => { const i = body.indexOf(k); return i < 0 ? Infinity : i; }));
+    assert.ok(writeAt > lockAt && writeAt < Infinity, f + ' writes only inside it');
+    const gateAt = Math.max(body.indexOf('getEmployeeInfo_()'), body.indexOf('hbAdminCall_('));
+    assert.ok(gateAt >= 0 && gateAt < lockAt, f + ' checks its caller first');
+    assert.ok(/hbPeopleRead_\((st|c)\.ss, true\)/.test(body.slice(lockAt)), f + ' reads fresh, under the lock');
+  });
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');

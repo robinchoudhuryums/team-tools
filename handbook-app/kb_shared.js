@@ -2,7 +2,7 @@
  * CI fails while this file differs from what the sync would write.
  *
  * Team Tools' handbook readers, verbatim from 00_config.js, 10_core.js, 70_kb.js,
- * with every declaration they reach (108 in all).
+ * with every declaration they reach (109 in all).
  * Copied under a private name: getKbImages → ttGetKbImages_, getManualImages → ttGetManualImages_, getManualMeta → ttGetManualMeta_, getManualPart → ttGetManualPart_, getManualParts → ttGetManualParts_, getReferenceItem → ttGetReferenceItem_, searchReference → ttSearchReference_.
  * Supplied by Handbook.js instead of copied: fmtDate_, getAutoTagRules_, getEmployeeInfo_, getKbSS_, getKbSearchSynonyms_, getOrCreateKbSheet_, kbRecordSearchSignal_. */
 
@@ -271,6 +271,11 @@ function sheetSafe_(v) {
 /** One ROW (an array of cells) for appendRow / a single setValues row. */
 function sheetSafeRow_(row) {
   return Array.isArray(row) ? row.map(sheetSafe_) : row;
+}
+
+/** A 2-D block for Range.setValues. */
+function sheetSafeRows_(rows) {
+  return Array.isArray(rows) ? rows.map(sheetSafeRow_) : rows;
 }
 
 function kbRowStatus_(v) { return String(v || '').trim().toLowerCase() === KB_STATUS_DRAFT ? KB_STATUS_DRAFT : KB_STATUS_PUBLISHED; }

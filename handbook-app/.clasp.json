@@ -13,7 +13,8 @@
   ],
   "filePushOrder": [
     "kb_shared.js",
-    "Handbook.js"
+    "Handbook.js",
+    "People.js"
   ],
   "skipSubdirectories": false
 }
