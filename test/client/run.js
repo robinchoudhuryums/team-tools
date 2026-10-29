@@ -31750,7 +31750,7 @@ function hb31Engine_() {
     vm.runInContext('var ' + n + ' = ' + /const \w+ = (\d+);/.exec(codeSrc.match(new RegExp('const ' + n + ' = \\d+;'))[0])[1] + ';', ctx);
   });
   ['QUIZ_TYPES', 'QUIZ_TF_OPTIONS'].forEach((n) => vm.runInContext('var ' + new RegExp('const (' + n + ' = \\[[^\\]]*\\]);').exec(codeSrc)[1] + ';', ctx));
-  ['quizQuestion_', 'quizValidate_', 'quizAnswerRight_', 'quizGrade_', 'quizStripQuestion_', 'quizReview_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['quizQuestion_', 'quizValidate_', 'quizAnswerRight_', 'quizGrade_', 'quizStripQuestion_', 'quizReview_', 'trainValidateQuizDef_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
 const HB31_Q = { title: 'Oxygen', passPct: 80, questions: [
@@ -31781,7 +31781,9 @@ test('HB3.1-a: the engine — single, multi-select and true/false validate, grad
   assert.deepStrictEqual(r, [{ i: 1, explain: 'a and d.', section: 'man-8-4', anchor: '' }, { i: 2, explain: 'It is false.', section: 'man-8-2', anchor: '' }]);
   // Refusals.
   const bad = (q, o) => e.quizValidate_({ title: 'T', passPct: 50, questions: [Object.assign({ q: 'Q', options: ['a', 'b'], correct: 0 }, q)] }, o || all).error;
-  assert.ok(/not a question type here/.test(bad({ type: 'multi', correct: [0] }, { types: ['single'] })), 'Team Tools takes single-answer only');
+  assert.ok(/not a question type here/.test(bad({ type: 'multi', correct: [0] }, { types: ['single'] })), 'a type outside the list is refused');
+  assert.ok(/not a question type here/.test(e.trainValidateQuizDef_({ title: 'T', passPct: 50, questions: [{ type: 'multi', q: 'Q', options: ['a', 'b'], correct: [0] }] }).error),
+    'Team Tools\' own quizzes stay single-answer (its client and its stored shape know no other)');
   assert.ok(/each once/.test(bad({ type: 'multi', correct: [0, 0] })));
   assert.ok(/each once/.test(bad({ type: 'multi', correct: [] })));
   assert.ok(/True and False/.test(bad({ type: 'truefalse', options: ['Yes', 'No'] })));
@@ -31834,7 +31836,7 @@ test('HB3.1-c: the import checks the bundle\'s quizzes with the engine and store
   assert.deepStrictEqual(g[1].slice(0, 5), ['q-oxygen', '3/4 Oxygen', 'man-8-2', '', 80]);
   const stored = JSON.parse(g[1][5]);
   assert.deepStrictEqual(stored.map((q) => [q.type, q.correct, q.section]), [['single', 1, 'man-8-2'], ['multi', [0, 3], 'man-8-4'], ['truefalse', 1, 'man-8-2']], 'the engine\'s normalized questions, key included (this tab never reaches a client)');
-  assert.deepStrictEqual(fmt.map((f) => f[1]).sort(), [1, 2, 3, 4, 6], 'every text column formatted @ before the write — "3/4" stays a title');
+  assert.deepStrictEqual(fmt.map((f) => f[1] + f[2]).sort(), ['1@', '2@', '3@', '4@', '6@'], 'every text column formatted @ before the write — "3/4" stays a title');
   assert.ok(/; quizzes=1 \(stored\)$/.test(r1.audits[0]), r1.audits[0]);
   // A re-import of the same quizzes writes nothing at all.
   book.writes.length = 0;
