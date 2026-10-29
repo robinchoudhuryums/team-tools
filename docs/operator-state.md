@@ -2700,8 +2700,21 @@ entry says which it is.
   spreadsheets", so open the app once as the deployer and approve it; (2) deploy
   Team Tools too, then save Reference → Synonyms once (or import the handbook)
   — that writes the `KbSearchConfig` tab the app reads its search synonyms and
-  vocabulary from. Until then the app searches without your synonyms. The full
-  picture is [`docs/handbook-app.md`](handbook-app.md).
+  vocabulary from. Until then the app searches without your synonyms. **Since
+  HB2.1** the app keeps its own people — who reads it, their department and
+  their manager — in a **Handbook spreadsheet** of its own (never the KB):
+  (1) create an empty Google Sheet named e.g. "UMS Handbook — People", owned by
+  (or shared with edit rights to) the deploying account, in the app's timezone;
+  (2) set the handbook project's Script Property `HANDBOOK_SS_ID` to its id —
+  the app creates the `People` tab on the first save; do not edit its header
+  row (an edited header is reported, and nothing is read from it); (3)
+  optionally set `HANDBOOK_ADMIN_EMAILS` (comma-separated) — unset, the
+  deploying account is the only admin; (4) open the app → **Profile** → under
+  *Managers*, add each manager's address. Readers are then asked, on their next
+  visit, for a department and a manager, and each manager confirms their own
+  people under *Your team*. Unset, reading works as before and nobody is asked.
+  No new permission is needed. The full picture is
+  [`docs/handbook-app.md`](handbook-app.md).
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>
 - **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`

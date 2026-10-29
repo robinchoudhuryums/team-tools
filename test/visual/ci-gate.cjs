@@ -20,6 +20,7 @@ const CI_SCENARIOS = [
   'handbook-home-light-mobile',     // HB1.4: the handbook app's frame
   'handbook-search-light-mobile',
   'handbook-section-light-wide',
+  'handbook-people-dark-mobile',    // HB2.1: the people view
   'clock-light-mobile',
   'clock-light-wide',
   'manage-light-mobile',

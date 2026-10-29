@@ -89,8 +89,8 @@ tree in cycle 13**, see Frozen Subsystems for what was removed and why) is aband
 because admin policy on the org domain prevents install of Marketplace Add-ons
 without ticket-driven allowlisting; the web-app pattern needs no admin.
 
-**`handbook-app/` (HB1.2)** is a second clasp project: the handbook, read-only, for the whole domain. Its
-hand-written files are `Handbook.js` and the page (`index`, `script_handbook`, `styles_handbook`); the rest are
+**`handbook-app/` (HB1.2)** is a second clasp project: the handbook for the whole domain (its own People store since HB2.1). Its
+hand-written files are `Handbook.js`, `People.js` and the page (`index`, `script_handbook`, `styles_handbook`); the rest are
 COPIES `npm run handbook:sync` writes from `web-app/` — never edit one; CI fails until re-synced ([why](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)).
 
 ## Development
@@ -598,7 +598,7 @@ for the reasoning, which is usually the part that matters.
 - [The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)](docs/design-decisions.md#the-handbook-rendering-layer-is-a-shared-partial)
 - [The handbook reader reaches its host only through `MANUAL_HOST`, and keeps its own state on `MANUAL_STATE` (handbook app HB1.1b, operator 2026-10-28)](docs/design-decisions.md#the-handbook-reader-reaches-its-host-through-manual-host)
 - [The handbook app is a second project fed by a derived copy of Team Tools' readers — it supplies the environment and never writes (handbook app HB1.2, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-is-a-second-project-fed-by-a-derived-copy)
-- [The handbook app's page hosts the shared reader through the contract, copies Team Tools' page shell, and keeps the chapters in the browser (handbook app HB1.3, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-frame-hosts-the-shared-reader) · [it searches with Team Tools' search and appends feedback to Team Tools' tab, the settings it cannot read mirrored (HB1.4, 2026-10-29)](docs/design-decisions.md#the-handbook-app-searches-and-takes-feedback)
+- [The handbook app's page hosts the shared reader through the contract, copies Team Tools' page shell, and keeps the chapters in the browser (handbook app HB1.3, operator 2026-10-28)](docs/design-decisions.md#the-handbook-app-frame-hosts-the-shared-reader) · [it searches with Team Tools' search and appends feedback to Team Tools' tab, the settings it cannot read mirrored (HB1.4, 2026-10-29)](docs/design-decisions.md#the-handbook-app-searches-and-takes-feedback) · [it keeps its own people — a reader picks a department and manager, the manager confirms (HB2.1, 2026-10-29)](docs/design-decisions.md#the-handbook-app-keeps-its-own-people)
 
 ## Operator State Checklist
 
@@ -763,7 +763,7 @@ the dated round entries that used to sit here moved to
 - [The `QuizResets` tab (KB spreadsheet) — the quiz retry limit's reset ledger: 3 failed attempts, then a 24-hour wait or a manager reset (cycle 23 TRN-1)](docs/operator-state.md#operator-the-quizresets-tab-cycle-23)
 - [The CDR Report's `DO NOT EDIT!` roster tab feeds the intake Sales/PAP recipients — `CONFIG.INTAKE.TEAM_*`, first.last addresses (25post B6)](docs/operator-state.md#operator-the-do-not-edit-roster-tab-feeds-intake-recipients)
 - [The procedures manual import — export, choose `manual.json` from the computer (no Drive — the domain disables it), Check → Import → Publish; the `ManualImport`, `ManualMeta` and `ManualImages` tabs; a diagram change is a deploy; the export's xref report and the search synonyms the file carries; since the cycle 24 renumber, deploy first, tick the removal box and publish by chapter (22post M1–M5b, M4-FU3)](docs/operator-state.md#operator-the-procedures-manual-import-22post-m)
-- [The handbook app (`handbook-app/`, HB1.2) — `clasp create`, the `HANDBOOK_KB_SS_ID` Script Property, a domain-only deployment; re-sync and push it whenever the handbook reader or its server readers change](docs/operator-state.md#operator-the-handbook-app-hb1-2)
+- [The handbook app (`handbook-app/`, HB1.2) — `clasp create`, the `HANDBOOK_KB_SS_ID` Script Property, a domain-only deployment; re-sync and push it whenever the handbook reader or its server readers change; since HB2.1 `HANDBOOK_SS_ID` (the Handbook spreadsheet, People tab) and `HANDBOOK_ADMIN_EMAILS`](docs/operator-state.md#operator-the-handbook-app-hb1-2)
 
 Documented ONLY in the operator log, because the round that introduced them is
 the only place they are explained — all three are operator-settable, so they are
@@ -964,9 +964,9 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1448 | `node test/client/run.js` |
-| DOM harness tests | 311 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 195 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1453 | `node test/client/run.js` |
+| DOM harness tests | 315 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 198 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 102 | `'Manager access required.'` or `assertManagerCaller_` in the server source |

@@ -3011,3 +3011,27 @@ per-change detail. By delta:
 - **Visual** — `build.mjs` also writes `page-handbook.html`; nine `handbook-*`
   scenarios (home light/dark/phone, department, `?s=`, search wide/phone,
   phone contents, the suggest dialog), three on the CI gate.
+
+## Handbook app HB2.1 — people (2026-10-29)
+
+- **Pure (run.js, "HB2.1")** — a: the people helpers (an address as the key, a
+  name read from it, the admin list defaulting to the deployer, an edited header
+  read as nothing, standing, and when a changed choice asks again); b: a first
+  visit driven end to end in `hbServer_` (the admin marks a manager — the tab is
+  created; a reader chooses; the manager confirms; an unchanged save writes
+  nothing; "not my team"; the KB untouched); c: the gates (admin-only,
+  their-own-team, no self-manager, a real manager and chapter, a refused caller
+  never takes the lock, a busy lock is said); d: an unmarked manager's people
+  "choose again", a remove deletes the right row, unset / unreachable / edited
+  header as three answers; e: structural — `People.js` never reaches the KB,
+  and every public writer checks its caller, then writes only inside
+  `hbWithLock_` after a fresh read. `hbServer_` now opens two spreadsheets by
+  id, records `setValues` and `deleteRow`, fakes the lock and the deployer, and
+  takes the caller per call (`sb.__email`).
+- **DOM** — a first visit (prompt, badge, the profile form, Save's arguments, the
+  repaint, the reading department set); a manager confirms while an unsaved
+  department survives (g141); the admin adds a manager, a refusal keeps the
+  typed address, Remove asks first; unset, a failed load and Back.
+- **Visual** — `handbook-people-light-wide`, `handbook-people-dark-mobile`,
+  `handbook-firstvisit-light-mobile` over a `HB_PEOPLE_VIEW()` fixture of
+  invented people.

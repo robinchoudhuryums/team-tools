@@ -3,9 +3,9 @@
 The Policies and Procedures Handbook as its own web app, for **every employee
 signed in to the company domain** — not only Team Tools' roster. It shows
 exactly what Team Tools' Reference shows (the same reader, the same rules), and
-it is built so it cannot drift from it. Batches HB1.1–HB1.4 (operator
+it is built so it cannot drift from it. Batches HB1.1–HB1.4 and HB2.1 (operator
 2026-10-28/29); the reasoning is in [`design-decisions.md`](design-decisions.md)
-under the four "handbook app" entries.
+under the "handbook app" entries.
 
 ## What a reader gets
 
@@ -23,19 +23,24 @@ under the four "handbook app" entries.
 - **Section links** — `<app URL>?s=6.9.3` opens 6.9.3. Every section opened
   updates the address bar, and Back / Forward work.
 - **Feedback** in the reader bar — helpful / not helpful, and *Suggest an edit*.
+- **Profile** in the header (HB2.1) — the reader's department and manager. A
+  first visit is asked for both on the home page; the manager confirms. A
+  manager sees *Your team* there; the admin also sees the managers and
+  everyone. See [People](#people).
 - The chapters are **kept in the browser** and re-read only when the handbook
   changed; if the server cannot be reached, the kept copy is shown with a note
   that it may be out of date.
 
 ## How it is built
 
-Only four files are written by hand:
+Only five files are written by hand:
 
 | File | Holds |
 |---|---|
 | `Handbook.js` | The server's environment (who is asking, the spreadsheet, today) and its public endpoints |
+| `People.js` | The Handbook spreadsheet's People tab: profiles, managers, confirmations (HB2.1) |
 | `index.html` | The page template |
-| `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the browser copy, links |
+| `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the people view, the browser copy, links |
 | `styles_handbook.html` | The frame's styles |
 
 Everything else is a **copy** that `npm run handbook:sync`
@@ -78,10 +83,31 @@ auto-tag rules (the signal's vocabulary). Team Tools rewrites it when either is
 saved and on every handbook import — only when it changed — and says so if it
 could not.
 
+## People
+
+Since HB2.1 the app has its own store, the **Handbook spreadsheet** named by
+the `HANDBOOK_SS_ID` Script Property. Employee records stay out of the
+Knowledge Base, and only this app writes it — so, unlike the KB, its rows are
+updated in place, each write holding this project's lock.
+
+Its `People` tab (created by the first save; never edit the header row) has
+one row per person: `Email`, `Department` (a chapter of the handbook),
+`Manager` (an address), `Role` (`manager` or blank), `Status` (blank,
+`pending`, `confirmed`, `declined`) and four times.
+
+| Who | What they do |
+|---|---|
+| A reader | Picks a department and a manager on a first visit (the home page asks). A new choice asks the manager again. |
+| A manager (a row the admin marks) | Sees *Your team*: confirms a request, says "not my team", or removes someone later — who is then asked to choose again. |
+| The admin (`HANDBOOK_ADMIN_EMAILS`, or the deploying account while it is unset) | Adds and unmarks managers, sees everyone, confirms for anyone, removes someone who has left. A manager who is unmarked leaves their people "choose again". |
+
+Unset, nobody is asked anything and the handbook reads as before.
+
 ## Setup and deploying
 
 The one-time setup (create the project, set `HANDBOOK_KB_SS_ID`, deploy for the
-domain) is in [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
+domain, and since HB2.1 the Handbook spreadsheet) is in
+[`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
 
 To ship a change: `npm run handbook:push` (it syncs, checks and pushes), then
 Deploy → Manage deployments → Edit → New version. A change to the handbook
@@ -97,6 +123,10 @@ reader or its server readers ships in **both** projects — Team Tools with
 | "Could not reach the handbook — showing the copy kept on this device…" | The server did not answer; the browser's copy is shown |
 | "Section 9.9 is not in the handbook — here is the home page." | A link to a section that does not exist (or is still a draft) |
 | "The search failed: …" | The search did not run — never read as "no matches" |
+| "Profiles are not set up yet …" (Profile) | `HANDBOOK_SS_ID` is not set — an admin is told so by name |
+| "Could not load your profile: Could not open the Handbook spreadsheet …" | The property names a spreadsheet the deploying account cannot open |
+| '…the "People" tab's header row has been edited…' | Put the header row back as the message lists it |
+| "Not saved: …" (a toast) | A profile or team action was refused, and why |
 
 A publish in Team Tools reaches the app within five minutes (its caches are its
 own). Search synonyms reach it when Team Tools next saves them or imports the
@@ -104,10 +134,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate.

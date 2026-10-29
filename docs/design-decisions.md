@@ -5920,3 +5920,35 @@ pick them up without re-deriving the context.
   a tab, onto those two tabs. **Alternatives rejected:** a per-chapter owner
   email (no owner list exists, and it spends the deployer's mail quota), and
   writing `KbSearchSignal` directly (the position race above).
+- <a id="the-handbook-app-keeps-its-own-people"></a>**The handbook app keeps its own people in its own spreadsheet — a reader picks a department and a manager, the manager confirms, the admin keeps the list of managers (handbook app HB2.1, operator plan 2026-10-28)**
+  Training plans, sign-offs and quiz results (Phase 3) need to know whose team a
+  reader is on, and the domain has ~150 people nobody wants to type in. So the
+  READER says it: on a first visit the home page asks for a department (a
+  chapter of the handbook) and a manager, and the manager confirms — or says
+  "not my team", and the reader is asked again. A new department or manager
+  asks again; saving the same choice keeps a confirmation. (1) **Its own
+  store, `HANDBOOK_SS_ID`.** Employee records do not belong in the Knowledge
+  Base, which is patient-data-free by policy and shared with Team Tools, and
+  the operator controls who can open the Handbook spreadsheet. Only this
+  project writes it, so — unlike the KB, where it only appends — this
+  project's ScriptLock serialises every write and a row is updated in place;
+  each write reads the tab fresh under the lock, and the caller is checked
+  before the lock (g17). (2) **Roles.** Admins are `HANDBOOK_ADMIN_EMAILS`, or
+  the deploying account while it is unset (the operator, who deploys it —
+  HB7.1 moves the deployment, so the property is the lasting form); managers
+  are People rows the admin marks, in the app. A manager the admin unmarks
+  leaves their people "choose again", DERIVED on read — nothing is rewritten.
+  (3) **Honest states** (g128, g122): unset (`setUp: false` — the page asks
+  nothing, an admin is told the property), unreachable ("Could not open the
+  Handbook spreadsheet") and an edited header row ("…has been edited", read
+  as nothing) are three answers, and none of them stops the handbook reading.
+  Status is a word, never TRUE/FALSE (g09). (4) **The page** paints the
+  profile, "Your team" and the admin's lists as separate sections, so an
+  answer to one action never wipes an unsaved choice in another (g141), and
+  every action answers with the caller's whole view, applied unless a newer
+  one already arrived. **Alternatives rejected:** importing Team Tools'
+  roster (most of the domain is not on it, and the projects cannot share a
+  store without sharing a lock); managers as a Script Property list like Team
+  Tools' `MANAGER_EMAILS` (the admin would have to open the editor; g153 is
+  the cost of a list nobody sees); asking the reader for a name (the address
+  gives one — `maria.lopez` reads as Maria Lopez).
