@@ -6061,3 +6061,23 @@ pick them up without re-deriving the context.
   beside Mark as read (two buttons that mean nearly the same); reminders on by
   default (they spend the deployer's shared email allowance — the operator's
   call to make).
+- <a id="bookmarks-follow-the-account-notes-stay-in-the-browser"></a>**Bookmarks follow the reader's account; notes stay in the browser unless the reader turns on syncing behind a patient-information warning (handbook app HB2.2, operator plan 2026-10-28)**
+  The plan's two answers: bookmarks are synced to the account, and notes are
+  "kept in the browser by default; syncing is optional and warns against
+  patient information". A bookmark names a published section and carries the
+  handbook's title (never the page's); the reader bar's star reaches it through
+  `MANUAL_HOST`'s bookmark hooks, the same contract Team Tools fills with its
+  own. `Saved.js` keeps one Bookmarks row per reader (a JSON list, updated in
+  place) and one Notes row per reader and section (a JSON body, so a note never
+  coerces — g144). **Sync is a merge, not a copy:** per section the later note
+  wins, and a deletion is a tombstone (empty text, its time) so it reaches the
+  other side; the page's merge mirrors the server's and a pin holds them equal
+  (g120). Turning sync on sends this browser's notes and keeps the answer;
+  turning it off REMOVES the account's copies, because "off" should mean the
+  spreadsheet no longer holds them. While the Handbook spreadsheet is unset the
+  browser keeps the bookmarks and syncing is not offered; an unreadable
+  bookmark row is an error, never "none" (g53). **Alternatives rejected:**
+  syncing notes by default (the operator's choice — the spreadsheet is not a
+  PHI store); a last-write-wins upload of the whole map (a second computer's
+  older copy would erase newer notes); keeping the account's copies when sync
+  is turned off (a reader who turned it off to remove them would be surprised).

@@ -9671,7 +9671,7 @@ test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list grou
   const bar = h.d.getElementById('hb-quizbar');
   assert.ok(/Quiz: Nebulizers/.test(bar.textContent) && bar.querySelector('[data-quiz="q-neb"]'), 'the bar names the section\'s quiz');
   h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
-  assert.strictEqual(bar.textContent.trim(), '', 'and only on its section');
+  assert.ok(!/Quiz/.test(bar.textContent), 'and only on its section (HB2.2: the note button rides every section)');
   h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { quizzes: true }, {}]);
   const groups = [...h.d.querySelectorAll('.hb-qz-grp')].map((g) => [g.querySelector('h2').textContent, [...g.querySelectorAll('.hb-pp-row-n')].map((n) => n.textContent)]);
@@ -9927,7 +9927,7 @@ test('HB3.4 DOM: the bar above a section — "I\'ve read this" signs it off at t
   // No sign-off store: nothing to press.
   const off = await hbBoot_({ answers: { hbMySignOffs: { setUp: false, signoffs: {} } } });
   off.w.MANUAL_HOST.openItem('man-3-2'); await off.settleAll();
-  assert.strictEqual(off.d.getElementById('hb-quizbar').textContent, '');
+  assert.ok(!/read this/i.test(off.d.getElementById('hb-quizbar').textContent), 'no sign-off (HB2.2: the note button stays)');
 });
 
 test('HB3.4 DOM: My training — a changed item asks to be read again, its sign-off reaches the server and the bar above the section agrees (driven)', async () => {
@@ -9970,4 +9970,158 @@ test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked,
   const r = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: { setUp: true, plans: [] } } });
   r.w.hbGoTraining_(); await r.settleAll();
   assert.strictEqual(r.calls.indexOf('hbTeamProgress'), -1, 'a reader asks for no progress');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.2 — bookmarks (the reader bar's star, the reader's account) and notes
+// (this browser; the account only when the reader turns it on).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.2 — bookmarks and notes');
+const hb22Ls_ = (w, k) => { try { return JSON.parse(w.localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+
+test('HB2.2 DOM: the reader bar\'s star bookmarks the section in the reader\'s account; Saved lists it, opens it and removes it; a refusal changes nothing; with no store the browser keeps the list and the server is never asked (driven)', async () => {
+  let list = [{ id: 'man-3-1', title: '3.1 Oxygen basics' }], refuse = '';
+  const h = await hbBoot_({ answers: { hbMyBookmarks: () => ({ setUp: true, bookmarks: list }),
+    hbToggleBookmark: (id, on) => { if (refuse) return { success: false, error: refuse };
+      list = on ? [{ id, title: id === 'man-3-2' ? '3.2 Nebulizers' : id }].concat(list.filter((b) => b.id !== id)) : list.filter((b) => b.id !== id);
+      return { success: true, bookmarks: list }; } } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const star = () => h.d.querySelector('.kb-man-bar .kb-bm');
+  assert.ok(star(), 'the reader bar carries the star');
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'false');
+  star().click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbToggleBookmark').pop(), ['hbToggleBookmark', 'man-3-2', true]);
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'true', 'pressed once the account has it');
+  refuse = 'The handbook is busy.';
+  star().click(); await h.settleAll();
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'true', 'a refusal leaves it as it was');
+  assert.ok(/Not saved: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent));
+  refuse = '';
+  h.d.querySelector('#hb-toc .hb-toc-saved').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { saved: true }, {}]);
+  const rows = () => [...h.d.querySelectorAll('#hb-sv .hb-sv-row')].filter((r) => !r.classList.contains('hb-sv-note'));
+  assert.deepStrictEqual(rows().map((r) => r.querySelector('.hb-tr-it-t').textContent), ['3.2 Nebulizers', '3.1 Oxygen basics'], 'the handbook\'s titles, newest first');
+  assert.ok(/Kept in your account/.test(h.main().textContent));
+  [...rows()[1].querySelectorAll('button')].filter((b) => b.textContent === 'Remove')[0].click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbToggleBookmark').pop(), ['hbToggleBookmark', 'man-3-1', false]);
+  assert.deepStrictEqual(rows().map((r) => r.querySelector('.hb-tr-it-t').textContent), ['3.2 Nebulizers'], 'the list repaints');
+  [...rows()[0].querySelectorAll('button')].filter((b) => b.textContent === 'Open')[0].click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-2'), 'Open reads it');
+  h.w.__hbChange({ state: { saved: true } }); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-sv'), 'Back to Saved');
+  // No store: the browser's own list.
+  const un = await hbBoot_({ answers: { hbMyBookmarks: { setUp: false, bookmarks: [] } } });
+  un.w.MANUAL_HOST.openItem('man-3-2'); await un.settleAll();
+  un.d.querySelector('.kb-man-bar .kb-bm').click(); await un.settleAll();
+  assert.strictEqual(un.calls.indexOf('hbToggleBookmark'), -1, 'nothing to ask');
+  assert.deepStrictEqual(hb22Ls_(un.w, 'umsHbBookmarks').map((b) => b.id), ['man-3-2'], 'kept in this browser');
+  un.w.hbGoSaved_(); await un.settleAll();
+  assert.ok(/Kept in this browser/.test(un.main().textContent));
+});
+
+test('HB2.2 DOM: a note — "Add a note" above a section opens the editor; a save keeps it in this browser and asks nothing of the server; the bar then says "Your note"; Delete leaves a tombstone; Escape after typing asks first (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [] } } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const btn = () => h.d.querySelector('#hb-quizbar .hb-note-btn');
+  assert.strictEqual(btn().textContent.trim(), 'Add a note');
+  btn().click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-note-ov');
+  assert.ok(ov && /Nebulizers/.test(ov.textContent) && /Kept in this browser only/.test(ov.textContent) && /patient information/.test(ov.textContent));
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Ask which mask they use'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.ok(!h.d.getElementById('hb-note-ov'), 'saved: closed');
+  const kept = hb22Ls_(h.w, 'umsHbNotes');
+  assert.strictEqual(kept['man-3-2'].t, 'Ask which mask they use');
+  assert.ok(kept['man-3-2'].ms > 0);
+  assert.strictEqual(h.calls.indexOf('hbSyncNotes'), -1, 'sync is off: the server never sees it');
+  assert.strictEqual(btn().textContent.trim(), 'Your note');
+  // Escape after typing asks (g166).
+  btn().click(); await h.settleAll();
+  const ta2 = h.d.getElementById('hb-note-text');
+  assert.strictEqual(ta2.value, 'Ask which mask they use', 'the editor opens with the note');
+  ta2.value = 'changed'; ta2.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Discard changes\?/.test(ask.textContent));
+  ask.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  // Delete.
+  [...h.d.querySelectorAll('#hb-note-ov button')].filter((b) => b.textContent === 'Delete')[0].click(); await h.settleAll();
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, '', 'a tombstone, so a deletion can travel');
+  assert.strictEqual(btn().textContent.trim(), 'Add a note');
+  h.w.hbGoSaved_(); await h.settleAll();
+  assert.ok(/No notes yet/.test(h.main().textContent), 'a tombstone is not listed');
+});
+
+test('HB2.2 DOM: syncing notes — turning it on warns about patient information, then sends this browser\'s notes and keeps the merge; a save then goes to the account; a failed one stays here and says so; turning it off removes the account\'s copies (driven)', async () => {
+  let fail = false;
+  const sent = [];
+  const h = await hbBoot_({ ls: { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Mine here', ms: 100 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbForgetNotes: { success: true, removed: 2 },
+      hbSyncNotes: (m) => { sent.push(JSON.parse(JSON.stringify(m))); return fail ? { success: false, error: 'The handbook is busy.' }
+        : { success: true, notes: Object.assign({ 'man-3-2': { t: 'From my other computer', ms: 200 } }, m) }; } } });
+  assert.strictEqual(sent.length, 0, 'off at boot: nothing is sent');
+  h.w.hbGoSaved_(); await h.settleAll();
+  const box = () => h.d.getElementById('hb-sv-sync');
+  box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Never write patient information/.test(ask.textContent), 'the warning comes first');
+  assert.strictEqual(box().checked, false, 'the box says what IS until it is turned on');
+  ask.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0], { 'man-3-1': { t: 'Mine here', ms: 100 } }, 'this browser\'s notes go up');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '1');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'From my other computer', 'and the account\'s come down');
+  assert.ok(box().checked && /On: your notes are kept in your account/.test(h.main().textContent));
+  // A save now sends just that note; a failed one stays here and says so.
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.d.querySelector('#hb-quizbar .hb-note-btn').click(); await h.settleAll();
+  assert.ok(/Kept in your account/.test(h.d.getElementById('hb-note-ov').textContent));
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Edited'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  fail = true;
+  h.d.querySelector('#hb-note-ov .btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(Object.keys(sent[1]), ['man-3-2'], 'one note');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'Edited', 'kept here');
+  assert.ok(/not in your account yet: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent));
+  fail = false;
+  // Off.
+  h.w.hbGoSaved_(); await h.settleAll();
+  box().checked = false; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  const off = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(off && /copies in your account are deleted/.test(off.textContent));
+  off.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.calls.indexOf('hbForgetNotes') >= 0);
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'Edited', 'this browser keeps its notes');
+  // On at boot: this browser's notes go up once.
+  const b = await hbBoot_({ ls: { umsHbNotesSync: '1', umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'x', ms: 5 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbSyncNotes: (m) => ({ success: true, notes: m }) } });
+  assert.deepStrictEqual(b.argsOf.filter((a) => a[0] === 'hbSyncNotes'), [['hbSyncNotes', { 'man-3-1': { t: 'x', ms: 5 } }]]);
+});
+
+test('HB2.2 DOM: export and import — the export carries each note with its section\'s title; an import keeps the newer note per section, says what it took, and refuses a file that is not an export (driven)', async () => {
+  const h = await hbBoot_({ ls: { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Newer here', ms: 500 }, 'man-3-2': { t: 'Old here', ms: 10 }, 'man-5-1': { t: '', ms: 9 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] } } });
+  const out = JSON.parse(h.w.hbNotesExport_(JSON.parse(h.w.localStorage.getItem('umsHbNotes')), h.w.hbSectionTitle_, '2026-10-29T00:00:00Z'));
+  assert.strictEqual(out.app, 'ums-handbook-notes');
+  assert.deepStrictEqual(Object.keys(out.notes), ['man-3-1', 'man-3-2'], 'no tombstone');
+  assert.strictEqual(out.notes['man-3-1'].title, '3.1 Oxygen basics');
+  h.w.hbGoSaved_(); await h.settleAll();
+  const input = h.d.querySelector('#hb-sv .hb-sv-file');
+  assert.ok(input && input.hidden, 'the file box is hidden behind its button');
+  const load = async (text) => {
+    Object.defineProperty(input, 'files', { value: [new h.w.File([text], 'notes.json', { type: 'application/json' })], configurable: true });
+    input.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 30)); await h.settleAll();
+  };
+  await load(JSON.stringify({ app: 'ums-handbook-notes', version: 1, notes: {
+    'man-3-1': { t: 'Older from file', ms: 100 }, 'man-3-2': { t: 'Newer from file', ms: 200 }, 'man-9-9': { t: 'New section', ms: 50 }, 'bad id': { t: 'x', ms: 1 } } }));
+  const kept = hb22Ls_(h.w, 'umsHbNotes');
+  assert.strictEqual(kept['man-3-1'].t, 'Newer here', 'the newer note here is kept');
+  assert.strictEqual(kept['man-3-2'].t, 'Newer from file');
+  assert.strictEqual(kept['man-9-9'].t, 'New section');
+  assert.ok(/Imported 2 notes — newer notes here were kept; 1 could not be read/.test(h.d.getElementById('toast-stack').textContent), h.d.getElementById('toast-stack').textContent);
+  await load('{"not":"ours"}');
+  assert.ok(/not a notes export/.test(h.d.getElementById('toast-stack').textContent));
+  assert.strictEqual(h.calls.indexOf('hbSyncNotes'), -1, 'sync off: an import stays here');
 });

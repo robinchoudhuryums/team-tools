@@ -152,6 +152,27 @@ Plans, team quizzes and read marks live in the Handbook spreadsheet's `Plans`,
 `TeamQuizzes` and `ReadMarks` tabs (created on first use; never edit their
 headers — a row that will not read is counted and skipped).
 
+## Bookmarks and notes (HB2.2)
+
+- **Bookmarks** — the star on the reader bar. They belong to the reader's
+  account, so they follow them to any computer; **Saved** in the contents lists
+  them (Open, Remove; one whose section has left the handbook says so). Until
+  the Handbook spreadsheet is set up, the browser keeps the list instead.
+- **Notes** — "Add a note" in the bar above a section opens a note for that
+  section; the bar then says "Your note". A note is kept **in this browser**.
+  Saved lists the notes, with **Export notes** (a file), **Copy notes** and
+  **Import notes** (the newer note per section wins; anything that is not an
+  export is refused).
+- **Keep my notes in my account** (Saved → Notes) is off by default. Turning it
+  on first warns that the notes are stored in the handbook's spreadsheet, which
+  the admin can open, and that a note must never hold patient information; the
+  browser's notes are then merged with the account's (the later note per
+  section wins, and a deletion travels too). Turning it off removes the
+  account's copies; the browser keeps its own.
+
+Bookmarks and synced notes live in the Handbook spreadsheet's `Bookmarks` and
+`Notes` tabs (created on first use; never edit their headers).
+
 ## Sign-offs, team progress and reminders (HB3.4)
 
 - **"I've read this"** sits in the bar above every section, and on each reading

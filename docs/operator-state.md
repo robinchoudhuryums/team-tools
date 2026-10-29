@@ -2721,6 +2721,13 @@ entry says which it is.
   training plans, the managers' own quizzes and the readers' "Mark as read"
   ticks (`Plans`, `TeamQuizzes`, `ReadMarks` — created on first use; do not
   edit their headers). Nothing to set: managers build plans under **Training**.
+  **Since HB2.2** it also holds each reader's bookmarks and, for a reader who
+  turns on "Keep my notes in my account", their notes (`Bookmarks`, `Notes` —
+  created on first use; do not edit their headers). Nothing to set. A note is
+  free text a reader typed; the app warns that it must never hold patient
+  information, but it cannot check — treat the `Notes` tab as you would any
+  staff-written text, and share the spreadsheet with no one but the deploying
+  account.
   **Since HB3.4** `ReadMarks` carries the sign-offs ("I've read this", with the
   section's version — a fifth column; a tab made by HB3.3 keeps its four-name
   header and is written to anyway), and the app asks for two NEW permissions —

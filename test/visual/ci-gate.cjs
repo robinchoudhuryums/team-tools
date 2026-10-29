@@ -24,6 +24,7 @@ const CI_SCENARIOS = [
   'handbook-quiz-take-light-mobile', // HB3.2: a quiz sitting
   'handbook-training-dark-mobile',  // HB3.3: My training + Team training
   'handbook-progress-dark-mobile',  // HB3.4: the per-person progress table
+  'handbook-saved-dark-mobile',     // HB2.2: bookmarks and notes
   'clock-light-mobile',
   'clock-light-wide',
   'manage-light-mobile',

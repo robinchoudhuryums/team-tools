@@ -116,8 +116,8 @@ MANUAL_HOST.install({
   printAllCards: function () { kbPrintAllCards_(); },
   publishItem: function () {},                 // nobody is an admin here, and drafts are never served
   suggestEdit: function (btn) { kbSuggestEdit_(btn); },   // HB1.4: Reference's dialog, into the same feedback tab
-  bookmarkBtnHtml: function () { return ''; }, // bookmarks arrive with HB2.2
-  bookmarkBtnPatch: function () {},
+  bookmarkBtnHtml: function (item, cls) { return hbBookmarkBtnHtml_(item, cls); },   // HB2.2: the reader's account
+  bookmarkBtnPatch: function (btn, item) { hbBookmarkBtnPatch_(btn, item); },
   recordOpen: function () {},                  // the handbook app records nothing
   loadComments: function () {},                // comments are Team Tools'
   // There is no drawer: this page IS the reader, so a link opens here.
@@ -163,6 +163,7 @@ function hbOnHistory_(e) {
   else if (st && st.quizzes) hbQuizList_(false);
   else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
   else if (st && st.training) hbTraining_(false);
+  else if (st && st.saved) hbSaved_(false);
   else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
 }
@@ -525,7 +526,7 @@ function hbPaintQuizBar_(id) {
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
   var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
-  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + mine.map(function (q) {
+  bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + mine.map(function (q) {
     return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
       '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
   }).join('');
@@ -746,7 +747,7 @@ function hbDueLabel_(due) {
 }
 
 var HB_TR = { seq: 0, showing: false, mine: undefined, team: undefined };
-function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; }
+function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; hbLeaveSaved_(); }   // and the Saved page (HB2.2)
 function hbGoTraining_() { hbTraining_(true); }
 function hbTraining_(push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_(); hbLeaveTraining_();
@@ -1144,6 +1145,322 @@ function hbDownloadProgress_() {
   } catch (e) { showToast('The download did not start — use Copy table.', 'toast-warn'); }
 }
 
+// ── Bookmarks and notes (HB2.2) ─────────────────────────────────────────
+// A BOOKMARK belongs to the reader's account (Saved.js), and the reader bar's
+// star is its button. While the Handbook spreadsheet is not set up the server
+// says so (setUp: false) and the browser keeps the list instead.
+// A NOTE is kept in this browser. Only when the reader turns on "keep my notes
+// in my account" — after a warning that a note must never hold patient
+// information — does one reach the server, by MERGE: per section the later
+// note wins, and a deletion is a tombstone (empty text, its time) so it
+// travels too. The same merge rule is the server's hbNotesMerge_ (pinned).
+var HB_LS_BOOKMARKS = 'umsHbBookmarks';   // the list (the account's copy, or the browser's own while unset)
+var HB_LS_NOTES = 'umsHbNotes';           // { sectionId: { t, ms } } — tombstones included
+var HB_LS_NOTES_SYNC = 'umsHbNotesSync';  // '1' while this browser keeps its notes in the account
+var HB_NOTE_MAX = 4000;
+var HB_SV = { setUp: undefined, bookmarks: [], seq: 0, showing: false };
+
+function hbNotes_() { var n = hbLsJson_(HB_LS_NOTES); return n && typeof n === 'object' && !Array.isArray(n) ? n : {}; }
+function hbNotesPut_(map) { hbLsSet_(HB_LS_NOTES, JSON.stringify(map || {})); }
+function hbNotesSyncOn_() { return hbLs_(HB_LS_NOTES_SYNC) === '1'; }
+/** The note for a section, or '' (a tombstone is no note). */
+function hbNoteText_(id) { var n = hbNotes_()[id]; return n && typeof n.t === 'string' ? n.t : ''; }
+/** PURE — the server's hbNotesMerge_, for an import: per section the later
+ *  note wins; on a tie the first map's; tombstones kept. */
+function hbNotesMergeLocal_(a, b) {
+  var out = {};
+  [a || {}, b || {}].forEach(function (m) {
+    Object.keys(m).forEach(function (id) {
+      var n = m[id];
+      if (!n || typeof n.t !== 'string' || !(Number(n.ms) > 0)) return;
+      if (!out[id] || Number(n.ms) > out[id].ms) out[id] = { t: n.t, ms: Number(n.ms) };
+    });
+  });
+  return out;
+}
+/** PURE — an exported file's notes ({ sectionId: { t, ms } }), or { error }.
+ *  Only what this app writes is taken: a section id, a string within the
+ *  limit, a time. */
+function hbNotesFromFile_(text) {
+  var data;
+  try { data = JSON.parse(String(text || '')); } catch (e) { return { error: 'That file is not a notes export.' }; }
+  if (!data || data.app !== 'ums-handbook-notes' || !data.notes || typeof data.notes !== 'object') return { error: 'That file is not a notes export from the handbook.' };
+  var out = {}, skipped = 0;
+  Object.keys(data.notes).forEach(function (id) {
+    var n = data.notes[id];
+    if (/^man-[a-z0-9-]{1,60}$/.test(id) && n && typeof n.t === 'string' && n.t.length <= HB_NOTE_MAX && Number(n.ms) > 0) out[id] = { t: n.t, ms: Number(n.ms) };
+    else skipped++;
+  });
+  return { notes: out, skipped: skipped };
+}
+
+// — bookmarks —
+function hbBookmarked_(id) { return HB_SV.bookmarks.some(function (b) { return b && b.id === id; }); }
+function hbBookmarkBtnHtml_(item, extraClass) {
+  var on = hbBookmarked_(item.id);
+  return '<button type="button" class="kb-btn kb-bm' + (on ? ' on' : '') + (extraClass ? ' ' + extraClass : '') + '" data-kb-id="' + esc(item.id) + '" data-kb-title="' + esc(item.title || '') + '"' +
+    ' aria-pressed="' + (on ? 'true' : 'false') + '" title="' + (on ? 'Bookmarked — click to remove' : 'Bookmark this') + '" aria-label="Bookmark" onclick="hbToggleBookmark_(this)">' + icon('star', 14) + '</button>';
+}
+/** Bring a star to `item` in place, keeping its node and focus (F51). */
+function hbBookmarkBtnPatch_(btn, item) {
+  var on = hbBookmarked_(item.id);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('data-kb-id', item.id);
+  btn.setAttribute('data-kb-title', item.title || '');
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.title = on ? 'Bookmarked — click to remove' : 'Bookmark this';
+}
+function hbRepaintStars_() {
+  document.querySelectorAll('.kb-bm[data-kb-id]').forEach(function (b) {
+    if (b.getAttribute('data-kb-id')) hbBookmarkBtnPatch_(b, { id: b.getAttribute('data-kb-id'), title: b.getAttribute('data-kb-title') || '' });
+  });
+}
+function hbLoadBookmarks_() {
+  var kept = hbLsJson_(HB_LS_BOOKMARKS);
+  if (Array.isArray(kept)) HB_SV.bookmarks = kept;
+  google.script.run
+    .withSuccessHandler(function (r) {
+      // A failure keeps what this browser had (g129); the next toggle asks the server again.
+      if (!r || r.error) return;
+      HB_SV.setUp = r.setUp !== false;
+      if (HB_SV.setUp) { HB_SV.bookmarks = r.bookmarks || []; hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks)); }
+      hbRepaintStars_();
+      if (HB_SV.showing) hbPaintSaved_();
+    })
+    .withFailureHandler(function () {})
+    .hbMyBookmarks();
+}
+function hbToggleBookmark_(btn) {
+  var id = btn.getAttribute('data-kb-id'), title = btn.getAttribute('data-kb-title') || '';
+  if (!id) return;
+  var on = !hbBookmarked_(id);
+  var done = function () {
+    hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks));
+    hbRepaintStars_();
+    if (HB_SV.showing) hbPaintSaved_();
+    showToast(on ? 'Bookmarked' : 'Removed bookmark', 'toast-success');
+  };
+  if (HB_SV.setUp === false) {   // the browser's own list
+    HB_SV.bookmarks = kbBookmarksToggle_(HB_SV.bookmarks, { id: id, title: title }, 100);
+    done(); return;
+  }
+  btn.disabled = true;
+  var fin = function (r) {
+    if (btn.isConnected) btn.disabled = false;
+    if (!r || !r.success) { showToast('Not saved: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    HB_SV.setUp = true; HB_SV.bookmarks = r.bookmarks || [];
+    done();
+  };
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbToggleBookmark(id, on);
+}
+
+// — notes —
+/** The bar's note button for a section. */
+function hbNoteBarHtml_(id) {
+  if (!id) return '';
+  var has = !!hbNoteText_(id);
+  return '<button type="button" class="kb-btn hb-note-btn' + (has ? ' on' : '') + '" data-id="' + esc(id) + '" onclick="hbEditNote_(this.getAttribute(\'data-id\'))">' +
+    icon('fileText', 13) + (has ? ' Your note' : ' Add a note') + '</button>';
+}
+function hbSectionTitle_(id) {
+  var s = HB.tree.filter(function (x) { return x.id === id; })[0];
+  return s ? s.title : '';
+}
+/** Write one section's note here, and to the account when sync is on. A
+ *  failed sync keeps the note in the browser and says so — the next sync
+ *  (the next visit, or the next save) carries it. */
+function hbPutNote_(id, text, after) {
+  var map = hbNotes_();
+  map[id] = { t: String(text || ''), ms: Date.now() };
+  hbNotesPut_(map);
+  if (!hbNotesSyncOn_()) { if (after) after(true); return; }
+  var one = {}; one[id] = map[id];
+  hbSyncNotes_(one, function (ok, err) {
+    if (!ok) showToast('Saved in this browser — not in your account yet: ' + String(err || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-warn');
+    if (after) after(true);
+  });
+}
+/** Send notes to the account and keep the merged answer. */
+function hbSyncNotes_(map, cb) {
+  var fin = function (r) {
+    if (!r || !r.success) { cb(false, r && r.error); return; }
+    hbNotesPut_(hbNotesMergeLocal_(hbNotes_(), r.notes || {}));
+    cb(true);
+  };
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbSyncNotes(map);
+}
+function hbEditNote_(id) {
+  if (!id) return;
+  var had = hbNoteText_(id), saving = false;
+  var title = hbSectionTitle_(id) || 'This section';
+  var ov = ensureOverlay('hb-note-ov', { labelledBy: 'hb-note-h', unsaved: { what: 'this note', busy: function () { return saving; } },
+    onClose: function () { if (saving) return; var o = document.getElementById('hb-note-ov'); if (o) o.remove(); } });
+  var finish = function (text, msg) {
+    saving = true;
+    hbPutNote_(id, text, function () {
+      saving = false;
+      closeOverlay(ov, { discard: true });
+      showToast(msg, 'toast-success');
+      hbPaintQuizBar_(HB.currentId);
+      if (HB_SV.showing) hbPaintSaved_();
+    });
+  };
+  ov._hbSave = function () {
+    var text = String(document.getElementById('hb-note-text').value || '');
+    if (text.length > HB_NOTE_MAX) { hbEdMsg_('hb-note-msg', 'A note can be at most ' + HB_NOTE_MAX + ' characters'); return; }
+    finish(text.trim() ? text : '', text.trim() ? 'Note saved.' : 'Note removed.');
+  };
+  ov._hbDelete = function () { finish('', 'Note removed.'); };
+  var where = hbNotesSyncOn_() ? '<b>Kept in your account.</b> Never write patient information here — no names, dates of birth, member or order numbers.'
+    : 'Kept in this browser only. Never write patient information here.';
+  ov.innerHTML = '<div class="modal hb-ed hb-note-ed" role="document"><div class="modal-title" id="hb-note-h">Your note</div>' +
+    '<div class="hb-ed-body"><p class="hb-quiet hb-note-for">' + esc(title) + '</p>' +
+    '<label class="hb-pp-l">Note <textarea class="hb-pp-in hb-note-text" id="hb-note-text" rows="7" maxlength="' + HB_NOTE_MAX + '">' + esc(had) + '</textarea></label>' +
+    '<p class="hb-note-warn" role="note">' + icon('warning', 13) + ' ' + where + '</p>' +
+    '<p class="hb-ed-msg" id="hb-note-msg" role="alert"></p></div>' +
+    '<div class="modal-footer">' + (had ? '<button type="button" class="btn-modal-cancel hb-pp-danger" onclick="document.getElementById(\'hb-note-ov\')._hbDelete()">Delete</button>' : '') +
+    '<button type="button" class="btn-modal-cancel" onclick="closeOverlay(document.getElementById(\'hb-note-ov\'))">Cancel</button>' +
+    '<button type="button" class="btn-modal-ok" onclick="document.getElementById(\'hb-note-ov\')._hbSave()">Save note</button></div></div>';
+  var ta = document.getElementById('hb-note-text'); if (ta) ta.focus();
+}
+
+// — the Saved page —
+function hbLeaveSaved_() { HB_SV.showing = false; HB_SV.seq++; }
+function hbGoSaved_() { hbSaved_(true); }
+function hbSaved_(push) {
+  hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_SV.showing = true;
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-tr hb-sv" id="hb-sv"></div>';
+  main.scrollTop = 0;
+  if (push) hbHistory_('push', { saved: true }, {});
+  hbPaintSaved_();
+}
+function hbPaintSaved_() {
+  var host = document.getElementById('hb-sv'); if (!host) return;
+  var where = HB_SV.setUp === false ? 'Kept in this browser — saving to your account is not set up yet.' : 'Kept in your account, on every computer you sign in on.';
+  var bms = HB_SV.bookmarks.map(function (b) {
+    var live = hbSectionTitle_(b.id);
+    return '<li class="hb-tr-it hb-sv-row"><span class="hb-tr-ic">' + icon('star', 14) + '</span><span class="hb-tr-it-t">' + esc(live || b.title || b.id) + (live ? '' : ' <span class="hb-quiet">— no longer in the handbook</span>') + '</span>' +
+      '<span class="hb-tr-act">' + (live ? '<button type="button" class="kb-btn" data-kb-id="' + esc(b.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">Open</button>' : '') +
+      '<button type="button" class="kb-btn" data-kb-id="' + esc(b.id) + '" data-kb-title="' + esc(b.title || '') + '" onclick="hbToggleBookmark_(this)">Remove</button></span></li>';
+  }).join('');
+  var notes = hbNotes_();
+  var ids = Object.keys(notes).filter(function (id) { return notes[id] && notes[id].t; })
+    .sort(function (a, b) { return notes[b].ms - notes[a].ms; });
+  var nrows = ids.map(function (id) {
+    var live = hbSectionTitle_(id), t = notes[id].t;
+    return '<li class="hb-tr-it hb-sv-row hb-sv-note"><span class="hb-tr-ic">' + icon('fileText', 14) + '</span><span class="hb-tr-it-t"><b>' + esc(live || id) + '</b>' +
+      (live ? '' : ' <span class="hb-quiet">— no longer in the handbook</span>') + '<span class="hb-sv-snip">' + esc(t.length > 160 ? t.slice(0, 157) + '…' : t) + '</span></span>' +
+      '<span class="hb-tr-act">' + (live ? '<button type="button" class="kb-btn" data-kb-id="' + esc(id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">Open</button>' : '') +
+      '<button type="button" class="kb-btn" data-id="' + esc(id) + '" onclick="hbEditNote_(this.getAttribute(\'data-id\'))">Edit</button></span></li>';
+  }).join('');
+  var syncOn = hbNotesSyncOn_();
+  var sync = HB_SV.setUp === false ? '<p class="hb-quiet">Your notes are kept in this browser. Keeping them in your account is not set up yet.</p>'
+    : '<label class="hb-sv-sync"><input type="checkbox" id="hb-sv-sync"' + (syncOn ? ' checked' : '') + ' onchange="hbSetNotesSync_(this)"> Keep my notes in my account</label>' +
+      '<p class="hb-quiet hb-sv-syncnote">' + (syncOn ? 'On: your notes are kept in your account as well as this browser. Never write patient information in a note.'
+        : 'Off: your notes stay in this browser only — clearing the browser, or another computer, will not have them. Export them to keep a copy.') + '</p>';
+  host.innerHTML = '<h1 class="hb-pp-h">Saved</h1>' +
+    '<section><h2 class="hb-pp-h2">Bookmarks</h2><p class="hb-quiet">' + where + '</p>' +
+    (bms ? '<ul class="hb-tr-items hb-sv-list">' + bms + '</ul>' : '<p class="hb-quiet">Nothing bookmarked yet — press the ' + icon('star', 12) + ' on a section to keep it here.</p>') + '</section>' +
+    '<section><h2 class="hb-pp-h2">Notes</h2>' + sync +
+    (nrows ? '<ul class="hb-tr-items hb-sv-list">' + nrows + '</ul>' : '<p class="hb-quiet">No notes yet — use "Add a note" above a section.</p>') +
+    '<div class="hb-qz-actions">' + (ids.length ? '<button type="button" class="kb-btn" onclick="hbExportNotes_(this)">' + icon('download', 12) + ' Export notes</button>' +
+      '<button type="button" class="kb-btn" onclick="hbCopyNotes_(this)">' + icon('copy', 12) + ' Copy notes</button>' : '') +
+    '<button type="button" class="kb-btn" onclick="this.nextElementSibling.click()">' + icon('upload', 12) + ' Import notes</button>' +
+    '<input type="file" accept=".json,application/json" class="hb-sv-file" hidden aria-label="Choose a notes export" onchange="hbImportNotes_(this)"></div></section>';
+}
+/** PURE — the export: every note with its section's title, as a file the
+ *  import reads back. Tombstones are left out. */
+function hbNotesExport_(notes, titleOf, nowIso) {
+  var out = { app: 'ums-handbook-notes', version: 1, exported: nowIso, notes: {} };
+  Object.keys(notes || {}).sort().forEach(function (id) {
+    var n = notes[id];
+    if (n && n.t) out.notes[id] = { title: titleOf(id) || '', t: n.t, ms: n.ms };
+  });
+  return JSON.stringify(out, null, 2);
+}
+function hbExportNotes_() {
+  var text = hbNotesExport_(hbNotes_(), hbSectionTitle_, new Date().toISOString());
+  try {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = 'handbook-notes-' + hbIsoDay_(new Date()) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Downloading — if nothing arrives, use Copy notes.', 'toast-success');
+  } catch (e) { showToast('The download did not start — use Copy notes.', 'toast-warn'); }
+}
+function hbCopyNotes_(btn) {
+  copyWithFeedback_(hbNotesExport_(hbNotes_(), hbSectionTitle_, new Date().toISOString()), { el: btn, ok: 'Copied — paste it into a file to keep', label: 'Your notes' });
+}
+function hbImportNotes_(input) {
+  var f = input.files && input.files[0]; if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    input.value = '';
+    var got = hbNotesFromFile_(reader.result);
+    if (got.error) { showToast(got.error, 'toast-error'); return; }
+    var before = hbNotes_(), merged = hbNotesMergeLocal_(before, got.notes);
+    var took = Object.keys(got.notes).filter(function (id) { return merged[id].ms === got.notes[id].ms && (!before[id] || before[id].ms !== got.notes[id].ms); });
+    hbNotesPut_(merged);
+    var msg = 'Imported ' + took.length + ' note' + (took.length === 1 ? '' : 's') + (Object.keys(got.notes).length > took.length ? ' — newer notes here were kept' : '') +
+      (got.skipped ? '; ' + got.skipped + ' could not be read' : '') + '.';
+    var after = function () { showToast(msg, 'toast-success'); hbPaintSaved_(); hbPaintQuizBar_(HB.currentId); };
+    if (!hbNotesSyncOn_() || !took.length) { after(); return; }
+    var sub = {}; took.forEach(function (id) { sub[id] = merged[id]; });
+    hbSyncNotes_(sub, function (ok, err) {
+      if (!ok) showToast('Imported here — not in your account yet: ' + String(err || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-warn');
+      after();
+    });
+  };
+  reader.onerror = function () { input.value = ''; showToast('That file could not be read.', 'toast-error'); };
+  reader.readAsText(f);
+}
+/** Turning sync on warns first, then sends this browser's notes and keeps the
+ *  merge; turning it off removes the account's copies (asked first too). */
+function hbSetNotesSync_(box) {
+  var want = !!box.checked;
+  box.checked = !want;   // the box says what IS, until the answer
+  if (want) {
+    uiConfirm({ title: 'Keep your notes in your account?', confirmLabel: 'Keep them in my account',
+      message: 'Your notes will also be stored in the handbook\'s spreadsheet, which the handbook\'s admin can open. Never write patient information in a note — no names, dates of birth, member or order numbers.' })
+      .then(function (yes) {
+        if (!yes) return;
+        box.disabled = true;
+        hbSyncNotes_(hbNotes_(), function (ok, err) {
+          box.disabled = false;
+          if (!ok) { showToast('Not turned on: ' + String(err || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+          hbLsSet_(HB_LS_NOTES_SYNC, '1');
+          showToast('Your notes are kept in your account.', 'toast-success');
+          hbPaintSaved_(); hbPaintQuizBar_(HB.currentId);
+        });
+      });
+    return;
+  }
+  uiConfirm({ title: 'Stop keeping notes in your account?', confirmLabel: 'Stop', tone: 'danger',
+    message: 'Your notes stay in this browser. The copies in your account are deleted.' })
+    .then(function (yes) {
+      if (!yes) return;
+      box.disabled = true;
+      var fin = function (r) {
+        box.disabled = false;
+        if (!r || !r.success) { showToast('Not turned off: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+        hbLsSet_(HB_LS_NOTES_SYNC, '');
+        showToast('Your notes are kept in this browser only.', 'toast-success');
+        hbPaintSaved_();
+      };
+      google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbForgetNotes();
+    });
+}
+/** At boot, with sync on: send this browser's notes, keep the merge. */
+function hbBootNotes_() {
+  if (!hbNotesSyncOn_()) return;
+  hbSyncNotes_(hbNotes_(), function (ok) { if (ok) { hbPaintQuizBar_(HB.currentId); if (HB_SV.showing) hbPaintSaved_(); } });
+}
+
 // ── Contents ──────────────────────────────────────────────────────────────
 function hbChapterLabel_(dept) {
   var p = kbManualChapterParts_(dept);
@@ -1155,7 +1472,8 @@ function hbPaintToc_() {
   var depts = kbManualDepts_().list;
   var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>' +
     '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>' +   // HB3.2
-    '<button type="button" class="hb-toc-quizzes hb-toc-training" onclick="hbGoTraining_()">' + icon('clipboardList', 14) + ' Training</button>';   // HB3.3
+    '<button type="button" class="hb-toc-quizzes hb-toc-training" onclick="hbGoTraining_()">' + icon('clipboardList', 14) + ' Training</button>' +   // HB3.3
+    '<button type="button" class="hb-toc-quizzes hb-toc-saved" onclick="hbGoSaved_()">' + icon('star', 14) + ' Saved</button>';   // HB2.2
   depts.forEach(function (dept) {
     var secs = HB.tree.filter(function (it) { return it.department === dept; });
     html += '<div class="hb-ch" data-dept="' + esc(dept) + '">' +
@@ -1342,6 +1660,8 @@ function hbBoot_() {
   hbLoadMe_();
   hbLoadQuizzes_();   // HB3.2: the quiz bar needs to know which sections have one
   hbLoadSignOffs_();  // HB3.4: and the bar's sign-off, the reader's own
+  hbLoadBookmarks_(); // HB2.2: the reader's bookmarks, and their notes when kept in the account
+  hbBootNotes_();
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));

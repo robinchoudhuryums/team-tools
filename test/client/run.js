@@ -41649,6 +41649,27 @@ test('HB2.2-d: the gates — no account, no answer; the caller is checked before
   assert.ok(!/getKbSS_|getOrCreateKbSheet_/.test(src), 'Saved.js never reaches the KB');
 });
 
+test('HB2.2-e: the page\'s merge is the server\'s (a mirror whose drift would lose a note — g120); the page reads back only what its export writes', () => {
+  const ctx = vm.createContext({ JSON, Number, String, Object, Array, HB_NOTE_MAX: 4000 });
+  ['hbNotesMergeLocal_', 'hbNotesFromFile_', 'hbNotesExport_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));
+  const sb = hb22Sb_();
+  const cases = [
+    [{}, {}],
+    [{ 'man-1-1': { t: 'a', ms: 1 } }, { 'man-1-1': { t: 'b', ms: 2 } }],
+    [{ 'man-1-1': { t: 'a', ms: 3 } }, { 'man-1-1': { t: '', ms: 2 } }],
+    [{ 'man-1-1': { t: 'a', ms: 2 } }, { 'man-1-1': { t: '', ms: 2 } }],
+    [{ 'man-1-1': { t: 'a', ms: 5 }, 'man-2-1': { t: 7, ms: 9 } }, { 'man-3-1': { t: 'c', ms: 0 }, 'man-4-1': null, 'man-5-1': { t: 'e', ms: '8' } }],
+  ];
+  cases.forEach(([a, b], i) => assert.deepStrictEqual(hbPlain_(ctx.hbNotesMergeLocal_(a, b)), hbPlain_(sb.hbNotesMerge_(a, b)), 'case ' + i + ' agrees'));
+  // The export round-trips through the import; a tombstone is not exported.
+  const exp = ctx.hbNotesExport_({ 'man-1-1': { t: 'Keep "this"', ms: 4 }, 'man-2-1': { t: '', ms: 5 } }, (id) => (id === 'man-1-1' ? '1.1 Welcome' : ''), '2026-10-29T00:00:00Z');
+  assert.deepStrictEqual(hbPlain_(ctx.hbNotesFromFile_(exp)), { notes: { 'man-1-1': { t: 'Keep "this"', ms: 4 } }, skipped: 0 });
+  assert.ok(ctx.hbNotesFromFile_('{"app":"other","notes":{}}').error);
+  assert.ok(ctx.hbNotesFromFile_('not json').error);
+  assert.deepStrictEqual(hbPlain_(ctx.hbNotesFromFile_(JSON.stringify({ app: 'ums-handbook-notes', notes: { 'man-1-1': { t: 'x'.repeat(4001), ms: 1 }, '=1+1': { t: 'x', ms: 1 }, 'man-2-1': { t: 'ok', ms: 0 } } }))),
+    { notes: {}, skipped: 3 }, 'too long, a stranger id, no time — each skipped');
+});
+
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
 console.log(`\n${pass} passed, ${fail} failed\n`);
 

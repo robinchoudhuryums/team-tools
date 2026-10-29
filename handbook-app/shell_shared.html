@@ -2,7 +2,7 @@
      edit the source and run `npm run handbook:sync`. -->
 <script>
 // The page shell: Team Tools' declarations the handbook's pages use, verbatim,
-// with every declaration they reach (29 in all).
+// with every declaration they reach (30 in all).
 // Supplied by the handbook's pages instead of copied: errBeaconSend_.
 
 let currentView = 'clock';
@@ -733,5 +733,19 @@ function kbSuggestEdit_(btn) {
       .withFailureHandler(function (e) { showToast((e && e.message) || 'Could not send', 'toast-error'); })
       .kbFlagItem(id, 'suggest', String(note).trim());   // E3: its own kind — the queue and the export tell it from "out of date"
   });
+}
+
+// PURE (#5 bookmarks): TOGGLE an item in a bookmark list — remove if present,
+// else prepend. Dedupe by id, cap length. Explicit + persistent, unlike recents.
+function kbBookmarksToggle_(list, item, cap) {
+  cap = cap || 12;
+  var id = String(item.id);
+  var existed = (list || []).some(function (b) { return b && String(b.id) === id; });
+  var out = existed ? [] : [{ id: id, title: String(item.title || '') }];
+  (list || []).forEach(function (b) {
+    if (!b || String(b.id) === id || out.length >= cap) return;
+    out.push({ id: String(b.id), title: String(b.title || '') });
+  });
+  return out;
 }
 </script>

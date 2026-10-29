@@ -120,6 +120,22 @@
   .hb-tr-mark.on { border-color: var(--accent); color: var(--success-deep); }
   .hb-tr-arch .hb-pp-row-n { color: var(--muted); }
 
+  /* Bookmarks and notes (HB2.2) */
+  .kb-bm.on { color: var(--warning-deep); }
+  .kb-man-bar .kb-bm.on { background: var(--warn-soft); }
+  .hb-note-btn { font-size: .8rem; }
+  .hb-note-btn.on { border-color: var(--accent); color: var(--success-deep); }
+  .hb-note-for { margin: 0; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .hb-note-text { min-height: 9em; resize: vertical; }
+  .hb-note-warn { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: .8rem; color: var(--warning-deep); }
+  .hb-note-warn svg { flex: none; margin-top: 2px; }
+  .hb-sv section { display: flex; flex-direction: column; gap: 8px; }
+  .hb-sv-list { margin: 0; }
+  .hb-sv-row .hb-tr-it-t { display: flex; flex-direction: column; gap: 2px; }
+  .hb-sv-snip { font-size: .8rem; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+  .hb-sv-sync { display: inline-flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 600; cursor: pointer; }
+  .hb-sv-syncnote { margin: 0; font-size: .8rem; }
+
   /* Sign-off + team progress (HB3.4) */
   .hb-so { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
   .hb-so-t { display: inline-flex; align-items: center; gap: 5px; font-size: .84rem; min-width: 0; overflow-wrap: anywhere; }

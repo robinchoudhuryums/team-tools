@@ -3133,3 +3133,30 @@ per-change detail. By delta:
   `handbook-quizbar-light-mobile`. Reading the wide shot found the table wider
   than its column (nowrap headers, "To re-sign" clipped) — headers now wrap; the
   phone shot shows two columns, so a narrow screen says the table scrolls.
+
+## Handbook app HB2.2 — bookmarks and notes (2026-10-29)
+
+- **Pure (run.js, "HB2.2")** — a: the helpers (a bookmark to the top once, off,
+  capped, junk dropped; a note's limits; the merge — later wins, a deletion
+  wins and is kept, a tie keeps the first; the reader's Notes rows, a bad one
+  counted); b: bookmarks in the account (a published section with the
+  handbook's title, one row per reader, an unreadable list said, unset); c:
+  notes sync driven — merge both ways, only changes written, bad entries
+  refused, another reader's notes untouched, forgetting empties only the
+  caller's rows; d: the gates (no account, before the lock, busy, unset vs
+  unreachable, the KB untouched); e: the page's merge equals the server's on
+  the same cases, and the export round-trips through the import. `hbServer_`
+  loads Saved.js and its fake range gains `clearContent`.
+- **DOM** — the reader bar's star (account; a refusal; Saved lists, removes,
+  opens; Back; unset keeps the list in the browser and asks nothing); a note
+  (the editor, saved in the browser with no server call, "Your note", Escape
+  asks, Delete leaves a tombstone); sync (the warning first, the box shows what
+  IS, the browser's notes up and the account's down, a save sends one note, a
+  failed one stays and says so, off removes the account's copies, on at boot
+  sends once); export and import (titles, no tombstones, newer wins, the count,
+  a stranger file refused). Two older drives now allow the note button on the
+  bar (HB3.2's quiz bar, HB3.4's no-store case).
+- **Visual** — `handbook-saved-light-wide`, `handbook-saved-dark-mobile` (on the
+  CI gate), `handbook-note-light-mobile`. Reading them: "Remove" borrowed the
+  star's warning colour, and "Delete note" wrapped in the phone's footer — both
+  fixed.

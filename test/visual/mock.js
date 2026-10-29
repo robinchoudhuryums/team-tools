@@ -1482,6 +1482,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
     },
     hbMarkRead: { success: true },
+    // HB2.2 — the reader's bookmarks (their account) and notes (synced only when on).
+    hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }, { id: 'man-0-10', title: '0.10 Anatomy of a transaction' }, { id: 'man-gone-1', title: '4.7 Retired forms' }] },
+    hbToggleBookmark: { success: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }] },
+    hbSyncNotes: function (m) { return { success: true, notes: m || {}, written: 0, refused: 0 }; },
+    hbForgetNotes: { success: true, removed: 2 },
     // HB3.4 — the reader's sign-offs (0.11 changed for retraining since it was
     // read; 0.10 signed) and the manager's per-person progress.
     hbMySignOffs: function () {
