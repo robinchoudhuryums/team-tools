@@ -1107,6 +1107,8 @@ function kbSaveSynonyms_(btn) {
       if (btn) btn.disabled = false;
       if (!r || !r.success) { showToast((r && r.error) || 'Save failed', 'toast-error'); return; }
       showToast('Saved · ' + (r.synonyms || []).length + ' synonym group(s)', 'toast-success');
+      // HB1.4: the handbook app searches with a copy in the KB spreadsheet.
+      if (r.handbookMirrored === false) showToast('Saved here, but the handbook app could not be given the change — save again to retry.', 'toast-warn');
       var o = document.getElementById('kb-syn-overlay'); if (o) o.remove();
     })
     .withFailureHandler(function (e) { if (btn) btn.disabled = false; showToast((e && e.message) || 'Save failed', 'toast-error'); })
@@ -1344,6 +1346,8 @@ function kbManualRun_(dryRun) {
       if (imp) imp.disabled = !(dryRun && KB_MANUAL_FILE === file && r && r.success && ((r.created || 0) + (r.updated || 0) > 0 || r.metaUpdated || (r.orphaned || []).length));
       kbManualGate_(imp);
       if (!dryRun && r && r.success) kbManualImported_(r);
+      // HB1.4: the import refreshes the handbook app's search copy; say when it could not.
+      if (!dryRun && r && r.success && r.handbookMirrored === false) showToast('Imported — but the handbook app\'s search settings could not be refreshed; import again to retry.', 'toast-warn');
     })
     .withFailureHandler(function (e) {
       if (chk) chk.disabled = false;

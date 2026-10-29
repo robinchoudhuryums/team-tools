@@ -14085,6 +14085,8 @@ function cnRenderAdminBody_(cfg) {
         btn.disabled = false; btn.textContent = 'Save Rules';
         if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
         showToast('Auto-tag rules saved', 'toast-success');
+        // HB1.4: the handbook app reads a copy of the rules (its search vocabulary).
+        if (res.handbookMirrored === false) showToast('Saved here, but the handbook app could not be given the change — save again to retry.', 'toast-warn');
         // Reps pick the change up on their next config fetch; THIS browser's
         // matcher updates immediately — with the rules as the server STORED
         // them (A7, cycle 22): "Wheel Chair" is saved as tag `wheel-chair`

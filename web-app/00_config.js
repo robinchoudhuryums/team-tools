@@ -2179,6 +2179,9 @@ const KB_REQUESTS_RESOLVED_TAIL = 10;
 // searches as they type). Kept KB_SEARCH_SIGNAL_DAYS by the nightly diagnostics
 // purge; read by the admin-only kbGetSearchSignal and the content-request hint.
 const KB_SEARCH_SIGNAL_TAB = 'KbSearchSignal';
+const KB_SEARCH_SIGNAL_HB_TAB = 'KbSearchSignalHb';   // HB1.4: the handbook app's searches — its own tab (appendRow only), the same report and purge
+const KB_SEARCH_CONFIG_TAB = 'KbSearchConfig';        // HB1.4: the synonyms + auto-tag rules mirrored for the handbook app (A2, JSON)
+const KB_SEARCH_CONFIG_HEADERS = ['Config'];
 const KB_SEARCH_SIGNAL_HEADERS = ['Timestamp', 'Term', 'Source', 'Event'];
 const KBSS = { TS: 0, TERM: 1, SOURCE: 2, EVENT: 3 };
 const KB_SEARCH_SIGNAL_TEXT_IDX = [KBSS.TERM];   // a term is kept as typed text ('@' — a heading like "3/4" must not become a date)

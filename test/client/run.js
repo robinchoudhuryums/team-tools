@@ -10336,7 +10336,7 @@ test('auto-tag: rules ADD, dismissal sticks, session resets with the form', () =
 
 test('auto-tag rules: sanitize-on-read mirrors the save validation (server)', () => {
   const nc = (x) => String(x).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
-  const read = nc(extractRawFunction('Code.js', 'getAutoTagRules_'));
+  const read = nc(extractRawFunction('Code.js', 'getAutoTagRules_') + extractRawFunction('Code.js', 'autoTagRulesNormalize_'));   // HB1.4: the read normalizes through the pure half
   const save = nc(extractRawFunction('Code.js', 'saveAutoTagRules'));
   // Both sides normalize the tag identically (kebab, 2–24) so a rejected save
   // and a sanitized read can never disagree about what a valid rule is.
@@ -24864,7 +24864,9 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
     'a thrown run is a failed outcome the runner stamps and a clean run clears it (F4 — a returned error reaches nobody; ST2)');
   // E6 (cycle 25, G4): the search signal (KB store) is purged past its fixed
   // window every night; a KB store that cannot be opened is a PARTIAL run.
-  assert.ok(/ks = diagPurgeTab_\(getKbSS_\(\)\.getSheetByName\(KB_SEARCH_SIGNAL_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget\)/.test(f) &&
+  // HB1.4: and the handbook app's own signal tab, on the same window.
+  assert.ok(/ks = diagPurgeTab_\(kbSs\.getSheetByName\(KB_SEARCH_SIGNAL_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget\)/.test(f) &&
+            /diagPurgeTab_\(kbSs\.getSheetByName\(KB_SEARCH_SIGNAL_HB_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget - ks\.removed\)/.test(f) &&
             /ksError \? automationOutcome_\('partial', [^)]*\['KbSearchSignal'\]\)/.test(f), 'the search signal keeps 90 days; an unopenable KB store is named, partial');
   const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
   assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; digestDeliveryDays=\$\{ddDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}; digestDeliveriesRemoved=\$\{dd\.removed\}/.test(call),
@@ -28169,9 +28171,10 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // Cycle 25 F6 added the cold-archive mover and the call-notes export: the
   // note text columns stay '@' wherever a note row is copied to. Cycle 25 E3
   // added the handbook feedback export: section titles and reps' notes.
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known eleven');
+    'the raw plain-text writers are exactly the known twelve');
   assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49) and the search signal (cycle 25 E6)');
@@ -29840,7 +29843,8 @@ test('U4: the deploy beacon never serves another deployment\'s hash — no Scrip
 test('A7: after saving auto-tag rules the admin\'s browser runs the rules as STORED (driven)', () => {
   let stored = null;
   const ctx = vm.createContext({ String, Array, JSON, CN_AUTO_TAG_RULE_LIMIT: 50,
-    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {} });
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'a@x' }), propSetBounded_: (k, v) => { stored = v; }, writeAuditLog_() {},
+    kbMirrorSearchConfig_: () => true });   // HB1.4: the save mirrors the rules for the handbook app
   vm.runInContext(extractRawFunction('Code.js', 'saveAutoTagRules'), ctx);
   const res = JSON.parse(JSON.stringify(ctx.saveAutoTagRules([{ tag: 'Wheel Chair', keywords: ['  Power CHAIR ', ''] }])));
   assert.deepStrictEqual(res.rules, [{ tag: 'wheel-chair', keywords: ['power chair'] }], 'the normalised rules come back');
@@ -30968,6 +30972,7 @@ function m1Importer_(book, fileText, who, extra) {
     kbAppendRevision_: (prior, by, action) => revisions.push(prior[0] + ':' + action),
     invalidateKbCache_: () => book.writes.push(['cache', 'bust']),
     writeAuditLog_: (e, a, d, t, adj, h, notes) => audits.push(a + ' ' + notes),
+    kbMirrorSearchConfig_: () => true,   // HB1.4: every import refreshes the handbook app's search mirror — a write only on a change (its own pin)
     Date, Buffer,
   }, extra || {}));
   ['kbRowStatus_', 'kbSha256Hex_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
@@ -38605,7 +38610,7 @@ test('E3 (cycle 25): kbFlagItem — "Suggest an edit" is its own kind, for handb
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     getOrCreateKbFeedbackSheet_: () => ({ appendRow: (r) => rows.push(r) }), sheetSafeRow_: (r) => r,
     fmtDate_: () => '2026-10-15', fmtTime_: () => '10:00:00', writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n) },
-  ['kbFlagItem'], E3_FB_CONSTS);
+  ['kbFlagItem', 'kbFeedbackEntry_'], E3_FB_CONSTS);   // HB1.4: the checks are kbFeedbackEntry_'s
   const res = (a) => JSON.parse(JSON.stringify(a));
   assert.deepStrictEqual(res(ctx.kbFlagItem('kb-7', 'suggest', 'x')), { success: false, error: 'Suggested edits are for handbook sections.' });
   assert.deepStrictEqual(res(ctx.kbFlagItem('man-5-9', 'suggest', '   ')), { success: false, error: 'Write the change you suggest.' });
@@ -39269,7 +39274,7 @@ test('E6 (cycle 25, G4): kbSignalTermsOf_ — ONLY vocabulary terms come out of 
 test('E6 (cycle 25, G4): kbRecordSearchSignal_ writes [time, term, source, event] — no rep — once per person per term per window, a "zero" row when the search found nothing, skips when the script lock is busy, and never throws (driven)', () => {
   const store = {}, rows = [], fmts = [];
   let lockFree = true, released = 0;
-  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbSignalTermsOf_', 'kbHashStr_', 'kbRecordSearchSignal_'], {
+  const ctx = e6Ctx_(['kbSignalNorm_', 'kbSignalVocab_', 'kbSignalTermsOf_', 'kbHashStr_', 'kbRecordSearchSignal_', 'kbSearchSignalPlan_', 'kbSearchSignalSeen_'], {
     Logger: { log() {} },
     kbSignalVocabulary_() { return { entries: ctx.kbSignalVocab_(E6_SRC) }; },
     CacheService: { getScriptCache: () => ({ getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store[k]) o[k] = store[k]; }); return o; },
@@ -39353,7 +39358,7 @@ test('E6 (cycle 25, G4): the admin report and the request hint — kbGetSearchSi
   assert.ok(/item\.searchHint = kbSearchSignalHint_\(item\.topic, /.test(list) && !/KBR\.QUERY/.test(list), 'from the topic the rep chose to send — never the raw query (F9)');
   const rows = stripJsComments_(extractRawFunction('Code.js', 'kbSearchSignalRows_'));
   assert.ok(/normalizeAuditTs_\(r\[KBSS\.TS\]\)/.test(rows), 'a stamp Sheets coerced to a Date is read back as the written string (g11)');
-  assert.ok(/const truncated = start > 2 && !!rows\.length && String\(rows\[0\]\[KBSS\.TS\]\) >= cutoff;/.test(rows), 'the scan cap that cuts the window is said (g152)');
+  assert.ok(/if \(start > 2 && !!rows\.length && String\(rows\[0\]\[KBSS\.TS\]\) >= cutoff\) out\.truncated = true;/.test(rows), 'the scan cap that cuts the window is said (g152) — for either tab (HB1.4)');
 });
 
 test('E6 (cycle 25, G4): the vocabulary is cached under a key that hashes its code and the KB generation, and a vocabulary with a failed source is NAMED and never cached (driven)', () => {

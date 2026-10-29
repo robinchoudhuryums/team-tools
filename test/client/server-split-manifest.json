@@ -3453,6 +3453,34 @@
     "routeLookupReserve_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB1.4: feedback validator, search-signal plan, synonym/tag normalizers and the handbook search mirror split out for the handbook app",
+   "added": [
+    "KB_SEARCH_CONFIG_HEADERS",
+    "KB_SEARCH_CONFIG_TAB",
+    "KB_SEARCH_SIGNAL_HB_TAB",
+    "autoTagRulesNormalize_",
+    "kbFeedbackEntry_",
+    "kbMirrorSearchConfig_",
+    "kbSearchSignalPlan_",
+    "kbSearchSignalSeen_",
+    "kbSynonymGroups_"
+   ],
+   "removed": [],
+   "changed": [
+    "getAutoTagRules_",
+    "getKbSearchSynonyms_",
+    "kbFlagItem",
+    "kbImportManual",
+    "kbRecordSearchSignal_",
+    "kbSaveSearchConfig",
+    "kbSearchSignalRows_",
+    "purgeOldDiagnostics",
+    "saveAutoTagRules"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5072,6 +5100,16 @@
    "kind": "const",
    "sha": "c75111354dadebfd"
   },
+  "KB_SEARCH_CONFIG_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a70f7dd0316b1651"
+  },
+  "KB_SEARCH_CONFIG_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "28279e96f71befa2"
+  },
   "KB_SEARCH_MAX_PER_ITEM": {
    "file": "00_config.js",
    "kind": "const",
@@ -5096,6 +5134,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "273ab85aaa99c634"
+  },
+  "KB_SEARCH_SIGNAL_HB_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "43d7cfe27bf2aa3a"
   },
   "KB_SEARCH_SIGNAL_HEADERS": {
    "file": "00_config.js",
@@ -6531,6 +6574,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "f4c4d69a159fb8b1"
+  },
+  "autoTagRulesNormalize_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "41bacfd3111efba3"
   },
   "automationDetectorChecks_": {
    "file": "10_core.js",
@@ -8080,7 +8128,7 @@
   "getAutoTagRules_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d742430f5932525d"
+   "sha": "cf9eaf2f671eeaae"
   },
   "getAutomationHealth": {
    "file": "10_core.js",
@@ -8475,7 +8523,7 @@
   "getKbSearchSynonyms_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d91492820358145c"
+   "sha": "413073d689737d15"
   },
   "getLeaveDeduction_": {
    "file": "20_timeclock.js",
@@ -9687,10 +9735,15 @@
    "kind": "function",
    "sha": "1d9f009887a15c40"
   },
+  "kbFeedbackEntry_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "874296bb0901ff01"
+  },
   "kbFlagItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "830a143e5d25e73c"
+   "sha": "7359e7ce9d9d1e28"
   },
   "kbGeneration_": {
    "file": "70_kb.js",
@@ -9830,7 +9883,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "321ba0b473223a33"
+   "sha": "4a525823b108d507"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -9957,6 +10010,11 @@
    "kind": "function",
    "sha": "fd155e0b7ce8e5b7"
   },
+  "kbMirrorSearchConfig_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "898f63c5e297704e"
+  },
   "kbNaturalCompare_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9995,7 +10053,7 @@
   "kbRecordSearchSignal_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ec90aeb2f0ce5993"
+   "sha": "c2ef9baf30ccfa29"
   },
   "kbRecordView": {
    "file": "70_kb.js",
@@ -10060,7 +10118,7 @@
   "kbSaveSearchConfig": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "21d451892e045d21"
+   "sha": "20772258505d673f"
   },
   "kbScanBrokenEmbeds_": {
    "file": "70_kb.js",
@@ -10087,6 +10145,11 @@
    "kind": "function",
    "sha": "33748860017caa76"
   },
+  "kbSearchSignalPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a217123f5d720e8c"
+  },
   "kbSearchSignalReport_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10095,7 +10158,12 @@
   "kbSearchSignalRows_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "143c405b4e162c47"
+   "sha": "6830b506f073bed5"
+  },
+  "kbSearchSignalSeen_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "182bd37e49f25f04"
   },
   "kbSearchTerms_": {
    "file": "70_kb.js",
@@ -10166,6 +10234,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "f1bd49548a747ec7"
+  },
+  "kbSynonymGroups_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "510bacf8ee7c7490"
   },
   "kbTermCount_": {
    "file": "70_kb.js",
@@ -10905,7 +10978,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6c9eba6a14358197"
+   "sha": "8a1d31de153d5141"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -11600,7 +11673,7 @@
   "saveAutoTagRules": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "0c7a0dbf1629d22d"
+   "sha": "bd09a6c1b439dd96"
   },
   "saveBreakSchedules": {
    "file": "20_timeclock.js",

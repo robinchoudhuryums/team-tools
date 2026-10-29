@@ -620,8 +620,9 @@ function saveAutoTagRules(rules) {
       'Updated auto-tag rules (' + clean.length + ')', callerEmp.email);
     // A7 (cycle 22): ship back what was STORED — the normalised tags and the
     // lowercased keywords — so the saving browser runs the same rules every
-    // rep will, not the raw text it sent.
-    return { success: true, rules: clean };
+    // rep will, not the raw text it sent. HB1.4: and mirror them for the
+    // handbook app's search-signal vocabulary.
+    return { success: true, rules: clean, handbookMirrored: kbMirrorSearchConfig_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 function saveDepartmentEmails(deptJson) {
@@ -1251,7 +1252,11 @@ function purgeOldDiagnostics() {
       // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
       // a store with no signal tab has nothing to purge.
       try {
-        ks = diagPurgeTab_(getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget);
+        const kbSs = getKbSS_();
+        ks = diagPurgeTab_(kbSs.getSheetByName(KB_SEARCH_SIGNAL_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget);
+        // HB1.4: the handbook app's searches keep the same 90 days.
+        const ksHb = diagPurgeTab_(kbSs.getSheetByName(KB_SEARCH_SIGNAL_HB_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget - ks.removed);
+        ks = { removed: ks.removed + ksHb.removed, hitCap: ks.hitCap || ksHb.hitCap };
       } catch (e) { ksError = String(e.message || e); }
     } finally {
       lock.releaseLock();
@@ -4632,8 +4637,13 @@ function getAutoTagRules_() {
       if (Array.isArray(parsed)) raw = parsed;
     } catch (_) {}
   }
+  return autoTagRulesNormalize_(raw);
+}
+/** PURE — auto-tag rules, whitelist-rebuilt (the L-12 rule above). HB1.4: the
+ *  handbook app reads the KbSearchConfig mirror through this too. */
+function autoTagRulesNormalize_(raw) {
   const out = [];
-  raw.forEach(function (r) {
+  (Array.isArray(raw) ? raw : []).forEach(function (r) {
     const tag = String((r && r.tag) || '').trim().toLowerCase()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (tag.length < 2 || tag.length > 24) return;

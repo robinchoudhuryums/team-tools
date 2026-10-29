@@ -590,7 +590,14 @@ function getKbSearchSynonyms_() {
   try {
     const raw = PropertiesService.getScriptProperties().getProperty(KB_SYNONYMS_PROP);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    return kbSynonymGroups_(JSON.parse(raw));
+  } catch (e) { return []; }
+}
+/** PURE — stored synonym groups, sanitised: ≥2 distinct lowercase terms a
+ *  group; anything else dropped. HB1.4: the handbook app reads the mirror
+ *  through this too. */
+function kbSynonymGroups_(parsed) {
+  try {
     if (!Array.isArray(parsed)) return [];
     const groups = [];
     parsed.forEach(function (g) {
@@ -650,9 +657,35 @@ function kbSaveSearchConfig(groups) {
     }
     propSetBounded_(KB_SYNONYMS_PROP, JSON.stringify(clean), { hint: 'remove a synonym group' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0, 'KB search synonyms: ' + clean.length + ' group(s)', emp.email);
-    return { success: true, synonyms: clean };
+    return { success: true, synonyms: clean, handbookMirrored: kbMirrorSearchConfig_() };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** HB1.4 — the handbook app reads the search synonyms and the auto-tag rules
+ *  (its search-signal vocabulary) from the KB spreadsheet, because Script
+ *  Properties are per project. Team Tools writes them to KbSearchConfig A2 as
+ *  one JSON {synonyms, tags} whenever either is saved, and on every handbook
+ *  import — only when it CHANGED, so a re-import still writes nothing (M1).
+ *  Best-effort: false when the write failed, which the save says (the handbook
+ *  keeps searching with the last mirror). */
+function kbMirrorSearchConfig_() {
+  try {
+    const json = JSON.stringify({ synonyms: getKbSearchSynonyms_(), tags: getAutoTagRules_() });
+    const ss = getKbSS_();
+    let sheet = ss.getSheetByName(KB_SEARCH_CONFIG_TAB);
+    if (sheet && sheet.getLastRow() >= 2 && String(sheet.getRange(2, 1).getValue()) === json) return true;
+    if (!sheet) {
+      sheet = ss.insertSheet(KB_SEARCH_CONFIG_TAB);
+      sheet.appendRow(sheetSafeRow_(KB_SEARCH_CONFIG_HEADERS));
+    }
+    const cell = sheet.getRange(2, 1);
+    cell.setNumberFormat('@');
+    cell.setValue(sheetText_(json));
+    return true;
+  } catch (e) {
+    Logger.log('kbMirrorSearchConfig_ failed: ' + e.message);
+    return false;
+  }
 }
 function getOrCreateKbViewsSheet_() {
   const ss = getKbSS_();
@@ -3426,26 +3459,33 @@ function kbFlagItem(itemId, kind, note) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const id = String(itemId || '').trim().substring(0, 100);
-    if (!id) return { success: false, error: 'Missing item id.' };
-    const k = String(kind || '').trim();
-    if (!KB_FEEDBACK_KINDS[k]) return { success: false, error: 'Unknown feedback kind.' };
-    const raw = String(note || '').trim();
-    if (k === 'suggest') {
-      // E3: a suggested edit IS the rep's words — refused, never cut (the
-      // kbAddComment posture), and only the handbook carries the button.
-      if (!KB_MANUAL_ID_RE.test(id)) return { success: false, error: 'Suggested edits are for handbook sections.' };
-      if (!raw) return { success: false, error: 'Write the change you suggest.' };
-      if (raw.length > KB_FEEDBACK_NOTE_MAX) return { success: false, error: 'A suggestion can be at most ' + KB_FEEDBACK_NOTE_MAX + ' characters.' };
-    }
-    const n = KB_FEEDBACK_NOTED[k] ? raw.substring(0, KB_FEEDBACK_NOTE_MAX) : '';
+    const fe = kbFeedbackEntry_(itemId, kind, note);
+    if (fe.error) return { success: false, error: fe.error };
     getOrCreateKbFeedbackSheet_().appendRow(sheetSafeRow_([
-      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, emp.name, k, n,
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), fe.id, emp.id, emp.name, fe.kind, fe.note,
     ]));
-    if (KB_FEEDBACK_NOTED[k]) writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id + (k === 'suggest' ? '; kind=suggest' : ''), emp.email);
+    if (KB_FEEDBACK_NOTED[fe.kind]) writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + fe.id + (fe.kind === 'suggest' ? '; kind=suggest' : ''), emp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (Node-pinned) — one feedback entry, checked: {id, kind, note} or
+ *  {error}. HB1.4: the handbook app appends what this accepts to the same tab,
+ *  so the two writers cannot accept different things (g126). */
+function kbFeedbackEntry_(itemId, kind, note) {
+  const id = String(itemId || '').trim().substring(0, 100);
+  if (!id) return { error: 'Missing item id.' };
+  const k = String(kind || '').trim();
+  if (!KB_FEEDBACK_KINDS[k]) return { error: 'Unknown feedback kind.' };
+  const raw = String(note || '').trim();
+  if (k === 'suggest') {
+    // E3: a suggested edit IS the rep's words — refused, never cut (the
+    // kbAddComment posture), and only the handbook carries the button.
+    if (!KB_MANUAL_ID_RE.test(id)) return { error: 'Suggested edits are for handbook sections.' };
+    if (!raw) return { error: 'Write the change you suggest.' };
+    if (raw.length > KB_FEEDBACK_NOTE_MAX) return { error: 'A suggestion can be at most ' + KB_FEEDBACK_NOTE_MAX + ' characters.' };
+  }
+  return { id: id, kind: k, note: KB_FEEDBACK_NOTED[k] ? raw.substring(0, KB_FEEDBACK_NOTE_MAX) : '' };
 }
 function getOrCreateKbCommentsSheet_() {
   const ss = getKbSS_();
@@ -3878,34 +3918,44 @@ function getOrCreateKbSearchSignalSheet_() {
  *  search never waits behind a punch or a note. Returns the rows written. */
 function kbRecordSearchSignal_(emp, query, zero) {
   try {
-    const terms = kbSignalTermsOf_(query, kbSignalVocabulary_().entries, KB_SEARCH_SIGNAL_TERMS_MAX);
-    if (!terms.length) return 0;
-    const day = fmtDate_(new Date());
-    const keyOf = function (t, ev) { return 'kb_signal_seen:' + kbHashStr_(String(emp.id) + '|' + day + '|' + t.norm + '|' + ev); };
-    const want = [];
-    terms.forEach(function (t) {
-      want.push({ t: t, ev: 'search' });
-      if (zero) want.push({ t: t, ev: 'zero' });
-    });
-    const cache = CacheService.getScriptCache();
-    const seen = cache.getAll(want.map(function (w) { return keyOf(w.t, w.ev); })) || {};
-    const fresh = want.filter(function (w) { return !seen[keyOf(w.t, w.ev)]; });
+    const fresh = kbSearchSignalPlan_(emp, query, zero);
     if (!fresh.length) return 0;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(1000)) return 0;
     try {
       const ts = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-      const rows = fresh.map(function (w) { return [ts, w.t.term, w.t.source, w.ev]; });
+      const rows = fresh.map(function (f) { return [ts, f.term, f.source, f.ev]; });
       appendRowsTextSafe_(getOrCreateKbSearchSignalSheet_(), rows, KB_SEARCH_SIGNAL_TEXT_IDX);
     } finally { lock.releaseLock(); }
-    const put = {};
-    fresh.forEach(function (w) { put[keyOf(w.t, w.ev)] = '1'; });
-    try { cache.putAll(put, KB_SEARCH_SIGNAL_DEDUPE_SECS); } catch (e) {}
+    kbSearchSignalSeen_(fresh);
     return fresh.length;
   } catch (err) {
     Logger.log('kbRecordSearchSignal_ failed: ' + err.message);
     return 0;
   }
+}
+/** What one search adds to the signal — [{term, source, ev, key}]: its
+ *  vocabulary terms, each a 'search' event (and a 'zero' event when it found
+ *  nothing), less what this person already recorded today (the cache). Reads
+ *  only. HB1.4: the handbook app records through this too, into its own tab. */
+function kbSearchSignalPlan_(emp, query, zero) {
+  const terms = kbSignalTermsOf_(query, kbSignalVocabulary_().entries, KB_SEARCH_SIGNAL_TERMS_MAX);
+  if (!terms.length) return [];
+  const day = fmtDate_(new Date());
+  const keyOf = function (t, ev) { return 'kb_signal_seen:' + kbHashStr_(String(emp.id) + '|' + day + '|' + t.norm + '|' + ev); };
+  const want = [];
+  terms.forEach(function (t) {
+    want.push({ term: t.term, source: t.source, ev: 'search', key: keyOf(t, 'search') });
+    if (zero) want.push({ term: t.term, source: t.source, ev: 'zero', key: keyOf(t, 'zero') });
+  });
+  const seen = CacheService.getScriptCache().getAll(want.map(function (w) { return w.key; })) || {};
+  return want.filter(function (w) { return !seen[w.key]; });
+}
+/** Mark a plan's events recorded, so this person's repeats count once. */
+function kbSearchSignalSeen_(fresh) {
+  const put = {};
+  fresh.forEach(function (f) { put[f.key] = '1'; });
+  try { CacheService.getScriptCache().putAll(put, KB_SEARCH_SIGNAL_DEDUPE_SECS); } catch (e) {}
 }
 
 /** PURE (Node-pinned): the window's rows → per-term counts. `rows` are sheet
@@ -3938,15 +3988,23 @@ function kbSearchSignalReport_(rows, cutoff, min) {
  *  cap cut the window (g152: an absence past the cap is not evidence). */
 function kbSearchSignalRows_() {
   const cutoff = fmtDate_(new Date(Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000)) + ' 00:00:00';
-  const sheet = getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB);
-  if (!sheet) return { rows: [], cutoff: cutoff, truncated: false, missing: true };
-  const last = sheet.getLastRow();
-  if (last < 2) return { rows: [], cutoff: cutoff, truncated: false, missing: false };
-  const start = Math.max(2, last - KB_SEARCH_SIGNAL_SCAN_MAX + 1);
-  const rows = sheet.getRange(start, 1, last - start + 1, KB_SEARCH_SIGNAL_HEADERS.length).getValues()
-    .map(function (r) { const c = r.slice(); c[KBSS.TS] = normalizeAuditTs_(r[KBSS.TS]); return c; });
-  const truncated = start > 2 && !!rows.length && String(rows[0][KBSS.TS]) >= cutoff;
-  return { rows: rows, cutoff: cutoff, truncated: truncated, missing: false };
+  const ss = getKbSS_();
+  // HB1.4: the handbook app's searches are in their own tab (another project
+  // cannot share this one's lock); both are one signal.
+  const out = { rows: [], cutoff: cutoff, truncated: false, missing: true };
+  [KB_SEARCH_SIGNAL_TAB, KB_SEARCH_SIGNAL_HB_TAB].forEach(function (name) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    out.missing = false;
+    const last = sheet.getLastRow();
+    if (last < 2) return;
+    const start = Math.max(2, last - KB_SEARCH_SIGNAL_SCAN_MAX + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_SEARCH_SIGNAL_HEADERS.length).getValues()
+      .map(function (r) { const c = r.slice(); c[KBSS.TS] = normalizeAuditTs_(r[KBSS.TS]); return c; });
+    if (start > 2 && !!rows.length && String(rows[0][KBSS.TS]) >= cutoff) out.truncated = true;
+    Array.prototype.push.apply(out.rows, rows);
+  });
+  return out;
 }
 
 /** Admin-only: what reps searched for in the window, by vocabulary term. */
@@ -5100,7 +5158,9 @@ function kbImportManual(source, opts) {
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
-      result = Object.assign({ success: true, dryRun: false }, summary);
+      // HB1.4: every import refreshes the handbook app's search mirror, so the
+      // app follows a settings change without anyone re-saving it.
+      result = Object.assign({ success: true, dryRun: false, handbookMirrored: kbMirrorSearchConfig_() }, summary);
     } finally { lock.releaseLock(); }
     return result;
   } catch (err) { return { success: false, error: err.message }; }
