@@ -31448,7 +31448,7 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   assert.ok(/"manual\.json"/.test(ex) && !/"articles\.json"/.test(ex), 'the upload is manual.json');
   // Batch M3: the images ride the same file (the importer unpacks them).
   // Batch M5b: and the glossary's abbreviations, as search synonyms.
-  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images\}/.test(ex));
+  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list,\s*"articles": articles, "images": images\}/.test(ex));
   assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex), 'VERSION comes from build.py');
   const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
   assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd), 'and build.py still declares it in that shape');
