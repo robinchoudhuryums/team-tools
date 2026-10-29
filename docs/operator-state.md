@@ -2717,7 +2717,11 @@ entry says which it is.
   quiz attempts and resets (`QuizAttempts`, `QuizResets` — created by the first
   one; do not edit their headers). Nothing to set: the quizzes are the ones
   Team Tools' manual import stores, and a reader's confirmed manager resets a
-  lock-out from Profile → Quiz lock-outs. The full picture is
+  lock-out from Profile → Quiz lock-outs. **Since HB3.3** it also holds the
+  training plans, the managers' own quizzes and the readers' "Mark as read"
+  ticks (`Plans`, `TeamQuizzes`, `ReadMarks` — created on first use; do not
+  edit their headers). Nothing to set: managers build plans under **Training**.
+  The full picture is
   [`docs/handbook-app.md`](handbook-app.md).
 
 <a id="operator-the-procedures-manual-import-22post-m"></a>

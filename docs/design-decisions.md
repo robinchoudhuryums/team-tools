@@ -6007,3 +6007,30 @@ pick them up without re-deriving the context.
   (keyed by roster id, and two projects cannot share its lock); a
   server-remembered shuffle (state per sitting for no gain); showing the right
   option after a final attempt (the next 24-hour set would start with the key).
+- <a id="training-plans-reach-the-authors-own-team"></a>**Managers write their own quizzes and build training plans; a plan reaches the author's own confirmed team, resolved when it is read (handbook app HB3.3, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's three answers: (1) **a chapter or section item is done when
+  the reader marks it read** — a button, honest about what it proves; HB3.4's
+  versioned sign-off upgrades it. A quiz item is done when it is passed.
+  (2) **A manager's department assignment reaches their own confirmed team in
+  that department; the admin's reaches everyone in it** — and people named one
+  by one are likewise the manager's own team. (3) **A manager's quiz is seen
+  only by the people a live plan assigns it to, its author and the admin**, so
+  the Quizzes list stays the official ones for everyone else. Mechanics:
+  `Training.js` keeps three Handbook-spreadsheet tabs (TeamQuizzes, Plans,
+  ReadMarks), each record's body one JSON cell — a title like "3/4" or a due
+  date never coerces (g144/g13) — updated in place under the app's lock after
+  the caller is checked (g17). **Recipients are resolved at READ time** from
+  the author's current team (`hbAuthorTeam_` → `hbPlanRecipients_`): a new
+  confirmed member in a department picks its plans up, someone who changes
+  team stops receiving the old manager's, and an unmarked manager's plans reach
+  nobody — nothing is rewritten. A team quiz is graded by the same engine and
+  taken through `Quiz.js` by id under the visibility rule; its key reaches only
+  the editor of its author or the admin. Read marks are append-only (the latest
+  per reader and item wins), so one mark serves every plan that names the item.
+  Archiving keeps attempts and marks; an archived quiz is never offered and an
+  archived plan reaches nobody. The editors are overlays that ask before
+  discarding (g166). **Alternatives rejected:** freezing recipients at save
+  time (the team changes; a plan would silently miss new people); counting a
+  section as done on opening it (proves a click); team quizzes in the Quizzes
+  list for everyone (the operator's choice — and a manager's quiz is written
+  for one team).

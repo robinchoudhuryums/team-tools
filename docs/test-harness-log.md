@@ -3080,3 +3080,32 @@ per-change detail. By delta:
   `handbook-quiz-result-dark-wide`, `handbook-quizbar-light-mobile`. Reading the
   first found a raw section id for an unpublished section and an enabled-looking
   disabled button — both fixed before commit.
+
+## Handbook app HB3.3 — training plans and team quizzes (2026-10-29)
+
+- **Pure (run.js, "HB3.3")** — a: the helpers (JSON rows with a broken one
+  counted; the latest read mark wins; an author's team — the admin everyone, a
+  manager their confirmed people, anyone else nobody; recipients by name or
+  department; every refusal of a plan; a team quiz's section must be published;
+  overdue); b: a manager's quiz and department plan driven end to end — their
+  own person in that department gets it, another manager's person and their own
+  person elsewhere do not; the team quiz listed, keyless and takeable only for
+  the recipient; marks and a pass make it done (unmarking undoes); the admin's
+  department plan reaches both teams; a newly confirmed member picks plans up at
+  read time; Team training's payload; the KB untouched); c: the gates (a reader
+  refused before the lock; another manager cannot edit, poach or borrow a quiz;
+  the admin can; archiving a plan or a quiz; a mark names a published item;
+  unset); d: structural — no KB reach, caller → lock → write. `hbServer_` loads
+  Training.js and fakes `Utilities.getUuid`.
+- **DOM** — My training (progress, Overdue, labels, Mark as read reaching the
+  server and ticking the item in both plans, a reader asks for no team data, a
+  quiz item opens the sitting, Back); the quiz editor (the `*` rule refused on
+  the page, a server refusal kept in the editor, a true/false question, the
+  save and reload, Escape asking first); the plan editor (prefill, add each item
+  once, remove, departments and people, the exact payload, the reach toast);
+  `hbParseOptions_` and its inverse. (jsdom: an attribute selector over a value
+  with `&` and `—` matched nothing — the drive selects by `.value`.)
+- **Visual** — `handbook-training-light-wide`, `handbook-training-dark-mobile`
+  (on the CI gate), `handbook-quiz-editor-light-wide`,
+  `handbook-plan-editor-light-mobile`. Reading the editors found `.hb-pp-l`'s
+  row basis (14em) becoming HEIGHT in the editors' column layout — fixed.

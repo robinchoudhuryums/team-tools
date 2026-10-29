@@ -33,13 +33,14 @@ under the "handbook app" entries.
 
 ## How it is built
 
-Only six files are written by hand:
+Only seven files are written by hand:
 
 | File | Holds |
 |---|---|
 | `Handbook.js` | The server's environment (who is asking, the spreadsheet, today) and its public endpoints |
 | `People.js` | The Handbook spreadsheet's People tab: profiles, managers, confirmations (HB2.1) |
 | `Quiz.js` | Taking a quiz: reads ManualQuizzes, records attempts and resets (HB3.2) |
+| `Training.js` | Training plans, team quizzes and read marks (HB3.3) |
 | `index.html` | The page template |
 | `script_handbook.html` | The page: the reader's host (all 18 `MANUAL_HOST` hooks), contents, home, search, the people view, the browser copy, links |
 | `styles_handbook.html` | The frame's styles |
@@ -125,6 +126,32 @@ to the Handbook spreadsheet's `QuizAttempts` and `QuizResets` tabs (created by
 the first one; never edit their headers); without the Handbook spreadsheet the
 quizzes can be read about but not taken.
 
+## Training (HB3.3)
+
+**Training** in the contents opens **My training**: every plan assigned to the
+reader, who set it, its due date (and Overdue), a progress bar and its items —
+a chapter or section to open and **Mark as read**, a quiz to take (done when
+passed). A manager, or the admin, also sees **Team training**: their plans
+(with how many people each reaches now) and their own quizzes, with Edit,
+Archive / Restore, **New plan** and **New quiz**.
+
+- **A quiz** is written one question at a time: the type (one answer, choose all
+  that apply, true or false), the question, the options one per line with `*`
+  before each right one, the explanation a wrong answer is shown, and the
+  section to go back to. It is graded like an official quiz — the same three
+  tries then 24 hours, the same manager reset.
+- **A plan** is a title, a due date, its items (sections, chapters, official
+  quizzes and the author's own) and who it is for — departments and/or people.
+  A manager's plan reaches only their own confirmed team (a department means
+  their people in it); the admin's reaches anyone. Who it reaches is worked out
+  each time it is read, so a newly confirmed team member picks it up.
+- A manager's quiz is seen only by the people a plan assigns it to, its author
+  and the admin.
+
+Plans, team quizzes and read marks live in the Handbook spreadsheet's `Plans`,
+`TeamQuizzes` and `ReadMarks` tabs (created on first use; never edit their
+headers — a row that will not read is counted and skipped).
+
 ## Setup and deploying
 
 The one-time setup (create the project, set `HANDBOOK_KB_SS_ID`, deploy for the
@@ -156,10 +183,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate.

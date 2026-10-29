@@ -9771,3 +9771,120 @@ test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar i
   await new Promise((r) => setTimeout(r, 80)); await two.settleAll();
   assert.strictEqual(two.d.querySelector('#hb-qz-take h1').textContent, 'Nebulizers', 'the later quiz stays — the earlier answer is dropped');
 });
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.3 — training: My training (progress, Mark as read), Team training for a
+// manager, and the quiz and plan editors.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.3 — training plans and team quizzes');
+const HB33_MINE = () => ({ setUp: true, plans: [
+  { id: 'pl-000000000001', title: 'First week', authorName: 'Boss', due: '2000-01-01', overdue: true, done: 0, total: 3, items: [
+    { kind: 'section', id: 'man-3-1', key: 'section:man-3-1', done: false },
+    { kind: 'chapter', id: HB_DEPT, key: 'chapter:' + HB_DEPT, done: false },
+    { kind: 'quiz', id: 'q-neb', key: 'quiz:q-neb', title: 'Nebulizers', done: false, quiz: hb32Me_() }] },
+  { id: 'pl-000000000002', title: 'Refresher', authorName: 'Boss', due: '', overdue: false, done: 0, total: 1, items: [
+    { kind: 'section', id: 'man-3-1', key: 'section:man-3-1', done: false }] }] });
+const HB33_TEAM = () => ({ isAdmin: false, unreadable: 0, quizzes: [], plans: [],
+  team: [{ email: 'rep@ex.org', name: 'Rep', department: HB_DEPT }], official: [{ id: 'q-neb', title: 'Nebulizers' }] });
+const hb33Boss_ = () => hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [] });
+
+test('HB3.3 DOM: My training — each plan with its progress and Overdue; Mark as read reaches the server and ticks the item in every plan that has it; a reader sees no Team training and asks for none', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: HB33_MINE(), hbMarkRead: { success: true } } });
+  h.d.querySelector('#hb-toc .hb-toc-training').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { training: true }, {}]);
+  const plans = [...h.d.querySelectorAll('.hb-tr-plan')];
+  assert.deepStrictEqual(plans.map((p) => p.querySelector('.hb-pp-row-n').textContent), ['First week', 'Refresher']);
+  assert.ok(/Overdue/.test(plans[0].textContent) && /0 of 3 done/.test(plans[0].textContent));
+  assert.deepStrictEqual([...plans[0].querySelectorAll('.hb-tr-it-t')].map((t) => t.textContent), ['3.1 Oxygen basics', '3 · Respiratory & Resupply', 'Nebulizers'], 'a section by its title, a chapter by its label, a quiz by its title');
+  plans[0].querySelector('.hb-tr-mark[data-kind="section"]').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  const after = [...h.d.querySelectorAll('.hb-tr-plan')];
+  assert.ok(/1 of 3 done/.test(after[0].textContent) && /1 of 1 done/.test(after[1].textContent), 'one mark serves both plans');
+  assert.strictEqual(after[0].querySelector('.hb-tr-mark[data-kind="section"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.d.getElementById('hb-tr-team').textContent, '');
+  assert.strictEqual(h.calls.indexOf('hbTeamTraining'), -1, 'a reader asks for no team training');
+  // A quiz item opens the sitting.
+  after[0].querySelector('[data-quiz="q-neb"]').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-take'), 'Take the quiz opens it');
+  // Back to Training.
+  h.w.__hbChange({ state: { training: true } }); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-tr-plan'));
+});
+
+test('HB3.3 DOM: the quiz editor — "*" marks the right options, a question without one is refused here, a server refusal stays in the editor, a save sends the quiz and reloads; Escape after typing asks first (driven)', async () => {
+  let refuse = 'Question 1: text is required (max 500 chars).';
+  const sent = [];
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(),
+    hbSaveTeamQuiz: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return refuse ? { success: false, error: refuse } : { success: true, id: 'tq-000000000001' }; } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  assert.ok(/No quizzes of your own yet/.test(h.d.getElementById('hb-tr-team').textContent));
+  [...h.d.querySelectorAll('#hb-tr-team button')].filter((b) => /New quiz/.test(b.textContent))[0].click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-tq-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  const type = (el, v) => { el.value = v; el.dispatchEvent(new h.w.Event('input', { bubbles: true })); };
+  type(h.d.getElementById('hb-tq-title'), 'Our checks');
+  type(ov.querySelector('.hb-ed-text'), 'First?');
+  type(ov.querySelector('.hb-ed-optbox'), 'Verify\nShip');
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.ok(/start the right option with \*/.test(h.d.getElementById('hb-tq-msg').textContent));
+  assert.strictEqual(sent.length, 0, 'refused before the server');
+  type(ov.querySelector('.hb-ed-optbox'), '* Verify\nShip');
+  type(ov.querySelector('.hb-ed-why'), 'Verify first.');
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0].questions[0], { type: 'single', q: 'First?', options: ['Verify', 'Ship'], correct: 0, explain: 'Verify first.', section: '' });
+  assert.ok(/text is required/.test(h.d.getElementById('hb-tq-msg').textContent) && h.d.getElementById('hb-tq-ov'), 'a server refusal stays in the editor');
+  // A true/false question added.
+  h.w.hbAddQuizQuestion_();
+  const qs = ov.querySelectorAll('.hb-ed-q');
+  qs[1].querySelector('.hb-ed-type').value = 'truefalse'; qs[1].querySelector('.hb-ed-type').dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(qs[1].querySelector('.hb-ed-opts').hidden, true, 'its options box goes');
+  type(qs[1].querySelector('.hb-ed-text'), 'Skip it?');
+  qs[1].querySelector('.hb-ed-tfsel').value = '1';
+  refuse = '';
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual([sent[1].questions[1].type, sent[1].questions[1].correct], ['truefalse', 1]);
+  assert.ok(!h.d.getElementById('hb-tq-ov'), 'saved: closed');
+  assert.ok(h.calls.filter((c) => c === 'hbTeamTraining').length >= 2, 'and the list reloads');
+  // Escape after typing in a new one asks first.
+  [...h.d.querySelectorAll('#hb-tr-team button')].filter((b) => /New quiz/.test(b.textContent))[0].click(); await h.settleAll();
+  type(h.d.getElementById('hb-tq-title'), 'Half written');
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Discard changes\?/.test(ask.textContent), 'g166');
+  ask.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(h.d.getElementById('hb-tq-title').value, 'Half written', 'Keep editing keeps it');
+});
+
+test('HB3.3 DOM: the plan editor — items added by kind (each once) and removed, departments and people ticked, the save sends exactly that and says whom it reaches; an existing plan opens with its items (driven)', async () => {
+  const sent = [];
+  const team = Object.assign(HB33_TEAM(), { plans: [{ id: 'pl-000000000009', author: 'boss@ex.org', authorName: 'Boss', live: true, reaches: 1,
+    plan: { title: 'Old', due: '2026-12-01', items: [{ kind: 'quiz', id: 'q-neb' }], assign: { people: ['rep@ex.org'], departments: [] } } }] });
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: team,
+    hbSavePlan: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return { success: true, id: 'pl-00000000000a', reaches: 4 }; } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  assert.ok(/reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
+  h.w.hbEditPlan_('pl-000000000009'); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('#hb-pl-items .hb-ed-item span')].map((s) => s.textContent), ['Pass the quiz Nebulizers (official)'], 'prefilled');
+  assert.strictEqual(h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked, true);
+  h.d.getElementById('hb-pl-ov').querySelector('.hb-ed-item button').click();   // remove the quiz
+  const pick = (kind, id) => { const k = h.d.getElementById('hb-pl-kind'); k.value = kind; k.dispatchEvent(new h.w.Event('change', { bubbles: true })); h.d.getElementById('hb-pl-pick').value = id; h.w.hbPlanAddItem_(); };
+  pick('section', 'man-3-2'); pick('section', 'man-3-2'); pick('chapter', 'Chapter 05 — Power Mobility');
+  assert.strictEqual(h.d.querySelectorAll('#hb-pl-items .hb-ed-item').length, 2, 'each item once');
+  [...h.d.querySelectorAll('#hb-pl-depts input')].filter((i) => i.value === HB_DEPT)[0].checked = true;
+  h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked = false;
+  h.d.getElementById('hb-pl-title').value = 'Respiratory week';
+  h.d.getElementById('hb-pl-ov').querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0], { title: 'Respiratory week', due: '2026-12-01', items: [{ kind: 'section', id: 'man-3-2' }, { kind: 'chapter', id: 'Chapter 05 — Power Mobility' }],
+    assign: { people: [], departments: [HB_DEPT] }, id: 'pl-000000000009' });
+  assert.ok(/reaches 4 people now/.test(h.d.getElementById('toast-stack').textContent));
+  assert.ok(!h.d.getElementById('hb-pl-ov'));
+});
+
+test('HB3.3 DOM: hbParseOptions_ — one option per line, "*" marks the right ones, blank lines dropped; a true/false question has its own two (pure)', async () => {
+  const h = await hbBoot_({});
+  const P = (t, ty) => JSON.parse(JSON.stringify(h.w.hbParseOptions_(t, ty)));
+  assert.deepStrictEqual(P('a\n* b\n\n c ', 'single'), { options: ['a', 'b', 'c'], correct: 1 });
+  assert.deepStrictEqual(P('*a\nb\n*  c', 'multi'), { options: ['a', 'b', 'c'], correct: [0, 2] });
+  assert.deepStrictEqual(P('a\nb', 'single'), { options: ['a', 'b'], correct: -1 }, 'none marked');
+  assert.deepStrictEqual(P('* x', 'truefalse'), { options: ['True', 'False'], correct: -1 });
+  assert.strictEqual(h.w.hbOptionsText_({ type: 'multi', options: ['a', 'b', 'c'], correct: [0, 2] }), '* a\nb\n* c', 'and back');
+});
