@@ -40642,7 +40642,7 @@ function hbServer_(opts) {
     HtmlService: opts.HtmlService,
   });
   sb.__email = opts.email || '';
-  ['kb_shared.js', 'Handbook.js', 'People.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
   sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks;
   return sb;
 }
@@ -40716,7 +40716,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbConfirmPerson', 'hbGetMe', 'hbRemovePerson', 'hbSaveProfile', 'hbSetManager',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbRemovePerson', 'hbResetQuiz', 'hbSaveProfile', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamQuizLocks',
     'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
@@ -41144,6 +41144,127 @@ test('HB2.1-e: People.js writes only the Handbook spreadsheet, every write holds
     assert.ok(gateAt >= 0 && gateAt < lockAt, f + ' checks its caller first');
     assert.ok(/hbPeopleRead_\((st|c)\.ss, true\)/.test(body.slice(lockAt)), f + ' reads fresh, under the lock');
   });
+});
+// HB3.2 — taking a quiz in the handbook app: Quiz.js over the KB's
+// ManualQuizzes tab (read) and the Handbook spreadsheet's QuizAttempts and
+// QuizResets tabs (appended), driven in hbServer_.
+console.log('\nHB3.2 — taking a quiz in the handbook app');
+const HB32_QS = [
+  { type: 'single', q: 'One?', options: ['a', 'b', 'c'], correct: 1, explain: 'Because b.', section: 'man-1-1', anchor: '1.1.2' },
+  { type: 'multi', q: 'All?', options: ['a', 'b', 'c'], correct: [0, 2], explain: 'a and c.', section: 'man-2-1', anchor: '' },
+  { type: 'truefalse', q: 'True?', options: ['True', 'False'], correct: 0, explain: 'It is true.', section: 'man-1-1', anchor: '' }];
+const hb32Tabs_ = () => Object.assign(hbTabs_(), { ManualQuizzes: [['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'],
+  ['q-intro', 'Intro check', 'man-1-1', '', 67, JSON.stringify(HB32_QS)], ['q-broken', 'Broken', 'man-2-1', '', 80, '{not json']] });
+function hb32Sb_(extra) {
+  return hbServer_(Object.assign({ tabs: hb32Tabs_(), hbTabs: {} }, HB_PPL_ENV, extra || {}));
+}
+const HB32_RIGHT = [1, [2, 0], 0], HB32_WRONG = [0, [0], 1];
+
+test('HB3.2-a: the quiz helpers — rows read (a broken one counted, never served), attempts and resets parsed (Passed is a word), and the standing: three fails lock for the wait, a pass or a reset starts over', () => {
+  const sb = hb32Sb_();
+  const q = hbPlain_(sb.hbQuizzesFromRows_(hb32Tabs_().ManualQuizzes.slice(1).map((r) => r.map(String))));
+  assert.deepStrictEqual([q.quizzes.map((x) => x.id), q.unreadable], [['q-intro'], 1]);
+  assert.strictEqual(q.quizzes[0].passPct, 67);
+  const at = hbPlain_(sb.hbQuizAttemptsParse_([['h'], [100, 'A@x.org', 'q-1', 50, 'no', '[]'], [200, 'a@x.org', 'q-1', 100, 'YES', '[]'], ['', 'b@x.org', 'q-1', 1, 'no'], [300, 'bad', 'q-1', 1, 'no']]));
+  assert.deepStrictEqual(at.map((a) => [a.ms, a.email, a.passed]), [[100, 'a@x.org', false], [200, 'a@x.org', true]], 'TRUE is never stored; a blank time or address is skipped');
+  const H = 3600000, F = (ms) => ({ ms, email: 'a@x.org', quizId: 'q-1', scorePct: 0, passed: false });
+  const three = [F(1 * H), F(2 * H), F(3 * H)];
+  const st = hbPlain_(sb.hbQuizStanding_(three, [], 'a@x.org', 'q-1', 4 * H));
+  assert.deepStrictEqual([st.locked, st.retryAtMs, st.attemptsLeft, st.attempts], [true, 27 * H, 0, 3], 'locked for 24 hours from the third');
+  assert.strictEqual(sb.hbQuizStanding_(three, [], 'a@x.org', 'q-1', 28 * H).locked, false, 'the wait elapsed');
+  assert.strictEqual(sb.hbQuizStanding_(three, [{ ms: 3.5 * H, email: 'a@x.org', quizId: 'q-1' }], 'a@x.org', 'q-1', 4 * H).locked, false, 'a reset after them');
+  assert.strictEqual(sb.hbQuizStanding_(three, [{ ms: 3.5 * H, email: 'a@x.org', quizId: 'q-OTHER' }], 'a@x.org', 'q-1', 4 * H).locked, true, 'a reset of another quiz does not count');
+  const passIn = [F(1 * H), Object.assign(F(2 * H), { passed: true, scorePct: 90 }), F(3 * H)];
+  const sp = hbPlain_(sb.hbQuizStanding_(passIn, [], 'a@x.org', 'q-1', 4 * H));
+  assert.deepStrictEqual([sp.locked, sp.attemptsLeft, sp.best, sp.passed], [false, 2, 90, true], 'a pass starts the count over; best and passed are kept');
+});
+
+test('HB3.2-b: a reader lists and takes a quiz — the questions arrive without the key, a wrong answer is shown its explanation and section (never the right option), three fails lock, a fourth is refused and NOT recorded (driven)', () => {
+  const sb = hb32Sb_();
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  hbAs_(sb, 'rep@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org');
+  const list = hbPlain_(sb.hbListQuizzes());
+  assert.deepStrictEqual([list.setUp, list.unreadable, list.quizzes.map((q) => [q.id, q.count, q.me.attemptsLeft, q.me.attempts])], [true, 1, [['q-intro', 3, 3, 0]]]);
+  const g = hbPlain_(sb.hbGetQuiz('q-intro'));
+  assert.deepStrictEqual(g.quiz.questions, [{ q: 'One?', options: ['a', 'b', 'c'] }, { q: 'All?', options: ['a', 'b', 'c'], type: 'multi' }, { q: 'True?', options: ['True', 'False'], type: 'truefalse' }]);
+  assert.ok(!/correct|explain|Because/.test(JSON.stringify(g)), 'the key and the explanations stay on the server until a submit');
+  // A wrong submit.
+  const w = hbPlain_(sb.hbSubmitQuiz('q-intro', HB32_WRONG));
+  assert.deepStrictEqual([w.success, w.scorePct, w.passed, w.perQuestion], [true, 0, false, [false, false, false]]);
+  assert.deepStrictEqual(w.review, [{ i: 0, explain: 'Because b.', section: 'man-1-1', anchor: '1.1.2' }, { i: 1, explain: 'a and c.', section: 'man-2-1', anchor: '' }, { i: 2, explain: 'It is true.', section: 'man-1-1', anchor: '' }]);
+  assert.ok(!/"correct"/.test(JSON.stringify(w)), 'never the right option');
+  const row = sb.__hbTabs.QuizAttempts[1];
+  assert.deepStrictEqual(row.slice(1, 5), ['rep@ex.org', 'q-intro', 0, 'no'], 'recorded by address, Passed as a word');
+  assert.deepStrictEqual(sb.__hbTabs.QuizAttempts[0], ['AtMs', 'Email', 'QuizId', 'ScorePct', 'Passed', 'PerQuestion']);
+  assert.strictEqual(w.me.attemptsLeft, 2);
+  // Two more fails, then locked: the fourth is refused, and not recorded.
+  sb.hbSubmitQuiz('q-intro', HB32_WRONG); const third = hbPlain_(sb.hbSubmitQuiz('q-intro', HB32_WRONG));
+  assert.deepStrictEqual([third.success, third.me.locked], [true, true]);
+  const rows = sb.__hbTabs.QuizAttempts.length;
+  const four = hbPlain_(sb.hbSubmitQuiz('q-intro', HB32_RIGHT));
+  assert.deepStrictEqual([four.success, four.locked, sb.__hbTabs.QuizAttempts.length], [false, true, rows], 'refused without a row');
+  assert.ok(four.me.retryAtMs > Date.now() + 23 * 3600000);
+  // A pass (after a reset): the score, passed, nothing to review.
+  hbAs_(sb, 'owner@example.org').hbConfirmPerson('rep@ex.org', true);
+  hbAs_(sb, 'boss@ex.org').hbResetQuiz('rep@ex.org', 'q-intro');
+  const ok = hbPlain_(hbAs_(sb, 'rep@ex.org').hbSubmitQuiz('q-intro', HB32_RIGHT));
+  assert.deepStrictEqual([ok.success, ok.scorePct, ok.passed, ok.review], [true, 100, true, []]);
+  // Refusals before any read of the attempts.
+  assert.strictEqual(sb.hbSubmitQuiz('q-intro', [1]).error, 'Those are not answers to this quiz — reload it and try again.');
+  assert.strictEqual(sb.hbSubmitQuiz('nope', []).error, 'That is not a quiz.');
+  assert.strictEqual(sb.hbGetQuiz('q-gone').error, 'That quiz is not in the handbook.');
+  assert.strictEqual(hbAs_(sb, '').hbSubmitQuiz('q-intro', HB32_RIGHT).error, 'Not authorized.');
+  // Nothing was written to the Knowledge Base.
+  assert.deepStrictEqual(Object.keys(sb.__tabs).sort(), ['KB', 'ManualMeta', 'ManualQuizzes']);
+});
+
+test('HB3.2-c: a reset is the confirmed manager\'s or an admin\'s — not another manager\'s, not a pending one\'s; the lock-out list shows each their own people; unset reads, but cannot take (driven)', () => {
+  const sb = hb32Sb_();
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  sb.hbSetManager('other@ex.org', true);
+  hbAs_(sb, 'rep@ex.org').hbSaveProfile('2 · Mobility', 'boss@ex.org');
+  [1, 2, 3].forEach(() => sb.hbSubmitQuiz('q-intro', HB32_WRONG));
+  // Pending: the chosen manager cannot reset yet.
+  assert.strictEqual(hbAs_(sb, 'boss@ex.org').hbResetQuiz('rep@ex.org', 'q-intro').error, 'Only their manager can reset their attempts.');
+  assert.deepStrictEqual(hbPlain_(sb.hbTeamQuizLocks()).locks, [], 'not theirs to see yet');
+  sb.hbConfirmPerson('rep@ex.org', true);
+  const locks = hbPlain_(sb.hbTeamQuizLocks()).locks;
+  assert.deepStrictEqual(locks.map((l) => [l.email, l.quizId, l.title]), [['rep@ex.org', 'q-intro', 'Intro check']]);
+  assert.strictEqual(hbAs_(sb, 'other@ex.org').hbResetQuiz('rep@ex.org', 'q-intro').error, 'Only their manager can reset their attempts.', 'another manager cannot');
+  assert.deepStrictEqual(hbPlain_(sb.hbTeamQuizLocks()).locks, [], 'and does not see them');
+  assert.strictEqual(hbAs_(sb, 'rep@ex.org').hbResetQuiz('rep@ex.org', 'q-intro').error, 'Only their manager can reset their attempts.', 'nor the reader');
+  const r = hbPlain_(hbAs_(sb, 'boss@ex.org').hbResetQuiz('rep@ex.org', 'q-intro'));
+  assert.strictEqual(r.success, true);
+  assert.deepStrictEqual(sb.__hbTabs.QuizResets[1].slice(1), ['rep@ex.org', 'q-intro', 'boss@ex.org']);
+  assert.strictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbGetQuiz('q-intro')).me.locked, false, 'open again');
+  assert.strictEqual(sb.__hbTabs.QuizAttempts.length, 4, 'the attempts themselves are kept');
+  // An admin may reset anyone.
+  [1, 2, 3].forEach(() => sb.hbSubmitQuiz('q-intro', HB32_WRONG));
+  assert.strictEqual(hbAs_(sb, 'owner@example.org').hbResetQuiz('rep@ex.org', 'q-intro').success, true);
+  // Unset: the quizzes list, and nothing can be taken.
+  const unset = hbServer_({ tabs: hb32Tabs_(), email: 'rep@ex.org', props: { HANDBOOK_KB_SS_ID: 'ss1' } });
+  const ul = hbPlain_(unset.hbListQuizzes());
+  assert.deepStrictEqual([ul.setUp, ul.quizzes.length, ul.quizzes[0].me], [false, 1, undefined]);
+  assert.ok(/HANDBOOK_SS_ID/.test(unset.hbSubmitQuiz('q-intro', HB32_RIGHT).error));
+  // Unreachable is not "not set up".
+  const gone = hb32Sb_({ openFail: ['hbss'], email: 'rep@ex.org' });
+  assert.ok(/Could not open the Handbook spreadsheet/.test(gone.hbListQuizzes().error));
+});
+
+test('HB3.2-d: Quiz.js reads the Knowledge Base and never writes it; its writes are appends to its own two tabs, under the app\'s lock, after the caller is checked (structural)', () => {
+  const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Quiz.js'), 'utf8'));
+  const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
+  assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'insertSheet'], 'appends only');
+  assert.strictEqual((src.match(/hbQuizAppend_\(/g) || []).length, 3, 'the helper and its two callers');
+  const kbUses = [...src.matchAll(/getKbSS_\(\)[^;]*/g)].map((m) => m[0]);
+  assert.ok(kbUses.length && kbUses.every((u) => /getSheetByName\(KB_MANUAL_QUIZZES_TAB\)/.test(u)), 'the KB is read for ManualQuizzes only');
+  ['hbSubmitQuiz', 'hbResetQuiz'].forEach((f) => {
+    const b = extractFnFrom(src, f);
+    const gate = b.indexOf('getEmployeeInfo_()'), lock = b.indexOf('hbWithLock_('), write = b.indexOf('hbQuizAppend_(');
+    assert.ok(gate >= 0 && gate < lock && lock < write, f + ': caller, then lock, then the append');
+  });
+  ['quizGrade_', 'quizStripQuestion_', 'quizReview_', 'trainQuizLockout_', 'kbManualQuizzesStored_'].forEach((n) =>
+    assert.ok(new RegExp('\\b' + n + '\\b').test(src) && !new RegExp('^function ' + n + '\\(', 'm').test(src), n + ' is Team Tools\', copied — not rewritten here'));
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
