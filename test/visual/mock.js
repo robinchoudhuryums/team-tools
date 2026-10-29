@@ -1431,6 +1431,31 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     hbConfirmPerson: function () { return { success: true, view: HB_PEOPLE_VIEW() }; },
     hbSetManager: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
     hbRemovePerson: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    // HB3.2 — taking a quiz: two quizzes (one passed, one locked) and a third
+    // untaken, on real sections of the mock manual; a sitting; a result with
+    // one answer to go over; one person locked out on the manager's team.
+    hbListQuizzes: function () {
+      var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
+      return { setUp: true, unreadable: 0, quizzes: [
+        { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, me: me() },
+        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 1, passed: true, best: 100 }) },
+        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3 }) }] };
+    },
+    hbGetQuiz: function () {
+      return { quiz: { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, questions: [
+        { q: 'What do you confirm before discussing an order?', options: ['The caller\'s identity (two identifiers)', 'The caller\'s insurance plan', 'The delivery address only'] },
+        { q: 'Which of these go in the call note?', options: ['Who called', 'What was asked', 'Your opinion of the caller', 'What happens next'], type: 'multi' },
+        { q: 'You may leave patient details in a voicemail.', options: ['True', 'False'], type: 'truefalse' },
+        { q: 'A caller asks for a supervisor. You…', options: ['Transfer per the escalation directory', 'Ask them to call back', 'End the call'] }] },
+        me: { locked: false, retryAtMs: null, attemptsLeft: 2, maxAttempts: 3, attempts: 1, best: 50, passed: false } };
+    },
+    hbSubmitQuiz: function () {
+      return { success: true, scorePct: 75, right: 3, total: 4, passed: false, passPct: 80, perQuestion: [true, false, true, true],
+        review: [{ i: 1, explain: 'A call note records who called, what they asked and what happens next — never an opinion of the caller.', section: 'man-0-11', anchor: '' }],
+        me: { locked: false, retryAtMs: null, attemptsLeft: 1, maxAttempts: 3, attempts: 2, best: 75, passed: false } };
+    },
+    hbTeamQuizLocks: function () { return { locks: [{ email: 'alex.kim@example.com', name: 'Alex Kim', quizId: 'q-field-pickup', title: 'Pick-up procedures', retryAtMs: Date.now() + 5 * 3600000 }] }; },
+    hbResetQuiz: { success: true },
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },

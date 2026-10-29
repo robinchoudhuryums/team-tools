@@ -104,6 +104,7 @@ const HB_PAGE = { page: 'handbook' };
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
 const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
+const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ document.querySelectorAll('.hb-qz-q').forEach(function(f){ var i=f.querySelector('input'); if(i) i.checked=true; }); hbSubmitQuiz_(); }, 400)";
 const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
 
 const SCENARIOS = [
@@ -125,6 +126,11 @@ const SCENARIOS = [
   ['handbook-people-light-wide',   {}, WIDE,   'light', '', 'hbGoPeople_()', HB_PAGE],
   ['handbook-people-dark-mobile',  {}, MOBILE, 'dark',  '', 'hbGoPeople_()', HB_PAGE],
   ['handbook-firstvisit-light-mobile', {}, MOBILE, 'light', '', HB_FIRST, HB_PAGE],
+  // HB3.2 — quizzes: the list, a sitting, a result, the bar on a section.
+  ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
+  ['handbook-quiz-take-light-mobile', {}, MOBILE, 'light', '', "hbTakeQuiz_('q-core-calls', true)", HB_PAGE],
+  ['handbook-quiz-result-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_RESULT, HB_PAGE],
+  ['handbook-quizbar-light-mobile', {}, MOBILE, 'light', '?s=0.11', '', HB_PAGE],
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
   // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,

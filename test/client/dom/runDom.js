@@ -9645,3 +9645,122 @@ test('HB2.1 DOM: no profile store asks nothing (an admin is told the setting); a
   fail.w.__hbChange({ state: { people: true } }); await fail.settleAll();
   assert.ok(fail.d.getElementById('hb-pp-me'), 'Back to the people view');
 });
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.2 — taking a quiz in the handbook app: the quiz bar, the list, a sitting
+// (shuffled on the page, answered in the original order), the result, the
+// lock-out, and a manager's reset.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.2 — taking a quiz in the handbook app');
+const HB32_QUIZ = { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3,
+  questions: [{ q: 'How often?', options: ['Daily', 'Monthly', 'Yearly'] }, { q: 'Which ship?', options: ['Kits', 'Tubing', 'Masks'], type: 'multi' }, { q: 'Nebs are respiratory.', options: ['True', 'False'], type: 'truefalse' }] };
+const hb32Me_ = (o) => Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {});
+const HB32_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
+  { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
+  { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ locked: true, retryAtMs: Date.now() + 3600000, attemptsLeft: 0, attempts: 3 }) }] });
+/** Tick the options whose TEXT is given, for question `text` — the page shuffles, so a test picks by words. */
+function hb32Pick_(h, qText, optTexts) {
+  const fs_ = [...h.d.querySelectorAll('.hb-qz-q')].filter((f) => f.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0)[0];
+  assert.ok(fs_, 'question shown: ' + qText);
+  [...fs_.querySelectorAll('.hb-qz-opt')].forEach((l) => { if (optTexts.indexOf(l.textContent.trim()) >= 0) l.querySelector('input').checked = true; });
+}
+
+test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list groups by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST() } });
+  assert.strictEqual(h.d.getElementById('hb-quizbar').textContent.trim(), '', 'no bar on the home page');
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = h.d.getElementById('hb-quizbar');
+  assert.ok(/Quiz: Nebulizers/.test(bar.textContent) && bar.querySelector('[data-quiz="q-neb"]'), 'the bar names the section\'s quiz');
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.strictEqual(bar.textContent.trim(), '', 'and only on its section');
+  h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { quizzes: true }, {}]);
+  const groups = [...h.d.querySelectorAll('.hb-qz-grp')].map((g) => [g.querySelector('h2').textContent, [...g.querySelectorAll('.hb-pp-row-n')].map((n) => n.textContent)]);
+  assert.deepStrictEqual(groups, [['3 · Respiratory & Resupply', ['Nebulizers']], ['5 · Power Mobility', ['Chairs']]], 'in the contents\' order');
+  const rows = [...h.d.querySelectorAll('.hb-qz-grp .hb-pp-row')];
+  assert.ok(/Not taken/.test(rows[0].textContent) && /pass mark 67%/.test(rows[0].textContent) && /section 3\.2/.test(rows[0].textContent));
+  assert.ok(/Locked until/.test(rows[1].textContent) && rows[1].querySelector('button').disabled, 'a locked quiz cannot be started');
+});
+
+test('HB3.2 DOM: a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
+  const sent = [];
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
+    hbSubmitQuiz: (id, a) => { sent.push(JSON.parse(JSON.stringify(a))); return { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true],
+      review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) }; } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { quiz: 'q-neb' }, {}]);
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 3);
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
+  // Unanswered: said, and nothing sent.
+  hb32Pick_(h, 'How often?', ['Monthly']);
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  assert.ok(/Answer every question first/.test(h.d.getElementById('hb-qz-need').textContent));
+  assert.strictEqual(sent.length, 0);
+  hb32Pick_(h, 'Which ship?', ['Masks', 'Kits']);
+  hb32Pick_(h, 'Nebs are respiratory.', ['True']);
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  assert.deepStrictEqual(sent, [[1, [0, 2], 0]], 'original question order, original option numbers');
+  const page = h.main().textContent;
+  assert.ok(/67%/.test(page) && /Passed/.test(page));
+  assert.ok(/Kits and masks ship monthly\./.test(page), 'the explanation');
+  const link = h.d.querySelector('.hb-qz-rev .hb-qz-sec');
+  assert.strictEqual(link.textContent, 'Read 3.1.1');
+  assert.ok(!/Tubing/.test(h.d.querySelector('.hb-qz-rev').textContent), 'no option text in the review');
+  link.click(); await h.settleAll();
+  assert.ok(h.d.querySelector('#kb-man-sec-man-3-1') || /Tanks/.test(h.main().textContent), 'the link opens the section');
+});
+
+test('HB3.2 DOM: shuffling — every order is a permutation, a true/false keeps True then False, and the answers map back exactly (pure, over a seeded random)', async () => {
+  const h = await hbBoot_({});
+  let seed = 7; const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const qs = [{ options: ['a', 'b', 'c', 'd'] }, { type: 'truefalse', options: ['True', 'False'] }, { type: 'multi', options: ['x', 'y', 'z'] }];
+  for (let n = 0; n < 20; n++) {
+    const order = JSON.parse(JSON.stringify(h.w.hbQuizOrder_(qs, rand)));
+    assert.deepStrictEqual(order.map((o) => o.q).sort(), [0, 1, 2]);
+    order.forEach((o) => assert.deepStrictEqual(o.opts.slice().sort(), [...Array(qs[o.q].options.length).keys()]));
+    assert.deepStrictEqual(order.filter((o) => o.q === 1)[0].opts, [0, 1]);
+    // Choose, on the shown page, the option shown first for each question.
+    const picked = order.map(() => [0]);
+    const ans = JSON.parse(JSON.stringify(h.w.hbQuizAnswers_(qs, order, picked)));
+    order.forEach((o) => assert.deepStrictEqual(ans[o.q], qs[o.q].type === 'multi' ? [o.opts[0]] : o.opts[0]));
+  }
+});
+
+test('HB3.2 DOM: locked — the quiz says when, and a submit refused as locked repaints that; a manager sees the team\'s lock-outs and resets one (driven)', async () => {
+  const locked = hb32Me_({ locked: true, retryAtMs: Date.now() + 7200000, attemptsLeft: 0, attempts: 3 });
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: locked } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  assert.ok(/used your 3 attempts/.test(h.main().textContent) && !h.d.querySelector('.hb-qz-form'), 'no form while locked');
+  // A manager's lock-outs.
+  let locks = [{ email: 'rep@ex.org', name: 'Rep', quizId: 'q-neb', title: 'Nebulizers', retryAtMs: Date.now() + 3600000 }];
+  const me = hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [] });
+  const m = await hbBoot_({ answers: { hbGetMe: me, hbTeamQuizLocks: () => ({ locks }), hbResetQuiz: () => { locks = []; return { success: true }; } } });
+  m.w.hbGoPeople_(); await m.settleAll();
+  const sec = m.d.getElementById('hb-pp-locks');
+  assert.ok(/Quiz lock-outs/.test(sec.textContent) && /Nebulizers · locked until/.test(sec.textContent));
+  sec.querySelector('button').click(); await m.settleAll();
+  assert.deepStrictEqual(m.argsOf.filter((a) => a[0] === 'hbResetQuiz').pop(), ['hbResetQuiz', 'rep@ex.org', 'q-neb']);
+  assert.ok(/Nobody you manage is locked out/.test(m.d.getElementById('hb-pp-locks').textContent), 'reloaded after the reset');
+  // A reader (no team) has no lock-out section and makes no call for one.
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_() } });
+  r.w.hbGoPeople_(); await r.settleAll();
+  assert.strictEqual(r.d.getElementById('hb-pp-locks').textContent, '');
+  assert.strictEqual(r.calls.indexOf('hbTeamQuizLocks'), -1);
+});
+
+test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar it had; Back reopens a quiz; an answer for a view already left is dropped', async () => {
+  let fail = false;
+  const h = await hbBoot_({ answers: { hbListQuizzes: () => (fail ? { __fail: 'Service invoked too many times' } : HB32_LIST()),
+    hbGetQuiz: { __delay: 30, value: { quiz: HB32_QUIZ, me: hb32Me_() } } } });
+  fail = true;
+  h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
+  assert.ok(/The quizzes could not be loaded: Service invoked too many times/.test(h.main().textContent));
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(/Quiz: Nebulizers/.test(h.d.getElementById('hb-quizbar').textContent), 'the bar keeps the list that loaded');
+  // A slow quiz answer after the reader moved on: dropped.
+  h.w.hbTakeQuiz_('q-neb', true);
+  h.w.hbGoHome_();
+  await new Promise((r) => setTimeout(r, 60)); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-card') && !h.d.querySelector('.hb-qz-form'), 'home stays home');
+  h.w.__hbChange({ state: { quiz: 'q-neb' } }); await new Promise((r) => setTimeout(r, 60)); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-qz-form'), 'Back to the quiz');
+});

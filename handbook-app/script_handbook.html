@@ -133,7 +133,7 @@ function hbMain_() { return document.getElementById('kb-main'); }
  *  Back), a Back itself does not push again. */
 function hbOpen_(id, anchor, nav, push) {
   hbCloseSide_();
-  hbLeaveSearch_(); HB_PP.showing = false;
+  hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
   hbMarkHomeBtn_(false);
   if (push) hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) });
@@ -141,7 +141,7 @@ function hbOpen_(id, anchor, nav, push) {
 function hbGoHome_() { hbHome_(true); }
 function hbHome_(push) {
   hbCloseSide_();
-  hbLeaveSearch_(); HB_PP.showing = false;
+  hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = true;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over home
   var main = hbMain_(); if (!main) return;
@@ -160,6 +160,8 @@ function hbOnHistory_(e) {
   var st = e && e.state;
   if (st && st.search) { var box = document.getElementById('hb-q'); if (box) box.value = st.search; hbSearch_(st.search, false); }
   else if (st && st.people) hbPeople_(false);
+  else if (st && st.quizzes) hbQuizList_(false);
+  else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
   else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
 }
@@ -190,7 +192,7 @@ function hbSearch_(q, record) {
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the results
   hbMarkCurrent_(null); hbMarkHomeBtn_(false);
-  HB_SEARCH.showing = true; HB_SEARCH.q = q; HB_PP.showing = false;
+  HB_SEARCH.showing = true; HB_SEARCH.q = q; HB_PP.showing = false; hbLeaveQuiz_();
   var seq = ++HB_SEARCH.seq;
   if (record) hbHistory_(was ? 'replace' : 'push', { search: q }, {});
   var jump = kbManualNumberTarget_(q, HB.tree);
@@ -305,16 +307,16 @@ function hbPaintMeBtn_() {
 function hbGoPeople_() { hbPeople_(true); }
 function hbPeople_(push) {
   hbCloseSide_();
-  hbLeaveSearch_();
+  hbLeaveSearch_(); hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the view
   hbMarkCurrent_(null); hbMarkHomeBtn_(false);
   HB_PP.showing = true; HB_PP.dirty = false;
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-people"><section class="hb-pp" id="hb-pp-me"></section>' +
-    '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
+    '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-locks"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
   main.scrollTop = 0;
-  hbPaintPeopleMe_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_();
+  hbPaintPeopleMe_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_();
   if (push) hbHistory_('push', { people: true }, {});
 }
 /** "Your profile" — the reader's department and manager. Not repainted while
@@ -452,6 +454,260 @@ function hbPpRemove_(btn) {
     .then(function (yes) { if (yes) hbPpCall_(btn, 'hbRemovePerson', [email], ['team', 'admin', 'me'], 'Removed.'); });
 }
 
+// ── Quizzes (HB3.2) ───────────────────────────────────────────────────────
+// The handbook's official quizzes (Quiz.js): a list grouped by chapter, a bar
+// on any section that has one, taking a quiz, and its result. Questions and
+// options are SHUFFLED here and the answers sent back in the quiz's ORIGINAL
+// order, so the server never needs to remember a shuffle. A wrong answer is
+// shown its explanation and a link to its section, never the right option.
+// Every answer is for ITS request: a view left, or a newer load, drops it (g81).
+
+/** PURE — a random order of 0..n-1 (Fisher–Yates over `rand`, 0 ≤ rand() < 1). */
+function hbShuffle_(n, rand) {
+  var a = [];
+  for (var i = 0; i < n; i++) a.push(i);
+  for (var j = n - 1; j > 0; j--) {
+    var k = Math.floor(rand() * (j + 1));
+    var t = a[j]; a[j] = a[k]; a[k] = t;
+  }
+  return a;
+}
+/** PURE — the order a quiz is shown in: the questions shuffled, and each
+ *  question's options shuffled (a true/false keeps True, False). Each entry
+ *  is { q: original question index, opts: [original option indices] }. */
+function hbQuizOrder_(questions, rand) {
+  return hbShuffle_(questions.length, rand).map(function (qi) {
+    var q = questions[qi], n = (q.options || []).length;
+    return { q: qi, opts: q.type === 'truefalse' ? [0, 1] : hbShuffle_(n, rand) };
+  });
+}
+/** PURE — the answers in the quiz's ORIGINAL order, from what was chosen on
+ *  the shuffled page: picked[k] is the list of SHOWN option positions chosen
+ *  for shown question k. A single answer is an index, a multi-select a list;
+ *  an unanswered question is null. */
+function hbQuizAnswers_(questions, order, picked) {
+  var out = questions.map(function () { return null; });
+  order.forEach(function (o, k) {
+    var shown = picked[k] || [];
+    var orig = shown.map(function (s) { return o.opts[s]; });
+    out[o.q] = questions[o.q].type === 'multi' ? (orig.length ? orig.sort(function (a, b) { return a - b; }) : null) : (orig.length ? orig[0] : null);
+  });
+  return out;
+}
+/** PURE — a stamp as the reader reads it ("Thu, Oct 30, 2:15 PM"). */
+function hbWhen_(ms) {
+  try { return new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+  catch (e) { return new Date(ms).toString(); }
+}
+
+var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null };   // seq: the open view's; lseq: the list load's
+function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; }
+
+function hbLoadQuizzes_(then) {
+  var lseq = ++HB_QZ.lseq;
+  var take = function (res) {
+    if (lseq !== HB_QZ.lseq) return;   // a newer load is on its way
+    // A failure never replaces a list that loaded (g129): the bar keeps it.
+    if (!(res && res.error && HB_QZ.list && !HB_QZ.list.error)) HB_QZ.list = res;
+    hbPaintQuizBar_(HB.currentId);
+    if (then) then(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { take(res && typeof res === 'object' ? res : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (err) { take({ error: (err && err.message) || 'The server did not answer.' }); })
+    .hbListQuizzes();
+}
+/** The quiz bar: the quizzes on the section in view (none → hidden). */
+function hbPaintQuizBar_(id) {
+  var bar = document.getElementById('hb-quizbar'); if (!bar) return;
+  var list = HB_QZ.list, mine = [];
+  if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
+  bar.innerHTML = mine.map(function (q) {
+    return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
+  }).join('');
+}
+/** Where a reader stands with a quiz, as a chip. */
+function hbQuizChip_(me) {
+  if (!me) return '';
+  if (me.locked) return '<span class="hb-qz-chip lock">Locked until ' + esc(hbWhen_(me.retryAtMs)) + '</span>';
+  if (me.passed) return '<span class="hb-qz-chip pass">Passed' + (me.best != null ? ' · best ' + me.best + '%' : '') + '</span>';
+  if (me.attempts) return '<span class="hb-qz-chip">' + me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left</span>';
+  return '<span class="hb-qz-chip">Not taken</span>';
+}
+/** A link to a quiz's (or a question's) section — only when the reader can
+ *  open it: a section not in the contents (unpublished) gets no link, never a
+ *  raw id. */
+function hbQuizSecLink_(id, anchor, before, label) {
+  if (!id || !HB.tree.some(function (it) { return it.id === id; })) return '';
+  return esc(before) + '<a href="#" class="hb-qz-sec" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(anchor || '') +
+    '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\')); return false;">' +
+    esc(label + hbLinkOf_(id, anchor, HB.tree)) + '</a>';
+}
+function hbGoQuizzes_() { hbQuizList_(true); }
+function hbQuizList_(push) {
+  hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_QZ.showing = 'list';
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-qz"><h1 class="hb-pp-h">Quizzes</h1><div id="hb-qz-body">' + loSweep() + '</div></div>';
+  main.scrollTop = 0;
+  if (push) hbHistory_('push', { quizzes: true }, {});
+  var seq = HB_QZ.seq;
+  hbLoadQuizzes_(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'list') hbPaintQuizList_(res); });
+}
+function hbPaintQuizList_(res) {
+  var host = document.getElementById('hb-qz-body'); if (!host) return;
+  if (!res || res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The quizzes could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
+  var qs = res.quizzes || [];
+  var html = '';
+  if (res.setUp === false) html += '<p class="hb-quiet">Quizzes can be taken once the handbook\'s admin sets up the Handbook spreadsheet.</p>';
+  if (res.unreadable) html += '<p class="hb-quiet">' + res.unreadable + ' quiz' + (res.unreadable === 1 ? '' : 'zes') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>';
+  if (!qs.length) { host.innerHTML = html + '<p class="hb-quiet">No quizzes have been published yet.</p>'; return; }
+  // Grouped by the chapter of the section each belongs to, in the contents' order.
+  var deptOf = {};
+  HB.tree.forEach(function (it) { deptOf[it.id] = it.department; });
+  var groups = {};
+  qs.forEach(function (q) { var d = deptOf[q.section] || ''; (groups[d] = groups[d] || []).push(q); });
+  var order = kbManualDepts_().list.filter(function (d) { return groups[d]; });
+  if (groups['']) order.push('');
+  host.innerHTML = html + order.map(function (d) {
+    return '<section class="hb-qz-grp"><h2 class="hb-pp-h2">' + esc(d ? hbChapterLabel_(d) : 'Other') + '</h2>' + groups[d].map(function (q) {
+      var locked = q.me && q.me.locked;
+      return '<div class="hb-pp-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(q.title) + '</span>' +
+        '<span class="hb-quiet">' + q.count + ' question' + (q.count === 1 ? '' : 's') + ' · pass mark ' + q.passPct + '%' + hbQuizSecLink_(q.section, q.anchor, ' · ', 'section ') + '</span>' +
+        hbQuizChip_(q.me) + '</div>' +
+        '<div class="hb-pp-row-a">' + (res.setUp === false ? '' : '<button type="button" class="kb-btn hb-pp-yes" data-quiz="' + esc(q.id) + '"' + (locked ? ' disabled' : '') +
+          ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (locked ? 'Locked' : (q.me && q.me.attempts ? 'Take again' : 'Take the quiz')) + '</button>') + '</div></div>';
+    }).join('') + '</section>';
+  }).join('');
+}
+
+/** Open a quiz to take: its questions shuffled for this sitting. */
+function hbTakeQuiz_(id, push) {
+  hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_QZ.showing = 'take';
+  var seq = HB_QZ.seq;
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-qz" id="hb-qz-take">' + loSweep() + '</div>';
+  main.scrollTop = 0;
+  if (push) hbHistory_('push', { quiz: id }, {});
+  google.script.run
+    .withSuccessHandler(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbPaintTake_(res || { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbPaintTake_({ error: (err && err.message) || 'The server did not answer.' }); })
+    .hbGetQuiz(id);
+}
+function hbPaintTake_(res) {
+  var host = document.getElementById('hb-qz-take'); if (!host) return;
+  if (res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The quiz could not be opened: ' + esc(String(res.error).replace(/\.$/, '')) + '.</p>'; return; }
+  var quiz = res.quiz, me = res.me || {};
+  var head = '<h1 class="hb-pp-h">' + esc(quiz.title) + '</h1><p class="hb-quiet">' + quiz.questions.length + ' question' + (quiz.questions.length === 1 ? '' : 's') +
+    ' · pass mark ' + quiz.passPct + '% · ' + (me.locked ? '' : me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left') + '</p>';
+  if (me.locked) {
+    host.innerHTML = head + '<p class="hb-msg bad" role="alert">You have used your ' + me.maxAttempts + ' attempts. You can try again after ' + esc(hbWhen_(me.retryAtMs)) +
+      ', or ask your manager to reset them.</p><button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Back to quizzes</button>';
+    return;
+  }
+  var order = hbQuizOrder_(quiz.questions, Math.random);
+  HB_QZ.taking = { quiz: quiz, order: order };
+  host.innerHTML = head + '<form class="hb-qz-form" onsubmit="hbSubmitQuiz_(event)">' + order.map(function (o, k) {
+    var q = quiz.questions[o.q], multi = q.type === 'multi';
+    return '<fieldset class="hb-qz-q" data-k="' + k + '"><legend class="hb-qz-qt"><span class="hb-qz-n">' + (k + 1) + '.</span> ' + esc(q.q) +
+      (multi ? ' <span class="hb-quiet">(choose all that apply)</span>' : '') + '</legend>' +
+      o.opts.map(function (oi, s) {
+        return '<label class="hb-qz-opt"><input type="' + (multi ? 'checkbox' : 'radio') + '" name="hb-qz-' + k + '" value="' + s + '"> <span>' + esc(q.options[oi]) + '</span></label>';
+      }).join('') + '</fieldset>';
+  }).join('') + '<p class="hb-qz-need" id="hb-qz-need" role="alert"></p>' +
+    '<div class="hb-qz-actions"><button type="submit" class="kb-btn hb-pp-yes" id="hb-qz-submit">Submit answers</button>' +
+    '<button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Cancel</button></div></form>';
+}
+function hbSubmitQuiz_(e) {
+  if (e) e.preventDefault();
+  var t = HB_QZ.taking; if (!t) return;
+  var picked = t.order.map(function (o, k) {
+    return Array.prototype.slice.call(document.querySelectorAll('input[name="hb-qz-' + k + '"]:checked')).map(function (i) { return Number(i.value); });
+  });
+  var missing = picked.map(function (p, k) { return p.length ? 0 : k + 1; }).filter(Boolean);
+  var need = document.getElementById('hb-qz-need');
+  if (missing.length) { if (need) need.textContent = 'Answer every question first — ' + (missing.length === 1 ? 'question ' + missing[0] + ' is' : 'questions ' + missing.join(', ') + ' are') + ' unanswered.'; return; }
+  if (need) need.textContent = '';
+  var btn = document.getElementById('hb-qz-submit'); if (btn) btn.disabled = true;
+  var answers = hbQuizAnswers_(t.quiz.questions, t.order, picked);
+  var seq = HB_QZ.seq;
+  var done = function (res) {
+    if (seq !== HB_QZ.seq || HB_QZ.showing !== 'take') return;
+    if (!res || !res.success) {
+      if (btn && btn.isConnected) btn.disabled = false;
+      if (res && res.locked) { hbPaintTake_({ quiz: t.quiz, me: res.me }); return; }
+      showToast('Not submitted: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error');
+      return;
+    }
+    hbPaintResult_(t.quiz, res);
+    hbLoadQuizzes_();   // the list and the quiz bar learn the new standing
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: err && err.message }); })
+    .hbSubmitQuiz(t.quiz.id, answers);
+}
+/** The result: the score, and for each wrong answer its explanation and the
+ *  section to read — never which option was right. */
+function hbPaintResult_(quiz, res) {
+  var host = document.getElementById('hb-qz-take'); if (!host) return;
+  HB_QZ.taking = null;
+  var me = res.me || {};
+  var html = '<h1 class="hb-pp-h">' + esc(quiz.title) + '</h1>' +
+    '<div class="hb-qz-score ' + (res.passed ? 'pass' : 'fail') + '" role="status"><b>' + res.scorePct + '%</b> — ' + res.right + ' of ' + res.total + ' right. ' +
+    (res.passed ? 'Passed (the pass mark is ' + res.passPct + '%).' : 'Not passed yet (the pass mark is ' + res.passPct + '%).') + '</div>';
+  if ((res.review || []).length) {
+    html += '<h2 class="hb-pp-h2">To go over</h2>' + res.review.map(function (r) {
+      var q = quiz.questions[r.i] || {};
+      return '<div class="hb-qz-rev"><div class="hb-qz-qt">' + esc(q.q || '') + '</div>' +
+        (r.explain ? '<div class="hb-qz-why">' + esc(r.explain) + '</div>' : '') + hbQuizSecLink_(r.section, r.anchor, '', 'Read ') + '</div>';
+    }).join('');
+  }
+  html += '<p class="hb-quiet">' + (me.locked ? 'You have used your ' + me.maxAttempts + ' attempts — you can try again after ' + esc(hbWhen_(me.retryAtMs)) + ', or ask your manager to reset them.'
+    : (res.passed ? '' : me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left.')) + '</p>' +
+    '<div class="hb-qz-actions">' + (me.locked || res.passed ? '' : '<button type="button" class="kb-btn hb-pp-yes" data-quiz="' + esc(quiz.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), false)">Try again</button>') +
+    '<button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Back to quizzes</button></div>';
+  host.innerHTML = html;
+  hbMain_().scrollTop = 0;
+}
+
+/** People view: the manager's (or admin's) people locked out of a quiz. */
+function hbLoadLocks_() {
+  var host = document.getElementById('hb-pp-locks'); if (!host) return;
+  var me = HB_ME;
+  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  google.script.run
+    .withSuccessHandler(function (res) { hbPaintLocks_(res || { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (err) { hbPaintLocks_({ error: (err && err.message) || 'The server did not answer.' }); })
+    .hbTeamQuizLocks();
+}
+function hbPaintLocks_(res) {
+  var host = document.getElementById('hb-pp-locks'); if (!host || !HB_PP.showing) return;
+  if (res.error) { host.innerHTML = '<h2 class="hb-pp-h2">Quiz lock-outs</h2><p class="hb-msg bad" role="alert">Could not read the quiz lock-outs: ' + esc(String(res.error).replace(/\.$/, '')) + '.</p>'; return; }
+  var locks = res.locks || [];
+  host.innerHTML = '<h2 class="hb-pp-h2">Quiz lock-outs</h2>' + (locks.length ? locks.map(function (l) {
+    return '<div class="hb-pp-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(l.name) + '</span>' +
+      '<span class="hb-quiet">' + esc(l.title) + ' · locked until ' + esc(hbWhen_(l.retryAtMs)) + '</span></div>' +
+      '<div class="hb-pp-row-a"><button type="button" class="kb-btn" data-email="' + esc(l.email) + '" data-quiz="' + esc(l.quizId) + '" onclick="hbResetQuiz_(this)">Reset attempts</button></div></div>';
+  }).join('') : '<p class="hb-quiet">Nobody you manage is locked out of a quiz.</p>');
+}
+function hbResetQuiz_(btn) {
+  btn.disabled = true;
+  var done = function (res) {
+    if (!res || !res.success) { if (btn.isConnected) btn.disabled = false; showToast('Not reset: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    showToast('Attempts reset — they can take the quiz again.', 'toast-success');
+    hbLoadLocks_();
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: err && err.message }); })
+    .hbResetQuiz(btn.getAttribute('data-email'), btn.getAttribute('data-quiz'));
+}
+
 // ── Contents ──────────────────────────────────────────────────────────────
 function hbChapterLabel_(dept) {
   var p = kbManualChapterParts_(dept);
@@ -461,7 +717,8 @@ function hbChapterLabel_(dept) {
 function hbPaintToc_() {
   var host = document.getElementById('hb-toc'); if (!host) return;
   var depts = kbManualDepts_().list;
-  var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>';
+  var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>' +
+    '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>';   // HB3.2
   depts.forEach(function (dept) {
     var secs = HB.tree.filter(function (it) { return it.department === dept; });
     html += '<div class="hb-ch" data-dept="' + esc(dept) + '">' +
@@ -484,6 +741,7 @@ function hbToggleCh_(btn) {
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 function hbMarkCurrent_(id) {
+  hbPaintQuizBar_(id);   // HB3.2: the quizzes on the section in view
   document.querySelectorAll('#hb-toc .hb-it').forEach(function (b) {
     var on = !!id && b.getAttribute('data-kb-id') === id;
     b.classList.toggle('on', on);
@@ -645,6 +903,7 @@ function hbBoot_() {
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
   hbLoadMe_();
+  hbLoadQuizzes_();   // HB3.2: the quiz bar needs to know which sections have one
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));
