@@ -16,6 +16,7 @@
     "Handbook.js",
     "People.js",
     "Quiz.js",
+    "Reminders.js",
     "Training.js"
   ],
   "skipSubdirectories": false

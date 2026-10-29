@@ -24,8 +24,12 @@
  * a due date never coerces — g144/g13):
  *   TeamQuizzes [Id, Author, QuizJson, UpdatedMs, Status]   live | archived
  *   Plans       [Id, Author, PlanJson, UpdatedMs, Status]   live | archived
- *   ReadMarks   [AtMs, Email, ItemKey, Done]                append-only; the
- *               latest mark per (reader, item) wins; Done is yes / no (g09)
+ *   ReadMarks   [AtMs, Email, ItemKey, Done, Version]       append-only; the
+ *               latest mark per (reader, item) wins; Done is yes / no (g09).
+ *               Since HB3.4 a mark IS the sign-off ("I've read this"): it
+ *               records the section's version (its body's stamp), and a change
+ *               the changelog flags for retraining, dated after it, asks the
+ *               reader to sign again — until they do, the item is not done.
  * A team quiz's answer key stays on the server like an official one's
  * (quizStripQuestion_); its author and the admin see it in the editor. */
 
@@ -34,7 +38,7 @@ const HB_TEAM_QUIZZES_HEADERS = ['Id', 'Author', 'QuizJson', 'UpdatedMs', 'Statu
 const HB_PLANS_TAB = 'Plans';
 const HB_PLANS_HEADERS = ['Id', 'Author', 'PlanJson', 'UpdatedMs', 'Status'];
 const HB_READS_TAB = 'ReadMarks';
-const HB_READS_HEADERS = ['AtMs', 'Email', 'ItemKey', 'Done'];
+const HB_READS_HEADERS = ['AtMs', 'Email', 'ItemKey', 'Done', 'Version'];   // HB3.4: the version signed
 const HB_TEAM_QUIZ_ID_RE = /^tq-[a-z0-9]{8,24}$/;
 const HB_PLAN_ID_RE = /^pl-[a-z0-9]{8,24}$/;
 const HB_QUIZ_ID_RE = /^(?:q-[a-z0-9]+(?:-[a-z0-9]+)*|tq-[a-z0-9]{8,24})$/;   // an official or a team quiz
@@ -63,18 +67,36 @@ function hbJsonRows_(values, idRe) {
 }
 /** PURE — the key a reading mark and a plan item share. */
 function hbItemKey_(kind, id) { return kind + ':' + id; }
-/** PURE — the latest mark per (reader, item): { 'email|key': true/false }. */
-function hbReadDone_(values) {
+/** PURE — the latest mark per (reader, item): { 'email|key': {ms, done,
+ *  version} } — the sign-offs (HB3.4). */
+function hbSignMarks_(values) {
   const latest = {};
   (values || []).slice(1).forEach(function (r) {
     const ms = Number(r[0]), email = hbEmail_(r[1]), key = String(r[2] || '');
     if (!email || !key || !(ms > 0)) return;
     const k = email + '|' + key;
-    if (!latest[k] || ms >= latest[k].ms) latest[k] = { ms: ms, done: String(r[3] || '').toLowerCase() === 'yes' };
+    if (!latest[k] || ms >= latest[k].ms) latest[k] = { ms: ms, done: String(r[3] || '').toLowerCase() === 'yes', version: String(r[4] == null ? '' : r[4]) };
   });
-  const out = {};
-  Object.keys(latest).forEach(function (k) { out[k] = latest[k].done; });
-  return out;
+  return latest;
+}
+/** PURE — the latest retraining change to any of `ids` (section ids), from
+ *  the handbook's changelog: its date (YYYY-MM-DD) or ''. */
+function hbRetrainDate_(changelog, ids) {
+  const want = {};
+  (ids || []).forEach(function (id) { want[id] = 1; });
+  let latest = '';
+  (Array.isArray(changelog) ? changelog : []).forEach(function (c) {
+    if (!c || c.retraining !== true || !want[c.id] || !/^\d{4}-\d{2}-\d{2}$/.test(String(c.date || ''))) return;
+    if (c.date > latest) latest = c.date;
+  });
+  return latest;
+}
+/** PURE — where a sign-off stands: 'unsigned' (none, or withdrawn), 'resign'
+ *  (a change flagged for retraining is dated AFTER the day it was signed), or
+ *  'signed'. A change not flagged for retraining never asks again. */
+function hbSignState_(mark, signedDay, retrainDate) {
+  if (!mark || !mark.done) return 'unsigned';
+  return retrainDate && retrainDate > signedDay ? 'resign' : 'signed';
 }
 /** PURE — the people an author may assign to: an admin, everyone; a manager
  *  (still a manager), their confirmed team; anyone else, nobody. */
@@ -161,18 +183,61 @@ function hbTrainTabValues_(ss, name, width) {
 }
 function hbTeamQuizRows_(ss) { return hbJsonRows_(hbTrainTabValues_(ss, HB_TEAM_QUIZZES_TAB, HB_TEAM_QUIZZES_HEADERS.length), HB_TEAM_QUIZ_ID_RE); }
 function hbPlanRows_(ss) { return hbJsonRows_(hbTrainTabValues_(ss, HB_PLANS_TAB, HB_PLANS_HEADERS.length), HB_PLAN_ID_RE); }
-function hbReads_(ss) { return hbReadDone_(hbTrainTabValues_(ss, HB_READS_TAB, HB_READS_HEADERS.length)); }
-/** The published handbook: its chapters and its sections (id → title). */
+function hbSignOffs_(ss) { return hbSignMarks_(hbTrainTabValues_(ss, HB_READS_TAB, HB_READS_HEADERS.length)); }
+/** The published handbook: its chapters, its sections (id → title), and
+ *  each section's and chapter's VERSION — the stamp of its text (HB3.4). */
 function hbPublished_() {
   const res = getManualParts();
   if (!res || res.error || !Array.isArray(res.parts)) throw new Error('Could not read the handbook\'s chapters' + (res && res.error ? ': ' + res.error : '') + '.');
-  const out = { departments: [], sectionIds: {}, sectionTitle: {} };
+  const out = { departments: [], sectionIds: {}, sectionTitle: {}, version: {}, chapterSections: {} };
   res.parts.forEach(function (p) {
     if (!p || !p.department) return;
-    out.departments.push(String(p.department));
-    (p.sections || []).forEach(function (s) { out.sectionIds[s.id] = 1; out.sectionTitle[s.id] = String(s.title || ''); });
+    const dept = String(p.department), ids = [];
+    out.departments.push(dept);
+    (p.sections || []).forEach(function (s) {
+      out.sectionIds[s.id] = 1; out.sectionTitle[s.id] = String(s.title || '');
+      out.version[hbItemKey_('section', s.id)] = hbStamp_(String(s.bodyMd || ''));
+      ids.push(s.id);
+    });
+    out.chapterSections[dept] = ids;
+    out.version[hbItemKey_('chapter', dept)] = hbStamp_(ids.map(function (id) { return out.version[hbItemKey_('section', id)]; }).join('|'));
   });
   return out;
+}
+/** Everything an item's progress is read from, for one request. */
+function hbProgressCtx_(ss) {
+  const meta = getManualMeta();
+  const titles = {};
+  hbQuizzes_().quizzes.forEach(function (q) { titles[q.id] = q.title; });
+  hbTeamQuizRows_(ss).rows.forEach(function (r) { titles[r.id] = String(r.body.title || ''); });
+  return { pub: hbPublished_(), changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [],
+    marks: hbSignOffs_(ss), attempts: hbQuizAttempts_(ss), resets: hbQuizResets_(ss), titles: titles, now: Date.now(), today: fmtDate_(new Date()) };
+}
+/** One reader's sign-off on one reading item: { state, signedMs, version }. */
+function hbSignOf_(ctx, email, kind, id) {
+  const key = hbItemKey_(kind, id);
+  const mark = ctx.marks[email + '|' + key] || null;
+  const ids = kind === 'chapter' ? (ctx.pub.chapterSections[id] || []) : [id];
+  const signedDay = mark ? fmtDate_(new Date(mark.ms)) : '';
+  return { state: hbSignState_(mark, signedDay, hbRetrainDate_(ctx.changelog, ids)), signedMs: mark && mark.done ? mark.ms : 0,
+    changed: !!(mark && mark.done && mark.version && ctx.pub.version[key] && mark.version !== ctx.pub.version[key]) };
+}
+/** A plan's items for one reader: each with whether it is done (a reading item
+ *  signed and not asked again; a quiz passed), the progress, and overdue. */
+function hbPlanProgress_(ctx, plan, email) {
+  const items = (plan.body.items || []).map(function (it) {
+    const key = hbItemKey_(it.kind, it.id);
+    if (it.kind === 'quiz') {
+      const s = hbQuizStanding_(ctx.attempts, ctx.resets, email, it.id, ctx.now);
+      return { kind: 'quiz', id: it.id, key: key, title: ctx.titles[it.id] || '', missing: !ctx.titles[it.id], done: s.passed, quiz: s };
+    }
+    const so = hbSignOf_(ctx, email, it.kind, it.id);
+    return { kind: it.kind, id: it.id, key: key, done: so.state === 'signed', sign: so };
+  });
+  const n = items.filter(function (i) { return i.done; }).length;
+  const due = String(plan.body.due || '');
+  return { id: plan.id, title: String(plan.body.title || ''), author: plan.author, authorName: hbNameOf_(plan.author), due: due,
+    items: items, done: n, total: items.length, overdue: hbPlanOverdue_(due, ctx.today, n === items.length) };
 }
 /** A team quiz record as the quiz engine's shape. */
 function hbTeamQuizOf_(r) {
@@ -227,8 +292,8 @@ function hbNewId_(prefix) { return prefix + String(Utilities.getUuid()).replace(
 // ── Public endpoints ─────────────────────────────────────────────────────
 
 /** My training: the live plans that reach the reader now, each item with
- *  whether it is done (a chapter/section the reader marked read; a quiz
- *  passed), the progress, the due date and whether it is overdue. */
+ *  whether it is done (a chapter/section the reader signed off, not asked
+ *  again since; a quiz passed), the progress, the due date and overdue. */
 function hbMyTraining() {
   const emp = getEmployeeInfo_();
   if (!emp) return { error: 'Not authorized.' };
@@ -239,30 +304,14 @@ function hbMyTraining() {
     const admins = hbAdmins_(), people = hbPeopleRead_(ss, false);
     const plans = hbPlansFor_(hbPlanRows_(ss).rows, people, admins, emp.email);
     if (!plans.length) return { setUp: true, plans: [] };
-    const done = hbReads_(ss);
-    const attempts = hbQuizAttempts_(ss), resets = hbQuizResets_(ss), now = Date.now();
-    const titles = {};
-    hbQuizzes_().quizzes.forEach(function (q) { titles[q.id] = q.title; });
-    hbTeamQuizRows_(ss).rows.forEach(function (r) { titles[r.id] = String(r.body.title || ''); });
-    const today = fmtDate_(new Date());
-    return { setUp: true, plans: plans.map(function (p) {
-      const items = (p.body.items || []).map(function (it) {
-        const key = hbItemKey_(it.kind, it.id);
-        if (it.kind === 'quiz') {
-          const s = hbQuizStanding_(attempts, resets, emp.email, it.id, now);
-          return { kind: 'quiz', id: it.id, key: key, title: titles[it.id] || '', missing: !titles[it.id], done: s.passed, quiz: s };
-        }
-        return { kind: it.kind, id: it.id, key: key, done: !!done[emp.email + '|' + key] };
-      });
-      const n = items.filter(function (i) { return i.done; }).length;
-      return { id: p.id, title: String(p.body.title || ''), author: p.author, authorName: hbNameOf_(p.author), due: String(p.body.due || ''),
-        items: items, done: n, total: items.length, overdue: hbPlanOverdue_(String(p.body.due || ''), today, n === items.length) };
-    }) };
+    const ctx = hbProgressCtx_(ss);
+    return { setUp: true, plans: plans.map(function (p) { return hbPlanProgress_(ctx, p, emp.email); }) };
   } catch (err) { return { error: err.message }; }
 }
 
-/** The reader marks a chapter or section read (or not). Any signed-in reader;
- *  the item must be a published one. Appends a ReadMarks row. */
+/** The reader signs off a chapter or section — "I've read this" — or
+ *  withdraws it. Any signed-in reader; the item must be a published one.
+ *  Appends a ReadMarks row with the version signed (HB3.4). */
 function hbMarkRead(kind, id, done) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
@@ -275,7 +324,8 @@ function hbMarkRead(kind, id, done) {
   if (kind === 'chapter' ? pub.departments.indexOf(sid) < 0 : !pub.sectionIds[sid]) return { success: false, error: 'That ' + kind + ' is not in the handbook.' };
   return hbWithLock_(function () {
     try {
-      hbQuizAppend_(st.ss, HB_READS_TAB, HB_READS_HEADERS, [Date.now(), emp.email, hbItemKey_(kind, sid), done === false ? 'no' : 'yes']);
+      const key = hbItemKey_(kind, sid);
+      hbQuizAppend_(st.ss, HB_READS_TAB, HB_READS_HEADERS, [Date.now(), emp.email, key, done === false ? 'no' : 'yes', pub.version[key] || '']);
       return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
   });
@@ -385,4 +435,63 @@ function hbArchiveTraining(kind, id, archived) {
       return { success: true };
     } catch (err) { return { success: false, error: err.message }; }
   });
+}
+
+/** HB3.4 — the reader's own sign-offs, for the bar above the reader: every
+ *  item they have signed (or been asked to sign again), by key. */
+function hbMySignOffs() {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { error: 'Not authorized.' };
+  let ss;
+  try { ss = getHandbookSS_(); } catch (err) { return { error: 'Could not open the Handbook spreadsheet: ' + err.message }; }
+  if (!ss) return { setUp: false, signoffs: {} };
+  try {
+    const marks = hbSignOffs_(ss);
+    const meta = getManualMeta();
+    const ctx = { marks: marks, changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [], pub: hbPublished_() };
+    const out = {};
+    Object.keys(marks).forEach(function (k) {
+      const bar = k.indexOf('|');
+      if (k.slice(0, bar) !== emp.email) return;
+      const key = k.slice(bar + 1), colon = key.indexOf(':');
+      const so = hbSignOf_(ctx, emp.email, key.slice(0, colon), key.slice(colon + 1));
+      if (so.state !== 'unsigned') out[key] = so;
+    });
+    return { setUp: true, signoffs: out };
+  } catch (err) { return { error: err.message }; }
+}
+
+/** HB3.4 — the manager view, per person: a manager's confirmed team (the
+ *  admin: everyone), each with every live plan that reaches them (whoever
+ *  wrote it) — done, total, overdue; the quizzes they have attempted — best
+ *  score, attempts, passed, locked; and their sign-offs — current and asked
+ *  again. Whether reminder emails are on rides along. */
+function hbTeamProgress() {
+  const c = hbAuthorCall_();
+  if (c.error) return { error: c.error };
+  try {
+    const admins = hbAdmins_();
+    const plans = hbPlanRows_(c.ss).rows;
+    const ctx = hbProgressCtx_(c.ss);
+    const team = hbAuthorTeam_(c.people, c.emp.email, c.isAdmin);
+    return { remindersOn: hbRemindersOn_(), people: team.map(function (p) {
+      const mine = hbPlansFor_(plans, c.people, admins, p.email).map(function (pl) { return hbPlanProgress_(ctx, pl, p.email); });
+      const tried = {};
+      ctx.attempts.forEach(function (a) { if (a.email === p.email) tried[a.quizId] = 1; });
+      const quizzes = Object.keys(tried).map(function (id) {
+        const s = hbQuizStanding_(ctx.attempts, ctx.resets, p.email, id, ctx.now);
+        return { id: id, title: ctx.titles[id] || id, best: s.best, attempts: s.attempts, passed: s.passed, locked: s.locked };
+      });
+      let signed = 0, resign = 0;
+      Object.keys(ctx.marks).forEach(function (k) {
+        if (k.indexOf(p.email + '|') !== 0) return;
+        const key = k.slice(p.email.length + 1), colon = key.indexOf(':');
+        const st = hbSignOf_(ctx, p.email, key.slice(0, colon), key.slice(colon + 1)).state;
+        if (st === 'signed') signed++; else if (st === 'resign') resign++;
+      });
+      return { email: p.email, name: hbNameOf_(p.email), department: p.department,
+        plans: mine.map(function (pl) { return { id: pl.id, title: pl.title, due: pl.due, done: pl.done, total: pl.total, overdue: pl.overdue }; }),
+        overdue: mine.filter(function (pl) { return pl.overdue; }).length, quizzes: quizzes, signed: signed, resign: resign };
+    }) };
+  } catch (err) { return { error: err.message }; }
 }

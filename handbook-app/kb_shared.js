@@ -2,7 +2,7 @@
  * CI fails while this file differs from what the sync would write.
  *
  * Team Tools' handbook readers, verbatim from 00_config.js, 10_core.js, 70_kb.js, 80_training.js,
- * with every declaration they reach (131 in all).
+ * with every declaration they reach (132 in all).
  * Copied under a private name: getKbImages → ttGetKbImages_, getManualImages → ttGetManualImages_, getManualMeta → ttGetManualMeta_, getManualPart → ttGetManualPart_, getManualParts → ttGetManualParts_, getReferenceItem → ttGetReferenceItem_, searchReference → ttSearchReference_.
  * Supplied by Handbook.js instead of copied: fmtDate_, getAutoTagRules_, getEmployeeInfo_, getKbSS_, getKbSearchSynonyms_, getOrCreateKbSheet_, kbRecordSearchSignal_. */
 
@@ -266,6 +266,12 @@ const QUIZ_EXPLAIN_MAX = 600;
 const TRAIN_QUIZ_MAX_ATTEMPTS = 3;
 
 const TRAIN_QUIZ_LOCK_HOURS = 24;
+
+function esc_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 /** PURE — auto-tag rules, whitelist-rebuilt (the L-12 rule above). HB1.4: the
  *  handbook app reads the KbSearchConfig mirror through this too. */

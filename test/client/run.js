@@ -40605,7 +40605,7 @@ testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-b: the sync refuses a copied WRI
 /** The handbook server in a sandbox: kb_shared.js + Handbook.js over fake
  *  Apps Script services. `reads` counts sheet reads; tabs is name → rows. */
 function hbServer_(opts) {
-  const reads = { n: 0 }, locks = { n: 0 }, uuids = { n: 0 };
+  const reads = { n: 0 }, locks = { n: 0 }, uuids = { n: 0 }, mails = [], triggers = [];
   const sheetOf = (rows) => ({
     getLastRow: () => rows.length,
     getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
@@ -40631,7 +40631,13 @@ function hbServer_(opts) {
   const sb = vm.createContext({
     console, JSON, Math, Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,
     Session: { getActiveUser: () => ({ getEmail: () => sb.__email }), getEffectiveUser: () => ({ getEmail: () => opts.deployer || 'owner@example.org' }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null,
+      setProperty: (k, v) => { opts.props = opts.props || {}; opts.props[k] = String(v); } }) },
+    // HB3.4: the reminder emails and their trigger, recorded.
+    MailApp: { sendEmail: (m) => { if (opts.mailFail) throw new Error('Service invoked too many times'); mails.push(JSON.parse(JSON.stringify(m))); } },
+    ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/ex.org/s/HB/exec' }),
+      getProjectTriggers: () => triggers.slice(), deleteTrigger: (t) => { triggers.splice(triggers.indexOf(t), 1); },
+      newTrigger: (fn) => ({ timeBased: () => ({ everyDays: (n) => ({ atHour: (h) => ({ create: () => { const t = { getHandlerFunction: () => fn, n, h }; triggers.push(t); return t; } }) }) }) }) },
     SpreadsheetApp: { openById: (id) => {
       if ((opts.openFail || []).indexOf(id) >= 0) throw new Error('You do not have access to the requested document.');
       return id && id === (opts.props || {}).HANDBOOK_SS_ID ? ssOf(hbTabs) : ssOf(tabs);
@@ -40643,8 +40649,8 @@ function hbServer_(opts) {
     HtmlService: opts.HtmlService,
   });
   sb.__email = opts.email || '';
-  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
-  sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks;
+  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js', 'Reminders.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks; sb.__mails = mails; sb.__triggers = triggers; sb.__props = () => opts.props;
   return sb;
 }
 const HB_KB_HEAD = ['Id', 'Department', 'Title', 'Type', 'BodyMd', 'DriveKind', 'DriveFileId', 'SortOrder', 'UpdatedAt', 'UpdatedBy', 'ReviewedAt', 'ReviewedBy', 'Status'];
@@ -40717,8 +40723,9 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamQuizLocks', 'hbTeamTraining',
-    'include', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining',
+    'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
   const shared = fs.readFileSync(path.join(HB, 'shared/script_manual_render.html'), 'utf8');
@@ -40730,8 +40737,10 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   // HB1.4: spreadsheets, to APPEND feedback and the search signal (HB1.4-c
   // holds that appendRow is the only write); the reader's address; no mail,
   // no Drive.
-  assert.deepStrictEqual(m.oauthScopes.slice().sort(), ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/userinfo.email'],
-    'spreadsheets and the reader\'s address — nothing else');
+  // HB3.4: send_mail and scriptapp for the training reminders (off until the operator turns them on).
+  assert.deepStrictEqual(m.oauthScopes.slice().sort(), ['https://www.googleapis.com/auth/script.scriptapp', 'https://www.googleapis.com/auth/script.send_mail',
+    'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/userinfo.email'],
+    'spreadsheets, the reader\'s address, and (reminders) mail and a trigger — nothing else');
   const clasp = JSON.parse(fs.readFileSync(path.join(HB, '.clasp.json'), 'utf8'));
   assert.deepStrictEqual(clasp.filePushOrder, ['kb_shared.js'].concat(own.sort()), 'the generated file loads first, then every hand-written one');
 });
@@ -41289,8 +41298,8 @@ test('HB3.3-a: the plan helpers — JSON rows (a broken one counted), the latest
   const sb = hb32Sb_();
   const rows = hbPlainV_(sb.hbJsonRows_([['h'], ['pl-aaaaaaaa', 'B@ex.org', '{"title":"T"}', 5, 'live'], ['pl-bbbbbbbb', 'b@ex.org', 'not json', 5, ''], ['bad id', 'b@ex.org', '{}', 5, ''], ['pl-cccccccc', 'b@ex.org', '{"title":"X"}', 6, 'Archived']], /^pl-[a-z0-9]{8,24}$/));
   assert.deepStrictEqual([rows.rows.map((r) => [r.id, r.author, r.live, r.row]), rows.unreadable], [[['pl-aaaaaaaa', 'b@ex.org', true, 2], ['pl-cccccccc', 'b@ex.org', false, 5]], 2]);
-  const done = hbPlainV_(sb.hbReadDone_([['h'], [100, 'a@ex.org', 'section:man-1-1', 'yes'], [200, 'a@ex.org', 'section:man-1-1', 'no'], [150, 'a@ex.org', 'chapter:1 · Intro', 'YES']]));
-  assert.deepStrictEqual(done, { 'a@ex.org|section:man-1-1': false, 'a@ex.org|chapter:1 · Intro': true }, 'the latest mark wins; Done is a word');
+  const done = hbPlainV_(sb.hbSignMarks_([['h'], [100, 'a@ex.org', 'section:man-1-1', 'yes', 'v1'], [200, 'a@ex.org', 'section:man-1-1', 'no', 'v1'], [150, 'a@ex.org', 'chapter:1 · Intro', 'YES']]));
+  assert.deepStrictEqual(done, { 'a@ex.org|section:man-1-1': { ms: 200, done: false, version: 'v1' }, 'a@ex.org|chapter:1 · Intro': { ms: 150, done: true, version: '' } }, 'the latest mark wins; Done is a word');
   const P = (email, manager, dept, status, role) => ({ email, manager, department: dept, status: status || 'confirmed', role: role || '' });
   const people = [P('boss@ex.org', '', '', '', 'manager'), P('a@ex.org', 'boss@ex.org', 'D1'), P('b@ex.org', 'boss@ex.org', 'D2', 'pending'), P('c@ex.org', 'x@ex.org', 'D1')];
   assert.deepStrictEqual(sb.hbAuthorTeam_(people, 'boss@ex.org', false).map((p) => p.email), ['a@ex.org'], 'confirmed only');
@@ -41413,6 +41422,114 @@ test('HB3.3-d: Training.js never writes the Knowledge Base; its writes go throug
       write = Math.min.apply(null, ['hbTrainWrite_(', 'hbQuizAppend_('].map((k) => { const i = b.indexOf(k); return i < 0 ? Infinity : i; }));
     assert.ok(gate >= 0 && gate < lock && lock < write && write < Infinity, f + ': caller, then lock, then write');
   });
+});
+// HB3.4 — sign-offs, the manager view and reminder emails, driven in hbServer_.
+console.log('\nHB3.4 — sign-offs, the manager view and reminders');
+const hb34Day_ = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+/** A world with a changelog entry for man-1-1 dated `retrainIn` days from today (flagged or not). */
+function hb34World_(retrainIn, flagged, extra) {
+  const tabs = hb32Tabs_();
+  if (retrainIn !== null) tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.0', changelog: [{ id: 'man-1-1', date: hb34Day_(retrainIn), num: '1.1', summary: 'Changed', retraining: flagged }] })]];
+  // Its OWN properties: the reminders write them, and HB_PPL_ENV's object is shared by every test.
+  const sb = hbServer_(Object.assign({ tabs, hbTabs: {} }, HB_PPL_ENV, { props: Object.assign({}, HB_PPL_ENV.props) }, extra || {}));
+  hbAs_(sb, 'owner@example.org').hbSetManager('boss@ex.org', true);
+  hbAs_(sb, 'rep@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');
+  hbAs_(sb, 'owner@example.org').hbConfirmPerson('rep@ex.org', true);
+  return sb;
+}
+
+test('HB3.4-a: the sign-off helpers — the latest mark with its version, the latest retraining change to a section, the three states; the reminder picks (once a day) and an escaped email', () => {
+  const sb = hb32Sb_();
+  const log = [{ id: 'man-1-1', date: '2026-10-20', retraining: true }, { id: 'man-1-1', date: '2026-10-25', retraining: false }, { id: 'man-2-1', date: '2026-10-28', retraining: true }, { id: 'man-1-1', date: 'soon', retraining: true }];
+  assert.strictEqual(sb.hbRetrainDate_(log, ['man-1-1']), '2026-10-20', 'only a flagged change counts; a bad date is dropped');
+  assert.strictEqual(sb.hbRetrainDate_(log, ['man-1-1', 'man-2-1']), '2026-10-28', 'a chapter: any of its sections');
+  assert.strictEqual(sb.hbRetrainDate_(log, ['man-9-9']), '');
+  assert.strictEqual(sb.hbSignState_(null, '', '2026-10-20'), 'unsigned');
+  assert.strictEqual(sb.hbSignState_({ done: false }, '2026-10-21', ''), 'unsigned', 'withdrawn');
+  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-19', '2026-10-20'), 'resign', 'a retraining change after the sign-off');
+  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-20', '2026-10-20'), 'signed', 'signed the day of the change: current');
+  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-21', '2026-10-20'), 'signed');
+  assert.deepStrictEqual(hbPlainV_(sb.hbReminderPicks_({ 'a@x.org': [1], 'b@x.org': [1], 'c@x.org': [] }, { 'a@x.org': '2026-10-29' }, '2026-10-29')), ['b@x.org'], 'once a day; nobody with nothing overdue');
+  const html = sb.hbReminderHtml_('Rep', [{ title: '<b>Onboarding</b>', due: '2026-10-01', done: 1, total: 3 }], 'https://x/exec');
+  assert.ok(/&lt;b&gt;Onboarding/.test(html) && !/<b>Onboarding/.test(html), 'plan titles are escaped');
+  assert.ok(/1 of 3 done/.test(html) && /href="https:\/\/x\/exec"/.test(html));
+});
+
+test('HB3.4-b: "I\'ve read this" records the section\'s version; a change flagged for retraining after it asks again — the plan item is not done until re-signed; an unflagged change only notes "changed" (driven)', () => {
+  // Signed three days ago; a retraining change yesterday.
+  const sb = hb34World_(-1, true);
+  hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Read 1.1', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+  hbAs_(sb, 'rep@ex.org');
+  sb.__hbTabs.ReadMarks = [['AtMs', 'Email', 'ItemKey', 'Done', 'Version'], [Date.now() - 3 * 86400000, 'rep@ex.org', 'section:man-1-1', 'yes', 'old']];
+  let so = hbPlainV_(sb.hbMySignOffs());
+  assert.deepStrictEqual([so.signoffs['section:man-1-1'].state, so.signoffs['section:man-1-1'].changed], ['resign', true]);
+  assert.strictEqual(hbPlainV_(sb.hbMyTraining()).plans[0].done, 0, 'asked again: not done');
+  // Sign again: the version is the section's current stamp.
+  assert.strictEqual(sb.hbMarkRead('section', 'man-1-1', true).success, true);
+  const row = sb.__hbTabs.ReadMarks[sb.__hbTabs.ReadMarks.length - 1];
+  assert.deepStrictEqual(row.slice(1, 5), ['rep@ex.org', 'section:man-1-1', 'yes', sb.hbStamp_('Hello')], 'the version signed is the body\'s stamp');
+  so = hbPlainV_(sb.hbMySignOffs());
+  assert.deepStrictEqual([so.signoffs['section:man-1-1'].state, so.signoffs['section:man-1-1'].changed], ['signed', false]);
+  const item = hbPlainV_(sb.hbMyTraining()).plans[0].items[0];
+  assert.deepStrictEqual([item.done, item.sign.state], [true, 'signed']);
+  // Withdrawn: gone from the sign-offs, not done.
+  sb.hbMarkRead('section', 'man-1-1', false);
+  assert.deepStrictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs, {});
+  // An UNflagged change after the sign-off: still signed, marked "changed".
+  const quiet = hb34World_(-1, false);
+  hbAs_(quiet, 'rep@ex.org');
+  quiet.__hbTabs.ReadMarks = [['AtMs', 'Email', 'ItemKey', 'Done', 'Version'], [Date.now() - 3 * 86400000, 'rep@ex.org', 'section:man-1-1', 'yes', 'old']];
+  const q = hbPlainV_(quiet.hbMySignOffs()).signoffs['section:man-1-1'];
+  assert.deepStrictEqual([q.state, q.changed], ['signed', true], 'only retraining asks again');
+  // A chapter: a retraining change to any of its sections asks again.
+  quiet.__hbTabs.ReadMarks.push([Date.now() - 3 * 86400000, 'rep@ex.org', 'chapter:1 · Intro', 'yes', 'old']);
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).setUp, true);
+  const ch = hb34World_(-1, true);
+  hbAs_(ch, 'rep@ex.org');
+  ch.__hbTabs.ReadMarks = [['AtMs', 'Email', 'ItemKey', 'Done', 'Version'], [Date.now() - 3 * 86400000, 'rep@ex.org', 'chapter:1 · Intro', 'yes', 'old']];
+  assert.strictEqual(hbPlainV_(ch.hbMySignOffs()).signoffs['chapter:1 · Intro'].state, 'resign');
+});
+
+test('HB3.4-c: the manager view, per person — plans done / overdue, quizzes best / attempts / locked, sign-offs current and to re-sign; a reader is refused; reminders say whether they are on (driven)', () => {
+  const sb = hb34World_(-1, true);
+  hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Late', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }, { kind: 'quiz', id: 'q-intro' }], assign: { people: ['rep@ex.org'] } });
+  hbAs_(sb, 'rep@ex.org');
+  [1, 2, 3].forEach(() => sb.hbSubmitQuiz('q-intro', HB32_WRONG));
+  sb.__hbTabs.ReadMarks = [['AtMs', 'Email', 'ItemKey', 'Done', 'Version'], [Date.now() - 3 * 86400000, 'rep@ex.org', 'section:man-1-1', 'yes', 'old'], [Date.now(), 'rep@ex.org', 'section:man-2-1', 'yes', 'x']];
+  assert.strictEqual(sb.hbTeamProgress().error, 'Handbook manager access required.');
+  const v = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamProgress());
+  assert.strictEqual(v.remindersOn, false);
+  const rep = v.people.filter((p) => p.email === 'rep@ex.org')[0];
+  assert.deepStrictEqual(rep.plans.map((p) => [p.title, p.done, p.total, p.overdue]), [['Late', 0, 2, true]]);
+  assert.deepStrictEqual(rep.quizzes.map((q) => [q.id, q.best, q.attempts, q.locked, q.passed]), [['q-intro', 0, 3, true, false]]);
+  assert.deepStrictEqual([rep.signed, rep.resign, rep.overdue], [1, 1, 1]);
+});
+
+test('HB3.4-d: reminders — refused to anyone but the owner, nothing sent while off; on, one email per overdue reader per day (escaped, with the link), a failed send is counted; the installer replaces its trigger (driven)', () => {
+  const sb = hb34World_(null, false);
+  hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Late <one>', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+  assert.ok(/Only the handbook's owner/.test(hbAs_(sb, 'rep@ex.org').hbSendTrainingReminders().error), 'a reader cannot set it off (g26)');
+  assert.ok(/Only the handbook's owner/.test(sb.installHandbookReminders().error));
+  hbAs_(sb, 'owner@example.org');
+  assert.ok(/Reminders are off/.test(sb.hbSendTrainingReminders().skipped));
+  assert.strictEqual(sb.__mails.length, 0);
+  sb.__props().HANDBOOK_REMINDERS = 'on';
+  const r = hbPlainV_(sb.hbSendTrainingReminders());
+  assert.deepStrictEqual([r.sent, r.failed, r.overdue], [1, 0, 1]);
+  assert.deepStrictEqual([sb.__mails[0].to, sb.__mails[0].subject], ['rep@ex.org', 'Handbook training overdue']);
+  assert.ok(/Late &lt;one&gt;/.test(sb.__mails[0].htmlBody) && /\/exec/.test(sb.__mails[0].htmlBody));
+  assert.strictEqual(hbPlainV_(sb.hbSendTrainingReminders()).sent, 0, 'not twice in a day');
+  // A failed send is counted, and not recorded as sent.
+  const f = hb34World_(null, false, { mailFail: true });
+  hbAs_(f, 'boss@ex.org').hbSavePlan({ title: 'Late', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+  f.__props().HANDBOOK_REMINDERS = 'on';
+  const fr = hbPlainV_(hbAs_(f, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([fr.sent, fr.failed], [0, 1]);
+  assert.deepStrictEqual(JSON.parse(f.__props().HANDBOOK_REMINDERS_LAST), {}, 'not recorded as sent');
+  // The installer: one daily trigger, replaced on a second run.
+  assert.strictEqual(sb.installHandbookReminders().installed, true);
+  sb.installHandbookReminders();
+  assert.deepStrictEqual(sb.__triggers.map((t) => [t.getHandlerFunction(), t.n, t.h]), [['hbSendTrainingReminders', 1, 8]]);
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
