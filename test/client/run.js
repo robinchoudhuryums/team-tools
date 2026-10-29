@@ -40612,7 +40612,9 @@ function hbServer_(opts) {
     getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; },
       getValue: () => { reads.n++; const row = rows[r - 1] || []; return row[c - 1] === undefined ? '' : row[c - 1]; },
       // HB2.1: the People tab is updated in place (the Handbook spreadsheet is this project's alone).
-      setValues: (vals) => { vals.forEach((v, i) => { rows[r - 1 + i] = JSON.parse(JSON.stringify(v)); }); writes.push(['set', r, vals]); } }),
+      setValues: (vals) => { vals.forEach((v, i) => { rows[r - 1 + i] = JSON.parse(JSON.stringify(v)); }); writes.push(['set', r, vals]); },
+      // HB2.2: notes turned off empty their rows.
+      clearContent: () => { for (let i = 0; i < (nr || 1); i++) rows[r - 1 + i] = (rows[r - 1 + i] || []).map(() => ''); writes.push(['clear', r]); } }),
     // HB1.4: the app appends (feedback, its search signal) — recorded.
     appendRow: (row) => { rows.push(JSON.parse(JSON.stringify(row))); writes.push(['append', row]); },
     deleteRow: (r) => { rows.splice(r - 1, 1); writes.push(['delete', r]); },
@@ -40649,7 +40651,7 @@ function hbServer_(opts) {
     HtmlService: opts.HtmlService,
   });
   sb.__email = opts.email || '';
-  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js', 'Reminders.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js', 'Reminders.js', 'Saved.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
   sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks; sb.__mails = mails; sb.__triggers = triggers; sb.__props = () => opts.props;
   return sb;
 }
@@ -40723,8 +40725,8 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
-    'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbSyncNotes', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining', 'hbToggleBookmark',
     'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
   // The reader's own statement of the server functions it calls (HB1.1c's header).
@@ -41530,6 +41532,121 @@ test('HB3.4-d: reminders — refused to anyone but the owner, nothing sent while
   assert.strictEqual(sb.installHandbookReminders().installed, true);
   sb.installHandbookReminders();
   assert.deepStrictEqual(sb.__triggers.map((t) => [t.getHandlerFunction(), t.n, t.h]), [['hbSendTrainingReminders', 1, 8]]);
+});
+
+// HB2.2 — bookmarks (the reader's account) and notes (the browser, synced to
+// the account only on the reader's say-so). Saved.js in the same sandbox; the
+// page that uses it is driven in runDom.js ("HB2.2").
+console.log('\nHB2.2 — bookmarks and notes');
+const hb22Sb_ = (extra) => hbServer_(Object.assign({ tabs: hbTabs_(), hbTabs: {} }, HB_PPL_ENV, { props: Object.assign({}, HB_PPL_ENV.props) }, extra || {}));
+
+test('HB2.2-a: the helpers — a bookmark goes to the top once and comes off, capped; a note is a string of at most the limit with a time; a merge keeps the later note per section, deletions included; an unreadable Notes row is counted', () => {
+  const sb = hb22Sb_();
+  const B = (l, id, t, on, cap) => hbPlain_(sb.hbBookmarksApply_(l, id, t, on, cap));
+  const l1 = B([], 'man-1-1', '1.1 Welcome', true, 3);
+  assert.deepStrictEqual(l1, [{ id: 'man-1-1', title: '1.1 Welcome' }]);
+  const l2 = B(l1, 'man-2-1', '2.1 Chairs', true, 3);
+  assert.deepStrictEqual(l2.map((b) => b.id), ['man-2-1', 'man-1-1'], 'newest first');
+  assert.deepStrictEqual(B(l2, 'man-1-1', 'x', true, 3).map((b) => b.id), ['man-1-1', 'man-2-1'], 'once: a repeat moves it up');
+  assert.deepStrictEqual(B(l2, 'man-2-1', '', false, 3).map((b) => b.id), ['man-1-1'], 'off');
+  assert.deepStrictEqual(B([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 'd', '', true, 3).map((b) => b.id), ['d', 'a', 'b'], 'capped');
+  assert.deepStrictEqual(B([null, { id: 7 }, { id: 'ok', title: 'T' }], '', '', false, 9), [{ id: 'ok', title: 'T' }], 'junk dropped');
+  const C = (n) => hbPlain_(sb.hbNoteClean_(n, 1000));
+  assert.deepStrictEqual(C({ t: 'hi', ms: 5 }), { t: 'hi', ms: 5 });
+  assert.deepStrictEqual(C({ t: '', ms: 5 }), { t: '', ms: 5 }, 'a tombstone is a note');
+  assert.strictEqual(C({ t: 'x'.repeat(4001), ms: 5 }), null, 'over the limit');
+  assert.strictEqual(C({ t: 'hi', ms: 2000 }), null, 'from the future');
+  assert.strictEqual(C({ t: 3, ms: 5 }), null);
+  assert.strictEqual(C({ t: 'hi' }), null, 'no time');
+  const M = (a, b) => hbPlain_(sb.hbNotesMerge_(a, b));
+  assert.deepStrictEqual(M({ 'man-1-1': { t: 'old', ms: 1 }, 'man-2-1': { t: 'mine', ms: 9 } }, { 'man-1-1': { t: 'new', ms: 2 }, 'man-2-1': { t: '', ms: 3 } }),
+    { 'man-1-1': { t: 'new', ms: 2 }, 'man-2-1': { t: 'mine', ms: 9 } }, 'the later wins, on each side');
+  assert.deepStrictEqual(M({ 'man-1-1': { t: 'a', ms: 4 } }, { 'man-1-1': { t: '', ms: 5 } }), { 'man-1-1': { t: '', ms: 5 } }, 'a later deletion wins and is kept');
+  assert.deepStrictEqual(M({ 'man-1-1': { t: 'a', ms: 4 } }, { 'man-1-1': { t: 'b', ms: 4 } }), { 'man-1-1': { t: 'a', ms: 4 } }, 'a tie keeps the first');
+  const rows = hbPlain_(sb.hbNotesRows_([['Email', 'SectionId', 'NoteJson', 'UpdatedMs'],
+    ['rep@ex.org', 'man-1-1', '{"t":"one"}', 5], ['other@ex.org', 'man-1-1', '{"t":"theirs"}', 9],
+    ['rep@ex.org', 'man-2-1', 'not json', 6], ['', '', '', ''], ['REP@ex.org', 'man-1-1', '{"t":"later"}', 7]], 'rep@ex.org'));
+  assert.deepStrictEqual(rows, { map: { 'man-1-1': { t: 'later', ms: 7, row: 6 } }, unreadable: 1 }, 'the reader\'s own, the latest row, a bad one counted, a cleared one skipped');
+});
+
+test('HB2.2-b: bookmarks live in the reader\'s account — a published section only, the handbook\'s title, one row per reader updated in place; another reader\'s list is their own; an unreadable list is said, never "none"', () => {
+  const sb = hb22Sb_();
+  hbAs_(sb, 'rep@ex.org');
+  assert.deepStrictEqual(hbPlain_(sb.hbMyBookmarks()), { setUp: true, bookmarks: [] });
+  const r = hbPlain_(sb.hbToggleBookmark('man-1-1', true));
+  assert.deepStrictEqual(r, { success: true, bookmarks: [{ id: 'man-1-1', title: '1.1 Welcome' }] }, 'the handbook\'s title, whatever the page says');
+  assert.ok(/not in the handbook/.test(sb.hbToggleBookmark('man-1-2', true).error), 'a draft is not a bookmark');
+  assert.ok(/not in the handbook/.test(sb.hbToggleBookmark('man-9-9', true).error));
+  assert.ok(/Only a section/.test(sb.hbToggleBookmark('kb-pricing', true).error), 'a Reference article is not the handbook\'s');
+  sb.hbToggleBookmark('man-2-1', true);
+  assert.strictEqual(sb.__hbTabs.Bookmarks.length, 2, 'one header and ONE row for this reader');
+  hbAs_(sb, 'ann@ex.org').hbToggleBookmark('man-2-1', true);
+  assert.strictEqual(sb.__hbTabs.Bookmarks.length, 3, 'a second reader gets their own row');
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbMyBookmarks()).bookmarks.map((b) => b.id), ['man-2-1', 'man-1-1']);
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'ann@ex.org').hbMyBookmarks()).bookmarks.map((b) => b.id), ['man-2-1']);
+  // Off: a removed section can still come off the list.
+  sb.__hbTabs.Bookmarks[1][1] = JSON.stringify([{ id: 'man-gone-1', title: 'Gone' }]);
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbToggleBookmark('man-gone-1', false)), { success: true, bookmarks: [] });
+  sb.__hbTabs.Bookmarks[1][1] = '[broken';
+  assert.ok(/could not be read/.test(sb.hbMyBookmarks().error), 'g53: never read as no bookmarks');
+  assert.ok(/could not be read/.test(sb.hbToggleBookmark('man-1-1', true).error), 'and a toggle never overwrites what it could not read');
+  // Unset: the page keeps them in the browser.
+  const un = hbServer_(Object.assign({ tabs: hbTabs_(), hbTabs: {} }, HB_ENV));
+  assert.deepStrictEqual(hbPlain_(un.hbMyBookmarks()), { setUp: false, bookmarks: [] });
+  assert.ok(/HANDBOOK_SS_ID Script Property is not set/.test(un.hbToggleBookmark('man-1-1', true).error));
+});
+
+test('HB2.2-c: notes sync — the account\'s copy and the browser\'s merge, later wins per section, only changes are written; a bad entry is refused and counted; forgetting empties the reader\'s rows and nobody else\'s (driven)', () => {
+  const sb = hbAs_(hb22Sb_(), 'rep@ex.org');
+  const now = Date.now();
+  const r1 = hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'Ask for the TRX', ms: now - 50 }, 'man-2-1': { t: 'Chairs: check width', ms: now - 40 } }));
+  assert.strictEqual(r1.success, true);
+  assert.deepStrictEqual(r1.notes, { 'man-1-1': { t: 'Ask for the TRX', ms: now - 50 }, 'man-2-1': { t: 'Chairs: check width', ms: now - 40 } });
+  assert.strictEqual(r1.written, 2);
+  assert.strictEqual(sb.__hbTabs.Notes[1][2], '{"t":"Ask for the TRX"}', 'a JSON cell — a note never coerces (g144)');
+  // Another browser: an older edit of one, a newer deletion of the other, a new one.
+  const w = sb.__writes.length;
+  const r2 = hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'stale', ms: now - 60 }, 'man-2-1': { t: '', ms: now - 10 } }));
+  assert.deepStrictEqual(r2.notes, { 'man-1-1': { t: 'Ask for the TRX', ms: now - 50 }, 'man-2-1': { t: '', ms: now - 10 } }, 'later wins; the deletion travels');
+  assert.strictEqual(r2.written, 1, 'only what changed is written');
+  assert.deepStrictEqual(sb.__writes.slice(w).map((x) => x[0]), ['set'], 'updated in place');
+  // Refused: a formula-looking id, a Reference article, too long, from the future.
+  const r3 = hbPlain_(sb.hbSyncNotes({ '=HYPERLINK("x")': { t: 'a', ms: now }, 'kb-pricing': { t: 'a', ms: now }, 'man-1-2': { t: 'x'.repeat(4001), ms: now }, 'man-3-1': { t: 'later', ms: now + 3 * 86400000 } }));
+  assert.strictEqual(r3.refused, 4);
+  assert.strictEqual(r3.written, 0);
+  assert.ok(/could not be read/.test(sb.hbSyncNotes([]).error));
+  const big = {}; for (let i = 0; i < 501; i++) big['man-9-' + i] = { t: 'n', ms: now };
+  assert.ok(/At most 500/.test(sb.hbSyncNotes(big).error));
+  // Someone else's notes are theirs.
+  hbAs_(sb, 'ann@ex.org').hbSyncNotes({ 'man-1-1': { t: 'Ann\'s', ms: now } });
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbSyncNotes({})).notes['man-1-1'].t, 'Ask for the TRX');
+  // Off: the reader's account copies go; Ann's stay.
+  const f = hbPlain_(sb.hbForgetNotes());
+  assert.deepStrictEqual(f, { success: true, removed: 2 });
+  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({})).notes, {}, 'nothing of theirs left');
+  assert.strictEqual(hbPlain_(hbAs_(sb, 'ann@ex.org').hbSyncNotes({})).notes['man-1-1'].t, 'Ann\'s');
+});
+
+test('HB2.2-d: the gates — no account, no answer; the caller is checked before the lock; a busy lock is said; unset and unreachable are different answers; the KB is never written', () => {
+  const sb = hbAs_(hb22Sb_(), '');
+  ['hbMyBookmarks', 'hbToggleBookmark', 'hbSyncNotes', 'hbForgetNotes'].forEach((fn) => {
+    const r = sb[fn]('man-1-1', true);
+    assert.ok(/Not authorized/.test(r.error), fn + ' refuses no account');
+  });
+  assert.strictEqual(sb.__locks.n, 0, 'refused before the lock (g17)');
+  const busy = hbAs_(hb22Sb_({ lockBusy: true }), 'rep@ex.org');
+  assert.ok(/busy/.test(busy.hbToggleBookmark('man-1-1', true).error));
+  assert.ok(/busy/.test(busy.hbSyncNotes({}).error));
+  const down = hbAs_(hb22Sb_({ openFail: ['hbss'] }), 'rep@ex.org');
+  assert.ok(/Could not open the Handbook spreadsheet/.test(down.hbMyBookmarks().error), 'unreachable is said, never "not set up" (g128)');
+  const un = hbAs_(hbServer_(Object.assign({ tabs: hbTabs_(), hbTabs: {} }, HB_ENV)), 'rep@example.org');
+  assert.deepStrictEqual(hbPlain_(un.hbForgetNotes()), { success: true, removed: 0 });
+  assert.ok(/not set up yet/.test(un.hbSyncNotes({}).error));
+  const all = hbAs_(hb22Sb_(), 'rep@ex.org');
+  all.hbToggleBookmark('man-1-1', true); all.hbSyncNotes({ 'man-1-1': { t: 'n', ms: Date.now() } }); all.hbForgetNotes();
+  assert.deepStrictEqual(Object.keys(all.__tabs).sort(), Object.keys(hbTabs_()).sort(), 'the KB spreadsheet gains no tab');
+  const src = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Saved.js'), 'utf8');
+  assert.ok(!/getKbSS_|getOrCreateKbSheet_/.test(src), 'Saved.js never reaches the KB');
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');

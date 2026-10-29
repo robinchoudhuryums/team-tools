@@ -17,6 +17,7 @@
     "People.js",
     "Quiz.js",
     "Reminders.js",
+    "Saved.js",
     "Training.js"
   ],
   "skipSubdirectories": false
