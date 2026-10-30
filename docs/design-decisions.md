@@ -6105,3 +6105,28 @@ pick them up without re-deriving the context.
   sets once); scaling the whole page with CSS zoom (it breaks the layout's
   breakpoints); speaking a section as one utterance (Chrome stops a long one
   part-way).
+
+- <a id="axe-gates-every-handbook-screen-and-the-accent-ink-is-darker-in-light-mode"></a>**axe gates every handbook screen in CI, focus follows the reader, and link and primary green is `--accent-ink` — the darker accent in light mode, in both apps (handbook app HB2.4, operator plan 2026-10-28; answers 2026-10-30)**
+  The operator's answers: fix the contrast in **both apps** (the shared rules,
+  so Team Tools' links and modal primary buttons are the darker green in light
+  mode too; dark mode untouched), and give an overflowing table a Tab stop **in
+  the shared reader**, only when it actually overflows. Mechanics: axe-core is a
+  pinned dev dependency of `test/visual`, and `shoot.mjs --axe` runs it over
+  every `handbook-*` scenario (WCAG 2.1 A + AA tags) after the scenario's post
+  hook — no screenshots, exit 1 on any violation or when no scenario matched —
+  in the visual-layout CI job, after the layout gate and even when it failed.
+  The accent `#0f8a52` is 4.4:1 under white text and on white, so
+  `--accent-ink` is `--accent-2` in light mode and `--accent` in dark; it is
+  declared on both `html` and `body` because a `var()` resolves where it is
+  declared and the palettes and mode are set on both. The Profile badge's count
+  is drawn by `::after { content: attr(data-n) }` because axe's
+  label-content-name rule reads an `aria-hidden` child's text as visible text
+  all the same. Focus moves only on a navigation the reader made (a click, a
+  link, a search result) — never on Back, a repaint or a scroll — and a
+  section's heading takes it once, after the paint. The reading area stopped
+  being a live region: every repaint was being read out whole. **Alternatives
+  rejected:** axe on Team Tools' scenarios too (the plan scoped this to the
+  handbook; Team Tools' screens have not had the pass, so the gate would start
+  red); a darker `--accent` itself (it is the fill of every chip, badge and
+  ribbon, and only text needs the 4.5:1); a Tab stop on every table (a reader
+  tabbing through a section would stop on tables that do not scroll).

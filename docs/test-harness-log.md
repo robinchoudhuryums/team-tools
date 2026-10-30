@@ -3186,3 +3186,33 @@ per-change detail. By delta:
   pre-existing masthead defect already on the follow-on list, so that scenario
   is not gated. The fake speech is DEFINED on `window` in the shot (Chromium's
   `speechSynthesis` cannot be assigned).
+
+## Handbook app HB2.4 — keyboard and screen reader; axe on every handbook screen (2026-10-30)
+
+- **Visual (`shoot.mjs --axe`)** — axe-core, pinned, over every `handbook-*`
+  scenario (WCAG 2.1 A + AA); a CI step in `visual-layout` after the layout
+  gate (`!cancelled()`), its report in the failure artifact. Its first run
+  found: no document title; the Profile button's name not containing its
+  visible text (the badge count — an `aria-hidden` child is still visible text
+  to that rule, so the count moved to `::after attr(data-n)`); the bar's
+  previous/next names not containing their visible label; the accent at 4.4:1
+  under white text and on links; overflowing tables a keyboard could not reach
+  — one only after a text-size change, so the page re-measures then. A new
+  scenario, `handbook-slideshow-dark-mobile`, steps a slideshow and lays out
+  overflowing tables on a phone.
+- **Pure (run.js, "HB2.4")** — a: the pin is exact, the mode's tags, its
+  handbook filter, its two failing exits, the CI step and artifact, the
+  `.gitignore`; b: `--accent-ink` on html and body, dark untouched, every
+  palette's accent paired with its darker one, the modal button and reader
+  links on it; c: the title, `main` not a live region, the skip link, the
+  badge drawn, focus calls on navigation, the re-measure on a display change.
+  V-8, the gallery markup and MRD-3's bar-name assertion were updated with the
+  change.
+- **DOM** — focus to the section heading after a contents click and after a
+  link open, to a view's heading, never on Back, and never pulled back by a
+  later scroll; the narrow contents' focus in and back (Escape, a tap outside,
+  a second press; a stray Escape moves nothing); the slideshow's announcement
+  (never on load, place and caption, counter hidden); a table's Tab stop only
+  while it overflows (jsdom has no layout, so the wrapper's widths are
+  stubbed) and re-measured on a text-size change; the title, skip link,
+  landmarks, `main` without `aria-live`, the drawn badge.

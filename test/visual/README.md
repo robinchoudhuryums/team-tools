@@ -21,6 +21,15 @@ the shots as an artifact when it fails. A finding owned elsewhere goes in
 whose finding stops firing fails the run, so remove it with the fix. A subset
 name the matrix lacks is refused before the browser starts.
 
+**axe on every handbook screen (HB2.4).** `node shoot.mjs --axe` runs
+axe-core (pinned in `package.json`) over every scenario whose page is the
+handbook app, against WCAG 2.1 A and AA, after each scenario's post hook — no
+screenshots. It writes `axe-report.json` (each violation's rule, impact, count,
+first targets and failure summary) and exits non-zero on any violation, or when
+a filter after `--axe` matched no handbook scenario. CI runs it in the same
+job, after the layout gate and even when that failed. A new handbook screen is
+checked by giving it a scenario.
+
 **Where the rest of this lives** (the Doc map in
 [`CLAUDE.md`](../../CLAUDE.md) is the index): the **Visual Audit Stage** —
 which every `/broad-scan` must run, what to compare, and the standing
