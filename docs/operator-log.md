@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-10-28 → 10-30 — the handbook app (HB1.2–HB4.1)
+
+**A second Apps Script project** — `handbook-app/`, the handbook for every
+employee — plus Team Tools changes that ride the same deploys. The standing
+setup is the operator-state entry *The handbook app (`handbook-app/`, HB1.2)*;
+this is what each round asked of the operator.
+
+- **HB1.2–HB1.4:** create the project (`clasp create`), set
+  `HANDBOOK_KB_SS_ID` to the KB spreadsheet, deploy for the domain. Team Tools
+  New version (the shared reader moved into `shared/script_manual_render.html`;
+  every Import now mirrors the search synonyms into `KbSearchConfig`).
+- **HB2.1:** create the Handbook spreadsheet, set `HANDBOOK_SS_ID` and
+  `HANDBOOK_ADMIN_EMAILS`; the People tab is made by the first profile.
+- **HB2.2–HB2.4, HB3.2–HB3.4:** `npm run handbook:push` + New version each
+  time; reminder emails stay off until `HANDBOOK_REMINDERS=on` and
+  `installHandbookReminders`. HB2.4 also needs a Team Tools New version (the
+  darker light-mode green on links and modal primaries).
+- **HB3.1 + HB3.5:** Team Tools New version, then export + Import — the
+  dialog says "Quizzes: 2 quizzes (20 questions)" once the Chapter 0 and 1
+  quizzes (approved 2026-10-30) are in; §1-7.1 changed with them, so publish
+  Chapter 1.
+- **HB4.1:** both projects New version, then export + Import ("Forms: 2
+  forms · stored") — and press **Download** once on the handbook app's Forms
+  page: the Apps Script sandbox may block downloads silently, and HB4.2 depends
+  on the answer.
+
 ## 2026-10-28 — handbook round: the 6.9.3 pick-up slideshow, resupply limits, company holidays
 
 **Adds NO operator state** — deploy a New version, then **re-import

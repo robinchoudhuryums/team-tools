@@ -1563,6 +1563,17 @@ not restate it. Server endpoints live in the fourteen server files
        before `kb/script_kb.html`, so the stand-alone handbook app can include the
        same file. Reference is the reader's host: it installs the `MANUAL_HOST`
        hooks at load; the reader's own state is `MANUAL_STATE`. No visible change.
+     - **2026-10-29 → 10-30 (handbook app HB1.4–HB4.1), what changed in Team
+       Tools:** every Import refreshes the handbook app's copy of the search
+       synonyms and auto-tag rules (`KbSearchConfig`, HB1.4); the Import also
+       stores the handbook's published official quizzes in `ManualQuizzes`
+       (HB3.1 — drafts are held back at export, HB3.5) and its form PDFs in
+       `ManualFiles` (HB4.1), each said on its own dialog line ("Quizzes:",
+       "Forms:"); the quiz engine moved into `80_training.js`'s shared helpers
+       with Team Tools' own quizzes unchanged (HB3.1). The shared reader (HB2.4):
+       the bar's previous/next buttons are named for the section they open, a
+       slideshow announces each slide, an overflowing table is a named Tab stop,
+       and links and the modal primary take the darker green in light mode.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

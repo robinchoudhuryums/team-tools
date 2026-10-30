@@ -303,6 +303,10 @@ reader or its server readers ships in **both** projects — Team Tools with
 | "Could not load your profile: Could not open the Handbook spreadsheet …" | The property names a spreadsheet the deploying account cannot open |
 | '…the "People" tab's header row has been edited…' | Put the header row back as the message lists it |
 | "Not saved: …" (a toast) | A profile or team action was refused, and why |
+| "The forms could not be loaded: The form library could not be read …" (Forms) | The `ManualFiles` tab's header row was edited — re-import the handbook to rewrite it |
+| "That form is not in the library — it may have been removed at the last import." | The form was dropped from `manual/data/forms.json`; reload the page |
+| "The viewer could not load in this browser. Use Download …" | pdf.js could not be fetched from cdnjs (blocked or offline); Download still works |
+| "Downloading … If nothing arrives, this browser blocked it …" | The sandbox may block the download without a word — open the form in the viewer |
 
 A publish in Team Tools reaches the app within five minutes (its caches are its
 own). Search synonyms reach it when Team Tools next saves them or imports the

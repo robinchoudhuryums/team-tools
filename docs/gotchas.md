@@ -1915,6 +1915,12 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `.actions .prime` / `.cn-action-prime` exactly. `.ui-dialog-ok.is-danger`
   still overrides at (0,2,0), so destructive confirms stay red. A new primary
   action belongs on this class, not a bespoke one — and never inverted.
+  **HB2.4 (2026-10-30):** axe measured `--accent` (`#0f8a52`) at 4.4:1 under
+  white text and on white, short of AA's 4.5:1, so `.btn-modal-ok` and the
+  reader's links now take `--accent-ink` — `--accent-2` in light mode, the
+  accent itself in dark — declared on both `html` and `body` (a `var()` resolves
+  where it is declared). The vocabulary is still the accent; the ink is its
+  readable shade.
 
 <a id="g62-a-state-that-can-be-zero-must"></a>
 

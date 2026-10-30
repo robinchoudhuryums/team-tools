@@ -178,8 +178,10 @@ Script project synced via [clasp](https://github.com/google/clasp).
   `styles.html` and consumes the canonical design tokens directly —
   new tools should reach for these before adding tool-local
   variants.
-`web-app/` is Team Tools; `handbook-app/` (HB1.2) is the read-only handbook app
-for every employee, fed by `npm run handbook:sync` from `web-app/`. The legacy Workspace Add-on
+`web-app/` is Team Tools; `handbook-app/` (HB1.2) is the handbook app for every
+employee: it reads the handbook Team Tools publishes (fed by `npm run handbook:sync`
+from `web-app/`) and keeps its own spreadsheet for people, quizzes, training,
+sign-offs and saved items (HB2–HB4) — see [`docs/handbook-app.md`](docs/handbook-app.md). The legacy Workspace Add-on
 scaffold and the pre-port bound `form-generator` script were deleted in
 cycle 13 — the Add-on path was abandoned because admin policy on the org
 domain blocks Marketplace install without ticket-driven allowlisting, and
