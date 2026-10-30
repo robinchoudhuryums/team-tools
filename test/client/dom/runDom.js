@@ -10479,6 +10479,18 @@ test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer
   await new Promise((res) => setTimeout(res, 80)); await slow.settleAll();
   assert.strictEqual(got.length, 0, 'the late answer drew nothing');
   assert.ok(!slow.d.getElementById('hb-form-ov'));
+  // Close one form and open another before the first answer lands: the first
+  // must not draw into the second's viewer.
+  const pdf = 'data:application/pdf;base64,' + HB41_PDF_B64;
+  const two = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: (k) => ({ __delay: k === 'form-eaa' ? 30 : 120, value: { success: true, dataUri: pdf } }) } });
+  const got2 = hb41PdfJs_(two.w, 1);
+  two.w.hbOpenForm_('form-eaa');
+  two.w.closeOverlay(two.d.getElementById('hb-form-ov'));
+  two.w.hbOpenForm_('form-pt-ot-rx');
+  await new Promise((res) => setTimeout(res, 70)); await two.settleAll();
+  assert.strictEqual(got2.length, 0, 'the closed form\'s answer drew nothing into the open viewer');
+  await new Promise((res) => setTimeout(res, 120)); await two.settleAll();
+  assert.deepStrictEqual([...two.d.querySelectorAll('#hb-form-ov canvas')].map((c) => c.getAttribute('aria-label')), ['PT/OT Evaluation Rx (sample) — page 1 of 1'], 'the open form, once');
 });
 
 test('HB4.1 DOM: Download saves the PDF under the form\'s title and says what to do if the browser blocks it; a failed read says so (driven)', async () => {
