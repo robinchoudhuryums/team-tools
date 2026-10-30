@@ -5981,6 +5981,11 @@ pick them up without re-deriving the context.
   JSON cell (it is already near its limit, and every reader would pay for the
   keys it must not see); a separate quiz upload (two files to keep in step);
   writing the bank before HB3.5 (questions need the operator's review first).
+  **HB3.5 (operator 2026-10-30):** every quiz carries a REQUIRED `status`,
+  `draft` or `published`; a draft is checked like any quiz and never exported,
+  so approval is one field and a quiz with no status is an error rather than a
+  silent publish. Rejected: a separate drafts file (two copies to move a quiz
+  between, and a draft that skipped the section check).
 - <a id="quizzes-are-taken-in-the-handbook-app"></a>**Quizzes are taken in the handbook app: shuffled in the browser, graded by the shared engine, attempts and resets in the app's own spreadsheet (handbook app HB3.2, operator plan 2026-10-28)**
   (1) **The quizzes are read, the attempts are the app's.** `Quiz.js` reads the
   KB's `ManualQuizzes` (Team Tools publishes it — HB3.1) and appends attempts

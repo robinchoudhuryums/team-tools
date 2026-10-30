@@ -41743,6 +41743,47 @@ test('HB2.4-c: the handbook page names itself and its regions, and the reading a
   assert.ok(/kbManualScrollTables_\(document\)/.test(extractFnFrom(js, 'hbApplyDisplay_')), 'a text-size change re-measures the tables');
 });
 
+
+// ── HB3.5 — the first official quizzes: drafted in the bank, published only once approved ──
+test('HB3.5-a: every quiz in the bank says whether it is a draft or published; the build check refuses anything else and exports only published quizzes; the export names the drafts it held back', () => {
+  const bank = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manual/data/quizzes.json'), 'utf8'));
+  assert.ok(bank.quizzes.length >= 2, 'the Chapter 0 and Chapter 1 quizzes are in the bank');
+  bank.quizzes.forEach((q) => assert.ok(q.status === 'draft' || q.status === 'published', q.id + ' says which it is'));
+  const py = fs.readFileSync(path.join(__dirname, '../../manual/quizzes.py'), 'utf8');
+  assert.ok(/^STATUSES = \("draft", "published"\)/m.test(py));
+  assert.ok(/if status not in STATUSES:\s*\n\s*errors\.append/.test(py), 'no status, or an unknown one, is an error — never a silent publish');
+  assert.ok(/if status == "published":\s*\n\s*out\.append\(quiz\)/.test(py), 'only a published quiz reaches the export');
+  assert.ok(/a draft kept back/.test(py) && /"a broken draft still fails"/.test(py), 'the self-test drives both');
+  const ex = fs.readFileSync(path.join(__dirname, '../../manual/export_reference.py'), 'utf8');
+  assert.ok(/quiz_drafts = quizzes\.drafts\(quiz_bank\)/.test(ex) && /draft\(s\) checked, not exported/.test(ex));
+});
+
+test('HB3.5-b: the drafted quizzes pass the app\'s own import check as they stand — approving one is only flipping its status (driven through kbManualQuizzesValidate_ and the engine)', () => {
+  const e = hb31Engine_();
+  vm.runInContext('var KB_MANUAL_QUIZZES_MAX = ' + /const KB_MANUAL_QUIZZES_MAX = (\d+);/.exec(codeSrc)[1] + '; var KB_MANUAL_QUIZ_ID_MAX = ' + /const KB_MANUAL_QUIZ_ID_MAX = (\d+);/.exec(codeSrc)[1] + '; var KB_MANUAL_QUIZ_ID_RE = ' + /const KB_MANUAL_QUIZ_ID_RE = (\/[^\n]+\/);/.exec(codeSrc)[1] + ';', e);
+  vm.runInContext(extractRawFunction('Code.js', 'kbManualQuizzesValidate_'), e);
+  const bank = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manual/data/quizzes.json'), 'utf8'));
+  // The export's resolution: §0-2.1 is article man-0-2 at anchor 0.2.1; a level-2 token is the whole article.
+  const target = (tok) => { const m = /^§(\d+)-(\d+)((?:\.\d+)*)$/.exec(tok); assert.ok(m, 'a section token: ' + tok); return { id: 'man-' + m[1] + '-' + m[2], anchor: m[3] ? m[1] + '.' + m[2] + m[3] : '' }; };
+  const ids = {};
+  const exported = bank.quizzes.map((qz) => {
+    const home = target(qz.section); ids[home.id] = 1;
+    return { id: qz.id, title: qz.title, section: home.id, anchor: home.anchor, passPct: qz.passPct, questions: qz.questions.map((q) => {
+      const t = target(q.section); ids[t.id] = 1;
+      return Object.assign({}, q, { section: t.id, anchor: t.anchor, options: q.type === 'truefalse' ? ['True', 'False'] : q.options });
+    }) };
+  });
+  const r = J2(e.kbManualQuizzesValidate_(exported, Object.keys(ids)));
+  assert.deepStrictEqual(r.errors, [], 'the import would take every draft');
+  assert.strictEqual(r.items.length, bank.quizzes.length);
+  bank.quizzes.forEach((qz) => {
+    assert.ok(qz.questions.length >= 8 && qz.questions.length <= 12, qz.id + ': about ten questions (the operator\'s shape)');
+    assert.strictEqual(qz.passPct, 80, qz.id + ': pass at 80%');
+    const ch = /^§(\d+)-/.exec(qz.section)[1];
+    qz.questions.forEach((q, i) => assert.strictEqual(/^§(\d+)-/.exec(q.section)[1], ch, qz.id + ' question ' + (i + 1) + ' tests its own chapter'));
+  });
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

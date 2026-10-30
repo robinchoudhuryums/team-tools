@@ -2759,8 +2759,10 @@ entry says which it is.
   synonyms, stored with the router and changelog in `ManualMeta`; a file from
   before M5b imports with none, so **re-export and import once** to turn them
   on. **Quizzes (HB3.1, 2026-10-29):** the export also carries the official
-  quizzes from `manual/data/quizzes.json` (empty until HB3.5's questions are
-  approved) — a quiz or question naming a section that does not exist fails
+  quizzes from `manual/data/quizzes.json` — only those marked `"status":
+  "published"`; a draft is checked and held back, and the export's "quizzes"
+  line names the drafts (HB3.5, 2026-10-30: Chapters 0 and 1 are drafted for
+  review; approving one is flipping its status, then export and import) — a quiz or question naming a section that does not exist fails
   the export — and the import stores them in a `ManualQuizzes` tab of the KB
   spreadsheet, rewritten only when they changed; the dialog's "Quizzes:" line
   says which. Do not edit that tab: it holds the answer keys, and the next

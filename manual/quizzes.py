@@ -6,7 +6,7 @@ tests, so a quiz changes in the same commit as its section:
 
     {"quizzes": [
       {"id": "q-oxygen-basics", "title": "Oxygen basics", "section": "§8-2",
-       "passPct": 80,
+       "passPct": 80, "status": "draft",
        "questions": [
          {"type": "single", "q": "…?", "options": ["…", "…"], "correct": 1,
           "explain": "Why — shown when this question is answered wrongly.",
@@ -15,6 +15,11 @@ tests, so a quiz changes in the same commit as its section:
           "correct": [0, 2], "explain": "…", "section": "§8-4"},
          {"type": "truefalse", "q": "…", "correct": 0, "explain": "…",
           "section": "§8-5"}]}]}
+
+`status` is required: "draft" or "published" (HB3.5 — nothing is published
+until the operator approves it). A draft is checked exactly like a published
+quiz, so a broken draft still fails the export, but only published quizzes are
+exported; approving one is changing its status to "published".
 
 `type` is single (the default — `correct` one option index), multi (`correct`
 every right index; all of them and nothing else is right) or truefalse (the
@@ -44,6 +49,7 @@ TITLE_MAX = 120          # QUIZ_TITLE_MAX
 EXPLAIN_MAX = 600        # QUIZ_EXPLAIN_MAX
 QUIZ_JSON_MAX = 45000    # TRAIN_QUIZ_JSON_MAX — one stored quiz, one cell
 TYPES = ("single", "multi", "truefalse")    # QUIZ_TYPES
+STATUSES = ("draft", "published")           # HB3.5: only "published" is exported
 TF_OPTIONS = ["True", "False"]              # QUIZ_TF_OPTIONS
 ID_RE = re.compile(r"^q-[a-z0-9]+(?:-[a-z0-9]+)*$")   # KB_MANUAL_QUIZ_ID_RE
 ID_MAX = 48
@@ -59,8 +65,9 @@ def _int(v):
 
 def check(bank, resolve):
     """bank — the parsed quizzes.json; resolve(token) — a section token to
-    {id, anchor, num}, or None. Returns (quizzes, errors): the export shape,
-    and every problem found (each names the quiz and question)."""
+    {id, anchor, num}, or None. Returns (quizzes, errors): the PUBLISHED quizzes
+    in the export shape, and every problem found in any quiz, drafts included
+    (each names the quiz and question)."""
     errors, out, seen = [], [], set()
     if not isinstance(bank, dict) or not isinstance(bank.get("quizzes"), list):
         return [], ["quizzes.json: expected {\"quizzes\": [...]}"]
@@ -78,6 +85,9 @@ def check(bank, resolve):
         title = _text(qz.get("title"))
         if not title or len(title) > TITLE_MAX:
             errors.append(f"{where}: a title is required ({TITLE_MAX} characters at most)")
+        status = qz.get("status")
+        if status not in STATUSES:
+            errors.append(f"{where}: status must be \"draft\" or \"published\" — a quiz is published only once approved")
         pass_pct = _int(qz.get("passPct"))
         if pass_pct is None or not 0 <= pass_pct <= 100:
             errors.append(f"{where}: passPct must be a whole number 0–100")
@@ -143,8 +153,15 @@ def check(bank, resolve):
                     "passPct": pass_pct, "questions": questions}
             if len(json.dumps(questions, ensure_ascii=False)) > QUIZ_JSON_MAX:
                 errors.append(f"{where}: its questions are too large to store ({QUIZ_JSON_MAX:,} characters)")
-            out.append(quiz)
+            if status == "published":
+                out.append(quiz)
     return out, errors
+
+
+def drafts(bank):
+    """The ids of the bank's draft quizzes — checked, never exported."""
+    qs = bank.get("quizzes") if isinstance(bank, dict) else None
+    return [q.get("id") for q in qs if isinstance(q, dict) and q.get("status") == "draft"] if isinstance(qs, list) else []
 
 
 # ----------------------------------------------------------------- self-test ---
@@ -160,7 +177,8 @@ def _selftest():
         return base
 
     def quiz(*questions, **kw):
-        base = {"id": "q-oxygen", "title": "Oxygen", "section": "§8-2", "passPct": 80, "questions": list(questions)}
+        base = {"id": "q-oxygen", "title": "Oxygen", "section": "§8-2", "passPct": 80, "status": "published",
+                "questions": list(questions)}
         base.update(kw)
         return {"quizzes": [base]}
 
@@ -190,6 +208,18 @@ def _selftest():
         if qs[2]["options"] != TF_OPTIONS:
             fails.append("true/false options are filled in")
     expect({"quizzes": []}, None, "an empty bank")
+    # HB3.5: a draft is checked like any quiz and never exported; no status is refused.
+    draft = quiz(q(), status="draft")
+    out, errs = check(draft, resolve)
+    if errs or out:
+        fails.append(f"a draft: checked clean and not exported, got {len(out)} exported, {errs}")
+    if drafts(draft) != ["q-oxygen"]:
+        fails.append("drafts() names the draft")
+    expect(quiz(q(section="§8-9.9"), status="draft"), "'§8-9.9' is not a section", "a broken draft still fails")
+    no_status = quiz(q())
+    no_status["quizzes"][0].pop("status")
+    expect(no_status, "status must be", "no status")
+    expect(quiz(q(), status="approved"), "status must be", "an unknown status")
     expect({}, "expected {", "not a bank")
     expect(quiz(q(), id="Oxygen Quiz"), "id must look like", "a bad id")
     expect({"quizzes": quiz(q())["quizzes"] * 2}, "id used twice", "a duplicate id")
@@ -215,7 +245,7 @@ def _selftest():
         for f in fails:
             print("  ✗", f)
         return 1
-    print("quizzes.py self-test: ok (the good bank, and 20 refusals)")
+    print("quizzes.py self-test: ok (the good bank, a draft kept back, and 23 refusals)")
     return 0
 
 

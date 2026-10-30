@@ -16,7 +16,8 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
                  {alt, kind, dataUri} — which the import stores as rows of
                  the KB spreadsheet's ManualImages tab (M4-FU3: the domain
                  disables Apps Script's Drive); one upload carries everything.
-                 `quizzes` (HB3.1) is data/quizzes.json checked by quizzes.py,
+                 `quizzes` (HB3.1) is data/quizzes.json checked by quizzes.py — its
+                 PUBLISHED quizzes only; a draft is checked and held back (HB3.5),
                  every section resolved to the app's {id, anchor}.
 
 and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
@@ -670,8 +671,10 @@ def main():
     synonyms = build_synonyms()
     version, built = build_meta()
     # HB3.1: the official quizzes — every quiz and question names a real section.
-    quiz_list, quiz_errors = quizzes.check(json.load(open("data/quizzes.json", encoding="utf-8")),
-                                           lambda sec: sec_lookup(sec, anchors))
+    # HB3.5: a draft is checked the same way but held back — only "published" quizzes are exported.
+    quiz_bank = json.load(open("data/quizzes.json", encoding="utf-8"))
+    quiz_list, quiz_errors = quizzes.check(quiz_bank, lambda sec: sec_lookup(sec, anchors))
+    quiz_drafts = quizzes.drafts(quiz_bank)
     errors.extend("quizzes.json: " + e for e in quiz_errors)
 
     articles = [howto_article()]
@@ -722,7 +725,8 @@ def main():
     print(f"changelog             : {len(changelog)} dated changes")
     print(f"search synonyms       : {len(synonyms)} glossary abbreviations, matched as phrases")
     print(f"quizzes               : {len(quiz_list)} ({sum(len(q['questions']) for q in quiz_list)} questions, "
-          f"{'every section verified' if not quiz_errors else str(len(quiz_errors)) + ' problem(s) below'})")
+          f"{'every section verified' if not quiz_errors else str(len(quiz_errors)) + ' problem(s) below'})"
+          + (f"; {len(quiz_drafts)} draft(s) checked, not exported: {', '.join(quiz_drafts)}" if quiz_drafts else ""))
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
     if in_repo:
         print(f"diagrams              : {n_diagrams} in the app partial")

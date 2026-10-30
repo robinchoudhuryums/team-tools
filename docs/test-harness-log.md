@@ -3216,3 +3216,17 @@ per-change detail. By delta:
   while it overflows (jsdom has no layout, so the wrapper's widths are
   stubbed) and re-measured on a text-size change; the title, skip link,
   landmarks, `main` without `aria-live`, the drawn badge.
+
+## Handbook app HB3.5 — the first official quizzes, drafted (2026-10-30)
+
+- **Python (`quizzes.py --check`)** — a draft is checked clean and not exported;
+  `drafts()` names it; a broken draft still fails; no status and an unknown
+  status are refused (23 refusals in all).
+- **Pure (run.js, "HB3.5")** — a: every quiz in the bank says draft or
+  published, the check refuses anything else, only a published quiz reaches the
+  export, the export names the drafts; b: the drafted quizzes, resolved the way
+  the export resolves a section token, pass Team Tools' own import check
+  (`kbManualQuizzesValidate_` and the engine) as they stand — about ten
+  questions, 80%, every question in its own chapter.
+- **Export** — `export_reference.py` ran clean over the bank: "0 (0 questions,
+  every section verified); 2 draft(s) checked, not exported".

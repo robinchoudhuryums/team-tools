@@ -115,6 +115,13 @@ grade with one engine (`quiz…_` in `web-app/80_training.js`): single-answer,
 multi-select and true/false questions, each with the explanation a wrong answer
 is shown and the section to go back to. The answer key never leaves a server.
 
+**Drafts (HB3.5).** Every quiz in the bank says `"status": "draft"` or
+`"published"`. A draft is checked exactly like a published quiz (a broken one
+still fails the export), but only published quizzes are exported, so nothing
+reaches readers until the operator approves it — approving is changing the
+status, then export and import. The first two, Chapter 0 (CSR Core) and Chapter
+1 (Call Handling), ten questions each at 80%, are drafted for review.
+
 **Taking one (HB3.2).** **Quizzes** in the contents lists them by chapter, and a
 section that has one shows a quiz bar. The questions and their options are
 shuffled for each sitting; every question must be answered. The result gives
