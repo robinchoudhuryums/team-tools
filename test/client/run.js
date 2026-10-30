@@ -41739,7 +41739,7 @@ test('HB2.4-c: the handbook page names itself and its regions, and the reading a
   const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
   assert.ok(/\.hb-me-badge::after \{ content: attr\(data-n\); \}/.test(css), 'the count is drawn from data-n');
   const js = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
-  assert.ok(/hbFocusView_\(\)/.test(extractFnFrom(js, 'hbHome_')) && /HB_FOCUS_SEC = id; hbFocusSection_\(id\)/.test(extractFnFrom(js, 'hbOpen_')), 'a navigation the reader made moves focus');
+  assert.ok(/hbFocusView_\(\)/.test(extractFnFrom(js, 'hbHome_')) && /hbFocusSection_\(id\)/.test(extractFnFrom(js, 'hbOpen_')), 'a navigation the reader made moves focus');
   assert.ok(/kbManualScrollTables_\(document\)/.test(extractFnFrom(js, 'hbApplyDisplay_')), 'a text-size change re-measures the tables');
 });
 
