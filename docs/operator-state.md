@@ -2768,7 +2768,20 @@ entry says which it is.
   spreadsheet, rewritten only when they changed; the dialog's "Quizzes:" line
   says which. Do not edit that tab: it holds the answer keys, and the next
   import overwrites it. A file from before HB3.1 leaves the stored quizzes as
-  they are. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
+  they are. **Forms (HB4.1, 2026-10-30):** the export also carries the
+  handbook's form library — `manual/data/forms.json` names each form's PDF in
+  the repo's `forms/` folder (the same files Team Tools attaches to emails) and
+  the sections that offer it; a missing or non-PDF file, one over 1 MB, or a
+  section that does not exist fails the export. The import stores the PDFs in
+  a `ManualFiles` tab of the KB spreadsheet (the `ManualImages` row shape, plus
+  each form's title, summary and sections), rewritten only when a form changed;
+  the dialog's "Forms:" line says which. Do not edit that tab. A file from
+  before HB4.1 leaves the stored forms as they are. With the forms the file is
+  about 4.3 MB of the import's 5 MB cap (`KB_MANUAL_FILE_MAX`). **After the
+  first import with forms, open the handbook app's Forms page and press
+  Download once**: the Apps Script page's sandbox may block downloads, and the
+  page cannot tell — if nothing arrives, the viewer still shows the form.
+  **The export's "xref previews" lines (M5a, 2026-09-30)** say how
   many cross-references preview the part of their target they are about, how
   many show its opening by design (anchored, or no numbered sub-section to point
   at), and WARN about the links an anchor could fix —

@@ -30,6 +30,11 @@ a filter after `--axe` matched no handbook scenario. CI runs it in the same
 job, after the layout gate and even when that failed. A new handbook screen is
 checked by giving it a scenario.
 
+**pdf.js (HB4.1).** The handbook's form viewer loads pdf.js from cdnjs; the
+harness has no network, so every context routes that URL to the same pinned
+build in `node_modules/pdfjs-dist` (a dev dependency here). The form PDFs are
+the repo's own (`forms/`), inlined by `build.mjs` as `window.__FORM_PDFS__`.
+
 **Where the rest of this lives** (the Doc map in
 [`CLAUDE.md`](../../CLAUDE.md) is the index): the **Visual Audit Stage** —
 which every `/broad-scan` must run, what to compare, and the standing

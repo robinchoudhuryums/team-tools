@@ -3230,3 +3230,40 @@ per-change detail. By delta:
   questions, 80%, every question in its own chapter.
 - **Export** — `export_reference.py` ran clean over the bank: "0 (0 questions,
   every section verified); 2 draft(s) checked, not exported".
+
+## Handbook app HB4.1 — the form library (2026-10-30)
+
+- **Python (`forms.py --check`)** — the good list (sections resolved in
+  order, the PDF a data URI byte for byte) and 14 refusals: id, duplicate id,
+  title, long summary, no section, a missing section, a section twice, a path
+  outside `forms/`, a non-`.pdf` name, a missing file, non-PDF bytes, too large,
+  one file for two forms; a refused form is never exported (the first run
+  caught one that was — a long summary failed the check but the form still
+  went out).
+- **Pure (run.js, "HB4.1")** — a: the mirrored limits and key rule, the CI
+  step, the export's check over the repo's `forms/`, every listed file a PDF
+  under the cap that Team Tools' `FORM_CATALOG` also names; b: the import's
+  own check driven (null = an older file; eight refusals; a duplicate key);
+  c: the import over a fake book — a check writes nothing, the PDF split under
+  the cell limit and rejoined byte for byte, parts 0..n-1, text columns `@`,
+  the audit row, the catalog read back, a re-import writes nothing, a title
+  change rewrites, an older file keeps them, an empty list clears, a bad form
+  refuses the file, an edited header throws; d: the handbook server — links to
+  published sections only, no bytes in the list, one form served, "not in the
+  library" and "could not be read" apart, a damaged form and an edited header
+  said, the anonymous refused; e: one pinned pdf.js on cdnjs, the same build in
+  the harness and routed, `isEvalSupported: false`, the worker as a plain
+  script, called only from the viewer, never at page load. The driven import
+  tests' sandbox list gained the five form functions; S2's raw-writer list,
+  the handbook's public-surface list and M2-E1's bundle shape were updated.
+- **DOM** — the Forms page (rows, section links, Open/Download, Back, a
+  failed read said, an empty library); the bar offers only the forms naming
+  that section; the viewer draws every page as a named image, gives pdf.js a
+  copy of the bytes with eval off, and fetches once per visit; pdf.js failing
+  to load, a missing form and a viewer closed before its answer; Download's
+  file name and message, a safe file name, a failed read as a toast — and the
+  list it was pressed in survives (the first version wrote the message over
+  the reading area).
+- **Visual** — `handbook-forms-light-wide`, `handbook-form-view-dark-mobile`
+  (the real PT/OT Rx drawn by pdf.js, served from `pdfjs-dist` in place of
+  cdnjs) and `handbook-form-bar-light-wide`; all three pass axe.

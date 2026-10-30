@@ -41937,6 +41937,20 @@ test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a f
   assert.ok(!/HB_PDFJS_BASE/.test(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8')), 'never at page load');
 });
 
+test('HB4.1-f: the import result says what happened to the forms — checked, stored, unchanged, a failed write, or an older file — and the dialog draws that line beside the quizzes (driven)', () => {
+  const kb = fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8');
+  const ctx = vm.createContext({ esc: (s) => String(s) });
+  vm.runInContext(extractFnFrom(kb, 'kbManualFormsLine_'), ctx);
+  const t = (f, d) => ctx.kbManualFormsLine_(f, d).html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  assert.strictEqual(t({ total: 2, changed: true }, true), 'Forms: 2 forms · would be stored');
+  assert.strictEqual(t({ total: 1, changed: true, error: '' }, false), 'Forms: 1 form · stored');
+  assert.strictEqual(t({ total: 2, changed: false }, false), 'Forms: 2 forms · unchanged');
+  const f = ctx.kbManualFormsLine_({ total: 1, changed: true, error: 'Service failed' }, false);
+  assert.ok(f.warn && /NOT stored/.test(f.html) && /press Import again/.test(f.html));
+  assert.ok(/No forms in this file — the stored forms are left as they are/.test(t(null, false)));
+  assert.ok(/qz\.html \+ fm\.html/.test(kb) && /\(r\.forms && r\.forms\.error\)/.test(kb), 'the dialog draws it, and a failed forms write turns the toast to a warning');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

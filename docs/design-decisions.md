@@ -6136,3 +6136,28 @@ pick them up without re-deriving the context.
   red); a darker `--accent` itself (it is the fill of every chip, badge and
   ribbon, and only text needs the 4.5:1); a Tab stop on every table (a reader
   tabbing through a section would stop on tables that do not scroll).
+
+- <a id="the-form-library-reads-the-repo-s-forms-folder"></a>**The handbook's form library reads the repo's existing `forms/` folder, rides the manual import into a ManualFiles tab, and is drawn by pdf.js on the page's own thread (handbook app HB4.1, operator plan 2026-10-28; answers 2026-10-30)**
+  The operator's answers: the EAA and the PT/OT Rx; the PDFs come from the
+  `forms/` folder Team Tools already attaches to external emails (one copy of
+  each, not a second set under `manual/`); build everything now, and the
+  operator tests Download after deploying (the plan's "test a download first"
+  could not be run from the repo). Mechanics: `manual/data/forms.json` lists
+  the forms and the sections that offer them; `manual/forms.py` checks the
+  list at export; `manual.json` carries each PDF as a data URI; the import
+  stores them in `ManualFiles` in the `ManualImages` row shape, so the images'
+  ledger (`kbImageTabLedger_`) and reader (`kbImageTabServe_`) serve them
+  unchanged — the title, summary and sections ride trailing columns because
+  the `ManualMeta` cell, the obvious home, is at 42,000 of its 45,000
+  characters. The viewer loads pdf.js 3.11.174 from cdnjs only when a form is
+  first opened, and loads its worker code as a plain script so it runs on the
+  page's thread: the Apps Script sandbox cannot start a Worker from another
+  origin. `isEvalSupported: false` keeps a PDF's font code from being
+  evaluated. Download is a blob link; the page cannot tell when the sandbox
+  blocks it, so its message says what to do if nothing arrives. The visual
+  harness serves the same pdf.js build from `node_modules` in place of cdnjs.
+  **Alternatives rejected:** the browser's own PDF viewer in an iframe
+  (Chrome will not run it inside a sandboxed frame); pdf.js inlined into the
+  page (a megabyte on every visit for a page most readers never open);
+  `manual/forms/` copies (two copies to keep in step); a separate catalog tab
+  (a second tab to keep consistent with the bytes); filling forms (HB4.2).

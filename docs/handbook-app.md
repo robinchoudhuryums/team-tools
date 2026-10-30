@@ -177,6 +177,31 @@ headers — a row that will not read is counted and skipped).
   speak through Google's servers — the handbook is PHI-free, so that is
   allowed. A browser with no speech shows no Listen button.
 
+## Forms (HB4.1)
+
+- **The list is in the repo.** `manual/data/forms.json` names the forms the
+  handbook carries — today the EAA and the PT/OT Evaluation Rx — each with a
+  title, a one-line summary, the PDF's name in the repo's `forms/` folder and
+  the sections that offer it. `forms/` is the same folder Team Tools attaches
+  to customer and provider emails (`CONFIG.CALL_NOTES.FORM_CATALOG`), so one
+  copy of each PDF serves both. `manual/forms.py` fails the export on a missing
+  or non-PDF file, a file over 1 MB or a section that does not exist.
+- **The import stores them.** `manual.json` carries each PDF as a data URI;
+  Team Tools' Import checks them again and stores them in the KB spreadsheet's
+  `ManualFiles` tab, in the `ManualImages` row shape (the base64 in pieces by
+  part) with the title, summary and sections on every row, rewritten only when
+  a form changed. The dialog's "Forms:" line says which. Do not edit the tab.
+- **The page.** **Forms** in the contents lists them, each linking to the
+  published sections that name it; the bar above those sections offers
+  **Open the form**. Open draws every page in a viewer with pdf.js 3.11.174,
+  loaded from cdnjs only when a form is first opened, run on the page's own
+  thread (the sandbox cannot start a worker from another origin) and never
+  evaluating a PDF's font code. **Download** saves the PDF under its title; the
+  Apps Script page's sandbox may block a download without a word, so the
+  message says to open the form in the viewer if nothing arrives — **test it
+  once after deploying**. A failed list, form or viewer load is said, never
+  read as "no forms". Filling a form in the browser is HB4.2.
+
 ## Keyboard and screen readers (HB2.4)
 
 - **axe on every screen.** `node shoot.mjs --axe` (test/visual) runs axe-core
@@ -285,10 +310,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate, and every one
