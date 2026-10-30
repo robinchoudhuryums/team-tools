@@ -22,6 +22,8 @@ OPERATOR ACTIONS / DEPLOY:
 - After approval: `manual/make_all.sh` → Team Tools Reference → Handbook → Check → Import (the dialog's "Quizzes:" line names them) | BLOCKS DEPLOY: N
 Deploy: no app deploy — the change is in the manual build and the bank
 
+REVIEW (operator 2026-10-30, after the block above): q-csr-core Q7 gained the over-long subject line as a distractor; q-call-handling Q9 now asks what to do first, with the spanishcalls email named the secondary option; §1-7.1 (src/p1.md) was changed to match — a fourth step and a rewritten note — with a changelog entry flagged for retraining; both quizzes approved and set to "published". The export now carries 2 quizzes (20 questions), every section verified; the build's HTML validation reports 0 errors; pure 1480/1480.
+
 FOLLOW-ON ITEMS:
 - The remaining chapters (2–10, the appendices) — drafted the same way when the operator asks; manual/training/billing-knowledge-check.md is a ready source for Chapter 10.
 

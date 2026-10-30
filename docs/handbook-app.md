@@ -120,7 +120,8 @@ is shown and the section to go back to. The answer key never leaves a server.
 still fails the export), but only published quizzes are exported, so nothing
 reaches readers until the operator approves it — approving is changing the
 status, then export and import. The first two, Chapter 0 (CSR Core) and Chapter
-1 (Call Handling), ten questions each at 80%, are drafted for review.
+1 (Call Handling), ten questions each at 80%, were drafted, reviewed and
+published on 2026-10-30.
 
 **Taking one (HB3.2).** **Quizzes** in the contents lists them by chapter, and a
 section that has one shows a quiz bar. The questions and their options are

@@ -2761,8 +2761,9 @@ entry says which it is.
   on. **Quizzes (HB3.1, 2026-10-29):** the export also carries the official
   quizzes from `manual/data/quizzes.json` — only those marked `"status":
   "published"`; a draft is checked and held back, and the export's "quizzes"
-  line names the drafts (HB3.5, 2026-10-30: Chapters 0 and 1 are drafted for
-  review; approving one is flipping its status, then export and import) — a quiz or question naming a section that does not exist fails
+  line names the drafts (HB3.5, 2026-10-30: the Chapter 0 and Chapter 1 quizzes
+  are published — export and import once to make them live; approving a later
+  draft is flipping its status, then export and import) — a quiz or question naming a section that does not exist fails
   the export — and the import stores them in a `ManualQuizzes` tab of the KB
   spreadsheet, rewritten only when they changed; the dialog's "Quizzes:" line
   says which. Do not edit that tab: it holds the answer keys, and the next

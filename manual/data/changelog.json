@@ -1,5 +1,14 @@
 [
   {
+    "date": "2026-10-30",
+    "part": "p1",
+    "section": "§1-7.1",
+    "summary": "An inbound caller who needs a Spanish speaker goes to the Spanish Queue Voicemail first; an email to spanishcalls@universalmedsupply.com is now the secondary option, not ruled out.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator 2026-10-30 (HB3.5 quiz review)"
+  },
+  {
     "date": "2026-10-28",
     "part": "p3",
     "section": "§3-8.1",
