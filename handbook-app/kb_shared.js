@@ -2,7 +2,7 @@
  * CI fails while this file differs from what the sync would write.
  *
  * Team Tools' handbook readers, verbatim from 00_config.js, 10_core.js, 70_kb.js, 80_training.js,
- * with every declaration they reach (132 in all).
+ * with every declaration they reach (141 in all).
  * Copied under a private name: getKbImages → ttGetKbImages_, getManualImages → ttGetManualImages_, getManualMeta → ttGetManualMeta_, getManualPart → ttGetManualPart_, getManualParts → ttGetManualParts_, getReferenceItem → ttGetReferenceItem_, searchReference → ttSearchReference_.
  * Supplied by Handbook.js instead of copied: fmtDate_, getAutoTagRules_, getEmployeeInfo_, getKbSS_, getKbSearchSynonyms_, getOrCreateKbSheet_, kbRecordSearchSignal_. */
 
@@ -142,6 +142,27 @@ const KB_MANUAL_QUIZZES_TAB = 'ManualQuizzes';
 const KB_MANUAL_QUIZZES_HEADERS = ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'];
 
 const KB_MANUAL_QUIZ_ID_RE = /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// HB4.1 — the handbook's form library (manual/data/forms.json, checked by
+// manual/forms.py, the PDFs from the repo's forms/ folder, carried in
+// manual.json as data URIs). Stored in the ManualFiles tab in the ManualImages
+// row shape — the PDF's base64 split across rows by part, keyed by form key +
+// content hash — so the images' ledger and reader serve it, with the form's
+// title, summary and sections (JSON) as trailing columns on every row. Written
+// by the import only, and only when a form changed; the handbook app reads it.
+const KB_MANUAL_FILES_TAB = 'ManualFiles';
+
+const KB_MANUAL_FILES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt', 'Title', 'Summary', 'Sections'];
+
+const KBMF = { TITLE: 7, SUMMARY: 8, SECTIONS: 9 };
+
+const KB_MANUAL_FORM_KEY_RE = /^form-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const KB_MANUAL_FORM_MAX_BYTES = 1024 * 1024;
+
+const KB_MANUAL_FORM_TYPES = ['application/pdf'];
+
+const KB_MANUAL_FORM_CACHE_PREFIX = 'kbmform_';
 
 const KB_MANUAL_IMAGES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'];
 
@@ -1313,6 +1334,37 @@ function kbManualQuizzesStored_(sheet) {
   }
   return vals.slice(1).filter(function (r) { return String(r[0] || '').trim(); })
     .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), String(r[3]), Math.round(Number(r[4])) || 0, String(r[5])]; });
+}
+
+/** The stored forms, without their bytes: [{key, sha, title, summary,
+ *  sections}] in key order, from part 0 of each form whose parts are whole
+ *  (kbImageTabLedger_'s rule). A missing tab is none stored ([]); a header
+ *  that was edited throws — "could not read" is not "none stored" (g128). */
+function kbManualFormsCatalog_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return [];
+  if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_FILES_HEADERS)) throw new Error('The ' + KB_MANUAL_FILES_TAB + ' tab\'s header row has been edited.');
+  const ledger = kbImageTabLedger_(sheet, KB_MANUAL_FILES_HEADERS, KB_MANUAL_FORM_KEY_RE);
+  const keys = Object.keys(ledger).sort();
+  if (!keys.length) return [];
+  const last = sheet.getLastRow();
+  const meta = sheet.getRange(2, KBMF.TITLE + 1, last - 1, 3).getValues();
+  return keys.map(function (k) {
+    const r = meta[ledger[k].rows[0] - 2];
+    let sections = [];
+    try { sections = JSON.parse(String(r[2] || '[]')); } catch (e) { sections = []; }
+    return { key: k, sha: ledger[k].sha, title: String(r[0] || ''), summary: String(r[1] || ''),
+      sections: Array.isArray(sections) ? sections : [] };
+  });
+}
+
+/** One form's PDF as a data URL, through the images' reader: "not stored"
+ *  (missing) and "could not read" (failed) apart (g128), the bytes re-checked
+ *  as a PDF within the cap, an edited header "could not read". Read-only —
+ *  the handbook app serves it; Team Tools has no reader of its own. */
+function kbManualFormServe_(key) {
+  return kbImageTabServe_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB), [key], {
+    headers: KB_MANUAL_FILES_HEADERS, keyRe: KB_MANUAL_FORM_KEY_RE, batch: 1, types: KB_MANUAL_FORM_TYPES,
+    maxBytes: KB_MANUAL_FORM_MAX_BYTES, cachePrefix: KB_MANUAL_FORM_CACHE_PREFIX, headerChangedFails: true });
 }
 
 /** Employee — the manual's images as data URLs, by key, in one call: a part

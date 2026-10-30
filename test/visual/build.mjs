@@ -51,6 +51,11 @@ hb = hb.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, (m, f) =>
   fs.readFileSync(path.join(HB, f + '.html'), 'utf8').replace(/<\?[\s\S]*?\?>/g, ''));
 hb = hb.replace(/<\?!=\s*JSON\.stringify\(hbParams[\s\S]*?\?>/, 'Object.fromEntries(new URLSearchParams(location.search))');
 hb = hb.replace(/<\?[\s\S]*?\?>/g, '');
-hb = hb.replace('</head>', '<script>\nwindow.__MANUAL_IMAGES__ = ' + manualImages + ';\n' + mock + '\n</script>\n</head>');
+// HB4.1 — the form library's PDFs, the repo's own (the forms/ folder), for hbGetForm.
+const formPdfs = {
+  'form-eaa': fs.readFileSync(path.join(HERE, '..', '..', 'forms', 'EAA (Economic Assistance Application) Form.pdf')).toString('base64'),
+  'form-pt-ot-rx': fs.readFileSync(path.join(HERE, '..', '..', 'forms', 'Sample PT OT Rx.pdf')).toString('base64'),
+};
+hb = hb.replace('</head>', '<script>\nwindow.__MANUAL_IMAGES__ = ' + manualImages + ';\nwindow.__FORM_PDFS__ = ' + JSON.stringify(formPdfs) + ';\n' + mock + '\n</script>\n</head>');
 fs.writeFileSync(path.join(HERE, 'page-handbook.html'), hb);
 console.log('page-handbook.html written:', hb.length, 'bytes');

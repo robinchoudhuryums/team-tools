@@ -3539,6 +3539,37 @@
     "kbManualQuizzesWrite_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-30",
+   "why": "HB4.1: the handbook's form library — ManualFiles constants and the forms' validate/rows/catalog/write/serve",
+   "added": [
+    "KBMF",
+    "KB_MANUAL_FILES_HEADERS",
+    "KB_MANUAL_FILES_TAB",
+    "KB_MANUAL_FILES_TEXT_IDX",
+    "KB_MANUAL_FORMS_MAX",
+    "KB_MANUAL_FORM_CACHE_PREFIX",
+    "KB_MANUAL_FORM_KEY_MAX",
+    "KB_MANUAL_FORM_KEY_RE",
+    "KB_MANUAL_FORM_MAX_BYTES",
+    "KB_MANUAL_FORM_SECTIONS_MAX",
+    "KB_MANUAL_FORM_SUMMARY_MAX",
+    "KB_MANUAL_FORM_TITLE_MAX",
+    "KB_MANUAL_FORM_TYPES",
+    "kbManualFormServe_",
+    "kbManualFormsCatalogOf_",
+    "kbManualFormsCatalog_",
+    "kbManualFormsRows_",
+    "kbManualFormsValidate_",
+    "kbManualFormsWrite_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4653,6 +4684,11 @@
    "kind": "const",
    "sha": "a522c639706a62db"
   },
+  "KBMF": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "97dfd135ca8b6c5e"
+  },
   "KBMG": {
    "file": "00_config.js",
    "kind": "const",
@@ -4953,6 +4989,21 @@
    "kind": "const",
    "sha": "7bb1ad63a645d08b"
   },
+  "KB_MANUAL_FILES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "99a53cf2baed9794"
+  },
+  "KB_MANUAL_FILES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2d0ef8487131410e"
+  },
+  "KB_MANUAL_FILES_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9cbf7fadb9f3e6a9"
+  },
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -4962,6 +5013,51 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5443f7e68d186e3b"
+  },
+  "KB_MANUAL_FORMS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "17ec8c11e4eb42b5"
+  },
+  "KB_MANUAL_FORM_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8adb7ba14348f582"
+  },
+  "KB_MANUAL_FORM_KEY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3d6d420af2846178"
+  },
+  "KB_MANUAL_FORM_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ebcf3442102e9adf"
+  },
+  "KB_MANUAL_FORM_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef1d4c3c7bd2c5eb"
+  },
+  "KB_MANUAL_FORM_SECTIONS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "73144913da9b8310"
+  },
+  "KB_MANUAL_FORM_SUMMARY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2631eabc7e506800"
+  },
+  "KB_MANUAL_FORM_TITLE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2bdda0a0071887aa"
+  },
+  "KB_MANUAL_FORM_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1bc36b9e6c7e6883"
   },
   "KB_MANUAL_ID_RE": {
    "file": "00_config.js",
@@ -10001,7 +10097,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d1c7f3075245394f"
+   "sha": "d62defbffd6ac1c0"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -10016,7 +10112,37 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6fde7b84f1b4d211"
+   "sha": "dd332d5f7d689cef"
+  },
+  "kbManualFormServe_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2ed99cd950ae8d98"
+  },
+  "kbManualFormsCatalogOf_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "af0fdeae1a4822be"
+  },
+  "kbManualFormsCatalog_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ef5d580557776b37"
+  },
+  "kbManualFormsRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "dbda72d4e8eca494"
+  },
+  "kbManualFormsValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "559504c48082c5b0"
+  },
+  "kbManualFormsWrite_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3d3d0e7fa17a7b99"
   },
   "kbManualHashBasis_": {
    "file": "70_kb.js",

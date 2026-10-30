@@ -127,6 +127,11 @@ const SCENARIOS = [
   // overflow a phone (each a named Tab stop) — for axe as much as for the eye.
   ['handbook-slideshow-dark-mobile', {}, MOBILE, 'dark', '?s=0.10', "setTimeout(function(){ var g = document.querySelector('.kb-gallery'); if (g) { kbGalleryStep_(g, 1); g.scrollIntoView(); } }, 300)", HB_PAGE],
   ['handbook-search-light-wide',   {}, WIDE,   'light', '', HB_SEARCH, HB_PAGE],
+  // HB4.1: the form library, a form open in the viewer (the real PDF drawn by
+  // pdf.js) on a phone, and a section whose bar offers a form.
+  ['handbook-forms-light-wide',    {}, WIDE,   'light', '', 'hbGoForms_()', HB_PAGE],
+  ['handbook-form-view-dark-mobile', {}, MOBILE, 'dark', '', "hbOpenForm_('form-pt-ot-rx')", HB_PAGE],
+  ['handbook-form-bar-light-wide', {}, WIDE,   'light', '?s=0.11', '', HB_PAGE],
   ['handbook-search-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH, HB_PAGE],
   ['handbook-contents-light-mobile', {}, MOBILE, 'light', '', 'hbToggleSide_()', HB_PAGE],
   ['handbook-suggest-light-wide',  {}, WIDE,   'light', '?s=3.8', HB_SUGGEST, HB_PAGE],
@@ -629,6 +634,13 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
   if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
   const ctx = await browser.newContext(ctxOpts);
+  // HB4.1: the handbook's form viewer loads pdf.js from cdnjs; the harness
+  // serves the same pinned build from node_modules (no network in CI or here).
+  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', (route) => {
+    const file = path.join(HERE, 'node_modules/pdfjs-dist/build', path.basename(new URL(route.request().url()).pathname));
+    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ path: file, contentType: 'text/javascript' });
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

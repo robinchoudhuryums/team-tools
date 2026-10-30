@@ -1219,7 +1219,7 @@ function kbManualImported_(r) {
   var bits = [(r.created || 0) + ' new draft' + (r.created === 1 ? '' : 's'), (r.updated || 0) + ' updated'];
   if (r.removed) bits.push(r.removed + ' removed');
   if ((r.skipped || []).length) bits.push(r.skipped.length + ' skipped');
-  showToast('Handbook imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) || (r.quizzes && r.quizzes.error) ? 'toast-warn' : 'toast-success');
+  showToast('Handbook imported — ' + bits.join(' · '), (r.skipped || []).length || (r.images && r.images.error) || (r.quizzes && r.quizzes.error) || (r.forms && r.forms.error) ? 'toast-warn' : 'toast-success');
   var picked = document.getElementById('kb-man-picked');
   if (picked && KB_MANUAL_FILE) picked.textContent = KB_MANUAL_FILE.name + ' — imported';
   var box = document.getElementById('kb-man-result');
@@ -1293,8 +1293,9 @@ function kbManualResultHtml_(r, dryRun) {
     : '';
   var im = kbManualImagesLine_(r.images, dryRun);
   var qz = kbManualQuizzesLine_(r.quizzes, dryRun);   // HB3.1
-  return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn || qz.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
-    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + reviewedLine + im.html + qz.html +
+  var fm = kbManualFormsLine_(r.forms, dryRun);       // HB4.1
+  return '<div class="kb-man-res' + (skipped.length || orphaned.length || im.warn || qz.warn || fm.warn ? ' warn' : '') + '"><b>' + esc(head) + '</b><div>' + esc(line) + '</div>' +
+    '<div class="kb-man-meta">' + esc(metaLine) + '</div>' + repairLine + reviewedLine + im.html + qz.html + fm.html +
     (skipped.length
       ? '<div class="kb-man-skiph">These ' + verb + ' skipped:</div><ul>' + skipped.map(function (s) {
           return '<li>' + esc(s.title || s.id) + ' <span class="kb-man-why">— ' + esc(KB_MANUAL_SKIP_WHY[s.reason] || s.reason) + '</span></li>';
@@ -1332,6 +1333,15 @@ function kbManualQuizzesLine_(qz, dryRun) {
   var html = '<div class="kb-man-meta">' + esc('Quizzes: ' + what + ' · ' + state) + '</div>';
   if (!dryRun && qz.error) html += '<div class="kb-man-skiph">The quizzes could not be saved (' + esc(qz.error) + ') — the sections are in; press Import again to retry the quizzes.</div>';
   return { html: html, warn: !dryRun && !!qz.error };
+}
+/** Pure (Node-pinned) — HB4.1: the form library's half of a check or an
+ *  import. null = the file predates forms (the stored ones are kept). */
+function kbManualFormsLine_(fm, dryRun) {
+  if (!fm) return { html: '<div class="kb-man-meta">No forms in this file — the stored forms are left as they are.</div>', warn: false };
+  var state = !fm.changed ? 'unchanged' : (dryRun ? 'would be stored' : (fm.error ? 'NOT stored' : 'stored'));
+  var html = '<div class="kb-man-meta">' + esc('Forms: ' + fm.total + ' form' + (fm.total === 1 ? '' : 's') + ' · ' + state) + '</div>';
+  if (!dryRun && fm.error) html += '<div class="kb-man-skiph">The forms could not be saved (' + esc(fm.error) + ') — the sections are in; press Import again to retry the forms.</div>';
+  return { html: html, warn: !dryRun && !!fm.error };
 }
 function kbManualRun_(dryRun) {
   var inp = document.getElementById('kb-man-file');

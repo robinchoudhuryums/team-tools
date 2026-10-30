@@ -1434,6 +1434,20 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // HB3.2 — taking a quiz: two quizzes (one passed, one locked) and a third
     // untaken, on real sections of the mock manual; a sitting; a result with
     // one answer to go over; one person locked out on the manager's team.
+    // HB4.1 — the form library: the two forms the handbook carries, offered on
+    // two real sections of the mock manual; the bytes are the repo's own PDFs
+    // (build.mjs inlines them as window.__FORM_PDFS__).
+    hbListForms: function () {
+      return { forms: [
+        { key: 'form-eaa', title: 'Economic Assistance Application (EAA)', summary: 'The blank application a patient fills in to apply for economic assistance. Billing processes it; it does not apply to an out-of-pocket order.',
+          sections: [{ id: 'man-0-11', anchor: '', num: '0.11', title: '0.11 Notes and email conventions' }] },
+        { key: 'form-pt-ot-rx', title: 'PT/OT Evaluation Rx (sample)', summary: 'A sample PT/OT prescription, for a provider who refers a power mobility patient to a physical or occupational therapist for the evaluation.',
+          sections: [{ id: 'man-0-10', anchor: '', num: '0.10', title: '0.10 Anatomy of a transaction' }, { id: 'man-0-2', anchor: '', num: '0.2', title: '0.2 Status update for a DME order' }] }] };
+    },
+    hbGetForm: function (key) {
+      var b64 = (window.__FORM_PDFS__ || {})[key];
+      return b64 ? { success: true, dataUri: 'data:application/pdf;base64,' + b64 } : { error: 'That form is not in the library.' };
+    },
     hbListQuizzes: function () {
       var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
       return { setUp: true, unreadable: 0, quizzes: [

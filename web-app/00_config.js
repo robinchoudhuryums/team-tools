@@ -2255,6 +2255,26 @@ const KB_MANUAL_QUIZZES_TEXT_IDX = [0, 1, 2, 3, 5];   // every column but PassPc
 const KB_MANUAL_QUIZ_ID_RE = /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/;   // mirrors manual/quizzes.py ID_RE (pinned)
 const KB_MANUAL_QUIZ_ID_MAX = 48;
 const KB_MANUAL_QUIZZES_MAX = 300;
+// HB4.1 — the handbook's form library (manual/data/forms.json, checked by
+// manual/forms.py, the PDFs from the repo's forms/ folder, carried in
+// manual.json as data URIs). Stored in the ManualFiles tab in the ManualImages
+// row shape — the PDF's base64 split across rows by part, keyed by form key +
+// content hash — so the images' ledger and reader serve it, with the form's
+// title, summary and sections (JSON) as trailing columns on every row. Written
+// by the import only, and only when a form changed; the handbook app reads it.
+const KB_MANUAL_FILES_TAB = 'ManualFiles';
+const KB_MANUAL_FILES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt', 'Title', 'Summary', 'Sections'];
+const KBMF = { TITLE: 7, SUMMARY: 8, SECTIONS: 9 };   // the trailing columns; 0–6 are KBMG's
+const KB_MANUAL_FILES_TEXT_IDX = [0, 1, 2, 3, 5, 7, 8, 9];   // every column but Part and ImportedAt is text ('@')
+const KB_MANUAL_FORM_KEY_RE = /^form-[a-z0-9]+(?:-[a-z0-9]+)*$/;   // mirrors manual/forms.py ID_RE (pinned)
+const KB_MANUAL_FORM_KEY_MAX = 48;
+const KB_MANUAL_FORM_TITLE_MAX = 120;
+const KB_MANUAL_FORM_SUMMARY_MAX = 300;
+const KB_MANUAL_FORM_SECTIONS_MAX = 8;
+const KB_MANUAL_FORMS_MAX = 40;
+const KB_MANUAL_FORM_MAX_BYTES = 1024 * 1024;   // one PDF; the EAA is ~200 KB
+const KB_MANUAL_FORM_TYPES = ['application/pdf'];
+const KB_MANUAL_FORM_CACHE_PREFIX = 'kbmform_';   // + content hash (g157)
 const KB_MANUAL_IMAGES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'];
 const KBMG = { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 };
 const KB_MANUAL_IMAGE_CELL_MAX = 45000;        // base64 characters per row — under the 50,000-character cell limit

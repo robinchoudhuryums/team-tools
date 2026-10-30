@@ -4,7 +4,7 @@
 Writes, under $MANUAL_OUT/reference (default dist/reference):
 
   manual.json    THE upload file (Batch M2): {format, version, built, router,
-                 changelog, synonyms, quizzes, articles, images}. `articles` holds one object per level-2
+                 changelog, synonyms, quizzes, forms, articles, images}. `articles` holds one object per level-2
                  section of Parts 0-10, one per quick reference card, one per
                  Appendix B section, ONE glossary article for Appendix A and the
                  front page — {Id, Department, Title, Type, BodyMd, SortOrder,
@@ -19,6 +19,10 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
                  `quizzes` (HB3.1) is data/quizzes.json checked by quizzes.py — its
                  PUBLISHED quizzes only; a draft is checked and held back (HB3.5),
                  every section resolved to the app's {id, anchor}.
+                 `forms` (HB4.1) is data/forms.json checked by forms.py — each
+                 form's PDF from the repo's forms/ folder as a data URI, with
+                 the sections that offer it; the import stores them in the
+                 KB spreadsheet's ManualFiles tab.
 
 and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
 
@@ -54,6 +58,7 @@ sys.path.insert(0, HERE)
 from numbering import display as dnum  # noqa: E402
 import footnotes, roles  # noqa: E402  (shared with build.py)
 import quizzes  # noqa: E402  (HB3.1: the question bank's check)
+import forms  # noqa: E402  (HB4.1: the form library's check)
 from built_date import built_date  # noqa: E402  (the one build date, shared with build.py and make_html.py)
 
 # Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
@@ -675,6 +680,11 @@ def main():
     quiz_bank = json.load(open("data/quizzes.json", encoding="utf-8"))
     quiz_list, quiz_errors = quizzes.check(quiz_bank, lambda sec: sec_lookup(sec, anchors))
     quiz_drafts = quizzes.drafts(quiz_bank)
+    # HB4.1: the form library — the PDFs are the repo's forms/ folder, shared with Team Tools' email attachments.
+    form_list, form_errors = forms.check(json.load(open("data/forms.json", encoding="utf-8")),
+                                         lambda sec: sec_lookup(sec, anchors),
+                                         forms.repo_reader(os.path.join(HERE, "..", "forms")))
+    errors.extend("forms.json: " + e for e in form_errors)
     errors.extend("quizzes.json: " + e for e in quiz_errors)
 
     articles = [howto_article()]
@@ -727,6 +737,8 @@ def main():
     print(f"quizzes               : {len(quiz_list)} ({sum(len(q['questions']) for q in quiz_list)} questions, "
           f"{'every section verified' if not quiz_errors else str(len(quiz_errors)) + ' problem(s) below'})"
           + (f"; {len(quiz_drafts)} draft(s) checked, not exported: {', '.join(quiz_drafts)}" if quiz_drafts else ""))
+    print(f"forms                 : {len(form_list)} ({sum(len(f['dataUri']) for f in form_list):,} characters of PDF, "
+          f"{'every file and section verified' if not form_errors else str(len(form_errors)) + ' problem(s) below'})")
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
     if in_repo:
         print(f"diagrams              : {n_diagrams} in the app partial")
@@ -748,7 +760,7 @@ def main():
     images = {k: {"alt": IMAGES[k]["alt"], "kind": IMAGES[k]["kind"], "dataUri": IMAGES[k]["dataUri"]}
               for k in sorted(IMAGES)}
     bundle = {"format": BUNDLE_FORMAT, "version": version, "built": built,
-              "router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list,
+              "router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list, "forms": form_list,
               "articles": articles, "images": images}
     with open(os.path.join(out, "manual.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, ensure_ascii=False, indent=1)

@@ -164,6 +164,7 @@ function hbOnHistory_(e) {
   else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
   else if (st && st.training) hbTraining_(false);
   else if (st && st.saved) hbSaved_(false);
+  else if (st && st.forms) hbFormList_(false);   // HB4.1
   else if (st && st.id) hbOpen_(st.id, st.anchor || '', null, false);
   else hbHome_(false);
 }
@@ -505,7 +506,7 @@ function hbWhen_(ms) {
 }
 
 var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null };   // seq: the open view's; lseq: the list load's
-function hbLeaveQuiz_() { HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); hbStopReading_(); }   // and read aloud (HB2.3)   // every other view leaves Training too (HB3.3)
+function hbLeaveQuiz_() { HB_FM.showing = false; HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); hbStopReading_(); }   // and read aloud (HB2.3)   // every other view leaves Training too (HB3.3)
 
 function hbLoadQuizzes_(then) {
   var lseq = ++HB_QZ.lseq;
@@ -531,6 +532,9 @@ function hbPaintQuizBar_(id) {
   bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
     return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
       '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
+  }).join('') + hbFormsFor_(id).map(function (f) {   // HB4.1: the forms this section offers
+    return '<span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button>';
   }).join('');
 }
 /** Where a reader stands with a quiz, as a chip. */
@@ -589,6 +593,200 @@ function hbPaintQuizList_(res) {
           ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (locked ? 'Locked' : (q.me && q.me.attempts ? 'Take again' : 'Take the quiz')) + '</button>') + '</div></div>';
     }).join('') + '</section>';
   }).join('');
+}
+
+// ── Forms (HB4.1) ─────────────────────────────────────────────────────────
+// The handbook's form library: Team Tools' Import stores the PDFs (ManualFiles)
+// and this page lists them, offers each on the bar above the sections that name
+// it, shows one in an in-page viewer (pdf.js, loaded from cdnjs only when a
+// form is opened, run on the page's own thread — the sandbox cannot start a
+// worker from another origin) and downloads it. A failed list never replaces
+// one that loaded (g129), and a failure is said, never "no forms" (g53).
+var HB_FM = { list: undefined, lseq: 0, showing: false, seq: 0, vseq: 0, bytes: {} };   // seq: the list view's; vseq: the open viewer's
+var HB_PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+var HB_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' | 'failed'
+function hbLoadForms_(then) {
+  var lseq = ++HB_FM.lseq;
+  var take = function (res) {
+    if (lseq !== HB_FM.lseq) return;
+    if (!(res && res.error && HB_FM.list && !HB_FM.list.error)) HB_FM.list = res;
+    hbPaintQuizBar_(HB.currentId);
+    if (then) then(res);
+  };
+  google.script.run
+    .withSuccessHandler(function (res) { take(res && typeof res === 'object' ? res : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (err) { take({ error: (err && err.message) || 'The server did not answer.' }); })
+    .hbListForms();
+}
+/** The forms a section offers (none while the list has not loaded). */
+function hbFormsFor_(id) {
+  var list = HB_FM.list;
+  if (!id || !list || list.error || !Array.isArray(list.forms)) return [];
+  return list.forms.filter(function (f) { return (f.sections || []).some(function (sc) { return sc.id === id; }); });
+}
+function hbFormByKey_(key) {
+  var list = HB_FM.list;
+  return list && Array.isArray(list.forms) ? list.forms.filter(function (f) { return f.key === key; })[0] || null : null;
+}
+function hbGoForms_() { hbFormList_(true); }
+function hbFormList_(push) {
+  hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
+  HB.currentId = null; HB.landing = false;
+  MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
+  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  HB_FM.showing = true;
+  var seq = ++HB_FM.seq;
+  var main = hbMain_(); if (!main) return;
+  main.innerHTML = '<div class="hb-qz hb-fm"><h1 class="hb-pp-h">Forms</h1><div id="hb-fm-body">' + loSweep() + '</div></div>';
+  main.scrollTop = 0;
+  if (push) { hbHistory_('push', { forms: true }, {}); hbFocusView_(); }
+  hbLoadForms_(function (res) { if (seq === HB_FM.seq && HB_FM.showing) hbPaintFormList_(res); });
+}
+function hbPaintFormList_(res) {
+  var host = document.getElementById('hb-fm-body'); if (!host) return;
+  if (!res || res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The forms could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
+  var forms = res.forms || [];
+  if (!forms.length) { host.innerHTML = '<p class="hb-quiet">No forms have been published yet.</p>'; return; }
+  host.innerHTML = '<p class="hb-quiet">Blank forms the handbook refers to. Open one to read it here, or download it to fill in and print.</p>' +
+    forms.map(function (f) {
+      var where = (f.sections || []).map(function (sc) { return hbQuizSecLink_(sc.id, sc.anchor, '', ''); }).filter(Boolean);
+      return '<div class="hb-pp-row hb-fm-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + icon('fileText', 14) + ' ' + esc(f.title) + '</span>' +
+        (f.summary ? '<span class="hb-fm-sum">' + esc(f.summary) + '</span>' : '') +
+        (where.length ? '<span class="hb-quiet">In the handbook: ' + where.join(', ') + '</span>' : '') + '</div>' +
+        '<div class="hb-pp-row-a"><button type="button" class="kb-btn hb-pp-yes" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open</button>' +
+        '<button type="button" class="kb-btn" data-form="' + esc(f.key) + '" onclick="hbDownloadForm_(this.getAttribute(\'data-form\'))">' + icon('download', 13) + ' Download</button></div></div>';
+    }).join('');
+}
+/** PURE — a data URL's base64 as bytes. */
+function hbDataUriBytes_(uri) {
+  var b64 = String(uri || '').split(',')[1] || '';
+  var bin = atob(b64), out = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+/** A form's bytes, from this visit's copy or the server: done(bytes) or
+ *  done(null, message). */
+function hbFormBytes_(key, done) {
+  if (HB_FM.bytes[key]) { done(HB_FM.bytes[key]); return; }
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || res.error || !res.dataUri) { done(null, (res && res.error) || 'The server did not answer.'); return; }
+      var b; try { b = hbDataUriBytes_(res.dataUri); } catch (e) { done(null, 'The form arrived damaged.'); return; }
+      HB_FM.bytes[key] = b; done(b);
+    })
+    .withFailureHandler(function (err) { done(null, (err && err.message) || 'The server did not answer.'); })
+    .hbGetForm(key);
+}
+/** pdf.js, loaded once: the library, then its worker code as a plain script
+ *  so it runs on this thread (pdf.js uses a global pdfjsWorker when one is
+ *  there). done(lib) or done(null) when either cannot load. */
+function hbPdfJs_(done) {
+  if (HB_PDFJS.state === '' && window.pdfjsLib && window.pdfjsWorker) HB_PDFJS.state = 'ready';   // already on the page
+  if (HB_PDFJS.state === 'ready') { done(window.pdfjsLib); return; }
+  if (HB_PDFJS.state === 'failed') { done(null); return; }
+  HB_PDFJS.waiting.push(done);
+  if (HB_PDFJS.state === 'loading') return;
+  HB_PDFJS.state = 'loading';
+  var finish = function (ok) {
+    HB_PDFJS.state = ok ? 'ready' : 'failed';
+    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = HB_PDFJS_BASE + 'pdf.worker.min.js'; } catch (e) {} }
+    var w = HB_PDFJS.waiting; HB_PDFJS.waiting = [];
+    w.forEach(function (fn) { fn(ok ? window.pdfjsLib : null); });
+  };
+  var load = function (file, next) {
+    var sc = document.createElement('script');
+    sc.src = HB_PDFJS_BASE + file;
+    sc.onload = next; sc.onerror = function () { finish(false); };
+    document.head.appendChild(sc);
+  };
+  load('pdf.min.js', function () {
+    if (!window.pdfjsLib) { finish(false); return; }
+    load('pdf.worker.min.js', function () { finish(!!window.pdfjsWorker); });
+  });
+}
+/** Open a form in the viewer: its pages drawn one under another, each named
+ *  for a screen reader; Download beside Close. */
+function hbOpenForm_(key) {
+  var f = hbFormByKey_(key); if (!f) { showToast('That form is not in the library.', 'toast-warn'); return; }
+  var vseq = ++HB_FM.vseq;
+  var ov = ensureOverlay('hb-form-ov', { labelledBy: 'hb-form-h', onClose: function () { HB_FM.vseq++; var o = document.getElementById('hb-form-ov'); if (o) o.remove(); } });
+  ov.innerHTML = '<div class="modal hb-fv" role="document"><div class="modal-title" id="hb-form-h">' + icon('fileText', 16) + ' ' + esc(f.title) + '</div>' +
+    '<div class="hb-fv-body" id="hb-fv-body" aria-busy="true">' + loSweep() + '</div>' +
+    '<div class="modal-footer"><span class="hb-fv-msg" id="hb-fv-msg" role="status"></span>' +
+    '<button type="button" class="btn-modal-cancel" data-form="' + esc(key) + '" onclick="hbDownloadForm_(this.getAttribute(\'data-form\'))">' + icon('download', 13) + ' Download</button>' +
+    '<button type="button" class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'hb-form-ov\'))">Close</button></div></div>';
+  var body = function () { return vseq === HB_FM.vseq ? document.getElementById('hb-fv-body') : null; };
+  var fail = function (msg) {
+    var b = body(); if (!b) return;
+    b.removeAttribute('aria-busy');
+    b.innerHTML = '<p class="hb-msg bad" role="alert">' + esc(msg) + '</p>';
+  };
+  hbFormBytes_(key, function (bytes, err) {
+    if (!body()) return;
+    if (!bytes) { fail('The form could not be loaded: ' + String(err || '').replace(/\.$/, '') + '.'); return; }
+    hbPdfJs_(function (lib) {
+      if (!body()) return;
+      if (!lib) { fail('The viewer could not load in this browser. Use Download to open the form on your computer.'); return; }
+      // A copy: pdf.js takes ownership of the buffer it is given.
+      lib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise.then(function (doc) {
+        var b = body(); if (!b) return;
+        b.innerHTML = '';
+        var n = doc.numPages, chain = Promise.resolve();
+        for (var i = 1; i <= n; i++) {
+          (function (pn) {
+            chain = chain.then(function () {
+              if (!body()) return null;
+              return doc.getPage(pn).then(function (page) {
+                var host = body(); if (!host) return null;
+                var width = Math.max(240, (host.clientWidth || 640) - 4);
+                var vp1 = page.getViewport({ scale: 1 });
+                var scale = width / vp1.width, ratio = window.devicePixelRatio || 1;
+                var vp = page.getViewport({ scale: scale * ratio });
+                var cv = document.createElement('canvas');
+                cv.className = 'hb-fv-page';
+                cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+                cv.style.width = Math.floor(vp.width / ratio) + 'px';
+                cv.setAttribute('role', 'img');
+                cv.setAttribute('aria-label', f.title + ' — page ' + pn + ' of ' + n);
+                host.appendChild(cv);
+                return page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+              });
+            });
+          })(i);
+        }
+        return chain.then(function () { var h = body(); if (h) h.removeAttribute('aria-busy'); });
+      }).catch(function () { fail('The form could not be shown. Use Download to open it on your computer.'); });
+    });
+  });
+}
+/** PURE — the file name a form downloads as: its title, safe for any OS. */
+function hbFormFileName_(title) {
+  var t = String(title || 'form').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return (t || 'form') + '.pdf';
+}
+/** Download a form: a blob link clicked. The page's sandbox may block a
+ *  download without a word, so the message says what to do if nothing arrives. */
+function hbDownloadForm_(key) {
+  var f = hbFormByKey_(key); if (!f) { showToast('That form is not in the library.', 'toast-warn'); return; }
+  // In the viewer the line beside the buttons; elsewhere a toast — never the
+  // reading area, which holds the list the reader pressed Download in.
+  var say = function (msg, bad, interim) {
+    var m = document.getElementById('hb-fv-msg');
+    if (m) m.textContent = msg; else if (!interim) showToast(msg, bad ? 'toast-warn' : 'toast-success');
+  };
+  say('Preparing the download…', false, true);
+  hbFormBytes_(key, function (bytes, err) {
+    if (!bytes) { say('The form could not be downloaded: ' + String(err || '').replace(/\.$/, '') + '.', true); return; }
+    var url;
+    try {
+      url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = hbFormFileName_(f.title); a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { say('This browser blocked the download. Open the form here instead.', true); return; }
+    setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+    say('Downloading ' + hbFormFileName_(f.title) + '. If nothing arrives, this browser blocked it — open the form here instead.');
+  });
 }
 
 /** Open a quiz to take: its questions shuffled for this sitting. */
@@ -1686,6 +1884,7 @@ function hbPaintToc_() {
   var depts = kbManualDepts_().list;
   var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>' +
     '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>' +   // HB3.2
+    '<button type="button" class="hb-toc-quizzes hb-toc-forms" onclick="hbGoForms_()">' + icon('fileText', 14) + ' Forms</button>' +   // HB4.1
     '<button type="button" class="hb-toc-quizzes hb-toc-training" onclick="hbGoTraining_()">' + icon('clipboardList', 14) + ' Training</button>' +   // HB3.3
     '<button type="button" class="hb-toc-quizzes hb-toc-saved" onclick="hbGoSaved_()">' + icon('star', 14) + ' Saved</button>';   // HB2.2
   depts.forEach(function (dept) {
@@ -1903,6 +2102,7 @@ function hbBoot_() {
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
   hbLoadMe_();
   hbLoadQuizzes_();   // HB3.2: the quiz bar needs to know which sections have one
+  hbLoadForms_();     // HB4.1: and which offer a form
   hbLoadSignOffs_();  // HB3.4: and the bar's sign-off, the reader's own
   hbLoadBookmarks_(); // HB2.2: the reader's bookmarks, and their notes when kept in the account
   hbBootNotes_();

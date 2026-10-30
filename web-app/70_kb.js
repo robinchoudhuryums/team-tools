@@ -4484,7 +4484,8 @@ function kbManualBundle_(data) {
   if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
   return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog, synonyms: data.synonyms },
     images: data.images === undefined ? null : data.images,     // Batch M3 — an M2 file carries none
-    quizzes: data.quizzes === undefined ? null : data.quizzes };  // HB3.1 — an older file carries none
+    quizzes: data.quizzes === undefined ? null : data.quizzes,   // HB3.1 — an older file carries none
+    forms: data.forms === undefined ? null : data.forms };       // HB4.1 — an older file carries none
 }
 
 // ── Batch M3 — the manual's images ──────────────────────────────────────────
@@ -4687,6 +4688,116 @@ function kbManualQuizzesWrite_(rows) {
   if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
   KB_MANUAL_QUIZZES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
   sheet.getRange(2, 1, rows.length, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_QUIZZES_TEXT_IDX));
+}
+
+// ── HB4.1 — the handbook's form library ─────────────────────────────────────
+/** PURE (Node-pinned) — the bundle's forms, checked again (manual/forms.py
+ *  checked them at export): a key shaped like form-eaa, used once; a title;
+ *  1–KB_MANUAL_FORM_SECTIONS_MAX sections, each one of THIS file's articles;
+ *  the PDF as a data URI whose bytes begin %PDF-, within the size cap; each
+ *  with the SHA-256 of its base64 (hashFn). `forms` null (an older file) →
+ *  items null: the stored forms are left as they are. Any bad form refuses the
+ *  WHOLE file, like any other bad entry. */
+function kbManualFormsValidate_(forms, articleIds, hashFn) {
+  if (forms == null) return { items: null, errors: [] };
+  if (!Array.isArray(forms)) return { items: null, errors: ['The file\'s forms are not a list.'] };
+  const errors = [], items = [], seen = {}, ids = {};
+  (articleIds || []).forEach(function (id) { ids[id] = 1; });
+  if (forms.length > KB_MANUAL_FORMS_MAX) errors.push('The file carries ' + forms.length + ' forms; at most ' + KB_MANUAL_FORMS_MAX + ' are stored.');
+  forms.slice(0, KB_MANUAL_FORMS_MAX).forEach(function (f, n) {
+    f = f && typeof f === 'object' ? f : {};
+    const key = String(f.key || '');
+    const where = 'Form "' + (key || String(n + 1)).substring(0, KB_MANUAL_FORM_KEY_MAX) + '"';
+    if (!KB_MANUAL_FORM_KEY_RE.test(key) || key.length > KB_MANUAL_FORM_KEY_MAX) { errors.push(where + ': not a form key (form-…).'); return; }
+    if (seen[key]) { errors.push(where + ': its key is used twice.'); return; }
+    seen[key] = 1;
+    const title = typeof f.title === 'string' ? f.title.trim() : '';
+    if (!title || title.length > KB_MANUAL_FORM_TITLE_MAX) { errors.push(where + ': it needs a title of at most ' + KB_MANUAL_FORM_TITLE_MAX + ' characters.'); return; }
+    const summary = typeof f.summary === 'string' ? f.summary.trim() : '';
+    if (summary.length > KB_MANUAL_FORM_SUMMARY_MAX) { errors.push(where + ': its summary is longer than ' + KB_MANUAL_FORM_SUMMARY_MAX + ' characters.'); return; }
+    const secs = Array.isArray(f.sections) ? f.sections : [];
+    if (!secs.length || secs.length > KB_MANUAL_FORM_SECTIONS_MAX) { errors.push(where + ': it needs 1–' + KB_MANUAL_FORM_SECTIONS_MAX + ' sections.'); return; }
+    const sections = [];
+    for (let i = 0; i < secs.length; i++) {
+      const sc = secs[i] && typeof secs[i] === 'object' ? secs[i] : {};
+      const id = String(sc.id || ''), anchor = String(sc.anchor || ''), num = String(sc.num || '');
+      if (!ids[id] || anchor.length > 40 || num.length > 40) { errors.push(where + ': a section is not a section of this file.'); return; }
+      sections.push({ id: id, anchor: anchor, num: num });
+    }
+    const m = /^data:application\/pdf;base64,([A-Za-z0-9+\/]+={0,2})$/.exec(String(f.dataUri || ''));
+    if (!m || m[1].indexOf('JVBERi0') !== 0) { errors.push(where + ': its file is not a PDF.'); return; }
+    if (Math.floor(m[1].length * 3 / 4) > KB_MANUAL_FORM_MAX_BYTES) { errors.push(where + ': its PDF is larger than ' + KB_MANUAL_FORM_MAX_BYTES + ' bytes.'); return; }
+    items.push({ key: key, title: title, summary: summary, sections: sections, contentType: 'application/pdf', base64: m[1], sha: hashFn(m[1]) });
+  });
+  return { items: errors.length ? null : items, errors: errors };
+}
+/** PURE (Node-pinned) — the ManualFiles rows for the checked forms, in key
+ *  order: the ManualImages row shape (each PDF's base64 in pieces of at most
+ *  KB_MANUAL_IMAGE_CELL_MAX characters, by part), then the title, summary and
+ *  sections JSON on every row. The pieces rejoin to exactly the base64 that
+ *  was checked. */
+function kbManualFormsRows_(items, now) {
+  const rows = [];
+  (items || []).slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); }).forEach(function (it) {
+    const b64 = String(it.base64 || '');
+    const n = Math.max(1, Math.ceil(b64.length / KB_MANUAL_IMAGE_CELL_MAX));
+    const secs = JSON.stringify(it.sections || []);
+    for (let p = 0; p < n; p++) {
+      rows.push([it.key, it.sha, it.contentType, 'form', p, b64.substring(p * KB_MANUAL_IMAGE_CELL_MAX, (p + 1) * KB_MANUAL_IMAGE_CELL_MAX), now, it.title, it.summary, secs]);
+    }
+  });
+  return rows;
+}
+/** The stored forms, without their bytes: [{key, sha, title, summary,
+ *  sections}] in key order, from part 0 of each form whose parts are whole
+ *  (kbImageTabLedger_'s rule). A missing tab is none stored ([]); a header
+ *  that was edited throws — "could not read" is not "none stored" (g128). */
+function kbManualFormsCatalog_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return [];
+  if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_FILES_HEADERS)) throw new Error('The ' + KB_MANUAL_FILES_TAB + ' tab\'s header row has been edited.');
+  const ledger = kbImageTabLedger_(sheet, KB_MANUAL_FILES_HEADERS, KB_MANUAL_FORM_KEY_RE);
+  const keys = Object.keys(ledger).sort();
+  if (!keys.length) return [];
+  const last = sheet.getLastRow();
+  const meta = sheet.getRange(2, KBMF.TITLE + 1, last - 1, 3).getValues();
+  return keys.map(function (k) {
+    const r = meta[ledger[k].rows[0] - 2];
+    let sections = [];
+    try { sections = JSON.parse(String(r[2] || '[]')); } catch (e) { sections = []; }
+    return { key: k, sha: ledger[k].sha, title: String(r[0] || ''), summary: String(r[1] || ''),
+      sections: Array.isArray(sections) ? sections : [] };
+  });
+}
+/** PURE — the catalog a set of checked forms would store, for comparing with
+ *  kbManualFormsCatalog_ (an import writes only when the two differ). */
+function kbManualFormsCatalogOf_(items) {
+  return (items || []).slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); })
+    .map(function (it) { return { key: it.key, sha: it.sha, title: it.title, summary: it.summary, sections: it.sections }; });
+}
+/** Under the caller's lock: the whole tab rewritten — the header, then every
+ *  form the file carries, the text columns formatted first (g144), the grid
+ *  grown first (g145). */
+function kbManualFormsWrite_(rows) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_FILES_TAB);
+  if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_FILES_TAB); sheet.setFrozenRows(1); }
+  sheet.getRange(1, 1, 1, KB_MANUAL_FILES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_FILES_HEADERS]));
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_FILES_HEADERS.length)).clearContent();
+  if (!rows.length) return;
+  const need = rows.length + 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  KB_MANUAL_FILES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(2, 1, rows.length, KB_MANUAL_FILES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_FILES_TEXT_IDX));
+}
+/** One form's PDF as a data URL, through the images' reader: "not stored"
+ *  (missing) and "could not read" (failed) apart (g128), the bytes re-checked
+ *  as a PDF within the cap, an edited header "could not read". Read-only —
+ *  the handbook app serves it; Team Tools has no reader of its own. */
+function kbManualFormServe_(key) {
+  return kbImageTabServe_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB), [key], {
+    headers: KB_MANUAL_FILES_HEADERS, keyRe: KB_MANUAL_FORM_KEY_RE, batch: 1, types: KB_MANUAL_FORM_TYPES,
+    maxBytes: KB_MANUAL_FORM_MAX_BYTES, cachePrefix: KB_MANUAL_FORM_CACHE_PREFIX, headerChangedFails: true });
 }
 
 /** Employee — the manual's images as data URLs, by key, in one call: a part
@@ -5106,7 +5217,8 @@ function kbImportManual(source, opts) {
     const mv = bundle.meta ? kbManualMetaValidate_(bundle.meta, v.items.map(function (it) { return it.id; })) : { meta: null, errors: [] };
     const iv = kbManualImagesValidate_(bundle.images, v.items, function (b64) { return kbSha256Hex_(b64); });
     const qv = kbManualQuizzesValidate_(bundle.quizzes, v.items.map(function (it) { return it.id; }));   // HB3.1
-    const problems = v.errors.concat(mv.errors, iv.errors, qv.errors);
+    const fv = kbManualFormsValidate_(bundle.forms, v.items.map(function (it) { return it.id; }), function (b64) { return kbSha256Hex_(b64); });   // HB4.1
+    const problems = v.errors.concat(mv.errors, iv.errors, qv.errors, fv.errors);
     if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
     const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
     const lock = LockService.getScriptLock();
@@ -5162,6 +5274,13 @@ function kbImportManual(source, opts) {
         summary.quizzes = { total: quizRows.length, changed: JSON.stringify(stored) !== JSON.stringify(quizRows),
           questions: qv.items.reduce(function (n, q) { return n + JSON.parse(q.questionsJson).length; }, 0) };
       } else summary.quizzes = null;
+      // HB4.1 — the forms: compared with the tab's catalog (bytes by hash, and
+      // the title, summary and sections) under the lock; written below only
+      // when they differ, so a re-import writes nothing.
+      if (fv.items) {
+        const storedForms = kbManualFormsCatalog_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB));
+        summary.forms = { total: fv.items.length, changed: JSON.stringify(storedForms) !== JSON.stringify(kbManualFormsCatalogOf_(fv.items)) };
+      } else summary.forms = null;
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
@@ -5233,6 +5352,12 @@ function kbImportManual(source, opts) {
         summary.quizzes.error = '';
         try { kbManualQuizzesWrite_(quizRows); } catch (e) { summary.quizzes.error = String(e.message || e).substring(0, 200); }
       }
+      if (fv.items && summary.forms.changed) {
+        // Like the quizzes: a failed write is said beside the sections (which
+        // are in), and the next Import retries it.
+        summary.forms.error = '';
+        try { kbManualFormsWrite_(kbManualFormsRows_(fv.items, now)); } catch (e) { summary.forms.error = String(e.message || e).substring(0, 200); }
+      }
       if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
@@ -5244,6 +5369,7 @@ function kbImportManual(source, opts) {
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
         (summary.quizzes ? '; quizzes=' + summary.quizzes.total + (summary.quizzes.changed ? (summary.quizzes.error ? ' (error)' : ' (stored)') : ' (same)') : '') +
+        (summary.forms ? '; forms=' + summary.forms.total + (summary.forms.changed ? (summary.forms.error ? ' (error)' : ' (stored)') : ' (same)') : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
       // HB1.4: every import refreshes the handbook app's search mirror, so the
       // app follows a settings change without anyone re-saving it.

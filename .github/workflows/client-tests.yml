@@ -111,6 +111,7 @@ jobs:
           python validate_html.py "$RUNNER_TEMP/handbook.html"
           python feedback_report.py --check   # cycle 25 E3: the feedback worklist's self-test
           python quizzes.py --check           # HB3.1: the question bank's check, self-tested
+          python forms.py --check             # HB4.1: the form library's check, self-tested
           MANUAL_OUT="$RUNNER_TEMP/manual-dist" python export_reference.py
           cd ..
           git diff --exit-code -- manual/diagrams web-app/kb/script_manual_diagrams.html

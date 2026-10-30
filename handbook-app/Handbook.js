@@ -224,6 +224,42 @@ function hbStamp_(s) {
 }
 function getManualImages(keys) { return ttGetManualImages_(keys); }
 function getKbImages(keys) { return ttGetKbImages_(keys); }
+
+// ── HB4.1 — the form library ────────────────────────────────────────────────
+/** The forms Team Tools' Import stored (the ManualFiles tab), without their
+ *  bytes: {forms: [{key, title, summary, sections: [{id, anchor, num, title}]}]}
+ *  — only links to PUBLISHED sections, in the list's order. A form whose every
+ *  section is unpublished is still listed (the Forms page links nowhere).
+ *  An unreadable tab is said, never read as "no forms" (g128). */
+function hbListForms() {
+  if (!getEmployeeInfo_()) return { error: 'Not authorized.' };
+  let cat, pub;
+  try { cat = kbManualFormsCatalog_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB)); }
+  catch (err) { return { error: 'The form library could not be read: ' + err.message }; }
+  try { pub = hbPublished_(); } catch (err) { return { error: err.message }; }
+  return { forms: hbFormsVisible_(cat, pub.sectionIds, pub.sectionTitle) };
+}
+/** PURE — the catalog as the page shows it: each form's sections narrowed to
+ *  the published ones, with their titles; nothing else of the row leaves. */
+function hbFormsVisible_(catalog, sectionIds, sectionTitle) {
+  return (catalog || []).map(function (f) {
+    return { key: f.key, title: f.title, summary: f.summary,
+      sections: (f.sections || []).filter(function (sc) { return sc && sectionIds[sc.id]; })
+        .map(function (sc) { return { id: sc.id, anchor: String(sc.anchor || ''), num: String(sc.num || ''), title: String(sectionTitle[sc.id] || '') }; }) };
+  });
+}
+/** One form's PDF as a data URL ({success, dataUri}). "Not in the library"
+ *  and "could not be read" are different answers (g128). */
+function hbGetForm(key) {
+  if (!getEmployeeInfo_()) return { error: 'Not authorized.' };
+  key = String(key || '');
+  if (!KB_MANUAL_FORM_KEY_RE.test(key)) return { error: 'That is not a form in the library.' };
+  let res;
+  try { res = kbManualFormServe_(key); } catch (err) { return { error: 'The form could not be read: ' + err.message }; }
+  if (res && res.images && res.images[key]) return { success: true, dataUri: res.images[key] };
+  if (res && res.missing && res.missing.indexOf(key) >= 0) return { error: 'That form is not in the library — it may have been removed at the last import.' };
+  return { error: 'The form could not be read from the KB spreadsheet. Try again in a moment.' };
+}
 /** A cross-reference preview: handbook sections only. A link to an ordinary
  *  Reference article is answered as such — those articles are Team Tools'. */
 function getReferenceItem(id) {

@@ -28180,9 +28180,9 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known thirteen');
+    'the raw plain-text writers are exactly the known fourteen (HB4.1 added the form library\'s tab)');
   assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49) and the search signal (cycle 25 E6)');
@@ -30985,6 +30985,12 @@ function m1Importer_(book, fileText, who, extra) {
     KB_MANUAL_QUIZZES_TAB: 'ManualQuizzes', KB_MANUAL_QUIZZES_HEADERS: ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'],
     KB_MANUAL_QUIZZES_TEXT_IDX: [0, 1, 2, 3, 5], KB_MANUAL_QUIZ_ID_RE: /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/, KB_MANUAL_QUIZ_ID_MAX: 48, KB_MANUAL_QUIZZES_MAX: 300,
     QUIZ_TYPES: ['single', 'multi', 'truefalse'], QUIZ_TF_OPTIONS: ['True', 'False'],
+    // HB4.1: the form library — every limit and name read from the config source.
+    ...Object.fromEntries(['KB_MANUAL_FORM_KEY_MAX', 'KB_MANUAL_FORM_TITLE_MAX', 'KB_MANUAL_FORM_SUMMARY_MAX', 'KB_MANUAL_FORM_SECTIONS_MAX', 'KB_MANUAL_FORMS_MAX']
+      .map((n) => [n, Number(new RegExp('const ' + n + ' = (\\d+);').exec(codeSrc)[1])])),
+    KB_MANUAL_FORM_MAX_BYTES: 1024 * 1024, KB_MANUAL_FILES_TAB: 'ManualFiles',
+    KB_MANUAL_FILES_HEADERS: JSON.parse(/const KB_MANUAL_FILES_HEADERS = (\[[^\]]*\]);/.exec(codeSrc)[1].replace(/'/g, '"')),
+    KBMF: { TITLE: 7, SUMMARY: 8, SECTIONS: 9 }, KB_MANUAL_FILES_TEXT_IDX: [0, 1, 2, 3, 5, 7, 8, 9], KB_MANUAL_FORM_KEY_RE: /^form-[a-z0-9]+(?:-[a-z0-9]+)*$/,
     ...Object.fromEntries(['TRAIN_QUIZ_MAX_QUESTIONS', 'TRAIN_QUIZ_MAX_OPTIONS', 'TRAIN_QUIZ_JSON_MAX', 'QUIZ_TEXT_MAX', 'QUIZ_OPTION_MAX', 'QUIZ_TITLE_MAX', 'QUIZ_EXPLAIN_MAX']
       .map((n) => [n, Number(new RegExp('const ' + n + ' = (\\d+);').exec(codeSrc)[1])])),
     sheetTextRows_: (rows) => rows,
@@ -30997,7 +31003,9 @@ function m1Importer_(book, fileText, who, extra) {
     'kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualReviewOnUpdate_',
     // HB3.1: the quizzes the bundle carries, checked by the shared engine.
     'kbManualQuizzesValidate_', 'kbManualQuizzesRows_', 'kbManualQuizzesStored_', 'kbManualQuizzesWrite_',
-    'quizQuestion_', 'quizValidate_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
+    'quizQuestion_', 'quizValidate_',
+    // HB4.1: the forms the bundle carries, stored in ManualFiles.
+    'kbManualFormsValidate_', 'kbManualFormsRows_', 'kbManualFormsCatalog_', 'kbManualFormsCatalogOf_', 'kbManualFormsWrite_']   // DRV-3 (cycle 23 Batch 12): the manual functions delegate to the shared image-tab helpers
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   // M4-FU3: the file arrives as text. The tests keep naming it M1_LINK; the
   // wrapper hands the importer that file's text, as the browser does.
@@ -31459,7 +31467,7 @@ test('M2-E1: the exporter writes ONE bundle in the format the importer reads, wi
   assert.ok(/"manual\.json"/.test(ex) && !/"articles\.json"/.test(ex), 'the upload is manual.json');
   // Batch M3: the images ride the same file (the importer unpacks them).
   // Batch M5b: and the glossary's abbreviations, as search synonyms.
-  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list,\s*"articles": articles, "images": images\}/.test(ex));
+  assert.ok(/bundle = \{"format": BUNDLE_FORMAT, "version": version, "built": built,\s*"router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list, "forms": form_list,\s*"articles": articles, "images": images\}/.test(ex));
   assert.ok(/\^VERSION = "\(\[\^"\]\+\)"/.test(ex), 'VERSION comes from build.py');
   const bd = fs.readFileSync(path.join(M, 'build.py'), 'utf8');
   assert.ok(/^VERSION = "v[\d.]+"$/m.test(bd), 'and build.py still declares it in that shape');
@@ -40725,7 +40733,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetMe', 'hbGetQuiz', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
     'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbSyncNotes', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining', 'hbToggleBookmark',
     'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
@@ -41782,6 +41790,151 @@ test('HB3.5-b: the drafted quizzes pass the app\'s own import check as they stan
     const ch = /^§(\d+)-/.exec(qz.section)[1];
     qz.questions.forEach((q, i) => assert.strictEqual(/^§(\d+)-/.exec(q.section)[1], ch, qz.id + ' question ' + (i + 1) + ' tests its own chapter'));
   });
+});
+
+
+// ── HB4.1 — the form library ───────────────────────────────────────────────
+const HB41_PDF = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n').toString('base64');
+test('HB4.1-a: manual/forms.py mirrors the app\'s form limits and key rule, CI runs its self-test, the export runs the check and carries `forms`, and every listed form is a PDF in the repo\'s forms/ folder that Team Tools also attaches', () => {
+  const py = fs.readFileSync(path.join(HB_ROOT, 'manual/forms.py'), 'utf8');
+  const num = (name) => Number(new RegExp('^' + name + ' = ([\\d *]+)', 'm').exec(py)[1].split('*').reduce((a, b) => a * Number(b.trim()), 1));
+  const js = (name) => { const m = new RegExp('const ' + name + ' = ([\\d *]+);').exec(codeSrc); return m[1].split('*').reduce((a, b) => a * Number(b.trim()), 1); };
+  [['ID_MAX', 'KB_MANUAL_FORM_KEY_MAX'], ['TITLE_MAX', 'KB_MANUAL_FORM_TITLE_MAX'], ['SUMMARY_MAX', 'KB_MANUAL_FORM_SUMMARY_MAX'],
+    ['SECTIONS_MAX', 'KB_MANUAL_FORM_SECTIONS_MAX'], ['FORMS_MAX', 'KB_MANUAL_FORMS_MAX'], ['MAX_BYTES', 'KB_MANUAL_FORM_MAX_BYTES']]
+    .forEach(([p, j]) => assert.strictEqual(num(p), js(j), p + ' == ' + j));
+  assert.strictEqual(/^ID_RE = re\.compile\(r"([^"]+)"\)/m.exec(py)[1], /const KB_MANUAL_FORM_KEY_RE = \/([^/]+)\//.exec(codeSrc)[1], 'one key rule');
+  const ci = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  assert.ok(/python forms\.py --check/.test(ci), 'CI runs the form check\'s self-test');
+  const ex = fs.readFileSync(path.join(HB_ROOT, 'manual/export_reference.py'), 'utf8');
+  assert.ok(/forms\.check\(/.test(ex) && /forms\.repo_reader\(os\.path\.join\(HERE, "\.\.", "forms"\)\)/.test(ex), 'the export checks the list against the repo\'s forms/ folder');
+  const bank = JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'manual/data/forms.json'), 'utf8'));
+  assert.deepStrictEqual(bank.forms.map((f) => f.id), ['form-eaa', 'form-pt-ot-rx'], 'the operator\'s two (2026-10-30)');
+  const catalog = /FORM_CATALOG: \[([\s\S]*?)\],/.exec(codeSrc)[1];
+  bank.forms.forEach((f) => {
+    const b = fs.readFileSync(path.join(HB_ROOT, 'forms', f.file));
+    assert.ok(b.slice(0, 5).toString() === '%PDF-' && b.length <= js('KB_MANUAL_FORM_MAX_BYTES'), f.file + ' is a PDF under the cap');
+    assert.ok(catalog.indexOf("fileName: '" + f.file + "'") >= 0, f.file + ' is the same file Team Tools attaches (one copy)');
+  });
+});
+
+test('HB4.1-b: the import checks each form again — key, title, sections in THIS file, PDF bytes, the cap — and any bad form refuses the file (driven)', () => {
+  const e = vm.createContext({ Math, JSON, String, Number, Array, Object });
+  vm.runInContext(['KB_MANUAL_FORM_KEY_MAX', 'KB_MANUAL_FORM_TITLE_MAX', 'KB_MANUAL_FORM_SUMMARY_MAX', 'KB_MANUAL_FORM_SECTIONS_MAX', 'KB_MANUAL_FORMS_MAX']
+    .map((n) => 'var ' + n + ' = ' + new RegExp('const ' + n + ' = (\\d+);').exec(codeSrc)[1] + ';').join('') +
+    'var KB_MANUAL_FORM_MAX_BYTES = 1024 * 1024; var KB_MANUAL_FORM_KEY_RE = ' + /const KB_MANUAL_FORM_KEY_RE = (\/[^\n]+\/);/.exec(codeSrc)[1] + ';', e);
+  vm.runInContext(extractRawFunction('Code.js', 'kbManualFormsValidate_'), e);
+  const good = { key: 'form-eaa', title: 'EAA', summary: 'The application.', sections: [{ id: 'man-10-19', anchor: '10.19.6', num: '10.19.6' }], dataUri: HB41_PDF };
+  const v = (forms) => J2(e.kbManualFormsValidate_(forms, ['man-10-19', 'man-0-9'], (b) => 'h' + b.length));
+  const ok = v([good]);
+  assert.deepStrictEqual(ok.errors, []);
+  assert.deepStrictEqual(Object.keys(ok.items[0]).sort(), ['base64', 'contentType', 'key', 'sections', 'sha', 'summary', 'title']);
+  assert.strictEqual(ok.items[0].contentType, 'application/pdf');
+  assert.deepStrictEqual(v(null), { items: null, errors: [] }, 'an older file carries none: the stored forms are left as they are');
+  const bad = (f, re) => { const r = v([Object.assign({}, good, f)]); assert.ok(r.items === null && r.errors.some((x) => re.test(x)), JSON.stringify(r.errors)); };
+  bad({ key: 'EAA' }, /not a form key/);
+  bad({ title: '' }, /needs a title/);
+  bad({ summary: 'x'.repeat(301) }, /summary is longer/);
+  bad({ sections: [] }, /needs 1–/);
+  bad({ sections: [{ id: 'man-9-9', anchor: '' }] }, /not a section of this file/);
+  bad({ dataUri: 'data:application/pdf;base64,' + Buffer.from('<html>').toString('base64') }, /not a PDF/);
+  bad({ dataUri: 'data:image/png;base64,JVBERi0x' }, /not a PDF/);
+  bad({ dataUri: 'data:application/pdf;base64,JVBERi0' + 'A'.repeat(1400000) }, /larger than/);
+  const dup = v([good, good]);
+  assert.ok(dup.items === null && dup.errors.some((x) => /used twice/.test(x)));
+  assert.ok(v({}).errors.some((x) => /not a list/.test(x)));
+});
+
+test('HB4.1-c: the forms land in ManualFiles in the images\' row shape — split by part under the cell limit, text columns @, the title and sections on every row; a re-import writes nothing, a changed title rewrites, an older file keeps them, a bad form refuses the file; the catalog reads them back (driven)', () => {
+  const arts = [m1Art_({ Id: 'man-10-19', Department: 'Part 10 — Billing', Title: '10.19 Payments', BodyMd: 'x\n', SortOrder: 19 })];
+  const big = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.7\n' + 'x'.repeat(70000)).toString('base64');
+  const form = { key: 'form-eaa', title: '3/4 EAA', summary: 'The application.', sections: [{ id: 'man-10-19', anchor: '10.19.6', num: '10.19.6' }], dataUri: big };
+  const bundle = (forms) => Object.assign({ format: 'ums-manual/1', version: 'v3.0', built: '10/30/2026', router: [], changelog: [], articles: arts }, forms === undefined ? {} : { forms });
+  const book = m1Book_([], null);
+  const fmt = [];
+  const run = (b, o) => {
+    const imp = m1Importer_(book, JSON.stringify(b));
+    const ins = book.insertSheet;
+    book.insertSheet = (n) => { const sh = ins(n); const gr = sh.getRange; sh.getRange = (...a) => Object.assign(gr(...a), { setNumberFormat: (f) => fmt.push([n, a[1], f]) }); return sh; };
+    const r = imp.ctx.kbImportManual(M1_LINK, o || {});
+    book.insertSheet = ins;
+    return Object.assign(r, { audits: imp.audits, ctx: imp.ctx });
+  };
+  const chk = J2(run(bundle([form]), { dryRun: true }));
+  assert.deepStrictEqual(chk.forms, { total: 1, changed: true });
+  assert.ok(!book.sheets.ManualFiles, 'a check writes nothing');
+  const r1 = run(bundle([form]));
+  assert.strictEqual(r1.success, true, r1.error);
+  assert.deepStrictEqual(J2(r1.forms), { total: 1, changed: true, error: '' });
+  const g = book.sheets.ManualFiles.grid;
+  assert.deepStrictEqual(g[0], ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt', 'Title', 'Summary', 'Sections']);
+  const rows = g.slice(1).filter((r) => r[0]);
+  assert.ok(rows.length >= 2, 'a PDF over one cell is split across rows');
+  assert.ok(rows.every((r) => r[5].length <= 45000), 'every piece under the cell limit');
+  assert.strictEqual(rows.map((r) => r[5]).join(''), big.split(',')[1], 'the pieces rejoin to exactly the bytes checked');
+  assert.deepStrictEqual(rows.map((r) => r[4]), rows.map((r, i) => i), 'parts 0..n-1');
+  assert.ok(rows.every((r) => r[3] === 'form' && r[2] === 'application/pdf' && r[7] === '3/4 EAA' && JSON.parse(r[9])[0].anchor === '10.19.6'));
+  assert.deepStrictEqual(fmt.filter((f) => f[0] === 'ManualFiles').map((f) => f[1] + f[2]).sort(), ['10@', '1@', '2@', '3@', '4@', '6@', '8@', '9@'], 'every text column @ before the write — "3/4" stays a title');
+  assert.ok(/; forms=1 \(stored\)$/.test(r1.audits[0]), r1.audits[0]);
+  // The catalog reads back what was stored.
+  const cat = J2(r1.ctx.kbManualFormsCatalog_(book.sheets.ManualFiles));
+  assert.deepStrictEqual(cat.map((c) => [c.key, c.title, c.summary, c.sections.length]), [['form-eaa', '3/4 EAA', 'The application.', 1]]);
+  // A re-import writes nothing; a changed title rewrites.
+  book.writes.length = 0;
+  const r2 = run(bundle([form]));
+  assert.deepStrictEqual([r2.forms.changed, book.writes], [false, []], 'a re-import changes nothing');
+  const r3 = run(bundle([Object.assign({}, form, { title: 'EAA (new)' })]));
+  assert.strictEqual(r3.forms.changed, true, 'a title change alone is a change');
+  assert.ok(book.sheets.ManualFiles.grid.slice(1).filter((r) => r[0]).every((r) => r[7] === 'EAA (new)'));
+  // An older file keeps them; an empty list removes them.
+  assert.strictEqual(run(bundle(undefined)).forms, null);
+  assert.ok(book.sheets.ManualFiles.grid.slice(1).some((r) => r[0]), 'kept');
+  assert.deepStrictEqual([run(bundle([])).forms.changed, book.sheets.ManualFiles.grid.slice(1).filter((r) => r[0]).length], [true, 0], 'cleared');
+  // A bad form refuses the whole file.
+  const before = book.sheets.KB.grid.length;
+  const bad = run(bundle([Object.assign({}, form, { sections: [{ id: 'man-1-1', anchor: '' }] })]));
+  assert.ok(!bad.success && bad.problems.some((p) => /not a section of this file/.test(p)));
+  assert.strictEqual(book.sheets.KB.grid.length, before);
+  // An edited header is "could not read", never "no forms" (g128).
+  book.sheets.ManualFiles.grid[0][7] = 'Name';
+  assert.throws(() => r1.ctx.kbManualFormsCatalog_(book.sheets.ManualFiles), /header row has been edited/);
+});
+
+test('HB4.1-d: the handbook app lists the stored forms with links to PUBLISHED sections only, serves one form\'s PDF, says "not in the library" and "could not be read" apart, and refuses a reader who is not signed in (driven)', () => {
+  const b64 = HB41_PDF.split(',')[1];
+  const tabs = Object.assign(hbTabs_(), { ManualFiles: [['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt', 'Title', 'Summary', 'Sections'],
+    ['form-eaa', 'sha1', 'application/pdf', 'form', 0, b64, '', 'EAA', 'The application.', JSON.stringify([{ id: 'man-1-1', anchor: '', num: '1.1' }, { id: 'man-1-2', anchor: '', num: '1.2' }])]] });
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const list = hbPlain_(sb.hbListForms());
+  assert.deepStrictEqual(list.forms, [{ key: 'form-eaa', title: 'EAA', summary: 'The application.', sections: [{ id: 'man-1-1', anchor: '', num: '1.1', title: '1.1 Welcome' }] }],
+    'the draft section 1.2 is not linked; no bytes or hash leave in the list');
+  const one = hbPlain_(sb.hbGetForm('form-eaa'));
+  assert.deepStrictEqual(one, { success: true, dataUri: HB41_PDF });
+  assert.ok(/not in the library/.test(sb.hbGetForm('form-nope').error), 'not stored');
+  assert.ok(/not a form in the library/.test(sb.hbGetForm('../x').error), 'a key not shaped like one reads nothing');
+  tabs.ManualFiles[1][5] = '<<not base64>>';
+  const broken = hbServer_(Object.assign({ tabs }, HB_ENV));
+  assert.ok(/could not be read/.test(broken.hbGetForm('form-eaa').error), 'damaged bytes are "could not be read"');
+  tabs.ManualFiles[0][7] = 'Name';
+  const edited = hbServer_(Object.assign({ tabs }, HB_ENV));
+  assert.ok(/could not be read/.test(edited.hbListForms().error), 'an edited header is said, never "no forms"');
+  const anon = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV, { email: '' }));
+  assert.strictEqual(anon.hbListForms().error, 'Not authorized.');
+  assert.strictEqual(anon.hbGetForm('form-eaa').error, 'Not authorized.');
+});
+
+test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {
+  const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+  const base = /var HB_PDFJS_BASE = '(https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/pdf\.js\/(\d+\.\d+\.\d+)\/)';/.exec(page);
+  assert.ok(base, 'an exact version on cdnjs');
+  const pkg = JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'test/visual/package.json'), 'utf8'));
+  assert.strictEqual((pkg.devDependencies || {})['pdfjs-dist'], base[2], 'the harness pins the same build');
+  const sh = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  assert.ok(sh.indexOf("ctx.route('" + base[1] + "*'") >= 0, 'and serves it in place of cdnjs');
+  assert.ok(/isEvalSupported: false/.test(extractFnFrom(page, 'hbOpenForm_')), 'pdf.js never evaluates a PDF\'s font code');
+  assert.ok(/load\('pdf\.worker\.min\.js'/.test(extractFnFrom(page, 'hbPdfJs_')), 'the worker code is a plain script — no cross-origin Worker');
+  const callers = (page.match(/hbPdfJs_\(/g) || []).length;
+  assert.strictEqual(callers, 2, 'declared once and called once — from the viewer');
+  assert.ok(!/HB_PDFJS_BASE/.test(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8')), 'never at page load');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

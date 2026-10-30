@@ -10390,3 +10390,112 @@ test('HB2.4 DOM: the page has a title, a skip link to the reading area, named la
   assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws, never text in the button\'s name');
   assert.strictEqual(boss.d.getElementById('hb-me').textContent.trim(), 'Profile', 'the button\'s text is its visible word');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB4.1 — the form library: the Forms page, the bar, the viewer, Download.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB4.1 — the form library');
+const HB41_PDF_B64 = Buffer.from('%PDF-1.7\n%%EOF\n').toString('base64');
+const HB41_FORMS = () => ({ forms: [
+  { key: 'form-eaa', title: 'Economic Assistance Application (EAA)', summary: 'The blank application.', sections: [{ id: 'man-3-1', anchor: '', num: '3.1', title: '3.1 Oxygen basics' }] },
+  { key: 'form-pt-ot-rx', title: 'PT/OT Evaluation Rx (sample)', summary: '', sections: [] }] });
+/** A pdf.js stand-in on the page: records what it was given, draws nothing. */
+function hb41PdfJs_(w, pages) {
+  const got = [];
+  w.HTMLCanvasElement.prototype.getContext = () => ({});
+  w.pdfjsWorker = {};
+  w.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: (o) => { got.push(o); return { promise: Promise.resolve({ numPages: pages || 2,
+    getPage: () => Promise.resolve({ getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }), render: () => ({ promise: Promise.resolve() }) }) }) }; } };
+  return got;
+}
+
+test('HB4.1 DOM: Forms in the contents lists the library — each form\'s summary, its links into published sections, Open and Download; a failed read says so, never "no forms" (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS() } });
+  h.d.querySelector('#hb-toc .hb-toc-forms').click(); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Forms');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { forms: true }, {}]);
+  const rows = [...h.main().querySelectorAll('.hb-fm-row')];
+  assert.deepStrictEqual(rows.map((r) => r.querySelector('.hb-pp-row-n').textContent.trim()), ['Economic Assistance Application (EAA)', 'PT/OT Evaluation Rx (sample)']);
+  assert.strictEqual(rows[0].querySelector('.hb-qz-sec').getAttribute('data-kb-id'), 'man-3-1', 'a link into its section');
+  assert.ok(!rows[1].querySelector('.hb-qz-sec') && !/In the handbook/.test(rows[1].textContent), 'a form whose sections are unpublished links nowhere');
+  assert.deepStrictEqual([...rows[0].querySelectorAll('button')].map((b) => b.textContent.trim()), ['Open', 'Download']);
+  // Back and forward.
+  h.w.__hbChange({ state: { forms: true } }); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Forms');
+  const bad = await hbBoot_({ answers: { hbListForms: { error: 'The form library could not be read: the header row has been edited.' } } });
+  bad.w.hbGoForms_(); await bad.settleAll();
+  assert.ok(/The forms could not be loaded: The form library could not be read/.test(bad.main().textContent) && bad.main().querySelector('[role="alert"]'));
+  assert.ok(!/No forms/.test(bad.main().textContent));
+  const none = await hbBoot_({ answers: { hbListForms: { forms: [] } } });
+  none.w.hbGoForms_(); await none.settleAll();
+  assert.ok(/No forms have been published yet/.test(none.main().textContent));
+});
+
+test('HB4.1 DOM: the bar above a section offers the forms that name it — and only those (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS() } });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = h.d.getElementById('hb-quizbar');
+  assert.ok(/Form: Economic Assistance Application \(EAA\)/.test(bar.textContent));
+  assert.strictEqual(bar.querySelector('[data-form]').getAttribute('data-form'), 'form-eaa');
+  assert.ok(!/PT\/OT/.test(bar.textContent));
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(!/Form:/.test(h.d.getElementById('hb-quizbar').textContent), 'a section no form names offers none');
+});
+
+test('HB4.1 DOM: Open draws every page of the PDF in the viewer, each a named image, from bytes fetched once per visit; pdf.js is given a copy and never evaluates font code (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  const got = hb41PdfJs_(h.w, 2);
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  const ov = h.d.getElementById('hb-form-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  assert.strictEqual(ov.getAttribute('aria-labelledby'), 'hb-form-h');
+  const pages = [...ov.querySelectorAll('canvas.hb-fv-page')];
+  assert.deepStrictEqual(pages.map((c) => c.getAttribute('aria-label')), ['Economic Assistance Application (EAA) — page 1 of 2', 'Economic Assistance Application (EAA) — page 2 of 2']);
+  assert.ok(pages.every((c) => c.getAttribute('role') === 'img'));
+  assert.ok(!h.d.getElementById('hb-fv-body').hasAttribute('aria-busy'), 'done loading');
+  assert.strictEqual(got[0].isEvalSupported, false);
+  assert.strictEqual(Buffer.from(got[0].data).toString(), '%PDF-1.7\n%%EOF\n', 'the PDF\'s own bytes');
+  h.w.closeOverlay(ov); await h.settleAll();
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  assert.strictEqual(h.calls.filter((c) => c === 'hbGetForm').length, 1, 'fetched once per visit');
+  assert.notStrictEqual(got[0].data, got[1].data, 'each render gets its own copy (pdf.js takes the buffer)');
+});
+
+test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer says so and points at Download; a viewer closed before its answer paints nothing (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  const sc = [...h.d.querySelectorAll('script[src]')].filter((s) => /pdf\.js\/3\.11\.174\/pdf\.min\.js$/.test(s.src))[0];
+  assert.ok(sc, 'pdf.js is fetched from cdnjs only now, at its pinned version');
+  sc.onerror(); await h.settleAll();
+  assert.ok(/The viewer could not load in this browser\. Use Download/.test(h.d.getElementById('hb-fv-body').textContent));
+  const r = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { error: 'That form is not in the library — it may have been removed at the last import.' } } });
+  hb41PdfJs_(r.w);
+  r.w.hbOpenForm_('form-eaa'); await r.settleAll();
+  assert.ok(/The form could not be loaded: That form is not in the library/.test(r.d.getElementById('hb-fv-body').textContent));
+  const slow = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { __delay: 40, value: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } } });
+  const got = hb41PdfJs_(slow.w);
+  slow.w.hbOpenForm_('form-eaa');
+  slow.w.closeOverlay(slow.d.getElementById('hb-form-ov'));
+  await new Promise((res) => setTimeout(res, 80)); await slow.settleAll();
+  assert.strictEqual(got.length, 0, 'the late answer drew nothing');
+  assert.ok(!slow.d.getElementById('hb-form-ov'));
+});
+
+test('HB4.1 DOM: Download saves the PDF under the form\'s title and says what to do if the browser blocks it; a failed read says so (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  const clicks = [];
+  h.w.URL.createObjectURL = (b) => { clicks.push(['blob', b.type, b.size]); return 'blob:x'; };
+  h.w.URL.revokeObjectURL = () => {};
+  h.w.HTMLAnchorElement.prototype.click = function () { clicks.push(['click', this.getAttribute('download'), this.getAttribute('href')]); };
+  hb41PdfJs_(h.w);
+  h.w.hbOpenForm_('form-pt-ot-rx'); await h.settleAll();
+  h.d.querySelector('#hb-form-ov [data-form]').click(); await h.settleAll();
+  assert.deepStrictEqual(clicks, [['blob', 'application/pdf', 15], ['click', 'PT OT Evaluation Rx (sample).pdf', 'blob:x']]);
+  assert.ok(/Downloading PT OT Evaluation Rx \(sample\)\.pdf\. If nothing arrives, this browser blocked it/.test(h.d.getElementById('hb-fv-msg').textContent));
+  assert.strictEqual(h.w.hbFormFileName_('a:b*c?"d"<e>|f\\g/h'), 'a b c d e f g h.pdf', 'a title is a safe file name everywhere');
+  const r = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { error: 'The form could not be read from the KB spreadsheet. Try again in a moment.' } } });
+  r.w.hbGoForms_(); await r.settleAll();
+  [...r.main().querySelectorAll('button')].filter((b) => /Download/.test(b.textContent))[0].click(); await r.settleAll();
+  assert.ok(/The form could not be downloaded: The form could not be read/.test(r.d.getElementById('toast-stack').textContent));
+  assert.strictEqual(r.main().querySelectorAll('.hb-fm-row').length, 2, 'the list the reader pressed Download in is still there');
+});
