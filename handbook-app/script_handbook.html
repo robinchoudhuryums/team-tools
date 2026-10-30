@@ -1780,14 +1780,14 @@ function hbToggleSide_() {
   else if (btn) btn.focus();
 }
 /** Close the narrow-screen contents. `refocus`: the reader dismissed them
- *  (Escape, a tap outside) — focus returns to the Contents button; a
- *  navigation that closes them moves focus itself. */
+ *  (Escape, a tap outside — both act only while they are open) — focus
+ *  returns to the Contents button; a navigation that closes them moves focus
+ *  itself. */
 function hbCloseSide_(refocus) {
   var wrap = document.querySelector('.hb-wrap'), btn = document.getElementById('hb-menu');
-  var was = !!(wrap && wrap.classList.contains('side-open'));
   if (wrap) wrap.classList.remove('side-open');
   if (btn) btn.setAttribute('aria-expanded', 'false');
-  if (refocus && was && btn) btn.focus();
+  if (refocus && btn) btn.focus();
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────

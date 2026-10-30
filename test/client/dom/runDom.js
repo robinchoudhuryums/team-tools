@@ -10328,6 +10328,8 @@ test('HB2.4 DOM: the narrow contents take focus when opened — the current sect
   h.d.getElementById('hb-q').focus();
   h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'));
+  h.main().dispatchEvent(new h.w.MouseEvent('click', { bubbles: true }));
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'), 'nor does a click on the page while they are shut');
 });
 
 test('HB2.4 DOM: a slideshow announces each slide change once, with its caption, and never on load; the visible counter is hidden from the reader so it is not read twice', () => {
