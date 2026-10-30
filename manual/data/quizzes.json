@@ -42,7 +42,11 @@
       "That the provider's office, by name, is causing the delay",
       "That the information is under review and we'll request anything else we need"
      ],
-     "correct": [0, 1, 2],
+     "correct": [
+      0,
+      1,
+      2
+     ],
      "explain": "Don't estimate a delivery date that isn't in the system, don't promise a callback window unless you're the one making the call, and don't blame the provider's office by name. Saying the information is under review is exactly what to tell a caller whose order arrived recently.",
      "section": "§0-2.3"
     },
@@ -84,12 +88,13 @@
      "q": "Which is the correct subject line for an internal email about an out-of-pocket purchase?",
      "options": [
       "OOP Purchase: Maria Garcia 456789",
+      "Patient wants to purchase a walker OOP so I processed it: Maria Garcia 456789",
       "Maria Garcia — out of pocket",
       "URGENT: walker purchase",
       "456789"
      ],
      "correct": 0,
-     "explain": "Every internal email uses [Update type]: [Patient name] [TRX #]. Always include the TRX number — without it the receiving team has to search by name.",
+     "explain": "Every internal email uses [Update type]: [Patient name] [TRX #] — a short update type the department can read before opening it, not a sentence. Always include the TRX number: without it the receiving team has to search by name.",
      "section": "§0-11.2"
     },
     {
@@ -189,7 +194,10 @@
       "A written complaint from the caller",
       "The caller's agreement to wait 24–48 hours"
      ],
-     "correct": [0, 1],
+     "correct": [
+      0,
+      1
+     ],
      "explain": "Collect the patient's name and date of birth, and understand the caller's specific concern, before finding a supervisor. A cold transfer makes the caller explain everything a second time.",
      "section": "§1-4.4"
     },
@@ -228,7 +236,7 @@
     },
     {
      "type": "single",
-     "q": "An inbound caller needs a Spanish speaker, and nobody answers the Spanish Queue. What do you do?",
+     "q": "An inbound caller needs a Spanish speaker, and nobody answers the Spanish Queue. What do you do first?",
      "options": [
       "Transfer the caller to the Spanish Queue Voicemail",
       "Email spanishcalls@universalmedsupply.com with the details",
@@ -236,7 +244,7 @@
       "Ask the caller to call back later"
      ],
      "correct": 0,
-     "explain": "Transfer the caller to the Spanish Queue Voicemail, which asks in Spanish for the patient's name, date of birth and reason for calling. You can't email the details, because you can't understand them; and a direct transfer isn't queued or tracked.",
+     "explain": "First, transfer the caller to the Spanish Queue Voicemail: it asks in Spanish for the patient's name, date of birth and reason for calling, and a bilingual team member calls back. An email to spanishcalls@universalmedsupply.com is the secondary option. Never transfer directly to a colleague — that isn't queued or tracked.",
      "section": "§1-7.1"
     },
     {
