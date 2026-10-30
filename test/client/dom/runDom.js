@@ -10381,7 +10381,12 @@ test('HB2.4 DOM: the page has a title, a skip link to the reading area, named la
   assert.ok(skip, 'a skip link to the reading area');
   assert.ok(h.main().tagName === 'MAIN' && !h.main().hasAttribute('aria-live'), 'the whole reading area is not announced on every repaint');
   assert.ok(h.d.querySelector('header') && h.d.querySelector('nav[aria-label]'), 'a banner and a named navigation landmark');
-  const badge = h.d.getElementById('hb-me-badge');
+  // A manager with one request waiting: the badge shows "1" — drawn, not text.
+  const pend = hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' });
+  const boss = await hbBoot_({ answers: { hbGetMe: hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [pend] }) } });
+  const badge = boss.d.getElementById('hb-me-badge');
+  assert.strictEqual(badge.getAttribute('data-n'), '1', 'a count to show');
   assert.strictEqual(badge.getAttribute('aria-hidden'), 'true');
-  assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws');
+  assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws, never text in the button\'s name');
+  assert.strictEqual(boss.d.getElementById('hb-me').textContent.trim(), 'Profile', 'the button\'s text is its visible word');
 });
