@@ -163,6 +163,14 @@ jobs:
           node build.mjs
           node shoot.mjs --ci
 
+      # HB2.4: axe-core (pinned in test/visual/package.json) over every handbook
+      # scenario, WCAG 2.1 A + AA; any violation fails the job. `!cancelled()`
+      # so a layout failure above never hides an accessibility one.
+      - name: Check every handbook screen with axe (WCAG 2.1 A + AA)
+        if: ${{ !cancelled() }}
+        working-directory: test/visual
+        run: node shoot.mjs --axe
+
       - name: Keep the shots and the report when the gate fails
         if: failure()
         uses: actions/upload-artifact@v4
@@ -170,5 +178,6 @@ jobs:
           name: visual-layout
           path: |
             test/visual/report.json
+            test/visual/axe-report.json
             test/visual/shots/
           retention-days: 7

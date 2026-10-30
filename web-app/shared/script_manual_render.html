@@ -18,7 +18,7 @@
   .kb-article p { margin: .6em 0; }
   .kb-article ul, .kb-article ol { margin: .5em 0; padding-left: 1.5em; }
   .kb-article li { margin: .25em 0; }
-  .kb-article a { color: var(--accent); text-underline-offset: 2px; }
+  .kb-article a { color: var(--accent-ink); text-underline-offset: 2px; }   /* HB2.4: AA in light mode */
   .kb-article code { background: var(--paper-2); padding: 1px 5px; border-radius: 4px; font-family: var(--mono); font-size: .88em; }
   .kb-article pre { background: var(--paper-2); padding: 12px 14px; border-radius: var(--radius); overflow-x: auto; }
   .kb-article pre code { background: none; padding: 0; }
@@ -97,7 +97,7 @@
   .kb-peek-pop img { display: block; max-width: 100%; max-height: 300px; width: auto; height: auto; margin: 0; border-radius: 3px; }
   .kb-peek-pop .kb-img-pending { margin: 0; }
   @media print { .kb-peek-pop { display: none !important; } .kb-peek { text-decoration: none; } }
-  .kb-article a.kb-xref { color: var(--accent); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
+  .kb-article a.kb-xref { color: var(--accent-ink); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
   .kb-fn-ref { font: inherit; font-size: .8em; font-weight: 700; line-height: 1; vertical-align: .45em; margin-left: 1px; padding: 2px 4px; border: none; border-radius: 4px; background: var(--accent-soft); color: var(--accent-2); cursor: pointer; }
   .kb-fn-ref:hover, .kb-fn-ref:focus-visible { box-shadow: 0 0 0 2px var(--accent); outline: none; }
   .kb-article hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
@@ -163,13 +163,16 @@
   .kb-img-modal .kb-img-nav { margin-top: 8px; }
   /* A tutorial slideshow (```gallery, operator 2026-10-19): one slide at a time,
      Previous / Next and a dot per slide; every slide prints (styles.html rule 7). */
-  .kb-article .kb-gallery { margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
+  .kb-article .kb-gallery { position: relative; margin: 1em 0 1.25em; padding: 10px 12px 12px; max-width: 760px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
   .kb-article .kb-gallery:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .kb-gal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: .78rem; color: var(--muted); }
   .kb-gal-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
   .kb-gal-count { flex: none; font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .kb-gal-slide { text-align: center; }
   .kb-gal-slide.kb-gal-off { display: none; }
+  /* HB2.4: the slide announcement, heard and not seen — positioned inside the
+     (positioned) slideshow so it never escapes the reader's scroller (g171). */
+  .kb-gal-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .kb-article .kb-gal-slide img.kb-manimg-figure { margin: 0 auto; }
   .kb-gal-cap { margin-top: 6px; font-size: .84rem; color: var(--muted); }
   /* A slide's longer text (operator 2026-10-28): folded under "Show details",
@@ -2483,7 +2486,9 @@ function kbGalleryHtml_(label, body, inline) {
     dots += '<button type="button" class="kb-gal-dot' + (d ? '' : ' on') + '" onclick="kbGalleryGo_(this,' + d + ')" aria-label="Slide ' + (d + 1) + ' of ' + n + '"' + (d ? '' : ' aria-current="true"') + '></button>';
   }
   return '<figure class="kb-gallery" data-i="0" data-n="' + n + '" tabindex="0" role="group" aria-roledescription="slideshow" aria-label="' + name.replace(/"/g, '&quot;') + '" onkeydown="kbGalleryKey_(event)">' +
-    '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-live="polite">1 / ' + n + '</span></div>' +
+    '<div class="kb-gal-head"><span class="kb-gal-label">' + icon('image', 12) + ' ' + name + '</span><span class="kb-gal-count" aria-hidden="true">1 / ' + n + '</span></div>' +
+    // HB2.4: a slide change is announced by number and caption, politely.
+    '<span class="kb-gal-live" role="status" aria-live="polite"></span>' +
     slides.map(function (sl, k) {
       return '<div class="kb-gal-slide' + (k ? ' kb-gal-off' : '') + '" data-k="' + k + '">' + sl.img + (sl.cap ? '<figcaption class="kb-gal-cap">' + sl.cap + '</figcaption>' : '') +
         kbGalNotesHtml_(sl.notes, inline) + '</div>';
@@ -2507,6 +2512,8 @@ function kbGalleryGo_(el, i) {
   });
   var c = fig.querySelector('.kb-gal-count');
   if (c) c.textContent = (i + 1) + ' / ' + n;
+  var live = fig.querySelector('.kb-gal-live'), cap = slides[i].querySelector('.kb-gal-cap');
+  if (live) live.textContent = 'Slide ' + (i + 1) + ' of ' + n + (cap && cap.textContent.trim() ? ': ' + cap.textContent.trim() : '');
   fig.setAttribute('data-i', String(i));
 }
 function kbGalleryStep_(el, d) {
@@ -3723,6 +3730,7 @@ function kbManualDecorate_(root) {
     t.parentNode.insertBefore(w, t);
     w.appendChild(t);
   });
+  kbManualScrollTables_(root);
   kbDecorateCallouts_(root, '.kb-man-sec blockquote.kb-callout');
   kbManualFootnotes_(root);
   // M5: a link whose whole text is a section number reads as a number.
@@ -4101,11 +4109,28 @@ function kbManualBarPaint_(id) {
     b.disabled = !x[1];
     b.querySelector('span').textContent = x[1] ? x[1].label : '';
     b.title = x[1] ? x[2] + (x[1].chapter ? ' chapter: ' : ': ') + x[1].title : 'No ' + x[2].toLowerCase() + ' section';
-    b.setAttribute('aria-label', b.title);
+    // HB2.4: the name carries the visible label (WCAG 2.5.3), then the title.
+    b.setAttribute('aria-label', x[1] ? x[2] + ' — ' + x[1].label + (x[1].title ? ': ' + x[1].title : '') : b.title);
   });
   MANUAL_HOST.markCurrent(id);
   MANUAL_HOST.revealInTree(id);
 }
+/** HB2.4 (operator 2026-10-30) — a table box that scrolls sideways is a stop
+ *  on the Tab path (arrow keys then scroll it), named after its table; one
+ *  that fits adds none. Re-measured whenever the window changes size. */
+function kbManualScrollTables_(root) {
+  (root || document).querySelectorAll('.kb-man-tw').forEach(function (w) {
+    if (w.scrollWidth > w.clientWidth + 1) {
+      if (w.getAttribute('tabindex') !== '0') {
+        var th = w.querySelector('th, td');
+        w.setAttribute('tabindex', '0'); w.setAttribute('role', 'region');
+        w.setAttribute('aria-label', 'Table' + (th && th.textContent.trim() ? ': ' + th.textContent.trim().slice(0, 60) : '') + ' (scrolls sideways)');
+      }
+    } else if (w.hasAttribute('tabindex')) { w.removeAttribute('tabindex'); w.removeAttribute('role'); w.removeAttribute('aria-label'); }
+  });
+}
+var KB_TABLES_RESIZE_T = null;
+try { window.addEventListener('resize', function () { clearTimeout(KB_TABLES_RESIZE_T); KB_TABLES_RESIZE_T = setTimeout(function () { kbManualScrollTables_(document); }, 200); }); } catch (e) {}
 function kbManualStep_(dir) {
   var nb = MANUAL_STATE.manualBarNav || {}, t = dir < 0 ? nb.prev : nb.next;
   if (t && t.id) MANUAL_HOST.openItem(t.id, '', t.chapter ? { chapter: true } : undefined);   // M16: a chapter step may resume

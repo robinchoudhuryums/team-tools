@@ -123,6 +123,9 @@ const SCENARIOS = [
   ['handbook-home-light-mobile',   {}, MOBILE, 'light', '', '', HB_PAGE],
   ['handbook-mydept-light-wide',   {}, WIDE,   'light', '', HB_DEPT, HB_PAGE],
   ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
+  // HB2.4: a slideshow stepped once (its announcement filled) and tables that
+  // overflow a phone (each a named Tab stop) — for axe as much as for the eye.
+  ['handbook-slideshow-dark-mobile', {}, MOBILE, 'dark', '?s=0.10', "setTimeout(function(){ var g = document.querySelector('.kb-gallery'); if (g) { kbGalleryStep_(g, 1); g.scrollIntoView(); } }, 300)", HB_PAGE],
   ['handbook-search-light-wide',   {}, WIDE,   'light', '', HB_SEARCH, HB_PAGE],
   ['handbook-search-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH, HB_PAGE],
   ['handbook-contents-light-mobile', {}, MOBILE, 'light', '', 'hbToggleSide_()', HB_PAGE],
@@ -606,13 +609,22 @@ if (CI) {
   const absent = gate.CI_SCENARIOS.filter((n) => !names.has(n));
   if (absent.length) { console.error('ci-gate: no such scenario: ' + absent.join(', ')); process.exit(1); }
 }
-const only = CI ? null : (process.argv[2] ? process.argv.slice(2) : null);
+// --axe (HB2.4): every HANDBOOK scenario through axe-core's WCAG 2.1 A + AA
+// rules after its post hook — no screenshots; exit 1 on any violation. A
+// filter after --axe narrows it (`node shoot.mjs --axe handbook-quiz`).
+const AXE = process.argv.includes('--axe');
+const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+const AXE_SRC = AXE ? fs.readFileSync(path.join(HERE, 'node_modules/axe-core/axe.min.js'), 'utf8') : '';
+const args = process.argv.slice(2).filter((a) => a !== '--axe' && a !== '--ci');
+const only = CI ? null : (args.length ? args : null);
+const axeReport = [];
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
 for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
+  if (AXE && !(opts && opts.page === 'handbook')) continue;
   // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
   if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
@@ -639,6 +651,15 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (post) {
     await page.evaluate((code) => { try { (0, eval)(code); } catch (e) { console.error('post hook threw: ' + e.message); } }, post);
     await page.waitForTimeout(1000);
+  }
+  if (AXE) {
+    await page.addScriptTag({ content: AXE_SRC });
+    const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
+      .then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
+        targets: v.nodes.slice(0, 4).map((n) => n.target.join(' ')), summary: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\n').slice(0, 3).join(' ') }))), AXE_TAGS);
+    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, errors: Array.from(new Set(errors)).slice(0, 4) });
+    await ctx.close();
+    continue;
   }
   // Compact/mobile use viewport-clipped frames: a fullPage capture PAINTS
   // off-viewport fixed elements (the closed KB drawer, the mobile nav) into
@@ -709,6 +730,14 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   await ctx.close();
 }
 await browser.close();
+if (AXE) {
+  fs.writeFileSync(path.join(HERE, 'axe-report.json'), JSON.stringify(axeReport, null, 2));
+  const bad = axeReport.filter((r) => r.violations.length);
+  console.log('AXE (' + axeReport.length + ' handbook scenarios, WCAG 2.1 A + AA): ' + (bad.length ? 'FAIL' : 'PASS'));
+  bad.forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  if (!axeReport.length) { console.log('  no handbook scenario matched — nothing was checked'); process.exit(1); }
+  process.exit(bad.length ? 1 : 0);
+}
 fs.writeFileSync(path.join(HERE, 'report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 const overflowing = report.filter((r) => r.overflowPx > 0);

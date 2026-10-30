@@ -41,7 +41,8 @@
   .hb-me-btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .84rem; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink); cursor: pointer; }
   .hb-me-btn:hover { background: var(--paper-2); }
   .hb-me-badge { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--info); color: var(--paper-card); font-size: .7rem; font-weight: 700; text-align: center; line-height: 18px; }
-  .hb-me-badge:empty { display: none; }
+  .hb-me-badge::after { content: attr(data-n); }   /* HB2.4: drawn, so the button's text stays "Profile" */
+  .hb-me-badge:not([data-n]), .hb-me-badge[data-n=""] { display: none; }
   .hb-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--info); border-radius: 10px; background: var(--info-soft); }
   .hb-prompt + .hb-prompt { margin-top: 8px; }
   .hb-prompt-t { flex: 1 1 18em; min-width: 0; font-size: .88rem; color: var(--ink); overflow-wrap: anywhere; }

@@ -169,6 +169,37 @@ headers — a row that will not read is counted and skipped).
   speak through Google's servers — the handbook is PHI-free, so that is
   allowed. A browser with no speech shows no Listen button.
 
+## Keyboard and screen readers (HB2.4)
+
+- **axe on every screen.** `node shoot.mjs --axe` (test/visual) runs axe-core
+  — an exact pinned version, so an upstream rule never turns CI red by itself —
+  over every `handbook-*` scenario against WCAG 2.1 A and AA, writes
+  `axe-report.json`, and fails on any violation or when no scenario matched.
+  CI runs it in the visual-layout job after the layout gate, even when that
+  gate failed. A new handbook screen is checked by adding its scenario.
+- **Focus follows the reader.** A section opened from the contents, a link or
+  the search lands focus on its heading (once, after it paints — scrolling past
+  later never pulls focus back); a view opened by a click (home, people,
+  quizzes, training, saved) lands on its heading. Back and forward leave focus
+  where it was. The narrow-screen contents take focus when opened — the section
+  being read, else the first entry — and give it back to the Contents button on
+  Escape, a tap outside or a second press.
+- **What is announced.** The reading area is not a live region (a repaint would
+  be read out whole). A slideshow says "Slide 2 of 4: caption" when it steps,
+  never on load; its visible counter is hidden from screen readers so it is not
+  read twice. The bar's previous/next buttons are named for their visible
+  label and the section they open.
+- **Names.** The page title is "UMS Handbook"; the Profile button's count badge
+  is drawn by the stylesheet (`data-n`), so the button's name is its visible
+  word (WCAG 2.5.3). A table wider than the reader is a Tab stop named
+  "Table: <first cell> (scrolls sideways)", so a keyboard can scroll it — only
+  while it overflows, re-measured on resize and on a text-size change.
+- **Colour.** Links and primary buttons use `--accent-ink`: in light mode the
+  darker accent (`--accent-2`, which every palette defines), because the
+  accent itself is 4.4:1 under white text; dark mode is unchanged. The token
+  lives in Team Tools' design tokens, so Team Tools' links and modal buttons
+  are the darker green too.
+
 ## Bookmarks and notes (HB2.2)
 
 - **Bookmarks** — the star on the reader bar. They belong to the reader's
@@ -246,10 +277,11 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
 - DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
-  (`test/visual/build.mjs` writes it); three ride the CI gate.
+  (`test/visual/build.mjs` writes it); three ride the CI gate, and every one
+  is checked by axe (`--axe`, HB2.4).

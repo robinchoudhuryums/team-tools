@@ -6496,8 +6496,8 @@ test('V-8: the shared modal primary uses the app accent, not an inverted --ink',
   const st = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   const rule = st.slice(st.indexOf('  .btn-modal-ok {'));
   const body = rule.slice(0, rule.indexOf('}'));
-  assert.ok(/background: var\(--accent\)/.test(body),
-    'the app has ONE primary vocabulary (--accent); this was the only inverted button');
+  assert.ok(/background: var\(--accent-ink\)/.test(body),
+    'the app has ONE primary vocabulary (the accent — its AA ink, HB2.4); this was the only inverted button');
   assert.ok(!/background: var\(--ink\)/.test(body),
     '--ink on --ink renders near-black in light mode and near-WHITE in dark, ' +
     'out-competing the real primary');
@@ -36636,7 +36636,7 @@ test('Operator 2026-10-19: a tutorial slideshow is a ```gallery — one slide at
   assert.ok(/data-manimg="fig-o2-ticket-1"/.test(h) && /data-manimg="fig-o2-ticket-5"/.test(h), 'each slide is the hydrator\'s keyed image chip');
   assert.ok(!/not an image line/.test(h) && !/\.\.\/x/.test(h), 'a line that is not a handbook image is dropped, and a bad key never reaches an attribute');
   assert.ok(/<figcaption class="kb-gal-cap">Step 1 — <strong>Actions<\/strong><\/figcaption>/.test(h), 'the caption keeps its emphasis');
-  assert.ok(/<span class="kb-gal-count" aria-live="polite">1 \/ 2<\/span>/.test(h) && (h.match(/class="kb-gal-dot(?: on)?"/g) || []).length === 2, 'a counter and a dot per slide');
+  assert.ok(/<span class="kb-gal-count" aria-hidden="true">1 \/ 2<\/span>/.test(h) && /<span class="kb-gal-live" role="status" aria-live="polite"><\/span>/.test(h) && (h.match(/class="kb-gal-dot(?: on)?"/g) || []).length === 2, 'a counter and a dot per slide');
   assert.ok(!/kb-gal-nav/.test(c.kbMd_('```gallery\n![One](manimg:fig-a) only\n```')), 'one slide needs no buttons');
   assert.strictEqual(c.kbMd_('```gallery\nnothing here\n```'), '', 'no image, no gallery');
   // Paper has no Next: the print block's rule 7 shows every slide and drops the buttons.
@@ -37444,7 +37444,7 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   assert.ok(filled >= 10, 'the sweep sees the filled-accent rules (non-vacuous): ' + filled);
   // the bar when narrow: the labels go, the name stays
   assert.ok(/@container \(max-width: 560px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 560px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
-  assert.ok(/b\.setAttribute\('aria-label', b\.title\);/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps its accessible name');
+  assert.ok(/b\.setAttribute\('aria-label', x\[1\] \? x\[2\] \+ ' — ' \+ x\[1\]\.label/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps an accessible name that carries its visible label (HB2.4, WCAG 2.5.3)');
   // the masthead, driven
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: {}, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
     esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
@@ -41693,6 +41693,56 @@ test('HB2.2-e: the page\'s merge is the server\'s (a mirror whose drift would lo
 });
 
 if (skipped.length) console.log('\n' + skipped.length + ' skipped for a missing package (CI re-runs them after npm ci with REQUIRE_DEPS=1)');
+
+// ── HB2.4 — the keyboard and screen-reader pass; axe on every handbook screen ──
+test('HB2.4-a: axe-core is pinned exactly, `shoot.mjs --axe` checks every HANDBOOK scenario against WCAG 2.1 A + AA and fails on a violation or on nothing checked, and CI runs it even after a layout failure', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'test/visual/package.json'), 'utf8'));
+  const v = (pkg.devDependencies || {})['axe-core'] || (pkg.dependencies || {})['axe-core'];
+  assert.ok(/^\d+\.\d+\.\d+$/.test(v || ''), 'an exact version — a rule added upstream must never turn CI red on its own');
+  const sh = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  assert.ok(/const AXE_TAGS = \['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'\];/.test(sh));
+  assert.ok(/if \(AXE && !\(opts && opts\.page === 'handbook'\)\) continue;/.test(sh), 'the handbook screens — Team Tools is not yet held to it');
+  assert.ok(/node_modules\/axe-core\/axe\.min\.js/.test(sh) && /window\.axe\.run\(document/.test(sh));
+  assert.ok(/if \(!axeReport\.length\) \{[^}]*process\.exit\(1\)/.test(sh), 'a filter that matched nothing is a failure, never a pass');
+  assert.ok(/process\.exit\(bad\.length \? 1 : 0\)/.test(sh), 'a violation fails the run');
+  const scen = sh.match(/\['handbook-[a-z0-9-]+',/g) || [];
+  assert.ok(scen.length >= 30 && scen.some((x) => /slideshow/.test(x)), 'a slideshow is among them');
+  const wf = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  const job = wf.slice(wf.indexOf('  visual-layout:'));
+  const step = job.slice(job.indexOf('- name: Check every handbook screen with axe'));
+  assert.ok(step.length < job.length, 'the axe step is in the visual-layout job');
+  assert.ok(/if: \$\{\{ !cancelled\(\) \}\}/.test(step.slice(0, 300)) && /run: node shoot\.mjs --axe/.test(step.slice(0, 300)), 'run after a layout failure too');
+  assert.ok(/test\/visual\/axe-report\.json/.test(job), 'and its report rides the failure artifact');
+  assert.ok(/^axe-report\.json$/m.test(fs.readFileSync(path.join(HB_ROOT, 'test/visual/.gitignore'), 'utf8')));
+});
+
+test('HB2.4-b: link and primary-button green is `--accent-ink` — the darker accent in light mode (AA 4.5:1 under white text and on white), the accent itself in dark; every palette defines the darker one', () => {
+  const tok = fs.readFileSync(path.join(HB_ROOT, 'web-app/styles_design_tokens.html'), 'utf8');
+  assert.ok(/:root, body \{ --accent-ink: var\(--accent-2\); \}/.test(tok), 'declared on html AND body — a var() resolves where it is declared, and the palettes and mode set on both');
+  assert.ok(/:root\[data-mode="dark"\], :root\[data-mode="dark"\] body, body\[data-mode="dark"\] \{ --accent-ink: var\(--accent\); \}/.test(tok), 'dark mode is untouched');
+  const acc = (tok.match(/--accent:\s+#[0-9a-f]{6};/g) || []).length, acc2 = (tok.match(/--accent-2:\s+#[0-9a-f]{6};/g) || []).length;
+  assert.ok(acc >= 2 && acc === acc2, 'every block that sets the accent sets the darker one too');
+  const st = fs.readFileSync(path.join(HB_ROOT, 'web-app/styles.html'), 'utf8');
+  const ok = st.slice(st.indexOf('  .btn-modal-ok {')); const okBody = ok.slice(0, ok.indexOf('}'));
+  assert.ok(/background: var\(--accent-ink\)/.test(okBody) && /border: 1px solid var\(--accent-ink\)/.test(okBody));
+  const kb = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  assert.ok(/\.kb-article a \{ color: var\(--accent-ink\);/.test(kb) && /\.kb-article a\.kb-xref \{ color: var\(--accent-ink\);/.test(kb), 'reader links');
+});
+
+test('HB2.4-c: the handbook page names itself and its regions, and the reading area is not a live region — a repaint is not read out whole', () => {
+  const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8');
+  assert.ok(/<title>UMS Handbook<\/title>/.test(page));
+  const main = (page.match(/<main [^>]*>/) || [''])[0];
+  assert.ok(/id="kb-main"/.test(main) && !/aria-live/.test(main), 'the reading area');
+  assert.ok(/<a [^>]*href="#kb-main"/.test(page), 'the skip link');
+  assert.ok(/id="hb-me-badge"[^>]*aria-hidden="true"|aria-hidden="true"[^>]*id="hb-me-badge"/.test(page), 'the badge is not part of the Profile button\'s name (WCAG 2.5.3)');
+  const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
+  assert.ok(/\.hb-me-badge::after \{ content: attr\(data-n\); \}/.test(css), 'the count is drawn from data-n');
+  const js = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+  assert.ok(/hbFocusView_\(\)/.test(extractFnFrom(js, 'hbHome_')) && /HB_FOCUS_SEC = id; hbFocusSection_\(id\)/.test(extractFnFrom(js, 'hbOpen_')), 'a navigation the reader made moves focus');
+  assert.ok(/kbManualScrollTables_\(document\)/.test(extractFnFrom(js, 'hbApplyDisplay_')), 'a text-size change re-measures the tables');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

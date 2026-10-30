@@ -9549,7 +9549,7 @@ test('HB2.1 DOM: a first visit is asked for a department and a manager — the p
   const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbSaveProfile: { success: true, changed: true, view: saved } } });
   const prompt = h.d.querySelector('#hb-me-prompt .hb-prompt');
   assert.ok(prompt && /department and your manager/.test(prompt.textContent), 'the home page asks');
-  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '!', 'and so does the header');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '!', 'and so does the header');
   prompt.querySelector('button').click(); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { people: true }, {}], 'the view is a history entry');
   const dept = h.d.getElementById('hb-pp-dept'), mgr = h.d.getElementById('hb-pp-mgr');
@@ -9562,7 +9562,7 @@ test('HB2.1 DOM: a first visit is asked for a department and a manager — the p
   assert.ok(/Boss will be asked to confirm/.test(hbToasts_(h)), hbToasts_(h));
   assert.ok(/Waiting for Boss to confirm/.test(h.d.querySelector('.hb-pp-standing').textContent), 'the form repaints with the answer');
   assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), HB_DEPT, 'the saved department is the reading choice too');
-  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '', 'nothing left to ask');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '', 'nothing left to ask');
   // Home now says who it is waiting for.
   h.d.querySelector('#hb-toc .hb-toc-home').click(); await h.settleAll();
   assert.ok(/Waiting for Boss/.test(h.d.getElementById('hb-me-prompt').textContent));
@@ -9573,7 +9573,7 @@ test('HB2.1 DOM: a manager confirms from "Your team" — and an answer never wip
   const me = hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [pend] });
   const after = Object.assign({}, me, { team: [Object.assign({}, pend, { standing: 'confirmed' })] });
   const h = await hbBoot_({ answers: { hbGetMe: me, hbConfirmPerson: { success: true, view: after } } });
-  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '1', 'one request waiting');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '1', 'one request waiting');
   assert.ok(/1 person is waiting for you/.test(h.d.getElementById('hb-me-prompt').textContent));
   h.w.hbGoPeople_(); await h.settleAll();
   const dept = h.d.getElementById('hb-pp-dept');
@@ -9582,7 +9582,7 @@ test('HB2.1 DOM: a manager confirms from "Your team" — and an answer never wip
   assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbConfirmPerson').pop(), ['hbConfirmPerson', 'rep@ex.org', true]);
   assert.ok(/Confirmed by Boss/.test(h.d.getElementById('hb-pp-team').textContent), 'the team repaints');
   assert.strictEqual(h.d.getElementById('hb-pp-dept').value, 'Chapter 05 — Power Mobility', 'the unsaved choice survives');
-  assert.strictEqual(h.d.getElementById('hb-me-badge').textContent, '');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '');
 });
 
 test('HB2.1 DOM: the admin adds a manager and removes a person (after a confirm); a refusal says why and changes nothing', async () => {
@@ -9633,7 +9633,7 @@ test('HB2.1 DOM: a saved profile\'s department becomes the reading choice on a b
 test('HB2.1 DOM: no profile store asks nothing (an admin is told the setting); a failed load says so in the view, never on the home page; Back reopens the view', async () => {
   const unset = await hbBoot_({ answers: { hbGetMe: { email: 'owner@ex.org', name: 'Owner', isAdmin: true, setUp: false } } });
   assert.strictEqual(unset.d.getElementById('hb-me-prompt').textContent, '', 'nothing to ask');
-  assert.strictEqual(unset.d.getElementById('hb-me-badge').textContent, '');
+  assert.strictEqual(unset.d.getElementById('hb-me-badge').getAttribute('data-n'), '');
   unset.w.hbGoPeople_(); await unset.settleAll();
   assert.ok(/HANDBOOK_SS_ID/.test(unset.d.getElementById('hb-pp-me').textContent), 'the admin is told what to set');
   const fail = await hbBoot_({ answers: { hbGetMe: { __fail: 'Exceeded maximum execution time' } } });
@@ -10277,4 +10277,109 @@ test('HB2.3 DOM: the read-aloud voice and speed come from the Display panel; a l
   assert.ok(C('x'.repeat(50) + ' ' + 'y'.repeat(50), 40).every((c) => c.length <= 40), 'a run with no punctuation is cut too');
   assert.deepStrictEqual(C('See 3.1 and 10.4.2 first. It costs $1.50 a day.'), ['See 3.1 and 10.4.2 first.', 'It costs $1.50 a day.'], 'a section number or a price is not a sentence end');
   assert.deepStrictEqual(C('   '), []);
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.4 — the keyboard and screen-reader pass (axe runs in the visual matrix).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.4 — keyboard and screen reader');
+
+test('HB2.4 DOM: focus follows the reader — opening a section from the contents lands on its heading; a view opened by a click lands on its heading; Back moves nothing (driven)', async () => {
+  const h = await hbBoot_();
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"]').click();
+  await h.settleAll();
+  const head = h.d.querySelector('#kb-man-sec-man-3-2 .kb-man-sec-h');
+  assert.strictEqual(h.d.activeElement, head, 'the section heading has focus, so the next Tab reads on from it');
+  assert.strictEqual(head.getAttribute('tabindex'), '-1', 'focusable by script, never a Tab stop');
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, h.main().querySelector('h1'), 'home: its heading');
+  h.w.hbGoSaved_(); await h.settleAll();
+  assert.ok(h.main().contains(h.d.activeElement), 'Saved: inside the view');
+  // Back and forward come through the change handler: no push, no focus move.
+  const btn = h.d.getElementById('hb-q'); btn.focus();
+  h.w.__hbChange({ state: { id: 'man-5-1', anchor: '' } }); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, btn, 'a history step leaves focus where the reader had it');
+  // A section opened from the page's own link paints first, then is focused once.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-sec-h'));
+  h.d.getElementById('hb-q').focus();
+  h.w.hbMarkCurrent_('man-3-1');
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'), 'scrolling past it later never pulls focus back');
+});
+
+test('HB2.4 DOM: the narrow contents take focus when opened — the current section, else the first entry — and give it back to the Contents button on Escape, a tap outside or a second press (driven)', async () => {
+  const h = await hbBoot_();
+  const menu = h.d.getElementById('hb-menu');
+  menu.focus(); h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#hb-toc button'), 'no section open: the first entry');
+  assert.strictEqual(menu.getAttribute('aria-expanded'), 'true');
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.d.activeElement, menu, 'Escape: back to the button');
+  assert.strictEqual(menu.getAttribute('aria-expanded'), 'false');
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#hb-toc .hb-it.on[data-kb-id="man-3-2"]'), 'the section being read');
+  h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, menu, 'a second press closes them and focus returns');
+  h.w.hbToggleSide_();
+  h.main().dispatchEvent(new h.w.MouseEvent('click', { bubbles: true }));
+  assert.ok(!h.d.querySelector('.hb-wrap.side-open') && h.d.activeElement === menu, 'a tap outside: closed, focus back');
+  // Closed already: a stray Escape moves nothing.
+  h.d.getElementById('hb-q').focus();
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'));
+});
+
+test('HB2.4 DOM: a slideshow announces each slide change once, with its caption, and never on load; the visible counter is hidden from the reader so it is not read twice', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const host = doc.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = h.read('kbMd_')('```gallery Steps\n![A](manimg:fig-a) one\n![B](manimg:fig-b)\n```');
+  doc.body.appendChild(host);
+  const fig = host.querySelector('.kb-gallery');
+  const live = fig.querySelector('.kb-gal-live');
+  assert.ok(live && live.getAttribute('role') === 'status' && live.getAttribute('aria-live') === 'polite');
+  assert.strictEqual(live.textContent, '', 'nothing is announced when the page opens');
+  assert.strictEqual(fig.querySelector('.kb-gal-count').getAttribute('aria-hidden'), 'true');
+  h.read('kbGalleryStep_')(fig, 1);
+  assert.strictEqual(live.textContent, 'Slide 2 of 2', 'a slide with no caption: its place');
+  h.read('kbGalleryStep_')(fig, 1);
+  assert.strictEqual(live.textContent, 'Slide 1 of 2: one', 'and with one, its caption');
+  assert.strictEqual(fig.querySelector('.kb-gal-count').textContent, '1 / 2', 'the visible counter still steps');
+});
+
+test('HB2.4 DOM: a table wider than the reader is a named Tab stop, and only while it is — re-measured when the text size changes (driven)', async () => {
+  const parts = HB_PARTS();
+  parts.parts[1].sections[0].bodyMd = 'Intro.\n\n| Item | Code |\n|---|---|\n| Tank | E0431 |\n';
+  const h = await hbBoot_({ answers: { getManualParts: parts } });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const tw = h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-tw');
+  assert.ok(tw, 'the table is wrapped');
+  assert.ok(!tw.hasAttribute('tabindex'), 'jsdom lays nothing out: it fits, so it is no Tab stop');
+  let sw = 900;
+  Object.defineProperty(tw, 'scrollWidth', { configurable: true, get: () => sw });
+  Object.defineProperty(tw, 'clientWidth', { configurable: true, get: () => 400 });
+  // The text size grows: the page re-measures.
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const r = h.d.querySelector('#hb-disp-ov input[name="hb-disp-size"][value="3"]');
+  r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(tw.getAttribute('tabindex'), '0', 'it overflows: a Tab stop, so a keyboard can scroll it');
+  assert.strictEqual(tw.getAttribute('role'), 'region');
+  assert.strictEqual(tw.getAttribute('aria-label'), 'Table: Item (scrolls sideways)', 'named by its first cell');
+  sw = 400;
+  h.w.kbManualScrollTables_(h.d);
+  assert.ok(!tw.hasAttribute('tabindex') && !tw.hasAttribute('role') && !tw.hasAttribute('aria-label'), 'fits again: an ordinary table');
+});
+
+test('HB2.4 DOM: the page has a title, a skip link to the reading area, named landmarks, and a reading area that is not a live region; the account badge is drawn, not read into the button\'s name', async () => {
+  const h = await hbBoot_();
+  assert.strictEqual(h.d.title, 'UMS Handbook');
+  const skip = h.d.querySelector('a[href="#kb-main"]');
+  assert.ok(skip, 'a skip link to the reading area');
+  assert.ok(h.main().tagName === 'MAIN' && !h.main().hasAttribute('aria-live'), 'the whole reading area is not announced on every repaint');
+  assert.ok(h.d.querySelector('header') && h.d.querySelector('nav[aria-label]'), 'a banner and a named navigation landmark');
+  const badge = h.d.getElementById('hb-me-badge');
+  assert.strictEqual(badge.getAttribute('aria-hidden'), 'true');
+  assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws');
 });

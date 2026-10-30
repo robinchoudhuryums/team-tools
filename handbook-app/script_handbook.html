@@ -136,7 +136,7 @@ function hbOpen_(id, anchor, nav, push) {
   hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
   hbMarkHomeBtn_(false);
-  if (push) hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) });
+  if (push) { hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) }); HB_FOCUS_SEC = id; hbFocusSection_(id); }
 }
 function hbGoHome_() { hbHome_(true); }
 function hbHome_(push) {
@@ -149,7 +149,7 @@ function hbHome_(push) {
   main.scrollTop = 0;
   hbMarkCurrent_(null);
   hbMarkHomeBtn_(true);
-  if (push) hbHistory_('push', { home: true }, {});
+  if (push) { hbHistory_('push', { home: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
 }
 /** google.script.history — the TOP window's address and its Back button. A
  *  page served outside HtmlService has neither, and still works without them. */
@@ -302,7 +302,9 @@ function hbApplyMe_(seq, me, parts) {
 function hbPaintMeBtn_() {
   var b = document.getElementById('hb-me-badge'), btn = document.getElementById('hb-me');
   var badge = hbMeBadge_(HB_ME);
-  if (b) b.textContent = badge;
+  // HB2.4: the badge draws its count with CSS (::after), so the button's text
+  // stays "Profile" and its name — which carries the count — begins with it.
+  if (b) { b.textContent = ''; b.setAttribute('data-n', badge); }
   if (btn) btn.setAttribute('aria-label', 'Profile' + (badge === '!' ? ' — needs your answer' : badge ? ' — ' + badge + ' waiting for you' : ''));
 }
 
@@ -319,7 +321,7 @@ function hbPeople_(push) {
     '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-locks"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
   main.scrollTop = 0;
   hbPaintPeopleMe_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_();
-  if (push) hbHistory_('push', { people: true }, {});
+  if (push) { hbHistory_('push', { people: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
 }
 /** "Your profile" — the reader's department and manager. Not repainted while
  *  the reader has changed it and not saved (g141). */
@@ -558,7 +560,7 @@ function hbQuizList_(push) {
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-qz"><h1 class="hb-pp-h">Quizzes</h1><div id="hb-qz-body">' + loSweep() + '</div></div>';
   main.scrollTop = 0;
-  if (push) hbHistory_('push', { quizzes: true }, {});
+  if (push) { hbHistory_('push', { quizzes: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
   var seq = HB_QZ.seq;
   hbLoadQuizzes_(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'list') hbPaintQuizList_(res); });
 }
@@ -759,7 +761,7 @@ function hbTraining_(push) {
   main.innerHTML = '<div class="hb-tr"><section id="hb-tr-mine"><h1 class="hb-pp-h">My training</h1>' + loSweep() + '</section>' +
     '<section id="hb-tr-team"></section></div>';
   main.scrollTop = 0;
-  if (push) hbHistory_('push', { training: true }, {});
+  if (push) { hbHistory_('push', { training: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
   hbLoadMine_();
   hbLoadTeamTraining_();
 }
@@ -1336,7 +1338,7 @@ function hbSaved_(push) {
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-tr hb-sv" id="hb-sv"></div>';
   main.scrollTop = 0;
-  if (push) hbHistory_('push', { saved: true }, {});
+  if (push) { hbHistory_('push', { saved: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
   hbPaintSaved_();
 }
 function hbPaintSaved_() {
@@ -1506,6 +1508,7 @@ function hbApplyDisplay_(p, keep) {
     if (attrs[k]) root.setAttribute(k, attrs[k]); else root.removeAttribute(k);
   });
   if (p.font) hbEnsureEasyFont_();
+  try { kbManualScrollTables_(document); } catch (e) {}   // HB2.4: a new text size can make a table scroll
   if (keep) hbLsSet_(HB_LS_DISPLAY, JSON.stringify({ prefs: p, attrs: attrs }));
   return p;
 }
@@ -1706,7 +1709,29 @@ function hbToggleCh_(btn) {
   box.classList.toggle('open', open);
   btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
+// HB2.4 — focus follows the reader: a view the reader chose takes focus at its
+// heading (or <main>), and a section they opened at its heading once the reader
+// shows it (a chapter can still be loading — markCurrent says when it is in
+// view). <main> is not a live region, so a chapter is never read out whole.
+var HB_FOCUS_SEC = null;
+function hbFocusEl_(el) {
+  if (!el) return false;
+  if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+  try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+  return document.activeElement === el;
+}
+function hbFocusView_() {
+  var main = hbMain_(); if (!main) return;
+  hbFocusEl_(main.querySelector('h1') || main);
+}
+function hbFocusSection_(id) {
+  if (HB_FOCUS_SEC !== id) return;
+  var sec = document.getElementById('kb-man-sec-' + id);
+  var h = sec && sec.querySelector('.kb-man-sec-h');
+  if (h && hbFocusEl_(h)) HB_FOCUS_SEC = null;
+}
 function hbMarkCurrent_(id) {
+  if (HB_FOCUS_SEC && id === HB_FOCUS_SEC) hbFocusSection_(id);
   hbPaintQuizBar_(id);   // HB3.2: the quizzes on the section in view
   document.querySelectorAll('#hb-toc .hb-it').forEach(function (b) {
     var on = !!id && b.getAttribute('data-kb-id') === id;
@@ -1750,11 +1775,19 @@ function hbToggleSide_() {
   var open = !wrap.classList.contains('side-open');
   wrap.classList.toggle('side-open', open);
   if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  // HB2.4: the opened contents take focus — the current section, else the first entry.
+  if (open) { var at = document.querySelector('#hb-toc .hb-it.on') || document.querySelector('#hb-toc button'); if (at) at.focus(); }
+  else if (btn) btn.focus();
 }
-function hbCloseSide_() {
+/** Close the narrow-screen contents. `refocus`: the reader dismissed them
+ *  (Escape, a tap outside) — focus returns to the Contents button; a
+ *  navigation that closes them moves focus itself. */
+function hbCloseSide_(refocus) {
   var wrap = document.querySelector('.hb-wrap'), btn = document.getElementById('hb-menu');
+  var was = !!(wrap && wrap.classList.contains('side-open'));
   if (wrap) wrap.classList.remove('side-open');
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (refocus && was && btn) btn.focus();
 }
 
 // ── Home ──────────────────────────────────────────────────────────────────
@@ -1858,14 +1891,14 @@ function hbBoot_() {
     if (e.key !== 'Escape') return;
     if (overlayEscapeClose_(e)) return;
     var wrap = document.querySelector('.hb-wrap');
-    if (wrap && wrap.classList.contains('side-open')) { hbCloseSide_(); e.preventDefault(); }
+    if (wrap && wrap.classList.contains('side-open')) { hbCloseSide_(true); e.preventDefault(); }
   });
   document.addEventListener('focusin', overlayFocusTrap_);
   // Narrow screens: a tap outside the open contents closes them.
   document.addEventListener('click', function (e) {
     var wrap = document.querySelector('.hb-wrap');
     if (!wrap || !wrap.classList.contains('side-open') || !e.target.closest) return;
-    if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_();
+    if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_(true);
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
   hbLoadMe_();

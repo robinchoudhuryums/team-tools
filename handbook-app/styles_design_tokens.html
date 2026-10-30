@@ -647,6 +647,16 @@
   .icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .icon svg { display: block; }
 
+  /* HB2.4 (operator 2026-10-30): the accent as TEXT or as a fill under text.
+     Light mode's --accent is 4.39:1 on white — under WCAG AA — so text and the
+     primary button use the darker --accent-2 there (5.9:1+); dark mode's
+     --accent already passes. Declared on <html> AND <body>, because a custom
+     property's var() resolves where it is declared: a palette or mode set on
+     <body> (Team Tools) or on <html> (the handbook app) is read by the
+     declaration on the element that carries it. */
+  :root, body { --accent-ink: var(--accent-2); }
+  :root[data-mode="dark"], :root[data-mode="dark"] body, body[data-mode="dark"] { --accent-ink: var(--accent); }
+
   /* Reduced-motion safety */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

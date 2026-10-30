@@ -2228,16 +2228,16 @@
      — the inversion was never per-button, it was this shared class. */
   .btn-modal-ok {
     flex: 2; padding: 11px 14px;
-    border: 1px solid var(--accent); border-radius: var(--radius);
-    background: var(--accent);
+    border: 1px solid var(--accent-ink); border-radius: var(--radius);
+    background: var(--accent-ink);   /* HB2.4: AA under the white text in light mode */
     font-family: var(--ui);
     font-size: 13px; font-weight: 600; color: var(--paper-card);
     cursor: pointer; letter-spacing: .02em;
     transition: background var(--t) var(--ease), border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
   }
   .btn-modal-ok:hover:not(:disabled) {
-    background: var(--accent-2);
-    border-color: var(--accent-2);
+    background: color-mix(in oklab, var(--accent-ink) 85%, var(--ink));
+    border-color: color-mix(in oklab, var(--accent-ink) 85%, var(--ink));
     box-shadow: var(--shadow-sm);
   }
   .btn-modal-ok:disabled { opacity: .5; cursor: not-allowed; }

@@ -3,6 +3,7 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
+  <title>UMS Handbook</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -44,15 +45,15 @@
     <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
       oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
     <button type="button" class="hb-me-btn" id="hb-disp" onclick="hbOpenDisplay_()" aria-haspopup="dialog">Display</button>
-    <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge"></span></button>
+    <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge" aria-hidden="true"></span></button>
     <label class="hb-dept">My department
       <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
     </label>
   </header>
-  <div class="hb-quizbar" id="hb-quizbar" role="region" aria-label="Quiz for this section"></div>
+  <div class="hb-quizbar" id="hb-quizbar" role="region" aria-label="This section's tools"></div>
   <div class="hb-wrap">
     <nav class="hb-side" id="hb-side" aria-label="Contents"><div id="hb-toc" class="hb-toc"></div></nav>
-    <main class="kb-main" id="kb-main" tabindex="-1" aria-live="polite"></main>
+    <main class="kb-main" id="kb-main" tabindex="-1"></main>
   </div>
   <!-- showToast writes here; without it every toast is silently dropped. -->
   <div class="toast-stack" id="toast-stack" role="region" aria-live="polite" aria-label="Notifications"></div>
