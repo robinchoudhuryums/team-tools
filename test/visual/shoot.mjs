@@ -10,6 +10,7 @@ import gate from './ci-gate.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(HERE, 'page.html');
+const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: the handbook app (opts.page: 'handbook')
 const OUT = path.join(HERE, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -55,6 +56,29 @@ const KBL_CODES = KBL_SEARCH +
   "; (function tick(n){ var b=document.querySelector('#kb-ins-results .kb-ins-det-btn');" +
   " if(b){ insToggleLegend_(b); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(16)";
 
+// 25post B: the eligibility CARDS (verdict lines, facts list) sit below the
+// fold inside the panel's own scroller; poll for the last row, then scroll it in.
+const KBL_ELIG_CARDS = KBL_SEARCH +
+  "; (function tick(n){ var rows=document.querySelectorAll('#kb-oop-results .kb-ins-row');" +
+  " if(rows.length >= 3){ rows[rows.length-1].scrollIntoView({ block: 'end' }); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
+
+// 25post C1: the eligibility map, opened — poll for the toggle, press it,
+// scroll the drawn map into view.
+// D4 (operator 2026-10-27): the three image-chip states side by side — the
+// mock answers "not imported" for these keys, then one chip is put back to
+// loading and one to failed, so all three (and an article image's "not
+// stored") are in one shot.
+const DAYEDIT_ACTIVITY = "openDayEditModal('E-1077', 'Nina Patel', new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10));" +
+  " setTimeout(function(){ ['de-clockin','de-clockout'].forEach(function(id){ var e=document.getElementById(id); e.value=''; e.dispatchEvent(new Event('input')); });" +
+  " deApplySuggestion_('ClockIn'); }, 500)";
+const KBL_IMG_STATES = "var m=document.getElementById('kb-main'); if(m){ m.innerHTML='<div class=\"kb-article\"><h2>Image states</h2>' +" +
+  " kbMd_('![The Log screen](manimg:fig-d4-load)\\n\\n![The New Order button](manimg:fig-d4-gone)\\n\\n![The Patient tab](manimg:fig-d4-fail)\\n\\nRow icon ![Hold icon](manimg:icon-d4-gone) beside its name.\\n\\n![Old screenshot](kbimg:kbimg-000000000000000000000000)') + '</div>';" +
+  " setTimeout(function(){ var c=m.querySelectorAll('.kb-manimg'); if(c[0]) kbImgChipState_(c[0],'data-mi','loading'); if(c[2]) kbImgChipState_(c[2],'data-mi','failed'); }, 600); }";
+const KBL_ELIG_MAP = KBL_SEARCH +
+  "; (function tick(n){ var b=document.querySelector('#kb-oop-results .kb-oop-mapbtn');" +
+  " if(b){ oopToggleMap_(b); setTimeout(function(){ var m=document.querySelector('#kb-oop-results .kb-oop-map'); if(m) m.scrollIntoView({ block: 'center' }); }, 100); return; }" +
+  " if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
+
 // The DRAWER's cross-reference sits under the item row, below the fold at
 // ~340px. That width is exactly where T1/T2's defects lived, so it is shot
 // rather than reasoned about: scroll the drawer body once the results land.
@@ -76,7 +100,73 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
   " copyWithFeedback_('Drive Scout 3 Wheel (W/ Shipping Cost) \u2014 $1,070.00'," +
   " { ok: 'Copied', label: 'Drive Scout 3 Wheel \u00b7 W/ Shipping Cost' });";
 
+const HB_PAGE = { page: 'handbook' };
+const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
+const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
+const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
+const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ document.querySelectorAll('.hb-qz-q').forEach(function(f){ var i=f.querySelector('input'); if(i) i.checked=true; }); hbSubmitQuiz_(); }, 400)";
+const HB_PROGRESS = "hbGoTraining_(); setTimeout(function(){ var e=document.getElementById('hb-tr-progress'); if(e) e.scrollIntoView(); var d=e && e.querySelector('details'); if(d) d.open=true; }, 500)";
+const HB_NOTES = "try { localStorage.setItem('umsHbNotes', JSON.stringify({ 'man-0-11': { t: 'Read the Ticket State before the note.\\nA split shipment has two tracking numbers — give both.', ms: Date.now() - 3600000 }, 'man-0-10': { t: 'Pat. Resp. is what they owe BEFORE delivery.', ms: Date.now() - 86400000 }, 'man-0-2': { t: '', ms: 5 } })); } catch (e) {} ";
+const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
+const HB_READING = "Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { q: [], speak: function (u) { this.q.push(u); }, pause: function () {}, resume: function () {}, cancel: function () {}, getVoices: function () { return []; }, addEventListener: function () {} } });" +
+  " window.SpeechSynthesisUtterance = function (t) { this.text = t; };" +
+  " setTimeout(function () { hbReadAloud_(); var s = window.speechSynthesis; for (var i = 0; i < 2; i++) { var u = s.q[s.q.length - 1]; if (u && u.onend) u.onend(); } }, 400)";
+const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
+
 const SCENARIOS = [
+  // HB1.4 — the handbook app (handbook-app/): its home (first visit, and with a
+  // department chosen), a section by link, search, the phone contents and the
+  // suggest-an-edit dialog. The reader inside is Team Tools' shared partial,
+  // already shot under reference-manual-*; these shoot the frame around it.
+  ['handbook-home-light-wide',     {}, WIDE,   'light', '', '', HB_PAGE],
+  ['handbook-home-dark-wide',      {}, WIDE,   'dark',  '', '', HB_PAGE],
+  ['handbook-home-light-mobile',   {}, MOBILE, 'light', '', '', HB_PAGE],
+  ['handbook-mydept-light-wide',   {}, WIDE,   'light', '', HB_DEPT, HB_PAGE],
+  ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
+  // HB2.4: a slideshow stepped once (its announcement filled) and tables that
+  // overflow a phone (each a named Tab stop) — for axe as much as for the eye.
+  ['handbook-slideshow-dark-mobile', {}, MOBILE, 'dark', '?s=0.10', "setTimeout(function(){ var g = document.querySelector('.kb-gallery'); if (g) { kbGalleryStep_(g, 1); g.scrollIntoView(); } }, 300)", HB_PAGE],
+  ['handbook-search-light-wide',   {}, WIDE,   'light', '', HB_SEARCH, HB_PAGE],
+  // HB4.1: the form library, a form open in the viewer (the real PDF drawn by
+  // pdf.js) on a phone, and a section whose bar offers a form.
+  ['handbook-forms-light-wide',    {}, WIDE,   'light', '', 'hbGoForms_()', HB_PAGE],
+  ['handbook-form-view-dark-mobile', {}, MOBILE, 'dark', '', "hbOpenForm_('form-pt-ot-rx')", HB_PAGE],
+  ['handbook-form-bar-light-wide', {}, WIDE,   'light', '?s=0.11', '', HB_PAGE],
+  ['handbook-search-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH, HB_PAGE],
+  ['handbook-contents-light-mobile', {}, MOBILE, 'light', '', 'hbToggleSide_()', HB_PAGE],
+  ['handbook-suggest-light-wide',  {}, WIDE,   'light', '?s=3.8', HB_SUGGEST, HB_PAGE],
+  // HB2.1 — the people view (profile, "Your team", the admin's lists), and a
+  // first visit's home prompt.
+  ['handbook-people-light-wide',   {}, WIDE,   'light', '', 'hbGoPeople_()', HB_PAGE],
+  ['handbook-people-dark-mobile',  {}, MOBILE, 'dark',  '', 'hbGoPeople_()', HB_PAGE],
+  ['handbook-firstvisit-light-mobile', {}, MOBILE, 'light', '', HB_FIRST, HB_PAGE],
+  // HB3.2 — quizzes: the list, a sitting, a result, the bar on a section.
+  ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
+  ['handbook-quiz-take-light-mobile', {}, MOBILE, 'light', '', "hbTakeQuiz_('q-core-calls', true)", HB_PAGE],
+  ['handbook-quiz-result-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_RESULT, HB_PAGE],
+  ['handbook-quizbar-light-mobile', {}, MOBILE, 'light', '?s=0.11', '', HB_PAGE],
+  // HB3.3 — training: My training and Team training; the two editors.
+  ['handbook-training-light-wide', {}, WIDE,   'light', '', 'hbGoTraining_()', HB_PAGE],
+  ['handbook-training-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoTraining_()', HB_PAGE],
+  ['handbook-quiz-editor-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditTeamQuiz_('tq-00000000000a'); }, 400)", HB_PAGE],
+  ['handbook-plan-editor-light-mobile', {}, MOBILE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditPlan_('pl-000000000001'); }, 400)", HB_PAGE],
+  // HB2.3 — the Display panel; the largest text with wide spacing, high
+  // contrast and the easier-reading font at phone width; larger text and high
+  // contrast on a desktop; a section being read aloud (the block marked).
+  ['handbook-display-light-mobile', {}, MOBILE, 'light', '?s=0.11', "setTimeout(function(){ hbOpenDisplay_(); }, 300)", HB_PAGE],
+  ['handbook-large-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.11', HB_LARGE('{ size: 3, spacing: 2, contrast: true, font: true }'), HB_PAGE],
+  ['handbook-large-light-wide',    {}, WIDE,   'light', '?s=0.10', HB_LARGE('{ size: 2, contrast: true }'), HB_PAGE],
+  ['handbook-reading-light-wide',  {}, WIDE,   'light', '?s=0.11', HB_READING, HB_PAGE],
+  // HB2.2 — Saved (bookmarks, one no longer in the handbook; notes, sync off)
+  // and the note editor over a section.
+  ['handbook-saved-light-wide',    {}, WIDE,   'light', '', HB_NOTES + 'hbGoSaved_()', HB_PAGE],
+  ['handbook-saved-dark-mobile',   {}, MOBILE, 'dark',  '', HB_NOTES + 'hbGoSaved_()', HB_PAGE],
+  ['handbook-note-light-mobile',   {}, MOBILE, 'light', '?s=0.11', HB_NOTES + "setTimeout(function(){ hbEditNote_('man-0-11'); }, 300)", HB_PAGE],
+  // HB3.4 — the sign-off on the bar (signed; the changed-since ask is on
+  // handbook-quizbar-light-mobile) and the manager's per-person progress.
+  ['handbook-signed-dark-wide',    {}, WIDE,   'dark',  '?s=0.10', '', HB_PAGE],
+  ['handbook-progress-light-wide', {}, WIDE,   'light', '', HB_PROGRESS, HB_PAGE],
+  ['handbook-progress-dark-mobile', {}, MOBILE, 'dark', '', HB_PROGRESS, HB_PAGE],
   ['clock-light-wide',      { tool: 'timeClock', tab: 'clock' },      WIDE, 'light', ''],
   ['clock-dark-wide',       { tool: 'timeClock', tab: 'clock' },      WIDE, 'dark',  ''],
   // 22post E — Customize dashboard: the panel open mid-edit (Spanish hidden,
@@ -137,6 +227,8 @@ const SCENARIOS = [
   // module (training queue, review candidates, per-rep, stats).
   ['intake-pmd-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', ''],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
+  // 25post A1: a Sent PPD's detail — each recommendation with its reason.
+  ['intake-sent-detail-light-wide', { tool: 'intake', tab: 'intakeSent' }, WIDE, 'light', '', "intakeOpenSent_(document.querySelector('[data-sent-idx]')); setTimeout(function () { var g = document.querySelector('.intk-sent-grp'); if (g) g.scrollIntoView({ block: 'start' }); }, 250)"],
   ['cn-teamnotes-light-wide', { tool: 'callNotes', tab: 'callNotesManage' }, WIDE, 'light', ''],
   // Operator 2026-09-10 — the Per-Rep view: the read-only card with its
   // Coach / Delete actions had never been on camera (the default Team Notes
@@ -411,6 +503,12 @@ const SCENARIOS = [
   ['reference-drawer-light-compact',{ tool: 'reference', tab: null }, COMPACT, 'light', '?compact=1', KBD_SEARCH],
   ['reference-results-light-wide',  { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_SEARCH],
   ['reference-results-dark-wide',   { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_SEARCH],
+  ['reference-elig-cards-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_CARDS],
+  ['reference-elig-cards-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_CARDS],
+  ['reference-img-states-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_IMG_STATES],
+  ['reference-img-states-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_IMG_STATES],
+  ['reference-elig-map-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_ELIG_MAP],
+  ['reference-elig-map-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_ELIG_MAP],
   // T3 — the join, both directions in one frame: the payor's code columns
   // NAMED (and the three states that are not a name), and the item row's
   // cross-reference to the payor on screen.
@@ -439,6 +537,11 @@ const SCENARIOS = [
     "openDayEditModal('E-1077', 'Nina Patel')"],
   ['dayedit-light-compact', { tool: 'manage', tab: 'manage' }, COMPACT, 'light', '?compact=1',
     "openDayEditModal('E-1077', 'Nina Patel')"],
+  // Round 12 E2 (operator 2026-10-28): the app-activity strip with both
+  // suggestions — a past day, both clock slots cleared, Clock In applied (so
+  // the Inferred tag is on camera beside the Out suggestion still offered).
+  ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
+  ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
   // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
   // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
   // camera; the phone width is where the radio labels wrap.
@@ -511,17 +614,33 @@ if (CI) {
   const absent = gate.CI_SCENARIOS.filter((n) => !names.has(n));
   if (absent.length) { console.error('ci-gate: no such scenario: ' + absent.join(', ')); process.exit(1); }
 }
-const only = CI ? null : (process.argv[2] ? process.argv.slice(2) : null);
+// --axe (HB2.4): every HANDBOOK scenario through axe-core's WCAG 2.1 A + AA
+// rules after its post hook — no screenshots; exit 1 on any violation. A
+// filter after --axe narrows it (`node shoot.mjs --axe handbook-quiz`).
+const AXE = process.argv.includes('--axe');
+const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+const AXE_SRC = AXE ? fs.readFileSync(path.join(HERE, 'node_modules/axe-core/axe.min.js'), 'utf8') : '';
+const args = process.argv.slice(2).filter((a) => a !== '--axe' && a !== '--ci');
+const only = CI ? null : (args.length ? args : null);
+const axeReport = [];
 const report = [];
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 
 for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
+  if (AXE && !(opts && opts.page === 'handbook')) continue;
   // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
   if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
   const ctx = await browser.newContext(ctxOpts);
+  // HB4.1: the handbook's form viewer loads pdf.js from cdnjs; the harness
+  // serves the same pinned build from node_modules (no network in CI or here).
+  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', (route) => {
+    const file = path.join(HERE, 'node_modules/pdfjs-dist/build', path.basename(new URL(route.request().url()).pathname));
+    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
+    return route.fulfill({ path: file, contentType: 'text/javascript' });
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -535,7 +654,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (opts && opts.utc) fake.setUTCHours(opts.utc[0], opts.utc[1] || 0, 0, 0);
   else fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift
   await page.clock.install({ time: fake });
-  await page.goto(PAGE + query, { waitUntil: 'load' });
+  await page.goto((opts && opts.page === 'handbook' ? PAGE_HB : PAGE) + query, { waitUntil: 'load' });
   await page.waitForTimeout(1200);
   if (nav.tool) {
     await page.evaluate(([tool, tab]) => { try { window.enterTool(tool, tab || undefined); } catch (e) { console.error('enterTool threw: ' + e.message); } }, [nav.tool, nav.tab]);
@@ -544,6 +663,15 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (post) {
     await page.evaluate((code) => { try { (0, eval)(code); } catch (e) { console.error('post hook threw: ' + e.message); } }, post);
     await page.waitForTimeout(1000);
+  }
+  if (AXE) {
+    await page.addScriptTag({ content: AXE_SRC });
+    const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
+      .then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
+        targets: v.nodes.slice(0, 4).map((n) => n.target.join(' ')), summary: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\n').slice(0, 3).join(' ') }))), AXE_TAGS);
+    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, errors: Array.from(new Set(errors)).slice(0, 4) });
+    await ctx.close();
+    continue;
   }
   // Compact/mobile use viewport-clipped frames: a fullPage capture PAINTS
   // off-viewport fixed elements (the closed KB drawer, the mobile nav) into
@@ -614,6 +742,14 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   await ctx.close();
 }
 await browser.close();
+if (AXE) {
+  fs.writeFileSync(path.join(HERE, 'axe-report.json'), JSON.stringify(axeReport, null, 2));
+  const bad = axeReport.filter((r) => r.violations.length);
+  console.log('AXE (' + axeReport.length + ' handbook scenarios, WCAG 2.1 A + AA): ' + (bad.length ? 'FAIL' : 'PASS'));
+  bad.forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  if (!axeReport.length) { console.log('  no handbook scenario matched — nothing was checked'); process.exit(1); }
+  process.exit(bad.length ? 1 : 0);
+}
 fs.writeFileSync(path.join(HERE, 'report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
 const overflowing = report.filter((r) => r.overflowPx > 0);

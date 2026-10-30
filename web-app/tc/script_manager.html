@@ -1459,7 +1459,16 @@ document.getElementById('exp-submit').addEventListener('click', () => {
       const resSlot = document.getElementById('exp-result');
       if (resSlot) {
         resSlot.innerHTML = `<a class="exp-result-link" href="${esc(result.url)}" target="_blank" rel="noopener">`
-          + `${icon('popOut', 13)}Open the export sheet — ${esc(String(result.rowCount))} rows${esc(archNote)}</a>`;
+          + `${icon('popOut', 13)}Open the export sheet — ${esc(String(result.rowCount))} rows${esc(archNote)}</a>`
+          // Round 12 E2: punches set from app activity are named here, not in the upload file.
+          + (result.inferredCount
+            ? `<details class="exp-inferred"><summary>${esc(String(result.inferredCount))} punch${result.inferredCount === 1 ? '' : 'es'} inferred from app activity</summary><ul>`
+              + (result.inferred || []).map(function (p) {
+                  return '<li>' + esc(p.name || p.id) + ' · ' + esc(p.date) + ' · ' + esc(p.type === 'ClockOut' ? 'Clock Out' : p.type === 'ClockIn' ? 'Clock In' : p.type) + ' ' + esc(dispTime(p.time)) + '</li>';
+                }).join('')
+              + (result.inferredCount > (result.inferred || []).length ? '<li>and ' + esc(String(result.inferredCount - (result.inferred || []).length)) + ' more</li>' : '')
+              + '</ul></details>'
+            : '');
       }
       let exWin = null;
       try { exWin = window.open(result.url, '_blank'); } catch (_) { exWin = null; }
@@ -1717,19 +1726,21 @@ function tcalDayTableHtml_(data) {
   var editable = dateIso <= todayIso && daysBetweenIso(dateIso, todayIso) <= adjWin;
   var adjChip = ' <span style="font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 3px">ADJ</span>';
   var dash = '<span style="color:var(--muted-3)">—</span>';
-  function tCell(t, adj) { return t ? esc(dispTime(t)) + (adj ? adjChip : '') : dash; }
+  // Round 12 E2: a clock time set from app activity carries the Inferred chip.
+  var infChip = ' <span class="punch-inf-chip" title="Inferred from app activity by a manager">Inferred</span>';
+  function tCell(t, adj, inf) { return t ? esc(dispTime(t)) + (adj ? adjChip : '') + (inf ? infChip : '') : dash; }
 
   var table = mtRenderTable_({
     columns: [
       { key: 'name', label: 'Rep', name: true, cell: function (r) { return esc(r.name); } },
-      { key: 'in', label: 'Clock In', cell: function (r) { return r.noPunches ? '<span style="color:var(--muted)">no punches</span>' : tCell(r.clockIn, r.adjClockIn); } },
+      { key: 'in', label: 'Clock In', cell: function (r) { return r.noPunches ? '<span style="color:var(--muted)">no punches</span>' : tCell(r.clockIn, r.adjClockIn, r.infClockIn); } },
       { key: 'lo', label: 'Lunch Out', cell: function (r) { return r.noPunches ? '' : tCell(r.lunchOut, r.adjLunchOut); } },
       { key: 'li', label: 'Lunch In', cell: function (r) { return r.noPunches ? '' : tCell(r.lunchIn, r.adjLunchIn); } },
       { key: 'out', label: 'Clock Out', cell: function (r) {
           if (r.noPunches) return '';
           var extra = r.punchCount > (['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length)
             ? ' <span style="font-size:10px;color:var(--muted)" title="This day has punch rows beyond the four columns shown — a second break, or duplicates. The Hours figure already counts every break pair, and Day Edit now lists every pair, so opening it here is safe.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
-          return tCell(r.clockOut, r.adjClockOut) + extra;
+          return tCell(r.clockOut, r.adjClockOut, r.infClockOut) + extra;
         } },
       { key: 'hours', label: 'Hours', numeric: true, cell: function (r) {
           if (typeof r.hours === 'number') return '<b>' + esc(fmtHrs(r.hours)) + '</b>';
@@ -1922,6 +1933,118 @@ var _deLoadSeq = 0;
 var _deTouched = {};
 function deMarkTouched_(key) { _deTouched[key] = true; }
 
+/* Round 12 E2 (operator 2026-10-28) — the rep's APP ACTIVITY in Day Edit:
+ * managerGetDayActivity's pings in 10-minute blocks, and the first / last
+ * ping offered as a Clock In / Clock Out. Apply fills the slot (the manager
+ * can still change it) and the slot is then INFERRED — tagged here, and saved
+ * with the mark (`slots.inferred`) that every timesheet surface shows. A slot
+ * counts as inferred only while it still holds the value it was applied or
+ * loaded with; typing another time makes it the manager's own entry. The read
+ * is per open (its own sequence), never blocks Save, and a failure is said. */
+var DE_ACT = { seq: 0, data: null, failed: false };
+var _deInfVal = { ClockIn: '', ClockOut: '' };
+var DE_SLOT_INPUT = { ClockIn: 'de-clockin', ClockOut: 'de-clockout' };
+function deSlotInferred_(type) {
+  var el = document.getElementById(DE_SLOT_INPUT[type]);
+  return !!(el && el.value && _deInfVal[type] && el.value === _deInfVal[type]);
+}
+function deSyncInferredTags_() {
+  ['ClockIn', 'ClockOut'].forEach(function (t) {
+    var tag = document.getElementById(DE_SLOT_INPUT[t] + '-inf');
+    if (tag) tag.hidden = !deSlotInferred_(t);
+  });
+}
+function deHourLabel_(h) { h = ((h % 24) + 24) % 24; return (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); }
+/** PURE (DOM-free; Node + DOM pinned) — the activity panel for one day.
+ *  `o` = {clockInEmpty, clockOutEmpty, isRepToday, range}. */
+function deActivityHtml_(d, o) {
+  o = o || {};
+  var head = '<div class="de-act-head"><span class="de-act-title">App activity</span>';
+  var hm = function (s) { return /^\d{2}:\d{2}$/.test(String(s || '')) ? s : ''; };
+  var first = hm(d && d.first), last = hm(d && d.last);
+  if (!d || !(d.pings > 0) || !first) {
+    return head + '</div><div class="de-act-note">No app activity recorded on this day' +
+      (d && d.retentionDays ? ' (activity is kept ' + esc(String(d.retentionDays)) + ' days)' : '') + '.</div>';
+  }
+  head += '<span>first ' + esc(dispTime(first)) + ' · last ' + esc(dispTime(last)) + '</span></div>';
+  var size = d.blockMin > 0 ? d.blockMin : 10, per = Math.round(60 / size);
+  var fm = parseInt(first.slice(0, 2), 10) * 60 + parseInt(first.slice(3), 10);
+  var lm = parseInt(last.slice(0, 2), 10) * 60 + parseInt(last.slice(3), 10);
+  var h0 = Math.max(0, Math.floor(fm / 60) - 1), h1 = Math.min(24, Math.floor(lm / 60) + 2);
+  if (h1 - h0 < 8) { h0 = Math.max(0, Math.min(h0, 24 - 8)); h1 = Math.min(24, h0 + 8); }
+  var blocks = Array.isArray(d.blocks) ? d.blocks : [];
+  var cells = '', on = 0, n = 0;
+  for (var b = h0 * per; b < h1 * per; b++) {
+    var hit = blocks[b] > 0;
+    if (hit) on++;
+    n++;
+    cells += '<span class="de-act-b' + (hit ? ' on' : '') + '"></span>';
+  }
+  var mid = Math.round((h0 + h1) / 2);
+  var html = head +
+    '<div class="de-act-strip" role="img" aria-label="App activity from ' + esc(dispTime(first)) + ' to ' + esc(dispTime(last)) +
+      ' — ' + on + ' of ' + n + ' ' + size + '-minute blocks active">' + cells + '</div>' +
+    '<div class="de-act-ticks" aria-hidden="true"><span>' + deHourLabel_(h0) + '</span><span>' + deHourLabel_(mid) + '</span><span>' + deHourLabel_(h1) + '</span></div>';
+  if (o.range) return html + '<div class="de-act-note">Suggestions are for a single day — clear <b>To</b> to use them.</div>';
+  var sug = [];
+  if (o.clockInEmpty) sug.push('In ' + esc(dispTime(first)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockIn" aria-label="Apply ' + esc(dispTime(first)) + ' as Clock In">Apply</button>');
+  if (o.clockOutEmpty && !o.isRepToday && last !== first) sug.push('Out ' + esc(dispTime(last)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockOut" aria-label="Apply ' + esc(dispTime(last)) + ' as Clock Out">Apply</button>');
+  if (sug.length) html += '<div class="de-act-sug"><span>Suggested from app activity:</span> ' + sug.join(' ') + '</div>';
+  return html + '<div class="de-act-note">Activity is sampled at most every ' + esc(String(d.gapMin || size)) +
+    ' minutes while the app is in use, so the last activity can be a few minutes later than shown. A time you apply stays editable, and saves marked <b>Inferred (app activity)</b>.</div>';
+}
+function deRenderActivity_() {
+  var host = document.getElementById('de-act');
+  if (!host) return;
+  if (DE_ACT.failed) {
+    host.hidden = false;
+    host.innerHTML = '<div class="de-act-head"><span class="de-act-title">App activity</span></div>' +
+      '<div class="de-act-note">App activity could not be read for this day — enter the times by hand.</div>';
+    return;
+  }
+  var d = DE_ACT.data;
+  if (!d) { host.hidden = true; host.innerHTML = ''; return; }
+  host.hidden = false;
+  host.innerHTML = deActivityHtml_(d, {
+    clockInEmpty: !document.getElementById('de-clockin').value,
+    clockOutEmpty: !document.getElementById('de-clockout').value,
+    isRepToday: !!(d.timezone && d.date === isoDateTz(d.timezone)),
+    range: deRangeModeOn_(),
+  });
+}
+function deLoadActivity_(empId, date) {
+  var seq = ++DE_ACT.seq;
+  DE_ACT.data = null; DE_ACT.failed = false;
+  _deInfVal = { ClockIn: '', ClockOut: '' };
+  deSyncInferredTags_();
+  deRenderActivity_();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== DE_ACT.seq || empId !== _deEmpId || date !== _deDate) return;   // a late answer for another open
+      if (!res || res.error) { DE_ACT.failed = true; deRenderActivity_(); return; }
+      DE_ACT.data = res;
+      deRenderActivity_();
+    })
+    .withFailureHandler(function () {
+      if (seq !== DE_ACT.seq || empId !== _deEmpId || date !== _deDate) return;
+      DE_ACT.failed = true; deRenderActivity_();
+    })
+    .managerGetDayActivity(empId, date);
+}
+function deApplySuggestion_(type) {
+  var d = DE_ACT.data;
+  if (!d || !DE_SLOT_INPUT[type]) return;
+  var v = type === 'ClockIn' ? d.first : d.last;
+  if (!/^\d{2}:\d{2}$/.test(String(v || ''))) return;
+  var el = document.getElementById(DE_SLOT_INPUT[type]);
+  el.value = v;
+  deMarkTouched_(type === 'ClockIn' ? 'clockin' : 'clockout');
+  _deInfVal[type] = v;
+  deSyncInferredTags_();
+  deRenderActivity_();
+  el.focus();
+}
+
 /* F1 (cycle 25): range mode SETS every non-blank slot on every day of the
  * range (managerSaveDayRange), but the slots arrive PREFILLED with the From
  * day's real punches. A manager who filled "To" meaning to add one missing
@@ -2061,6 +2184,7 @@ function openDayEditModal(empId, empName, prefillDate, tzHint) {
   deRenderBreaks_([]);
   ensureOverlay('day-edit-overlay');   // F-40: the focus stash/restore lifecycle
   loadDayEditPunches(empId, _deDate, _deDate);
+  deLoadActivity_(empId, _deDate);   // round 12 E2
 }
 
 function loadDayEditPunches(empId, start, end) {
@@ -2088,9 +2212,13 @@ function loadDayEditPunches(empId, start, end) {
         return;
       }
       // Fill only what the manager has NOT typed into yet (the race above).
-      if (!_deTouched.clockin)  { document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true; }
-      if (!_deTouched.clockout) { document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true; }
+      if (!_deTouched.clockin)  { document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true;
+        _deInfVal.ClockIn = (day.infClockIn && day.clockIn) ? day.clockIn.substring(0, 5) : ''; }   // E2: a saved inferred time stays marked until changed
+      if (!_deTouched.clockout) { document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true;
+        _deInfVal.ClockOut = (day.infClockOut && day.clockOut) ? day.clockOut.substring(0, 5) : ''; }
       if (!_deTouched.breaks)   { deSetBreaksFromDay_(day); _dePrefilled.breaks = true; }
+      deSyncInferredTags_();
+      deRenderActivity_();   // E2: a suggestion shows only for a slot the day left empty
     })
     .withFailureHandler(function () {
       if (empId !== _deEmpId || seq !== _deLoadSeq) return;
@@ -2103,8 +2231,13 @@ function loadDayEditPunches(empId, start, end) {
  * re-render from the snapshot (the cnRenderSubforms_ pattern) — re-rendering
  * without it would wipe every other row's in-progress input. Remove is
  * delegated on the host so it survives each re-render. */
-document.getElementById('de-clockin').addEventListener('input', function () { deMarkTouched_('clockin'); });
-document.getElementById('de-clockout').addEventListener('input', function () { deMarkTouched_('clockout'); });
+document.getElementById('de-clockin').addEventListener('input', function () { deMarkTouched_('clockin'); deSyncInferredTags_(); deRenderActivity_(); });
+document.getElementById('de-clockout').addEventListener('input', function () { deMarkTouched_('clockout'); deSyncInferredTags_(); deRenderActivity_(); });
+// E2: Apply on a suggestion (delegated — the panel is rebuilt on every render).
+document.getElementById('de-act').addEventListener('click', function (e) {
+  var b = e.target.closest ? e.target.closest('[data-de-apply]') : null;
+  if (b) deApplySuggestion_(b.getAttribute('data-de-apply'));
+});
 document.getElementById('de-breaks').addEventListener('input', function () { deMarkTouched_('breaks'); });
 document.getElementById('de-break-add').addEventListener('click', function () {
   deMarkTouched_('breaks');
@@ -2131,6 +2264,7 @@ document.getElementById('de-breaks').addEventListener('click', function (e) {
 document.getElementById('de-date-to').addEventListener('change', deApplyRangePrefill_);
 // Filling/clearing "To" flips range mode, which caps the list at one pair.
 document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode_);
+document.getElementById('de-date-to').addEventListener('change', function () { deRenderActivity_(); });   // E2: no single-day suggestion in range mode
 // Typing into a break field can change nothing structural, but the row COUNT
 // is what gates the add button and the range note, so keep them in step.
 document.getElementById('de-breaks').addEventListener('input', deSyncRangeMode_);
@@ -2176,6 +2310,7 @@ document.getElementById('de-date').addEventListener('change', function () {
   document.getElementById('de-clockout').value = '';
   deRenderBreaks_([]);
   loadDayEditPunches(_deEmpId, d, d);
+  deLoadActivity_(_deEmpId, d);   // E2
 });
 
 document.getElementById('de-save').addEventListener('click', function () {
@@ -2187,6 +2322,8 @@ document.getElementById('de-save').addEventListener('click', function () {
     ClockOut: document.getElementById('de-clockout').value || '',
     breaks:   deReadBreaks_(),
   };
+  // E2: which clock slots still hold a time applied from app activity.
+  slots.inferred = { ClockIn: deSlotInferred_('ClockIn'), ClockOut: deSlotInferred_('ClockOut') };
   var strayMsg = deStrayUnresolved_(slots.breaks);
   if (strayMsg) { showToast(strayMsg, 'toast-error'); return; }
   var reason = document.getElementById('de-reason').value.trim();

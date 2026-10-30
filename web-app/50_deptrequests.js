@@ -1042,6 +1042,21 @@ function drDeptStats_(items, slaCfg) {
              slaDays: getDeptRequestSla_(b.dept, slaCfg), avgMinutes: avg, medianMinutes: med };   // M6: working days
   }).sort(function (a, b) { return b.open - a.open; });
 }
+/** PURE (Node-pinned) — E1 (operator 2026-10-27): the departments whose
+ *  replies are running late, for the ONE manager Needs-you item. A department
+ *  counts when at least a quarter of its OPEN requests are past their SLA
+ *  (working days, M6) AND more than three are — so one stale request in a
+ *  quiet department never raises it. Worst share first. `deptStats` is
+ *  drDeptStats_'s output; a malformed row is skipped, never counted. */
+const DR_LATE_SHARE = 0.25;
+const DR_LATE_MIN = 4;   // "more than 3"
+function drLateDepartments_(deptStats) {
+  return (deptStats || []).filter(function (d) {
+    const open = Number(d && d.open) || 0, late = Number(d && d.overdueOpen) || 0;
+    return open > 0 && late >= DR_LATE_MIN && late / open >= DR_LATE_SHARE;
+  }).map(function (d) { return { dept: String(d.dept), late: Number(d.overdueOpen), open: Number(d.open) }; })
+    .sort(function (a, b) { return (b.late / b.open) - (a.late / a.open) || b.late - a.late; });
+}
 function getDeptRequests() {
   try {
     const emp = getEmployeeInfo_();

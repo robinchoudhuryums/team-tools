@@ -1150,11 +1150,13 @@
     "dimensions": null,
     "seat": null,
     "specs": [],
-    "allowance": "2 / month, in addition to the administration set",
+    "allowance": "2 / month",
     "notes": null,
     "source": "MM p.18",
-    "images": [],
-    "verified": "2026-09-23",
+    "images": [
+      "rr/neb-nebulizer-kit.jpg"
+    ],
+    "verified": "2026-10-28",
     "flags": [],
     "billing_type": "purchase-resupply",
     "allowance_authority": "Medicare LCD L33370"
@@ -1177,7 +1179,7 @@
     "notes": null,
     "source": "MM p.18",
     "images": [],
-    "verified": "2026-09-23",
+    "verified": "2026-10-28",
     "flags": [],
     "billing_type": "purchase-resupply",
     "allowance_authority": "Medicare LCD L33370"
@@ -1200,7 +1202,7 @@
     "notes": null,
     "source": "MM p.18",
     "images": [],
-    "verified": "2026-09-23",
+    "verified": "2026-10-28",
     "flags": [],
     "billing_type": "purchase-resupply",
     "allowance_authority": "Medicare LCD L33370"
@@ -1223,7 +1225,7 @@
     "notes": null,
     "source": "MM p.18",
     "images": [],
-    "verified": "2026-09-23",
+    "verified": "2026-10-28",
     "flags": [],
     "billing_type": "purchase-resupply",
     "allowance_authority": "Medicare LCD L33370"
@@ -1246,7 +1248,7 @@
     "notes": null,
     "source": "MM p.18",
     "images": [],
-    "verified": "2026-09-23",
+    "verified": "2026-10-28",
     "flags": [],
     "billing_type": "purchase-resupply",
     "allowance_authority": "Medicare LCD L33370"
@@ -2259,6 +2261,38 @@
     "billing_type": "purchase-resupply"
   },
   {
+    "id": "sup-sterile-water",
+    "name": "Hudson RCI AquaPak Sterile Water 1070mL",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A4217"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [
+      {
+        "label": "Unit",
+        "value": "1,070 mL bottle; the Item Master counts A4217 as 500 mL per unit"
+      }
+    ],
+    "allowance": "4 bottles / month",
+    "notes": null,
+    "source": "Operator 2026-10-28 (UMS public site; Item Master)",
+    "images": [
+      "rr/sup-sterile-water.jpg"
+    ],
+    "verified": "2026-10-28",
+    "flags": [
+      "ums-published"
+    ],
+    "allowance_authority": "UMS published schedule",
+    "billing_type": "purchase-resupply"
+  },
+  {
     "id": "sup-medline-800cc-suction-canister",
     "name": "Medline 800cc Suction Canister",
     "part": "p3",
@@ -2283,6 +2317,33 @@
       "medicare-verified"
     ],
     "allowance_authority": "Medicare LCD L33612",
+    "billing_type": "purchase-resupply"
+  },
+  {
+    "id": "sup-suction-tubing",
+    "name": "Suction Tubing",
+    "part": "p3",
+    "category": "suction-supply",
+    "hcpcs": [
+      "A7002"
+    ],
+    "hcpcs_note": null,
+    "product_weight_lbs": null,
+    "capacity_lbs": null,
+    "dimensions": null,
+    "seat": null,
+    "specs": [],
+    "allowance": "8 / month",
+    "notes": null,
+    "source": "Operator 2026-10-28 (UMS public site)",
+    "images": [
+      "rr/sup-suction-tubing.jpg"
+    ],
+    "verified": "2026-10-28",
+    "flags": [
+      "ums-published"
+    ],
+    "allowance_authority": "UMS published schedule",
     "billing_type": "purchase-resupply"
   },
   {
@@ -3059,7 +3120,7 @@
     "images": [
       "rr/image48.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-28",
     "flags": [
       "tx-medicaid-only",
       "tmhp-governed"
@@ -3092,7 +3153,7 @@
     "images": [
       "rr/image11.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-28",
     "flags": [
       "tx-medicaid-only",
       "tmhp-governed"
@@ -3119,13 +3180,13 @@
         "value": "S (22–36\"), M (32–44\"), L (45–58\"), XL (58–64\"), XXL (63–69\"). XXL is T4524"
       }
     ],
-    "allowance": "240 / month",
+    "allowance": "240 / month, combined with pullups and liners",
     "notes": null,
     "source": "RR p.15",
     "images": [
       "rr/image7.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-28",
     "flags": [
       "tx-medicaid-only",
       "tmhp-governed"
@@ -3152,13 +3213,13 @@
         "value": "Same size chart as briefs. XXL is T4544"
       }
     ],
-    "allowance": "240 / month",
+    "allowance": "240 / month, combined with briefs and liners",
     "notes": null,
     "source": "RR p.15",
     "images": [
       "rr/image56.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-28",
     "flags": [
       "tx-medicaid-only",
       "tmhp-governed"
@@ -3185,13 +3246,13 @@
         "value": "Size 5.5\" × 9\"–15\""
       }
     ],
-    "allowance": "240 / month",
+    "allowance": "240 / month, combined with briefs and pullups",
     "notes": null,
     "source": "RR p.15",
     "images": [
       "rr/image47.jpg"
     ],
-    "verified": "2026-03-01",
+    "verified": "2026-10-28",
     "flags": [
       "tx-medicaid-only",
       "tmhp-governed"
@@ -3991,30 +4052,6 @@
     "images": [
       "o2/image14.png"
     ],
-    "verified": "2026-09-15",
-    "billing_type": "non-billable",
-    "flags": [
-      "bundled-in-rental"
-    ]
-  },
-  {
-    "id": "o2-stand-rack",
-    "name": "Oxygen Cylinder Stand / Rack",
-    "part": "p8",
-    "category": "oxygen-accessory",
-    "hcpcs": [
-      "E1355"
-    ],
-    "hcpcs_note": null,
-    "product_weight_lbs": null,
-    "capacity_lbs": null,
-    "dimensions": null,
-    "seat": null,
-    "specs": [],
-    "allowance": null,
-    "notes": "Included in the oxygen rental — no separate charge to the patient at any point in the 5-year useful lifetime.",
-    "source": "Oxygen guide",
-    "images": [],
     "verified": "2026-09-15",
     "billing_type": "non-billable",
     "flags": [

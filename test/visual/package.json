@@ -9,6 +9,10 @@
     "shoot": "node build.mjs && node shoot.mjs"
   },
   "dependencies": {
+    "axe-core": "4.14.0",
     "playwright": "^1.61.1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "3.11.174"
   }
 }

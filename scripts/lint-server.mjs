@@ -28,6 +28,10 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_APP = path.join(ROOT, 'web-app');
+/* HB1.2 (2026-10-28): handbook-app/ is a second Apps Script project — its own
+ * global scope, its own manifest. Each project is linted alone, so a name only
+ * Team Tools declares is undeclared in the handbook (and throws there). */
+const PROJECTS = [WEB_APP, path.join(ROOT, 'handbook-app')].filter((d) => fs.existsSync(path.join(d, '.clasp.json')));
 
 /** Apps Script BUILT-IN globals — the ones the V8 runtime provides to every
  *  project with no manifest entry. Not derivable: they come from the runtime,
@@ -58,21 +62,20 @@ const APPS_SCRIPT_BUILTINS = [
  *  to catch an undefined name was itself pre-declaring names the runtime does
  *  not define. Derive them from the manifest instead, so enabling a service is
  *  what makes it lintable and disabling one puts its uses back under the net. */
-function advancedServiceGlobals() {
-  const manifest = JSON.parse(fs.readFileSync(path.join(WEB_APP, 'appsscript.json'), 'utf8'));
+function advancedServiceGlobals(dir) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'appsscript.json'), 'utf8'));
   const svcs = (manifest.dependencies && manifest.dependencies.enabledAdvancedServices) || [];
   return svcs.map((s) => s && s.userSymbol).filter(Boolean);
 }
 
-const APPS_SCRIPT_GLOBALS = APPS_SCRIPT_BUILTINS.concat(advancedServiceGlobals());
 
 /** Server files in the order Apps Script would see them: filePushOrder first,
  *  then everything else clasp pushes, sorted. Membership is the DIRECTORY, not
  *  filePushOrder — a new .js file is covered the moment it lands. */
-function serverFiles() {
-  const clasp = JSON.parse(fs.readFileSync(path.join(WEB_APP, '.clasp.json'), 'utf8'));
+function serverFiles(dir) {
+  const clasp = JSON.parse(fs.readFileSync(path.join(dir, '.clasp.json'), 'utf8'));
   const ordered = (clasp.filePushOrder || []).filter((f) => f.endsWith('.js'));
-  const all = fs.readdirSync(WEB_APP).filter((f) => f.endsWith('.js')).sort();
+  const all = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort();
   const rest = all.filter((f) => !ordered.includes(f));
   const gone = ordered.filter((f) => !all.includes(f));
   if (gone.length) {
@@ -81,22 +84,6 @@ function serverFiles() {
   }
   return ordered.concat(rest);
 }
-
-const files = serverFiles();
-/* Concatenate, remembering where each file starts so a reported line number
- * can be translated back to file:line. A single combined lint is the point:
- * per-file linting would report every cross-file helper as undeclared. */
-const offsets = [];
-let combined = '', line = 1;
-for (const f of files) {
-  const src = fs.readFileSync(path.join(WEB_APP, f), 'utf8');
-  offsets.push({ file: f, start: line });
-  combined += src + '\n';
-  line += src.split('\n').length;   // +1 for the joining newline is implicit
-}
-
-const globals = {};
-for (const g of APPS_SCRIPT_GLOBALS) globals[g] = 'readonly';
 
 /* SHEET-SAFE (cycle 22 S2). Sheets parses a string written by setValue /
  * setValues / appendRow as if a person typed it, so `=…` (and `+…`/`-…` that is
@@ -122,34 +109,64 @@ const SHEET_SAFE = [
 }]);
 const SHEET_SAFE_EXEMPT_FILES = ['Tests.js'];   // fixture writes of constant TEST_ data
 
-const messages = new Linter().verify(combined, {
-  languageOptions: { ecmaVersion: 2020, sourceType: 'script', globals },
-  rules: { 'no-undef': 'error', 'no-restricted-syntax': ['error'].concat(SHEET_SAFE) },
-}).filter((m) => !(m.ruleId === 'no-restricted-syntax' &&
-  SHEET_SAFE_EXEMPT_FILES.indexOf(locateFile(m.line)) >= 0));
 
-
-function locateHit(ln) {
-  let hit = offsets[0];
-  for (const o of offsets) if (o.start <= ln) hit = o; else break;
-  return hit;
+/** Lint ONE project: its pushed .js files concatenated in the order Apps
+ *  Script loads them, against the platform's globals and its own manifest's
+ *  advanced services. Returns the problems, each located to file:line. */
+function lintProject(dir) {
+  const files = serverFiles(dir);
+  /* Concatenate, remembering where each file starts so a reported line number
+   * can be translated back to file:line. A single combined lint is the point:
+   * per-file linting would report every cross-file helper as undeclared. */
+  const offsets = [];
+  let combined = '', line = 1;
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    offsets.push({ file: f, start: line });
+    combined += src + '\n';
+    line += src.split('\n').length;   // +1 for the joining newline is implicit
+  }
+  const globals = {};
+  for (const g of APPS_SCRIPT_BUILTINS.concat(advancedServiceGlobals(dir))) globals[g] = 'readonly';
+  const locateHit = (ln) => {
+    let hit = offsets[0];
+    for (const o of offsets) if (o.start <= ln) hit = o; else break;
+    return hit;
+  };
+  const project = path.relative(ROOT, dir);
+  const messages = new Linter().verify(combined, {
+    languageOptions: { ecmaVersion: 2020, sourceType: 'script', globals },
+    rules: { 'no-undef': 'error', 'no-restricted-syntax': ['error'].concat(SHEET_SAFE) },
+  }).filter((m) => !(m.ruleId === 'no-restricted-syntax' &&
+    SHEET_SAFE_EXEMPT_FILES.indexOf(locateHit(m.line).file) >= 0));
+  return {
+    files: files.length,
+    problems: messages.map((m) => {
+      const hit = locateHit(m.line);
+      return project + '/' + hit.file + ':' + (m.line - hit.start + 1) + '  ' + m.message;
+    }),
+  };
 }
-function locateFile(ln) { return locateHit(ln).file; }
-function locate(ln) {
-  const hit = locateHit(ln);
-  return hit.file + ':' + (ln - hit.start + 1);
+
+let fileCount = 0;
+const problems = [];
+for (const dir of PROJECTS) {
+  const r = lintProject(dir);
+  fileCount += r.files;
+  problems.push(...r.problems);
 }
 
-if (messages.length === 0) {
-  console.log('lint-server: no undeclared identifiers and no unwrapped sheet write across ' + files.length + ' server files.');
+if (problems.length === 0) {
+  console.log('lint-server: no undeclared identifiers and no unwrapped sheet write across ' + fileCount + ' server files in ' +
+    PROJECTS.length + ' project(s).');
   process.exit(0);
 }
-console.error('lint-server: ' + messages.length + ' problem(s) —');
-for (const m of messages) console.error('  ' + locate(m.line) + '  ' + m.message);
+console.error('lint-server: ' + problems.length + ' problem(s) —');
+for (const p of problems) console.error('  ' + p);
 console.error('\nA SHEET-SAFE line writes a value Sheets may store as a FORMULA: wrap it in the\n' +
   'helper the message names (10_core.js). Any other line is an undeclared name.\n' +
   'Every such name resolves to nothing at runtime: the line throws ReferenceError\n' +
   'when reached. If the name IS real, it is either an Apps Script platform global\n' +
   '(add it to APPS_SCRIPT_GLOBALS in this file) or a declaration that belongs in a\n' +
-  'web-app/*.js file.');
+  'web-app/*.js file — or, in handbook-app/, in Handbook.js or the sync\'s copy.');
 process.exit(1);

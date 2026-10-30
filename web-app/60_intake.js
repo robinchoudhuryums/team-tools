@@ -287,6 +287,26 @@ function intakeCapLbs_(text) {
   const m = /^\s*(\d{1,3}(?:,\d{3})+(?!\d)|\d+)/.exec(String(text == null ? '' : text));
   return m ? parseInt(m[1].replace(/,/g, ''), 10) : NaN;
 }
+/** PURE (Node-pinned) — A2 (operator 2026-10-27): the weight reason for a
+ *  model the patient's weight PUT on the list. A capacity RANGE whose lower
+ *  bound is above zero ("301-450") is a heavy-duty model the engine admits only
+ *  for a patient at or above that bound — so the weight is part of why it is
+ *  recommended, and the reason says so. A plain cap ("300"), a range from zero,
+ *  a blank weight or an unreadable cell is '' — the weight is not a reason
+ *  there. Fixed vocabulary and numbers only: the justification is the ONE
+ *  raw-HTML field (g44), so nothing a rep typed may reach it. */
+function intakeWeightReason_(weight, capStr) {
+  const w = Number(weight);
+  if (!(w > 0)) return '';
+  const raw = String(capStr == null ? '' : capStr).trim();
+  if (raw.indexOf('-') < 0) return '';
+  const parts = raw.split('-');
+  const minCap = intakeCapLbs_(parts[0]);
+  const maxCap = intakeCapLbs_(parts[1]);
+  if (!isFinite(minCap) || !isFinite(maxCap) || !(minCap > 0)) return '';
+  if (w < minCap || w > maxCap) return '';
+  return 'Weight ' + Math.round(w) + ' lbs \u2014 within this model\u2019s ' + minCap + '\u2013' + maxCap + ' lbs range';
+}
 function intakeCatalogIssues_(rows) {
   const out = [];
   (rows || []).forEach(function (r, i) {
@@ -1042,6 +1062,9 @@ function intakeFilterRecommendations_(answers, allProducts) {
       }
       if (['K0800', 'K0801'].includes(p.hcpcs)) justification += ' | (if POV eligible)';
     }
+    // A2: the weight is a reason only where it put the model on the list.
+    const weightReason = intakeWeightReason_(patient.weight, p.weightCapacityStr);
+    if (weightReason) justification = (justification === 'Eligible option' ? '' : justification + ' | ') + weightReason;
 
     return {
       hcpcs: displayHcpcs,

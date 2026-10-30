@@ -41,3 +41,21 @@ html = html.replace('</head>', '<script>\nwindow.__MANUAL_IMAGES__ = ' + manualI
 
 fs.writeFileSync(path.join(HERE, 'page.html'), html);
 console.log('page.html written:', html.length, 'bytes');
+
+// HB1.4 — the handbook app's page, the same way: handbook-app/index.html with
+// every include inlined (the copies the sync wrote and its own partials), the
+// ?s= value from the page's own URL, and the same mock.
+const HB = path.join(HERE, '..', '..', 'handbook-app');
+let hb = fs.readFileSync(path.join(HB, 'index.html'), 'utf8');
+hb = hb.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, (m, f) =>
+  fs.readFileSync(path.join(HB, f + '.html'), 'utf8').replace(/<\?[\s\S]*?\?>/g, ''));
+hb = hb.replace(/<\?!=\s*JSON\.stringify\(hbParams[\s\S]*?\?>/, 'Object.fromEntries(new URLSearchParams(location.search))');
+hb = hb.replace(/<\?[\s\S]*?\?>/g, '');
+// HB4.1 — the form library's PDFs, the repo's own (the forms/ folder), for hbGetForm.
+const formPdfs = {
+  'form-eaa': fs.readFileSync(path.join(HERE, '..', '..', 'forms', 'EAA (Economic Assistance Application) Form.pdf')).toString('base64'),
+  'form-pt-ot-rx': fs.readFileSync(path.join(HERE, '..', '..', 'forms', 'Sample PT OT Rx.pdf')).toString('base64'),
+};
+hb = hb.replace('</head>', '<script>\nwindow.__MANUAL_IMAGES__ = ' + manualImages + ';\nwindow.__FORM_PDFS__ = ' + JSON.stringify(formPdfs) + ';\n' + mock + '\n</script>\n</head>');
+fs.writeFileSync(path.join(HERE, 'page-handbook.html'), hb);
+console.log('page-handbook.html written:', hb.length, 'bytes');

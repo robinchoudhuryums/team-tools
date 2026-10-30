@@ -304,7 +304,22 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
 // resolve through the failure handler and are logged to window.__MISSING__.
 (function () {
   var todayIso = new Date().toISOString().slice(0, 10);
-  function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+  /** HB2.1 — the handbook app's people view, as hbGetMe answers it. */
+function HB_PEOPLE_VIEW() {
+  var RESP = 'Chapter 03 \u2014 Respiratory & Resupply', POWER = 'Chapter 05 \u2014 Power Mobility';
+  var p = function (email, name, dept, mgr, mgrName, standing, isMgr) {
+    return { email: email, name: name, department: dept, manager: mgr, managerName: mgrName, isManager: !!isMgr, standing: standing, requestedMs: 0, confirmedMs: 0 };
+  };
+  var me = p('dana.reyes@example.com', 'Dana Reyes', RESP, 'sam.ortiz@example.com', 'Sam Ortiz', 'confirmed', true);
+  var team = [p('alex.kim@example.com', 'Alex Kim', RESP, me.email, 'Dana Reyes', 'pending'),
+    p('jordan.lee@example.com', 'Jordan Lee', RESP, me.email, 'Dana Reyes', 'confirmed'),
+    p('casey.nguyen@example.com', 'Casey Nguyen', POWER, me.email, 'Dana Reyes', 'confirmed')];
+  var boss = p('sam.ortiz@example.com', 'Sam Ortiz', POWER, '', '', 'none', true);
+  return { email: me.email, name: me.name, setUp: true, isAdmin: true, isManager: true, me: me,
+    managers: [{ email: boss.email, name: boss.name }], team: team,
+    everyone: [me, boss].concat(team, [p('riley.brooks@example.com', 'Riley Brooks', POWER, 'pat.gone@example.com', 'Pat Gone', 'gone')]) };
+}
+function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
   function ts(dIso, hms) { return dIso + 'T' + hms; }
   function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
@@ -665,11 +680,12 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { kind: 'sched', title: 'Call back — J. Rivera · insurance question', detail: 'Call-back at 9:30 AM', dueIso: todayIso, overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'callNotes' } },
         { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
         { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
-        { kind: 'requests', title: 'Request to Shipping · Verified Shipping', detail: 'Sent ' + daysAgo(0), dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+        // E1 (operator 2026-10-27): the ONE manager item — departments with ≥25% of their open requests past SLA and more than three.
+        { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
         // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
         { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsSpanish' } },
       ],
-      total: 7, cap: 30, overdue: 3, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
+      total: 7, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
@@ -993,6 +1009,25 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       });
       if (moved && (dr.myDepts || []).indexOf(moved.toDept) >= 0) dr.incoming = [moved].concat(dr.incoming || []);
       return { success: true, already: false };
+    },
+    // 25post A1 (operator 2026-10-27): the Intake Sent tab — a list of one
+    // PPD and its detail, whose recommendations carry their REASONS (and the
+    // A2 weight reason on the heavy-duty chair). Fictional patient.
+    intakeListMySubmissions: function () {
+      return { submissions: [
+        { formType: 'PPD', submissionId: 'PPD-1', timestamp: '2026-10-27 10:12', repId: 'E-1001', repName: 'Avery Blake', patientInfo: 'Sample Patient \u00b7 TRX 000000', language: 'EN', recipient: 'power@example.com', amendsId: '', supersededBy: null }],
+        isManager: false, total: 1, cap: 100, failedTypes: [] };
+    },
+    intakeGetSubmission: function (formType, id) {
+      return { formType: 'PPD', submissionId: id, isOwn: true, amendsId: '', supersededBy: null, feedback: [], feedbackUnavailable: false,
+        timestamp: '2026-10-27 10:12', repId: 'E-1001', repName: 'Avery Blake', patientInfo: 'Sample Patient \u00b7 TRX 000000', language: 'EN',
+        answers: { '38': '320 lbs', '35': 'Yes' }, recipient: 'power@example.com',
+        recommendations: {
+          complex: [{ hcpcs: 'K0843 (substitute K0862)', justification: 'MPO - <span style="text-decoration: underline;">Provide <strong>K0862</strong> as free upgrade</span>' }],
+          standard: [{ hcpcs: 'K0824', justification: 'Solid Seat indicated for: Spinal Curvature | Weight 320 lbs \u2014 within this model\u2019s 301\u2013450 lbs range' },
+            { hcpcs: 'K0822', justification: 'Solid Seat indicated for: Spinal Curvature' }] },
+        selections: { 'K0824': { preferred: true, status: 'accepted' } },
+        factors: [{ label: 'Weight', value: '320 lbs' }, { label: 'Spinal curvature (Q35)', value: 'Yes' }] };
     },
     // Operator testing note 6 (2026-09-10): the Expand detail — the SOURCE
     // NOTE's fields, keyed by the request the button names (a FUNCTION of the
@@ -1381,6 +1416,113 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         changelog: REAL_META.changelog.filter(function (c) { return c.id === 'man-0-11'; }).slice(0, 1)
           .map(function (c) { return Object.assign({}, c, { date: daysAgo(40) }); }) };
     },
+    // HB1.4 — the handbook app's own calls (page-handbook.html): the stamp its
+    // browser copy is checked against (a fixed one: every scenario starts with an
+    // empty browser, so the chapters are read in full), and section feedback
+    // like the server's {success}.
+    getManualStamp: { stamp: 'MOCK-STAMP' },
+    kbFlagItem: { success: true },
+    // HB2.1 — the handbook app's people: a reader who manages a team and is the
+    // admin (so the profile, "Your team" and the admin's lists all draw), with
+    // one request waiting. Each action answers with the same view, as the
+    // server does. Invented names; nothing here is a real person.
+    hbGetMe: function () { return HB_PEOPLE_VIEW(); },
+    hbSaveProfile: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    hbConfirmPerson: function () { return { success: true, view: HB_PEOPLE_VIEW() }; },
+    hbSetManager: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    hbRemovePerson: function () { return { success: true, changed: true, view: HB_PEOPLE_VIEW() }; },
+    // HB3.2 — taking a quiz: two quizzes (one passed, one locked) and a third
+    // untaken, on real sections of the mock manual; a sitting; a result with
+    // one answer to go over; one person locked out on the manager's team.
+    // HB4.1 — the form library: the two forms the handbook carries, offered on
+    // two real sections of the mock manual; the bytes are the repo's own PDFs
+    // (build.mjs inlines them as window.__FORM_PDFS__).
+    hbListForms: function () {
+      return { forms: [
+        { key: 'form-eaa', title: 'Economic Assistance Application (EAA)', summary: 'The blank application a patient fills in to apply for economic assistance. Billing processes it; it does not apply to an out-of-pocket order.',
+          sections: [{ id: 'man-0-11', anchor: '', num: '0.11', title: '0.11 Notes and email conventions' }] },
+        { key: 'form-pt-ot-rx', title: 'PT/OT Evaluation Rx (sample)', summary: 'A sample PT/OT prescription, for a provider who refers a power mobility patient to a physical or occupational therapist for the evaluation.',
+          sections: [{ id: 'man-0-10', anchor: '', num: '0.10', title: '0.10 Anatomy of a transaction' }, { id: 'man-0-2', anchor: '', num: '0.2', title: '0.2 Status update for a DME order' }] }] };
+    },
+    hbGetForm: function (key) {
+      var b64 = (window.__FORM_PDFS__ || {})[key];
+      return b64 ? { success: true, dataUri: 'data:application/pdf;base64,' + b64 } : { error: 'That form is not in the library.' };
+    },
+    hbListQuizzes: function () {
+      var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
+      return { setUp: true, unreadable: 0, quizzes: [
+        { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, me: me() },
+        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 1, passed: true, best: 100 }) },
+        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3 }) }] };
+    },
+    hbGetQuiz: function () {
+      return { quiz: { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, questions: [
+        { q: 'What do you confirm before discussing an order?', options: ['The caller\'s identity (two identifiers)', 'The caller\'s insurance plan', 'The delivery address only'] },
+        { q: 'Which of these go in the call note?', options: ['Who called', 'What was asked', 'Your opinion of the caller', 'What happens next'], type: 'multi' },
+        { q: 'You may leave patient details in a voicemail.', options: ['True', 'False'], type: 'truefalse' },
+        { q: 'A caller asks for a supervisor. You…', options: ['Transfer per the escalation directory', 'Ask them to call back', 'End the call'] }] },
+        me: { locked: false, retryAtMs: null, attemptsLeft: 2, maxAttempts: 3, attempts: 1, best: 50, passed: false } };
+    },
+    hbSubmitQuiz: function () {
+      return { success: true, scorePct: 75, right: 3, total: 4, passed: false, passPct: 80, perQuestion: [true, false, true, true],
+        review: [{ i: 1, explain: 'A call note records who called, what they asked and what happens next — never an opinion of the caller.', section: 'man-0-11', anchor: '' }],
+        me: { locked: false, retryAtMs: null, attemptsLeft: 1, maxAttempts: 3, attempts: 2, best: 75, passed: false } };
+    },
+    hbTeamQuizLocks: function () { return { locks: [{ email: 'alex.kim@example.com', name: 'Alex Kim', quizId: 'q-field-pickup', title: 'Pick-up procedures', retryAtMs: Date.now() + 5 * 3600000 }] }; },
+    hbResetQuiz: { success: true },
+    // HB3.3 — training: two plans for the reader (one overdue, one finished),
+    // and the manager's team training (a plan, an archived plan, a quiz).
+    hbMyTraining: function () {
+      var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
+      return { setUp: true, plans: [
+        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, items: [
+          { kind: 'section', id: 'man-0-11', key: 'section:man-0-11', done: true },
+          { kind: 'section', id: 'man-0-10', key: 'section:man-0-10', done: true },
+          { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false, sign: { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true } },
+          { kind: 'quiz', id: 'q-core-calls', key: 'quiz:q-core-calls', title: 'Taking a call', done: false, quiz: me({ attempts: 1, attemptsLeft: 2, best: 50 }) }] },
+        { id: 'pl-000000000002', title: 'Pick-up refresher', authorName: 'Sam Ortiz', due: '', overdue: false, done: 1, total: 1, items: [
+          { kind: 'quiz', id: 'tq-00000000000a', key: 'quiz:tq-00000000000a', title: 'Pick-up checks', done: true, quiz: me({ attempts: 1, passed: true, best: 100 }) }] }] };
+    },
+    hbTeamTraining: function () {
+      return { isAdmin: false, unreadable: 0,
+        quizzes: [{ id: 'tq-00000000000a', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, updatedMs: 0, quiz: { title: 'Pick-up checks', passPct: 80, questions: [
+          { type: 'single', q: 'What do you confirm before a pick-up?', options: ['The address and the equipment', 'The weather'], correct: 0, explain: 'The ticket must match what is collected.', section: 'man-0-11', anchor: '' },
+          { type: 'multi', q: 'Which go on the ticket?', options: ['Serial number', 'Condition', 'Your opinion'], correct: [0, 1], explain: '', section: '', anchor: '' },
+          { type: 'truefalse', q: 'A pick-up can be closed without a signature.', options: ['True', 'False'], correct: 1, explain: '', section: '', anchor: '' }] } }],
+        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, plan: { title: 'New starter: first week', due: daysAgo(-7),
+          items: [{ kind: 'section', id: 'man-0-11' }, { kind: 'quiz', id: 'q-core-calls' }], assign: { people: ['alex.kim@example.com'], departments: ['Chapter 03 \u2014 Respiratory & Resupply'] } } },
+          { id: 'pl-000000000003', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: false, reaches: 0, plan: { title: 'Last quarter\'s refresher', due: '', items: [{ kind: 'section', id: 'man-0-10' }], assign: { people: [], departments: ['Chapter 05 \u2014 Power Mobility'] } } }],
+        team: [{ email: 'alex.kim@example.com', name: 'Alex Kim', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: 'Chapter 05 \u2014 Power Mobility' }],
+        official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
+    },
+    hbMarkRead: { success: true },
+    // HB2.2 — the reader's bookmarks (their account) and notes (synced only when on).
+    hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }, { id: 'man-0-10', title: '0.10 Anatomy of a transaction' }, { id: 'man-gone-1', title: '4.7 Retired forms' }] },
+    hbToggleBookmark: { success: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }] },
+    hbSyncNotes: function (m) { return { success: true, notes: m || {}, written: 0, refused: 0 }; },
+    hbForgetNotes: { success: true, removed: 2 },
+    // HB3.4 — the reader's sign-offs (0.11 changed for retraining since it was
+    // read; 0.10 signed) and the manager's per-person progress.
+    hbMySignOffs: function () {
+      return { setUp: true, signoffs: {
+        'section:man-0-11': { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true },
+        'section:man-0-10': { state: 'signed', signedMs: Date.now() - 6 * 86400000, changed: false } } };
+    },
+    hbTeamProgress: function () {
+      var R = 'Chapter 03 \u2014 Respiratory & Resupply', P = 'Chapter 05 \u2014 Power Mobility';
+      return { remindersOn: false, people: [
+        { email: 'alex.kim@example.com', name: 'Alex Kim', department: R, overdue: 1, signed: 6, resign: 1,
+          plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 2, total: 4, overdue: true }],
+          quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 50, attempts: 1, passed: false, locked: false },
+            { id: 'q-field-pickup', title: 'Pick-up procedures', best: 40, attempts: 3, passed: false, locked: true }] },
+        { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: R, overdue: 0, signed: 12, resign: 0,
+          plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 4, total: 4, overdue: false }],
+          quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 100, attempts: 1, passed: true, locked: false }] },
+        { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: P, overdue: 0, signed: 0, resign: 0, plans: [], quizzes: [] }] };
+    },
+    hbSaveTeamQuiz: { success: true, id: 'tq-00000000000b' },
+    hbSavePlan: { success: true, id: 'pl-000000000004', reaches: 2 },
+    hbArchiveTraining: { success: true },
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },
@@ -1388,7 +1530,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return { success: true, dryRun: !!(opts && opts.dryRun), total: 160, created: 2, updated: 3, unchanged: 153, reviewed: 2,
         skipped: [{ id: 'man-5-9', title: '5.9 Equipment guide', reason: 'edited' }, { id: 'man-1-4', title: '1.4 Difficult calls', reason: 'deleted' }],
         images: (opts && opts.dryRun) ? { total: 160, unchanged: 0, toStore: 160, removed: 0 }
-          : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' } };
+          : { total: 160, unchanged: 0, stored: 160, removed: 0, error: '' },
+        quizzes: (opts && opts.dryRun) ? { total: 4, questions: 38, changed: true } : { total: 4, questions: 38, changed: true, error: '' } };   // HB3.1
     },
     kbPublishManual: function (opts) {
       const dept = (opts && opts.department) || '';
@@ -1517,9 +1660,10 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         days.push({ date: ds, dayLabel: DAY_ABBR[dow] + ', ' + MN[cur.getUTCMonth()] + ' ' + cur.getUTCDate(),
           isWeekend: wk, isToday: isToday, isFuture: future, hasData: has,
           clockIn: has ? '08:02:00' : null, adjClockIn: false,
+          infClockIn: has && cur.getUTCDate() % 7 === 0,   // E2: an inferred Clock In on camera
           lunchOut: has ? '12:00:00' : null, adjLunchOut: false,
           lunchIn: has ? '12:30:00' : null, adjLunchIn: false,
-          clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false,
+          clockOut: (has && !inc) ? '17:02:00' : null, adjClockOut: false, infClockOut: false,
           // Every break pair, mirroring buildTimesheetForEmployee_ (INV-185).
           breaks: has ? [{ out: '12:00:00', in: '12:30:00' }] : [],
           hoursWorked: hrs, isIncomplete: inc, inProgress: false });
@@ -1767,7 +1911,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       return {
         days: [{
           date: start, dayName: 'Tue',
-          clockIn: '08:00:00', clockOut: '21:00:00',
+          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: false, infClockOut: false,
           lunchOut: '12:00:00', lunchIn: '12:30:00',
           breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
           openBreak: null,   // T1: a closed day — the leave-with-no-return field is null
@@ -1780,6 +1924,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // Operator 2026-09-03: the queue sits beside Pending Time Off, so the
     // Manage shots carry two rows (keys mirror managerGetPendingAdjustments'
     // own push literal — INV-185).
+    // E2 (operator 2026-10-28): Day Edit's app-activity read — a FUNCTION of
+    // the date (F14). Keys mirror managerGetDayActivity's return (INV-185):
+    // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
+    managerGetDayActivity: function (empId, date) {
+      var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
+      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 60,
+        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
+    },
     managerGetPendingAdjustments: { requests: [
       { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
       { reqId: 'req-2', empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), punchType: 'ClockOut', time: '19:00', reason: '', action: 'resume', endTime: '21:15', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 17:40:00' },   // T3: a filed finish
@@ -1802,9 +1954,9 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     getTeamCalendar: function (month) {
       var y = parseInt(month.slice(0, 4), 10), m = parseInt(month.slice(5, 7), 10);
       var reps = [
-        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, breaks: [{ out: '12:00:00', in: '12:30:00' }], hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
-        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, breaks: [{ out: '11:45:00', in: '12:15:00' }, { out: '15:00:00', in: '15:10:00' }], hours: 8.35, incomplete: false, inProgress: false, punchCount: 6 },
-        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, breaks: [], hours: null, incomplete: true, inProgress: false, punchCount: 1 },
+        { id: 'E-1042', name: 'Avery Blake', clockIn: '08:02:00', adjClockIn: false, lunchOut: '12:00:00', adjLunchOut: false, lunchIn: '12:30:00', adjLunchIn: false, clockOut: '17:01:00', adjClockOut: false, infClockIn: true, infClockOut: false, breaks: [{ out: '12:00:00', in: '12:30:00' }], hours: 8.48, incomplete: false, inProgress: false, punchCount: 4 },
+        { id: 'E-1077', name: 'Nina Patel', clockIn: '07:58:00', adjClockIn: false, lunchOut: '11:45:00', adjLunchOut: false, lunchIn: '12:15:00', adjLunchIn: false, clockOut: '16:59:00', adjClockOut: true, infClockIn: false, infClockOut: false, breaks: [{ out: '11:45:00', in: '12:15:00' }, { out: '15:00:00', in: '15:10:00' }], hours: 8.35, incomplete: false, inProgress: false, punchCount: 6 },
+        { id: 'E-1088', name: 'Sam Ortiz', clockIn: '08:31:00', adjClockIn: false, lunchOut: null, adjLunchOut: false, lunchIn: null, adjLunchIn: false, clockOut: null, adjClockOut: false, infClockIn: false, infClockOut: false, breaks: [], hours: null, incomplete: true, inProgress: false, punchCount: 1 },
       ];
       var days = {}, last = new Date(y, m, 0).getDate();
       for (var d = 1; d <= last; d++) {
@@ -1853,7 +2005,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
     // return sites (INV-185); the OOP rows carry MULTIPLE priced columns,
     // because a single-price item is exactly the shape that hid the prices[0]
     // defect from the operator's own post-deploy check.
-    searchInsurancePayors: { total: 3, cap: 8, matches: [
+    searchInsurancePayors: { total: 4, cap: 8, matches: [
       { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
@@ -1874,8 +2026,14 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
       { name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] }],
+      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
+      { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+        reimbursement: 'Yes', details: [], excludedState: 'TX' }],
       codeJoin: { attempted: true, error: '' } },
+    // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
+    kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
+      ['hcsc', 'health care service corporation']] },
     searchOopPricing: { total: 2, cap: 8, matches: [
       { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open',
         codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
@@ -1888,9 +2046,18 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       { name: 'Bariatric Transfer Bench', code: 'K0821/23/16', effective: '', eligibility: 'TX, OK',
         codes: { raw: 'K0821/23/16', shaped: true, certain: false, tokens: [] },
         price: '', prices: [], details: [] }] },
+    // 25post C1: the eligibility map — a placeholder picture (the real one is
+    // drawn by Apps Script's Maps service), the ring round the nearest, one
+    // farther warehouse counted rather than drawn.
+    oopEligibilityMap: { img: 'data:image/png;base64,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', ringMiles: 100,
+      nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas', 'Houston', 'San Antonio'], omitted: 1, route: 'Dallas' },   // E2 (b): the drive was drawn
     checkOopEligibility: { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving',
-      total: 2, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4 }, { name: 'Houston', miles: 225.0 }],
+      total: 4, cap: 12, warehouses: [{ name: 'Dallas', miles: 12.4, driveMiles: 15.8, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }, { name: 'Houston', miles: 225.0, driveMiles: null }, { name: 'San Antonio', miles: 254.1, driveMiles: null }, { name: 'Honolulu', miles: 3770.2, driveMiles: null }],
+      // Round 12 E2 (b): the drives this answer used (checkOopEligibility's `drive`).
+      drive: { miles: { Dallas: 15.8 }, fastest: { Dallas: 17.2 }, poly: { Dallas: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' }, noRoute: [], unavailable: [], reason: '', looked: 1 },
       deliveryCities: [{ name: 'Irving', state: 'TX', accepts: 'POV, scooter' }],
+      // 25post B1: a rep sees the COUNT of unusable delivery-table rows on one line.
+      locationWarnings: ['a warehouse row with no name'], isAdmin: false, cityFrom: '',
       items: [
         { name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: 'Open', rule: 'open',
           codes: { raw: 'K0800 (C/C)', shaped: true, certain: true, tokens: ['K0800'] },
@@ -1904,7 +2071,21 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
         { name: 'Portable Oxygen Concentrator', code: 'E1392', effective: '06/01/2026', eligibility: 'FL, GA, NC', rule: 'states',
           price: '$2,150.00', prices: [{ label: '', value: '$2,150.00' }], details: [],
           insurance: { verdict: 'no', near: false, why: 'TX is not a listed state.' },
-          oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } }] },
+          oop: { verdict: 'yes', near: false, why: 'Out of pocket there is no state restriction (the sheet limits insurance orders to FL, GA, NC).' } },
+        // Round 12 E2 (b): a radius rule judged on the drive.
+        { name: 'Bariatric Power Chair', code: 'K0861', effective: '09/16/2026', eligibility: '100 miles of Dallas warehouse', rule: 'radius',
+          price: '$3,980.00', prices: [{ label: '', value: '$3,980.00' }], details: [{ label: 'Category', value: 'Power chair' }],
+          insurance: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' },
+          oop: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' } },
+        // 25post B3: a union that is neither a yes nor a no — one short line per rule.
+        { name: 'Island Scooter Program', code: 'K0827', effective: '09/16/2026', eligibility: '100 miles of Honolulu warehouse, or listed cities', rule: 'any',
+          price: '$1,480.00', prices: [{ label: '', value: '$1,480.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
+          insurance: { verdict: 'unknown', near: false, why: '3,770.2 mi from Honolulu (>100 mi). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3,770.2 mi from Honolulu (>100 mi).' },
+              { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] },
+          oop: { verdict: 'unknown', near: false, why: '3,770.2 mi from Honolulu (>100 mi). Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.',
+            parts: [{ rule: 'Distance', verdict: 'no', why: '3,770.2 mi from Honolulu (>100 mi).' },
+              { rule: 'City list', verdict: 'unknown', why: 'Irving is listed, but its State cell ("Texs") could not be read. Fix it in LocationAcceptance to get a firm answer.' }] } }] },
     // E6 (cycle 25, G4): an admin's request carries the search hint (the
     // vocabulary terms in its topic that people searched for).
     kbGetContentRequests: { open: [
@@ -2460,6 +2641,8 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
                    external: [], ownDomain: 'umsupply.com' },
         // 25post — mailQuotaStatus_'s shape; a busy afternoon, the warn tone.
         mailQuota: { remaining: 240, warnAt: 300, bccPerSend: 1, error: '' },
+        // Round 12 E2 (b) — routeLookupStatus_'s shape; a busy day, the warn tone.
+        routeLookups: { used: 6720, cap: 8000, hours: 24, error: '' },
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
@@ -2689,6 +2872,7 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       propStore: { valueMax: 9000, storeMax: 512000, warnPct: 80, count: 9, bytes: 8200,
                    largestKey: 'CN_EMAIL_TEMPLATES', largestBytes: 2100, error: '' },
       mailQuota: { remaining: 1320, warnAt: 300, bccPerSend: 0, error: '' },
+      routeLookups: { used: 412, cap: 8000, hours: 24, error: '' },
       kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
     },
   };
@@ -2723,5 +2907,5 @@ function spanishAutoAssignPick_(unclaimed, members, load) {
       },
     });
   }
-  window.google = { script: { get run() { return makeChain(null, null); }, host: { close: function () {} }, history: { push: function () {}, replace: function () {} } } };
+  window.google = { script: { get run() { return makeChain(null, null); }, host: { close: function () {} }, history: { push: function () {}, replace: function () {}, setChangeHandler: function () {} } } };
 })();

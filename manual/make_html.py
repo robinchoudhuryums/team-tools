@@ -664,6 +664,12 @@ figure.gallery .galstep{width:32px;height:32px;border-radius:50%;font-size:16px;
 figure.gallery .galdot{width:10px;height:10px;padding:0;border-radius:50%;background:var(--rule)!important}
 figure.gallery .galdot.cur{background:var(--cur,var(--accent))!important;border-color:transparent}
 figure.gallery:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+figure.shot .notes{font-size:13px;line-height:1.5;color:var(--ink);text-align:left;max-width:680px;margin:8px auto 0}
+figure.shot .notes p{margin:6px 0}
+figure.shot .notes ul{margin:4px 0 6px 20px;padding:0}
+figure.gallery .notesbtn{display:block;margin:6px auto 0;font:inherit;font-size:12px;cursor:pointer;border:1px solid var(--rule);
+  background:var(--bg);color:var(--accent);border-radius:999px;padding:2px 12px}
+figure.gallery .notes.shut{display:none}
 figure.shot img.zoom{cursor:zoom-in}
 .lb{position:fixed;inset:0;z-index:1000;background:rgba(15,20,25,.88);display:flex;flex-direction:column;cursor:zoom-out}
 .lb[hidden]{display:none}
@@ -691,7 +697,7 @@ figure.shot img.zoom{cursor:zoom-in}
 #ppop .ppc{margin-top:6px;font-size:12.5px;line-height:1.4;color:var(--muted)}
 @media print{#ppop{display:none!important}.peek[tabindex]{text-decoration:none}}
 @media print{.lb{display:none!important}}
-@media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span{display:none}}
+@media print{figure.gallery.on .slide{display:block}figure.gallery .galnav,figure.gallery .galhead span,figure.gallery .notesbtn{display:none}figure.gallery .notes.shut{display:block}}
 main > figure.shot{max-width:860px}
 @media print{figure.shot{break-inside:avoid}}
 img.thumb{float:left;width:52px;height:52px;object-fit:contain;margin:1px 12px 2px 0;
@@ -1788,7 +1794,17 @@ window.addEventListener('resize',twAll);
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(twAll);
 // a tutorial slideshow steps one slide at a time (operator 2026-10-19); it wraps
 // at either end, and ← / → step it when it has focus
+// a slide's longer text (operator 2026-10-28) folds under "Show details" on
+// screen; print shows it (the .notes.shut print rule), and with no script it shows
+let galNotes=0;
 mainEl.querySelectorAll('figure.gallery').forEach(g=>{
+ g.querySelectorAll(':scope > .slide > .notes').forEach(nt=>{
+  const b=document.createElement('button');b.type='button';b.className='notesbtn';
+  nt.id='gn'+(++galNotes);nt.classList.add('shut');
+  b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls',nt.id);b.textContent='Show details';
+  b.addEventListener('click',()=>{const shut=nt.classList.toggle('shut');b.setAttribute('aria-expanded',shut?'false':'true');b.textContent=shut?'Show details':'Hide details';});
+  nt.before(b);
+ });
  const sl=[...g.querySelectorAll(':scope > .slide')],n=sl.length;if(n<2)return;
  const head=document.createElement('div');head.className='galhead';
  const t=document.createElement('b');t.textContent=g.dataset.title||'Slideshow';

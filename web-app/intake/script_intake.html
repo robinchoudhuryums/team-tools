@@ -220,6 +220,11 @@
 
   /* Tokened group header (Sent list/detail + legacy uses; no more navy --brand) */
   .intk-head { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--paper-2); padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  /* A1 — a Sent PPD's recommendations: the group label, the code with its ★ / status under it, the reason beside it. */
+  .intk-sent-grp { font-size: .74rem; font-weight: 600; color: var(--ink); padding: 8px 14px 2px; }
+  .intk-sent-rec .q { font-weight: 700; }
+  .intk-sent-sel { display: block; font-weight: 400; font-size: .76rem; color: var(--muted); margin-top: 2px; }
+  .intk-sent-why { font-size: .84rem; }
   .intk-grid { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; background: var(--paper-card); }
   .intk-grid .intk-row { padding-left: 14px; padding-right: 14px; }
 
@@ -3245,21 +3250,11 @@ function intakeRenderSentDetail_(d) {
         '<div class="intk-row"><div class="q">' + esc(nls.label) + '</div>' +
         '<div style="white-space:pre-wrap">' + esc(String(notesStored)) + '</div></div>';
     }
-    var recs = [].concat(
-      (d.recommendations && d.recommendations.complex) || [],
-      (d.recommendations && d.recommendations.standard) || []);
-    if (recs.length > 0) {
-      rowsHtml += '<div class="intk-head">Recommendations sent</div>';
-      recs.forEach(function (p) {
-        var rid = String(p.hcpcs).replace(/\s+/g, '-');
-        var sel = (d.selections || {})[rid] || {};
-        var bits = [];
-        if (sel.preferred) bits.push('★ preferred');
-        if (sel.status && sel.status !== 'none') bits.push(sel.status);
-        rowsHtml += '<div class="intk-row"><div class="q" style="font-weight:400">' + esc(String(p.hcpcs)) + '</div>' +
-          '<div style="font-size:.82rem;color:var(--muted)">' + esc(bits.join(' · ') || '—') + '</div></div>';
-      });
-    }
+    // A1 (operator 2026-10-27): each recommendation sent with its REASON, as
+    // the email shows it, grouped Complex / Standard. The reason is the
+    // server's justification — the one raw-HTML field (g44) — drawn as plain
+    // text, exactly as the preview draws it (intakeStripTags_ then esc()).
+    rowsHtml += intakeSentRecsHtml_(d.recommendations, d.selections);
     // Read-only engine explainability — the clinical factors the recommendation
     // engine derived from these answers (server `factors`, recomputed via the
     // shared derivation so it can't drift). Makes "why this HCPCS fired" auditable
@@ -3520,6 +3515,32 @@ function intakeClearForm_(form) {
   else intakeEnterAcct_(form, form === 'pap' ? 'PAP Account' : 'PMD Account');
 }
 
+/** A1 — the "Recommendations sent" rows of a Sent PPD: per group (Complex,
+ *  then Standard — the email's order), the code with its ★ / status, and the
+ *  reason it was recommended — one line per " | " part, as the reasons are
+ *  joined. '' when nothing was sent. Every value esc()'d. */
+function intakeSentRecsHtml_(recommendations, selections) {
+  var r = recommendations || {};
+  var groups = [['Complex', r.complex || []], ['Standard', r.standard || []]]
+    .filter(function (g) { return g[1].length; });
+  if (!groups.length) return '';
+  var html = '<div class="intk-head">Recommendations sent</div>';
+  groups.forEach(function (g) {
+    html += '<div class="intk-sent-grp">' + esc(g[0]) + '</div>';
+    g[1].forEach(function (p) {
+      var rid = String(p.hcpcs).replace(/\s+/g, '-');
+      var sel = (selections || {})[rid] || {};
+      var bits = [];
+      if (sel.preferred) bits.push('\u2605 preferred');
+      if (sel.status && sel.status !== 'none') bits.push(sel.status);
+      var why = intakeStripTags_(p.justification).trim();
+      html += '<div class="intk-row intk-sent-rec"><div class="q">' + esc(String(p.hcpcs)) +
+        (bits.length ? '<span class="intk-sent-sel">' + esc(bits.join(' \u00b7 ')) + '</span>' : '') + '</div>' +
+        '<div class="intk-sent-why">' + (why ? why.split(' | ').map(esc).join('<br>') : '<span style="color:var(--muted);font-style:italic">No reason recorded</span>') + '</div></div>';
+    });
+  });
+  return html;
+}
 function intakeStripTags_(s) { return String(s == null ? '' : s).replace(/<[^>]*>/g, ''); }
 
 // Minimal modal built on the shared .overlay vocabulary. Created via

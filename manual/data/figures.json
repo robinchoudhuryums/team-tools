@@ -80,44 +80,64 @@
   "pickup-ticket-1": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 1 (operator upload 2026-10-21)",
     "alt": "Actions menu, Create Order",
-    "caption": "Step 1 — Actions → Create Order",
+    "caption": "Step 2 — Actions → Create Order",
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
   },
   "pickup-ticket-2": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 2 (operator upload 2026-10-21)",
     "alt": "A new Transaction Work Flow, the patient search box",
-    "caption": "Step 2 — the patient search in the new window",
+    "caption": "Step 3 — the patient search in the new window",
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
   },
   "pickup-ticket-3": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 3 (operator upload 2026-10-21)",
     "alt": "The patient search by date of birth, the patient selected",
-    "caption": "Step 3 — search by date of birth and select the patient",
+    "caption": "Step 4 — search by date of birth and select the patient",
     "reviewed": "2026-10-21 — checked for PHI; the other patients in the search results pixelated; 2026-10-26 — every pixelated detail labelled in (parentheses)"
   },
   "pickup-ticket-4": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 4 (operator upload 2026-10-21)",
     "alt": "Transaction tab: Pick-up type, product category, market and referral source",
-    "caption": "Step 4 — the Transaction tab",
-    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+    "caption": "Step 5 — the Transaction tab",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only",
+    "notes": [
+      "The boxes highlighted are the only ones that should need to be changed.",
+      "- **Transaction Type:** “Pick-Up”",
+      "- **Product Categories:** select all categories of DME being picked up",
+      "- **Market:** select the most accurate location option for the patient",
+      "- **Referral Source:** “UMS MM & GDME Inbound Call”"
+    ]
   },
   "pickup-ticket-5": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 5 (operator upload 2026-10-21)",
     "alt": "Selection tab with the item being picked up",
-    "caption": "Step 5 — the Selection tab",
-    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+    "caption": "Step 6 — the Selection tab",
+    "reviewed": "2026-10-21 — checked for PHI; test patient only",
+    "notes": [
+      "Click ‘+ Expand/Collapse’ to see all the equipment in the patient’s history. You can then add the items to be picked up by clicking the blue ‘+’ next to the item name."
+    ]
   },
   "pickup-ticket-6": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 6 (operator upload 2026-10-21)",
     "alt": "Claim Prep tab",
-    "caption": "Step 6 — Claim Prep",
+    "caption": "Step 1 — Claim Prep: first, check if the items are eligible to be picked up before creating a ticket (if patient-owned, cannot be picked up).",
     "reviewed": "2026-10-21 — checked for PHI; test patient only"
   },
   "pickup-ticket-7": {
     "source": "Pick-Up Ticket Creation Tutorial Slides, slide 7 (operator upload 2026-10-21)",
     "alt": "Ticket tab: pick-up from, pick-up contact and pickup reason",
     "caption": "Step 7 — the Ticket tab",
-    "reviewed": "2026-10-21 — checked for PHI; test patient only"
+    "reviewed": "2026-10-21 — checked for PHI; test patient only",
+    "notes": [
+      "Finally, on the ‘Ticket’ tab we generally only need to change what is highlighted by the red boxes.",
+      "- **Pick-Up From:** confirm the appropriate pick-up address with the caller.",
+      "- **Pick-Up Contact:** confirm the best phone number to contact regarding the pick-up with the caller.",
+      "- **Pick-Up Reason:** select the most accurate reason for the pick-up. *Note:* “Other” is not normally advisable, as one of the other options should be sufficient.",
+      "Do not schedule a date. This is done by Field Ops.",
+      "Special Instructions will be autofilled by the Pick-Up Reason you selected, but any additional details should be added here.",
+      "Double-check the correct items are listed at the bottom of the screen, and adjust in the ‘Selection’ tab if necessary.",
+      "Once everything is complete and accurate, leave your standard notation on the notes of this new transaction. There is no need to do anything else, as the ticket has been automatically saved and is with Field Ops for review."
+    ]
   },
   "o2-cyl-m6": {
     "source": "operator product image 2026-10-21, labels set to the cylinder table's measurements (operator)",

@@ -113,6 +113,28 @@ Both harnesses live outside `web-app/`, so `clasp push` never sees them.
 
 ---
 
+## Reading the Reference client: `kb/script_kb.html` is TWO files
+
+Since handbook app HB1.1a the handbook's rendering layer lives in
+`web-app/shared/script_manual_render.html`, included before
+`kb/script_kb.html`. `harness.js`'s `CLIENT_ALIASES` makes a read of
+`'kb/script_kb.html'` — through `extractScript`, `extractFunction`,
+`loadFunction`, `extractRawFunction` or `readWebFile` — the pair, in include
+order, the client twin of the `'Code.js'` alias below. Read a file directly
+(`fs`) only when the pin is ABOUT the two files apart, as the HB1.1a contract
+pin is. A new raw `fs.readFileSync` of `kb/script_kb.html` would silently miss
+every function that moved.
+
+Since HB1.1b the reader calls its host through `MANUAL_HOST` and keeps its own
+state on `MANUAL_STATE`. A sandbox that loads reader functions calls
+`manualHostInto_(ctx)` (run.js), which evaluates the REAL contract from the
+shared file and the REAL Team Tools install from `kb/script_kb.html`. The install
+is late-bound, so the sandbox's stubs (`kbOpenItem_`, `kbPanelPrefs_`, …) are
+what the reader reaches. Seed the reader's fields on `MANUAL_STATE`, the host's
+(`tree`, `isAdmin`, `currentId`, `landing`) on `KB_STATE`. `extractFnFrom` stops
+at a `</script>` as well as at the next function, because the last function of
+the shared file is followed by its tag, not by Reference's first function.
+
 ## Reading the server: `serverSource()`, never a filename
 
 `harness.js` exports `serverFiles()` and `serverSource()` (Batch F1).

@@ -83,6 +83,15 @@ not restate it. Server endpoints live in the fourteen server files
      through, so the Dashboard is never empty. A manager saves or clears the
      team default from the same panel. A hidden widget loads nothing.
 
+     **25post round 12 E1 (operator 2026-10-27) — Dept Requests leave Needs
+     you.** The list no longer carries one item per open or incoming request (a
+     rep's list does not read the tracker at all). A manager gets ONE item,
+     "Department replies running late", while any department has at least a
+     quarter of its open requests past their SLA and more than three of them
+     (`drLateDepartments_`, `DR_LATE_SHARE` / `DR_LATE_MIN`), naming each such
+     department ("Billing 5 of 12 past SLA"), worst share first, and opening the
+     Dept Requests tab. Spanish Inbox items stay as they were.
+
      **Cycle 23 Batch 6a (2026-10-02) — PTO and punch correctness.** A
      single-date time-off request on a weekend or company holiday is refused by
      name, as the range path already skipped them (rep and manager). An
@@ -249,6 +258,26 @@ not restate it. Server endpoints live in the fourteen server files
      flags a clocked-in rep idle 30+ minutes — no app activity and no punch,
      scheduled breaks taken out — with an amber chip and a line under the card
      (`liveIdleMin_`, INV-391; in-app only).
+
+     **25post round 12 E2 (operator 2026-10-28): app activity and inferred
+     punches.** Every presence ping (a real gesture, at most one per window per
+     10 minutes) also appends `[time, empId, ms]` to the ADP sheet's
+     **ActivityLog** tab (`activityLogAppend_` — best-effort, unlocked, ids and
+     times only; the nightly diagnostics purge keeps `ACTIVITY_LOG_DAYS`, 60).
+     Day Edit reads the rep's day in their timezone (`managerGetDayActivity`,
+     manager-gated; a binary search on the time column, then only that slice's
+     ids) and draws it as 10-minute blocks. The first ping is offered as Clock
+     In and the last as Clock Out — Out only on a past day, never in range
+     mode, each only for an empty slot. **Apply** fills the slot, which stays
+     editable and is tagged **Inferred (app activity)** while it holds that
+     value; the save sends `slots.inferred` and `managerSaveDay` writes
+     `ADP_INFERRED_MARK` into Timesheet **column J** (`ADP.INFERRED`, past the
+     nine columns the ADP upload copies). The team calendar, the pay statement
+     and Day Edit show the mark (`infClockIn` / `infClockOut` — the shown, last
+     row's); a rep's adjustment or an approval that rewrites the time clears
+     it. The export file is untouched: the inferred punches are listed beside
+     the export link and in the automated export email
+     (`exportInferredLines_`).
 
 ## Call Notes
 
@@ -875,6 +904,15 @@ not restate it. Server endpoints live in the fourteen server files
      hashed body (`INTAKE_PREVIEW_IMG_SLOT`, `intakePreviewFillImages_`), so the
      preview shows the card images where the email will; email card images are
      340px (`INTAKE_EMAIL_IMG_WIDTH`, with a width attribute for Outlook).
+     **25post round 12 A (2026-10-27):** a Sent PPD lists each recommendation
+     with the reason it was sent with, Complex then Standard, one reason per
+     line, the ★ / status under the code (`intakeSentRecsHtml_`; the stored
+     justification drawn as text, as the preview draws it). A model whose
+     capacity RANGE starts above zero ("301-450") is on the list because of the
+     patient's weight, and its reason now says so — "Weight 320 lbs — within
+     this model's 301–450 lbs range" (`intakeWeightReason_`), in the preview,
+     the email and the Sent record (the call note carries codes only); a plain cap or a range from
+     zero adds nothing. Older submissions keep the reasons they were sent with.
 
 ## Reference
 
@@ -927,6 +965,24 @@ not restate it. Server endpoints live in the fourteen server files
      (accepted/in-network good; TRY info; location/SI/PR/plan-specific
      warn; not-accepted/OON bad). The rep's QUERY is never persisted (the
      kbMapDistances posture).
+
+     **States, aliases and excluded states (operator 2026-10-27, round 12 D).**
+     `insPayorMatch_` reads the STATES in a query on their own — by code or full
+     name, either way round, whole words only (`insStatesIn_`: a code counts in
+     a payor NAME only in capitals, and in a query in any case except "in",
+     "or" and "me") — and scores the rest of the query through the old
+     `insPayorScore_`, as typed and as each alias the **Synonyms** list gives it
+     (`KB_SEARCH_SYNONYMS`, the list KB search already reads). So "uhc tx" finds
+     "UnitedHealthcare Texas" and "unitedhealthcare texas" finds "UHC TX". A plan
+     naming the searched state ranks above a national one, which ranks above
+     one for another state; a state alone lists the plans that name it. A plan
+     whose name EXCLUDES the state ("UHC (all states other than TX)" —
+     `insPayorNameStates_`) is still listed, LAST, with a "TX excluded" note
+     (`excludedState`). The Synonyms editor's **Suggest payor aliases**
+     (`kbSuggestPayorSynonyms`, admin, read-only) offers groups from the
+     InsurancePayors names — each `INS_PAYOR_ALIAS_FAMILIES` family one of whose
+     terms a name carries, and each "Long Name (ABC)" the sheet spells out —
+     appended to the box for the admin to review; nothing is saved until Save.
 
      **The acceptance vocabulary explains itself (T2, 2026-09-21).** `INS_TERMS`
      is the ONE source for the legend, for the per-value explanations, and — by
@@ -1219,7 +1275,16 @@ not restate it. Server endpoints live in the fourteen server files
      the file nor the images go through Drive: the admin chooses `manual.json`
      from their computer), and the reader asks `getManualImages` for a page's
      images in one or two calls. A chip shows while one loads, and says "not imported yet" or
-     "could not load" when it cannot draw. A re-import rewrites the tab only
+     "could not load" when it cannot draw. Since round 12 D4 (operator
+     2026-10-27, "I sometimes think I don't have an image uploaded but it is
+     just taking time to load") the chip says so in its own text
+     (`kbImgChipState_`, shared with article images): **Loading image…** over a
+     shimmer the size of the image (a figure, a thumbnail, or a small square for
+     an icon), **Image not imported yet** (an admin is pointed at Reference →
+     Handbook → Import), or **Couldn't load this image** with a **Retry** that
+     asks again (a failure is never cached). An article image reads **Image not
+     stored** for its missing case. The image's name rides `data-alt`, so the
+     image that replaces the chip keeps it as its alt. A re-import rewrites the tab only
      when an image changed or was dropped. The Manual dialog reports the images
      too — what would be stored on a check; what was stored and removed on an
      import, and a failed write with "press Import again".
@@ -1291,6 +1356,70 @@ not restate it. Server endpoints live in the fourteen server files
      One highlighter (`kbHighlightTerms_`) serves the Reference tab, the drawer,
      the cross-reference preview and the Call Notes searches, whose substring
      hits (a TRX fragment) keep their mark the same way.
+
+     **The eligibility answer, tidied (operator 2026-10-27, round 12 B).** Above
+     the results: the address, the NEAREST warehouse on its own line (every
+     distance folded under "All warehouse distances"), and — when the delivery
+     table has rows it cannot use — one line for a rep ("N rows … a 'No' may be
+     wrong — tell a manager"); an admin gets "fix them in LocationAcceptance"
+     and the rows by name (`isAdmin` on the payload). Where Google gives no city
+     (every Queens and Brooklyn address) the borough, else the neighborhood,
+     stands in and is named as one (`cityFrom`); a stand-in missing from the
+     city list is "Cannot tell", never "No", since the list may name the city
+     proper. On each item the verdict's label and word sit on one line and the
+     reason on its own below; a union's No or Cannot tell gives one short line
+     per rule ("Distance: No — …", "City list: Cannot tell — …", the server's
+     `parts`, `oopRuleLabel_`). The item's facts are a two-column list (Code,
+     Effective, then the sheet's own columns) instead of chips, and the Area
+     line steps aside wherever a verdict answers it — the price lookup keeps it.
+     A distance reads "1,380.6 mi from Dallas (>100 mi)" / "12 mi from Dallas
+     (within 100 mi)" (`oopMilesFmt_`); only a near-the-limit yes repeats that
+     the drive is longer than the straight line.
+
+     **The eligibility map (operator 2026-10-27, round 12 C).** Under the
+     nearest-warehouse line: **Show map** and **Driving route from <nearest>**.
+     The route opens Google Maps directions from that warehouse's address to the
+     address Google read — the real drive, where every figure above is a straight
+     line. Show map draws nothing until pressed; `oopEligibilityMap` then has
+     Apps Script's built-in Maps service (no API key, no billing) draw a static
+     picture: the address (A), the nearest warehouse and any other within 300
+     miles (W), and the 100-mile ring round the nearest (`oopMapPlan_`,
+     `oopRingPoints_`); a farther warehouse is counted under the map, not drawn,
+     since it would zoom the picture out to nothing. One read per address per
+     page (a failure is not kept), never cached on the server, and an error
+     never quotes the address or the service's own message.
+
+     **"except <state>" is an insurance exclusion (operator 2026-10-27, round 12
+     D5).** "Scooters may be available out of pocket in Hawaii, just not through
+     insurance." An Area Eligibility cell ending in "except Hawaii" (also
+     "(except Hawaii and Alaska)", "excluding", "other than", a code in
+     capitals) is read by `oopExceptStatesClause_` and the rest parsed on its
+     own: `{kind: 'except', states, rule}`. Through insurance the rule
+     underneath answers first and the excluded state is a NO ("Not through
+     insurance in HI"); out of pocket `oopEligibilityForPayment_` lifts it like
+     a state list. Every word after the keyword must be a state, or the value
+     stays unknown (K3), and the clause never rescues an unreadable rest.
+
+     **The drive decides a distance rule (operator 2026-10-28, round 12 E2 b).**
+     For warehouses already within the largest limit in a straight line
+     (nearest first, at most `OOP_DRIVE_MAX_LOOKUPS`), the check asks Apps
+     Script's built-in route lookup for the drive with alternatives on
+     (`oopDrivingRoute_`), and `oopRoutePick_` keeps the SHORTEST route Google
+     offered — the operator's rule: eligible when any offered route is within
+     the limit, even if the fastest is not. The card reads "94 mi drive from
+     Dallas (within 100 mi; the fastest route is 106 mi)"; no road route is a
+     no; a straight line over the limit is still a certain no with no lookup.
+     Every lookup counts against the deployer's daily "Map Direction query"
+     quota, so the app keeps its own 24-hour count (`ROUTE_LOOKUPS_24H`, hourly
+     buckets) and stops at `ROUTE_LOOKUP_CAP` (8,000, under Google's documented
+     10,000 for Workspace); past it, with an unreadable count, or on any failure
+     the check falls back to the straight line and SAYS so — a line above the
+     verdicts and "Driving distance unavailable — straight line shown" on
+     each. The page keeps its drives per address and sends them back with the
+     next check of the same address (a hint is believed only when it is not
+     shorter than the straight line); the map draws the drive it was given and
+     never looks one up. No address is stored. Admin → System shows "Route
+     lookups: N of 8,000 in the last 24 hours" (`routeLookupStatus_`).
 
      **Cycle 24 manual update (2026-10-06 → 10-07, the operator's edit list —
      `.cycle/manual-update-plan.md`).** The manual source is edited and RENUMBERED
@@ -1415,6 +1544,36 @@ not restate it. Server endpoints live in the fourteen server files
        key as a citation (`kbManualImagesValidate_`). The HTML handbook does the
        same (`#ppop`, each named image carried once in `PEEK` with its size);
        Word and print keep the words.
+     - **2026-10-28:** a slideshow slide can carry DETAILS — the field-by-field
+       instructions under a short caption. In the source they are a figure's
+       `notes` in `figures.json` (a `- ` line is a bullet; `**bold**`, `*italic*`);
+       the export writes them as two-space-indented lines under the slide's line
+       in the ` ```gallery ` fence, and `kbGalleryHtml_` draws them below the
+       image, shut, under a "Show details" button (`kbGalNotesHtml_`,
+       `kbGalleryNotes_` — hidden by class, `aria-expanded` kept in step). Below
+       rather than beside, because a CRM screenshot needs the column's whole
+       width. Print rule 7 opens every slide's details and drops the button; the
+       HTML handbook does the same (`.notesbtn`), and Word prints them under each
+       image. An older reader ignores the indented lines. First used by 6.9.3's
+       pick-up ticket slideshow, whose Claim Prep slide is now Step 1.
+     - **2026-10-28 (handbook app HB1.1a/b):** the renderer (`kbMd_` and its
+       blocks, images, viewer, peek) and the reader screen (masthead, quick
+       cards, reader bar, chapter nav, spy, trail, resume, cross-reference
+       previews) live in `web-app/shared/script_manual_render.html`, included
+       before `kb/script_kb.html`, so the stand-alone handbook app can include the
+       same file. Reference is the reader's host: it installs the `MANUAL_HOST`
+       hooks at load; the reader's own state is `MANUAL_STATE`. No visible change.
+     - **2026-10-29 → 10-30 (handbook app HB1.4–HB4.1), what changed in Team
+       Tools:** every Import refreshes the handbook app's copy of the search
+       synonyms and auto-tag rules (`KbSearchConfig`, HB1.4); the Import also
+       stores the handbook's published official quizzes in `ManualQuizzes`
+       (HB3.1 — drafts are held back at export, HB3.5) and its form PDFs in
+       `ManualFiles` (HB4.1), each said on its own dialog line ("Quizzes:",
+       "Forms:"); the quiz engine moved into `80_training.js`'s shared helpers
+       with Team Tools' own quizzes unchanged (HB3.1). The shared reader (HB2.4):
+       the bar's previous/next buttons are named for the section they open, a
+       slideshow announces each slide, an overflowing table is a named Tab stop,
+       and links and the modal primary take the darker green in light mode.
 
      **Cycle 23 Batch 2 (2026-10-01) — the eligibility lookup reads less
      generously.** "TX or OK" is Texas and Oklahoma (no longer Oregon); a state

@@ -1019,6 +1019,34 @@ test('F3: intakeClearForm_ nulls INTAKE_STATE.preview (drops cached patient PHI)
   assert.strictEqual(h.window.INTAKE_STATE.preview, null, 'cached preview (patient answers) cleared on form clear');
 });
 
+test('A1 DOM (operator 2026-10-27): a Sent PPD shows each recommendation WITH its reason, Complex before Standard, the stored HTML drawn as plain text, the selection beside the code', () => {
+  const h = boot();
+  const host = h.window.document.createElement('div');
+  host.innerHTML = h.window.intakeRenderSentDetail_({
+    formType: 'PPD', submissionId: 'P1', language: 'EN', answers: { '38': '320 lbs' }, feedback: [],
+    recommendations: {
+      complex: [{ hcpcs: 'K0843 (substitute K0862)', justification: 'MPO - <span style="text-decoration: underline;">Provide <strong>K0862</strong> as free upgrade</span>' }],
+      standard: [{ hcpcs: 'K0825', justification: "Captain's Seat | Weight 320 lbs — within this model’s 301–450 lbs range" },
+        { hcpcs: 'K0823', justification: '<img src=x onerror=alert(1)>' }],
+    },
+    selections: { 'K0825': { preferred: true, status: 'accepted' } },
+    factors: [],
+  });
+  const heads = Array.from(host.querySelectorAll('.intk-head')).map((e) => e.textContent);
+  assert.ok(heads.indexOf('Recommendations sent') >= 0, 'the section is there');
+  assert.deepStrictEqual(Array.from(host.querySelectorAll('.intk-sent-grp')).map((e) => e.textContent).join('|'), 'Complex|Standard', 'Complex first, as the email orders them');
+  const recs = Array.from(host.querySelectorAll('.intk-sent-rec'));
+  assert.strictEqual(recs.length, 3);
+  assert.strictEqual(recs[0].querySelector('.intk-sent-why').textContent, 'MPO - Provide K0862 as free upgrade', 'the stored HTML reads as its text');
+  assert.ok(/K0825/.test(recs[1].querySelector('.q').textContent) && recs[1].querySelector('.intk-sent-sel').textContent === '★ preferred · accepted', 'the selection rides under the code');
+  assert.strictEqual(recs[1].querySelector('.intk-sent-why').innerHTML, "Captain's Seat<br>Weight 320 lbs \u2014 within this model\u2019s 301\u2013450 lbs range", 'the A2 weight reason is shown, one reason per line');
+  assert.strictEqual(recs[2].querySelector('.intk-sent-sel'), null, 'no selection, no line');
+  assert.strictEqual(host.querySelector('img'), null, 'a hostile justification stays inert');
+  // Nothing sent → no section.
+  host.innerHTML = h.window.intakeRenderSentDetail_({ formType: 'PPD', submissionId: 'P2', language: 'EN', answers: {}, feedback: [], recommendations: { complex: [], standard: [] }, factors: [] });
+  assert.ok(!/Recommendations sent/.test(host.textContent), 'no recommendations → no empty section');
+});
+
 test('I1 (cycle 22): an amend lands on a BLANK form in the original language — the rep\'s draft never survives into it', () => {
   // The rep has another patient's PPD in progress (a stored draft). They open a
   // Spanish submission for patient A and press Amend. Before I1 the language
@@ -2114,6 +2142,77 @@ test('F5 (cycle 22 follow-on): a STRAY break stamp renders as a flagged half row
   assert.strictEqual(h.run.pending('managerSaveDay').length, 1, 'resolved, the day saves');
 });
 
+test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, offers the first / last ping as Clock In / Out, Apply fills an editable slot tagged Inferred, and the save says which slots are still inferred', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const today = h.read('_deDate'), tz = h.read('empTz')();
+  const blocks = new Array(144).fill(0); for (let b = 47; b <= 102; b++) blocks[b] = (b >= 72 && b <= 75) ? 0 : 1;
+  const act = (date) => ({ date, timezone: tz, blockMin: 10, gapMin: 10, retentionDays: 60, pings: 52, first: '07:56', last: '17:06', blocks });
+  const panel = () => h.document.getElementById('de-act');
+  const ci = h.document.getElementById('de-clockin'), co = h.document.getElementById('de-clockout');
+  const tagIn = h.document.getElementById('de-clockin-inf'), tagOut = h.document.getElementById('de-clockout-inf');
+  assert.ok(panel().hidden, 'nothing until the read lands');
+  h.run.flushSuccess({ days: [{ date: today, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess(act(today), 'managerGetDayActivity');
+  assert.ok(!panel().hidden && panel().querySelectorAll('.de-act-b.on').length > 40, 'the strip shows the active blocks');
+  assert.match(panel().querySelector('.de-act-strip').getAttribute('aria-label'), /from 7:56 AM to 5:06 PM — \d+ of \d+ 10-minute blocks active/);
+  const applyIn = () => panel().querySelector('[data-de-apply="ClockIn"]');
+  assert.ok(applyIn() && /In 7:56 AM/.test(panel().querySelector('.de-act-sug').textContent), 'In is suggested for an empty slot');
+  assert.ok(!panel().querySelector('[data-de-apply="ClockOut"]'), 'Out is NOT suggested on the rep\'s today — they may still be working');
+  applyIn().click();
+  assert.strictEqual(ci.value, '07:56');
+  assert.ok(!tagIn.hidden, 'the slot is tagged Inferred');
+  assert.ok(!applyIn(), 'and its suggestion steps aside');
+  ci.value = '08:10'; ci.dispatchEvent(new h.window.Event('input'));
+  assert.ok(tagIn.hidden, 'typing another time makes it the manager\'s own entry');
+  ci.value = ''; ci.dispatchEvent(new h.window.Event('input'));
+  applyIn().click();
+  h.document.getElementById('de-save').click();
+  const sent = h.run.pending('managerSaveDay')[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sent.args[2].inferred)), { ClockIn: true, ClockOut: false }, 'the save names the inferred slot');
+  // Another day: a late answer for the previous open is dropped; a past day offers Out too.
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const t2 = h2.read('_deDate'), y = h2.read('mgrAddDaysIso_')(t2, -1);
+  const dEl = h2.document.getElementById('de-date');
+  dEl.value = y; dEl.dispatchEvent(new h2.window.Event('change'));
+  h2.run.flushSuccess(act(t2), 'managerGetDayActivity');
+  assert.ok(h2.document.getElementById('de-act').hidden, 'the answer for the day it left never paints');
+  h2.run.flushSuccess(act(y), 'managerGetDayActivity');
+  assert.ok(h2.document.querySelector('#de-act [data-de-apply="ClockOut"]'), 'a past day offers Out');
+  // "To" filled: range mode, no single-day suggestion.
+  const to = h2.document.getElementById('de-date-to');
+  to.value = t2; to.dispatchEvent(new h2.window.Event('change'));
+  assert.ok(!h2.document.querySelector('#de-act [data-de-apply]') && /single day/.test(h2.document.getElementById('de-act').textContent));
+  // A failed read is said, and never blocks the save.
+  const h3 = boot();
+  h3.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const t3 = h3.read('_deDate');
+  h3.run.flushSuccess({ days: [{ date: t3, clockIn: '08:00:00', infClockIn: true, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.ok(!h3.document.getElementById('de-clockin-inf').hidden, 'a SAVED inferred Clock In loads tagged');
+  h3.run.flushFailure(new Error('quota'), 'managerGetDayActivity');
+  assert.match(h3.document.getElementById('de-act').textContent, /could not be read for this day/);
+  assert.ok(!h3.document.getElementById('de-save').disabled, 'Save stays live');
+  // No pings: said as such, no suggestion.
+  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', retentionDays: 60 }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day \(activity is kept 60 days\)/.test(v) && !/data-de-apply/.test(v));
+  // The text comes from the payload only through the HH:mm check.
+  const bad = h3.read('deActivityHtml_')({ pings: 3, first: '<b>x', last: '17:00', blocks: [] }, { clockInEmpty: true });
+  assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');
+});
+
+test('E2 DOM: an inferred punch is marked on the pay statement and in the team calendar', () => {
+  const h = boot();
+  const html = h.read('payStmtHtml_')({ period: { start: '2026-10-01', end: '2026-10-31', cycle: 'Monthly', offset: 0 }, days: [
+    { date: '2026-10-05', dayLabel: 'Mon, Oct 5', hasData: true, clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, hoursWorked: 8.5 },
+    { date: '2026-10-06', dayLabel: 'Tue, Oct 6', hasData: true, clockIn: '08:00:00', clockOut: '17:00:00', hoursWorked: 8.5 }],
+    totalHours: 17, daysWorked: 2, incompleteCount: 0, pto: [], rate: 0, estGross: 0, adjustments: {}, maxOffset: 6 });
+  const box = h.document.createElement('div'); box.innerHTML = html;
+  const chips = box.querySelectorAll('.punch-inf-chip');
+  assert.strictEqual(chips.length, 1, 'one day carries it');
+  assert.strictEqual(chips[0].getAttribute('title'), 'Clock In inferred from app activity by a manager');
+});
+
 test('an older server (scalars only) still prefills its one pair', () => {
   const h = boot();
   h.read('deSetBreaksFromDay_')({ lunchOut: '12:00:00', lunchIn: '12:30:00' });
@@ -3121,9 +3220,9 @@ test('OOP-A DOM: the price lookup rides both hosts; a no-match refuses to offer 
 
   const out = h.$('#kb-oop-results').textContent;
   assert.ok(/\$129\.00/.test(out), 'the price renders as the SHEET displays it');
-  assert.ok(/effective[:\s]+2026-09-01/.test(out), 'with the effective date — a commitment needs its as-of');
-  assert.ok(/area[:\s]+AZ NV/.test(out), 'and the area eligibility');
-  assert.ok(/Manufacturer[:\s]+Acme/.test(out), 'an unrecognised column rides along verbatim');
+  assert.ok(/effective[:\s]*2026-09-01/i.test(out), 'with the effective date — a commitment needs its as-of');
+  assert.ok(/area[:\s]*AZ NV/i.test(out), 'and the area eligibility (the price lookup has no verdict, so it keeps the area line — B3)');
+  assert.ok(/Manufacturer[:\s]*Acme/.test(out), 'an unrecognised column rides along verbatim');
 
   // THE ROW WITH NO PRICE. An empty span here reads as free, or as nothing to
   // say; both are worse than saying it plainly.
@@ -3780,10 +3879,13 @@ test('ELIG DOM: both verdicts render, labelled, on both hosts — a near-boundar
   // near-boundary verdict's reason, so a host-wide regex stayed green with the
   // strip's own caveat deleted (found by bite-check).
   const strips = Array.from(host.querySelectorAll('.kb-ins-more'));
-  const distStrip = strips.filter((d) => /Dallas 182\.4 mi/.test(d.textContent))[0];
-  assert.ok(distStrip, 'the distances render once, above the list');
-  assert.ok(/San Antonio 74\.1 mi/.test(distStrip.textContent), 'every placed warehouse, in one strip');
+  // B1 (operator 2026-10-27): the NEAREST on one line, every distance one tap away.
+  const distStrip = strips.filter((d) => /Nearest warehouse/.test(d.textContent))[0];
+  assert.ok(distStrip, 'the nearest warehouse renders once, above the list');
+  assert.ok(/Nearest warehouse: San Antonio \u00b7 74\.1 mi/.test(distStrip.textContent), 'the nearest, not the first listed');
   assert.ok(/straight-line/.test(distStrip.textContent), 'with the caveat that makes them honest');
+  const all = host.querySelector('details.kb-oop-dist');
+  assert.ok(all && !all.open && /Dallas \u00b7 182\.4 mi/.test(all.textContent) && /San Antonio \u00b7 74\.1 mi/.test(all.textContent), 'every placed warehouse, folded');
 
   // An UNPLACEABLE warehouse is surfaced, not silently dropped — a radius
   // answer measured against some of the warehouses is not a whole answer, and
@@ -3904,8 +4006,8 @@ test('R DOM: the eligibility answer renders EVERY priced column, labelled — th
 
   // ONE renderer means the eligibility row keeps everything the price row had.
   assert.ok(/E0294/.test(row.textContent), 'the code rides it');
-  assert.ok(/effective[:\s]+2026-09-01/.test(row.textContent), 'and the effective date — a commitment needs its as-of');
-  assert.ok(/Weight cap[:\s]+450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
+  assert.ok(/effective[:\s]*2026-09-01/i.test(row.textContent), 'and the effective date — a commitment needs its as-of');
+  assert.ok(/Weight cap[:\s]*450 lb/.test(row.textContent), 'and an unrecognised column still rides along verbatim');
   // The verdicts still ride it. This fixture's two AGREE, so since T4 they
   // render as one row naming both routes rather than two identical ones — the
   // ELIG DOM pin drives the disagreeing branch.
@@ -4091,11 +4193,13 @@ test('T1 DOM: one meaning, one look — an unclassifiable payor status renders l
   h.read('oopLookupInput_')(item);
   h.flushTimers();
   await tick(); await tick();
-  const chips = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-meta-chip'));
-  assert.strictEqual(chips.length, 5, 'code, effective, area and both details are separate chips — ' +
+  // B3 (operator 2026-10-27): a two-column facts list (key · value), not chips.
+  const keys = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-oop-facts dt')).map((d) => d.textContent);
+  assert.strictEqual(keys.join('|'), 'Code|Effective|Area|Category|Shipping', 'code, effective, area and both details are separate rows — ' +
     'the meta mixes a billing code, a date, a delivery rule, money and colour options, and one ' +
     'sentence made every one equally hard to find');
-  assert.ok(chips.some((c) => /Shipping/.test(c.textContent) && /\$150\.00/.test(c.textContent)),
+  const dts = Array.from(h.$('#kb-oop-results').querySelectorAll('.kb-oop-facts dt'));
+  assert.ok(dts.some((d) => d.textContent === 'Shipping' && d.nextElementSibling.textContent === '$150.00'),
     'a detail keeps its key with its value');
 });
 
@@ -4652,9 +4756,10 @@ test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and
   const host = h.$('#kb-oop-results');
   const txt = host.textContent;
 
-  // The dropped row is ON SCREEN, in warn tone, naming the row.
-  assert.ok(/Delivery table:/.test(txt), 'the dropped registry rows are surfaced to the rep');
-  assert.ok(/San Antonio/.test(txt) && /no address/.test(txt), 'naming the row and why it was dropped');
+  // B1 (operator 2026-10-27): a rep sees ONE line — how many rows, and what
+  // it means for a No; the rows by name are an admin's to fix.
+  assert.ok(/1 row in the delivery table can\u2019t be used, so a \u201cNo\u201d may be wrong \u2014 tell a manager\./.test(txt), 'the dropped registry rows are surfaced to the rep, as a count');
+  assert.ok(!/Delivery table:/.test(txt) && !/no address/.test(txt), 'without the row-by-row detail');
 
   // A city-delegated YES names the city, so the rep can see WHICH rule decided.
   const rows = host.querySelectorAll('.kb-ins-row');
@@ -4679,11 +4784,195 @@ test('T7 DOM: a delivery table that dropped rows SAYS so on the rep surface, and
       oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
   }));
   addr.value = '900 Congress Ave, Austin TX';
-  h.read('oopLookupInput_')(addr);
+  h.read('oopAddrConfirm_')(addr);
   h.flushTimers();
   await tick(); await tick();
-  assert.ok(!/Delivery table:/.test(h.$('#kb-oop-results').textContent),
+  assert.ok(/Open Item/.test(h.$('#kb-oop-results').textContent), 'non-vacuity: the clean answer IS the one on screen');
+  assert.ok(!/Delivery table:/.test(h.$('#kb-oop-results').textContent) && !h.$('#kb-oop-results .kb-oop-warn'),
     'a clean delivery table shows NO warning line at all');
+  // An ADMIN gets the rows by name, folded under the same line.
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: '500 Main St, Austin, TX 78701, USA', state: 'TX', city: 'Austin', total: 0, isAdmin: true,
+    warehouses: [{ name: 'Dallas', miles: 182.4 }], deliveryCities: [],
+    locationWarnings: ['"San Antonio" has no address, so no distance can be measured from it.', 'a warehouse row with no name'],
+    items: [{ name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+      insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' },
+      oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
+  }));
+  addr.value = '901 Congress Ave, Austin TX';
+  h.read('oopAddrConfirm_')(addr);                  // K5: a street address runs once CONFIRMED
+  h.flushTimers();
+  await tick(); await tick();
+  const adm = h.$('#kb-oop-results');
+  assert.ok(/2 rows in the delivery table can\u2019t be used, so a \u201cNo\u201d may be wrong \u2014 fix them in LocationAcceptance\./.test(adm.textContent), 'the admin is told where to fix them');
+  const rowsList = Array.from(adm.querySelectorAll('.kb-oop-warn-list > div')).map((d) => d.textContent);
+  assert.ok(rowsList.length === 2 && /San Antonio/.test(rowsList[0]) && /no address/.test(rowsList[0]) && /no name/.test(rowsList[1]), 'naming each row and why it was dropped');
+});
+
+test('B DOM (operator 2026-10-27): the eligibility card — a stand-in city is named, the nearest warehouse leads, a Cannot tell gives one short line per rule, the facts are a two-column list and the area line steps aside for the verdict', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const why = { verdict: 'unknown', near: false,
+    why: '1380.6 mi from Dallas, over the 100 mi limit (straight-line — the drive is longer still). Google gives no city for this address; its borough, Queens, is not a listed service city — confirm the city before answering.',
+    parts: [{ rule: 'Distance', verdict: 'no', why: '1380.6 mi from Dallas, over the 100 mi limit (straight-line — the drive is longer still).' },
+      { rule: 'City list', verdict: 'unknown', why: 'Google gives no city for this address; its borough, Queens, is not a listed service city — <b>confirm</b> the city before answering.' }] };
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: 'Astoria, NY 11104, USA', state: 'NY', city: 'Queens', cityFrom: 'borough', total: 1,
+    warehouses: [{ name: 'Dallas', miles: 1380.6 }, { name: 'Middletown, DE', miles: 151.2 }, { name: 'Brandon, FL', miles: 1003.4 }],
+    deliveryCities: [], locationWarnings: [],
+    items: [{ name: 'Drive Scout 3 Wheel', code: 'K0800 (C/C)', effective: '09/16/2026', eligibility: '100 miles of any warehouse, or listed cities', rule: 'any',
+      prices: [{ label: 'OOP Price - Pick-up', value: '$920.00' }], details: [{ label: 'Category', value: 'POV/Scooter' }],
+      insurance: why, oop: why }],
+  }));
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '11104';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  // B2 — the stand-in city is named as one.
+  assert.ok(/city read as Queens \(Google gave no city — this is its borough\)/.test(host.textContent), 'the borough is named as a stand-in');
+  // B1 — the nearest warehouse leads; the rest are folded.
+  const lead = Array.from(host.querySelectorAll('.kb-ins-more')).filter((d) => /Nearest warehouse/.test(d.textContent))[0];
+  assert.ok(lead && /Middletown, DE · 151\.2 mi \(straight-line\)/.test(lead.textContent) && !/Dallas/.test(lead.textContent), 'the NEAREST, alone on its line');
+  assert.ok(/All warehouse distances \(3\)/.test(host.querySelector('details.kb-oop-dist summary').textContent), 'the rest one tap away');
+  // B3 — one line per rule, the word and the label above it.
+  const v = host.querySelector('.kb-elig-v.unknown');
+  const parts = Array.from(v.querySelectorAll('.kb-elig-part')).map((p) => p.textContent);
+  assert.strictEqual(parts.length, 2, 'one line per rule');
+  assert.ok(/^Distance: No — 1380\.6 mi from Dallas/.test(parts[0]) && /^City list: Cannot tell — Google gives no city/.test(parts[1]), 'each named, with its own answer: ' + parts.join(' / '));
+  assert.strictEqual(v.querySelector('.kb-elig-part b').textContent, 'Distance:', 'the rule name is the bold lead');
+  assert.ok(/<b>confirm<\/b>/.test(parts[1]) && v.querySelectorAll('b').length === 2, 'a server reason stays text — only the rule names are bold');
+  // B3 — the facts list, without the area line under a verdict.
+  const keys = Array.from(host.querySelectorAll('.kb-oop-facts dt')).map((d) => d.textContent).join('|');
+  assert.strictEqual(keys, 'Code|Effective|Category', 'two-column facts; the area rule is what the verdict answers, so it steps aside');
+  assert.ok(!/100 miles of any warehouse, or listed cities/.test(host.textContent), 'the raw area text is not repeated above its own answer');
+});
+
+test('E2b DOM (operator 2026-10-28): the drive is shown beside the straight line, kept for the page and sent back with the next check of the same address, and its line goes to the map; a capped day is SAID above the verdicts', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const sent = [];
+  let reply = 'drive';
+  h.run.respond('checkOopEligibility', (a, q, o) => {
+    sent.push(JSON.parse(JSON.stringify(o || null)));
+    const capped = reply === 'cap';
+    return { success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving', total: 1, deliveryCities: [], locationWarnings: [],
+      warehouses: [{ name: 'Dallas', miles: 12.4, driveMiles: capped ? null : 15.8, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }],
+      drive: capped ? { miles: {}, fastest: {}, poly: {}, noRoute: [], unavailable: ['Dallas'], reason: 'cap', looked: 0 }
+        : { miles: { Dallas: 15.8 }, fastest: { Dallas: 17.2 }, poly: { Dallas: '_p~iF~ps|U' }, noRoute: [], unavailable: [], reason: '', looked: 1 },
+      items: [{ name: 'Chair', price: '$10.00', eligibility: '100 miles of Dallas warehouse', rule: 'radius',
+        insurance: capped ? { verdict: 'yes', near: false, why: '12.4 mi from Dallas (within 100 mi). Driving distance unavailable — straight line shown.' }
+          : { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' },
+        oop: { verdict: 'yes', near: false, drive: true, why: '15.8 mi drive from Dallas (within 100 mi; the fastest route is 17.2 mi).' } }] };
+  });
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  let mapArgs = null;
+  h.run.respond('oopEligibilityMap', (a, o) => { mapArgs = JSON.parse(JSON.stringify(o || null));
+    return { img: 'data:image/png;base64,QUJD', ringMiles: 100, nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas'], omitted: 0, route: 'Dallas' }; });
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '75038';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers(); await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  assert.strictEqual(sent[0].drive, null, 'the first check of an address has no drives to offer');
+  assert.ok(/Nearest warehouse: Dallas · 12.4 mi \(straight-line\) · 15.8 mi drive/.test(host.textContent), host.textContent.slice(0, 200));
+  assert.ok(/15\.8 mi drive from Dallas \(within 100 mi; the fastest route is 17\.2 mi\)/.test(host.textContent), 'the verdict names the drive');
+  // The same address again (another item): the drive rides back.
+  const item = h.$('#kb-oop-item');
+  item.value = 'chair'; h.read('oopLookupInput_')(item, { now: true });
+  h.flushTimers(); await tick(); await tick();
+  assert.deepStrictEqual(sent[1].drive.miles, { Dallas: 15.8 }, 'kept for the page and sent back');
+  assert.strictEqual(sent[1].drive.poly.Dallas, '_p~iF~ps|U');
+  // The map is asked to draw that drive.
+  const btn = host.querySelector('.kb-oop-mapbtn');
+  h.read('oopToggleMap_')(btn); await tick(); await tick();
+  assert.deepStrictEqual(mapArgs, { route: { name: 'Dallas', poly: '_p~iF~ps|U' } });
+  assert.ok(/blue line: the drive from Dallas/.test(host.querySelector('.kb-oop-map').textContent));
+  // A capped day: said above the verdicts, and an unavailable drive is never kept.
+  reply = 'cap';
+  const h2addr = '75039';
+  addr.value = h2addr; h.read('oopAddrConfirm_')(addr);
+  h.flushTimers(); await tick(); await tick();
+  assert.ok(/route-lookup limit is reached\. Distance answers below use the straight line/.test(h.$('#kb-oop-results').textContent));
+  assert.ok(/Nearest warehouse: Dallas · 12.4 mi \(straight-line\)$/m.test(Array.from(h.$$('#kb-oop-results .kb-ins-more')).map((e) => e.textContent).join('\n')), 'no drive beside the straight line');
+  assert.ok(!(h.read('KB_OOP_DRIVE')[h2addr] && Object.keys(h.read('KB_OOP_DRIVE')[h2addr].miles).length), 'nothing kept for that address');
+});
+
+test('E2b DOM: Admin → System says how many route lookups the last 24 hours spent — ok, close to the cap, at the cap, or unknown', () => {
+  const h = boot();
+  const V = h.read('cnRouteLookupsVerdict_');
+  assert.strictEqual(V(null), null, 'an older server: no line');
+  assert.deepStrictEqual([V({ used: 412, cap: 8000, hours: 24 }).tone, V({ used: 6720, cap: 8000 }).tone, V({ used: 8000, cap: 8000 }).tone, V({ used: null, cap: 8000, error: 'x' }).tone],
+    ['ok', 'warn', 'fail', 'warn']);
+  assert.match(V({ used: 412, cap: 8000, hours: 24 }).title, /Route lookups: 412 of 8,000 in the last 24 hours/);
+  const html = h.read('cnRouteLookupsHtml_')({ used: 8000, cap: 8000, hours: 24 });
+  assert.ok(/cn-drive-danger/.test(html) && /limit reached/.test(html));
+});
+
+test('C1 DOM (operator 2026-10-27): Show map draws nothing until pressed, reads ONCE per address, keeps a failure out of the cache, refuses a non-PNG source; the driving route runs from the nearest warehouse to the address Google read', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.run.respond('checkOopEligibility', () => ({
+    success: true, formatted: 'Irving, TX 75038, USA', state: 'TX', city: 'Irving', total: 1, deliveryCities: [], locationWarnings: [],
+    warehouses: [{ name: 'Houston', miles: 225, address: '1 Port Rd, Houston, TX' }, { name: 'Dallas', miles: 12.4, address: '1329 W Walnut Hill Ln, Irving, TX 75038' }],
+    items: [{ name: 'Open Item', price: '$10.00', eligibility: 'Open', rule: 'open',
+      insurance: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' }, oop: { verdict: 'yes', near: false, why: 'Available anywhere in the US.' } }],
+  }));
+  h.run.respond('getReferenceTree', () => ({ items: [], isAdmin: false, isManager: false, departments: [] }));
+  let mapCalls = 0, fail = true;
+  h.run.respond('oopEligibilityMap', (a) => { mapCalls++; if (fail) return { error: 'The map service did not answer — try again, or use the driving-route link.' };
+    return { img: 'data:image/png;base64,QUJD', ringMiles: 100, nearest: { name: 'Dallas', miles: 12.4 }, shown: ['Dallas'], omitted: 1, asked: a }; });
+  h.window.enterTool('reference', 'reference');
+  h.flushTimers();
+  const addr = h.$('#kb-oop-addr');
+  addr.value = '75038';
+  h.read('oopAddrConfirm_')(addr);
+  h.flushTimers();
+  await tick(); await tick();
+  const host = h.$('#kb-oop-results');
+  // The route: from the NEAREST warehouse's address to the address Google read.
+  const route = host.querySelector('a.kb-oop-route');
+  assert.ok(route && /Driving route from Dallas/.test(route.textContent), 'named for the nearest warehouse');
+  const u = new h.window.URL(route.href);
+  assert.strictEqual(u.searchParams.get('origin'), '1329 W Walnut Hill Ln, Irving, TX 75038');
+  assert.strictEqual(u.searchParams.get('destination'), 'Irving, TX 75038, USA');
+  assert.ok(route.target === '_blank' && /noopener/.test(route.rel));
+  // Nothing drawn until pressed.
+  const btn = host.querySelector('.kb-oop-mapbtn');
+  const mapHost = host.querySelector('.kb-oop-map');
+  assert.strictEqual(btn.getAttribute('onclick'), 'oopToggleMap_(this)', 'the button is wired to the toggle');
+  const press = () => h.read('oopToggleMap_')(btn);
+  assert.strictEqual(mapCalls, 0, 'no map read until it is asked for');
+  assert.ok(mapHost.hidden && btn.getAttribute('aria-expanded') === 'false');
+  // A failure says so, and is not kept.
+  press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 1);
+  assert.ok(/did not answer/.test(mapHost.textContent) && !mapHost.querySelector('img'), 'the failure is stated');
+  press(); press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 2, 'a failure is never cached — reopening asks again');
+  // Success: the picture, its key, and one read for the address.
+  fail = false;
+  press(); press(); await tick(); await tick();
+  assert.strictEqual(mapCalls, 3);
+  const img = mapHost.querySelector('img.kb-oop-map-img');
+  assert.ok(img && img.getAttribute('src') === 'data:image/png;base64,QUJD' && /Dallas/.test(img.alt), 'the map, described');
+  assert.ok(/ring: 100 miles round Dallas/.test(mapHost.textContent) && /1 farther warehouse not drawn/.test(mapHost.textContent), 'and its key');
+  assert.strictEqual(btn.textContent.trim(), 'Hide map');
+  press();
+  assert.ok(mapHost.hidden && btn.getAttribute('aria-expanded') === 'false');
+  press(); await tick();
+  assert.strictEqual(mapCalls, 3, 'the same address is read once per page');
+  // Only a PNG data URL is ever a source.
+  assert.ok(/unreadable/.test(h.read('oopMapHtml_')({ img: 'javascript:alert(1)', ringMiles: 100 })) && !/<img/.test(h.read('oopMapHtml_')({ img: 'https://evil/x.png', ringMiles: 100 })));
 });
 
 test('T4 DOM: copy yields the parked FIGURE, and a blocked clipboard SAYS so instead of claiming success', async () => {
@@ -5559,7 +5848,7 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   const fig = h.$('#kb-main img.kb-manimg-figure');
   assert.ok(fig && fig.alt === 'Regulator', 'a figure is a figure');
   const gone = h.$('.kb-manimg[data-manimg="icon-gone"]');
-  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /not imported yet/.test(gone.title), '"not imported" is said, on the chip');
+  assert.ok(gone && gone.getAttribute('data-mi') === 'missing' && /Image not imported yet/.test(gone.textContent) && /Gone icon/.test(gone.title), '"not imported" is said, on the chip (D4: in its text)');
   // A failed call: marked, and NOT cached — the next render asks again, while the successes are remembered.
   h.read('kbOpenItem_')('man-10-1');
   h.run.flushSuccess({ department: 'Chapter 10 — Billing & Denials', sections: [{ id: 'man-10-1', title: '10.1 2026 annual figures', status: 'published', bodyMd: '![Other](manimg:thumb-z) ![New Order icon](manimg:icon-a)' }] }, 'getManualPart');
@@ -5569,12 +5858,62 @@ test('M3 DOM: manual images arrive in ONE batched call per page and are set by p
   assert.ok(h.$('#kb-main img.kb-manimg-icon'), 'and draws at once from the cache');
   h.run.flushFailure(new Error('network'), 'getManualImages');
   const z = h.$('.kb-manimg[data-manimg="thumb-z"]');
-  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /could not load/.test(z.title), 'a failed call is said as a failure, not as "not imported"');
+  assert.ok(z && z.getAttribute('data-mi') === 'failed' && /Couldn’t load this image/.test(z.textContent), 'a failed call is said as a failure, not as "not imported" (D4: in its text)');
   const before = h.run.pending('getManualImages').length;
   doc.getElementById('kb-main').insertAdjacentHTML('beforeend', '<div class="kb-article">' + h.read('kbMd_')('![Other](manimg:thumb-z)') + '</div>');
   await tick(); h.flushTimers(); await tick();
   const c3 = h.run.pending('getManualImages').slice(before);
   assert.ok(c3.some((c) => JSON.stringify(c.args[0]) === '["thumb-z"]'), 'the next render asks for it again (a failure is never cached)');
+});
+
+test('D4 DOM (operator 2026-10-27): an image chip says which state it is in — "Loading image…" over a sized placeholder, "not imported yet" (an admin is told where to import), "Couldn’t load" with a Retry that asks again; an article image the same', async () => {
+  const h = boot();
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  h.window.eval('KB_STATE.isAdmin = true');
+  const art = mount_(h, 'd4-art'); art.className = 'kb-article';
+  art.innerHTML = h.read('kbMd_')('![The Log screen](manimg:fig-d4a) ![Gone figure](manimg:fig-d4b) ![Slow one](manimg:fig-d4c)');
+  await tick(); h.flushTimers(); await tick();
+  const chips = art.querySelectorAll('.kb-manimg');
+  assert.strictEqual(chips.length, 3);
+  chips.forEach((c) => {
+    assert.strictEqual(c.getAttribute('data-mi'), 'loading');
+    assert.ok(/^Loading image…/.test(c.textContent), 'says it is loading: ' + c.textContent);
+    assert.strictEqual(c.getAttribute('aria-busy'), 'true');
+  });
+  assert.strictEqual(chips[0].querySelector('.kb-img-alt').textContent, 'The Log screen', 'and keeps its name under it');
+  h.run.flushSuccess({ success: true, images: {}, missing: ['fig-d4b'], failed: ['fig-d4c'] }, 'getManualImages');
+  const gone = art.querySelector('[data-manimg="fig-d4b"]'), slow = art.querySelector('[data-manimg="fig-d4c"]');
+  assert.ok(/Image not imported yet/.test(gone.textContent) && /Reference → Handbook → Import/.test(gone.textContent), 'an admin is told where: ' + gone.textContent);
+  assert.ok(!gone.querySelector('.kb-img-retry'), 'nothing to retry on a missing image');
+  assert.ok(/Couldn’t load this image/.test(slow.textContent), slow.textContent);
+  const retry = slow.querySelector('button.kb-img-retry');
+  assert.ok(retry && retry.textContent === 'Retry' && retry.type === 'button');
+  const before = h.run.pending('getManualImages').length;
+  h.click(retry);
+  await tick(); h.flushTimers(); await tick();
+  const again = h.run.pending('getManualImages').slice(before);
+  assert.ok(again.some((c) => JSON.stringify(c.args[0]) === '["fig-d4c"]'), 'Retry asks for that image again');
+  assert.strictEqual(slow.getAttribute('data-mi'), 'loading', 'and the chip is loading again');
+  h.run.flushSuccess({ success: true, images: { 'fig-d4c': PNG }, missing: [], failed: [] }, 'getManualImages');
+  const img = art.querySelector('img.kb-manimg-figure');
+  assert.ok(img && img.alt === 'Slow one', 'the image arrives with the chip\'s own name as its alt, not the status words');
+  // A rep is not pointed at an admin screen.
+  h.window.eval('KB_STATE.isAdmin = false');
+  const art2 = mount_(h, 'd4-art2'); art2.className = 'kb-article';
+  art2.innerHTML = h.read('kbMd_')('![Gone too](manimg:fig-d4d)');
+  await tick(); h.flushTimers(); await tick();
+  h.run.flushSuccess({ success: true, images: {}, missing: ['fig-d4d'], failed: [] }, 'getManualImages');
+  const g2 = art2.querySelector('.kb-manimg');
+  assert.ok(/Image not imported yet/.test(g2.textContent) && !/Import it/.test(g2.textContent), g2.textContent);
+  // Article (kbimg) images: the same three states.
+  const k = 'kbimg-' + 'a'.repeat(24);
+  const art3 = mount_(h, 'd4-art3'); art3.className = 'kb-article';
+  art3.innerHTML = h.read('kbMd_')('![Shot](kbimg:' + k + ')');
+  await tick(); h.flushTimers(); await tick();
+  const kc = art3.querySelector('.kb-kbimg');
+  assert.ok(kc.getAttribute('data-ki') === 'loading' && /^Loading image…/.test(kc.textContent));
+  h.run.flushFailure(new Error('network'), 'getKbImages');
+  assert.ok(/Couldn’t load this image/.test(kc.textContent) && kc.querySelector('.kb-img-retry'), kc.textContent);
 });
 
 test('Operator 2026-10-22 DOM: a handbook figure wider than it is drawn opens at full size — a click or Enter, the same image (by property) in an overlay that closes through closeOverlay; a small one stays a plain image', async () => {
@@ -5655,7 +5994,7 @@ test('Operator 2026-10-23 DOM: a slide opens as its slideshow at full size — i
   assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '2 / 3', cap: 'PAR submitted — the method of submission', alt: 'PAR submitted note', box: '', page: '1' }, 'Next steps the viewer AND the page');
   assert.ok(!gal.querySelectorAll('.kb-gal-slide')[1].classList.contains('kb-gal-off'), 'the page shows the same slide');
   h.click(next);
-  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '3 / 3', cap: 'Dual submission', alt: null, box: 'Dual submission note', page: '2' }, 'a slide whose image is not there yet is named, never blank');
+  assert.deepStrictEqual(st(), { t: 'The PAR notes', n: '3 / 3', cap: 'Dual submission', alt: null, box: 'Dual submission note — not imported yet', page: '2' }, 'a slide whose image is not there yet is named, never blank — and says why (D4)');
   ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   assert.strictEqual(st().n, '1 / 3', '→ wraps from the last to the first');
   ov.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
@@ -6273,7 +6612,7 @@ test('MRD-5 DOM (manual reader design Phase 5): explicit opens build the reading
   const h = m4Boot_();
   const w = h.window, doc = w.document;
   const st = h.read('KB_STATE');
-  const ids = () => JSON.parse(JSON.stringify((st.trail || []).map((e) => e.id)));
+  const ids = () => JSON.parse(JSON.stringify((h.read('MANUAL_STATE').trail || []).map((e) => e.id)));   // the trail is the reader's own state (HB1.1b)
   h.read('kbOpenItem_')('man-0-10');
   h.run.flushSuccess(M2_PART0, 'getManualPart');
   assert.ok(!doc.querySelector('#kb-main .kb-trail'), 'one section: no trail row');
@@ -6458,7 +6797,7 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   let during = null;
   w.print = () => { during = { marked: h.$$('.print-one').map((e) => e.className), card: doc.documentElement.hasAttribute('data-print-card'), one: doc.documentElement.hasAttribute('data-print-one') }; };
   const pr = card().querySelector('.kb-man-card-pr');
-  assert.strictEqual(pr.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  assert.strictEqual(pr.getAttribute('onclick'), "MANUAL_HOST.printSection(this.getAttribute('data-kb-id'))");
   h.read('kbPrintSectionById_')(pr.getAttribute('data-kb-id'));
   assert.deepStrictEqual(during, { marked: ['kb-man-card print-one'], card: true, one: true }, 'the masthead card alone, with the card flag');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6475,7 +6814,7 @@ test('MRD-8 DOM (manual reader design Phase 8): once the whole manual has arrive
   const all = h.$('#kb-main .kb-man-mast-acts button');
   assert.ok(all && /Print all cards/.test(all.textContent));
   during = null;
-  assert.strictEqual(all.getAttribute('onclick'), 'kbPrintAllCards_()');
+  assert.strictEqual(all.getAttribute('onclick'), 'MANUAL_HOST.printAllCards()');
   h.read('kbPrintAllCards_')();
   assert.deepStrictEqual(during, { marked: ['kb-man-sec kb-man-p0 print-one'], card: true, one: true }, 'every card section, as cards');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6530,7 +6869,7 @@ test('M4 DOM: Print marks ONLY its own section for the one print block, for exac
   const btn = h.$('#kb-main [data-kb-man-bar] .kb-man-print');
   assert.ok(btn && btn.getAttribute('data-kb-id') === 'man-0-11' && /Print just this section/.test(btn.getAttribute('aria-label')), 'the bar\'s Print names the open section');
   doc.getElementById('kb-man-sec-man-0-10').classList.add('print-one');   // a stale mark from an earlier print
-  assert.strictEqual(btn.getAttribute('onclick'), "kbPrintSectionById_(this.getAttribute('data-kb-id'))");
+  assert.strictEqual(btn.getAttribute('onclick'), "MANUAL_HOST.printSection(this.getAttribute('data-kb-id'))");
   h.read('kbPrintSectionById_')(btn.getAttribute('data-kb-id'));
   assert.deepStrictEqual(during, { marked: ['man-0-11'], root: true }, 'during print(): this section alone, and the root flag the print rules key on');
   w.dispatchEvent(new w.Event('afterprint'));
@@ -6595,7 +6934,7 @@ test('F10 (cycle 25): a search hit\'s slug anchor lands on its sub-heading — t
 
 test('F11 (cycle 25): a failed handbook-meta read answers every waiter as FAILED and is never cached — the next open asks again; "none" is cached; an import forgets the meta, and a read in flight across it is answered but not kept; the call router says it could not load', async () => {
   const h = m4Boot_();
-  const st = h.read('KB_STATE');
+  const st = h.read('MANUAL_STATE');   // the meta is the reader's own state (HB1.1b)
   h.run.pending('getManualMeta').forEach(() => h.run.flushFailure('boot noise', 'getManualMeta'));
   assert.strictEqual(st.manualMeta, undefined, 'a transport failure is not cached');
   const ens = h.read('kbEnsureManualMeta_');
@@ -7097,7 +7436,7 @@ test('M5a DOM: the click lands on that part — the target part loads and the ra
   assert.ok(m5aRow_(doc.getElementById('kb-man-sec-man-5-10'), 'truck lift').classList.contains('kb-h-flash'), 'the truck row lands on the truck answer');
   assert.strictEqual(chips().length, 1, 'a chip again');
   h.read('kbOpenItem_')('man-5-10');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('KB_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.read('MANUAL_STATE').trail.map((e) => e.id))), ['man-0-7', 'man-5-10'], 'opening the section already at the end adds nothing');   // through JSON: the array is the window's (g116)
 });
 
 test('M5a DOM: the drawer keeps the trail — the preview\'s Open lands on the row; leaving a section by a code, a search or the router offers "Back to" it, which restores the scroll and pops (never pushes); closing the drawer forgets the trail', async () => {
@@ -7986,6 +8325,44 @@ test('Seams F4 (cycle 24): the Search synonyms and Revision history × close thr
   });
 });
 
+test('D2/D3 DOM (operator 2026-10-27): a payor plan that excludes the searched state is labelled "TX excluded"; the Synonyms editor appends the payor aliases it is offered, once, for review', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell({ isManager: true, isAdmin: true });
+  h.run.drain();
+  const host = mount_(h, 'kb-ins-results');
+  h.read('insRenderResults_')('', 'uhc tx', { total: 2, cap: 8, matches: [
+    { name: 'UnitedHealthcare Texas', networkStatus: 'in-network', details: [] },
+    { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', details: [], excludedState: 'TX' }] });
+  const cards = host.querySelectorAll('.kb-ins-card');
+  assert.strictEqual(cards.length, 2);
+  assert.ok(!cards[0].querySelector('.kb-ins-excl') && !cards[0].classList.contains('is-excl'), 'a plain plan carries no note');
+  const ex = cards[1].querySelector('.kb-ins-excl');
+  assert.ok(ex && ex.textContent === 'TX excluded' && cards[1].classList.contains('is-excl'), 'the excluding plan says so');
+  // Escaped like every other field.
+  h.read('insRenderResults_')('', 'x', { total: 1, cap: 8, matches: [{ name: 'P', details: [], excludedState: '<b>' }] });
+  assert.ok(!host.querySelector('.kb-ins-excl b'), 'the state is text, never markup');
+  // D2: the alias offer.
+  h.read('kbOpenSynonyms_')();
+  h.run.flushSuccess({ synonyms: [['cpap', 'pap']], propBudget: {}, propValueMax: 9000 }, 'kbGetSearchConfig');
+  const ta = h.$('#kb-syn-ta');
+  ta.value = 'cpap, pap\nhcsc, health care service corporation';   // an unsaved line the offer must not repeat
+  const btn = h.$('.kb-syn-seed button');
+  assert.ok(btn && /Suggest payor aliases/.test(btn.textContent));
+  h.read('kbSeedPayorSynonyms_')(btn);
+  assert.ok(btn.disabled, 'busy while it reads');
+  h.run.flushSuccess({ payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare'], ['hcsc', 'health care service corporation']] }, 'kbSuggestPayorSynonyms');
+  assert.strictEqual(ta.value, 'cpap, pap\nhcsc, health care service corporation\nuhc, unitedhealthcare, united healthcare', 'appended at the end, the one already there skipped');
+  assert.ok(/Added 1 alias group at the end/.test(h.$('#kb-syn-seed-msg').textContent));
+  assert.strictEqual(h.run.pending('kbSaveSearchConfig').length, 0, 'nothing is saved until Save');
+  h.read('kbSeedPayorSynonyms_')(btn);
+  h.run.flushSuccess({ payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare']] }, 'kbSuggestPayorSynonyms');
+  assert.ok(/No new aliases/.test(h.$('#kb-syn-seed-msg').textContent), 'a second press adds nothing');
+  h.read('kbSeedPayorSynonyms_')(btn);
+  h.run.flushSuccess({ error: 'There is no "InsurancePayors" tab in the KB spreadsheet to read payor names from.' }, 'kbSuggestPayorSynonyms');
+  assert.ok(/no "InsurancePayors" tab/.test(h.$('#kb-syn-seed-msg').textContent) && !btn.disabled, 'a failure is said');
+});
+
 test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archive could not be read — and says nothing on a clean read', () => {
   const h = boot();
   b9TourSeen(h);
@@ -8259,7 +8636,7 @@ test('DRV-3 DOM: an article\'s kbimg chips arrive in ONE batched call and are se
   assert.strictEqual(imgs.length, 2, 'both mentions become the image');
   assert.ok(imgs.every((im) => im.getAttribute('src') === PNG) && imgs[0].alt === 'Shot A', 'the data URL by property, the alt from the chip');
   const gone = h.$('.kb-kbimg[data-kbimg="' + kGone + '"]');
-  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /not stored/.test(gone.title), '"not stored" is said on the chip');
+  assert.ok(gone && gone.getAttribute('data-ki') === 'missing' && /Image not stored/.test(gone.textContent), '"not stored" is said on the chip (D4: in its text)');
   // A failed call is marked and NOT cached; the success above IS (no second call for kA).
   const art2 = mount_(h, 'b12-art2'); art2.className = 'kb-article';
   art2.innerHTML = h.read('kbMd_')('![B](kbimg:' + kB + ') ![A](kbimg:' + kA + ')');
@@ -8894,4 +9271,1243 @@ test('B9 DOM: a card photo is fitted by the shared image fitter before it is kep
   assert.strictEqual(h.read('INTAKE_STATE.pmd.images.length'), 1, 'an image the fitter refuses is not attached');
   assert.ok(/too large even after shrinking/.test(h.document.body.textContent), 'and the rep is told why');
   assert.ok(/Large photos are shrunk before they are sent/.test(h.$('.intk-img-hint').textContent), 'the instruction says so');
+});
+
+section('Reference — slideshow slide details (operator 2026-10-28)');
+
+test('Slideshow details DOM: a slide\'s indented lines render shut under "Show details"; the button opens and shuts them and keeps aria-expanded in step', () => {
+  const h = boot();
+  const md = '```gallery Steps\n![one](manimg:fig-shot-1) Step 1\n  First line.\n  - **Field:** value\n![two](manimg:fig-shot-2) Step 2\n```';
+  const host = h.document.createElement('div');
+  host.innerHTML = h.read('kbMd_')(md);
+  h.document.body.appendChild(host);
+  const btns = host.querySelectorAll('.kb-gal-more');
+  assert.strictEqual(btns.length, 1, 'only the slide WITH notes gets a button');
+  const btn = btns[0];
+  const panel = h.document.getElementById(btn.getAttribute('aria-controls'));
+  assert.ok(panel && panel.classList.contains('kb-gal-notes'), 'the button controls its notes panel');
+  assert.ok(panel.classList.contains('kb-gal-notes-off'), 'shut on arrival');
+  assert.ok(!panel.hasAttribute('hidden'), 'hidden by class, never the hidden attribute (g73)');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
+  assert.ok(/First line\./.test(panel.textContent) && panel.querySelector('li strong'), 'paragraph and bold bullet both render');
+  h.window.kbGalleryNotes_(btn);   // the button's inline onclick
+  assert.ok(!panel.classList.contains('kb-gal-notes-off'), 'opened');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'true');
+  assert.strictEqual(btn.textContent, 'Hide details');
+  h.window.kbGalleryNotes_(btn);   // the button's inline onclick
+  assert.ok(panel.classList.contains('kb-gal-notes-off'), 'shut again');
+  assert.strictEqual(btn.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(btn.textContent, 'Show details');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB1.3 — the handbook app's page, booted whole: index.html with its includes
+// expanded (the copies the sync wrote, the page's own script), over fake
+// server answers, a fake IndexedDB and a fake google.script.history.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB1.3 — the handbook app\'s page');
+
+const path = require('path'), fs = require('fs'), { JSDOM } = require('jsdom');
+const HB_DIR = path.resolve(__dirname, '../../../handbook-app');
+function hbPageHtml_(params) {
+  let html = fs.readFileSync(path.join(HB_DIR, 'index.html'), 'utf8');
+  html = html.replace(/<\?!=\s*include\('([^']+)'\)\s*\?>/g, (m, f) => fs.readFileSync(path.join(HB_DIR, f + '.html'), 'utf8').replace(/<\?[\s\S]*?\?>/g, ''));
+  html = html.replace(/<\?!=\s*JSON\.stringify\(hbParams[\s\S]*?\?>/, JSON.stringify(params || {}));
+  assert.ok(!/<\?/.test(html), 'every scriptlet is expanded');
+  return html;
+}
+const HB_DAY = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+const HB_PARTS = () => ({ isAdmin: false, stamp: 'S1', parts: [
+  { department: 'Chapter 05 — Power Mobility', sections: [{ id: 'man-5-1', title: '5.1 Chairs', status: 'published', sortOrder: 1, bodyMd: 'Chairs roll.' }] },
+  { department: 'Chapter 03 — Respiratory & Resupply', sections: [
+    { id: 'man-3-1', title: '3.1 Oxygen basics', status: 'published', sortOrder: 1, bodyMd: 'Intro.\n\n## 3.1.1 Tanks\n\nTanks hold oxygen.' },
+    { id: 'man-3-2', title: '3.2 Nebulizers', status: 'published', sortOrder: 2, bodyMd: 'Nebs.' }] }] });
+const HB_META = () => ({ version: 'v3.0', built: '10/26/2026', router: [], changelog: [
+  { id: 'man-3-2', date: HB_DAY(2), num: '3.2', summary: 'Nebulizer frequencies' },
+  { id: 'man-9-9', date: HB_DAY(2), num: '9.9', summary: 'A draft nobody here can see' },
+  { id: 'man-5-1', date: HB_DAY(100), num: '5.1', summary: 'Chairs, long ago' }] });
+
+/** A fake IndexedDB over one Map, so a second boot sees what the first kept. */
+function hbFakeIdb_(store) {
+  return { open() {
+    const rq = {};
+    setTimeout(() => {
+      rq.result = { createObjectStore() {}, transaction() { return { objectStore() { return {
+        get(k) { const g = {}; setTimeout(() => { g.result = store.get(k); g.onsuccess && g.onsuccess(); }, 0); return g; },
+        put(v, k) { store.set(k, JSON.parse(JSON.stringify(v))); },
+      }; } }; } };
+      if (!store.__made) { store.__made = true; rq.onupgradeneeded && rq.onupgradeneeded(); }
+      rq.onsuccess && rq.onsuccess();
+    }, 0);
+    return rq;
+  } };
+}
+/** Boot the page. `answers` maps a server function to a value, a function of
+ *  its arguments, or { __fail: message } (the failure handler). */
+async function hbBoot_(opts) {
+  opts = opts || {};
+  const calls = [], hist = [], argsOf = [];
+  const answers = Object.assign({ getManualMeta: HB_META(), getManualStamp: { stamp: 'S1' }, getManualParts: HB_PARTS(),
+    getManualImages: { success: true, images: {}, missing: [], failed: [] }, kbFlagItem: { success: true },
+    searchReference: (q) => ({ sectioned: true, terms: [String(q)], results: [
+      { id: 'man-3-2', title: '3.2 Nebulizers', department: 'Chapter 03 — Respiratory & Resupply', heading: '', anchor: '', snippet: 'Nebs ship monthly', score: 5 },
+      { id: 'kb-neb', title: 'Nebulizer pricing', department: 'Sales', heading: '', anchor: '', snippet: 'Reference only', score: 4 }] }) }, opts.answers || {});
+  const dom = new JSDOM(hbPageHtml_(opts.params), { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.test/',
+    beforeParse(w) {
+      Object.keys(opts.ls || {}).forEach((k) => w.localStorage.setItem(k, opts.ls[k]));
+      if (opts.idb) w.indexedDB = hbFakeIdb_(opts.idb);
+      w.print = () => {};
+      const chain = () => { const c = { ok: null, bad: null };
+        return new Proxy({}, { get(t, name) {
+          if (name === 'withSuccessHandler') return (f) => { c.ok = f; return p; };
+          if (name === 'withFailureHandler') return (f) => { c.bad = f; return p; };
+          return (...args) => { calls.push(name); argsOf.push(JSON.parse(JSON.stringify([name].concat(args)))); let a = answers[name];
+            if (typeof a === 'function') a = a(...args);
+            const delay = a && a.__delay ? a.__delay : 0;   // HB1.4: a slower answer, to drop a stale one
+            if (a && a.__delay) a = a.value;
+            setTimeout(() => {
+              if (a && a.__fail) { if (c.bad) c.bad(new Error(a.__fail)); }
+              else if (c.ok) c.ok(a === undefined ? { error: 'no fixture for ' + name } : JSON.parse(JSON.stringify(a)));
+            }, delay); };
+        } }); };
+      let p;
+      w.google = { script: {
+        get run() { p = chain(); return p; },
+        // JSON copies: the page's objects are another realm's (g116 — deepStrictEqual compares prototypes)
+        history: { push: (s, q) => hist.push(JSON.parse(JSON.stringify(['push', s, q]))), replace: (s, q) => hist.push(JSON.parse(JSON.stringify(['replace', s, q]))), setChangeHandler: (f) => { w.__hbChange = f; } } } };
+    } });
+  const w = dom.window;
+  const settleAll = async () => { for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 2)); };
+  await settleAll();
+  return { w, d: w.document, calls, hist, argsOf, settleAll, main: () => w.document.getElementById('kb-main') };
+}
+
+test('HB1.3 DOM: the home page lists the chapters and what changed — published sections only, in the window — and the contents', async () => {
+  const h = await hbBoot_();
+  const cards = h.d.querySelectorAll('.hb-card');
+  assert.deepStrictEqual([...cards].map((c) => c.querySelector('.hb-card-t').textContent), ['Respiratory & Resupply', 'Power Mobility'], 'chapters in the reader\'s order');
+  const news = [...h.d.querySelectorAll('.hb-news-row .hb-news-num')].map((x) => x.textContent);
+  assert.deepStrictEqual(news, ['3.2'], 'a first visit shows the last month — not a section this reader cannot see, not an old change');
+  assert.ok(/Changed in the last 30 days/i.test(h.main().textContent));
+  assert.strictEqual(h.d.querySelectorAll('#hb-toc .hb-ch').length, 2);
+  assert.ok(h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"] .hb-new'), 'the contents mark the changed section');
+  assert.ok(!h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"] .hb-new'));
+  assert.strictEqual(h.d.getElementById('hb-ver').textContent, 'v3.0', 'the version as the handbook writes it');
+  assert.deepStrictEqual(h.hist, [['replace', { home: true }, {}]], 'the first view replaces the history entry it arrived on');
+  assert.ok(JSON.parse(h.w.localStorage.getItem('umsHbVisit')).last, 'the visit is recorded');
+});
+
+test('HB1.3 DOM: "my department" puts its chapter first, and a later visit counts from the last one', async () => {
+  const h = await hbBoot_({ ls: { umsHbDept: 'Chapter 05 — Power Mobility', umsHbVisit: JSON.stringify({ last: '2020-01-01', prev: '' }) } });
+  const mine = h.d.querySelector('.hb-card.mine');
+  assert.ok(mine && /Power Mobility/.test(mine.textContent), 'the chosen chapter is marked');
+  assert.ok(h.main().textContent.indexOf('Your department') < h.main().textContent.indexOf('All chapters'), 'and comes first');
+  assert.strictEqual(h.d.getElementById('hb-dept-sel').value, 'Chapter 05 — Power Mobility');
+  assert.ok(/New since your last visit/.test(h.main().textContent));
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-news-num')].map((x) => x.textContent), ['3.2', '5.1'], 'everything after the last visit, newest first');
+  const sel = h.d.getElementById('hb-dept-sel');
+  sel.value = 'Chapter 03 — Respiratory & Resupply'; sel.dispatchEvent(new h.w.Event('change'));
+  assert.ok(/Respiratory/.test(h.d.querySelector('.hb-card.mine').textContent), 'changing it repaints home');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), 'Chapter 03 — Respiratory & Resupply');
+});
+
+test('HB1.3 DOM: a contents row opens its section in the reader and pushes a section link; Back and forward come through the change handler', async () => {
+  const h = await hbBoot_();
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"]').click();
+  await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-2'), 'the reader painted the chapter');
+  assert.ok(h.d.querySelector('#hb-toc .hb-it.on[data-kb-id="man-3-2"]'), 'the row is current');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { id: 'man-3-2', anchor: '' }, { s: '3.2' }]);
+  const n = h.hist.length;
+  h.w.__hbChange({ state: { home: true } });
+  assert.ok(h.d.querySelector('.hb-home'), 'Back to home');
+  h.w.__hbChange({ state: { id: 'man-5-1', anchor: '' } });
+  await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-5-1'), 'forward to a section');
+  assert.strictEqual(h.hist.length, n, 'and neither pushes again');
+  assert.ok(!h.calls.includes('getManualPart'), 'every chapter came from the one read');
+});
+
+test('HB1.3 DOM: ?s= opens the section it names (a subsection too); an unknown one says so and shows home', async () => {
+  const h = await hbBoot_({ params: { s: '3.1.1' } });
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'the section that holds 3.1.1');
+  assert.deepStrictEqual(h.hist[0], ['replace', { id: 'man-3-1', anchor: '3.1.1' }, { s: '3.1.1' }]);
+  const u = await hbBoot_({ params: { s: '9.9' } });
+  assert.ok(u.d.querySelector('.hb-home'));
+  assert.ok(/Section 9\.9 is not in the handbook/.test(u.d.getElementById('toast-stack').textContent), 'the toast reached the page\'s stack');
+});
+
+test('HB1.3 DOM: the chapters are kept in the browser — a visit whose stamp matches makes no full read; a new stamp reads again', async () => {
+  const idb = new Map();
+  const a = await hbBoot_({ idb });
+  assert.ok(a.calls.includes('getManualParts'), 'nothing kept yet: a full read');
+  assert.strictEqual(idb.get('parts').stamp, 'S1', 'and the answer is kept with its stamp');
+  const b = await hbBoot_({ idb });
+  assert.ok(b.calls.includes('getManualStamp') && !b.calls.includes('getManualParts'), 'same stamp: the kept copy, no full read');
+  assert.strictEqual(b.d.querySelectorAll('.hb-card').length, 2, 'and it paints the same');
+  const c = await hbBoot_({ idb, answers: { getManualStamp: { stamp: 'S2' }, getManualParts: Object.assign(HB_PARTS(), { stamp: 'S2' }) } });
+  assert.ok(c.calls.includes('getManualParts'), 'a changed handbook is read again');
+  assert.strictEqual(idb.get('parts').stamp, 'S2');
+});
+
+test('HB1.3 DOM: a failed read falls back to the kept copy and says so; with none it names the failure', async () => {
+  const idb = new Map();
+  await hbBoot_({ idb });
+  const down = { getManualStamp: { __fail: 'offline' }, getManualParts: { __fail: 'offline' } };
+  const k = await hbBoot_({ idb, answers: down });
+  assert.strictEqual(k.d.querySelectorAll('.hb-card').length, 2, 'the kept copy');
+  assert.ok(/may be out of date/.test(k.d.getElementById('toast-stack').textContent));
+  const none = await hbBoot_({ answers: { getManualParts: { error: 'The handbook is not set up yet: the HANDBOOK_KB_SS_ID Script Property is not set.' } } });
+  assert.ok(/could not be loaded: The handbook is not set up yet/.test(none.main().textContent), 'the server\'s own words');
+  assert.ok(none.main().querySelector('[role="alert"]'));
+});
+
+test('HB1.3 DOM: Escape closes an open overlay through the copied shell, then the narrow contents', async () => {
+  const h = await hbBoot_();
+  const ov = h.w.ensureOverlay('hb-test-ov');
+  ov.innerHTML = '<div class="modal"><button>OK</button></div>';
+  assert.ok(ov.classList.contains('open'));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!ov.classList.contains('open'), 'the overlay closed');
+  h.w.hbToggleSide_();
+  assert.ok(h.d.querySelector('.hb-wrap.side-open'));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(!h.d.querySelector('.hb-wrap.side-open'), 'then the contents');
+});
+
+test('HB1.4 DOM: the search box — results for its request (a Reference article never listed), a section number jumps, a failure says so, and Back returns to the results', async () => {
+  const h = await hbBoot_();
+  const box = h.d.getElementById('hb-q');
+  box.value = 'neb'; box.dispatchEvent(new h.w.Event('input'));
+  await new Promise((r) => setTimeout(r, 350)); await h.settleAll();
+  const hits = [...h.d.querySelectorAll('.hb-results-list .hb-hit')].map((b) => b.getAttribute('data-kb-id'));
+  assert.deepStrictEqual(hits, ['man-3-2'], 'the handbook section only');
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'searchReference').pop().slice(1), ['neb', { signal: true }], 'a typed search adds to the signal');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { search: 'neb' }, {}], 'the first results view is a history entry');
+  h.w.hbSearch_('nebs', true);
+  await h.settleAll();
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['replace', { search: 'nebs' }, {}], 'a refinement replaces it');
+  // A section number jumps.
+  h.w.hbSearch_('3.1.1', true);
+  await h.settleAll();
+  const jump = h.d.querySelector('.hb-hit-jump');
+  assert.ok(jump && jump.getAttribute('data-kb-id') === 'man-3-1' && jump.getAttribute('data-kb-anchor') === '3.1.1', 'the reader\'s own number resolver');
+  jump.click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'and it opens');
+  // Back to the results.
+  h.w.__hbChange({ state: { search: 'neb' } });
+  await h.settleAll();
+  assert.strictEqual(box.value, 'neb');
+  assert.ok(h.d.querySelector('.hb-results-list .hb-hit[data-kb-id="man-3-2"]'), 'Back shows the results again');
+  // A failure is a failure, never "no matches".
+  const f = await hbBoot_({ answers: { searchReference: { error: 'Quota exceeded.' } } });
+  f.w.hbSearch_('neb', true); await f.settleAll();
+  const msg = f.d.querySelector('.hb-results-list [role="alert"]');
+  assert.ok(msg && /The search failed: Quota exceeded\./.test(msg.textContent), 'the server\'s words');
+  assert.ok(!/Nothing in the handbook matches/.test(f.main().textContent));
+});
+
+test('HB1.4 DOM: a slower answer to an earlier search never paints over a later one, nor over a section opened since', async () => {
+  const slow = (q) => (q === 'slow' ? { __delay: 40, value: { results: [{ id: 'man-5-1', title: '5.1 Chairs', snippet: 'old' }], terms: [] } }
+    : { results: [{ id: 'man-3-2', title: '3.2 Nebulizers', snippet: 'new' }], terms: [] });
+  const h = await hbBoot_({ answers: { searchReference: slow } });
+  h.w.hbSearch_('slow', true); h.w.hbSearch_('fast', true);
+  await new Promise((r) => setTimeout(r, 80)); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-hit')].map((b) => b.getAttribute('data-kb-id')), ['man-3-2'], 'the later search\'s results stand');
+  h.w.hbSearch_('slow', true);
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"]').click();
+  await new Promise((r) => setTimeout(r, 80)); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1') && !h.d.querySelector('.hb-results'), 'the section opened since stays');
+});
+
+test('HB1.4 DOM: the reader bar\'s feedback is live here — a vote reaches kbFlagItem for the section in view, and "Suggest an edit" opens the dialog', async () => {
+  const h = await hbBoot_({ params: { s: '3.2' } });
+  await h.settleAll();
+  const up = h.d.querySelector('[data-kb-man-fb="helpful"]');
+  assert.ok(up && !up.disabled && up.getAttribute('data-kb-id') === 'man-3-2', 'the vote names the section in view');
+  up.click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'kbFlagItem').pop(), ['kbFlagItem', 'man-3-2', 'helpful', '']);
+  const sug = h.d.querySelector('[data-kb-man-fb="suggest"]');
+  sug.disabled = false; sug.click(); await h.settleAll();
+  const dlg = h.d.querySelector('.overlay.open');
+  assert.ok(dlg && /Suggest an edit/.test(dlg.textContent), 'Reference\'s dialog, through the host hook');
+});
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.1 — the handbook app's people view: the home prompt, the reader's
+// profile, a manager's team and the admin's list, over fake hbGetMe answers.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.1 — the handbook app\'s people');
+const HB_DEPT = 'Chapter 03 — Respiratory & Resupply';
+const hbPerson_ = (email, extra) => Object.assign({ email, name: email.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase()), department: '', manager: '',
+  managerName: '', isManager: false, standing: 'none', requestedMs: 0, confirmedMs: 0 }, extra || {});
+const hbMeView_ = (extra) => Object.assign({ email: 'rep@ex.org', name: 'Rep', setUp: true, isAdmin: false, isManager: false, me: null,
+  managers: [{ email: 'boss@ex.org', name: 'Boss' }] }, extra || {});
+const hbToasts_ = (h) => h.d.getElementById('toast-stack').textContent;
+
+test('HB2.1 DOM: a first visit is asked for a department and a manager — the prompt opens the profile, Save sends both, and the answer says who will confirm', async () => {
+  const saved = hbMeView_({ me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' }) });
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbSaveProfile: { success: true, changed: true, view: saved } } });
+  const prompt = h.d.querySelector('#hb-me-prompt .hb-prompt');
+  assert.ok(prompt && /department and your manager/.test(prompt.textContent), 'the home page asks');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '!', 'and so does the header');
+  prompt.querySelector('button').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { people: true }, {}], 'the view is a history entry');
+  const dept = h.d.getElementById('hb-pp-dept'), mgr = h.d.getElementById('hb-pp-mgr');
+  assert.deepStrictEqual([...dept.options].map((o) => o.value), ['', HB_DEPT, 'Chapter 05 — Power Mobility'], 'the chapters, in the reader\'s order');
+  assert.deepStrictEqual([...mgr.options].map((o) => o.value), ['', 'boss@ex.org']);
+  dept.value = HB_DEPT; dept.dispatchEvent(new h.w.Event('change'));
+  mgr.value = 'boss@ex.org'; mgr.dispatchEvent(new h.w.Event('change'));
+  h.d.querySelector('.hb-pp-save').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbSaveProfile').pop(), ['hbSaveProfile', HB_DEPT, 'boss@ex.org']);
+  assert.ok(/Boss will be asked to confirm/.test(hbToasts_(h)), hbToasts_(h));
+  assert.ok(/Waiting for Boss to confirm/.test(h.d.querySelector('.hb-pp-standing').textContent), 'the form repaints with the answer');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), HB_DEPT, 'the saved department is the reading choice too');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '', 'nothing left to ask');
+  // Home now says who it is waiting for.
+  h.d.querySelector('#hb-toc .hb-toc-home').click(); await h.settleAll();
+  assert.ok(/Waiting for Boss/.test(h.d.getElementById('hb-me-prompt').textContent));
+});
+
+test('HB2.1 DOM: a manager confirms from "Your team" — and an answer never wipes a profile change being made (g141)', async () => {
+  const pend = hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' });
+  const me = hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [pend] });
+  const after = Object.assign({}, me, { team: [Object.assign({}, pend, { standing: 'confirmed' })] });
+  const h = await hbBoot_({ answers: { hbGetMe: me, hbConfirmPerson: { success: true, view: after } } });
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '1', 'one request waiting');
+  assert.ok(/1 person is waiting for you/.test(h.d.getElementById('hb-me-prompt').textContent));
+  h.w.hbGoPeople_(); await h.settleAll();
+  const dept = h.d.getElementById('hb-pp-dept');
+  dept.value = 'Chapter 05 — Power Mobility'; dept.dispatchEvent(new h.w.Event('change'));
+  h.d.querySelector('#hb-pp-team .hb-pp-yes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbConfirmPerson').pop(), ['hbConfirmPerson', 'rep@ex.org', true]);
+  assert.ok(/Confirmed by Boss/.test(h.d.getElementById('hb-pp-team').textContent), 'the team repaints');
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').value, 'Chapter 05 — Power Mobility', 'the unsaved choice survives');
+  assert.strictEqual(h.d.getElementById('hb-me-badge').getAttribute('data-n'), '');
+});
+
+test('HB2.1 DOM: the admin adds a manager and removes a person (after a confirm); a refusal says why and changes nothing', async () => {
+  const me = hbMeView_({ email: 'owner@ex.org', name: 'Owner', isAdmin: true, managers: [], everyone: [hbPerson_('rep@ex.org', { department: HB_DEPT })] });
+  const withBoss = Object.assign({}, me, { everyone: me.everyone.concat([hbPerson_('boss@ex.org', { isManager: true })]) });
+  let refuse = false;
+  const h = await hbBoot_({ answers: { hbGetMe: me,
+    hbSetManager: () => (refuse ? { success: false, error: 'That is not an email address.' } : { success: true, changed: true, view: withBoss }),
+    hbRemovePerson: { success: true, changed: true, view: Object.assign({}, withBoss, { everyone: withBoss.everyone.slice(1) }) } } });
+  h.w.hbGoPeople_(); await h.settleAll();
+  assert.ok(/No managers yet/.test(h.d.getElementById('hb-pp-admin').textContent));
+  // An unsaved profile choice, then an action that repaints the profile too (the manager list changed).
+  const dept = h.d.getElementById('hb-pp-dept');
+  dept.value = HB_DEPT; dept.dispatchEvent(new h.w.Event('change'));
+  const box = h.d.getElementById('hb-pp-add');
+  box.value = 'boss@ex.org';
+  h.d.getElementById('hb-pp-add-btn').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbSetManager').pop(), ['hbSetManager', 'boss@ex.org', true]);
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').value, HB_DEPT, 'the unsaved department survives the repaint (g141)');
+  assert.strictEqual(h.d.getElementById('hb-pp-add').value, '', 'the address is cleared once it is saved');
+  assert.ok(/Boss/.test(h.d.querySelector('#hb-pp-admin .hb-pp-row').textContent), 'listed as a manager');
+  // A refusal keeps what was typed and says why.
+  refuse = true;
+  h.d.getElementById('hb-pp-add').value = 'nonsense';
+  h.d.getElementById('hb-pp-add-btn').click(); await h.settleAll();
+  assert.ok(/Not saved: That is not an email address/.test(hbToasts_(h)), hbToasts_(h));
+  assert.strictEqual(h.d.getElementById('hb-pp-add').value, 'nonsense');
+  // Remove asks first; Cancel sends nothing.
+  const rm = () => [...h.d.querySelectorAll('#hb-pp-admin .hb-pp-danger')].filter((b) => b.getAttribute('data-email') === 'rep@ex.org')[0];
+  rm().click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog .ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(h.calls.indexOf('hbRemovePerson'), -1, 'cancelled: nothing sent');
+  rm().click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog .ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbRemovePerson').pop(), ['hbRemovePerson', 'rep@ex.org']);
+  assert.ok(!/rep@ex\.org/.test(h.d.getElementById('hb-pp-admin').textContent), 'gone from the list');
+});
+
+test('HB2.1 DOM: a saved profile\'s department becomes the reading choice on a browser that has none — and never overrides one it has', async () => {
+  const view = hbMeView_({ me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'confirmed' }) });
+  const fresh = await hbBoot_({ answers: { hbGetMe: view } });
+  assert.strictEqual(fresh.w.localStorage.getItem('umsHbDept'), HB_DEPT);
+  assert.strictEqual(fresh.d.getElementById('hb-dept-sel').value, HB_DEPT, 'the header picker shows it');
+  const chosen = await hbBoot_({ answers: { hbGetMe: view }, ls: { umsHbDept: 'Chapter 05 — Power Mobility' } });
+  assert.strictEqual(chosen.w.localStorage.getItem('umsHbDept'), 'Chapter 05 — Power Mobility', 'the browser\'s own choice stands');
+});
+
+test('HB2.1 DOM: no profile store asks nothing (an admin is told the setting); a failed load says so in the view, never on the home page; Back reopens the view', async () => {
+  const unset = await hbBoot_({ answers: { hbGetMe: { email: 'owner@ex.org', name: 'Owner', isAdmin: true, setUp: false } } });
+  assert.strictEqual(unset.d.getElementById('hb-me-prompt').textContent, '', 'nothing to ask');
+  assert.strictEqual(unset.d.getElementById('hb-me-badge').getAttribute('data-n'), '');
+  unset.w.hbGoPeople_(); await unset.settleAll();
+  assert.ok(/HANDBOOK_SS_ID/.test(unset.d.getElementById('hb-pp-me').textContent), 'the admin is told what to set');
+  const fail = await hbBoot_({ answers: { hbGetMe: { __fail: 'Exceeded maximum execution time' } } });
+  assert.ok(fail.d.querySelector('.hb-card'), 'the handbook still reads');
+  fail.w.hbGoPeople_(); await fail.settleAll();
+  const msg = fail.d.querySelector('#hb-pp-me .hb-msg.bad');
+  assert.ok(msg && /Could not load your profile: Exceeded maximum execution time/.test(msg.textContent));
+  fail.d.querySelector('#hb-toc .hb-toc-home').click(); await fail.settleAll();
+  fail.w.__hbChange({ state: { people: true } }); await fail.settleAll();
+  assert.ok(fail.d.getElementById('hb-pp-me'), 'Back to the people view');
+});
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.2 — taking a quiz in the handbook app: the quiz bar, the list, a sitting
+// (shuffled on the page, answered in the original order), the result, the
+// lock-out, and a manager's reset.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.2 — taking a quiz in the handbook app');
+const HB32_QUIZ = { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3,
+  questions: [{ q: 'How often?', options: ['Daily', 'Monthly', 'Yearly'] }, { q: 'Which ship?', options: ['Kits', 'Tubing', 'Masks'], type: 'multi' }, { q: 'Nebs are respiratory.', options: ['True', 'False'], type: 'truefalse' }] };
+const hb32Me_ = (o) => Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {});
+const HB32_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
+  { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
+  { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ locked: true, retryAtMs: Date.now() + 3600000, attemptsLeft: 0, attempts: 3 }) }] });
+/** Tick the options whose TEXT is given, for question `text` — the page shuffles, so a test picks by words. */
+function hb32Pick_(h, qText, optTexts) {
+  const fs_ = [...h.d.querySelectorAll('.hb-qz-q')].filter((f) => f.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0)[0];
+  assert.ok(fs_, 'question shown: ' + qText);
+  [...fs_.querySelectorAll('.hb-qz-opt')].forEach((l) => { if (optTexts.indexOf(l.textContent.trim()) >= 0) l.querySelector('input').checked = true; });
+}
+
+test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list groups by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST() } });
+  assert.strictEqual(h.d.getElementById('hb-quizbar').textContent.trim(), '', 'no bar on the home page');
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = h.d.getElementById('hb-quizbar');
+  assert.ok(/Quiz: Nebulizers/.test(bar.textContent) && bar.querySelector('[data-quiz="q-neb"]'), 'the bar names the section\'s quiz');
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.ok(!/Quiz/.test(bar.textContent), 'and only on its section (HB2.2: the note button rides every section)');
+  h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { quizzes: true }, {}]);
+  const groups = [...h.d.querySelectorAll('.hb-qz-grp')].map((g) => [g.querySelector('h2').textContent, [...g.querySelectorAll('.hb-pp-row-n')].map((n) => n.textContent)]);
+  assert.deepStrictEqual(groups, [['3 · Respiratory & Resupply', ['Nebulizers']], ['5 · Power Mobility', ['Chairs']]], 'in the contents\' order');
+  const rows = [...h.d.querySelectorAll('.hb-qz-grp .hb-pp-row')];
+  assert.ok(/Not taken/.test(rows[0].textContent) && /pass mark 67%/.test(rows[0].textContent) && /section 3\.2/.test(rows[0].textContent));
+  assert.ok(/Locked until/.test(rows[1].textContent) && rows[1].querySelector('button').disabled, 'a locked quiz cannot be started');
+});
+
+test('HB3.2 DOM: a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
+  const sent = [];
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
+    hbSubmitQuiz: (id, a) => { sent.push(JSON.parse(JSON.stringify(a))); return { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true],
+      review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) }; } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { quiz: 'q-neb' }, {}]);
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 3);
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
+  // Unanswered: said, and nothing sent.
+  hb32Pick_(h, 'How often?', ['Monthly']);
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  assert.ok(/Answer every question first/.test(h.d.getElementById('hb-qz-need').textContent));
+  assert.strictEqual(sent.length, 0);
+  hb32Pick_(h, 'Which ship?', ['Masks', 'Kits']);
+  hb32Pick_(h, 'Nebs are respiratory.', ['True']);
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  assert.deepStrictEqual(sent, [[1, [0, 2], 0]], 'original question order, original option numbers');
+  const page = h.main().textContent;
+  assert.ok(/67%/.test(page) && /Passed/.test(page));
+  assert.ok(/Kits and masks ship monthly\./.test(page), 'the explanation');
+  const link = h.d.querySelector('.hb-qz-rev .hb-qz-sec');
+  assert.strictEqual(link.textContent, 'Read 3.1.1');
+  assert.ok(!/Tubing/.test(h.d.querySelector('.hb-qz-rev').textContent), 'no option text in the review');
+  link.click(); await h.settleAll();
+  assert.ok(h.d.querySelector('#kb-man-sec-man-3-1') || /Tanks/.test(h.main().textContent), 'the link opens the section');
+});
+
+test('HB3.2 DOM: shuffling — every order is a permutation, a true/false keeps True then False, and the answers map back exactly (pure, over a seeded random)', async () => {
+  const h = await hbBoot_({});
+  let seed = 7; const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const qs = [{ options: ['a', 'b', 'c', 'd'] }, { type: 'truefalse', options: ['True', 'False'] }, { type: 'multi', options: ['x', 'y', 'z'] }];
+  for (let n = 0; n < 20; n++) {
+    const order = JSON.parse(JSON.stringify(h.w.hbQuizOrder_(qs, rand)));
+    assert.deepStrictEqual(order.map((o) => o.q).sort(), [0, 1, 2]);
+    order.forEach((o) => assert.deepStrictEqual(o.opts.slice().sort(), [...Array(qs[o.q].options.length).keys()]));
+    assert.deepStrictEqual(order.filter((o) => o.q === 1)[0].opts, [0, 1]);
+    // Choose, on the shown page, the option shown first for each question.
+    const picked = order.map(() => [0]);
+    const ans = JSON.parse(JSON.stringify(h.w.hbQuizAnswers_(qs, order, picked)));
+    order.forEach((o) => assert.deepStrictEqual(ans[o.q], qs[o.q].type === 'multi' ? [o.opts[0]] : o.opts[0]));
+  }
+});
+
+test('HB3.2 DOM: locked — the quiz says when, and a submit refused as locked repaints that; a manager sees the team\'s lock-outs and resets one (driven)', async () => {
+  const locked = hb32Me_({ locked: true, retryAtMs: Date.now() + 7200000, attemptsLeft: 0, attempts: 3 });
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: locked } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  assert.ok(/used your 3 attempts/.test(h.main().textContent) && !h.d.querySelector('.hb-qz-form'), 'no form while locked');
+  // A manager's lock-outs.
+  let locks = [{ email: 'rep@ex.org', name: 'Rep', quizId: 'q-neb', title: 'Nebulizers', retryAtMs: Date.now() + 3600000 }];
+  const me = hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [] });
+  const m = await hbBoot_({ answers: { hbGetMe: me, hbTeamQuizLocks: () => ({ locks }), hbResetQuiz: () => { locks = []; return { success: true }; } } });
+  m.w.hbGoPeople_(); await m.settleAll();
+  const sec = m.d.getElementById('hb-pp-locks');
+  assert.ok(/Quiz lock-outs/.test(sec.textContent) && /Nebulizers · locked until/.test(sec.textContent));
+  sec.querySelector('button').click(); await m.settleAll();
+  assert.deepStrictEqual(m.argsOf.filter((a) => a[0] === 'hbResetQuiz').pop(), ['hbResetQuiz', 'rep@ex.org', 'q-neb']);
+  assert.ok(/Nobody you manage is locked out/.test(m.d.getElementById('hb-pp-locks').textContent), 'reloaded after the reset');
+  // A reader (no team) has no lock-out section and makes no call for one.
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_() } });
+  r.w.hbGoPeople_(); await r.settleAll();
+  assert.strictEqual(r.d.getElementById('hb-pp-locks').textContent, '');
+  assert.strictEqual(r.calls.indexOf('hbTeamQuizLocks'), -1);
+});
+
+test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar it had; Back reopens a quiz; an answer for a view already left is dropped', async () => {
+  let fail = false;
+  const h = await hbBoot_({ answers: { hbListQuizzes: () => (fail ? { __fail: 'Service invoked too many times' } : HB32_LIST()),
+    hbGetQuiz: { __delay: 30, value: { quiz: HB32_QUIZ, me: hb32Me_() } } } });
+  fail = true;
+  h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
+  assert.ok(/The quizzes could not be loaded: Service invoked too many times/.test(h.main().textContent));
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(/Quiz: Nebulizers/.test(h.d.getElementById('hb-quizbar').textContent), 'the bar keeps the list that loaded');
+  // A slow quiz answer after the reader moved on: dropped.
+  h.w.hbTakeQuiz_('q-neb', true);
+  h.w.hbGoHome_();
+  await new Promise((r) => setTimeout(r, 60)); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-card') && !h.d.querySelector('.hb-qz-form'), 'home stays home');
+  h.w.__hbChange({ state: { quiz: 'q-neb' } }); await new Promise((r) => setTimeout(r, 60)); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-qz-form'), 'Back to the quiz');
+  // The case that bites: a slow answer for quiz A lands while quiz B is open.
+  const two = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(),
+    hbGetQuiz: (id) => (id === 'q-slow' ? { __delay: 40, value: { quiz: Object.assign({}, HB32_QUIZ, { id: 'q-slow', title: 'Slow quiz' }), me: hb32Me_() } } : { quiz: HB32_QUIZ, me: hb32Me_() }) } });
+  two.w.hbTakeQuiz_('q-slow', true);
+  two.w.hbTakeQuiz_('q-neb', true);
+  await new Promise((r) => setTimeout(r, 80)); await two.settleAll();
+  assert.strictEqual(two.d.querySelector('#hb-qz-take h1').textContent, 'Nebulizers', 'the later quiz stays — the earlier answer is dropped');
+});
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.3 — training: My training (progress, Mark as read), Team training for a
+// manager, and the quiz and plan editors.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.3 — training plans and team quizzes');
+const HB33_MINE = () => ({ setUp: true, plans: [
+  { id: 'pl-000000000001', title: 'First week', authorName: 'Boss', due: '2000-01-01', overdue: true, done: 0, total: 3, items: [
+    { kind: 'section', id: 'man-3-1', key: 'section:man-3-1', done: false },
+    { kind: 'chapter', id: HB_DEPT, key: 'chapter:' + HB_DEPT, done: false },
+    { kind: 'quiz', id: 'q-neb', key: 'quiz:q-neb', title: 'Nebulizers', done: false, quiz: hb32Me_() }] },
+  { id: 'pl-000000000002', title: 'Refresher', authorName: 'Boss', due: '', overdue: false, done: 0, total: 1, items: [
+    { kind: 'section', id: 'man-3-1', key: 'section:man-3-1', done: false }] }] });
+const HB33_TEAM = () => ({ isAdmin: false, unreadable: 0, quizzes: [], plans: [],
+  team: [{ email: 'rep@ex.org', name: 'Rep', department: HB_DEPT }], official: [{ id: 'q-neb', title: 'Nebulizers' }] });
+const hb33Boss_ = () => hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [] });
+
+test('HB3.3 DOM: My training — each plan with its progress and Overdue; Mark as read reaches the server and ticks the item in every plan that has it; a reader sees no Team training and asks for none', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: HB33_MINE(), hbMarkRead: { success: true } } });
+  h.d.querySelector('#hb-toc .hb-toc-training').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { training: true }, {}]);
+  const plans = [...h.d.querySelectorAll('.hb-tr-plan')];
+  assert.deepStrictEqual(plans.map((p) => p.querySelector('.hb-pp-row-n').textContent), ['First week', 'Refresher']);
+  assert.ok(/Overdue/.test(plans[0].textContent) && /0 of 3 done/.test(plans[0].textContent));
+  assert.deepStrictEqual([...plans[0].querySelectorAll('.hb-tr-it-t')].map((t) => t.textContent), ['3.1 Oxygen basics', '3 · Respiratory & Resupply', 'Nebulizers'], 'a section by its title, a chapter by its label, a quiz by its title');
+  plans[0].querySelector('.hb-tr-mark[data-kind="section"]').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  const after = [...h.d.querySelectorAll('.hb-tr-plan')];
+  assert.ok(/1 of 3 done/.test(after[0].textContent) && /1 of 1 done/.test(after[1].textContent), 'one mark serves both plans');
+  assert.strictEqual(after[0].querySelector('.hb-tr-mark[data-kind="section"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.d.getElementById('hb-tr-team').textContent, '');
+  assert.strictEqual(h.calls.indexOf('hbTeamTraining'), -1, 'a reader asks for no team training');
+  // A quiz item opens the sitting.
+  after[0].querySelector('[data-quiz="q-neb"]').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-take'), 'Take the quiz opens it');
+  // Back to Training.
+  h.w.__hbChange({ state: { training: true } }); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-tr-plan'));
+});
+
+test('HB3.3 DOM: the quiz editor — "*" marks the right options, a question without one is refused here, a server refusal stays in the editor, a save sends the quiz and reloads; Escape after typing asks first (driven)', async () => {
+  let refuse = 'Question 1: text is required (max 500 chars).';
+  const sent = [];
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(),
+    hbSaveTeamQuiz: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return refuse ? { success: false, error: refuse } : { success: true, id: 'tq-000000000001' }; } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  assert.ok(/No quizzes of your own yet/.test(h.d.getElementById('hb-tr-team').textContent));
+  [...h.d.querySelectorAll('#hb-tr-team button')].filter((b) => /New quiz/.test(b.textContent))[0].click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-tq-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  const type = (el, v) => { el.value = v; el.dispatchEvent(new h.w.Event('input', { bubbles: true })); };
+  type(h.d.getElementById('hb-tq-title'), 'Our checks');
+  type(ov.querySelector('.hb-ed-text'), 'First?');
+  type(ov.querySelector('.hb-ed-optbox'), 'Verify\nShip');
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.ok(/start the right option with \*/.test(h.d.getElementById('hb-tq-msg').textContent));
+  assert.strictEqual(sent.length, 0, 'refused before the server');
+  type(ov.querySelector('.hb-ed-optbox'), '* Verify\nShip');
+  type(ov.querySelector('.hb-ed-why'), 'Verify first.');
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0].questions[0], { type: 'single', q: 'First?', options: ['Verify', 'Ship'], correct: 0, explain: 'Verify first.', section: '' });
+  assert.ok(/text is required/.test(h.d.getElementById('hb-tq-msg').textContent) && h.d.getElementById('hb-tq-ov'), 'a server refusal stays in the editor');
+  // A true/false question added.
+  h.w.hbAddQuizQuestion_();
+  const qs = ov.querySelectorAll('.hb-ed-q');
+  qs[1].querySelector('.hb-ed-type').value = 'truefalse'; qs[1].querySelector('.hb-ed-type').dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(qs[1].querySelector('.hb-ed-opts').hidden, true, 'its options box goes');
+  type(qs[1].querySelector('.hb-ed-text'), 'Skip it?');
+  qs[1].querySelector('.hb-ed-tfsel').value = '1';
+  refuse = '';
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual([sent[1].questions[1].type, sent[1].questions[1].correct], ['truefalse', 1]);
+  assert.ok(!h.d.getElementById('hb-tq-ov'), 'saved: closed');
+  assert.ok(h.calls.filter((c) => c === 'hbTeamTraining').length >= 2, 'and the list reloads');
+  // Escape after typing in a new one asks first.
+  [...h.d.querySelectorAll('#hb-tr-team button')].filter((b) => /New quiz/.test(b.textContent))[0].click(); await h.settleAll();
+  type(h.d.getElementById('hb-tq-title'), 'Half written');
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Discard changes\?/.test(ask.textContent), 'g166');
+  ask.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(h.d.getElementById('hb-tq-title').value, 'Half written', 'Keep editing keeps it');
+});
+
+test('HB3.3 DOM: the plan editor — items added by kind (each once) and removed, departments and people ticked, the save sends exactly that and says whom it reaches; an existing plan opens with its items (driven)', async () => {
+  const sent = [];
+  const team = Object.assign(HB33_TEAM(), { plans: [{ id: 'pl-000000000009', author: 'boss@ex.org', authorName: 'Boss', live: true, reaches: 1,
+    plan: { title: 'Old', due: '2026-12-01', items: [{ kind: 'quiz', id: 'q-neb' }], assign: { people: ['rep@ex.org'], departments: [] } } }] });
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: team,
+    hbSavePlan: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return { success: true, id: 'pl-00000000000a', reaches: 4 }; } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  assert.ok(/reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
+  h.w.hbEditPlan_('pl-000000000009'); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('#hb-pl-items .hb-ed-item span')].map((s) => s.textContent), ['Pass the quiz Nebulizers (official)'], 'prefilled');
+  assert.strictEqual(h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked, true);
+  h.d.getElementById('hb-pl-ov').querySelector('.hb-ed-item button').click();   // remove the quiz
+  const pick = (kind, id) => { const k = h.d.getElementById('hb-pl-kind'); k.value = kind; k.dispatchEvent(new h.w.Event('change', { bubbles: true })); h.d.getElementById('hb-pl-pick').value = id; h.w.hbPlanAddItem_(); };
+  pick('section', 'man-3-2'); pick('section', 'man-3-2'); pick('chapter', 'Chapter 05 — Power Mobility');
+  assert.strictEqual(h.d.querySelectorAll('#hb-pl-items .hb-ed-item').length, 2, 'each item once');
+  [...h.d.querySelectorAll('#hb-pl-depts input')].filter((i) => i.value === HB_DEPT)[0].checked = true;
+  h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked = false;
+  h.d.getElementById('hb-pl-title').value = 'Respiratory week';
+  h.d.getElementById('hb-pl-ov').querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0], { title: 'Respiratory week', due: '2026-12-01', items: [{ kind: 'section', id: 'man-3-2' }, { kind: 'chapter', id: 'Chapter 05 — Power Mobility' }],
+    assign: { people: [], departments: [HB_DEPT] }, id: 'pl-000000000009' });
+  assert.ok(/reaches 4 people now/.test(h.d.getElementById('toast-stack').textContent));
+  assert.ok(!h.d.getElementById('hb-pl-ov'));
+});
+
+test('HB3.3 DOM: hbParseOptions_ — one option per line, "*" marks the right ones, blank lines dropped; a true/false question has its own two (pure)', async () => {
+  const h = await hbBoot_({});
+  const P = (t, ty) => JSON.parse(JSON.stringify(h.w.hbParseOptions_(t, ty)));
+  assert.deepStrictEqual(P('a\n* b\n\n c ', 'single'), { options: ['a', 'b', 'c'], correct: 1 });
+  assert.deepStrictEqual(P('*a\nb\n*  c', 'multi'), { options: ['a', 'b', 'c'], correct: [0, 2] });
+  assert.deepStrictEqual(P('a\nb', 'single'), { options: ['a', 'b'], correct: -1 }, 'none marked');
+  assert.deepStrictEqual(P('* x', 'truefalse'), { options: ['True', 'False'], correct: -1 });
+  assert.strictEqual(h.w.hbOptionsText_({ type: 'multi', options: ['a', 'b', 'c'], correct: [0, 2] }), '* a\nb\n* c', 'and back');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB3.4 — the sign-off ("I've read this", versioned; a retraining change asks
+// again) and the manager's per-person progress with its export.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB3.4 — sign-offs and team progress');
+const HB34_SO = () => ({ setUp: true, signoffs: { 'section:man-3-1': { state: 'resign', signedMs: Date.UTC(2026, 8, 1), changed: true } } });
+const HB34_PROGRESS = () => ({ remindersOn: false, people: [
+  { email: 'rep@ex.org', name: 'Rep', department: HB_DEPT, overdue: 1, signed: 2, resign: 1,
+    plans: [{ id: 'pl-000000000001', title: 'First week', due: '2000-01-01', done: 1, total: 3, overdue: true }],
+    quizzes: [{ id: 'q-neb', title: 'Nebulizers', best: 60, attempts: 3, passed: false, locked: true }] },
+  { email: 'ann@ex.org', name: '=Ann, "A"', department: '', overdue: 0, signed: 0, resign: 0, plans: [], quizzes: [] }] });
+
+test('HB3.4 DOM: the bar above a section — "I\'ve read this" signs it off at the server and the bar says when; Undo withdraws it; a retraining change asks again; a refusal changes nothing; no sign-offs set up → no button (driven)', async () => {
+  let refuse = '';
+  const h = await hbBoot_({ answers: { hbMySignOffs: HB34_SO(), hbMarkRead: () => (refuse ? { success: false, error: refuse } : { success: true }) } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent))[0];
+  assert.ok(btn(/^I've read this$/), 'an unsigned section offers the sign-off');
+  btn(/^I've read this$/).click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true]);
+  assert.ok(/You read this on/.test(bar().textContent) && btn(/^Undo$/), 'signed: the date, and Undo');
+  btn(/^Undo$/).click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', false]);
+  assert.ok(btn(/^I've read this$/) && !/You read this/.test(bar().textContent), 'withdrawn');
+  // The section a retraining change touched asks again.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.ok(/Changed since you read it/.test(bar().textContent) && btn(/I've read it again/));
+  refuse = 'The handbook is busy.';
+  btn(/I've read it again/).click(); await h.settleAll();
+  assert.ok(/Changed since you read it/.test(bar().textContent), 'a refusal keeps the ask');
+  assert.ok(/Not saved: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent), 'and says so');
+  refuse = '';
+  btn(/I've read it again/).click(); await h.settleAll();
+  assert.ok(/You read this on/.test(bar().textContent));
+  // No sign-off store: nothing to press.
+  const off = await hbBoot_({ answers: { hbMySignOffs: { setUp: false, signoffs: {} } } });
+  off.w.MANUAL_HOST.openItem('man-3-2'); await off.settleAll();
+  assert.ok(!/read this/i.test(off.d.getElementById('hb-quizbar').textContent), 'no sign-off (HB2.2: the note button stays)');
+});
+
+test('HB3.4 DOM: My training — a changed item asks to be read again, its sign-off reaches the server and the bar above the section agrees (driven)', async () => {
+  const mine = HB33_MINE();
+  mine.plans.forEach((p) => p.items.forEach((it) => { if (it.id === 'man-3-1') it.sign = { state: 'resign', signedMs: 1, changed: true }; }));
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: mine, hbMySignOffs: HB34_SO(), hbMarkRead: { success: true } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const mark = h.d.querySelector('.hb-tr-plan .hb-tr-mark[data-kind="section"]');
+  assert.strictEqual(mark.textContent, "Changed — I've read it again");
+  mark.click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  assert.ok(/1 of 1 done/.test(h.d.querySelectorAll('.hb-tr-plan')[1].textContent), 'every plan with it agrees');
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.ok(/You read this on/.test(h.d.getElementById('hb-quizbar').textContent), 'the bar no longer asks');
+});
+
+test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked, details per plan and quiz; Copy table is the rows as TSV (formula-safe); a failed load says so; a reader never asks for it (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: HB34_PROGRESS() } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const host = h.d.getElementById('hb-tr-progress');
+  const rows = [...host.querySelectorAll('tbody tr')];
+  assert.strictEqual(rows.length, 2);
+  assert.ok(rows[0].classList.contains('late') && !rows[1].classList.contains('late'), 'an overdue person is marked');
+  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent), ['3 · Respiratory & Resupply', '0 of 1', '1', '0 of 1', '1', '2', '1']);
+  const det = rows[0].querySelector('details').textContent;
+  assert.ok(/First week — 1 of 3/.test(det) && /Nebulizers — best 60%, 3 attempts · locked/.test(det), det);
+  assert.ok(/Reminder emails are off/.test(host.textContent));
+  const copied = [];
+  Object.defineProperty(h.w.navigator, 'clipboard', { value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } }, configurable: true });
+  [...host.querySelectorAll('button')].filter((b) => /Copy table/.test(b.textContent))[0].click(); await h.settleAll();
+  const lines = copied[0].split('\n');
+  assert.strictEqual(lines[0], ['Person', 'Email', 'Department', 'Plans done', 'Overdue plans', 'Quizzes passed', 'Quizzes locked', 'Sections signed', 'To re-sign'].join('\t'));
+  assert.strictEqual(lines[2].split('\t')[0], '\'=Ann, "A"', 'a cell that would be a formula is not one (g144)');
+  assert.strictEqual(h.w.hbCsvCell_('=Ann, "A"'), '"\'=Ann, ""A"""', 'the CSV quotes it as well');
+  assert.strictEqual(h.w.hbCsvCell_(3), '3');
+  // A failed load says so in the panel.
+  const bad = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: { error: 'Handbook manager access required.' } } });
+  bad.w.hbGoTraining_(); await bad.settleAll();
+  assert.ok(/Progress could not be loaded: Handbook manager access required/.test(bad.d.getElementById('hb-tr-progress').textContent));
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: { setUp: true, plans: [] } } });
+  r.w.hbGoTraining_(); await r.settleAll();
+  assert.strictEqual(r.calls.indexOf('hbTeamProgress'), -1, 'a reader asks for no progress');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.2 — bookmarks (the reader bar's star, the reader's account) and notes
+// (this browser; the account only when the reader turns it on).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.2 — bookmarks and notes');
+const hb22Ls_ = (w, k) => { try { return JSON.parse(w.localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
+
+test('HB2.2 DOM: the reader bar\'s star bookmarks the section in the reader\'s account; Saved lists it, opens it and removes it; a refusal changes nothing; with no store the browser keeps the list and the server is never asked (driven)', async () => {
+  let list = [{ id: 'man-3-1', title: '3.1 Oxygen basics' }], refuse = '';
+  const h = await hbBoot_({ answers: { hbMyBookmarks: () => ({ setUp: true, bookmarks: list }),
+    hbToggleBookmark: (id, on) => { if (refuse) return { success: false, error: refuse };
+      list = on ? [{ id, title: id === 'man-3-2' ? '3.2 Nebulizers' : id }].concat(list.filter((b) => b.id !== id)) : list.filter((b) => b.id !== id);
+      return { success: true, bookmarks: list }; } } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const star = () => h.d.querySelector('.kb-man-bar .kb-bm');
+  assert.ok(star(), 'the reader bar carries the star');
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'false');
+  star().click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbToggleBookmark').pop(), ['hbToggleBookmark', 'man-3-2', true]);
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'true', 'pressed once the account has it');
+  refuse = 'The handbook is busy.';
+  star().click(); await h.settleAll();
+  assert.strictEqual(star().getAttribute('aria-pressed'), 'true', 'a refusal leaves it as it was');
+  assert.ok(/Not saved: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent));
+  refuse = '';
+  h.d.querySelector('#hb-toc .hb-toc-saved').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist.pop(), ['push', { saved: true }, {}]);
+  const rows = () => [...h.d.querySelectorAll('#hb-sv .hb-sv-row')].filter((r) => !r.classList.contains('hb-sv-note'));
+  assert.deepStrictEqual(rows().map((r) => r.querySelector('.hb-tr-it-t').textContent), ['3.2 Nebulizers', '3.1 Oxygen basics'], 'the handbook\'s titles, newest first');
+  assert.ok(/Kept in your account/.test(h.main().textContent));
+  [...rows()[1].querySelectorAll('button')].filter((b) => b.textContent === 'Remove')[0].click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbToggleBookmark').pop(), ['hbToggleBookmark', 'man-3-1', false]);
+  assert.deepStrictEqual(rows().map((r) => r.querySelector('.hb-tr-it-t').textContent), ['3.2 Nebulizers'], 'the list repaints');
+  [...rows()[0].querySelectorAll('button')].filter((b) => b.textContent === 'Open')[0].click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-2'), 'Open reads it');
+  h.w.__hbChange({ state: { saved: true } }); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-sv'), 'Back to Saved');
+  // No store: the browser's own list.
+  const un = await hbBoot_({ answers: { hbMyBookmarks: { setUp: false, bookmarks: [] } } });
+  un.w.MANUAL_HOST.openItem('man-3-2'); await un.settleAll();
+  un.d.querySelector('.kb-man-bar .kb-bm').click(); await un.settleAll();
+  assert.strictEqual(un.calls.indexOf('hbToggleBookmark'), -1, 'nothing to ask');
+  assert.deepStrictEqual(hb22Ls_(un.w, 'umsHbBookmarks').map((b) => b.id), ['man-3-2'], 'kept in this browser');
+  un.w.hbGoSaved_(); await un.settleAll();
+  assert.ok(/Kept in this browser/.test(un.main().textContent));
+});
+
+test('HB2.2 DOM: a note — "Add a note" above a section opens the editor; a save keeps it in this browser and asks nothing of the server; the bar then says "Your note"; Delete leaves a tombstone; Escape after typing asks first (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [] } } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const btn = () => h.d.querySelector('#hb-quizbar .hb-note-btn');
+  assert.strictEqual(btn().textContent.trim(), 'Add a note');
+  btn().click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-note-ov');
+  assert.ok(ov && /Nebulizers/.test(ov.textContent) && /Kept in this browser only/.test(ov.textContent) && /patient information/.test(ov.textContent));
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Ask which mask they use'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  ov.querySelector('.btn-modal-ok').click(); await h.settleAll();
+  assert.ok(!h.d.getElementById('hb-note-ov'), 'saved: closed');
+  const kept = hb22Ls_(h.w, 'umsHbNotes');
+  assert.strictEqual(kept['man-3-2'].t, 'Ask which mask they use');
+  assert.ok(kept['man-3-2'].ms > 0);
+  assert.strictEqual(h.calls.indexOf('hbSyncNotes'), -1, 'sync is off: the server never sees it');
+  assert.strictEqual(btn().textContent.trim(), 'Your note');
+  // Escape after typing asks (g166).
+  btn().click(); await h.settleAll();
+  const ta2 = h.d.getElementById('hb-note-text');
+  assert.strictEqual(ta2.value, 'Ask which mask they use', 'the editor opens with the note');
+  ta2.value = 'changed'; ta2.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Discard changes\?/.test(ask.textContent));
+  ask.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  // Delete.
+  [...h.d.querySelectorAll('#hb-note-ov button')].filter((b) => b.textContent === 'Delete')[0].click(); await h.settleAll();
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, '', 'a tombstone, so a deletion can travel');
+  assert.strictEqual(btn().textContent.trim(), 'Add a note');
+  h.w.hbGoSaved_(); await h.settleAll();
+  assert.ok(/No notes yet/.test(h.main().textContent), 'a tombstone is not listed');
+});
+
+test('HB2.2 DOM: syncing notes — turning it on warns about patient information, then sends this browser\'s notes and keeps the merge; a save then goes to the account; a failed one stays here and says so; turning it off removes the account\'s copies (driven)', async () => {
+  let fail = false;
+  const sent = [];
+  const h = await hbBoot_({ ls: { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Mine here', ms: 100 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbForgetNotes: { success: true, removed: 2 },
+      hbSyncNotes: (m) => { sent.push(JSON.parse(JSON.stringify(m))); return fail ? { success: false, error: 'The handbook is busy.' }
+        : { success: true, notes: Object.assign({ 'man-3-2': { t: 'From my other computer', ms: 200 } }, m) }; } } });
+  assert.strictEqual(sent.length, 0, 'off at boot: nothing is sent');
+  h.w.hbGoSaved_(); await h.settleAll();
+  const box = () => h.d.getElementById('hb-sv-sync');
+  // Cancel at the warning: nothing is sent and nothing is turned on.
+  box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  h.d.querySelector('.overlay.open.ui-dialog .ui-dialog-cancel').click(); await h.settleAll();
+  assert.strictEqual(sent.length, 0, 'the warning refused: nothing goes up');
+  assert.ok(!h.w.localStorage.getItem('umsHbNotesSync') && !box().checked, 'and sync stays off');
+  box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  const ask = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(ask && /Never write patient information/.test(ask.textContent), 'the warning comes first');
+  assert.strictEqual(box().checked, false, 'the box says what IS until it is turned on');
+  ask.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[0], { 'man-3-1': { t: 'Mine here', ms: 100 } }, 'this browser\'s notes go up');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '1');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'From my other computer', 'and the account\'s come down');
+  assert.ok(box().checked && /On: your notes are kept in your account/.test(h.main().textContent));
+  // A save now sends just that note; a failed one stays here and says so.
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.d.querySelector('#hb-quizbar .hb-note-btn').click(); await h.settleAll();
+  assert.ok(/Kept in your account/.test(h.d.getElementById('hb-note-ov').textContent));
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Edited'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  fail = true;
+  h.d.querySelector('#hb-note-ov .btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(Object.keys(sent[1]), ['man-3-2'], 'one note');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'Edited', 'kept here');
+  assert.ok(/not in your account yet: The handbook is busy/.test(h.d.getElementById('toast-stack').textContent));
+  fail = false;
+  // Off.
+  h.w.hbGoSaved_(); await h.settleAll();
+  box().checked = false; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  const off = h.d.querySelector('.overlay.open.ui-dialog');
+  assert.ok(off && /copies in your account are deleted/.test(off.textContent));
+  off.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.calls.indexOf('hbForgetNotes') >= 0);
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'Edited', 'this browser keeps its notes');
+  // On at boot: this browser's notes go up once.
+  const b = await hbBoot_({ ls: { umsHbNotesSync: '1', umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'x', ms: 5 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbSyncNotes: (m) => ({ success: true, notes: m }) } });
+  assert.deepStrictEqual(b.argsOf.filter((a) => a[0] === 'hbSyncNotes'), [['hbSyncNotes', { 'man-3-1': { t: 'x', ms: 5 } }]]);
+});
+
+test('HB2.2 DOM: export and import — the export carries each note with its section\'s title; an import keeps the newer note per section, says what it took, and refuses a file that is not an export (driven)', async () => {
+  const h = await hbBoot_({ ls: { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Newer here', ms: 500 }, 'man-3-2': { t: 'Old here', ms: 10 }, 'man-5-1': { t: '', ms: 9 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] } } });
+  const out = JSON.parse(h.w.hbNotesExport_(JSON.parse(h.w.localStorage.getItem('umsHbNotes')), h.w.hbSectionTitle_, '2026-10-29T00:00:00Z'));
+  assert.strictEqual(out.app, 'ums-handbook-notes');
+  assert.deepStrictEqual(Object.keys(out.notes), ['man-3-1', 'man-3-2'], 'no tombstone');
+  assert.strictEqual(out.notes['man-3-1'].title, '3.1 Oxygen basics');
+  h.w.hbGoSaved_(); await h.settleAll();
+  const input = h.d.querySelector('#hb-sv .hb-sv-file');
+  assert.ok(input && input.hidden, 'the file box is hidden behind its button');
+  const load = async (text) => {
+    Object.defineProperty(input, 'files', { value: [new h.w.File([text], 'notes.json', { type: 'application/json' })], configurable: true });
+    input.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 30)); await h.settleAll();
+  };
+  await load(JSON.stringify({ app: 'ums-handbook-notes', version: 1, notes: {
+    'man-3-1': { t: 'Older from file', ms: 100 }, 'man-3-2': { t: 'Newer from file', ms: 200 }, 'man-9-9': { t: 'New section', ms: 50 }, 'bad id': { t: 'x', ms: 1 } } }));
+  const kept = hb22Ls_(h.w, 'umsHbNotes');
+  assert.strictEqual(kept['man-3-1'].t, 'Newer here', 'the newer note here is kept');
+  assert.strictEqual(kept['man-3-2'].t, 'Newer from file');
+  assert.strictEqual(kept['man-9-9'].t, 'New section');
+  assert.ok(/Imported 2 notes — newer notes here were kept; 1 could not be read/.test(h.d.getElementById('toast-stack').textContent), h.d.getElementById('toast-stack').textContent);
+  await load('{"not":"ours"}');
+  assert.ok(/not a notes export/.test(h.d.getElementById('toast-stack').textContent));
+  assert.strictEqual(h.calls.indexOf('hbSyncNotes'), -1, 'sync off: an import stays here');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.3 — display settings (this browser) and read aloud (the browser's speech).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.3 — display settings and read aloud');
+/** A fake speechSynthesis: records what is spoken; a test ends an utterance by
+ *  calling its onend. */
+function hb23Speech_(w) {
+  const log = [];
+  const speech = { spoken: [], log,
+    speak(u) { this.spoken.push(u); log.push('speak'); },
+    pause() { log.push('pause'); }, resume() { log.push('resume'); }, cancel() { log.push('cancel'); },
+    getVoices() { return [{ name: 'Alex', lang: 'en-US' }, { name: 'Moira', lang: 'en-IE' }]; },
+    addEventListener() {} };
+  w.speechSynthesis = speech;
+  w.SpeechSynthesisUtterance = function (text) { this.text = text; };
+  return speech;
+}
+
+test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and is kept in this browser; the easier-reading font loads only when chosen; Reset clears it all (driven)', async () => {
+  const h = await hbBoot_();
+  const root = h.d.documentElement;
+  assert.strictEqual(h.d.getElementById('hb-easy-font'), null, 'no font download until it is chosen');
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const ov = h.d.getElementById('hb-disp-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  const pick = (name, v) => { const r = ov.querySelector('input[name="hb-disp-' + name + '"][value="' + v + '"]'); r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
+  pick('size', 2); pick('spacing', 1);
+  assert.strictEqual(root.getAttribute('data-hb-size'), '2');
+  assert.strictEqual(root.getAttribute('data-hb-spacing'), '1');
+  const box = (label) => [...ov.querySelectorAll('.hb-disp-check')].filter((l) => l.textContent.indexOf(label) === 0)[0].querySelector('input');
+  [['High contrast', 'data-hb-contrast', 'high'], ['Easier-reading font', 'data-hb-font', 'easy'], ['Reduce motion', 'data-hb-motion', 'reduce']].forEach(([label, attr, val]) => {
+    const b = box(label); b.checked = true; b.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+    assert.strictEqual(root.getAttribute(attr), val, label);
+  });
+  const link = h.d.getElementById('hb-easy-font');
+  assert.ok(link && /Atkinson\+Hyperlegible/.test(link.href), 'the font is loaded once chosen');
+  const kept = JSON.parse(h.w.localStorage.getItem('umsHbDisplay'));
+  assert.deepStrictEqual(kept.attrs, { 'data-hb-size': '2', 'data-hb-spacing': '1', 'data-hb-contrast': 'high', 'data-hb-motion': 'reduce', 'data-hb-font': 'easy' });
+  assert.strictEqual(kept.prefs.size, 2);
+  // Off again, one at a time.
+  const c = box('High contrast'); c.checked = false; c.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(root.hasAttribute('data-hb-contrast'), false);
+  [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Reset')[0].click(); await h.settleAll();
+  ['data-hb-size', 'data-hb-spacing', 'data-hb-contrast', 'data-hb-motion', 'data-hb-font'].forEach((a) => assert.strictEqual(root.hasAttribute(a), false, a + ' cleared'));
+  assert.deepStrictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs, {});
+  assert.ok(h.d.getElementById('hb-disp-ov').querySelector('input[name="hb-disp-size"][value="0"]').checked, 'the panel repaints at the defaults');
+  [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Done')[0].click(); await h.settleAll();
+  assert.ok(!h.d.getElementById('hb-disp-ov'), 'Done closes it');
+});
+
+test('HB2.3 DOM: the head applies the kept settings before the page script runs — only data-hb-* names with plain values; the font comes with them (driven)', async () => {
+  const h = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { size: 3, font: true }, attrs: {
+    'data-hb-size': '3', 'data-hb-font': 'easy', onclick: 'alert(1)', 'data-hb-x': '"><b>', 'data-mode': 'dark' } }) } });
+  const root = h.d.documentElement;
+  assert.strictEqual(root.getAttribute('data-hb-size'), '3');
+  assert.strictEqual(root.getAttribute('data-hb-font'), 'easy');
+  assert.strictEqual(root.hasAttribute('onclick'), false, 'not a data-hb name');
+  assert.strictEqual(root.hasAttribute('data-hb-x'), false, 'not a plain value');
+  assert.strictEqual(root.getAttribute('data-mode'), null, 'the theme is not this setting\'s to change');
+  assert.strictEqual(h.d.querySelectorAll('#hb-easy-font').length, 1, 'the font, once — the page does not add a second');
+  // A broken store is no settings, never a broken page.
+  const b = await hbBoot_({ ls: { umsHbDisplay: '{not json' } });
+  assert.ok(b.d.querySelector('.hb-card'), 'the page still opens');
+});
+
+test('HB2.3 DOM: read aloud — Listen speaks the section a block at a time, marking the one being read; Pause and Resume; Stop and any navigation cancel it; a browser without speech offers no Listen (driven)', async () => {
+  const h = await hbBoot_();
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent.trim()))[0];
+  assert.ok(btn(/^Listen$/), 'offered');
+  btn(/^Listen$/).click(); await h.settleAll();
+  assert.strictEqual(sp.spoken[0].text, '3.1 Oxygen basics', 'the title first');
+  assert.ok(h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-sec-h').classList.contains('hb-ra-on'), 'and it is marked');
+  assert.ok(btn(/^Pause$/) && btn(/^Stop$/));
+  sp.spoken[0].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[1].text, 'Intro.');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 1, 'one block marked at a time');
+  btn(/^Pause$/).click(); await h.settleAll();
+  assert.ok(sp.log.indexOf('pause') >= 0 && btn(/^Resume$/));
+  btn(/^Resume$/).click(); await h.settleAll();
+  assert.ok(sp.log.indexOf('resume') >= 0 && btn(/^Pause$/));
+  sp.spoken[1].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[2].text, '3.1.1 Tanks', 'a heading inside the section');
+  sp.spoken[2].onend(); sp.spoken[3].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[3].text, 'Tanks hold oxygen.');
+  assert.ok(btn(/^Listen$/), 'the end of the section ends the reading');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 0, 'and clears the mark');
+  // Stop, and navigation.
+  btn(/^Listen$/).click(); await h.settleAll();
+  const n = sp.spoken.length;
+  btn(/^Stop$/).click(); await h.settleAll();
+  assert.ok(sp.log.lastIndexOf('cancel') > sp.log.lastIndexOf('speak'), 'Stop cancels');
+  sp.spoken[n - 1].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken.length, n, 'a late end after Stop speaks nothing more');
+  btn(/^Listen$/).click(); await h.settleAll();
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.ok(sp.log.lastIndexOf('cancel') > sp.log.lastIndexOf('speak'), 'leaving the section stops it');
+  assert.strictEqual(h.d.querySelectorAll('.hb-ra-on').length, 0);
+  // No speech in this browser: no Listen.
+  const none = await hbBoot_();
+  delete none.w.speechSynthesis;
+  none.w.MANUAL_HOST.openItem('man-3-1'); await none.settleAll();
+  assert.ok(![...none.d.querySelectorAll('#hb-quizbar button')].some((b) => /Listen/.test(b.textContent)));
+});
+
+test('HB2.3 DOM: read aloud skips what is hidden, and a late end after Stop inside a long paragraph speaks nothing more (driven)', async () => {
+  const parts = HB_PARTS();
+  parts.parts[1].sections[1].bodyMd = 'First sentence here. Second sentence here.';
+  const h = await hbBoot_({ answers: { getManualParts: parts } });
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.d.querySelector('#kb-man-sec-man-3-2 .kb-article').insertAdjacentHTML('beforeend', '<p hidden>Hidden words</p><p><button>Copy</button></p>');
+  h.w.hbReadAloud_(); await h.settleAll();
+  for (let i = 0; i < 6 && sp.spoken.length > i; i++) { sp.spoken[i].onend(); await h.settleAll(); }
+  assert.deepStrictEqual(sp.spoken.map((u) => u.text), ['3.2 Nebulizers', 'First sentence here.', 'Second sentence here.'], 'nothing hidden, no button label');
+  // Stop in the middle of the paragraph, then the first sentence's end arrives late.
+  h.w.hbReadAloud_(); await h.settleAll();
+  sp.spoken[3].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken[4].text, 'First sentence here.');
+  h.w.hbStopReading_(); await h.settleAll();
+  sp.spoken[4].onend(); await h.settleAll();
+  assert.strictEqual(sp.spoken.length, 5, 'the second sentence is not spoken after Stop');
+});
+
+test('HB2.3 DOM: the read-aloud voice and speed come from the Display panel; a long sentence is spoken in pieces (driven)', async () => {
+  const h = await hbBoot_();
+  const sp = hb23Speech_(h.w);
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const sel = h.d.getElementById('hb-disp-voice');
+  assert.deepStrictEqual([...sel.options].map((o) => o.value), ['', 'Alex', 'Moira'], 'every voice the browser offers');
+  sel.value = 'Moira'; sel.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  const rate = [...h.d.querySelectorAll('#hb-disp-ov select')][1];
+  rate.value = '1.5'; rate.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  h.w.closeOverlay(h.d.getElementById('hb-disp-ov')); await h.settleAll();
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  h.w.hbReadAloud_(); await h.settleAll();
+  assert.strictEqual(sp.spoken[0].voice.name, 'Moira');
+  assert.strictEqual(sp.spoken[0].rate, 1.5);
+  const C = (t, m) => JSON.parse(JSON.stringify(h.w.hbSpeechChunks_(t, m)));
+  assert.deepStrictEqual(C('One. Two!  Three?'), ['One.', 'Two!', 'Three?']);
+  assert.deepStrictEqual(C('alpha beta, gamma delta, epsilon', 14), ['alpha beta,', 'gamma delta,', 'epsilon']);
+  assert.ok(C('x'.repeat(50) + ' ' + 'y'.repeat(50), 40).every((c) => c.length <= 40), 'a run with no punctuation is cut too');
+  assert.deepStrictEqual(C('See 3.1 and 10.4.2 first. It costs $1.50 a day.'), ['See 3.1 and 10.4.2 first.', 'It costs $1.50 a day.'], 'a section number or a price is not a sentence end');
+  assert.deepStrictEqual(C('   '), []);
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB2.4 — the keyboard and screen-reader pass (axe runs in the visual matrix).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB2.4 — keyboard and screen reader');
+
+test('HB2.4 DOM: focus follows the reader — opening a section from the contents lands on its heading; a view opened by a click lands on its heading; Back moves nothing (driven)', async () => {
+  const h = await hbBoot_();
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"]').click();
+  await h.settleAll();
+  const head = h.d.querySelector('#kb-man-sec-man-3-2 .kb-man-sec-h');
+  assert.strictEqual(h.d.activeElement, head, 'the section heading has focus, so the next Tab reads on from it');
+  assert.strictEqual(head.getAttribute('tabindex'), '-1', 'focusable by script, never a Tab stop');
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, h.main().querySelector('h1'), 'home: its heading');
+  h.w.hbGoSaved_(); await h.settleAll();
+  assert.ok(h.main().contains(h.d.activeElement), 'Saved: inside the view');
+  // Back and forward come through the change handler: no push, no focus move.
+  const btn = h.d.getElementById('hb-q'); btn.focus();
+  h.w.__hbChange({ state: { id: 'man-5-1', anchor: '' } }); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, btn, 'a history step leaves focus where the reader had it');
+  // A section opened from the page's own link paints first, then is focused once.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-sec-h'));
+  h.d.getElementById('hb-q').focus();
+  h.w.hbMarkCurrent_('man-3-1');
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'), 'scrolling past it later never pulls focus back');
+});
+
+test('HB2.4 DOM: the narrow contents take focus when opened — the current section, else the first entry — and give it back to the Contents button on Escape, a tap outside or a second press (driven)', async () => {
+  const h = await hbBoot_();
+  const menu = h.d.getElementById('hb-menu');
+  menu.focus(); h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#hb-toc button'), 'no section open: the first entry');
+  assert.strictEqual(menu.getAttribute('aria-expanded'), 'true');
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.d.activeElement, menu, 'Escape: back to the button');
+  assert.strictEqual(menu.getAttribute('aria-expanded'), 'false');
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, h.d.querySelector('#hb-toc .hb-it.on[data-kb-id="man-3-2"]'), 'the section being read');
+  h.w.hbToggleSide_();
+  assert.strictEqual(h.d.activeElement, menu, 'a second press closes them and focus returns');
+  h.w.hbToggleSide_();
+  h.main().dispatchEvent(new h.w.MouseEvent('click', { bubbles: true }));
+  assert.ok(!h.d.querySelector('.hb-wrap.side-open') && h.d.activeElement === menu, 'a tap outside: closed, focus back');
+  // Closed already: a stray Escape moves nothing.
+  h.d.getElementById('hb-q').focus();
+  h.d.dispatchEvent(new h.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'));
+  h.main().dispatchEvent(new h.w.MouseEvent('click', { bubbles: true }));
+  assert.strictEqual(h.d.activeElement, h.d.getElementById('hb-q'), 'nor does a click on the page while they are shut');
+});
+
+test('HB2.4 DOM: a slideshow announces each slide change once, with its caption, and never on load; the visible counter is hidden from the reader so it is not read twice', () => {
+  const h = m4Boot_();
+  const doc = h.window.document;
+  const host = doc.createElement('div');
+  host.className = 'kb-article';
+  host.innerHTML = h.read('kbMd_')('```gallery Steps\n![A](manimg:fig-a) one\n![B](manimg:fig-b)\n```');
+  doc.body.appendChild(host);
+  const fig = host.querySelector('.kb-gallery');
+  const live = fig.querySelector('.kb-gal-live');
+  assert.ok(live && live.getAttribute('role') === 'status' && live.getAttribute('aria-live') === 'polite');
+  assert.strictEqual(live.textContent, '', 'nothing is announced when the page opens');
+  assert.strictEqual(fig.querySelector('.kb-gal-count').getAttribute('aria-hidden'), 'true');
+  h.read('kbGalleryStep_')(fig, 1);
+  assert.strictEqual(live.textContent, 'Slide 2 of 2', 'a slide with no caption: its place');
+  h.read('kbGalleryStep_')(fig, 1);
+  assert.strictEqual(live.textContent, 'Slide 1 of 2: one', 'and with one, its caption');
+  assert.strictEqual(fig.querySelector('.kb-gal-count').textContent, '1 / 2', 'the visible counter still steps');
+});
+
+test('HB2.4 DOM: a table wider than the reader is a named Tab stop, and only while it is — re-measured when the text size changes (driven)', async () => {
+  const parts = HB_PARTS();
+  parts.parts[1].sections[0].bodyMd = 'Intro.\n\n| Item | Code |\n|---|---|\n| Tank | E0431 |\n';
+  const h = await hbBoot_({ answers: { getManualParts: parts } });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const tw = h.d.querySelector('#kb-man-sec-man-3-1 .kb-man-tw');
+  assert.ok(tw, 'the table is wrapped');
+  assert.ok(!tw.hasAttribute('tabindex'), 'jsdom lays nothing out: it fits, so it is no Tab stop');
+  let sw = 900;
+  Object.defineProperty(tw, 'scrollWidth', { configurable: true, get: () => sw });
+  Object.defineProperty(tw, 'clientWidth', { configurable: true, get: () => 400 });
+  // The text size grows: the page re-measures.
+  h.d.getElementById('hb-disp').click(); await h.settleAll();
+  const r = h.d.querySelector('#hb-disp-ov input[name="hb-disp-size"][value="3"]');
+  r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.strictEqual(tw.getAttribute('tabindex'), '0', 'it overflows: a Tab stop, so a keyboard can scroll it');
+  assert.strictEqual(tw.getAttribute('role'), 'region');
+  assert.strictEqual(tw.getAttribute('aria-label'), 'Table: Item (scrolls sideways)', 'named by its first cell');
+  sw = 400;
+  h.w.kbManualScrollTables_(h.d);
+  assert.ok(!tw.hasAttribute('tabindex') && !tw.hasAttribute('role') && !tw.hasAttribute('aria-label'), 'fits again: an ordinary table');
+});
+
+test('HB2.4 DOM: the page has a title, a skip link to the reading area, named landmarks, and a reading area that is not a live region; the account badge is drawn, not read into the button\'s name', async () => {
+  const h = await hbBoot_();
+  assert.strictEqual(h.d.title, 'UMS Handbook');
+  const skip = h.d.querySelector('a[href="#kb-main"]');
+  assert.ok(skip, 'a skip link to the reading area');
+  assert.ok(h.main().tagName === 'MAIN' && !h.main().hasAttribute('aria-live'), 'the whole reading area is not announced on every repaint');
+  assert.ok(h.d.querySelector('header') && h.d.querySelector('nav[aria-label]'), 'a banner and a named navigation landmark');
+  // A manager with one request waiting: the badge shows "1" — drawn, not text.
+  const pend = hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'pending' });
+  const boss = await hbBoot_({ answers: { hbGetMe: hbMeView_({ email: 'boss@ex.org', name: 'Boss', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }), team: [pend] }) } });
+  const badge = boss.d.getElementById('hb-me-badge');
+  assert.strictEqual(badge.getAttribute('data-n'), '1', 'a count to show');
+  assert.strictEqual(badge.getAttribute('aria-hidden'), 'true');
+  assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws, never text in the button\'s name');
+  assert.strictEqual(boss.d.getElementById('hb-me').textContent.trim(), 'Profile', 'the button\'s text is its visible word');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HB4.1 — the form library: the Forms page, the bar, the viewer, Download.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HB4.1 — the form library');
+const HB41_PDF_B64 = Buffer.from('%PDF-1.7\n%%EOF\n').toString('base64');
+const HB41_FORMS = () => ({ forms: [
+  { key: 'form-eaa', title: 'Economic Assistance Application (EAA)', summary: 'The blank application.', sections: [{ id: 'man-3-1', anchor: '', num: '3.1', title: '3.1 Oxygen basics' }] },
+  { key: 'form-pt-ot-rx', title: 'PT/OT Evaluation Rx (sample)', summary: '', sections: [] }] });
+/** A pdf.js stand-in on the page: records what it was given, draws nothing. */
+function hb41PdfJs_(w, pages) {
+  const got = [];
+  w.HTMLCanvasElement.prototype.getContext = () => ({});
+  w.pdfjsWorker = {};
+  w.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: (o) => { got.push(o); return { promise: Promise.resolve({ numPages: pages || 2,
+    getPage: () => Promise.resolve({ getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }), render: () => ({ promise: Promise.resolve() }) }) }) }; } };
+  return got;
+}
+
+test('HB4.1 DOM: Forms in the contents lists the library — each form\'s summary, its links into published sections, Open and Download; a failed read says so, never "no forms" (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS() } });
+  h.d.querySelector('#hb-toc .hb-toc-forms').click(); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Forms');
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { forms: true }, {}]);
+  const rows = [...h.main().querySelectorAll('.hb-fm-row')];
+  assert.deepStrictEqual(rows.map((r) => r.querySelector('.hb-pp-row-n').textContent.trim()), ['Economic Assistance Application (EAA)', 'PT/OT Evaluation Rx (sample)']);
+  assert.strictEqual(rows[0].querySelector('.hb-qz-sec').getAttribute('data-kb-id'), 'man-3-1', 'a link into its section');
+  assert.ok(!rows[1].querySelector('.hb-qz-sec') && !/In the handbook/.test(rows[1].textContent), 'a form whose sections are unpublished links nowhere');
+  assert.deepStrictEqual([...rows[0].querySelectorAll('button')].map((b) => b.textContent.trim()), ['Open', 'Download']);
+  // Back and forward.
+  h.w.__hbChange({ state: { forms: true } }); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Forms');
+  const bad = await hbBoot_({ answers: { hbListForms: { error: 'The form library could not be read: the header row has been edited.' } } });
+  bad.w.hbGoForms_(); await bad.settleAll();
+  assert.ok(/The forms could not be loaded: The form library could not be read/.test(bad.main().textContent) && bad.main().querySelector('[role="alert"]'));
+  assert.ok(!/No forms/.test(bad.main().textContent));
+  const none = await hbBoot_({ answers: { hbListForms: { forms: [] } } });
+  none.w.hbGoForms_(); await none.settleAll();
+  assert.ok(/No forms have been published yet/.test(none.main().textContent));
+});
+
+test('HB4.1 DOM: the bar above a section offers the forms that name it — and only those (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS() } });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = h.d.getElementById('hb-quizbar');
+  assert.ok(/Form: Economic Assistance Application \(EAA\)/.test(bar.textContent));
+  assert.strictEqual(bar.querySelector('[data-form]').getAttribute('data-form'), 'form-eaa');
+  assert.ok(!/PT\/OT/.test(bar.textContent));
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(!/Form:/.test(h.d.getElementById('hb-quizbar').textContent), 'a section no form names offers none');
+});
+
+test('HB4.1 DOM: Open draws every page of the PDF in the viewer, each a named image, from bytes fetched once per visit; pdf.js is given a copy and never evaluates font code (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  const got = hb41PdfJs_(h.w, 2);
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  const ov = h.d.getElementById('hb-form-ov');
+  assert.ok(ov && ov.classList.contains('open'));
+  assert.strictEqual(ov.getAttribute('aria-labelledby'), 'hb-form-h');
+  const pages = [...ov.querySelectorAll('canvas.hb-fv-page')];
+  assert.deepStrictEqual(pages.map((c) => c.getAttribute('aria-label')), ['Economic Assistance Application (EAA) — page 1 of 2', 'Economic Assistance Application (EAA) — page 2 of 2']);
+  assert.ok(pages.every((c) => c.getAttribute('role') === 'img'));
+  assert.ok(!h.d.getElementById('hb-fv-body').hasAttribute('aria-busy'), 'done loading');
+  assert.strictEqual(got[0].isEvalSupported, false);
+  assert.strictEqual(Buffer.from(got[0].data).toString(), '%PDF-1.7\n%%EOF\n', 'the PDF\'s own bytes');
+  h.w.closeOverlay(ov); await h.settleAll();
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  assert.strictEqual(h.calls.filter((c) => c === 'hbGetForm').length, 1, 'fetched once per visit');
+  assert.notStrictEqual(got[0].data, got[1].data, 'each render gets its own copy (pdf.js takes the buffer)');
+});
+
+test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer says so and points at Download; a viewer closed before its answer paints nothing (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  const sc = [...h.d.querySelectorAll('script[src]')].filter((s) => /pdf\.js\/3\.11\.174\/pdf\.min\.js$/.test(s.src))[0];
+  assert.ok(sc, 'pdf.js is fetched from cdnjs only now, at its pinned version');
+  sc.onerror(); await h.settleAll();
+  assert.ok(/The viewer could not load in this browser\. Use Download/.test(h.d.getElementById('hb-fv-body').textContent));
+  const r = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { error: 'That form is not in the library — it may have been removed at the last import.' } } });
+  hb41PdfJs_(r.w);
+  r.w.hbOpenForm_('form-eaa'); await r.settleAll();
+  assert.ok(/The form could not be loaded: That form is not in the library/.test(r.d.getElementById('hb-fv-body').textContent));
+  const slow = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { __delay: 40, value: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } } });
+  const got = hb41PdfJs_(slow.w);
+  slow.w.hbOpenForm_('form-eaa');
+  slow.w.closeOverlay(slow.d.getElementById('hb-form-ov'));
+  await new Promise((res) => setTimeout(res, 80)); await slow.settleAll();
+  assert.strictEqual(got.length, 0, 'the late answer drew nothing');
+  assert.ok(!slow.d.getElementById('hb-form-ov'));
+  // Close one form and open another before the first answer lands: the first
+  // must not draw into the second's viewer.
+  const pdf = 'data:application/pdf;base64,' + HB41_PDF_B64;
+  const two = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: (k) => ({ __delay: k === 'form-eaa' ? 30 : 120, value: { success: true, dataUri: pdf } }) } });
+  const got2 = hb41PdfJs_(two.w, 1);
+  two.w.hbOpenForm_('form-eaa');
+  two.w.closeOverlay(two.d.getElementById('hb-form-ov'));
+  two.w.hbOpenForm_('form-pt-ot-rx');
+  await new Promise((res) => setTimeout(res, 70)); await two.settleAll();
+  assert.strictEqual(got2.length, 0, 'the closed form\'s answer drew nothing into the open viewer');
+  await new Promise((res) => setTimeout(res, 120)); await two.settleAll();
+  assert.deepStrictEqual([...two.d.querySelectorAll('#hb-form-ov canvas')].map((c) => c.getAttribute('aria-label')), ['PT/OT Evaluation Rx (sample) — page 1 of 1'], 'the open form, once');
+});
+
+test('HB4.1 DOM: Download saves the PDF under the form\'s title and says what to do if the browser blocks it; a failed read says so (driven)', async () => {
+  const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  const clicks = [];
+  h.w.URL.createObjectURL = (b) => { clicks.push(['blob', b.type, b.size]); return 'blob:x'; };
+  h.w.URL.revokeObjectURL = () => {};
+  h.w.HTMLAnchorElement.prototype.click = function () { clicks.push(['click', this.getAttribute('download'), this.getAttribute('href')]); };
+  hb41PdfJs_(h.w);
+  h.w.hbOpenForm_('form-pt-ot-rx'); await h.settleAll();
+  h.d.querySelector('#hb-form-ov [data-form]').click(); await h.settleAll();
+  assert.deepStrictEqual(clicks, [['blob', 'application/pdf', 15], ['click', 'PT OT Evaluation Rx (sample).pdf', 'blob:x']]);
+  assert.ok(/Downloading PT OT Evaluation Rx \(sample\)\.pdf\. If nothing arrives, this browser blocked it/.test(h.d.getElementById('hb-fv-msg').textContent));
+  assert.strictEqual(h.w.hbFormFileName_('a:b*c?"d"<e>|f\\g/h'), 'a b c d e f g h.pdf', 'a title is a safe file name everywhere');
+  const r = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { error: 'The form could not be read from the KB spreadsheet. Try again in a moment.' } } });
+  r.w.hbGoForms_(); await r.settleAll();
+  [...r.main().querySelectorAll('button')].filter((b) => /Download/.test(b.textContent))[0].click(); await r.settleAll();
+  assert.ok(/The form could not be downloaded: The form could not be read/.test(r.d.getElementById('toast-stack').textContent));
+  assert.strictEqual(r.main().querySelectorAll('.hb-fm-row').length, 2, 'the list the reader pressed Download in is still there');
 });

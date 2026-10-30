@@ -92,9 +92,16 @@
       <div class="field"><label for="de-date-to">To <span class="opt-marker">(optional — range)</span></label><input type="date" id="de-date-to"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label for="de-clockin">Clock In</label><input type="time" id="de-clockin"></div>
-      <div class="field"><label for="de-clockout">Clock Out</label><input type="time" id="de-clockout"></div>
+      <div class="field"><label for="de-clockin">Clock In</label><input type="time" id="de-clockin" aria-describedby="de-clockin-inf">
+        <span class="de-inf-tag" id="de-clockin-inf" hidden>Inferred (app activity)</span></div>
+      <div class="field"><label for="de-clockout">Clock Out</label><input type="time" id="de-clockout" aria-describedby="de-clockout-inf">
+        <span class="de-inf-tag" id="de-clockout-inf" hidden>Inferred (app activity)</span></div>
     </div>
+    <!-- Round 12 E2 (operator 2026-10-28): the rep's app activity this day, in
+         10-minute blocks, and the first / last ping offered as a Clock In /
+         Clock Out the manager applies (and can still edit). Built by
+         deRenderActivity_(); hidden until the read lands. -->
+    <div class="de-act" id="de-act" hidden></div>
     <!-- A4: N break pairs. Rows are built by deRenderBreaks_(); each carries its
          own labelled leave/return inputs and a remove button (INV-173/195). -->
     <div class="de-breaks-head">

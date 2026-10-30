@@ -620,8 +620,9 @@ function saveAutoTagRules(rules) {
       'Updated auto-tag rules (' + clean.length + ')', callerEmp.email);
     // A7 (cycle 22): ship back what was STORED — the normalised tags and the
     // lowercased keywords — so the saving browser runs the same rules every
-    // rep will, not the raw text it sent.
-    return { success: true, rules: clean };
+    // rep will, not the raw text it sent. HB1.4: and mirror them for the
+    // handbook app's search-signal vocabulary.
+    return { success: true, rules: clean, handbookMirrored: kbMirrorSearchConfig_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 function saveDepartmentEmails(deptJson) {
@@ -1231,6 +1232,7 @@ function purgeOldDiagnostics() {
     lock.waitLock(15000);
     let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
     let ks = { removed: 0, hitCap: false }, ksError = '';
+    let al = { removed: 0, hitCap: false };
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1243,24 +1245,32 @@ function purgeOldDiagnostics() {
       }
       dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
       budget -= dd.removed;
+      // 25post round 12 E2: the app-activity record keeps ACTIVITY_LOG_DAYS.
+      al = diagPurgeTab_(ss.getSheetByName(ACTIVITY_LOG_TAB), Date.now() - ACTIVITY_LOG_DAYS * 86400000, budget);
+      budget -= al.removed;
       // E6: the search signal lives on the KB store. One that cannot be opened
       // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
       // a store with no signal tab has nothing to purge.
       try {
-        ks = diagPurgeTab_(getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget);
+        const kbSs = getKbSS_();
+        ks = diagPurgeTab_(kbSs.getSheetByName(KB_SEARCH_SIGNAL_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget);
+        // HB1.4: the handbook app's searches keep the same 90 days.
+        const ksHb = diagPurgeTab_(kbSs.getSheetByName(KB_SEARCH_SIGNAL_HB_TAB), Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000, budget - ks.removed);
+        ks = { removed: ks.removed + ksHb.removed, hitCap: ks.hitCap || ksHb.hitCap };
       } catch (e) { ksError = String(e.message || e); }
     } finally {
       lock.releaseLock();
     }
-    const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap;
+    const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap || al.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
+      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${ks.removed} KbSearchSignal row(s)` +
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s)` +
       (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') + '.');
     return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
-             searchSignalRemoved: ks.removed,
+             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed,
              outcome: ksError ? automationOutcome_('partial', 'the search signal was not purged — the KB store could not be opened: ' + ksError, ['KbSearchSignal'])
                               : automationOutcome_('ok') };
   });
@@ -2675,8 +2685,9 @@ function getStorageHealth(opts) {
     try { propStore = scriptPropertiesStatus_(); } catch (e) { propStore = null; }
     // 25post — the deploying account's email allowance left today.
     const mailQuota = mailQuotaStatus_();
+    const routeLookups = routeLookupStatus_();   // 25post round 12 E2 (b)
     return { configTimezone: cfgTz, adpLocale: adpLocale, stores: stores, kbEmbeds: kbEmbeds,
-             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota };
+             drive: drive, mailBcc: mailBcc, propStore: propStore, mailQuota: mailQuota, routeLookups: routeLookups };
   } catch (err) { return { error: err.message }; }
 }
 
@@ -4626,8 +4637,13 @@ function getAutoTagRules_() {
       if (Array.isArray(parsed)) raw = parsed;
     } catch (_) {}
   }
+  return autoTagRulesNormalize_(raw);
+}
+/** PURE — auto-tag rules, whitelist-rebuilt (the L-12 rule above). HB1.4: the
+ *  handbook app reads the KbSearchConfig mirror through this too. */
+function autoTagRulesNormalize_(raw) {
   const out = [];
-  raw.forEach(function (r) {
+  (Array.isArray(raw) ? raw : []).forEach(function (r) {
     const tag = String((r && r.tag) || '').trim().toLowerCase()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (tag.length < 2 || tag.length > 24) return;

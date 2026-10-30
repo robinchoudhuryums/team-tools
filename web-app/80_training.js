@@ -836,52 +836,148 @@ function notifyTrainingAssigned_(targetIds, itemTitle, dueDate) {
     }
   } catch (e) { console.warn('notifyTrainingAssigned_ failed: ' + e.message); }
 }
-/** Pure — validates + normalizes a quiz definition. Returns { ok, quiz } or
- *  { ok:false, error }. Whitelist-built: only known fields survive. */
-function trainValidateQuizDef_(def) {
+// ── HB3.1 — the quiz engine both apps share ─────────────────────────────────
+// PURE, and nothing here reads CONFIG, a sheet or the clock, so the handbook
+// app's sync can copy it verbatim (scripts/handbook-sync.mjs). Team Tools'
+// trainValidateQuizDef_ / trainGradeQuiz_ / trainStripQuizForRep_ below are
+// this engine with Team Tools' stored shape — byte-identical results for its
+// single-answer quizzes. The retry limit, trainQuizLockout_, was already pure
+// and keyed by nothing: an attempt list is a list, whoever it belongs to.
+
+/** PURE — one question, validated and normalized: { question } or { error }.
+ *  type 'single' (the default; `correct` an option index), 'multi' (`correct`
+ *  the list of right indices — every one must be chosen, and nothing else) or
+ *  'truefalse' (options True, False). `explain` is what a wrong answer is
+ *  shown; `section` / `anchor` the handbook section it tests. opts.types limits
+ *  the types; opts.sectionIds (an id → 1 map), when given, requires every
+ *  question to name one of them. */
+function quizQuestion_(q, i, opts) {
+  q = q || {};
+  opts = opts || {};
+  const n = 'Question ' + (i + 1);
+  const type = q.type == null || q.type === '' ? 'single' : String(q.type);
+  if ((opts.types || ['single']).indexOf(type) < 0) return { error: n + ': "' + type.substring(0, 20) + '" is not a question type here.' };
+  const text = String(q.q || '').trim();
+  if (!text || text.length > QUIZ_TEXT_MAX) return { error: n + ': text is required (max ' + QUIZ_TEXT_MAX + ' chars).' };
+  let options;
+  if (type === 'truefalse') {
+    options = QUIZ_TF_OPTIONS.slice();
+    if (q.options != null && (!Array.isArray(q.options) || q.options.map(function (o) { return String(o).trim(); }).join('\n') !== options.join('\n'))) {
+      return { error: n + ': a true/false question\'s options are True and False.' };
+    }
+  } else {
+    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > TRAIN_QUIZ_MAX_OPTIONS) {
+      return { error: n + ': needs 2–' + TRAIN_QUIZ_MAX_OPTIONS + ' options.' };
+    }
+    options = [];
+    for (let j = 0; j < q.options.length; j++) {
+      const opt = String(q.options[j] || '').trim();
+      if (!opt || opt.length > QUIZ_OPTION_MAX) return { error: n + ', option ' + (j + 1) + ': text is required (max ' + QUIZ_OPTION_MAX + ' chars).' };
+      options.push(opt);
+    }
+  }
+  let correct;
+  if (type === 'multi') {
+    const list = Array.isArray(q.correct) ? q.correct.map(function (c) { return Math.round(Number(c)); }) : [];
+    const seen = {};
+    const ok = list.length >= 1 && list.every(function (c) { if (!(c >= 0 && c < options.length) || seen[c]) return false; seen[c] = 1; return true; });
+    if (!ok) return { error: n + ': pick the correct options (each once).' };
+    correct = list.slice().sort(function (a, b) { return a - b; });
+  } else {
+    correct = Math.round(Number(q.correct));
+    if (!(correct >= 0 && correct < options.length)) return { error: n + ': pick the correct option.' };
+  }
+  const explain = String(q.explain == null ? '' : q.explain).trim();
+  if (explain.length > QUIZ_EXPLAIN_MAX) return { error: n + ': the explanation is longer than ' + QUIZ_EXPLAIN_MAX + ' characters.' };
+  const section = String(q.section == null ? '' : q.section).trim();
+  const anchor = String(q.anchor == null ? '' : q.anchor).trim();
+  if (opts.sectionIds && !opts.sectionIds[section]) return { error: n + ': it must name the handbook section it tests' + (section ? ' (' + section.substring(0, 30) + ' is not one).' : '.') };
+  return { question: { type: type, q: text, options: options, correct: correct, explain: explain, section: section, anchor: anchor } };
+}
+/** PURE — a quiz: title, pass mark and questions. Returns { ok, quiz } or
+ *  { ok:false, error } (the first problem). Whitelist-built: only known fields
+ *  survive; a caller adds its own (Team Tools' kbItemId, the bank's id). */
+function quizValidate_(def, opts) {
   def = def || {};
   const title = String(def.title || '').trim();
-  if (!title || title.length > 120) return { ok: false, error: 'Quiz title is required (max 120 chars).' };
+  if (!title || title.length > QUIZ_TITLE_MAX) return { ok: false, error: 'Quiz title is required (max ' + QUIZ_TITLE_MAX + ' chars).' };
   const passPct = Math.round(Number(def.passPct));
   if (!(passPct >= 0 && passPct <= 100)) return { ok: false, error: 'Pass threshold must be 0–100.' };
-  const kbItemId = String(def.kbItemId || '').trim();
   if (!Array.isArray(def.questions) || def.questions.length < 1 || def.questions.length > TRAIN_QUIZ_MAX_QUESTIONS) {
     return { ok: false, error: 'A quiz needs 1–' + TRAIN_QUIZ_MAX_QUESTIONS + ' questions.' };
   }
   const questions = [];
   for (let i = 0; i < def.questions.length; i++) {
-    const q = def.questions[i] || {};
-    const text = String(q.q || '').trim();
-    if (!text || text.length > 500) return { ok: false, error: 'Question ' + (i + 1) + ': text is required (max 500 chars).' };
-    if (!Array.isArray(q.options) || q.options.length < 2 || q.options.length > TRAIN_QUIZ_MAX_OPTIONS) {
-      return { ok: false, error: 'Question ' + (i + 1) + ': needs 2–' + TRAIN_QUIZ_MAX_OPTIONS + ' options.' };
-    }
-    const options = [];
-    for (let j = 0; j < q.options.length; j++) {
-      const opt = String(q.options[j] || '').trim();
-      if (!opt || opt.length > 200) return { ok: false, error: 'Question ' + (i + 1) + ', option ' + (j + 1) + ': text is required (max 200 chars).' };
-      options.push(opt);
-    }
-    const correct = Math.round(Number(q.correct));
-    if (!(correct >= 0 && correct < options.length)) return { ok: false, error: 'Question ' + (i + 1) + ': pick the correct option.' };
-    questions.push({ q: text, options: options, correct: correct });
+    const r = quizQuestion_(def.questions[i], i, opts);
+    if (r.error) return { ok: false, error: r.error };
+    questions.push(r.question);
   }
-  return { ok: true, quiz: { title: title, kbItemId: kbItemId, passPct: passPct, questions: questions } };
+  return { ok: true, quiz: { title: title, passPct: passPct, questions: questions } };
 }
-/** Pure — grades answers (option indices; missing/invalid = wrong) against
- *  the full question defs. Returns { scorePct, passed-less data }: right,
- *  total, perQuestion booleans. NEVER returns the correct indices. */
-function trainGradeQuiz_(questions, answers) {
+/** PURE — is one answer right? A multi-select answer is right only when it
+ *  chooses exactly the right options. */
+function quizAnswerRight_(question, answer) {
+  if (question.type === 'multi') {
+    const want = (question.correct || []).slice().sort(function (a, b) { return a - b; });
+    if (!Array.isArray(answer)) return false;
+    const got = [];
+    for (let i = 0; i < answer.length; i++) {
+      const a = Math.round(Number(answer[i]));
+      if (got.indexOf(a) < 0) got.push(a);
+    }
+    got.sort(function (a, b) { return a - b; });
+    return got.length === want.length && got.every(function (a, i) { return a === want[i]; });
+  }
+  return Math.round(Number(answer)) === question.correct;
+}
+/** PURE — grades answers (missing/invalid = wrong) against the full question
+ *  defs: { right, total, perQuestion, scorePct }. NEVER returns the key. */
+function quizGrade_(questions, answers) {
   const perQuestion = [];
   let right = 0;
   for (let i = 0; i < questions.length; i++) {
-    const a = (answers && answers.length > i) ? Math.round(Number(answers[i])) : -1;
-    const ok = a === questions[i].correct;
+    const has = answers && answers.length > i && answers[i] != null;
+    const ok = has && quizAnswerRight_(questions[i], answers[i]);
     perQuestion.push(ok);
     if (ok) right++;
   }
   const total = questions.length || 1;
   return { right: right, total: questions.length, perQuestion: perQuestion, scorePct: Math.round(100 * right / total) };
+}
+/** PURE — a question as the person taking the quiz receives it: the text and
+ *  the options (and the type, unless it is plain single-answer). WHITELIST-
+ *  built, so the key, the explanation and the section cannot leak through a
+ *  missed field. */
+function quizStripQuestion_(q) {
+  const out = { q: q.q, options: (q.options || []).slice() };
+  if (q.type && q.type !== 'single') out.type = q.type;
+  return out;
+}
+/** PURE — what each WRONG answer is shown after a submit: its explanation and
+ *  the section to go back to. Never which option was right. */
+function quizReview_(questions, perQuestion) {
+  const out = [];
+  (questions || []).forEach(function (q, i) {
+    if (perQuestion && perQuestion[i]) return;
+    out.push({ i: i, explain: String(q.explain || ''), section: String(q.section || ''), anchor: String(q.anchor || '') });
+  });
+  return out;
+}
+
+/** Pure — Team Tools' quiz definition: the engine's single-answer quiz, in
+ *  the shape the Quizzes tab stores ({q, options, correct} per question). */
+function trainValidateQuizDef_(def) {
+  def = def || {};
+  const v = quizValidate_(def, { types: ['single'] });
+  if (!v.ok) return v;
+  return { ok: true, quiz: { title: v.quiz.title, kbItemId: String(def.kbItemId || '').trim(), passPct: v.quiz.passPct,
+    questions: v.quiz.questions.map(function (q) { return { q: q.q, options: q.options, correct: q.correct }; }) } };
+}
+/** Pure — grades answers (option indices; missing/invalid = wrong) against
+ *  the full question defs. Returns { scorePct, passed-less data }: right,
+ *  total, perQuestion booleans. NEVER returns the correct indices. */
+function trainGradeQuiz_(questions, answers) {
+  return quizGrade_(questions, answers);
 }
 /** Pure — the rep-facing shape. WHITELIST-constructed (never a delete-key
  *  copy), so `correct` cannot leak through a missed field (the privacy
@@ -890,7 +986,7 @@ function trainStripQuizForRep_(quizId, quiz) {
   return {
     quizId: quizId, title: quiz.title, passPct: quiz.passPct,
     kbItemId: quiz.kbItemId || '',
-    questions: (quiz.questions || []).map(function (q) { return { q: q.q, options: q.options.slice() }; }),
+    questions: (quiz.questions || []).map(quizStripQuestion_),
   };
 }
 /** All quiz rows as { quizId: {title, kbItemId, passPct, questions[], questionCount} }.

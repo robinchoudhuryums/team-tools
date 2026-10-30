@@ -458,7 +458,12 @@ const CONFIG = {
                            // than this. Editing an item counts as reviewing it.
   },
 };
-const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8 };
+const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6, STATUS:7, COMMENTS:8,
+  // 25post round 12 E2 (operator 2026-10-28) — column J, BEYOND the nine the
+  // ADP upload carries (the export copies A..I only): ADP_INFERRED_MARK on a
+  // Clock In / Clock Out a manager saved from the app-activity suggestion.
+  INFERRED:9 };
+const ADP_INFERRED_MARK = 'Inferred (app activity)';
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 // Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {
@@ -955,6 +960,32 @@ const PRESENCE_TTL_SEC = 1800;   // ~30 min — the window the chip's tooltip na
 const PRESENCE_LAST_PREFIX = 'presence_last_v1:';
 const PRESENCE_LAST_TTL_SEC = 21600;
 const IDLE_ALERT_MIN = 30;
+// 25post round 12 E2 (operator 2026-10-28) — the app-activity RECORD. Each
+// presence ping (a real gesture, at most one per window per
+// PRESENCE_MIN_GAP_MS on the client) also appends [time, empId, ms] to this
+// ADP-sheet tab; the manager's Day Edit charts a day of it in
+// ACTIVITY_BLOCK_MIN blocks and offers the first / last ping as a suggested
+// Clock In / Clock Out. Ids and times only — no page, no content. Rows past
+// ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
+const ACTIVITY_LOG_TAB = 'ActivityLog';
+const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
+const ACTIVITY_LOG_DAYS = 60;
+const ACTIVITY_BLOCK_MIN = 10;
+// 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
+// radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,
+// no key, no billing) counts against the DEPLOYER's daily "Map Direction
+// query" quota (documented 10,000 a day on Workspace, rolling), so every
+// rep's lookup is the deployer's. The app keeps its own count over the last
+// 24 hours in ROUTE_LOOKUP_PROP and stops at ROUTE_LOOKUP_CAP — 2,000 under
+// Google's — after which (or on any failure) a check falls back to the
+// straight line and says so. Only warehouses already within the limit in a
+// straight line are looked up (a straight line over it is a certain no),
+// nearest first, at most OOP_DRIVE_MAX_LOOKUPS per check.
+const ROUTE_LOOKUP_CAP = 8000;
+const ROUTE_LOOKUP_PROP = 'ROUTE_LOOKUPS_24H';
+const OOP_DRIVE_MAX_LOOKUPS = 3;
+const EXPORT_INFERRED_LIST_MAX = 50;   // the inferred punches an export names beside its link / in its email
+const ACTIVITY_PING_GAP_MIN = 10;   // = the client's PRESENCE_MIN_GAP_MS (pinned): a ping is a sample, at most one per window per gap
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
 // Turns the same per-rep tag scan the taxonomy uses into a weekly time series
@@ -2148,6 +2179,9 @@ const KB_REQUESTS_RESOLVED_TAIL = 10;
 // searches as they type). Kept KB_SEARCH_SIGNAL_DAYS by the nightly diagnostics
 // purge; read by the admin-only kbGetSearchSignal and the content-request hint.
 const KB_SEARCH_SIGNAL_TAB = 'KbSearchSignal';
+const KB_SEARCH_SIGNAL_HB_TAB = 'KbSearchSignalHb';   // HB1.4: the handbook app's searches — its own tab (appendRow only), the same report and purge
+const KB_SEARCH_CONFIG_TAB = 'KbSearchConfig';        // HB1.4: the synonyms + auto-tag rules mirrored for the handbook app (A2, JSON)
+const KB_SEARCH_CONFIG_HEADERS = ['Config'];
 const KB_SEARCH_SIGNAL_HEADERS = ['Timestamp', 'Term', 'Source', 'Event'];
 const KBSS = { TS: 0, TERM: 1, SOURCE: 2, EVENT: 3 };
 const KB_SEARCH_SIGNAL_TEXT_IDX = [KBSS.TERM];   // a term is kept as typed text ('@' — a heading like "3/4" must not become a date)
@@ -2210,6 +2244,37 @@ const KB_MANUAL_READONLY_MSG = 'This section comes from the Policies & Procedure
 // import rewrites the tab only when an image changed. Readers ask
 // getManualImages for a page's images in one call; it reads only this tab.
 const KB_MANUAL_IMAGES_TAB = 'ManualImages';
+// HB3.1 — the handbook's official quizzes (manual/data/quizzes.json, checked
+// by manual/quizzes.py, carried in manual.json): one row per quiz, the
+// questions as JSON with their answer key. The app never sends a client this
+// tab — the handbook app strips the key (quizStripQuestion_) before a quiz
+// leaves its server. Written by the import only, and only when it changed.
+const KB_MANUAL_QUIZZES_TAB = 'ManualQuizzes';
+const KB_MANUAL_QUIZZES_HEADERS = ['Id', 'Title', 'Section', 'Anchor', 'PassPct', 'QuestionsJson'];
+const KB_MANUAL_QUIZZES_TEXT_IDX = [0, 1, 2, 3, 5];   // every column but PassPct is text ('@')
+const KB_MANUAL_QUIZ_ID_RE = /^q-[a-z0-9]+(?:-[a-z0-9]+)*$/;   // mirrors manual/quizzes.py ID_RE (pinned)
+const KB_MANUAL_QUIZ_ID_MAX = 48;
+const KB_MANUAL_QUIZZES_MAX = 300;
+// HB4.1 — the handbook's form library (manual/data/forms.json, checked by
+// manual/forms.py, the PDFs from the repo's forms/ folder, carried in
+// manual.json as data URIs). Stored in the ManualFiles tab in the ManualImages
+// row shape — the PDF's base64 split across rows by part, keyed by form key +
+// content hash — so the images' ledger and reader serve it, with the form's
+// title, summary and sections (JSON) as trailing columns on every row. Written
+// by the import only, and only when a form changed; the handbook app reads it.
+const KB_MANUAL_FILES_TAB = 'ManualFiles';
+const KB_MANUAL_FILES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt', 'Title', 'Summary', 'Sections'];
+const KBMF = { TITLE: 7, SUMMARY: 8, SECTIONS: 9 };   // the trailing columns; 0–6 are KBMG's
+const KB_MANUAL_FILES_TEXT_IDX = [0, 1, 2, 3, 5, 7, 8, 9];   // every column but Part and ImportedAt is text ('@')
+const KB_MANUAL_FORM_KEY_RE = /^form-[a-z0-9]+(?:-[a-z0-9]+)*$/;   // mirrors manual/forms.py ID_RE (pinned)
+const KB_MANUAL_FORM_KEY_MAX = 48;
+const KB_MANUAL_FORM_TITLE_MAX = 120;
+const KB_MANUAL_FORM_SUMMARY_MAX = 300;
+const KB_MANUAL_FORM_SECTIONS_MAX = 8;
+const KB_MANUAL_FORMS_MAX = 40;
+const KB_MANUAL_FORM_MAX_BYTES = 1024 * 1024;   // one PDF; the EAA is ~200 KB
+const KB_MANUAL_FORM_TYPES = ['application/pdf'];
+const KB_MANUAL_FORM_CACHE_PREFIX = 'kbmform_';   // + content hash (g157)
 const KB_MANUAL_IMAGES_HEADERS = ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'];
 const KBMG = { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5, IMPORTED_AT: 6 };
 const KB_MANUAL_IMAGE_CELL_MAX = 45000;        // base64 characters per row — under the 50,000-character cell limit
@@ -2349,6 +2414,27 @@ const US_STATE_NAMES = {
 };
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
+// D2 (operator 2026-10-27): payor alias FAMILIES the Synonyms editor offers
+// when one of their terms appears in the InsurancePayors sheet. A suggestion,
+// never a write: the admin reviews the lines and saves them into
+// KB_SEARCH_SYNONYMS, the one alias list both searches read. A term that is
+// also a state code or an everyday word ("va", "ma", "hip") is left out,
+// because it would read as a state in the payor search or widen KB search.
+const INS_PAYOR_ALIAS_FAMILIES = [
+  ['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
+  ['bcbs', 'blue cross blue shield', 'blue cross and blue shield', 'bluecross blueshield'],
+  ['tricare', 'champus'],
+  ['amerigroup', 'wellpoint'],
+  ['anthem', 'elevance'],
+  ['kaiser', 'kaiser permanente', 'kp'],
+  ['wellcare', 'well care'],
+  ['hcsc', 'health care service corporation'],
+  ['harvard pilgrim', 'hphc'],
+  ['bcn', 'blue care network'],
+  ['hap', 'health alliance plan'],
+  ['superior', 'superior healthplan', 'superior health plan'],
+  ['chip', 'childrens health insurance program'],
+];
 const INS_PAYOR_MAX_ROWS = 5000;
 // ════════════════════════════════════════════════════════════════════════════
 //  REFERENCE DATA TABLES — operator-uploaded CSV → a NAMED KB sheet tab
@@ -2627,6 +2713,17 @@ const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PA
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
 const TRAIN_QUIZ_JSON_MAX = 45000;   // under the 50k Sheets cell limit (INV-96 spirit)
+// HB3.1 (handbook app plan, operator 2026-10-28): ONE quiz engine for both
+// apps (80_training.js, quiz…_). Team Tools' own quizzes are single-answer; the
+// handbook's official quizzes (manual/data/quizzes.json, mirrored by
+// manual/quizzes.py — pinned equal) may also be multi-select or true/false,
+// and every question explains itself and names the section it tests.
+const QUIZ_TYPES = ['single', 'multi', 'truefalse'];
+const QUIZ_TF_OPTIONS = ['True', 'False'];
+const QUIZ_TEXT_MAX = 500;
+const QUIZ_OPTION_MAX = 200;
+const QUIZ_TITLE_MAX = 120;
+const QUIZ_EXPLAIN_MAX = 600;
 // TRN-1 (cycle 23 Batch 11, operator 2026-10-05): retries are no longer
 // unlimited. A failed attempt now shows WHICH questions were wrong (never the
 // right option), and with unlimited retries that is an answer key by

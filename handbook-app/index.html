@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>UMS Handbook</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <?!= include('styles_design_tokens') ?>
+  <?!= include('styles') ?>
+  <?!= include('styles_handbook') ?>
+  <script>
+    // The link's section (?s=6.9.3) — the page cannot read its own address
+    // inside HtmlService (g107), so doGet hands it over. `<` is escaped so a
+    // value can never close this block (the same discipline as Team Tools).
+    window.HB_PARAMS = <?!= JSON.stringify(hbParams || {}).replace(/</g, '\\u003c') ?>;
+    // Dark mode follows the device, before first paint (the tokens partial
+    // keys its dark palette on data-mode).
+    try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-mode', 'dark'); } catch (e) {}
+    // HB2.3: the reader's display settings (this browser), before first paint —
+    // exactly the attributes the page stored (hbDisplayAttrs_ decides them),
+    // and the easier-reading font's stylesheet when it is on.
+    try {
+      var hbD = JSON.parse(localStorage.getItem('umsHbDisplay') || 'null');
+      var hbA = hbD && hbD.attrs && typeof hbD.attrs === 'object' ? hbD.attrs : {};
+      Object.keys(hbA).forEach(function (k) {
+        if (/^data-hb-[a-z]+$/.test(k) && /^[a-z0-9]+$/.test(String(hbA[k]))) document.documentElement.setAttribute(k, String(hbA[k]));
+      });
+      if (hbA['data-hb-font'] === 'easy') {
+        var hbL = document.createElement('link');
+        hbL.id = 'hb-easy-font'; hbL.rel = 'stylesheet';
+        hbL.href = 'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap';
+        document.head.appendChild(hbL);
+      }
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <a class="hb-skip" href="#kb-main" onclick="document.getElementById('kb-main').focus(); return false;">Skip to the handbook</a>
+  <header class="hb-head">
+    <button type="button" class="hb-menu" id="hb-menu" aria-controls="hb-side" aria-expanded="false" onclick="hbToggleSide_()">Contents</button>
+    <a class="hb-brand" href="#" onclick="hbGoHome_(); return false;">UMS Handbook</a>
+    <span class="hb-ver" id="hb-ver"></span>
+    <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
+      oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
+    <button type="button" class="hb-me-btn" id="hb-disp" onclick="hbOpenDisplay_()" aria-haspopup="dialog">Display</button>
+    <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge" aria-hidden="true"></span></button>
+    <label class="hb-dept">My department
+      <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
+    </label>
+  </header>
+  <div class="hb-quizbar" id="hb-quizbar" role="region" aria-label="This section's tools"></div>
+  <div class="hb-wrap">
+    <nav class="hb-side" id="hb-side" aria-label="Contents"><div id="hb-toc" class="hb-toc"></div></nav>
+    <main class="kb-main" id="kb-main" tabindex="-1"></main>
+  </div>
+  <!-- showToast writes here; without it every toast is silently dropped. -->
+  <div class="toast-stack" id="toast-stack" role="region" aria-live="polite" aria-label="Notifications"></div>
+
+<?!= include('script_icons') ?>
+<?!= include('shell_shared') ?>
+<?!= include('shared/script_manual_render') ?>
+<?!= include('kb/script_manual_diagrams') ?>
+<?!= include('script_handbook') ?>
+</body>
+</html>

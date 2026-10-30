@@ -115,6 +115,27 @@ def plain(runs):
     return "".join(r.get("t", "") for r in runs).strip()
 
 
+# a slideshow slide's longer text (figures.json `notes`, operator 2026-10-28)
+FIG_NOTES = {k: v.get("notes") for k, v in json.load(open("data/figures.json")).items() if isinstance(v, dict)}
+
+
+def slide_note_blocks(notes, part):
+    """Notes -> Word blocks: "- " lines become one bulleted list, the rest paragraphs."""
+    out, items = [], []
+    for line in (notes or []):
+        line = str(line)
+        if line.startswith("- "):
+            items.append(inline(line[2:]))
+            continue
+        if items:
+            out.append({"k": "list", "ordered": False, "items": items, "part": part})
+            items = []
+        out.append({"k": "p", "runs": inline(line), "part": part})
+    if items:
+        out.append({"k": "list", "ordered": False, "items": items, "part": part})
+    return out
+
+
 FIGURE = re.compile(r'<img\s[^>]*src="(data:image/[^"]+)"[^>]*>(?:\s*<figcaption>(.*?)</figcaption>)?', re.S)
 
 blocks = []
@@ -167,8 +188,14 @@ while i < len(lines):
         while "</figure>" not in buf[-1] and i + 1 < len(lines):
             i += 1
             buf.append(lines[i])
-        for m in FIGURE.finditer("\n".join(buf)):
+        joined = "\n".join(buf)
+        # a slideshow names each slide's figure, so its notes follow its image
+        # (operator 2026-10-28) — Word shows them in full, like print
+        slide_ids = re.findall(r'<div class="slide" data-fig="([^"]+)"', joined)
+        for n, m in enumerate(FIGURE.finditer(joined)):
             blocks.append({"k": "image", "src": m.group(1), "cap": inline(m.group(2) or "")})
+            if n < len(slide_ids):
+                blocks.extend(slide_note_blocks(FIG_NOTES.get(slide_ids[n]), cur_part))
         i += 1
         continue
 

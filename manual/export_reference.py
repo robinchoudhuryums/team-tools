@@ -4,7 +4,7 @@
 Writes, under $MANUAL_OUT/reference (default dist/reference):
 
   manual.json    THE upload file (Batch M2): {format, version, built, router,
-                 changelog, articles, images}. `articles` holds one object per level-2
+                 changelog, synonyms, quizzes, forms, articles, images}. `articles` holds one object per level-2
                  section of Parts 0-10, one per quick reference card, one per
                  Appendix B section, ONE glossary article for Appendix A and the
                  front page — {Id, Department, Title, Type, BodyMd, SortOrder,
@@ -16,6 +16,13 @@ Writes, under $MANUAL_OUT/reference (default dist/reference):
                  {alt, kind, dataUri} — which the import stores as rows of
                  the KB spreadsheet's ManualImages tab (M4-FU3: the domain
                  disables Apps Script's Drive); one upload carries everything.
+                 `quizzes` (HB3.1) is data/quizzes.json checked by quizzes.py — its
+                 PUBLISHED quizzes only; a draft is checked and held back (HB3.5),
+                 every section resolved to the app's {id, anchor}.
+                 `forms` (HB4.1) is data/forms.json checked by forms.py — each
+                 form's PDF from the repo's forms/ folder as a data URI, with
+                 the sections that offer it; the import stores them in the
+                 KB spreadsheet's ManualFiles tab.
 
 and, when it runs inside the team-tools repo, the diagram partial (Batch M3):
 
@@ -50,6 +57,8 @@ os.chdir(HERE)
 sys.path.insert(0, HERE)
 from numbering import display as dnum  # noqa: E402
 import footnotes, roles  # noqa: E402  (shared with build.py)
+import quizzes  # noqa: E402  (HB3.1: the question bank's check)
+import forms  # noqa: E402  (HB4.1: the form library's check)
 from built_date import built_date  # noqa: E402  (the one build date, shared with build.py and make_html.py)
 
 # Mirrors KB_BODY_MAX in web-app/00_config.js — the importer refuses a longer
@@ -159,7 +168,9 @@ def figure_md(fid):
 def gallery_md(spec):
     """A tutorial slideshow (operator 2026-10-19) -> a ```gallery fence the
     Reference reader steps through: one `![alt](manimg:key) caption` per line.
-    The fence info carries the title."""
+    The fence info carries the title. A slide's `notes` (operator 2026-10-28)
+    follow its line, each indented two spaces ("  - " a bullet); the reader
+    folds them under "Show details", and an older reader drops them."""
     parts = spec.split("|")
     title = next((p.split("=", 1)[1] for p in parts if p.startswith("title=")), "Slideshow")
     lines = []
@@ -170,6 +181,10 @@ def gallery_md(spec):
         f = FIGS[fid]
         caption = re.sub(r"<(b|strong)>(.*?)</\1>", r"\2", f["caption"])
         lines.append(image_ref(f["alt"], "fig-" + slug(fid), "figure", "figures.json:" + fid, FIGB[fid]) + " " + caption)
+        for note in f.get("notes") or []:
+            note = " ".join(str(note).split())
+            if note:
+                lines.append("  " + note.replace("`", "'"))
     return "```gallery " + title.replace("`", "'") + "\n" + "\n".join(lines) + "\n```"
 
 
@@ -361,14 +376,22 @@ def build_meta():
     return ver.group(1), built_date()
 
 
-def sec_target(sec, anchors):
-    """A section number → {id, anchor} (anchor '' for a whole article)."""
+def sec_lookup(sec, anchors):
+    """A section number → {id, anchor, num} (anchor '' for a whole article), or None."""
     a = anchors.get(sec)
     if not a:
-        errors.append(f"UNRESOLVABLE REF {sec} (router or changelog)")
         return None
     whole = a["level"] == 2 and not sec.startswith("§A-")
-    return {"id": a["id"], "anchor": "" if whole else dnum(sec)}
+    return {"id": a["id"], "anchor": "" if whole else dnum(sec), "num": dnum(sec)}
+
+
+def sec_target(sec, anchors):
+    """A section number → {id, anchor} (anchor '' for a whole article)."""
+    t = sec_lookup(sec, anchors)
+    if not t:
+        errors.append(f"UNRESOLVABLE REF {sec} (router or changelog)")
+        return None
+    return {"id": t["id"], "anchor": t["anchor"]}
 
 
 def build_router(p1_text, anchors):
@@ -652,6 +675,17 @@ def main():
     changelog = build_changelog(anchors)
     synonyms = build_synonyms()
     version, built = build_meta()
+    # HB3.1: the official quizzes — every quiz and question names a real section.
+    # HB3.5: a draft is checked the same way but held back — only "published" quizzes are exported.
+    quiz_bank = json.load(open("data/quizzes.json", encoding="utf-8"))
+    quiz_list, quiz_errors = quizzes.check(quiz_bank, lambda sec: sec_lookup(sec, anchors))
+    quiz_drafts = quizzes.drafts(quiz_bank)
+    # HB4.1: the form library — the PDFs are the repo's forms/ folder, shared with Team Tools' email attachments.
+    form_list, form_errors = forms.check(json.load(open("data/forms.json", encoding="utf-8")),
+                                         lambda sec: sec_lookup(sec, anchors),
+                                         forms.repo_reader(os.path.join(HERE, "..", "forms")))
+    errors.extend("forms.json: " + e for e in form_errors)
+    errors.extend("quizzes.json: " + e for e in quiz_errors)
 
     articles = [howto_article()]
     for k, text in bodies.items():
@@ -700,6 +734,11 @@ def main():
     print(f"call router           : {len(router)} caller phrases in {len({r['g'] for r in router})} groups")
     print(f"changelog             : {len(changelog)} dated changes")
     print(f"search synonyms       : {len(synonyms)} glossary abbreviations, matched as phrases")
+    print(f"quizzes               : {len(quiz_list)} ({sum(len(q['questions']) for q in quiz_list)} questions, "
+          f"{'every section verified' if not quiz_errors else str(len(quiz_errors)) + ' problem(s) below'})"
+          + (f"; {len(quiz_drafts)} draft(s) checked, not exported: {', '.join(quiz_drafts)}" if quiz_drafts else ""))
+    print(f"forms                 : {len(form_list)} ({sum(len(f['dataUri']) for f in form_list):,} characters of PDF, "
+          f"{'every file and section verified' if not form_errors else str(len(form_errors)) + ' problem(s) below'})")
     print(f"largest body          : {max(len(a['BodyMd']) for a in articles):,} characters")
     if in_repo:
         print(f"diagrams              : {n_diagrams} in the app partial")
@@ -721,7 +760,8 @@ def main():
     images = {k: {"alt": IMAGES[k]["alt"], "kind": IMAGES[k]["kind"], "dataUri": IMAGES[k]["dataUri"]}
               for k in sorted(IMAGES)}
     bundle = {"format": BUNDLE_FORMAT, "version": version, "built": built,
-              "router": router, "changelog": changelog, "synonyms": synonyms, "articles": articles, "images": images}
+              "router": router, "changelog": changelog, "synonyms": synonyms, "quizzes": quiz_list, "forms": form_list,
+              "articles": articles, "images": images}
     with open(os.path.join(out, "manual.json"), "w", encoding="utf-8") as f:
         json.dump(bundle, f, ensure_ascii=False, indent=1)
         f.write("\n")
@@ -746,7 +786,8 @@ def xref_report(path):
     """Batch M5a — which cross-references preview the target's OPENING (no
     block of it clearly matches the link) and carry no heading anchor to fix
     that. The app's own scorer does the work (scripts/manual-xref-report.mjs
-    reads it out of script_kb.html), so the report is the preview a rep sees.
+    reads it out of the reader's partials — web-app/shared/script_manual_render.html
+    since handbook app HB1.1b), so the report is the preview a rep sees.
     WARNING only: a missing Node or a failed run never fails the export."""
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "manual-xref-report.mjs")
     try:

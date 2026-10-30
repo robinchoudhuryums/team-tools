@@ -11562,7 +11562,7 @@ function cnRenderStoragePanel_(res) {
   return '<div class="panel" id="cn-sys-sec-storage" style="margin-bottom:20px">' +
     '<h2 class="card-label">' + icon('settings', 14) + ' Storage inventory</h2>' +
     cnDriveAccessHtml_(res && res.drive) + cnMailBccHtml_(res && res.mailBcc) +
-    cnPropStoreHtml_(res && res.propStore) + cnMailQuotaHtml_(res && res.mailQuota) +
+    cnPropStoreHtml_(res && res.propStore) + cnMailQuotaHtml_(res && res.mailQuota) + cnRouteLookupsHtml_(res && res.routeLookups) +
     hdr + table + cnRenderKbEmbedsHealth_(res && res.kbEmbeds) +
   '</div>';
 }
@@ -11723,6 +11723,29 @@ function cnMailQuotaHtml_(mq) {
   return '<div class="cn-drive-line cn-drive-' + tone + '">' +
     icon(v.tone === 'ok' ? 'check' : 'warning', 12) + '<span><strong>' + esc(v.title) + '.</strong> ' +
     esc(v.detail) + (v.fix ? ' ' + esc(v.fix) : '') + '</span></div>';
+}
+/** Round 12 E2 (b) (operator 2026-10-28) — the route lookups the eligibility
+ *  check spent in the last 24 hours, against the app's own cap (under Google's
+ *  quota for the deploying account). PURE verdict: null when the server is
+ *  older; an unreadable count is a warning, never "fine" (INV-187). */
+function cnRouteLookupsVerdict_(rl) {
+  if (!rl || rl.cap == null) return null;
+  var cap = Number(rl.cap);
+  if (rl.error || rl.used == null) {
+    return { tone: 'warn', title: 'Route lookups: count unavailable', detail: 'The driving-distance counter could not be read, so eligibility checks use the straight line until it can.' };
+  }
+  var used = Number(rl.used);
+  var line = used.toLocaleString() + ' of ' + cap.toLocaleString() + ' in the last ' + (rl.hours || 24) + ' hours';
+  if (used >= cap) return { tone: 'fail', title: 'Route lookups: limit reached', detail: line + ' — eligibility checks use the straight line, and say so, until the count falls.' };
+  if (used >= cap * 0.8) return { tone: 'warn', title: 'Route lookups: ' + line, detail: 'Close to the limit — past it, checks fall back to the straight line.' };
+  return { tone: 'ok', title: 'Route lookups: ' + line, detail: 'Driving distances for the eligibility check (Reference).' };
+}
+function cnRouteLookupsHtml_(rl) {
+  var v = cnRouteLookupsVerdict_(rl);
+  if (!v) return '';
+  var tone = v.tone === 'fail' ? 'danger' : v.tone;
+  return '<div class="cn-drive-line cn-drive-' + tone + '">' +
+    icon(v.tone === 'ok' ? 'check' : 'warning', 12) + '<span><strong>' + esc(v.title) + '.</strong> ' + esc(v.detail) + '</span></div>';
 }
 /** Cycle 25 FU3 — the PTO accrual ledger's per-rep side copies (F17) as a
  *  clause of the Script Properties line: '' when none exist or the server is
@@ -12255,6 +12278,9 @@ function cnHealthFindings_(health, storage, oop) {
     // 25post — the day's email allowance (one verdict, shared with the line).
     var mqv = cnMailQuotaVerdict_(storage.mailQuota);
     if (mqv) add('mailQuota', 'storage', mqv.tone, mqv.title, mqv.detail, mqv.fix || undefined);
+    // Round 12 E2 (b): the route-lookup count — a finding past 80% of the cap, ok otherwise.
+    var rlv = cnRouteLookupsVerdict_(storage.routeLookups);
+    if (rlv) add('routeLookups', 'storage', rlv.tone, rlv.title, rlv.detail);
     // (Batch Q, 2026-09-11) The Script Property store — where every operator
     // blob lives, capped at ~9KB per value and 500KB overall, and reported
     // nowhere until now. An ok FACT on a normal deployment (INV-186).
@@ -14059,6 +14085,8 @@ function cnRenderAdminBody_(cfg) {
         btn.disabled = false; btn.textContent = 'Save Rules';
         if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); return; }
         showToast('Auto-tag rules saved', 'toast-success');
+        // HB1.4: the handbook app reads a copy of the rules (its search vocabulary).
+        if (res.handbookMirrored === false) showToast('Saved here, but the handbook app could not be given the change — save again to retry.', 'toast-warn');
         // Reps pick the change up on their next config fetch; THIS browser's
         // matcher updates immediately — with the rules as the server STORED
         // them (A7, cycle 22): "Wheel Chair" is saved as tag `wheel-chair`

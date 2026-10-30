@@ -10,10 +10,89 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
-## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts (25post rounds 8–11)
+## 2026-10-28 → 10-30 — the handbook app (HB1.2–HB4.1)
+
+**A second Apps Script project** — `handbook-app/`, the handbook for every
+employee — plus Team Tools changes that ride the same deploys. The standing
+setup is the operator-state entry *The handbook app (`handbook-app/`, HB1.2)*;
+this is what each round asked of the operator.
+
+- **HB1.2–HB1.4:** create the project (`clasp create`), set
+  `HANDBOOK_KB_SS_ID` to the KB spreadsheet, deploy for the domain. Team Tools
+  New version (the shared reader moved into `shared/script_manual_render.html`;
+  every Import now mirrors the search synonyms into `KbSearchConfig`).
+- **HB2.1:** create the Handbook spreadsheet, set `HANDBOOK_SS_ID` and
+  `HANDBOOK_ADMIN_EMAILS`; the People tab is made by the first profile.
+- **HB2.2–HB2.4, HB3.2–HB3.4:** `npm run handbook:push` + New version each
+  time; reminder emails stay off until `HANDBOOK_REMINDERS=on` and
+  `installHandbookReminders`. HB2.4 also needs a Team Tools New version (the
+  darker light-mode green on links and modal primaries).
+- **HB3.1 + HB3.5:** Team Tools New version, then export + Import — the
+  dialog says "Quizzes: 2 quizzes (20 questions)" once the Chapter 0 and 1
+  quizzes (approved 2026-10-30) are in; §1-7.1 changed with them, so publish
+  Chapter 1.
+- **HB4.1:** both projects New version, then export + Import ("Forms: 2
+  forms · stored") — and press **Download** once on the handbook app's Forms
+  page: the Apps Script sandbox may block downloads silently, and HB4.2 depends
+  on the answer.
+
+## 2026-10-28 — handbook round: the 6.9.3 pick-up slideshow, resupply limits, company holidays
+
+**Adds NO operator state** — deploy a New version, then **re-import
+`manual.json`** (build it from `manual/` with `make_all.sh`; Check → Import →
+Publish chapters 3, 6, 8, 9 and 10). Until the re-import the app shows the old
+text.
+
+- **6.9.3** — Claim Prep is Step 1 of the pick-up ticket slideshow; the
+  Transaction, Selection and Ticket slides carry the field-by-field
+  instructions under **Show details** below the image (printed in full), and
+  the seven screenshots are cropped to the part that matters. The oxygen
+  ticket's copy of the patient-search screenshot (`o2-ticket-2`) is uncropped.
+- **3.3.3** — nebulizer supplies 2 a month each, the aerosol mask (A7015) 1;
+  the nebulizer kit (A7004) has a photo.
+- **3.5.2** — suction tubing (A7002, 8 a month) and sterile water (A4217,
+  4 bottles a month — usually the 1,070 mL AquaPak; the Item Master counts
+  A4217 as 500 mL per unit).
+- **3.8.1** — briefs, pullups and liners share ONE Texas Medicaid limit of
+  240 a month; each had read as 240 on its own. All five incontinence
+  allowances confirmed against TMHP by the operator.
+- **8.4.1** — the Oxygen Cylinder Stand / Rack (E1355) is removed (not in the
+  Item Master).
+- **9.1** — the company holidays are listed. The app's business-day
+  arithmetic reads the CDR Report's **Company Holidays** tab, not the handbook:
+  the tab should hold the same days, each on the weekday actually taken off.
+
+## 2026-10-28 — app activity in Day Edit and inferred punches; distance rules judged on the drive (25post round 12 E2)
+
+**Adds NO Script Properties to set** — a deploy (New version). Two things
+appear on their own: the **ActivityLog** tab on the ADP sheet (on the first
+presence ping) and the auto-managed `ROUTE_LOOKUPS_24H` counter. Two new
+server reads: `managerGetDayActivity` (manager) and the route lookup inside
+the eligibility check. If Apps Script asks the deployer to re-authorize after
+the deploy, accept — the route lookup is the same Maps service.
+
+- **Day Edit** shows the rep's app activity for the day as a strip of
+  10-minute blocks, with "Suggested from app activity: In 7:56 AM — Apply"
+  (and Out on a past day). Apply fills the time; you can still change it.
+  A time saved that way is marked **Inferred (app activity)** — in the
+  Timesheet tab's new column J, in Day Edit, on the team calendar and on the
+  pay statement. If the rep later adjusts that punch, or an adjustment is
+  approved, the mark goes.
+- **The ADP export file is unchanged.** Inferred punches are listed under
+  the export link and in the automated export email, so you can check them
+  before uploading.
+- **Area eligibility by distance now uses the drive.** If any route Google
+  offers is within the limit, the item is eligible, even when the fastest
+  route is longer; the card says both. The app stops looking up routes at
+  8,000 in 24 hours (Google allows 10,000 a day for a Workspace account);
+  past that, answers use the straight line and say so. Admin → System shows
+  the count.
+
+## 2026-10-27 — the Spanish Inbox's expanded request reads as a conversation; the call router's groups; Dept Request detail and Show reply; search marks at word starts; Sent PPD reasons and the weight reason; Dept Requests out of Needs you; the eligibility answer tidied and mapped; insurance states and aliases, image loaders, "except Hawaii" (25post rounds 8–12)
 
 **Adds NO Script Properties** — a deploy (New version) and a handbook
-re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
+re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`; round 12 D an admin-only read, `kbSuggestPayorSynonyms`.
+Round 12 B reads nothing new; fix the LocationAcceptance rows it names.
 
 - **Expand on a Spanish Inbox request** shows the newest message on its own,
   in paragraphs, with the earlier messages of the thread folded under "N
@@ -42,6 +121,46 @@ re-import. Round 10 adds one read-only server endpoint, `getDeptRequestReply`.
   Notes search mark a search word where a word starts — "in" no longer lights
   up inside "billing". A result found only by a match inside a word ("pap" in
   "CPAP", part of a TRX) still has that match marked.
+- **Intake** (round 12 A): a Sent PPD now shows why each model was
+  recommended, as the email does. A heavy-duty model (a weight range like
+  301–450 lbs in the Offerings sheet) recommended because of the patient's
+  weight says so: "Weight 320 lbs — within this model's 301–450 lbs range".
+  Only new sends carry the weight line.
+- **Needs you** (round 12 E1): Department Request items are gone from the
+  Dashboard's Needs you for everyone. Managers get one item, "Department
+  replies running late", only while a department has at least 25% of its open
+  requests past SLA and more than 3 of them; it names the departments and
+  opens Dept Requests. Spanish Inbox assignments still appear.
+- **OOP price & area eligibility** (round 12 B): the address line, then the
+  nearest warehouse (all distances one click away). Unusable delivery-table
+  rows show as one line — admins see which rows. A Queens/Brooklyn address now
+  reads its borough as the city, and says so. Each item's answer puts the
+  verdict first and one short line per rule under it, and the item details are
+  a tidy two-column list.
+- **Distance wording** (round 12 B follow-up): a distance answer reads
+  "1,380.6 mi from Dallas (>100 mi)" or "12 mi from Dallas (within 100 mi)";
+  only a near-the-limit yes still mentions the straight line.
+- **Eligibility map** (round 12 C): under the nearest warehouse, **Show map**
+  draws the address, nearby warehouses and the 100-mile ring (only when
+  pressed), and **Driving route from …** opens Google Maps directions from the
+  nearest warehouse. No API key or billing. If Apps Script asks the deployer to
+  re-authorize after this deploy, accept — the map uses the same Maps service
+  as the address lookup.
+- **Insurance lookup** (round 12 D): "uhc tx" now finds "UnitedHealthcare
+  Texas" and the other way round — states match by code or full name. A plan
+  whose name excludes the state you typed ("all states other than TX") is
+  listed last with a **TX excluded** note. Payor nicknames ride the
+  **Synonyms** list (Reference → Synonyms): press **Suggest payor aliases** to
+  add groups built from the payor sheet's names, check them, then **Save** —
+  nothing is saved until you do.
+- **Image loaders** (round 12 D): a handbook or article image that is still
+  loading shows a grey box reading **Loading image…**; one that was never
+  imported says **Image not imported yet**; one that failed says **Couldn't
+  load this image** with a **Retry** button.
+- **"except Hawaii"** (round 12 D): an Area Eligibility cell can now say
+  "Open (except Hawaii)" — the item reads **No** through insurance in Hawaii and
+  **Yes** out of pocket. Add it to the scooter rows after this deploy (before
+  it, the app reads that cell as "cannot tell").
 
 ## 2026-10-26 — after-hours duty, D10, crutches (25post round 7)
 

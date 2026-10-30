@@ -492,6 +492,11 @@ entry says which it is.
   manual's abbreviations ("ABN" ↔ "Advance Beneficiary Notice") ride
   `manual.json` into `ManualMeta` instead, and are matched as whole PHRASES.
   Edit those in the manual's glossary, never here.
+  **Payor aliases (25post round 12 D2, 2026-10-27):** the insurance lookup
+  reads these groups too (`insPayorMatch_`), so "uhc" finds "UnitedHealthcare".
+  The modal's **Suggest payor aliases** button (`kbSuggestPayorSynonyms`,
+  admin, read-only) appends groups built from the InsurancePayors names for
+  review — run it once after this deploy, check the lines, then Save.
 <a id="operator-quiz-import-from-google-forms-requires-the-google-forms-oaut"></a>
 - **Quiz import from Google Forms requires the Google Forms OAuth scope.**
   `importQuizFromForm` (Team Training → New quiz → "Import from Google
@@ -2237,6 +2242,24 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
+- **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
+  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
+  to set up:** the tab is auto-provisioned on the first presence ping after
+  the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
+  milliseconds — the column Day Edit searches). One row per presence ping —
+  a real gesture, at most one per app window per 10 minutes — so roughly six
+  rows an hour per active rep; ids and times only. The nightly diagnostics
+  purge removes rows older than 60 days (`ACTIVITY_LOG_DAYS`). **Timesheet
+  column J** ("Source", named the first time it is written) carries
+  `Inferred (app activity)` on a Clock In / Clock Out a manager saved from
+  Day Edit's suggestion; the ADP export copies columns A–I only, so the
+  upload file never carries it. Do not type in column J by hand — a rep's
+  adjustment or an approval clears it, and the app reads only that exact
+  phrase. **Auto-managed:** Script Property `ROUTE_LOOKUPS_24H` — the
+  eligibility check's route lookups per hour for the last 24 hours (`{hour:
+  count}`), capped at `ROUTE_LOOKUP_CAP` (8,000); delete it to reset the count.
+
 <a id="operator-the-digestdeliveries-tab-cycle-25"></a>
 - **The `DigestDeliveries` tab (ADP spreadsheet) — the manager digest delivery
   log (cycle 25 E1, G3).** **Nothing to set up:** it is auto-provisioned on the
@@ -2639,6 +2662,90 @@ entry says which it is.
   default; an unreadable value reads as no defaults (the standard layout). No
   setup needed.
 
+<a id="operator-the-handbook-app-hb1-2"></a>
+- **The handbook app (`handbook-app/`, HB1.2, operator 2026-10-28).** A second
+  Apps Script project that serves the handbook read-only to anyone signed in to
+  the domain. One-time setup, from the repo root:
+  1. Create the project in a scratch folder (so clasp cannot overwrite the
+     committed manifest): `mkdir /tmp/hb && cd /tmp/hb && clasp create --type
+     standalone --title "UMS Handbook"`. Copy the `scriptId` from
+     `/tmp/hb/.clasp.json` into `handbook-app/.clasp.json` (replacing
+     `SET-ME-…`) and commit it.
+  2. `npm run handbook:push` — it re-syncs, checks and pushes.
+  3. In the new project's editor: Project Settings → Script Properties → add
+     `HANDBOOK_KB_SS_ID` = the KB spreadsheet's id (the same id as Team Tools'
+     `KB_SS_ID`). Unset, every page says so by name.
+  4. Deploy → New deployment → Web app: Execute as **Me**, Who has access
+     **Anyone within the organisation**. Authorise the two scopes (read
+     spreadsheets, see your email address). Open the URL: it should list the
+     chapters and the version.
+
+  **The account you deploy as must be able to open the KB spreadsheet** — the
+  app reads it as you. (HB7.1 moves it to a shared account.) **Whenever** the
+  handbook reader or its server readers change in `web-app/`, run
+  `npm run handbook:sync`, commit, and push both projects; CI fails until the
+  copies are current. A publish in Team Tools shows in the handbook app within
+  five minutes. **Since HB1.3 the page is the reader:** contents, a department
+  picker, the home page with what changed since a reader's last visit, and
+  section links — `<the web app URL>?s=6.9.3` opens 6.9.3 (a section, a
+  subsection, `card 4`, or a `man-…` id). Each browser keeps the chapters
+  (IndexedDB) and re-reads them only when the handbook changed; a reader who
+  wants a fresh copy at once can reload after five minutes. **Since HB1.4** the
+  app searches (Team Tools' search) and takes section feedback — it now WRITES,
+  by appendRow only, into `KbFeedback` (Team Tools' tab: votes, out-of-date
+  flags and suggested edits, with the reader's address; Export feedback carries
+  them) and its own `KbSearchSignalHb` tab (its searches' vocabulary terms;
+  Admin → Reference's search signal and the nightly purge read it). **After
+  deploying HB1.4:** (1) the app's permission is now "see, edit … your
+  spreadsheets", so open the app once as the deployer and approve it; (2) deploy
+  Team Tools too, then save Reference → Synonyms once (or import the handbook)
+  — that writes the `KbSearchConfig` tab the app reads its search synonyms and
+  vocabulary from. Until then the app searches without your synonyms. **Since
+  HB2.1** the app keeps its own people — who reads it, their department and
+  their manager — in a **Handbook spreadsheet** of its own (never the KB):
+  (1) create an empty Google Sheet named e.g. "UMS Handbook — People", owned by
+  (or shared with edit rights to) the deploying account, in the app's timezone;
+  (2) set the handbook project's Script Property `HANDBOOK_SS_ID` to its id —
+  the app creates the `People` tab on the first save; do not edit its header
+  row (an edited header is reported, and nothing is read from it); (3)
+  optionally set `HANDBOOK_ADMIN_EMAILS` (comma-separated) — unset, the
+  deploying account is the only admin; (4) open the app → **Profile** → under
+  *Managers*, add each manager's address. Readers are then asked, on their next
+  visit, for a department and a manager, and each manager confirms their own
+  people under *Your team*. Unset, reading works as before and nobody is asked.
+  No new permission is needed. **Since HB3.2** the same spreadsheet takes the
+  quiz attempts and resets (`QuizAttempts`, `QuizResets` — created by the first
+  one; do not edit their headers). Nothing to set: the quizzes are the ones
+  Team Tools' manual import stores, and a reader's confirmed manager resets a
+  lock-out from Profile → Quiz lock-outs. **Since HB3.3** it also holds the
+  training plans, the managers' own quizzes and the readers' "Mark as read"
+  ticks (`Plans`, `TeamQuizzes`, `ReadMarks` — created on first use; do not
+  edit their headers). Nothing to set: managers build plans under **Training**.
+  **Since HB2.2** it also holds each reader's bookmarks and, for a reader who
+  turns on "Keep my notes in my account", their notes (`Bookmarks`, `Notes` —
+  created on first use; do not edit their headers). Nothing to set. A note is
+  free text a reader typed; the app warns that it must never hold patient
+  information, but it cannot check — treat the `Notes` tab as you would any
+  staff-written text, and share the spreadsheet with no one but the deploying
+  account.
+  **Since HB3.4** `ReadMarks` carries the sign-offs ("I've read this", with the
+  section's version — a fifth column; a tab made by HB3.3 keeps its four-name
+  header and is written to anyway), and the app asks for two NEW permissions —
+  send email and manage its triggers — so **open the app once as the deployer
+  after the push and approve them**. **Reminder emails are OFF** until both:
+  (1) set the Script Property `HANDBOOK_REMINDERS` to `on`; (2) in the Apps
+  Script editor run `installHandbookReminders` once (it installs one daily 8am
+  trigger and replaces any earlier one; run it again to repair). Each run emails
+  every reader with an overdue plan at most once a day, from the deploying
+  account — it shares Team Tools' daily email allowance while both run as the
+  same account. To turn them off, set `HANDBOOK_REMINDERS` to anything but `on`
+  (the trigger then sends nothing). `HANDBOOK_REMINDERS_LAST` is auto-managed
+  (`{email: day}`, the day each reader was last emailed, kept only for people
+  still overdue) — delete it to forget. Both functions refuse anyone but the
+  deploying account.
+  The full picture is
+  [`docs/handbook-app.md`](handbook-app.md).
+
 <a id="operator-the-procedures-manual-import-22post-m"></a>
 - **The procedures manual import — `ManualImport`, `ManualMeta` and `ManualImages`
   (22post M1–M3, 2026-09-28/29).** The manual's source is `manual/` in the repo, and the app never
@@ -2651,7 +2758,30 @@ entry says which it is.
   glossary's abbreviations ("ABN" → "Advance Beneficiary Notice") as search
   synonyms, stored with the router and changelog in `ManualMeta`; a file from
   before M5b imports with none, so **re-export and import once** to turn them
-  on. **The export's "xref previews" lines (M5a, 2026-09-30)** say how
+  on. **Quizzes (HB3.1, 2026-10-29):** the export also carries the official
+  quizzes from `manual/data/quizzes.json` — only those marked `"status":
+  "published"`; a draft is checked and held back, and the export's "quizzes"
+  line names the drafts (HB3.5, 2026-10-30: the Chapter 0 and Chapter 1 quizzes
+  are published — export and import once to make them live; approving a later
+  draft is flipping its status, then export and import) — a quiz or question naming a section that does not exist fails
+  the export — and the import stores them in a `ManualQuizzes` tab of the KB
+  spreadsheet, rewritten only when they changed; the dialog's "Quizzes:" line
+  says which. Do not edit that tab: it holds the answer keys, and the next
+  import overwrites it. A file from before HB3.1 leaves the stored quizzes as
+  they are. **Forms (HB4.1, 2026-10-30):** the export also carries the
+  handbook's form library — `manual/data/forms.json` names each form's PDF in
+  the repo's `forms/` folder (the same files Team Tools attaches to emails) and
+  the sections that offer it; a missing or non-PDF file, one over 1 MB, or a
+  section that does not exist fails the export. The import stores the PDFs in
+  a `ManualFiles` tab of the KB spreadsheet (the `ManualImages` row shape, plus
+  each form's title, summary and sections), rewritten only when a form changed;
+  the dialog's "Forms:" line says which. Do not edit that tab. A file from
+  before HB4.1 leaves the stored forms as they are. With the forms the file is
+  about 4.3 MB of the import's 5 MB cap (`KB_MANUAL_FILE_MAX`). **After the
+  first import with forms, open the handbook app's Forms page and press
+  Download once**: the Apps Script page's sandbox may block downloads, and the
+  page cannot tell — if nothing arrives, the viewer still shows the form.
+  **The export's "xref previews" lines (M5a, 2026-09-30)** say how
   many cross-references preview the part of their target they are about, how
   many show its opening by design (anchored, or no numbered sub-section to point
   at), and WARN about the links an anchor could fix —

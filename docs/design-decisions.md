@@ -5767,3 +5767,397 @@ pick them up without re-deriving the context.
   rejected:** the image inline in each span (twenty copies of seven images in
   the HTML); a CSS-only `:hover` popover inside the text (clipped by the
   scrolling tables the mentions sit in, and nothing on a touch screen).
+- <a id="the-handbook-rendering-layer-is-a-shared-partial"></a>**The handbook's rendering layer is one shared partial, and its reach into Reference is a named contract (handbook app HB1.1a, operator 2026-10-28)**
+  The stand-alone handbook web app must draw the handbook exactly as Reference
+  does, and two copies of a renderer drift (g126). The reader was not separable
+  as one block — its 97 declarations reached 48 Reference names, and the
+  transitive closure was almost the whole module — so the operator chose a split
+  along a seam: `web-app/shared/script_manual_render.html` holds the RENDERING
+  layer (`kbMd_` and every block it draws, the image hydrators, the full-size
+  viewer, the peek, footnotes, callouts and their styles, including the base
+  `.kb-article` typography), moved verbatim and in order, and is included BEFORE
+  `kb/script_kb.html`. Its remaining reach into Reference (`kbXrefOpen_`,
+  `KB_STATE`) is a list a pin holds and that only shrinks; HB1.1b replaces it
+  with host hooks and moves the reader screen behind the same contract. The CSS
+  move was checked rule by rule for cascade flips (same specificity, same
+  target, an earlier Reference rule that would now win) — one real one, the
+  editor preview's decision-checklist labels, is held by a preview-scoped rule
+  — and by an old-vs-new pixel comparison of every Reference scenario. Test
+  reads of `kb/script_kb.html` go through the harness's `CLIENT_ALIASES`, the
+  client twin of the server's `'Code.js'` alias (g113), so no pin depends on
+  which file holds a function. **Alternatives rejected:** copying the reader into
+  the new app (two readers that drift); shipping the whole Reference client to
+  the new app with features switched off (6,800 lines and stubbed server calls).
+- <a id="the-handbook-reader-reaches-its-host-through-manual-host"></a>**The handbook reader reaches its host only through `MANUAL_HOST`, and keeps its own state on `MANUAL_STATE` (handbook app HB1.1b, operator 2026-10-28)**
+  The reader screen — the chapter masthead and quick cards, the reader bar and
+  its feedback, chapter navigation, the scroll-spy, the trail and resume, the
+  cross-reference previews and footnote/glossary cards, and their pure helpers
+  (block finding, the link scorer, highlighting, natural sort) — moved into the
+  shared partial beside the renderer. It had reached Reference by 17 function
+  names and 27 reads of `KB_STATE`; each became a named HOOK on `MANUAL_HOST`
+  (`state`, `openItem`, `prefs`/`savePrefs`, `markCurrent`, `revealInTree`,
+  `treeUpdated`, `printSection`, `printAllCards`, `publishItem`, `suggestEdit`,
+  `bookmarkBtnHtml`/`bookmarkBtnPatch`, `recordOpen`, `loadComments`,
+  `drawerOpenItem`, `drawerOpen`, `drawerTitle`). Team Tools installs them once
+  at load in `kb/script_kb.html`, LATE-BOUND (each calls the Reference function
+  by name when it runs), so behaviour is unchanged and a test's stub is still
+  what gets called; the handbook app installs its own. Of `KB_STATE`'s fields
+  only four are the host's (`tree`, `isAdmin`, `currentId`, `landing` — through
+  `state()`); the reader's own (`manual*`, `resume*`, `trail`) moved to
+  `MANUAL_STATE`, and Reference reads two of them (`manualMeta`, `manualPart`)
+  there. `install` throws on a misspelt hook rather than ignoring it, and an
+  uninstalled hook is a harmless default. A pin holds both directions: the
+  shared file names nothing Reference declares, and the hooks it calls, the
+  hooks it declares and the hooks Team Tools installs are one set. **Alternative
+  rejected:** passing the host's whole state object and calling Reference's
+  functions directly from the shared file (no seam — the handbook app would have
+  had to define forty Reference names to run it).
+  **HB1.1c:** what the file needs from its PAGE beyond the hooks — eleven
+  `script_core` names (`esc`, `showToast`, `ensureOverlay`/`closeOverlay`,
+  `errorStateHtml_`, `loSweep`, the copy helpers, `currentView`, …), `icon`,
+  `KB_MANUAL_DIAGRAMS` and nine server functions — is stated in its header as
+  SHELL NEEDS, and a pin derives the real list from the code, so the handbook
+  app (HB1.2) builds against a list that cannot drift. The rules that style a
+  HOST piece inside the reader stay with the host: the bookmark button in the bar
+  (`.kb-man-bar .kb-bm.on` — the button is `bookmarkBtnHtml`'s) and Reference's
+  page layout around the reader (`.kb-main:has(> .kb-man-top)`).
+
+
+- <a id="the-handbook-app-is-a-second-project-fed-by-a-derived-copy"></a>**The handbook app is a second project fed by a derived copy of Team Tools' readers — it supplies the environment and never writes (handbook app HB1.2, operator 2026-10-28)**
+  `handbook-app/` is its own Apps Script project, because its audience (every
+  employee of the domain, ~150) is not Team Tools' roster and a roster gate is
+  the first thing every Team Tools endpoint does. It runs as the deployer with
+  domain access and two scopes (read-only spreadsheets, the reader's address),
+  and reads the same KB spreadsheet by `HANDBOOK_KB_SS_ID`; importing and
+  publishing stay in Team Tools. **What it owns** is `Handbook.js`: four
+  ENVIRONMENT functions under Team Tools' names — `getEmployeeInfo_` (any
+  signed-in caller, never an admin, so drafts are never served),
+  `getKbSS_`, `getOrCreateKbSheet_` (reads; a missing tab is named, never
+  created) and `fmtDate_` (Team Tools' storage timezone) — plus the public
+  endpoints. **What it copies** is written by `scripts/handbook-sync.mjs`: the
+  reader partials byte for byte, and `kb_shared.js` — every name `Handbook.js`
+  uses that Team Tools' server declares, with everything THAT reaches, by an
+  acorn dependency walk that stops at every name `Handbook.js` declares. A name
+  shaped `ttXxx_` copies Team Tools' `xxx` under that private name, so the
+  handbook's public endpoint of the same name decides what is served
+  (`getReferenceItem` answers handbook sections only; `getManualParts` adds a
+  chunked cache). The walk REFUSES a copied write (a sheet, property, lock, mail
+  or Drive mutation) and a reach into `CONFIG` (the values it needs are picked
+  as literals into `HB_TT_CONFIG`); `--check` in CI fails while any copy is
+  stale. The handbook's cache is its own, so Team Tools' clears never reach it:
+  a publish shows there within five minutes (`HB_CACHE_TTL`, and the copied
+  meta cache's `KB_CACHE_TTL`). Feedback, Drive thumbnails and warehouse
+  distances answer "not available in the handbook app yet" in the shape their
+  caller reads as failure; search arrives with its UI in HB1.4, because Team
+  Tools' search writes the search signal and reads synonyms that live in Team
+  Tools' Script Properties. **Alternatives rejected:** a hand-written read-only
+  server (a second copy of the draft rule, the image checks and the meta cache
+  — exactly the two-readers shape of g126); a Library shared between the
+  projects (a library runs in the caller's project but its version is pinned
+  separately, so the handbook could serve an older reader than Team Tools
+  without anything saying so); and copying whole server files (`70_kb.js`
+  alone would bring every KB writer and the roster).
+
+- <a id="the-handbook-app-frame-hosts-the-shared-reader"></a>**The handbook app's page hosts the shared reader through the contract, copies Team Tools' page shell, and keeps the chapters in the browser (handbook app HB1.3, operator 2026-10-28)**
+  `handbook-app/script_handbook.html` is the reader's second HOST: it installs
+  all 18 `MANUAL_HOST` hooks (a pin derives the list from the contract, so a
+  hook left to its idle default fails), gives the reader `#kb-main` and
+  `#toast-stack`, and owns the frame — the contents, a department picker
+  (`umsHbDept`), and a home page with that department's chapter first and the
+  changelog entries since the last visit (`umsHbVisit` moves only on a new day,
+  so a reload keeps "since"; a first visit shows 30 days; only sections in the
+  published tree count). **What the page does not own it copies:** the sync
+  extracts the overlay, toast, copy and print functions from `script_core` and
+  Reference (`shell_shared.html`) by the same dependency walk as the server —
+  now SCOPE-ANALYSED (eslint-scope), so a local that shares a top-level name is
+  not a use — and refuses a reach into `KB_STATE` or a call to a server
+  function the app does not serve; the page declares `errBeaconSend_` itself
+  (Team Tools' beacon writes to its ClientErrors tab). Team Tools' two
+  anonymous overlay listeners became `overlayEscapeClose_` / `overlayFocusTrap_`
+  so the page can register them. The tokens and styles partials are copied
+  whole, so the reader looks exactly as in Reference; the page styles only its
+  frame plus `.kb-main` and `.kb-btn`, whose rules are Reference's (the HB1.1c
+  host-styling rule). **The chapters are kept in IndexedDB** as the last
+  `getManualParts` answer with the server's stamp of it; a visit asks only for
+  `getManualStamp` (one cache read while the server's copy is warm) and reads
+  the chapters again only when it moved — a failed read falls back to the kept
+  copy and says it may be out of date. **Links:** `?s=6.9.3` reaches the page
+  through doGet (the page cannot read its own address, g107), resolved by the
+  reader's own `kbManualNumberTarget_`; every open pushes the top window's
+  address through `google.script.history`, and Back/forward come through its
+  change handler; an unknown section says so and shows home. Section feedback
+  is hidden until HB1.4 routes it. **Alternatives rejected:** hand-copying the
+  shell helpers (two copies of the overlay lifecycle — the g100 family), and
+  localStorage for the chapters (a full manual approaches its quota).
+
+- <a id="the-handbook-app-searches-and-takes-feedback"></a>**The handbook app searches with Team Tools' search and takes section feedback into Team Tools' tab — appending only, with the settings it cannot read mirrored into the spreadsheet (handbook app HB1.4, operator 2026-10-29)**
+  The operator chose three things: feedback goes to the **same KbFeedback tab**
+  (so the existing export and worklist carry it), search uses **mirrored
+  synonyms**, and the app's searches are **counted** in the search signal.
+  What that took: (1) **Writes, by `appendRow` only.** Two Apps Script projects
+  cannot share a ScriptLock, so anything that computes a row position
+  (`getLastRow() + 1`, `appendRowsTextSafe_`) could overwrite the other
+  project's row. `appendRow` is an atomic server-side append, safe beside Team
+  Tools' appends and its purge's deletes. The feedback row is checked by Team
+  Tools' own `kbFeedbackEntry_` (split out of `kbFlagItem`, g126 — one rule for
+  two writers) and names the reader by address (no roster id). (2) **The
+  signal in its own tab, `KbSearchSignalHb`.** Team Tools writes
+  `KbSearchSignal` by position under its lock, so a second writer there could
+  lose rows; the report (`kbSearchSignalRows_`) and the nightly purge read both
+  tabs. The term rides a leading apostrophe — the '@' rule without a position
+  to format. The plan (`kbSearchSignalPlan_`: vocabulary terms, no person,
+  dedupe) is Team Tools' own. (3) **The mirror.** The synonym groups and the
+  auto-tag rules (the signal's vocabulary) live in Team Tools' Script
+  Properties, which are per project; `kbMirrorSearchConfig_` writes them as
+  one JSON to `KbSearchConfig` A2 when either is saved and on every handbook
+  import — only when changed, so a re-import still writes nothing — and the
+  save or import says when it could not. The app supplies
+  `getKbSearchSynonyms_` / `getAutoTagRules_` from it through Team Tools' pure
+  normalizers. (4) **Search** is Team Tools' `searchReference`, copied; the
+  app's wrapper drops ordinary Reference articles (it could not open them).
+  The scope widened from `spreadsheets.readonly` to `spreadsheets`; a pin holds
+  that the hand-written server's only write calls are `appendRow` and creating
+  a tab, onto those two tabs. **Alternatives rejected:** a per-chapter owner
+  email (no owner list exists, and it spends the deployer's mail quota), and
+  writing `KbSearchSignal` directly (the position race above).
+- <a id="the-handbook-app-keeps-its-own-people"></a>**The handbook app keeps its own people in its own spreadsheet — a reader picks a department and a manager, the manager confirms, the admin keeps the list of managers (handbook app HB2.1, operator plan 2026-10-28)**
+  Training plans, sign-offs and quiz results (Phase 3) need to know whose team a
+  reader is on, and the domain has ~150 people nobody wants to type in. So the
+  READER says it: on a first visit the home page asks for a department (a
+  chapter of the handbook) and a manager, and the manager confirms — or says
+  "not my team", and the reader is asked again. A new department or manager
+  asks again; saving the same choice keeps a confirmation. (1) **Its own
+  store, `HANDBOOK_SS_ID`.** Employee records do not belong in the Knowledge
+  Base, which is patient-data-free by policy and shared with Team Tools, and
+  the operator controls who can open the Handbook spreadsheet. Only this
+  project writes it, so — unlike the KB, where it only appends — this
+  project's ScriptLock serialises every write and a row is updated in place;
+  each write reads the tab fresh under the lock, and the caller is checked
+  before the lock (g17). (2) **Roles.** Admins are `HANDBOOK_ADMIN_EMAILS`, or
+  the deploying account while it is unset (the operator, who deploys it —
+  HB7.1 moves the deployment, so the property is the lasting form); managers
+  are People rows the admin marks, in the app. A manager the admin unmarks
+  leaves their people "choose again", DERIVED on read — nothing is rewritten.
+  (3) **Honest states** (g128, g122): unset (`setUp: false` — the page asks
+  nothing, an admin is told the property), unreachable ("Could not open the
+  Handbook spreadsheet") and an edited header row ("…has been edited", read
+  as nothing) are three answers, and none of them stops the handbook reading.
+  Status is a word, never TRUE/FALSE (g09). (4) **The page** paints the
+  profile, "Your team" and the admin's lists as separate sections, so an
+  answer to one action never wipes an unsaved choice in another (g141), and
+  every action answers with the caller's whole view, applied unless a newer
+  one already arrived. **Alternatives rejected:** importing Team Tools'
+  roster (most of the domain is not on it, and the projects cannot share a
+  store without sharing a lock); managers as a Script Property list like Team
+  Tools' `MANAGER_EMAILS` (the admin would have to open the editor; g153 is
+  the cost of a list nobody sees); asking the reader for a name (the address
+  gives one — `maria.lopez` reads as Maria Lopez).
+- <a id="one-quiz-engine-and-the-handbook-s-question-bank"></a>**One quiz engine serves both apps, and the handbook's official quizzes are written in the repo beside the sections they test (handbook app HB3.1, operator plan 2026-10-28)**
+  (1) **One engine.** `80_training.js`'s `quizQuestion_` / `quizValidate_` /
+  `quizGrade_` / `quizStripQuestion_` / `quizReview_` are pure and read no
+  CONFIG, so the handbook app's sync can copy them; Team Tools'
+  `trainValidateQuizDef_`, `trainGradeQuiz_` and `trainStripQuizForRep_` are
+  the same engine in Team Tools' stored shape, with byte-identical results for
+  its single-answer quizzes (their existing pins pass unchanged). The retry
+  limit, `trainQuizLockout_`, was already pure and keyed by nothing — the
+  handbook keys its attempts by address (HB3.2). The engine adds what the plan
+  asked for: multi-select (right only as exactly the right set — partial
+  credit would make "choose all" a guessing game) and true/false, an
+  explanation per question and the section it tests. The stripped shape is
+  whitelist-built (the key, the explanation and the section never leave a
+  server before a submit); `quizReview_` gives a wrong answer its explanation
+  and section, never the right option (TRN-1's rule: no answer key by
+  elimination). (2) **The bank is repo data.** `manual/data/quizzes.json`
+  names sections the way the chapters do (`§8-2.3`), so a quiz changes in the
+  same commit as its section, and `manual/quizzes.py` fails the export on a
+  section that does not exist — the cross-reference rule. Its limits mirror the
+  engine's and are pinned equal (g126: two readers, one rule). (3) **It rides
+  the one upload.** `manual.json` carries the checked quizzes with each section
+  resolved to the app's `{id, anchor}`; Team Tools' Import checks them again
+  with the engine (a section must be one of the file's own articles) and
+  stores them in `ManualQuizzes` — text cells, rewritten only on a change, so
+  a re-import writes nothing (M1's rule). The tab holds the keys and never
+  reaches a client. **Alternatives rejected:** quizzes in `ManualMeta`'s one
+  JSON cell (it is already near its limit, and every reader would pay for the
+  keys it must not see); a separate quiz upload (two files to keep in step);
+  writing the bank before HB3.5 (questions need the operator's review first).
+  **HB3.5 (operator 2026-10-30):** every quiz carries a REQUIRED `status`,
+  `draft` or `published`; a draft is checked like any quiz and never exported,
+  so approval is one field and a quiz with no status is an error rather than a
+  silent publish. Rejected: a separate drafts file (two copies to move a quiz
+  between, and a draft that skipped the section check).
+- <a id="quizzes-are-taken-in-the-handbook-app"></a>**Quizzes are taken in the handbook app: shuffled in the browser, graded by the shared engine, attempts and resets in the app's own spreadsheet (handbook app HB3.2, operator plan 2026-10-28)**
+  (1) **The quizzes are read, the attempts are the app's.** `Quiz.js` reads the
+  KB's `ManualQuizzes` (Team Tools publishes it — HB3.1) and appends attempts
+  and resets to `QuizAttempts` / `QuizResets` in the Handbook spreadsheet, under
+  the app's own lock; the reader is named by address, times are numbers and
+  Passed a word (g09). The engine, the retry limit and the tab reader are Team
+  Tools' functions copied by the sync — a pin holds that Quiz.js declares none
+  of them. (2) **The shuffle is the browser's.** The page shuffles questions
+  and options (`hbQuizOrder_`; a true/false keeps True, False) and sends the
+  answers in the quiz's ORIGINAL order (`hbQuizAnswers_`), so the server keeps
+  no sitting between open and submit, and a reload is simply a new shuffle.
+  (3) **TRN-1's rules, unchanged:** three failed attempts, then 24 hours from
+  the last; a pass starts the count over; a submit while locked is refused
+  and NOT recorded; a wrong answer shows its explanation and a link to its
+  section, never the right option. (4) **A reset is the confirmed manager's**
+  (still a manager) **or an admin's** — not a pending request's chosen
+  manager, not another manager's; the attempts are kept, a reset row only
+  starts the count over. The people view lists each manager's own locked-out
+  people. (5) **Honest states:** no Handbook spreadsheet lists the quizzes but
+  cannot take one; an unreachable one is said; a quiz row that will not parse
+  is counted, never served; a failed list load keeps the quiz bar it had and
+  says so in the list (g129); every answer is for its own view (g81).
+  **Alternatives rejected:** recording attempts in Team Tools' QuizAttempts
+  (keyed by roster id, and two projects cannot share its lock); a
+  server-remembered shuffle (state per sitting for no gain); showing the right
+  option after a final attempt (the next 24-hour set would start with the key).
+- <a id="training-plans-reach-the-authors-own-team"></a>**Managers write their own quizzes and build training plans; a plan reaches the author's own confirmed team, resolved when it is read (handbook app HB3.3, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's three answers: (1) **a chapter or section item is done when
+  the reader marks it read** — a button, honest about what it proves; HB3.4's
+  versioned sign-off upgrades it. A quiz item is done when it is passed.
+  (2) **A manager's department assignment reaches their own confirmed team in
+  that department; the admin's reaches everyone in it** — and people named one
+  by one are likewise the manager's own team. (3) **A manager's quiz is seen
+  only by the people a live plan assigns it to, its author and the admin**, so
+  the Quizzes list stays the official ones for everyone else. Mechanics:
+  `Training.js` keeps three Handbook-spreadsheet tabs (TeamQuizzes, Plans,
+  ReadMarks), each record's body one JSON cell — a title like "3/4" or a due
+  date never coerces (g144/g13) — updated in place under the app's lock after
+  the caller is checked (g17). **Recipients are resolved at READ time** from
+  the author's current team (`hbAuthorTeam_` → `hbPlanRecipients_`): a new
+  confirmed member in a department picks its plans up, someone who changes
+  team stops receiving the old manager's, and an unmarked manager's plans reach
+  nobody — nothing is rewritten. A team quiz is graded by the same engine and
+  taken through `Quiz.js` by id under the visibility rule; its key reaches only
+  the editor of its author or the admin. Read marks are append-only (the latest
+  per reader and item wins), so one mark serves every plan that names the item.
+  Archiving keeps attempts and marks; an archived quiz is never offered and an
+  archived plan reaches nobody. The editors are overlays that ask before
+  discarding (g166). **Alternatives rejected:** freezing recipients at save
+  time (the team changes; a plan would silently miss new people); counting a
+  section as done on opening it (proves a click); team quizzes in the Quizzes
+  list for everyone (the operator's choice — and a manager's quiz is written
+  for one team).
+- <a id="sign-offs-are-versioned-and-reminders-ship-off"></a>**"I've read this" is recorded against the section's version and asks again only for a retraining change; reminder emails ship built but off (handbook app HB3.4, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's two answers: (1) **the sign-off REPLACES HB3.3's Mark as read**
+  — one "I've read this" in the bar above every section and on each reading
+  item in My training, so there is one notion of "read", not two; (2)
+  **reminders are built, and off** — the code and its two permissions ship,
+  nothing is sent until `HANDBOOK_REMINDERS=on` and the trigger is installed.
+  Mechanics: the sign-off appends to `ReadMarks` with the section's VERSION
+  (`hbStamp_` of its text; a chapter's is the stamp of its sections' stamps),
+  so the record says WHAT was read, not only that a button was pressed. **What
+  asks again is the changelog's retraining flag, not the version**: a
+  retraining-flagged entry dated after the day it was signed (in the app's
+  timezone) turns the item to `resign` and its plan item back to not done; a
+  version change without the flag only adds "it has been updated since" — a
+  typo fix must not send the whole team back to re-read. The manager view
+  (`hbTeamProgress`) derives everything from the same context as My training
+  (`hbProgressCtx_` / `hbPlanProgress_`), so the two cannot disagree. Export is
+  **Copy table** (`tsvRow_`, formula-safe — g144) with Download CSV beside it,
+  because a download from inside the Apps Script iframe is not guaranteed.
+  Reminders: `hbSendTrainingReminders` and `installHandbookReminders` are
+  reachable by `google.script.run` (g143), so both refuse any caller whose
+  active user is not the effective user — only the deployer, or the deployer's
+  trigger (g26); one email per reader per day (`HANDBOOK_REMINDERS_LAST`), plan
+  titles escaped, no answers or typed text. **Alternatives rejected:** asking
+  again on every version change (punishes typo fixes); a separate sign-off
+  beside Mark as read (two buttons that mean nearly the same); reminders on by
+  default (they spend the deployer's shared email allowance — the operator's
+  call to make).
+- <a id="bookmarks-follow-the-account-notes-stay-in-the-browser"></a>**Bookmarks follow the reader's account; notes stay in the browser unless the reader turns on syncing behind a patient-information warning (handbook app HB2.2, operator plan 2026-10-28)**
+  The plan's two answers: bookmarks are synced to the account, and notes are
+  "kept in the browser by default; syncing is optional and warns against
+  patient information". A bookmark names a published section and carries the
+  handbook's title (never the page's); the reader bar's star reaches it through
+  `MANUAL_HOST`'s bookmark hooks, the same contract Team Tools fills with its
+  own. `Saved.js` keeps one Bookmarks row per reader (a JSON list, updated in
+  place) and one Notes row per reader and section (a JSON body, so a note never
+  coerces — g144). **Sync is a merge, not a copy:** per section the later note
+  wins, and a deletion is a tombstone (empty text, its time) so it reaches the
+  other side; the page's merge mirrors the server's and a pin holds them equal
+  (g120). Turning sync on sends this browser's notes and keeps the answer;
+  turning it off REMOVES the account's copies, because "off" should mean the
+  spreadsheet no longer holds them. While the Handbook spreadsheet is unset the
+  browser keeps the bookmarks and syncing is not offered; an unreadable
+  bookmark row is an error, never "none" (g53). **Alternatives rejected:**
+  syncing notes by default (the operator's choice — the spreadsheet is not a
+  PHI store); a last-write-wins upload of the whole map (a second computer's
+  older copy would erase newer notes); keeping the account's copies when sync
+  is turned off (a reader who turned it off to remove them would be surprised).
+- <a id="display-settings-stay-in-the-browser-and-read-aloud-is-the-browsers"></a>**Display settings are attributes on `<html>`, kept in the browser and applied before first paint; read aloud is the browser's own speech, a block at a time (handbook app HB2.3, operator plan 2026-10-28; answers 2026-10-29)**
+  The operator's answers: the settings are remembered **in this browser** (no
+  server, no tab); the easier-reading font is **Atkinson Hyperlegible**; read
+  aloud may use **any voice** the browser offers (the handbook is PHI-free, so a
+  network voice is acceptable). Mechanics: each setting is one `data-hb-*`
+  attribute on `<html>`, and `hbDisplayAttrs_` is the ONE place that decides
+  them — the page stores the attributes beside the prefs, and `index.html`'s
+  head applies exactly what was stored (names `data-hb-[a-z]+`, plain values
+  only) before first paint, so the page never flashes the old look; a pin holds
+  the head's filter and the stylesheet to every attribute the page can write.
+  Text size scales the ROOT font size, so the rem-sized reader grows while the
+  px-sized chrome stays put; high contrast re-points the neutral tokens for
+  light and for dark (each scoped, so neither overrides the other); reduced
+  motion is the tokens partial's reduced-motion rule, forced. Read aloud speaks
+  the section's title, then each paragraph, list item, heading, table row and
+  caption — hidden slides, buttons and screen-reader-only text left out — in
+  pieces short enough that Chrome does not cut an utterance off (a sentence
+  ends at punctuation followed by a space, never inside "3.1" or "$1.50");
+  every navigation stops it, and a late `onend` after Stop speaks nothing
+  (a sequence guard). **Alternatives rejected:** the account for the settings
+  (the operator's choice — one more request per visit for something a reader
+  sets once); scaling the whole page with CSS zoom (it breaks the layout's
+  breakpoints); speaking a section as one utterance (Chrome stops a long one
+  part-way).
+
+- <a id="axe-gates-every-handbook-screen-and-the-accent-ink-is-darker-in-light-mode"></a>**axe gates every handbook screen in CI, focus follows the reader, and link and primary green is `--accent-ink` — the darker accent in light mode, in both apps (handbook app HB2.4, operator plan 2026-10-28; answers 2026-10-30)**
+  The operator's answers: fix the contrast in **both apps** (the shared rules,
+  so Team Tools' links and modal primary buttons are the darker green in light
+  mode too; dark mode untouched), and give an overflowing table a Tab stop **in
+  the shared reader**, only when it actually overflows. Mechanics: axe-core is a
+  pinned dev dependency of `test/visual`, and `shoot.mjs --axe` runs it over
+  every `handbook-*` scenario (WCAG 2.1 A + AA tags) after the scenario's post
+  hook — no screenshots, exit 1 on any violation or when no scenario matched —
+  in the visual-layout CI job, after the layout gate and even when it failed.
+  The accent `#0f8a52` is 4.4:1 under white text and on white, so
+  `--accent-ink` is `--accent-2` in light mode and `--accent` in dark; it is
+  declared on both `html` and `body` because a `var()` resolves where it is
+  declared and the palettes and mode are set on both. The Profile badge's count
+  is drawn by `::after { content: attr(data-n) }` because axe's
+  label-content-name rule reads an `aria-hidden` child's text as visible text
+  all the same. Focus moves only on a navigation the reader made (a click, a
+  link, a search result) — never on Back, a repaint or a scroll — and a
+  section's heading takes it straight after
+  `kbOpenManualSection_` paints it. The reading area stopped
+  being a live region: every repaint was being read out whole. **Alternatives
+  rejected:** axe on Team Tools' scenarios too (the plan scoped this to the
+  handbook; Team Tools' screens have not had the pass, so the gate would start
+  red); a darker `--accent` itself (it is the fill of every chip, badge and
+  ribbon, and only text needs the 4.5:1); a Tab stop on every table (a reader
+  tabbing through a section would stop on tables that do not scroll).
+
+- <a id="the-form-library-reads-the-repo-s-forms-folder"></a>**The handbook's form library reads the repo's existing `forms/` folder, rides the manual import into a ManualFiles tab, and is drawn by pdf.js on the page's own thread (handbook app HB4.1, operator plan 2026-10-28; answers 2026-10-30)**
+  The operator's answers: the EAA and the PT/OT Rx; the PDFs come from the
+  `forms/` folder Team Tools already attaches to external emails (one copy of
+  each, not a second set under `manual/`); build everything now, and the
+  operator tests Download after deploying (the plan's "test a download first"
+  could not be run from the repo). Mechanics: `manual/data/forms.json` lists
+  the forms and the sections that offer them; `manual/forms.py` checks the
+  list at export; `manual.json` carries each PDF as a data URI; the import
+  stores them in `ManualFiles` in the `ManualImages` row shape, so the images'
+  ledger (`kbImageTabLedger_`) and reader (`kbImageTabServe_`) serve them
+  unchanged — the title, summary and sections ride trailing columns because
+  the `ManualMeta` cell, the obvious home, is at 42,000 of its 45,000
+  characters. The viewer loads pdf.js 3.11.174 from cdnjs only when a form is
+  first opened, and loads its worker code as a plain script so it runs on the
+  page's thread: the Apps Script sandbox cannot start a Worker from another
+  origin. `isEvalSupported: false` keeps a PDF's font code from being
+  evaluated. Download is a blob link; the page cannot tell when the sandbox
+  blocks it, so its message says what to do if nothing arrives. The visual
+  harness serves the same pdf.js build from `node_modules` in place of cdnjs.
+  **Alternatives rejected:** the browser's own PDF viewer in an iframe
+  (Chrome will not run it inside a sandboxed frame); pdf.js inlined into the
+  page (a megabyte on every visit for a page most readers never open);
+  `manual/forms/` copies (two copies to keep in step); a separate catalog tab
+  (a second tab to keep consistent with the bytes); filling forms (HB4.2).

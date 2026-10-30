@@ -3279,6 +3279,297 @@
     "drReplyScanCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post A2: intakeWeightReason_ (60_intake.js) — the weight reason for a heavy-duty model",
+   "added": [
+    "intakeWeightReason_"
+   ],
+   "removed": [],
+   "changed": [
+    "intakeFilterRecommendations_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post E1: drLateDepartments_ + DR_LATE_SHARE/DR_LATE_MIN (50_deptrequests.js) — the manager Needs-you item",
+   "added": [
+    "DR_LATE_MIN",
+    "DR_LATE_SHARE",
+    "drLateDepartments_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post B3: oopRuleLabel_ (70_kb.js) — a union branch's short name on the eligibility card",
+   "added": [
+    "oopRuleLabel_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "kbGeocodeOne_",
+    "oopEligibilityCheck_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "operator 2026-10-27: oopMilesFmt_ (70_kb.js) — the concise distance phrase",
+   "added": [
+    "oopMilesFmt_"
+   ],
+   "removed": [],
+   "changed": [
+    "oopEligibilityCheck_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "operator 2026-10-27: oopMilesFmt_ drops a trailing .0",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "oopMilesFmt_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post C1: the eligibility map — oopRingPoints_, oopMapPlan_, oopEligibilityMap + OOP_MAP_* (70_kb.js)",
+   "added": [
+    "OOP_MAP_NEARBY_MILES",
+    "OOP_MAP_RING_MILES",
+    "OOP_MAP_RING_POINTS",
+    "oopEligibilityMap",
+    "oopMapPlan_",
+    "oopRingPoints_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-27",
+   "why": "25post round 12 D: payor state matching, alias suggestions, except-states eligibility",
+   "added": [
+    "INS_PAYOR_ALIAS_FAMILIES",
+    "insPayorAliasSuggest_",
+    "insPayorMatch_",
+    "insPayorNameStates_",
+    "insStatesIn_",
+    "kbSuggestPayorSynonyms",
+    "oopExceptStatesClause_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getOopPricingDiagnostics",
+    "oopEligibilityCheck_",
+    "oopEligibilityForPayment_",
+    "oopEligibilityParse_",
+    "oopRuleLabel_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2: app-activity record, inferred punches",
+   "added": [
+    "ACTIVITY_BLOCK_MIN",
+    "ACTIVITY_LOG_DAYS",
+    "ACTIVITY_LOG_HEADERS",
+    "ACTIVITY_LOG_TAB",
+    "ACTIVITY_PING_GAP_MIN",
+    "ADP_INFERRED_MARK",
+    "EXPORT_INFERRED_LIST_MAX",
+    "activityDayView_",
+    "activityLogAppend_",
+    "activityLowerBound_",
+    "adpRowInferred_",
+    "adpSetInferred_",
+    "exportInferredLines_",
+    "getOrCreateActivityLogSheet_",
+    "managerGetDayActivity"
+   ],
+   "removed": [],
+   "changed": [
+    "ADP",
+    "buildTimesheetForEmployee_",
+    "exportAdpRange",
+    "generateExportSheet_",
+    "getTeamCalendar",
+    "managerSaveDay",
+    "purgeOldDiagnostics",
+    "recordPresence",
+    "recordPunchCore_",
+    "sendAutomatedExport_",
+    "writeAdjustPunchForEmployee_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2 (b): driving distance for radius rules, route-lookup cap",
+   "added": [
+    "OOP_DRIVE_MAX_LOOKUPS",
+    "ROUTE_LOOKUP_CAP",
+    "ROUTE_LOOKUP_PROP",
+    "oopDriveForCheck_",
+    "oopDrivingRoute_",
+    "oopMaxRadius_",
+    "oopPolylineOk_",
+    "oopRoutePick_",
+    "routeLookupReserve_",
+    "routeLookupStatus_",
+    "routeLookupWindow_"
+   ],
+   "removed": [],
+   "changed": [
+    "checkOopEligibility",
+    "getStorageHealth",
+    "oopEligibilityCheck_",
+    "oopEligibilityMap"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-28",
+   "why": "25post round 12 E2 (b): the counter writes through propSetBounded_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "routeLookupReserve_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB1.4: feedback validator, search-signal plan, synonym/tag normalizers and the handbook search mirror split out for the handbook app",
+   "added": [
+    "KB_SEARCH_CONFIG_HEADERS",
+    "KB_SEARCH_CONFIG_TAB",
+    "KB_SEARCH_SIGNAL_HB_TAB",
+    "autoTagRulesNormalize_",
+    "kbFeedbackEntry_",
+    "kbMirrorSearchConfig_",
+    "kbSearchSignalPlan_",
+    "kbSearchSignalSeen_",
+    "kbSynonymGroups_"
+   ],
+   "removed": [],
+   "changed": [
+    "getAutoTagRules_",
+    "getKbSearchSynonyms_",
+    "kbFlagItem",
+    "kbImportManual",
+    "kbRecordSearchSignal_",
+    "kbSaveSearchConfig",
+    "kbSearchSignalRows_",
+    "purgeOldDiagnostics",
+    "saveAutoTagRules"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the shared quiz engine (quiz…_) and its limits",
+   "added": [
+    "QUIZ_EXPLAIN_MAX",
+    "QUIZ_OPTION_MAX",
+    "QUIZ_TEXT_MAX",
+    "QUIZ_TF_OPTIONS",
+    "QUIZ_TITLE_MAX",
+    "QUIZ_TYPES",
+    "quizAnswerRight_",
+    "quizGrade_",
+    "quizQuestion_",
+    "quizReview_",
+    "quizStripQuestion_",
+    "quizValidate_"
+   ],
+   "removed": [],
+   "changed": [
+    "trainGradeQuiz_",
+    "trainStripQuizForRep_",
+    "trainValidateQuizDef_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the handbook's quizzes on import",
+   "added": [
+    "KB_MANUAL_QUIZZES_HEADERS",
+    "KB_MANUAL_QUIZZES_MAX",
+    "KB_MANUAL_QUIZZES_TAB",
+    "KB_MANUAL_QUIZ_ID_MAX",
+    "KB_MANUAL_QUIZ_ID_RE",
+    "kbManualQuizzesRows_",
+    "kbManualQuizzesStored_",
+    "kbManualQuizzesValidate_",
+    "kbManualQuizzesWrite_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-29",
+   "why": "HB3.1: the quizzes tab's text-column list",
+   "added": [
+    "KB_MANUAL_QUIZZES_TEXT_IDX"
+   ],
+   "removed": [],
+   "changed": [
+    "kbManualQuizzesWrite_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-10-30",
+   "why": "HB4.1: the handbook's form library — ManualFiles constants and the forms' validate/rows/catalog/write/serve",
+   "added": [
+    "KBMF",
+    "KB_MANUAL_FILES_HEADERS",
+    "KB_MANUAL_FILES_TAB",
+    "KB_MANUAL_FILES_TEXT_IDX",
+    "KB_MANUAL_FORMS_MAX",
+    "KB_MANUAL_FORM_CACHE_PREFIX",
+    "KB_MANUAL_FORM_KEY_MAX",
+    "KB_MANUAL_FORM_KEY_RE",
+    "KB_MANUAL_FORM_MAX_BYTES",
+    "KB_MANUAL_FORM_SECTIONS_MAX",
+    "KB_MANUAL_FORM_SUMMARY_MAX",
+    "KB_MANUAL_FORM_TITLE_MAX",
+    "KB_MANUAL_FORM_TYPES",
+    "kbManualFormServe_",
+    "kbManualFormsCatalogOf_",
+    "kbManualFormsCatalog_",
+    "kbManualFormsRows_",
+    "kbManualFormsValidate_",
+    "kbManualFormsWrite_"
+   ],
+   "removed": [],
+   "changed": [
+    "kbImportManual",
+    "kbManualBundle_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3303,6 +3594,31 @@
    "kind": "const",
    "sha": "68179aeacaee5fa7"
   },
+  "ACTIVITY_BLOCK_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c7cc886b0ad0d18"
+  },
+  "ACTIVITY_LOG_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8b21e39683a05fc7"
+  },
+  "ACTIVITY_LOG_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e505c21fd4c7cd11"
+  },
+  "ACTIVITY_LOG_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee581345428888ca"
+  },
+  "ACTIVITY_PING_GAP_MIN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "46ddb07ec8694106"
+  },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3321,7 +3637,12 @@
   "ADP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "481c8853995f98b9"
+   "sha": "da28af4268944744"
+  },
+  "ADP_INFERRED_MARK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1aa2ab0422a9bbfd"
   },
   "AUDIT": {
    "file": "00_config.js",
@@ -3923,6 +4244,16 @@
    "kind": "const",
    "sha": "b710d9d42807ef6a"
   },
+  "DR_LATE_MIN": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "6a021f9f22f7401a"
+  },
+  "DR_LATE_SHARE": {
+   "file": "50_deptrequests.js",
+   "kind": "const",
+   "sha": "9fada94f7e381ae7"
+  },
   "DR_LIST_CAP": {
    "file": "00_config.js",
    "kind": "const",
@@ -4123,6 +4454,11 @@
    "kind": "const",
    "sha": "41ad9d2f188e970d"
   },
+  "EXPORT_INFERRED_LIST_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e9709e064da01c77"
+  },
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4172,6 +4508,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "459ffe49b2aac1bc"
+  },
+  "INS_PAYOR_ALIAS_FAMILIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb0b9cb41364fb75"
   },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
@@ -4342,6 +4683,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "a522c639706a62db"
+  },
+  "KBMF": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "97dfd135ca8b6c5e"
   },
   "KBMG": {
    "file": "00_config.js",
@@ -4643,6 +4989,21 @@
    "kind": "const",
    "sha": "7bb1ad63a645d08b"
   },
+  "KB_MANUAL_FILES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "99a53cf2baed9794"
+  },
+  "KB_MANUAL_FILES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2d0ef8487131410e"
+  },
+  "KB_MANUAL_FILES_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9cbf7fadb9f3e6a9"
+  },
   "KB_MANUAL_FILE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -4652,6 +5013,51 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "5443f7e68d186e3b"
+  },
+  "KB_MANUAL_FORMS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "17ec8c11e4eb42b5"
+  },
+  "KB_MANUAL_FORM_CACHE_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8adb7ba14348f582"
+  },
+  "KB_MANUAL_FORM_KEY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3d6d420af2846178"
+  },
+  "KB_MANUAL_FORM_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ebcf3442102e9adf"
+  },
+  "KB_MANUAL_FORM_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef1d4c3c7bd2c5eb"
+  },
+  "KB_MANUAL_FORM_SECTIONS_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "73144913da9b8310"
+  },
+  "KB_MANUAL_FORM_SUMMARY_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2631eabc7e506800"
+  },
+  "KB_MANUAL_FORM_TITLE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2bdda0a0071887aa"
+  },
+  "KB_MANUAL_FORM_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1bc36b9e6c7e6883"
   },
   "KB_MANUAL_ID_RE": {
    "file": "00_config.js",
@@ -4732,6 +5138,36 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "805168d9df518cb4"
+  },
+  "KB_MANUAL_QUIZZES_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58bc7a63284f47c2"
+  },
+  "KB_MANUAL_QUIZZES_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cc66350c0c6599f5"
+  },
+  "KB_MANUAL_QUIZZES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ef1ffdef052e123"
+  },
+  "KB_MANUAL_QUIZZES_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8755d9431e6057ac"
+  },
+  "KB_MANUAL_QUIZ_ID_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc07f47774fe70a1"
+  },
+  "KB_MANUAL_QUIZ_ID_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "609993c030c2c834"
   },
   "KB_MANUAL_READONLY_MSG": {
    "file": "00_config.js",
@@ -4848,6 +5284,16 @@
    "kind": "const",
    "sha": "c75111354dadebfd"
   },
+  "KB_SEARCH_CONFIG_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a70f7dd0316b1651"
+  },
+  "KB_SEARCH_CONFIG_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "28279e96f71befa2"
+  },
   "KB_SEARCH_MAX_PER_ITEM": {
    "file": "00_config.js",
    "kind": "const",
@@ -4872,6 +5318,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "273ab85aaa99c634"
+  },
+  "KB_SEARCH_SIGNAL_HB_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "43d7cfe27bf2aa3a"
   },
   "KB_SEARCH_SIGNAL_HEADERS": {
    "file": "00_config.js",
@@ -5058,6 +5509,11 @@
    "kind": "const",
    "sha": "e56df5966a5e911f"
   },
+  "OOP_DRIVE_MAX_LOOKUPS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4f02cdeef9896b79"
+  },
   "OOP_ELIG_MAX_ITEMS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5067,6 +5523,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "f4999711dec09515"
+  },
+  "OOP_MAP_NEARBY_MILES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "eb6051a5e8802dbd"
+  },
+  "OOP_MAP_RING_MILES": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "00587ed2c360dcfd"
+  },
+  "OOP_MAP_RING_POINTS": {
+   "file": "70_kb.js",
+   "kind": "const",
+   "sha": "836ca7d61527feb8"
   },
   "OOP_MAX_ROWS": {
    "file": "00_config.js",
@@ -5443,6 +5914,36 @@
    "kind": "const",
    "sha": "eebe6ba6e656e9f8"
   },
+  "QUIZ_EXPLAIN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5791a1e978d46b12"
+  },
+  "QUIZ_OPTION_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8ac7377776cc7376"
+  },
+  "QUIZ_TEXT_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8eeb4c099c0ffdc2"
+  },
+  "QUIZ_TF_OPTIONS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "84ee0f9d0ab98ce8"
+  },
+  "QUIZ_TITLE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "58c4b6923a0f152c"
+  },
+  "QUIZ_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "739a5497a86031b1"
+  },
   "RETIRED_TRIGGER_HANDLERS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5457,6 +5958,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "b54a1f6176ae6cc8"
+  },
+  "ROUTE_LOOKUP_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9c0bdffe31a574a4"
+  },
+  "ROUTE_LOOKUP_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f98ea5726538ac78"
   },
   "SC": {
    "file": "00_config.js",
@@ -6058,6 +6569,21 @@
    "kind": "function",
    "sha": "df83ecfc4e87c13a"
   },
+  "activityDayView_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "03292fac00a86c3a"
+  },
+  "activityLogAppend_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ddb5653e1d3ad4cd"
+  },
+  "activityLowerBound_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7403e00a892d6365"
+  },
   "addDaysIso_": {
    "file": "10_core.js",
    "kind": "function",
@@ -6142,6 +6668,16 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "118f9fb9ee8cb5c7"
+  },
+  "adpRowInferred_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "412bc7634984ca10"
+  },
+  "adpSetInferred_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9cccd794604fcf79"
   },
   "adpSheetTz_": {
    "file": "20_timeclock.js",
@@ -6252,6 +6788,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "f4c4d69a159fb8b1"
+  },
+  "autoTagRulesNormalize_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "41bacfd3111efba3"
   },
   "automationDetectorChecks_": {
    "file": "10_core.js",
@@ -6511,7 +7052,7 @@
   "buildTimesheetForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4356b3a08f9d1677"
+   "sha": "fe184a871f78fa35"
   },
   "businessHours_": {
    "file": "10_core.js",
@@ -6651,7 +7192,7 @@
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "83b877e3d614b728"
+   "sha": "ffed830a02bcfb61"
   },
   "checkOpenPunches": {
    "file": "20_timeclock.js",
@@ -7228,6 +7769,11 @@
    "kind": "function",
    "sha": "d9b2cee2490b00a0"
   },
+  "drLateDepartments_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "e2dcdf133adb2cc7"
+  },
   "drNewestOpenFirst_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -7561,7 +8107,7 @@
   "exportAdpRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "02eaa7a2128131db"
+   "sha": "eb7a0b3fafd561cc"
   },
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
@@ -7572,6 +8118,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "653981af8af81fb6"
+  },
+  "exportInferredLines_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b95f21d3f52e692d"
   },
   "featureFlagDef_": {
    "file": "10_core.js",
@@ -7746,7 +8297,7 @@
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9ffc6d2b720956ab"
+   "sha": "b51a274aec3efc3c"
   },
   "generateFormToken_": {
    "file": "61_forms.js",
@@ -7791,7 +8342,7 @@
   "getAutoTagRules_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d742430f5932525d"
+   "sha": "cf9eaf2f671eeaae"
   },
   "getAutomationHealth": {
    "file": "10_core.js",
@@ -8186,7 +8737,7 @@
   "getKbSearchSynonyms_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d91492820358145c"
+   "sha": "413073d689737d15"
   },
   "getLeaveDeduction_": {
    "file": "20_timeclock.js",
@@ -8291,7 +8842,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f3a115bc1e57e825"
+   "sha": "075c12bc33ce0a71"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -8366,7 +8917,12 @@
   "getOopPricingDiagnostics": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "1cb5745f8a672e88"
+   "sha": "86eb2f778ca64250"
+  },
+  "getOrCreateActivityLogSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "71fb74417f40b00a"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -8676,12 +9232,12 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e85a2318980da06a"
+   "sha": "d33fdbd7f277ca86"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e4b50f577934318c"
+   "sha": "0dfcd18c45f20024"
   },
   "getTeamMetrics": {
    "file": "40_metrics.js",
@@ -8808,6 +9364,21 @@
    "kind": "function",
    "sha": "f97ae732a91cf1d6"
   },
+  "insPayorAliasSuggest_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0dec995f961d2f17"
+  },
+  "insPayorMatch_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "d6c86f97464b0587"
+  },
+  "insPayorNameStates_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c4e6063149f42dcc"
+  },
   "insPayorRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -8817,6 +9388,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "290eae6fc7f1aa39"
+  },
+  "insStatesIn_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a0db0e05a5eec900"
   },
   "installAutomationTriggers": {
    "file": "10_core.js",
@@ -8931,7 +9507,7 @@
   "intakeFilterRecommendations_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "ba887b69f72e52e5"
+   "sha": "adeb9be048ffa504"
   },
   "intakeGetSubmission": {
    "file": "60_intake.js",
@@ -9117,6 +9693,11 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "86f8d8feedcbd4a8"
+  },
+  "intakeWeightReason_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "9858768c3066b239"
   },
   "invalidateCnAmbientCache_": {
    "file": "30_callnotes.js",
@@ -9368,10 +9949,15 @@
    "kind": "function",
    "sha": "1d9f009887a15c40"
   },
+  "kbFeedbackEntry_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "874296bb0901ff01"
+  },
   "kbFlagItem": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "830a143e5d25e73c"
+   "sha": "7359e7ce9d9d1e28"
   },
   "kbGeneration_": {
    "file": "70_kb.js",
@@ -9396,7 +9982,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "914bafe75f05ca61"
+   "sha": "81fe7aac06a1f2e1"
   },
   "kbGeocodePartialMsg_": {
    "file": "70_kb.js",
@@ -9511,7 +10097,7 @@
   "kbImportManual": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "321ba0b473223a33"
+   "sha": "d62defbffd6ac1c0"
   },
   "kbIngestFile": {
    "file": "70_kb.js",
@@ -9526,7 +10112,37 @@
   "kbManualBundle_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6c8812e6fb1ad227"
+   "sha": "dd332d5f7d689cef"
+  },
+  "kbManualFormServe_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2ed99cd950ae8d98"
+  },
+  "kbManualFormsCatalogOf_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "af0fdeae1a4822be"
+  },
+  "kbManualFormsCatalog_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ef5d580557776b37"
+  },
+  "kbManualFormsRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "dbda72d4e8eca494"
+  },
+  "kbManualFormsValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "559504c48082c5b0"
+  },
+  "kbManualFormsWrite_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3d3d0e7fa17a7b99"
   },
   "kbManualHashBasis_": {
    "file": "70_kb.js",
@@ -9598,6 +10214,26 @@
    "kind": "function",
    "sha": "668d5d721b33f4cc"
   },
+  "kbManualQuizzesRows_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8a965d52dd20117c"
+  },
+  "kbManualQuizzesStored_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c91bc7b071923c06"
+  },
+  "kbManualQuizzesValidate_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3cd8b8d2a656c9be"
+  },
+  "kbManualQuizzesWrite_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3cbf7cd3c58b847a"
+  },
   "kbManualRecentPayload_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9638,6 +10274,11 @@
    "kind": "function",
    "sha": "fd155e0b7ce8e5b7"
   },
+  "kbMirrorSearchConfig_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "898f63c5e297704e"
+  },
   "kbNaturalCompare_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9676,7 +10317,7 @@
   "kbRecordSearchSignal_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "ec90aeb2f0ce5993"
+   "sha": "c2ef9baf30ccfa29"
   },
   "kbRecordView": {
    "file": "70_kb.js",
@@ -9741,7 +10382,7 @@
   "kbSaveSearchConfig": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "21d451892e045d21"
+   "sha": "20772258505d673f"
   },
   "kbScanBrokenEmbeds_": {
    "file": "70_kb.js",
@@ -9768,6 +10409,11 @@
    "kind": "function",
    "sha": "33748860017caa76"
   },
+  "kbSearchSignalPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a217123f5d720e8c"
+  },
   "kbSearchSignalReport_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -9776,7 +10422,12 @@
   "kbSearchSignalRows_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "143c405b4e162c47"
+   "sha": "6830b506f073bed5"
+  },
+  "kbSearchSignalSeen_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "182bd37e49f25f04"
   },
   "kbSearchTerms_": {
    "file": "70_kb.js",
@@ -9842,6 +10493,16 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "ebe6b72c67b694b1"
+  },
+  "kbSuggestPayorSynonyms": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f1bd49548a747ec7"
+  },
+  "kbSynonymGroups_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "510bacf8ee7c7490"
   },
   "kbTermCount_": {
    "file": "70_kb.js",
@@ -9968,6 +10629,11 @@
    "kind": "function",
    "sha": "94bfdba1c729f2c4"
   },
+  "managerGetDayActivity": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d42b4244adafc606"
+  },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
    "kind": "function",
@@ -10011,7 +10677,7 @@
   "managerSaveDay": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "634cf286cec0efd0"
+   "sha": "a1e05e4a5cf40233"
   },
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
@@ -10223,35 +10889,75 @@
    "kind": "function",
    "sha": "1e3d158ffcdb7f7a"
   },
+  "oopDriveForCheck_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "21ef27160e84dda3"
+  },
+  "oopDrivingRoute_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6818d44e837369fd"
+  },
   "oopEligibilityCheck_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "90ee8b7183f9dacf"
+   "sha": "d1b24a459f9ff665"
   },
   "oopEligibilityForPayment_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0a79805bbb740391"
+   "sha": "c778d638f2a6212b"
+  },
+  "oopEligibilityMap": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2a2910557c5ce8ef"
   },
   "oopEligibilityParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "940df1b89a428175"
+   "sha": "bb47f1f9019d2a55"
+  },
+  "oopExceptStatesClause_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "6ab8e8e966522acb"
   },
   "oopHeaderRole_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "30065044fee2478e"
   },
+  "oopMapPlan_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c4b2b51bba1ff110"
+  },
   "oopMatchScore_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "df037b2e3e32a22a"
   },
+  "oopMaxRadius_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "94bb52383086e44a"
+  },
+  "oopMilesFmt_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3734ffce3bdfd028"
+  },
   "oopNameCol_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "d4ee46be714b2662"
+  },
+  "oopPolylineOk_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3e5d01c71f53a556"
   },
   "oopPriceByLabel_": {
    "file": "70_kb.js",
@@ -10273,6 +10979,16 @@
    "kind": "function",
    "sha": "69638e8b0321d862"
   },
+  "oopRingPoints_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8b81d202794ae75f"
+  },
+  "oopRoutePick_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "abe1d7020b12b997"
+  },
   "oopRowIsBlank_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10282,6 +10998,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "c0856406be14769e"
+  },
+  "oopRuleLabel_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "766c330c395c106e"
   },
   "oopSheet_": {
    "file": "70_kb.js",
@@ -10521,7 +11242,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "669a180408e35da6"
+   "sha": "8a1d31de153d5141"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -10898,6 +11619,36 @@
    "kind": "function",
    "sha": "e630a3e9b237e555"
   },
+  "quizAnswerRight_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "542262232585b488"
+  },
+  "quizGrade_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "b5a7ceb49a58bf4a"
+  },
+  "quizQuestion_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "6538333c19a849ba"
+  },
+  "quizReview_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "75a075bef601235b"
+  },
+  "quizStripQuestion_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "1fff5241391b6f94"
+  },
+  "quizValidate_": {
+   "file": "80_training.js",
+   "kind": "function",
+   "sha": "5c42df3d183482c5"
+  },
   "readAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -10971,7 +11722,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2083a19d07eeee49"
+   "sha": "d62347fbaf382f9e"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -10981,7 +11732,7 @@
   "recordPunchCore_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ddd62fcfabe55a70"
+   "sha": "6079b68f68103acc"
   },
   "recordViewEnter": {
    "file": "10_core.js",
@@ -11123,6 +11874,21 @@
    "kind": "function",
    "sha": "1a37be5691c30e7c"
   },
+  "routeLookupReserve_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8d32becb2b644a6c"
+  },
+  "routeLookupStatus_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e0bb666e4408611b"
+  },
+  "routeLookupWindow_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "0a0cdd029e3ca633"
+  },
   "runAutomationJob_": {
    "file": "10_core.js",
    "kind": "function",
@@ -11201,7 +11967,7 @@
   "saveAutoTagRules": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "0c7a0dbf1629d22d"
+   "sha": "bd09a6c1b439dd96"
   },
   "saveBreakSchedules": {
    "file": "20_timeclock.js",
@@ -11341,7 +12107,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "09ffcdee7bf7dfb9"
+   "sha": "8e200514995276f4"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",
@@ -11376,7 +12142,7 @@
   "sendAutomatedExport_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d553965779e62f90"
+   "sha": "21e25fe98b53dc21"
   },
   "sendAutomationHealthDigest": {
    "file": "10_core.js",
@@ -11956,7 +12722,7 @@
   "trainGradeQuiz_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "8318bcdf8554e44b"
+   "sha": "6a9ed2017087609a"
   },
   "trainKbTitles_": {
    "file": "70_kb.js",
@@ -12021,7 +12787,7 @@
   "trainStripQuizForRep_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "6abf5564f6bca552"
+   "sha": "a5da4f1bbc476e87"
   },
   "trainTodayIso_": {
    "file": "80_training.js",
@@ -12031,7 +12797,7 @@
   "trainValidateQuizDef_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "345d9423410c3cb3"
+   "sha": "d22b99a489a29298"
   },
   "trainingReplyClear_": {
    "file": "80_training.js",
@@ -12206,7 +12972,7 @@
   "writeAdjustPunchForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "5c23f738fc2c7a31"
+   "sha": "16982bc14b7bcff4"
   },
   "writeAuditLog_": {
    "file": "10_core.js",

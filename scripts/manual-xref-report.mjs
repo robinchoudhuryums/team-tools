@@ -14,7 +14,9 @@
 // match is too loose to show a rep unasked (measured 2026-09-30: roughly six
 // in ten right), which is exactly why a person decides it here.
 //
-// It runs the APP'S OWN functions, read out of web-app/kb/script_kb.html — the
+// It runs the APP'S OWN functions, read out of the reader's partials — since
+// handbook app HB1.1b, web-app/shared/script_manual_render.html holds the
+// scorer, and web-app/kb/script_kb.html the export-only kbMdLinkContexts_ — the
 // scorer the reader uses — so the report cannot disagree with the preview a
 // rep sees (one scorer, no Python mirror: g126). WARNINGS only: it never
 // fails the export and always exits 0 unless the inputs are unreadable.
@@ -34,11 +36,14 @@ const file = args.find((a) => !a.startsWith('--')) || path.join(ROOT, 'manual/di
 const LIST = args.includes('--list');
 const JSON_OUT = args.includes('--json');
 
-/** The functions the reader scores with, by name, out of the partial. */
+/** The partials the reader's functions live in (HB1.1b): the shared reader, then Reference. */
+export const READER_PARTIALS = ['web-app/shared/script_manual_render.html', 'web-app/kb/script_kb.html'];
+
+/** The functions the reader scores with, by name, out of the partials. */
 export function loadScorer(src) {
   const fn = (name) => {
     const i = src.indexOf('function ' + name + '(');
-    if (i < 0) throw new Error('script_kb.html has no ' + name);
+    if (i < 0) throw new Error('the reader partials have no ' + name);
     let depth = 0, j = src.indexOf('{', i);
     for (; j < src.length; j++) {
       if (src[j] === '{') depth++;
@@ -48,7 +53,7 @@ export function loadScorer(src) {
   };
   const decl = (name) => {
     const i = src.indexOf('var ' + name + ' ');
-    if (i < 0) throw new Error('script_kb.html has no ' + name);
+    if (i < 0) throw new Error('the reader partials have no ' + name);
     const end = src.indexOf(';\n', i);
     const iife = src.slice(i, end).indexOf('(function') >= 0 ? src.indexOf('})();', i) + 5 : end + 1;
     return src.slice(i, iife);
@@ -106,7 +111,7 @@ if (import.meta.url === 'file://' + process.argv[1] || process.argv[1] === fileU
   let bundle;
   try { bundle = JSON.parse(fs.readFileSync(file, 'utf8')); }
   catch (e) { console.error('manual-xref-report: cannot read ' + file + ' (' + e.message + ')'); process.exit(2); }
-  const k = loadScorer(fs.readFileSync(path.join(ROOT, 'web-app/kb/script_kb.html'), 'utf8'));
+  const k = loadScorer(READER_PARTIALS.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n'));
   const r = report(k, bundle.articles || []);
   if (JSON_OUT) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
   console.log('Cross-references: ' + r.links + ' · previews focus on the linked part: ' + r.focused +

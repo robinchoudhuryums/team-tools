@@ -154,6 +154,35 @@ def oncall_table():
     return "\n".join(out)
 
 
+def notes_inline(s):
+    """A slide note's inline marks: **bold** and *italic*, the text escaped."""
+    t = html.escape(str(s), quote=False)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    return re.sub(r"(?<![*\w])\*(?!\s)(.+?)(?<!\s)\*(?![*\w])", r"<i>\1</i>", t)
+
+
+def slide_notes_html(notes):
+    """A slideshow slide's `notes` (figures.json, operator 2026-10-28): a line
+    that starts "- " is a bullet, every other line a paragraph. '' for none."""
+    if not notes:
+        return ""
+    out, items = [], []
+
+    def flush():
+        if items:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>")
+            items.clear()
+    for line in notes:
+        line = str(line)
+        if line.startswith("- "):
+            items.append(notes_inline(line[2:]))
+        else:
+            flush()
+            out.append(f"<p>{notes_inline(line)}</p>")
+    flush()
+    return '<div class="notes">' + "".join(out) + "</div>"
+
+
 def expand(m):
     spec = m.group(1).strip()
     if spec == "roster:leads":
@@ -246,7 +275,11 @@ def expand(m):
             if fid not in FIGS or fid not in FIGB:
                 raise SystemExit(f"unknown figure in gallery: {fid}")
             f = FIGS[fid]
-            cells.append(f'<div class="slide"><img src="{FIGB[fid]}" alt="{f["alt"]}"><figcaption>{f["caption"]}</figcaption></div>')
+            # A slide's longer text (operator 2026-10-28) rides beside its
+            # caption as `notes`: the HTML handbook folds it under a toggle,
+            # print shows it, and md2model puts it in Word under the image.
+            cells.append(f'<div class="slide" data-fig="{html.escape(fid, quote=True)}"><img src="{FIGB[fid]}" alt="{f["alt"]}">'
+                         f'<figcaption>{f["caption"]}</figcaption>{slide_notes_html(f.get("notes"))}</div>')
         return f'<figure class="shot gallery" data-title="{html.escape(title, quote=True)}">' + "".join(cells) + '</figure>'
     if spec.startswith("peek:"):
         # A button named in the text shows its locator screenshot on hover

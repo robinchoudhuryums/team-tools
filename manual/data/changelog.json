@@ -1,5 +1,68 @@
 [
   {
+    "date": "2026-10-30",
+    "part": "p1",
+    "section": "§1-7.1",
+    "summary": "An inbound caller who needs a Spanish speaker goes to the Spanish Queue Voicemail first; an email to spanishcalls@universalmedsupply.com is now the secondary option, not ruled out.",
+    "authority": "Operations",
+    "retraining": true,
+    "provenance": "Operator 2026-10-30 (HB3.5 quiz review)"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p3",
+    "section": "§3-8.1",
+    "summary": "Briefs, pullups and liners share one Texas Medicaid limit of 240 a month between them — not 240 of each. Underpads (120 a month) and wipes (2 packs a month) are limited separately.",
+    "authority": "Respiratory & Resupply",
+    "retraining": true,
+    "provenance": "Operator 2026-10-28; TMHP limits confirmed"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p3",
+    "section": "§3-5.2",
+    "summary": "Suction tubing (A7002, 8 a month) and sterile water (A4217, 4 bottles a month — usually the 1,070 mL AquaPak; the Item Master counts A4217 as 500 mL per unit) are listed with the suction supplies.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-28"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p3",
+    "section": "§3-3.3",
+    "summary": "Nebulizer supply frequencies confirmed: 2 a month for each supply, except the aerosol mask (A7015) at 1 a month. The nebulizer kit (A7004) has a photo.",
+    "authority": "Respiratory & Resupply",
+    "retraining": false,
+    "provenance": "Operator 2026-10-28"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p8",
+    "section": "§8-4.1",
+    "summary": "The Oxygen Cylinder Stand / Rack (E1355) is no longer listed — it is not in the Item Master.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-28"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p9",
+    "section": "§9-1",
+    "summary": "Company holidays are listed: New Year's Day, Memorial Day, Independence Day, Labor Day, Thanksgiving and Christmas. When one falls on a weekend, the weekday before or after that weekend is taken off instead.",
+    "authority": "Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-28"
+  },
+  {
+    "date": "2026-10-28",
+    "part": "p6",
+    "section": "§6-9.3",
+    "summary": "The pick-up ticket slideshow starts with Claim Prep (check the items can be picked up first). The Transaction, Selection and Ticket slides carry field-by-field instructions under Show details, and the screenshots are cropped to the part that matters.",
+    "authority": "Field Operations",
+    "retraining": false,
+    "provenance": "Operator 2026-10-28"
+  },
+  {
     "date": "2026-10-26",
     "part": "p9",
     "section": "§9-1",

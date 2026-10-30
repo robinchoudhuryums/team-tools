@@ -6688,6 +6688,7 @@ function test_managerGates_rejectNonManager() {
     ['kbGetSearchSignal',              function () { return kbGetSearchSignal(); }],   // cycle 25 E6
     ['kbGetSearchConfig',              function () { return kbGetSearchConfig(); }],
     ['kbSaveSearchConfig',             function () { return kbSaveSearchConfig([]); }],
+    ['kbSuggestPayorSynonyms',         function () { return kbSuggestPayorSynonyms(); }],   // 25post round 12 D2
     ['getCoveragePlan',                function () { return getCoveragePlan(D, D); }],
     ['getAdminConfig',                 function () { return getAdminConfig(); }],
     ['getRetentionConfig',             function () { return getRetentionConfig(); }],
@@ -6713,6 +6714,7 @@ function test_managerGates_rejectNonManager() {
     ['getManagerDashboard',            function () { return getManagerDashboard(); }],
     ['getEmployeesList',               function () { return getEmployeesList(); }],
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
+    ['managerGetDayActivity',          function () { return managerGetDayActivity(_TEST_INDIA_ID, D); }],   // 25post round 12 E2
     // Pay statement (2026-08-17): rep-callable for SELF; the repEmpId branch —
     // viewing ANOTHER rep's hours + rate — is the manager-gated surface. The
     // omnibus runs as the INDIA employee, so the target must be a DIFFERENT id
@@ -6838,7 +6840,7 @@ function test_managerGates_rejectNonManager() {
     // Cycle 25 E6 — the Reference search signal (admin-only by the operator's decision).
     kbGetSearchSignal: 1,
     // #8 — search-synonym config (authoring-adjacent).
-    kbGetSearchConfig: 1, kbSaveSearchConfig: 1,
+    kbGetSearchConfig: 1, kbSaveSearchConfig: 1, kbSuggestPayorSynonyms: 1,   // D2 — the payor alias offer
     // Reference data tables + editor file ingest (operator 2026-08-25) — both
     // write/read KB store content, so they sit in the authoring tier.
     getKbDataTables: 1, kbImportDataTable: 1, kbIngestFile: 1,

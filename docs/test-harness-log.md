@@ -2852,3 +2852,418 @@ per-change detail. By delta:
   which is the rule working, not a defect.
 - **Server manifest:** `kbManualImagesValidate_` revised (`split-manifest.mjs
   --why`).
+
+## Handbook app HB1.1a — the rendering layer moved to a shared partial (2026-10-28)
+
+- **The alias:** `harness.js` gained `CLIENT_ALIASES` and `readWebFile` — a
+  read of `kb/script_kb.html` is `shared/script_manual_render.html` +
+  `kb/script_kb.html`, in include order, so the ~250 pins that name the Reference
+  partial kept working when 110 declarations and 301 style rules moved. The 39
+  raw `fs.readFileSync(... 'kb/script_kb.html')` reads in `run.js` now go
+  through `readWebFile`. The DOM harness keeps its own partial list and loads
+  the two files separately, as `index.html` does.
+- **The contract pin (HB1.1a):** nothing declared in both files, the shared file
+  included first, and the shared layer's references to names Reference declares
+  are exactly `KB_STATE` and `kbXrefOpen_` — a list that only shrinks; HB1.1b
+  turns both into host hooks.
+- **Visual:** all 72 Reference and manual shots taken on the old and the new
+  code and compared pixel by pixel. 39 were identical, and 27 differed only
+  below the noise threshold (the loading bar and anti-aliasing). Of the six with
+  real pixel counts, four were run-to-run noise (a second run of the new code
+  matched the old exactly). Two (`reference-manual-polish-pak-light-wide`,
+  `reference-manual-diagram-full-dark-wide`) differed consistently, by 346 and
+  172 scattered text pixels. A dump of every element's full computed style and
+  box in both scenarios on both builds was IDENTICAL (1,307 and 1,596
+  elements), so that residue is rasterisation, from the page's two extra
+  `<style>`/`<script>` elements, not a style or layout change. Method worth
+  keeping: a computed-style dump settles what a pixel diff cannot.
+- **Left for HB1.1b:** the two `.kb-article .kb-diagram svg.kbdg` rules, plus the
+  mixed selector lists (render and reader selectors in one rule), stay in
+  Reference's styles.
+
+## Handbook app HB1.1b — the reader screen behind MANUAL_HOST (2026-10-28)
+
+- **Moved:** 105 declarations (the reader screen, the cross-reference system and
+  their pure helpers) and 179 style rules into `shared/script_manual_render.html`.
+  The CSS order was checked against the file as it stood BEFORE HB1.1a, every
+  pair in both directions (the new rules land after HB1.1a's): all 915 original
+  rules accounted for, no new flip that two rules could both match.
+- **Tests that changed, and why:** five sandboxes now take the real contract
+  through `manualHostInto_`; the tests that seeded `KB_STATE.manualParts` /
+  `.trail` / `.manualMeta` seed `MANUAL_STATE` (the field moved, the behaviour
+  did not); nine assertions on emitted `onclick` and source text read
+  `MANUAL_HOST.printSection(…)` / `.openItem(…)` / `.printAllCards()` /
+  `.savePrefs(…)` / `.prefs()` instead of the Reference names; MRD-7 finds the
+  reader bar's ≤720px rule in the shared file's own block; `extractFnFrom` stops
+  at `</script>`; `scripts/manual-xref-report.mjs` reads the scorer from both
+  partials (`READER_PARTIALS`).
+- **The contract pin (HB1.1a/b):** the shared file names nothing Reference
+  declares and no `KB_STATE`/`KB_DRAWER`; called hooks = declared hooks =
+  installed hooks; a misspelt hook throws and an uninstalled host is idle
+  (driven); Reference reads `MANUAL_STATE` for `manualMeta` and `manualPart`
+  only; the reader's styles moved and the admin import's stayed.
+- **Bites:** seven, all BITE — the reader naming a Reference function, reading
+  `KB_STATE`, a hook left out of the install, a declared hook nobody calls,
+  `install` ignoring a misspelt hook, Reference reading a reader field on
+  `KB_STATE`, and (DOM) the `openItem` hook made a no-op, which MRD-5 DOM catches.
+- **Visual:** the 72 Reference and manual shots taken on HB1.1a's code (a git
+  worktree, so the working tree was never stashed) and on HB1.1b's: 43
+  identical, 23 below the noise threshold, one 5-pixel spot, five with text-pixel
+  residue. Those five (codes, compact drawer, HCPCS, polish-pak) have identical
+  computed styles, boxes and text on every element, old and new (959 to 1,604
+  elements each). The visual CI gate passes.
+
+## Handbook app HB1.1c — the shell-needs contract (2026-10-28)
+
+- **HB1.1c pin:** the shared file's SHELL NEEDS header must equal what the code
+  uses — the top-level names (and `global.X =` exports) of every other partial
+  `index.html` includes, plus the public server functions called as `.name(` —
+  with one named exception (`pad`, a local that shares `script_core`'s name; the
+  pin re-checks it is still a local).
+- **Sweep:** no tool reads `kb/script_kb.html` for moved code any more; the export's
+  xref-report docstring names the shared partial.
+
+
+## Handbook app HB1.2 — the second project, copied and driven (2026-10-28)
+
+- **HB1.2-a** runs `scripts/handbook-sync.mjs --check --json`: the copies are
+  current, the environment Handbook.js supplies is exactly four names, the six
+  `tt…_` renames are the six served endpoints, CONFIG never ships, the
+  generated file declares no public function, the client copies are byte copies
+  under one banner line, and CI runs the check after `npm ci` with acorn declared.
+- **HB1.2-b** builds a temp tree three ways through `--root`: the real tree
+  builds (control); a write added two hops inside a copied reader is refused and
+  named; Handbook.js reaching CONFIG is refused; a `tt…_` name with no original
+  is refused.
+- **HB1.2-c / -d** load `kb_shared.js` + `Handbook.js` into a vm over fake
+  Session / Properties / Spreadsheet / Cache services with a read counter:
+  published handbook sections only (no draft, no Reference article), a draft
+  cross-reference is "Not found.", a Reference one is refused without a read,
+  What's new skips a draft's change; the parts read is served from cache the
+  second time, an anonymous caller is refused before any read, an unset
+  `HANDBOOK_KB_SS_ID` is named and not cached, a missing KB tab is named.
+- **HB1.2-e:** the public surface (every function not ending `_` in the
+  hand-written files) is an exact list that covers every server call the shared
+  reader's SHELL NEEDS header names; the manifest is domain access, run as the
+  deployer, two read-only scopes; `filePushOrder` loads the copy first.
+- **Bites: 9/9** — admin everywhere, the manual-only guard dropped, an error
+  cached, the cache never hit, `setProperty` off the write list, ANYONE access,
+  What's new ungated, the walk ignoring Handbook.js's declarations, a stale copy.
+- `scripts/lint-server.mjs` now resolves each project's global scope on its own
+  (`advancedServiceGlobals(dir)`; the F-50 pin calls it with a directory).
+- **HB1.2 follow-up (CI):** the pushed HB1.2 run failed in the dependency-free
+  floor — HB1.2-a/b spawn the sync, which imports acorn, before `npm ci`. Those
+  two pins now go through `testNeedsDeps`: a visible `SKIPPED` line (and a count
+  under the summary) in the floor, and CI re-runs the harness after the install
+  with `REQUIRE_DEPS=1`, where a missing package fails. HB1.2-a asserts that step.
+
+## Handbook app HB1.3 — the frame, driven (2026-10-28)
+
+- **DOM (runDom.js, "HB1.3 — the handbook app's page")** boots the WHOLE page —
+  `handbook-app/index.html` with its includes expanded — in jsdom over an
+  auto-answering fake `google.script.run`, a fake IndexedDB over one Map (so a
+  second boot sees what the first kept) and a fake `google.script.history`
+  (entries JSON-copied: the page's objects are another realm's). Seven drives:
+  home (chapters, news, contents dots, version, the replaced first entry); the
+  department and a later visit; a contents row → reader + pushed `s`, Back and
+  forward without a push; `?s=` incl. a subsection, an unknown one toasting
+  through the page's own stack; the kept copy (no full read on a matching
+  stamp, a re-read on a new one); a failed read falling back to it, or naming
+  the server's error; Escape through the copied shell, then the contents.
+- **Pure (run.js, "HB1.3")** — a: the page's pure helpers (visit step, news,
+  tree, link round trip); b: every contract hook installed (read from the
+  contract, not listed); c: the server's stamp (cache-only while warm, moves
+  with a section) and doGet's `?s=` filter; d: every literal `getElementById`
+  in the copied code is created by it or present in the page; e (eslint +
+  jsdom): no-undef over the assembled page, the browser's globals DERIVED from
+  jsdom's window plus `global.X =` exports and `typeof`-tested names.
+- **HB1.2-b** now also drives the page walk's refusals (a `KB_STATE` reach, an
+  unserved server call) and shows a Reference helper that does not reach its
+  state IS copied. The sync needs `eslint-scope` too (a declared devDependency).
+- **Bites: 12/12** — seven pure (visit, news window, a hook left default, a
+  fixed stamp, any `?s=`, no toast stack, an undeclared page name) and five DOM
+  (kept copy unused, no pushed link, no kept fallback, department not first,
+  Escape unwired).
+
+## Handbook app HB1.4 — search and feedback (2026-10-29)
+
+- **Pure (run.js, "HB1.4")** — a: `kbFeedbackEntry_`, the one check both writers
+  apply; b: the app's `kbFlagItem` driven (row shape, tab created with Team
+  Tools' headers, a refusal writes nothing); c: the app's search driven
+  (Reference hits dropped, the mirrored synonyms widen it, the signal in
+  `KbSearchSignalHb` with the apostrophe, never `KbSearchSignal`, deduped, only
+  typed searches); d: structural — the hand-written server's only write calls
+  are `appendRow` and `insertSheet`, onto the two tabs; e: `kbMirrorSearchConfig_`
+  driven (created, text cell, unchanged → no write, a failure → false) and its
+  three callers and three client warnings; f: the signal report over both tabs.
+  `hbServer_`'s fake sheets now record `appendRow` / `insertSheet`, and its
+  `formatDate` honours the time pattern.
+- **DOM** — the search box (handbook-only results, the signal flag, push then
+  replace, a number jump that opens, Back to the results, a failure named);
+  a slow answer dropped for a later search and for a section opened since; the
+  bar's vote reaching `kbFlagItem` and Suggest opening Reference's dialog. The
+  fake server takes `{__delay, value}`; recorded arguments are JSON copies.
+- **Existing pins updated for the splits** (test doubles of the old shape):
+  auto-tag sanitize-on-read, A7, RT-1's purge, S2's text writers (twelve), the
+  import sandbox (`kbMirrorSearchConfig_` stub — a re-import still writes
+  nothing, because the mirror writes only on a change), E3, E6 ×2, X1's
+  shrink-only list (`kbFlagItem` has a fixture now), the manifest.
+- **Visual** — `build.mjs` also writes `page-handbook.html`; nine `handbook-*`
+  scenarios (home light/dark/phone, department, `?s=`, search wide/phone,
+  phone contents, the suggest dialog), three on the CI gate.
+
+## Handbook app HB2.1 — people (2026-10-29)
+
+- **Pure (run.js, "HB2.1")** — a: the people helpers (an address as the key, a
+  name read from it, the admin list defaulting to the deployer, an edited header
+  read as nothing, standing, and when a changed choice asks again); b: a first
+  visit driven end to end in `hbServer_` (the admin marks a manager — the tab is
+  created; a reader chooses; the manager confirms; an unchanged save writes
+  nothing; "not my team"; the KB untouched); c: the gates (admin-only,
+  their-own-team, no self-manager, a real manager and chapter, a refused caller
+  never takes the lock, a busy lock is said); d: an unmarked manager's people
+  "choose again", a remove deletes the right row, unset / unreachable / edited
+  header as three answers; e: structural — `People.js` never reaches the KB,
+  and every public writer checks its caller, then writes only inside
+  `hbWithLock_` after a fresh read. `hbServer_` now opens two spreadsheets by
+  id, records `setValues` and `deleteRow`, fakes the lock and the deployer, and
+  takes the caller per call (`sb.__email`).
+- **DOM** — a first visit (prompt, badge, the profile form, Save's arguments, the
+  repaint, the reading department set); a manager confirms while an unsaved
+  department survives (g141); the admin adds a manager, a refusal keeps the
+  typed address, Remove asks first, and an unsaved department survives the
+  profile's own repaint; a saved department seeds a browser with no reading
+  choice and never overrides one; unset, a failed load and Back. (The last two
+  were added when their bite-checks reported NO BITE: the confirm action never
+  repaints the profile, so the first drive could not see the dirty guard.)
+- **Visual** — `handbook-people-light-wide`, `handbook-people-dark-mobile`,
+  `handbook-firstvisit-light-mobile` over a `HB_PEOPLE_VIEW()` fixture of
+  invented people.
+
+## Handbook app HB3.1 — the quiz engine and the question bank (2026-10-29)
+
+- **Pure (run.js, "HB3.1")** — a: the engine driven over single, multi-select
+  and true/false (a multi answer right only as exactly the set; the stripped
+  shape whitelist-built; the review gives explanation and section, never the
+  key; the refusals); b: `manual/quizzes.py`'s limits, types and id rule pinned
+  equal to the app's, CI runs its self-test and the export runs the check; c:
+  the import driven over the fake book (a check writes nothing; the tab created
+  with text columns formatted before the write; a re-import writes nothing; an
+  older file keeps the stored quizzes; an empty list clears them; four kinds of
+  bad quiz and a duplicate refuse the file); d: the dialog's quizzes line. The
+  three Team Tools quiz pins and TRN-1 pass unchanged over the delegating
+  functions (their sandboxes now load the engine); S2's raw-text writer list
+  gains `kbManualQuizzesWrite_`; M2-E1 reads the bundle's `quizzes` field.
+- **Python** — `manual/quizzes.py --check`: the good bank and 20 refusals, run in
+  CI's handbook step.
+
+## Handbook app HB3.2 — taking a quiz (2026-10-29)
+
+- **Pure (run.js, "HB3.2")** — a: the helpers (a broken quiz row counted, never
+  served; Passed read as a word; the standing — three fails lock for 24 hours
+  from the last, a pass or a later reset starts over, another quiz's reset does
+  not); b: a reader driven end to end in `hbServer_` (the list, the stripped
+  questions, a wrong submit's review with no key, three fails lock, a fourth
+  refused and NOT recorded, a pass after a reset, the refusals, the KB untouched);
+  c: the reset gate (a pending request's manager, another manager and the reader
+  refused; the confirmed manager and an admin allowed; the attempts kept) and the
+  lock-out list, unset vs unreachable; d: structural — Quiz.js only appends, the
+  KB is read for ManualQuizzes only, caller then lock then append, and the engine
+  is Team Tools', copied. `hbServer_` now loads Quiz.js.
+- **DOM** — the quiz bar on its section only; the list by chapter with the
+  reader's standing and a locked quiz disabled; a sitting (unanswered refused;
+  answers sent in the original order whatever the shuffle; the review's
+  explanation and section link, no option text); the shuffle over a seeded random
+  (permutations, true/false fixed, answers map back); locked, and a manager's
+  lock-outs with Reset; a failed list load, a dropped late answer, Back to a quiz.
+- **Visual** — `handbook-quizzes-light-wide`, `handbook-quiz-take-light-mobile`,
+  `handbook-quiz-result-dark-wide`, `handbook-quizbar-light-mobile`. Reading the
+  first found a raw section id for an unpublished section and an enabled-looking
+  disabled button — both fixed before commit.
+
+## Handbook app HB3.3 — training plans and team quizzes (2026-10-29)
+
+- **Pure (run.js, "HB3.3")** — a: the helpers (JSON rows with a broken one
+  counted; the latest read mark wins; an author's team — the admin everyone, a
+  manager their confirmed people, anyone else nobody; recipients by name or
+  department; every refusal of a plan; a team quiz's section must be published;
+  overdue); b: a manager's quiz and department plan driven end to end — their
+  own person in that department gets it, another manager's person and their own
+  person elsewhere do not; the team quiz listed, keyless and takeable only for
+  the recipient; marks and a pass make it done (unmarking undoes); the admin's
+  department plan reaches both teams; a newly confirmed member picks plans up at
+  read time; Team training's payload; the KB untouched); c: the gates (a reader
+  refused before the lock; another manager cannot edit, poach or borrow a quiz;
+  the admin can; archiving a plan or a quiz; a mark names a published item;
+  unset); d: structural — no KB reach, caller → lock → write. `hbServer_` loads
+  Training.js and fakes `Utilities.getUuid`.
+- **DOM** — My training (progress, Overdue, labels, Mark as read reaching the
+  server and ticking the item in both plans, a reader asks for no team data, a
+  quiz item opens the sitting, Back); the quiz editor (the `*` rule refused on
+  the page, a server refusal kept in the editor, a true/false question, the
+  save and reload, Escape asking first); the plan editor (prefill, add each item
+  once, remove, departments and people, the exact payload, the reach toast);
+  `hbParseOptions_` and its inverse. (jsdom: an attribute selector over a value
+  with `&` and `—` matched nothing — the drive selects by `.value`.)
+- **Visual** — `handbook-training-light-wide`, `handbook-training-dark-mobile`
+  (on the CI gate), `handbook-quiz-editor-light-wide`,
+  `handbook-plan-editor-light-mobile`. Reading the editors found `.hb-pp-l`'s
+  row basis (14em) becoming HEIGHT in the editors' column layout — fixed.
+
+## Handbook app HB3.4 — sign-offs, team progress and reminders (2026-10-29)
+
+- **Pure (run.js, "HB3.4")** — a: the helpers (the latest mark with its
+  version; the latest retraining change to a section or a chapter's sections;
+  the three sign-off states; the reminder picks — once a day; the email
+  escaped); b: "I've read this" records the version, a retraining-flagged change
+  after it asks again and the plan item is not done until re-signed, an
+  unflagged change only notes "changed"; c: the manager view per person and the
+  reader refused; d: reminders — refused to anyone but the owner, nothing sent
+  while off, one email per overdue reader per day with the link, a failed send
+  counted, the installer replacing its trigger. `hbServer_` loads Reminders.js
+  and fakes MailApp and ScriptApp; `hb34World_` takes its OWN copy of the
+  Script Properties (a shared one leaked a reminder record between tests).
+- **DOM** — the bar above a section (sign, Undo, the retraining ask, a refusal
+  kept with its toast, no store → no button); My training's "Changed — I've
+  read it again" reaching the server and the bar agreeing; Team training's
+  progress table (overdue marked, the cells, Details, Copy table as formula-safe
+  TSV, `hbCsvCell_`, a failed load said, a reader never asks).
+- **Visual** — `handbook-signed-dark-wide`, `handbook-progress-light-wide`,
+  `handbook-progress-dark-mobile` (on the CI gate); the retraining ask rides
+  `handbook-quizbar-light-mobile`. Reading the wide shot found the table wider
+  than its column (nowrap headers, "To re-sign" clipped) — headers now wrap; the
+  phone shot shows two columns, so a narrow screen says the table scrolls.
+
+## Handbook app HB2.2 — bookmarks and notes (2026-10-29)
+
+- **Pure (run.js, "HB2.2")** — a: the helpers (a bookmark to the top once, off,
+  capped, junk dropped; a note's limits; the merge — later wins, a deletion
+  wins and is kept, a tie keeps the first; the reader's Notes rows, a bad one
+  counted); b: bookmarks in the account (a published section with the
+  handbook's title, one row per reader, an unreadable list said, unset); c:
+  notes sync driven — merge both ways, only changes written, bad entries
+  refused, another reader's notes untouched, forgetting empties only the
+  caller's rows; d: the gates (no account, before the lock, busy, unset vs
+  unreachable, the KB untouched); e: the page's merge equals the server's on
+  the same cases, and the export round-trips through the import. `hbServer_`
+  loads Saved.js and its fake range gains `clearContent`.
+- **DOM** — the reader bar's star (account; a refusal; Saved lists, removes,
+  opens; Back; unset keeps the list in the browser and asks nothing); a note
+  (the editor, saved in the browser with no server call, "Your note", Escape
+  asks, Delete leaves a tombstone); sync (the warning first, the box shows what
+  IS, the browser's notes up and the account's down, a save sends one note, a
+  failed one stays and says so, off removes the account's copies, on at boot
+  sends once); export and import (titles, no tombstones, newer wins, the count,
+  a stranger file refused). Two older drives now allow the note button on the
+  bar (HB3.2's quiz bar, HB3.4's no-store case).
+- **Visual** — `handbook-saved-light-wide`, `handbook-saved-dark-mobile` (on the
+  CI gate), `handbook-note-light-mobile`. Reading them: "Remove" borrowed the
+  star's warning colour, and "Delete note" wrapped in the phone's footer — both
+  fixed.
+
+## Handbook app HB2.3 — display settings and read aloud (2026-10-29)
+
+- **Pure (run.js, "HB2.3")** — a: the prefs cleaned to their ranges; the
+  defaults put nothing on `<html>`; every attribute the page can produce passes
+  `index.html`'s head filter (read from the file) and has a rule in the
+  stylesheet — the page decides, the head applies, and neither can drift
+  unseen.
+- **DOM** — the Display panel (each choice on `<html>` at once and kept; the
+  font downloaded only once chosen; Reset clears it all; Done closes); the head
+  applies kept attributes before the page script (and refuses a non-`data-hb`
+  name, a value with markup, the theme attribute; a broken store opens the page
+  anyway); read aloud over a fake `speechSynthesis` (title first, one block
+  marked, Pause/Resume, the end clears, Stop cancels and a late `onend` speaks
+  nothing, navigation stops it, no speech → no Listen); the voice and speed
+  reach the utterance; `hbSpeechChunks_` — sentences, comma splits, a long run
+  cut, and "3.1" / "$1.50" never a sentence end (the drive caught the first
+  version reading section numbers in pieces).
+- **Visual** — `handbook-display-light-mobile` (on the CI gate),
+  `handbook-large-dark-mobile`, `handbook-large-light-wide`,
+  `handbook-reading-light-wide`. The largest text at 390px overflowed 6px
+  through the department picker (a flex item without `min-width: 0`) — fixed;
+  it also squeezes the shared reader's chapter index (`.kb-man-ix-t`), the
+  pre-existing masthead defect already on the follow-on list, so that scenario
+  is not gated. The fake speech is DEFINED on `window` in the shot (Chromium's
+  `speechSynthesis` cannot be assigned).
+
+## Handbook app HB2.4 — keyboard and screen reader; axe on every handbook screen (2026-10-30)
+
+- **Visual (`shoot.mjs --axe`)** — axe-core, pinned, over every `handbook-*`
+  scenario (WCAG 2.1 A + AA); a CI step in `visual-layout` after the layout
+  gate (`!cancelled()`), its report in the failure artifact. Its first run
+  found: no document title; the Profile button's name not containing its
+  visible text (the badge count — an `aria-hidden` child is still visible text
+  to that rule, so the count moved to `::after attr(data-n)`); the bar's
+  previous/next names not containing their visible label; the accent at 4.4:1
+  under white text and on links; overflowing tables a keyboard could not reach
+  — one only after a text-size change, so the page re-measures then. A new
+  scenario, `handbook-slideshow-dark-mobile`, steps a slideshow and lays out
+  overflowing tables on a phone.
+- **Pure (run.js, "HB2.4")** — a: the pin is exact, the mode's tags, its
+  handbook filter, its two failing exits, the CI step and artifact, the
+  `.gitignore`; b: `--accent-ink` on html and body, dark untouched, every
+  palette's accent paired with its darker one, the modal button and reader
+  links on it; c: the title, `main` not a live region, the skip link, the
+  badge drawn, focus calls on navigation, the re-measure on a display change.
+  V-8, the gallery markup and MRD-3's bar-name assertion were updated with the
+  change.
+- **DOM** — focus to the section heading after a contents click and after a
+  link open, to a view's heading, never on Back, and never pulled back by a
+  later scroll; the narrow contents' focus in and back (Escape, a tap outside,
+  a second press; a stray Escape moves nothing); the slideshow's announcement
+  (never on load, place and caption, counter hidden); a table's Tab stop only
+  while it overflows (jsdom has no layout, so the wrapper's widths are
+  stubbed) and re-measured on a text-size change; the title, skip link,
+  landmarks, `main` without `aria-live`, the drawn badge.
+
+## Handbook app HB3.5 — the first official quizzes, drafted (2026-10-30)
+
+- **Python (`quizzes.py --check`)** — a draft is checked clean and not exported;
+  `drafts()` names it; a broken draft still fails; no status and an unknown
+  status are refused (23 refusals in all).
+- **Pure (run.js, "HB3.5")** — a: every quiz in the bank says draft or
+  published, the check refuses anything else, only a published quiz reaches the
+  export, the export names the drafts; b: the drafted quizzes, resolved the way
+  the export resolves a section token, pass Team Tools' own import check
+  (`kbManualQuizzesValidate_` and the engine) as they stand — about ten
+  questions, 80%, every question in its own chapter.
+- **Export** — `export_reference.py` ran clean over the bank: "0 (0 questions,
+  every section verified); 2 draft(s) checked, not exported".
+
+## Handbook app HB4.1 — the form library (2026-10-30)
+
+- **Python (`forms.py --check`)** — the good list (sections resolved in
+  order, the PDF a data URI byte for byte) and 14 refusals: id, duplicate id,
+  title, long summary, no section, a missing section, a section twice, a path
+  outside `forms/`, a non-`.pdf` name, a missing file, non-PDF bytes, too large,
+  one file for two forms; a refused form is never exported (the first run
+  caught one that was — a long summary failed the check but the form still
+  went out).
+- **Pure (run.js, "HB4.1")** — a: the mirrored limits and key rule, the CI
+  step, the export's check over the repo's `forms/`, every listed file a PDF
+  under the cap that Team Tools' `FORM_CATALOG` also names; b: the import's
+  own check driven (null = an older file; eight refusals; a duplicate key);
+  c: the import over a fake book — a check writes nothing, the PDF split under
+  the cell limit and rejoined byte for byte, parts 0..n-1, text columns `@`,
+  the audit row, the catalog read back, a re-import writes nothing, a title
+  change rewrites, an older file keeps them, an empty list clears, a bad form
+  refuses the file, an edited header throws; d: the handbook server — links to
+  published sections only, no bytes in the list, one form served, "not in the
+  library" and "could not be read" apart, a damaged form and an edited header
+  said, the anonymous refused; e: one pinned pdf.js on cdnjs, the same build in
+  the harness and routed, `isEvalSupported: false`, the worker as a plain
+  script, called only from the viewer, never at page load. The driven import
+  tests' sandbox list gained the five form functions; S2's raw-writer list,
+  the handbook's public-surface list and M2-E1's bundle shape were updated.
+- **DOM** — the Forms page (rows, section links, Open/Download, Back, a
+  failed read said, an empty library); the bar offers only the forms naming
+  that section; the viewer draws every page as a named image, gives pdf.js a
+  copy of the bytes with eval off, and fetches once per visit; pdf.js failing
+  to load, a missing form and a viewer closed before its answer; Download's
+  file name and message, a safe file name, a failed read as a toast — and the
+  list it was pressed in survives (the first version wrote the message over
+  the reading area).
+- **Visual** — `handbook-forms-light-wide`, `handbook-form-view-dark-mobile`
+  (the real PT/OT Rx drawn by pdf.js, served from `pdfjs-dist` in place of
+  cdnjs) and `handbook-form-bar-light-wide`; all three pass axe.

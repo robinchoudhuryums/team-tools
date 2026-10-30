@@ -1,0 +1,18 @@
+{
+ "forms": [
+  {
+   "id": "form-eaa",
+   "title": "Economic Assistance Application (EAA)",
+   "summary": "The blank application a patient fills in to apply for economic assistance. Billing processes it; it does not apply to an out-of-pocket order.",
+   "file": "EAA (Economic Assistance Application) Form.pdf",
+   "sections": ["§10-19.6", "§0-9"]
+  },
+  {
+   "id": "form-pt-ot-rx",
+   "title": "PT/OT Evaluation Rx (sample)",
+   "summary": "A sample PT/OT prescription, for a provider who refers a power mobility patient to a physical or occupational therapist for the evaluation.",
+   "file": "Sample PT OT Rx.pdf",
+   "sections": ["§5-4", "§5-2.2"]
+  }
+ ]
+}

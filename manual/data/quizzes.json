@@ -1,0 +1,266 @@
+{
+ "quizzes": [
+  {
+   "id": "q-csr-core",
+   "title": "Chapter 0 — CSR Core",
+   "section": "§0-1",
+   "passPct": 80,
+   "status": "published",
+   "questions": [
+    {
+     "type": "single",
+     "q": "You can't find the caller's patient by name and date of birth. What do you do next?",
+     "options": [
+      "Search the caller's phone number",
+      "Tell the caller there is no order on file",
+      "Ask the provider's office to resend the referral",
+      "Transfer the caller to the Sales queue"
+     ],
+     "correct": 0,
+     "explain": "Search the caller's phone number next. A match on a lead means a Sales team member is already working with this caller, even though no account exists yet. Only if the phone number finds nothing either do you treat it as \"no patient in the system\".",
+     "section": "§0-2.1"
+    },
+    {
+     "type": "single",
+     "q": "A caller's order needs to be re-opened. What do you do?",
+     "options": [
+      "Transfer the caller to the department that closed it",
+      "Email the department queue — don't transfer",
+      "Tell the caller to call back in a few days",
+      "Promise the caller the order will be re-opened today"
+     ],
+     "correct": 1,
+     "explain": "Don't transfer — email the department queue. The team has to review the order before anyone can commit, and they would tell the caller the same thing you can.",
+     "section": "§0-2.2"
+    },
+    {
+     "type": "multi",
+     "q": "On a status call, which of these should you NOT say? (Choose all that apply.)",
+     "options": [
+      "A delivery date that isn't in the system",
+      "\"We'll call you back within the hour,\" when someone else will make the call",
+      "That the provider's office, by name, is causing the delay",
+      "That the information is under review and we'll request anything else we need"
+     ],
+     "correct": [
+      0,
+      1,
+      2
+     ],
+     "explain": "Don't estimate a delivery date that isn't in the system, don't promise a callback window unless you're the one making the call, and don't blame the provider's office by name. Saying the information is under review is exactly what to tell a caller whose order arrived recently.",
+     "section": "§0-2.3"
+    },
+    {
+     "type": "single",
+     "q": "A patient tells you their insurance has changed. What must you collect before ending the call?",
+     "options": [
+      "The plan name only",
+      "The plan name, member ID and effective date",
+      "The member ID and the group number",
+      "A photo of the new card"
+     ],
+     "correct": 1,
+     "explain": "Collect all three: the plan name, the member ID and the effective date. A plan name without the other two usually means someone has to call the patient back.",
+     "section": "§0-3.2"
+    },
+    {
+     "type": "single",
+     "q": "A patient buys a walker out of pocket. Who handles it?",
+     "options": [
+      "You complete the purchase, then send one email to the intake team, the eligibility team and Field Operations",
+      "You transfer the caller to the intake team",
+      "You ask the provider's office to send a referral first",
+      "You email Field Operations only, to schedule delivery"
+     ],
+     "correct": 0,
+     "explain": "The CSR team handles out-of-pocket purchases. Complete the purchase, then send one email to all three: intake (to open the order), eligibility (so no insurance verification starts) and Field Operations (to schedule delivery).",
+     "section": "§0-6"
+    },
+    {
+     "type": "truefalse",
+     "q": "A CPAP bought out of pocket doesn't need a prescription, because insurance isn't billed.",
+     "correct": 1,
+     "explain": "False. Oxygen concentrators, PAP devices and ventilators need a prescription even when bought out of pocket — federal law restricts their sale to a prescriber's order. This overrides the general out-of-pocket rule.",
+     "section": "§0-6"
+    },
+    {
+     "type": "single",
+     "q": "Which is the correct subject line for an internal email about an out-of-pocket purchase?",
+     "options": [
+      "OOP Purchase: Maria Garcia 456789",
+      "Patient wants to purchase a walker OOP so I processed it: Maria Garcia 456789",
+      "Maria Garcia — out of pocket",
+      "URGENT: walker purchase",
+      "456789"
+     ],
+     "correct": 0,
+     "explain": "Every internal email uses [Update type]: [Patient name] [TRX #] — a short update type the department can read before opening it, not a sentence. Always include the TRX number: without it the receiving team has to search by name.",
+     "section": "§0-11.2"
+    },
+    {
+     "type": "single",
+     "q": "An insurance representative calls with an authorization decision. What do you do?",
+     "options": [
+      "Transfer them straight to the intake team",
+      "Ask them to call back when the intake team is free",
+      "Note the decision and the reference number, confirm they'll fax or email the letter, post your notes, and email the intake team",
+      "Note the decision on the transaction; nothing else is needed"
+     ],
+     "correct": 2,
+     "explain": "A transfer may not be necessary. Note the decision and the authorization reference number, confirm the representative will also fax or email the response letter, post your notes on the transaction, and email the relevant intake team.",
+     "section": "§0-12.3"
+    },
+    {
+     "type": "single",
+     "q": "Nobody answers an outbound call. What is the minimum before you stop trying?",
+     "options": [
+      "One attempt, then a voicemail",
+      "At least two attempts in all, the second from at least one other caller ID",
+      "Three attempts from the same number",
+      "Two attempts, both from your own extension"
+     ],
+     "correct": 1,
+     "explain": "Try again using at least one other caller ID from the 8x8 outbound list — at least two attempts in all — and note every attempt on the transaction.",
+     "section": "§0-14"
+    },
+    {
+     "type": "truefalse",
+     "q": "When you leave a voicemail, it's fine to name the equipment ordered so the patient knows why you called.",
+     "correct": 1,
+     "explain": "False. Whoever plays the message back may not be the patient. Give your name, the company and a callback number — never the item, the diagnosis or a balance.",
+     "section": "§0-14"
+    }
+   ]
+  },
+  {
+   "id": "q-call-handling",
+   "title": "Chapter 1 — Call Handling",
+   "section": "§1-1",
+   "passPct": 80,
+   "status": "published",
+   "questions": [
+    {
+     "type": "single",
+     "q": "A caller says she's the patient's daughter. She isn't on the account. What must she confirm before you discuss the order and billing details?",
+     "options": [
+      "Only the patient's full name",
+      "Her relationship to the patient, the patient's full name, and the patient's date of birth and/or home address",
+      "A signed AOR on file",
+      "The transaction number"
+     ],
+     "correct": 1,
+     "explain": "A caller other than the patient may be told order and billing details once they confirm their relationship to the patient, the patient's full name, and the patient's date of birth and/or home address.",
+     "section": "§1-3"
+    },
+    {
+     "type": "truefalse",
+     "q": "A caller who can't be verified can still give you information, such as a new address.",
+     "correct": 0,
+     "explain": "True. Before verification, information flows one way: an unverified caller can give you information, but can't be told anything about the order.",
+     "section": "§1-3"
+    },
+    {
+     "type": "single",
+     "q": "When do you advise a caller to hang up and dial 9-1-1?",
+     "options": [
+      "Only when the caller asks for an ambulance",
+      "After you've taken their details",
+      "When the caller says they need emergency help within the next few minutes, or you believe a medical emergency is happening",
+      "After placing them on hold to check with a supervisor"
+     ],
+     "correct": 2,
+     "explain": "Advise 9-1-1 if the caller needs emergency help within minutes or describes anything comparable, or if you believe a medical emergency is taking place, whatever they've said. Don't troubleshoot, hold or take details first. When in doubt, err toward 9-1-1.",
+     "section": "§1-4.1"
+    },
+    {
+     "type": "single",
+     "q": "A caller keeps cursing at you. What do you do?",
+     "options": [
+      "Disconnect straight away",
+      "Warn them that you'll end the call if it continues; if it does, tell them you're ending the call, then disconnect",
+      "Place them on hold until they calm down",
+      "Transfer them to a supervisor"
+     ],
+     "correct": 1,
+     "explain": "Warn first, then disconnect. A call is never disconnected without a warning, and you say that you're ending the call before you do. Both statements are what make the disconnection defensible.",
+     "section": "§1-4.3"
+    },
+    {
+     "type": "multi",
+     "q": "A caller asks for a supervisor. What do you gather before you escalate? (Choose all that apply.)",
+     "options": [
+      "The patient's name and date of birth",
+      "The caller's specific concern — what they want resolved",
+      "A written complaint from the caller",
+      "The caller's agreement to wait 24–48 hours"
+     ],
+     "correct": [
+      0,
+      1
+     ],
+     "explain": "Collect the patient's name and date of birth, and understand the caller's specific concern, before finding a supervisor. A cold transfer makes the caller explain everything a second time.",
+     "section": "§1-4.4"
+    },
+    {
+     "type": "single",
+     "q": "A family member calls to say the patient has died. The rented equipment is not patient-owned. What do you do?",
+     "options": [
+      "Tell the family they can keep it",
+      "Promise a driver will collect it tomorrow",
+      "Confirm the best contact and pick-up address and create a pick-up ticket; Field Ops will verify it and call back within 24–48 hours",
+      "Bill the estate for the remaining rental months"
+     ],
+     "correct": 2,
+     "explain": "Express condolences, note the date of death, then confirm the best contact and the pick-up address and create a pick-up ticket. Field Ops verifies and calls back within 24–48 hours. Don't promise a collection — creating the ticket isn't arranging the pick-up.",
+     "section": "§1-5"
+    },
+    {
+     "type": "truefalse",
+     "q": "An oxygen concentrator the patient rented for many years belongs to the family after the patient dies.",
+     "correct": 1,
+     "explain": "False. Oxygen is never patient-owned. A concentrator always comes back, however long the patient had it.",
+     "section": "§1-5"
+    },
+    {
+     "type": "single",
+     "q": "A caller from 1-800-MEDICARE is calling about a patient's complaint. What do you do?",
+     "options": [
+      "Resolve it on the call if the issue is simple",
+      "Route it directly to a supervisor, then record it as a complaint",
+      "Ask Medicare to have the patient call in",
+      "Email the department and wait for them to call back"
+     ],
+     "correct": 1,
+     "explain": "Get it directly to a supervisor, without working through the usual escalation steps first, and record it as a complaint. A complaint that reaches us through Medicare has already escalated outside the company, so don't try to resolve it on the call.",
+     "section": "§1-6.2"
+    },
+    {
+     "type": "single",
+     "q": "An inbound caller needs a Spanish speaker, and nobody answers the Spanish Queue. What do you do first?",
+     "options": [
+      "Transfer the caller to the Spanish Queue Voicemail",
+      "Email spanishcalls@universalmedsupply.com with the details",
+      "Transfer the caller directly to a Spanish-speaking colleague",
+      "Ask the caller to call back later"
+     ],
+     "correct": 0,
+     "explain": "First, transfer the caller to the Spanish Queue Voicemail: it asks in Spanish for the patient's name, date of birth and reason for calling, and a bilingual team member calls back. An email to spanishcalls@universalmedsupply.com is the secondary option. Never transfer directly to a colleague — that isn't queued or tracked.",
+     "section": "§1-7.1"
+    },
+    {
+     "type": "single",
+     "q": "A patient with a QMB card has been billed for their 20% coinsurance and offers to pay. What do you do?",
+     "options": [
+      "Take the payment",
+      "Offer a payment plan",
+      "Don't collect — route the bill to Billing",
+      "Waive the charge yourself"
+     ],
+     "correct": 2,
+     "explain": "Never collect Medicare cost-sharing from a QMB patient — that's federal law, not a courtesy. Route the bill to Billing.",
+     "section": "§1-2"
+    }
+   ]
+  }
+ ]
+}

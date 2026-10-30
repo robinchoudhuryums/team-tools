@@ -21,10 +21,24 @@ const vm = require('vm');
 
 const WEB_APP = path.resolve(__dirname, '../../web-app');
 
+// Handbook app HB1.1a (2026-10-28) — the Reference client is TWO partials
+// since the handbook's rendering layer moved to shared/script_manual_render.html.
+// A read of 'kb/script_kb.html' is the pair, in include order: the client twin
+// of the server's 'Code.js' alias (g113), so no pin depends on which of the two
+// files holds a function. A pin about the shared file ALONE names it.
+const CLIENT_ALIASES = Object.freeze({
+  'kb/script_kb.html': ['shared/script_manual_render.html', 'kb/script_kb.html'],
+});
+function readWebFile(file) {
+  const parts = CLIENT_ALIASES[file];
+  if (!parts) return fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  return parts.map((f) => fs.readFileSync(path.join(WEB_APP, f), 'utf8')).join('\n');
+}
+
 /** Concatenate the JS inside every <script> block of an HtmlService partial,
  *  stripping the tags and any GAS scriptlets (<? … ?>). */
 function extractScript(file) {
-  const src = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  const src = readWebFile(file);
   const re = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
   const blocks = [];
   let m;
@@ -37,7 +51,7 @@ function extractScript(file) {
  *  the DOM harness — mirroring how index.html includes these partials before the
  *  tool scripts run. */
 function extractMarkup(file) {
-  const src = fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+  const src = readWebFile(file);
   return src
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<\?[\s\S]*?\?>/g, '');
@@ -135,7 +149,7 @@ function serverSource() {
 function extractRawFunction(file, name) {
   const js = isServerFile(file)
     ? serverSource()
-    : fs.readFileSync(path.join(WEB_APP, file), 'utf8');
+    : readWebFile(file);
   const start = js.indexOf('function ' + name + '(');   // F(cycle-8): paren-anchored — see extractFunction
   if (start < 0) throw new Error(`function ${name} not found in ${file}`);
   let i = js.indexOf('{', start);
@@ -304,4 +318,4 @@ function loadFunction(sandbox, file, name) {
   return sandbox[name];
 }
 
-module.exports = { extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, serverDecls, serverCallersOf, buildSandbox, loadFunction, fakeEl };
+module.exports = { readWebFile, CLIENT_ALIASES, extractScript, extractMarkup, extractFunction, extractRawFunction, serverFiles, serverSource, isServerFile, serverDecls, serverCallersOf, buildSandbox, loadFunction, fakeEl };

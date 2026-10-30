@@ -590,7 +590,14 @@ function getKbSearchSynonyms_() {
   try {
     const raw = PropertiesService.getScriptProperties().getProperty(KB_SYNONYMS_PROP);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
+    return kbSynonymGroups_(JSON.parse(raw));
+  } catch (e) { return []; }
+}
+/** PURE — stored synonym groups, sanitised: ≥2 distinct lowercase terms a
+ *  group; anything else dropped. HB1.4: the handbook app reads the mirror
+ *  through this too. */
+function kbSynonymGroups_(parsed) {
+  try {
     if (!Array.isArray(parsed)) return [];
     const groups = [];
     parsed.forEach(function (g) {
@@ -650,9 +657,35 @@ function kbSaveSearchConfig(groups) {
     }
     propSetBounded_(KB_SYNONYMS_PROP, JSON.stringify(clean), { hint: 'remove a synonym group' });
     writeAuditLog_(emp, 'AdminConfigChange', '', '', false, 0, 'KB search synonyms: ' + clean.length + ' group(s)', emp.email);
-    return { success: true, synonyms: clean };
+    return { success: true, synonyms: clean, handbookMirrored: kbMirrorSearchConfig_() };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** HB1.4 — the handbook app reads the search synonyms and the auto-tag rules
+ *  (its search-signal vocabulary) from the KB spreadsheet, because Script
+ *  Properties are per project. Team Tools writes them to KbSearchConfig A2 as
+ *  one JSON {synonyms, tags} whenever either is saved, and on every handbook
+ *  import — only when it CHANGED, so a re-import still writes nothing (M1).
+ *  Best-effort: false when the write failed, which the save says (the handbook
+ *  keeps searching with the last mirror). */
+function kbMirrorSearchConfig_() {
+  try {
+    const json = JSON.stringify({ synonyms: getKbSearchSynonyms_(), tags: getAutoTagRules_() });
+    const ss = getKbSS_();
+    let sheet = ss.getSheetByName(KB_SEARCH_CONFIG_TAB);
+    if (sheet && sheet.getLastRow() >= 2 && String(sheet.getRange(2, 1).getValue()) === json) return true;
+    if (!sheet) {
+      sheet = ss.insertSheet(KB_SEARCH_CONFIG_TAB);
+      sheet.appendRow(sheetSafeRow_(KB_SEARCH_CONFIG_HEADERS));
+    }
+    const cell = sheet.getRange(2, 1);
+    cell.setNumberFormat('@');
+    cell.setValue(sheetText_(json));
+    return true;
+  } catch (e) {
+    Logger.log('kbMirrorSearchConfig_ failed: ' + e.message);
+    return false;
+  }
 }
 function getOrCreateKbViewsSheet_() {
   const ss = getKbSS_();
@@ -831,6 +864,120 @@ function insPayorScore_(name, query) {
   toks.forEach(function (t) { if (n.indexOf(t) >= 0) { hits++; score += 10; } });
   if (hits === toks.length) score += 30;            // every token present
   return score;
+}
+/** PURE (Node-pinned) — D1 (operator 2026-10-27): the US states a text names,
+ *  as codes, WHOLE WORDS only. A full name reads in any case ("Texas", "new
+ *  york"); a two-letter code only in capitals in a payor NAME ("UHC TX"),
+ *  because a name is prose ("in", "or"). In a typed QUERY a rep writes
+ *  lower case, so a code reads in any case there — except the three that are
+ *  everyday words in a query ("in", "or", "me"), which only count in capitals.
+ *  Returns { states: ['TX', …], rest } — `rest` is the text with the states
+ *  taken out. */
+function insStatesIn_(text, isQuery) {
+  const words = String(text == null ? '' : text).split(/[^A-Za-z0-9&]+/).filter(function (w) { return !!w; });
+  const states = [], rest = [];
+  const add = function (c) { if (states.indexOf(c) < 0) states.push(c); };
+  for (let i = 0; i < words.length; i++) {
+    const two = i + 1 < words.length ? (words[i] + ' ' + words[i + 1]).toLowerCase() : '';
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two]); i++; continue; }
+    const w = words[i], lc = w.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc]); continue; }
+    const up = w.toUpperCase();
+    if (w.length === 2 && US_STATE_CODES.indexOf(up) >= 0 &&
+        (w === up || (isQuery && ['in', 'or', 'me'].indexOf(lc) < 0))) { add(up); continue; }
+    rest.push(w);
+  }
+  return { states: states, rest: rest.join(' ') };
+}
+/** PURE (Node-pinned) — D3: the states a payor NAME excludes ("UHC (all
+ *  states other than TX)", "Aetna except Texas and Oklahoma"), and the states
+ *  it names otherwise. Returns { excluded: [...], named: [...] }. */
+function insPayorNameStates_(name) {
+  const n = String(name == null ? '' : name);
+  const m = n.match(/\b(?:other\s+than|except|excluding|excludes|excl|outside(?:\s+of)?|not\s+in|non)\b[\s.-]*([^)]*)/i);
+  const excluded = m ? insStatesIn_(m[1], false).states : [];
+  const outside = m ? n.slice(0, m.index) + ' ' + n.slice(m.index + m[0].length) : n;
+  return { excluded: excluded, named: insStatesIn_(outside, false).states };
+}
+/** PURE (Node-pinned) — D1–D3 (operator 2026-10-27): score a payor name for
+ *  the payor lookup. The query's STATES are matched on their own — by code or
+ *  full name, either way round ("uhc tx" finds "UnitedHealthcare Texas") — and
+ *  the rest of the query through `insPayorScore_`, tried as typed and as each
+ *  alias the Synonyms list gives it ("uhc" → "unitedhealthcare"). A plan
+ *  naming the searched state ranks above one naming another; one whose name
+ *  EXCLUDES it carries `excluded` and the caller ranks it last. Returns
+ *  { score, excluded: 'TX' | '' }; 0 = no match. */
+function insPayorMatch_(name, query, groups) {
+  const q = insStatesIn_(query, true);
+  const ns = insPayorNameStates_(name);
+  let base;
+  if (!q.states.length) base = insPayorScore_(name, query);
+  else if (q.rest.trim()) base = insPayorScore_(name, q.rest);
+  else base = ns.named.some(function (c) { return q.states.indexOf(c) >= 0; }) ? 40 : 0;   // a state alone
+  // Aliases: every group with a term the rest of the query holds, as whole words.
+  const restLc = ' ' + String(q.states.length ? q.rest : query).toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+  (groups || []).forEach(function (g) {
+    (g || []).forEach(function (term) {
+      const t = String(term || '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim();
+      if (!t || restLc.indexOf(' ' + t + ' ') < 0) return;
+      g.forEach(function (alt) {
+        const a = String(alt || '').toLowerCase().trim();
+        if (!a || a === t) return;
+        const variant = restLc.replace(' ' + t + ' ', ' ' + a + ' ').trim();
+        base = Math.max(base, insPayorScore_(name, variant));
+      });
+    });
+  });
+  if (!(base > 0)) return { score: 0, excluded: '' };
+  if (!q.states.length) return { score: base, excluded: '' };
+  const ex = q.states.filter(function (c) { return ns.excluded.indexOf(c) >= 0; })[0] || '';
+  if (ex) return { score: base, excluded: ex };
+  if (ns.named.some(function (c) { return q.states.indexOf(c) >= 0; })) return { score: base + 40, excluded: '' };
+  if (ns.named.length) return { score: Math.max(1, base - 20), excluded: '' };   // a plan for another state
+  return { score: base, excluded: '' };
+}
+/** PURE (Node-pinned) — D2: the alias groups to OFFER from the payor names —
+ *  each INS_PAYOR_ALIAS_FAMILIES family one of whose terms a name carries, and
+ *  each "Long Name (ABC)" acronym the sheet spells out. A group with a term
+ *  already in the admin's list is not offered again. */
+function insPayorAliasSuggest_(names, existing) {
+  const have = {};
+  (existing || []).forEach(function (g) { (g || []).forEach(function (t) { have[String(t).toLowerCase().trim()] = 1; }); });
+  const norm = function (s) { return ' ' + String(s || '').toLowerCase().replace(/[^a-z0-9&]+/g, ' ').trim() + ' '; };
+  const all = (names || []).map(norm);
+  const out = [];
+  const offer = function (g) {
+    if (g.length < 2 || g.some(function (t) { return have[t]; })) return;
+    out.push(g); g.forEach(function (t) { have[t] = 1; });
+  };
+  INS_PAYOR_ALIAS_FAMILIES.forEach(function (fam) {
+    const seen = fam.some(function (t) {
+      const w = ' ' + t.replace(/[^a-z0-9&]+/g, ' ').trim() + ' ';
+      return all.some(function (n) { return n.indexOf(w) >= 0; });
+    });
+    if (seen) offer(fam.slice());
+  });
+  (names || []).forEach(function (raw) {
+    const m = String(raw || '').match(/^\s*([A-Za-z][A-Za-z .&'-]{5,38}?)\s*\(([A-Z]{2,6})\)/);
+    if (!m || US_STATE_CODES.indexOf(m[2]) >= 0) return;
+    const long = m[1].toLowerCase().replace(/[^a-z0-9& ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const ab = m[2].toLowerCase();
+    if (long && long !== ab) offer([ab, long]);
+  });
+  return out;
+}
+/** Admin-only, read-only — D2: alias groups offered from the InsurancePayors
+ *  names, for the Synonyms editor to append for review. Nothing is saved. */
+function kbSuggestPayorSynonyms() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
+    if (!sh) return { error: 'There is no "' + INS_PAYOR_TAB + '" tab in the KB spreadsheet to read payor names from.' };
+    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+    const names = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
+    return { groups: insPayorAliasSuggest_(names, getKbSearchSynonyms_()), payors: names.filter(function (n) { return String(n).trim(); }).length };
+  } catch (err) { return { error: 'Could not read the payor names: ' + err.message }; }
 }
 /** PURE (Node-pinned): the ONE HCPCS tokenizer. Both operator tables name the
  *  same equipment in the same billing vocabulary — the payor sheet as COLUMN
@@ -1670,6 +1817,42 @@ function oopRadiusClause_(text, warehouseNames) {
     : { kind: 'radius', miles: miles, warehouses: hits };
 }
 
+/** PURE (Node-pinned) — D5 (operator 2026-10-27): a trailing "except <states>"
+ *  clause ("Open (except Hawaii)", "TX, OK except Oklahoma City" is NOT one —
+ *  every word after the keyword must be a state). Returns
+ *  `{ states: ['HI', …], rest }` — the value with the clause removed — or null
+ *  when there is no such clause or its tail is not purely states, which leaves
+ *  the value to the grammar below (and to K3's "unknown" for anything else it
+ *  says). A full name reads in any case; a two-letter code only in capitals,
+ *  because "or", "in" and "me" are words (KB-1). */
+function oopExceptStatesClause_(raw) {
+  const text = String(raw == null ? '' : raw);
+  const m = text.match(/[\s,;\u2013\u2014-]*(\(\s*)?\b(?:except|excluding|excludes|excl|other\s+than|not\s+in|but\s+not)\b\.?\s*(?:for\s+|in\s+)?([^()]*?)\s*\)?\s*\.?\s*$/i);
+  if (!m || !m[2]) return null;
+  const words = m[2].split(/[\s,;/&+]+/).filter(function (w) { return !!w; })
+    .filter(function (w) { return ['and', 'or', 'the', 'state', 'states', 'of'].indexOf(w.toLowerCase()) < 0; });
+  if (!words.length) return null;
+  const states = [];
+  for (let i = 0; i < words.length; i++) {
+    const two = i + 1 < words.length ? (words[i] + ' ' + words[i + 1]).toLowerCase().replace(/[.]/g, '') : '';
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) {
+      if (states.indexOf(US_STATE_NAMES[two]) < 0) states.push(US_STATE_NAMES[two]);
+      i++; continue;
+    }
+    const one = words[i].replace(/[.]/g, '');
+    const lc = one.toLowerCase();
+    let code = Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc) ? US_STATE_NAMES[lc] : null;
+    if (!code && one.length === 2 && one === one.toUpperCase() && US_STATE_CODES.indexOf(one) >= 0) code = one;
+    if (!code) return null;
+    if (states.indexOf(code) < 0) states.push(code);
+  }
+  let rest = text.slice(0, m.index);
+  // "Open (anywhere in the US except Hawaii)": the clause took the closing
+  // parenthesis with it, so the opening one is put back in step.
+  if (!m[1] && (rest.match(/\(/g) || []).length > (rest.match(/\)/g) || []).length) rest += ')';
+  return { states: states, rest: rest.trim() };
+}
+
 /** PURE (Node-pinned): parse one Area Eligibility cell into a RULE.
  *
  *  Returns one of:
@@ -1716,6 +1899,25 @@ function oopRadiusClause_(text, warehouseNames) {
 function oopEligibilityParse_(text, warehouseNames) {
   const raw0 = String(text == null ? '' : text).trim();
   if (!raw0) return { kind: 'unknown', raw: '' };
+
+  // ── D5 (operator 2026-10-27): "except <states>" is an INSURANCE exclusion ──
+  // "Scooters may be available out of pocket in Hawaii, just not through
+  // insurance." So the clause is read off first, the rest parsed on its own,
+  // and the two kept apart: the check answers NO through insurance in an
+  // excluded state, and `oopEligibilityForPayment_` lifts it out of pocket
+  // (a state limit is WHO IS PAYING). An unreadable rest is still unknown —
+  // the clause never rescues the value it is attached to (g41).
+  const ex = oopExceptStatesClause_(raw0);
+  if (ex) {
+    if (!ex.rest) return { kind: 'unknown', raw: raw0 };
+    const inner = oopEligibilityParse_(ex.rest, warehouseNames);
+    if (inner.kind === 'unknown') {
+      const u = { kind: 'unknown', raw: raw0 };
+      if (inner.noWarehouse) u.noWarehouse = true;
+      return u;
+    }
+    return { kind: 'except', states: ex.states, rule: inner, raw: raw0 };
+  }
 
   // ── The CITY clause, detected and STRIPPED before anything else ─────────
   // A value may carry it BESIDE another rule ("100 miles of Dallas, or listed
@@ -1884,6 +2086,16 @@ function oopEligibilityForPayment_(rule, payingOop) {
   const r = (rule && rule.kind) ? rule : { kind: 'unknown', raw: '' };
   if (!payingOop) return r;
   if (r.kind === 'states') return { kind: 'open', liftedFrom: (r.states || []).slice() };
+  // D5: an "except <states>" exclusion is an insurance one, so out of pocket
+  // the rule underneath is all that is left — and an `open` one says which
+  // states the insurance rule left out.
+  if (r.kind === 'except') {
+    const under = oopEligibilityForPayment_(r.rule, true);
+    if (under.kind !== 'open') return under;
+    const o = { kind: 'open', liftedExcept: (r.states || []).slice() };
+    if (under.liftedFrom) o.liftedFrom = under.liftedFrom;
+    return o;
+  }
   // `cities` does NOT lift, and it is the same test the rest of this function
   // applies rather than a special case: a service-city list is HOW IT GETS
   // THERE, not WHO IS PAYING. The operator confirmed it on 2026-09-22 — a
@@ -1899,6 +2111,145 @@ function oopEligibilityForPayment_(rule, payingOop) {
   return r;
 }
 
+/** PURE (Node-pinned) — a distance as the card shows it: at most one
+ *  decimal ("12", "1,380.6"), with a thousands separator. */
+function oopMilesFmt_(d) {
+  const r = Math.round(Number(d) * 10) / 10;
+  const parts = String(r).split('.');
+  return parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (parts[1] ? '.' + parts[1] : '');
+}
+/** PURE (Node-pinned) — E2 (b): the largest radius any parsed rule names (0
+ *  when none does) — the straight-line bound for which warehouses to drive. */
+function oopMaxRadius_(rules) {
+  let max = 0;
+  const walk = function (r) {
+    if (!r) return;
+    if (r.kind === 'radius') max = Math.max(max, Number(r.miles) || 0);
+    else if (r.kind === 'any') (r.rules || []).forEach(walk);
+    else if (r.kind === 'except') walk(r.rule);
+  };
+  (rules || []).forEach(walk);
+  return max;
+}
+/** PURE (Node-pinned) — an encoded route line as Google writes it, and
+ *  nothing else (it is drawn on the static map). */
+function oopPolylineOk_(p) {
+  return typeof p === 'string' && p.length > 0 && p.length <= 12000 && /^[\x3f-\x7e]+$/.test(p);
+}
+/** PURE (Node-pinned) — E2 (b): Google's answer → the SHORTEST route it
+ *  offered (the operator's rule: any route within the limit qualifies), the
+ *  first (fastest) route's miles, and the chosen route's line. NO route is an
+ *  answer ({noRoute}) — a different one from a lookup that failed ({error}),
+ *  g128. */
+function oopRoutePick_(res) {
+  const st = res && res.status;
+  if (st === 'ZERO_RESULTS' || st === 'NOT_FOUND') return { noRoute: true };
+  if (st !== 'OK' || !Array.isArray(res.routes) || !res.routes.length) return { error: true };
+  const meters = res.routes.map(function (r) {
+    return (r && Array.isArray(r.legs) && r.legs.length) ? r.legs.reduce(function (a, l) { return a + (Number(l && l.distance && l.distance.value) || 0); }, 0) : 0;
+  });
+  let pick = -1;
+  meters.forEach(function (m, i) { if (m > 0 && (pick < 0 || m < meters[pick])) pick = i; });
+  if (pick < 0) return { error: true };
+  const mi = function (m) { return Math.round(m / 1609.344 * 10) / 10; };
+  const line = res.routes[pick].overview_polyline && res.routes[pick].overview_polyline.points;
+  return { miles: mi(meters[pick]), fastest: mi(meters[0] > 0 ? meters[0] : meters[pick]),
+    poly: oopPolylineOk_(line) ? line : '', alternatives: res.routes.length };
+}
+/** One drive, warehouse → address, alternatives on. Never throws, and a
+ *  failure's own message is not kept (it can carry the coordinates). */
+function oopDrivingRoute_(from, to) {
+  try {
+    const res = Maps.newDirectionFinder().setOrigin(from.lat, from.lng).setDestination(to.lat, to.lng)
+      .setMode(Maps.DirectionFinder.Mode.DRIVING).setAlternatives(true).getDirections();
+    return oopRoutePick_(res);
+  } catch (e) { return { error: true }; }
+}
+/** PURE (Node-pinned) — the route-lookup counter: hourly buckets, keyed by
+ *  hours since the epoch, kept for the last 24. Returns { buckets, used }. */
+function routeLookupWindow_(raw, nowHour) {
+  let b = {};
+  try { const p = JSON.parse(raw || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) b = p; } catch (e) { b = {}; }
+  const kept = {};
+  let used = 0;
+  Object.keys(b).forEach(function (k) {
+    const h = parseInt(k, 10), n = Number(b[k]);
+    if (h > nowHour - 24 && h <= nowHour && n > 0) { kept[h] = n; used += n; }
+  });
+  return { buckets: kept, used: used };
+}
+/** E2 (b) — reserve `k` route lookups against ROUTE_LOOKUP_CAP. { ok, used,
+ *  cap } — `ok: false` past the cap; `error` when the count could not be
+ *  read, which is refused too (an unknown count is not room). Unlocked: two
+ *  checks at once can under-count by a lookup, which the 2,000 below Google's
+ *  quota absorbs; a rep's check never waits on the project lock. */
+function routeLookupReserve_(k) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const nowHour = Math.floor(Date.now() / 3600000);
+    const w = routeLookupWindow_(props.getProperty(ROUTE_LOOKUP_PROP), nowHour);
+    if (w.used + k > ROUTE_LOOKUP_CAP) return { ok: false, used: w.used, cap: ROUTE_LOOKUP_CAP };
+    w.buckets[nowHour] = (w.buckets[nowHour] || 0) + k;
+    propSetBounded_(ROUTE_LOOKUP_PROP, JSON.stringify(w.buckets), { hint: 'the route-lookup counter keeps 24 hourly counts' });
+    return { ok: true, used: w.used + k, cap: ROUTE_LOOKUP_CAP };
+  } catch (e) { return { ok: false, error: String(e.message || e), cap: ROUTE_LOOKUP_CAP }; }
+}
+/** E2 (b) — the count for Admin → System: { used, cap, hours: 24 } or with
+ *  `error` (UNKNOWN, never read as fine). */
+function routeLookupStatus_() {
+  try {
+    const w = routeLookupWindow_(PropertiesService.getScriptProperties().getProperty(ROUTE_LOOKUP_PROP), Math.floor(Date.now() / 3600000));
+    return { used: w.used, cap: ROUTE_LOOKUP_CAP, hours: 24, error: '' };
+  } catch (e) { return { used: null, cap: ROUTE_LOOKUP_CAP, hours: 24, error: String(e.message || e) }; }
+}
+/** E2 (b) — the drives for one check. `cands` = [{name, lat, lng, straight}]
+ *  (already within the limit in a straight line); `hint` = this page's earlier
+ *  answer for the same address, used for a warehouse only when its miles are
+ *  a drive the geometry allows (never shorter than the straight line). A
+ *  forged hint changes only the forger's own screen. */
+function oopDriveForCheck_(dest, cands, hint) {
+  const out = { miles: {}, fastest: {}, poly: {}, noRoute: [], unavailable: [], reason: '', looked: 0 };
+  const h = (hint && typeof hint === 'object') ? hint : {};
+  const need = [];
+  (cands || []).forEach(function (c) {
+    if (Array.isArray(h.noRoute) && h.noRoute.indexOf(c.name) >= 0) { out.noRoute.push(c.name); return; }
+    const hm = Number(h.miles && h.miles[c.name]);
+    if (isFinite(hm) && hm > 0 && hm >= c.straight - 0.5 && hm < 20000) {
+      out.miles[c.name] = hm;
+      const hf = Number(h.fastest && h.fastest[c.name]);
+      out.fastest[c.name] = (isFinite(hf) && hf >= hm) ? hf : hm;
+      if (oopPolylineOk_(h.poly && h.poly[c.name])) out.poly[c.name] = h.poly[c.name];
+      return;
+    }
+    need.push(c);
+  });
+  if (!need.length) return out;
+  const res = routeLookupReserve_(need.length);
+  if (!res.ok) {
+    need.forEach(function (c) { out.unavailable.push(c.name); });
+    out.reason = res.error ? 'error' : 'cap';
+    return out;
+  }
+  out.looked = need.length;
+  need.forEach(function (c) {
+    const r = oopDrivingRoute_(c, dest);
+    if (r.noRoute) out.noRoute.push(c.name);
+    else if (r.error || !(r.miles > 0)) { out.unavailable.push(c.name); out.reason = out.reason || 'error'; }
+    else { out.miles[c.name] = r.miles; out.fastest[c.name] = r.fastest; if (r.poly) out.poly[c.name] = r.poly; }
+  });
+  return out;
+}
+/** PURE (Node-pinned) — B3: the short name a rule goes by on the card, one
+ *  per branch of a union ("Distance", "City list"). */
+function oopRuleLabel_(rule) {
+  const k = rule && rule.kind;
+  if (k === 'radius') return 'Distance';
+  if (k === 'cities') return 'City list';
+  if (k === 'states') return 'States';
+  if (k === 'open') return 'Anywhere';
+  if (k === 'except') return oopRuleLabel_(rule.rule);
+  return 'Rule';
+}
 /** PURE (Node-pinned): does `rule` cover `loc`?
  *
  *  `loc` is { state: 'TX', miles: { '<warehouse name>': 87.2, … } }, where a
@@ -1921,10 +2272,30 @@ function oopEligibilityCheck_(rule, loc) {
   const where = loc || {};
 
   if (r.kind === 'open') {
+    const ins = [];
+    if (r.liftedFrom && r.liftedFrom.length) ins.push('limits insurance orders to ' + r.liftedFrom.join(', '));
+    if (r.liftedExcept && r.liftedExcept.length) ins.push('excludes ' + r.liftedExcept.join(', ') + ' for insurance orders only');
     return { verdict: 'yes', near: false,
-      why: r.liftedFrom && r.liftedFrom.length
-        ? 'Out of pocket there is no state restriction (the sheet limits insurance orders to ' + r.liftedFrom.join(', ') + ').'
+      why: ins.length
+        ? 'Out of pocket there is no state restriction (the sheet ' + ins.join(' and ') + ').'
         : 'Available anywhere in the US.' };
+  }
+
+  // D5: the insurance exclusion. The rule underneath answers first — a NO
+  // there is a NO whatever the state — and then the excluded states say no.
+  if (r.kind === 'except') {
+    const under = oopEligibilityCheck_(r.rule, where);
+    if (under.verdict === 'no') return under;
+    const list = (r.states || []).join(', ');
+    const st = String(where.state || '').trim().toUpperCase();
+    if (!st) {
+      return { verdict: 'unknown', near: false,
+        why: 'Could not determine the state for that address — the sheet excludes ' + list + ' for insurance orders.' };
+    }
+    if ((r.states || []).indexOf(st) >= 0) {
+      return { verdict: 'no', near: false, why: 'Not through insurance in ' + st + ' (the sheet excludes ' + list + ').' };
+    }
+    return under;
   }
 
   if (r.kind === 'states') {
@@ -1951,24 +2322,61 @@ function oopEligibilityCheck_(rule, loc) {
       return { verdict: 'unknown', near: false,
         why: 'This item reaches ' + miles + ' miles from any warehouse, but the delivery table has no warehouses in it.' };
     }
-    let best = null, bestName = '';
+    // E2 (b): a warehouse with a DRIVE on file is measured by it (the
+    // shortest route Google offered — the operator's rule: any route within
+    // the limit qualifies); one Google found no road from delivers nowhere by
+    // van; every other is the straight line, as before.
+    const drv = where.drive || null;
+    let best = null, bestName = '', bestDrive = false;
     let anyUnplaced = false;
+    const noRoad = [];
     names.forEach(function (n) {
       const d = (where.miles || {})[n];
       if (d == null || !isFinite(d)) { anyUnplaced = true; return; }
-      if (best === null || d < best) { best = d; bestName = n; }
+      if (drv && (drv.noRoute || []).indexOf(n) >= 0) { noRoad.push(n); return; }
+      const dd = drv && drv.miles ? drv.miles[n] : null;
+      const isDrive = dd != null && isFinite(dd);
+      const use = isDrive ? dd : d;
+      if (best === null || use < best) { best = use; bestName = n; bestDrive = isDrive; }
     });
     if (best === null) {
+      if (noRoad.length && !anyUnplaced) {
+        return { verdict: 'no', near: false, why: 'No driving route from ' + noRoad.join(' or ') + ' to this address.' };
+      }
       return { verdict: 'unknown', near: false,
         why: 'Could not measure the distance to ' + names.join(' or ') + '.' };
     }
-    const shown = Math.round(best * 10) / 10;
+    if (bestDrive) {
+      const shownD = oopMilesFmt_(best);
+      const f = drv.fastest ? drv.fastest[bestName] : null;
+      const via = (f != null && isFinite(f) && f - best >= 0.5) ? '; the fastest route is ' + oopMilesFmt_(f) + ' mi' : '';
+      if (best <= miles) {
+        return { verdict: 'yes', near: false, drive: true,
+          why: shownD + ' mi drive from ' + bestName + ' (within ' + miles + ' mi' + via + ').' +
+            (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+      }
+      if (anyUnplaced) {
+        return { verdict: 'unknown', near: false, drive: true,
+          why: shownD + ' mi drive from ' + bestName + ' (>' + miles + ' mi), but a warehouse could not be ' +
+            'placed and might be nearer. Fix its address in LocationAcceptance to get a firm answer.' };
+      }
+      return { verdict: 'no', near: false, drive: true, why: shownD + ' mi drive from ' + bestName + ' (>' + miles + ' mi).' };
+    }
+    // A straight line inside the limit with no drive behind it: the lookup
+    // was not available (the daily cap, a failure) — SAID, never passed off
+    // as a drive.
+    const noDrive = (drv && best <= miles) ? ' Driving distance unavailable \u2014 straight line shown.' : '';
+    // Operator 2026-10-27: the distance and the limit in one short phrase —
+    // "1,380.6 mi from Dallas (>100 mi)". The header already says the
+    // distances are straight-line; only a near-boundary yes repeats it, because
+    // that is the one answer the straight line can get wrong.
+    const shown = oopMilesFmt_(best);
     if (best <= miles) {
       const near = best > miles * OOP_ELIG_NEAR_BAND;
       return { verdict: 'yes', near: near,
-        why: shown + ' mi from ' + bestName + ' (limit ' + miles + ' mi)' +
-          (near ? ' — close to the boundary, and this is straight-line distance; the drive is longer. Check before committing.' : '.') +
-          (anyUnplaced ? ' One warehouse could not be placed.' : '') };
+        why: shown + ' mi from ' + bestName + ' (within ' + miles + ' mi)' +
+          (near ? ' — close to the limit, and the drive is longer than this straight line. Check before committing.' : '.') +
+          (anyUnplaced ? ' One warehouse could not be placed.' : '') + noDrive };
     }
     // Straight-line already exceeds the limit, so the drive does too — but
     // only for the warehouses we could PLACE. An unplaced one might be nearer,
@@ -1978,11 +2386,11 @@ function oopEligibilityCheck_(rule, loc) {
     // ANY-warehouse rule spans the whole registry and makes it far likelier.
     if (anyUnplaced) {
       return { verdict: 'unknown', near: false,
-        why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit — but a warehouse could not be ' +
+        why: shown + ' mi from ' + bestName + ' (>' + miles + ' mi), but a warehouse could not be ' +
           'placed and might be nearer. Fix its address in LocationAcceptance to get a firm answer.' };
     }
     return { verdict: 'no', near: false,
-      why: shown + ' mi from ' + bestName + ', over the ' + miles + ' mi limit (straight-line — the drive is longer still).' };
+      why: shown + ' mi from ' + bestName + ' (>' + miles + ' mi).' };
   }
 
   if (r.kind === 'cities') {
@@ -2008,6 +2416,13 @@ function oopEligibilityCheck_(rule, loc) {
       return { verdict: 'unknown', near: false,
         why: city + ' is listed, but its State cell ("' + (bad[0].stateRaw || '') + '") could not be read. ' +
           'Fix it in LocationAcceptance to get a firm answer.' };
+    }
+    // B2: a borough or neighborhood standing in for a city Google did not give
+    // is not a city the list could be expected to name ("Queens" for a list
+    // that says "New York"), so its absence is not a NO.
+    if (where.cityFrom) {
+      return { verdict: 'unknown', near: false,
+        why: 'Google gives no city for this address; its ' + where.cityFrom + ', ' + city + ', is not a listed service city — confirm the city before answering.' };
     }
     return { verdict: 'no', near: false, why: city + ' is not one of the listed service cities.' };
   }
@@ -2035,8 +2450,12 @@ function oopEligibilityCheck_(rule, loc) {
     // measure the distance" does not know the city list was also checked and
     // came back empty, and would go chase the wrong half.
     const unk = subs.some(function (s) { return s.verdict === 'unknown'; });
+    // B3 (operator 2026-10-27): `parts` keeps each branch's answer apart, so
+    // the card draws one short line per rule; `why` stays the joined text for
+    // every reader that has only ever read it.
     return { verdict: unk ? 'unknown' : 'no', near: false,
-      why: subs.map(function (s) { return s.why; }).join(' ') };
+      why: subs.map(function (s) { return s.why; }).join(' '),
+      parts: subs.map(function (s, i) { return { rule: oopRuleLabel_(r.rules[i]), verdict: s.verdict, why: s.why }; }) };
   }
 
   if (r.noWarehouse) {
@@ -2066,7 +2485,7 @@ function oopEligibilityCheck_(rule, loc) {
  *  ungeocodable address is an ERROR, never an empty eligible list. A list of
  *  zero eligible items and a lookup that did not run look identical on screen,
  *  and only one of them means "do not sell this here". */
-function checkOopEligibility(address, query) {
+function checkOopEligibility(address, query, opts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
@@ -2133,18 +2552,21 @@ function checkOopEligibility(address, query) {
       if (!r) return false;
       if (r.kind === 'radius') return true;
       if (r.kind === 'any') return (r.rules || []).some(ruleNeedsRadius);
+      if (r.kind === 'except') return ruleNeedsRadius(r.rule);   // D5
       return false;
     };
     const needRadius = parsed.some(ruleNeedsRadius);
     const milesByName = {};
     const whOut = [];
+    const whGeo = {};
     if (needRadius && whNames.length) {
       const geos = kbGeocodeCached_(whNames.map(function (n) { return wh[n]; }));
       whNames.forEach(function (n, i) {
         const g = geos[i];
+        if (g) whGeo[n] = g;
         const d = g ? Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 : null;
         if (d != null) milesByName[n] = d;
-        whOut.push({ name: n, miles: d });
+        whOut.push({ name: n, miles: d, address: wh[n] });   // C1: the driving-route link starts here
       });
     }
     // Listed delivery cities for this address, matched ONCE. They are shown as
@@ -2156,10 +2578,25 @@ function checkOopEligibility(address, query) {
     // unless the column said to ask it.
     const cityHits = locCityMatches_(loc0.cities, qGeo.city, qGeo.state);
 
+    // E2 (b) (operator 2026-10-28): the DRIVE, for the warehouses a radius
+    // rule could still accept — within the largest limit in a straight line,
+    // nearest first. A straight line over the limit is already a certain no
+    // (no road is shorter), so those cost nothing. `opts.drive` is this page's
+    // earlier answer for the same address, reused rather than looked up again.
+    let drive = null;
+    if (needRadius && whNames.length) {
+      const maxR = oopMaxRadius_(parsed);
+      const cands = whNames.filter(function (n) { return whGeo[n] && milesByName[n] != null && milesByName[n] <= maxR; })
+        .sort(function (a, b) { return milesByName[a] - milesByName[b]; }).slice(0, OOP_DRIVE_MAX_LOOKUPS)
+        .map(function (n) { return { name: n, lat: whGeo[n].lat, lng: whGeo[n].lng, straight: milesByName[n] }; });
+      drive = oopDriveForCheck_({ lat: qGeo.lat, lng: qGeo.lng }, cands, opts && opts.drive);
+      whOut.forEach(function (w) { const m = drive.miles[w.name]; w.driveMiles = (m != null && isFinite(m)) ? m : null; });
+    }
+
     const loc = { state: qGeo.state, miles: milesByName,
-      city: qGeo.city, cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
+      city: qGeo.city, cityFrom: qGeo.cityFrom || '', cityMatches: cityHits, hasCityRows: loc0.cities.length > 0,
       cityUnreadable: locCityUnreadable_(loc0.cities, qGeo.city),
-      warehouseNames: whNames };
+      warehouseNames: whNames, drive: drive };
 
     const items = picked.map(function (row, i) {
       const o = oopRowObj_(headers, row);
@@ -2186,7 +2623,15 @@ function checkOopEligibility(address, query) {
     });
 
     return { success: true, formatted: qGeo.formatted, state: qGeo.state, city: qGeo.city,
+      cityFrom: qGeo.cityFrom || '',          // B2: '' = the city proper; else 'borough' / 'neighborhood'
+      isAdmin: !!emp.isAdmin,                 // B1: an admin sees WHICH delivery-table rows are unusable
       warehouses: whOut, items: items, total: total,
+      // E2 (b): the drives this answer used — miles (the shortest route Google
+      // offered), the fastest route's miles, each route's line for the map,
+      // the warehouses with no road route, and why any could not be driven
+      // ('cap' | 'error'). The page sends it back for the same address.
+      drive: drive ? { miles: drive.miles, fastest: drive.fastest, poly: drive.poly, noRoute: drive.noRoute,
+        unavailable: drive.unavailable, reason: drive.reason, looked: drive.looked } : null,
       deliveryCities: cityHits,
       // A registry that could not be read is SURFACED rather than silently
       // producing UNKNOWN radius verdicts that read like caution (g02): the
@@ -2205,6 +2650,92 @@ function checkOopEligibility(address, query) {
       })),
       cap: OOP_ELIG_MAX_ITEMS, truncated: total > OOP_ELIG_MAX_ITEMS };
   } catch (err) { return { error: 'Eligibility check failed: ' + err.message }; }
+}
+
+// ── C1 (operator 2026-10-27): the eligibility map ─────────────────────────
+// A STATIC picture drawn by Apps Script's built-in Maps service — no API key,
+// no billing — and only when the rep opens it. It shows the address, the
+// nearest warehouse with the network's 100-mile ring, and any other warehouse
+// close enough to matter; a warehouse an ocean away (Honolulu, for a Dallas
+// address) would zoom the picture out to nothing, so it is counted, not drawn.
+const OOP_MAP_RING_MILES = 100;      // the network rule: "100 miles of any warehouse"
+const OOP_MAP_NEARBY_MILES = 300;    // other warehouses drawn when this close to the address
+const OOP_MAP_RING_POINTS = 36;
+/** PURE (Node-pinned) — the ring: `n` points `miles` from (lat, lng), closed. */
+function oopRingPoints_(lat, lng, miles, n) {
+  const R = 3958.8, d = miles / R, p1 = lat * Math.PI / 180, l1 = lng * Math.PI / 180;
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = 2 * Math.PI * (i % n) / n;
+    const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(t));
+    const l2 = l1 + Math.atan2(Math.sin(t) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+    out.push({ lat: Math.round(p2 * 180 / Math.PI * 1e5) / 1e5, lng: Math.round(((l2 * 180 / Math.PI + 540) % 360 - 180) * 1e5) / 1e5 });
+  }
+  return out;
+}
+/** PURE (Node-pinned) — what the map draws. `whs` is [{name, lat, lng, miles}]
+ *  (miles from the address; an unplaced warehouse has no lat). The nearest is
+ *  always drawn with its ring; another only within OOP_MAP_NEARBY_MILES. */
+function oopMapPlan_(whs, ringMiles) {
+  const placed = (whs || []).filter(function (w) { return w && isFinite(w.lat) && isFinite(w.lng) && isFinite(w.miles); })
+    .slice().sort(function (a, b) { return a.miles - b.miles; });
+  if (!placed.length) return null;
+  const nearest = placed[0];
+  const shown = placed.filter(function (w, i) { return i === 0 || w.miles <= OOP_MAP_NEARBY_MILES; });
+  return { nearest: nearest, shown: shown, omitted: placed.length - shown.length,
+    ring: oopRingPoints_(nearest.lat, nearest.lng, ringMiles, OOP_MAP_RING_POINTS) };
+}
+/** Rep-callable, read-only, no lock, never cached (the address is a patient's
+ *  — the kbMapDistances rule). Returns { img: data URL, ringMiles, nearest,
+ *  shown[], omitted } or { error }. An error never quotes the address (g146). */
+function oopEligibilityMap(address, opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const addr = String(address || '').trim();
+    if (addr.length < 3 || addr.length > KB_MAP_QUERY_MAX) {
+      return { error: 'Enter an address or ZIP code (3–' + KB_MAP_QUERY_MAX + ' characters).' };
+    }
+    const qGeo = kbGeocodeOne_(addr);
+    if (qGeo && qGeo.unavailable) return { error: kbGeocodeUnavailableMsg_(qGeo) };
+    if (qGeo && qGeo.partial) return { error: kbGeocodePartialMsg_(qGeo) };
+    if (!qGeo) return { error: 'Could not find that location — try a 5-digit ZIP code.' };
+    if (kbGeoOutsideUs_(qGeo)) return { error: kbGeoOutsideUsMsg_() };
+    const loc0 = getLocationAcceptance_();
+    const names = Object.keys(loc0.warehouses || {});
+    const geos = names.length ? kbGeocodeCached_(names.map(function (n) { return loc0.warehouses[n]; })) : [];
+    const whs = names.map(function (n, i) {
+      const g = geos[i];
+      return g ? { name: n, lat: g.lat, lng: g.lng, miles: Math.round(kbHaversineMiles_(qGeo.lat, qGeo.lng, g.lat, g.lng) * 10) / 10 } : { name: n };
+    });
+    const plan = oopMapPlan_(whs, OOP_MAP_RING_MILES);
+    if (!plan) return { error: 'No warehouse in the delivery table could be placed, so there is nothing to map.' };
+    let bytes, drewRoute = false;
+    try {
+      const map = Maps.newStaticMap().setSize(640, 400).setMapType(Maps.StaticMap.Type.ROADMAP);
+      map.setPathStyle(2, '0x2E7D32CC', '0x2E7D3226');
+      map.beginPath();
+      plan.ring.forEach(function (pt) { map.addPoint(pt.lat, pt.lng); });
+      map.endPath();
+      // E2 (b): the drive the verdict used, when the page sends its line —
+      // drawn from what the check already looked up, never a lookup of its own.
+      const route = opts && opts.route;
+      drewRoute = !!(route && oopPolylineOk_(route.poly));
+      if (drewRoute) { map.setPathStyle(4, '0x1565C0DD', null); map.addPath(route.poly); }
+      map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.BLUE, 'W');
+      plan.shown.forEach(function (w) { map.addMarker(w.lat, w.lng); });
+      map.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, Maps.StaticMap.Color.RED, 'A');
+      map.addMarker(qGeo.lat, qGeo.lng);
+      bytes = map.getBlob().getBytes();
+    } catch (e) {
+      // The service's own message can carry the request URL, coordinates and all.
+      return { error: 'The map service did not answer — try again, or use the driving-route link.' };
+    }
+    return { img: 'data:image/png;base64,' + Utilities.base64Encode(bytes), ringMiles: OOP_MAP_RING_MILES,
+      nearest: { name: plan.nearest.name, miles: plan.nearest.miles },
+      shown: plan.shown.map(function (w) { return w.name; }), omitted: plan.omitted,
+      route: drewRoute ? String((opts.route && opts.route.name) || '') : '' };
+  } catch (err) { return { error: 'Could not draw the map.' }; }
 }
 
 /** PURE (Node-pinned) — K9 (cycle 22): a row with nothing in any cell. It is
@@ -2267,7 +2798,7 @@ function getOopPricingDiagnostics() {
     // inferred the rest, so adding a kind made one counter NaN and silently
     // mis-stated the other — an enumerated set that drifts from what the parser
     // can actually return is the failure this project keeps meeting (g137).
-    const elig = { open: 0, states: 0, radius: 0, cities: 0, any: 0, unknown: [] };
+    const elig = { open: 0, states: 0, radius: 0, cities: 0, any: 0, except: 0, unknown: [] };
     let unknownCount = 0;
     if (rows) {
       const all = sh.getRange(2, 1, rows, width).getDisplayValues();
@@ -2301,7 +2832,7 @@ function getOopPricingDiagnostics() {
       locUnreadable: loc.unreadable,
       locNoAddress: loc.noAddress,
       eligibility: { open: elig.open, states: elig.states, radius: elig.radius,
-        cities: elig.cities, any: elig.any,
+        cities: elig.cities, any: elig.any, except: elig.except,
         unknownCount: unknownCount, unknown: elig.unknown },
       sample: rows ? sh.getRange(2, 1, Math.min(3, rows), width).getDisplayValues() : [] };
   } catch (err) { return { error: String(err.message || err) }; }
@@ -2326,18 +2857,23 @@ function searchInsurancePayors(query) {
     const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
     // Name-column scan for scoring; full rows fetched only for the top N.
     const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    // D1–D3: states matched by code or name, aliases from the Synonyms list,
+    // and a plan that EXCLUDES the searched state ranked after every other.
+    const groups = getKbSearchSynonyms_();
     const scored = [];
     for (let i = 0; i < names.length; i++) {
-      const sc = insPayorScore_(names[i][0], q);
-      if (sc > 0) scored.push({ i: i, score: sc });
+      const sc = insPayorMatch_(names[i][0], q, groups);
+      if (sc.score > 0) scored.push({ i: i, score: sc.score, excluded: sc.excluded });
     }
-    scored.sort(function (a, b) { return b.score - a.score; });
+    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score; });
     const top = scored.slice(0, INS_PAYOR_TOP);
     const matches = top.map(function (t) {
       // getDisplayValues — a foreign-authored sheet's formats are not ours to
       // reinterpret (the INV-64 discipline).
       const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
-      return insPayorRowObj_(headers, row);
+      const o = insPayorRowObj_(headers, row);
+      if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
+      return o;
     });
     // The JOIN (T3). The payor sheet says `K0802 — Not Accepted`, which is a
     // rule about an item the rep cannot name. The pricing tab knows what K0802
@@ -2923,26 +3459,33 @@ function kbFlagItem(itemId, kind, note) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const id = String(itemId || '').trim().substring(0, 100);
-    if (!id) return { success: false, error: 'Missing item id.' };
-    const k = String(kind || '').trim();
-    if (!KB_FEEDBACK_KINDS[k]) return { success: false, error: 'Unknown feedback kind.' };
-    const raw = String(note || '').trim();
-    if (k === 'suggest') {
-      // E3: a suggested edit IS the rep's words — refused, never cut (the
-      // kbAddComment posture), and only the handbook carries the button.
-      if (!KB_MANUAL_ID_RE.test(id)) return { success: false, error: 'Suggested edits are for handbook sections.' };
-      if (!raw) return { success: false, error: 'Write the change you suggest.' };
-      if (raw.length > KB_FEEDBACK_NOTE_MAX) return { success: false, error: 'A suggestion can be at most ' + KB_FEEDBACK_NOTE_MAX + ' characters.' };
-    }
-    const n = KB_FEEDBACK_NOTED[k] ? raw.substring(0, KB_FEEDBACK_NOTE_MAX) : '';
+    const fe = kbFeedbackEntry_(itemId, kind, note);
+    if (fe.error) return { success: false, error: fe.error };
     getOrCreateKbFeedbackSheet_().appendRow(sheetSafeRow_([
-      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), id, emp.id, emp.name, k, n,
+      fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), fe.id, emp.id, emp.name, fe.kind, fe.note,
     ]));
-    if (KB_FEEDBACK_NOTED[k]) writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + id + (k === 'suggest' ? '; kind=suggest' : ''), emp.email);
+    if (KB_FEEDBACK_NOTED[fe.kind]) writeAuditLog_(emp, 'KbItemFlagged', '', '', false, 0, 'id=' + fe.id + (fe.kind === 'suggest' ? '; kind=suggest' : ''), emp.email);
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
+}
+/** PURE (Node-pinned) — one feedback entry, checked: {id, kind, note} or
+ *  {error}. HB1.4: the handbook app appends what this accepts to the same tab,
+ *  so the two writers cannot accept different things (g126). */
+function kbFeedbackEntry_(itemId, kind, note) {
+  const id = String(itemId || '').trim().substring(0, 100);
+  if (!id) return { error: 'Missing item id.' };
+  const k = String(kind || '').trim();
+  if (!KB_FEEDBACK_KINDS[k]) return { error: 'Unknown feedback kind.' };
+  const raw = String(note || '').trim();
+  if (k === 'suggest') {
+    // E3: a suggested edit IS the rep's words — refused, never cut (the
+    // kbAddComment posture), and only the handbook carries the button.
+    if (!KB_MANUAL_ID_RE.test(id)) return { error: 'Suggested edits are for handbook sections.' };
+    if (!raw) return { error: 'Write the change you suggest.' };
+    if (raw.length > KB_FEEDBACK_NOTE_MAX) return { error: 'A suggestion can be at most ' + KB_FEEDBACK_NOTE_MAX + ' characters.' };
+  }
+  return { id: id, kind: k, note: KB_FEEDBACK_NOTED[k] ? raw.substring(0, KB_FEEDBACK_NOTE_MAX) : '' };
 }
 function getOrCreateKbCommentsSheet_() {
   const ss = getKbSS_();
@@ -3375,34 +3918,44 @@ function getOrCreateKbSearchSignalSheet_() {
  *  search never waits behind a punch or a note. Returns the rows written. */
 function kbRecordSearchSignal_(emp, query, zero) {
   try {
-    const terms = kbSignalTermsOf_(query, kbSignalVocabulary_().entries, KB_SEARCH_SIGNAL_TERMS_MAX);
-    if (!terms.length) return 0;
-    const day = fmtDate_(new Date());
-    const keyOf = function (t, ev) { return 'kb_signal_seen:' + kbHashStr_(String(emp.id) + '|' + day + '|' + t.norm + '|' + ev); };
-    const want = [];
-    terms.forEach(function (t) {
-      want.push({ t: t, ev: 'search' });
-      if (zero) want.push({ t: t, ev: 'zero' });
-    });
-    const cache = CacheService.getScriptCache();
-    const seen = cache.getAll(want.map(function (w) { return keyOf(w.t, w.ev); })) || {};
-    const fresh = want.filter(function (w) { return !seen[keyOf(w.t, w.ev)]; });
+    const fresh = kbSearchSignalPlan_(emp, query, zero);
     if (!fresh.length) return 0;
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(1000)) return 0;
     try {
       const ts = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
-      const rows = fresh.map(function (w) { return [ts, w.t.term, w.t.source, w.ev]; });
+      const rows = fresh.map(function (f) { return [ts, f.term, f.source, f.ev]; });
       appendRowsTextSafe_(getOrCreateKbSearchSignalSheet_(), rows, KB_SEARCH_SIGNAL_TEXT_IDX);
     } finally { lock.releaseLock(); }
-    const put = {};
-    fresh.forEach(function (w) { put[keyOf(w.t, w.ev)] = '1'; });
-    try { cache.putAll(put, KB_SEARCH_SIGNAL_DEDUPE_SECS); } catch (e) {}
+    kbSearchSignalSeen_(fresh);
     return fresh.length;
   } catch (err) {
     Logger.log('kbRecordSearchSignal_ failed: ' + err.message);
     return 0;
   }
+}
+/** What one search adds to the signal — [{term, source, ev, key}]: its
+ *  vocabulary terms, each a 'search' event (and a 'zero' event when it found
+ *  nothing), less what this person already recorded today (the cache). Reads
+ *  only. HB1.4: the handbook app records through this too, into its own tab. */
+function kbSearchSignalPlan_(emp, query, zero) {
+  const terms = kbSignalTermsOf_(query, kbSignalVocabulary_().entries, KB_SEARCH_SIGNAL_TERMS_MAX);
+  if (!terms.length) return [];
+  const day = fmtDate_(new Date());
+  const keyOf = function (t, ev) { return 'kb_signal_seen:' + kbHashStr_(String(emp.id) + '|' + day + '|' + t.norm + '|' + ev); };
+  const want = [];
+  terms.forEach(function (t) {
+    want.push({ term: t.term, source: t.source, ev: 'search', key: keyOf(t, 'search') });
+    if (zero) want.push({ term: t.term, source: t.source, ev: 'zero', key: keyOf(t, 'zero') });
+  });
+  const seen = CacheService.getScriptCache().getAll(want.map(function (w) { return w.key; })) || {};
+  return want.filter(function (w) { return !seen[w.key]; });
+}
+/** Mark a plan's events recorded, so this person's repeats count once. */
+function kbSearchSignalSeen_(fresh) {
+  const put = {};
+  fresh.forEach(function (f) { put[f.key] = '1'; });
+  try { CacheService.getScriptCache().putAll(put, KB_SEARCH_SIGNAL_DEDUPE_SECS); } catch (e) {}
 }
 
 /** PURE (Node-pinned): the window's rows → per-term counts. `rows` are sheet
@@ -3435,15 +3988,23 @@ function kbSearchSignalReport_(rows, cutoff, min) {
  *  cap cut the window (g152: an absence past the cap is not evidence). */
 function kbSearchSignalRows_() {
   const cutoff = fmtDate_(new Date(Date.now() - KB_SEARCH_SIGNAL_DAYS * 86400000)) + ' 00:00:00';
-  const sheet = getKbSS_().getSheetByName(KB_SEARCH_SIGNAL_TAB);
-  if (!sheet) return { rows: [], cutoff: cutoff, truncated: false, missing: true };
-  const last = sheet.getLastRow();
-  if (last < 2) return { rows: [], cutoff: cutoff, truncated: false, missing: false };
-  const start = Math.max(2, last - KB_SEARCH_SIGNAL_SCAN_MAX + 1);
-  const rows = sheet.getRange(start, 1, last - start + 1, KB_SEARCH_SIGNAL_HEADERS.length).getValues()
-    .map(function (r) { const c = r.slice(); c[KBSS.TS] = normalizeAuditTs_(r[KBSS.TS]); return c; });
-  const truncated = start > 2 && !!rows.length && String(rows[0][KBSS.TS]) >= cutoff;
-  return { rows: rows, cutoff: cutoff, truncated: truncated, missing: false };
+  const ss = getKbSS_();
+  // HB1.4: the handbook app's searches are in their own tab (another project
+  // cannot share this one's lock); both are one signal.
+  const out = { rows: [], cutoff: cutoff, truncated: false, missing: true };
+  [KB_SEARCH_SIGNAL_TAB, KB_SEARCH_SIGNAL_HB_TAB].forEach(function (name) {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    out.missing = false;
+    const last = sheet.getLastRow();
+    if (last < 2) return;
+    const start = Math.max(2, last - KB_SEARCH_SIGNAL_SCAN_MAX + 1);
+    const rows = sheet.getRange(start, 1, last - start + 1, KB_SEARCH_SIGNAL_HEADERS.length).getValues()
+      .map(function (r) { const c = r.slice(); c[KBSS.TS] = normalizeAuditTs_(r[KBSS.TS]); return c; });
+    if (start > 2 && !!rows.length && String(rows[0][KBSS.TS]) >= cutoff) out.truncated = true;
+    Array.prototype.push.apply(out.rows, rows);
+  });
+  return out;
 }
 
 /** Admin-only: what reps searched for in the window, by vocabulary term. */
@@ -3922,7 +4483,9 @@ function kbManualBundle_(data) {
   if (data.format !== KB_MANUAL_FORMAT) return { error: 'The file\'s format is "' + String(data.format || 'none').substring(0, 40) + '"; this app reads ' + KB_MANUAL_FORMAT + ' — rebuild with the current manual/export_reference.py.' };
   if (!Array.isArray(data.articles)) return { error: 'The file holds no article list.' };
   return { articles: data.articles, meta: { version: data.version, built: data.built, router: data.router, changelog: data.changelog, synonyms: data.synonyms },
-    images: data.images === undefined ? null : data.images };   // Batch M3 — an M2 file carries none
+    images: data.images === undefined ? null : data.images,     // Batch M3 — an M2 file carries none
+    quizzes: data.quizzes === undefined ? null : data.quizzes,   // HB3.1 — an older file carries none
+    forms: data.forms === undefined ? null : data.forms };       // HB4.1 — an older file carries none
 }
 
 // ── Batch M3 — the manual's images ──────────────────────────────────────────
@@ -4056,6 +4619,185 @@ function kbManualImagesWrite_(rows) {
   const last = sheet.getLastRow();
   if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_IMAGES_HEADERS.length)).clearContent();
   if (rows.length) appendRowsSafe_(sheet, rows);
+}
+
+// ── HB3.1 — the handbook's official quizzes ─────────────────────────────────
+/** PURE (Node-pinned) — the bundle's quizzes, checked again with the app's
+ *  own quiz engine (manual/quizzes.py checked them at export): an id shaped
+ *  like q-oxygen-basics, used once; a section that is one of THIS file's
+ *  articles, for the quiz and for every question; an explanation on every
+ *  question; the stored JSON within one cell. `quizzes` null (an older file)
+ *  → items null: the stored quizzes are left as they are. Any bad quiz refuses
+ *  the WHOLE file, like any other bad entry. */
+function kbManualQuizzesValidate_(quizzes, articleIds) {
+  if (quizzes == null) return { items: null, errors: [] };
+  if (!Array.isArray(quizzes)) return { items: null, errors: ['The file\'s quizzes are not a list.'] };
+  const errors = [], items = [], seen = {}, ids = {};
+  (articleIds || []).forEach(function (id) { ids[id] = 1; });
+  if (quizzes.length > KB_MANUAL_QUIZZES_MAX) errors.push('The file carries ' + quizzes.length + ' quizzes; at most ' + KB_MANUAL_QUIZZES_MAX + ' are stored.');
+  quizzes.slice(0, KB_MANUAL_QUIZZES_MAX).forEach(function (qz, n) {
+    qz = qz && typeof qz === 'object' ? qz : {};
+    const id = String(qz.id || '');
+    const where = 'Quiz "' + (id || (n + 1)).toString().substring(0, KB_MANUAL_QUIZ_ID_MAX) + '"';
+    if (!KB_MANUAL_QUIZ_ID_RE.test(id) || id.length > KB_MANUAL_QUIZ_ID_MAX) { errors.push(where + ': not a quiz id (q-…).'); return; }
+    if (seen[id]) { errors.push(where + ': its id is used twice.'); return; }
+    seen[id] = 1;
+    const section = String(qz.section || '');
+    if (!ids[section]) { errors.push(where + ': its section is not a section of this file.'); return; }
+    const v = quizValidate_(qz, { types: QUIZ_TYPES, sectionIds: ids });
+    if (!v.ok) { errors.push(where + ': ' + v.error); return; }
+    const noWhy = v.quiz.questions.map(function (q, i) { return q.explain ? 0 : i + 1; }).filter(Boolean);
+    if (noWhy.length) { errors.push(where + ': question ' + noWhy[0] + ' has no explanation.'); return; }
+    const json = JSON.stringify(v.quiz.questions);
+    if (json.length > TRAIN_QUIZ_JSON_MAX) { errors.push(where + ': its questions are too large to store.'); return; }
+    items.push({ id: id, title: v.quiz.title, section: section, anchor: String(qz.anchor || ''), passPct: v.quiz.passPct, questionsJson: json });
+  });
+  return { items: errors.length ? null : items, errors: errors };
+}
+/** PURE — the tab rows for the checked quizzes, in the file's order. */
+function kbManualQuizzesRows_(items) {
+  return (items || []).map(function (q) { return [q.id, q.title, q.section, q.anchor, q.passPct, q.questionsJson]; });
+}
+/** The stored rows, as kbManualQuizzesRows_ would write them ([] before the
+ *  first import). A header that was edited throws — "could not read" is not
+ *  "none stored" (g128), and an import must not plan against a guess. */
+function kbManualQuizzesStored_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return [];
+  const width = KB_MANUAL_QUIZZES_HEADERS.length;
+  const vals = sheet.getRange(1, 1, sheet.getLastRow(), width).getValues();
+  if (vals[0].map(function (h) { return String(h || '').trim(); }).join('|') !== KB_MANUAL_QUIZZES_HEADERS.join('|')) {
+    throw new Error('The ' + KB_MANUAL_QUIZZES_TAB + ' tab\'s header row has been edited.');
+  }
+  return vals.slice(1).filter(function (r) { return String(r[0] || '').trim(); })
+    .map(function (r) { return [String(r[0]), String(r[1]), String(r[2]), String(r[3]), Math.round(Number(r[4])) || 0, String(r[5])]; });
+}
+/** The whole tab, rewritten: the header, then every quiz the file carries, as
+ *  text cells (a title or an anchor never coerces — g144). The caller holds
+ *  the lock and writes only when the rows changed. */
+function kbManualQuizzesWrite_(rows) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_QUIZZES_TAB);
+  if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_QUIZZES_TAB); sheet.setFrozenRows(1); }
+  sheet.getRange(1, 1, 1, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_QUIZZES_HEADERS]));
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_QUIZZES_HEADERS.length)).clearContent();
+  if (!rows.length) return;
+  // From row 2, whatever the cleared tab's grid: grown first (g145), the text
+  // columns formatted, then one write.
+  const need = rows.length + 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  KB_MANUAL_QUIZZES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(2, 1, rows.length, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_QUIZZES_TEXT_IDX));
+}
+
+// ── HB4.1 — the handbook's form library ─────────────────────────────────────
+/** PURE (Node-pinned) — the bundle's forms, checked again (manual/forms.py
+ *  checked them at export): a key shaped like form-eaa, used once; a title;
+ *  1–KB_MANUAL_FORM_SECTIONS_MAX sections, each one of THIS file's articles;
+ *  the PDF as a data URI whose bytes begin %PDF-, within the size cap; each
+ *  with the SHA-256 of its base64 (hashFn). `forms` null (an older file) →
+ *  items null: the stored forms are left as they are. Any bad form refuses the
+ *  WHOLE file, like any other bad entry. */
+function kbManualFormsValidate_(forms, articleIds, hashFn) {
+  if (forms == null) return { items: null, errors: [] };
+  if (!Array.isArray(forms)) return { items: null, errors: ['The file\'s forms are not a list.'] };
+  const errors = [], items = [], seen = {}, ids = {};
+  (articleIds || []).forEach(function (id) { ids[id] = 1; });
+  if (forms.length > KB_MANUAL_FORMS_MAX) errors.push('The file carries ' + forms.length + ' forms; at most ' + KB_MANUAL_FORMS_MAX + ' are stored.');
+  forms.slice(0, KB_MANUAL_FORMS_MAX).forEach(function (f, n) {
+    f = f && typeof f === 'object' ? f : {};
+    const key = String(f.key || '');
+    const where = 'Form "' + (key || String(n + 1)).substring(0, KB_MANUAL_FORM_KEY_MAX) + '"';
+    if (!KB_MANUAL_FORM_KEY_RE.test(key) || key.length > KB_MANUAL_FORM_KEY_MAX) { errors.push(where + ': not a form key (form-…).'); return; }
+    if (seen[key]) { errors.push(where + ': its key is used twice.'); return; }
+    seen[key] = 1;
+    const title = typeof f.title === 'string' ? f.title.trim() : '';
+    if (!title || title.length > KB_MANUAL_FORM_TITLE_MAX) { errors.push(where + ': it needs a title of at most ' + KB_MANUAL_FORM_TITLE_MAX + ' characters.'); return; }
+    const summary = typeof f.summary === 'string' ? f.summary.trim() : '';
+    if (summary.length > KB_MANUAL_FORM_SUMMARY_MAX) { errors.push(where + ': its summary is longer than ' + KB_MANUAL_FORM_SUMMARY_MAX + ' characters.'); return; }
+    const secs = Array.isArray(f.sections) ? f.sections : [];
+    if (!secs.length || secs.length > KB_MANUAL_FORM_SECTIONS_MAX) { errors.push(where + ': it needs 1–' + KB_MANUAL_FORM_SECTIONS_MAX + ' sections.'); return; }
+    const sections = [];
+    for (let i = 0; i < secs.length; i++) {
+      const sc = secs[i] && typeof secs[i] === 'object' ? secs[i] : {};
+      const id = String(sc.id || ''), anchor = String(sc.anchor || ''), num = String(sc.num || '');
+      if (!ids[id] || anchor.length > 40 || num.length > 40) { errors.push(where + ': a section is not a section of this file.'); return; }
+      sections.push({ id: id, anchor: anchor, num: num });
+    }
+    const m = /^data:application\/pdf;base64,([A-Za-z0-9+\/]+={0,2})$/.exec(String(f.dataUri || ''));
+    if (!m || m[1].indexOf('JVBERi0') !== 0) { errors.push(where + ': its file is not a PDF.'); return; }
+    if (Math.floor(m[1].length * 3 / 4) > KB_MANUAL_FORM_MAX_BYTES) { errors.push(where + ': its PDF is larger than ' + KB_MANUAL_FORM_MAX_BYTES + ' bytes.'); return; }
+    items.push({ key: key, title: title, summary: summary, sections: sections, contentType: 'application/pdf', base64: m[1], sha: hashFn(m[1]) });
+  });
+  return { items: errors.length ? null : items, errors: errors };
+}
+/** PURE (Node-pinned) — the ManualFiles rows for the checked forms, in key
+ *  order: the ManualImages row shape (each PDF's base64 in pieces of at most
+ *  KB_MANUAL_IMAGE_CELL_MAX characters, by part), then the title, summary and
+ *  sections JSON on every row. The pieces rejoin to exactly the base64 that
+ *  was checked. */
+function kbManualFormsRows_(items, now) {
+  const rows = [];
+  (items || []).slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); }).forEach(function (it) {
+    const b64 = String(it.base64 || '');
+    const n = Math.max(1, Math.ceil(b64.length / KB_MANUAL_IMAGE_CELL_MAX));
+    const secs = JSON.stringify(it.sections || []);
+    for (let p = 0; p < n; p++) {
+      rows.push([it.key, it.sha, it.contentType, 'form', p, b64.substring(p * KB_MANUAL_IMAGE_CELL_MAX, (p + 1) * KB_MANUAL_IMAGE_CELL_MAX), now, it.title, it.summary, secs]);
+    }
+  });
+  return rows;
+}
+/** The stored forms, without their bytes: [{key, sha, title, summary,
+ *  sections}] in key order, from part 0 of each form whose parts are whole
+ *  (kbImageTabLedger_'s rule). A missing tab is none stored ([]); a header
+ *  that was edited throws — "could not read" is not "none stored" (g128). */
+function kbManualFormsCatalog_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return [];
+  if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_FILES_HEADERS)) throw new Error('The ' + KB_MANUAL_FILES_TAB + ' tab\'s header row has been edited.');
+  const ledger = kbImageTabLedger_(sheet, KB_MANUAL_FILES_HEADERS, KB_MANUAL_FORM_KEY_RE);
+  const keys = Object.keys(ledger).sort();
+  if (!keys.length) return [];
+  const last = sheet.getLastRow();
+  const meta = sheet.getRange(2, KBMF.TITLE + 1, last - 1, 3).getValues();
+  return keys.map(function (k) {
+    const r = meta[ledger[k].rows[0] - 2];
+    let sections = [];
+    try { sections = JSON.parse(String(r[2] || '[]')); } catch (e) { sections = []; }
+    return { key: k, sha: ledger[k].sha, title: String(r[0] || ''), summary: String(r[1] || ''),
+      sections: Array.isArray(sections) ? sections : [] };
+  });
+}
+/** PURE — the catalog a set of checked forms would store, for comparing with
+ *  kbManualFormsCatalog_ (an import writes only when the two differ). */
+function kbManualFormsCatalogOf_(items) {
+  return (items || []).slice().sort(function (a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); })
+    .map(function (it) { return { key: it.key, sha: it.sha, title: it.title, summary: it.summary, sections: it.sections }; });
+}
+/** Under the caller's lock: the whole tab rewritten — the header, then every
+ *  form the file carries, the text columns formatted first (g144), the grid
+ *  grown first (g145). */
+function kbManualFormsWrite_(rows) {
+  const ss = getKbSS_();
+  let sheet = ss.getSheetByName(KB_MANUAL_FILES_TAB);
+  if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_FILES_TAB); sheet.setFrozenRows(1); }
+  sheet.getRange(1, 1, 1, KB_MANUAL_FILES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_FILES_HEADERS]));
+  const last = sheet.getLastRow();
+  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_FILES_HEADERS.length)).clearContent();
+  if (!rows.length) return;
+  const need = rows.length + 1;
+  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
+  KB_MANUAL_FILES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
+  sheet.getRange(2, 1, rows.length, KB_MANUAL_FILES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_FILES_TEXT_IDX));
+}
+/** One form's PDF as a data URL, through the images' reader: "not stored"
+ *  (missing) and "could not read" (failed) apart (g128), the bytes re-checked
+ *  as a PDF within the cap, an edited header "could not read". Read-only —
+ *  the handbook app serves it; Team Tools has no reader of its own. */
+function kbManualFormServe_(key) {
+  return kbImageTabServe_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB), [key], {
+    headers: KB_MANUAL_FILES_HEADERS, keyRe: KB_MANUAL_FORM_KEY_RE, batch: 1, types: KB_MANUAL_FORM_TYPES,
+    maxBytes: KB_MANUAL_FORM_MAX_BYTES, cachePrefix: KB_MANUAL_FORM_CACHE_PREFIX, headerChangedFails: true });
 }
 
 /** Employee — the manual's images as data URLs, by key, in one call: a part
@@ -4474,7 +5216,9 @@ function kbImportManual(source, opts) {
     const v = kbManualValidate_(bundle.articles);
     const mv = bundle.meta ? kbManualMetaValidate_(bundle.meta, v.items.map(function (it) { return it.id; })) : { meta: null, errors: [] };
     const iv = kbManualImagesValidate_(bundle.images, v.items, function (b64) { return kbSha256Hex_(b64); });
-    const problems = v.errors.concat(mv.errors, iv.errors);
+    const qv = kbManualQuizzesValidate_(bundle.quizzes, v.items.map(function (it) { return it.id; }));   // HB3.1
+    const fv = kbManualFormsValidate_(bundle.forms, v.items.map(function (it) { return it.id; }), function (b64) { return kbSha256Hex_(b64); });   // HB4.1
+    const problems = v.errors.concat(mv.errors, iv.errors, qv.errors, fv.errors);
     if (problems.length) return { success: false, error: 'The file was refused; nothing was imported.', problems: problems.slice(0, 20), problemCount: problems.length };
     const metaJson = mv.meta ? JSON.stringify(mv.meta) : '';
     const lock = LockService.getScriptLock();
@@ -4521,6 +5265,22 @@ function kbImportManual(source, opts) {
         imgRemoved = Object.keys(imLed).filter(function (k) { return !inFile[k]; }).length;
         summary.images = { total: iv.items.length, unchanged: imgPlan.unchanged.length, toStore: imgPlan.upload.length, removed: imgRemoved };
       }
+      // HB3.1 — the quizzes: compared with the tab under the lock; written
+      // below only when they differ, so a re-import writes nothing.
+      let quizRows = null;
+      if (qv.items) {
+        quizRows = kbManualQuizzesRows_(qv.items);
+        const stored = kbManualQuizzesStored_(getKbSS_().getSheetByName(KB_MANUAL_QUIZZES_TAB));
+        summary.quizzes = { total: quizRows.length, changed: JSON.stringify(stored) !== JSON.stringify(quizRows),
+          questions: qv.items.reduce(function (n, q) { return n + JSON.parse(q.questionsJson).length; }, 0) };
+      } else summary.quizzes = null;
+      // HB4.1 — the forms: compared with the tab's catalog (bytes by hash, and
+      // the title, summary and sections) under the lock; written below only
+      // when they differ, so a re-import writes nothing.
+      if (fv.items) {
+        const storedForms = kbManualFormsCatalog_(getKbSS_().getSheetByName(KB_MANUAL_FILES_TAB));
+        summary.forms = { total: fv.items.length, changed: JSON.stringify(storedForms) !== JSON.stringify(kbManualFormsCatalogOf_(fv.items)) };
+      } else summary.forms = null;
       if (opts.dryRun) return Object.assign({ success: true, dryRun: true }, summary);
 
       const now = fmtDate_(new Date()) + ' ' + fmtTime_(new Date());
@@ -4586,6 +5346,18 @@ function kbImportManual(source, opts) {
         }
         delete imgs.toStore;
       }
+      if (quizRows && summary.quizzes.changed) {
+        // Like the images: a failed write is said beside the sections (which
+        // are in), and the next Import retries it.
+        summary.quizzes.error = '';
+        try { kbManualQuizzesWrite_(quizRows); } catch (e) { summary.quizzes.error = String(e.message || e).substring(0, 200); }
+      }
+      if (fv.items && summary.forms.changed) {
+        // Like the quizzes: a failed write is said beside the sections (which
+        // are in), and the next Import retries it.
+        summary.forms.error = '';
+        try { kbManualFormsWrite_(kbManualFormsRows_(fv.items, now)); } catch (e) { summary.forms.error = String(e.message || e).substring(0, 200); }
+      }
       if (ledgerWrites.length || summary.removed) invalidateKbCache_();
       const skipBy = {};
       plan.skipped.forEach(function (s) { skipBy[s.reason] = (skipBy[s.reason] || 0) + 1; });
@@ -4596,8 +5368,12 @@ function kbImportManual(source, opts) {
         '; orphaned=' + orphaned.length + '; removed=' + summary.removed + '; meta=' + (metaChanged ? 'updated' : 'same') +
         (summary.images ? '; imagesStored=' + summary.images.stored + '; imagesRemoved=' + summary.images.removed +
           (summary.images.error ? '; imagesError=1' : '') : '') +
+        (summary.quizzes ? '; quizzes=' + summary.quizzes.total + (summary.quizzes.changed ? (summary.quizzes.error ? ' (error)' : ' (stored)') : ' (same)') : '') +
+        (summary.forms ? '; forms=' + summary.forms.total + (summary.forms.changed ? (summary.forms.error ? ' (error)' : ' (stored)') : ' (same)') : '') +
         Object.keys(skipBy).sort().map(function (k) { return '; ' + k + '=' + skipBy[k]; }).join(''), emp.email);
-      result = Object.assign({ success: true, dryRun: false }, summary);
+      // HB1.4: every import refreshes the handbook app's search mirror, so the
+      // app follows a settings change without anyone re-saving it.
+      result = Object.assign({ success: true, dryRun: false, handbookMirrored: kbMirrorSearchConfig_() }, summary);
     } finally { lock.releaseLock(); }
     return result;
   } catch (err) { return { success: false, error: err.message }; }
@@ -5095,7 +5871,7 @@ function kbGeocodeOne_(addr) {
     // asked. Not found and partly found are different answers (g128), so it
     // comes back as its own shape and the caller asks for a fuller address.
     if (r.partial_match) return { partial: true, formatted: String(r.formatted_address || '') };
-    let state = '', city = '', country = '';
+    let state = '', city = '', country = '', borough = '', hood = '';
     const comps = r.address_components || [];
     for (let i = 0; i < comps.length; i++) {
       const types = comps[i].types || [];
@@ -5112,9 +5888,18 @@ function kbGeocodeOne_(addr) {
       if (!city && (types.indexOf('locality') >= 0 || types.indexOf('postal_town') >= 0)) {
         city = String(comps[i].long_name || '').trim();
       }
+      // B2 (operator 2026-10-27): where there is NO city — every Queens and
+      // Brooklyn address — the borough, else the neighborhood, stands in, and
+      // `cityFrom` says which, so the matcher and the rep both know it is not
+      // the city proper. A city proper always wins.
+      if (!borough && types.indexOf('sublocality_level_1') >= 0) borough = String(comps[i].long_name || '').trim();
+      if (!hood && types.indexOf('neighborhood') >= 0) hood = String(comps[i].long_name || '').trim();
     }
+    let cityFrom = '';
+    if (!city && borough) { city = borough; cityFrom = 'borough'; }
+    else if (!city && hood) { city = hood; cityFrom = 'neighborhood'; }
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
-      formatted: String(r.formatted_address || ''), state: state, city: city, country: country };
+      formatted: String(r.formatted_address || ''), state: state, city: city, cityFrom: cityFrom, country: country };
   } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
 }
 /** PURE (Node-pinned) — KB2-3 (cycle 23): a geocode whose COUNTRY is known and

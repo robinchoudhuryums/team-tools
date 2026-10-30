@@ -1,0 +1,24 @@
+{
+  "scriptId": "SET-ME-see-docs-operator-state-md",
+  "rootDir": ".",
+  "scriptExtensions": [
+    ".js",
+    ".gs"
+  ],
+  "htmlExtensions": [
+    ".html"
+  ],
+  "jsonExtensions": [
+    ".json"
+  ],
+  "filePushOrder": [
+    "kb_shared.js",
+    "Handbook.js",
+    "People.js",
+    "Quiz.js",
+    "Reminders.js",
+    "Saved.js",
+    "Training.js"
+  ],
+  "skipSubdirectories": false
+}
