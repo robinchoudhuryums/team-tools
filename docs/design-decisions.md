@@ -6123,7 +6123,8 @@ pick them up without re-deriving the context.
   label-content-name rule reads an `aria-hidden` child's text as visible text
   all the same. Focus moves only on a navigation the reader made (a click, a
   link, a search result) — never on Back, a repaint or a scroll — and a
-  section's heading takes it once, after the paint. The reading area stopped
+  section's heading takes it straight after
+  `kbOpenManualSection_` paints it. The reading area stopped
   being a live region: every repaint was being read out whole. **Alternatives
   rejected:** axe on Team Tools' scenarios too (the plan scoped this to the
   handbook; Team Tools' screens have not had the pass, so the gate would start
