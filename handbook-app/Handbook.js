@@ -307,3 +307,100 @@ function kbFlagItem(itemId, kind, note) {
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
+
+// ── HBR1 — the home page's shelf: what the team looked up on calls ──────────
+// Team Tools records every handbook or Reference open in the KB spreadsheet's
+// KbViews tab — [Timestamp, ItemId, RepId, Context], PHI-free — and an open from
+// the reference drawer (the mid-call lookup) carries a `drawer:<view>` context.
+// The shelf counts those, handbook sections only, per chapter, for the last 30
+// days and the 30 before. There is no record of what KIND of call came in;
+// this is what agents needed to look up during calls, and the page says so.
+// Team totals only: the rep column is fetched with its row and never used.
+const HB_VIEWS_TAB = 'KbViews';                 // Team Tools' KB_VIEWS_TAB (pinned equal)
+const HB_SHELF_DAYS = 30;
+const HB_SHELF_FLOOR = 50;                      // fewer lookups than this in 30 days says so
+const HB_SHELF_CHUNK = 5000;                    // rows per read, newest first
+const HB_SHELF_MAX_ROWS = 100000;               // a read stops here and says it was cut
+const HB_SHELF_CACHE_KEY = 'hb_shelf_v1';
+const HB_SHELF_TTL = 3600;                      // an hour
+
+/** The shelf's "On calls" view (cached an hour, for everyone — it is a team
+ *  total). {since, days, floor, total, prevTotal, chapters: {key: {n, prev,
+ *  top, topN}}, truncated} or {error}. A failure is never cached (g129). */
+function hbGetShelf() {
+  if (!getEmployeeInfo_()) return { error: 'Not authorized.' };
+  try {
+    const hit = CacheService.getScriptCache().get(HB_SHELF_CACHE_KEY);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {}
+  let res;
+  try { res = hbShelfRead_(); }
+  catch (err) { return { error: 'The lookups on calls could not be read: ' + err.message }; }
+  try { CacheService.getScriptCache().put(HB_SHELF_CACHE_KEY, JSON.stringify(res), HB_SHELF_TTL); } catch (e) {}
+  return res;
+}
+/** Read KbViews back from its newest row, a chunk at a time, until a chunk
+ *  reaches past the 60 days the two windows need — BY DATE, so a busy month is
+ *  never cut by a fixed row count (g152). The tab is appended in time order.
+ *  Timestamps Sheets coerced to Dates are recovered in the spreadsheet's own
+ *  timezone, the one that coerced them (g11). */
+function hbShelfRead_() {
+  const ss = getKbSS_();
+  const tz = ss.getSpreadsheetTimeZone();
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  const sheet = ss.getSheetByName(HB_VIEWS_TAB);
+  const rows = [];
+  let truncated = false;
+  if (sheet) {
+    const cut = hbShelfDayAdd_(today, -2 * HB_SHELF_DAYS);
+    let end = sheet.getLastRow();
+    while (end >= 2) {
+      if (rows.length >= HB_SHELF_MAX_ROWS) { truncated = true; break; }
+      const start = Math.max(2, end - HB_SHELF_CHUNK + 1);
+      const data = sheet.getRange(start, 1, end - start + 1, 4).getValues();
+      let past = false;
+      for (let i = data.length - 1; i >= 0; i--) {
+        const ts = data[i][0];
+        const day = ts instanceof Date ? Utilities.formatDate(ts, tz, 'yyyy-MM-dd') : String(ts || '').substring(0, 10);
+        if (day && day <= cut) { past = true; break; }
+        rows.push([day, String(data[i][1] || ''), String(data[i][3] || '')]);
+      }
+      if (past) break;
+      end = start - 1;
+    }
+  }
+  const out = hbShelfCount_(rows, today, HB_SHELF_DAYS);
+  out.floor = HB_SHELF_FLOOR;
+  out.truncated = truncated;
+  return out;
+}
+/** PURE — 'yyyy-MM-dd' plus n days (n may be negative), by the calendar. */
+function hbShelfDayAdd_(iso, n) {
+  const p = String(iso).split('-');
+  const d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n));
+  return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+}
+/** PURE (Node-pinned) — rows [[day, itemId, context]] counted per chapter:
+ *  drawer opens of handbook sections only (`man-<chapter>-…`), this window
+ *  (the `days` up to and including today) and the one before it. Each chapter
+ *  carries its most-opened section this window. */
+function hbShelfCount_(rows, today, days) {
+  const from = hbShelfDayAdd_(today, -days), prevFrom = hbShelfDayAdd_(today, -2 * days);
+  const ch = {}, ids = {};
+  let total = 0, prevTotal = 0;
+  (rows || []).forEach(function (r) {
+    if (!r || String(r[2] || '').indexOf('drawer') !== 0) return;
+    const m = /^man-([a-z0-9]+)-[a-z0-9-]+$/.exec(String(r[1] || ''));
+    if (!m) return;
+    const day = String(r[0] || '');
+    if (!day || day > today || day <= prevFrom) return;
+    const c = ch[m[1]] || (ch[m[1]] = { n: 0, prev: 0, top: '', topN: 0 });
+    if (day > from) {
+      c.n++; total++;
+      const k = m[1] + '|' + r[1];
+      ids[k] = (ids[k] || 0) + 1;
+      if (ids[k] > c.topN || (ids[k] === c.topN && String(r[1]) < c.top)) { c.top = String(r[1]); c.topN = ids[k]; }
+    } else { c.prev++; prevTotal++; }
+  });
+  return { since: hbShelfDayAdd_(from, 1), days: days, total: total, prevTotal: prevTotal, chapters: ch };
+}

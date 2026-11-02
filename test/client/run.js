@@ -40630,7 +40630,7 @@ function hbServer_(opts) {
   const writes = [];
   const tabs = opts.tabs || {};
   const hbTabs = opts.hbTabs || {};   // HB2.1: the Handbook spreadsheet (HANDBOOK_SS_ID)
-  const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null),
+  const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null), getSpreadsheetTimeZone: () => 'UTC',   // HBR1: the shelf reads KbViews in the sheet's tz
     insertSheet: (n) => { if (t[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); t[n] = []; writes.push(['insert', n]); return sheetOf(t[n]); } });
   const store = new Map();
   const cache = {
@@ -40733,7 +40733,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbGetShelf', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
     'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbSyncNotes', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining', 'hbToggleBookmark',
     'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
@@ -41920,6 +41920,68 @@ test('HB4.1-d: the handbook app lists the stored forms with links to PUBLISHED s
   const anon = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV, { email: '' }));
   assert.strictEqual(anon.hbListForms().error, 'Not authorized.');
   assert.strictEqual(anon.hbGetForm('form-eaa').error, 'Not authorized.');
+});
+
+// HBR1 — the home page's shelf: handbook lookups on calls, per chapter.
+const hbrDay_ = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+test('HBR1-a: the shelf counts drawer opens of handbook sections per chapter, this 30 days and the 30 before, each with its most-opened section (pure)', () => {
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  const T = '2026-11-02';
+  const r = hbPlain_(sb.hbShelfCount_([
+    [T, 'man-8-6', 'drawer:callNotes'], ['2026-11-01', 'man-8-6', 'drawer:metrics'], ['2026-10-20', 'man-8-2', 'drawer:callNotes'],
+    ['2026-10-04', 'man-3-1', 'drawer:x'],      // the window's first day
+    ['2026-10-03', 'man-8-2', 'drawer:x'],      // the previous window's last day
+    ['2026-09-04', 'man-8-2', 'drawer:x'],      // its first day
+    ['2026-09-03', 'man-8-2', 'drawer:x'],      // older than both: not counted
+    [T, 'man-8-6', 'reference'],                // the Reference tab is not a call
+    [T, 'kb-pricing', 'drawer:callNotes'],      // a Reference article is not the handbook
+    ['2026-11-03', 'man-8-6', 'drawer:x'],      // tomorrow (a clock or tz edge) is not counted
+    ['', 'man-8-6', 'drawer:x'],                // an unreadable day is not counted
+    [T, 'man-a-1', 'drawer:x']], T, 30));
+  assert.deepStrictEqual(r, { since: '2026-10-04', days: 30, total: 5, prevTotal: 2, chapters: {
+    8: { n: 3, prev: 2, top: 'man-8-6', topN: 2 }, 3: { n: 1, prev: 0, top: 'man-3-1', topN: 1 }, a: { n: 1, prev: 0, top: 'man-a-1', topN: 1 } } });
+  // A tie for the top section goes to the lower id, so the answer is stable.
+  const tie = hbPlain_(sb.hbShelfCount_([[T, 'man-5-2', 'drawer:x'], [T, 'man-5-1', 'drawer:x']], T, 30));
+  assert.strictEqual(tie.chapters[5].top, 'man-5-1');
+  assert.deepStrictEqual([sb.hbShelfDayAdd_('2026-03-01', -1), sb.hbShelfDayAdd_('2026-12-31', 1), sb.hbShelfDayAdd_('2024-03-30', -30)], ['2026-02-28', '2027-01-01', '2024-02-29']);
+});
+
+test('HBR1-b: hbGetShelf reads KbViews back BY DATE across chunks (never a fixed tail), counts Dates in the sheet\'s tz, caches an hour, never caches a failure, and refuses a reader who is not signed in (driven)', () => {
+  const at = (n) => new Date(hbrDay_(n) + 'T12:00:00Z');   // Sheets hands a coerced Date back
+  const rows = [['Timestamp', 'ItemId', 'RepId', 'Context']];
+  for (let i = 0; i < 400; i++) rows.push([at(75), 'man-8-2', 'r1', 'drawer:callNotes']);   // past both windows
+  for (let i = 0; i < 300; i++) rows.push([at(45), 'man-8-2', 'r1', 'drawer:callNotes']);   // the 30 before
+  for (let i = 0; i < 9000; i++) rows.push([hbrDay_(10) + ' 09:00:00', i % 3 ? 'man-8-6' : 'man-6-9', 'r' + (i % 7), i % 10 ? 'drawer:callNotes' : 'reference']);   // a busy month, more than one chunk
+  const tabs = Object.assign(hbTabs_(), { KbViews: rows });
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const res = hbPlain_(sb.hbGetShelf());
+  assert.strictEqual(res.total, 8100, 'every drawer open of the busy month — 9,000 rows read across chunks, the Reference-tab tenth left out');
+  assert.strictEqual(res.prevTotal, 300, 'the 30 before');
+  assert.deepStrictEqual([res.chapters[8].n, res.chapters[8].top, res.chapters[6].n, res.chapters[8].prev], [5400, 'man-8-6', 2700, 300]);
+  assert.deepStrictEqual([res.floor, res.truncated, res.days], [50, false, 30]);
+  assert.ok(!JSON.stringify(res).includes('r1'), 'no rep leaves the server — team totals only');
+  const reads = sb.__reads.n;
+  assert.ok(reads <= 3, 'it stopped at the first chunk that reached past 60 days (' + reads + ' reads), never the 75-day rows\' chunk beyond it');
+  assert.deepStrictEqual(hbPlain_(sb.hbGetShelf()), res, 'the second visit is the cached answer');
+  assert.strictEqual(sb.__reads.n, reads, 'and reads nothing');
+  // No KbViews tab yet: nothing recorded, said as zero lookups (the page says "not enough yet").
+  const empty = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  assert.deepStrictEqual([empty.hbGetShelf().total, empty.hbGetShelf().prevTotal], [0, 0]);
+  // A failed read is an error, and it is not cached (g129).
+  const down = hbServer_(Object.assign({ tabs, openFail: ['ss1'] }, HB_ENV));
+  assert.ok(/could not be read/.test(down.hbGetShelf().error));
+  assert.strictEqual(down.CacheService.getScriptCache().get('hb_shelf_v1'), null, 'a failure is never cached');
+  assert.strictEqual(hbServer_(Object.assign({ tabs }, HB_ENV, { email: '' })).hbGetShelf().error, 'Not authorized.');
+});
+
+test('HBR1-c: the shelf reads the tab Team Tools writes, and the context its drawer stamps', () => {
+  const cfg = fs.readFileSync(path.join(HB_ROOT, 'web-app/00_config.js'), 'utf8');
+  const hb = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8');
+  assert.strictEqual(/const HB_VIEWS_TAB = '([^']+)'/.exec(hb)[1], /const KB_VIEWS_TAB = '([^']+)'/.exec(cfg)[1], 'the same tab');
+  assert.deepStrictEqual(/const KB_VIEWS_HEADERS = \[([^\]]+)\]/.exec(cfg)[1].split(',').map((x) => x.trim().replace(/'/g, '')), ['Timestamp', 'ItemId', 'RepId', 'Context'],
+    'the columns the shelf reads by position: the time first, the id second, the context fourth');
+  const kb = fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/context \|\| \('drawer:' \+/.test(kb), 'a drawer open (no context given) is stamped drawer:<view> — the only opens the shelf counts');
 });
 
 test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {
