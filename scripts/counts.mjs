@@ -206,9 +206,14 @@ function harnessTotal(rel) {
     const captured = String(e && e.stdout || '');
     const sum = /(\d+) passed, (\d+) failed/.exec(captured);
     if (sum && Number(sum[2]) > 0) {
+      // Name what failed: a red that does not reproduce (it happened once in CI,
+      // 2026-11-02) is untraceable from "1 failing" alone.
+      const failed = captured.split('\n').filter((l) => /^\s*✗/.test(l)).slice(0, 10)
+        .map((l) => '    ' + l.trim().slice(0, 240));
       throw new CountsError(
         rel + ' is RED (' + sum[2] + ' failing of ' + (Number(sum[1]) + Number(sum[2])) + ') — the harness is ' +
         'red, fix that first. The counts cannot be trusted while it is.\n' +
+        (failed.length ? '  Failing:\n' + failed.join('\n') + '\n' : '') +
         '  Run: node ' + rel);
     }
     throw new CountsError(

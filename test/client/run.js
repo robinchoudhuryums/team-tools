@@ -38094,7 +38094,8 @@ test('F69 (cycle 25): the visual matrix measures VERTICAL runaway and SQUEEZED t
   assert.ok(/document\.documentElement\.scrollHeight/.test(shoot) && /Math\.max\(bottom, vh\)/.test(shoot), 'runaway = the document\'s scroll height past the visible content (or the window)');
   assert.ok(/cs\.clip && cs\.clip !== 'auto'/.test(shoot) && /r\.width < 2 \|\| r\.height < 2/.test(shoot), 'a visually hidden box is not content — it is the usual escapee (F67, g171)');
   assert.ok(/cs\.position === 'fixed'/.test(shoot), 'fixed chrome does not extend the document');
-  assert.ok(/own\.length >= 16 && r\.width < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
+  assert.ok(/own\.length >= 16 && run < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
+  assert.ok(/const run = \/\^vertical\/\.test\(cs\.writingMode \|\| ''\) \? r\.height : r\.width;/.test(shoot), 'HBR1: a vertical label (a shelf spine) runs along its height — that is its column');
   assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = gate\.RUNAWAY_PX;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
   const readme = fs.readFileSync(path.join(__dirname, '../visual/README.md'), 'utf8');
   assert.ok(/verticalRunawayPx/.test(readme) && /narrowText/.test(readme), 'the harness README names both measurements');
@@ -40630,7 +40631,7 @@ function hbServer_(opts) {
   const writes = [];
   const tabs = opts.tabs || {};
   const hbTabs = opts.hbTabs || {};   // HB2.1: the Handbook spreadsheet (HANDBOOK_SS_ID)
-  const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null),
+  const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null), getSpreadsheetTimeZone: () => 'UTC',   // HBR1: the shelf reads KbViews in the sheet's tz
     insertSheet: (n) => { if (t[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); t[n] = []; writes.push(['insert', n]); return sheetOf(t[n]); } });
   const store = new Map();
   const cache = {
@@ -40733,7 +40734,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbGetShelf', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbRequestTopic', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
     'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbSyncNotes', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining', 'hbToggleBookmark',
     'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
@@ -40773,6 +40774,36 @@ function hbPageCtx_() {
   return ctx;
 }
 const hbJ_ = (v) => JSON.parse(JSON.stringify(v));
+
+test('HBR1-d: home\'s pure helpers — a chapter\'s read share counts only current sign-offs; the shelf fills against the busiest; Continue picks the newest point still here; Due puts re-reads first and overdue plans before the rest; names, greetings and changes in words', () => {
+  const c = hbPageCtx_();
+  ['hbReadShare_', 'hbShelfBooks_', 'hbContinue_', 'hbDueList_', 'hbInitials_', 'hbGreeting_', 'hbSpineName_', 'hbShelfDelta_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), c));
+  const so = { 'section:a': { state: 'signed' }, 'section:b': { state: 'resign' }, 'section:c': { state: 'signed' } };
+  assert.deepStrictEqual(hbJ_(c.hbReadShare_(['a', 'b', 'd'], so)), { read: 1, total: 3, pct: 33 }, 'a section changed since it was read is unread');
+  assert.deepStrictEqual(hbJ_(c.hbReadShare_([], so)), { read: 0, total: 0, pct: 0 });
+  const chapters = [{ key: '3', ids: ['a', 'b'] }, { key: '5', ids: ['c'] }, { key: '6', ids: ['d'] }];
+  const calls = hbJ_(c.hbShelfBooks_(chapters, 'calls', { total: 75, chapters: { 3: { n: 50, prev: 40, top: 'a' }, 5: { n: 25, prev: 0, top: 'c' } } }, null));
+  assert.deepStrictEqual(calls, { top: '3', total: 75, books: [{ key: '3', pct: 100, n: 50, prev: 40, top: 'a' }, { key: '5', pct: 50, n: 25, prev: 0, top: 'c' }, { key: '6', pct: 0, n: 0, prev: 0, top: '' }] });
+  assert.deepStrictEqual(hbJ_(c.hbShelfBooks_(chapters, 'calls', { total: 0, chapters: {} }, null)).books.map((b) => b.pct), [0, 0, 0], 'no lookups is never a division by zero');
+  assert.deepStrictEqual(hbJ_(c.hbShelfBooks_(chapters, 'me', null, so)), { books: [{ key: '3', pct: 50, read: 1, total: 2 }, { key: '5', pct: 100, read: 1, total: 1 }, { key: '6', pct: 0, read: 0, total: 1 }], read: 2, total: 4, pct: 50 });
+  const day = 864e5, now = 100 * day;
+  assert.deepStrictEqual(hbJ_(c.hbContinue_({ A: { id: 'a', h: '1.1', at: now - 2 * day }, B: { id: 'b', at: now - day }, C: { id: 'gone', at: now }, D: { id: 'c', at: now - 8 * day } }, ['a', 'b', 'c'], now, 7)),
+    { dept: 'B', id: 'b', h: '', at: now - day }, 'the newest a reader can open, under a week old');
+  assert.strictEqual(c.hbContinue_({}, ['a'], now, 7), null);
+  assert.strictEqual(c.hbContinue_(null, ['a'], now, 7), null);
+  const tree = [{ id: 'a', title: '1.1 A' }, { id: 'b', title: '1.2 B' }];
+  const mine = { plans: [{ title: 'Later', done: 0, total: 2, due: '2026-12-01' }, { title: 'Overdue', done: 1, total: 2, due: '2026-12-09', overdue: true },
+    { title: 'Sooner', done: 0, total: 1, due: '2026-11-05' }, { title: 'Done', done: 1, total: 1 }, { title: 'No date', done: 0, total: 1 }] };
+  assert.deepStrictEqual(hbJ_(c.hbDueList_(mine, so, true, tree)).map((x) => x.title), ['1.2 B', 'Overdue', 'Sooner', 'Later', 'No date']);
+  assert.deepStrictEqual(hbJ_(c.hbDueList_({ error: 'x' }, so, true, tree)).map((x) => x.kind), ['reread'], 'a failed plan read still lists what the sign-offs know');
+  assert.strictEqual(c.hbDueList_(undefined, {}, undefined, tree), null, 'neither source answered: nothing to say yet');
+  assert.deepStrictEqual(hbJ_(c.hbDueList_(mine, so, false, tree))[0].title, 'Overdue', 'no sign-offs: the plans alone');
+  assert.deepStrictEqual(['Jordan Reyes', 'dana.reyes@ex.org', 'Cher', '', '42 Bob'].map((n) => c.hbInitials_(n)), ['JR', 'DR', 'C', '', 'B']);
+  assert.deepStrictEqual([[9, 'Jordan Reyes'], [13, ''], [18, 'Sam']].map(([h, n]) => c.hbGreeting_(new Date(2026, 10, 2, h), n)), ['Good morning, Jordan', 'Good afternoon', 'Good evening, Sam']);
+  assert.deepStrictEqual(['Respiratory & Resupply', 'Manual Mobility & General DME', 'Oxygen'].map((n) => c.hbSpineName_(n)), ['Respiratory', 'Manual Mobility', 'Oxygen']);
+  assert.deepStrictEqual([[118, 100], [80, 100], [5, 5], [7, 0], [0, 0]].map(([n, p]) => c.hbShelfDelta_(n, p)),
+    ['↑ 18% on the 30 days before', '↓ 20% on the 30 days before', 'no change on the 30 days before', 'new in these 30 days', '']);
+});
 
 test('HB1.3-a: the page\'s pure helpers — the visit moves only on a new day, news is published and after the last visit, and a section link round-trips', () => {
   const c = hbPageCtx_();
@@ -40947,16 +40978,16 @@ test('HB1.4-c: the app\'s search — handbook sections only, the mirrored synony
   assert.strictEqual(sig.length, before, 'an untyped search records nothing');
 });
 
-test('HB1.4-d: the app\'s only writes are appendRow — onto KbFeedback and KbSearchSignalHb — and a tab it creates (structural, over the hand-written server)', () => {
+test('HB1.4-d: the app\'s only writes are appendRow — onto KbFeedback, KbSearchSignalHb and (HBR2) KbContentRequests — and a tab it creates (structural, over the hand-written server)', () => {
   const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8'));
   const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
   assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'insertSheet'], 'appendRow (atomic — no position, no lock to share) and creating a tab');
-  const tabsAppended = [...src.matchAll(/hbAppendTab_\((KB_\w+),/g)].map((m) => m[1]).sort();
-  assert.strictEqual((src.match(/hbAppendTab_\(/g) || []).length, 3, 'its declaration and the two callers — no other');
-  assert.deepStrictEqual(tabsAppended, ['KB_FEEDBACK_TAB', 'KB_SEARCH_SIGNAL_HB_TAB'], 'onto these two tabs only');
+  const tabsAppended = [...src.matchAll(/hbAppendTab_\(((?:KB|HB)_\w+),/g)].map((m) => m[1]).sort();
+  assert.strictEqual((src.match(/hbAppendTab_\(/g) || []).length, 4, 'its declaration and the three callers — no other');
+  assert.deepStrictEqual(tabsAppended, ['HB_REQUESTS_TAB', 'KB_FEEDBACK_TAB', 'KB_SEARCH_SIGNAL_HB_TAB'], 'onto these three tabs only (HBR2 added the content requests)');
   const hdr = extractFnFrom(src, 'hbAppendTab_');
   assert.ok(/insertSheet\(name\)/.test(hdr) && /appendRow\(sheetSafeRow_\(headers\)\)/.test(hdr), 'a new tab gets its headers');
-  assert.strictEqual((src.match(/\.appendRow\(/g) || []).length, 3, 'three appends: the header, a feedback row, a signal row');
+  assert.strictEqual((src.match(/\.appendRow\(/g) || []).length, 4, 'four appends: the header, a feedback row, a signal row, a content request');
 });
 
 test('HB1.4-e: Team Tools mirrors the synonyms and auto-tag rules to KbSearchConfig — as a text cell, only when they changed (a re-import writes nothing), false when it could not', () => {
@@ -41920,6 +41951,98 @@ test('HB4.1-d: the handbook app lists the stored forms with links to PUBLISHED s
   const anon = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV, { email: '' }));
   assert.strictEqual(anon.hbListForms().error, 'Not authorized.');
   assert.strictEqual(anon.hbGetForm('form-eaa').error, 'Not authorized.');
+});
+
+// HBR1 — the home page's shelf: handbook lookups on calls, per chapter.
+const hbrDay_ = (n) => { const d = new Date(); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+test('HBR1-a: the shelf counts drawer opens of handbook sections per chapter, this 30 days and the 30 before, each with its most-opened section (pure)', () => {
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  const T = '2026-11-02';
+  const r = hbPlain_(sb.hbShelfCount_([
+    [T, 'man-8-6', 'drawer:callNotes'], ['2026-11-01', 'man-8-6', 'drawer:metrics'], ['2026-10-20', 'man-8-2', 'drawer:callNotes'],
+    ['2026-10-04', 'man-3-1', 'drawer:x'],      // the window's first day
+    ['2026-10-03', 'man-8-2', 'drawer:x'],      // the previous window's last day
+    ['2026-09-04', 'man-8-2', 'drawer:x'],      // its first day
+    ['2026-09-03', 'man-8-2', 'drawer:x'],      // older than both: not counted
+    [T, 'man-8-6', 'reference'],                // the Reference tab is not a call
+    [T, 'kb-pricing', 'drawer:callNotes'],      // a Reference article is not the handbook
+    ['2026-11-03', 'man-8-6', 'drawer:x'],      // tomorrow (a clock or tz edge) is not counted
+    ['', 'man-8-6', 'drawer:x'],                // an unreadable day is not counted
+    [T, 'man-a-1', 'drawer:x']], T, 30));
+  assert.deepStrictEqual(r, { since: '2026-10-04', days: 30, total: 5, prevTotal: 2, chapters: {
+    8: { n: 3, prev: 2, top: 'man-8-6', topN: 2 }, 3: { n: 1, prev: 0, top: 'man-3-1', topN: 1 }, a: { n: 1, prev: 0, top: 'man-a-1', topN: 1 } } });
+  // A tie for the top section goes to the lower id, so the answer is stable.
+  const tie = hbPlain_(sb.hbShelfCount_([[T, 'man-5-2', 'drawer:x'], [T, 'man-5-1', 'drawer:x']], T, 30));
+  assert.strictEqual(tie.chapters[5].top, 'man-5-1');
+  assert.deepStrictEqual([sb.hbShelfDayAdd_('2026-03-01', -1), sb.hbShelfDayAdd_('2026-12-31', 1), sb.hbShelfDayAdd_('2024-03-30', -30)], ['2026-02-28', '2027-01-01', '2024-02-29']);
+});
+
+test('HBR1-b: hbGetShelf reads KbViews back BY DATE across chunks (never a fixed tail), counts Dates in the sheet\'s tz, caches an hour, never caches a failure, and refuses a reader who is not signed in (driven)', () => {
+  const at = (n) => new Date(hbrDay_(n) + 'T12:00:00Z');   // Sheets hands a coerced Date back
+  const rows = [['Timestamp', 'ItemId', 'RepId', 'Context']];
+  for (let i = 0; i < 6000; i++) rows.push([at(75), 'man-8-2', 'r1', 'drawer:callNotes']);   // past both windows — chunks a reader that did not stop would go on to
+  for (let i = 0; i < 300; i++) rows.push([at(45), 'man-8-2', 'r1', 'drawer:callNotes']);   // the 30 before
+  for (let i = 0; i < 9000; i++) rows.push([hbrDay_(10) + ' 09:00:00', i % 3 ? 'man-8-6' : 'man-6-9', 'r' + (i % 7), i % 10 ? 'drawer:callNotes' : 'reference']);   // a busy month, more than one chunk
+  const tabs = Object.assign(hbTabs_(), { KbViews: rows });
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const res = hbPlain_(sb.hbGetShelf());
+  assert.strictEqual(res.total, 8100, 'every drawer open of the busy month — read across chunks, the Reference-tab tenth left out');
+  assert.strictEqual(res.prevTotal, 300, 'the 30 before');
+  assert.deepStrictEqual([res.chapters[8].n, res.chapters[8].top, res.chapters[6].n, res.chapters[8].prev], [5400, 'man-8-6', 2700, 300]);
+  assert.deepStrictEqual([res.floor, res.truncated, res.days], [50, false, 30]);
+  assert.ok(!JSON.stringify(res).includes('r1'), 'no rep leaves the server — team totals only');
+  const reads = sb.__reads.n;
+  assert.strictEqual(reads, 2, 'it stopped at the first chunk that reached past 60 days — never the two chunks of older rows beyond it');
+  assert.deepStrictEqual(hbPlain_(sb.hbGetShelf()), res, 'the second visit is the cached answer');
+  assert.strictEqual(sb.__reads.n, reads, 'and reads nothing');
+  // No KbViews tab yet: nothing recorded, said as zero lookups (the page says "not enough yet").
+  const empty = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  assert.deepStrictEqual([empty.hbGetShelf().total, empty.hbGetShelf().prevTotal], [0, 0]);
+  // A failed read is an error, and it is not cached (g129).
+  const down = hbServer_(Object.assign({ tabs, openFail: ['ss1'] }, HB_ENV));
+  assert.ok(/could not be read/.test(down.hbGetShelf().error));
+  assert.strictEqual(down.CacheService.getScriptCache().get('hb_shelf_v1'), null, 'a failure is never cached');
+  assert.strictEqual(hbServer_(Object.assign({ tabs }, HB_ENV, { email: '' })).hbGetShelf().error, 'Not authorized.');
+});
+
+test('HBR1-c: the shelf reads the tab Team Tools writes, and the context its drawer stamps', () => {
+  const cfg = fs.readFileSync(path.join(HB_ROOT, 'web-app/00_config.js'), 'utf8');
+  const hb = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8');
+  assert.strictEqual(/const HB_VIEWS_TAB = '([^']+)'/.exec(hb)[1], /const KB_VIEWS_TAB = '([^']+)'/.exec(cfg)[1], 'the same tab');
+  assert.deepStrictEqual(/const KB_VIEWS_HEADERS = \[([^\]]+)\]/.exec(cfg)[1].split(',').map((x) => x.trim().replace(/'/g, '')), ['Timestamp', 'ItemId', 'RepId', 'Context'],
+    'the columns the shelf reads by position: the time first, the id second, the context fourth');
+  const kb = fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8');
+  assert.ok(/context \|\| \('drawer:' \+/.test(kb), 'a drawer open (no context given) is stamped drawer:<view> — the only opens the shelf counts');
+});
+
+// HBR2 — "Didn't find it?" from the handbook's search page.
+test('HBR2-a: hbRequestTopic appends a reader\'s topic to Team Tools\' content-request queue in its own shape — never the search typed, the topic as text — and refuses an empty, an over-long or an anonymous request (driven)', () => {
+  const tabs = hbTabs_();
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const r = hbPlain_(sb.hbRequestTopic('  picking up   an oxygen tank  '));
+  assert.ok(r.success && /^u0/.test(r.reqId));
+  assert.deepStrictEqual(tabs.KbContentRequests[0], ['Timestamp', 'ReqId', 'RepId', 'RepName', 'Topic', 'Note', 'Query', 'Status', 'ResolvedAt', 'ResolvedBy'], 'a missing tab is made with Team Tools\' headers');
+  const row = tabs.KbContentRequests[1];
+  assert.deepStrictEqual(row.slice(1), [r.reqId, 'rep@example.org', 'rep@example.org', "'picking up an oxygen tank", '', '', 'open', '', ''],
+    'the reader by address; the topic as text (a leading apostrophe — g144); no note; the Query column blank — the typed search is never stored (F9)');
+  assert.ok(sb.__writes.every((w) => w[0] === 'append' || w[0] === 'insert'), 'appendRow only — no positional write (the two projects\' locks do not exclude each other)');
+  sb.hbRequestTopic('3/4');
+  assert.strictEqual(tabs.KbContentRequests[2][4], "'3/4", 'a fraction stays text');
+  const n = tabs.KbContentRequests.length;
+  assert.ok(/Say what you were looking for/.test(sb.hbRequestTopic('   ').error));
+  assert.ok(/under 200 characters/.test(sb.hbRequestTopic('x'.repeat(201)).error), 'refused, never cut');
+  assert.strictEqual(hbServer_(Object.assign({ tabs }, HB_ENV, { email: '' })).hbRequestTopic('x').error, 'Not authorized.');
+  assert.strictEqual(tabs.KbContentRequests.length, n, 'nothing written for a refusal');
+});
+
+test('HBR2-b: the request row is Team Tools\' — the tab, the headers and the topic limit equal its own, and Team Tools still never stores the query', () => {
+  const cfg = fs.readFileSync(path.join(HB_ROOT, 'web-app/00_config.js'), 'utf8');
+  const hb = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8');
+  assert.strictEqual(/const HB_REQUESTS_TAB = '([^']+)'/.exec(hb)[1], /const KB_REQUESTS_TAB = '([^']+)'/.exec(cfg)[1]);
+  assert.strictEqual(/const HB_REQUESTS_HEADERS = (\[[^\]]+\])/.exec(hb)[1], /const KB_REQUESTS_HEADERS = (\[[^\]]+\])/.exec(cfg)[1]);
+  assert.strictEqual(/const HB_REQUEST_TOPIC_MAX = (\d+)/.exec(hb)[1], /const KB_REQUEST_TOPIC_MAX = (\d+)/.exec(cfg)[1]);
+  const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+  assert.ok(/\.hbRequestTopic\(String\(topic\)\.trim\(\)\)/.test(page) && !/hbRequestTopic\([^)]*HB_SEARCH/.test(page), 'the page sends the topic the reader wrote, never the search');
 });
 
 test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {

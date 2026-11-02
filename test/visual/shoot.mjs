@@ -122,6 +122,12 @@ const SCENARIOS = [
   ['handbook-home-dark-wide',      {}, WIDE,   'dark',  '', '', HB_PAGE],
   ['handbook-home-light-mobile',   {}, MOBILE, 'light', '', '', HB_PAGE],
   ['handbook-mydept-light-wide',   {}, WIDE,   'light', '', HB_DEPT, HB_PAGE],
+  // HBR1 — home's shelf on the reader's own view, and home in dark on a phone.
+  ['handbook-shelf-me-light-wide', {}, WIDE,   'light', '', "setTimeout(function(){ hbShelfView_('me'); }, 300)", HB_PAGE],
+  ['handbook-home-dark-mobile',    {}, MOBILE, 'dark',  '', '', HB_PAGE],
+  // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
+  ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
+  ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],
   ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
   // HB2.4: a slideshow stepped once (its announcement filled) and tables that
   // overflow a phone (each a named Tab stop) — for axe as much as for the eye.
@@ -723,7 +729,9 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
       for (let n = el.firstChild; n; n = n.nextSibling) if (n.nodeType === 3) own += n.nodeValue;
       own = own.replace(/\s+/g, ' ').trim();
       // SVG <text> is drawn, not laid out in a column — a scaled-down diagram's labels are not squeezed text.
-      if (own.length >= 16 && r.width < 48 && cs.display !== 'inline' && !(el instanceof SVGElement) && r.right > 0 && r.left < window.innerWidth) {
+      // HBR1: vertical writing (a shelf spine's name) runs along the height — that is its column's length.
+      const run = /^vertical/.test(cs.writingMode || '') ? r.height : r.width;
+      if (own.length >= 16 && run < 48 && cs.display !== 'inline' && !(el instanceof SVGElement) && r.right > 0 && r.left < window.innerWidth) {
         narrow.push({ tag: el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : ''),
           w: Math.round(r.width), text: own.slice(0, 24) });
       }

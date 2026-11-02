@@ -6161,3 +6161,52 @@ pick them up without re-deriving the context.
   page (a megabyte on every visit for a page most readers never open);
   `manual/forms/` copies (two copies to keep in step); a separate catalog tab
   (a second tab to keep consistent with the bytes); filling forms (HB4.2).
+- <a id="the-handbook-app-wears-team-tools-frame"></a>**The handbook app wears Team Tools' frame, and its home is a shelf whose default view is the team's lookups on calls (handbook refresh HBR1, operator 2026-11-02)**
+  The operator asked for a less basic handbook app. Four mockup rounds (the
+  handoff in `docs/design_handoff_handbook_refresh/`) settled it:
+  - **Team Tools' styling, not a second product.** A bold direction with a dark
+    rail read as a different app; the agreed middle ground keeps its layout and
+    colour (a hero, tinted chapter tiles, chapter-coloured headers) inside Team
+    Tools' chrome — Inter Tight, the spaced mono labels, the light rail with its
+    `inset 3px` active row, the green dot, `#0f8a52`, its radii and light
+    shadows. A light rail in both modes: a dark rail in one app is the biggest
+    tell, and a light rail in dark mode glares.
+  - **No dark-gradient header cards.** The operator found them "too striking …
+    cheap looking"; hero C is a plain card in both modes, and every later
+    header (the section banner, quiz heads, the result) takes a wash of its
+    chapter colour instead (Batches 2–4).
+  - **The shelf's default is "On calls".** A shelf of the reader's progress stops
+    saying anything once everything is read. The app has no record of call
+    TYPES — DQE is one row per agent per day, transfers cover four queues, and
+    call notes are PHI in per-rep sheets — so the default view counts what IS
+    recorded and PHI-free: Team Tools' drawer opens of handbook sections
+    (`KbViews`, context `drawer:<view>`), per chapter, team-wide, over 30 days,
+    labelled *most looked up on calls*. My reading is the alternate. Fewer than
+    50 lookups opens on My reading and says why; the read is by date, cached an
+    hour, and a failure is never cached.
+  - **Late answers patch, never redraw.** Home holds a search box; the shelf, Due
+    for you, the meta and the reader's name arrive after it and each repaints
+    only its own box (g141). Typing there hands over to the bar's box, words and
+    caret, when the results replace home.
+  - **The reader's scroller keeps Reference's padding** (18px / 22px): the shared
+    reader's sticky bar sits at exactly that offset (g162).
+- <a id="the-handbook-app-dresses-the-shared-reader-on-its-own-side"></a>**The handbook app dresses the shared reader on its own side, and a reader's missing topic reaches Team Tools' request queue (handbook refresh HBR2, operator plan 2026-11-02)**
+  The section page in the mockup is Team Tools' shared reader. Changing that
+  partial would change Team Tools' Reference too, so Batch 2 is host-side only:
+  - **CSS on the reader's own markup**, scoped to the handbook page — the
+    masthead as a banner (its `kb-man-pN` class gives the colour and, one rule a
+    chapter, the faint number; it needs `flex-shrink: 0` and is the container
+    for its index's `@container` query), the section heads' rule. Print keeps
+    its own block: the banner is screen-only.
+  - **What the host owns, rebuilt** — the tools bar (#hb-quizbar) and a side
+    column painted from what the page already holds: the quiz list, the form
+    library, and the section's own rendered headings and `.kb-xref` links. It
+    follows `MANUAL_HOST.markCurrent`, so it is always the section in view.
+  - **Previous / next** are the reader's own ‹ › and its end-of-chapter card;
+    nothing new was drawn.
+  - **Suggest a topic** appends to Team Tools' `KbContentRequests` in its own row
+    shape, so the requests land in the queue managers already work — the
+    handbook-app posture of HB1.4 (appendRow only; the projects' locks do not
+    exclude each other). The reader is named by address (there is no roster),
+    the topic rides an apostrophe (g144), and the search typed is never sent or
+    stored (F9, g146): the dialog starts empty.

@@ -3267,3 +3267,68 @@ per-change detail. By delta:
 - **Visual** — `handbook-forms-light-wide`, `handbook-form-view-dark-mobile`
   (the real PT/OT Rx drawn by pdf.js, served from `pdfjs-dist` in place of
   cdnjs) and `handbook-form-bar-light-wide`; all three pass axe.
+
+## Handbook refresh HBR1 — the frame and home (2026-11-02)
+
+- **Pure (run.js, "HBR1")** — a: the shelf's count (drawer opens of handbook
+  sections only, the window's first and last days, the previous window's edges,
+  tomorrow and an unreadable day dropped, a tie for the top section to the lower
+  id, the calendar arithmetic); b: `hbGetShelf` driven over 9,700 KbViews rows —
+  every drawer open of a busy month across chunks, the 30 before, no rep in the
+  answer, the read stopping at the first chunk past 60 days, the cache, an
+  absent tab as zero, a failed read said and never cached, the anonymous
+  refused; c: the tab and columns Team Tools writes, and the `drawer:` context
+  its drawer stamps; d: home's pure helpers (the read share, the shelf's books in
+  both views, Continue reading, Due for you's order, initials, greetings, spine
+  names, a change in words). F69's structural pin follows the measure's new
+  vertical branch; the public-surface list gained `hbGetShelf`; the sandbox's
+  spreadsheet answers a timezone.
+- **DOM ("HBR1")** — the shelf's On calls (names, fills, the busiest, a spine's
+  name and card, no rep) and My reading (a re-read section unread, focus kept on
+  the toggle, a spine opens its chapter); too few lookups and a failed read;
+  Due for you's order and the rail's counts and shares (none invented when a
+  source failed); Continue reading's pick and Resume; home's search handing over
+  to the bar's with the words and the caret while a late answer patches its own
+  box (g141); the rail's and tabs' `aria-current`, home's paper, the router's
+  openings (one per group, never one the reader cannot open), the phone's
+  Search. Four older DOM tests moved to the new frame with their intent kept
+  (the picker on Profile; one grid with the reader's tile first; the Profile
+  button's initials and its name). jsdom's selector engine did not match an
+  attribute value holding an em dash — the test finds those by value.
+- **Visual** — `handbook-shelf-me-light-wide` and `handbook-home-dark-mobile`;
+  the existing `handbook-*` screens re-shot on the new frame. The squeezed-text
+  measure now reads a vertical label (a spine's name) along its height — it had
+  flagged "Field Operations" as a 14px column.
+
+## Handbook refresh HBR2 — the section page and search as a page (2026-11-02)
+
+- **Pure (run.js, "HBR2")** — a: `hbRequestTopic` driven — a missing tab made
+  with Team Tools' headers, the row's shape (the reader by address, the topic as
+  text behind an apostrophe, no note, the Query column blank), appendRow only, a
+  fraction kept as text, an empty, an over-long (refused, never cut) and an
+  anonymous request refused with nothing written; b: the tab, headers and topic
+  limit equal Team Tools', and the page sends the topic, never the search.
+  HB1.4-d's structural list of the app's writes names the new append (three
+  tabs, four appends); the public-surface list gained `hbRequestTopic`.
+- **DOM ("HBR2")** — the side column beside a section (the quiz with where the
+  reader stands, the form, the numbered headings with their anchors, each
+  referenced section once by title), its column emptied off a section, the
+  toolbar's quiz and form pills; the search page (the best match, the chapter
+  crumb and colour, filters with counts that narrow and restore, nothing to
+  narrow for one chapter, none said with the offer); Suggest a topic (the dialog
+  starts empty though the search held a name, an empty topic refused in it, the
+  trimmed topic alone sent, a refusal said).
+- **Visual** — `handbook-chapter-light-wide` (a chapter at its top: the banner
+  and the column) and `handbook-suggest-topic-light-mobile`. Measuring found the
+  banner shrunk to 44px — `overflow: hidden` drops a flex item's automatic
+  minimum height in the reader's flex column — and the chapter index in two
+  squeezed columns on a phone (its `@container` query had no container on this
+  page).
+- **A red that did not reproduce** — CI on the HBR1 block commit failed once in
+  `counts.mjs --check` with "1 failing of 353" while the same job's DOM step had
+  passed; two local full runs and the next push were green, and the log could
+  not say which test. `counts.mjs` now lists the failing tests' names when a
+  harness is red, and the HBR1 typing drive waits on its conditions (the shelf
+  drawn, the results showing) rather than on 20 ms and 80 ms margins over a
+  60 ms answer and a 300 ms debounce — the likeliest race a loaded runner loses.
+  Both of its bites were re-run and bite.

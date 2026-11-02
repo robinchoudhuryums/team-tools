@@ -135,7 +135,7 @@ function hbOpen_(id, anchor, nav, push) {
   hbCloseSide_();
   hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
-  hbMarkHomeBtn_(false);
+  hbMarkNav_('');
   if (push) { hbHistory_('push', { id: id, anchor: anchor || '' }, { s: hbLinkOf_(id, anchor, HB.tree) }); HB_FOCUS_SEC = id; hbFocusSection_(id); }
 }
 function hbGoHome_() { hbHome_(true); }
@@ -148,7 +148,7 @@ function hbHome_(push) {
   main.innerHTML = hbHomeHtml_();
   main.scrollTop = 0;
   hbMarkCurrent_(null);
-  hbMarkHomeBtn_(true);
+  hbMarkNav_('home');
   if (push) { hbHistory_('push', { home: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
 }
 /** google.script.history — the TOP window's address and its Back button. A
@@ -185,6 +185,19 @@ function hbSearchKey_(e) {
   if (e.key === 'Enter') { e.preventDefault(); clearTimeout(HB_SEARCH.timer); var q = String(e.target.value || '').trim(); if (q.length >= HB_SEARCH_MIN) hbSearch_(q, true); }
   else if (e.key === 'Escape' && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ''; if (HB_SEARCH.showing) hbHome_(true); }
 }
+/** HBR1 — the Search button (the phone's bar and tab): home's own box when home
+ *  shows it, otherwise the bar's, opened across the bar on a phone. */
+function hbOpenSearch_() {
+  var hero = document.getElementById('hb-hero-q');
+  if (hero && HB.landing) { hero.focus(); return; }
+  var head = document.querySelector('.hb-head'); if (head) head.classList.add('hb-searching');
+  var q = document.getElementById('hb-q'); if (q) q.focus();
+}
+/** The phone's open search closes again when it is left empty. */
+function hbSearchBlur_() {
+  var q = document.getElementById('hb-q'), head = document.querySelector('.hb-head');
+  if (head && q && !q.value) head.classList.remove('hb-searching');
+}
 function hbLeaveSearch_() { HB_SEARCH.showing = false; HB_SEARCH.seq++; clearTimeout(HB_SEARCH.timer); }
 /** Run a search and show its results; `record` puts it in the history (the
  *  first result view pushes, a refinement replaces, so Back leaves search). */
@@ -194,23 +207,34 @@ function hbSearch_(q, record) {
   var was = HB_SEARCH.showing;
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the results
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('search');
   HB_SEARCH.showing = true; HB_SEARCH.q = q; HB_PP.showing = false; hbLeaveQuiz_();
   var seq = ++HB_SEARCH.seq;
+  // HBR1: typed into home's box, the search goes on in the bar's — the
+  // results replace home, and the words and the caret must not go with it (g141).
+  var hero = document.getElementById('hb-hero-q');
+  var handOver = hero && document.activeElement === hero;
   if (record) hbHistory_(was ? 'replace' : 'push', { search: q }, {});
   var jump = kbManualNumberTarget_(q, HB.tree);
   main.innerHTML = '<div class="hb-results"><h1 class="hb-results-h">Results for “' + esc(q) + '”</h1>' +
     (jump ? '<button type="button" class="hb-hit hb-hit-jump" data-kb-id="' + esc(jump.id) + '" data-kb-anchor="' + esc(jump.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
       icon('chevronRight', 14) + ' Go to <b>' + esc(jump.num) + '</b> ' + esc(kbManualSplitTitle_(jump.title).rest) + '</button>' : '') +
-    '<div class="hb-results-list" role="status">' + loSweep() + '</div></div>';
+    '<div class="hb-res-grid"><div class="hb-results-list" role="status">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
   main.scrollTop = 0;
+  if (handOver) {
+    var bar = document.getElementById('hb-q');
+    var hd = document.querySelector('.hb-head'); if (hd) hd.classList.add('hb-searching');
+    if (bar) { bar.value = hero.value; bar.focus(); try { bar.setSelectionRange(bar.value.length, bar.value.length); } catch (e) {} }
+  }
   var done = function (res) {
     if (seq !== HB_SEARCH.seq || !HB_SEARCH.showing) return;
     var list = main.querySelector('.hb-results-list'); if (!list) return;
     if (!res || res.error) { list.innerHTML = '<p class="hb-msg bad" role="alert">The search failed: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
     // Handbook sections only — the server already drops the rest; this page
     // could not open one anyway (getReferenceItem refuses it).
-    list.innerHTML = hbResultsHtml_((res.results || []).filter(function (r) { return r && kbIsManualId_(r.id); }), q);
+    var shown = (res.results || []).filter(function (r) { return r && kbIsManualId_(r.id); });
+    list.innerHTML = hbResultsHtml_(shown, q);
+    var side = main.querySelector('.hb-res-side'); if (side) side.innerHTML = hbResultsSideHtml_(shown);   // HBR2
     try { kbHighlightTerms_(list, q, res.terms); } catch (e) {}
   };
   google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: (err && err.message) || '' }); })
@@ -219,16 +243,57 @@ function hbSearch_(q, record) {
 /** The result rows: the section (its number as a chip), the part of it that
  *  matched, and a line of it. Router answers ("the caller said …") lead. */
 function hbResultsHtml_(results, q) {
-  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>';
+  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
+  // HBR2: the first result is the best match; every hit carries its chapter (colour, icon, name) and a key the filters use.
   return '<p class="hb-quiet">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
-    results.map(function (r) {
-      var t = kbManualSplitTitle_(r.title || '');
-      return '<button type="button" class="hb-hit" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+    results.map(function (r, i) {
+      var t = kbManualSplitTitle_(r.title || ''), ck = kbManualChapterKey_(r.department || ''), cp = kbManualChapterParts_(r.department || '');
+      return '<button type="button" class="hb-hit' + (i === 0 ? ' hb-hit-best' : '') + (ck ? ' kb-man-' + ck : '') + '" data-dept="' + esc(r.department || '') + '" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+        (i === 0 && results.length > 1 ? '<span class="hb-hit-best-l">Best match</span>' : '') +
+        (cp.name ? '<span class="hb-hit-crumb">' + kbManualChapterIcon_(r.department, 13, 'hb-hit-ic') + esc((cp.appendix ? 'Appendix ' + cp.num : cp.num ? 'Chapter ' + Number(cp.num) : '') + (cp.num ? ' · ' : '') + cp.name) + '</span>' : '') +
         '<span class="hb-hit-t">' + (t.num ? '<span class="hb-hit-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</span>' +
         (r.heading ? '<span class="hb-hit-h">' + esc(r.heading) + '</span>' : '') +
         (r.router && r.chunkMd ? '<span class="hb-hit-s">' + esc(kbMdPlain_(r.chunkMd)) + '</span>' : (r.snippet ? '<span class="hb-hit-s">' + esc(r.snippet) + '</span>' : '')) +
         '</button>';
     }).join('');
+}
+
+/** HBR2 — beside the results: the chapters they come from, as filters with
+ *  counts, and "Didn't find it?". '' when there is nothing to narrow. */
+function hbResultsSideHtml_(results) {
+  if (!results.length) return '';
+  var counts = {}, order = [];
+  results.forEach(function (r) { var d = r.department || ''; if (!(d in counts)) { counts[d] = 0; order.push(d); } counts[d]++; });
+  order.sort(function (a, b) { return kbDeptCompare_(a, b); });
+  var btn = function (d, label, n, on) {
+    var ck = d ? kbManualChapterKey_(d) : '';
+    return '<button type="button" class="hb-res-f' + (ck ? ' kb-man-' + ck : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-dept="' + esc(d) + '" data-all="' + (d === null ? '1' : '') + '" onclick="hbFilterResults_(this)">' +
+      '<span class="hb-res-dot" aria-hidden="true"></span><span class="hb-res-l">' + esc(label) + '</span><span class="hb-res-n">' + n + '</span></button>';
+  };
+  return (order.length > 1 ? '<div class="hb-res-card"><div class="hb-res-h">Chapters</div>' + btn(null, 'All', results.length, true) +
+    order.map(function (d) { return btn(d, d ? kbManualChapterParts_(d).name : 'Other', counts[d], false); }).join('') + '</div>' : '') + hbSuggestTopicHtml_();
+}
+/** Show only one chapter's hits (or all again). */
+function hbFilterResults_(btn) {
+  var side = btn.closest('.hb-res-side'), main = hbMain_(); if (!side || !main) return;
+  var all = btn.getAttribute('data-all') === '1', dept = btn.getAttribute('data-dept');
+  side.querySelectorAll('.hb-res-f').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  main.querySelectorAll('.hb-results-list .hb-hit').forEach(function (h) { h.classList.toggle('hb-off', !all && h.getAttribute('data-dept') !== dept); });
+}
+function hbSuggestTopicHtml_() {
+  return '<div class="hb-res-card hb-res-ask"><div class="hb-res-h">Didn\u2019t find it?</div><p class="hb-quiet">Tell the handbook team what you were looking for, and they will add it.</p>' +
+    '<button type="button" class="kb-btn" onclick="hbSuggestTopic_()">Suggest a topic</button></div>';
+}
+/** Ask for the topic (never the search typed — it can carry a patient's name, F9) and send it. */
+function hbSuggestTopic_() {
+  uiPrompt({ title: 'Suggest a topic', message: 'What were you looking for? Describe the topic \u2014 no patient details.', placeholder: 'e.g. picking up an oxygen tank', confirmLabel: 'Send',
+    validator: function (v) { v = String(v || '').trim(); return !v ? 'Say what you were looking for.' : v.length > 200 ? 'Keep it under 200 characters.' : ''; } }).then(function (topic) {
+    if (topic == null) return;
+    google.script.run
+      .withSuccessHandler(function (r) { showToast(r && r.success ? 'Thanks \u2014 the handbook team will see it.' : 'Not sent: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', r && r.success ? 'success' : 'toast-error'); })
+      .withFailureHandler(function (e) { showToast('Not sent: ' + String((e && e.message) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); })
+      .hbRequestTopic(String(topic).trim());
+  });
 }
 
 // ── People (HB2.1) ────────────────────────────────────────────────────────
@@ -293,6 +358,7 @@ function hbApplyMe_(seq, me, parts) {
   hbPaintMeBtn_();
   var prompt = document.getElementById('hb-me-prompt');
   if (prompt) prompt.innerHTML = hbMePromptHtml_(me);
+  hbPatchHome_();   // HBR1: the greeting names the reader
   if (HB_PP.showing) {
     (parts || ['me', 'team', 'admin']).forEach(function (k) {
       if (k === 'me') hbPaintPeopleMe_(); else if (k === 'team') hbPaintPeopleTeam_(); else hbPaintPeopleAdmin_();
@@ -307,6 +373,24 @@ function hbPaintMeBtn_() {
   // stays "Profile" and its name — which carries the count — begins with it.
   if (b) { b.textContent = ''; b.setAttribute('data-n', badge); }
   if (btn) btn.setAttribute('aria-label', 'Profile' + (badge === '!' ? ' — needs your answer' : badge ? ' — ' + badge + ' waiting for you' : ''));
+  // HBR1: the reader's initials on the button, and the rail's user card.
+  var me = HB_ME && !HB_ME.error ? HB_ME : null;
+  var ini = me ? hbInitials_(me.name || me.email) : '';
+  // Drawn from data-ini (CSS), like the badge: the initials are no words in the button's name (label in name, HB2.4).
+  var ava = document.getElementById('hb-me-ava'); if (ava) { ava.innerHTML = ini ? '' : icon('user', 17); ava.setAttribute('data-ini', ini); }
+  var card = document.getElementById('hb-user');
+  if (card) {
+    var dept = (me && me.me && me.me.department) || hbLs_(HB_LS_DEPT) || '';
+    card.innerHTML = me ? '<span class="hb-ava" aria-hidden="true" data-ini="' + esc(ini) + '"></span><span class="hb-user-b"><span class="hb-user-n">' + esc(me.name || me.email) + '</span>' +
+      '<span class="hb-user-d">' + esc(dept ? kbManualChapterParts_(dept).name : 'No department chosen') + '</span></span>' : '';
+  }
+}
+/** PURE — a name's initials: the first letters of its first and last words
+ *  ("Jordan Reyes" → "JR"; an address uses the part before the @). */
+function hbInitials_(name) {
+  var w = String(name || '').split('@')[0].split(/[\s._-]+/).filter(function (x) { return /^[A-Za-z]/.test(x); });
+  if (!w.length) return '';
+  return (w[0].charAt(0) + (w.length > 1 ? w[w.length - 1].charAt(0) : '')).toUpperCase();
 }
 
 function hbGoPeople_() { hbPeople_(true); }
@@ -315,13 +399,16 @@ function hbPeople_(push) {
   hbLeaveSearch_(); hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;   // a chapter still loading must not paint over the view
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('');
   HB_PP.showing = true; HB_PP.dirty = false;
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-people"><section class="hb-pp" id="hb-pp-me"></section>' +
+    // HBR1: the chapter home shows first — this browser's choice — moved here from the bar.
+    '<section class="hb-pp" id="hb-pp-read"><h2 class="hb-pp-h2">Reading</h2><label class="hb-pp-l hb-dept">Chapter shown first on the home page' +
+    '<select id="hb-dept-sel" class="hb-pp-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select></label></section>' +
     '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-locks"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
   main.scrollTop = 0;
-  hbPaintPeopleMe_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_();
+  hbPaintPeopleMe_(); hbPaintDeptPicker_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_();
   if (push) { hbHistory_('push', { people: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
 }
 /** "Your profile" — the reader's department and manager. Not repainted while
@@ -515,6 +602,7 @@ function hbLoadQuizzes_(then) {
     // A failure never replaces a list that loaded (g129): the bar keeps it.
     if (!(res && res.error && HB_QZ.list && !HB_QZ.list.error)) HB_QZ.list = res;
     hbPaintQuizBar_(HB.currentId);
+    hbPaintCounts_();
     if (then) then(res);
   };
   google.script.run
@@ -529,13 +617,71 @@ function hbPaintQuizBar_(id) {
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
   var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
+  // HBR2: each quiz and form is one item, so a wide screen can leave them to the side column.
   bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
-    return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
+    return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button></span>';
   }).join('') + hbFormsFor_(id).map(function (f) {   // HB4.1: the forms this section offers
-    return '<span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button>';
+    return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></span>';
   }).join('');
+  hbPaintAside_(id, mine);
+}
+/** HBR2 — the side column beside a section (wide screens): its quizzes with where
+ *  the reader stands, its forms, the headings in it and what it refers to — all
+ *  from what the page already has (the quiz list, the form library, the section's
+ *  own rendered headings and cross-references). Follows the scroll-spy; empty
+ *  (and hidden) off a section. */
+function hbPaintAside_(id, quizzes) {
+  var aside = document.getElementById('hb-aside'), body = document.querySelector('.hb-body');
+  if (!aside) return;
+  var sec = id ? document.getElementById('kb-man-sec-' + id) : null;
+  if (!id || !sec) { aside.innerHTML = ''; if (body) body.classList.remove('hb-has-aside'); return; }
+  var item = HB.tree.filter(function (it) { return it.id === id; })[0];
+  var t = item ? kbManualSplitTitle_(item.title) : { num: '', rest: '' };
+  var heads = hbSectionHeads_(sec), refs = hbSectionRefs_(sec, id);
+  var forms = hbFormsFor_(id);
+  var html = '<div class="hb-as-k">This section</div><div class="hb-as-t">' + (t.num ? '<span class="hb-as-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</div>';
+  (quizzes || []).forEach(function (q) {
+    var me = q.me || {};
+    html += '<div class="hb-as-card"><div class="hb-as-h">' + icon('check', 14) + ' Quiz</div><div class="hb-as-ct">' + esc(q.title) + '</div>' + hbQuizChip_(q.me) +
+      '<button type="button" class="kb-btn hb-btn-pri" data-quiz="' + esc(q.id) + '"' + (me.locked ? ' disabled' : '') + ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' +
+      (me.locked ? 'Locked' : me.passed ? 'Take it again' : me.attempts ? 'Try again' : 'Take the quiz') + '</button></div>';
+  });
+  forms.forEach(function (f) {
+    html += '<div class="hb-as-card"><div class="hb-as-h">' + icon('fileText', 14) + ' Form</div><div class="hb-as-ct">' + esc(f.title) + '</div>' +
+      '<button type="button" class="kb-btn" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></div>';
+  });
+  if (heads.length) html += '<div class="hb-as-k">In this section</div><nav class="hb-as-toc" aria-label="In this section">' + heads.map(function (h) {
+    return '<button type="button" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(h.num) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))"><span class="hb-as-hn">' + esc(h.num) + '</span>' + esc(h.text) + '</button>';
+  }).join('') + '</nav>';
+  if (refs.length) html += '<div class="hb-as-k">See also</div><div class="hb-as-refs">' + refs.map(function (r) {
+    return '<button type="button" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' + icon('chevronRight', 12) + esc(r.text) + '</button>';
+  }).join('') + '</div>';
+  if (aside.innerHTML !== html) aside.innerHTML = html;
+  if (body) body.classList.add('hb-has-aside');
+}
+/** The numbered headings a section's article holds ("3.8.1 Incontinence supplies"). */
+function hbSectionHeads_(sec) {
+  var out = [];
+  sec.querySelectorAll('.kb-article h2, .kb-article h3').forEach(function (h) {
+    var m = /^\s*((?:\d+|[A-C])(?:\.\d+)+)\s+(.+?)\s*$/.exec(h.textContent || '');
+    if (m) out.push({ num: m[1], text: m[2] });
+  });
+  return out.slice(0, 12);
+}
+/** The other sections a section refers to — each section once (at its first link), in order, at most five. */
+function hbSectionRefs_(sec, id) {
+  var seen = {}, out = [];
+  sec.querySelectorAll('a.kb-xref[data-kb-id]').forEach(function (a) {
+    var rid = a.getAttribute('data-kb-id'), an = a.getAttribute('data-kb-anchor') || '';
+    if (!rid || rid === id || seen[rid] || out.length >= 5 || !HB.tree.some(function (it) { return it.id === rid; })) return;
+    seen[rid] = 1;   // a section once, at the first place it is named
+    // The link's own words are often a bare number ("6.2"); the section's title says what it is.
+    var it = HB.tree.filter(function (x) { return x.id === rid; })[0], tt = kbManualSplitTitle_(it.title);
+    out.push({ id: rid, anchor: an, text: (an && /^(?:\d+|[A-C])(?:\.\d+)+$/.test(an) ? an : tt.num) + ' ' + tt.rest });
+  });
+  return out;
 }
 /** Where a reader stands with a quiz, as a chip. */
 function hbQuizChip_(me) {
@@ -559,7 +705,7 @@ function hbQuizList_(push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('quizzes');
   HB_QZ.showing = 'list';
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-qz"><h1 class="hb-pp-h">Quizzes</h1><div id="hb-qz-body">' + loSweep() + '</div></div>';
@@ -633,7 +779,7 @@ function hbFormList_(push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('forms');
   HB_FM.showing = true;
   var seq = ++HB_FM.seq;
   var main = hbMain_(); if (!main) return;
@@ -794,7 +940,7 @@ function hbTakeQuiz_(id, push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('quizzes');
   HB_QZ.showing = 'take';
   var seq = HB_QZ.seq;
   var main = hbMain_(); if (!main) return;
@@ -953,7 +1099,7 @@ function hbTraining_(push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_(); hbLeaveTraining_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('training');
   HB_TR.showing = true;
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-tr"><section id="hb-tr-mine"><h1 class="hb-pp-h">My training</h1>' + loSweep() + '</section>' +
@@ -1241,6 +1387,7 @@ function hbLoadSignOffs_() {
       if (!r || r.error) return;   // a failure keeps what was loaded (g129); the bar simply offers the button
       HB_SO.setUp = r.setUp !== false; HB_SO.signoffs = r.signoffs || {};
       hbPaintQuizBar_(HB.currentId);
+      hbPaintCounts_(); hbPatchHome_();   // HBR1: the rail's shares, home's reading
     })
     .withFailureHandler(function () {})
     .hbMySignOffs();
@@ -1280,6 +1427,7 @@ function hbSignOff_(btn) {
       if (p.done === p.total) p.overdue = false;
     });
     hbPaintQuizBar_(HB.currentId);
+    hbPaintCounts_();   // HBR1: the rail's share and Training count follow it
     if (HB_TR.showing) hbPaintMine_();
   };
   google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done);
@@ -1531,7 +1679,7 @@ function hbSaved_(push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
-  hbMarkCurrent_(null); hbMarkHomeBtn_(false);
+  hbMarkCurrent_(null); hbMarkNav_('saved');
   HB_SV.showing = true;
   var main = hbMain_(); if (!main) return;
   main.innerHTML = '<div class="hb-tr hb-sv" id="hb-sv"></div>';
@@ -1879,20 +2027,23 @@ function hbChapterLabel_(dept) {
   if (p.appendix) return 'Appendix ' + p.num + ' · ' + p.name;
   return (p.num ? Number(p.num) + ' · ' : '') + p.name;
 }
+/** HBR1 — the rail's pages, and the phone's tabs: [key, label, icon, open]. */
+var HB_NAV = [['home', 'Home', 'grid', 'hbGoHome_'], ['quizzes', 'Quizzes', 'check', 'hbGoQuizzes_'], ['forms', 'Forms', 'fileText', 'hbGoForms_'],
+  ['training', 'Training', 'clipboardList', 'hbGoTraining_'], ['saved', 'Saved', 'star', 'hbGoSaved_']];
 function hbPaintToc_() {
   var host = document.getElementById('hb-toc'); if (!host) return;
   var depts = kbManualDepts_().list;
-  var html = '<button type="button" class="hb-toc-home" onclick="hbGoHome_()">' + icon('list', 14) + ' Home</button>' +
-    '<button type="button" class="hb-toc-quizzes" onclick="hbGoQuizzes_()">' + icon('check', 14) + ' Quizzes</button>' +   // HB3.2
-    '<button type="button" class="hb-toc-quizzes hb-toc-forms" onclick="hbGoForms_()">' + icon('fileText', 14) + ' Forms</button>' +   // HB4.1
-    '<button type="button" class="hb-toc-quizzes hb-toc-training" onclick="hbGoTraining_()">' + icon('clipboardList', 14) + ' Training</button>' +   // HB3.3
-    '<button type="button" class="hb-toc-quizzes hb-toc-saved" onclick="hbGoSaved_()">' + icon('star', 14) + ' Saved</button>';   // HB2.2
+  var cls = { home: 'hb-toc-home', quizzes: 'hb-toc-quizzes', forms: 'hb-toc-quizzes hb-toc-forms', training: 'hb-toc-quizzes hb-toc-training', saved: 'hb-toc-quizzes hb-toc-saved' };
+  var html = HB_NAV.map(function (n) {
+    return '<button type="button" class="hb-nav ' + cls[n[0]] + '" data-nav="' + n[0] + '" onclick="' + n[3] + '()">' + icon(n[2], 17) +
+      '<span class="hb-nav-l">' + n[1] + '</span><span class="hb-nav-n" data-count="' + n[0] + '"></span></button>';
+  }).join('') + '<div class="hb-side-h" aria-hidden="true">Chapters</div>';
   depts.forEach(function (dept) {
     var secs = HB.tree.filter(function (it) { return it.department === dept; });
     html += '<div class="hb-ch" data-dept="' + esc(dept) + '">' +
       '<button type="button" class="hb-ch-t" aria-expanded="false" onclick="hbToggleCh_(this)">' +
         '<span class="hb-caret">' + icon('chevronRight', 12) + '</span>' + kbManualChapterIcon_(dept, 15, 'hb-ch-ic') +
-        '<span class="hb-ch-n">' + esc(hbChapterLabel_(dept)) + '</span></button>' +
+        '<span class="hb-ch-n">' + esc(hbChapterLabel_(dept)) + '</span><span class="hb-ch-p" data-share="' + esc(dept) + '"></span></button>' +
       '<div class="hb-ch-list">' + secs.map(function (s) {
         var t = kbManualSplitTitle_(s.title);
         return '<button type="button" class="hb-it" data-kb-id="' + esc(s.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">' +
@@ -1901,6 +2052,53 @@ function hbPaintToc_() {
   });
   host.innerHTML = html;
   hbPaintTocNews_();
+  hbPaintCounts_();
+}
+/** PURE (Node-pinned) — how much of a chapter the reader has read: sections
+ *  signed off at their current version (a section changed since is unread
+ *  again), out of the chapter's sections. {read, total, pct}. */
+function hbReadShare_(sectionIds, signoffs) {
+  var read = (sectionIds || []).filter(function (id) { var so = signoffs && signoffs['section:' + id]; return so && so.state === 'signed'; }).length;
+  var total = (sectionIds || []).length;
+  return { read: read, total: total, pct: total ? Math.round(100 * read / total) : 0 };
+}
+/** The rail's counts and read shares — drawn as each source arrives; nothing
+ *  is said for a source that has not (or could not) load. */
+function hbPaintCounts_() {
+  var due = hbDueItems_();
+  var n = { quizzes: hbQuizzesOpen_(), training: due === null ? null : due.length };
+  document.querySelectorAll('[data-count]').forEach(function (el) {
+    var v = n[el.getAttribute('data-count')];
+    el.textContent = v ? String(v) : '';
+    if (v) el.setAttribute('title', el.getAttribute('data-count') === 'quizzes' ? v + ' not passed yet' : v + ' due for you'); else el.removeAttribute('title');
+  });
+  var on = HB_SO.setUp === true;
+  document.querySelectorAll('[data-share]').forEach(function (el) {
+    var dept = el.getAttribute('data-share');
+    var ids = HB.tree.filter(function (it) { return it.department === dept; }).map(function (it) { return it.id; });
+    var sh = on ? hbReadShare_(ids, HB_SO.signoffs) : null;
+    el.innerHTML = !sh ? '' : sh.pct === 100 ? icon('check', 12) : esc(sh.pct + '%');
+    if (sh) el.setAttribute('title', sh.read + ' of ' + sh.total + ' sections read'); else el.removeAttribute('title');
+  });
+}
+/** Official quizzes the reader has not passed (null until the list loads). */
+function hbQuizzesOpen_() {
+  var list = HB_QZ.list;
+  if (!list || list.error || list.setUp === false || !Array.isArray(list.quizzes)) return null;
+  return list.quizzes.filter(function (q) { return !(q.me && q.me.passed); }).length;
+}
+/** The page's chrome icons, and the phone's tabs. */
+function hbPaintChrome_() {
+  var put = function (id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; };
+  put('hb-menu', icon('list', 18));
+  put('hb-q-open', icon('search', 18));
+  put('hb-disp', icon('sun', 18));
+  var qi = document.querySelector('.hb-q-ic'); if (qi) qi.innerHTML = icon('search', 16);
+  var tabs = document.getElementById('hb-tabs');
+  if (tabs) tabs.innerHTML = [HB_NAV[0], ['search', 'Search', 'search', 'hbOpenSearch_'], HB_NAV[1], HB_NAV[3], HB_NAV[4]].map(function (n) {
+    return '<button type="button" class="hb-tab" data-nav="' + n[0] + '" onclick="' + n[3] + '()">' + icon(n[2], 20) + '<span>' + n[1] + '</span></button>';
+  }).join('');
+  hbPaintMeBtn_();
 }
 function hbToggleCh_(btn) {
   var box = btn.closest('.hb-ch'); if (!box) return;
@@ -1942,9 +2140,17 @@ function hbMarkCurrent_(id) {
     } else b.removeAttribute('aria-current');
   });
 }
-function hbMarkHomeBtn_(on) {
-  var b = document.querySelector('#hb-toc .hb-toc-home');
-  if (b) b.classList.toggle('on', !!on);
+/** HBR1 — which page is showing, on the rail's nav and the phone's tabs
+ *  (aria-current), and home's own look: the page's paper behind its cards, the
+ *  bar's search hidden while home's larger one is on screen. */
+function hbMarkNav_(key) {
+  document.querySelectorAll('[data-nav]').forEach(function (b) {
+    var on = !!key && b.getAttribute('data-nav') === key;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  var main = hbMain_(); if (main) main.classList.toggle('hb-on-home', key === 'home');
+  var head = document.querySelector('.hb-head'); if (head) head.classList.toggle('hb-on-home-bar', key === 'home');
 }
 /** Keep the current row in view by scrolling the CONTENTS panel — never
  *  scrollIntoView, which can scroll the page inside the HtmlService frame. */
@@ -1997,45 +2203,309 @@ function hbNewsNow_() {
   var meta = MANUAL_STATE.manualMeta || {};
   return hbNews_(meta.changelog, visible, HB_SINCE || '', hbIsoDay_(new Date()), HB_NEWS_FIRST_DAYS, HB_NEWS_MAX);
 }
+// HBR1 (operator 2026-11-02, docs/design_handoff_handbook_refresh/): home is a
+// hero — the greeting, "What's the caller asking about?", a large search and the
+// call router's openings — beside the shelf; then Continue reading and Due for
+// you, what changed (only when something did), and the chapters as tiles, the
+// reader's department first. Everything that arrives late patches its own box
+// (hbPatchHome_), never the whole page: the hero's search may hold typing (g141).
+var HB_SHELF = { res: undefined, view: 'calls', chosen: false };
 function hbHomeHtml_() {
-  var meta = MANUAL_STATE.manualMeta;
+  return '<div class="hb-home">' +
+    '<section class="hb-hero" aria-labelledby="hb-hero-h"><div class="hb-hero-l">' +
+      '<div class="hb-hero-k" id="hb-hero-k">' + esc(hbGreeting_(new Date(), HB_ME && !HB_ME.error ? HB_ME.name : '')) + '</div>' +
+      '<h1 id="hb-hero-h">What’s the caller asking about?</h1>' +
+      '<p class="hb-hero-p">Start from the call — the handbook takes you to the section.</p>' +
+      '<div class="hb-hero-q"><span class="hb-q-ic" aria-hidden="true">' + icon('search', 18) + '</span>' +
+        '<input type="search" id="hb-hero-q" class="hb-q" placeholder="Search policies, procedures, HCPCS codes…" aria-label="Search the handbook" autocomplete="off" ' +
+        'oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)"></div>' +
+      '<div class="hb-chips" id="hb-chips">' + hbChipsHtml_() + '</div>' +
+    '</div><div class="hb-shelf" id="hb-shelf">' + hbShelfHtml_() + '</div></section>' +
+    '<div id="hb-me-prompt">' + hbMePromptHtml_(HB_ME) + '</div>' +
+    '<div class="hb-home-two"><section class="hb-hc" id="hb-cont" aria-label="Continue reading">' + hbContinueHtml_() + '</section>' +
+      '<section class="hb-hc" id="hb-due" aria-label="Due for you">' + hbDueHtml_() + '</section></div>' +
+    '<div id="hb-news-host">' + hbNewsHtml_() + '</div>' +
+    '<section aria-labelledby="hb-ch-h"><div class="hb-sec-h"><h2 id="hb-ch-h">Chapters</h2><span>' + (hbMyDept_() ? 'Your department first' : 'Choose your department in your profile to see its chapter first') + '</span></div>' +
+      '<div class="hb-cards" id="hb-tiles">' + hbTilesHtml_() + '</div></section>' +
+  '</div>';
+}
+/** Repaint the boxes of home that late answers feed — never the hero's search. */
+function hbPatchHome_() {
+  if (!HB.landing || !document.querySelector('.hb-home')) return;
+  var put = function (id, html) { var el = document.getElementById(id); if (el && el.innerHTML !== html) el.innerHTML = html; };
+  var k = document.getElementById('hb-hero-k'); if (k) k.textContent = hbGreeting_(new Date(), HB_ME && !HB_ME.error ? HB_ME.name : '');
+  put('hb-chips', hbChipsHtml_());
+  put('hb-shelf', hbShelfHtml_());
+  put('hb-cont', hbContinueHtml_());
+  put('hb-due', hbDueHtml_());
+  put('hb-news-host', hbNewsHtml_());
+  put('hb-tiles', hbTilesHtml_());
+}
+function hbMyDept_() {
   var mine = hbLs_(HB_LS_DEPT) || '';
-  var d = kbManualDepts_();
-  if (d.list.indexOf(mine) < 0) mine = '';
-  var html = '<div class="hb-home"><div><h1>Policies and Procedures Handbook</h1>' +
-    '<div class="hb-home-sub">' + (meta && meta.version ? esc(meta.version) + (meta.built ? ' · built ' + esc(meta.built) : '') : '') + '</div></div>' +
-    '<div id="hb-me-prompt">' + hbMePromptHtml_(HB_ME) + '</div>';
-  // What's new — since the last visit, or the last month on a first one.
-  if (meta === undefined) html += '<section><h2>What\'s new</h2><div class="hb-quiet">' + loSweep() + '</div></section>';
-  else if (meta) {
-    var n = hbNewsNow_();
-    html += '<section><h2>' + (HB_SINCE ? 'New since your last visit (' + esc(kbManualDateLabel_(HB_SINCE)) + ')' : 'Changed in the last ' + HB_NEWS_FIRST_DAYS + ' days') + '</h2>';
-    if (!n.items.length) html += '<div class="hb-quiet">Nothing has changed' + (HB_SINCE ? ' since then.' : '.') + '</div>';
-    else {
-      html += '<div class="hb-news">' + n.items.map(function (it) {
-        return '<button type="button" class="hb-news-row" data-kb-id="' + esc(it.id) + '" data-kb-anchor="' + esc(it.anchor) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
-          '<span class="hb-news-num">' + esc(it.num) + '</span><span class="hb-news-sum">' + esc(it.summary) +
-          (it.retraining ? ' <span class="hb-retrain">Retraining</span>' : '') + '</span>' +
-          '<span class="hb-news-date">' + esc(kbManualDateLabel_(it.date)) + '</span></button>';
-      }).join('') + '</div>';
-      if (n.total > n.items.length) html += '<div class="hb-quiet">and ' + (n.total - n.items.length) + ' more.</div>';
-    }
-    html += '</section>';
+  return kbManualDepts_().list.indexOf(mine) >= 0 ? mine : '';
+}
+/** PURE — "Good afternoon, Jordan" (the first name; none without one). */
+function hbGreeting_(d, name) {
+  var h = d.getHours();
+  var first = String(name || '').trim().split(/\s+/)[0] || '';
+  return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first : '');
+}
+/** The call router's openings: the first question of each group, up to five,
+ *  each opening the section its answer leads with. */
+function hbChipsHtml_() {
+  var meta = MANUAL_STATE.manualMeta;
+  if (!meta || !Array.isArray(meta.router) || !HB.tree.length) return '';
+  var vis = {}; HB.tree.forEach(function (it) { vis[it.id] = 1; });
+  var seen = {}, chips = [];
+  meta.router.forEach(function (r) {
+    if (chips.length >= 5 || !r || seen[r.g]) return;
+    var t = (r.t || []).filter(function (x) { return x && vis[x.id]; })[0];
+    if (!t) return;
+    seen[r.g] = 1;
+    chips.push('<button type="button" class="hb-chip" data-kb-id="' + esc(t.id) + '" data-kb-anchor="' + esc(t.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">“' + esc(r.q) + '”</button>');
+  });
+  return chips.join('');
+}
+
+// ── The shelf ──────────────────────────────────────────────────────────────
+/** PURE — a chapter's short name for its spine: the part before " & "
+ *  ("Respiratory & Resupply" → "Respiratory"). */
+function hbSpineName_(name) { return String(name || '').split(' & ')[0]; }
+/** The chapters on the shelf (appendices are not books on it): their
+ *  department, number, short name and the chapter key the lookups carry. */
+function hbShelfChapters_() {
+  return kbManualDepts_().list.filter(function (d) { return !kbManualChapterParts_(d).appendix; }).map(function (d) {
+    var p = kbManualChapterParts_(d), first = HB.tree.filter(function (it) { return it.department === d; })[0];
+    var m = first ? /^man-([a-z0-9]+)-/.exec(first.id) : null;
+    return { dept: d, num: p.num ? String(Number(p.num)) : '', name: p.name, key: m ? m[1] : '', ids: HB.tree.filter(function (it) { return it.department === d; }).map(function (it) { return it.id; }) };
+  });
+}
+/** PURE (Node-pinned) — the shelf's books for a view. `calls`: each chapter's
+ *  lookups against the busiest (`res` is hbGetShelf's answer); `me`: the
+ *  reader's read share. Returns {books: [{key, pct, n, prev, top}], top, total}. */
+function hbShelfBooks_(chapters, view, res, signoffs) {
+  if (view === 'me') {
+    var all = 0, read = 0;
+    var books = chapters.map(function (c) { var sh = hbReadShare_(c.ids, signoffs); all += sh.total; read += sh.read; return { key: c.key, pct: sh.pct, read: sh.read, total: sh.total }; });
+    return { books: books, read: read, total: all, pct: all ? Math.round(100 * read / all) : 0 };
   }
-  var card = function (dept) {
-    var first = d.first(dept), count = HB.tree.filter(function (it) { return it.department === dept; }).length;
+  var ch = (res && res.chapters) || {};
+  var max = 0;
+  chapters.forEach(function (c) { var x = ch[c.key]; if (x && x.n > max) max = x.n; });
+  var top = null;
+  var out = chapters.map(function (c) {
+    var x = ch[c.key] || { n: 0, prev: 0, top: '' };
+    if (x.n && (!top || x.n > top.n)) top = { key: c.key, n: x.n };
+    return { key: c.key, pct: max ? Math.round(100 * x.n / max) : 0, n: x.n, prev: x.prev, top: x.top };
+  });
+  return { books: out, top: top ? top.key : '', total: (res && res.total) || 0 };
+}
+/** PURE — a change as words: "+18% on the 30 days before", "new this month", "no change". */
+function hbShelfDelta_(n, prev) {
+  if (!prev) return n ? 'new in these 30 days' : '';
+  var d = Math.round(100 * (n - prev) / prev);
+  return d === 0 ? 'no change on the 30 days before' : (d > 0 ? '↑ ' + d : '↓ ' + (-d)) + '% on the 30 days before';
+}
+function hbShelfHtml_() {
+  var chapters = hbShelfChapters_();
+  if (!chapters.length) return '';
+  var res = HB_SHELF.res, view = HB_SHELF.view;
+  var seg = '<span class="hb-seg" role="group" aria-label="What the shelf shows">' +
+    '<button type="button" aria-pressed="' + (view === 'calls') + '" onclick="hbShelfView_(\'calls\')">On calls</button>' +
+    '<button type="button" aria-pressed="' + (view === 'me') + '" onclick="hbShelfView_(\'me\')">My reading</button></span>';
+  var head = '<div class="hb-shelf-h"><span class="hb-shelf-k">' + (view === 'calls' ? 'On calls · 30 days' : 'My reading') + '</span>' + seg + '</div>';
+  var body;
+  if (view === 'calls') {
+    if (res === undefined) return head + '<div class="hb-shelf-msg">' + loSweep() + '</div>';
+    if (!res || res.error) return head + '<p class="hb-shelf-msg" role="status">The lookups on calls could not be loaded. My reading still works.</p>';
+    if (res.total < (res.floor || 0)) return head + '<p class="hb-shelf-msg" role="status">Not enough lookups on calls yet — ' + res.total + ' in the last 30 days. This fills in as the team opens the handbook during calls.</p>';
+    var b = hbShelfBooks_(chapters, 'calls', res, null);
+    var top = chapters.filter(function (c) { return c.key === b.top; })[0];
+    body = '<div class="hb-shelf-v">' + (top ? '<span class="hb-shelf-top kb-man-p' + esc(top.key) + '"><i></i>' + esc(top.name) + '</span>' : '') +
+      '<span class="hb-shelf-s">most looked up · ' + b.total.toLocaleString() + ' lookups</span></div>' +
+      hbBooksHtml_(chapters, b.books, 'calls', b.top) +
+      '<div class="hb-shelf-f">The whole team — the handbook opened during calls' + (res.truncated ? ' (the newest ' + HB_SHELF_ROWS_NOTE + ')' : '') + '</div>';
+  } else {
+    if (HB_SO.setUp === undefined) return head + '<div class="hb-shelf-msg">' + loSweep() + '</div>';
+    if (HB_SO.setUp === false) return head + '<p class="hb-shelf-msg" role="status">Your reading shows here once the handbook’s admin sets up profiles.</p>';
+    var m = hbShelfBooks_(chapters, 'me', null, HB_SO.signoffs);
+    body = '<div class="hb-shelf-v"><b>' + m.pct + '%</b><span class="hb-shelf-s">' + m.read + ' of ' + m.total + ' sections read</span></div>' +
+      hbBooksHtml_(chapters, m.books, 'me', hbMyDept_()) +
+      '<div class="hb-shelf-f">Sections you marked “I’ve read this” at their current version</div>';
+  }
+  return head + body;
+}
+var HB_SHELF_ROWS_NOTE = '100,000 lookups';
+/** The spines: each a button (its words are its name), the chapter's short
+ *  name up it, its hover-and-focus card, the number beneath. */
+function hbBooksHtml_(chapters, books, view, mark) {
+  var n = chapters.length;
+  return '<div class="hb-books">' + chapters.map(function (c, i) {
+    var b = books[i], h = 82 + ((Number(c.num) || i) * 7) % 19;
+    var label, tip;
+    if (view === 'calls') {
+      var sec = b.top ? HB.tree.filter(function (it) { return it.id === b.top; })[0] : null;
+      label = c.name + ': ' + b.n + ' lookups on calls' + (b.n && mark === c.key ? ', the most' : '');
+      tip = '<b>Chapter ' + esc(c.num) + ' · ' + esc(c.name) + '</b>' + b.n.toLocaleString() + ' lookups on calls' +
+        (b.n ? '<br>' + esc(hbShelfDelta_(b.n, b.prev)) : '') + (sec ? '<br>Top: ' + esc(sec.title) : '');
+    } else {
+      label = c.name + ': ' + b.read + ' of ' + b.total + ' sections read';
+      tip = '<b>Chapter ' + esc(c.num) + ' · ' + esc(c.name) + '</b>' + b.read + ' of ' + b.total + ' sections read';
+    }
+    var cls = 'hb-book kb-man-p' + esc(c.key) + (view === 'me' && mark === c.dept ? ' mine' : '') + (i >= n - 3 ? ' tip-r' : '');
+    return '<button type="button" class="' + cls + '" style="height:' + h + '%;--p:' + b.pct + '%" aria-label="' + esc(label) + '" data-kb-id="' + esc(c.ids[0] || '') + '" ' +
+      'onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
+      // The spine's words are drawn (data-*, CSS) — its name is its aria-label, which says all of it (axe: label in name).
+      (view === 'calls' && mark === c.key && b.n ? '<span class="hb-book-most" aria-hidden="true" data-t="Most"></span>' : '') +
+      '<span class="hb-book-nm" aria-hidden="true" data-t="' + esc(hbSpineName_(c.name)) + '"></span>' +
+      '<span class="hb-book-tip" aria-hidden="true">' + tip + '</span></button>';
+  }).join('') + '</div><div class="hb-book-nums" aria-hidden="true">' + chapters.map(function (c) { return '<span>' + esc(c.num) + '</span>'; }).join('') + '</div>';
+}
+function hbShelfView_(v) {
+  HB_SHELF.view = v === 'me' ? 'me' : 'calls'; HB_SHELF.chosen = true;
+  var el = document.getElementById('hb-shelf'); if (!el) return;
+  el.innerHTML = hbShelfHtml_();
+  var b = el.querySelector('.hb-seg button[aria-pressed="true"]'); if (b) b.focus();
+}
+function hbLoadShelf_() {
+  google.script.run
+    .withSuccessHandler(function (r) { hbTakeShelf_(r && typeof r === 'object' ? r : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { hbTakeShelf_({ error: (e && e.message) || 'The server did not answer.' }); })
+    .hbGetShelf();
+}
+/** The lookups arrive: too few, and the shelf opens on My reading instead —
+ *  unless the reader already chose. */
+function hbTakeShelf_(res) {
+  HB_SHELF.res = res;
+  if (!HB_SHELF.chosen && res && !res.error && res.total < (res.floor || 0)) HB_SHELF.view = 'me';
+  hbPatchHome_();
+}
+
+// ── Continue reading, and Due for you ─────────────────────────────────────
+/** PURE (Node-pinned) — the newest reading point (the reader's resume store,
+ *  one per chapter) under `days` old that names a section still here. */
+function hbContinue_(store, ids, now, days) {
+  var best = null;
+  Object.keys(store && typeof store === 'object' ? store : {}).forEach(function (dept) {
+    var e = store[dept];
+    if (!e || typeof e.id !== 'string' || (ids || []).indexOf(e.id) < 0) return;
+    var age = now - Number(e.at || 0);
+    if (!(age >= 0 && age < days * 86400000)) return;
+    if (!best || Number(e.at) > best.at) best = { dept: dept, id: e.id, h: typeof e.h === 'string' ? e.h : '', at: Number(e.at) };
+  });
+  return best;
+}
+function hbAgo_(ms) {
+  var d = Math.floor(ms / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago';
+}
+function hbContinueHtml_() {
+  var head = '<h2 class="hb-hc-h">Continue reading</h2>';
+  var ids = HB.tree.map(function (it) { return it.id; });
+  var c = hbContinue_((MANUAL_HOST.prefs() || {}).resume, ids, Date.now(), KB_RESUME_DAYS);
+  if (!c) return head + '<p class="hb-quiet">Nothing to pick up yet — open any chapter below and the handbook remembers where you were.</p>';
+  var sec = HB.tree.filter(function (it) { return it.id === c.id; })[0];
+  var p = kbManualChapterParts_(sec.department), t = kbManualSplitTitle_(sec.title);
+  var sh = HB_SO.setUp === true ? hbReadShare_(HB.tree.filter(function (it) { return it.department === sec.department; }).map(function (it) { return it.id; }), HB_SO.signoffs) : null;
+  var key = (/^man-([a-z0-9]+)-/.exec(c.id) || [])[1] || '';
+  return head + '<div class="hb-cont kb-man-p' + esc(key) + '">' +
+    '<span class="hb-cont-cover" aria-hidden="true">' + kbManualChapterIcon_(sec.department, 30, 'hb-cont-ic') + '</span>' +
+    '<div class="hb-cont-b"><div class="hb-cont-k">' + esc(p.appendix ? 'Appendix ' + p.num : 'Chapter ' + Number(p.num)) + ' · ' + esc(p.name) + ' · ' + esc(hbAgo_(Date.now() - c.at)) + '</div>' +
+      '<div class="hb-cont-t">' + (t.num ? '<span class="hb-cont-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</div>' +
+      '<div class="hb-cont-f">' + (sh ? '<span class="hb-bar" aria-hidden="true"><i style="width:' + sh.pct + '%"></i></span><span class="hb-quiet">' + sh.read + ' of ' + sh.total + ' read</span>' : '') +
+      '<button type="button" class="kb-btn hb-btn-pri" data-kb-id="' + esc(c.id) + '" data-kb-anchor="' + esc(c.h) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">Resume</button></div></div></div>';
+}
+/** PURE (Node-pinned) — what is due for the reader: sections changed since they
+ *  read them (signed off at an older version), then training plans not yet done
+ *  (overdue first, then by due date). null while neither source has answered. */
+function hbDueList_(mine, signoffs, soSetUp, tree) {
+  if ((!mine || mine.error) && soSetUp !== true) return null;
+  var out = [];
+  if (soSetUp === true) (tree || []).forEach(function (it) {
+    var so = signoffs && signoffs['section:' + it.id];
+    if (so && so.state === 'resign') out.push({ kind: 'reread', id: it.id, title: it.title });
+  });
+  var plans = mine && !mine.error && Array.isArray(mine.plans) ? mine.plans.filter(function (p) { return p.done < p.total; }) : [];
+  plans.sort(function (a, b) { return (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || String(a.due || '9999').localeCompare(String(b.due || '9999')); });
+  plans.forEach(function (p) { out.push({ kind: 'plan', title: p.title, done: p.done, total: p.total, due: p.due || '', overdue: !!p.overdue }); });
+  return out;
+}
+function hbDueItems_() { return hbDueList_(HB_TR.mine, HB_SO.signoffs, HB_SO.setUp, HB.tree); }
+function hbDueHtml_() {
+  var head = '<h2 class="hb-hc-h">Due for you</h2>';
+  var items = hbDueItems_();
+  if (items === null) {
+    if ((HB_TR.mine === undefined) || HB_SO.setUp === undefined) return head + loSweep();
+    return head + '<p class="hb-quiet">Training and sign-offs show here once the handbook’s admin sets up profiles.</p>';
+  }
+  if (!items.length) return head + '<p class="hb-quiet">Nothing is due — you’re up to date.</p>';
+  return head + '<ul class="hb-due">' + items.slice(0, 4).map(function (it) {
+    if (it.kind === 'reread') {
+      return '<li><button type="button" class="hb-due-row" data-kb-id="' + esc(it.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">' +
+        '<span class="hb-due-ic warn" aria-hidden="true">' + icon('warning', 17) + '</span><span class="hb-due-b"><b>Read ' + esc(it.title) + ' again</b><span class="hb-quiet">Changed since you read it</span></span>' +
+        '<span class="hb-due-w bad">Needed</span></button></li>';
+    }
+    return '<li><button type="button" class="hb-due-row" onclick="hbGoTraining_()"><span class="hb-due-ic" aria-hidden="true">' + icon('clipboardList', 17) + '</span>' +
+      '<span class="hb-due-b"><b>' + esc(it.title) + '</b><span class="hb-quiet">Training plan · ' + it.done + ' of ' + it.total + ' done</span></span>' +
+      '<span class="hb-due-w' + (it.overdue ? ' bad' : '') + '">' + esc(it.overdue ? 'Overdue' : it.due ? 'Due ' + hbDueLabel_(it.due) : '') + '</span></button></li>';
+  }).join('') + '</ul>' + (items.length > 4 ? '<button type="button" class="kb-btn" onclick="hbGoTraining_()">All ' + items.length + '</button>' : '');
+}
+/** Training plans for Due for you and the rail's count — read once at the start;
+ *  a failure never replaces a list that loaded (g129). */
+function hbLoadDue_() {
+  google.script.run
+    .withSuccessHandler(function (r) { hbTakeDue_(r && typeof r === 'object' ? r : { error: 'The server did not answer.' }); })
+    .withFailureHandler(function (e) { hbTakeDue_({ error: (e && e.message) || 'The server did not answer.' }); })
+    .hbMyTraining();
+}
+function hbTakeDue_(res) {
+  if (res && res.error && HB_TR.mine && !HB_TR.mine.error) return;
+  HB_TR.mine = res;
+  hbPaintCounts_(); hbPatchHome_();
+}
+
+// ── What changed ──────────────────────────────────────────────────────────
+/** Since the last visit (the last month on a first one) — said only when
+ *  something changed; nothing at all while the meta loads. */
+function hbNewsHtml_() {
+  var meta = MANUAL_STATE.manualMeta;
+  if (!meta || !HB.tree.length) return '';
+  var n = hbNewsNow_();
+  if (!n.items.length) return '';
+  return '<section aria-labelledby="hb-news-h"><div class="hb-sec-h"><h2 id="hb-news-h">' + (HB_SINCE ? 'New since your last visit' : 'Recently changed') + '</h2><span>' +
+    esc(HB_SINCE ? kbManualDateLabel_(HB_SINCE) : 'the last ' + HB_NEWS_FIRST_DAYS + ' days') + '</span></div>' +
+    '<div class="hb-news">' + n.items.map(function (it) {
+      var key = (/^man-([a-z0-9]+)-/.exec(it.id) || [])[1] || '';
+      return '<button type="button" class="hb-news-row kb-man-p' + esc(key) + '" data-kb-id="' + esc(it.id) + '" data-kb-anchor="' + esc(it.anchor) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+        '<span class="hb-news-num">' + esc(it.num) + '</span><span class="hb-news-sum">' + esc(it.summary) +
+        (it.retraining ? ' <span class="hb-retrain">Retraining</span>' : '') + '</span>' +
+        '<span class="hb-news-date">' + esc(kbManualDateLabel_(it.date)) + '</span></button>';
+    }).join('') + '</div>' + (n.total > n.items.length ? '<div class="hb-quiet">and ' + (n.total - n.items.length) + ' more.</div>' : '') + '</section>';
+}
+
+// ── The chapters ──────────────────────────────────────────────────────────
+/** The tiles: the reader's department first and wide; each with its read share
+ *  (when sign-offs are on) and its quiz once passed. */
+function hbTilesHtml_() {
+  var d = kbManualDepts_(), mine = hbMyDept_();
+  var order = (mine ? [mine] : []).concat(d.list.filter(function (x) { return x !== mine; }));
+  var quizzes = HB_QZ.list && !HB_QZ.list.error && Array.isArray(HB_QZ.list.quizzes) ? HB_QZ.list.quizzes : [];
+  var deptOf = {}; HB.tree.forEach(function (it) { deptOf[it.id] = it.department; });
+  return order.map(function (dept) {
+    var first = d.first(dept), secs = HB.tree.filter(function (it) { return it.department === dept; });
     var p = kbManualChapterParts_(dept);
-    return '<button type="button" class="hb-card' + (dept === mine ? ' mine' : '') + '" data-kb-id="' + esc(first) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
-      kbManualChapterIcon_(dept, 22, 'hb-card-ic') +
-      '<span class="hb-card-b"><span class="hb-card-k">' + esc(p.appendix ? 'Appendix ' + p.num : (p.num ? 'Chapter ' + Number(p.num) : '')) + '</span>' +
-      '<span class="hb-card-t">' + esc(p.name) + '</span>' +
-      '<span class="hb-card-c">' + count + (count === 1 ? ' section' : ' sections') + '</span></span></button>';
-  };
-  if (mine) html += '<section><h2>Your department</h2><div class="hb-cards">' + card(mine) + '</div></section>';
-  html += '<section><h2>' + (mine ? 'All chapters' : 'Chapters') + '</h2><div class="hb-cards">' +
-    d.list.filter(function (x) { return x !== mine; }).map(card).join('') + '</div></section>';
-  if (!mine) html += '<div class="hb-quiet">Choose your department at the top to see its chapter first.</div>';
-  return html + '</div>';
+    var sh = HB_SO.setUp === true ? hbReadShare_(secs.map(function (it) { return it.id; }), HB_SO.signoffs) : null;
+    var passed = quizzes.some(function (q) { return deptOf[q.section] === dept && q.me && q.me.passed; });
+    var tag = dept === mine ? '<span class="hb-card-tag">Your department</span>' : passed ? '<span class="hb-card-tag ok">' + icon('check', 11) + ' Quiz passed</span>' : '';
+    var ck = kbManualChapterKey_(dept);
+    return '<button type="button" class="hb-card' + (ck ? ' kb-man-' + ck : '') + (dept === mine ? ' mine' : '') + '" data-n="' + esc(p.appendix ? p.num : String(Number(p.num))) + '" data-kb-id="' + esc(first) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
+      tag + '<span class="hb-card-ic" aria-hidden="true">' + (ck ? icon(KB_MANUAL_CHAPTER_ICONS[ck], 20) : icon('list', 20)) + '</span>' +
+      '<span class="hb-card-b"><span class="hb-card-k">' + esc(p.appendix ? 'Appendix ' + p.num : (p.num ? 'Chapter ' + Number(p.num) : '')) + ' · ' + secs.length + (secs.length === 1 ? ' section' : ' sections') + '</span>' +
+      '<span class="hb-card-t">' + esc(p.name) + '</span></span>' +
+      (sh ? '<span class="hb-card-f"><span class="hb-bar" aria-hidden="true"><i style="width:' + sh.pct + '%"></i></span><span class="hb-card-c">' + (sh.pct === 100 ? 'All read' : sh.pct + '% read') + '</span></span>' : '') +
+      '</button>';
+  }).join('');
 }
 function hbPaintDeptPicker_() {
   var sel = document.getElementById('hb-dept-sel'); if (!sel) return;
@@ -2047,6 +2517,7 @@ function hbPaintDeptPicker_() {
 }
 function hbSetDept_(dept) {
   hbLsSet_(HB_LS_DEPT, dept || '');
+  hbPaintMeBtn_();   // the rail's user card names it
   if (HB.landing) hbHome_(false);
 }
 function hbMsg_(msg, bad) {
@@ -2100,7 +2571,10 @@ function hbBoot_() {
     if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_(true);
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
+  hbPaintChrome_();   // HBR1: the bar's icons and the phone's tabs
   hbLoadMe_();
+  hbLoadShelf_();     // HBR1: home's shelf — the team's lookups on calls
+  hbLoadDue_();       // HBR1: Due for you, and the rail's Training count
   hbLoadQuizzes_();   // HB3.2: the quiz bar needs to know which sections have one
   hbLoadForms_();     // HB4.1: and which offer a form
   hbLoadSignOffs_();  // HB3.4: and the bar's sign-off, the reader's own
@@ -2115,7 +2589,8 @@ function hbBoot_() {
   var main = hbMain_(); if (main) main.innerHTML = '<div class="hb-msg">' + loSweep() + '</div>';
   kbEnsureManualMeta_(function () {
     hbPaintVer_();
-    if (HB.tree.length && HB.landing && HB.currentId === null) hbHome_(false);
+    if (document.querySelector('.hb-home')) hbPatchHome_();   // HBR1: patched, never redrawn — home's search may hold typing (g141)
+    else if (HB.tree.length && HB.landing && HB.currentId === null) hbHome_(false);
     hbPaintTocNews_();
   });
   var kept, stamp, started = false;

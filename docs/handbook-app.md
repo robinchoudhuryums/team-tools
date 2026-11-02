@@ -9,21 +9,46 @@ under the "handbook app" entries.
 
 ## What a reader gets
 
-- **Home** — the version, *what changed since your last visit* (published
-  sections only; a first visit shows the last 30 days), your department's
-  chapter first (chosen in the header, remembered in that browser), then every
-  chapter.
-- **Contents** on the left (a **Contents** button on a phone), with a dot on any
+- **The frame** (HBR1, 2026-11-02 — the design handoff in
+  `docs/design_handoff_handbook_refresh/`) is Team Tools': a light rail with the
+  brand, the pages (Home, Quizzes, Forms, Training, Saved — Quizzes counts the
+  quizzes not passed, Training what is due), a *Chapters* list with each
+  chapter's read share, and the reader's card at its foot; a slim bar with the
+  search, **Display** and the **Profile** initials (the badge on its corner). On
+  a phone the bar is one row (menu, brand, search, profile) and a tab bar runs
+  along the foot.
+- **Home** (HBR1) — *"What's the caller asking about?"*: a greeting, a large
+  search, the call router's openings, and **the shelf** — the chapters as book
+  spines, each named up its spine. **On calls** (the default) fills each spine
+  with the team's handbook lookups during calls over the last 30 days, against
+  the busiest; hovering or focusing a spine shows its count, the change on the 30
+  days before and its most-opened section. **My reading** fills each with the
+  reader's sections signed off at their current version. Fewer than 50 lookups in
+  30 days opens on My reading and says why. Below: **Continue reading** (the
+  newest reading point this week), **Due for you** (sections changed since you
+  read them, then unfinished plans, overdue first), *what changed since your last
+  visit* only when something did, and the chapters as tiles — your department's
+  first (chosen on **Profile**, remembered in that browser).
+- **Contents** on the rail (the menu button on a phone), with a dot on any
   section changed since the last visit.
 - **The reader** — Team Tools' own: chapter mastheads, the reader bar, quick
-  cards, slideshows, diagrams, cross-references, printing.
-- **Search** in the header — a section number (`6.9.3`, `card 4`) jumps
-  straight to it; anything else lists the matching sections. Back returns to
-  the results.
+  cards, slideshows, diagrams, cross-references, printing. Since HBR2 the app
+  dresses it on its own side (Team Tools is untouched): a chapter's masthead is a
+  banner in its colour with its number faint behind, section heads carry a
+  chapter-colour rule, the tools above a section are a white toolbar (*I've read
+  this* first, each quiz and form one pill; one scrolling row on a phone), and
+  at width a side column follows the section in view — its quiz with where you
+  stand, its forms, its numbered headings and the sections it refers to. The
+  reader's own ‹ › and the card at a chapter's end are previous and next.
+- **Search** in the bar (home's own box hands over to it as you type) — a section number (`6.9.3`, `card 4`) jumps
+  straight to it; anything else is a results page (HBR2): the best match first,
+  each hit under its chapter, chapter filters with counts when the hits span
+  more than one, and *Didn't find it?* → **Suggest a topic**, which reaches Team
+  Tools' content-request queue. Back returns to the results.
 - **Section links** — `<app URL>?s=6.9.3` opens 6.9.3. Every section opened
   updates the address bar, and Back / Forward work.
 - **Feedback** in the reader bar — helpful / not helpful, and *Suggest an edit*.
-- **Profile** in the header (HB2.1) — the reader's department and manager. A
+- **Profile** in the bar (HB2.1) — the reader's department and manager. A
   first visit is asked for both on the home page; the manager confirms. A
   manager sees *Your team* there; the admin also sees the managers and
   everyone. See [People](#people).
@@ -69,7 +94,16 @@ It runs as the deployer, so readers need no access to the spreadsheet. It reads
 the KB spreadsheet named by its `HANDBOOK_KB_SS_ID` Script Property (the same
 spreadsheet as Team Tools' `KB_SS_ID`): the KB tab (published `man-…` sections
 only — nobody is an admin here), ManualMeta, ManualImages, KbImages, OopPricing
-(for search's HCPCS vocabulary) and **KbSearchConfig**.
+(for search's HCPCS vocabulary), **KbSearchConfig** and, since HBR1,
+**KbViews** — Team Tools' record of every handbook open, `[Timestamp, ItemId,
+RepId, Context]`. Home's shelf (`hbGetShelf`) counts the opens from Team
+Tools' reference drawer (`drawer:<view>` — the mid-call lookup) of handbook
+sections, per chapter, for the last 30 days and the 30 before. It reads the tab
+back from its newest row a chunk at a time until it passes 60 days (by date,
+never a row count — g152), reads coerced Dates in the sheet's own timezone,
+never uses the rep column (a team total), caches the answer an hour, and never
+caches a failure. The app has no record of what kind of call came in; the page
+says *most looked up on calls*, never *most calls*.
 
 It **writes** by `appendRow` only — an atomic append, because the two
 projects' ScriptLocks do not exclude each other:
@@ -78,6 +112,7 @@ projects' ScriptLocks do not exclude each other:
 |---|---|---|
 | `KbFeedback` | A reader's vote, out-of-date flag or suggested edit: `[time, section, '', reader's address, kind, note]` — checked by Team Tools' own `kbFeedbackEntry_` | Admin → Reference → Handbook → Export feedback (the worklist by source file) |
 | `KbSearchSignalHb` | The vocabulary terms its searches contained — no person, once per person per term per window (Team Tools' plan) | Admin → Reference's search signal, beside `KbSearchSignal`; the nightly purge keeps 90 days of both |
+| `KbContentRequests` (HBR2) | A topic the reader asked for from the search page's *Didn't find it?* — Team Tools' row shape, the reader by address, the topic as text, never the search typed (F9) | Team Tools' Reference content-request queue, beside its own reps' requests |
 
 **KbSearchConfig** is Team Tools' mirror of two settings that live in its
 Script Properties, which this project cannot read: the search synonyms and the
@@ -162,7 +197,7 @@ headers — a row that will not read is counted and skipped).
 
 ## Display and read aloud (HB2.3)
 
-- **Display** in the header opens the reader's display settings: text size
+- **Display** in the bar opens the reader's display settings: text size
   (Default, Large, Larger, Largest), line spacing (Default, Relaxed, Wide),
   **High contrast**, an **easier-reading font** (Atkinson Hyperlegible,
   downloaded only once it is chosen) and **Reduce motion** (always on anyway
@@ -314,10 +349,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate, and every one
