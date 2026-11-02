@@ -376,6 +376,19 @@ const CONFIG = {
       'Changing suppliers', 'Dissatisfied with services', 'Due to cost',
       'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request',
     ],
+    // Batch B (operator 2026-11-02): the TAG a department email adds to its note
+    // when it is sent (cnEmailToolTag_). Close Order is tagged PER REASON — the
+    // operator asked for that — through this map, because a tag is 2–24
+    // characters (sanitizeTagsArray_) and "close-dissatisfied-with-services"
+    // would not fit; a typed ("Other") or legacy reason is `close-other`. Every
+    // reason above needs an entry (a pin checks); keep the tags ≤ 24 characters.
+    CLOSE_REASON_TAGS: {
+      'Changing suppliers': 'close-change-supplier', 'Dissatisfied with services': 'close-dissatisfied',
+      'Due to cost': 'close-cost', 'Patient deceased': 'close-deceased', 'Insurance change': 'close-insurance',
+      'No longer needed': 'close-not-needed', 'Patient request': 'close-pt-request', 'Other': 'close-other',
+    },
+    // The other email tools, by updateInfoToSubformKey_'s key.
+    EMAIL_TOOL_TAGS: { shipping: 'ver-ship', resupply: 'resupply', oop: 'oop-order' },
     // Always offered alongside dept-specific suggestions
     UPDATE_SUGGESTIONS_DEFAULT: [
       'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',

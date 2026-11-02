@@ -746,7 +746,9 @@ function getCallNotesDepartments() {
       voiceInputEnabled: !!getFlag_('voiceInput'),
       emailTemplates: getEmailTemplates_(),
       externalLinks: getExternalLinks_(),
-      autoTagRules: getAutoTagRules_(),
+      // Batch B: an ARCHIVED tag is never auto-added — its rule stays in the
+      // admin editor, but a rep's browser is not sent it.
+      autoTagRules: cnRulesWithoutArchived_(getAutoTagRules_(), getArchivedTagsSet_()),
       flags: getClientFeatureFlags_(),
     };
   } catch (err) { return { error: err.message }; }
@@ -2554,6 +2556,7 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     const deptLabel = externalSendFailed
       ? selections.departments.filter(function (d) { return d !== 'Other'; }).join(', ')
       : selections.departments.join(', ');
+    let sentTags = null;   // Batch B: the note's tags after the send's tag, for the client's card
     try {
       sheet.getRange(located.rowIndex, CN.EMAILED_AT + 1, 1, 2)
         .setValues(sheetSafeRows_([[emailedAt, deptLabel]]));
@@ -2569,6 +2572,10 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
         const existingSub = (note.subformData && typeof note.subformData === 'object')
           ? note.subformData : {};
         const mergedSub = Object.assign({}, existingSub, selections);
+        // Batch B: the email tool's tag rides the same write (the X5 rule — tags
+        // live in subformData, no new column).
+        mergedSub.tags = cnTagsWithSendTag_(existingSub.tags, cnEmailToolTag_(selections), getArchivedTagsSet_());
+        sentTags = mergedSub.tags;
         sheet.getRange(located.rowIndex, CN.SUBFORM + 1, 1, 2).setValues(sheetSafeRows_([[
           updateInfoToSubformKey_(selections.updateInfo),
           JSON.stringify(mergedSub),
@@ -2639,11 +2646,11 @@ function emailFromCallNote(noteId, emailPayload, expectedBodyHash) {
     // would DUPLICATE it) with an explicit warning naming what failed. The
     // client surfaces `warning` as a warn toast.
     if (externalSendFailed) {
-      return { success: true, emailedAt, recipients: recipientList.internalTo, subject,
+      return { success: true, emailedAt, recipients: recipientList.internalTo, subject, tags: sentTags,
         warning: 'The department copy was sent, but the external/Other copy failed (' +
           externalSendFailed + '). Send to the external recipient separately — do NOT re-send the whole email (the department already has it).' };
     }
-    return { success: true, emailedAt, recipients: recipientList.to, subject };
+    return { success: true, emailedAt, recipients: recipientList.to, subject, tags: sentTags };
   } catch (err) { return { success: false, error: err.message }; }
   finally { lock.releaseLock(); }
 }
@@ -3121,6 +3128,32 @@ function buildCallNoteEmailText_(callData, selections, subject) {
   lines.push('');
   lines.push('— UMS Team Tools · Call Notes');
   return lines.join('\n');
+}
+/** Batch B (operator 2026-11-02) — PURE (Node-pinned): the tag a department
+ *  email adds to its note, '' for an update type that carries none. Close
+ *  Order: its reasonCode (a preset, or 'Other') through CLOSE_REASON_TAGS; a
+ *  legacy reason with no code is `close-other`. */
+function cnEmailToolTag_(selections, cfg) {
+  const c = cfg || CONFIG.CALL_NOTES;
+  const key = updateInfoToSubformKey_(selections && selections.updateInfo);
+  if (!key) return '';
+  if (key === 'close') {
+    const cd = (selections && selections.closeDetails) || {};
+    const code = String(cd.reasonCode || '').trim();
+    return (c.CLOSE_REASON_TAGS && c.CLOSE_REASON_TAGS[code]) || c.CLOSE_REASON_TAGS.Other;
+  }
+  return (c.EMAIL_TOOL_TAGS && c.EMAIL_TOOL_TAGS[key]) || '';
+}
+/** PURE — a note's tags with the send's tag added: never an archived tag,
+ *  never a ninth (sanitizeTagsArray_'s cap keeps the first eight). */
+function cnTagsWithSendTag_(tags, tag, archived) {
+  const have = Array.isArray(tags) ? tags : [];
+  if (!tag || (archived && archived[tag])) return sanitizeTagsArray_(have);
+  return sanitizeTagsArray_(have.concat([tag]));
+}
+/** PURE — the auto-tag rules a rep's browser gets: none whose tag is archived. */
+function cnRulesWithoutArchived_(rules, archived) {
+  return (rules || []).filter(function (r) { return r && !(archived && archived[String(r.tag || '').toLowerCase()]); });
 }
 function updateInfoToSubformKey_(updateInfo) {
   const t = String(updateInfo || '').toLowerCase();

@@ -503,6 +503,14 @@ lighter `--warn-fill`.
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 
+**Batch B (operator 2026-11-02):** a department email's send tags its note:
+- Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
+- OOP Order `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply
+  `resupply`.
+
+The 8-tag cap and the archived set hold. An archived tag's keyword rule is no
+longer sent to reps.
+
 ## Metrics
 
    - **Metrics** — CDR integration module that reads DQE Historical

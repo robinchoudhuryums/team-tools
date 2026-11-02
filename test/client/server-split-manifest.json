@@ -3641,6 +3641,22 @@
     "scratchpadSanitizeHtml_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Batch B: email-tool tags at send, and archived tags out of the reps' auto-tag rules",
+   "added": [
+    "cnEmailToolTag_",
+    "cnRulesWithoutArchived_",
+    "cnTagsWithSendTag_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "emailFromCallNote",
+    "getCallNotesDepartments"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4158,7 +4174,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b0403b358d5ed5b0"
+   "sha": "b5d4498aea7c83e4"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -7470,6 +7486,11 @@
    "kind": "function",
    "sha": "cefdb748ec3ea19a"
   },
+  "cnEmailToolTag_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "412d6ebef276c279"
+  },
   "cnEnrolledSheetId_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -7530,6 +7551,11 @@
    "kind": "function",
    "sha": "36e35b3cbeb7183d"
   },
+  "cnRulesWithoutArchived_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4b61c3187e91e36d"
+  },
   "cnTagAdminStartAudit_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -7544,6 +7570,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "541b0c684a0e4aa6"
+  },
+  "cnTagsWithSendTag_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "eda2bc90fb5d239f"
   },
   "cnTimestampString_": {
    "file": "30_callnotes.js",
@@ -8123,7 +8154,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "dfdccb969a5ee62e"
+   "sha": "33d5aa15e71790e1"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -8563,7 +8594,7 @@
   "getCallNotesDepartments": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "1da219a7f4f94233"
+   "sha": "7e923b02551a0b5b"
   },
   "getCallNotesEnrollment": {
    "file": "30_callnotes.js",

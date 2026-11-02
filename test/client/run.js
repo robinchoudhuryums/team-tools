@@ -10365,8 +10365,9 @@ test('auto-tag rules: sanitize-on-read mirrors the save validation (server)', ()
   assert.ok(/CN_AUTO_TAG_RULE_LIMIT/.test(save), 'rule count is bounded');
   // Shipped to reps beside the other composer config; admins get it in the editor.
   const code = serverSource();
-  assert.strictEqual((code.match(/autoTagRules: getAutoTagRules_\(\),/g) || []).length, 2,
-    'getCallNotesDepartments AND getAdminConfig both carry the rules');
+  assert.strictEqual((code.match(/autoTagRules: getAutoTagRules_\(\),/g) || []).length, 1, 'getAdminConfig carries every rule (the editor)');
+  assert.strictEqual((code.match(/autoTagRules: cnRulesWithoutArchived_\(getAutoTagRules_\(\), getArchivedTagsSet_\(\)\),/g) || []).length, 1,
+    'getCallNotesDepartments carries them too — less any whose tag is archived (Batch B)');
 });
 
 test('intake feedback loop: gated writer, existence check, PHI-free audit, CTA outside the hash', () => {
@@ -30356,6 +30357,49 @@ test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy pa
   rows.length = 0;
   const fresh = J(ctx.scratchpadPageOp('add', '', 'First extra'));
   assert.deepStrictEqual(fresh.pages.map((p) => p.id)[0], 'main', 'the legacy page exists before any other');
+});
+
+test('Batch B (operator 2026-11-02): a department email tags its note — Close Order per REASON, OOP Order oop-order, Verified Shipping ver-ship, Repeat Resupply resupply — never an archived tag, never a ninth; and a rep is never sent an archived tag\'s auto-tag rule (driven)', () => {
+  const src = serverSource();
+  const cfgSrc = /CLOSE_REASON_TAGS: (\{[\s\S]*?\}),\n/.exec(src);
+  const toolSrc = /EMAIL_TOOL_TAGS: (\{[^}]*\}),/.exec(src);
+  const reasonsSrc = /CLOSE_ORDER_REASONS: (\[[\s\S]*?\]),/.exec(src);
+  assert.ok(cfgSrc && toolSrc && reasonsSrc, 'the CONFIG maps are declared');
+  const CN_CFG = { CLOSE_REASON_TAGS: vm.runInNewContext('(' + cfgSrc[1] + ')'), EMAIL_TOOL_TAGS: vm.runInNewContext('(' + toolSrc[1] + ')') };
+  const reasons = vm.runInNewContext('(' + reasonsSrc[1] + ')');
+  const ctx = vm.createContext({ String, Array, CONFIG: { CALL_NOTES: CN_CFG } });
+  ['sanitizeTagsArray_', 'updateInfoToSubformKey_', 'cnEmailToolTag_', 'cnTagsWithSendTag_', 'cnRulesWithoutArchived_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  // Every preset reason has its own tag, and every tag passes the tag rule as written.
+  reasons.concat(['Other']).forEach((r) => {
+    const t = CN_CFG.CLOSE_REASON_TAGS[r];
+    assert.ok(t, r + ' has a tag');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.sanitizeTagsArray_([t]))), [t], t + ' survives sanitizeTagsArray_ unchanged (2–24, kebab)');
+  });
+  assert.strictEqual(new Set(Object.values(CN_CFG.CLOSE_REASON_TAGS)).size, Object.keys(CN_CFG.CLOSE_REASON_TAGS).length, 'one tag per reason');
+  const tag = (sel) => ctx.cnEmailToolTag_(sel);
+  assert.strictEqual(tag({ updateInfo: 'Close Order', closeDetails: { reason: 'Changing suppliers', reasonCode: 'Changing suppliers' } }), 'close-change-supplier', 'the operator\'s own example');
+  assert.strictEqual(tag({ updateInfo: 'Close Order', closeDetails: { reason: 'moved to Texas', reasonCode: 'Other' } }), 'close-other', 'a typed reason');
+  assert.strictEqual(tag({ updateInfo: 'Close Order', closeDetails: { reason: 'legacy free text' } }), 'close-other', 'a legacy reason with no code');
+  assert.strictEqual(tag({ updateInfo: 'OOP Order' }), 'oop-order');
+  assert.strictEqual(tag({ updateInfo: 'Verified Shipping' }), 'ver-ship');
+  assert.strictEqual(tag({ updateInfo: 'Repeat Resupply' }), 'resupply');
+  assert.strictEqual(tag({ updateInfo: 'Supervisor/Complaint' }), '', 'an update type with no tool adds nothing');
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(J(ctx.cnTagsWithSendTag_(['billing'], 'ver-ship', {})), ['billing', 'ver-ship']);
+  assert.deepStrictEqual(J(ctx.cnTagsWithSendTag_(['ver-ship'], 'ver-ship', {})), ['ver-ship'], 'a re-send never doubles it');
+  assert.deepStrictEqual(J(ctx.cnTagsWithSendTag_(['billing'], 'ver-ship', { 'ver-ship': true })), ['billing'], 'an archived tag is never added');
+  const eight = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'];
+  assert.deepStrictEqual(J(ctx.cnTagsWithSendTag_(eight, 'ver-ship', {})), eight, 'never a ninth tag');
+  assert.deepStrictEqual(J(ctx.cnRulesWithoutArchived_([{ tag: 'oop', keywords: ['x'] }, { tag: 'billing', keywords: ['y'] }], { oop: true })).map((r) => r.tag), ['billing'],
+    'a rep is never sent the rule of an archived tag');
+  // Wiring: the send writes the tags in the same subformData write and returns them.
+  const send = stripJsComments_(extractRawFunction('Code.js', 'emailFromCallNote'));
+  assert.ok(/mergedSub\.tags = cnTagsWithSendTag_\(existingSub\.tags, cnEmailToolTag_\(selections\), getArchivedTagsSet_\(\)\);/.test(send), 'the tag rides the subformData merge');
+  assert.ok(send.indexOf('mergedSub.tags =') < send.indexOf('JSON.stringify(mergedSub)'), 'before the write');
+  assert.strictEqual((send.match(/tags: sentTags/g) || []).length, 2, 'both success returns carry the tags');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/if \(Array\.isArray\(res\.tags\)\) sentNote\.subformData\.tags = res\.tags\.slice\(\);/.test(cn), 'the card shows the new tag without a reload');
 });
 
 test('B-2b: ONE drag helper — clamped to the viewport, pointer events, and both email composers use it (driven)', () => {

@@ -1510,6 +1510,21 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (admin-gated, INV-136) so a rejected save and a
   sanitized read can never disagree; rules ride `getCallNotesDepartments`
   (reps) + `getAdminConfig` (the editor). Pinned by the auto-tag Node pins.
+  **AMENDED (Batch B, operator 2026-11-02).**
+  - **Tags at send:** a department email's SEND tags its note, on the server,
+    in the same subformData write as the email's selections:
+    - Close Order is tagged per REASON through `CONFIG.CALL_NOTES.CLOSE_REASON_TAGS`
+      (`close-change-supplier`, `close-cost`, …; a typed or legacy reason is
+      `close-other`). A tag is 2–24 characters, which the reasons as words would
+      not fit.
+    - OOP Order is `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply
+      `resupply` (`EMAIL_TOOL_TAGS`).
+  - **Limits:** the 8-tag cap holds (an eighth tag is never displaced), and an
+    archived tag is never added. The send returns the tags, so the card shows
+    them at once.
+  - **Archived rules:** a rep's browser is no longer sent the auto-tag rule of
+    an ARCHIVED tag (`cnRulesWithoutArchived_`). Archiving a tag used to hide it
+    from suggestions while its rule kept adding it.
 - <a id="intake-recommendation-feedback-operator-2026-08-13"></a>**Intake recommendation feedback (operator 2026-08-13).** Every intake email
   (PPD/PMD/PAP) carries a "Send feedback on this recommendation" button — an
   email client can't host a live comment box (most strip forms), so the button

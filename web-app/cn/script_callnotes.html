@@ -8459,6 +8459,8 @@ function cnComposerSend_() {
         emailKeys.forEach(function (k) {
           if (c.selections[k] !== undefined) sentNote.subformData[k] = c.selections[k];
         });
+        // Batch B: the send added its tool's tag on the server — the card shows it now.
+        if (Array.isArray(res.tags)) sentNote.subformData.tags = res.tags.slice();
         cnReplaceNoteInState_(sentNote);
       }
       // Save & Compose transaction completes on SEND: clear the form now

@@ -3401,3 +3401,17 @@ per-change detail. By delta:
 - **Visual** — the cn-scratchpad scenarios measure clean with the page bar and
   the wider toolbar.
 
+## Operator round 2026-11-02, Batch B — email-tool tags (2026-11-02)
+
+- **Pure** — a driven pin:
+  - every Close Order reason (and Other) has its own tag, each surviving
+    `sanitizeTagsArray_` unchanged;
+  - the tool tags by update type, and none for a type without a tool;
+  - no double tag, no archived tag, no ninth tag;
+  - the reps' rule list without archived tags;
+  - wiring: the tag rides the subformData merge before the write, both success
+    returns carry the tags, and the card mirrors them.
+
+  The auto-tag delivery pin now reads the filtered line for reps and the full
+  one for the admin editor.
+

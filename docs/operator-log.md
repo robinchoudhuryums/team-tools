@@ -10,6 +10,32 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch B (email-tool tags)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+Sending a department email now tags its note automatically:
+- **Close Order:** a tag for each reason:
+
+  | Reason | Tag |
+  |---|---|
+  | Changing suppliers | `close-change-supplier` |
+  | Dissatisfied with services | `close-dissatisfied` |
+  | Due to cost | `close-cost` |
+  | Patient deceased | `close-deceased` |
+  | Insurance change | `close-insurance` |
+  | No longer needed | `close-not-needed` |
+  | Patient request | `close-pt-request` |
+  | Other (typed) | `close-other` |
+
+- **OOP Order** `oop-order`, **Verified Shipping** `ver-ship`, **Repeat
+  Resupply** `resupply`.
+
+The tag names live in `CONFIG.CALL_NOTES` (`CLOSE_REASON_TAGS`,
+`EMAIL_TOOL_TAGS`). An archived tag is never added this way, and archiving a tag
+now also stops its keyword auto-tag rule from adding it. Older notes are not
+re-tagged.
+
 ## 2026-11-02 — Operator round, Batch S (the Scratchpad)
 
 **No new operator state, and no new tab.** A page is a ROW of the rep's existing

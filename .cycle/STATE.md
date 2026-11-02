@@ -15,6 +15,7 @@ Updated: 2026-11-02 (Script Property consolidation) · was 2026-11-02 (handbook 
 - (none — cycle 25 is closed; its record is the top block of `.cycle/HISTORY.md`)
 
 ## Completed this cycle
+- Operator round 2026-11-02 Batch B | web-app/00_config.js, 30_callnotes.js, cn/script_callnotes.html; tests; docs | a department email's send tags its note (Close Order per reason via CLOSE_REASON_TAGS, oop-order, ver-ship, resupply), never archived, never a ninth, mirrored on the card; reps are no longer sent an archived tag's auto-tag rule — block `.cycle/blocks/25post-B-broad-implement.md`
 - Operator round 2026-11-02 Batch S | web-app/30_callnotes.js, 00_config.js, cn/script_callnotes.html, script_core.html; tests; test/visual/mock.js; docs | Scratchpad: named pages (rows of the rep's tab; row 1 = legacy `main`; saves name their page; a deleted page's text goes to "Recovered text"), checklists, highlights, h3, auto-linked http(s) URLs (Ctrl/⌘+click), insert time, send selection → the note's Issue/Resolution, find (Highlight API), Ctrl/⌘+Shift+S; both sanitizers widened — block `.cycle/blocks/25post-S-broad-implement.md`
 - Operator round 2026-11-02 Batch A | web-app/script_core.html, cn/script_callnotes.html, metrics/script_metrics.html, metrics/script_deptrequests.html, styles_design_tokens.html (+ the handbook copy), tc/script_clock.html, train/script_coaching.html, intake/script_intake.html, 00_config.js; tests; docs | Reference above Intake; the copy hint as an ⓘ tooltip; Scratchpad pending colour/size + a visible grip; Spanish auto-assign busy state; reminders carry Clock in / Clock out / Lunch out; the escalation digest reads 30 days; Dept Requests per-list sort named on each heading + the manager summary row on top; `--warn-fill` for filled amber — block `.cycle/blocks/25post-A-broad-implement.md`
 - Script Property consolidation (operator 2026-11-02, options 1 + 2) | web-app/00_config.js, 10_core.js, 20_timeclock.js, Tests.js, cn/script_callnotes.html; tests; docs | the PTO accrual ledger's per-rep side copy → the ADP sheet's PtoAccrualLedger tab (plain-text rows; the reader merges any legacy keys, the higher figure winning; an unreadable row is a hole, never overwritten); the per-job run stamps → ONE `AUTOMATION_RUNS` key under the A8 user lock (legacy keys read beside it, the newer stamp winning); the owner-only `moveLedgersOutOfScriptProperties()` copies, reads back and deletes only what verified; Storage Health names what is still to move — block `.cycle/blocks/25post-SPC-broad-implement.md`
@@ -64,7 +65,7 @@ Updated: 2026-11-02 (Script Property consolidation) · was 2026-11-02 (handbook 
 - **Operator round 2026-11-02 — the batch plan (operator approved the order A → S → B → C → E → D → G → F → H):**
   - **A** small fixes — DONE (block `.cycle/blocks/25post-A-broad-implement.md`).
   - **S** Scratchpad extras — DONE (block `.cycle/blocks/25post-S-broad-implement.md`).
-  - **B** email-tool auto-tags at send: Close Order → `close-<reason>` PER REASON (operator), OOP Order → `oop-order`, Verified Shipping → `ver-ship`, Repeat Resupply → `resupply`; 8-tag cap; and the gap that an ARCHIVED tag can still be auto-added.
+  - **B** email-tool auto-tags — DONE (block `.cycle/blocks/25post-B-broad-implement.md`).
   - **C** Spanish Inbox: assignee badge + toast on a new assignment; multi-select resolve (one locked call); group by date or sending department past ~15, received date on each card.
   - **E** fold Metrics: My Stats + Team Metrics → one Stats tab (Me/Team) and Spanish Inbox under the Dashboard tool; **Dept Requests under Call Notes** (operator); tab keys kept.
   - **D** Dept Requests: open requests for one TRX fold into one card with "N follow-ups with no response".
@@ -186,4 +187,4 @@ Updated: 2026-11-02 (Script Property consolidation) · was 2026-11-02 (handbook 
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Batches A and S (operator round 2026-11-02) are committed and pushed on the branch behind PR #307; the operator owes the deploys. Next is Batch B (email-tool auto-tags, Close Order per reason) when asked — write its estimate first.
+Batches A, S and B (operator round 2026-11-02) are committed and pushed on the branch behind PR #307; the operator owes the deploys. Next is Batch C (Spanish Inbox: assignee badge + toast, multi-select resolve, grouping + dates) when asked — write its estimate first.
