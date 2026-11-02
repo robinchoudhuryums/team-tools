@@ -9388,7 +9388,7 @@ test('HB1.3 DOM: the home page lists the chapters and what changed — published
   assert.deepStrictEqual([...cards].map((c) => c.querySelector('.hb-card-t').textContent), ['Respiratory & Resupply', 'Power Mobility'], 'chapters in the reader\'s order');
   const news = [...h.d.querySelectorAll('.hb-news-row .hb-news-num')].map((x) => x.textContent);
   assert.deepStrictEqual(news, ['3.2'], 'a first visit shows the last month — not a section this reader cannot see, not an old change');
-  assert.ok(/Changed in the last 30 days/i.test(h.main().textContent));
+  assert.ok(/Recently changed/.test(h.main().textContent) && /the last 30 days/.test(h.main().textContent), 'HBR1: said only because something changed');
   assert.strictEqual(h.d.querySelectorAll('#hb-toc .hb-ch').length, 2);
   assert.ok(h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-2"] .hb-new'), 'the contents mark the changed section');
   assert.ok(!h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"] .hb-new'));
@@ -9401,14 +9401,18 @@ test('HB1.3 DOM: "my department" puts its chapter first, and a later visit count
   const h = await hbBoot_({ ls: { umsHbDept: 'Chapter 05 — Power Mobility', umsHbVisit: JSON.stringify({ last: '2020-01-01', prev: '' }) } });
   const mine = h.d.querySelector('.hb-card.mine');
   assert.ok(mine && /Power Mobility/.test(mine.textContent), 'the chosen chapter is marked');
-  assert.ok(h.main().textContent.indexOf('Your department') < h.main().textContent.indexOf('All chapters'), 'and comes first');
-  assert.strictEqual(h.d.getElementById('hb-dept-sel').value, 'Chapter 05 — Power Mobility');
+  assert.strictEqual(h.d.querySelector('#hb-tiles .hb-card'), mine, 'and comes first (HBR1: one grid, the reader\'s tile first and wide)');
+  assert.ok(/Your department first/.test(h.main().textContent));
+  assert.ok(!h.d.getElementById('hb-dept-sel'), 'HBR1: the picker is not on the bar');
   assert.ok(/New since your last visit/.test(h.main().textContent));
   assert.deepStrictEqual([...h.d.querySelectorAll('.hb-news-num')].map((x) => x.textContent), ['3.2', '5.1'], 'everything after the last visit, newest first');
+  h.w.hbGoPeople_(); await h.settleAll();
   const sel = h.d.getElementById('hb-dept-sel');
+  assert.strictEqual(sel.value, 'Chapter 05 — Power Mobility', 'HBR1: the choice is made on Profile');
   sel.value = 'Chapter 03 — Respiratory & Resupply'; sel.dispatchEvent(new h.w.Event('change'));
-  assert.ok(/Respiratory/.test(h.d.querySelector('.hb-card.mine').textContent), 'changing it repaints home');
   assert.strictEqual(h.w.localStorage.getItem('umsHbDept'), 'Chapter 03 — Respiratory & Resupply');
+  h.d.querySelector('#hb-toc .hb-toc-home').click(); await h.settleAll();
+  assert.ok(/Respiratory/.test(h.d.querySelector('.hb-card.mine').textContent), 'home follows it');
 });
 
 test('HB1.3 DOM: a contents row opens its section in the reader and pushes a section link; Back and forward come through the change handler', async () => {
@@ -9625,7 +9629,8 @@ test('HB2.1 DOM: a saved profile\'s department becomes the reading choice on a b
   const view = hbMeView_({ me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss', standing: 'confirmed' }) });
   const fresh = await hbBoot_({ answers: { hbGetMe: view } });
   assert.strictEqual(fresh.w.localStorage.getItem('umsHbDept'), HB_DEPT);
-  assert.strictEqual(fresh.d.getElementById('hb-dept-sel').value, HB_DEPT, 'the header picker shows it');
+  fresh.w.hbGoPeople_(); await fresh.settleAll();
+  assert.strictEqual(fresh.d.getElementById('hb-dept-sel').value, HB_DEPT, 'the Profile page\'s picker shows it (HBR1: moved off the bar)');
   const chosen = await hbBoot_({ answers: { hbGetMe: view }, ls: { umsHbDept: 'Chapter 05 — Power Mobility' } });
   assert.strictEqual(chosen.w.localStorage.getItem('umsHbDept'), 'Chapter 05 — Power Mobility', 'the browser\'s own choice stands');
 });
@@ -10388,7 +10393,10 @@ test('HB2.4 DOM: the page has a title, a skip link to the reading area, named la
   assert.strictEqual(badge.getAttribute('data-n'), '1', 'a count to show');
   assert.strictEqual(badge.getAttribute('aria-hidden'), 'true');
   assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws, never text in the button\'s name');
-  assert.strictEqual(boss.d.getElementById('hb-me').textContent.trim(), 'Profile', 'the button\'s text is its visible word');
+  // HBR1: the button shows the reader's initials (hidden from the name); its name says Profile and the count.
+  assert.strictEqual(boss.d.getElementById('hb-me-ava').textContent, 'B');
+  assert.strictEqual(boss.d.getElementById('hb-me-ava').getAttribute('aria-hidden'), 'true');
+  assert.strictEqual(boss.d.getElementById('hb-me').getAttribute('aria-label'), 'Profile — 1 waiting for you', 'its name begins with its job and carries the count');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -10510,4 +10518,131 @@ test('HB4.1 DOM: Download saves the PDF under the form\'s title and says what to
   [...r.main().querySelectorAll('button')].filter((b) => /Download/.test(b.textContent))[0].click(); await r.settleAll();
   assert.ok(/The form could not be downloaded: The form could not be read/.test(r.d.getElementById('toast-stack').textContent));
   assert.strictEqual(r.main().querySelectorAll('.hb-fm-row').length, 2, 'the list the reader pressed Download in is still there');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR1 — the handbook app refresh, Batch 1 (operator 2026-11-02): the frame
+// (a light rail, a slim bar, the phone's tabs) and home (hero C, the two-view
+// shelf, Continue reading, Due for you, the tiles), over fake answers.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR1 — the handbook app\'s frame and home');
+const HBR_SHELF = (total) => ({ since: HB_DAY(29), days: 30, floor: 50, truncated: false, total: total == null ? 120 : total, prevTotal: 90,
+  chapters: { 3: { n: 80, prev: 60, top: 'man-3-2', topN: 50 }, 5: { n: 40, prev: 30, top: 'man-5-1', topN: 40 } } });
+const HBR_SO = () => ({ setUp: true, signoffs: { 'section:man-3-1': { state: 'signed', signedMs: Date.now(), changed: false },
+  'section:man-3-2': { state: 'resign', signedMs: Date.now() - 9e8, changed: true } } });
+const HBR_TRAIN = () => ({ setUp: true, plans: [
+  { id: 'p1', title: 'First week', authorName: 'Boss', due: HB_DAY(-3), overdue: false, done: 1, total: 3, items: [] },
+  { id: 'p2', title: 'Late plan', authorName: 'Boss', due: HB_DAY(2), overdue: true, done: 0, total: 1, items: [] },
+  { id: 'p3', title: 'Done plan', authorName: 'Boss', due: '', overdue: false, done: 2, total: 2, items: [] }] });
+const HBR_QUIZZES = () => ({ setUp: true, unreadable: 0, quizzes: [
+  { id: 'q1', title: 'Resp quiz', section: 'man-3-1', anchor: '', passPct: 80, count: 4, me: { passed: true, attempts: 1 } },
+  { id: 'q2', title: 'Power quiz', section: 'man-5-1', anchor: '', passPct: 80, count: 4, me: { passed: false, attempts: 0 } }] });
+const HBR_ALL = (extra) => Object.assign({ hbGetShelf: HBR_SHELF(), hbMySignOffs: HBR_SO(), hbMyTraining: HBR_TRAIN(), hbListQuizzes: HBR_QUIZZES(),
+  hbGetMe: hbMeView_({ name: 'Jordan Reyes', me: hbPerson_('rep@ex.org', { department: HB_DEPT, standing: 'confirmed' }) }) }, extra || {});
+
+test('HBR1 DOM: the shelf opens on the team\'s lookups on calls — a spine per chapter, named up its spine, filled against the busiest, the busiest marked — and My reading shows the reader\'s own (driven)', async () => {
+  const h = await hbBoot_({ answers: HBR_ALL() });
+  const shelf = h.d.getElementById('hb-shelf');
+  assert.ok(/On calls · 30 days/.test(shelf.textContent) && /Respiratory & Resupply/.test(shelf.querySelector('.hb-shelf-top').textContent), 'the busiest chapter is named');
+  assert.ok(/120 lookups/.test(shelf.textContent));
+  const books = [...shelf.querySelectorAll('.hb-book')];
+  assert.deepStrictEqual(books.map((b) => b.querySelector('.hb-book-nm').textContent), ['Respiratory', 'Power Mobility'], 'each spine carries its chapter\'s short name');
+  assert.deepStrictEqual(books.map((b) => b.style.getPropertyValue('--p')), ['100%', '50%'], 'filled against the busiest');
+  assert.ok(books[0].querySelector('.hb-book-most') && !books[1].querySelector('.hb-book-most'), 'the busiest is marked');
+  assert.strictEqual(books[0].getAttribute('aria-label'), 'Respiratory & Resupply: 80 lookups on calls, the most', 'a spine\'s name is its words');
+  assert.ok(/↑ 33% on the 30 days before/.test(books[0].querySelector('.hb-book-tip').textContent) && /Top: 3\.2 Nebulizers/.test(books[0].querySelector('.hb-book-tip').textContent), 'its card: the change and the most-opened section');
+  assert.ok(!/RepId|rep@/.test(shelf.innerHTML), 'team totals only');
+  const pressed = () => [...shelf.querySelectorAll('.hb-seg button')].map((b) => b.getAttribute('aria-pressed'));
+  assert.deepStrictEqual(pressed(), ['true', 'false']);
+  shelf.querySelectorAll('.hb-seg button')[1].click();
+  assert.deepStrictEqual(pressed(), ['false', 'true'], 'My reading');
+  assert.ok(/1 of 3 sections read/.test(shelf.textContent), 'a section changed since it was read is unread again');
+  assert.deepStrictEqual([...shelf.querySelectorAll('.hb-book')].map((b) => b.style.getPropertyValue('--p')), ['50%', '0%']);
+  assert.strictEqual(h.d.activeElement, shelf.querySelectorAll('.hb-seg button')[1], 'focus stays on the toggle it pressed');
+  books[0].click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'a spine opens its chapter');
+});
+
+test('HBR1 DOM: too few lookups opens the shelf on My reading and says so; a failed read says so and never draws an empty shelf (driven)', async () => {
+  const thin = await hbBoot_({ answers: HBR_ALL({ hbGetShelf: HBR_SHELF(12) }) });
+  const shelf = thin.d.getElementById('hb-shelf');
+  assert.strictEqual(shelf.querySelector('.hb-seg button[aria-pressed="true"]').textContent, 'My reading', 'it opens on the reader\'s own view');
+  shelf.querySelector('.hb-seg button').click();
+  assert.ok(/Not enough lookups on calls yet — 12 in the last 30 days/.test(shelf.textContent) && !shelf.querySelector('.hb-book'), 'and On calls says why it is empty');
+  const down = await hbBoot_({ answers: HBR_ALL({ hbGetShelf: { __fail: 'Exceeded maximum execution time' } }) });
+  const s2 = down.d.getElementById('hb-shelf');
+  assert.ok(/could not be loaded/.test(s2.textContent) && !s2.querySelector('.hb-book'), 'a failure is said (g53)');
+  assert.strictEqual(s2.querySelector('.hb-seg button[aria-pressed="true"]').textContent, 'On calls', 'and the reader is not moved off it silently');
+});
+
+test('HBR1 DOM: Due for you lists sections to read again, then unfinished plans, overdue first; the rail counts them and the quizzes not passed, and shows each chapter\'s read share (driven)', async () => {
+  const h = await hbBoot_({ answers: HBR_ALL() });
+  const due = [...h.d.querySelectorAll('#hb-due .hb-due-row')].map((r) => r.querySelector('b').textContent);
+  assert.deepStrictEqual(due, ['Read 3.2 Nebulizers again', 'Late plan', 'First week'], 'a done plan is not due');
+  assert.ok(/Overdue/.test(h.d.querySelectorAll('#hb-due .hb-due-row')[1].textContent));
+  assert.strictEqual(h.d.querySelector('[data-count="training"]').textContent, '3');
+  assert.strictEqual(h.d.querySelector('[data-count="quizzes"]').textContent, '1', 'one quiz not passed');
+  const share = (d, dept) => [...d.querySelectorAll('[data-share]')].filter((e) => e.getAttribute('data-share') === dept)[0].textContent;
+  assert.strictEqual(share(h.d, 'Chapter 03 — Respiratory & Resupply'), '50%');
+  assert.strictEqual(share(h.d, 'Chapter 05 — Power Mobility'), '0%');
+  const tile = [...h.d.querySelectorAll('.hb-card')].filter((c) => /Respiratory/.test(c.textContent))[0];
+  assert.ok(/Quiz passed|Your department/.test(tile.textContent) && /50% read/.test(tile.textContent), 'the tile carries its share');
+  // Nothing loaded for Training: no count is invented (g53).
+  const none = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: { __fail: 'x' }, hbMySignOffs: { __fail: 'x' } }) });
+  assert.strictEqual(none.d.querySelector('[data-count="training"]').textContent, '');
+  assert.strictEqual(share(none.d, 'Chapter 03 — Respiratory & Resupply'), '', 'no share without sign-offs');
+});
+
+test('HBR1 DOM: Continue reading picks the newest reading point under a week old that is still in the handbook; Resume opens it there (driven)', async () => {
+  const now = Date.now();
+  const prefs = { resume: { 'Chapter 05 — Power Mobility': { id: 'man-5-1', h: '', at: now - 3 * 864e5 },
+    'Chapter 03 — Respiratory & Resupply': { id: 'man-3-1', h: '3.1.1', at: now - 864e5 },
+    'Gone': { id: 'man-9-9', h: '', at: now } } };
+  const h = await hbBoot_({ answers: HBR_ALL(), ls: { umsHbReader: JSON.stringify(prefs) } });
+  const cont = h.d.getElementById('hb-cont');
+  assert.ok(/Oxygen basics/.test(cont.textContent) && /yesterday/.test(cont.textContent), 'the newest point a reader can open (a removed section is skipped)');
+  cont.querySelector('button').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'), 'Resume opens the section');
+  const fresh = await hbBoot_({ answers: HBR_ALL() });
+  assert.ok(/Nothing to pick up yet/.test(fresh.d.getElementById('hb-cont').textContent));
+});
+
+test('HBR1 DOM: typing in home\'s search hands over to the bar\'s — the words and the caret survive the results replacing home; late answers patch home without touching the box (g141, driven)', async () => {
+  const h = await hbBoot_({ answers: HBR_ALL({ hbGetShelf: { __delay: 60, value: HBR_SHELF() } }) });
+  const hero = h.d.getElementById('hb-hero-q');
+  hero.focus(); hero.value = 'neb';
+  await new Promise((r) => setTimeout(r, 80));   // the shelf answers while the box holds typing
+  assert.strictEqual(h.d.getElementById('hb-hero-q'), hero, 'the late answer patched its own box, not home');
+  assert.ok(h.d.querySelector('#hb-shelf .hb-book'));
+  hero.value = 'nebs'; hero.dispatchEvent(new h.w.Event('input'));
+  await new Promise((r) => setTimeout(r, 380)); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-results'), 'the results replaced home');
+  const bar = h.d.getElementById('hb-q');
+  assert.strictEqual(bar.value, 'nebs', 'the words went with it');
+  assert.strictEqual(h.d.activeElement, bar, 'and the caret');
+  assert.strictEqual(bar.selectionStart, 4);
+});
+
+test('HBR1 DOM: the rail\'s pages and the phone\'s tabs mark the page showing (aria-current); home lays its cards on the paper and hides the bar\'s search; the router\'s openings open their sections (driven)', async () => {
+  const meta = Object.assign(HB_META(), { router: [
+    { g: 'Status', q: 'Where is my equipment?', a: '3.2', t: [{ id: 'man-3-2', anchor: '', num: '3.2' }] },
+    { g: 'Status', q: 'When is it coming?', a: '3.2', t: [{ id: 'man-3-2', anchor: '', num: '3.2' }] },
+    { g: 'Hidden', q: 'A draft answer', a: '9.9', t: [{ id: 'man-9-9', anchor: '', num: '9.9' }] },
+    { g: 'Chairs', q: 'Is my chair here?', a: '5.1', t: [{ id: 'man-5-1', anchor: '', num: '5.1' }] }] });
+  const h = await hbBoot_({ answers: HBR_ALL({ getManualMeta: meta }) });
+  const cur = () => [...h.d.querySelectorAll('[aria-current="page"][data-nav]')].map((b) => b.getAttribute('data-nav'));
+  assert.deepStrictEqual(cur(), ['home', 'home'], 'the rail and the tabs');
+  assert.ok(h.main().classList.contains('hb-on-home') && h.d.querySelector('.hb-head').classList.contains('hb-on-home-bar'));
+  assert.deepStrictEqual([...h.d.querySelectorAll('#hb-chips .hb-chip')].map((c) => c.textContent), ['“Where is my equipment?”', '“Is my chair here?”'],
+    'one opening per group, never one whose section the reader cannot open');
+  h.d.querySelectorAll('#hb-chips .hb-chip')[1].click(); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-5-1'), 'an opening opens its section');
+  assert.deepStrictEqual(cur(), [], 'a section is no page of the rail');
+  assert.ok(!h.main().classList.contains('hb-on-home'), 'the reader is white again');
+  h.d.querySelector('.hb-tab[data-nav="quizzes"]').click(); await h.settleAll();
+  assert.deepStrictEqual(cur(), ['quizzes', 'quizzes']);
+  h.d.querySelector('.hb-tab[data-nav="search"]').click();
+  assert.ok(h.d.querySelector('.hb-head').classList.contains('hb-searching') && h.d.activeElement === h.d.getElementById('hb-q'), 'Search opens the bar\'s box');
+  h.d.getElementById('hb-q').dispatchEvent(new h.w.Event('blur'));
+  assert.ok(!h.d.querySelector('.hb-head').classList.contains('hb-searching'), 'left empty, it closes');
 });

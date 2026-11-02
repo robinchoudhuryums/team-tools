@@ -38094,7 +38094,8 @@ test('F69 (cycle 25): the visual matrix measures VERTICAL runaway and SQUEEZED t
   assert.ok(/document\.documentElement\.scrollHeight/.test(shoot) && /Math\.max\(bottom, vh\)/.test(shoot), 'runaway = the document\'s scroll height past the visible content (or the window)');
   assert.ok(/cs\.clip && cs\.clip !== 'auto'/.test(shoot) && /r\.width < 2 \|\| r\.height < 2/.test(shoot), 'a visually hidden box is not content — it is the usual escapee (F67, g171)');
   assert.ok(/cs\.position === 'fixed'/.test(shoot), 'fixed chrome does not extend the document');
-  assert.ok(/own\.length >= 16 && r\.width < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
+  assert.ok(/own\.length >= 16 && run < 48/.test(shoot) && /!\(el instanceof SVGElement\)/.test(shoot), 'squeezed text: 16+ characters of its own text under 48px, SVG labels excluded');
+  assert.ok(/const run = \/\^vertical\/\.test\(cs\.writingMode \|\| ''\) \? r\.height : r\.width;/.test(shoot), 'HBR1: a vertical label (a shelf spine) runs along its height — that is its column');
   assert.ok(/VERTICAL RUNAWAY/.test(shoot) && /const RUNAWAY_PX = gate\.RUNAWAY_PX;/.test(shoot) && /SQUEEZED TEXT/.test(shoot), 'the run prints a section for each');
   const readme = fs.readFileSync(path.join(__dirname, '../visual/README.md'), 'utf8');
   assert.ok(/verticalRunawayPx/.test(readme) && /narrowText/.test(readme), 'the harness README names both measurements');
@@ -40773,6 +40774,36 @@ function hbPageCtx_() {
   return ctx;
 }
 const hbJ_ = (v) => JSON.parse(JSON.stringify(v));
+
+test('HBR1-d: home\'s pure helpers — a chapter\'s read share counts only current sign-offs; the shelf fills against the busiest; Continue picks the newest point still here; Due puts re-reads first and overdue plans before the rest; names, greetings and changes in words', () => {
+  const c = hbPageCtx_();
+  ['hbReadShare_', 'hbShelfBooks_', 'hbContinue_', 'hbDueList_', 'hbInitials_', 'hbGreeting_', 'hbSpineName_', 'hbShelfDelta_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), c));
+  const so = { 'section:a': { state: 'signed' }, 'section:b': { state: 'resign' }, 'section:c': { state: 'signed' } };
+  assert.deepStrictEqual(hbJ_(c.hbReadShare_(['a', 'b', 'd'], so)), { read: 1, total: 3, pct: 33 }, 'a section changed since it was read is unread');
+  assert.deepStrictEqual(hbJ_(c.hbReadShare_([], so)), { read: 0, total: 0, pct: 0 });
+  const chapters = [{ key: '3', ids: ['a', 'b'] }, { key: '5', ids: ['c'] }, { key: '6', ids: ['d'] }];
+  const calls = hbJ_(c.hbShelfBooks_(chapters, 'calls', { total: 75, chapters: { 3: { n: 50, prev: 40, top: 'a' }, 5: { n: 25, prev: 0, top: 'c' } } }, null));
+  assert.deepStrictEqual(calls, { top: '3', total: 75, books: [{ key: '3', pct: 100, n: 50, prev: 40, top: 'a' }, { key: '5', pct: 50, n: 25, prev: 0, top: 'c' }, { key: '6', pct: 0, n: 0, prev: 0, top: '' }] });
+  assert.deepStrictEqual(hbJ_(c.hbShelfBooks_(chapters, 'calls', { total: 0, chapters: {} }, null)).books.map((b) => b.pct), [0, 0, 0], 'no lookups is never a division by zero');
+  assert.deepStrictEqual(hbJ_(c.hbShelfBooks_(chapters, 'me', null, so)), { books: [{ key: '3', pct: 50, read: 1, total: 2 }, { key: '5', pct: 100, read: 1, total: 1 }, { key: '6', pct: 0, read: 0, total: 1 }], read: 2, total: 4, pct: 50 });
+  const day = 864e5, now = 100 * day;
+  assert.deepStrictEqual(hbJ_(c.hbContinue_({ A: { id: 'a', h: '1.1', at: now - 2 * day }, B: { id: 'b', at: now - day }, C: { id: 'gone', at: now }, D: { id: 'c', at: now - 8 * day } }, ['a', 'b', 'c'], now, 7)),
+    { dept: 'B', id: 'b', h: '', at: now - day }, 'the newest a reader can open, under a week old');
+  assert.strictEqual(c.hbContinue_({}, ['a'], now, 7), null);
+  assert.strictEqual(c.hbContinue_(null, ['a'], now, 7), null);
+  const tree = [{ id: 'a', title: '1.1 A' }, { id: 'b', title: '1.2 B' }];
+  const mine = { plans: [{ title: 'Later', done: 0, total: 2, due: '2026-12-01' }, { title: 'Overdue', done: 1, total: 2, due: '2026-12-09', overdue: true },
+    { title: 'Sooner', done: 0, total: 1, due: '2026-11-05' }, { title: 'Done', done: 1, total: 1 }, { title: 'No date', done: 0, total: 1 }] };
+  assert.deepStrictEqual(hbJ_(c.hbDueList_(mine, so, true, tree)).map((x) => x.title), ['1.2 B', 'Overdue', 'Sooner', 'Later', 'No date']);
+  assert.deepStrictEqual(hbJ_(c.hbDueList_({ error: 'x' }, so, true, tree)).map((x) => x.kind), ['reread'], 'a failed plan read still lists what the sign-offs know');
+  assert.strictEqual(c.hbDueList_(undefined, {}, undefined, tree), null, 'neither source answered: nothing to say yet');
+  assert.deepStrictEqual(hbJ_(c.hbDueList_(mine, so, false, tree))[0].title, 'Overdue', 'no sign-offs: the plans alone');
+  assert.deepStrictEqual(['Jordan Reyes', 'dana.reyes@ex.org', 'Cher', '', '42 Bob'].map((n) => c.hbInitials_(n)), ['JR', 'DR', 'C', '', 'B']);
+  assert.deepStrictEqual([[9, 'Jordan Reyes'], [13, ''], [18, 'Sam']].map(([h, n]) => c.hbGreeting_(new Date(2026, 10, 2, h), n)), ['Good morning, Jordan', 'Good afternoon', 'Good evening, Sam']);
+  assert.deepStrictEqual(['Respiratory & Resupply', 'Manual Mobility & General DME', 'Oxygen'].map((n) => c.hbSpineName_(n)), ['Respiratory', 'Manual Mobility', 'Oxygen']);
+  assert.deepStrictEqual([[118, 100], [80, 100], [5, 5], [7, 0], [0, 0]].map(([n, p]) => c.hbShelfDelta_(n, p)),
+    ['↑ 18% on the 30 days before', '↓ 20% on the 30 days before', 'no change on the 30 days before', 'new in these 30 days', '']);
+});
 
 test('HB1.3-a: the page\'s pure helpers — the visit moves only on a new day, news is published and after the last visit, and a section link round-trips', () => {
   const c = hbPageCtx_();

@@ -38,23 +38,30 @@
 </head>
 <body>
   <a class="hb-skip" href="#kb-main" onclick="document.getElementById('kb-main').focus(); return false;">Skip to the handbook</a>
-  <header class="hb-head">
-    <button type="button" class="hb-menu" id="hb-menu" aria-controls="hb-side" aria-expanded="false" onclick="hbToggleSide_()">Contents</button>
-    <a class="hb-brand" href="#" onclick="hbGoHome_(); return false;">UMS Handbook</a>
-    <span class="hb-ver" id="hb-ver"></span>
-    <input type="search" class="hb-q" id="hb-q" placeholder="Search the handbook" aria-label="Search the handbook" autocomplete="off"
-      oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)">
-    <button type="button" class="hb-me-btn" id="hb-disp" onclick="hbOpenDisplay_()" aria-haspopup="dialog">Display</button>
-    <button type="button" class="hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile">Profile<span class="hb-me-badge" id="hb-me-badge" aria-hidden="true"></span></button>
-    <label class="hb-dept">My department
-      <select id="hb-dept-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select>
-    </label>
-  </header>
-  <div class="hb-quizbar" id="hb-quizbar" role="region" aria-label="This section's tools"></div>
   <div class="hb-wrap">
-    <nav class="hb-side" id="hb-side" aria-label="Contents"><div id="hb-toc" class="hb-toc"></div></nav>
-    <main class="kb-main" id="kb-main" tabindex="-1"></main>
+    <nav class="hb-side" id="hb-side" aria-label="Contents">
+      <a class="hb-brand" href="#" onclick="hbGoHome_(); return false;"><span class="hb-mark" aria-hidden="true"></span><span class="hb-brand-t">UMS Handbook <span class="hb-ver" id="hb-ver"></span></span></a>
+      <div id="hb-toc" class="hb-toc"></div>
+      <button type="button" class="hb-user" id="hb-user" onclick="hbGoPeople_()" aria-label="Your profile"></button>
+    </nav>
+    <div class="hb-col">
+      <header class="hb-head">
+        <button type="button" class="hb-menu hb-ib" id="hb-menu" aria-controls="hb-side" aria-expanded="false" aria-label="Contents" onclick="hbToggleSide_()"></button>
+        <a class="hb-brand hb-brand-m" href="#" onclick="hbGoHome_(); return false;"><span class="hb-mark" aria-hidden="true"></span>Handbook</a>
+        <div class="hb-q-wrap"><span class="hb-q-ic" aria-hidden="true"></span>
+          <input type="search" class="hb-q" id="hb-q" placeholder="Search policies, procedures, HCPCS codes…" aria-label="Search the handbook" autocomplete="off"
+            oninput="hbSearchInput_(this.value)" onkeydown="hbSearchKey_(event)" onblur="hbSearchBlur_()"></div>
+        <div class="hb-head-r">
+          <button type="button" class="hb-ib hb-q-open" id="hb-q-open" aria-label="Search the handbook" onclick="hbOpenSearch_()"></button>
+          <button type="button" class="hb-ib" id="hb-disp" onclick="hbOpenDisplay_()" aria-haspopup="dialog" aria-label="Display settings"></button>
+          <button type="button" class="hb-ib hb-me-btn" id="hb-me" onclick="hbGoPeople_()" aria-label="Profile"><span class="hb-me-ava" id="hb-me-ava" aria-hidden="true"></span><span class="hb-me-badge" id="hb-me-badge" aria-hidden="true"></span></button>
+        </div>
+      </header>
+      <div class="hb-quizbar" id="hb-quizbar" role="region" aria-label="This section's tools"></div>
+      <main class="kb-main" id="kb-main" tabindex="-1"></main>
+    </div>
   </div>
+  <nav class="hb-tabs" id="hb-tabs" aria-label="The handbook's pages"></nav>
   <!-- showToast writes here; without it every toast is silently dropped. -->
   <div class="toast-stack" id="toast-stack" role="region" aria-live="polite" aria-label="Notifications"></div>
 

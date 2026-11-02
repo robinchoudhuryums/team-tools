@@ -1496,6 +1496,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
     },
     hbMarkRead: { success: true },
+    // HBR1 — home's shelf: the team's lookups on calls per chapter (this 30 days
+    // and the 30 before), each chapter's most-opened section, on the mock manual's chapters.
+    hbGetShelf: { since: daysAgo(29), days: 30, floor: 50, truncated: false, total: 1214, prevTotal: 1102, chapters: {
+      0: { n: 286, prev: 241, top: 'man-0-2', topN: 61 }, 3: { n: 352, prev: 330, top: 'man-3-8', topN: 140 }, 5: { n: 148, prev: 160, top: 'man-5-9', topN: 52 },
+      6: { n: 271, prev: 229, top: 'man-6-9', topN: 98 }, 10: { n: 157, prev: 142, top: 'man-10-19', topN: 40 } } },
     // HB2.2 — the reader's bookmarks (their account) and notes (synced only when on).
     hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }, { id: 'man-0-10', title: '0.10 Anatomy of a transaction' }, { id: 'man-gone-1', title: '4.7 Retired forms' }] },
     hbToggleBookmark: { success: true, bookmarks: [{ id: 'man-0-11', title: '0.11 Notes and email conventions' }] },
