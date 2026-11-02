@@ -32,10 +32,19 @@ under the "handbook app" entries.
 - **Contents** on the rail (the menu button on a phone), with a dot on any
   section changed since the last visit.
 - **The reader** — Team Tools' own: chapter mastheads, the reader bar, quick
-  cards, slideshows, diagrams, cross-references, printing.
+  cards, slideshows, diagrams, cross-references, printing. Since HBR2 the app
+  dresses it on its own side (Team Tools is untouched): a chapter's masthead is a
+  banner in its colour with its number faint behind, section heads carry a
+  chapter-colour rule, the tools above a section are a white toolbar (*I've read
+  this* first, each quiz and form one pill; one scrolling row on a phone), and
+  at width a side column follows the section in view — its quiz with where you
+  stand, its forms, its numbered headings and the sections it refers to. The
+  reader's own ‹ › and the card at a chapter's end are previous and next.
 - **Search** in the bar (home's own box hands over to it as you type) — a section number (`6.9.3`, `card 4`) jumps
-  straight to it; anything else lists the matching sections. Back returns to
-  the results.
+  straight to it; anything else is a results page (HBR2): the best match first,
+  each hit under its chapter, chapter filters with counts when the hits span
+  more than one, and *Didn't find it?* → **Suggest a topic**, which reaches Team
+  Tools' content-request queue. Back returns to the results.
 - **Section links** — `<app URL>?s=6.9.3` opens 6.9.3. Every section opened
   updates the address bar, and Back / Forward work.
 - **Feedback** in the reader bar — helpful / not helpful, and *Suggest an edit*.
@@ -103,6 +112,7 @@ projects' ScriptLocks do not exclude each other:
 |---|---|---|
 | `KbFeedback` | A reader's vote, out-of-date flag or suggested edit: `[time, section, '', reader's address, kind, note]` — checked by Team Tools' own `kbFeedbackEntry_` | Admin → Reference → Handbook → Export feedback (the worklist by source file) |
 | `KbSearchSignalHb` | The vocabulary terms its searches contained — no person, once per person per term per window (Team Tools' plan) | Admin → Reference's search signal, beside `KbSearchSignal`; the nightly purge keeps 90 days of both |
+| `KbContentRequests` (HBR2) | A topic the reader asked for from the search page's *Didn't find it?* — Team Tools' row shape, the reader by address, the topic as text, never the search typed (F9) | Team Tools' Reference content-request queue, beside its own reps' requests |
 
 **KbSearchConfig** is Team Tools' mirror of two settings that live in its
 Script Properties, which this project cannot read: the search synonyms and the
@@ -339,10 +349,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate, and every one

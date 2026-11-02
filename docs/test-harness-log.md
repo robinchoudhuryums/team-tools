@@ -3299,3 +3299,28 @@ per-change detail. By delta:
   the existing `handbook-*` screens re-shot on the new frame. The squeezed-text
   measure now reads a vertical label (a spine's name) along its height — it had
   flagged "Field Operations" as a 14px column.
+
+## Handbook refresh HBR2 — the section page and search as a page (2026-11-02)
+
+- **Pure (run.js, "HBR2")** — a: `hbRequestTopic` driven — a missing tab made
+  with Team Tools' headers, the row's shape (the reader by address, the topic as
+  text behind an apostrophe, no note, the Query column blank), appendRow only, a
+  fraction kept as text, an empty, an over-long (refused, never cut) and an
+  anonymous request refused with nothing written; b: the tab, headers and topic
+  limit equal Team Tools', and the page sends the topic, never the search.
+  HB1.4-d's structural list of the app's writes names the new append (three
+  tabs, four appends); the public-surface list gained `hbRequestTopic`.
+- **DOM ("HBR2")** — the side column beside a section (the quiz with where the
+  reader stands, the form, the numbered headings with their anchors, each
+  referenced section once by title), its column emptied off a section, the
+  toolbar's quiz and form pills; the search page (the best match, the chapter
+  crumb and colour, filters with counts that narrow and restore, nothing to
+  narrow for one chapter, none said with the offer); Suggest a topic (the dialog
+  starts empty though the search held a name, an empty topic refused in it, the
+  trimmed topic alone sent, a refusal said).
+- **Visual** — `handbook-chapter-light-wide` (a chapter at its top: the banner
+  and the column) and `handbook-suggest-topic-light-mobile`. Measuring found the
+  banner shrunk to 44px — `overflow: hidden` drops a flex item's automatic
+  minimum height in the reader's flex column — and the chapter index in two
+  squeezed columns on a phone (its `@container` query had no container on this
+  page).

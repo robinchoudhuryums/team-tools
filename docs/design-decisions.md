@@ -6190,3 +6190,23 @@ pick them up without re-deriving the context.
     caret, when the results replace home.
   - **The reader's scroller keeps Reference's padding** (18px / 22px): the shared
     reader's sticky bar sits at exactly that offset (g162).
+- <a id="the-handbook-app-dresses-the-shared-reader-on-its-own-side"></a>**The handbook app dresses the shared reader on its own side, and a reader's missing topic reaches Team Tools' request queue (handbook refresh HBR2, operator plan 2026-11-02)**
+  The section page in the mockup is Team Tools' shared reader. Changing that
+  partial would change Team Tools' Reference too, so Batch 2 is host-side only:
+  - **CSS on the reader's own markup**, scoped to the handbook page — the
+    masthead as a banner (its `kb-man-pN` class gives the colour and, one rule a
+    chapter, the faint number; it needs `flex-shrink: 0` and is the container
+    for its index's `@container` query), the section heads' rule. Print keeps
+    its own block: the banner is screen-only.
+  - **What the host owns, rebuilt** — the tools bar (#hb-quizbar) and a side
+    column painted from what the page already holds: the quiz list, the form
+    library, and the section's own rendered headings and `.kb-xref` links. It
+    follows `MANUAL_HOST.markCurrent`, so it is always the section in view.
+  - **Previous / next** are the reader's own ‹ › and its end-of-chapter card;
+    nothing new was drawn.
+  - **Suggest a topic** appends to Team Tools' `KbContentRequests` in its own row
+    shape, so the requests land in the queue managers already work — the
+    handbook-app posture of HB1.4 (appendRow only; the projects' locks do not
+    exclude each other). The reader is named by address (there is no roster),
+    the topic rides an apostrophe (g144), and the search typed is never sent or
+    stored (F9, g146): the dialog starts empty.
