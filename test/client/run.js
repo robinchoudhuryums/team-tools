@@ -40734,7 +40734,7 @@ test('HB1.2-e: the app\'s public surface is exactly its endpoints, every server 
   const pub = [];
   own.forEach((f) => [...fs.readFileSync(path.join(HB, f), 'utf8').matchAll(/^function (\w+)\(/gm)].forEach((m) => { if (!/_$/.test(m[1])) pub.push(m[1]); }));
   assert.deepStrictEqual(pub.sort(), ['doGet', 'getKbImages', 'getManualImages', 'getManualMeta', 'getManualPart', 'getManualParts',
-    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbGetShelf', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
+    'getManualRecent', 'getManualStamp', 'getReferenceItem', 'hbArchiveTraining', 'hbConfirmPerson', 'hbForgetNotes', 'hbGetForm', 'hbGetMe', 'hbGetQuiz', 'hbGetShelf', 'hbListForms', 'hbListQuizzes', 'hbMarkRead', 'hbMyBookmarks', 'hbMySignOffs', 'hbMyTraining', 'hbRemovePerson', 'hbRequestTopic', 'hbResetQuiz', 'hbSavePlan', 'hbSaveProfile', 'hbSaveTeamQuiz',
     'hbSendTrainingReminders', 'hbSetManager', 'hbSubmitQuiz', 'hbSyncNotes', 'hbTeamProgress', 'hbTeamQuizLocks', 'hbTeamTraining', 'hbToggleBookmark',
     'include', 'installHandbookReminders', 'kbFlagItem', 'kbGetImageData', 'kbMapDistances', 'searchReference'],
     'every function google.script.run can reach in the handbook app (g143) — add one here only on purpose');
@@ -40978,16 +40978,16 @@ test('HB1.4-c: the app\'s search — handbook sections only, the mirrored synony
   assert.strictEqual(sig.length, before, 'an untyped search records nothing');
 });
 
-test('HB1.4-d: the app\'s only writes are appendRow — onto KbFeedback and KbSearchSignalHb — and a tab it creates (structural, over the hand-written server)', () => {
+test('HB1.4-d: the app\'s only writes are appendRow — onto KbFeedback, KbSearchSignalHb and (HBR2) KbContentRequests — and a tab it creates (structural, over the hand-written server)', () => {
   const src = stripJsComments_(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8'));
   const calls = [...src.matchAll(/\.(setValues?|appendRow|insertSheet|deleteRows?|clear(?:Content)?|setNumberFormat|insertRows\w*|deleteSheet|setProperty|sendEmail)\(/g)].map((m) => m[1]);
   assert.deepStrictEqual([...new Set(calls)].sort(), ['appendRow', 'insertSheet'], 'appendRow (atomic — no position, no lock to share) and creating a tab');
-  const tabsAppended = [...src.matchAll(/hbAppendTab_\((KB_\w+),/g)].map((m) => m[1]).sort();
-  assert.strictEqual((src.match(/hbAppendTab_\(/g) || []).length, 3, 'its declaration and the two callers — no other');
-  assert.deepStrictEqual(tabsAppended, ['KB_FEEDBACK_TAB', 'KB_SEARCH_SIGNAL_HB_TAB'], 'onto these two tabs only');
+  const tabsAppended = [...src.matchAll(/hbAppendTab_\(((?:KB|HB)_\w+),/g)].map((m) => m[1]).sort();
+  assert.strictEqual((src.match(/hbAppendTab_\(/g) || []).length, 4, 'its declaration and the three callers — no other');
+  assert.deepStrictEqual(tabsAppended, ['HB_REQUESTS_TAB', 'KB_FEEDBACK_TAB', 'KB_SEARCH_SIGNAL_HB_TAB'], 'onto these three tabs only (HBR2 added the content requests)');
   const hdr = extractFnFrom(src, 'hbAppendTab_');
   assert.ok(/insertSheet\(name\)/.test(hdr) && /appendRow\(sheetSafeRow_\(headers\)\)/.test(hdr), 'a new tab gets its headers');
-  assert.strictEqual((src.match(/\.appendRow\(/g) || []).length, 3, 'three appends: the header, a feedback row, a signal row');
+  assert.strictEqual((src.match(/\.appendRow\(/g) || []).length, 4, 'four appends: the header, a feedback row, a signal row, a content request');
 });
 
 test('HB1.4-e: Team Tools mirrors the synonyms and auto-tag rules to KbSearchConfig — as a text cell, only when they changed (a re-import writes nothing), false when it could not', () => {
@@ -42013,6 +42013,36 @@ test('HBR1-c: the shelf reads the tab Team Tools writes, and the context its dra
     'the columns the shelf reads by position: the time first, the id second, the context fourth');
   const kb = fs.readFileSync(path.join(HB_ROOT, 'web-app/kb/script_kb.html'), 'utf8');
   assert.ok(/context \|\| \('drawer:' \+/.test(kb), 'a drawer open (no context given) is stamped drawer:<view> — the only opens the shelf counts');
+});
+
+// HBR2 — "Didn't find it?" from the handbook's search page.
+test('HBR2-a: hbRequestTopic appends a reader\'s topic to Team Tools\' content-request queue in its own shape — never the search typed, the topic as text — and refuses an empty, an over-long or an anonymous request (driven)', () => {
+  const tabs = hbTabs_();
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const r = hbPlain_(sb.hbRequestTopic('  picking up   an oxygen tank  '));
+  assert.ok(r.success && /^u0/.test(r.reqId));
+  assert.deepStrictEqual(tabs.KbContentRequests[0], ['Timestamp', 'ReqId', 'RepId', 'RepName', 'Topic', 'Note', 'Query', 'Status', 'ResolvedAt', 'ResolvedBy'], 'a missing tab is made with Team Tools\' headers');
+  const row = tabs.KbContentRequests[1];
+  assert.deepStrictEqual(row.slice(1), [r.reqId, 'rep@example.org', 'rep@example.org', "'picking up an oxygen tank", '', '', 'open', '', ''],
+    'the reader by address; the topic as text (a leading apostrophe — g144); no note; the Query column blank — the typed search is never stored (F9)');
+  assert.ok(sb.__writes.every((w) => w[0] === 'append' || w[0] === 'insert'), 'appendRow only — no positional write (the two projects\' locks do not exclude each other)');
+  sb.hbRequestTopic('3/4');
+  assert.strictEqual(tabs.KbContentRequests[2][4], "'3/4", 'a fraction stays text');
+  const n = tabs.KbContentRequests.length;
+  assert.ok(/Say what you were looking for/.test(sb.hbRequestTopic('   ').error));
+  assert.ok(/under 200 characters/.test(sb.hbRequestTopic('x'.repeat(201)).error), 'refused, never cut');
+  assert.strictEqual(hbServer_(Object.assign({ tabs }, HB_ENV, { email: '' })).hbRequestTopic('x').error, 'Not authorized.');
+  assert.strictEqual(tabs.KbContentRequests.length, n, 'nothing written for a refusal');
+});
+
+test('HBR2-b: the request row is Team Tools\' — the tab, the headers and the topic limit equal its own, and Team Tools still never stores the query', () => {
+  const cfg = fs.readFileSync(path.join(HB_ROOT, 'web-app/00_config.js'), 'utf8');
+  const hb = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/Handbook.js'), 'utf8');
+  assert.strictEqual(/const HB_REQUESTS_TAB = '([^']+)'/.exec(hb)[1], /const KB_REQUESTS_TAB = '([^']+)'/.exec(cfg)[1]);
+  assert.strictEqual(/const HB_REQUESTS_HEADERS = (\[[^\]]+\])/.exec(hb)[1], /const KB_REQUESTS_HEADERS = (\[[^\]]+\])/.exec(cfg)[1]);
+  assert.strictEqual(/const HB_REQUEST_TOPIC_MAX = (\d+)/.exec(hb)[1], /const KB_REQUEST_TOPIC_MAX = (\d+)/.exec(cfg)[1]);
+  const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+  assert.ok(/\.hbRequestTopic\(String\(topic\)\.trim\(\)\)/.test(page) && !/hbRequestTopic\([^)]*HB_SEARCH/.test(page), 'the page sends the topic the reader wrote, never the search');
 });
 
 test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {

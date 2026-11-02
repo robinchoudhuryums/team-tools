@@ -125,6 +125,9 @@ const SCENARIOS = [
   // HBR1 — home's shelf on the reader's own view, and home in dark on a phone.
   ['handbook-shelf-me-light-wide', {}, WIDE,   'light', '', "setTimeout(function(){ hbShelfView_('me'); }, 300)", HB_PAGE],
   ['handbook-home-dark-mobile',    {}, MOBILE, 'dark',  '', '', HB_PAGE],
+  // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
+  ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
+  ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],
   ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
   // HB2.4: a slideshow stepped once (its announcement filled) and tables that
   // overflow a phone (each a named Tab stop) — for axe as much as for the eye.

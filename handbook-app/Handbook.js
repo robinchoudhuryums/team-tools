@@ -404,3 +404,31 @@ function hbShelfCount_(rows, today, days) {
   });
   return { since: hbShelfDayAdd_(from, 1), days: days, total: total, prevTotal: prevTotal, chapters: ch };
 }
+
+// ── HBR2 — "Didn't find it?" from the search page: a topic the handbook lacks ──
+// Team Tools' content-gap queue (Reference, its manager's "Requests" list) is the
+// KbContentRequests tab; a reader here adds to it the way HB1.4's feedback adds
+// to KbFeedback — appendRow only (the two projects' locks do not exclude each
+// other). The row is Team Tools' shape: the reader is named by address (there
+// is no roster here), the Query column stays blank — the typed search is never
+// stored (F9: a query typed mid-call can carry a patient's name) — and the topic
+// rides a leading apostrophe, so "3/4" stays text (g144).
+const HB_REQUESTS_TAB = 'KbContentRequests';   // Team Tools' KB_REQUESTS_TAB (pinned equal)
+const HB_REQUESTS_HEADERS = ['Timestamp', 'ReqId', 'RepId', 'RepName', 'Topic', 'Note', 'Query', 'Status', 'ResolvedAt', 'ResolvedBy'];   // KB_REQUESTS_HEADERS (pinned equal)
+const HB_REQUEST_TOPIC_MAX = 200;              // KB_REQUEST_TOPIC_MAX (pinned equal)
+
+/** {success, reqId} or {success: false, error}. An empty topic, or one longer
+ *  than the limit, is refused — never cut. */
+function hbRequestTopic(topic) {
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Not authorized.' };
+  const t = String(topic || '').replace(/\s+/g, ' ').trim();
+  if (!t) return { success: false, error: 'Say what you were looking for.' };
+  if (t.length > HB_REQUEST_TOPIC_MAX) return { success: false, error: 'Keep it under ' + HB_REQUEST_TOPIC_MAX + ' characters.' };
+  try {
+    const reqId = Utilities.getUuid(), now = new Date();
+    hbAppendTab_(HB_REQUESTS_TAB, HB_REQUESTS_HEADERS)
+      .appendRow(sheetSafeRow_([fmtDate_(now) + ' ' + fmtTime_(now), reqId, emp.id, emp.email, "'" + t, '', '', 'open', '', '']));
+    return { success: true, reqId: reqId };
+  } catch (err) { return { success: false, error: err.message }; }
+}

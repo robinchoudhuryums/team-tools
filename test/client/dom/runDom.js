@@ -10649,3 +10649,83 @@ test('HBR1 DOM: the rail\'s pages and the phone\'s tabs mark the page showing (a
   h.d.getElementById('hb-q').dispatchEvent(new h.w.Event('blur'));
   assert.ok(!h.d.querySelector('.hb-head').classList.contains('hb-searching'), 'left empty, it closes');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR2 — the handbook app refresh, Batch 2: the section page's toolbar and side
+// column, and search results as a page with "Didn't find it?".
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR2 — the handbook app\'s section page and search page');
+const HBR2_PARTS = () => {
+  const p = HB_PARTS();
+  p.parts[1].sections[0].bodyMd = 'Intro. See [chairs](kb:man-5-1) and [chairs again](kb:man-5-1#5.1) and [nebs](kb:man-3-2).\n\n## 3.1.1 Tanks\n\nTanks hold oxygen.\n\n## 3.1.2 Regulators\n\nThey regulate.';
+  return p;
+};
+const HBR2_QUIZ = () => ({ setUp: true, unreadable: 0, quizzes: [{ id: 'q-ox', title: 'Oxygen quiz', section: 'man-3-1', anchor: '', passPct: 80, count: 3, me: { passed: false, attempts: 1, attemptsLeft: 2, maxAttempts: 3 } }] });
+const HBR2_FORMS = () => ({ forms: [{ key: 'form-eaa', title: 'EAA', summary: '', sections: [{ id: 'man-3-1', anchor: '', num: '3.1', title: '3.1 Oxygen basics' }] }] });
+
+test('HBR2 DOM: beside a section, the side column carries its quiz (where the reader stands), its form, the headings in it and the sections it refers to — each once — and follows the reader off it (driven)', async () => {
+  const h = await hbBoot_({ answers: { getManualParts: HBR2_PARTS(), hbListQuizzes: HBR2_QUIZ(), hbListForms: HBR2_FORMS() } });
+  h.d.querySelector('#hb-toc .hb-it[data-kb-id="man-3-1"]').click(); await h.settleAll();
+  h.w.hbMarkCurrent_('man-3-1');   // the scroll-spy's call
+  const aside = h.d.getElementById('hb-aside');
+  assert.ok(h.d.querySelector('.hb-body').classList.contains('hb-has-aside'));
+  assert.ok(/3\.1 Oxygen basics/.test(aside.querySelector('.hb-as-t').textContent));
+  const cards = [...aside.querySelectorAll('.hb-as-card')].map((c) => c.textContent);
+  assert.ok(/Oxygen quiz/.test(cards[0]) && /2 of 3 attempts left/.test(cards[0]) && /Try again/.test(cards[0]), 'the quiz, with the reader\'s standing');
+  assert.ok(/EAA/.test(cards[1]) && /Open the form/.test(cards[1]));
+  assert.deepStrictEqual([...aside.querySelectorAll('.hb-as-toc button')].map((b) => [b.getAttribute('data-kb-anchor'), b.textContent]), [['3.1.1', '3.1.1Tanks'], ['3.1.2', '3.1.2Regulators']], 'the numbered headings, each opening its anchor');
+  assert.deepStrictEqual([...aside.querySelectorAll('.hb-as-refs button')].map((b) => b.getAttribute('data-kb-id') + '|' + b.textContent), ['man-5-1|5.1 Chairs', 'man-3-2|3.2 Nebulizers'],
+    'each section once, by its title — never the bare words of the link');
+  // The bar keeps each quiz and form as one item (a wide screen leaves them to the column).
+  assert.strictEqual(h.d.querySelectorAll('#hb-quizbar .hb-qb-item').length, 2);
+  aside.querySelectorAll('.hb-as-toc button')[1].click(); await h.settleAll();
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.strictEqual(aside.innerHTML, '', 'off a section the column is empty');
+  assert.ok(!h.d.querySelector('.hb-body').classList.contains('hb-has-aside'));
+});
+
+test('HBR2 DOM: search results are a page — the best match first, each hit under its chapter, chapter filters with counts that narrow the list, and "Didn\'t find it?" (driven)', async () => {
+  const results = [
+    { id: 'man-3-2', title: '3.2 Nebulizers', department: 'Chapter 03 — Respiratory & Resupply', heading: '', anchor: '', snippet: 'Nebs ship monthly', score: 9 },
+    { id: 'man-5-1', title: '5.1 Chairs', department: 'Chapter 05 — Power Mobility', heading: '', anchor: '', snippet: 'Chairs roll', score: 6 },
+    { id: 'man-3-1', title: '3.1 Oxygen basics', department: 'Chapter 03 — Respiratory & Resupply', heading: '', anchor: '', snippet: 'Tanks', score: 4 }];
+  const h = await hbBoot_({ answers: { searchReference: () => ({ sectioned: true, terms: ['neb'], results }) } });
+  h.w.hbSearch_('neb', true); await h.settleAll();
+  const hits = [...h.d.querySelectorAll('.hb-results-list .hb-hit')];
+  assert.ok(hits[0].classList.contains('hb-hit-best') && /Best match/.test(hits[0].textContent) && !hits[1].classList.contains('hb-hit-best'));
+  assert.ok(/Chapter 3 · Respiratory & Resupply/.test(hits[0].querySelector('.hb-hit-crumb').textContent) && hits[0].classList.contains('kb-man-p3'), 'the hit\'s chapter, in its colour');
+  const filters = [...h.d.querySelectorAll('.hb-res-side .hb-res-f')];
+  assert.deepStrictEqual(filters.map((f) => f.querySelector('.hb-res-l').textContent + ' ' + f.querySelector('.hb-res-n').textContent), ['All 3', 'Respiratory & Resupply 2', 'Power Mobility 1']);
+  filters[2].click();
+  assert.deepStrictEqual(hits.map((x) => x.classList.contains('hb-off')), [true, false, true], 'only that chapter\'s hits');
+  assert.deepStrictEqual(filters.map((f) => f.getAttribute('aria-pressed')), ['false', 'false', 'true']);
+  filters[0].click();
+  assert.ok(hits.every((x) => !x.classList.contains('hb-off')), 'All shows them again');
+  assert.ok(h.d.querySelector('.hb-res-side .hb-res-ask button'), 'Didn\'t find it? beside them');
+  // One chapter only: nothing to narrow.
+  const one = await hbBoot_({ answers: { searchReference: () => ({ sectioned: true, terms: [], results: results.slice(0, 1) }) } });
+  one.w.hbSearch_('neb', true); await one.settleAll();
+  assert.ok(!one.d.querySelector('.hb-res-f') && one.d.querySelector('.hb-res-ask'));
+  // None: said, with the offer under it.
+  const none = await hbBoot_({ answers: { searchReference: () => ({ sectioned: true, terms: [], results: [] }) } });
+  none.w.hbSearch_('zebra', true); await none.settleAll();
+  assert.ok(/Nothing in the handbook matches/.test(none.main().textContent) && none.d.querySelector('.hb-results-list .hb-res-ask'));
+});
+
+test('HBR2 DOM: Suggest a topic sends what the reader wrote — never the search typed — refuses an empty one in the dialog, and says when it was not sent (driven)', async () => {
+  const sent = [];
+  const h = await hbBoot_({ answers: { searchReference: () => ({ sectioned: true, terms: [], results: [] }),
+    hbRequestTopic: (t) => { sent.push(t); return sent.length === 1 ? { success: true, reqId: 'r1' } : { success: false, error: 'The handbook is not set up yet.' }; } } });
+  h.w.hbSearch_('Maria Garcia 456789', true); await h.settleAll();
+  const ask = () => { h.d.querySelector('.hb-res-ask button').click(); return h.d.querySelector('.ui-dialog'); };
+  let dlg = ask();
+  const input = dlg.querySelector('.ui-dialog-input');
+  assert.strictEqual(input.value, '', 'the dialog starts empty — the search may hold a patient\'s name (F9)');
+  dlg.querySelector('.ui-dialog-ok').click();
+  assert.ok(/Say what you were looking for/.test(dlg.textContent) && h.d.querySelector('.ui-dialog'), 'an empty topic is refused in the dialog');
+  input.value = '  oxygen tank pick-up  '; dlg.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent, ['oxygen tank pick-up'], 'the topic, trimmed — and only it');
+  assert.ok(/the handbook team will see it/.test(h.d.getElementById('toast-stack').textContent));
+  dlg = ask(); dlg.querySelector('.ui-dialog-input').value = 'chairs'; dlg.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(/Not sent: The handbook is not set up yet/.test(h.d.getElementById('toast-stack').textContent), 'a refusal is said');
+});

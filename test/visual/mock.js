@@ -1496,6 +1496,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         official: [{ id: 'q-core-calls', title: 'Taking a call' }, { id: 'q-core-status', title: 'Order statuses' }] };
     },
     hbMarkRead: { success: true },
+    hbRequestTopic: { success: true, reqId: 'mock-req' },   // HBR2: Didn't find it? → Suggest a topic
     // HBR1 — home's shelf: the team's lookups on calls per chapter (this 30 days
     // and the 30 before), each chapter's most-opened section, on the mock manual's chapters.
     hbGetShelf: { since: daysAgo(29), days: 30, floor: 50, truncated: false, total: 1214, prevTotal: 1102, chapters: {

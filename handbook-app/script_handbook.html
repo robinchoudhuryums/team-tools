@@ -219,7 +219,7 @@ function hbSearch_(q, record) {
   main.innerHTML = '<div class="hb-results"><h1 class="hb-results-h">Results for “' + esc(q) + '”</h1>' +
     (jump ? '<button type="button" class="hb-hit hb-hit-jump" data-kb-id="' + esc(jump.id) + '" data-kb-anchor="' + esc(jump.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
       icon('chevronRight', 14) + ' Go to <b>' + esc(jump.num) + '</b> ' + esc(kbManualSplitTitle_(jump.title).rest) + '</button>' : '') +
-    '<div class="hb-results-list" role="status">' + loSweep() + '</div></div>';
+    '<div class="hb-res-grid"><div class="hb-results-list" role="status">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
   main.scrollTop = 0;
   if (handOver) {
     var bar = document.getElementById('hb-q');
@@ -232,7 +232,9 @@ function hbSearch_(q, record) {
     if (!res || res.error) { list.innerHTML = '<p class="hb-msg bad" role="alert">The search failed: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
     // Handbook sections only — the server already drops the rest; this page
     // could not open one anyway (getReferenceItem refuses it).
-    list.innerHTML = hbResultsHtml_((res.results || []).filter(function (r) { return r && kbIsManualId_(r.id); }), q);
+    var shown = (res.results || []).filter(function (r) { return r && kbIsManualId_(r.id); });
+    list.innerHTML = hbResultsHtml_(shown, q);
+    var side = main.querySelector('.hb-res-side'); if (side) side.innerHTML = hbResultsSideHtml_(shown);   // HBR2
     try { kbHighlightTerms_(list, q, res.terms); } catch (e) {}
   };
   google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: (err && err.message) || '' }); })
@@ -241,16 +243,57 @@ function hbSearch_(q, record) {
 /** The result rows: the section (its number as a chip), the part of it that
  *  matched, and a line of it. Router answers ("the caller said …") lead. */
 function hbResultsHtml_(results, q) {
-  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>';
+  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
+  // HBR2: the first result is the best match; every hit carries its chapter (colour, icon, name) and a key the filters use.
   return '<p class="hb-quiet">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
-    results.map(function (r) {
-      var t = kbManualSplitTitle_(r.title || '');
-      return '<button type="button" class="hb-hit" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+    results.map(function (r, i) {
+      var t = kbManualSplitTitle_(r.title || ''), ck = kbManualChapterKey_(r.department || ''), cp = kbManualChapterParts_(r.department || '');
+      return '<button type="button" class="hb-hit' + (i === 0 ? ' hb-hit-best' : '') + (ck ? ' kb-man-' + ck : '') + '" data-dept="' + esc(r.department || '') + '" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
+        (i === 0 && results.length > 1 ? '<span class="hb-hit-best-l">Best match</span>' : '') +
+        (cp.name ? '<span class="hb-hit-crumb">' + kbManualChapterIcon_(r.department, 13, 'hb-hit-ic') + esc((cp.appendix ? 'Appendix ' + cp.num : cp.num ? 'Chapter ' + Number(cp.num) : '') + (cp.num ? ' · ' : '') + cp.name) + '</span>' : '') +
         '<span class="hb-hit-t">' + (t.num ? '<span class="hb-hit-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</span>' +
         (r.heading ? '<span class="hb-hit-h">' + esc(r.heading) + '</span>' : '') +
         (r.router && r.chunkMd ? '<span class="hb-hit-s">' + esc(kbMdPlain_(r.chunkMd)) + '</span>' : (r.snippet ? '<span class="hb-hit-s">' + esc(r.snippet) + '</span>' : '')) +
         '</button>';
     }).join('');
+}
+
+/** HBR2 — beside the results: the chapters they come from, as filters with
+ *  counts, and "Didn't find it?". '' when there is nothing to narrow. */
+function hbResultsSideHtml_(results) {
+  if (!results.length) return '';
+  var counts = {}, order = [];
+  results.forEach(function (r) { var d = r.department || ''; if (!(d in counts)) { counts[d] = 0; order.push(d); } counts[d]++; });
+  order.sort(function (a, b) { return kbDeptCompare_(a, b); });
+  var btn = function (d, label, n, on) {
+    var ck = d ? kbManualChapterKey_(d) : '';
+    return '<button type="button" class="hb-res-f' + (ck ? ' kb-man-' + ck : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-dept="' + esc(d) + '" data-all="' + (d === null ? '1' : '') + '" onclick="hbFilterResults_(this)">' +
+      '<span class="hb-res-dot" aria-hidden="true"></span><span class="hb-res-l">' + esc(label) + '</span><span class="hb-res-n">' + n + '</span></button>';
+  };
+  return (order.length > 1 ? '<div class="hb-res-card"><div class="hb-res-h">Chapters</div>' + btn(null, 'All', results.length, true) +
+    order.map(function (d) { return btn(d, d ? kbManualChapterParts_(d).name : 'Other', counts[d], false); }).join('') + '</div>' : '') + hbSuggestTopicHtml_();
+}
+/** Show only one chapter's hits (or all again). */
+function hbFilterResults_(btn) {
+  var side = btn.closest('.hb-res-side'), main = hbMain_(); if (!side || !main) return;
+  var all = btn.getAttribute('data-all') === '1', dept = btn.getAttribute('data-dept');
+  side.querySelectorAll('.hb-res-f').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  main.querySelectorAll('.hb-results-list .hb-hit').forEach(function (h) { h.classList.toggle('hb-off', !all && h.getAttribute('data-dept') !== dept); });
+}
+function hbSuggestTopicHtml_() {
+  return '<div class="hb-res-card hb-res-ask"><div class="hb-res-h">Didn\u2019t find it?</div><p class="hb-quiet">Tell the handbook team what you were looking for, and they will add it.</p>' +
+    '<button type="button" class="kb-btn" onclick="hbSuggestTopic_()">Suggest a topic</button></div>';
+}
+/** Ask for the topic (never the search typed — it can carry a patient's name, F9) and send it. */
+function hbSuggestTopic_() {
+  uiPrompt({ title: 'Suggest a topic', message: 'What were you looking for? Describe the topic \u2014 no patient details.', placeholder: 'e.g. picking up an oxygen tank', confirmLabel: 'Send',
+    validator: function (v) { v = String(v || '').trim(); return !v ? 'Say what you were looking for.' : v.length > 200 ? 'Keep it under 200 characters.' : ''; } }).then(function (topic) {
+    if (topic == null) return;
+    google.script.run
+      .withSuccessHandler(function (r) { showToast(r && r.success ? 'Thanks \u2014 the handbook team will see it.' : 'Not sent: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', r && r.success ? 'success' : 'toast-error'); })
+      .withFailureHandler(function (e) { showToast('Not sent: ' + String((e && e.message) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); })
+      .hbRequestTopic(String(topic).trim());
+  });
 }
 
 // ── People (HB2.1) ────────────────────────────────────────────────────────
@@ -574,13 +617,71 @@ function hbPaintQuizBar_(id) {
   var list = HB_QZ.list, mine = [];
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
   var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp) : '';
+  // HBR2: each quiz and form is one item, so a wide screen can leave them to the side column.
   bar.innerHTML = (sign ? '<span class="hb-so">' + sign + '</span>' : '') + hbNoteBarHtml_(id) + hbListenBarHtml_(id) + mine.map(function (q) {
-    return '<span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button>';
+    return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('check', 13) + ' Quiz: ' + esc(q.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-quiz="' + esc(q.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">Take the quiz</button></span>';
   }).join('') + hbFormsFor_(id).map(function (f) {   // HB4.1: the forms this section offers
-    return '<span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
-      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button>';
+    return '<span class="hb-qb-item"><span class="hb-qb-t">' + icon('fileText', 13) + ' Form: ' + esc(f.title) + '</span>' +
+      '<button type="button" class="kb-btn hb-qb-go" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></span>';
   }).join('');
+  hbPaintAside_(id, mine);
+}
+/** HBR2 — the side column beside a section (wide screens): its quizzes with where
+ *  the reader stands, its forms, the headings in it and what it refers to — all
+ *  from what the page already has (the quiz list, the form library, the section's
+ *  own rendered headings and cross-references). Follows the scroll-spy; empty
+ *  (and hidden) off a section. */
+function hbPaintAside_(id, quizzes) {
+  var aside = document.getElementById('hb-aside'), body = document.querySelector('.hb-body');
+  if (!aside) return;
+  var sec = id ? document.getElementById('kb-man-sec-' + id) : null;
+  if (!id || !sec) { aside.innerHTML = ''; if (body) body.classList.remove('hb-has-aside'); return; }
+  var item = HB.tree.filter(function (it) { return it.id === id; })[0];
+  var t = item ? kbManualSplitTitle_(item.title) : { num: '', rest: '' };
+  var heads = hbSectionHeads_(sec), refs = hbSectionRefs_(sec, id);
+  var forms = hbFormsFor_(id);
+  var html = '<div class="hb-as-k">This section</div><div class="hb-as-t">' + (t.num ? '<span class="hb-as-n">' + esc(t.num) + '</span> ' : '') + esc(t.rest) + '</div>';
+  (quizzes || []).forEach(function (q) {
+    var me = q.me || {};
+    html += '<div class="hb-as-card"><div class="hb-as-h">' + icon('check', 14) + ' Quiz</div><div class="hb-as-ct">' + esc(q.title) + '</div>' + hbQuizChip_(q.me) +
+      '<button type="button" class="kb-btn hb-btn-pri" data-quiz="' + esc(q.id) + '"' + (me.locked ? ' disabled' : '') + ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' +
+      (me.locked ? 'Locked' : me.passed ? 'Take it again' : me.attempts ? 'Try again' : 'Take the quiz') + '</button></div>';
+  });
+  forms.forEach(function (f) {
+    html += '<div class="hb-as-card"><div class="hb-as-h">' + icon('fileText', 14) + ' Form</div><div class="hb-as-ct">' + esc(f.title) + '</div>' +
+      '<button type="button" class="kb-btn" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open the form</button></div>';
+  });
+  if (heads.length) html += '<div class="hb-as-k">In this section</div><nav class="hb-as-toc" aria-label="In this section">' + heads.map(function (h) {
+    return '<button type="button" data-kb-id="' + esc(id) + '" data-kb-anchor="' + esc(h.num) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))"><span class="hb-as-hn">' + esc(h.num) + '</span>' + esc(h.text) + '</button>';
+  }).join('') + '</nav>';
+  if (refs.length) html += '<div class="hb-as-k">See also</div><div class="hb-as-refs">' + refs.map(function (r) {
+    return '<button type="button" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' + icon('chevronRight', 12) + esc(r.text) + '</button>';
+  }).join('') + '</div>';
+  if (aside.innerHTML !== html) aside.innerHTML = html;
+  if (body) body.classList.add('hb-has-aside');
+}
+/** The numbered headings a section's article holds ("3.8.1 Incontinence supplies"). */
+function hbSectionHeads_(sec) {
+  var out = [];
+  sec.querySelectorAll('.kb-article h2, .kb-article h3').forEach(function (h) {
+    var m = /^\s*((?:\d+|[A-C])(?:\.\d+)+)\s+(.+?)\s*$/.exec(h.textContent || '');
+    if (m) out.push({ num: m[1], text: m[2] });
+  });
+  return out.slice(0, 12);
+}
+/** The other sections a section refers to — each section once (at its first link), in order, at most five. */
+function hbSectionRefs_(sec, id) {
+  var seen = {}, out = [];
+  sec.querySelectorAll('a.kb-xref[data-kb-id]').forEach(function (a) {
+    var rid = a.getAttribute('data-kb-id'), an = a.getAttribute('data-kb-anchor') || '';
+    if (!rid || rid === id || seen[rid] || out.length >= 5 || !HB.tree.some(function (it) { return it.id === rid; })) return;
+    seen[rid] = 1;   // a section once, at the first place it is named
+    // The link's own words are often a bare number ("6.2"); the section's title says what it is.
+    var it = HB.tree.filter(function (x) { return x.id === rid; })[0], tt = kbManualSplitTitle_(it.title);
+    out.push({ id: rid, anchor: an, text: (an && /^(?:\d+|[A-C])(?:\.\d+)+$/.test(an) ? an : tt.num) + ' ' + tt.rest });
+  });
+  return out;
 }
 /** Where a reader stands with a quiz, as a chip. */
 function hbQuizChip_(me) {
