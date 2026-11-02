@@ -333,11 +333,12 @@ function hbPaintMeBtn_() {
   // HBR1: the reader's initials on the button, and the rail's user card.
   var me = HB_ME && !HB_ME.error ? HB_ME : null;
   var ini = me ? hbInitials_(me.name || me.email) : '';
-  var ava = document.getElementById('hb-me-ava'); if (ava) ava.innerHTML = ini ? esc(ini) : icon('user', 17);
+  // Drawn from data-ini (CSS), like the badge: the initials are no words in the button's name (label in name, HB2.4).
+  var ava = document.getElementById('hb-me-ava'); if (ava) { ava.innerHTML = ini ? '' : icon('user', 17); ava.setAttribute('data-ini', ini); }
   var card = document.getElementById('hb-user');
   if (card) {
     var dept = (me && me.me && me.me.department) || hbLs_(HB_LS_DEPT) || '';
-    card.innerHTML = me ? '<span class="hb-ava" aria-hidden="true">' + esc(ini) + '</span><span class="hb-user-b"><span class="hb-user-n">' + esc(me.name || me.email) + '</span>' +
+    card.innerHTML = me ? '<span class="hb-ava" aria-hidden="true" data-ini="' + esc(ini) + '"></span><span class="hb-user-b"><span class="hb-user-n">' + esc(me.name || me.email) + '</span>' +
       '<span class="hb-user-d">' + esc(dept ? kbManualChapterParts_(dept).name : 'No department chosen') + '</span></span>' : '';
   }
 }
@@ -2254,8 +2255,9 @@ function hbBooksHtml_(chapters, books, view, mark) {
     var cls = 'hb-book kb-man-p' + esc(c.key) + (view === 'me' && mark === c.dept ? ' mine' : '') + (i >= n - 3 ? ' tip-r' : '');
     return '<button type="button" class="' + cls + '" style="height:' + h + '%;--p:' + b.pct + '%" aria-label="' + esc(label) + '" data-kb-id="' + esc(c.ids[0] || '') + '" ' +
       'onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), \'\', { chapter: true })">' +
-      (view === 'calls' && mark === c.key && b.n ? '<span class="hb-book-most" aria-hidden="true">Most</span>' : '') +
-      '<span class="hb-book-nm" aria-hidden="true">' + esc(hbSpineName_(c.name)) + '</span>' +
+      // The spine's words are drawn (data-*, CSS) — its name is its aria-label, which says all of it (axe: label in name).
+      (view === 'calls' && mark === c.key && b.n ? '<span class="hb-book-most" aria-hidden="true" data-t="Most"></span>' : '') +
+      '<span class="hb-book-nm" aria-hidden="true" data-t="' + esc(hbSpineName_(c.name)) + '"></span>' +
       '<span class="hb-book-tip" aria-hidden="true">' + tip + '</span></button>';
   }).join('') + '</div><div class="hb-book-nums" aria-hidden="true">' + chapters.map(function (c) { return '<span>' + esc(c.num) + '</span>'; }).join('') + '</div>';
 }

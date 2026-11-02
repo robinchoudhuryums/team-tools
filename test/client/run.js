@@ -41980,19 +41980,19 @@ test('HBR1-a: the shelf counts drawer opens of handbook sections per chapter, th
 test('HBR1-b: hbGetShelf reads KbViews back BY DATE across chunks (never a fixed tail), counts Dates in the sheet\'s tz, caches an hour, never caches a failure, and refuses a reader who is not signed in (driven)', () => {
   const at = (n) => new Date(hbrDay_(n) + 'T12:00:00Z');   // Sheets hands a coerced Date back
   const rows = [['Timestamp', 'ItemId', 'RepId', 'Context']];
-  for (let i = 0; i < 400; i++) rows.push([at(75), 'man-8-2', 'r1', 'drawer:callNotes']);   // past both windows
+  for (let i = 0; i < 6000; i++) rows.push([at(75), 'man-8-2', 'r1', 'drawer:callNotes']);   // past both windows — chunks a reader that did not stop would go on to
   for (let i = 0; i < 300; i++) rows.push([at(45), 'man-8-2', 'r1', 'drawer:callNotes']);   // the 30 before
   for (let i = 0; i < 9000; i++) rows.push([hbrDay_(10) + ' 09:00:00', i % 3 ? 'man-8-6' : 'man-6-9', 'r' + (i % 7), i % 10 ? 'drawer:callNotes' : 'reference']);   // a busy month, more than one chunk
   const tabs = Object.assign(hbTabs_(), { KbViews: rows });
   const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
   const res = hbPlain_(sb.hbGetShelf());
-  assert.strictEqual(res.total, 8100, 'every drawer open of the busy month — 9,000 rows read across chunks, the Reference-tab tenth left out');
+  assert.strictEqual(res.total, 8100, 'every drawer open of the busy month — read across chunks, the Reference-tab tenth left out');
   assert.strictEqual(res.prevTotal, 300, 'the 30 before');
   assert.deepStrictEqual([res.chapters[8].n, res.chapters[8].top, res.chapters[6].n, res.chapters[8].prev], [5400, 'man-8-6', 2700, 300]);
   assert.deepStrictEqual([res.floor, res.truncated, res.days], [50, false, 30]);
   assert.ok(!JSON.stringify(res).includes('r1'), 'no rep leaves the server — team totals only');
   const reads = sb.__reads.n;
-  assert.ok(reads <= 3, 'it stopped at the first chunk that reached past 60 days (' + reads + ' reads), never the 75-day rows\' chunk beyond it');
+  assert.strictEqual(reads, 2, 'it stopped at the first chunk that reached past 60 days — never the two chunks of older rows beyond it');
   assert.deepStrictEqual(hbPlain_(sb.hbGetShelf()), res, 'the second visit is the cached answer');
   assert.strictEqual(sb.__reads.n, reads, 'and reads nothing');
   // No KbViews tab yet: nothing recorded, said as zero lookups (the page says "not enough yet").

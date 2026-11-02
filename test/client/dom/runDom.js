@@ -10394,7 +10394,9 @@ test('HB2.4 DOM: the page has a title, a skip link to the reading area, named la
   assert.strictEqual(badge.getAttribute('aria-hidden'), 'true');
   assert.strictEqual(badge.textContent, '', 'the count is a data attribute the stylesheet draws, never text in the button\'s name');
   // HBR1: the button shows the reader's initials (hidden from the name); its name says Profile and the count.
-  assert.strictEqual(boss.d.getElementById('hb-me-ava').textContent, 'B');
+  assert.strictEqual(boss.d.getElementById('hb-me-ava').getAttribute('data-ini'), 'B');
+  assert.strictEqual(boss.d.getElementById('hb-me').textContent.trim(), '', 'the initials are drawn, never words beside the name (axe: label in name)');
+  assert.ok(!boss.d.getElementById('hb-user').hasAttribute('aria-label') && /Boss/.test(boss.d.getElementById('hb-user').textContent), 'the user card is named by its own words');
   assert.strictEqual(boss.d.getElementById('hb-me-ava').getAttribute('aria-hidden'), 'true');
   assert.strictEqual(boss.d.getElementById('hb-me').getAttribute('aria-label'), 'Profile — 1 waiting for you', 'its name begins with its job and carries the count');
 });
@@ -10546,7 +10548,8 @@ test('HBR1 DOM: the shelf opens on the team\'s lookups on calls — a spine per 
   assert.ok(/On calls · 30 days/.test(shelf.textContent) && /Respiratory & Resupply/.test(shelf.querySelector('.hb-shelf-top').textContent), 'the busiest chapter is named');
   assert.ok(/120 lookups/.test(shelf.textContent));
   const books = [...shelf.querySelectorAll('.hb-book')];
-  assert.deepStrictEqual(books.map((b) => b.querySelector('.hb-book-nm').textContent), ['Respiratory', 'Power Mobility'], 'each spine carries its chapter\'s short name');
+  assert.deepStrictEqual(books.map((b) => b.querySelector('.hb-book-nm').getAttribute('data-t')), ['Respiratory', 'Power Mobility'], 'each spine carries its chapter\'s short name');
+  assert.ok(books.every((b) => b.textContent.replace(/\s/g, '') === b.querySelector('.hb-book-tip').textContent.replace(/\s/g, '')), 'drawn, not words: only the (hidden) card is text — the name is the aria-label (axe: label in name)');
   assert.deepStrictEqual(books.map((b) => b.style.getPropertyValue('--p')), ['100%', '50%'], 'filled against the busiest');
   assert.ok(books[0].querySelector('.hb-book-most') && !books[1].querySelector('.hb-book-most'), 'the busiest is marked');
   assert.strictEqual(books[0].getAttribute('aria-label'), 'Respiratory & Resupply: 80 lookups on calls, the most', 'a spine\'s name is its words');
