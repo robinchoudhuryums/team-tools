@@ -3378,3 +3378,26 @@ per-change detail. By delta:
 - **Visual:** the clock, deptreq, spanish, cn-log and cn-scratchpad scenarios
   measure clean.
 
+## Operator round 2026-11-02, Batch S — the Scratchpad (2026-11-02)
+
+- **Pure** — a driven server pin for pages over a fake sheet:
+  - the legacy row 1 is `main`, and an older client writes row 1;
+  - add, rename, the page limit, delete (never the last);
+  - a save to a deleted page is refused with nothing written, and a load of one
+    says so.
+
+  The shared sanitizer cases gained checklists, highlights, h3 and links (http(s)
+  only; data: and javascript: dropped). B-2c reads the page's row. The
+  fixture-shape pin reads the page list's items against `scratchpadPageList_`.
+  S2's raw-text writers name `scratchpadPageOp`.
+- **DOM** — the client sanitizer twin carries the same cases. Two drives:
+  - **Pages:** a switch saves the old page under its id first; a load
+    overtaken by another switch is dropped; a deleted page's save moves the text
+    to "Recovered text".
+  - **Extras:** a checklist box ticks, a finished URL links (one being typed
+    does not), Ctrl+click opens and a blocked open is said, Send appends to
+    Issue as an input, Time inserts, Find counts and steps and its Escape stays
+    in the find bar, and Ctrl/Cmd+Shift+S toggles the panel.
+- **Visual** — the cn-scratchpad scenarios measure clean with the page bar and
+  the wider toolbar.
+

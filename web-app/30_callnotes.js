@@ -4576,34 +4576,78 @@ function scratchpadSheet_(emp, createIfMissing) {
   }
   return sh;
 }
-/** Read-only. No tab yet = an empty scratchpad, never an error. */
-function getMyScratchpad() {
+/** Batch S (operator 2026-11-02) — PURE (Node-pinned): the pages in the
+ *  Scratchpad tab's rows (A..E): [{id, name, row (1-based), updatedAtMs,
+ *  content, format}]. Row 1 is page `main` unless it carries an id; a later
+ *  row with no id is not a page (nothing the app writes looks like that). */
+function scratchpadPagesFromRows_(rows) {
+  const out = [];
+  (rows || []).forEach(function (r, i) {
+    const id = String((r && r[4] != null) ? r[4] : '').trim() || (i === 0 ? SCRATCHPAD_MAIN_PAGE : '');
+    if (!id) return;
+    const name = String((r && r[3] != null) ? r[3] : '').trim() || (i === 0 ? 'Notes' : 'Page ' + (i + 1));
+    const v = r ? r[0] : '';
+    const ms = Number(r ? r[1] : NaN);
+    out.push({ id: id, name: name, row: i + 1,
+      content: v == null ? '' : (typeof v === 'string' ? v : String(v)),
+      updatedAtMs: isFinite(ms) && ms > 0 ? ms : null,
+      format: String((r && r[2]) || '') === 'html' ? 'html' : 'text' });
+  });
+  return out;
+}
+/** PURE — a page name as stored: whitespace collapsed, control characters
+ *  dropped, at most SCRATCHPAD_PAGE_NAME_MAX; '' when nothing is left. */
+function scratchpadPageName_(name) {
+  return String(name == null ? '' : name).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()
+    .slice(0, SCRATCHPAD_PAGE_NAME_MAX).trim();
+}
+function scratchpadReadPages_(sh) {
+  if (!sh) return [];
+  const last = sh.getLastRow();
+  return last >= 1 ? scratchpadPagesFromRows_(sh.getRange(1, 1, last, 5).getValues()) : [];
+}
+/** The page list a client is sent: no content, no row numbers. */
+function scratchpadPageList_(pages) {
+  const list = (pages || []).map(function (p) { return { id: p.id, name: p.name, updatedAtMs: p.updatedAtMs }; });
+  return list.length ? list : [{ id: SCRATCHPAD_MAIN_PAGE, name: 'Notes', updatedAtMs: null }];
+}
+/** Read-only. No tab yet = an empty scratchpad, never an error. Batch S: one
+ *  PAGE — `pageId`'s, or the first; `missing` says a requested page is gone
+ *  (deleted in another window) and the first page was sent instead. */
+function getMyScratchpad(pageId) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { error: 'Not authorized.' };
     const sh = scratchpadSheet_(emp, false);
-    if (!sh) return { content: '', updatedAtMs: null };
-    const v = sh.getRange('A1').getValue();
-    // Belt-and-braces for a hand-made tab without the '@' format: a coerced
-    // cell String()s rather than throwing (content fidelity is only
-    // guaranteed for app-written cells, which are format-pinned).
-    const content = v == null ? '' : (typeof v === 'string' ? v : String(v));
-    const ms = Number(sh.getRange('B1').getValue());
-    // 22post B-2c: C1 names the stored format — 'html' (the formatting editor,
+    const pages = scratchpadReadPages_(sh);
+    const want = pageId == null ? '' : String(pageId);
+    let page = want ? pages.filter(function (p) { return p.id === want; })[0] : null;
+    const missing = !!want && !page && !(want === SCRATCHPAD_MAIN_PAGE && !pages.length);
+    if (!page) page = pages[0] || null;
+    // 22post B-2c: C names the stored format — 'html' (the formatting editor,
     // allowlist-sanitized on save) or blank/'text' (a pre-B pad, plain text the
-    // client converts on open).
-    const fmt = String(sh.getRange('C1').getValue() || '') === 'html' ? 'html' : 'text';
-    return { content: content, updatedAtMs: isFinite(ms) && ms > 0 ? ms : null, maxChars: SCRATCHPAD_MAX_CHARS, format: fmt };
+    // client converts on open). A coerced cell String()s rather than throwing.
+    return { content: page ? page.content : '', updatedAtMs: page ? page.updatedAtMs : null,
+      maxChars: SCRATCHPAD_MAX_CHARS, format: page ? page.format : 'text',
+      pageId: page ? page.id : SCRATCHPAD_MAIN_PAGE, pages: scratchpadPageList_(pages),
+      maxPages: SCRATCHPAD_MAX_PAGES, missing: missing };
   } catch (err) { return { error: err.message }; }
 }
 /** 22post B-2c — the Scratchpad's html allowlist, mirrored by the client's
  *  cnScratchSanitize_ (a drift only drops formatting; the server copy is what
- *  is stored). Keeps b/strong/i/em/u/br/div/p/ul/ol/li and a span carrying only
- *  the palette classes; drops every attribute, comment and unknown tag (its
- *  text kept), and the content of script/style-class elements. Text is
- *  re-escaped: a bare < > or & becomes an entity, existing entities stand. */
-const SCRATCH_ALLOWED_TAGS_ = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1 };
-const SCRATCH_CLASS_RE_ = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large))$/;
+ *  is stored). Keeps b/strong/i/em/u/br/div/p/ul/ol/li/h3, a span carrying only
+ *  the palette classes, and drops every other attribute, comment and unknown
+ *  tag (its text kept), and the content of script/style-class elements. Text
+ *  is re-escaped: a bare < > or & becomes an entity, existing entities stand.
+ *  Batch S (operator 2026-11-02): a checklist is ul.cn-sp-check with
+ *  li.cn-sp-done for a ticked item; a highlight is a span.cn-sp-h-*; a
+ *  heading is an h3; a link keeps ONLY an http(s) href — anything else (a
+ *  javascript: or data: URL, an entity-dressed one) loses the tag, keeps its
+ *  text. */
+const SCRATCH_ALLOWED_TAGS_ = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1, h3: 1, a: 1 };
+const SCRATCH_CLASS_RE_ = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large)|h-(yellow|green|blue|pink))$/;
+const SCRATCH_TAG_CLASS_RE_ = { ul: /^cn-sp-check$/, li: /^cn-sp-done$/ };
+const SCRATCH_HREF_RE_ = /^https?:\/\/[^\s"'<>`]+$/i;
 function scratchpadSanitizeHtml_(html) {
   let s = String(html == null ? '' : html);
   s = s.replace(/<!--[\s\S]*?-->/g, '');
@@ -4612,8 +4656,12 @@ function scratchpadSanitizeHtml_(html) {
     return t.replace(/&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/g, '&amp;')
             .replace(/</g, '&lt;').replace(/>/g, '&gt;');
   };
+  const attr = function (raw, name) {
+    const am = new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(raw);
+    return String(am ? (am[1] || am[2] || am[3] || '') : '');
+  };
   const re = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
-  const out = [], spans = [];
+  const out = [], spans = [], links = [];
   let last = 0, m;
   while ((m = re.exec(s))) {
     out.push(text(s.slice(last, m.index)));
@@ -4623,11 +4671,22 @@ function scratchpadSanitizeHtml_(html) {
     if (tag === 'br') { if (!close) out.push('<br>'); continue; }
     if (tag === 'span') {
       if (close) { if (spans.pop()) out.push('</span>'); continue; }
-      const cm = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[3]);
-      const cls = String(cm ? (cm[1] || cm[2] || cm[3] || '') : '').split(/\s+/)
-        .filter(function (c) { return SCRATCH_CLASS_RE_.test(c); });
+      const cls = attr(m[3], 'class').split(/\s+/).filter(function (c) { return SCRATCH_CLASS_RE_.test(c); });
       spans.push(cls.length > 0);
       if (cls.length) out.push('<span class="' + cls.join(' ') + '">');
+      continue;
+    }
+    if (tag === 'a') {
+      if (close) { if (links.pop()) out.push('</a>'); continue; }
+      const href = attr(m[3], 'href').trim();
+      const ok = href.length <= 2000 && SCRATCH_HREF_RE_.test(href);
+      links.push(ok);
+      if (ok) out.push('<a href="' + href + '">');
+      continue;
+    }
+    if (!close && SCRATCH_TAG_CLASS_RE_[tag]) {
+      const keep = attr(m[3], 'class').split(/\s+/).filter(function (c) { return SCRATCH_TAG_CLASS_RE_[tag].test(c); });
+      out.push(keep.length ? '<' + tag + ' class="' + keep.join(' ') + '">' : '<' + tag + '>');
       continue;
     }
     out.push('<' + (close ? '/' : '') + tag + '>');
@@ -4643,8 +4702,10 @@ function scratchpadSanitizeHtml_(html) {
  *  actionable error (the INV-96 posture — never a silent truncate: this is
  *  the rep's document). NO audit row per save (high-frequency, own-store,
  *  non-privileged — the kbRecordView precedent; INV-32 governs call-NOTE
- *  actions, which this is not). */
-function saveMyScratchpad(content, format) {
+ *  actions, which this is not). Batch S: the PAGE is named; no page id (an
+ *  older client) is row 1, and a page deleted in another window REFUSES with
+ *  `pageGone` — never written into some other page. */
+function saveMyScratchpad(content, format, pageId) {
   const lock = LockService.getUserLock();
   lock.waitLock(15000);
   try {
@@ -4659,11 +4720,66 @@ function saveMyScratchpad(content, format) {
       return { error: 'Scratchpad is over the ' + SCRATCHPAD_MAX_CHARS + '-character limit (' + text.length + ') — trim it and save again.' };
     }
     const sh = scratchpadSheet_(emp, true);
+    const want = pageId == null || pageId === '' ? '' : String(pageId);
+    let row = 1;
+    if (want) {
+      const pages = scratchpadReadPages_(sh);
+      const page = pages.filter(function (p) { return p.id === want; })[0];
+      if (page) row = page.row;
+      else if (!(want === SCRATCHPAD_MAIN_PAGE && !pages.length)) {
+        return { error: 'That page was deleted in another window — your text is still here; copy it to another page.', pageGone: true };
+      }
+    }
     const now = Date.now();
-    sh.getRange('A1').setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
-    sh.getRange('B1').setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
-    sh.getRange('C1').setValue(sheetSafe_(isHtml ? 'html' : 'text'));
-    return { success: true, updatedAtMs: now };
+    sh.getRange(row, 1).setNumberFormat('@').setValue(sheetText_(text));   // S2: the '@' cell, re-asserted — raw, never an apostrophe
+    sh.getRange(row, 2).setValue(sheetSafe_(now));   // epoch-ms NUMBER cell — coercion-immune
+    sh.getRange(row, 3).setValue(sheetSafe_(isHtml ? 'html' : 'text'));
+    return { success: true, updatedAtMs: now, pageId: want || SCRATCHPAD_MAIN_PAGE };
+  } catch (err) { return { error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+/** Batch S (operator 2026-11-02) — add, rename or delete a Scratchpad page.
+ *  The caller's own tab, under the user lock like the save. A name is plain
+ *  text in an '@' cell; at most SCRATCHPAD_MAX_PAGES pages; the last page is
+ *  never deleted. Returns the page list (and `pageId` — the new page's, or the
+ *  first page's after a delete). */
+function scratchpadPageOp(op, pageId, name) {
+  const lock = LockService.getUserLock();
+  lock.waitLock(15000);
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const sh = scratchpadSheet_(emp, true);
+    if (sh.getLastRow() < 1) sh.getRange(1, 3).setValue(sheetSafe_('html'));   // the legacy page exists before any other
+    let pages = scratchpadReadPages_(sh);
+    const id = pageId == null ? '' : String(pageId);
+    const page = pages.filter(function (p) { return p.id === id; })[0];
+    let result = '';
+    if (op === 'add') {
+      if (pages.length >= SCRATCHPAD_MAX_PAGES) return { error: 'You have the most pages a scratchpad holds (' + SCRATCHPAD_MAX_PAGES + ') — delete one first.' };
+      const nm = scratchpadPageName_(name) || ('Page ' + (pages.length + 1));
+      result = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36);
+      sh.appendRow(sheetSafeRow_(['', Date.now(), 'html', '', result]));
+      const row = sh.getLastRow();
+      sh.getRange(row, 4).setNumberFormat('@').setValue(sheetText_(nm));
+    } else if (op === 'rename') {
+      if (!page) return { error: 'That page was deleted in another window.', pageGone: true };
+      const nm = scratchpadPageName_(name);
+      if (!nm) return { error: 'A page needs a name.' };
+      sh.getRange(page.row, 4).setNumberFormat('@').setValue(sheetText_(nm));
+      result = page.id;
+    } else if (op === 'delete') {
+      if (!page) return { error: 'That page was already deleted.', pageGone: true };
+      if (pages.length <= 1) return { error: 'A scratchpad keeps at least one page.' };
+      // Row 1 losing its id would make the next row "main" by position — a
+      // deleted legacy page hands its id on to nothing, so the row below keeps
+      // its own (every row after the first carries one).
+      sh.deleteRow(page.row);
+    } else {
+      return { error: 'Unknown page action.' };
+    }
+    pages = scratchpadReadPages_(sh);
+    return { success: true, pages: scratchpadPageList_(pages), pageId: result || (pages[0] && pages[0].id) || SCRATCHPAD_MAIN_PAGE };
   } catch (err) { return { error: err.message }; }
   finally { lock.releaseLock(); }
 }

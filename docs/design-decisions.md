@@ -5028,6 +5028,26 @@ pick them up without re-deriving the context.
   and any span left unused (`cnScratchHtmlOf_`). The panel was already
   resizable (`resize: both`); a visible grip is now drawn over the browser's
   own handle, with `pointer-events: none` so the drag still reaches it.
+  **AMENDED (Batch S, operator 2026-11-02): the Scratchpad grows.**
+  - **Named pages, one ROW each** of the rep's Scratchpad tab (A the page, B
+    its save time, C its format, D its name, E its id; at most 10). Row 1 stays
+    the legacy page `main`, so a pad from before pages is the first page and an
+    older client keeps writing row 1. Every save names the page its text was
+    typed on, so a switch mid-save never writes one page's text into another,
+    and a page load overtaken by another switch is dropped. A save whose page
+    was deleted in another window is REFUSED (`pageGone`); the client puts the
+    text on a new "Recovered text" page rather than into another page or the
+    bin.
+  - **New formatting:** checklists (`ul.cn-sp-check` / `li.cn-sp-done`, ticked
+    by clicking the box), highlights (`span.cn-sp-h-*`, the pending-style path
+    of Batch A), headings (`h3`), and links. A link keeps ONLY an http(s) href
+    on both sanitizers. A finished URL is wrapped as it is typed, and
+    Ctrl/⌘+click opens it; a blocked open says so (g135).
+  - **New tools:** Time inserts the time in the rep's zone. Issue / Resolution
+    append the selection to the note being written, firing input so the draft
+    and auto-tags follow. Find counts and steps through matches, drawn with the
+    CSS Highlight API, so the text is never rewritten. Ctrl/⌘+Shift+S opens and
+    closes the panel from any page.
 - <a id="a-spanish-assignment-tells-the-assignee"></a>**A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27).** The operator asked for both. The email builder takes only a count, the
   assigner's name and a link (`spanishAssignEmail_(count, actorName, url)`), so
   no subject, sender, body or thread id can reach it; it is sent after the

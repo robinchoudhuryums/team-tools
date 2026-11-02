@@ -13864,11 +13864,21 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     });
     // getMyScratchpad fixture keys ⊆ the server return keys.
     const pad = strip(extractRawFunction('Code.js', 'getMyScratchpad'));
-    const padRet = /return \{ content: content,([\s\S]*?)\};/.exec(pad);
+    const padRet = /return \{ content: page \? page\.content : '',([\s\S]*?)\};/.exec(pad);   // Batch S: one PAGE
     assert.ok(padRet, 'found the scratchpad return shape');
     const padKeys = ['content'].concat([...padRet[1].matchAll(/(\w+):\s/g)].map((m) => m[1]));
-    const padFx = /getMyScratchpad: \{([^}]*)\}/.exec(mockRaw);
-    assert.ok(padFx, 'found the scratchpad fixture');
+    const padFxFull = /getMyScratchpad: \{([\s\S]*?)\},\n/.exec(mockRaw);
+    assert.ok(padFxFull, 'found the scratchpad fixture');
+    // Batch S: the page list's items are the server's page shape; the outer
+    // keys are read with the nested list blanked out.
+    const pageItems = /pages: \[([\s\S]*?)\]/.exec(padFxFull[1]);
+    assert.ok(pageItems, 'the fixture carries a page list');
+    const pageKeys = (/return \{ id: p\.id,([^}]*)\}/.exec(strip(extractRawFunction('Code.js', 'scratchpadPageList_'))) || [])[1];
+    assert.ok(pageKeys, 'found the server page shape');
+    const srvPageKeys = ['id'].concat([...pageKeys.matchAll(/(\w+):\s/g)].map((m) => m[1]));
+    [...pageItems[1].replace(/'(?:[^'\\]|\\.)*'/g, "''").matchAll(/(\w+):\s/g)].map((m) => m[1]).forEach((k) =>
+      assert.ok(srvPageKeys.includes(k), 'scratchpad fixture page key "' + k + '" is not a server field (' + srvPageKeys.join('|') + ')'));
+    const padFx = [null, padFxFull[1].replace(/\[[\s\S]*?\]/g, '[]')];
     // Blank out string LITERALS before extracting keys — the fixture's content
     // value contains "Dr. Alvarez: x4102", and a bare colon-space matcher read
     // "Alvarez" as a key on first write (the seams-18 F3 `https:` lesson in a
@@ -28197,9 +28207,9 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
-  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known fifteen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab)');
+    'the raw plain-text writers are exactly the known sixteen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names)');
   assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation)');
@@ -30248,12 +30258,21 @@ const SCRATCH_SANITIZE_CASES = [
   ['<div>line<br>two</div>', '<div>line<br>two</div>'],
   ['<b onmouseover="x()">t</b>', '<b>t</b>'],
   ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+  // Batch S (operator 2026-11-02): checklists, highlights, headings, links.
+  ['<ul class="cn-sp-check evil"><li class="cn-sp-done x">a</li><li>b</li></ul>', '<ul class="cn-sp-check"><li class="cn-sp-done">a</li><li>b</li></ul>'],
+  ['<span class="cn-sp-h-yellow">hl</span>', '<span class="cn-sp-h-yellow">hl</span>'],
+  ['<h3 id="x" onclick="y()">Head</h3>', '<h3>Head</h3>'],
+  ['<h1>big</h1>', 'big'],
+  ['<a href="https://x.com/a?b=1&amp;c=2" onclick="z()">site</a>', '<a href="https://x.com/a?b=1&amp;c=2">site</a>'],
+  ['<a href="data:text/html,x">d</a>', 'd'],
+  ['<a href="https://ok.org" target="_top">x <b>y</b></a> z', '<a href="https://ok.org">x <b>y</b></a> z'],
+  ['<ul class="cn-sp-done"><li class="cn-sp-check">wrong way round</li></ul>', '<ul><li>wrong way round</li></ul>'],
 ];
 
 test('B-2c: the server stores the Scratchpad through an ALLOWLIST — formatting kept, everything else dropped (driven)', () => {
   const ctx = vm.createContext({ String });
   const src = serverSource();
-  ['SCRATCH_ALLOWED_TAGS_', 'SCRATCH_CLASS_RE_'].forEach((n) => {
+  ['SCRATCH_ALLOWED_TAGS_', 'SCRATCH_CLASS_RE_', 'SCRATCH_TAG_CLASS_RE_', 'SCRATCH_HREF_RE_'].forEach((n) => {
     const m = new RegExp('const ' + n + ' = [^\\n]*;').exec(src);
     assert.ok(m, n + ' declared');
     vm.runInContext(m[0].replace(/^const /, 'var '), ctx);
@@ -30265,11 +30284,78 @@ test('B-2c: the server stores the Scratchpad through an ALLOWLIST — formatting
   const save = stripJsComments_(extractRawFunction('Code.js', 'saveMyScratchpad'));
   assert.ok(/isHtml \? scratchpadSanitizeHtml_\(content\)/.test(save), 'an html save is sanitized BY THE SERVER');
   assert.ok(save.indexOf('scratchpadSanitizeHtml_(content)') < save.indexOf('SCRATCHPAD_MAX_CHARS'), 'and the cap counts the stored (sanitized) text');
-  assert.ok(/getRange\('C1'\)\.setValue\(sheetSafe_\(isHtml \? 'html' : 'text'\)\)/.test(save), 'the format is recorded beside it');
-  assert.ok(/format: fmt/.test(extractRawFunction('Code.js', 'getMyScratchpad')), 'and read back');
+  assert.ok(/getRange\(row, 3\)\.setValue\(sheetSafe_\(isHtml \? 'html' : 'text'\)\)/.test(save), 'the format is recorded beside it (the page\'s row since Batch S)');
+  assert.ok(/format: page \? page\.format : 'text'/.test(extractRawFunction('Code.js', 'getMyScratchpad')), 'and read back');
   const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
-  assert.ok(/\.saveMyScratchpad\(clean, 'html'\)/.test(extractFnFrom(cn, 'cnScratchSave_')), 'the client saves sanitized html, marked html');
+  assert.ok(/\.saveMyScratchpad\(clean, 'html', page\)/.test(extractFnFrom(cn, 'cnScratchSave_')), 'the client saves sanitized html, marked html — naming the page it was typed on (Batch S)');
   assert.ok(/saveMyScratchpad\('<b>TEST_SCRATCH<\/b>/.test(fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8')), 'the editor round-trip covers the html path');
+});
+
+test('Batch S (operator 2026-11-02): Scratchpad PAGES — row 1 is the legacy page `main`, a save names its page and refuses one deleted in another window, and pages are added, renamed and deleted (never the last) under the user lock (driven)', () => {
+  const rows = [];
+  const fmt = {};
+  const sheet = {
+    getLastRow: () => rows.length,
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => rows.slice(r - 1, r - 1 + nr).map((x) => { const o = x.slice(c - 1, c - 1 + nc); while (o.length < nc) o.push(''); return o; }),
+      setNumberFormat(f) { fmt[r + ':' + c] = f; return this; },
+      setValue(v) { while (rows.length < r) rows.push([]); while (rows[r - 1].length < c) rows[r - 1].push(''); rows[r - 1][c - 1] = v; return this; },
+    }),
+    appendRow: (r) => { rows.push(r.slice()); },
+    deleteRow: (r) => { rows.splice(r - 1, 1); },
+  };
+  let locks = 0;
+  const ctx = vm.createContext({ String, Number, Math, Date, isFinite, Error, RegExp, JSON,
+    SCRATCHPAD_MAX_CHARS: 40000, SCRATCHPAD_MAX_PAGES: 3, SCRATCHPAD_PAGE_NAME_MAX: 40, SCRATCHPAD_MAIN_PAGE: 'main',
+    LockService: { getUserLock: () => ({ waitLock() { locks++; }, releaseLock() {} }) },
+    getEmployeeInfo_: () => ({ id: 'E1', callNotesSheetId: 'S' }),
+    scratchpadSheet_: () => sheet, scratchpadSanitizeHtml_: (h) => String(h),
+    sheetText_: (v) => v, sheetSafe_: (v) => v, sheetSafeRow_: (r) => r });
+  ['scratchpadPagesFromRows_', 'scratchpadPageName_', 'scratchpadReadPages_', 'scratchpadPageList_', 'getMyScratchpad', 'saveMyScratchpad', 'scratchpadPageOp']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  // A legacy pad: row 1 with no name or id is page `main`, "Notes".
+  rows.push(['legacy text', 1000, 'text']);
+  let g = J(ctx.getMyScratchpad());
+  assert.deepStrictEqual([g.pageId, g.content, g.format, g.pages.map((p) => p.name)], ['main', 'legacy text', 'text', ['Notes']]);
+  // An older client (no page id) still writes row 1.
+  assert.ok(ctx.saveMyScratchpad('<b>a</b>', 'html').success);
+  assert.strictEqual(rows[0][0], '<b>a</b>');
+  assert.strictEqual(fmt['1:1'], '@', 'the page cell is plain text, re-asserted');
+  // Add: a new row with an id, its name in an '@' cell; whitespace collapsed.
+  const add = J(ctx.scratchpadPageOp('add', '', '  Escalations\n list '));
+  assert.ok(add.success && /^p[a-z0-9]+$/.test(add.pageId), 'a new id');
+  assert.deepStrictEqual(add.pages.map((p) => p.name), ['Notes', 'Escalations list']);
+  assert.strictEqual(fmt['2:4'], '@', 'the name cell is plain text');
+  // Save to that page writes ITS row, and reads back by id.
+  assert.ok(ctx.saveMyScratchpad('two', 'html', add.pageId).success);
+  assert.strictEqual(rows[1][0], 'two');
+  assert.strictEqual(rows[0][0], '<b>a</b>', 'the other page is untouched');
+  g = J(ctx.getMyScratchpad(add.pageId));
+  assert.deepStrictEqual([g.pageId, g.content], [add.pageId, 'two']);
+  // Rename: an empty name is refused; a real one is stored.
+  assert.ok(ctx.scratchpadPageOp('rename', 'main', '   ').error);
+  assert.deepStrictEqual(J(ctx.scratchpadPageOp('rename', 'main', 'Desk')).pages.map((p) => p.name), ['Desk', 'Escalations list']);
+  // The page limit.
+  ctx.scratchpadPageOp('add', '', 'Third');
+  assert.ok(/most pages/.test(J(ctx.scratchpadPageOp('add', '', 'Fourth')).error), 'at most SCRATCHPAD_MAX_PAGES');
+  // Delete: the legacy page can go; the next keeps its own id; the last page never goes.
+  const del = J(ctx.scratchpadPageOp('delete', 'main'));
+  assert.deepStrictEqual(del.pages.map((p) => p.id), [add.pageId, del.pages[1].id]);
+  assert.strictEqual(del.pageId, add.pageId, 'the first remaining page is named after a delete');
+  // A save to a page deleted in another window is REFUSED, never written elsewhere.
+  const gone = J(ctx.saveMyScratchpad('lost?', 'html', 'main'));
+  assert.ok(gone.pageGone && gone.error, 'pageGone');
+  assert.ok(!rows.some((r) => r[0] === 'lost?'), 'and nothing was written');
+  const missing = J(ctx.getMyScratchpad('main'));
+  assert.ok(missing.missing && missing.pageId === add.pageId, 'a load of a deleted page says so and sends the first');
+  ctx.scratchpadPageOp('delete', del.pages[1].id);
+  assert.ok(/at least one page/.test(J(ctx.scratchpadPageOp('delete', add.pageId)).error), 'the last page is never deleted');
+  assert.ok(locks >= 8, 'every save and page action takes the user lock');
+  // A fresh tab: an add makes the legacy page first.
+  rows.length = 0;
+  const fresh = J(ctx.scratchpadPageOp('add', '', 'First extra'));
+  assert.deepStrictEqual(fresh.pages.map((p) => p.id)[0], 'main', 'the legacy page exists before any other');
 });
 
 test('B-2b: ONE drag helper — clamped to the viewport, pointer events, and both email composers use it (driven)', () => {

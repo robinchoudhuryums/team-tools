@@ -1189,6 +1189,42 @@
   .cn-sp-c-purple { color: var(--intake-pap); }
   .cn-sp-s-small  { font-size: .85em; }
   .cn-sp-s-large  { font-size: 1.3em; }
+  /* Batch S (operator 2026-11-02) — highlights (the semantic SOFT fills, which
+     flip with the theme), checklists, a heading, links, the page bar, find. */
+  .cn-sp-h-yellow { background: var(--warn-soft); }
+  .cn-sp-h-green  { background: var(--good-soft); }
+  .cn-sp-h-blue   { background: var(--info-soft); }
+  .cn-sp-h-pink   { background: var(--destructive-soft); }
+  .cn-sp-hl-swatch { font-weight: 700; color: var(--ink); }
+  .cn-sp-hl-plain { color: var(--muted); text-decoration: line-through; }
+  .cn-scratch-editor h3 { font-size: 1.12em; font-weight: 700; margin: 6px 0 2px; }
+  .cn-scratch-editor a { color: var(--accent-ink); text-decoration: underline; cursor: pointer; }
+  .cn-scratch-editor ul.cn-sp-check { list-style: none; padding-left: 2px; }
+  .cn-scratch-editor ul.cn-sp-check > li { position: relative; padding-left: 22px; }
+  .cn-scratch-editor ul.cn-sp-check > li::before {
+    content: ''; position: absolute; left: 2px; top: .25em; width: 12px; height: 12px;
+    border: 1.5px solid var(--muted); border-radius: 3px; background: var(--paper-card); cursor: pointer;
+  }
+  .cn-scratch-editor ul.cn-sp-check > li.cn-sp-done { color: var(--muted); text-decoration: line-through; }
+  .cn-scratch-editor ul.cn-sp-check > li.cn-sp-done::before {
+    background: var(--accent-ink); border-color: var(--accent-ink);
+    box-shadow: inset 0 0 0 2px var(--paper-card);
+  }
+  .cn-sp-pages { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; flex-wrap: wrap; }
+  .cn-sp-page-lbl { font-size: 11px; color: var(--muted); }
+  .cn-sp-page-sel { font: inherit; font-size: 12px; max-width: 46%; min-width: 0; padding: 2px 4px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
+  .cn-sp-pg-btn { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-size: 11.5px; padding: 2px 7px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: transparent; color: var(--ink); cursor: pointer; }
+  .cn-sp-pg-btn:hover:not(:disabled), .cn-sp-pg-btn:focus-visible { background: var(--paper-2); }
+  .cn-sp-pg-btn:disabled { opacity: .5; cursor: default; }
+  .cn-sp-find { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; }
+  .cn-sp-find[hidden] { display: none; }
+  .cn-sp-find-in { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); }
+  .cn-sp-find-n { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  ::highlight(cn-sp-find) { background-color: var(--warn-soft); }
+  ::highlight(cn-sp-find-cur) { background-color: var(--warn-fill); color: var(--on-warn); }
   .cn-scratch-hint { font-size: 10.5px; color: var(--muted-2); margin-top: 6px; }
   .cn-scratch-foot { margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); align-items: center; }
   .cn-scratch-foot .btn-modal-cancel, .cn-scratch-foot .btn-modal-ok { flex: 0 0 auto; padding-left: 14px; padding-right: 14px; }
@@ -3032,6 +3068,7 @@ function cnRenderNotesView(area) {
           <tr><td>Save &amp; Copy</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd></td></tr>
           <tr><td>Save &amp; Compose</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td></tr>
           <tr><td>Reference Drawer</td><td><kbd>${esc(mod)}</kbd> + <kbd>K</kbd></td></tr>
+          <tr><td>Scratchpad (open / close)</td><td><kbd>${esc(mod)}</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td></tr>
           <tr><td>Flag: Action</td><td><kbd>${esc(mod)}</kbd> + <kbd>1</kbd></td></tr>
           <tr><td>Flag: Training</td><td><kbd>${esc(mod)}</kbd> + <kbd>2</kbd></td></tr>
           <tr><td>Flag: Review</td><td><kbd>${esc(mod)}</kbd> + <kbd>3</kbd></td></tr>
@@ -5494,7 +5531,12 @@ var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, late
   // 22post A-2a: the last copy this session loaded or saved — {content,
   // updatedAtMs, format, maxChars} — so a reopen paints INSTANTLY and
   // refreshes behind it.
-  cache: null, prefetching: false, maxChars: null, resizeObs: null, geomTimer: null };
+  cache: null, prefetching: false, maxChars: null, resizeObs: null, geomTimer: null,
+  // Batch S (operator 2026-11-02): named PAGES. `page` is the one shown;
+  // `latestPage` the page `latest` was typed on (a save always names it, so a
+  // switch mid-save never writes one page's text into another); `loadSeq`
+  // drops a page load that is no longer the one wanted.
+  page: 'main', pages: null, maxPages: 10, latestPage: null, loadSeq: 0 };
 
 // 22post B-2b (operator 2026-09-27): the Scratchpad is a FLOATING, NON-MODAL
 // panel — no backdrop or blur, usable while filling in a note (or with the
@@ -5510,9 +5552,17 @@ var CN_SCRATCH_COLORS = [
   { key: 'red', label: 'Red' }, { key: 'amber', label: 'Amber' }, { key: 'green', label: 'Green' },
   { key: 'blue', label: 'Blue' }, { key: 'purple', label: 'Purple' },
 ];
-var CN_SCRATCH_ALLOWED = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1 };
+var CN_SCRATCH_ALLOWED = { b: 1, strong: 1, i: 1, em: 1, u: 1, br: 1, div: 1, p: 1, ul: 1, ol: 1, li: 1, span: 1, h3: 1, a: 1 };
 var CN_SCRATCH_DROP = { script: 1, style: 1, template: 1, iframe: 1, object: 1, embed: 1, noscript: 1, svg: 1, math: 1, textarea: 1, select: 1, title: 1, head: 1 };
-var CN_SCRATCH_CLASS_RE = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large))$/;
+var CN_SCRATCH_CLASS_RE = /^cn-sp-(c-(red|amber|green|blue|purple)|s-(small|large)|h-(yellow|green|blue|pink))$/;
+// Batch S (operator 2026-11-02) — mirrors of the server's SCRATCH_TAG_CLASS_RE_
+// and SCRATCH_HREF_RE_: a checklist (ul.cn-sp-check / li.cn-sp-done) and a
+// link that keeps only an http(s) href.
+var CN_SCRATCH_TAG_CLASS_RE = { ul: /^cn-sp-check$/, li: /^cn-sp-done$/ };
+var CN_SCRATCH_HREF_RE = /^https?:\/\/[^\s"'<>`]+$/i;
+var CN_SCRATCH_HIGHLIGHTS = [
+  { key: 'yellow', label: 'Yellow' }, { key: 'green', label: 'Green' }, { key: 'blue', label: 'Blue' }, { key: 'pink', label: 'Pink' },
+];
 
 /** 22post B-2c — the client twin of the server's scratchpadSanitizeHtml_ (the
  *  server copy is what is stored; this one guards what is RENDERED and
@@ -5537,6 +5587,18 @@ function cnScratchSanitize_(html) {
         var cls = String(k.getAttribute('class') || '').split(/\s+/)
           .filter(function (c) { return CN_SCRATCH_CLASS_RE.test(c); });
         out += cls.length ? '<span class="' + cls.join(' ') + '">' + walk(k) + '</span>' : walk(k);
+        continue;
+      }
+      if (tag === 'a') {
+        var href = String(k.getAttribute('href') || '').trim();
+        out += (href.length <= 2000 && CN_SCRATCH_HREF_RE.test(href))
+          ? '<a href="' + esc(href) + '">' + walk(k) + '</a>' : walk(k);
+        continue;
+      }
+      if (CN_SCRATCH_TAG_CLASS_RE[tag]) {
+        var keep = String(k.getAttribute('class') || '').split(/\s+/)
+          .filter(function (c) { return CN_SCRATCH_TAG_CLASS_RE[tag].test(c); });
+        out += '<' + tag + (keep.length ? ' class="' + keep.join(' ') + '"' : '') + '>' + walk(k) + '</' + tag + '>';
         continue;
       }
       out += '<' + tag + '>' + walk(k) + '</' + tag + '>';
@@ -5619,7 +5681,7 @@ function cnScratchPendingStyle_(ed, range, family, cls) {
 }
 function cnScratchSetValue_(html) {
   var ed = cnScratchEditor_();
-  if (ed) ed.innerHTML = cnScratchSanitize_(html);
+  if (ed) { ed.innerHTML = cnScratchSanitize_(html); cnScratchLinkify_(ed, null, 0); }   // Batch S: a pasted or older URL is a link too
   cnScratchCount_();
 }
 function cnScratchEnable_(ed) {
@@ -5630,6 +5692,8 @@ function cnScratchEnable_(ed) {
   if (!ed._listening) {
     ed.addEventListener('input', cnScratchInput_);
     ed.addEventListener('paste', cnScratchPaste_);
+    ed.addEventListener('click', cnScratchEditorClick_);     // Batch S: a checklist box, a Ctrl/⌘+click link
+    ed.addEventListener('keyup', cnScratchEditorKeyup_);     // Batch S: a finished URL becomes a link
     ed._listening = true;
   }
 }
@@ -5661,13 +5725,14 @@ function cnScratchPrefetch_() {
   google.script.run
     .withSuccessHandler(function (res) {
       CN_SCRATCH.prefetching = false;
-      if (res && !res.error && !CN_SCRATCH.cache) {
-        CN_SCRATCH.cache = { content: cnScratchLoadedHtml_(res), updatedAtMs: res.updatedAtMs || null };
+      if (res && !res.error && !CN_SCRATCH.cache && !res.missing) {
+        CN_SCRATCH.cache = { page: res.pageId || CN_SCRATCH.page, content: cnScratchLoadedHtml_(res), updatedAtMs: res.updatedAtMs || null };
         if (res.maxChars) CN_SCRATCH.maxChars = res.maxChars;
+        cnScratchTakePages_(res);
       }
     })
     .withFailureHandler(function () { CN_SCRATCH.prefetching = false; })
-    .getMyScratchpad();
+    .getMyScratchpad(CN_SCRATCH.page);
 }
 
 function cnScratchCloseBtnHtml_() {
@@ -5680,15 +5745,36 @@ function cnScratchToolbarHtml_() {
   var sw = CN_SCRATCH_COLORS.map(function (c) {
     return '<button type="button" class="cn-sp-swatch cn-sp-c-' + c.key + '" data-sp-color="' + c.key + '" title="' + c.label + ' text" aria-label="' + c.label + ' text">A</button>';
   }).join('');
+  // Batch S (operator 2026-11-02): highlight, heading, checklist, the time,
+  // find, and sending the selection into the note being written.
+  var hl = CN_SCRATCH_HIGHLIGHTS.map(function (c) {
+    return '<button type="button" class="cn-sp-swatch cn-sp-hl-swatch cn-sp-h-' + c.key + '" data-sp-hl="' + c.key + '" title="' + c.label + ' highlight" aria-label="' + c.label + ' highlight">ab</button>';
+  }).join('');
   return '<div class="cn-sp-tools" role="toolbar" aria-label="Formatting" aria-controls="cn-scratch-text">' +
     b('bold', 'Bold (Ctrl+B)', '<b>B</b>') + b('italic', 'Italic (Ctrl+I)', '<i>I</i>') + b('underline', 'Underline (Ctrl+U)', '<u>U</u>') +
+    b('heading', 'Heading', '<b>H</b>') +
     '<span class="cn-sp-sep" aria-hidden="true"></span>' +
     b('size-small', 'Smaller text', '<span class="cn-sp-s-small">A</span>') + b('size-normal', 'Normal size', 'A') + b('size-large', 'Larger text', '<span class="cn-sp-s-large">A</span>') +
     '<span class="cn-sp-sep" aria-hidden="true"></span>' +
     sw + '<button type="button" class="cn-sp-swatch cn-sp-swatch-plain" data-sp-color="" title="Default colour" aria-label="Default text colour">A</button>' +
     '<span class="cn-sp-sep" aria-hidden="true"></span>' +
+    hl + '<button type="button" class="cn-sp-swatch cn-sp-hl-swatch cn-sp-hl-plain" data-sp-hl="" title="No highlight" aria-label="No highlight">ab</button>' +
+    '<span class="cn-sp-sep" aria-hidden="true"></span>' +
     b('insertUnorderedList', 'Bulleted list', '&bull; List') + b('insertOrderedList', 'Numbered list', '1. List') +
+    b('checklist', 'Checklist — click a box to tick it', '&#9745; Checklist') +
     b('clear', 'Clear formatting', 'Clear') +
+    '<span class="cn-sp-sep" aria-hidden="true"></span>' +
+    b('time', 'Insert the time', icon('clock', 12) + ' Time') +
+    b('find', 'Find in this page (Ctrl+F)', icon('search', 12)) +
+    b('send-issue', 'Send the selected text to the note\'s Issue', icon('send', 11) + ' Issue') +
+    b('send-resolution', 'Send the selected text to the note\'s Resolution', icon('send', 11) + ' Resolution') +
+  '</div>' +
+  '<div class="cn-sp-find" id="cn-scratch-find" hidden>' +
+    '<input type="search" id="cn-scratch-find-in" class="cn-sp-find-in" placeholder="Find in this page" aria-label="Find in this page" autocomplete="off">' +
+    '<span class="cn-sp-find-n mono" id="cn-scratch-find-n" role="status"></span>' +
+    '<button type="button" class="cn-sp-tool" data-sp-find="prev" title="Previous (Shift+Enter)" aria-label="Previous match">' + icon('chevronUp', 12) + '</button>' +
+    '<button type="button" class="cn-sp-tool" data-sp-find="next" title="Next (Enter)" aria-label="Next match">' + icon('chevronDown', 12) + '</button>' +
+    '<button type="button" class="cn-sp-tool" data-sp-find="close" title="Close find (Esc)" aria-label="Close find">' + icon('x', 12) + '</button>' +
   '</div>';
 }
 
@@ -5743,10 +5829,11 @@ function cnOpenScratchpadModal_() {
       '<button type="button" class="modal-x" aria-label="Close the scratchpad" onclick="cnCloseScratchpadModal_()">' + icon('x', 14) + '</button>' +
     '</div>' +
     '<div class="cn-scratch-body">' +
+      '<div class="cn-sp-pages" id="cn-scratch-pages">' + cnScratchPagesHtml_() + '</div>' +
       cnScratchToolbarHtml_() +
       '<div id="cn-scratch-text" class="cn-scratch-editor" role="textbox" aria-multiline="true" aria-label="Scratchpad contents"' +
         ' contenteditable="false" aria-disabled="true" data-placeholder="Loading…"></div>' +
-      '<div class="cn-scratch-hint">Saved to your own Call Notes sheet — it follows you across devices; if two windows edit, the last save wins.</div>' +
+      '<div class="cn-scratch-hint">Saved to your own Call Notes sheet — it follows you across devices; if two windows edit, the last save wins. Ctrl/⌘+click a link to open it.</div>' +
       '<div class="cn-scratch-status mono" id="cn-scratch-status" role="status"></div>' +
     '</div>' +
     '<div class="modal-footer cn-scratch-foot">' +
@@ -5759,7 +5846,16 @@ function cnOpenScratchpadModal_() {
   // Escape closes it only from INSIDE — and never reaches the shell's handler,
   // which would close whatever modal sits underneath.
   panel.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cnCloseScratchpadModal_(); }
+    if (ev.key === 'Escape') {
+      ev.preventDefault(); ev.stopPropagation();
+      var fb = document.getElementById('cn-scratch-find');
+      if (fb && !fb.hidden && fb.contains(ev.target)) { cnScratchFindClose_(); return; }   // Batch S: the find bar first
+      cnCloseScratchpadModal_();
+      return;
+    }
+    if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && (ev.key === 'f' || ev.key === 'F')) {
+      ev.preventDefault(); ev.stopPropagation(); cnScratchFindOpen_();
+    }
   });
   var tools = panel.querySelector('.cn-sp-tools');
   if (tools) {
@@ -5767,6 +5863,7 @@ function cnOpenScratchpadModal_() {
     tools.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
     tools.addEventListener('click', cnScratchToolClick_);
   }
+  cnScratchWireFind_(panel);
   if (typeof ResizeObserver === 'function') {   // remember a resize (CSS resize handle)
     try {
       CN_SCRATCH.resizeObs = new ResizeObserver(function () {
@@ -5779,14 +5876,18 @@ function cnOpenScratchpadModal_() {
   // C6: text a previous close could not save (its save failed, or is still in
   // flight) is carried into this open rather than replaced by the server copy.
   var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
-  if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; }
+  if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; CN_SCRATCH.latestPage = null; }
+  else if (CN_SCRATCH.latestPage) CN_SCRATCH.page = CN_SCRATCH.latestPage;   // Batch S: reopen on the page the unsaved text belongs to
+  cnScratchRenderPages_();
+  var wantPage = CN_SCRATCH.page;
+  var seq = ++CN_SCRATCH.loadSeq;
   clearTimeout(CN_SCRATCH.timer);
   var ed0 = cnScratchEditor_();
   // 22post A-2a: paint at once from the unsaved carry or this session's copy;
   // the server read below then refreshes it (unless the rep has typed since).
   var painted = null;
   if (carry) painted = CN_SCRATCH.latest;
-  else if (CN_SCRATCH.cache) painted = CN_SCRATCH.cache.content;
+  else if (CN_SCRATCH.cache && CN_SCRATCH.cache.page === wantPage) painted = CN_SCRATCH.cache.content;
   if (ed0 && painted != null) {
     cnScratchEnable_(ed0);
     cnScratchSetValue_(painted);
@@ -5798,6 +5899,7 @@ function cnOpenScratchpadModal_() {
     .withSuccessHandler(function (res) {
       var ed = cnScratchEditor_();
       if (!ed) return;   // closed before the load landed
+      if (seq !== CN_SCRATCH.loadSeq) return;   // Batch S: a page switch since — this load is not wanted
       if (!res || res.error) {
         if (painted != null) {   // keep the painted copy editable; say the refresh failed
           cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
@@ -5810,10 +5912,17 @@ function cnOpenScratchpadModal_() {
         return;
       }
       if (res.maxChars) CN_SCRATCH.maxChars = res.maxChars;
+      cnScratchTakePages_(res);
       var html = cnScratchLoadedHtml_(res);
-      CN_SCRATCH.cache = { content: html, updatedAtMs: res.updatedAtMs || null };
+      CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
       cnScratchEnable_(ed);
       var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
+      if (res.missing && !stillUnsaved) {   // the page was deleted in another window: show the one that came instead
+        cnScratchSetValue_(html);
+        cnScratchStatus_('That page was deleted in another window — showing "' + cnScratchPageName_(CN_SCRATCH.page) + '"', true);
+        cnScratchCount_();
+        return;
+      }
       if (stillUnsaved) {
         if (painted == null) {   // not painted yet: show the unsaved text and save it
           cnScratchSetValue_(CN_SCRATCH.latest);
@@ -5830,6 +5939,7 @@ function cnOpenScratchpadModal_() {
     .withFailureHandler(function (err) {
       var ed = cnScratchEditor_();
       if (!ed) return;
+      if (seq !== CN_SCRATCH.loadSeq) return;
       if (painted != null) {
         cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
         return;
@@ -5837,7 +5947,7 @@ function cnOpenScratchpadModal_() {
       var body = ed.closest('.cn-scratch-body');
       if (body) body.innerHTML = errorStateHtml_((err && err.message) || 'Could not load your scratchpad');
     })
-    .getMyScratchpad();
+    .getMyScratchpad(wantPage);
 }
 
 /** Close (the Close buttons, the header ×, Escape from inside) — flush a
@@ -5849,7 +5959,7 @@ function cnCloseScratchpadModal_() {
   var panel = document.getElementById('cn-scratch-panel');
   if (CN_SCRATCH.dirty) {
     var ed = cnScratchEditor_();
-    if (cnScratchReady_(ed)) CN_SCRATCH.latest = cnScratchHtmlOf_(ed);   // read synchronously, BEFORE the DOM goes
+    if (cnScratchReady_(ed)) { CN_SCRATCH.latest = cnScratchHtmlOf_(ed); CN_SCRATCH.latestPage = CN_SCRATCH.page; }   // read synchronously, BEFORE the DOM goes
     cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
   }
   if (!panel) return;
@@ -5871,7 +5981,7 @@ function cnScratchStatus_(msg, warn) {
 function cnScratchInput_() {
   CN_SCRATCH.dirty = true;
   var v = cnScratchValue_();
-  if (v != null) CN_SCRATCH.latest = v;
+  if (v != null) { CN_SCRATCH.latest = v; CN_SCRATCH.latestPage = CN_SCRATCH.page; }
   cnScratchStatus_('Unsaved changes…', false);
   cnScratchCount_();
   clearTimeout(CN_SCRATCH.timer);
@@ -5897,7 +6007,9 @@ function cnScratchConvertMarks_(root, kind, cls) {
   if (!root) return 0;
   var sel = kind === 'color'
     ? 'font[color="#010203"], span[style*="rgb(1, 2, 3)"], span[style*="#010203"]'
-    : 'font[size="7"], span[style*="xxx-large"]';
+    : kind === 'hl'   // Batch S: the highlight sentinel (hiliteColor always writes a styled span)
+      ? 'span[style*="rgb(1, 2, 4)"], span[style*="#010204"], font[style*="rgb(1, 2, 4)"]'
+      : 'font[size="7"], span[style*="xxx-large"]';
   var n = 0;
   Array.prototype.slice.call(root.querySelectorAll(sel)).forEach(function (el) {
     var span = document.createElement('span');
@@ -5950,9 +6062,29 @@ function cnScratchToolClick_(e) {
     }
     cnScratchUnwrap_(ed, 's', range);
     if (cmd !== 'size-normal') { cnScratchExec_('fontSize', '7'); cnScratchConvertMarks_(ed, 'size', cmd === 'size-small' ? 'cn-sp-s-small' : 'cn-sp-s-large'); }
+  } else if (btn.hasAttribute('data-sp-hl')) {
+    var hlKey = btn.getAttribute('data-sp-hl');
+    if (!range) { cnScratchStatus_('Click in the scratchpad first', false); return; }
+    if (range.collapsed) { cnScratchPendingStyle_(ed, range, 'h', hlKey ? 'cn-sp-h-' + hlKey : ''); cnScratchInput_(); return; }
+    cnScratchUnwrap_(ed, 'h', range);
+    if (hlKey) { cnScratchExec_('hiliteColor', '#010204'); cnScratchConvertMarks_(ed, 'hl', 'cn-sp-h-' + hlKey); }
+  } else if (cmd === 'heading') {
+    var hNode = range && range.startContainer;
+    var inH = hNode && (hNode.nodeType === 1 ? hNode : hNode.parentNode).closest('h3');
+    cnScratchExec_('formatBlock', (inH && ed.contains(inH)) ? '<div>' : '<h3>');
+  } else if (cmd === 'checklist') {
+    cnScratchChecklist_(ed, range);
+  } else if (cmd === 'time') {
+    cnScratchInsertText_(ed, cnScratchTimeText_(new Date()));
+  } else if (cmd === 'find') {
+    cnScratchFindOpen_();
+    return;
+  } else if (cmd === 'send-issue' || cmd === 'send-resolution') {
+    cnScratchSendToNote_(cmd === 'send-issue' ? 'issue' : 'resolution');
+    return;
   } else if (cmd === 'clear') {
     cnScratchExec_('removeFormat');
-    cnScratchUnwrap_(ed, 'c', range); cnScratchUnwrap_(ed, 's', range);
+    cnScratchUnwrap_(ed, 'c', range); cnScratchUnwrap_(ed, 's', range); cnScratchUnwrap_(ed, 'h', range);
   } else if (cmd) {
     cnScratchExec_(cmd);
   }
@@ -5964,10 +6096,11 @@ function cnScratchSave_(force) {
   // The text to save: the live editor while the panel is open, else what the
   // close captured (C6). With neither — or nothing unsaved and no editor — there
   // is nothing to do (the INV-148 root-guard).
-  if (cnScratchReady_(ed)) CN_SCRATCH.latest = cnScratchHtmlOf_(ed);
+  if (cnScratchReady_(ed)) { CN_SCRATCH.latest = cnScratchHtmlOf_(ed); CN_SCRATCH.latestPage = CN_SCRATCH.page; }
   else if (!CN_SCRATCH.dirty) return;
   var text = CN_SCRATCH.latest;
   if (text == null) return;
+  var page = CN_SCRATCH.latestPage || CN_SCRATCH.page;   // Batch S: the page this text was typed on
   if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; the drain sends `latest` as it is THEN
   CN_SCRATCH.saving = true;
   clearTimeout(CN_SCRATCH.timer);
@@ -5983,11 +6116,12 @@ function cnScratchSave_(force) {
   var clean = cnScratchSanitize_(text);   // 22post B-2c: the server sanitizes too — it is the authority
   google.script.run
     .withSuccessHandler(function (r) {
+      if (r && r.pageGone) { CN_SCRATCH.saving = false; cnScratchRecover_(page); return; }
       if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
-      CN_SCRATCH.cache = { content: clean, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
-      // Clean only if nothing was typed while this save ran (C6).
-      if (CN_SCRATCH.latest === text) CN_SCRATCH.dirty = false;
+      CN_SCRATCH.cache = { page: page, content: clean, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
+      // Clean only if nothing was typed while this save ran (C6) — on this page.
+      if (CN_SCRATCH.latest === text && (CN_SCRATCH.latestPage || CN_SCRATCH.page) === page) CN_SCRATCH.dirty = false;
       cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
       // Drain a save that waited on this one (a close, a Save now, a debounce
       // fire). With the panel still open and nothing waiting, newer typing is
@@ -5998,7 +6132,342 @@ function cnScratchSave_(force) {
       }
     })
     .withFailureHandler(function (e) { failed((e && e.message) || 'Save failed — edit or press Save now to retry'); })
-    .saveMyScratchpad(clean, 'html');
+    .saveMyScratchpad(clean, 'html', page);
+}
+
+// ── Batch S (operator 2026-11-02): named pages ────────────────────────────────
+function cnScratchTakePages_(res) {
+  if (res && Array.isArray(res.pages) && res.pages.length) CN_SCRATCH.pages = res.pages;
+  if (res && res.maxPages) CN_SCRATCH.maxPages = res.maxPages;
+  if (res && res.pageId) CN_SCRATCH.page = res.pageId;
+  cnScratchRenderPages_();
+}
+function cnScratchPageName_(id) {
+  var p = (CN_SCRATCH.pages || []).filter(function (x) { return x.id === id; })[0];
+  return p ? p.name : 'Notes';
+}
+/** The page bar: a picker, then New, Rename and Delete. One page reads as the
+ *  plain pad it always was — the picker shows its name, Delete is disabled. */
+function cnScratchPagesHtml_() {
+  var pages = (CN_SCRATCH.pages && CN_SCRATCH.pages.length) ? CN_SCRATCH.pages : [{ id: CN_SCRATCH.page, name: 'Notes' }];
+  var opts = pages.map(function (p) {
+    return '<option value="' + esc(p.id) + '"' + (p.id === CN_SCRATCH.page ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+  }).join('');
+  var full = pages.length >= (CN_SCRATCH.maxPages || 10);
+  return '<label class="cn-sp-page-lbl" for="cn-scratch-page">Page</label>' +
+    '<select id="cn-scratch-page" class="cn-sp-page-sel" onchange="cnScratchSwitchPage_(this.value)">' + opts + '</select>' +
+    '<button type="button" class="cn-sp-pg-btn" onclick="cnScratchPageAdd_()"' + (full ? ' disabled title="Ten pages is the most a scratchpad holds"' : ' title="Add a page"') + '>' + icon('plus', 11) + ' New</button>' +
+    '<button type="button" class="cn-sp-pg-btn" onclick="cnScratchPageRename_()" title="Rename this page">Rename</button>' +
+    '<button type="button" class="cn-sp-pg-btn" onclick="cnScratchPageDelete_()"' + (pages.length <= 1 ? ' disabled title="A scratchpad keeps at least one page"' : ' title="Delete this page"') + '>Delete</button>';
+}
+function cnScratchRenderPages_() {
+  var host = document.getElementById('cn-scratch-pages');
+  if (host) host.innerHTML = cnScratchPagesHtml_();
+}
+/** Show another page: the current page's unsaved text is saved first (the
+ *  save names its own page), then the new page loads; a load overtaken by
+ *  another switch is dropped (loadSeq). */
+function cnScratchSwitchPage_(id) {
+  id = String(id || '');
+  if (!id || id === CN_SCRATCH.page) return;
+  var ed = cnScratchEditor_();
+  if (cnScratchReady_(ed) && CN_SCRATCH.dirty) cnScratchSave_(true);
+  CN_SCRATCH.page = id;
+  var seq = ++CN_SCRATCH.loadSeq;
+  cnScratchRenderPages_();
+  if (ed) {
+    ed.setAttribute('contenteditable', 'false');
+    ed.setAttribute('aria-disabled', 'true');
+    ed.innerHTML = '';
+    ed.setAttribute('data-placeholder', 'Loading…');
+  }
+  var cached = CN_SCRATCH.cache && CN_SCRATCH.cache.page === id ? CN_SCRATCH.cache : null;
+  if (cached && ed) { cnScratchEnable_(ed); cnScratchSetValue_(cached.content); }
+  cnScratchStatus_('Opening "' + cnScratchPageName_(id) + '"…', false);
+  google.script.run
+    .withSuccessHandler(function (res) {
+      var ed2 = cnScratchEditor_();
+      if (!ed2 || seq !== CN_SCRATCH.loadSeq) return;
+      if (!res || res.error) { cnScratchStatus_((res && res.error) || 'Could not open that page', true); return; }
+      cnScratchTakePages_(res);
+      var html = cnScratchLoadedHtml_(res);
+      CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
+      cnScratchEnable_(ed2);
+      // Typing into the cached copy while this loaded wins over the server copy.
+      if (!(CN_SCRATCH.dirty && CN_SCRATCH.latestPage === CN_SCRATCH.page)) cnScratchSetValue_(html);
+      cnScratchStatus_(res.missing ? 'That page was deleted in another window — showing "' + cnScratchPageName_(CN_SCRATCH.page) + '"'
+        : (res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : ''), !!res.missing);
+      cnScratchCount_();
+      try { ed2.focus(); } catch (_) {}
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== CN_SCRATCH.loadSeq || !cnScratchEditor_()) return;
+      cnScratchStatus_((err && err.message) || 'Could not open that page', true);
+    })
+    .getMyScratchpad(id);
+}
+function cnScratchPageOp_(op, id, name, done) {
+  google.script.run
+    .withSuccessHandler(function (r) {
+      if (!r || r.error) { cnScratchStatus_((r && r.error) || 'That did not work — try again', true); return; }
+      if (Array.isArray(r.pages)) CN_SCRATCH.pages = r.pages;
+      done(r);
+    })
+    .withFailureHandler(function (e) { cnScratchStatus_((e && e.message) || 'That did not work — try again', true); })
+    .scratchpadPageOp(op, id, name);
+}
+function cnScratchPageAdd_() {
+  uiPrompt({ title: 'New scratchpad page', message: 'Name it — you can rename it later.', confirmLabel: 'Create',
+    initialValue: 'Page ' + (((CN_SCRATCH.pages || []).length || 1) + 1) }).then(function (name) {
+    if (name == null) return;
+    cnScratchPageOp_('add', '', name, function (r) { cnScratchSwitchPage_(r.pageId); cnScratchRenderPages_(); });
+  });
+}
+function cnScratchPageRename_() {
+  var id = CN_SCRATCH.page;
+  uiPrompt({ title: 'Rename page', message: 'A new name for "' + cnScratchPageName_(id) + '".', confirmLabel: 'Rename',
+    initialValue: cnScratchPageName_(id) }).then(function (name) {
+    if (name == null || !String(name).trim()) return;
+    cnScratchPageOp_('rename', id, name, function () { cnScratchRenderPages_(); });
+  });
+}
+function cnScratchPageDelete_() {
+  var id = CN_SCRATCH.page;
+  uiConfirm({ title: 'Delete "' + cnScratchPageName_(id) + '"?', message: 'Its text is removed for good.', confirmLabel: 'Delete page', danger: true })
+    .then(function (ok) {
+      if (!ok) return;
+      cnScratchPageOp_('delete', id, '', function (r) {
+        if (CN_SCRATCH.latestPage === id) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; CN_SCRATCH.latestPage = null; }
+        if (CN_SCRATCH.cache && CN_SCRATCH.cache.page === id) CN_SCRATCH.cache = null;
+        CN_SCRATCH.page = '';   // so the switch below always loads
+        cnScratchSwitchPage_(r.pageId);
+      });
+    });
+}
+/** A save whose page was deleted in another window: the text is never written
+ *  into some other page and never dropped — it goes onto a NEW page, named so. */
+function cnScratchRecover_(lostPage) {
+  cnScratchPageOp_('add', '', 'Recovered text', function (r) {
+    if (CN_SCRATCH.latestPage === lostPage) CN_SCRATCH.latestPage = r.pageId;
+    if (CN_SCRATCH.page === lostPage) CN_SCRATCH.page = r.pageId;
+    cnScratchRenderPages_();
+    cnScratchSave_(true);
+    // A toast, not only the status line: the save that follows rewrites the status.
+    showToast('That scratchpad page was deleted in another window — your text is on a new page, "Recovered text"', 'toast-warn');
+  });
+}
+
+// ── Batch S (operator 2026-11-02): toolbar extras ─────────────────────────────
+/** Insert plain text at the caret: the browser's own insertText (so Undo works),
+ *  or a Range insert where that is unavailable. */
+function cnScratchInsertText_(ed, txt) {
+  var ok = false;
+  try { ok = document.execCommand('insertText', false, txt); } catch (_) { ok = false; }
+  if (!ok) {
+    var r = cnScratchRange_(ed);
+    if (!r) { ed.appendChild(document.createTextNode(txt)); }
+    else {
+      r.deleteContents();
+      var t = document.createTextNode(txt);
+      r.insertNode(t);
+      var sel = window.getSelection();
+      var c = document.createRange(); c.setStartAfter(t); c.collapse(true);
+      sel.removeAllRanges(); sel.addRange(c);
+    }
+  }
+  cnScratchInput_();
+}
+/** The time as the rep reads it — their own zone, e.g. "2:35 PM". */
+function cnScratchTimeText_(d) {
+  var tz = (typeof empTz === 'function' && empTz()) || undefined;
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(d); }
+  catch (_) { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(d); }
+}
+/** Checklist: a bulleted list carrying cn-sp-check. Inside one, the button
+ *  turns it back into plain text; inside a plain list, it becomes a checklist. */
+function cnScratchChecklist_(ed, range) {
+  var at = range && range.startContainer;
+  var host = at ? (at.nodeType === 1 ? at : at.parentNode) : null;
+  var ul = host && host.closest ? host.closest('ul') : null;
+  if (ul && ed.contains(ul)) {
+    if (ul.classList.contains('cn-sp-check')) { cnScratchExec_('insertUnorderedList'); return; }
+    ul.classList.add('cn-sp-check');
+    return;
+  }
+  cnScratchExec_('insertUnorderedList');
+  var r2 = cnScratchRange_(ed);
+  var h2 = r2 ? (r2.startContainer.nodeType === 1 ? r2.startContainer : r2.startContainer.parentNode) : null;
+  var made = h2 && h2.closest ? h2.closest('ul') : null;
+  if (made && ed.contains(made)) made.classList.add('cn-sp-check');
+}
+/** A click in the editor: on a checklist item's box, tick or untick it; a
+ *  Ctrl/⌘+click on a link opens it in a new tab (a plain click edits). */
+function cnScratchEditorClick_(e) {
+  var ed = cnScratchEditor_();
+  if (!ed || !e || !e.target || !e.target.closest) return;
+  var a = e.target.closest('a');
+  if (a && ed.contains(a) && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    var href = a.getAttribute('href') || '';
+    if (!CN_SCRATCH_HREF_RE.test(href)) return;
+    var w = null;
+    try { w = window.open(href, '_blank'); } catch (_) { w = null; }
+    if (!w) { cnScratchStatus_('Your browser blocked the link — copy it instead', true); return; }   // g135
+    try { w.opener = null; } catch (_) {}
+    return;
+  }
+  var li = e.target.closest('li');
+  var list = li && li.parentNode;
+  if (!li || !ed.contains(li) || !list || !list.classList || !list.classList.contains('cn-sp-check')) return;
+  var left = li.getBoundingClientRect ? li.getBoundingClientRect().left : 0;
+  if (e.clientX - left > 22) return;   // the text, not the box
+  e.preventDefault();
+  li.classList.toggle('cn-sp-done');
+  cnScratchInput_();
+}
+/** PURE (DOM-driven) — wrap every finished URL in root's text as a link: a run
+ *  starting http(s):// or www., its trailing punctuation left outside. A URL
+ *  the caret sits at the end of is still being typed and is left alone; the
+ *  caret is kept where it was. Text already inside a link is never touched.
+ *  Returns how many links were made. */
+function cnScratchLinkify_(root, caretNode, caretOffset) {
+  if (!root) return 0;
+  var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  var nodes = [], n;
+  while ((n = walk.nextNode())) { if (!(n.parentNode && n.parentNode.closest && n.parentNode.closest('a'))) nodes.push(n); }
+  var made = 0, caret = { node: caretNode || null, offset: caretOffset || 0 };
+  nodes.forEach(function (node) {
+    var text = node.nodeValue, re = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi, m, hits = [];
+    while ((m = re.exec(text))) {
+      var url = m[0].replace(/[.,;:!?)\]}'"]+$/, '');
+      if (url.length < 5) continue;
+      hits.push({ start: m.index, end: m.index + url.length, url: url });
+    }
+    for (var i = hits.length - 1; i >= 0; i--) {
+      var h = hits[i];
+      if (caret.node === node && caret.offset >= h.start && caret.offset <= h.end) continue;   // still being typed
+      var href = /^www\./i.test(h.url) ? 'https://' + h.url : h.url;
+      if (!CN_SCRATCH_HREF_RE.test(href)) continue;
+      var urlNode = node.splitText(h.start);
+      var rest = urlNode.splitText(h.end - h.start);
+      if (caret.node === node && caret.offset > h.end) { caret.node = rest; caret.offset -= h.end; }
+      var a = document.createElement('a');
+      a.setAttribute('href', href);
+      urlNode.parentNode.insertBefore(a, urlNode);
+      a.appendChild(urlNode);
+      made++;
+    }
+  });
+  if (made && caretNode) {
+    var sel = window.getSelection ? window.getSelection() : null;
+    if (sel) { var r = document.createRange(); r.setStart(caret.node, Math.min(caret.offset, caret.node.length)); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); }
+  }
+  return made;
+}
+function cnScratchEditorKeyup_(e) {
+  if (!e || (e.key !== ' ' && e.key !== 'Enter' && e.key !== 'Tab')) return;
+  var ed = cnScratchEditor_();
+  var r = cnScratchRange_(ed);
+  if (cnScratchLinkify_(ed, r ? r.startContainer : null, r ? r.startOffset : 0)) cnScratchInput_();
+}
+/** Send the selected scratchpad text into the note being written — appended
+ *  to its Issue or Resolution, with an input event so the draft, the timer and
+ *  the auto-tags follow exactly as if it had been typed. */
+function cnScratchSendToNote_(which) {
+  var ed = cnScratchEditor_();
+  var sel = window.getSelection ? window.getSelection() : null;
+  var r = cnScratchRange_(ed);
+  var text = (r && !r.collapsed && sel) ? String(sel.toString()).replace(/\s+/g, ' ').trim() : '';
+  if (!text) { cnScratchStatus_('Select the text to send first', false); return; }
+  var id = which === 'issue' ? 'cn-fld-issue' : 'cn-fld-resolution';
+  if (!document.getElementById(id)) { cnScratchStatus_('Open Call Notes → Log to send text into a note', true); return; }
+  var cur = cnGetFieldValue_(id);
+  cnSetFieldValue_(id, cur.trim() ? cur.replace(/\s+$/, '') + ' ' + text : text);
+  cnScratchStatus_('Sent to the note\'s ' + (which === 'issue' ? 'Issue' : 'Resolution'), false);
+}
+// Find in the page. Matches are drawn with the CSS Custom Highlight API where
+// the browser has it (nothing is written into the text); elsewhere the count
+// and the scrolling still work.
+var CN_SCRATCH_FIND = { ranges: [], at: -1 };
+/** PURE (DOM-driven) — the case-insensitive matches of q in root's text, one
+ *  Range each (a match never spans two text nodes). */
+function cnScratchFindRanges_(root, q) {
+  var out = [];
+  q = String(q || '').toLowerCase();
+  if (!root || !q) return out;
+  var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false), n;
+  while ((n = walk.nextNode())) {
+    var t = n.nodeValue.toLowerCase(), i = t.indexOf(q);
+    while (i >= 0) {
+      var r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + q.length);
+      out.push(r);
+      i = t.indexOf(q, i + q.length);
+    }
+  }
+  return out;
+}
+function cnScratchFindPaint_() {
+  var f = CN_SCRATCH_FIND, nEl = document.getElementById('cn-scratch-find-n');
+  var q = (document.getElementById('cn-scratch-find-in') || {}).value || '';
+  if (nEl) nEl.textContent = !q ? '' : (f.ranges.length ? (f.at + 1) + ' of ' + f.ranges.length : 'No match');
+  try {
+    if (window.CSS && CSS.highlights && typeof Highlight === 'function') {
+      CSS.highlights.set('cn-sp-find', new Highlight(...f.ranges));
+      CSS.highlights.set('cn-sp-find-cur', f.at >= 0 && f.ranges[f.at] ? new Highlight(f.ranges[f.at]) : new Highlight());
+    }
+  } catch (_) {}
+  var cur = f.at >= 0 ? f.ranges[f.at] : null;
+  var el = cur && cur.startContainer && cur.startContainer.parentElement;
+  if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: 'nearest' }); } catch (_) {} }
+}
+function cnScratchFindRun_() {
+  var q = (document.getElementById('cn-scratch-find-in') || {}).value || '';
+  CN_SCRATCH_FIND.ranges = cnScratchFindRanges_(cnScratchEditor_(), q);
+  CN_SCRATCH_FIND.at = CN_SCRATCH_FIND.ranges.length ? 0 : -1;
+  cnScratchFindPaint_();
+}
+function cnScratchFindStep_(dir) {
+  var f = CN_SCRATCH_FIND, n = f.ranges.length;
+  if (!n) return;
+  f.at = (f.at + dir + n) % n;
+  cnScratchFindPaint_();
+}
+function cnScratchFindOpen_() {
+  var fb = document.getElementById('cn-scratch-find');
+  if (!fb) return;
+  fb.hidden = false;
+  var inp = document.getElementById('cn-scratch-find-in');
+  if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
+  cnScratchFindRun_();
+}
+function cnScratchFindClose_() {
+  var fb = document.getElementById('cn-scratch-find');
+  if (fb) fb.hidden = true;
+  CN_SCRATCH_FIND.ranges = []; CN_SCRATCH_FIND.at = -1;
+  try { if (window.CSS && CSS.highlights) { CSS.highlights.delete('cn-sp-find'); CSS.highlights.delete('cn-sp-find-cur'); } } catch (_) {}
+  var ed = cnScratchEditor_();
+  if (cnScratchReady_(ed)) { try { ed.focus(); } catch (_) {} }
+}
+function cnScratchWireFind_(panel) {
+  var inp = panel.querySelector('#cn-scratch-find-in');
+  if (inp) {
+    inp.addEventListener('input', cnScratchFindRun_);
+    inp.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); cnScratchFindStep_(ev.shiftKey ? -1 : 1); }
+    });
+  }
+  var bar = panel.querySelector('#cn-scratch-find');
+  if (bar) bar.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-sp-find]') : null;
+    if (!b) return;
+    var k = b.getAttribute('data-sp-find');
+    if (k === 'close') cnScratchFindClose_(); else cnScratchFindStep_(k === 'prev' ? -1 : 1);
+  });
+}
+/** Ctrl/⌘+Shift+S, from any page: open the Scratchpad, or close it. */
+function cnToggleScratchpad_() {
+  if (document.getElementById('cn-scratch-panel')) cnCloseScratchpadModal_();
+  else cnOpenScratchpadModal_();
 }
 
 // ── G3: read-only viewer for a submitted fillable form ──────────────────────

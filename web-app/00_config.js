@@ -1751,6 +1751,14 @@ const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CRE
 // INV-167-guarded field the employee builders populate).
 const SCRATCHPAD_TAB = 'Scratchpad';
 const SCRATCHPAD_MAX_CHARS = 40000;   // comfortably under the ~50k cell limit
+// Batch S (operator 2026-11-02): named PAGES — one row of the Scratchpad tab
+// each: A the page (the same '@' html cell), B its save time, C its format,
+// D its name, E its id. Row 1 is the legacy pad, page `main` (named in D1
+// once renamed; "Notes" until then), so a pad from before pages is simply the
+// first page and an older client keeps reading and writing row 1.
+const SCRATCHPAD_MAX_PAGES = 10;
+const SCRATCHPAD_PAGE_NAME_MAX = 40;
+const SCRATCHPAD_MAIN_PAGE = 'main';
 /** Inter-department requests for the caller (rep: own; manager: all) + a
  *  per-department resolution-time aggregate for managers. Manager-gated fields
  *  (the aggregate + cross-rep rows) only return for managers. */

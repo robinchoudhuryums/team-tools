@@ -1335,7 +1335,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { id: 'sc-1', whenMs: Date.now() + 3600000, leadMin: 5, label: 'Translated call — Maria G · TRX 12345', status: 'active' }] },
     // Pilot round 3 — scratchpad + Reference comments (shapes mirror the
     // server returns; pinned like the sched fixture above).
-    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000, format: 'text' },
+    scratchpadPageOp: { success: true, pages: [{ id: 'main', name: 'Notes', updatedAtMs: Date.now() - 5400000 }, { id: 'p2', name: 'Escalations', updatedAtMs: Date.now() - 86400000 }], pageId: 'p2' },
+    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000, format: 'text',
+      pageId: 'main', pages: [{ id: 'main', name: 'Notes', updatedAtMs: Date.now() - 5400000 }, { id: 'p2', name: 'Escalations', updatedAtMs: Date.now() - 86400000 }], maxPages: 10, missing: false },
     // The reader scenario opens this article via the post hook — shape
     // mirrors getReferenceItem's article return (id/title/department/status/
     // type/bodyMd; INV-185).

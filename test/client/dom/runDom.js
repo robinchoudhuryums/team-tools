@@ -5336,6 +5336,14 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
     ['<div>line<br>two</div>', '<div>line<br>two</div>'],
     ['<b onmouseover="x()">t</b>', '<b>t</b>'],
     ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+    ['<ul class="cn-sp-check evil"><li class="cn-sp-done x">a</li><li>b</li></ul>', '<ul class="cn-sp-check"><li class="cn-sp-done">a</li><li>b</li></ul>'],
+    ['<span class="cn-sp-h-yellow">hl</span>', '<span class="cn-sp-h-yellow">hl</span>'],
+    ['<h3 id="x" onclick="y()">Head</h3>', '<h3>Head</h3>'],
+    ['<h1>big</h1>', 'big'],
+    ['<a href="https://x.com/a?b=1&amp;c=2" onclick="z()">site</a>', '<a href="https://x.com/a?b=1&amp;c=2">site</a>'],
+    ['<a href="data:text/html,x">d</a>', 'd'],
+    ['<a href="https://ok.org" target="_top">x <b>y</b></a> z', '<a href="https://ok.org">x <b>y</b></a> z'],
+    ['<ul class="cn-sp-done"><li class="cn-sp-check">wrong way round</li></ul>', '<ul><li>wrong way round</li></ul>'],
   ].forEach(([inp, want]) => assert.strictEqual(san(inp), want, inp));
 
   // A colour / size command's sentinel marks become palette classes, and
@@ -5356,7 +5364,7 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   ed2.dispatchEvent(new w.Event('input'));
   h.read('cnScratchSave_')(true);
   const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
-  assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html'], 'the save carries clean html and says so');
+  assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html', 'main'], 'the save carries clean html and says so — and the page it belongs to (Batch S)');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
 });
@@ -5401,6 +5409,134 @@ test('Operator 2026-11-02 DOM: a Scratchpad colour or size chosen with NOTHING s
   const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
   assert.strictEqual(call.args[0], 'b<span class="cn-sp-c-green">go</span>', 'the stored html carries no placeholder');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Batch S DOM (operator 2026-11-02): Scratchpad PAGES — a switch saves the old page under ITS id first, a load overtaken by another switch is dropped, and a save whose page was deleted elsewhere moves the text to a new "Recovered text" page (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  const pages2 = [{ id: 'main', name: 'Notes', updatedAtMs: 1 }, { id: 'p2', name: 'Escalations', updatedAtMs: 2 }];
+  h.run.flushSuccess({ content: 'main text', format: 'html', updatedAtMs: Date.now(), maxChars: 40000, pageId: 'main', pages: pages2, maxPages: 10 }, 'getMyScratchpad');
+  const sel = () => doc.getElementById('cn-scratch-page');
+  assert.deepStrictEqual(Array.from(sel().options).map((o) => o.textContent), ['Notes', 'Escalations'], 'the page picker lists the pages');
+  const ed = () => doc.getElementById('cn-scratch-text');
+  ed().innerHTML = 'main edited';
+  ed().dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSwitchPage_')('p2');
+  const save1 = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(save1.args), ['main edited', 'html', 'main'], 'the old page is saved under ITS id before the switch');
+  const load = h.run.pending('getMyScratchpad').slice(-1)[0];
+  assert.strictEqual(load.args[0], 'p2', 'and the new page is loaded by id');
+  assert.strictEqual(ed().getAttribute('contenteditable'), 'false', 'the editor waits for the page');
+  h.run.flushSuccess({ content: 'p2 text', format: 'html', updatedAtMs: Date.now(), pageId: 'p2', pages: pages2 }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'p2 text', 'the new page shows');
+  assert.strictEqual(sel().value, 'p2');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now(), pageId: 'main' }, 'saveMyScratchpad');
+  // Two switches in a row: the first page's late answer is dropped.
+  h.read('cnScratchSwitchPage_')('main');
+  h.read('cnScratchSwitchPage_')('p2');
+  h.run.flushSuccess({ content: 'LATE main', format: 'html', updatedAtMs: Date.now(), pageId: 'main', pages: pages2 }, 'getMyScratchpad');
+  assert.notStrictEqual(ed().innerHTML, 'LATE main', 'a load overtaken by another switch never paints');
+  h.run.flushSuccess({ content: 'p2 text', format: 'html', updatedAtMs: Date.now(), pageId: 'p2', pages: pages2 }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'p2 text');
+  // The page was deleted in another window: the text goes to a NEW page, never into another one.
+  ed().innerHTML = 'keep me';
+  ed().dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSave_')(true);
+  h.run.flushSuccess({ error: 'That page was deleted in another window', pageGone: true }, 'saveMyScratchpad');
+  const op = h.run.pending('scratchpadPageOp').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(op.args), ['add', '', 'Recovered text'], 'a Recovered text page is made');
+  h.run.flushSuccess({ success: true, pages: pages2.concat([{ id: 'p3', name: 'Recovered text', updatedAtMs: null }]), pageId: 'p3' }, 'scratchpadPageOp');
+  const save2 = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(save2.args), ['keep me', 'html', 'p3'], 'and the text is saved there');
+  assert.ok(/Recovered text/.test(doc.getElementById('toast-stack').textContent), 'and the rep is told where it went');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now(), pageId: 'p3' }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Batch S DOM (operator 2026-11-02): the Scratchpad extras — a checklist box ticks, a finished URL becomes a link (one still being typed does not), Ctrl+click opens it (a blocked open says so), Send puts the selection in the note\'s Issue, Time inserts the time, Find counts and steps, and Ctrl/Cmd+Shift+S opens and closes it (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', format: 'html', updatedAtMs: Date.now(), maxChars: 40000, pageId: 'main', pages: [{ id: 'main', name: 'Notes' }] }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  const caretAt = (node, off) => { const r = doc.createRange(); r.setStart(node, off); r.collapse(true); const s = w.getSelection(); s.removeAllRanges(); s.addRange(r); };
+  // Checklist: the box ticks, the text does not.
+  ed.innerHTML = '<ul class="cn-sp-check"><li>one</li><li>two</li></ul>';
+  const li = ed.querySelectorAll('li')[0];
+  li.dispatchEvent(new w.MouseEvent('click', { bubbles: true, clientX: 5 }));
+  assert.ok(li.classList.contains('cn-sp-done'), 'a click on the box ticks it');
+  li.dispatchEvent(new w.MouseEvent('click', { bubbles: true, clientX: 200 }));
+  assert.ok(li.classList.contains('cn-sp-done'), 'a click on the text does not');
+  // The Checklist button turns a plain list into one.
+  ed.innerHTML = '<ul><li>x</li></ul>';
+  caretAt(ed.querySelector('li').firstChild, 1);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="checklist"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(ed.querySelector('ul').classList.contains('cn-sp-check'), 'the list becomes a checklist');
+  // Links: finished URLs are wrapped, trailing punctuation outside; www. gets https.
+  ed.innerHTML = 'see https://example.com/a. and www.ums.com next';
+  assert.strictEqual(h.read('cnScratchLinkify_')(ed, null, 0), 2);
+  assert.strictEqual(ed.innerHTML, 'see <a href="https://example.com/a">https://example.com/a</a>. and <a href="https://www.ums.com">www.ums.com</a> next');
+  // A URL the caret is at the end of is still being typed; a space finishes it.
+  ed.innerHTML = 'go https://x.org';
+  caretAt(ed.firstChild, ed.firstChild.length);
+  assert.strictEqual(h.read('cnScratchLinkify_')(ed, ed.firstChild, ed.firstChild.length), 0, 'not while it is being typed');
+  ed.firstChild.appendData(' ');
+  caretAt(ed.firstChild, ed.firstChild.length);
+  ed.dispatchEvent(new w.KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+  assert.ok(ed.querySelector('a[href="https://x.org"]'), 'a space finishes it');
+  const sel = w.getSelection();
+  assert.ok(sel.rangeCount && sel.getRangeAt(0).startContainer.nodeValue === ' ', 'and the caret stays after the space');
+  // Ctrl+click opens; a blocked open says so.
+  let opened = null;
+  w.open = (u) => { opened = u; return null; };
+  ed.querySelector('a').dispatchEvent(new w.MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  assert.strictEqual(opened, 'https://x.org', 'Ctrl+click opens the link');
+  assert.ok(/blocked/.test(doc.getElementById('cn-scratch-status').textContent), 'a blocked open is said (g135)');
+  // Send the selection to the note's Issue.
+  ed.innerHTML = 'call back Tuesday';
+  const r = doc.createRange(); r.setStart(ed.firstChild, 0); r.setEnd(ed.firstChild, 9);
+  sel.removeAllRanges(); sel.addRange(r);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="send-issue"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(/Open Call Notes/.test(doc.getElementById('cn-scratch-status').textContent), 'with no note form open, it says where to go');
+  const issue = doc.createElement('div');
+  issue.id = 'cn-fld-issue'; issue.setAttribute('contenteditable', 'true'); issue.textContent = 'Asked about';
+  doc.body.appendChild(issue);
+  let fired = 0; issue.addEventListener('input', () => { fired++; });
+  sel.removeAllRanges(); sel.addRange(r);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="send-issue"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.strictEqual(issue.textContent, 'Asked about call back', 'the selection is appended to Issue');
+  assert.strictEqual(fired, 1, 'as an input, so the draft and auto-tags follow');
+  // Time.
+  ed.innerHTML = 'at ';
+  caretAt(ed.firstChild, 3);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="time"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(/^at \d{1,2}:\d{2}\s?[AP]M$/.test(ed.textContent), 'the time is inserted at the caret: ' + ed.textContent);
+  // Find: counts and steps; Escape in the find bar closes only the find bar.
+  ed.innerHTML = 'apple Apple banana <b>apple</b>';
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="find"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const fin = doc.getElementById('cn-scratch-find-in');
+  assert.ok(!doc.getElementById('cn-scratch-find').hidden, 'the find bar opens');
+  fin.value = 'apple'; fin.dispatchEvent(new w.Event('input'));
+  const count = () => doc.getElementById('cn-scratch-find-n').textContent;
+  assert.strictEqual(count(), '1 of 3', 'case-insensitive, across formatting');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.strictEqual(count(), '2 of 3');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+  assert.strictEqual(count(), '1 of 3');
+  fin.value = 'pear'; fin.dispatchEvent(new w.Event('input'));
+  assert.strictEqual(count(), 'No match');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(doc.getElementById('cn-scratch-find').hidden && doc.getElementById('cn-scratch-panel'), 'Escape closes the find bar, not the panel');
+  // Ctrl/Cmd+Shift+S from the page closes it, and opens it again.
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'S', ctrlKey: true, shiftKey: true, bubbles: true }));
+  assert.ok(!doc.getElementById('cn-scratch-panel'), 'the shortcut closes it');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'S', ctrlKey: true, shiftKey: true, bubbles: true }));
+  assert.ok(doc.getElementById('cn-scratch-panel'), 'and opens it');
+  h.run.flushSuccess({ content: '', format: 'html', updatedAtMs: Date.now(), pageId: 'main', pages: [{ id: 'main', name: 'Notes' }] }, 'getMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
 });
 

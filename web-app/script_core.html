@@ -3329,6 +3329,12 @@ document.addEventListener('keydown', function (e) {
     if (typeof kbDrawerToggle_ === 'function') { e.preventDefault(); kbDrawerToggle_(); }
     return;
   }
+  // Batch S (operator 2026-11-02): Ctrl/Cmd + Shift + S opens or closes the
+  // Scratchpad from any page — and, like Ctrl/Cmd + K, from inside a field.
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+    if (typeof cnToggleScratchpad_ === 'function') { e.preventDefault(); cnToggleScratchpad_(); }
+    return;
+  }
   // Ctrl/Cmd + / opens the Call Notes shortcuts overlay (if present)
   if ((e.metaKey || e.ctrlKey) && e.key === '/' && !e.shiftKey && !e.altKey) {
     // U2 (cycle 22): through the partial's opener, so the dialog is named and

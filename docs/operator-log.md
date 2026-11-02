@@ -10,6 +10,23 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch S (the Scratchpad)
+
+**No new operator state, and no new tab.** A page is a ROW of the rep's existing
+Scratchpad tab; their current pad becomes the first page, "Notes". Deploy:
+Team Tools `clasp push -f` + New version.
+
+What reps can now do in the Scratchpad:
+- Keep up to **10 named pages** (New / Rename / Delete).
+- Make a **checklist** whose boxes tick.
+- **Highlight** text, add a **heading**.
+- Get **links** from typed URLs (Ctrl/⌘+click opens one).
+- Insert the **time**.
+- **Send** selected text into the open note's Issue or Resolution.
+- **Find** in a page (Ctrl/⌘+F inside it).
+- **Open or close the Scratchpad from any page** with Ctrl/⌘+Shift+S (listed
+  in the shortcuts overlay).
+
 ## 2026-11-02 — Operator round, Batch A (Team Tools small fixes)
 
 **No new operator state.** Deploy Team Tools (`clasp push -f` + New version),

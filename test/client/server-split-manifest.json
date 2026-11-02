@@ -3616,6 +3616,31 @@
     "SPANISH_ESCALATE_READ_DAYS"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Batch S: scratchpad pages and the widened allowlist",
+   "added": [
+    "SCRATCHPAD_MAIN_PAGE",
+    "SCRATCHPAD_MAX_PAGES",
+    "SCRATCHPAD_PAGE_NAME_MAX",
+    "SCRATCH_HREF_RE_",
+    "SCRATCH_TAG_CLASS_RE_",
+    "scratchpadPageList_",
+    "scratchpadPageName_",
+    "scratchpadPageOp",
+    "scratchpadPagesFromRows_",
+    "scratchpadReadPages_"
+   ],
+   "removed": [],
+   "changed": [
+    "SCRATCH_ALLOWED_TAGS_",
+    "SCRATCH_CLASS_RE_",
+    "getMyScratchpad",
+    "saveMyScratchpad",
+    "scratchpadSanitizeHtml_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6065,10 +6090,25 @@
    "kind": "const",
    "sha": "1a99d04fe5c42015"
   },
+  "SCRATCHPAD_MAIN_PAGE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4035f88e847bb86a"
+  },
   "SCRATCHPAD_MAX_CHARS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "2d6e2d4d9361b94f"
+  },
+  "SCRATCHPAD_MAX_PAGES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6e43ec22fb9d463a"
+  },
+  "SCRATCHPAD_PAGE_NAME_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a8b32d00abedace3"
   },
   "SCRATCHPAD_TAB": {
    "file": "00_config.js",
@@ -6078,12 +6118,22 @@
   "SCRATCH_ALLOWED_TAGS_": {
    "file": "30_callnotes.js",
    "kind": "const",
-   "sha": "fa89d942812e3b3e"
+   "sha": "a2f5ef9952694736"
   },
   "SCRATCH_CLASS_RE_": {
    "file": "30_callnotes.js",
    "kind": "const",
-   "sha": "c79a8902c3788643"
+   "sha": "f8ad4fab095cfa36"
+  },
+  "SCRATCH_HREF_RE_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "c66b1617ea5ebfcd"
+  },
+  "SCRATCH_TAG_CLASS_RE_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "df73026be4939852"
   },
   "SELF_TEST_RESULT_PROP": {
    "file": "00_config.js",
@@ -8993,7 +9043,7 @@
   "getMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "012272addf8644f9"
+   "sha": "8b78c86a4bc4e73b"
   },
   "getMySentForms": {
    "file": "61_forms.js",
@@ -12153,7 +12203,7 @@
   "saveMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "25e10831267e1b69"
+   "sha": "21d44b03097e675d"
   },
   "saveQaMembers": {
    "file": "90_qa.js",
@@ -12225,10 +12275,35 @@
    "kind": "function",
    "sha": "81f48d8e0cac462f"
   },
+  "scratchpadPageList_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2ed49430ab9b01bf"
+  },
+  "scratchpadPageName_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1dd2317400d59b6e"
+  },
+  "scratchpadPageOp": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "abe4ae73068f8ded"
+  },
+  "scratchpadPagesFromRows_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "dea3fd1e3c16b64d"
+  },
+  "scratchpadReadPages_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ada56b19d4d750e6"
+  },
   "scratchpadSanitizeHtml_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "38cca7badad104d5"
+   "sha": "0dfd052566e68f55"
   },
   "scratchpadSheet_": {
    "file": "30_callnotes.js",

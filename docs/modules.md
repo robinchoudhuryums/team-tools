@@ -491,6 +491,18 @@ lighter `--warn-fill`.
 - In the Scratchpad, a colour or size picked with nothing selected applies to
   the next typing, and the resize corner is drawn.
 
+**Batch S (operator 2026-11-02): the Scratchpad grows.**
+- **Pages:** named pages, one row of the rep's Scratchpad tab each; row 1 is
+  the legacy pad.
+- **Formatting:** checklists, highlights, a heading, and auto-linked URLs
+  (Ctrl/⌘+click opens).
+- **Tools:** an insert-time button, Send selection → the note's Issue or
+  Resolution, and find in the page.
+- **Shortcut:** Ctrl/⌘+Shift+S opens or closes it from any page.
+
+The server allowlist and the client sanitizer were widened together. A link
+keeps only an http(s) href.
+
 ## Metrics
 
    - **Metrics** — CDR integration module that reads DQE Historical
