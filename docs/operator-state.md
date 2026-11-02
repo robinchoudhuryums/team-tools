@@ -899,8 +899,9 @@ entry says which it is.
   (`sendSpanishEscalationDigest`, riding `runDailyChecks` — no new trigger, so
   re-running `installAutomationTriggers` is not required) emails the managers
   the escalated requests: age, email or voicemail, who has it, and the Gmail
-  link — never the subject, text or requester. It reads the tab's widest
-  window (90 days), heartbeats as `spanishEscalation` (stale past 26 h), logs
+  link — never the subject, text or requester. It reads the last 30 days —
+  the one pending window (operator 2026-11-02; it read 90 until then), so a
+  request older than that is no longer emailed — heartbeats as `spanishEscalation` (stale past 26 h), logs
   each decision under Admin → System → Email deliveries, and a morning with
   none sends nothing. It does nothing while `SPANISH_INBOX_ADDRESS` is unset.
 

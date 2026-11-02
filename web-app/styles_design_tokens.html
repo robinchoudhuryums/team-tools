@@ -68,6 +68,14 @@
        (10.49:1 on #ffb547). Declared in the two BASE blocks only, like
        --warn itself (2026-10-09, manual reader design Phase 5's open item). */
     --on-warn:      var(--ink);
+    /* `--warn-fill` — the amber a FILLED surface paints (a primary amber
+       button, a pressed amber chip, an amber badge), with --on-warn text on it
+       (operator 2026-11-02: the dark text on #b7791f read muddy). A LIGHTER
+       amber in light mode, 8.02:1 under the ink; --warn itself stays, since
+       it is also amber TEXT on white in ~30 places, where lighter would fail
+       (2.26:1). Dark mode keeps --warn's own amber. Declared in the two BASE
+       blocks only, like --warn. */
+    --warn-fill:    #dda23a;
     --destructive:      #c13030;
     --destructive-soft: #fce5e5;
 
@@ -228,6 +236,7 @@
       --warn-soft:    rgba(255, 181, 71, 0.14);
       --warn-glow:    rgba(255, 181, 71, 0.22);
       --on-warn:      var(--paper-card);
+      --warn-fill:    var(--warn);
       --destructive:  #ff6679;
       --destructive-soft: rgba(255, 102, 121, 0.14);
 

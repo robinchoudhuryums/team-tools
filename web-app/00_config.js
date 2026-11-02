@@ -1708,10 +1708,13 @@ const SPANISH_PENDING_WINDOW_DAYS = 30;
 // once it has waited this many CALENDAR days (wall clock — the tab's own age
 // measure). It reads "Escalated · N days" on the tab and the Dashboard card,
 // its claimant's Needs-you item turns overdue, and the 8am escalation digest
-// lists it to the managers. The digest reads the tab's widest window, so a
-// request older than the 30-day default is still escalated, not forgotten.
+// lists it to the managers. The digest read the tab's widest window (90) so a
+// request older than the 30-day default was still escalated; the operator
+// (2026-11-02) asked for the last 30 days only, so it now reads the ONE
+// pending window every other reader uses — an older request still shows on
+// the tab when its select is widened.
 const SPANISH_ESCALATE_DAYS = 7;
-const SPANISH_ESCALATE_READ_DAYS = 90;
+const SPANISH_ESCALATE_READ_DAYS = SPANISH_PENDING_WINDOW_DAYS;
 // 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
 // getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
 // list can tell which of a rep's claims are still pending WITHOUT a Gmail read

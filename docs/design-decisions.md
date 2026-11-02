@@ -1147,6 +1147,17 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   scheduled-call reminders still run. Chosen over refreshing on every rollover
   tick and firing meanwhile: a reminder on the wrong day's state is the false
   positive the channel cannot afford.
+  **AMENDED (operator 2026-11-02): a punch reminder carries the punch.** The
+  still-clocked-in reminder carries **Clock out**, the not-clocked-in nudge
+  **Clock in**, and the Lunch break's reminder **Lunch out** (a rest break is
+  not punched, so its reminder has no button). The toast's existing action slot
+  calls the Clock view's own `submitPunch` from whatever page the rep is on.
+  The button is offered only when `empState.nextActions` allows that punch at
+  the time it fires, and checked again at the click. A reminder left on screen
+  after the rep punched in another window says the punches changed and records
+  nothing, and the server enforces the order regardless. The click is the
+  confirmation: the button names the punch. A browser notification cannot
+  carry a button inside the Apps Script sandbox, so it stays text.
 - <a id="two-way-sheet-entry-via-the-reconcile-pass-8"></a>**Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -5008,6 +5019,15 @@ pick them up without re-deriving the context.
   both are held to one case table. Rejected: Markdown markers (the operator
   wanted visible formatting) and keeping the modal with its backdrop removed
   (the focus trap would still have taken the rep's typing).
+  **AMENDED (operator 2026-11-02).** A colour or size chosen with NOTHING
+  selected now applies to what is typed next, as Bold already did
+  (`cnScratchPendingStyle_`). The palette classes are the app's, so the browser
+  cannot carry them. Instead, an empty span of the chosen class opens at the
+  caret, splitting the current run when the caret is inside one, holding a
+  zero-width placeholder. The save copies the editor and strips the placeholder
+  and any span left unused (`cnScratchHtmlOf_`). The panel was already
+  resizable (`resize: both`); a visible grip is now drawn over the browser's
+  own handle, with `pointer-events: none` so the drag still reaches it.
 - <a id="a-spanish-assignment-tells-the-assignee"></a>**A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27).** The operator asked for both. The email builder takes only a count, the
   assigner's name and a link (`spanishAssignEmail_(count, actorName, url)`), so
   no subject, sender, body or thread id can reach it; it is sent after the

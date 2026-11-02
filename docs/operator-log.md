@@ -10,6 +10,27 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch A (Team Tools small fixes)
+
+**No new operator state.** Deploy Team Tools (`clasp push -f` + New version),
+then the handbook app too (`npm run handbook:push` + New version): its copy of
+the colour tokens changed. What changed for people using the app:
+- The sidebar lists **Reference above Intake**.
+- The note template's "Highlight any text inside…" line is now an ⓘ tooltip on
+  the template's own copy hint.
+- **Scratchpad:** a colour or size picked with nothing selected applies to the
+  next typing, and the resize corner is visible.
+- The clock **reminders carry their punch**: Clock in, Clock out, and Lunch out
+  on the Lunch reminder, one click from any page. A rest break's reminder has no
+  button.
+- **Spanish Inbox:** Auto-assign shows "Assigning…" until it finishes. The
+  8am escalation email now covers the last 30 days only.
+- **Dept Requests:** each list has its own sort order (Oldest open and Incoming:
+  longest open first; My requests: newest; Recently resolved: latest resolved),
+  shown on its heading. For managers the summary row is at the very top.
+- The **amber buttons and chips** are a lighter amber with dark text in light
+  mode.
+
 ## 2026-11-02 — Script Property consolidation (Team Tools)
 
 The Apps Script editor's Script Properties page had stopped letting the operator

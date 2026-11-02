@@ -3354,3 +3354,27 @@ per-change detail. By delta:
   may not take the ScriptLock itself (A8), so S2 now requires every chain of
   callers to reach a function that takes it before the call.
 - Bite-checks: see the implement block.
+
+## Operator round 2026-11-02, Batch A (2026-11-02)
+
+- **DOM:**
+  - A drive of the Scratchpad's pending style: a colour with nothing selected,
+    then typing; a split inside a red run; an unused pending span; and the save
+    carrying no placeholder.
+  - A drive of a punch reminder: the button is offered only when the punch is
+    allowed, one click records it from the Call Notes page, a stale reminder
+    punches nothing, and a rest break has no button.
+  - C-N4 now holds the auto-assign run in flight (`clearResponder`) and checks
+    the busy look survives a list render.
+  - A-7 checks the summary row comes before the controls and each heading names
+    its order.
+- **Pure:**
+  - A-6 drives the per-list defaults (`drSortFor_`) and the Recently resolved
+    order.
+  - The sticky-reminder pin reads the new options object and the three
+    reminders' punch wiring.
+  - MRD-5 requires every `--on-warn` rule to sit on `--warn-fill`.
+  - The escalation digest sandbox reads 30.
+- **Visual:** the clock, deptreq, spanish, cn-log and cn-scratchpad scenarios
+  measure clean.
+

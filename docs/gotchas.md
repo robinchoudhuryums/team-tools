@@ -5979,6 +5979,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   anywhere in `web-app/`), MRD-4 (none on a semantic fill), MRD-5 (amber text is
   `--on-warn`) — each a sweep over every themed partial.
 
+  **AMENDED (operator 2026-11-02): a filled amber paints `--warn-fill`.** The
+  dark text on `#b7791f` read muddy. `--warn` could not get lighter: it is also
+  amber TEXT on white in ~30 places, where a lighter amber fails (2.26:1). The
+  filled surfaces (the Lunch Out button, the pressed amber chips, the amber
+  badges) now paint `--warn-fill`, a lighter amber in light mode (`#dda23a`,
+  8.02:1 under the ink) and `--warn` itself in dark mode. MRD-5 now requires
+  every `--on-warn` rule to sit on `--warn-fill`. Verify: MRD-5.
+
 <a id="g171-a-visually-hidden-absolute-element-escapes-its-scroller"></a>
 
 - **A visually hidden element is still POSITIONED — `position: absolute` with no

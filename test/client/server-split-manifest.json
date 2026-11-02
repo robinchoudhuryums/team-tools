@@ -3606,6 +3606,16 @@
     "stampAutomationRun_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Operator round 2026-11-02 Batch A: the Spanish escalation digest reads the one 30-day pending window",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "SPANISH_ESCALATE_READ_DAYS"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6103,7 +6113,7 @@
   "SPANISH_ESCALATE_READ_DAYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "4cfb3d5510265f55"
+   "sha": "62eb6eef421c9f69"
   },
   "SPANISH_PENDING_IDS_PREFIX": {
    "file": "00_config.js",

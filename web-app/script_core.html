@@ -103,6 +103,16 @@ const TOOLS = {
       metricsDeptReq:  { label: 'Dept Requests',  icon: 'outbox', enter: 'enterDeptRequestsView' },
     },
   },
+  // Operator 2026-11-02: Reference sits above Intake — the sidebar and the
+  // mobile nav follow this object's key order (renderShell).
+  reference: {
+    label: 'Reference',
+    sidebarIcon: 'list',
+    defaultTab: 'reference',
+    tabs: {
+      reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
+    },
+  },
   intake: {
     label: 'Intake',
     sidebarIcon: 'clipboardList',
@@ -113,14 +123,6 @@ const TOOLS = {
       intakePapAccount: { label: 'PAP Account',        icon: 'airflow',        enter: 'enterIntakePapView' },
       intakeSent:       { label: 'Sent',               icon: 'outbox',         enter: 'enterIntakeSentView' },
       intakeCatalog:    { label: 'Catalog',            icon: 'list',           enter: 'enterIntakeCatalogView' },
-    },
-  },
-  reference: {
-    label: 'Reference',
-    sidebarIcon: 'list',
-    defaultTab: 'reference',
-    tabs: {
-      reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
     },
   },
   develop: {
@@ -2281,12 +2283,19 @@ function notifyRequestDesktop_() {
 }
 
 /** The one entry point every reminder uses. `tone` rides the toast variant. */
-function notifyRemind_(msg, tone) {
+function notifyRemind_(msg, tone, action) {
   var p = notifyPrefs_();
   // STICKY (operator 2026-08-12): the chime calls the rep back to the window
   // and the toast had already timed out by the time they got there. A reminder
   // is the one toast class that must wait for its reader.
-  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', { sticky: true });
+  // Operator 2026-11-02: a punch reminder carries the punch itself, so it can
+  // be done from whatever page the rep is on (remindPunchAction_).
+  var opts = { sticky: true };
+  if (action && action.punch) {
+    opts.actionLabel = action.label;
+    opts.onAction = function () { remindPunchNow_(action.punch); };
+  }
+  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', opts);
   if (p.sound) notifyChime_();
   if (p.desktop && notifyDesktopReady_()) {
     try { new Notification('Team Tools', { body: msg, tag: 'ums-remind' }); } catch (e) {}
@@ -2494,14 +2503,33 @@ function remindFiredShared_(day) {
  *  intervals are started seconds apart per window, so concurrent same-minute
  *  ticks read the shared set before the other writes only in a sub-second
  *  race — and that worst case is the pre-fix behavior, never worse. */
-function remindOnce_(key, msg, tone) {
+// Operator 2026-11-02 — the punch a reminder offers. Offered only when the
+// rep's state allows it NOW (getNextActions_'s list, which the server also
+// enforces), and checked again at the click: a reminder left on screen while
+// the rep punched in another window must not punch twice. The click is the
+// confirmation — the button names the punch — so there is no second dialog.
+var REMIND_PUNCH_LABELS = { ClockIn: 'Clock in', ClockOut: 'Clock out', LunchOut: 'Lunch out' };
+function remindPunchAction_(type) {
+  var acts = (empState && empState.nextActions) || [];
+  if (!REMIND_PUNCH_LABELS[type] || acts.indexOf(type) < 0) return null;
+  return { label: REMIND_PUNCH_LABELS[type], punch: type };
+}
+function remindPunchNow_(type) {
+  var acts = (empState && empState.nextActions) || [];
+  if (acts.indexOf(type) < 0) {
+    showToast('Your punches changed since this reminder — open the Dashboard to see where you are', 'toast-info');
+    return;
+  }
+  if (typeof submitPunch === 'function') submitPunch(type, null);
+}
+function remindOnce_(key, msg, tone, action) {
   if (_remindFired[key]) return false;
   var shared = remindFiredShared_(_remindDay);
   if (shared.keys[key]) { _remindFired[key] = true; return false; }   // another window already fired it
   _remindFired[key] = true;
   shared.keys[key] = true;
   try { localStorage.setItem('umsRemindFired', JSON.stringify(shared)); } catch (e) {}
-  notifyRemind_(msg, tone);
+  notifyRemind_(msg, tone, action);
   return true;
 }
 
@@ -2631,8 +2659,11 @@ function remindersTick_() {
       var b = breaks[i];
       var until = b.startMin - nowMin;
       if (until >= 0 && until <= lead) {
+        // Only the LUNCH break is punched (Lunch out); a rest break is not, so
+        // its reminder carries no button.
         remindOnce_(today + ':brk:' + b.startMin,
-          b.label + (until <= 0 ? ' starts now' : ' in ' + until + ' min'), 'toast-warn');
+          b.label + (until <= 0 ? ' starts now' : ' in ' + until + ' min'), 'toast-warn',
+          /lunch/i.test(String(b.label || '')) ? remindPunchAction_('LunchOut') : null);
       }
     }
 
@@ -2645,7 +2676,8 @@ function remindersTick_() {
     if (plan.outAt != null && nowMin >= endMin + 5 && nowMin <= endMin + 120) {
       if (remindPunchState_() === 'in') {
         remindOnce_(today + ':out', 'Your shift ended at ' + remindFmtMin_(endMin) +
-          ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn');
+          ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn',
+          remindPunchAction_('ClockOut'));
       }
       remindMaybeRefreshState_();
     }
@@ -2677,7 +2709,7 @@ function remindersTick_() {
         remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
       if (Date.now() - _remindStateOkAt < REMIND_STATE_CONFIRM_MS) {
         remindOnce_(today + ':in', 'You are using Team Tools but not clocked in — ' +
-          'clock in so today counts on your timesheet.', 'toast-warn');
+          'clock in so today counts on your timesheet.', 'toast-warn', remindPunchAction_('ClockIn'));
       } else {
         remindMaybeRefreshState_();
       }

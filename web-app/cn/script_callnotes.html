@@ -184,14 +184,26 @@
     .cnv-trio { grid-template-columns: 1fr; gap: 6px; }
     .cnv-row, .cnv-row.full { grid-template-columns: 1fr; gap: 2px; }
   }
-  /* below-doc copy hint sits just under the frame */
-  .below-doc {
-    font-family: var(--mono); font-size: 9px; font-weight: 500;
-    color: var(--muted-2); letter-spacing: .04em;
-    padding: 8px 4px 0;
-    line-height: 1.4;
+  /* Operator 2026-11-02: the line under the frame ("Highlight any text inside
+     the box above…") is now this tooltip on the stamp's own copy hint — the
+     intake .intk-help bubble (data-tip, hover AND keyboard focus), opening
+     DOWN into the frame and right-anchored, since the hint sits at the
+     stamp's right edge. Its text is the stamp's, not uppercase. */
+  .frame-stamp .copyhint { display: inline-flex; align-items: center; gap: 4px; }
+  .cn-tip { position: relative; display: inline-flex; color: var(--muted); cursor: help; border-radius: 50%; }
+  .cn-tip:hover, .cn-tip:focus-visible { color: var(--accent); outline: none; }
+  .cn-tip::after {
+    content: attr(data-tip);
+    position: absolute; right: -6px; top: calc(100% + 8px); z-index: 30;
+    width: min(300px, 70vw);
+    background: var(--ink); color: var(--paper);
+    font-family: var(--ui); font-size: .76rem; font-weight: 400; line-height: 1.5;
+    text-transform: none; letter-spacing: 0; white-space: normal; text-align: left;
+    padding: 9px 12px; border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+    opacity: 0; visibility: hidden; transform: translateY(-4px); pointer-events: none;
+    transition: opacity var(--t) var(--ease), transform var(--t) var(--ease), visibility var(--t);
   }
-  .below-doc b { color: var(--ink); font-weight: 700; }
+  .cn-tip:hover::after, .cn-tip:focus-visible::after { opacity: 1; visibility: visible; transform: none; }
   /* Round 2 deferred 8e — prefill accent: highlight rows populated by
      cnApplyPrefillFromUrl_ (deep-link from the Clock coverage strip
      CTA / future caller). */
@@ -545,7 +557,7 @@
   .cn-ok-list li .why { color: var(--muted-3); }
   @media (max-width: 560px) { .cn-finding { grid-template-columns: 1fr; } .cn-finding .cn-finding-d, .cn-finding .cn-finding-f, .cn-finding .cn-finding-area { grid-column: 1; } }
   /* The System tab's count badge — a text equivalent rides aria-label (A6). */
-  .cn-admin-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 700; letter-spacing: 0; background: var(--warn); color: var(--on-warn); }
+  .cn-admin-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 700; letter-spacing: 0; background: var(--warn-fill); color: var(--on-warn); }
   .cn-admin-tab-badge[data-tone="fail"] { background: var(--destructive); color: var(--paper-card); }   /* its own text: the amber badge's --on-warn is ink in light mode */
   .toolbar-tab[aria-current="page"] .cn-admin-tab-badge { background: var(--paper); color: var(--ink); }
 
@@ -1131,6 +1143,16 @@
     border: 1px solid var(--line); border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg); resize: both; overflow: hidden;
   }
+  /* Operator 2026-11-02 — the panel was already resizable (resize: both), but
+     the browser's grip is a few faint pixels. This draws a visible one over
+     the same corner; pointer-events: none, so the drag still reaches the
+     browser's own handle underneath. */
+  .cn-float-panel::after {
+    content: ''; position: absolute; right: 3px; bottom: 3px; width: 12px; height: 12px;
+    pointer-events: none; opacity: .75;
+    background: linear-gradient(135deg, transparent 0 45%, var(--muted) 45% 52%, transparent 52% 65%,
+      var(--muted) 65% 72%, transparent 72% 85%, var(--muted) 85% 92%, transparent 92%);
+  }
   .cn-float-panel:focus { outline: none; }
   .cn-float-panel:focus-within { border-color: var(--accent); }
   .cn-float-head {
@@ -1373,7 +1395,7 @@
   }
   /* Color-coded chip variants — picked up by cnRenderFilterBar_ */
   .cn-filter-chip.cn-fc-action:not([aria-pressed="true"])    { color: var(--warning-deep); border-color: color-mix(in srgb, var(--warn), transparent 70%); }
-  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn); border-color: var(--warn); color: var(--on-warn); }
+  .cn-filter-chip.cn-fc-action[aria-pressed="true"]          { background: var(--warn-fill); border-color: var(--warn-fill); color: var(--on-warn); }
   .cn-filter-chip.cn-fc-training:not([aria-pressed="true"])  { color: var(--info-deep); border-color: color-mix(in srgb, var(--accent), transparent 70%); }
   .cn-filter-chip.cn-fc-training[aria-pressed="true"]        { background: var(--accent); border-color: var(--accent); color: var(--paper-card); }
   .cn-filter-chip.cn-fc-review:not([aria-pressed="true"])    { color: var(--success-deep); border-color: color-mix(in srgb, var(--good), transparent 70%); }
@@ -1631,7 +1653,7 @@
   /* ── Stale-flag badge in sidebar nav (count pill) ───────────────── */
   .cn-stale-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--warn); color: var(--on-warn);
+    background: var(--warn-fill); color: var(--on-warn);
     font-family: var(--mono); font-size: 10px; font-weight: 700;
     min-width: 16px; height: 16px; padding: 0 4px;
     border-radius: 999px;
@@ -3089,6 +3111,13 @@ function cnRenderNotesView(area) {
   if (restored) showToast('Draft restored', 'toast-success');
 }
 
+/** Operator 2026-11-02 — the note template's copy instruction, now a tooltip
+ *  on the frame stamp rather than a line under the box. Plain text: callers
+ *  escape it for the attribute. */
+function cnCopyTip_(mod) {
+  return 'Highlight any text inside the note template and press ' + mod +
+    'C — the labels and values copy as plain text matching your CRM template.';
+}
 function cnRenderActiveForm_() {
   // Round 2 · 8e — vertical 2/3 + 1/3 layout. Left panel = the call-note
   // template as a document (input/textarea fields kept — contenteditable
@@ -3114,7 +3143,9 @@ function cnRenderActiveForm_() {
           <div class="frame-stamp">
             <span>NOTE TEMPLATE</span>
             <span class="meta">· EDIT INLINE</span>
-            <span class="copyhint">SELECTABLE — ${esc(mod)}C ANYWHERE INSIDE</span>
+            <span class="copyhint">SELECTABLE — ${esc(mod)}C ANYWHERE INSIDE
+              <span class="cn-tip" tabindex="0" role="img"
+                    aria-label="${esc(cnCopyTip_(mod))}" data-tip="${esc(cnCopyTip_(mod))}">${icon('info', 11)}</span></span>
           </div>
           <div class="cnv-trio">
             <div>
@@ -3163,9 +3194,6 @@ function cnRenderActiveForm_() {
                  data-field="transferredTo" data-placeholder="Agent name, or leave blank / N/A"
                  role="textbox" aria-label="Transferred to" tabindex="0"></div>
           </div>
-        </div>
-        <div class="below-doc">
-          <span class="copyhint">Highlight any text inside the box above and press <b>${esc(mod)}C</b> — the labels + values copy as plain text matching your CRM template.</span>
         </div>
       </div>
 
@@ -5525,7 +5553,69 @@ function cnScratchEditor_() { return document.getElementById('cn-scratch-text');
 function cnScratchReady_(ed) { return !!ed && ed.getAttribute('contenteditable') === 'true'; }
 function cnScratchValue_() {
   var ed = cnScratchEditor_();
-  return ed ? ed.innerHTML : null;
+  return ed ? cnScratchHtmlOf_(ed) : null;
+}
+/** Operator 2026-11-02 — the editor's HTML as it is SAVED: the caret
+ *  placeholders a colour or size chosen with nothing selected leaves
+ *  (cnScratchPendingStyle_) are stripped from a copy, so a pending style
+ *  never reaches the store and an unused one leaves no empty span. The live
+ *  editor is untouched — the caret stays where the rep is typing. */
+function cnScratchHtmlOf_(ed) {
+  if (!ed) return '';
+  if (String(ed.innerHTML).indexOf('\u200B') < 0) return ed.innerHTML;
+  var copy = ed.cloneNode(true);
+  var walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT, null, false);
+  var texts = [], n;
+  while ((n = walk.nextNode())) texts.push(n);
+  texts.forEach(function (t) { if (t.nodeValue.indexOf('\u200B') >= 0) t.nodeValue = t.nodeValue.replace(/\u200B/g, ''); });
+  Array.prototype.slice.call(copy.querySelectorAll('span[class*="cn-sp-"]')).forEach(function (el) {
+    if (!el.textContent && !el.querySelector('br')) el.parentNode.removeChild(el);
+  });
+  return copy.innerHTML;
+}
+/** Operator 2026-11-02 — a colour or size chosen with NOTHING selected applies
+ *  to what is typed next, as Bold, Italic and Underline already did (the
+ *  browser carries those natively; the palette classes are ours, so it could
+ *  not). At the caret: leave the current span of that family (split at the
+ *  caret when inside one), then open a span of the chosen class — or plain
+ *  text for "default colour" / "normal size" — holding a zero-width
+ *  placeholder, and put the caret after it. Typing lands inside; the save
+ *  strips the placeholder (cnScratchHtmlOf_). Returns the node it opened. */
+function cnScratchPendingStyle_(ed, range, family, cls) {
+  if (!ed || !range) return null;
+  var start = range.startContainer;
+  var host = (start.nodeType === 1 ? start : start.parentNode);
+  var cur = host && host.closest ? host.closest('span[class*="cn-sp-' + family + '-"]') : null;
+  if (cur && !ed.contains(cur)) cur = null;
+  var at = range.cloneRange();
+  if (cur) {
+    // Split the current span at the caret: the part after it becomes a twin.
+    var tail = document.createRange();
+    tail.setStart(range.startContainer, range.startOffset);
+    tail.setEnd(cur, cur.childNodes.length);
+    var rest = tail.extractContents();
+    if (rest.textContent) {
+      var twin = cur.cloneNode(false);
+      twin.appendChild(rest);
+      cur.parentNode.insertBefore(twin, cur.nextSibling);
+    }
+    at = document.createRange();
+    at.setStartAfter(cur);
+    at.collapse(true);
+  }
+  var holder = document.createTextNode('\u200B');
+  var node = holder;
+  if (cls) { node = document.createElement('span'); node.className = cls; node.appendChild(holder); }
+  at.insertNode(node);
+  var sel = window.getSelection ? window.getSelection() : null;
+  if (sel) {
+    var caret = document.createRange();
+    caret.setStart(holder, 1);
+    caret.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(caret);
+  }
+  return node;
 }
 function cnScratchSetValue_(html) {
   var ed = cnScratchEditor_();
@@ -5759,7 +5849,7 @@ function cnCloseScratchpadModal_() {
   var panel = document.getElementById('cn-scratch-panel');
   if (CN_SCRATCH.dirty) {
     var ed = cnScratchEditor_();
-    if (cnScratchReady_(ed)) CN_SCRATCH.latest = ed.innerHTML;   // read synchronously, BEFORE the DOM goes
+    if (cnScratchReady_(ed)) CN_SCRATCH.latest = cnScratchHtmlOf_(ed);   // read synchronously, BEFORE the DOM goes
     cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
   }
   if (!panel) return;
@@ -5848,11 +5938,16 @@ function cnScratchToolClick_(e) {
   var cmd = btn.getAttribute('data-sp-cmd');
   var color = btn.getAttribute('data-sp-color');
   if (color != null) {
-    if (!range || range.collapsed) { cnScratchStatus_('Select some text first', false); return; }
+    if (!range) { cnScratchStatus_('Click in the scratchpad first', false); return; }
+    if (range.collapsed) { cnScratchPendingStyle_(ed, range, 'c', color ? 'cn-sp-c-' + color : ''); cnScratchInput_(); return; }
     cnScratchUnwrap_(ed, 'c', range);
     if (color) { cnScratchExec_('foreColor', '#010203'); cnScratchConvertMarks_(ed, 'color', 'cn-sp-c-' + color); }
   } else if (cmd === 'size-small' || cmd === 'size-large' || cmd === 'size-normal') {
-    if (!range || range.collapsed) { cnScratchStatus_('Select some text first', false); return; }
+    if (!range) { cnScratchStatus_('Click in the scratchpad first', false); return; }
+    if (range.collapsed) {
+      cnScratchPendingStyle_(ed, range, 's', cmd === 'size-normal' ? '' : (cmd === 'size-small' ? 'cn-sp-s-small' : 'cn-sp-s-large'));
+      cnScratchInput_(); return;
+    }
     cnScratchUnwrap_(ed, 's', range);
     if (cmd !== 'size-normal') { cnScratchExec_('fontSize', '7'); cnScratchConvertMarks_(ed, 'size', cmd === 'size-small' ? 'cn-sp-s-small' : 'cn-sp-s-large'); }
   } else if (cmd === 'clear') {
@@ -5869,7 +5964,7 @@ function cnScratchSave_(force) {
   // The text to save: the live editor while the panel is open, else what the
   // close captured (C6). With neither — or nothing unsaved and no editor — there
   // is nothing to do (the INV-148 root-guard).
-  if (cnScratchReady_(ed)) CN_SCRATCH.latest = ed.innerHTML;
+  if (cnScratchReady_(ed)) CN_SCRATCH.latest = cnScratchHtmlOf_(ed);
   else if (!CN_SCRATCH.dirty) return;
   var text = CN_SCRATCH.latest;
   if (text == null) return;

@@ -10039,9 +10039,15 @@ test('a reminder toast waits for its reader; routine toasts still self-dismiss',
   // The cap must not silently evict the reminder the rep has not seen yet.
   assert.ok(/querySelector\('\.toast:not\(\.toast-sticky\)'\) \|\| stack\.firstChild/.test(core),
     'the stack cap evicts the oldest NON-sticky first, and stays a real bound');
+  // Operator 2026-11-02: the clock-in, clock-out and lunch reminders carry their
+  // punch; a rest break's reminder does not (it is not punched).
+  const tickSrc = extractFunction('script_core.html', 'remindersTick_');
+  assert.ok(/remindOnce_\(today \+ ':out'[\s\S]{0,260}remindPunchAction_\('ClockOut'\)\)/.test(tickSrc), 'the still-clocked-in reminder carries Clock out');
+  assert.ok(/remindOnce_\(today \+ ':in'[\s\S]{0,200}remindPunchAction_\('ClockIn'\)\)/.test(tickSrc), 'the not-clocked-in reminder carries Clock in');
+  assert.ok(/\/lunch\/i\.test\(String\(b\.label \|\| ''\)\) \? remindPunchAction_\('LunchOut'\) : null/.test(tickSrc), 'only the LUNCH break carries Lunch out');
   const rem = extractFunction('script_core.html', 'notifyRemind_');
-  assert.ok(/showToast\(msg, tone \|\| 'toast-warn', \{ sticky: true \}\)/.test(rem),
-    'every reminder goes out sticky — the chime calls the rep back after 3.5s has passed');
+  assert.ok(/var opts = \{ sticky: true \};/.test(rem) && /showToast\(msg, tone \|\| 'toast-warn', opts\)/.test(rem),
+    'every reminder goes out sticky — the chime calls the rep back after 3.5s has passed (operator 2026-11-02: a punch reminder adds its button to the same sticky options)');
   const css = fs.readFileSync(path.join(__dirname, '../../web-app/styles.html'), 'utf8');
   assert.ok(/\.toast-x \{/.test(css), 'the dismiss control is styled, not a bare UA button');
 });
@@ -30178,6 +30184,14 @@ test('A-6: Dept Requests sort + date range — open first, newest by default; a 
   assert.deepStrictEqual(ids('newest'), ['new-open', 'old-open', 'undated', 'new-res']);
   assert.deepStrictEqual(ids('oldest'), ['old-open', 'new-open', 'undated', 'new-res'], 'oldest first, open before resolved');
   assert.deepStrictEqual(ids('longest'), ['old-open', 'new-open', 'undated', 'new-res'], 'longest business age first');
+  // Operator 2026-11-02: each list's own default, and the Recently resolved order.
+  const res = [{ id: 'r1', status: 'resolved', createdMs: 9000, resolvedMs: 10000 }, { id: 'r2', status: 'resolved', createdMs: 1000, resolvedMs: 20000 }];
+  assert.deepStrictEqual(res.slice().sort(cmp('resolved')).map((r) => r.id), ['r2', 'r1'], 'Recently resolved: the latest RESOLUTION first, not the latest sent');
+  vm.runInContext('var DR_LIST_SORT = { mine: "newest", incoming: "longest", team: "longest", recent: "resolved" }; var DR_SORT = "auto";', s2);
+  const sortFor = loadFunction(s2, 'metrics/script_deptrequests.html', 'drSortFor_');
+  assert.deepStrictEqual(['mine', 'incoming', 'team', 'recent'].map(sortFor), ['newest', 'longest', 'longest', 'resolved'], 'each list\'s own default');
+  vm.runInContext('DR_SORT = "oldest";', s2);
+  assert.strictEqual(sortFor('team'), 'oldest', 'a chosen sort applies to every list');
   const inRange = loadFunction(s2, 'metrics/script_deptrequests.html', 'drInRange_');
   const now = Date.UTC(2026, 8, 27, 12);
   assert.strictEqual(inRange(now - 3 * 86400000, { preset: '7' }, now), true);
@@ -37399,7 +37413,7 @@ test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its mark
   assert.ok(withRefs >= 10, 'the partial\'s diagrams do use markers (non-vacuous): ' + withRefs);
   // (2) dark semantic + chapter colours are screen-only — derived from the token file
   const tok = fs.readFileSync(path.join(PA_WEB, 'styles_design_tokens.html'), 'utf8');
-  const SCOPED = /--(?:good|good-soft|warn|warn-soft|warn-glow|on-warn|destructive|destructive-soft|info|info-soft|intake-[a-z-]+|man-p\d+)\s*:/;
+  const SCOPED = /--(?:good|good-soft|warn|warn-soft|warn-glow|warn-fill|on-warn|destructive|destructive-soft|info|info-soft|intake-[a-z-]+|man-p\d+)\s*:/;
   let screen = '', rest = tok.replace(/\/\*[\s\S]*?\*\//g, ''), at;
   while ((at = rest.indexOf('@media screen {')) >= 0) {
     let i = rest.indexOf('{', at) + 1, depth = 1;
@@ -37521,7 +37535,7 @@ test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a fi
     const src = fs.readFileSync(f, 'utf8');
     for (const m of src.matchAll(/\{([^{}]*)\}|style="([^"]*)"/g)) {
       const body = m[1] || m[2] || '';
-      if (!/background(?:-color)?:\s*var\(--warn\)/.test(body)) continue;
+      if (!/background(?:-color)?:\s*var\(--warn(?:-fill)?\)/.test(body)) continue;
       const c = /(?:^|[;\s])color:\s*([^;}"]+)/.exec(body);
       if (!c) continue;
       amber++;
@@ -37529,6 +37543,14 @@ test('MRD-5 (manual reader design Phase 5 + Phase 4\'s open items): text on a fi
     }
   });
   assert.deepStrictEqual(bad, [], 'text on the amber fill reads --on-warn');
+  // Operator 2026-11-02: a FILLED amber paints --warn-fill — lighter in light
+  // mode (ink 8.02:1), --warn's own amber in dark — and --warn stays for amber TEXT.
+  assert.strictEqual((tok.match(/--warn-fill:\s*#dda23a;/g) || []).length, 1, 'light: the lighter fill');
+  assert.strictEqual((tok.match(/--warn-fill:\s*var\(--warn\);/g) || []).length, 1, 'dark: the amber itself');
+  const fills = [];
+  files.forEach((f) => { const src = fs.readFileSync(f, 'utf8'); for (const m of src.matchAll(/\{([^{}]*)\}/g)) {
+    if (/background(?:-color)?:\s*var\(--warn\)/.test(m[1]) && /color:\s*var\(--on-warn\)/.test(m[1])) fills.push(path.relative(PA_WEB, f) + ': ' + m[1].trim().slice(0, 60)); } });
+  assert.deepStrictEqual(fills, [], 'every --on-warn text sits on --warn-fill, never the darker --warn');
   assert.ok(amber >= 4, 'the sweep sees the amber text rules (non-vacuous): ' + amber);
   const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
   assert.ok(/\.cn-admin-tab-badge\[data-tone="fail"\] \{ background: var\(--destructive\); color: var\(--paper-card\); \}/.test(cn), 'the red variant of an amber badge sets its own text — it would inherit --on-warn (ink on red in light mode)');
@@ -39357,10 +39379,10 @@ test('E4 (cycle 25, G5): the 8am escalation digest — managers get the escalate
   const sent = [], logs = [];
   let addr = 'es@x', mgrs = ['m@x'], readRes = { pending: pend, truncated: false }, mailThrows = false;
   const job = b10Ctx_(['spanishEscalationRows_', 'spanishEscalationBody_', 'sendSpanishEscalationDigest'], {
-    SPANISH_ESCALATE_DAYS: 7, SPANISH_ESCALATE_READ_DAYS: 90, EMP: { NAME: 1 }, _SYSTEM_AUDIT_EMP_: { email: 'system' }, Logger: { log() {} },
+    SPANISH_ESCALATE_DAYS: 7, SPANISH_ESCALATE_READ_DAYS: 30, EMP: { NAME: 1 }, _SYSTEM_AUDIT_EMP_: { email: 'system' }, Logger: { log() {} },
     assertManagerCaller_() {}, runAutomationJob_: (k, fn) => ({ key: k, out: fn() }), automationOutcome_: (s, m) => ({ status: s, message: m || '' }),
     stampDigestLastRun_() {}, getSpanishInboxAddress_: () => addr, getManagerEmails_: () => mgrs, getEmployeeInfo_: () => null,
-    spanishPendingCore_: (d) => { if (d !== 90) throw new Error('reads the tab\'s widest window'); return readRes; },
+    spanishPendingCore_: (d) => { if (d !== 30) throw new Error('reads the one 30-day pending window (operator 2026-11-02)'); return readRes; },
     getEmployeeRosterRows_: () => [['h'], ['E1', 'Ana Ruiz', 'ana@ums.com']], empRosterEmail_: (row) => row[2],
     esc_: (x) => String(x), buildBrandedEmailHtml_: (h, b) => b,
     appSendMail_: (m) => { if (mailThrows) throw new Error('quota'); sent.push(m); },

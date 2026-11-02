@@ -2191,6 +2191,14 @@ function spanishUnclaimedCount_() {
 function spanishAutoAssignBtnHtml_() {
   var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
   if (!isMgr) return '';
+  // Operator 2026-11-02 — while the run is in flight the button SAYS so, and
+  // it is drawn from state, so a list render mid-run (which rebuilds this
+  // button) can neither re-enable it nor drop the busy look.
+  if (SPANISH_STATE.autoAssigning) {
+    return '<button type="button" class="refresh-btn sp-autoassign" id="sp-autoassign" disabled aria-busy="true"' +
+      ' title="Assigning the unclaimed requests — this can take a little while">' +
+      '<span class="lo-dots" aria-hidden="true"><span></span><span></span><span></span></span> Assigning…</button>';
+  }
   var pd = SPANISH_STATE.pendingRes;
   var n = spanishUnclaimedCount_();
   var members = (pd && pd.members) || [];
@@ -2234,9 +2242,11 @@ function spanishAutoAssign_(btn) {
     confirmLabel: 'Auto-assign',
   }).then(function (ok) {
     if (!ok) return;
-    btn.disabled = true; btn.classList.add('is-busy');
+    SPANISH_STATE.autoAssigning = true;
+    spanishRefreshAutoAssign_();
     google.script.run
       .withSuccessHandler(function (r) {
+        SPANISH_STATE.autoAssigning = false;   // before the view guard: a run that ends elsewhere still ends
         if (currentView !== requestedView) return;
         if (!r || !r.success) {
           showToast((r && r.error) || 'Auto-assign failed', 'error');
@@ -2258,6 +2268,7 @@ function spanishAutoAssign_(btn) {
                     : 'Nothing to assign — every pending request is already claimed', 'success');
       })
       .withFailureHandler(function (e) {
+        SPANISH_STATE.autoAssigning = false;
         if (currentView !== requestedView) return;
         showToast((e && e.message) || 'Auto-assign failed', 'error');
         spanishRefreshAutoAssign_();

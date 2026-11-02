@@ -74,9 +74,14 @@ var DR_DEPT_FILTER = [];
 // the client re-sorts on request). Client-side over the cached payload, like
 // the chips. The range reads each item's createdMs; an undated legacy row is
 // kept (a filter that cannot place a row does not drop it).
-var DR_SORT = 'newest';
+// Operator 2026-11-02: the one page-wide default ('newest') also ordered the
+// list titled "Oldest open (team-wide)" newest first, which read as wrong. The
+// default is now EACH LIST'S OWN order (DR_LIST_SORT), named on every list's
+// heading; choosing a sort still applies it to every list, and says so.
+var DR_SORT = 'auto';
 var DR_RANGE = { preset: 'all', from: '', to: '', customOpen: false };
 var DR_SORTS = [
+  { key: 'auto',    label: 'Each list\'s default' },
   { key: 'newest',  label: 'Newest first' },
   { key: 'oldest',  label: 'Oldest first' },
   { key: 'longest', label: 'Longest open' },
@@ -85,13 +90,29 @@ var DR_RANGE_PRESETS = [
   { key: 'all', label: 'All loaded' }, { key: '7', label: '7 days' },
   { key: '30', label: '30 days' }, { key: '90', label: '90 days' },
 ];
+/** Each list's own order, used while DR_SORT is 'auto'. `resolved` (the
+ *  Recently resolved list's) is the newest RESOLUTION first, the order the
+ *  server ships — not offered in the menu, since only that list has it. */
+var DR_LIST_SORT = { mine: 'newest', incoming: 'longest', team: 'longest', recent: 'resolved' };
+var DR_SORT_NOTES = { newest: 'newest first', oldest: 'oldest first', longest: 'longest open first', resolved: 'latest resolved first' };
+/** PURE — the sort a list uses: the chosen one, or the list's own default. */
+function drSortFor_(listKey) {
+  return DR_SORT === 'auto' ? (DR_LIST_SORT[listKey] || 'newest') : DR_SORT;
+}
+/** The " · longest open first" suffix on a list's heading — the order is
+ *  always named, so a list never reads as sorted when it is not. */
+function drSortNote_(listKey) {
+  return ' · ' + esc(DR_SORT_NOTES[drSortFor_(listKey)] || 'newest first');
+}
 /** PURE — the comparator for a sort key. Every sort keeps open before
  *  resolved; within a group: newest / oldest by createdMs, or the longest
- *  business age first (a resolved row falls back to newest). */
+ *  business age first (a resolved row falls back to newest), or the newest
+ *  resolution first. */
 function drSortCmp_(sort) {
   return function (a, b) {
     if (a.status !== b.status) return a.status === 'resolved' ? 1 : -1;
     const am = a.createdMs || 0, bm = b.createdMs || 0;
+    if (sort === 'resolved') return (b.resolvedMs || bm) - (a.resolvedMs || am);
     if (sort === 'oldest') return (am || Infinity) - (bm || Infinity);
     if (sort === 'longest' && a.status !== 'resolved') return (b.elapsedMin || 0) - (a.elapsedMin || 0);
     return bm - am;
@@ -114,12 +135,13 @@ function drInRange_(ms, range, nowMs) {
   }
   return true;
 }
-/** One pipeline for every list: department chips, the date range, the sort. */
-function drListView_(list) {
+/** One pipeline for every list: department chips, the date range, the sort
+ *  (the chosen one, or `listKey`'s own default). */
+function drListView_(list, listKey) {
   const now = Date.now();
   return (list || []).filter(drDeptMatch_)
     .filter(function (r) { return drInRange_(r.createdMs, DR_RANGE, now); })
-    .slice().sort(drSortCmp_(DR_SORT));
+    .slice().sort(drSortCmp_(drSortFor_(listKey)));
 }
 function drRangeActive_() { return DR_RANGE.preset !== 'all'; }
 function drRerender_() {
@@ -130,7 +152,7 @@ function drRerender_() {
   }
 }
 function drSetSort_(key) {
-  DR_SORT = DR_SORTS.some(function (x) { return x.key === key; }) ? key : 'newest';
+  DR_SORT = DR_SORTS.some(function (x) { return x.key === key; }) ? key : 'auto';
   drRerender_();
 }
 function drSetRange_(key) {
@@ -380,7 +402,7 @@ function drRender_(area, data, errorMsg) {
         deptNames.map(function (dn) { return mkDeptChip(dn, esc(dn) + ' · ' + deptCounts[dn]); }).join('') +
       '</div>'
     : '';
-  const mine = drListView_(mineAll).filter(function (r) {
+  const mine = drListView_(mineAll, 'mine').filter(function (r) {
     if (DR_FILTER === 'open') return r.status !== 'resolved';
     if (DR_FILTER === 'resolved') return r.status === 'resolved';
     return true;
@@ -399,37 +421,39 @@ function drRender_(area, data, errorMsg) {
     : (mineAll.length
         ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + (drRangeActive_() ? ' in this date range' : '') + ' in this list.</div>'
         : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
-  const mineFiltered = drListView_(mineAll);
+  const mineFiltered = drListView_(mineAll, 'mine');
   const mineCount = (DR_DEPT_FILTER.length || drRangeActive_()) ? (mineFiltered.length + ' of ' + mineAll.length) : String(mineAll.length);
   const mineSection =
     '<div class="day-section-label" style="margin:14px 0 8px">My requests · ' + mineCount +
-    drCapNoteHtml_(mineAll.length, data && data.mineTotal) + '</div>' + filterBar + mineHtml;
+    drCapNoteHtml_(mineAll.length, data && data.mineTotal) + drSortNote_('mine') + '</div>' + filterBar + mineHtml;
 
   // v2 Incoming inbox — open requests addressed to a department the rep staffs
   // (roster column N → data.myDepts). Members can resolve in-app here.
   let incomingSection = '';
   if (data && data.myDepts && data.myDepts.length) {
-    const inc = drListView_(data.incoming || []);
+    const inc = drListView_(data.incoming || [], 'incoming');
     const incHtml = inc.length
       ? spCappedTasksHtml_(inc.map(drRequestCardHtml_), DR_SHOWN.incoming, "drShowMore_('incoming')")
       : '<div class="dr-empty">No open requests to your department right now.</div>';
     incomingSection =
       '<div class="day-section-label" style="margin:14px 0 8px">Incoming · ' + esc(data.myDepts.join(', ')) + ' · ' + inc.length +
-      drCapNoteHtml_(inc.length, data.incomingTotal) + '</div>' + incHtml;
+      drCapNoteHtml_(inc.length, data.incomingTotal) + drSortNote_('incoming') + '</div>' + incHtml;
   }
 
   // 22post A-7 (operator 2026-09-27): for a manager or admin the page leads
   // with the summary cards BESIDE "Resolution time by department", then the
   // team-wide list, then Incoming, then My requests. A rep's order is unchanged.
+  // Operator 2026-11-02: that row is now the VERY top, above the department
+  // chips and the sort — the filters below it act on the lists, not on it.
   const controls = drControlsHtml_();
   // E4 (cycle 25, ST1): the replies the hourly check was not sure about lead
   // the page, each with the reason it held back and an answer.
   const looks = drLooksHtml_(data);
   let body;
   if (data && data.isManager) {
-    body = deptBar + controls +
-      '<div class="dr-top-row"><div class="dr-top-kpi">' + strip + '</div>' +
+    body = '<div class="dr-top-row"><div class="dr-top-kpi">' + strip + '</div>' +
         '<div class="dr-top-stats">' + drMgrStatsHtml_(data) + '</div></div>' +
+      deptBar + controls +
       drMgrTeamHtml_(data) + incomingSection + drRecentHtml_(data) + mineSection;
   } else {
     body = strip + deptBar + controls + incomingSection + drRecentHtml_(data) + mineSection;
@@ -780,18 +804,18 @@ function drMgrStatsHtml_(data) {
 function drRecentHtml_(data) {
   const all = (data && data.recentResolved) || [];
   if (!all.length) return '';
-  const list = drListView_(all);
+  const list = drListView_(all, 'recent');
   const count = (DR_DEPT_FILTER.length || drRangeActive_()) ? (list.length + ' of ' + all.length) : String(all.length);
   const html = list.length
     ? spCappedTasksHtml_(list.map(drRequestCardHtml_), DR_SHOWN.recent, "drShowMore_('recent')")
     : '<div class="dr-empty">No matching requests resolved in the last ' + esc(String(data.reopenDays || 7)) + ' days.</div>';
   return '<div id="dr-recent"><div class="day-section-label" style="margin:18px 0 8px">Recently resolved · last ' +
-    esc(String(data.reopenDays || 7)) + ' days · ' + count + drCapNoteHtml_(all.length, data.recentResolvedTotal) + '</div>' + html + '</div>';
+    esc(String(data.reopenDays || 7)) + ' days · ' + count + drCapNoteHtml_(all.length, data.recentResolvedTotal) + drSortNote_('recent') + '</div>' + html + '</div>';
 }
 
 function drMgrTeamHtml_(data) {
   const openAllTeam = data.allOpen || [];
-  const open = drListView_(openAllTeam);
+  const open = drListView_(openAllTeam, 'team');
   const openCount = (DR_DEPT_FILTER.length || drRangeActive_()) ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
     ? spCappedTasksHtml_(open.map(drRequestCardHtml_), DR_SHOWN.team, "drShowMore_('team')")
@@ -799,7 +823,7 @@ function drMgrTeamHtml_(data) {
 
   return '<div id="dr-mgr-team">' +
     '<div class="day-section-label" style="margin:18px 0 8px">Oldest open (team-wide) · ' + openCount +
-      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + '</div>' + openHtml +
+      drCapNoteHtml_(openAllTeam.length, data.allOpenTotal) + drSortNote_('team') + '</div>' + openHtml +
   '</div>';
 }
 

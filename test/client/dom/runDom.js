@@ -1845,6 +1845,35 @@ test('a punch that returns fresh state applies it in ONE round trip — no secon
     'the fresh state was applied');
 });
 
+test('Operator 2026-11-02 DOM: a punch reminder carries the punch — the button is offered only when the punch is allowed, one click records it from any page, and a reminder left on screen after the state changed punches nothing (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  h.read('empState = { id: "TEST_E1", name: "Test Rep", nextActions: ["LunchOut", "ClockOut", "Adjust"], timezone: "Asia/Kolkata" }');
+  h.read('currentView = "callNotes"');
+  assert.strictEqual(h.read('remindPunchAction_')('ClockIn'), null, 'no Clock in button while clocked in');
+  const act = h.read('remindPunchAction_')('ClockOut');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(act)), { label: 'Clock out', punch: 'ClockOut' });
+  h.read('notifyRemind_')('Your shift ended at 5:00 PM and you are still clocked in', 'toast-warn', act);
+  const btn = doc.querySelector('#toast-stack .toast-sticky .toast-act');
+  assert.ok(btn && btn.textContent === 'Clock out', 'the sticky reminder carries a named Clock out button');
+  btn.click();
+  const rp = h.run.pending('recordPunch');
+  assert.strictEqual(rp.length, 1, 'one click records the punch — from the Call Notes page');
+  assert.strictEqual(rp[0].args[0], 'ClockOut');
+  h.run.flushSuccess({ success: true, displayTime: '5:06 PM', isAdjustment: false,
+    state: { id: 'TEST_E1', nextActions: ['Adjust'], adjustWindowDays: 30, timezone: 'Asia/Kolkata' } }, 'recordPunch');
+  assert.ok(Array.from(doc.querySelectorAll('#toast-stack .toast')).some((t) => /Clock Out at 5:06 PM/i.test(t.textContent)), 'the punch is confirmed by its toast');
+  // A second reminder still on screen from before: its click punches nothing.
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', { label: 'Lunch out', punch: 'LunchOut' });
+  doc.querySelector('#toast-stack .toast-sticky .toast-act').click();
+  assert.strictEqual(h.run.pending('recordPunch').length, 0, 'no second punch — the state no longer allows Lunch out');
+  assert.ok(/punches changed/.test(doc.getElementById('toast-stack').textContent), 'and the rep is told why');
+  // A reminder with no action stays a plain sticky toast.
+  h.read('notifyRemind_')('Morning break in 10 min', 'toast-warn', null);
+  const last = doc.querySelector('#toast-stack').lastElementChild;
+  assert.ok(last && !last.querySelector('.toast-act'), 'a rest-break reminder has no button');
+});
+
 test('an older server (no state on the response) still falls back to a refetch', () => {
   const h = boot();
   mountActions(h, ['ClockIn', 'Adjust']);
@@ -3297,10 +3326,22 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   assert.strictEqual(btn().disabled, false, 'and leaves the button enabled');
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
+  h.run.clearResponder('autoAssignSpanishThreads');   // hold the run in flight
   press();
   await tick(); await tick();
-  assert.strictEqual(rpcs, 1, 'ONE RPC');
-  assert.strictEqual(rpcDays, 30, 'carrying the list window');
+  const inflight = h.run.pending('autoAssignSpanishThreads');
+  assert.strictEqual(inflight.length, 1, 'ONE RPC');
+  assert.strictEqual(inflight[0].args[0], 30, 'carrying the list window');
+  // Operator 2026-11-02: while it runs the button says so, and a list render
+  // mid-run (which rebuilds the button) neither re-enables it nor drops the look.
+  assert.ok(btn().disabled && btn().getAttribute('aria-busy') === 'true' && /Assigning/.test(btn().textContent), 'busy while the run is in flight');
+  h.read('spanishRenderList_')();
+  assert.ok(btn().disabled && btn().getAttribute('aria-busy') === 'true' && /Assigning/.test(btn().textContent), 'still busy after a re-render mid-run');
+  h.run.flushSuccess({ success: true, unclaimed: 2, assigned: [
+    { threadId: 't1', claim: { by: 'ines@x.com', assignedBy: 'me@x.com', atMs: 2 } },
+    { threadId: 't3', claim: { by: 'sam@x.com', assignedBy: 'me@x.com', atMs: 2 } }] }, 'autoAssignSpanishThreads');
+  await tick();
+  assert.ok(!btn().getAttribute('aria-busy') && !/Assigning/.test(btn().textContent), 'the busy look ends with the run');
   assert.strictEqual(h.$$('.sp-claim-btn').length, 0, 'no Claim button remains — every returned claim was applied');
   assert.ok(btn() && btn().disabled, 'the refreshed button is disabled');
   assert.ok(/already claimed/.test(btn().title), 'and says why');
@@ -5240,9 +5281,16 @@ test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide c
     return ids;
   };
   assert.deepStrictEqual(mineIds(), ['m-new', 'm-old'], 'newest first by default');
+  // Operator 2026-11-02: the summary row is the very top — above the chips and the sort.
+  assert.ok(top.compareDocumentPosition(h.$('.dr-controls')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'the summary row comes before the sort and date controls');
+  const heading = (re) => h.$$('.day-section-label').filter((n) => re.test(n.textContent))[0].textContent;
+  assert.ok(/newest first/.test(heading(/My requests/)) && /longest open first/.test(heading(/Oldest open/)) && /longest open first/.test(heading(/Incoming/)),
+    'each list names its own default order — the team-wide oldest-open list is no longer newest first');
   h.window.drSetSort_('oldest');
   assert.deepStrictEqual(mineIds(), ['m-old', 'm-new'], 'the sort control re-orders the list');
-  h.window.drSetSort_('newest');
+  assert.ok(/oldest first/.test(heading(/Oldest open/)) && /oldest first/.test(heading(/My requests/)), 'a chosen sort applies to every list, and every heading says so');
+  h.window.drSetSort_('auto');
 });
 
 test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no backdrop, focus not trapped under a modal, Escape inside closes only it; formatting survives the allowlist and a legacy text pad converts', () => {
@@ -5309,6 +5357,49 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   h.read('cnScratchSave_')(true);
   const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
   assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html'], 'the save carries clean html and says so');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Operator 2026-11-02 DOM: a Scratchpad colour or size chosen with NOTHING selected applies to what is typed next — inside a coloured run it splits there — and the save never stores the caret placeholder or an unused pending span (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', updatedAtMs: Date.now(), maxChars: 40000, format: 'html' }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  const caretAt = (node, off) => { const r = doc.createRange(); r.setStart(node, off); r.collapse(true); const sel = w.getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+  const type = (txt) => { const r = w.getSelection().getRangeAt(0); r.startContainer.insertData(r.startOffset, txt); };
+  const click = (sel) => doc.querySelector('#cn-scratch-panel ' + sel).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  // 1. Plain text, caret at the end, choose blue, then type.
+  ed.innerHTML = 'note ';
+  caretAt(ed.firstChild, 5);
+  click('[data-sp-color="blue"]');
+  type('urgent');
+  assert.strictEqual(ed.innerHTML, 'note <span class="cn-sp-c-blue">​urgent</span>', 'the typing lands in the chosen colour');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), 'note <span class="cn-sp-c-blue">urgent</span>', 'the save strips the placeholder');
+  // 2. Inside a red run, choose the default colour: the run splits at the caret.
+  ed.innerHTML = '<span class="cn-sp-c-red">alert</span>';
+  caretAt(ed.firstChild.firstChild, 3);
+  click('[data-sp-color=""]');
+  type(' plain ');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), '<span class="cn-sp-c-red">ale</span> plain <span class="cn-sp-c-red">rt</span>',
+    'the red run is split, and the typing between is plain');
+  // 3. A size works the same way, and a pending span never typed into is not saved.
+  ed.innerHTML = 'a';
+  caretAt(ed.firstChild, 1);
+  click('[data-sp-cmd="size-large"]');
+  assert.ok(ed.querySelector('span.cn-sp-s-large'), 'a pending large span is open at the caret');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), 'a', 'an unused pending span leaves nothing behind');
+  // And the save itself sends the clean html.
+  ed.innerHTML = 'b';
+  caretAt(ed.firstChild, 1);
+  click('[data-sp-color="green"]');
+  type('go');
+  ed.dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSave_')(true);
+  const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.strictEqual(call.args[0], 'b<span class="cn-sp-c-green">go</span>', 'the stored html carries no placeholder');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
 });

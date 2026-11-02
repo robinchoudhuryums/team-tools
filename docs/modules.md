@@ -279,6 +279,13 @@ not restate it. Server endpoints live in the fourteen server files
      the export link and in the automated export email
      (`exportInferredLines_`).
 
+**Operator round 2026-11-02 (Batch A):** the clock reminders carry their punch.
+The still-clocked-in reminder offers Clock out, the not-clocked-in nudge offers
+Clock in, and the Lunch reminder offers Lunch out. One click records it from any
+page, but only while that punch is allowed, and it is checked again at the click.
+The Lunch Out button, the lunch break chip and the other amber fills paint the
+lighter `--warn-fill`.
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -477,6 +484,12 @@ not restate it. Server endpoints live in the fourteen server files
      (F7, operator-approved; S137). A failed end-of-day reminder send, or a rep
      Sheet the digest cannot read, now shows on the health dot and in the
      failure digest (F2).
+
+**Operator round 2026-11-02 (Batch A):**
+- The note template's copy instruction is an ⓘ tooltip on its "SELECTABLE"
+  hint, no longer a line under the box.
+- In the Scratchpad, a colour or size picked with nothing selected applies to
+  the next typing, and the resize corner is drawn.
 
 ## Metrics
 
@@ -741,6 +754,15 @@ not restate it. Server endpoints live in the fourteen server files
      Request re-checks that the note it fetched is the one the request links
      to, so a delete at the same moment can never show another patient's note
      (F6).
+
+**Operator round 2026-11-02 (Batch A):**
+- Spanish Inbox: Auto-assign reads "Assigning…" and stays disabled until the run
+  ends, even through a list refresh. The 8am escalation email covers the last 30
+  days (the one pending window), not 90.
+- Dept Requests: each list has its own default order, named on its heading —
+  Oldest open and Incoming longest-open first, My requests newest, Recently
+  resolved latest-resolved. A chosen sort applies to every list. A manager's
+  summary row is at the very top, above the chips and the sort.
 
 ## Intake
 
