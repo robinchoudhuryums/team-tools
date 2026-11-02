@@ -122,6 +122,9 @@ const SCENARIOS = [
   ['handbook-home-dark-wide',      {}, WIDE,   'dark',  '', '', HB_PAGE],
   ['handbook-home-light-mobile',   {}, MOBILE, 'light', '', '', HB_PAGE],
   ['handbook-mydept-light-wide',   {}, WIDE,   'light', '', HB_DEPT, HB_PAGE],
+  // HBR1 — home's shelf on the reader's own view, and home in dark on a phone.
+  ['handbook-shelf-me-light-wide', {}, WIDE,   'light', '', "setTimeout(function(){ hbShelfView_('me'); }, 300)", HB_PAGE],
+  ['handbook-home-dark-mobile',    {}, MOBILE, 'dark',  '', '', HB_PAGE],
   ['handbook-section-light-wide',  {}, WIDE,   'light', '?s=3.8.1', '', HB_PAGE],
   // HB2.4: a slideshow stepped once (its announcement filled) and tables that
   // overflow a phone (each a named Tab stop) — for axe as much as for the eye.

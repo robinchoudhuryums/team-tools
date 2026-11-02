@@ -10,6 +10,15 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — the handbook app's refresh, Batch 1 (HBR1)
+
+The handbook app takes Team Tools' frame and a new home (the plan and mockup:
+`docs/design_handoff_handbook_refresh/`). **No new operator state** — the
+shelf reads the KB spreadsheet's `KbViews` tab, which Team Tools already writes
+and the app's `HANDBOOK_KB_SS_ID` already opens. Deploy: `npm run
+handbook:push` + New version. Team Tools is unchanged. "My department" moved
+from the bar to Profile; each browser keeps its choice.
+
 ## 2026-10-28 → 10-30 — the handbook app (HB1.2–HB4.1)
 
 **A second Apps Script project** — `handbook-app/`, the handbook for every

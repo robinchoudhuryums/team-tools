@@ -38,7 +38,10 @@
   .kb-main:has(> .kb-man-top) { scroll-padding-top: 60px; }
   .kb-main:has(> .kb-man-top .kb-man-back:not(:empty)) { scroll-padding-top: 96px; }
   .kb-main:focus { outline: none; }
-  .kb-main h1[tabindex="-1"]:focus, .kb-man-sec-h[tabindex="-1"]:focus { outline: none; }
+  /* HBR1: a heading (or the reading area) that took focus from script (HB2.4) is
+     not a control — no ring. The ring is styles.html's :focus-visible box-shadow,
+     so both are cleared (Team Tools' own #view-area rule). Controls keep theirs. */
+  .kb-main:focus-visible, .kb-main h1[tabindex="-1"]:focus, .kb-man-sec-h[tabindex="-1"]:focus { outline: none; box-shadow: none; }
   .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
   .kb-btn:hover { background: var(--paper-2); }
   .kb-btn:disabled { opacity: .55; cursor: default; background: var(--paper-card); }
