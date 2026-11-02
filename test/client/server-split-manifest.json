@@ -3570,6 +3570,42 @@
     "kbManualBundle_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Script Property consolidation: the PTO accrual ledger tab and the one automation-run ledger",
+   "added": [
+    "AUTOMATION_RUN_LEDGER_PROP",
+    "PTO_ACCRUAL_LEDGER_HEADERS",
+    "PTO_ACCRUAL_LEDGER_TAB",
+    "PTO_ACCRUAL_LEDGER_TEXT_IDX",
+    "accrualLedgerCells_",
+    "accrualLedgerCovers_",
+    "accrualLedgerMergeMaps_",
+    "accrualLedgerReadRows_",
+    "accrualLedgerRowsToMap_",
+    "accrualLedgerSheet_",
+    "accrualLedgerWriteRows_",
+    "accrualSideLedgerCombine_",
+    "automationRunLedgerCombine_",
+    "automationRunLedgerParse_",
+    "automationRunNewer_",
+    "moveAccrualLedgerToTab_",
+    "moveAutomationRunsToLedger_",
+    "moveLedgersOutOfScriptProperties",
+    "propShrinkRunLedger_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_RUN_PROP_PREFIX",
+    "PTO_ACCRUAL_LEDGER_PREFIX",
+    "readAccrualSideLedger_",
+    "readAutomationRunLedger_",
+    "recordAccrualLedger_",
+    "scriptPropertiesStatus_",
+    "stampAutomationRun_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3679,10 +3715,15 @@
    "kind": "const",
    "sha": "4248aee1b68073c0"
   },
+  "AUTOMATION_RUN_LEDGER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f61e019cd2df00f7"
+  },
   "AUTOMATION_RUN_PROP_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8aa67bf5b762459e"
+   "sha": "804d74cd4ff5fa78"
   },
   "AUTOMATION_SYNCFAIL_WINDOW_DAYS": {
    "file": "00_config.js",
@@ -5639,6 +5680,11 @@
    "kind": "const",
    "sha": "7df6b02ee6be477f"
   },
+  "PTO_ACCRUAL_LEDGER_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "282cb50b5418e526"
+  },
   "PTO_ACCRUAL_LEDGER_KEEP_MONTHS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5647,12 +5693,22 @@
   "PTO_ACCRUAL_LEDGER_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0aa6d9fe92b803d2"
+   "sha": "1a15a2af24f9ce95"
   },
   "PTO_ACCRUAL_LEDGER_SINCE": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "26e4d82567fe421b"
+  },
+  "PTO_ACCRUAL_LEDGER_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "84ff5c333db0b8dc"
+  },
+  "PTO_ACCRUAL_LEDGER_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb4c9fbba09c161a"
   },
   "PTO_ACCRUAL_RECONCILE_MONTHS": {
    "file": "00_config.js",
@@ -6489,15 +6545,50 @@
    "kind": "function",
    "sha": "3e4f6d85e71d9b24"
   },
+  "accrualLedgerCells_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "71d3994b859c3193"
+  },
+  "accrualLedgerCovers_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b377505eac3fa151"
+  },
+  "accrualLedgerMergeMaps_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "95064cb740016c1e"
+  },
   "accrualLedgerPut_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "b8727a0c000181af"
   },
+  "accrualLedgerReadRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ca4c1abdb9ab0545"
+  },
+  "accrualLedgerRowsToMap_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "374dd52e40f98a09"
+  },
+  "accrualLedgerSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "fc46fc2ebc6e479b"
+  },
   "accrualLedgerWindowFromIso_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "531a1fe7b40ed443"
+  },
+  "accrualLedgerWriteRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9761a33e505ae32e"
   },
   "accrualMonthList_": {
    "file": "20_timeclock.js",
@@ -6523,6 +6614,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8fd0c569c66285bf"
+  },
+  "accrualSideLedgerCombine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c7ffe7adbafdc683"
   },
   "accrualStampNote_": {
    "file": "20_timeclock.js",
@@ -6838,6 +6934,21 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "7d755636e574b28a"
+  },
+  "automationRunLedgerCombine_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9f4e382ff39f9802"
+  },
+  "automationRunLedgerParse_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d209dcdefbb1873e"
+  },
+  "automationRunNewer_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a39a7994ff1f65fe"
   },
   "automationWatchMerge_": {
    "file": "10_core.js",
@@ -10754,6 +10865,21 @@
    "kind": "function",
    "sha": "febfb48554030de4"
   },
+  "moveAccrualLedgerToTab_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "837899cabd7aed19"
+  },
+  "moveAutomationRunsToLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "87dabc95a004ca98"
+  },
+  "moveLedgersOutOfScriptProperties": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "1636878e2c4f366f"
+  },
   "normalizeAuditTs_": {
    "file": "10_core.js",
    "kind": "function",
@@ -11158,6 +11284,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "5226a7cd26a34600"
+  },
+  "propShrinkRunLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ce7c8030ac28dace"
   },
   "propShrinkStripFields_": {
    "file": "10_core.js",
@@ -11662,7 +11793,7 @@
   "readAccrualSideLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6a9649ea133709b4"
+   "sha": "9fc40bfae826c65c"
   },
   "readAutomationErrors_": {
    "file": "10_core.js",
@@ -11672,7 +11803,7 @@
   "readAutomationRunLedger_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5afecaac60eb73d9"
+   "sha": "ef1b274d537be00b"
   },
   "readCallNoteRowsInRange_": {
    "file": "30_callnotes.js",
@@ -11707,7 +11838,7 @@
   "recordAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "343d2c8bb27759ac"
+   "sha": "65b0865ac55ba271"
   },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
@@ -12102,7 +12233,7 @@
   "scriptPropertiesStatus_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4349ab6f483f7d3a"
+   "sha": "e0221711159ac030"
   },
   "searchInsurancePayors": {
    "file": "70_kb.js",
@@ -12562,7 +12693,7 @@
   "stampAutomationRun_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a36bfaf04f1ba7c5"
+   "sha": "ea2a0fda70ba8ee5"
   },
   "stampDigestLastRun_": {
    "file": "10_core.js",

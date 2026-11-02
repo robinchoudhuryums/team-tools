@@ -26028,6 +26028,7 @@ test('Q-3: Storage Health reports the Script Property store — read-only, unkno
   const code = serverSource();
   loadPropGuard_(ctx);
   ctx.PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_'; ctx.PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';   // cycle 25 FU3
+  ctx.AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';   // the Script Property consolidation's legacy run keys
   vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
   ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x'.repeat(100), BB: 'y'.repeat(4000) }) }) };
   const ok = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
@@ -28146,9 +28147,14 @@ test('S2: a PLAIN-TEXT write is raw only where the cell is \'@\', formats before
 test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its own function, and every appendRowsTextSafe_ caller holds the lock (derived)', () => {
   const src = serverSource();
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm; let m;
-  const uses = [], appenders = [], bad = [];
+  const uses = [], appenders = [], bad = [], callerLocked = [];
+  const CALLER_LOCKED = ['accrualLedgerWriteRows_'];
+  const bodies = {};
   while ((m = re.exec(src)) !== null) {
     const name = m[1];
+    { const s0 = src.indexOf('{', m.index); let d0 = 0, k0 = s0;
+      for (; k0 < src.length; k0++) { if (src[k0] === '{') d0++; else if (src[k0] === '}' && --d0 === 0) break; }
+      bodies[name] = stripJsComments_(src.slice(s0, k0 + 1)); }
     if (['sheetText_', 'sheetTextRows_', 'appendRowsTextSafe_'].indexOf(name) >= 0) continue;   // the definitions
     const s = src.indexOf('{', m.index); let d = 0, k = s;
     for (; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}' && --d === 0) break; }
@@ -28169,7 +28175,12 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
       // serialises every writer of that rep's Sheet (cnAcquireRepLease_).
       const leaseAt = body.search(/\bcnAcquireRepLease_\(/);
       const leased = leaseAt >= 0 && leaseAt < aAt;
-      if (!leased && (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt)))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
+      // Script Property consolidation: a helper whose CALLERS hold the lock
+      // (it runs inside a locked job, so it may not re-take it — A8) is named
+      // here, and every chain of callers is checked below to reach a function
+      // that takes the ScriptLock before the call.
+      if (CALLER_LOCKED.indexOf(name) >= 0) callerLocked.push(name);
+      else if (!leased && (lAt < 0 || lAt > aAt || !/getScriptLock\(\)/.test(body.slice(0, lAt)))) bad.push(name + ': appendRowsTextSafe_ needs the ScriptLock held (getLastRow() + 1)');
       if (!/appendRowsTextSafe_\([^;]*?, [A-Z_]+_TEXT_IDX\)/.test(body)) bad.push(name + ': pass the tab\'s ONE _TEXT_IDX list');
     }
   }
@@ -28180,12 +28191,31 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
-  assert.deepStrictEqual(uses.sort(), ['acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
+  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known fourteen (HB4.1 added the form library\'s tab)');
-  assert.deepStrictEqual(appenders.sort(), ['createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+    'the raw plain-text writers are exactly the known fifteen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab)');
+  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
-    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49) and the search signal (cycle 25 E6)');
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation)');
+  // Every caller chain of a CALLER_LOCKED helper reaches a lock holder: a
+  // function that takes the ScriptLock BEFORE its call, or a helper whose own
+  // callers are checked the same way. A chain with no caller at all is a bug.
+  const lockedBefore = (fn, callee) => {
+    const b = bodies[fn] || ''; const at = b.indexOf(callee + '(');
+    const l = b.search(/\b(waitLock|tryLock)\(/);
+    return at >= 0 && l >= 0 && l < at && /getScriptLock\(\)/.test(b.slice(0, l));
+  };
+  const chainHolds = (callee, seen) => {
+    const callers = Object.keys(bodies).filter((f) => f !== callee && new RegExp('\\b' + callee + '\\(').test(bodies[f]));
+    if (!callers.length) { bad.push(callee + ': no caller holds the ScriptLock for it (it has no callers)'); return; }
+    callers.forEach((c) => {
+      if (lockedBefore(c, callee)) return;
+      if (seen.indexOf(c) >= 0 || seen.length > 4) { bad.push(callee + ' ← ' + c + ': the chain never reaches a ScriptLock holder'); return; }
+      chainHolds(c, seen.concat([c]));
+    });
+  };
+  assert.deepStrictEqual(callerLocked, CALLER_LOCKED, 'every listed caller-locked helper still appends (or leave the list)');
+  callerLocked.forEach((h) => chainHolds(h, [h]));
   assert.deepStrictEqual(bad, [], bad.join('\n'));
 });
 
@@ -28307,23 +28337,61 @@ test('A1: a monthly job with NO run on record is "not run" only when the AuditLo
     'a truncated window with no readable start covers nothing');
 });
 
-test('A1: the run ledger — writeAuditLog_ stamps AUTOMATION_RUN_<action> for an automation row only, and the merge keeps the NEWER run', () => {
-  const props = {};
-  const ctx = vm.createContext({ console, String, JSON, Date, isFinite,
-    AUTOMATION_AUDIT_ACTIONS: ['CallNotesReconcile', 'PtoAccrualCredit'], AUTOMATION_RUN_PROP_PREFIX: 'AUTOMATION_RUN_',
+test('A1: the run ledger — writeAuditLog_ stamps the ONE AUTOMATION_RUNS ledger (Script Property consolidation) for an automation row only, under the A8 lock; a legacy per-job key is read beside it; and the merge keeps the NEWER run', () => {
+  const props = {}; let locks = 0;
+  const ctx = vm.createContext({ console, String, JSON, Date, isFinite, Object, Array,
+    AUTOMATION_AUDIT_ACTIONS: ['CallNotesReconcile', 'PtoAccrualCredit'], AUTOMATION_RUN_PROP_PREFIX: 'AUTOMATION_RUN_', AUTOMATION_RUN_LEDGER_PROP: 'AUTOMATION_RUNS',
     fmtDate_: () => '2026-09-20', fmtTime_: () => '06:00:03', sheetSafeRow_: (r) => r,
     getOrCreateAuditSheet_: () => ({ appendRow() {} }),
-    propSetBounded_: (k, v) => { props[k] = v; },
-    propShrinkStripFields_: () => () => null,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) } });
-  ['writeAuditLog_', 'automationRunKey_', 'stampAutomationRun_', 'readAutomationRunLedger_', 'automationLastRunMerge_']
+    withAutomationErrorLock_: (fn) => { locks++; return fn(); },
+    propSetBounded_: (k, v) => { props[k] = v; }, propShrinkRunLedger_: () => null,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null),
+      getProperties: () => Object.assign({}, props), deleteProperty: (k) => { delete props[k]; } }) } });
+  ['writeAuditLog_', 'automationRunKey_', 'automationRunLedgerParse_', 'automationRunNewer_', 'stampAutomationRun_',
+   'automationRunLedgerCombine_', 'readAutomationRunLedger_', 'moveAutomationRunsToLedger_', 'automationLastRunMerge_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const sys = { id: 'SYSTEM', name: 'System', email: '' };
   ctx.writeAuditLog_(sys, 'PtoAccrualCredit', '2026-09-20', '', false, 0, 'credited=2');
   ctx.writeAuditLog_(sys, 'PunchIn', '2026-09-20', '09:00', false, 0, '');
-  assert.deepStrictEqual(Object.keys(props), ['AUTOMATION_RUN_PtoAccrualCredit'], 'one key per job, and only automation actions stamp');
-  const led = JSON.parse(JSON.stringify(ctx.readAutomationRunLedger_()));
-  assert.deepStrictEqual(led, { PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } }, 'the ledger reads back what was stamped');
+  ctx.fmtTime_ = () => '07:00:00';
+  ctx.writeAuditLog_(sys, 'CallNotesReconcile', '2026-09-20', '', false, 0, 'reps=4');
+  assert.deepStrictEqual(Object.keys(props), ['AUTOMATION_RUNS'], 'ONE key for every job, and only automation actions stamp');
+  assert.strictEqual(locks, 2, 'each stamp is a read-modify-write under the A8 user lock');
+  let led = JSON.parse(JSON.stringify(ctx.readAutomationRunLedger_()));
+  assert.deepStrictEqual(led, { CallNotesReconcile: { ts: '2026-09-20 07:00:00', notes: 'reps=4' }, PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } },
+    'the second job\'s stamp did not displace the first\'s');
+  // A legacy per-job key: read beside the ledger, the NEWER stamp winning either way.
+  props.AUTOMATION_RUN_PtoAccrualCredit = JSON.stringify({ ts: '2026-09-21 06:00:00', notes: 'legacy-newer' });
+  props.AUTOMATION_RUN_CallNotesReconcile = JSON.stringify({ ts: '2026-09-01 07:00:00', notes: 'legacy-older' });
+  led = JSON.parse(JSON.stringify(ctx.readAutomationRunLedger_()));
+  assert.strictEqual(led.PtoAccrualCredit.notes, 'legacy-newer', 'a newer legacy stamp is not hidden by the ledger');
+  assert.strictEqual(led.CallNotesReconcile.notes, 'reps=4', 'an older legacy stamp does not displace the ledger');
+  assert.strictEqual(ctx.automationRunNewer_({ ts: 'garbage' }, { ts: '2026-01-01 00:00:00' }), false, 'a malformed stamp never wins');
+  assert.strictEqual(ctx.automationRunNewer_({ ts: '2026-01-01 00:00:00' }, { ts: '' }), true, 'a well-formed stamp beats a missing one');
+  // The move: fold, read back, delete — and the ledger holds the newer of each.
+  const mv = JSON.parse(JSON.stringify(ctx.moveAutomationRunsToLedger_()));
+  assert.deepStrictEqual([mv.found, mv.moved, mv.kept.length], [2, 2, 0]);
+  assert.deepStrictEqual(Object.keys(props), ['AUTOMATION_RUNS'], 'the legacy keys are gone');
+  const after = JSON.parse(props.AUTOMATION_RUNS);
+  assert.deepStrictEqual([after.PtoAccrualCredit.notes, after.CallNotesReconcile.notes], ['legacy-newer', 'reps=4']);
+  // A ledger write that does not land deletes nothing.
+  props.AUTOMATION_RUN_PtoAccrualCredit = JSON.stringify({ ts: '2026-09-25 06:00:00', notes: 'x' });
+  ctx.propSetBounded_ = () => {};
+  const lost = JSON.parse(JSON.stringify(ctx.moveAutomationRunsToLedger_()));
+  assert.ok(lost.moved === 0 && 'AUTOMATION_RUN_PtoAccrualCredit' in props && /does not hold its run/.test(lost.kept[0]), 'unverified, so kept and named');
+  ctx.propSetBounded_ = (k, v) => { props[k] = v; };
+  // The degrade shrinker: notes go first (oldest first), then the oldest stamps.
+  const sh = vm.createContext({ String, JSON, Object, Array, PROP_VALUE_MAX: 9000 });
+  ['automationRunLedgerParse_', 'propShrinkRunLedger_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), sh));
+  vm.runInContext(extractRawFunction('Code.js', 'utf8Len_'), sh);
+  const big = JSON.stringify({ A: { ts: '2026-09-01 00:00:00', notes: 'n'.repeat(80) }, B: { ts: '2026-09-02 00:00:00', notes: 'm'.repeat(80) } });
+  const s1 = JSON.parse(sh.propShrinkRunLedger_(big, big.length - 40));
+  assert.deepStrictEqual([s1.A.notes, s1.B.notes.length], ['', 80], 'the OLDEST stamp\'s notes go first');
+  const s2 = JSON.parse(sh.propShrinkRunLedger_(big, 60));
+  assert.deepStrictEqual(Object.keys(s2), ['B'], 'then the oldest stamp — the newest run is kept');
+  assert.strictEqual(sh.propShrinkRunLedger_(big, 5), null, 'nothing fits: null, and the bounded writer clears');
+  ctx.writeAuditLog_ = undefined;
+  led = { PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } };
   // Merge: the newer run wins in either direction; an unparseable stamp never displaces a real row.
   const parse = (ts) => Date.parse(ts.replace(' ', 'T') + 'Z');
   const id = (ts) => ts;
@@ -33899,6 +33967,47 @@ test('F55 (cycle 25): a resolve-link click by a COPY recipient — the CC mailbo
 
 // ── cycle 25 Batch 7 — Time Clock follow-ons + the Dashboard Spanish card ──
 console.log('\ncycle 25 Batch 7 — Time Clock follow-ons');
+/** Script Property consolidation — a sandbox over the PtoAccrualLedger tab:
+ *  the real reader, writer and move over a fake ADP sheet and property store.
+ *  failRead: every read of the tab throws; dropWrites: setValues are lost. */
+function accrualLedgerTabCtx_(opt) {
+  const o = opt || {};
+  const props = {};
+  let sheet = null;
+  const rows = [];
+  const fmt = {};
+  const mkSheet = () => ({
+    appendRow: (r) => { rows.push(r.slice()); },
+    setFrozenRows() {},
+    getLastRow: () => { if (o.failRead) throw new Error('Service Spreadsheets failed'); return rows.length; },
+    getMaxRows: () => 1000, insertRowsAfter() {},
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => { if (o.failRead) throw new Error('Service Spreadsheets failed'); return rows.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc).concat(Array(Math.max(0, nc - x.length)).fill(''))); },
+      setValues: (v) => { if (o.dropWrites) return; v.forEach((row, i) => { rows[r - 1 + i] = row.slice(); }); },
+      setNumberFormat: (f) => { for (let i = 0; i < (nr || 1); i++) for (let j = 0; j < (nc || 1); j++) fmt[(r + i) + ':' + (c + j)] = f; },
+    }),
+  });
+  const ctx = vm.createContext({ String, Number, Object, Array, JSON, Date, Math, isFinite, Error, Logger: { log() {} },
+    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10' },
+    PTO_ACCRUAL_LEDGER_TAB: 'PtoAccrualLedger', PTO_ACCRUAL_LEDGER_HEADERS: ['EmpId', 'Months', 'Updated'], PTO_ACCRUAL_LEDGER_TEXT_IDX: [0, 1, 2],
+    PTO_ACCRUAL_LEDGER_PREFIX: 'PTO_ACCRUAL_LEDGER_', PTO_ACCRUAL_LEDGER_SINCE: 'PTO_ACCRUAL_LEDGER_SINCE', PTO_ACCRUAL_LEDGER_KEEP_MONTHS: 12,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; },
+      getProperties: () => Object.assign({}, props) }) },
+    propSetBounded_: (k, v) => { props[k] = String(v); },
+    getAdpSS_: () => ({ getSheetByName: (n) => (n === 'PtoAccrualLedger' ? sheet : null),
+      insertSheet: (n) => { sheet = mkSheet(); return sheet; } }),
+    sheetSafeRow_: (r) => r, tzAbbr_: () => 'IST', fmtDate_: () => '2026-10-02', fmtTime_: () => '06:00:03',
+  });
+  if (o.failRead) sheet = mkSheet();
+  ['accrualLedgerPut_', 'accrualLedgerMergeMaps_', 'accrualLedgerRowsToMap_', 'accrualSideLedgerCombine_', 'accrualLedgerCovers_',
+   'accrualLedgerSheet_', 'accrualLedgerReadRows_', 'accrualLedgerWriteRows_', 'accrualLedgerCells_', 'recordAccrualLedger_',
+   'readAccrualSideLedger_', 'moveAccrualLedgerToTab_', 'sheetTextRows_', 'appendRowsTextSafe_', 'sheetSafe_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  if (!o.failRead) { sheet = mkSheet(); rows.push(['EmpId', 'Months', 'Updated (IST)']); }
+  return { ctx, props, rows: () => rows,
+    textFormatted: (row, width) => { for (let j = 1; j <= width; j++) if (fmt[row + ':' + j] !== '@') return false; return true; } };
+}
+
 test('F17 (cycle 25): the accrual ledger has a per-rep, per-month side copy, so a month whose audit row scrolled out of the AuditLog tail is still reconciled — and a covered window no longer reports a truncated read (driven)', () => {
   const ctx = vm.createContext({ String, Number, Object, Array, Math, JSON, isFinite });
   ['accrualLedgerWindowFromIso_', 'mergeAccrualLedger_', 'accrualLedgerPut_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
@@ -33933,30 +34042,102 @@ test('F17 (cycle 25): the accrual ledger has a per-rep, per-month side copy, so 
   const merged = ctx.mergeAccrualLedger_({ byEmp: {}, truncated: true }, { E1: { '2026-07': 64 } }, '2026-07', '2026-07');
   const plan = J(rctx.planAccrualReconcile_(entries, merged, {}, ['2026-09', '2026-08', '2026-07'], 80, 8));
   assert.deepStrictEqual(plan.map((p) => [p.monthsKey, p.action]), [['2026-07', 'topup']], 'a late 16 hours on a month only the side copy remembers is credited');
-  // The record: SINCE once, the map through the bounded writer, and a failure drops the coverage claim.
-  const props = {}; let throwOn = '';
-  const ictx = vm.createContext({ String, Number, Object, JSON, Date, Math, isFinite, Logger: { log() {} },
-    CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10' },
-    PTO_ACCRUAL_LEDGER_PREFIX: 'PTO_ACCRUAL_LEDGER_', PTO_ACCRUAL_LEDGER_SINCE: 'PTO_ACCRUAL_LEDGER_SINCE', PTO_ACCRUAL_LEDGER_KEEP_MONTHS: 12,
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; },
-      getProperties: () => Object.assign({}, props) }) },
-    propSetBounded_: (k, v) => { if (throwOn && k.indexOf(throwOn) === 0) throw new Error('over the cap'); props[k] = v; } });
-  ['accrualLedgerPut_', 'recordAccrualLedger_', 'readAccrualSideLedger_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ictx));
-  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 72);
-  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 60);
-  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-07', '2026-08'], 99);
-  assert.deepStrictEqual(J(ictx.readAccrualSideLedger_()), { byEmp: { TEST_IN_001: { '2026-09': 72 } }, since: '2026-10' }, 'the higher figure stays, and a legacy multi-month key is never written');
-  throwOn = 'PTO_ACCRUAL_LEDGER_TEST';
-  ictx.recordAccrualLedger_('TEST_IN_001', ['2026-10'], 10);
-  assert.strictEqual(props.PTO_ACCRUAL_LEDGER_SINCE, undefined, 'a failed record drops the coverage claim, so a cut-short tail is reported again');
+  // The record (since the Script Property consolidation): SINCE once, the rep's
+  // PtoAccrualLedger ROW, a legacy key folded in, and a failure drops the coverage claim.
+  const T = accrualLedgerTabCtx_();
+  T.ctx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 72);
+  T.ctx.recordAccrualLedger_('TEST_IN_001', ['2026-09'], 60);
+  T.ctx.recordAccrualLedger_('TEST_IN_001', ['2026-07', '2026-08'], 99);
+  assert.deepStrictEqual(J(T.ctx.readAccrualSideLedger_()), { byEmp: { TEST_IN_001: { '2026-09': 72 } }, since: '2026-10', legacy: 0 },
+    'the higher figure stays, and a legacy multi-month key is never written');
+  assert.strictEqual(T.rows().length, 2, 'one header and ONE row for the rep, rewritten in place');
+  assert.deepStrictEqual(J(T.rows()[1].slice(0, 2)), ['TEST_IN_001', '{"2026-09":72}']);
+  assert.deepStrictEqual(Object.keys(T.props).filter((k) => k.indexOf('PTO_ACCRUAL_LEDGER_') === 0), ['PTO_ACCRUAL_LEDGER_SINCE'],
+    'no per-rep Script Property is written any more');
+  assert.ok(T.textFormatted(2, 3), 'every cell the record writes is plain text (g144)');
+  // A legacy key is folded into the row, so the row is whole before the key goes.
+  T.props.PTO_ACCRUAL_LEDGER_TEST_IN_002 = '{"2026-08":80}';
+  T.ctx.recordAccrualLedger_('TEST_IN_002', ['2026-09'], 64);
+  assert.strictEqual(T.rows()[2][1], '{"2026-08":80,"2026-09":64}', 'the legacy month rides the new row');
+  assert.ok('PTO_ACCRUAL_LEDGER_TEST_IN_002' in T.props, 'the record never deletes a legacy key — only the verified move does');
+  // The reader merges the tab and a legacy key, the higher figure per month.
+  T.props.PTO_ACCRUAL_LEDGER_TEST_IN_001 = '{"2026-09":70,"2026-06":40}';
+  assert.deepStrictEqual(J(T.ctx.readAccrualSideLedger_().byEmp.TEST_IN_001), { '2026-06': 40, '2026-09': 72 },
+    'a legacy month the tab lacks is read, and neither copy lowers the other');
+  // An unreadable row is a hole: no coverage, and the record refuses to overwrite it.
+  T.rows()[1][1] = 'not json';
+  const holed = J(T.ctx.readAccrualSideLedger_());
+  assert.strictEqual(holed.since, '', 'an unreadable row claims no coverage');
+  T.ctx.recordAccrualLedger_('TEST_IN_001', ['2026-10'], 10);
+  assert.strictEqual(T.rows()[1][1], 'not json', 'the unreadable row is left as it is');
+  assert.strictEqual(T.props.PTO_ACCRUAL_LEDGER_SINCE, undefined, 'a refused record drops the coverage claim, so a cut-short tail is reported again');
+  // A failed tab read is the legacy copy alone, with no coverage.
+  const down = accrualLedgerTabCtx_({ failRead: true });
+  down.props.PTO_ACCRUAL_LEDGER_SINCE = '2026-01'; down.props.PTO_ACCRUAL_LEDGER_E9 = '{"2026-09":80}';
+  assert.deepStrictEqual(J(down.ctx.readAccrualSideLedger_()), { byEmp: { E9: { '2026-09': 80 } }, since: '', legacy: 1 });
   // Wiring: every PtoAccrualCredit row records its month; the ledger read merges; the suite baseline clears it.
   const credit = stripJsComments_(extractRawFunction('Code.js', 'creditMonthlyPtoAccruals'));
   assert.strictEqual((credit.match(/recordAccrualLedger_\(/g) || []).length, 3, 'the credit, the zero row and the top-up each record');
   assert.strictEqual((credit.match(/writeWitnessAuditLog_\(\w+\.emp, 'PtoAccrualCredit'/g) || []).length, 3, 'one per PtoAccrualCredit row');
   assert.ok(/mergeAccrualLedger_\(out, side\.byEmp, side\.since, accrualLedgerWindowFromIso_\(sinceIso\)\)/.test(extractRawFunction('Code.js', 'readAccrualLedger_')));
   const tests = fs.readFileSync(path.join(PA_WEB, 'Tests.js'), 'utf8');
-  assert.ok(/deleteProperty\(PTO_ACCRUAL_LEDGER_PREFIX \+ empId\)/.test(extractRawFunction('Tests.js', '_clearTestState')), 'the test baseline clears the side copy (g139)');
-  assert.ok(/k\.indexOf\(PTO_ACCRUAL_LEDGER_PREFIX \+ 'TEST_'\) === 0/.test(tests), 'cleanupTestData sweeps a killed run\'s TEST_ copies (g132)');
+  const clear = extractRawFunction('Tests.js', '_clearTestState');
+  assert.ok(/_clearRowsByEmp\(ss\.getSheetByName\(PTO_ACCRUAL_LEDGER_TAB\), empId, 0, 2\)/.test(clear) && /deleteProperty\(PTO_ACCRUAL_LEDGER_PREFIX \+ empId\)/.test(clear),
+    'the test baseline clears the rep\'s row and any legacy key (g139)');
+  assert.ok(/getSheetByName\(PTO_ACCRUAL_LEDGER_TAB\), 2, function \(r\) \{\s*return String\(r\[0\] \|\| ''\)\.trim\(\)\.indexOf\('TEST_'\) === 0;/.test(tests) &&
+    /k\.indexOf\(PTO_ACCRUAL_LEDGER_PREFIX \+ 'TEST_'\) === 0/.test(tests), 'cleanupTestData sweeps a killed run\'s TEST_ rows and keys (g132)');
+});
+
+test('Script Property consolidation: the PTO accrual ledger\'s legacy keys move into the tab — copied, READ BACK, and deleted only where the tab covers them; anything else is kept and named (driven)', () => {
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const T = accrualLedgerTabCtx_();
+  T.props.PTO_ACCRUAL_LEDGER_SINCE = '2026-01';
+  T.props.PTO_ACCRUAL_LEDGER_A1 = '{"2026-08":80,"2026-09":72}';
+  T.props.PTO_ACCRUAL_LEDGER_B2 = '{"2026-09":64}';
+  T.props.PTO_ACCRUAL_LEDGER_C3 = 'garbage';
+  T.props.OTHER = 'kept';
+  T.ctx.recordAccrualLedger_('B2', ['2026-10'], 70);   // B2 already has a row (which folded its key in)
+  const r = J(T.ctx.moveAccrualLedgerToTab_());
+  assert.deepStrictEqual([r.found, r.moved], [3, 2], 'two keys moved, the unparseable one kept');
+  assert.deepStrictEqual(r.kept, ['PTO_ACCRUAL_LEDGER_C3 — its value is not a ledger map']);
+  assert.deepStrictEqual(Object.keys(T.props).sort(), ['OTHER', 'PTO_ACCRUAL_LEDGER_C3', 'PTO_ACCRUAL_LEDGER_SINCE'], 'SINCE and every unrelated key stay');
+  const side = J(T.ctx.readAccrualSideLedger_());
+  assert.deepStrictEqual(side.byEmp.A1, { '2026-08': 80, '2026-09': 72 }, 'the tab holds what the key held');
+  assert.deepStrictEqual(side.byEmp.B2, { '2026-09': 64, '2026-10': 70 }, 'an existing row keeps its own months and gains the key\'s');
+  assert.strictEqual(T.rows().filter((x) => x[0] === 'B2').length, 1, 'an existing row is rewritten, never duplicated');
+  assert.strictEqual(side.since, '2026-01', 'the coverage claim is untouched');
+  // Again: nothing left to move, nothing touched.
+  const again = J(T.ctx.moveAccrualLedgerToTab_());
+  assert.deepStrictEqual([again.found, again.moved], [1, 0], 'only the unparseable key is found again');
+  // A read-back that does not hold the months deletes NOTHING.
+  const lossy = accrualLedgerTabCtx_({ dropWrites: true });
+  lossy.props.PTO_ACCRUAL_LEDGER_A1 = '{"2026-08":80}';
+  const lr = J(lossy.ctx.moveAccrualLedgerToTab_());
+  assert.strictEqual(lr.moved, 0);
+  assert.ok('PTO_ACCRUAL_LEDGER_A1' in lossy.props && /does not hold every month/.test(lr.kept[0]), 'the key stays, and says why');
+  // A rep whose row cannot be read keeps the key, and the row is not overwritten.
+  const bad = accrualLedgerTabCtx_();
+  bad.rows().push(['A1', '{broken', 'x']);
+  bad.props.PTO_ACCRUAL_LEDGER_A1 = '{"2026-08":80}';
+  const br = J(bad.ctx.moveAccrualLedgerToTab_());
+  assert.strictEqual(br.moved, 0);
+  assert.ok(/row cannot be read/.test(br.kept[0]) && bad.rows()[1][1] === '{broken');
+  // Covers: a month the keep rule has aged out of a full map needs nothing.
+  const cov = (h, w) => T.ctx.accrualLedgerCovers_(h, w, 3);
+  assert.strictEqual(cov({ '2026-07': 1, '2026-08': 1, '2026-09': 1 }, { '2026-06': 5 }), true, 'aged out of a full map, as it would have been in the key');
+  assert.strictEqual(cov({ '2026-08': 1, '2026-09': 1 }, { '2026-06': 5 }), false, 'a map with room must hold it');
+  assert.strictEqual(cov({ '2026-09': 71.99 }, { '2026-09': 72 }), false, 'a lower figure never covers');
+  assert.strictEqual(cov({ '2026-09': 72 }, { '2026-09': 72.004 }), true, 'two decimals, the put rule: 72.004 is stored as 72');
+});
+
+test('Script Property consolidation: moveLedgersOutOfScriptProperties is the script owner\'s, from the editor — a manager in the browser is refused before anything is read or changed', () => {
+  const fn = stripJsComments_(extractRawFunction('Code.js', 'moveLedgersOutOfScriptProperties'));
+  const gate = fn.indexOf("assertManagerCaller_('moveLedgersOutOfScriptProperties')"), owner = fn.indexOf('if (!callerIsScriptOwner_())');
+  const lock = fn.indexOf('getScriptLock()'), move = fn.indexOf('moveAccrualLedgerToTab_(');
+  assert.ok(gate >= 0 && owner > gate && lock > owner && move > lock, 'manager gate, then the owner check (it throws), then the lock, then the moves');
+  assert.ok(/throw new Error\('moveLedgersOutOfScriptProperties runs from the Apps Script editor/.test(fn), 'a refusal throws, so nothing after it runs');
+  assert.ok(/'ScriptPropertyLedgerMove'/.test(fn) && !/JSON\.stringify\(report/.test(fn), 'one counts-only audit row — the report itself is logged, not stored');
+  assert.ok(/finally \{ lock\.releaseLock\(\); \}/.test(fn), 'the lock is released on every path');
 });
 
 test('F18 (cycle 25): a biweekly rep without their own PayAnchor cell gets the ORG anchor, so the Time / PTO rail shows the two-week period; and 80 hours is only ever a 14-day target (driven)', () => {
@@ -34198,22 +34379,23 @@ test('Batch 7 FU2 (cycle 25): adding a biweekly rep to a roster with NO pay anch
   assert.ok(/if \(res\.anchorWarning\) showToast\(res\.name \+ ' added — but ' \+ res\.anchorWarning, 'toast-warn', \{ sticky: true \}\);/.test(cn), 'and the admin sees it, sticky');
 });
 
-test('Batch 7 FU3 (cycle 25): Storage Health names the PTO accrual ledger\'s share of the Script Property store — its per-rep side copies grow with the roster (driven)', () => {
+test('Batch 7 FU3 (cycle 25): Storage Health names the PTO accrual ledger\'s share of the Script Property store — since the Script Property consolidation, the legacy per-rep and per-job keys still to move, and how (driven)', () => {
   const ctx = vm.createContext({ String, JSON, Number, Math, Object, Array, RegExp, Error });
   loadPropGuard_(ctx);
   ctx.PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_'; ctx.PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
+  ctx.AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
   vm.runInContext(extractRawFunction('Code.js', 'scriptPropertiesStatus_'), ctx);
   ctx.PropertiesService = { getScriptProperties: () => ({ getProperties: () => ({ A: 'x', PTO_ACCRUAL_LEDGER_SINCE: '2026-10',
-    PTO_ACCRUAL_LEDGER_PH1: '{"2026-09":80}', PTO_ACCRUAL_LEDGER_PH2: '{"2026-09":72}' }) }) };
+    PTO_ACCRUAL_LEDGER_PH1: '{"2026-09":80}', PTO_ACCRUAL_LEDGER_PH2: '{"2026-09":72}',
+    AUTOMATION_RUNS: '{}', AUTOMATION_RUN_PtoAccrualCredit: '{}' }) }) };
   const ps = JSON.parse(JSON.stringify(vm.runInContext('scriptPropertiesStatus_()', ctx)));
   assert.deepStrictEqual(ps.accrualLedger, { count: 2, bytes: ('PTO_ACCRUAL_LEDGER_PH1'.length + 14) * 2 }, 'two reps, keys and values counted, the SINCE marker not');
+  assert.strictEqual(ps.runLedgerLegacy, 1, 'one legacy run key — the one ledger (AUTOMATION_RUNS) is not one');
   const sb = buildSandbox([]);
   const note = loadFunction(sb, 'cn/script_callnotes.html', 'cnPropLedgerNote_');
-  assert.strictEqual(note(ps), ' · PTO accrual ledger copies: 2 reps, 72 bytes');
-  assert.strictEqual(note({ accrualLedger: { count: 0, bytes: 0 } }), '', 'none: nothing said');
-  assert.strictEqual(note({}), '', 'an older server: nothing said');
-  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
-  assert.strictEqual((cn.match(/(?<!function )cnPropLedgerNote_\(ps\)/g) || []).length, 2, 'both the Storage Health line and the System finding carry it');
+  assert.strictEqual(note(ps), ' · still to move out: 2 PTO accrual ledger keys (72 bytes) and 1 automation run key — run moveLedgersOutOfScriptProperties from the Apps Script editor');
+  assert.strictEqual(note({ accrualLedger: { count: 0, bytes: 0 }, runLedgerLegacy: 0 }), '', 'nothing left to move: no clause');
+  assert.strictEqual(note({}), '', 'an older server: no clause');
 });
 
 test('TC-03 (cycle 23): a single-date time-off request on a weekend or a company holiday is refused, on the rep path and the manager path, before anything is written (driven)', () => {

@@ -11749,12 +11749,20 @@ function cnRouteLookupsHtml_(rl) {
 }
 /** Cycle 25 FU3 — the PTO accrual ledger's per-rep side copies (F17) as a
  *  clause of the Script Properties line: '' when none exist or the server is
- *  older. Plain text; the callers escape or render it as text. */
+ *  older. Plain text; the callers escape or render it as text. Since the
+ *  Script Property consolidation (operator 2026-11-02) the copies live in the
+ *  PtoAccrualLedger tab, so a per-rep key — and a per-job AUTOMATION_RUN_ key —
+ *  is one still waiting to move, and the clause says how to move it. */
 function cnPropLedgerNote_(ps) {
   var l = ps && ps.accrualLedger;
-  if (!l || !(Number(l.count) > 0)) return '';
-  return ' · PTO accrual ledger copies: ' + Number(l.count) + ' rep' + (Number(l.count) === 1 ? '' : 's') +
-    ', ' + Number(l.bytes).toLocaleString() + ' bytes';
+  var reps = (l && Number(l.count) > 0) ? Number(l.count) : 0;
+  var runs = (ps && Number(ps.runLedgerLegacy) > 0) ? Number(ps.runLedgerLegacy) : 0;
+  if (!reps && !runs) return '';
+  var parts = [];
+  if (reps) parts.push(reps + ' PTO accrual ledger key' + (reps === 1 ? '' : 's') + ' (' + Number(l.bytes).toLocaleString() + ' bytes)');
+  if (runs) parts.push(runs + ' automation run key' + (runs === 1 ? '' : 's'));
+  return ' · still to move out: ' + parts.join(' and ') +
+    ' — run moveLedgersOutOfScriptProperties from the Apps Script editor';
 }
 
 /** Expand/collapse an mtRenderTable_ detail row from its disclosure button/** Expand/collapse an mtRenderTable_ detail row from its disclosure button

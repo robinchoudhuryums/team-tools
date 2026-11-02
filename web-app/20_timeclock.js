@@ -715,11 +715,126 @@ function accrualLedgerPut_(map, ym, hours, keep) {
   keys.slice(0, Math.max(0, keys.length - (keep || 0))).forEach(function (k) { delete out[k]; });
   return out;
 }
+/** PURE (Node-pinned; Script Property consolidation) — map `b` folded into
+ *  map `a` by accrualLedgerPut_'s rule: per month the HIGHER figure, then only
+ *  the newest `keep` months. Returns a new map. */
+function accrualLedgerMergeMaps_(a, b, keep) {
+  let out = Object.assign({}, a || {});
+  Object.keys(b || {}).forEach(function (ym) { out = accrualLedgerPut_(out, ym, b[ym], keep); });
+  return out;
+}
+/** PURE (Node-pinned) — the PtoAccrualLedger tab's data rows as
+ *  {byEmp: {empId: {ym: hours}}, at: {empId: first row index}, bad: {empId: true}}.
+ *  Two rows for one rep merge (the higher figure per month). A row whose map
+ *  cannot be read is BAD, never read as empty — a hole in the copy, so the
+ *  reader claims no coverage and the writer refuses to overwrite it. */
+function accrualLedgerRowsToMap_(rows, keep) {
+  const out = { byEmp: {}, at: {}, bad: {}, unreadable: 0 };
+  (rows || []).forEach(function (r, i) {
+    const id = String((r && r[0] != null) ? r[0] : '').trim();
+    if (!id) return;
+    if (!(id in out.at)) out.at[id] = i;
+    let m = null;
+    try { m = JSON.parse(String(r[1] == null ? '' : r[1])); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) { out.bad[id] = true; out.unreadable++; return; }
+    out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], m, keep);
+  });
+  return out;
+}
+/** PURE (Node-pinned) — the side ledger from the tab (`tab`, from
+ *  accrualLedgerRowsToMap_, or null when it could not be read) and every
+ *  Script Property (`props`), whose PTO_ACCRUAL_LEDGER_<empId> keys are the
+ *  legacy copy: per (rep, month) the higher figure. `since` — the coverage
+ *  claim — holds only while the tab was read and every row of it parsed: an
+ *  unreadable tab or row is a hole, and a hole is no coverage (F17's rule for
+ *  a failed record). `legacy` counts the legacy keys still there. */
+function accrualSideLedgerCombine_(tab, props, keep) {
+  const out = { byEmp: {}, since: '', legacy: 0 };
+  const p = props || {};
+  Object.keys(p).forEach(function (k) {
+    if (k === PTO_ACCRUAL_LEDGER_SINCE || k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
+    out.legacy++;
+    let m = null;
+    try { m = JSON.parse(p[k]); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    const id = k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length);
+    out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], m, keep);
+  });
+  if (tab) {
+    Object.keys(tab.byEmp || {}).forEach(function (id) {
+      out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], tab.byEmp[id], keep);
+    });
+  }
+  out.since = (tab && !tab.unreadable) ? String(p[PTO_ACCRUAL_LEDGER_SINCE] || '') : '';
+  return out;
+}
+/** PURE (Node-pinned) — does map `have` hold everything in `want`? Every
+ *  month at least as high, except a month older than the oldest `have` keeps
+ *  once it is full: the keep rule ages that out of any copy. A value
+ *  accrualLedgerPut_ would never store needs nothing. The migration deletes a
+ *  legacy key only when the tab, read back, covers it. */
+function accrualLedgerCovers_(have, want, keep) {
+  const h = have || {};
+  const kept = Object.keys(h).sort();
+  const floor = kept.length >= keep ? kept[0] : '';
+  return Object.keys(want || {}).every(function (ym) {
+    const w = Number(want[ym]);
+    if (!/^\d{4}-\d{2}$/.test(ym) || !isFinite(w) || w < 0) return true;
+    if (floor && ym < floor) return true;
+    return Number(h[ym]) >= +w.toFixed(2);
+  });
+}
+/** The PtoAccrualLedger tab (ADP sheet); made with its header when `create`
+ *  and missing. Null when it does not exist and `create` is false. */
+function accrualLedgerSheet_(create) {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(PTO_ACCRUAL_LEDGER_TAB);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(PTO_ACCRUAL_LEDGER_TAB);
+    sheet.appendRow(sheetSafeRow_(PTO_ACCRUAL_LEDGER_HEADERS.map(function (h, i) {
+      return i === 2 ? `Updated (${tzAbbr_(CONFIG.TIMEZONE)})` : h;
+    })));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** The tab's data rows (raw values); [] for a missing or empty tab. Throws on
+ *  a failed read. */
+function accrualLedgerReadRows_(sheet) {
+  if (!sheet) return [];
+  const last = sheet.getLastRow();
+  return last > 1 ? sheet.getRange(2, 1, last - 1, PTO_ACCRUAL_LEDGER_HEADERS.length).getValues() : [];
+}
+/** Write rep rows into the tab: `updates` = [{row: 0-based data index, cells}]
+ *  rewritten in place, `appends` = [cells] added at the end. Every cell is
+ *  plain text, the '@' re-asserted on the cells written (g144). The CALLER
+ *  holds the ScriptLock (the appendRowsTextSafe_ contract) — it cannot take it
+ *  here: the accrual job already holds it, and re-taking then releasing it
+ *  would release the job's own lock early (A8). S2 checks every caller chain
+ *  reaches a lock holder. */
+function accrualLedgerWriteRows_(sheet, updates, appends) {
+  const width = PTO_ACCRUAL_LEDGER_HEADERS.length;
+  (updates || []).forEach(function (u) {
+    const range = sheet.getRange(u.row + 2, 1, 1, width);
+    range.setNumberFormat('@');
+    range.setValues(sheetTextRows_([u.cells], null));
+  });
+  if (appends && appends.length) appendRowsTextSafe_(sheet, appends, PTO_ACCRUAL_LEDGER_TEXT_IDX);
+}
+/** One rep's row: the id, the map as JSON, the write time. */
+function accrualLedgerCells_(id, map) {
+  const now = new Date();
+  return [String(id), JSON.stringify(map || {}), fmtDate_(now) + ' ' + fmtTime_(now)];
+}
 /** F17 — record what a PtoAccrualCredit row paid for, in the side ledger.
- *  Called right after the audit row; never throws. The first record stamps
- *  `…_SINCE`. A FAILED record forgets `…_SINCE`, so the reconcile goes back to
- *  saying its tail read was cut short rather than trusting a copy with a hole
- *  in it (the tail still holds the row this run wrote). */
+ *  Called right after the audit row, under the accrual job's ScriptLock; never
+ *  throws. The first record stamps `…_SINCE`. A FAILED record forgets
+ *  `…_SINCE`, so the reconcile goes back to saying its tail read was cut short
+ *  rather than trusting a copy with a hole in it (the tail still holds the row
+ *  this run wrote). Since the Script Property consolidation the record is the
+ *  rep's PtoAccrualLedger row; a legacy key still holding the rep is folded
+ *  into the row so the row is whole (the migration deletes the key). A row
+ *  that cannot be read is never overwritten — that is a failed record. */
 function recordAccrualLedger_(empId, months, hours) {
   const id = String(empId || '').trim();
   if (!id || !months || months.length !== 1) return;   // a legacy multi-month key is never written
@@ -729,29 +844,76 @@ function recordAccrualLedger_(empId, months, hours) {
       propSetBounded_(PTO_ACCRUAL_LEDGER_SINCE,
         Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM'));
     }
-    let cur = {};
-    try { cur = JSON.parse(props.getProperty(PTO_ACCRUAL_LEDGER_PREFIX + id) || '{}') || {}; } catch (_) { cur = {}; }
-    // Refusing mode (the default): twelve months is far under the cap, and a
-    // refusal lands in the catch below, which drops the coverage claim.
-    propSetBounded_(PTO_ACCRUAL_LEDGER_PREFIX + id,
-      JSON.stringify(accrualLedgerPut_(cur, months[0], hours, PTO_ACCRUAL_LEDGER_KEEP_MONTHS)));
+    const sheet = accrualLedgerSheet_(true);
+    const tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+    if (tab.bad[id]) throw new Error('a ' + PTO_ACCRUAL_LEDGER_TAB + ' row for ' + id + ' cannot be read — it was left as it is');
+    let cur = tab.byEmp[id] || {};
+    let legacy = null;
+    try { legacy = JSON.parse(props.getProperty(PTO_ACCRUAL_LEDGER_PREFIX + id) || 'null'); } catch (_) { legacy = null; }
+    if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+      cur = accrualLedgerMergeMaps_(cur, legacy, PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+    }
+    const cells = accrualLedgerCells_(id, accrualLedgerPut_(cur, months[0], hours, PTO_ACCRUAL_LEDGER_KEEP_MONTHS));
+    if (id in tab.at) accrualLedgerWriteRows_(sheet, [{ row: tab.at[id], cells: cells }], []);
+    else accrualLedgerWriteRows_(sheet, [], [cells]);
   } catch (e) {
     Logger.log('recordAccrualLedger_ failed for ' + id + ': ' + e.message);
     try { props.deleteProperty(PTO_ACCRUAL_LEDGER_SINCE); } catch (_) {}
   }
 }
-/** F17 — every rep's side ledger and the month it began. A failed read is an
- *  EMPTY side ledger with no coverage: the tail alone decides, as before. */
+/** F17 — every rep's side ledger and the month it began: the PtoAccrualLedger
+ *  tab with any legacy per-rep keys merged in (accrualSideLedgerCombine_). A
+ *  failed read of the properties is an EMPTY side ledger with no coverage, and
+ *  a failed read of the tab is the legacy keys alone with no coverage: the
+ *  tail decides, as before. */
 function readAccrualSideLedger_() {
-  const out = { byEmp: {}, since: '' };
-  try {
-    const all = PropertiesService.getScriptProperties().getProperties();
-    Object.keys(all).forEach(function (k) {
-      if (k === PTO_ACCRUAL_LEDGER_SINCE) { out.since = String(all[k] || ''); return; }
-      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
-      try { out.byEmp[k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length)] = JSON.parse(all[k]) || {}; } catch (_) {}
-    });
-  } catch (e) { return { byEmp: {}, since: '' }; }
+  let all;
+  try { all = PropertiesService.getScriptProperties().getProperties() || {}; } catch (e) { return { byEmp: {}, since: '', legacy: 0 }; }
+  let tab = null;
+  try { tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(accrualLedgerSheet_(false)), PTO_ACCRUAL_LEDGER_KEEP_MONTHS); } catch (e) { tab = null; }
+  return accrualSideLedgerCombine_(tab, all, PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+}
+/** Script Property consolidation — copy every legacy PTO_ACCRUAL_LEDGER_<empId>
+ *  key into the tab, READ THE TAB BACK, and delete each key the tab now covers
+ *  (accrualLedgerCovers_). A key that cannot be parsed, whose rep has a row
+ *  that cannot be read, or that the read-back does not cover, is KEPT and
+ *  named — it stays readable beside the tab, so keeping it loses nothing.
+ *  The caller holds the ScriptLock. Throws only before anything is written. */
+function moveAccrualLedgerToTab_() {
+  const keep = PTO_ACCRUAL_LEDGER_KEEP_MONTHS;
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties() || {};
+  const legacy = {}, out = { found: 0, moved: 0, kept: [] };
+  Object.keys(all).forEach(function (k) {
+    if (k === PTO_ACCRUAL_LEDGER_SINCE || k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
+    out.found++;
+    let m = null;
+    try { m = JSON.parse(all[k]); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) { out.kept.push(k + ' — its value is not a ledger map'); return; }
+    legacy[k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length)] = m;
+  });
+  const ids = Object.keys(legacy).sort();
+  if (!ids.length) return out;
+  const sheet = accrualLedgerSheet_(true);
+  const tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), keep);
+  const updates = [], appends = [];
+  ids.forEach(function (id) {
+    if (tab.bad[id]) { out.kept.push(PTO_ACCRUAL_LEDGER_PREFIX + id + ' — the rep\'s ' + PTO_ACCRUAL_LEDGER_TAB + ' row cannot be read'); return; }
+    const cells = accrualLedgerCells_(id, accrualLedgerMergeMaps_(tab.byEmp[id], legacy[id], keep));
+    if (id in tab.at) updates.push({ row: tab.at[id], cells: cells });
+    else appends.push(cells);
+  });
+  accrualLedgerWriteRows_(sheet, updates, appends);
+  const back = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), keep);
+  ids.forEach(function (id) {
+    if (tab.bad[id]) return;
+    if (back.bad[id] || !accrualLedgerCovers_(back.byEmp[id], legacy[id], keep)) {
+      out.kept.push(PTO_ACCRUAL_LEDGER_PREFIX + id + ' — the tab read back does not hold every month');
+      return;
+    }
+    props.deleteProperty(PTO_ACCRUAL_LEDGER_PREFIX + id);
+    out.moved++;
+  });
   return out;
 }
 

@@ -1077,11 +1077,17 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 // CN_AUDIT_MAX_SCAN AuditLog rows, so the monthly accrual row scrolled out of
 // that window within days of the 1st (a daily false "has not run this month")
 // and a dead daily job went SILENT the moment its last row scrolled out.
-// writeAuditLog_ now stamps one Script Property per automation action —
-// AUTOMATION_RUN_<action> = {ts, notes} — on every automation audit row. One key
-// per job, so two jobs finishing together never race a shared read-modify-write.
-// Auto-managed; delete a key to forget that job's last run.
-const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
+// writeAuditLog_ stamps the job's run on every automation audit row.
+// Script Property consolidation (operator 2026-11-02): the stamps share ONE
+// property, AUTOMATION_RUNS = {action: {ts, notes}}, written under the A8
+// user lock (the same serialisation as AUTOMATION_LAST_ERRORS), where each job
+// used to own an AUTOMATION_RUN_<action> key — ten keys the Apps Script editor's
+// Script Properties page had to list. The per-action keys are LEGACY: read
+// beside the ledger (the newer stamp wins) until
+// moveLedgersOutOfScriptProperties() folds them in and deletes them.
+// Auto-managed; delete the ledger to forget every job's last run.
+const AUTOMATION_RUN_LEDGER_PROP = 'AUTOMATION_RUNS';   // not 'AUTOMATION_RUN_…': no prefix scan can mistake it for a legacy key
+const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';   // legacy keys only — never written
 // S7 (cycle 22) — who has been offboarded, lowercased, newest last. Offboarding
 // clears the roster EMAIL cell, so afterwards nothing on the roster can say an
 // address in MANAGER_EMAILS / ADMIN_EMAILS belongs to someone who left; the
@@ -1469,7 +1475,21 @@ const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
 // `…_SINCE` is the first month the side copy existed (manager tz): a window whose
 // oldest month is at or after it is fully covered, so a truncated tail read no
 // longer matters there. Each rep's map keeps its newest KEEP months.
-const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';
+//
+// Script Property consolidation (operator 2026-11-02): the side copy now lives
+// in the ADP sheet's PtoAccrualLedger tab — one row per rep, every cell plain
+// text: the EmpId, the {"YYYY-MM": hours} map as JSON, and when it was written.
+// One Script Property per accruing rep grew with the roster and filled the Apps
+// Script editor's Script Properties page. The PTO_ACCRUAL_LEDGER_<empId> keys
+// are LEGACY: read beside the tab (per month the higher figure wins, so neither
+// copy can lower what was paid for) until moveLedgersOutOfScriptProperties()
+// has copied them, read them back and deleted each one the tab holds. `…_SINCE`
+// stays a Script Property: one key, and the coverage claim it carries is
+// unchanged.
+const PTO_ACCRUAL_LEDGER_TAB = 'PtoAccrualLedger';
+const PTO_ACCRUAL_LEDGER_HEADERS = ['EmpId', 'Months', 'Updated'];
+const PTO_ACCRUAL_LEDGER_TEXT_IDX = [0, 1, 2];   // every column plain text (g144): an id, a JSON map, a stamp
+const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';   // legacy keys only — never written
 const PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
 const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a

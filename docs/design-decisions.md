@@ -4904,6 +4904,24 @@ pick them up without re-deriving the context.
   read reaches back past its stale hours (`auditWindowProvesAbsence_`, the
   follow-ups) — a fresh AuditLog proves nothing, so the fresh-deploy posture
   holds. Verify: the A1 and A2 pins, and FU-B6d.
+  **AMENDED (Script Property consolidation, operator 2026-11-02).** One key per
+  job was ten keys, and with the PTO ledger's one-per-rep keys they filled the
+  Apps Script editor's Script Properties page, where the operator sets
+  everything else. The jobs now share ONE key, `AUTOMATION_RUNS` =
+  `{action: {ts, notes}}`. That brings back the shared read-modify-write the
+  per-job keys avoided, so the stamp is serialised on the A8 user lock — the
+  one the error map already uses: every stamping job runs as the trigger
+  installer, and none of the user-lock holders writes an automation audit row,
+  so the lock is never taken twice. It fails open on contention like the error
+  map: a lost stamp leaves the AuditLog tail to answer, which is where liveness
+  stood before the ledger, never a false alarm. The legacy per-job keys are read
+  beside it (the newer stamp wins) until `moveLedgersOutOfScriptProperties()`
+  folds them in, reads the ledger back and deletes only what verified. The PTO
+  accrual ledger's side copy moved to a tab rather than one key, because it
+  grows with the roster and a JSON map of every rep would near the 9KB
+  per-value cap: the ADP sheet's `PtoAccrualLedger`, one plain-text row per rep,
+  written under the accrual job's ScriptLock (S2 now checks that the writer's
+  caller chain reaches that lock). Verify: A1, F17 and the two consolidation pins.
   **AMENDED (cycle 23 Batch 4a + follow-ons, 2026-10-01).** A send that did
   not happen is a stamped failure for every digest (the clean stamp lands only
   after the send); a health badge that could not compute is UNKNOWN —

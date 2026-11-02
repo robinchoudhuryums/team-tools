@@ -2577,11 +2577,28 @@ entry says which it is.
   reach in its four-minute budget, is NAMED; re-run to cover it. Optional,
   never blocking; once the list is empty it never needs running again.
 <a id="operator-the-automation-run-ledger-cycle-22"></a>
-- **The automation run ledger — `AUTOMATION_RUN_<action>` (cycle 22 A1,
-  2026-09-25).** Auto-managed; nothing to set. Each automation job's audit row
-  (`CallNotesReconcile`, `AdpExportAuto`, the purges and archives,
-  `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps one Script Property named
-  `AUTOMATION_RUN_<action>` with `{ts, notes}` (CONFIG.TIMEZONE wall time). The
+- **The automation run ledger — `AUTOMATION_RUNS`, once `AUTOMATION_RUN_<action>`
+  (cycle 22 A1, 2026-09-25; one key since 2026-11-02).** Auto-managed; nothing
+  to set. Each automation job's audit row (`CallNotesReconcile`, `AdpExportAuto`,
+  the purges and archives, `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps
+  its run, `{ts, notes}` (CONFIG.TIMEZONE wall time), into the ONE Script
+  Property `AUTOMATION_RUNS` = `{action: {ts, notes}}` — until 2026-11-02 each
+  job had its own `AUTOMATION_RUN_<action>` key. **The Script Property
+  consolidation (operator 2026-11-02) — a one-time step after deploying it:**
+  in the Team Tools Apps Script editor, as the script owner (who must also be
+  in `MANAGER_EMAILS`), run `moveLedgersOutOfScriptProperties`. It moves the
+  per-job keys into `AUTOMATION_RUNS` and the PTO accrual ledger's per-rep
+  `PTO_ACCRUAL_LEDGER_<empId>` keys into the ADP sheet's new
+  **`PtoAccrualLedger`** tab (one plain-text row per rep: EmpId, the month map
+  as JSON, when it was written — the app writes it; do not edit it), reads each
+  copy BACK, and deletes only the keys that verified. The log says how many of
+  each moved and names any it KEPT and why (a key that is not a ledger map, a
+  rep whose tab row cannot be read, a read-back that did not hold every month);
+  a kept key is still read beside its new home, so keeping it loses nothing.
+  Running it again moves nothing. Until it runs, both readers read the old keys
+  beside the new home, and Admin → System's Script Properties line says how
+  many are still to move. `PTO_ACCRUAL_LEDGER_SINCE` stays a Script Property.
+  A browser call is refused before anything is read. The
   Automation Health panel, the health dot and the failure digest read it before
   the AuditLog tail, so a job's last run no longer disappears when its row
   scrolls out of the 4,000-row scan. **After deploy every job has an empty
@@ -2589,7 +2606,8 @@ entry says which it is.
   "no run on record — cannot confirm" when the AuditLog window read does not
   reach far enough, and a monthly job is not called "not run this month" unless
   the window reaches back past the 1st. That is expected, not a fault; it clears
-  on each job's next run. Delete one key to forget that job's last run.
+  on each job's next run. Delete `AUTOMATION_RUNS` to forget every job's last
+  run.
   **25post (2026-10-16): `AUTOMATION_WATCH_SINCE`**, also auto-managed — when
   each digest and each enabled job was FIRST WATCHED. A digest a deploy adds,
   or a job a deploy or a setting turns on, is not called "never ran" or "no run

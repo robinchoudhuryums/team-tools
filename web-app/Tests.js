@@ -1021,8 +1021,12 @@ function cleanupTestData() {
   } catch (e) { Logger.log('cleanupTestData: MANAGER_EMAILS strip skipped: ' + e.message); }
 
   // F17 (cycle 25): the accrual ledger's side copy for a TEST_ rep — a by-key
-  // backstop for a killed run (g132).
+  // backstop for a killed run (g132): its PtoAccrualLedger rows, and any legacy
+  // per-rep key from before the Script Property consolidation.
   try {
+    _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(PTO_ACCRUAL_LEDGER_TAB), 2, function (r) {
+      return String(r[0] || '').trim().indexOf('TEST_') === 0;
+    });
     const ledProps = PropertiesService.getScriptProperties();
     ledProps.getKeys().forEach(function (k) {
       if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX + 'TEST_') === 0) ledProps.deleteProperty(k);
@@ -1083,7 +1087,10 @@ function _clearTestState(empId) {
   _clearRowsByEmp(ss.getSheetByName(CONFIG.TIMEOFF_TAB), empId, TO.EMP_ID,  2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.PUNCH_ADJUST_TAB), empId, PAR.EMP_ID, 2);
   _clearRowsByEmp(ss.getSheetByName(CONFIG.AUDIT_TAB),   empId, 1,          2);
-  // F17 (cycle 25): the accrual ledger's side copy is part of the same baseline.
+  // F17 (cycle 25): the accrual ledger's side copy is part of the same baseline —
+  // its PtoAccrualLedger row since the Script Property consolidation, and any
+  // legacy per-rep key from before it.
+  _clearRowsByEmp(ss.getSheetByName(PTO_ACCRUAL_LEDGER_TAB), empId, 0, 2);
   try { PropertiesService.getScriptProperties().deleteProperty(PTO_ACCRUAL_LEDGER_PREFIX + empId); } catch (e) {}
 
   const empSheet = ss.getSheetByName(CONFIG.EMPLOYEE_TAB);

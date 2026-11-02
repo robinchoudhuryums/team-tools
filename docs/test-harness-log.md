@@ -3332,3 +3332,25 @@ per-change detail. By delta:
   drawn, the results showing) rather than on 20 ms and 80 ms margins over a
   60 ms answer and a 300 ms debounce — the likeliest race a loaded runner loses.
   Both of its bites were re-run and bite.
+
+## Script Property consolidation — the PTO accrual ledger tab and one run ledger (2026-11-02)
+
+- **Pure** — F17's record half now drives the real reader, writer and move over
+  a fake ADP sheet (`accrualLedgerTabCtx_`): one row per rep rewritten in place,
+  every cell written formatted '@', no per-rep property written, a legacy key
+  folded into the row and read beside the tab (the higher figure per month), an
+  unreadable row claiming no coverage and never overwritten, a failed tab read
+  leaving the legacy copy with no coverage. A new drive of the move: copied,
+  read back, deleted only where the tab covers the key; an unparseable key, a
+  rep with a broken row and a read-back that lost the write each KEEP the key
+  and say why; a second run finds nothing; the keep-12 floor and the two-decimal
+  rule of `accrualLedgerCovers_`. A1 drives the one `AUTOMATION_RUNS` ledger
+  (two jobs' stamps both kept, each under the A8 lock, a legacy key read beside
+  it either way, the fold-read-back-delete move, an unverified move kept, and
+  the shrinker's notes-then-oldest order). A structural pin orders the move's
+  manager gate, owner check, lock and moves. FU3 drives the Storage Health
+  clause that names what is still to move. **S2 gained a caller-chain check:**
+  a plain-text appender that runs inside a locked job (`accrualLedgerWriteRows_`)
+  may not take the ScriptLock itself (A8), so S2 now requires every chain of
+  callers to reach a function that takes it before the call.
+- Bite-checks: see the implement block.

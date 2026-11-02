@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Script Property consolidation (Team Tools)
+
+The Apps Script editor's Script Properties page had stopped letting the operator
+add or edit a property. Two auto-managed families made up much of the list: one
+`PTO_ACCRUAL_LEDGER_<empId>` key per accruing rep, and one
+`AUTOMATION_RUN_<action>` key per automation job. The PTO ledger's side copy is
+now the ADP sheet's **`PtoAccrualLedger`** tab, created on the next accrual
+credit or by the move. The job runs share ONE key, **`AUTOMATION_RUNS`**.
+**Deploy, then once:** in the Team Tools editor, as the script owner, run
+`moveLedgersOutOfScriptProperties`. Its log says how many keys of each family
+moved and names any it kept and why. Nothing is lost if it never runs (both
+readers still read the old keys), but the keys stay on the page until it does.
+Admin → System's Script Properties line counts what is still to move.
+
 ## 2026-11-02 — the handbook app's refresh, Batch 2 (HBR2)
 
 The section page and search results (Team Tools unchanged — the shared reader is
