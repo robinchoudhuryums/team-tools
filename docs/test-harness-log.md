@@ -3324,3 +3324,11 @@ per-change detail. By delta:
   minimum height in the reader's flex column — and the chapter index in two
   squeezed columns on a phone (its `@container` query had no container on this
   page).
+- **A red that did not reproduce** — CI on the HBR1 block commit failed once in
+  `counts.mjs --check` with "1 failing of 353" while the same job's DOM step had
+  passed; two local full runs and the next push were green, and the log could
+  not say which test. `counts.mjs` now lists the failing tests' names when a
+  harness is red, and the HBR1 typing drive waits on its conditions (the shelf
+  drawn, the results showing) rather than on 20 ms and 80 ms margins over a
+  60 ms answer and a 300 ms debounce — the likeliest race a loaded runner loses.
+  Both of its bites were re-run and bite.

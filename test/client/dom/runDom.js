@@ -10614,12 +10614,15 @@ test('HBR1 DOM: typing in home\'s search hands over to the bar\'s — the words 
   const h = await hbBoot_({ answers: HBR_ALL({ hbGetShelf: { __delay: 60, value: HBR_SHELF() } }) });
   const hero = h.d.getElementById('hb-hero-q');
   hero.focus(); hero.value = 'neb';
-  await new Promise((r) => setTimeout(r, 80));   // the shelf answers while the box holds typing
+  // Wait on the condition, never on a margin: a fixed 80 ms against a 60 ms answer
+  // (and 380 ms against a 300 ms debounce) is a race a loaded runner can lose.
+  const until = async (fn, ms) => { const end = Date.now() + (ms || 3000);
+    while (!fn() && Date.now() < end) await new Promise((r) => setTimeout(r, 5)); return fn(); };
+  assert.ok(await until(() => h.d.querySelector('#hb-shelf .hb-book')), 'the shelf answers while the box holds typing');
   assert.strictEqual(h.d.getElementById('hb-hero-q'), hero, 'the late answer patched its own box, not home');
-  assert.ok(h.d.querySelector('#hb-shelf .hb-book'));
   hero.value = 'nebs'; hero.dispatchEvent(new h.w.Event('input'));
-  await new Promise((r) => setTimeout(r, 380)); await h.settleAll();
-  assert.ok(h.d.querySelector('.hb-results'), 'the results replaced home');
+  assert.ok(await until(() => h.d.querySelector('.hb-results')), 'the results replaced home');
+  await h.settleAll();
   const bar = h.d.getElementById('hb-q');
   assert.strictEqual(bar.value, 'nebs', 'the words went with it');
   assert.strictEqual(h.d.activeElement, bar, 'and the caret');
