@@ -279,6 +279,13 @@ not restate it. Server endpoints live in the fourteen server files
      the export link and in the automated export email
      (`exportInferredLines_`).
 
+**Operator round 2026-11-02 (Batch A):** the clock reminders carry their punch.
+The still-clocked-in reminder offers Clock out, the not-clocked-in nudge offers
+Clock in, and the Lunch reminder offers Lunch out. One click records it from any
+page, but only while that punch is allowed, and it is checked again at the click.
+The Lunch Out button, the lunch break chip and the other amber fills paint the
+lighter `--warn-fill`.
+
 ## Call Notes
 
    - **Call Notes** — rolling-note panel for CSR call logging. Each
@@ -478,7 +485,73 @@ not restate it. Server endpoints live in the fourteen server files
      Sheet the digest cannot read, now shows on the health dot and in the
      failure digest (F2).
 
+**Operator round 2026-11-02 (Batch A):**
+- The note template's copy instruction is an ⓘ tooltip on its "SELECTABLE"
+  hint, no longer a line under the box.
+- In the Scratchpad, a colour or size picked with nothing selected applies to
+  the next typing, and the resize corner is drawn.
+
+**Batch S (operator 2026-11-02): the Scratchpad grows.**
+- **Pages:** named pages, one row of the rep's Scratchpad tab each; row 1 is
+  the legacy pad.
+- **Formatting:** checklists, highlights, a heading, and auto-linked URLs
+  (Ctrl/⌘+click opens).
+- **Tools:** an insert-time button, Send selection → the note's Issue or
+  Resolution, and find in the page.
+- **Shortcut:** Ctrl/⌘+Shift+S opens or closes it from any page.
+
+The server allowlist and the client sanitizer were widened together. A link
+keeps only an http(s) href.
+
+**Batch E (operator 2026-11-02):** Dept Requests is a Call Notes tab (it was
+under Metrics), between Sent Forms and Team Notes.
+
+**Batch D (operator 2026-11-02):** open requests to one department for the
+same TRX # show as one fold in My requests, Incoming and the team-wide list —
+the newest on top with "N open requests for this TRX · M follow-ups with no
+response", the earlier ones behind "Show N earlier requests". Each is still a
+full card; Recently resolved never folds.
+
+**Batch H (operator 2026-11-02):** Issue Docs takes a **PDF file** as well as
+a written document. The manager chooses the PDF, sees its pages, and drags (or
+taps) to place **highlighted boxes** — short text, date or paragraph — each one
+a field they name; a short note can sit above it. The employee reads the PDF in
+the app and fills each box in place, then signs as before. The PDF's SHA-256 is
+part of what is signed, and the app re-checks the file on every read and before
+every signature. A signed or completed document has a **Certificate** (a PDF of
+the document, the employee, the times, the hashes, the signature and every
+answer).
+
+**Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
+each rep's last 1-on-1 and when the next is due (late in red, none on record as
+"due now"), with a **Log** button that records one (the date, an optional note)
+and lists the rep's recent 1-on-1s, each voidable. Each manager sets their own
+cadence (default 14 days, 0 = off) from the board's head. A manager with reps
+due gets one Needs-you item and a line in the daily brief or the overdue digest.
+The coaching composer takes one optional screenshot (chosen or pasted, shrunk in
+the browser), stored in the HR store and shown from a **Screenshot** chip on the
+item to the rep and the managers who can see it.
+
+**Batch G (operator 2026-11-02):** app activity is kept long-term as one
+summary row per rep per day (first and last activity, active minutes, the
+10-minute map), written nightly before the raw pings — now kept 14 days — are
+purged. Day Edit's activity strip reads the summary for any condensed day and
+says when a day predates what was kept.
+
+**Batch B (operator 2026-11-02):** a department email's send tags its note:
+- Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
+- OOP Order `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply
+  `resupply`.
+
+The 8-tag cap and the archived set hold. An archived tag's keyword rule is no
+longer sent to reps.
+
 ## Metrics
+
+   **Since Batch E (operator 2026-11-02) there is no Metrics tool:** My Stats
+   and Team Metrics are the Dashboard's **Stats** tab (a Me / Team switch),
+   the Spanish Inbox is a Dashboard tab, and Dept Requests is a Call Notes tab
+   — the partials, tab keys and behaviour below are unchanged.
 
    - **Metrics** — CDR integration module that reads DQE Historical
      Data from the CDR Report spreadsheet (the same sheet backing the
@@ -741,6 +814,28 @@ not restate it. Server endpoints live in the fourteen server files
      Request re-checks that the note it fetched is the one the request links
      to, so a delete at the same moment can never show another patient's note
      (F6).
+
+**Operator round 2026-11-02 (Batch A):**
+- Spanish Inbox: Auto-assign reads "Assigning…" and stays disabled until the run
+  ends, even through a list refresh. The 8am escalation email covers the last 30
+  days (the one pending window), not 90.
+- Dept Requests: each list has its own default order, named on its heading —
+  Oldest open and Incoming longest-open first, My requests newest, Recently
+  resolved latest-resolved. A chosen sort applies to every list. A manager's
+  summary row is at the very top, above the chips and the sort.
+
+**Operator round 2026-11-02 (Batch C) — the Spanish Inbox:**
+- A request assigned to you is counted on the Spanish Inbox tab and its tool
+  (sidebar and phone nav), and a new one assigned by someone else while the app
+  is open brings a toast with **Open** (polled every 3 minutes; your own claims
+  never toast).
+- Every pending card has a checkbox; **Resolve selected** marks them resolved
+  in one call, and anything it could not resolve stays selected with the reason
+  in the toast. **Select all shown** takes only the cards you can see.
+- Over 15 requests in a section, the cards group under collapsible headers by
+  **Date received** or **Department** (the sender's department mailbox or
+  roster department, else Other; voicemails as Voicemail); the choice is kept
+  in the browser. Every card shows the date it came in, top right.
 
 ## Intake
 

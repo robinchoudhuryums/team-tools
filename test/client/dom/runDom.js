@@ -1845,6 +1845,35 @@ test('a punch that returns fresh state applies it in ONE round trip — no secon
     'the fresh state was applied');
 });
 
+test('Operator 2026-11-02 DOM: a punch reminder carries the punch — the button is offered only when the punch is allowed, one click records it from any page, and a reminder left on screen after the state changed punches nothing (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  h.read('empState = { id: "TEST_E1", name: "Test Rep", nextActions: ["LunchOut", "ClockOut", "Adjust"], timezone: "Asia/Kolkata" }');
+  h.read('currentView = "callNotes"');
+  assert.strictEqual(h.read('remindPunchAction_')('ClockIn'), null, 'no Clock in button while clocked in');
+  const act = h.read('remindPunchAction_')('ClockOut');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(act)), { label: 'Clock out', punch: 'ClockOut' });
+  h.read('notifyRemind_')('Your shift ended at 5:00 PM and you are still clocked in', 'toast-warn', act);
+  const btn = doc.querySelector('#toast-stack .toast-sticky .toast-act');
+  assert.ok(btn && btn.textContent === 'Clock out', 'the sticky reminder carries a named Clock out button');
+  btn.click();
+  const rp = h.run.pending('recordPunch');
+  assert.strictEqual(rp.length, 1, 'one click records the punch — from the Call Notes page');
+  assert.strictEqual(rp[0].args[0], 'ClockOut');
+  h.run.flushSuccess({ success: true, displayTime: '5:06 PM', isAdjustment: false,
+    state: { id: 'TEST_E1', nextActions: ['Adjust'], adjustWindowDays: 30, timezone: 'Asia/Kolkata' } }, 'recordPunch');
+  assert.ok(Array.from(doc.querySelectorAll('#toast-stack .toast')).some((t) => /Clock Out at 5:06 PM/i.test(t.textContent)), 'the punch is confirmed by its toast');
+  // A second reminder still on screen from before: its click punches nothing.
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', { label: 'Lunch out', punch: 'LunchOut' });
+  doc.querySelector('#toast-stack .toast-sticky .toast-act').click();
+  assert.strictEqual(h.run.pending('recordPunch').length, 0, 'no second punch — the state no longer allows Lunch out');
+  assert.ok(/punches changed/.test(doc.getElementById('toast-stack').textContent), 'and the rep is told why');
+  // A reminder with no action stays a plain sticky toast.
+  h.read('notifyRemind_')('Morning break in 10 min', 'toast-warn', null);
+  const last = doc.querySelector('#toast-stack').lastElementChild;
+  assert.ok(last && !last.querySelector('.toast-act'), 'a rest-break reminder has no button');
+});
+
 test('an older server (no state on the response) still falls back to a refetch', () => {
   const h = boot();
   mountActions(h, ['ClockIn', 'Adjust']);
@@ -2194,8 +2223,11 @@ test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, off
   assert.match(h3.document.getElementById('de-act').textContent, /could not be read for this day/);
   assert.ok(!h3.document.getElementById('de-save').disabled, 'Save stays live');
   // No pings: said as such, no suggestion.
-  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', retentionDays: 60 }, { clockInEmpty: true });
-  assert.ok(/No app activity recorded on this day \(activity is kept 60 days\)/.test(v) && !/data-de-apply/.test(v));
+  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', date: '2026-08-01', keptFrom: '2026-09-01' }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day \(activity before 2026-09-01 was not kept\)/.test(v) && !/data-de-apply/.test(v),
+    'Batch G: a day before what was kept says so — "none" is only a verdict inside the kept span');
+  const kept = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', date: '2026-09-10', keptFrom: '2026-09-01' }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day\.</.test(kept), 'inside the kept span, a plain none');
   // The text comes from the payload only through the HH:mm check.
   const bad = h3.read('deActivityHtml_')({ pings: 3, first: '<b>x', last: '17:00', blocks: [] }, { clockInEmpty: true });
   assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');
@@ -2832,7 +2864,7 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
   let bodyCalls = 0;
   h.run.respond('getSpanishInboxThreadBody', (tid) => { bodyCalls++; return { threadId: tid, body: 'El paciente necesita ayuda con el formulario.\nGracias' }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const sel = '.sp-more.sp-toggle[data-thread="abc123"]';
   const btn = () => h.$(sel);
@@ -2903,7 +2935,7 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
   let fail = false, calls = 0;
   h.run.respond('resolveSpanishThread', () => { calls++; return fail ? { error: 'Gmail said no' } : { success: true }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
@@ -2973,7 +3005,7 @@ test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, c
     { threadId: 'f2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: { by: 'sam@x.com', atMs: 5 }, followUp: false, claimFloorMs: 0 }],
     members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false }));
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
   assert.ok(card('f1').querySelector('.sp-followup-pill'), 'the reopened card says follow-up');
@@ -3012,7 +3044,7 @@ test('SP4 DOM: the Pending header reports what the voicemail gate hid and what i
     h.run.respond('getSpanishInboxStats', stats);
     h.run.respond('getSpanishInboxPending', pendingFn);
     h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-    h.window.enterTool('metrics', 'metricsSpanish');
+    h.window.enterTool('timeClock', 'metricsSpanish');
     h.flushTimers();
     return h;
   };
@@ -3262,7 +3294,7 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   h0.run.respond('getSpanishInboxStats', stats);
   h0.run.respond('getSpanishInboxPending', pendingFixture);
   h0.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-  h0.window.enterTool('metrics', 'metricsSpanish');
+  h0.window.enterTool('timeClock', 'metricsSpanish');
   h0.flushTimers();
   assert.ok(h0.$('.sp-task'), 'the member sees the list');
   assert.strictEqual(h0.$('#sp-autoassign'), null, 'but no Auto-assign button (manager-only)');
@@ -3277,7 +3309,7 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   h.run.respond('autoAssignSpanishThreads', (days) => { rpcs++; rpcDays = days; return { success: true, unclaimed: 2, assigned: [
     { threadId: 't1', claim: { by: 'ines@x.com', assignedBy: 'me@x.com', atMs: 2 } },
     { threadId: 't3', claim: { by: 'sam@x.com', assignedBy: 'me@x.com', atMs: 2 } }] }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const btn = () => h.$('#sp-autoassign');
   assert.ok(btn(), 'the manager sees the button');
@@ -3297,10 +3329,22 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   assert.strictEqual(btn().disabled, false, 'and leaves the button enabled');
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
+  h.run.clearResponder('autoAssignSpanishThreads');   // hold the run in flight
   press();
   await tick(); await tick();
-  assert.strictEqual(rpcs, 1, 'ONE RPC');
-  assert.strictEqual(rpcDays, 30, 'carrying the list window');
+  const inflight = h.run.pending('autoAssignSpanishThreads');
+  assert.strictEqual(inflight.length, 1, 'ONE RPC');
+  assert.strictEqual(inflight[0].args[0], 30, 'carrying the list window');
+  // Operator 2026-11-02: while it runs the button says so, and a list render
+  // mid-run (which rebuilds the button) neither re-enables it nor drops the look.
+  assert.ok(btn().disabled && btn().getAttribute('aria-busy') === 'true' && /Assigning/.test(btn().textContent), 'busy while the run is in flight');
+  h.read('spanishRenderList_')();
+  assert.ok(btn().disabled && btn().getAttribute('aria-busy') === 'true' && /Assigning/.test(btn().textContent), 'still busy after a re-render mid-run');
+  h.run.flushSuccess({ success: true, unclaimed: 2, assigned: [
+    { threadId: 't1', claim: { by: 'ines@x.com', assignedBy: 'me@x.com', atMs: 2 } },
+    { threadId: 't3', claim: { by: 'sam@x.com', assignedBy: 'me@x.com', atMs: 2 } }] }, 'autoAssignSpanishThreads');
+  await tick();
+  assert.ok(!btn().getAttribute('aria-busy') && !/Assigning/.test(btn().textContent), 'the busy look ends with the run');
   assert.strictEqual(h.$$('.sp-claim-btn').length, 0, 'no Claim button remains — every returned claim was applied');
   assert.ok(btn() && btn().disabled, 'the refreshed button is disabled');
   assert.ok(/already claimed/.test(btn().title), 'and says why');
@@ -3324,7 +3368,7 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
       note: { callback: '555', caller: 'Ana', relationship: 'Self', patientAndTrx: 'Ana <b>Ruiz</b> · TRX 1',
         issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated **today**', dateLocal: '2026-09-01' } };
   });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
   assert.ok(card('q1') && card('q2'), 'both cards render');
@@ -3385,7 +3429,7 @@ test('DR-3/DR-4 DOM: Show reply — only on a request the department answered; O
   h.run.respond('getDeptRequestReply', (id) => { replyCalls++; return { requestId: id, reply: { from: 'Dana <b>W</b>', at: 'Oct 27, 2026 10:15 AM', verdict: 'needs-look',
     body: 'Which patient — the <img src=x> one?\n\nThanks,\nDana\nBilling Specialist\nUMS\n\nOn Mon, Oct 27, 2026 at 8:30 AM Me <me@x.com> wrote:\n> Please close the order.\n> --\n> You received this message because you are subscribed to the Google Groups "Billing" group.' } }; });
   h.run.respond('resolveDeptRequest', () => ({ success: true }));
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const look = () => h.$('#dr-looks .dr-look[data-req="r1"]');
   const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
@@ -5223,7 +5267,7 @@ test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide c
     truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 1, allOpenTotal: 1,
     teamKpis: { open: 4, overdue: 0, resolved: 9, total: 13, medianMin: 45, manualCount: 0 },
     deptStats: [{ dept: 'Billing', open: 4, resolved: 9, overdueOpen: 0, slaDays: 2, avgMinutes: 50, medianMinutes: 45, manualResolved: 0, untrackedResolved: 0 }] }));
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const top = h.$('.dr-top-row');
   assert.ok(top, 'the manager top row renders');
@@ -5240,9 +5284,16 @@ test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide c
     return ids;
   };
   assert.deepStrictEqual(mineIds(), ['m-new', 'm-old'], 'newest first by default');
+  // Operator 2026-11-02: the summary row is the very top — above the chips and the sort.
+  assert.ok(top.compareDocumentPosition(h.$('.dr-controls')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    'the summary row comes before the sort and date controls');
+  const heading = (re) => h.$$('.day-section-label').filter((n) => re.test(n.textContent))[0].textContent;
+  assert.ok(/newest first/.test(heading(/My requests/)) && /longest open first/.test(heading(/Oldest open/)) && /longest open first/.test(heading(/Incoming/)),
+    'each list names its own default order — the team-wide oldest-open list is no longer newest first');
   h.window.drSetSort_('oldest');
   assert.deepStrictEqual(mineIds(), ['m-old', 'm-new'], 'the sort control re-orders the list');
-  h.window.drSetSort_('newest');
+  assert.ok(/oldest first/.test(heading(/Oldest open/)) && /oldest first/.test(heading(/My requests/)), 'a chosen sort applies to every list, and every heading says so');
+  h.window.drSetSort_('auto');
 });
 
 test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no backdrop, focus not trapped under a modal, Escape inside closes only it; formatting survives the allowlist and a legacy text pad converts', () => {
@@ -5288,6 +5339,14 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
     ['<div>line<br>two</div>', '<div>line<br>two</div>'],
     ['<b onmouseover="x()">t</b>', '<b>t</b>'],
     ['a &amp; b &lt; c', 'a &amp; b &lt; c'],
+    ['<ul class="cn-sp-check evil"><li class="cn-sp-done x">a</li><li>b</li></ul>', '<ul class="cn-sp-check"><li class="cn-sp-done">a</li><li>b</li></ul>'],
+    ['<span class="cn-sp-h-yellow">hl</span>', '<span class="cn-sp-h-yellow">hl</span>'],
+    ['<h3 id="x" onclick="y()">Head</h3>', '<h3>Head</h3>'],
+    ['<h1>big</h1>', 'big'],
+    ['<a href="https://x.com/a?b=1&amp;c=2" onclick="z()">site</a>', '<a href="https://x.com/a?b=1&amp;c=2">site</a>'],
+    ['<a href="data:text/html,x">d</a>', 'd'],
+    ['<a href="https://ok.org" target="_top">x <b>y</b></a> z', '<a href="https://ok.org">x <b>y</b></a> z'],
+    ['<ul class="cn-sp-done"><li class="cn-sp-check">wrong way round</li></ul>', '<ul><li>wrong way round</li></ul>'],
   ].forEach(([inp, want]) => assert.strictEqual(san(inp), want, inp));
 
   // A colour / size command's sentinel marks become palette classes, and
@@ -5308,8 +5367,179 @@ test('22post B-2b/B-2c DOM: the Scratchpad is a floating NON-modal panel — no 
   ed2.dispatchEvent(new w.Event('input'));
   h.read('cnScratchSave_')(true);
   const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
-  assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html'], 'the save carries clean html and says so');
+  assert.deepStrictEqual(Array.from(call.args), ['<b>keep</b>', 'html', 'main'], 'the save carries clean html and says so — and the page it belongs to (Batch S)');
   h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Operator 2026-11-02 DOM: a Scratchpad colour or size chosen with NOTHING selected applies to what is typed next — inside a coloured run it splits there — and the save never stores the caret placeholder or an unused pending span (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', updatedAtMs: Date.now(), maxChars: 40000, format: 'html' }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  const caretAt = (node, off) => { const r = doc.createRange(); r.setStart(node, off); r.collapse(true); const sel = w.getSelection(); sel.removeAllRanges(); sel.addRange(r); };
+  const type = (txt) => { const r = w.getSelection().getRangeAt(0); r.startContainer.insertData(r.startOffset, txt); };
+  const click = (sel) => doc.querySelector('#cn-scratch-panel ' + sel).dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  // 1. Plain text, caret at the end, choose blue, then type.
+  ed.innerHTML = 'note ';
+  caretAt(ed.firstChild, 5);
+  click('[data-sp-color="blue"]');
+  type('urgent');
+  assert.strictEqual(ed.innerHTML, 'note <span class="cn-sp-c-blue">​urgent</span>', 'the typing lands in the chosen colour');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), 'note <span class="cn-sp-c-blue">urgent</span>', 'the save strips the placeholder');
+  // 2. Inside a red run, choose the default colour: the run splits at the caret.
+  ed.innerHTML = '<span class="cn-sp-c-red">alert</span>';
+  caretAt(ed.firstChild.firstChild, 3);
+  click('[data-sp-color=""]');
+  type(' plain ');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), '<span class="cn-sp-c-red">ale</span> plain <span class="cn-sp-c-red">rt</span>',
+    'the red run is split, and the typing between is plain');
+  // 3. A size works the same way, and a pending span never typed into is not saved.
+  ed.innerHTML = 'a';
+  caretAt(ed.firstChild, 1);
+  click('[data-sp-cmd="size-large"]');
+  assert.ok(ed.querySelector('span.cn-sp-s-large'), 'a pending large span is open at the caret');
+  assert.strictEqual(h.read('cnScratchHtmlOf_')(ed), 'a', 'an unused pending span leaves nothing behind');
+  // And the save itself sends the clean html.
+  ed.innerHTML = 'b';
+  caretAt(ed.firstChild, 1);
+  click('[data-sp-color="green"]');
+  type('go');
+  ed.dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSave_')(true);
+  const call = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.strictEqual(call.args[0], 'b<span class="cn-sp-c-green">go</span>', 'the stored html carries no placeholder');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now() }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Batch S DOM (operator 2026-11-02): Scratchpad PAGES — a switch saves the old page under ITS id first, a load overtaken by another switch is dropped, and a save whose page was deleted elsewhere moves the text to a new "Recovered text" page (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  const pages2 = [{ id: 'main', name: 'Notes', updatedAtMs: 1 }, { id: 'p2', name: 'Escalations', updatedAtMs: 2 }];
+  h.run.flushSuccess({ content: 'main text', format: 'html', updatedAtMs: Date.now(), maxChars: 40000, pageId: 'main', pages: pages2, maxPages: 10 }, 'getMyScratchpad');
+  const sel = () => doc.getElementById('cn-scratch-page');
+  assert.deepStrictEqual(Array.from(sel().options).map((o) => o.textContent), ['Notes', 'Escalations'], 'the page picker lists the pages');
+  const ed = () => doc.getElementById('cn-scratch-text');
+  ed().innerHTML = 'main edited';
+  ed().dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSwitchPage_')('p2');
+  const save1 = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(save1.args), ['main edited', 'html', 'main'], 'the old page is saved under ITS id before the switch');
+  const load = h.run.pending('getMyScratchpad').slice(-1)[0];
+  assert.strictEqual(load.args[0], 'p2', 'and the new page is loaded by id');
+  assert.strictEqual(ed().getAttribute('contenteditable'), 'false', 'the editor waits for the page');
+  h.run.flushSuccess({ content: 'p2 text', format: 'html', updatedAtMs: Date.now(), pageId: 'p2', pages: pages2 }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'p2 text', 'the new page shows');
+  assert.strictEqual(sel().value, 'p2');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now(), pageId: 'main' }, 'saveMyScratchpad');
+  // Two switches in a row: the first page's late answer is dropped.
+  h.read('cnScratchSwitchPage_')('main');
+  h.read('cnScratchSwitchPage_')('p2');
+  h.run.flushSuccess({ content: 'LATE main', format: 'html', updatedAtMs: Date.now(), pageId: 'main', pages: pages2 }, 'getMyScratchpad');
+  assert.notStrictEqual(ed().innerHTML, 'LATE main', 'a load overtaken by another switch never paints');
+  h.run.flushSuccess({ content: 'p2 text', format: 'html', updatedAtMs: Date.now(), pageId: 'p2', pages: pages2 }, 'getMyScratchpad');
+  assert.strictEqual(ed().innerHTML, 'p2 text');
+  // The page was deleted in another window: the text goes to a NEW page, never into another one.
+  ed().innerHTML = 'keep me';
+  ed().dispatchEvent(new w.Event('input'));
+  h.read('cnScratchSave_')(true);
+  h.run.flushSuccess({ error: 'That page was deleted in another window', pageGone: true }, 'saveMyScratchpad');
+  const op = h.run.pending('scratchpadPageOp').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(op.args), ['add', '', 'Recovered text'], 'a Recovered text page is made');
+  h.run.flushSuccess({ success: true, pages: pages2.concat([{ id: 'p3', name: 'Recovered text', updatedAtMs: null }]), pageId: 'p3' }, 'scratchpadPageOp');
+  const save2 = h.run.pending('saveMyScratchpad').slice(-1)[0];
+  assert.deepStrictEqual(Array.from(save2.args), ['keep me', 'html', 'p3'], 'and the text is saved there');
+  assert.ok(/Recovered text/.test(doc.getElementById('toast-stack').textContent), 'and the rep is told where it went');
+  h.run.flushSuccess({ success: true, updatedAtMs: Date.now(), pageId: 'p3' }, 'saveMyScratchpad');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('Batch S DOM (operator 2026-11-02): the Scratchpad extras — a checklist box ticks, a finished URL becomes a link (one still being typed does not), Ctrl+click opens it (a blocked open says so), Send puts the selection in the note\'s Issue, Time inserts the time, Find counts and steps, and Ctrl/Cmd+Shift+S opens and closes it (driven)', () => {
+  const h = boot();
+  const doc = h.document;
+  const w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', format: 'html', updatedAtMs: Date.now(), maxChars: 40000, pageId: 'main', pages: [{ id: 'main', name: 'Notes' }] }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  const caretAt = (node, off) => { const r = doc.createRange(); r.setStart(node, off); r.collapse(true); const s = w.getSelection(); s.removeAllRanges(); s.addRange(r); };
+  // Checklist: the box ticks, the text does not.
+  ed.innerHTML = '<ul class="cn-sp-check"><li>one</li><li>two</li></ul>';
+  const li = ed.querySelectorAll('li')[0];
+  li.dispatchEvent(new w.MouseEvent('click', { bubbles: true, clientX: 5 }));
+  assert.ok(li.classList.contains('cn-sp-done'), 'a click on the box ticks it');
+  li.dispatchEvent(new w.MouseEvent('click', { bubbles: true, clientX: 200 }));
+  assert.ok(li.classList.contains('cn-sp-done'), 'a click on the text does not');
+  // The Checklist button turns a plain list into one.
+  ed.innerHTML = '<ul><li>x</li></ul>';
+  caretAt(ed.querySelector('li').firstChild, 1);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="checklist"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(ed.querySelector('ul').classList.contains('cn-sp-check'), 'the list becomes a checklist');
+  // Links: finished URLs are wrapped, trailing punctuation outside; www. gets https.
+  ed.innerHTML = 'see https://example.com/a. and www.ums.com next';
+  assert.strictEqual(h.read('cnScratchLinkify_')(ed, null, 0), 2);
+  assert.strictEqual(ed.innerHTML, 'see <a href="https://example.com/a">https://example.com/a</a>. and <a href="https://www.ums.com">www.ums.com</a> next');
+  // A URL the caret is at the end of is still being typed; a space finishes it.
+  ed.innerHTML = 'go https://x.org';
+  caretAt(ed.firstChild, ed.firstChild.length);
+  assert.strictEqual(h.read('cnScratchLinkify_')(ed, ed.firstChild, ed.firstChild.length), 0, 'not while it is being typed');
+  ed.firstChild.appendData(' ');
+  caretAt(ed.firstChild, ed.firstChild.length);
+  ed.dispatchEvent(new w.KeyboardEvent('keyup', { key: ' ', bubbles: true }));
+  assert.ok(ed.querySelector('a[href="https://x.org"]'), 'a space finishes it');
+  const sel = w.getSelection();
+  assert.ok(sel.rangeCount && sel.getRangeAt(0).startContainer.nodeValue === ' ', 'and the caret stays after the space');
+  // Ctrl+click opens; a blocked open says so.
+  let opened = null;
+  w.open = (u) => { opened = u; return null; };
+  ed.querySelector('a').dispatchEvent(new w.MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  assert.strictEqual(opened, 'https://x.org', 'Ctrl+click opens the link');
+  assert.ok(/blocked/.test(doc.getElementById('cn-scratch-status').textContent), 'a blocked open is said (g135)');
+  // Send the selection to the note's Issue.
+  ed.innerHTML = 'call back Tuesday';
+  const r = doc.createRange(); r.setStart(ed.firstChild, 0); r.setEnd(ed.firstChild, 9);
+  sel.removeAllRanges(); sel.addRange(r);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="send-issue"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(/Open Call Notes/.test(doc.getElementById('cn-scratch-status').textContent), 'with no note form open, it says where to go');
+  const issue = doc.createElement('div');
+  issue.id = 'cn-fld-issue'; issue.setAttribute('contenteditable', 'true'); issue.textContent = 'Asked about';
+  doc.body.appendChild(issue);
+  let fired = 0; issue.addEventListener('input', () => { fired++; });
+  sel.removeAllRanges(); sel.addRange(r);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="send-issue"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.strictEqual(issue.textContent, 'Asked about call back', 'the selection is appended to Issue');
+  assert.strictEqual(fired, 1, 'as an input, so the draft and auto-tags follow');
+  // Time.
+  ed.innerHTML = 'at ';
+  caretAt(ed.firstChild, 3);
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="time"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.ok(/^at \d{1,2}:\d{2}\s?[AP]M$/.test(ed.textContent), 'the time is inserted at the caret: ' + ed.textContent);
+  // Find: counts and steps; Escape in the find bar closes only the find bar.
+  ed.innerHTML = 'apple Apple banana <b>apple</b>';
+  doc.querySelector('#cn-scratch-panel [data-sp-cmd="find"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  const fin = doc.getElementById('cn-scratch-find-in');
+  assert.ok(!doc.getElementById('cn-scratch-find').hidden, 'the find bar opens');
+  fin.value = 'apple'; fin.dispatchEvent(new w.Event('input'));
+  const count = () => doc.getElementById('cn-scratch-find-n').textContent;
+  assert.strictEqual(count(), '1 of 3', 'case-insensitive, across formatting');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  assert.strictEqual(count(), '2 of 3');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }));
+  assert.strictEqual(count(), '1 of 3');
+  fin.value = 'pear'; fin.dispatchEvent(new w.Event('input'));
+  assert.strictEqual(count(), 'No match');
+  fin.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.ok(doc.getElementById('cn-scratch-find').hidden && doc.getElementById('cn-scratch-panel'), 'Escape closes the find bar, not the panel');
+  // Ctrl/Cmd+Shift+S from the page closes it, and opens it again.
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'S', ctrlKey: true, shiftKey: true, bubbles: true }));
+  assert.ok(!doc.getElementById('cn-scratch-panel'), 'the shortcut closes it');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'S', ctrlKey: true, shiftKey: true, bubbles: true }));
+  assert.ok(doc.getElementById('cn-scratch-panel'), 'and opens it');
+  h.run.flushSuccess({ content: '', format: 'html', updatedAtMs: Date.now(), pageId: 'main', pages: [{ id: 'main', name: 'Notes' }] }, 'getMyScratchpad');
   h.read('cnCloseScratchpadModal_')();
 });
 
@@ -5325,7 +5555,7 @@ test('E4 DOM (cycle 25, ST1): "Replies to check" leads the Dept Requests tab —
     recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 2 };
   let reads = 0;
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const looks = () => h.$$('#dr-looks .dr-look');
   const body = h.$('#dr-body').textContent;
@@ -5372,11 +5602,437 @@ test('E4 DOM (cycle 25, G5): an escalated Spanish request reads "Escalated · N 
     { threadId: 'new', requester: 'b@x.com', ageHours: 30, escalated: false, subject: 'Hola', snippet: 's', hasMore: false, permalink: 'https://mail/new', claim: null }],
     members: ['me@x.com'], self: 'me@x.com', truncated: false }));
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
   assert.ok(card('old').classList.contains('sp-escalated') && /Escalated · 9 days/.test(card('old').querySelector('.sp-esc-pill').textContent));
   assert.ok(!card('new').classList.contains('sp-escalated') && !card('new').querySelector('.sp-esc-pill'), 'a day-old request is not escalated, however late it is');
+});
+
+// Batch C (operator 2026-11-02) — the Spanish Inbox: multi-select resolve,
+// grouping past the threshold with received dates, and the assignee badge.
+const spBatchC_ = (pending, resolved, over) => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell(Object.assign({ isManager: false, canSeeSpanish: true }, over || {}));
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: pending.length, resolved: (resolved || []).length, avgMinutes: null, medianMinutes: null,
+    avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
+    membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pending)), members: ['me@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '' }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: JSON.parse(JSON.stringify(resolved || [])), members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  return h;
+};
+const spItem_ = (tid, ageHours, extra) => Object.assign({ threadId: tid, requester: tid + '@x.com', ageHours: ageHours, receivedMs: Date.now() - ageHours * 3600000,
+  subject: 'S ' + tid, snippet: 's', hasMore: false, permalink: 'https://mail/' + tid, claim: null }, extra || {});
+
+test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar counts the selection, ONE call carries the ids in list order, the bar is busy while it runs, a resolved card leaves and one the server could not resolve STAYS selected and is named', async () => {
+  const h = spBatchC_([spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)],
+    [{ threadId: 'r1', requester: 'r@x.com', resolver: 'me@x.com', manual: true, resolveMinutes: null, resolvedAtMs: Date.now() - 3600000, receivedMs: Date.now() - 7200000, subject: 'R', permalink: 'https://mail/r1' }]);
+  const box = (tid) => h.$('input.sp-sel[data-thread="' + tid + '"]');
+  assert.deepStrictEqual(h.$$('input.sp-sel').map((b) => b.getAttribute('data-thread')), ['a', 'b', 'c'], 'one box per pending card, none on a resolved card');
+  assert.ok(h.$('#sp-bulk-go').disabled && /None selected/.test(h.$('#sp-bulk-n').textContent), 'nothing selected: Resolve selected is off');
+  // The harness runs no inline on* attributes: drive the handler the box names.
+  const tickBox = (tid, on) => { const b = box(tid); b.checked = on; h.window.spanishSelToggle_(b); };
+  tickBox('c', true); tickBox('a', true);
+  assert.ok(/2 selected/.test(h.$('#sp-bulk-n').textContent) && !h.$('#sp-bulk-go').disabled);
+  assert.ok(h.$('#sp-sel-all').indeterminate, 'Select all shown reads partial');
+  h.window.spanishResolveSelected_();
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const call = h.run.pending('resolveSpanishThreads')[0];
+  assert.ok(call, 'ONE call');
+  assert.deepStrictEqual(Array.from(call.args[0]), ['a', 'c'], 'the ids, in the list\'s order');
+  assert.ok(h.$('#sp-bulk-go').disabled && h.$('#sp-bulk-go').getAttribute('aria-busy') === 'true' && /Resolving/.test(h.$('#sp-bulk-go').textContent), 'busy while it runs');
+  h.run.flushSuccess({ success: true, resolved: ['a'], already: [], failed: [{ threadId: 'c', error: 'Thread not found.' }] }, 'resolveSpanishThreads');
+  h.flushTimers();
+  assert.ok(!box('a'), 'the resolved request left the list');
+  assert.ok(box('c') && box('c').checked, 'THE RULE: a request the server could not resolve stays, still selected');
+  assert.ok(/1 selected/.test(h.$('#sp-bulk-n').textContent));
+  const toast = h.$$('#toast-stack .toast-msg').map((t) => t.textContent).join(' | ');
+  assert.ok(/Marked 1 resolved · 1 could not be resolved — still selected \(Thread not found\.\)/.test(toast), 'the toast names both halves: ' + toast);
+  // Select all shown, then a refused call keeps everything.
+  h.window.spanishSelAll_(true);
+  assert.ok(box('b').checked && box('c').checked && /2 selected/.test(h.$('#sp-bulk-n').textContent));
+  h.window.spanishResolveSelected_(); h.click(h.$('.ui-dialog-ok')); await tick();
+  h.run.flushSuccess({ error: 'Spanish Inbox access required.' }, 'resolveSpanishThreads');
+  h.flushTimers();
+  assert.ok(box('b').checked && box('c').checked && !h.$('#sp-bulk-go').disabled, 'a refused call removes nothing and the bar is usable again');
+});
+
+test('Batch C DOM: past SPANISH_GROUP_MIN the list groups — by received day, or by sending department (largest first, Other and Voicemail last), remembered in this browser; a closed group\'s cards are not "shown" to Select all; at the threshold the list stays flat; every card shows its received date', () => {
+  const MIN = 15;
+  const depts = ['Billing', 'Intake', 'Billing', '', 'Billing'];
+  const many = [];
+  for (let i = 0; i < MIN + 3; i++) many.push(spItem_('g' + i, 200 - i * 10, { senderDept: depts[i % depts.length], kind: i === 4 ? 'voicemail' : undefined }));
+  let h = spBatchC_(many.slice(0, MIN), []);
+  assert.strictEqual(h.read('SPANISH_GROUP_MIN'), MIN, 'the threshold the operator was told');
+  assert.ok(!h.$('.sp-group') && !h.$('.sp-group-switch'), 'at the threshold: flat, no switch');
+  assert.ok(h.$$('.sp-task-recv').length >= 1 && /\d/.test(h.$('.sp-task-recv').textContent), 'the received date is in the card\'s corner');
+  h = spBatchC_(many, []);
+  const names = () => h.$$('.sp-group .sp-group-name').map((n) => n.textContent);
+  assert.ok(h.$('.sp-group-switch') && h.$('[data-sp-group="date"]').getAttribute('aria-pressed') === 'true', 'past it: grouped, by date first');
+  const dayCount = h.$$('.sp-group').length;
+  assert.ok(dayCount > 1 && h.$$('.sp-group').every((g) => g.open), 'one open group per received day');
+  const total = h.$$('.sp-group .sp-group-n').reduce((a, n) => a + Number(n.textContent), 0);
+  assert.strictEqual(total, MIN + 3, 'every request is in exactly one group');
+  h.window.spanishSetGroupBy_('dept');
+  assert.deepStrictEqual(names(), ['Billing', 'Intake', 'Other', 'Voicemail'], 'largest first; a sender in no department is Other, a voicemail is Voicemail — both last');
+  assert.strictEqual(h.window.localStorage.getItem('umsSpanishGroupBy'), 'dept', 'the choice is kept in this browser');
+  // Close the Billing group: Select all shown skips its cards.
+  const billing = h.$$('.sp-group')[0];
+  const billingIds = Array.from(billing.querySelectorAll('input.sp-sel')).map((b) => b.getAttribute('data-thread'));
+  billing.open = false; h.window.spanishGroupToggled_(billing);
+  h.window.spanishSelAll_(true);
+  const sel = h.read('spanishSelIds_()');
+  assert.ok(sel.length > 0 && billingIds.every((t) => sel.indexOf(t) < 0), 'THE RULE: a request inside a closed group is never resolved unseen');
+  // A re-render keeps the group closed and the selection.
+  h.window.spanishRenderList_();
+  assert.ok(!h.$$('.sp-group')[0].open && h.read('spanishSelIds_()').length === sel.length, 'state, not the DOM: a re-render keeps both');
+});
+
+test('Batch C DOM: the assignee badge and toast — the first answer in a browser is a silent baseline; a NEW request assigned by someone else toasts once with Open, a self-claim never does; the count sits on every nav form and the tab; an unreadable answer keeps the last count; zero clears it', () => {
+  const h = spBatchC_([spItem_('a', 3)], []);
+  assert.ok(h.read('SP_ASSIGN.started') === true, 'the poll starts for a member at boot');
+  const toasts = () => h.$$('#toast-stack .toast-msg').map((t) => t.textContent).filter((t) => /assigned to you/.test(t));
+  const badges = () => h.$$('.sp-assign-badge').map((b) => b.textContent);
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'a', atMs: 1, assignedBy: 'boss@x.com' }], count: 1, self: 'me@x.com' });
+  assert.deepStrictEqual(toasts(), [], 'the first answer in this browser is the baseline — what was already there is not news');
+  const hosts = h.$$('.sp-assign-badge').map((b) => b.parentNode);
+  assert.ok(hosts.some((x) => x.classList.contains('sb-link')) && hosts.some((x) => x.classList.contains('nav-btn')) && hosts.some((x) => x.getAttribute('data-tab') === 'metricsSpanish'),
+    'the count is on the sidebar link, the phone nav and the tab (g99)');
+  assert.ok(badges().every((t) => t === '1'));
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'a', atMs: 1, assignedBy: 'boss@x.com' }, { threadId: 'b', atMs: 2, assignedBy: 'boss@x.com' }, { threadId: 'c', atMs: 3, assignedBy: '' }], count: 3, self: 'me@x.com' });
+  assert.deepStrictEqual(toasts(), ['A Spanish Inbox request was assigned to you by boss'], 'b is news; c is the rep\'s own claim');
+  assert.ok(h.$('#toast-stack .toast-act') && /Open/.test(h.$('#toast-stack .toast-act').textContent), 'with Open');
+  assert.ok(badges().every((t) => t === '3'));
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'b', atMs: 2, assignedBy: 'boss@x.com' }], count: 1, self: 'me@x.com' });
+  assert.strictEqual(toasts().length, 1, 'once: a request already announced never toasts again');
+  h.window.spAssignApply_({ error: 'Spanish assignments read failed: x' });
+  assert.ok(badges().every((t) => t === '1'), 'an unreadable answer is unknown — the last count stands');
+  h.window.renderToolTabBar('timeClock');
+  assert.ok(h.$('.tt-btn[data-tab="metricsSpanish"] .sp-assign-badge'), 'a rebuilt tab bar gets its count back');
+  h.window.spAssignApply_({ configured: true, items: [], count: 0, self: 'me@x.com' });
+  assert.deepStrictEqual(badges(), [], 'zero clears it everywhere');
+});
+
+test('Batch E DOM: Stats is ONE tab — Me and Team are its switch, the Team view lights the Stats button and draws no tab of its own; a stale `metrics` lands on the Dashboard tool; Dept Requests is a Call Notes tab; the answer-rate badge rides EVERY nav form of the tool that holds Team Metrics', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.window.enterTool('metrics', 'metricsTeam');
+  const tabs = () => h.$$('#tool-tab-bar .tt-btn').map((b) => b.getAttribute('data-tab'));
+  assert.deepStrictEqual(tabs(), ['clock', 'metricsMyStats', 'timeoff', 'metricsSpanish'], 'Dashboard · Stats · Time / PTO · Spanish Inbox — no Team tab');
+  assert.strictEqual(h.read('currentView'), 'metricsTeam', 'the Team view is its own view (its guards, cache and restore are unchanged)');
+  const stats = h.$('.tt-btn[data-tab="metricsMyStats"]');
+  assert.ok(stats.classList.contains('active') && stats.getAttribute('aria-current') === 'page', 'the Team view lights Stats');
+  assert.ok(h.$('.sb-link[data-tool="timeClock"]').classList.contains('active'), 'a stale `metrics` lands on the Dashboard tool');
+  assert.strictEqual(h.$('[data-m-stats="team"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.$('[data-m-stats="me"]').getAttribute('aria-pressed'), 'false');
+  h.window.enterTool('metrics');
+  assert.strictEqual(h.read('currentView'), 'metricsMyStats', 'the bare retired tool opens Stats');
+  assert.strictEqual(h.$('[data-m-stats="me"]').getAttribute('aria-pressed'), 'true');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  assert.ok(tabs().indexOf('metricsDeptReq') >= 0 && h.$('.sb-link[data-tool="callNotes"]').classList.contains('active'), 'Dept Requests is a Call Notes tab');
+  assert.ok(!h.$('.sb-link[data-tool="metrics"]') && !h.$('.nav-btn[data-tool="metrics"]'), 'no Metrics in the sidebar or the phone nav');
+  h.run.respond('getMetricsAmbient', () => ({ badge: { label: '71%', date: '2026-11-03' }, threshold: 85 }));
+  h.window.mPollAmbient_();
+  const hosts = h.$$('.m-alert-badge').map((b) => b.parentNode);
+  assert.ok(hosts.some((x) => x.matches('.sb-link[data-tool="timeClock"]')) && hosts.some((x) => x.matches('.nav-btn[data-tool="timeClock"]')),
+    'the answer-rate badge is on the Dashboard tool, on both nav forms (g99)');
+  h.run.respond('getMetricsAmbient', () => ({ badge: null }));
+  h.window.mPollAmbient_();
+  assert.strictEqual(h.$$('.m-alert-badge').length, 0, 'and clears from both');
+});
+
+test('Batch D DOM: open requests for one TRX to one department are ONE card — the newest on top, "N follow-ups with no response", the earlier ones behind a toggle that a re-render remembers; each is still its own card, and Mark resolved on a folded one patches in place; the display cap counts the fold once', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const it = (id, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: 'd' + id, createdMs: ms,
+    byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: [], departments: ['Billing'], incoming: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100,
+    mine: [it('a', 3000), it('b', 2000), it('c', 1000), it('z', 2500, { patientTrx: 'K · TRX 11111' })], mineTotal: 4, incomingTotal: 0 };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(data)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  const folds = h.$$('.dr-fold');
+  assert.strictEqual(folds.length, 1, 'one fold');
+  const f = folds[0];
+  assert.ok(/3 open requests/.test(f.querySelector('.dr-fold-head').textContent) && /2 follow-ups with no response/.test(f.querySelector('.dr-fold-head').textContent));
+  const ids = (sel) => Array.from(f.querySelectorAll(sel)).map((n) => n.getAttribute('data-req'));
+  assert.deepStrictEqual(ids(':scope > .sp-task[data-req]'), ['a'], 'the newest on top');
+  assert.deepStrictEqual(ids('.dr-fold-more .sp-task[data-req]'), ['b', 'c'], 'the earlier ones, newest first');
+  assert.ok(f.querySelector('.dr-fold-more').hidden, 'closed at first');
+  const tog = f.querySelector('.dr-fold-toggle');
+  assert.ok(/Show 2 earlier requests/.test(tog.textContent) && tog.getAttribute('aria-expanded') === 'false');
+  h.window.drFoldToggle_(tog);
+  assert.ok(!f.querySelector('.dr-fold-more').hidden && tog.getAttribute('aria-expanded') === 'true');
+  h.window.drRerender_();
+  assert.ok(!h.$('.dr-fold .dr-fold-more').hidden, 'a re-render keeps it open (state, not the DOM)');
+  assert.strictEqual(h.$$('.sp-tasks > .sp-task[data-req="z"]').length, 1, 'another TRX stands alone');
+  // Resolve the OLDEST (inside the fold).
+  h.window.drResolveClick_(h.$('.dr-fold-more .sp-resolve[data-req="c"]'));
+  const ok = h.$('.ui-dialog-ok'); if (ok) h.click(ok);
+  await tick();
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  h.flushTimers();
+  const c = h.$$('.sp-task[data-req="c"]')[0];
+  assert.ok(c && /marked in app/.test(c.textContent), 'the folded card flipped to resolved in place');
+});
+
+const fDash_ = (oneOnOne, items) => ({ items: items || [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+  reminderDays: 7, businessDayMinutes: 540, todayIso: '2026-11-04', analytics: { total: 0, perRep: [], bySeverity: {} }, oneOnOne });
+const fBootCoach_ = (oneOnOne, items, more) => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getCoachingDashboard', () => fDash_(oneOnOne, items));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'E1', name: 'Ann Lee' }, { id: 'E2', name: 'Bo <Ray>' }, { id: 'E3', name: 'Cy Diaz' }] }));
+  Object.keys(more || {}).forEach((k) => h.run.respond(k, more[k]));
+  h.window.localStorage.setItem('umsCoachingMode', 'team');
+  h.window.enterTool('develop', 'coaching');
+  h.flushTimers();
+  return h;
+};
+const fOO_ = { cadenceDays: 14, cadenceSet: true, defaultDays: 14, maxDays: 90, todayIso: '2026-11-04',
+  reps: [{ empId: 'E1', empName: 'Ann Lee', last: '2026-10-15', count: 2, nextDue: '2026-10-29', due: true, daysOver: 6 },
+    { empId: 'E2', empName: 'Bo <Ray>', last: '', count: 0, nextDue: '', due: true, daysOver: null }],
+  history: { E1: [{ id: 'oo-1', date: '2026-10-15', byName: 'Robin', note: 'Talked <holds>', mine: true }] } };
+
+test('Batch F DOM: the board shows each rep\'s last and next 1-on-1 — late in red, none on record as "due now", a rep off the team as a dash with no Log; the head names the cadence and the count; a failed log read is said, and the columns are not drawn', () => {
+  const h = fBootCoach_(fOO_);
+  const board = h.$('.coach-board');
+  assert.ok(board && board.classList.contains('has-1on1'), 'the 1-on-1 columns are on');
+  const heads = Array.from(board.querySelectorAll('th')).map((th) => th.textContent.trim());
+  assert.ok(heads.some((x) => /Last 1-on-1/.test(x)) && heads.some((x) => /Next 1-on-1/.test(x)), heads.join('|'));
+  const row = (name) => Array.from(board.querySelectorAll('tbody tr')).find((tr) => tr.textContent.indexOf(name) >= 0);
+  const ann = row('Ann Lee'), bo = row('Bo <Ray>'), cy = row('Cy Diaz');
+  assert.ok(/15 Oct/.test(ann.textContent) && ann.querySelector('.kicker-pill[data-tone="destructive"]') && /6d late/.test(ann.textContent), 'Ann: last 15 Oct, six days late, in red');
+  assert.ok(/none on record/.test(bo.textContent) && bo.querySelector('.kicker-pill[data-tone="warn"]') && /due now/.test(bo.textContent), 'Bo: none on record is due now');
+  assert.ok(!cy.querySelector('[data-coach-1on1]') && /—/.test(cy.textContent), 'Cy is not on this manager\'s team: a dash, no Log');
+  assert.strictEqual(ann.querySelector('[data-coach-1on1]').getAttribute('aria-label'), 'Log a 1-on-1 with Ann Lee', 'a named button (g133: the id rides a data attribute)');
+  assert.ok(/1-on-1s every 14 days/.test(h.$('.coach-1on1-head').textContent) && /2 due/.test(h.$('.coach-1on1-head').textContent));
+  const h2 = fBootCoach_({ error: 'Could not read the 1-on-1 log: timed out' });
+  assert.ok(/Could not read the 1-on-1 log: timed out/.test(h2.$('.coach-1on1-head').textContent), 'a failed read is named, never an empty team (g53)');
+  assert.ok(!h2.$('.coach-board').classList.contains('has-1on1') && !h2.$('[data-coach-1on1]'), 'and no 1-on-1 column pretends to know');
+});
+
+test('Batch F DOM: Log opens a named dialog for that rep — today by default and never ahead, their recent 1-on-1s escaped; Log sends (empId, date, note) and closes; Void asks first; the cadence prompt refuses a bad number and saves a good one', async () => {
+  const calls = [];
+  const h = fBootCoach_(fOO_, [], {
+    logOneOnOne: (id, d, n) => { calls.push(['log', id, d, n]); return { success: true, id: 'oo-9', date: d }; },
+    voidOneOnOne: (id) => { calls.push(['void', id]); return { success: true }; },
+    setOneOnOneCadence: (d) => { calls.push(['cad', d]); return { success: true, cadenceDays: d }; } });
+  h.click('[data-coach-1on1="E1"]');
+  const ov = h.$('#coach-1on1-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('aria-labelledby') === 'coach-1on1-title', 'a named dialog');
+  assert.ok(/1-on-1 · Ann Lee/.test(h.$('#coach-1on1-title').textContent));
+  const date = h.$('#coach-1on1-date');
+  assert.deepStrictEqual([date.value, date.getAttribute('max')], ['2026-11-04', '2026-11-04'], 'today, and the picker stops at today');
+  assert.ok(/Talked <holds>/.test(ov.querySelector('.coach-1on1-note').textContent) && !ov.querySelector('holds'), 'the old note is text, never markup');
+  h.$('#coach-1on1-note').value = 'goals for Q4';
+  date.value = '2026-11-03';
+  h.click('#coach-1on1-go');
+  await tick(); h.flushTimers();
+  assert.deepStrictEqual(calls[0], ['log', 'E1', '2026-11-03', 'goals for Q4']);
+  assert.ok(!h.$('#coach-1on1-overlay').classList.contains('open'), 'a saved 1-on-1 closes its dialog without the discard ask');
+  // Void asks first.
+  let asked = null;
+  h.window.uiConfirm = (o) => { asked = o; return Promise.resolve(true); };
+  h.click('[data-coach-1on1="E1"]');
+  h.click('[data-coach-1on1-void="oo-1"]');
+  await tick(); await tick(); h.flushTimers();
+  assert.ok(asked && /Void this 1-on-1/.test(asked.title) && calls.some((c) => c[0] === 'void' && c[1] === 'oo-1'), 'confirmed, then voided');
+  // Cadence: the prompt's validator refuses 91 and "x", the saved value is a number.
+  let prompt = null;
+  h.window.uiPrompt = (o) => { prompt = o; return Promise.resolve('21'); };
+  h.click('[data-coach-cadence]');
+  await tick(); await tick();
+  assert.ok(prompt.validator('91') && prompt.validator('x') && !prompt.validator('0') && !prompt.validator('90'), 'whole days 0..90');
+  assert.deepStrictEqual(calls.filter((c) => c[0] === 'cad'), [['cad', 21]], 'sent as a number');
+});
+
+test('Batch F DOM: the screenshot — chosen or pasted into the drawer, it goes through the shared fitter and rides createCoaching as `image`; Log waits while it is prepared; Remove drops it; a card with one opens it on demand, and a failed read is said, not a blank frame', async () => {
+  const sent = [];
+  const item = { coachId: 'c1', empId: 'E1', empName: 'Ann Lee', severity: 'minor', status: 'open', whatHappened: 'w', whatShould: '', patientTRX: '',
+    createdAt: '2026-11-01 10:00:00', imageKey: 'coachimg-0123456789abcdef01234567', ageDays: 1, overdueUnacked: false };
+  let imgAnswer = { success: true, dataUrl: 'data:image/png;base64,AAAA' };
+  const imgAsked = [];
+  const h = fBootCoach_(fOO_, [item], {
+    createCoaching: (p) => { sent.push(p); return { success: true, coachId: 'c9' }; },
+    getCoachingImage: (id) => { imgAsked.push(id); return imgAnswer; } });
+  h.click('#coach-open-drawer');
+  assert.ok(h.$('[data-coach-img-pick]'), 'the drawer offers a screenshot');
+  h.read('kbImgPrepare_ = function (u, cb) { window.__fitCb = function () { cb(null, "data:image/jpeg;base64,FITTED"); }; }');
+  h.window.coachImgFile_(new h.window.Blob(['raw'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.window.__fitCb; i++) await tick();
+  assert.ok(/Preparing the screenshot/.test(h.$('#coach-img-slot').textContent), 'busy while it is fitted');
+  h.$('#coach-emp').value = 'E1'; h.$('#coach-what').value = 'what happened';
+  h.click('#coach-go');
+  assert.strictEqual(sent.length, 0, 'Log waits for the screenshot');
+  h.window.__fitCb();
+  assert.ok(h.$('.coach-img-thumb') && /FITTED/.test(h.$('.coach-img-thumb').getAttribute('src')), 'the FITTED image is shown');
+  h.click('#coach-go');
+  await tick(); h.flushTimers();
+  assert.strictEqual(sent[0].image, 'data:image/jpeg;base64,FITTED', 'the fitted image rides the create call');
+  // Remove drops it.
+  h.click('#coach-open-drawer');
+  h.window.coachImgFile_(new h.window.Blob(['raw'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.$('.coach-img-thumb'); i++) { await tick(); if (h.window.__fitCb) h.window.__fitCb(); }
+  h.click('[data-coach-img-clear]');
+  assert.ok(!h.$('.coach-img-thumb') && h.$('[data-coach-img-pick]'));
+  h.window.coachImgFile_(new h.window.Blob(['x'], { type: 'application/pdf' }));
+  assert.ok(/PNG, JPEG, GIF or WebP/.test(h.document.body.textContent), 'a non-image is refused with a reason');
+  h.read('coachCloseDrawer_')();
+  // A card with a screenshot opens it on demand.
+  assert.deepStrictEqual(imgAsked, [], 'nothing is fetched until a screenshot is opened');
+  const chip = h.$('[data-coach-img="c1"]');
+  assert.ok(chip && /Screenshot/.test(chip.textContent), 'the card carries the chip');
+  h.click('[data-coach-img="c1"]');
+  await tick(); h.flushTimers();
+  assert.ok(h.$('#coach-img-overlay.open .coach-img-full') && h.$('.coach-img-full').getAttribute('src') === 'data:image/png;base64,AAAA');
+  assert.deepStrictEqual(imgAsked, ['c1'], 'fetched only when opened, by the item\'s id');
+  imgAnswer = { error: 'The screenshot is not stored.' };
+  h.click('[data-coach-img-close]');
+  h.click('[data-coach-img="c1"]');
+  await tick(); h.flushTimers();
+  assert.ok(/The screenshot is not stored/.test(h.$('#coach-img-body').textContent) && !h.$('.coach-img-full'), 'a failed read is said');
+});
+
+// Batch H: a stand-in pdf.js — `pages` pages of 612x792 points, drawing nothing.
+const hFakePdf_ = (h, pages, opts) => {
+  const log = { docs: 0 };
+  h.window.pdfjsWorker = {};
+  h.window.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: () => {
+    log.docs++;
+    if (opts && opts.fail) return { promise: Promise.reject(new Error('bad pdf')) };
+    return { promise: Promise.resolve({ numPages: pages, getPage: () => Promise.resolve({
+      getViewport: ({ scale }) => ({ width: 612 * scale, height: 792 * scale }),
+      render: () => ({ promise: Promise.resolve() }) }) }) };
+  } };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ({});
+  return log;
+};
+const hSettle_ = async (n) => { for (let i = 0; i < (n || 12); i++) await tick(); };
+const hPdfUri_ = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n%%EOF\n').toString('base64');
+const hPdfDoc_ = (over) => Object.assign({ docId: 'dp', title: 'PIP', status: 'issued', isOwner: true, canComplete: true, requiresSignature: true,
+  bodyMd: 'Read and sign.\n\nPDF document "PIP.pdf" · SHA-256 ' + 'f'.repeat(64), pdf: { name: 'PIP.pdf', sha: 'f'.repeat(64) },
+  fields: [{ id: 'review-date', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.2, y: 0.16, w: 0.25, h: 0.03 } },
+    { id: 'comments', label: 'Comments', type: 'textarea', required: false, box: { page: 2, x: 0.1, y: 0.2, w: 0.8, h: 0.08 } },
+    { id: 'else', label: 'Anything else', type: 'text', required: false }],
+  responses: {}, ackText: 'I have read this document.' }, over || {});
+
+test('Batch H DOM: a PDF document opens with its pages drawn and its boxes ON them — an input per box (named, in place), the rest listed; what is typed in a box is a response like any field; the body shows the note and a wrapped fingerprint, not the hash line; a PDF that will not load is said and the document cannot be signed from it', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  let pdfAnswer = { success: true, dataUri: hPdfUri_ };
+  const asked = [];
+  h.run.respond('getMyDoc', () => hPdfDoc_());
+  h.run.respond('getEmpDocPdf', (id) => { asked.push(id); return pdfAnswer; });
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const ov = h.$('#ed-reader-overlay');
+  assert.deepStrictEqual(asked, ['dp'], 'the PDF is asked for by the document\'s id');
+  const pages = ov.querySelectorAll('#ed-pdf-pages .ed-pdf-page');
+  assert.strictEqual(pages.length, 2, 'two pages drawn');
+  const p1 = pages[0].querySelectorAll('.ed-pdf-box'), p2 = pages[1].querySelectorAll('.ed-pdf-box');
+  assert.strictEqual(p1.length, 1); assert.strictEqual(p2.length, 1, 'each box on its own page');
+  assert.strictEqual(p1[0].getAttribute('style'), 'left:20%;top:16%;width:25%;height:3%');
+  const date = p1[0].querySelector('input.ed-resp');
+  assert.ok(date && date.type === 'date' && date.getAttribute('aria-label') === 'Review date (required)' && date.getAttribute('data-fid') === 'review-date', 'a named date input in the box');
+  assert.ok(p2[0].querySelector('textarea.ed-resp'), 'a paragraph box is a textarea');
+  const listed = Array.from(ov.querySelectorAll('.ed-fields .ed-resp')).map((e) => e.getAttribute('data-fid'));
+  assert.deepStrictEqual(listed, ['else'], 'only the field with no box is listed');
+  date.value = '2026-11-20';
+  p2[0].querySelector('textarea').value = 'Agreed.';
+  assert.deepStrictEqual(Object.assign({}, h.read('edGatherResponses_')()), { 'review-date': '2026-11-20', comments: 'Agreed.', else: '' }, 'box answers ride the same responses');
+  assert.ok(!/SHA-256 f{64}<\/p>/.test(ov.querySelector('.kb-article').innerHTML) && /Read and sign\./.test(ov.querySelector('.kb-article').textContent), 'the note, without the hash line');
+  assert.ok(/PIP\.pdf · SHA-256 f{64}/.test(ov.querySelector('.ed-pdf-id').textContent), 'the fingerprint line');
+  assert.ok(!h.$('#ed-sign-btn').disabled);
+  // A PDF that cannot be loaded.
+  h.read('edCloseDoc_')();
+  pdfAnswer = { error: 'The PDF on file is not the one that was issued (its SHA-256 differs).', why: 'altered' };
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  assert.ok(/not the one that was issued/.test(h.$('#ed-pdf-pages').textContent) && /cannot be completed until it shows here/.test(h.$('#ed-pdf-pages').textContent), 'said, in the reader');
+  assert.ok(h.$('#ed-sign-btn').disabled, 'and the document cannot be signed from a page the employee could not read');
+  // After signing: the boxes show the answers, and the certificate is offered.
+  h.read('edCloseDoc_')();
+  h.run.respond('getMyDoc', () => hPdfDoc_({ status: 'signed', canComplete: false, ackText: undefined, signedAt: '2026-11-04 10:00:00', responses: { 'review-date': '2026-11-20' } }));
+  pdfAnswer = { success: true, dataUri: hPdfUri_ };
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const shown = h.$('#ed-pdf-pages .ed-pdf-box.is-show');
+  assert.ok(shown && shown.textContent === '2026-11-20' && !h.$('#ed-pdf-pages input'), 'the answer, read-only');
+  assert.ok(h.$('[data-ed-cert="dp"]'), 'a Certificate button on a signed document');
+});
+
+test('Batch H DOM: the certificate opens in a viewer — drawn by pdf.js with Download enabled; a certificate that could not be made is said, and Download stays off', async () => {
+  const h = boot();
+  hFakePdf_(h, 1);
+  let ans = { success: true, dataUri: hPdfUri_, fileName: 'PIP - certificate.pdf' };
+  h.run.respond('getEmpDocCertificate', () => ans);
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  assert.strictEqual(h.$$('#ed-cert-pages .ed-pdf-page').length, 1, 'the certificate drawn');
+  assert.ok(!h.$('#ed-cert-dl').disabled, 'Download is on');
+  h.click('[data-ed-cert-close]');
+  assert.ok(!h.$('#ed-cert-overlay.open'), 'Close goes through closeOverlay');
+  ans = { error: 'The certificate could not be made into a PDF here: conversion blocked' };
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  assert.ok(/conversion blocked/.test(h.$('#ed-cert-pages').textContent) && h.$('#ed-cert-dl').disabled, 'said, and nothing to download');
+});
+
+test('Batch H DOM: issuing a PDF — the Content toggle shows the PDF picker (the note optional); a chosen PDF is drawn, a box drawn on it becomes a named field with its page, removing it takes it off the page; the issue sends the PDF, its name and each box; a non-PDF, or a PDF with no file, is refused; a PDF document is not a template', async () => {
+  const h = boot(); mount_(h, 'view-area');
+  hFakePdf_(h, 2);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  const wrap = h.$('#ed-is-pdf-wrap');
+  assert.ok(wrap.hidden, 'written by default');
+  h.click('[data-ed-mode="pdf"]');
+  assert.ok(!wrap.hidden && h.$('[data-ed-mode="pdf"]').getAttribute('aria-pressed') === 'true' && /Note shown above the PDF/.test(h.$('#ed-is-body-lbl').textContent));
+  h.window.edIssuePdfFile_(new h.window.File(['hello'], 'notes.txt', { type: 'text/plain' }));
+  assert.ok(/Choose a PDF file/.test(h.$('#ed-is-pdf-msg').textContent), 'a non-PDF is refused with a reason');
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.$('#ed-is-emp').value = 'e1';
+  h.$('#ed-is-title').value = 'PIP';
+  h.window.edSubmitIssue_(true);
+  await tick();
+  assert.strictEqual(sent.length, 0, 'no PDF chosen: nothing is issued');
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'PIP - Nina.pdf', { type: 'application/pdf' }));
+  await hSettle_(20);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-page').length, 2, 'the chosen PDF is drawn');
+  assert.ok(/PIP - Nina\.pdf · 2 pages/.test(h.$('#ed-is-pdf-msg').textContent));
+  h.$('#ed-box-type').value = 'date';
+  h.window.edAddBox_(2, { x: 0.2, y: 0.5, w: 0.25, h: 0.03 });
+  const box = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="2"] .ed-pdf-box.is-edit');
+  assert.ok(box && /Date 1/.test(box.textContent), 'the box is on page 2, named for its type');
+  assert.ok(/Box · page 2/.test(h.$('#ed-fields-list').textContent), 'and listed as a field with its page');
+  const lbl = h.$('#ed-fields-list .ed-field-label');
+  lbl.value = 'Review date'; lbl.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(/Review date/.test(h.$('#ed-is-pdf-pages .ed-pdf-box').textContent), 'renaming the field renames its box');
+  h.window.edAddBox_(1, { x: 0.1, y: 0.1, w: 0.5, h: 0.08 });
+  h.window.edRemoveField_(1);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-box').length, 1, 'removing a field takes its box off the page');
+  h.window.edSaveAsTemplate_();
+  assert.ok(/cannot be a template/.test(h.document.body.textContent), 'a PDF document is not a template');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  const p = sent[0];
+  assert.ok(/^data:application\/pdf;base64,/.test(p.pdf) && p.pdfName === 'PIP - Nina.pdf', 'the PDF and its name ride the issue');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.fields)), [{ label: 'Review date', type: 'date', required: true, box: { page: 2, x: 0.2, y: 0.5, w: 0.25, h: 0.03 } }]);
+  assert.strictEqual(h.read('ED_STATE.issuePdf'), null, 'an issue resets the PDF with the form');
 });
 
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
@@ -5391,7 +6047,7 @@ test('22post D DOM: a reply-resolved card says so and credits the replier, a nee
     recentResolvedTotal: 1, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 1 };
   let reads = 0;
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   // E4 (cycle 25): the request CARDS — a "Replies to check" row (.dr-look) carries the same data-req.
   const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
@@ -7290,7 +7946,7 @@ test('F53 (cycle 25): My Stats says when the call data or the day-by-day trend c
 test('F56 (cycle 25): a server {error} on a background refresh keeps the painted last-good Metrics view (My Stats and Team Metrics) and says so — the transport-failure path already did', () => {
   const h = boot(); h.bootShell();
   h.run.drain();   // the shell's own Dashboard calls getMyMetrics at boot
-  h.window.enterTool('metrics', 'metricsMyStats');
+  h.window.enterTool('timeClock', 'metricsMyStats');
   const good = c25MyDay_({ cdr: { totalRung: 20, totalAnswered: 18, totalMissed: 2, pctAnswered: 90, tttFormatted: '0:30:00', attFormatted: '1:40', tttSeconds: 1800, attSeconds: 100 } });
   h.run.flushSuccess(good, 'getMyMetrics');
   assert.ok(/90/.test(h.$('#m-my-content').textContent), 'painted (non-vacuous)');
@@ -7750,7 +8406,7 @@ test('METUI-1: the Metrics alert badge survives a poll that could not read the c
   const h = boot();
   h.bootShell({ isManager: true });
   h.run.drain();
-  const badge = () => h.$('[data-tool="metrics"] .m-alert-badge');
+  const badge = () => h.$('[data-tool="timeClock"] .m-alert-badge');   // Batch E: the tool that holds Team Metrics
   const poll = () => h.read('mPollAmbient_')();
   poll(); h.run.flushSuccess({ badge: { label: '80%', date: '2026-09-30' }, threshold: 92 }, 'getMetricsAmbient');
   assert.ok(badge() && badge().textContent === '80%', 'sanity: a below-target day badges');
@@ -8303,7 +8959,7 @@ test('SH-02: the close buttons go through closeOverlay — focus returns to the 
   check('What\'s new', () => h.window.whatsNewOpen_(), () => h.$('#whatsnew-overlay .btn-modal-ok'));
   check('quiz editor (clean)', () => h.read('trainOpenQuizEditor_')(null), () => h.$('#train-qed-overlay .foot .kb-btn'));
   const doc = { docId: 'd2', title: 'Handbook', bodyMd: 'x', status: 'signed', canComplete: false, fields: [], responses: {}, signedAt: '2026-09-01' };
-  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
+  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn:last-child'));   // Batch H: a signed doc's Certificate sits before Close
 });
 
 test('Seams F4 (cycle 24): the Search synonyms and Revision history × close through closeOverlay — focus returns to the opener (INV-358)', () => {

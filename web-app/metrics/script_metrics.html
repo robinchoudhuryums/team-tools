@@ -82,6 +82,23 @@
   margin-left: 6px;
 }
 
+/* ── Batch E — the Stats tab's Me / Team switch, above the date controls ── */
+.m-stats-switch { margin: 0 0 var(--space-sm); width: fit-content; }
+
+/* ── Batch C — the Spanish Inbox assignee count (the cn-stale-badge shape) ── */
+.sp-assign-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--info); color: var(--paper-card);
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+.nav-btn .sp-assign-badge {
+  position: absolute; top: 4px; left: calc(50% + 4px);
+  margin-left: 0; min-width: 14px; height: 14px; font-size: 9px;
+}
+
 /* ── Date picker row ────────────────────────────────────────────── */
 .m-controls {
   display: flex;
@@ -567,6 +584,7 @@ function enterMetricsMyStatsView() {
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">My Call Metrics</h1>' +
     '</div>' +
+    mStatsSwitchHtml_('me') +
     '<div class="m-controls">' +
       // Yesterday/7D/30D presets — Yesterday = the previous WORKDAY's rich
       // single-day view (own-vs-team series; CDR data is never same-day, so a
@@ -1329,6 +1347,21 @@ function mGroupDetailHtml_(g) {
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
+/** Batch E (operator 2026-11-02 — "combine My Stats and Team Metrics"): the
+ *  Stats tab's Me / Team switch. Each half is still its own view (its own tab
+ *  key, guard, cache and last-view restore); the switch is a navigation, so a
+ *  link to either half lands on it. Shown in the pop-out too, where the title
+ *  row is hidden. Reps see the team AGGREGATE (INV-124 — the server strips
+ *  the per-rep rows). */
+function mStatsSwitchHtml_(which) {
+  var mk = function (key, view, label) {
+    return '<button type="button" class="toolbar-tab" data-m-stats="' + key + '" aria-pressed="' + (which === key) + '"' +
+      (which === key ? '' : ' onclick="showView(\'' + view + '\')"') + '>' + label + '</button>';
+  };
+  return '<div class="toolbar-tabs m-stats-switch" role="group" aria-label="Whose stats">' +
+    mk('me', 'metricsMyStats', 'Me') + mk('team', 'metricsTeam', 'Team') + '</div>';
+}
+
 function enterMetricsTeamView() {
   // Stop the Clock view's intervals (INV-73 — see enterMetricsMyStatsView).
   if (typeof stopClock === 'function') stopClock();
@@ -1342,6 +1375,7 @@ function enterMetricsTeamView() {
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">Team Call Metrics</h1>' +
     '</div>' +
+    mStatsSwitchHtml_('team') +
     // #2 — same control vocabulary as My Stats: pressed-state preset chips +
     // the Custom… disclosure hiding the raw date inputs until wanted.
     // (A1 still holds: every chip is a <button>, keyboard-reachable.)
@@ -1919,9 +1953,10 @@ function mPollAmbient_() {
       // not "the team is fine" — keep the last badge, as a failed poll does.
       if (!res || res.unavailable === 'cdr') return;
       if (!res.badge) { mClearBadge_(); return; }
-      var link = document.querySelector('.sb-link[data-tool="metrics"]')
-              || document.querySelector('.nav-btn[data-tool="metrics"]');
-      if (!link) return;
+      // Batch E: the badge rides the tool that now holds Team Metrics, looked
+      // up (never written in), on EVERY nav form — the `||` lookup always found
+      // the hidden sidebar link on a phone (g99, CNUI-09).
+      mAlertBadgeLinks_().forEach(function (link) {
       var badge = link.querySelector('.m-alert-badge');
       if (!badge) {
         badge = document.createElement('span');
@@ -1934,6 +1969,7 @@ function mPollAmbient_() {
       // F-08 (2026-09-17): a badge exists ONLY with a published target, so the
   // threshold is always on the response — the `|| 85` was a client mirror.
   badge.title = 'Previous workday (' + res.badge.date + '): ' + res.badge.label + ' answered — below the ' + res.threshold + '% Dashboard Standards target';
+      });
     })
     // METUI-1 (cycle 23): one transient transport failure removed a real
     // below-target alert for five minutes (g53). A failed poll changes nothing.
@@ -1941,12 +1977,130 @@ function mPollAmbient_() {
     .getMetricsAmbient();
 }
 
+/** The nav links (sidebar and phone bottom nav) of the tool that holds Team Metrics. */
+function mAlertBadgeLinks_() {
+  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL.metricsTeam) || 'timeClock';
+  return Array.prototype.slice.call(document.querySelectorAll('.sb-link[data-tool="' + tool + '"], .nav-btn[data-tool="' + tool + '"]'));
+}
 function mClearBadge_() {
-  var links = document.querySelectorAll('.sb-link[data-tool="metrics"], .nav-btn[data-tool="metrics"]');
-  for (var i = 0; i < links.length; i++) {
-    var badge = links[i].querySelector('.m-alert-badge');
+  mAlertBadgeLinks_().forEach(function (link) {
+    var badge = link.querySelector('.m-alert-badge');
     if (badge) badge.remove();
+  });
+}
+
+// ── Batch C (operator 2026-11-02 — "in-app notification for auto-assigned to
+// assigned agent in addition to email notification") ─────────────────────────
+// A count on the Spanish Inbox tab (and its tool in the sidebar and the
+// phone's bottom nav) of the requests that are YOURS and still pending, and a
+// toast when a NEW one is assigned to you — by a manager or the auto-assign —
+// while the app is open. Polled from getMySpanishAssignments (the claims tab
+// + the cached pending ids; never subject or body). Seen ids are kept in this
+// browser, shared by every window, so a pop-out and the main window toast
+// once between them; the first poll in a browser only takes a baseline.
+var SP_ASSIGN = { started: false, timer: null, soon: null, count: null, memSeen: null };
+var SP_ASSIGN_POLL_MS = 3 * 60000;
+var SP_ASSIGN_SEEN_KEY = 'umsSpanishAssignSeen';
+
+function spAssignStart_() {
+  if (!(typeof empState !== 'undefined' && empState && (empState.isManager || empState.canSeeSpanish))) return;
+  if (SP_ASSIGN.started) return;   // idempotent
+  SP_ASSIGN.started = true;
+  setTimeout(spAssignPoll_, 9000);   // off the boot critical path
+  SP_ASSIGN.timer = setInterval(function () {
+    // A hidden window skips its tick; the toast is owed to a reader, and the
+    // next visible tick still finds the assignment unseen.
+    try { if (document.visibilityState === 'hidden') return; } catch (e) {}
+    spAssignPoll_();
+  }, SP_ASSIGN_POLL_MS);
+}
+function spAssignPoll_() {
+  try {
+    google.script.run
+      .withSuccessHandler(spAssignApply_)
+      // METUI-1: a failed poll changes nothing — the last count stands.
+      .withFailureHandler(function () {})
+      .getMySpanishAssignments();
+  } catch (e) {}
+}
+/** After this window claims, releases or resolves: refresh soon, once. */
+function spAssignPollSoon_() {
+  if (!SP_ASSIGN.started) return;
+  clearTimeout(SP_ASSIGN.soon);
+  SP_ASSIGN.soon = setTimeout(spAssignPoll_, 1500);
+}
+
+/** PURE (Node-pinned) — the assignments to announce: open requests that are
+ *  not in `seen`, assigned by SOMEONE ELSE (a claim you made yourself is not
+ *  news to you). items: [{threadId, assignedBy}]. */
+function spAssignNew_(items, seen, self) {
+  var s = {}, me = String(self || '').toLowerCase();
+  (seen || []).forEach(function (t) { s[t] = true; });
+  return (items || []).filter(function (o) {
+    var by = String((o && o.assignedBy) || '').toLowerCase();
+    return o && o.threadId && !s[o.threadId] && by && by !== me;
+  });
+}
+/** The browser's seen ids — null when this browser has never stored any (the
+ *  baseline case), or when its store cannot be read (then the window's own
+ *  memory stands in). */
+function spAssignSeenRead_() {
+  try {
+    var raw = localStorage.getItem(SP_ASSIGN_SEEN_KEY);
+    if (raw == null) return null;
+    var v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return SP_ASSIGN.memSeen; }
+}
+function spAssignSeenWrite_(ids) {
+  SP_ASSIGN.memSeen = ids;
+  try { localStorage.setItem(SP_ASSIGN_SEEN_KEY, JSON.stringify(ids)); } catch (e) {}
+}
+/** PURE (Node-pinned) — the toast's words. */
+function spAssignToastText_(fresh) {
+  var n = (fresh || []).length;
+  if (n === 1) {
+    var by = String(fresh[0].assignedBy || '');
+    var who = by.indexOf('@') > 0 ? by.split('@')[0] : by;
+    return 'A Spanish Inbox request was assigned to you' + (who ? ' by ' + who : '');
   }
+  return n + ' Spanish Inbox requests were assigned to you';
+}
+function spAssignApply_(res) {
+  // An unreadable claims tab or inbox is UNKNOWN, not "nothing is yours"
+  // (g53/METUI-1): the last count stays and nothing is announced.
+  if (!res || res.error) return;
+  var items = res.items || [];
+  SP_ASSIGN.count = res.configured === false ? 0 : items.length;
+  spAssignPaint_();
+  var seen = spAssignSeenRead_();
+  if (seen != null) {
+    var fresh = spAssignNew_(items, seen, res.self);
+    if (fresh.length) {
+      showToast(spAssignToastText_(fresh), 'info', {
+        sticky: true, actionLabel: 'Open',
+        onAction: function () { enterTool(VIEW_TO_TOOL.metricsSpanish, 'metricsSpanish'); },
+      });
+    }
+  }
+  spAssignSeenWrite_(items.map(function (o) { return o.threadId; }));
+}
+/** The count on every nav form of the Spanish tab's tool (g99 — the sidebar
+ *  link and the phone's bottom nav, both) and on the tab itself. Zero clears
+ *  it; an unknown count (no answer yet) draws nothing. The tool is looked up,
+ *  never written in: the tab may move tools. */
+function spAssignPaint_() {
+  var n = SP_ASSIGN.count;
+  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL.metricsSpanish) || 'timeClock';
+  var title = n + ' Spanish Inbox request' + (n === 1 ? ' is' : 's are') + ' yours and still pending';
+  var hosts = document.querySelectorAll('.sb-link[data-tool="' + tool + '"], .nav-btn[data-tool="' + tool + '"], .tt-btn[data-tab="metricsSpanish"]');
+  Array.prototype.forEach.call(hosts, function (host) {
+    var b = host.querySelector('.sp-assign-badge');
+    if (!(n > 0)) { if (b) b.remove(); return; }
+    if (!b) { b = document.createElement('span'); b.className = 'sp-assign-badge'; host.appendChild(b); }
+    b.textContent = String(n);
+    b.title = title;
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1956,7 +2110,15 @@ function mClearBadge_() {
 // RPC) and `expanded` is which cards are open — kept in STATE, not the DOM, so
 // a claim/filter re-render of the list preserves an expanded card
 // (operator 2026-09-10: "Show full request" had no way back).
-var SPANISH_STATE = { days: 30, tab: 'all', bodies: {}, expanded: {} };
+var SPANISH_STATE = { days: 30, tab: 'all', bodies: {}, expanded: {}, selected: {}, collapsed: {}, groupBy: '' };
+// Batch C (operator 2026-11-02 — "if the number of requests being shown is
+// over a certain threshold, have them fold/stack by date or sending-
+// department"): a section with MORE than this many cards groups them under
+// collapsible headers. At or under it, the flat list stays (grouping a
+// handful of cards only adds clicks).
+var SPANISH_GROUP_MIN = 15;
+var SPANISH_GROUP_MODES = ['date', 'dept'];
+var SPANISH_GROUP_KEY = 'umsSpanishGroupBy';
 // Operator feedback 2026-08-06 — the combined Pending+Resolved list's RED
 // band: a pending request older than this many hours renders destructive-toned
 // ("overdue"), vs warn-toned pending and good-toned resolved. Client-side
@@ -2191,6 +2353,14 @@ function spanishUnclaimedCount_() {
 function spanishAutoAssignBtnHtml_() {
   var isMgr = !!(typeof empState !== 'undefined' && empState && empState.isManager);
   if (!isMgr) return '';
+  // Operator 2026-11-02 — while the run is in flight the button SAYS so, and
+  // it is drawn from state, so a list render mid-run (which rebuilds this
+  // button) can neither re-enable it nor drop the busy look.
+  if (SPANISH_STATE.autoAssigning) {
+    return '<button type="button" class="refresh-btn sp-autoassign" id="sp-autoassign" disabled aria-busy="true"' +
+      ' title="Assigning the unclaimed requests — this can take a little while">' +
+      '<span class="lo-dots" aria-hidden="true"><span></span><span></span><span></span></span> Assigning…</button>';
+  }
   var pd = SPANISH_STATE.pendingRes;
   var n = spanishUnclaimedCount_();
   var members = (pd && pd.members) || [];
@@ -2234,9 +2404,11 @@ function spanishAutoAssign_(btn) {
     confirmLabel: 'Auto-assign',
   }).then(function (ok) {
     if (!ok) return;
-    btn.disabled = true; btn.classList.add('is-busy');
+    SPANISH_STATE.autoAssigning = true;
+    spanishRefreshAutoAssign_();
     google.script.run
       .withSuccessHandler(function (r) {
+        SPANISH_STATE.autoAssigning = false;   // before the view guard: a run that ends elsewhere still ends
         if (currentView !== requestedView) return;
         if (!r || !r.success) {
           showToast((r && r.error) || 'Auto-assign failed', 'error');
@@ -2253,11 +2425,13 @@ function spanishAutoAssign_(btn) {
         spanishRenderList_();   // ONE render — the cards' claim pills AND the button
         var k = (r.assigned || []).length;
         if (k && typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
+        if (k) spAssignPollSoon_();   // Batch C — an assignment to me is mine at once
         showToast(k ? ('Assigned ' + k + ' request' + (k === 1 ? '' : 's') + ' across ' + members.length + ' member' + (members.length === 1 ? '' : 's') +
                         (r.notified != null ? ' · ' + r.notified + ' emailed' : ''))
                     : 'Nothing to assign — every pending request is already claimed', 'success');
       })
       .withFailureHandler(function (e) {
+        SPANISH_STATE.autoAssigning = false;
         if (currentView !== requestedView) return;
         showToast((e && e.message) || 'Auto-assign failed', 'error');
         spanishRefreshAutoAssign_();
@@ -2444,7 +2618,8 @@ function spanishRenderList_() {
   spanishRenderShare_();   // the share chart rides the same resolved data
   var s = document.getElementById('spanish-list'); if (!s) return;
   var tab = SPANISH_STATE.tab;
-  var html = '';
+  spanishSelPrune_();   // Batch C — a selection names only requests still pending
+  var html = spanishGroupSwitchHtml_();
   if (tab !== 'resolved') {
     if (SPANISH_STATE.pendingErr) {
       html += errorStateHtml_(SPANISH_STATE.pendingErr);
@@ -2460,9 +2635,9 @@ function spanishRenderList_() {
           ' Nothing pending — all caught up.' + spanishTruncNote_(pd) + spanishVmNote_(pd) + spanishClaimsNote_(pd) + '</div>';
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Pending · ' + pending.length +
-          spanishTruncNote_(pd) + spanishVmNote_(pd) + spanishClaimsNote_(pd) + '</div>' +
-          spCappedTasksHtml_(pending.map(spanishTaskCard_), (SPANISH_STATE.shown || {}).pending,
-            "spanishShowMore_('pending')", 'margin-bottom:16px');
+          spanishTruncNote_(pd) + spanishVmNote_(pd) + spanishClaimsNote_(pd) + spanishDeptNote_(pd, pending) + '</div>' +
+          spanishBulkBarHtml_() +
+          spanishSectionHtml_('pending', pending, spanishTaskCard_, 'margin-bottom:16px');
       }
     }
   }
@@ -2477,14 +2652,290 @@ function spanishRenderList_() {
           '<div style="font-size:13px;color:var(--muted)">No resolved requests in this period.' + spanishTruncNote_(rd) + '</div>';
       } else {
         html += '<div class="day-section-label" style="margin:6px 0 10px">Resolved · ' + resolved.length +
-          spanishTruncNote_(rd) + '</div>' +
-          spCappedTasksHtml_(resolved.map(spanishResolvedCard_), (SPANISH_STATE.shown || {}).resolved,
-            "spanishShowMore_('resolved')");
+          spanishTruncNote_(rd) + spanishDeptNote_(rd, resolved) + '</div>' +
+          spanishSectionHtml_('resolved', resolved, spanishResolvedCard_, '');
       }
     }
   }
   s.innerHTML = html;
   spanishRefreshAutoAssign_();   // note #4 — the unclaimed count follows the list
+  spanishSelSync_();             // Batch C — the bar's count and Select all follow the boxes
+}
+
+// ── Batch C (operator 2026-11-02): grouping, received dates, multi-select ──
+
+/** PURE (Node-pinned) — the local calendar day of an epoch-ms stamp as
+ *  YYYY-MM-DD ('' for no stamp). Browser-local, like every display date on
+ *  this tab (spanishFmtDateTime_): a manager reads "the day it came in" in
+ *  their own day, and nothing is computed from it. */
+function spanishLocalIso_(ms) {
+  if (!ms) return '';
+  var d = new Date(Number(ms));
+  if (isNaN(d.getTime())) return '';
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/** PURE (Node-pinned) — a request's group under `mode`. 'dept': a voicemail is
+ *  "Voicemail" (8x8 sends it, no department does), else the server's
+ *  senderDept, else "Other" — a sender in no department and not a department
+ *  mailbox. 'date': the received day; no stamp (an older server) is
+ *  "Date unknown", never today. Returns {key, label}. */
+function spanishGroupOf_(t, mode, nowMs) {
+  if (mode === 'dept') {
+    if (t && t.kind === 'voicemail') return { key: 'dept:~vm', label: 'Voicemail' };
+    var dep = String((t && t.senderDept) || '').trim();
+    return dep ? { key: 'dept:' + dep.toLowerCase(), label: dep } : { key: 'dept:~other', label: 'Other' };
+  }
+  var iso = spanishLocalIso_(t && t.receivedMs);
+  if (!iso) return { key: 'date:~unknown', label: 'Date unknown' };
+  var today = spanishLocalIso_(nowMs);
+  var y = new Date(Number(nowMs)); y.setDate(y.getDate() - 1);
+  var yIso = spanishLocalIso_(y.getTime());
+  var label = iso === today ? 'Today' : iso === yIso ? 'Yesterday'
+    : new Date(Number(t.receivedMs)).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  return { key: 'date:' + iso, label: label };
+}
+
+/** PURE (Node-pinned) — the cards of one section in groups. The list's own
+ *  order is kept INSIDE a group. Date groups come in the order the list
+ *  first reaches them (pending is oldest first, resolved newest resolved
+ *  first, so the days follow the list). Department groups come largest
+ *  first, ties by name, with Other and Voicemail last — the departments
+ *  sending the most are what the operator asked to see. Returns
+ *  [{key, label, items}]. */
+function spanishGroups_(items, mode, nowMs) {
+  var by = {}, order = [];
+  (items || []).forEach(function (t) {
+    var g = spanishGroupOf_(t, mode, nowMs);
+    if (!by[g.key]) { by[g.key] = { key: g.key, label: g.label, items: [] }; order.push(g.key); }
+    by[g.key].items.push(t);
+  });
+  var groups = order.map(function (k) { return by[k]; });
+  if (mode === 'dept') {
+    var tail = function (g) { return g.key === 'dept:~other' ? 1 : g.key === 'dept:~vm' ? 2 : 0; };
+    groups.sort(function (a, b) {
+      return (tail(a) - tail(b)) || (b.items.length - a.items.length) || (a.label.toLowerCase() < b.label.toLowerCase() ? -1 : a.label.toLowerCase() > b.label.toLowerCase() ? 1 : 0);
+    });
+  }
+  return groups;
+}
+
+/** The grouping mode in force — the reader's last choice, kept in this
+ *  browser (a convenience: a blocked store just means "by date"). */
+function spanishGroupMode_() {
+  if (SPANISH_GROUP_MODES.indexOf(SPANISH_STATE.groupBy) >= 0) return SPANISH_STATE.groupBy;
+  var v = '';
+  try { v = localStorage.getItem(SPANISH_GROUP_KEY) || ''; } catch (e) {}
+  SPANISH_STATE.groupBy = SPANISH_GROUP_MODES.indexOf(v) >= 0 ? v : 'date';
+  return SPANISH_STATE.groupBy;
+}
+function spanishSetGroupBy_(mode) {
+  if (SPANISH_GROUP_MODES.indexOf(mode) < 0) return;
+  SPANISH_STATE.groupBy = mode;
+  try { localStorage.setItem(SPANISH_GROUP_KEY, mode); } catch (e) {}
+  spanishRenderList_();
+}
+
+/** Which sections are long enough to group — only the ones the filter shows. */
+function spanishGroupedSections_() {
+  var tab = SPANISH_STATE.tab, out = {};
+  var pn = ((SPANISH_STATE.pendingRes || {}).pending || []).length;
+  var rn = ((SPANISH_STATE.resolvedRes || {}).resolved || []).length;
+  if (tab !== 'resolved' && !SPANISH_STATE.pendingErr && pn > SPANISH_GROUP_MIN) out.pending = true;
+  if (tab !== 'pending' && !SPANISH_STATE.resolvedErr && rn > SPANISH_GROUP_MIN) out.resolved = true;
+  return out;
+}
+
+/** The Date / Department switch — shown only while a section is grouped. */
+function spanishGroupSwitchHtml_() {
+  var g = spanishGroupedSections_();
+  if (!g.pending && !g.resolved) return '';
+  var mode = spanishGroupMode_();
+  var mk = function (key, label) {
+    return '<button type="button" class="toolbar-tab" data-sp-group="' + key + '" aria-pressed="' + (mode === key) +
+      '" onclick="spanishSetGroupBy_(\'' + key + '\')">' + label + '</button>';
+  };
+  return '<div class="sp-group-switch"><span class="sp-group-lbl" id="sp-group-lbl">Group by</span>' +
+    '<div class="toolbar-tabs" role="group" aria-labelledby="sp-group-lbl">' + mk('date', 'Date received') + mk('dept', 'Department') + '</div></div>';
+}
+
+/** One section's cards: flat (and display-capped) at or under the threshold;
+ *  past it, one collapsible group per date or department, each capped on its
+ *  own ("Show more" per group), each remembering whether it is open. */
+function spanishSectionHtml_(section, items, cardFn, extraStyle) {
+  var shown = SPANISH_STATE.shown || {};
+  if (!spanishGroupedSections_()[section]) {
+    return spCappedTasksHtml_(items.map(cardFn), shown[section], "spanishShowMore_('" + section + "')", extraStyle);
+  }
+  var groups = spanishGroups_(items, spanishGroupMode_(), Date.now());
+  var collapsed = SPANISH_STATE.collapsed || {};
+  return '<div class="sp-groups" style="' + (extraStyle || '') + '">' + groups.map(function (g) {
+    var gk = section + '|' + g.key;
+    return '<details class="sp-group" data-sp-gkey="' + esc(gk) + '"' + (collapsed[gk] ? '' : ' open') +
+      ' ontoggle="spanishGroupToggled_(this)">' +
+      '<summary class="sp-group-head"><span class="sp-group-name">' + esc(g.label) + '</span>' +
+        '<span class="sp-group-n">' + esc(String(g.items.length)) + '</span></summary>' +
+      // g133: the group's key is read off its <details>, never written into
+      // the handler — a department name can carry an apostrophe or an "&".
+      spCappedTasksHtml_(g.items.map(cardFn), shown[gk], "spanishShowMore_(this.closest('details').getAttribute('data-sp-gkey'))") +
+    '</details>';
+  }).join('') + '</div>';
+}
+/** A group opened or closed by its reader: remember it (state, not the DOM, so
+ *  a re-render keeps it), and the Select-all box follows what can be seen. */
+function spanishGroupToggled_(el) {
+  var gk = el && el.getAttribute('data-sp-gkey');
+  if (!gk) return;
+  SPANISH_STATE.collapsed = SPANISH_STATE.collapsed || {};
+  if (el.open) delete SPANISH_STATE.collapsed[gk]; else SPANISH_STATE.collapsed[gk] = true;
+  spanishSelSync_();
+}
+
+/** A section's department grouping is only as good as the department read:
+ *  when it failed, say so beside the count — never a silent "Other" (g128). */
+function spanishDeptNote_(res, items) {
+  if (!res || !res.deptUnavailable || spanishGroupMode_() !== 'dept' || (items || []).length <= SPANISH_GROUP_MIN) return '';
+  return ' · <span style="color:var(--warning-deep)">departments could not be read — senders are grouped as Other</span>';
+}
+
+/** The received date in the card's top corner ("Nov 2, 3:40 PM"); nothing
+ *  for an older server's card that carries no stamp. */
+function spanishReceivedHtml_(t) {
+  var when = spanishFmtDateTime_(t && t.receivedMs);
+  if (!when) return '';
+  return '<span class="sp-task-recv" title="Received ' + esc(when) + '">' + esc(when) + '</span>';
+}
+
+// Multi-select resolve (operator 2026-11-02). The selection is STATE keyed by
+// thread id, so a re-render (a claim, a refresh) keeps it; it is pruned to
+// the requests still pending on every render, so it can never name one that
+// left.
+
+function spanishSelBoxHtml_(t) {
+  var tid = String((t && t.threadId) || '');
+  if (!tid) return '';
+  return '<input type="checkbox" class="sp-sel" data-thread="' + esc(tid) + '"' +
+    ((SPANISH_STATE.selected || {})[tid] ? ' checked' : '') +
+    ' aria-label="' + esc('Select the request from ' + ((t && t.requester) || 'this sender')) + '" onchange="spanishSelToggle_(this)">';
+}
+function spanishSelPrune_() {
+  var sel = SPANISH_STATE.selected || {}, live = {};
+  (((SPANISH_STATE.pendingRes || {}).pending) || []).forEach(function (p) { live[p.threadId] = true; });
+  Object.keys(sel).forEach(function (k) { if (!live[k]) delete sel[k]; });
+  SPANISH_STATE.selected = sel;
+}
+/** PURE over state — the selected ids, in the pending list's order. */
+function spanishSelIds_() {
+  var sel = SPANISH_STATE.selected || {};
+  return (((SPANISH_STATE.pendingRes || {}).pending) || [])
+    .map(function (p) { return p.threadId; }).filter(function (k) { return sel[k]; });
+}
+/** The boxes a reader can SEE: not behind a cap, not in a closed group. */
+function spanishSelVisibleBoxes_() {
+  var list = document.getElementById('spanish-list');
+  if (!list) return [];
+  return Array.prototype.filter.call(list.querySelectorAll('input.sp-sel'), function (b) {
+    return !b.closest('details:not([open])');
+  });
+}
+function spanishSelToggle_(box) {
+  var tid = box && box.getAttribute('data-thread');
+  if (!tid) return;
+  SPANISH_STATE.selected = SPANISH_STATE.selected || {};
+  if (box.checked) SPANISH_STATE.selected[tid] = true; else delete SPANISH_STATE.selected[tid];
+  spanishSelSync_();
+}
+/** Select all shown / none — over the visible boxes only. A request hidden
+ *  behind "Show more" or inside a closed group is never resolved unseen. */
+function spanishSelAll_(on) {
+  SPANISH_STATE.selected = SPANISH_STATE.selected || {};
+  spanishSelVisibleBoxes_().forEach(function (b) {
+    var tid = b.getAttribute('data-thread');
+    b.checked = !!on;
+    if (on) SPANISH_STATE.selected[tid] = true; else delete SPANISH_STATE.selected[tid];
+  });
+  spanishSelSync_();
+}
+function spanishSelClear_() {
+  SPANISH_STATE.selected = {};
+  document.querySelectorAll('#spanish-list input.sp-sel').forEach(function (b) { b.checked = false; });
+  spanishSelSync_();
+}
+/** The bar (count, Resolve selected, Select all) drawn from state. */
+function spanishBulkBarHtml_() {
+  var n = spanishSelIds_().length;
+  var busy = !!SPANISH_STATE.bulkBusy;
+  return '<div class="sp-bulk" id="sp-bulk" role="group" aria-label="Resolve several requests">' +
+    '<label class="sp-bulk-all"><input type="checkbox" id="sp-sel-all" onchange="spanishSelAll_(this.checked)"> Select all shown</label>' +
+    '<span class="sp-bulk-n" id="sp-bulk-n" aria-live="polite">' + (n ? esc(String(n)) + ' selected' : 'None selected') + '</span>' +
+    (busy
+      ? '<button type="button" class="refresh-btn" id="sp-bulk-go" disabled aria-busy="true"><span class="lo-dots" aria-hidden="true"><span></span><span></span><span></span></span> Resolving…</button>'
+      : '<button type="button" class="refresh-btn" id="sp-bulk-go"' + (n ? '' : ' disabled') + ' onclick="spanishResolveSelected_()">' + icon('check', 12) + ' Resolve selected</button>') +
+    (n && !busy ? '<button type="button" class="sp-more" onclick="spanishSelClear_()">Clear</button>' : '') +
+  '</div>';
+}
+function spanishSelSync_() {
+  var bar = document.getElementById('sp-bulk');
+  if (bar) bar.outerHTML = spanishBulkBarHtml_();
+  var all = document.getElementById('sp-sel-all');
+  if (!all) return;
+  var vis = spanishSelVisibleBoxes_();
+  var on = vis.filter(function (b) { return b.checked; }).length;
+  all.checked = vis.length > 0 && on === vis.length;
+  all.indeterminate = on > 0 && on < vis.length;
+  all.disabled = !vis.length;
+}
+
+/** Confirm → ONE call → every resolved (or already resolved) request leaves
+ *  the list state, ONE render; a request the server could not resolve stays
+ *  selected and is counted in the toast — never dropped (g53). */
+function spanishResolveSelected_() {
+  var ids = spanishSelIds_();
+  if (!ids.length || SPANISH_STATE.bulkBusy) return;
+  var requestedView = currentView;
+  uiConfirm({
+    title: 'Mark ' + ids.length + ' request' + (ids.length === 1 ? '' : 's') + ' resolved?',
+    message: 'Use this for requests handled outside the email thread (phone call, CRM, in person). They move to the Resolved list — this can’t be undone in-app. If a requester writes again, that request comes back as a new one, unclaimed.',
+    confirmLabel: 'Mark ' + ids.length + ' resolved',
+  }).then(function (ok) {
+    if (!ok) return;
+    SPANISH_STATE.bulkBusy = true;
+    spanishSelSync_();
+    google.script.run
+      .withSuccessHandler(function (r) {
+        SPANISH_STATE.bulkBusy = false;   // before the view guard: a run that ends elsewhere still ends
+        if (!r || r.error) {
+          if (currentView === requestedView) { showToast((r && r.error) || 'Could not mark resolved', 'error'); spanishSelSync_(); }
+          return;
+        }
+        var gone = (r.resolved || []).concat(r.already || []);
+        gone.forEach(function (tid) { delete SPANISH_STATE.selected[tid]; spanishRemovePendingLocal_(tid); });
+        if (gone.length && typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
+        if (typeof spAssignPollSoon_ === 'function') spAssignPollSoon_();   // the badge follows
+        if (currentView !== requestedView) return;
+        spanishRenderList_();
+        var f = (r.failed || []).length;
+        showToast(spanishBulkResultText_(r), f ? 'warn' : 'success');
+      })
+      .withFailureHandler(function (e) {
+        SPANISH_STATE.bulkBusy = false;
+        if (currentView !== requestedView) return;
+        showToast((e && e.message) || 'Could not mark resolved', 'error');
+        spanishSelSync_();
+      })
+      .resolveSpanishThreads(ids);
+  });
+}
+/** PURE (Node-pinned) — what the bulk resolve says: how many it resolved, how
+ *  many were already resolved, and how many it could NOT (still selected). */
+function spanishBulkResultText_(r) {
+  var n = (r.resolved || []).length, a = (r.already || []).length, f = (r.failed || []).length;
+  var parts = [];
+  if (n) parts.push('Marked ' + n + ' resolved');
+  if (a) parts.push(a + ' already resolved');
+  if (f) parts.push(f + ' could not be resolved — still selected' + ((r.failed[0] && r.failed[0].error) ? ' (' + r.failed[0].error + ')' : ''));
+  return parts.join(' · ') || 'Nothing to resolve';
 }
 
 /** Row tone for a PENDING card — warn until SPANISH_OVERDUE_HOURS, then
@@ -2508,7 +2959,8 @@ function spanishResolvedCard_(t) {
   var when = spanishFmtDateTime_(t.resolvedAtMs);
   return '<div class="sp-task st-resolved">' +
     '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) +
-      '<span class="sp-task-age" style="color:var(--success-deep)"' + (tookTitle ? (' title="' + esc(tookTitle) + '"') : '') + '>' + icon('check', 12) + ' ' + esc(took) + '</span></div>' +
+      '<span class="sp-task-corner">' + spanishReceivedHtml_(t) +
+      '<span class="sp-task-age" style="color:var(--success-deep)"' + (tookTitle ? (' title="' + esc(tookTitle) + '"') : '') + '>' + icon('check', 12) + ' ' + esc(took) + '</span></span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body" style="color:var(--muted)">' +
       (when ? '<span class="sp-resolved-when">' + icon('clock', 11) + ' Resolved ' + esc(when) + '</span> · ' : '') +
@@ -2693,6 +3145,7 @@ function spanishClaimRpc_(el, tid, assignee) {
       if (!r || r.error) { showToast((r && r.error) || 'Claim failed', 'error'); spanishRenderList_(); return; }
       spanishSetClaimLocal_(tid, r.claim || null);
       if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8: a claim is a Needs-you task
+      spAssignPollSoon_();   // Batch C — the badge follows
       showToast(r.already ? 'Already claimed' :
         (assignee ? 'Assigned to ' + assignee.split('@')[0] + spanishNotifiedNote_(r) : 'Claimed — teammates will see you have it'), 'success');
     })
@@ -2715,6 +3168,7 @@ function spanishRelease_(btn) {
       if (!r || r.error) { showToast((r && r.error) || 'Release failed', 'error'); return; }
       spanishSetClaimLocal_(tid, null);
       if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
+      spAssignPollSoon_();   // Batch C
       showToast('Claim released', 'success');
     })
     .withFailureHandler(function (e) { btn.disabled = false; showToast((e && e.message) || 'Release failed', 'error'); })
@@ -2766,9 +3220,9 @@ function spanishTaskCard_(t) {
   var claimPill = spanishClaimPillHtml_(t, pd.self || '');
   var claimCtl = spanishClaimControlsHtml_(t, pd.self || '', isMgr, pd.members || []);
   return '<div class="sp-task ' + spanishPendingToneCls_(t.ageHours) + (t.escalated ? ' sp-escalated' : '') + '">' +
-    '<div class="sp-task-head"><span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + spanishFollowUpPillHtml_(t) + claimPill +
+    '<div class="sp-task-head">' + spanishSelBoxHtml_(t) + '<span class="sp-task-from">' + esc(t.requester) + '</span>' + spanishVmPillHtml_(t) + spanishFollowUpPillHtml_(t) + claimPill +
       spanishEscalatedPillHtml_(t) +
-      '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></div>' +
+      '<span class="sp-task-corner">' + spanishReceivedHtml_(t) + '<span class="sp-task-age" style="color:' + tone + '">' + esc(aged) + '</span></span></div>' +
     '<div class="sp-task-subj">' + esc(t.subject) + '</div>' +
     '<div class="sp-task-body' + (isOpen ? ' is-open' : '') + '" id="' + bodyId + '">' + (isOpen ? spanishBodyHtml_(SPANISH_STATE.bodies[t.threadId]) : esc(t.snippet) + (t.hasMore ? '…' : '')) + '</div>' +
     '<div class="sp-suggest-wrap">' + spanishSuggestHtml_((t.subject || '') + ' ' + (isOpen ? spanishBodyPlain_(SPANISH_STATE.bodies[t.threadId]) : t.snippet) || '') + '</div>' +
@@ -2824,6 +3278,8 @@ function spanishRemovePendingLocal_(tid) {
 var SP_LEAVE_FALLBACK_MS = 400;   // comfortably past the .22s exit
 function spanishResolveDone_(tid, card) {
   spanishRemovePendingLocal_(tid);
+  if (SPANISH_STATE.selected) delete SPANISH_STATE.selected[tid];   // Batch C
+  if (typeof spAssignPollSoon_ === 'function') spAssignPollSoon_();   // Batch C — the badge follows
   if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // 22post C-8
   if (!card || !card.parentNode) { spanishRenderList_(); return; }
   var done = false;

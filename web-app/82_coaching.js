@@ -205,6 +205,7 @@ function coachRowToObj_(row, ssTz) {
     nudgedAt: trainCellTs_(row[CO.NUDGED_AT], ssTz),
     noteDate: trainCellDate_(row[CO.NOTE_DATE], ssTz),
     qaFileId: String(row[CO.QA_FILE_ID] || '').trim(),
+    imageKey: COACH_IMAGE_KEY_RE.test(String(row[CO.IMAGE_KEY] || '').trim()) ? String(row[CO.IMAGE_KEY]).trim() : '',
   };
 }
 /** Bounded id-column lookup → { rowIdx, item } or null (the findEmpDocRow_ pattern). */
@@ -253,6 +254,15 @@ function createCoaching(payload) {
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.item.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
+    // Batch F: the optional screenshot is checked, then stored BEFORE the row,
+    // so an item never names an image that is not there; a screenshot that
+    // cannot be stored logs nothing (the manager can send it again without one).
+    let image = null;
+    if (payload && payload.image) {
+      image = coachImageItem_(payload.image);
+      if (image.error) return { success: false, error: image.error };
+      coachImageStoreCallerLocked_(image);
+    }
     const coachId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
@@ -260,10 +270,10 @@ function createCoaching(payload) {
     appendRowsTextSafe_(getOrCreateEmpDocSheet_(COACH_TAB, COACH_HEADERS), [[
       coachId, target.id, target.name, v.item.patientTRX, v.item.severity,
       v.item.whatHappened, v.item.whatShould, v.item.noteId, 'open',
-      callerEmp.email, ts, '', '', '', '', v.item.followUpAt, '', v.item.noteDate, v.item.qaFileId,
+      callerEmp.email, ts, '', '', '', '', v.item.followUpAt, '', v.item.noteDate, v.item.qaFileId, image ? image.key : '',
     ]], COACH_TEXT_IDX);
     writeAuditLog_(callerEmp, 'CoachingCreate', fmtDate_(now), '', false, 0,
-      'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity, callerEmp.email);
+      'coachId=' + coachId + '; empId=' + target.id + '; severity=' + v.item.severity + (image ? '; screenshot=yes' : ''), callerEmp.email);
     pendingTasksBust_(target.id);   // follow-up to T10 (cycle 22): a new item to acknowledge
     result = { success: true, coachId: coachId };
     if (v.item.severity === 'critical') {
@@ -374,12 +384,17 @@ function getCoachingDashboard() {
     const last = sheet.getLastRow();
     const reminderDays = CONFIG.COACHING_UNACK_REMINDER_DAYS || 7;
     const biz = coachBizOpts_();
+    // Batch F: the caller's 1-on-1 board. A failed read is NAMED, never an
+    // empty team (g53) — the coaching feed still renders beside it.
+    let oneOnOne;
+    try { oneOnOne = coachOneOnOneFor_(callerEmp, biz.todayIso); }
+    catch (e) { oneOnOne = { error: 'Could not read the 1-on-1 log: ' + ((e && e.message) || e) }; }
     if (last < 2) {
       // The empty shape carries every field the populated one does (INV-185 —
       // the visual fixture's empty twin mirrors THIS, not a narrower payload).
       return { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
         reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso,
-        analytics: coachAnalytics_([], Date.now(), reminderDays, biz) };
+        analytics: coachAnalytics_([], Date.now(), reminderDays, biz), oneOnOne: oneOnOne };
     }
     const ssTz = getHrDocsSS_().getSpreadsheetTimeZone();
     const rows = sheet.getRange(2, 1, last - 1, COACH_HEADERS.length).getValues();
@@ -410,7 +425,7 @@ function getCoachingDashboard() {
     voided.sort(function (a, b) { return a.createdAt < b.createdAt ? 1 : -1; });
     return { items: items, voided: voided.slice(0, COACH_VOIDED_CAP), voidedTotal: voided.length,
       counts: counts, reminderDays: reminderDays, businessDayMinutes: biz.dayMinutes, todayIso: biz.todayIso,
-      analytics: coachAnalytics_(items, nowMs, reminderDays, biz) };
+      analytics: coachAnalytics_(items, nowMs, reminderDays, biz), oneOnOne: oneOnOne };
   } catch (err) { return { error: err.message }; }
 }
 /** Manager-gated (INV-02), locked (INV-01). Soft-voids a coaching item (a
@@ -554,6 +569,360 @@ function coachUnackedAll_(nowMs) {
     Logger.log('coachUnackedAll_: HR docs store unavailable: ' + e.message);
     return hrSweepFailed_('un-acknowledged coaching', e);
   }
+}
+
+// ── Batch F (operator 2026-11-02 — "Last 1-on-1 date, reminders for managers,
+// adjustable cadence; optional screenshot for logged issues"). A manager logs
+// each 1-on-1 (the OneOnOnes tab); their cadence (CoachingSettings, default
+// CONFIG.COACHING_ONE_ON_ONE_DAYS) decides when the next is due; a rep past
+// due is a Needs-you item and a brief / digest line for THEIR roster manager.
+// A rep with no 1-on-1 on record is due — "never" is not "not yet".
+
+/** PURE (Node-pinned) — a yyyy-MM-dd date `n` calendar days on ('' for a bad date). */
+function coachIsoAddDays_(iso, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return '';
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (Math.floor(Number(n)) || 0))).toISOString().substring(0, 10);
+}
+/** PURE (Node-pinned) — whole calendar days from `a` to `b` (yyyy-MM-dd); null for a bad date. */
+function coachIsoDaysBetween_(a, b) {
+  const p = function (s) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN; };
+  const d = (p(b) - p(a)) / 86400000;
+  return isFinite(d) ? Math.round(d) : null;
+}
+/** PURE (Node-pinned) — a cadence a manager typed: a whole number of days,
+ *  0 (no reminders) .. COACH_CADENCE_MAX; null for anything else. */
+function coachNormCadence_(v) {
+  if (v === '' || v == null || typeof v === 'boolean') return null;
+  const n = Number(v);
+  if (!isFinite(n) || n !== Math.floor(n) || n < 0 || n > COACH_CADENCE_MAX) return null;
+  return n;
+}
+/** PURE (Node-pinned) — validate a 1-on-1 to log: a real date, not after
+ *  `todayIso` (the manager's day) and not more than COACH_MEET_BACK_DAYS
+ *  before it; an optional note, trimmed and capped. */
+function coachOneOnOneValidate_(empId, dateIso, note, todayIso) {
+  const id = String(empId || '').trim();
+  if (!id) return { ok: false, error: 'Pick an employee.' };
+  const d = coachIsoDateOrBlank_(dateIso);
+  if (!d || coachIsoAddDays_(d, 0) !== d) return { ok: false, error: 'Pick the date the 1-on-1 was held.' };
+  if (d > todayIso) return { ok: false, error: 'A 1-on-1 cannot be logged for a date that has not come yet.' };
+  if (coachIsoDaysBetween_(d, todayIso) > COACH_MEET_BACK_DAYS) return { ok: false, error: 'That date is more than a year ago.' };
+  const n = String(note == null ? '' : note).trim();
+  if (n.length > COACH_MEET_NOTE_MAX) return { ok: false, error: 'The note is too long (max ' + COACH_MEET_NOTE_MAX + ' chars).' };
+  return { ok: true, empId: id, date: d, note: n };
+}
+/** PURE (Node-pinned) — each rep's 1-on-1 standing against a cadence.
+ *  reps: [{empId, empName}] (the manager's team); logs: [{empId, meetDate,
+ *  status}]. A VOIDED row never counts, and neither does a date after today
+ *  (a hand-edited cell is not a 1-on-1 that happened). With a cadence of 0
+ *  nobody is ever due. A rep with none on record IS due (last ''). Returns
+ *  [{empId, empName, last, count, nextDue, due, daysOver}] — `daysOver` is
+ *  the days past `nextDue` (0 on the day it falls due), null when there is
+ *  no last 1-on-1 to count from. */
+function coachOneOnOneStanding_(reps, logs, cadenceDays, todayIso) {
+  const cad = coachNormCadence_(cadenceDays) || 0;
+  const byRep = {};
+  (logs || []).forEach(function (l) {
+    if (!l || String(l.status || '').trim() === 'void') return;
+    const d = coachIsoDateOrBlank_(l.meetDate);
+    if (!d || d > todayIso) return;
+    const r = byRep[l.empId] || (byRep[l.empId] = { last: '', count: 0 });
+    r.count++;
+    if (d > r.last) r.last = d;
+  });
+  return (reps || []).map(function (rep) {
+    const h = byRep[rep.empId] || { last: '', count: 0 };
+    const nextDue = cad && h.last ? coachIsoAddDays_(h.last, cad) : '';
+    const due = !!cad && (!h.last || nextDue <= todayIso);
+    return { empId: rep.empId, empName: rep.empName, last: h.last, count: h.count, nextDue: nextDue, due: due,
+      daysOver: due && h.last ? coachIsoDaysBetween_(nextDue, todayIso) : null };
+  });
+}
+/** PURE (Node-pinned) — a manager's team for 1-on-1s: every roster row whose
+ *  ManagerEmail (column M) is `mgrEmail`, counted as a person by the ONE
+ *  inclusion predicate (g03), the manager themself left out. Sorted by name. */
+function coachTeamReps_(mgrEmail, roster) {
+  const me = String(mgrEmail || '').toLowerCase().trim();
+  const out = [];
+  if (!me) return out;
+  for (let i = 1; i < (roster || []).length; i++) {
+    const row = roster[i];
+    const email = String(empRosterEmail_(row) || '').toLowerCase().trim();
+    if (!email || email === me) continue;
+    if (String(row[EMP.MANAGER_EMAIL] || '').toLowerCase().trim() !== me) continue;
+    const id = String(row[EMP.ID] || '').trim();
+    if (id) out.push({ empId: id, empName: String(row[EMP.NAME] || '').trim() || id });
+  }
+  return out.sort(function (a, b) { return a.empName.localeCompare(b.empName); });
+}
+/** Every 1-on-1 on file (voided rows included — the readers decide). A
+ *  missing tab is none logged yet. MeetDate is a plain-text cell; a
+ *  hand-typed date Sheets coerced reads back in the store's own zone. */
+function coachOneOnOneLogs_() {
+  const ss = getHrDocsSS_();
+  const sheet = ss.getSheetByName(COACH_MEET_TAB);
+  const last = sheet ? sheet.getLastRow() : 0;
+  if (last < 2) return [];
+  const tz = ss.getSpreadsheetTimeZone();
+  return sheet.getRange(2, 1, last - 1, COACH_MEET_HEADERS.length).getValues().map(function (r, i) {
+    return { rowIdx: i + 2, id: String(r[CMT.ID] || '').trim(), empId: String(r[CMT.EMP_ID] || '').trim(),
+      meetDate: trainCellDate_(r[CMT.MEET_DATE], tz), loggedBy: String(r[CMT.LOGGED_BY] || '').toLowerCase().trim(),
+      note: String(r[CMT.NOTE] || ''), status: String(r[CMT.STATUS] || '').trim() || 'ok' };
+  }).filter(function (l) { return l.id && l.empId; });
+}
+/** The cadence settings on file: {managerEmail: {days, rowIdx}}. A missing
+ *  tab, or a cell that is not a cadence, is the default. */
+function coachSettingsRead_() {
+  const sheet = getHrDocsSS_().getSheetByName(COACH_SETTINGS_TAB);
+  const out = {};
+  const last = sheet ? sheet.getLastRow() : 0;
+  if (last < 2) return out;
+  sheet.getRange(2, 1, last - 1, 2).getValues().forEach(function (r, i) {
+    const e = String(r[0] || '').toLowerCase().trim();
+    const d = coachNormCadence_(r[1]);
+    if (e && d != null) out[e] = { days: d, rowIdx: i + 2 };
+  });
+  return out;
+}
+function coachCadenceOf_(settings, email) {
+  const s = (settings || {})[String(email || '').toLowerCase().trim()];
+  return s ? s.days : (CONFIG.COACHING_ONE_ON_ONE_DAYS || 14);
+}
+/** One manager's 1-on-1 board: their cadence, each team rep's standing, and
+ *  the latest COACH_MEET_HISTORY 1-on-1s per rep (date, who logged it, the
+ *  note — HR content, for the rep's own manager only). Throws on a store it
+ *  cannot read; the dashboard ships that as `oneOnOne.error`. */
+function coachOneOnOneFor_(callerEmp, todayIso) {
+  const roster = getEmployeeRosterRows_();
+  const email = String(callerEmp.email || '').toLowerCase().trim();
+  const reps = coachTeamReps_(email, roster);
+  const settings = coachSettingsRead_();
+  const cadence = coachCadenceOf_(settings, email);
+  const logs = coachOneOnOneLogs_();
+  const names = {};
+  for (let i = 1; i < roster.length; i++) {
+    const e = String(empRosterEmail_(roster[i]) || '').toLowerCase().trim();
+    if (e) names[e] = String(roster[i][EMP.NAME] || '').trim();
+  }
+  const mine = {};
+  reps.forEach(function (r) { mine[r.empId] = true; });
+  const history = {};
+  logs.forEach(function (l) {
+    if (!mine[l.empId] || l.status === 'void' || !l.meetDate) return;
+    (history[l.empId] = history[l.empId] || []).push({ id: l.id, date: l.meetDate,
+      byName: names[l.loggedBy] || l.loggedBy.split('@')[0], note: l.note, mine: l.loggedBy === email });
+  });
+  Object.keys(history).forEach(function (k) {
+    history[k] = history[k].sort(function (a, b) { return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0); }).slice(0, COACH_MEET_HISTORY);
+  });
+  return { cadenceDays: cadence, cadenceSet: !!settings[email], defaultDays: CONFIG.COACHING_ONE_ON_ONE_DAYS || 14,
+    maxDays: COACH_CADENCE_MAX, todayIso: todayIso,
+    reps: coachOneOnOneStanding_(reps, logs, cadence, todayIso), history: history };
+}
+/** Every manager's DUE reps, for the brief, the standalone digest and
+ *  Needs-you: {managerEmail: [standing row]} — one roster, log and settings
+ *  read for the whole team. An unset HR store is {} (nothing to remind of);
+ *  a set one that cannot be read throws by name (HR-3: "could not look" is
+ *  not "nobody due"). */
+function coachOneOnOnesDueByManager_(todayIso) {
+  try {
+    const roster = getEmployeeRosterRows_();
+    const settings = coachSettingsRead_();
+    const logs = coachOneOnOneLogs_();
+    const mgrs = {};
+    for (let i = 1; i < roster.length; i++) {
+      const m = String(roster[i][EMP.MANAGER_EMAIL] || '').toLowerCase().trim();
+      if (m) mgrs[m] = true;
+    }
+    const out = {};
+    Object.keys(mgrs).forEach(function (m) {
+      const due = coachOneOnOneStanding_(coachTeamReps_(m, roster), logs, coachCadenceOf_(settings, m), todayIso)
+        .filter(function (s) { return s.due; });
+      if (due.length) out[m] = coachOneOnOneDueSort_(due);
+    });
+    return out;
+  } catch (e) {
+    if (!hrDocsConfigured_()) return {};
+    throw new Error('the Employee Docs store (HR_DOCS_SS_ID) could not be read for 1-on-1s: ' + ((e && e.message) || e));
+  }
+}
+/** One manager's DUE reps (Needs-you), most urgent first: none on record,
+ *  then the most days past due. Throws on a store it cannot read. */
+function coachOneOnOnesDueFor_(mgrEmail, todayIso) {
+  const me = String(mgrEmail || '').toLowerCase().trim();
+  const roster = getEmployeeRosterRows_();
+  return coachOneOnOneDueSort_(coachOneOnOneStanding_(coachTeamReps_(me, roster), coachOneOnOneLogs_(),
+    coachCadenceOf_(coachSettingsRead_(), me), todayIso).filter(function (s) { return s.due; }));
+}
+/** PURE (Node-pinned) — a due list in the order every reader shows it: a rep
+ *  with none on record first, then the most days past due, then by name. */
+function coachOneOnOneDueSort_(due) {
+  return (due || []).slice().sort(function (a, b) {
+    const an = a.last ? 1 : 0, bn = b.last ? 1 : 0;
+    if (an !== bn) return an - bn;
+    if ((b.daysOver || 0) !== (a.daysOver || 0)) return (b.daysOver || 0) - (a.daysOver || 0);
+    return String(a.empName).localeCompare(String(b.empName));
+  });
+}
+/** PURE (Node-pinned) — the ONE Needs-you item a manager's due list becomes:
+ *  a count, the first three names, and how many have none on record. Overdue
+ *  only once someone is PAST their due date ("never" has no date to be past). */
+function coachOneOnOneTask_(due) {
+  const list = coachOneOnOneDueSort_(due);
+  const never = list.filter(function (s) { return !s.last; }).length;
+  const late = list.filter(function (s) { return s.last && s.daysOver > 0; }).length;
+  const names = list.slice(0, 3).map(function (s) { return s.empName; }).join(', ') + (list.length > 3 ? ' +' + (list.length - 3) + ' more' : '');
+  return { kind: 'oneOnOne', title: list.length + ' 1-on-1' + (list.length === 1 ? '' : 's') + ' due',
+    detail: names + (never ? ' \u00b7 ' + never + ' with none on record' : ''),
+    dueIso: '', overdue: late > 0, action: 'Open', route: { tool: 'develop', tab: 'coaching' } };
+}
+/** The one line a due list reads as — "never" for a rep with none on record. */
+function coachOneOnOneDueText_(s) {
+  return s.last ? 'last ' + s.last + ' · due ' + s.nextDue : 'none on record';
+}
+/** Manager-gated (INV-02), team-scoped (the rep's roster ManagerEmail is the
+ *  caller), locked (INV-01). Logs a 1-on-1 held on `dateIso` with an optional
+ *  note (a plain-text cell, HR store only). Audit CoachingOneOnOne carries
+ *  ids only — the date and the note are HR-record detail. */
+function logOneOnOne(empId, dateIso, note) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  const todayIso = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  const v = coachOneOnOneValidate_(empId, dateIso, note, todayIso);
+  if (!v.ok) return { success: false, error: v.error };
+  const target = lookupEmployeeById_(v.empId);
+  const me = String(callerEmp.email || '').toLowerCase().trim();
+  if (!target || !me || String(target.managerEmail || '').toLowerCase().trim() !== me) {
+    return { success: false, error: 'Only the employee’s own manager (Employees column M) can log their 1-on-1.' };
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const id = Utilities.getUuid();
+    const now = new Date();
+    const stamp = fmtDate_(now) + ' ' + fmtTime_(now);
+    const row = [id, target.id, target.name, v.date, me, v.note, stamp, 'ok'];
+    appendRowsTextSafe_(getOrCreateEmpDocSheet_(COACH_MEET_TAB, COACH_MEET_HEADERS), [row], COACH_MEET_TEXT_IDX);
+    writeAuditLog_(callerEmp, 'CoachingOneOnOne', fmtDate_(now), '', false, 0, 'id=' + id + '; empId=' + target.id, callerEmp.email);
+    pendingTasksBust_(callerEmp.id);   // the manager's Needs-you item may be gone now
+    return { success: true, id: id, date: v.date };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+/** Manager-gated (INV-02), locked (INV-01). Voids a mistaken 1-on-1 — the row
+ *  is kept, marked void, and no reader counts it. Who logged it, or the rep's
+ *  roster manager, may void it; idempotent. Audit CoachingOneOnOneVoid, id-only. */
+function voidOneOnOne(id) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  const want = String(id || '').trim();
+  if (!want) return { success: false, error: '1-on-1 not found.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const found = coachOneOnOneLogs_().filter(function (l) { return l.id === want; })[0];
+    if (!found) return { success: false, error: '1-on-1 not found.' };
+    const me = String(callerEmp.email || '').toLowerCase().trim();
+    const target = lookupEmployeeById_(found.empId);
+    const repMgr = target ? String(target.managerEmail || '').toLowerCase().trim() : '';
+    if (!me || (found.loggedBy !== me && repMgr !== me)) return { success: false, error: '1-on-1 not found.' };
+    if (found.status === 'void') return { success: true, alreadyVoid: true };
+    const sheet = getHrDocsSS_().getSheetByName(COACH_MEET_TAB);
+    // g164: the row is re-read under the lock and must still carry its id.
+    if (String(sheet.getRange(found.rowIdx, CMT.ID + 1).getValue() || '').trim() !== want) return { success: false, error: 'The 1-on-1 log changed — reload and try again.' };
+    sheet.getRange(found.rowIdx, CMT.STATUS + 1).setValue(sheetSafe_('void'));
+    writeAuditLog_(callerEmp, 'CoachingOneOnOneVoid', '', '', false, 0, 'id=' + want + '; empId=' + found.empId, callerEmp.email);
+    pendingTasksBust_(callerEmp.id);
+    return { success: true };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+/** Manager-gated (INV-02), locked (INV-01). Sets the CALLER's own 1-on-1
+ *  cadence (whole days, 0 = no reminders, at most COACH_CADENCE_MAX) in the
+ *  CoachingSettings tab — one row per manager, rewritten in place. */
+function setOneOnOneCadence(days) {
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  const d = coachNormCadence_(days);
+  if (d == null) return { success: false, error: 'Pick a whole number of days from 0 (no reminders) to ' + COACH_CADENCE_MAX + '.' };
+  const me = String(callerEmp.email || '').toLowerCase().trim();
+  if (!me) return { success: false, error: 'Your roster row has no login email.' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const now = new Date();
+    const stamp = fmtDate_(now) + ' ' + fmtTime_(now);
+    const sheet = getOrCreateEmpDocSheet_(COACH_SETTINGS_TAB, COACH_SETTINGS_HEADERS);
+    const cur = coachSettingsRead_()[me];
+    if (cur) {
+      sheet.getRange(cur.rowIdx, 2).setValue(sheetSafe_(d));
+      sheet.getRange(cur.rowIdx, 3).setNumberFormat('@').setValue(sheetText_(stamp));
+    } else {
+      const row = [me, d, stamp];
+      appendRowsTextSafe_(sheet, [row], COACH_SETTINGS_TEXT_IDX);
+    }
+    writeAuditLog_(callerEmp, 'CoachingCadence', '', '', false, 0, 'days=' + d, callerEmp.email);
+    pendingTasksBust_(callerEmp.id);
+    return { success: true, cadenceDays: d };
+  } catch (err) { return { success: false, error: err.message }; }
+  finally { lock.releaseLock(); }
+}
+
+// ── The optional screenshot on a coaching item (Batch F). Drive is disabled
+// on this domain (DRV-1), so it is stored in the HR store's CoachingImages tab
+// in the KbImages row shape — the browser fits it under KB_IMAGE_MAX_BYTES
+// first — and read back only through getCoachingImage.
+/** A pasted / chosen image as a CoachingImages item, or { error }. */
+function coachImageItem_(dataUrl) {
+  const raw = String(dataUrl || '');
+  if (raw.length > KB_IMG_UPLOAD_MAX_CHARS) return { error: 'The screenshot is too large (max ' + (KB_IMAGE_MAX_BYTES / 1048576) + ' MB).' };
+  const parsed = kbParseImageDataUrl_(raw);
+  if (!parsed || KB_IMG_UPLOAD_TYPES.indexOf(parsed.contentType) < 0) return { error: 'The screenshot must be a PNG, JPEG, GIF or WebP image.' };
+  const it = kbImageItem_(parsed.contentType, parsed.base64, 'coaching', kbSha256Hex_);
+  if (it.error) return { error: 'The screenshot is ' + it.error + '.' };
+  it.key = 'coachimg-' + it.sha.substring(0, 24);
+  return it;
+}
+/** Under the CALLER's lock (createCoaching): store one screenshot. Append-only
+ *  and keyed by content, so the same image twice is one row set; a tab whose
+ *  header someone changed is refused by name (g142) — and so is the coaching
+ *  item, which is never logged pointing at bytes nobody can find. */
+function coachImageStoreCallerLocked_(it) {
+  const ss = getHrDocsSS_();
+  let sheet = ss.getSheetByName(COACH_IMAGES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(COACH_IMAGES_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_MANUAL_IMAGES_HEADERS));
+    sheet.setFrozenRows(1);
+  }
+  if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_IMAGES_HEADERS)) {
+    throw new Error('the ' + COACH_IMAGES_TAB + ' tab’s header row was changed — restore it to ' + KB_MANUAL_IMAGES_HEADERS.join(', ') + ' (nothing was logged)');
+  }
+  if (kbImageTabLedger_(sheet, KB_MANUAL_IMAGES_HEADERS, COACH_IMAGE_KEY_RE)[it.key]) return { reused: true };
+  appendRowsSafe_(sheet, kbManualImagesRows_([it], fmtDate_(new Date()) + ' ' + fmtTime_(new Date())));
+  return { reused: false };
+}
+/** Employee-callable, read-only. A coaching item's screenshot as a data URL,
+ *  for exactly who may read the item: the rep it is about (while it is not
+ *  void), or a manager coachCanManagerSee_ admits. Never cached (HR content).
+ *  "Not stored" and "could not read" are different answers (g128). */
+function getCoachingImage(coachId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findCoachingRow_(coachId);
+    const item = found && found.item;
+    const mine = !!(item && item.empId === emp.id && item.status !== 'void');
+    if (!item || !(mine || coachCanManagerSee_(emp, item))) return { error: 'Coaching item not found.' };
+    if (!item.imageKey) return { error: 'This item has no screenshot.' };
+    const r = kbImageTabServe_(getHrDocsSS_().getSheetByName(COACH_IMAGES_TAB), [item.imageKey], {
+      headers: KB_MANUAL_IMAGES_HEADERS, keyRe: COACH_IMAGE_KEY_RE, batch: 1, types: KB_IMG_UPLOAD_TYPES,
+      maxBytes: KB_IMAGE_MAX_BYTES, cachePrefix: '', headerChangedFails: true, noCache: true });
+    if (r.images[item.imageKey]) return { success: true, dataUrl: r.images[item.imageKey] };
+    if (r.failed.length) return { error: 'The screenshot could not be read' + (r.headerChanged ? ' — the ' + COACH_IMAGES_TAB + ' tab’s header row was changed.' : '.') };
+    return { error: 'The screenshot is not stored.' };
+  } catch (err) { return { error: err.message }; }
 }
 
 // ── K8 — the coaching mail family. EVERY builder here is NARRATIVE-FREE BY

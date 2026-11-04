@@ -213,17 +213,17 @@ const SCENARIOS = [
   ['cn-history-light-wide',   { tool: 'callNotes', tab: 'callNotesHistory' }, WIDE,   'light', ''],
   ['cn-history-light-mobile', { tool: 'callNotes', tab: 'callNotesHistory' }, MOBILE, 'light', ''],
   ['cn-log-dark-wide',      { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'dark',  ''],
-  ['metrics-light-wide',    { tool: 'metrics',   tab: null },         WIDE, 'light', ''],
-  ['metrics-dark-wide',     { tool: 'metrics',   tab: null },         WIDE, 'dark',  ''],
+  ['metrics-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },         WIDE, 'light', ''],
+  ['metrics-dark-wide',     { tool: 'timeClock', tab: 'metricsMyStats' },         WIDE, 'dark',  ''],
   // Cycle-14 Phase 2 — Team Metrics was never in the matrix, and it is now the
   // home of the sub-queue views (segmented bars are exactly what code review
   // cannot verify).
-  ['metrics-team-light-wide', { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'light', '?teamrange=7d'],
+  ['metrics-team-light-wide', { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'light', '?teamrange=7d'],
   // X3 (cycle 22): Team Metrics' DEFAULT range is today, which the one-day-lagged
   // call-data report never covers — every rep listed through notes, no rates
   // (M1: "—", never a red 0%). The three shots above/below preset a past range.
-  ['metrics-team-today-light-wide', { tool: 'metrics', tab: 'metricsTeam' }, WIDE, 'light', ''],
-  ['metrics-team-dark-wide',  { tool: 'metrics', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
+  ['metrics-team-today-light-wide', { tool: 'timeClock', tab: 'metricsTeam' }, WIDE, 'light', ''],
+  ['metrics-team-dark-wide',  { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],
   // 2026-08-31 coverage pass — the matrix covered 18 of 29 registry tabs.
@@ -266,8 +266,8 @@ const SCENARIOS = [
   ['reference-light-compact', { tool: 'reference', tab: null },              COMPACT, 'light', '?compact=1'],
   ['intake-light-mobile',     { tool: 'intake',    tab: null },              MOBILE,  'light', ''],
   ['intake-light-compact',    { tool: 'intake',    tab: null },              COMPACT, 'light', '?compact=1'],
-  ['metrics-light-mobile',    { tool: 'metrics',   tab: null },              MOBILE,  'light', ''],
-  ['metrics-team-light-mobile', { tool: 'metrics', tab: 'metricsTeam' },     MOBILE,  'light', '?teamrange=7d'],
+  ['metrics-light-mobile',    { tool: 'timeClock', tab: 'metricsMyStats' },              MOBILE,  'light', ''],
+  ['metrics-team-light-mobile', { tool: 'timeClock', tab: 'metricsTeam' },     MOBILE,  'light', '?teamrange=7d'],
   ['training-light-mobile',   { tool: 'develop',   tab: null },              MOBILE,  'light', ''],
   // Cycle-17 Batch 7 — three coverage gaps the Visual Audit Stage had been
   // carrying as known-uncovered: (a) dark parity for Reference / Training /
@@ -291,31 +291,46 @@ const SCENARIOS = [
   ['coaching-light-mobile',      { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', ''],
   ['coaching-mine-light-mobile', { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', '?role=rep'],
   ['coaching-error-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?failrpc=getCoachingDashboard'],
+  // Batch F (operator 2026-11-02): the 1-on-1 log dialog (wide and phone) and a coaching item's screenshot.
+  ['coaching-1on1-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenOneOnOne_('E-1042')"],
+  ['coaching-1on1-dark-mobile',  { tool: 'develop', tab: 'coaching' }, MOBILE, 'dark', '', "coachOpenOneOnOne_('E-1042')"],
+  ['coaching-shot-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenImage_('c1')"],
+  // Batch H (operator 2026-11-02): a PDF document — signing it with its boxes (wide and phone), its
+  // certificate, and the manager drawing a box on a chosen PDF (the post hook feeds the fixture PDF in).
+  ['empdocs-pdf-sign-light-wide',  { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  ['empdocs-pdf-sign-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  ['empdocs-cert-light-wide',      { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenCertificate_('d-signed')", { wait: 1500 }],
+  ['empdocs-issue-pdf-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
-  ['metrics-error-light-wide',    { tool: 'metrics',   tab: null },          WIDE,   'light', '?failrpc=getMyMetrics'],
+  ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],
   ['cn-log-error-light-wide',     { tool: 'callNotes', tab: 'callNotes' },   WIDE,   'light', '?failrpc=getMyCallNotes'],
   ['reference-error-light-mobile', { tool: 'reference', tab: null },         MOBILE, 'light', '?failrpc=getReferenceTree'],
   // Operator feedback 2026-08-06 — the two redesigned status views (combined
   // color-coded lists): fixtures cover all four DR tones + an overdue Spanish
   // pending card, so the tone vocabulary itself is on camera.
-  ['spanish-light-wide',   { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', ''],
+  ['spanish-light-wide',   { tool: 'timeClock', tab: 'metricsSpanish' }, WIDE, 'light', ''],
   // Operator 2026-09-10 — a pending card EXPANDED (Expand ⇄ Collapse): the
   // full request body in place of the snippet, the button reading Collapse.
-  ['spanish-expanded-light-wide', { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishExpand_(document.querySelector('.sp-more[data-thread]'))"],
-  ['deptreq-light-wide',   { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
+  ['spanish-expanded-light-wide', { tool: 'timeClock', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishExpand_(document.querySelector('.sp-more[data-thread]'))"],
+  ['deptreq-light-wide',   { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', ''],
   // Operator 2026-09-10 (note 6) — a request card EXPANDED: the source note's
   // fields in the detail panel under a subject carrying patient & TRX.
-  ['deptreq-expanded-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
+  ['deptreq-expanded-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drExpand_(document.querySelector('.dr-expand[data-req]'))"],
   // DR-3 (operator 2026-10-27): the department's reply on a Replies-to-check card, drawn as a conversation.
-  ['deptreq-reply-light-wide', { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
-  ['deptreq-reply-dark-mobile', { tool: 'metrics', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
+  ['deptreq-reply-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
+  ['deptreq-reply-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "drReplyToggle_(document.querySelector('#dr-looks .dr-reply-btn'))"],
   // 22post A-7 — the manager top row (team-wide cards beside the resolution
   // table) STACKS in the pop-out; and the sort + date controls in dark mode.
-  ['deptreq-light-compact', { tool: 'metrics', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
-  ['deptreq-dark-wide',     { tool: 'metrics', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  ['deptreq-light-compact', { tool: 'callNotes', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
+  ['deptreq-dark-wide',     { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  // Batch D (operator 2026-11-02) — three OPEN requests to Billing for one TRX fold into one card:
+  // the newest on top, "2 follow-ups with no response", then the earlier two opened.
+  ['deptreq-fold-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})();drFoldToggle_(document.querySelector('.dr-fold-toggle'))"],
+  ['deptreq-fold-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})()"],
   // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
-  ['deptreq-looks-light-mobile', { tool: 'metrics', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
+  ['deptreq-looks-light-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
   // 22post A-2a — the Scratchpad with the standard modal buttons.
   ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
@@ -323,7 +338,12 @@ const SCENARIOS = [
   ['cn-scratchpad-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_()"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
-  ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  // Batch C (operator 2026-11-02) — past SPANISH_GROUP_MIN the list folds into
+  // collapsible groups: by received day, and by sending department with two
+  // requests selected (the bar's count and Resolve selected on camera).
+  ['spanish-grouped-light-wide', { tool: 'timeClock', tab: 'metricsSpanish' }, WIDE, 'light', '', "(function(){var b=SPANISH_STATE.pendingRes.pending.slice();var d=['Billing','Intake','Billing','','Resupply','Intake'];var out=[];for(var i=0;i<18;i++){var x=Object.assign({},b[i%b.length]);x.threadId='g'+i;x.receivedMs=Date.now()-Math.floor(i/5)*86400000-i*600000;x.ageHours=Math.round((Date.now()-x.receivedMs)/3600000);x.senderDept=d[i%d.length];x.escalated=x.ageHours>=168;out.push(x);}out.sort(function(a,c){return c.ageHours-a.ageHours});SPANISH_STATE.pendingRes.pending=out;spanishRenderList_();})();spAssignPoll_()"],
+  ['spanish-grouped-dept-dark-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'dark', '', "(function(){var b=SPANISH_STATE.pendingRes.pending.slice();var d=['Billing','Intake','Billing','','Resupply','Intake'];var out=[];for(var i=0;i<18;i++){var x=Object.assign({},b[i%b.length]);x.threadId='g'+i;x.receivedMs=Date.now()-Math.floor(i/5)*86400000-i*600000;x.ageHours=Math.round((Date.now()-x.receivedMs)/3600000);x.senderDept=d[i%d.length];x.escalated=x.ageHours>=168;out.push(x);}out.sort(function(a,c){return c.ageHours-a.ageHours});SPANISH_STATE.pendingRes.pending=out;spanishRenderList_();})();spanishSetGroupBy_('dept');document.querySelectorAll('input.sp-sel')[0].click();document.querySelectorAll('input.sp-sel')[1].click()"],
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],
@@ -636,7 +656,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
   if (AXE && !(opts && opts.page === 'handbook')) continue;
-  // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
+  // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant, wait: extra ms after the post hook }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
   if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
   const ctx = await browser.newContext(ctxOpts);
@@ -668,7 +688,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   }
   if (post) {
     await page.evaluate((code) => { try { (0, eval)(code); } catch (e) { console.error('post hook threw: ' + e.message); } }, post);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000 + ((opts && opts.wait) || 0));   // Batch H: a post hook that draws PDF pages needs longer
   }
   if (AXE) {
     await page.addScriptTag({ content: AXE_SRC });

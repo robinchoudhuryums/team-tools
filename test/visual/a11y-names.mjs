@@ -34,7 +34,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.addInitScript(() => { try { localStorage.clear(); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} });
 await page.goto('file://' + path.join(HERE, 'page.html'));
 await page.waitForTimeout(900);
-const VIEWS = [['timeClock','clock'],['timeClock','timeoff'],['callNotes','callNotes'],['metrics',null],
+const VIEWS = [['timeClock','clock'],['timeClock','timeoff'],['callNotes','callNotes'],['timeClock','metricsMyStats'],
                ['manage','manage'],['intake','intakePpd'],['intake','intakeCatalog'],['reference',null],['develop','training']];
 for (const [tool, tab] of VIEWS) {
   await page.evaluate(([t, b]) => window.enterTool(t, b || undefined), [tool, tab]);

@@ -681,9 +681,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
         { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
         // E1 (operator 2026-10-27): the ONE manager item — departments with ≥25% of their open requests past SLA and more than three.
-        { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+        { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' } },
         // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
-        { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsSpanish' } },
+        { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'timeClock', tab: 'metricsSpanish' } },
       ],
       total: 7, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
@@ -1317,15 +1317,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
       // E4 (cycle 25, G5): it has waited 9 days — escalated (the server's flag), so the pill and stripe are on camera on the tab and the Dashboard card.
-      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
-      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
-      { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', senderDept: 'Intake', receivedMs: Date.now() - (9 * 24 + 5) * 3600000, ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
+      { threadId: 't1', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 3.2 * 3600000, ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
+      { threadId: 't5', requester: 'lchen@umsupply.com', senderDept: '', receivedMs: Date.now() - 1.1 * 3600000, ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
-      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
+      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', receivedMs: Date.now() - 0.6 * 3600000, ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
       medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
-      self: 'avery@umsupply.com' },
+      deptUnavailable: '', self: 'avery@umsupply.com' },
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
     // overdue (PAST the 30-min schedTick_ fire window, so the sched-modal
     // scenario shows the overdue tone WITHOUT a sticky toast covering the
@@ -1335,7 +1335,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { id: 'sc-1', whenMs: Date.now() + 3600000, leadMin: 5, label: 'Translated call — Maria G · TRX 12345', status: 'active' }] },
     // Pilot round 3 — scratchpad + Reference comments (shapes mirror the
     // server returns; pinned like the sched fixture above).
-    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000, format: 'text' },
+    scratchpadPageOp: { success: true, pages: [{ id: 'main', name: 'Notes', updatedAtMs: Date.now() - 5400000 }, { id: 'p2', name: 'Escalations', updatedAtMs: Date.now() - 86400000 }], pageId: 'p2' },
+    getMyScratchpad: { content: 'Ext for Dr. Alvarez: x4102\nPAR escalations → Sam\nSpanish glossary doc — bookmark', updatedAtMs: Date.now() - 5400000, maxChars: 40000, format: 'text',
+      pageId: 'main', pages: [{ id: 'main', name: 'Notes', updatedAtMs: Date.now() - 5400000 }, { id: 'p2', name: 'Escalations', updatedAtMs: Date.now() - 86400000 }], maxPages: 10, missing: false },
     // The reader scenario opens this article via the post hook — shape
     // mirrors getReferenceItem's article return (id/title/department/status/
     // type/bodyMd; INV-185).
@@ -1589,11 +1591,27 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       });
       return { success: true, unclaimed: unclaimed.length, assigned: assigned };
     },
+    // Batch C (operator 2026-11-02) — the assignee badge's read: the caller's
+    // open requests (Code.js getMySpanishAssignments — ids, times, the
+    // assigner; never content). t5 is avery's own claim, so the badge reads 1
+    // and, being self-claimed, never toasts.
+    getMySpanishAssignments: { configured: true, items: [{ threadId: 't5', atMs: Date.now() - 600000, assignedBy: '' }], count: 1, self: 'avery@umsupply.com' },
+    // Batch C — Resolve selected. Shape mirrors resolveSpanishThreads'
+    // ({success, resolved, already, failed}) AND its write: the resolved
+    // requests leave the pending fixture.
+    resolveSpanishThreads: function (ids) {
+      const pd = FIXTURES.getSpanishInboxPending;
+      const want = {};
+      (ids || []).forEach(function (t) { want[t] = true; });
+      const resolved = (pd.pending || []).filter(function (p) { return want[p.threadId]; }).map(function (p) { return p.threadId; });
+      pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
+      return { success: true, resolved: resolved, already: [], failed: [] };
+    },
     getSpanishInboxResolved: { resolved: [
-      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
+      { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       // Note #3 (2026-09-10): a MANUAL mark-resolve carries null minutes — the
       // server never invents a reply time for a request handled outside the thread.
-      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      { threadId: 't4', requester: 'lchen@umsupply.com', senderDept: '', receivedMs: Date.now() - 3 * 86400000, resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
       // Resolution-share chart (2026-08-17): members incl. one who resolved
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
@@ -1935,7 +1953,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
     managerGetDayActivity: function (empId, date) {
       var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
-      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 60,
+      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
         pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
     },
     managerGetPendingAdjustments: { requests: [
@@ -2137,31 +2155,42 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { coachId: 'c1', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-208', severity: 'minor', status: 'open',
         whatHappened: 'Quoted the wrong resupply window to the caller.', whatShould: 'Confirm the 90-day window in the CRM before quoting.',
         createdBy: 'avery@umsupply.com', createdAt: daysAgo(3) + ' 10:00:00', acknowledgedAt: '', ackBy: '',
-        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: 'n-4471', noteDate: daysAgo(3), qaFileId: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: 'n-4471', noteDate: daysAgo(3), qaFileId: '', imageKey: 'coachimg-0123456789abcdef01234567',
         ageDays: 2.4, overdueUnacked: false, followUpDue: false, nudgedToday: false },
       { coachId: 'c2', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-311', severity: 'praise', status: 'open',
         whatHappened: 'Great de-escalation on a billing dispute.', whatShould: '', createdBy: 'avery@umsupply.com',
         createdAt: daysAgo(6) + ' 15:20:00', acknowledgedAt: '', ackBy: '',
-        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', imageKey: '',
         ageDays: 4.1, overdueUnacked: false, followUpDue: false, nudgedToday: false },
       { coachId: 'c3', empId: 'E-1088', empName: 'Sam Ortiz', patientTRX: 'TRX-190', severity: 'critical', status: 'open',
         whatHappened: 'Released a shipment without insurance verification; the claim was denied.', whatShould: 'Verification is a hard gate — never release before the auth is on file.',
         createdBy: 'avery@umsupply.com', createdAt: daysAgo(12) + ' 09:10:00', acknowledgedAt: '', ackBy: '',
-        voidReason: '', repResponse: '', followUpAt: daysAgo(-2), nudgedAt: daysAgo(1) + ' 08:30:00', noteId: 'n-4402', noteDate: daysAgo(12), qaFileId: 'qa-file-1',
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-2), nudgedAt: daysAgo(1) + ' 08:30:00', noteId: 'n-4402', noteDate: daysAgo(12), qaFileId: 'qa-file-1', imageKey: '',
         ageDays: 8.0, overdueUnacked: true, followUpDue: false, nudgedToday: false },
       { coachId: 'c4', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'major', status: 'acknowledged',
         whatHappened: 'Put a caller on hold for nine minutes without a check-in.', whatShould: 'Check back every two minutes; offer a call-back past five.',
         createdBy: 'avery@umsupply.com', createdAt: daysAgo(9) + ' 13:45:00', acknowledgedAt: daysAgo(7) + ' 09:00:00', ackBy: 'avery@umsupply.com',
-        voidReason: '', repResponse: 'Understood — I will set a two-minute timer on holds.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '',
+        voidReason: '', repResponse: 'Understood — I will set a two-minute timer on holds.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', imageKey: '',
         ageDays: 6.3, overdueUnacked: false, followUpDue: false, nudgedToday: false }],
       voided: [
       { coachId: 'c5', empId: 'E-1090', empName: 'Leo Kim', patientTRX: 'TRX-300', severity: 'minor', status: 'void',
         whatHappened: 'Logged against the wrong patient.', whatShould: '', createdBy: 'avery@umsupply.com',
         createdAt: daysAgo(14) + ' 11:00:00', acknowledgedAt: '', ackBy: '',
-        voidReason: 'Wrong patient — re-logged as a separate item.', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '' }],
+        voidReason: 'Wrong patient — re-logged as a separate item.', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', imageKey: '' }],
       voidedTotal: 1,
       counts: { open: 2, acknowledged: 1, overdueUnacked: 1, praise: 1 },
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      // Batch F: the 1-on-1 board — one rep past due, one with none on record,
+      // one not due yet (coachOneOnOneFor_'s shape).
+      oneOnOne: { cadenceDays: 14, cadenceSet: true, defaultDays: 14, maxDays: 90, todayIso: todayIso,
+        reps: [
+          { empId: 'E-1042', empName: 'Avery Blake', last: daysAgo(20), count: 3, nextDue: daysAgo(6), due: true, daysOver: 6 },
+          { empId: 'E-1088', empName: 'Sam Ortiz', last: '', count: 0, nextDue: '', due: true, daysOver: null },
+          { empId: 'E-1090', empName: 'Leo Kim', last: daysAgo(5), count: 1, nextDue: daysAgo(-9), due: false, daysOver: null }],
+        history: {
+          'E-1042': [{ id: 'oo-1', date: daysAgo(20), byName: 'Robin Choudhury', note: 'Hold times and the callback habit; check in again in two weeks.', mine: true },
+                     { id: 'oo-2', date: daysAgo(36), byName: 'Robin Choudhury', note: '', mine: true }],
+          'E-1090': [{ id: 'oo-3', date: daysAgo(5), byName: 'Robin Choudhury', note: 'First 1-on-1 — goals for the quarter.', mine: true }] } },
       analytics: { total: 4, acknowledged: 1, ackRatePct: 33, medianDaysToAck: 1.6, overdueUnacked: 1,
         bySeverity: { praise: 1, minor: 1, major: 1, critical: 1 },
         perRep: [
@@ -2172,15 +2201,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { coachId: 'm1', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-508', severity: 'major', status: 'open',
         whatHappened: 'Quoted a delivery date the warehouse could not meet.', whatShould: 'Check the carrier ETA in the CRM before committing to a date.',
         createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(2) + ' 14:05:00', acknowledgedAt: '', ackBy: '',
-        voidReason: '', repResponse: '', followUpAt: daysAgo(-5), nudgedAt: '', noteId: 'n-4510', noteDate: daysAgo(2), qaFileId: '', ageDays: 1.2 },
+        voidReason: '', repResponse: '', followUpAt: daysAgo(-5), nudgedAt: '', noteId: 'n-4510', noteDate: daysAgo(2), qaFileId: '', imageKey: '', ageDays: 1.2 },
       { coachId: 'm2', empId: 'E-1042', empName: 'Avery Blake', patientTRX: 'TRX-471', severity: 'praise', status: 'open',
         whatHappened: 'Walked a nervous first-time CPAP user through mask fitting with real patience — the follow-up survey called you out by name.', whatShould: '',
         createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(5) + ' 16:40:00', acknowledgedAt: '', ackBy: '',
-        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 3.5 },
+        voidReason: '', repResponse: '', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', imageKey: '', ageDays: 3.5 },
       { coachId: 'm3', empId: 'E-1042', empName: 'Avery Blake', patientTRX: '', severity: 'minor', status: 'acknowledged',
         whatHappened: 'Missed the callback-number field on two notes in a row.', whatShould: 'The callback number is the first field for a reason — fill it before the narrative.',
         createdBy: 'robin@umsupply.com', createdByName: 'Robin Choudhury', createdAt: daysAgo(40) + ' 09:12:00', acknowledgedAt: daysAgo(39) + ' 10:00:00', ackBy: 'avery@umsupply.com',
-        voidReason: '', repResponse: 'Got it — I moved the number to the top of my template.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', ageDays: 28 }],
+        voidReason: '', repResponse: 'Got it — I moved the number to the top of my template.', followUpAt: '', nudgedAt: '', noteId: '', noteDate: '', qaFileId: '', imageKey: '', ageDays: 28 }],
       businessDayMinutes: 540 },
     // ── Batch-7 (cycle 17): the Admin panel scenario. Field names mirror the
     // server return sites (INV-185): getAdminConfig's config bag, the
@@ -2652,6 +2681,43 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
+    // Batch H (operator 2026-11-02): Employee Docs — a PIP issued as a PDF with
+    // two highlighted boxes (a date, a paragraph) and one listed field, plus a
+    // signed policy; the PDFs are tiny hand-built files (one page of text).
+    getMyDocs: { docs: [
+      { docId: 'd-pdf', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, needsAction: true, hasPdf: true },
+      { docId: 'd-signed', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
+        issuedAt: daysAgo(20) + ' 09:00:00', dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', fieldCount: 0, needsAction: false, hasPdf: false }] },
+    getMyDoc: function (id) {
+      var sha = '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8';
+      if (id === 'd-signed') {
+        return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
+          bodyMd: 'Answer within three rings, name the company, and confirm the caller\'s identity before discussing an order.', issuedAt: daysAgo(20) + ' 09:00:00',
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null };
+      }
+      return { docId: 'd-pdf', empId: 'E-1042', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        bodyMd: 'Please read the plan, fill in the highlighted boxes, and sign below.\n\nPDF document "PIP - Sam Ortiz.pdf" \u00b7 SHA-256 ' + sha,
+        issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', voidReason: '', isOwner: true, integrity: 'ok',
+        pdf: { name: 'PIP - Sam Ortiz.pdf', sha: sha },
+        fields: [
+          { id: 'review-date', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.215, y: 0.163, w: 0.25, h: 0.03 } },
+          { id: 'employee-comments', label: 'Employee comments', type: 'textarea', required: false, box: { page: 1, x: 0.098, y: 0.226, w: 0.8, h: 0.075 } },
+          { id: 'anything-else', label: 'Anything else you want on record?', type: 'text', required: false }],
+        responses: {}, canComplete: true, ackText: 'I acknowledge that I have read and understood this document. I understand this electronic acknowledgment has the same effect as a handwritten signature.', ackVersion: 1 };
+    },
+    getEmpDocPdf: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFBJUCAtIFNhbSBPcnRpeikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDcwMCBUZCAoUGVyZm9ybWFuY2UgSW1wcm92ZW1lbnQgUGxhbikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDY3NCBUZCAoR29hbHM6IGFuc3dlciB3aXRoaW4gMyByaW5nczsgbm90ZXMgb24gZXZlcnkgY2FsbC4pIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NDggVGQgKFJldmlldyBkYXRlOiBfX19fX19fX19fX19fXykgVGogRVQKQlQgL0YxIDExIFRmIDYwIDYyMiBUZCAoRW1wbG95ZWUgY29tbWVudHM6KSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTk2IFRkICgpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1NzAgVGQgKCkgVGogRVQKQlQgL0YxIDExIFRmIDYwIDU0NCBUZCAoTWFuYWdlcjogUm9iaW4gQ2hvdWRodXJ5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDcwOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3OQolJUVPRgo=', sha: '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8', name: 'PIP - Sam Ortiz.pdf' },
+    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' },
+    getDocsDashboard: { docs: [
+      { docId: 'd-pdf', empId: 'E-1088', empName: 'Sam Ortiz', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],
+      ackVersion: 1 },
+    getEmpDocTemplates: { templates: [] },
+    // Batch F: the screenshot reader and the three 1-on-1 writes.
+    getCoachingImage: { success: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' },
+    logOneOnOne: { success: true, id: 'oo-new', date: todayIso },
+    voidOneOnOne: { success: true },
+    setOneOnOneCadence: { success: true, cadenceDays: 14 },
     getEmployeesList: { employees: [
       { id: 'E-1042', name: 'Avery Blake', timezone: 'Asia/Kolkata', tzAbbr: 'IST' },
       { id: 'E-1088', name: 'Sam Ortiz', timezone: 'Asia/Manila', tzAbbr: 'PHT' },
@@ -2784,6 +2850,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // PR 4 (Coaching): both coaching payloads in their genuinely-empty shape.
     getCoachingDashboard: { items: [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
       reminderDays: 7, businessDayMinutes: 540, todayIso: todayIso,
+      oneOnOne: { cadenceDays: 14, cadenceSet: false, defaultDays: 14, maxDays: 90, todayIso: todayIso, reps: [], history: {} },
       analytics: { total: 0, acknowledged: 0, ackRatePct: 0, medianDaysToAck: null, overdueUnacked: 0, bySeverity: { praise: 0, minor: 0, major: 0, critical: 0 }, perRep: [] } },
     getMyCoaching: { items: [], businessDayMinutes: 540 },
     // PR 6 (Time Clock): a CLEAN, empty round — the block renders NOTHING

@@ -715,11 +715,126 @@ function accrualLedgerPut_(map, ym, hours, keep) {
   keys.slice(0, Math.max(0, keys.length - (keep || 0))).forEach(function (k) { delete out[k]; });
   return out;
 }
+/** PURE (Node-pinned; Script Property consolidation) — map `b` folded into
+ *  map `a` by accrualLedgerPut_'s rule: per month the HIGHER figure, then only
+ *  the newest `keep` months. Returns a new map. */
+function accrualLedgerMergeMaps_(a, b, keep) {
+  let out = Object.assign({}, a || {});
+  Object.keys(b || {}).forEach(function (ym) { out = accrualLedgerPut_(out, ym, b[ym], keep); });
+  return out;
+}
+/** PURE (Node-pinned) — the PtoAccrualLedger tab's data rows as
+ *  {byEmp: {empId: {ym: hours}}, at: {empId: first row index}, bad: {empId: true}}.
+ *  Two rows for one rep merge (the higher figure per month). A row whose map
+ *  cannot be read is BAD, never read as empty — a hole in the copy, so the
+ *  reader claims no coverage and the writer refuses to overwrite it. */
+function accrualLedgerRowsToMap_(rows, keep) {
+  const out = { byEmp: {}, at: {}, bad: {}, unreadable: 0 };
+  (rows || []).forEach(function (r, i) {
+    const id = String((r && r[0] != null) ? r[0] : '').trim();
+    if (!id) return;
+    if (!(id in out.at)) out.at[id] = i;
+    let m = null;
+    try { m = JSON.parse(String(r[1] == null ? '' : r[1])); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) { out.bad[id] = true; out.unreadable++; return; }
+    out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], m, keep);
+  });
+  return out;
+}
+/** PURE (Node-pinned) — the side ledger from the tab (`tab`, from
+ *  accrualLedgerRowsToMap_, or null when it could not be read) and every
+ *  Script Property (`props`), whose PTO_ACCRUAL_LEDGER_<empId> keys are the
+ *  legacy copy: per (rep, month) the higher figure. `since` — the coverage
+ *  claim — holds only while the tab was read and every row of it parsed: an
+ *  unreadable tab or row is a hole, and a hole is no coverage (F17's rule for
+ *  a failed record). `legacy` counts the legacy keys still there. */
+function accrualSideLedgerCombine_(tab, props, keep) {
+  const out = { byEmp: {}, since: '', legacy: 0 };
+  const p = props || {};
+  Object.keys(p).forEach(function (k) {
+    if (k === PTO_ACCRUAL_LEDGER_SINCE || k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
+    out.legacy++;
+    let m = null;
+    try { m = JSON.parse(p[k]); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;
+    const id = k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length);
+    out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], m, keep);
+  });
+  if (tab) {
+    Object.keys(tab.byEmp || {}).forEach(function (id) {
+      out.byEmp[id] = accrualLedgerMergeMaps_(out.byEmp[id], tab.byEmp[id], keep);
+    });
+  }
+  out.since = (tab && !tab.unreadable) ? String(p[PTO_ACCRUAL_LEDGER_SINCE] || '') : '';
+  return out;
+}
+/** PURE (Node-pinned) — does map `have` hold everything in `want`? Every
+ *  month at least as high, except a month older than the oldest `have` keeps
+ *  once it is full: the keep rule ages that out of any copy. A value
+ *  accrualLedgerPut_ would never store needs nothing. The migration deletes a
+ *  legacy key only when the tab, read back, covers it. */
+function accrualLedgerCovers_(have, want, keep) {
+  const h = have || {};
+  const kept = Object.keys(h).sort();
+  const floor = kept.length >= keep ? kept[0] : '';
+  return Object.keys(want || {}).every(function (ym) {
+    const w = Number(want[ym]);
+    if (!/^\d{4}-\d{2}$/.test(ym) || !isFinite(w) || w < 0) return true;
+    if (floor && ym < floor) return true;
+    return Number(h[ym]) >= +w.toFixed(2);
+  });
+}
+/** The PtoAccrualLedger tab (ADP sheet); made with its header when `create`
+ *  and missing. Null when it does not exist and `create` is false. */
+function accrualLedgerSheet_(create) {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(PTO_ACCRUAL_LEDGER_TAB);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(PTO_ACCRUAL_LEDGER_TAB);
+    sheet.appendRow(sheetSafeRow_(PTO_ACCRUAL_LEDGER_HEADERS.map(function (h, i) {
+      return i === 2 ? `Updated (${tzAbbr_(CONFIG.TIMEZONE)})` : h;
+    })));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** The tab's data rows (raw values); [] for a missing or empty tab. Throws on
+ *  a failed read. */
+function accrualLedgerReadRows_(sheet) {
+  if (!sheet) return [];
+  const last = sheet.getLastRow();
+  return last > 1 ? sheet.getRange(2, 1, last - 1, PTO_ACCRUAL_LEDGER_HEADERS.length).getValues() : [];
+}
+/** Write rep rows into the tab: `updates` = [{row: 0-based data index, cells}]
+ *  rewritten in place, `appends` = [cells] added at the end. Every cell is
+ *  plain text, the '@' re-asserted on the cells written (g144). The CALLER
+ *  holds the ScriptLock (the appendRowsTextSafe_ contract) — it cannot take it
+ *  here: the accrual job already holds it, and re-taking then releasing it
+ *  would release the job's own lock early (A8). S2 checks every caller chain
+ *  reaches a lock holder. */
+function accrualLedgerWriteRows_(sheet, updates, appends) {
+  const width = PTO_ACCRUAL_LEDGER_HEADERS.length;
+  (updates || []).forEach(function (u) {
+    const range = sheet.getRange(u.row + 2, 1, 1, width);
+    range.setNumberFormat('@');
+    range.setValues(sheetTextRows_([u.cells], null));
+  });
+  if (appends && appends.length) appendRowsTextSafe_(sheet, appends, PTO_ACCRUAL_LEDGER_TEXT_IDX);
+}
+/** One rep's row: the id, the map as JSON, the write time. */
+function accrualLedgerCells_(id, map) {
+  const now = new Date();
+  return [String(id), JSON.stringify(map || {}), fmtDate_(now) + ' ' + fmtTime_(now)];
+}
 /** F17 — record what a PtoAccrualCredit row paid for, in the side ledger.
- *  Called right after the audit row; never throws. The first record stamps
- *  `…_SINCE`. A FAILED record forgets `…_SINCE`, so the reconcile goes back to
- *  saying its tail read was cut short rather than trusting a copy with a hole
- *  in it (the tail still holds the row this run wrote). */
+ *  Called right after the audit row, under the accrual job's ScriptLock; never
+ *  throws. The first record stamps `…_SINCE`. A FAILED record forgets
+ *  `…_SINCE`, so the reconcile goes back to saying its tail read was cut short
+ *  rather than trusting a copy with a hole in it (the tail still holds the row
+ *  this run wrote). Since the Script Property consolidation the record is the
+ *  rep's PtoAccrualLedger row; a legacy key still holding the rep is folded
+ *  into the row so the row is whole (the migration deletes the key). A row
+ *  that cannot be read is never overwritten — that is a failed record. */
 function recordAccrualLedger_(empId, months, hours) {
   const id = String(empId || '').trim();
   if (!id || !months || months.length !== 1) return;   // a legacy multi-month key is never written
@@ -729,29 +844,76 @@ function recordAccrualLedger_(empId, months, hours) {
       propSetBounded_(PTO_ACCRUAL_LEDGER_SINCE,
         Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM'));
     }
-    let cur = {};
-    try { cur = JSON.parse(props.getProperty(PTO_ACCRUAL_LEDGER_PREFIX + id) || '{}') || {}; } catch (_) { cur = {}; }
-    // Refusing mode (the default): twelve months is far under the cap, and a
-    // refusal lands in the catch below, which drops the coverage claim.
-    propSetBounded_(PTO_ACCRUAL_LEDGER_PREFIX + id,
-      JSON.stringify(accrualLedgerPut_(cur, months[0], hours, PTO_ACCRUAL_LEDGER_KEEP_MONTHS)));
+    const sheet = accrualLedgerSheet_(true);
+    const tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+    if (tab.bad[id]) throw new Error('a ' + PTO_ACCRUAL_LEDGER_TAB + ' row for ' + id + ' cannot be read — it was left as it is');
+    let cur = tab.byEmp[id] || {};
+    let legacy = null;
+    try { legacy = JSON.parse(props.getProperty(PTO_ACCRUAL_LEDGER_PREFIX + id) || 'null'); } catch (_) { legacy = null; }
+    if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+      cur = accrualLedgerMergeMaps_(cur, legacy, PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+    }
+    const cells = accrualLedgerCells_(id, accrualLedgerPut_(cur, months[0], hours, PTO_ACCRUAL_LEDGER_KEEP_MONTHS));
+    if (id in tab.at) accrualLedgerWriteRows_(sheet, [{ row: tab.at[id], cells: cells }], []);
+    else accrualLedgerWriteRows_(sheet, [], [cells]);
   } catch (e) {
     Logger.log('recordAccrualLedger_ failed for ' + id + ': ' + e.message);
     try { props.deleteProperty(PTO_ACCRUAL_LEDGER_SINCE); } catch (_) {}
   }
 }
-/** F17 — every rep's side ledger and the month it began. A failed read is an
- *  EMPTY side ledger with no coverage: the tail alone decides, as before. */
+/** F17 — every rep's side ledger and the month it began: the PtoAccrualLedger
+ *  tab with any legacy per-rep keys merged in (accrualSideLedgerCombine_). A
+ *  failed read of the properties is an EMPTY side ledger with no coverage, and
+ *  a failed read of the tab is the legacy keys alone with no coverage: the
+ *  tail decides, as before. */
 function readAccrualSideLedger_() {
-  const out = { byEmp: {}, since: '' };
-  try {
-    const all = PropertiesService.getScriptProperties().getProperties();
-    Object.keys(all).forEach(function (k) {
-      if (k === PTO_ACCRUAL_LEDGER_SINCE) { out.since = String(all[k] || ''); return; }
-      if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
-      try { out.byEmp[k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length)] = JSON.parse(all[k]) || {}; } catch (_) {}
-    });
-  } catch (e) { return { byEmp: {}, since: '' }; }
+  let all;
+  try { all = PropertiesService.getScriptProperties().getProperties() || {}; } catch (e) { return { byEmp: {}, since: '', legacy: 0 }; }
+  let tab = null;
+  try { tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(accrualLedgerSheet_(false)), PTO_ACCRUAL_LEDGER_KEEP_MONTHS); } catch (e) { tab = null; }
+  return accrualSideLedgerCombine_(tab, all, PTO_ACCRUAL_LEDGER_KEEP_MONTHS);
+}
+/** Script Property consolidation — copy every legacy PTO_ACCRUAL_LEDGER_<empId>
+ *  key into the tab, READ THE TAB BACK, and delete each key the tab now covers
+ *  (accrualLedgerCovers_). A key that cannot be parsed, whose rep has a row
+ *  that cannot be read, or that the read-back does not cover, is KEPT and
+ *  named — it stays readable beside the tab, so keeping it loses nothing.
+ *  The caller holds the ScriptLock. Throws only before anything is written. */
+function moveAccrualLedgerToTab_() {
+  const keep = PTO_ACCRUAL_LEDGER_KEEP_MONTHS;
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties() || {};
+  const legacy = {}, out = { found: 0, moved: 0, kept: [] };
+  Object.keys(all).forEach(function (k) {
+    if (k === PTO_ACCRUAL_LEDGER_SINCE || k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) !== 0) return;
+    out.found++;
+    let m = null;
+    try { m = JSON.parse(all[k]); } catch (_) { m = null; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) { out.kept.push(k + ' — its value is not a ledger map'); return; }
+    legacy[k.slice(PTO_ACCRUAL_LEDGER_PREFIX.length)] = m;
+  });
+  const ids = Object.keys(legacy).sort();
+  if (!ids.length) return out;
+  const sheet = accrualLedgerSheet_(true);
+  const tab = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), keep);
+  const updates = [], appends = [];
+  ids.forEach(function (id) {
+    if (tab.bad[id]) { out.kept.push(PTO_ACCRUAL_LEDGER_PREFIX + id + ' — the rep\'s ' + PTO_ACCRUAL_LEDGER_TAB + ' row cannot be read'); return; }
+    const cells = accrualLedgerCells_(id, accrualLedgerMergeMaps_(tab.byEmp[id], legacy[id], keep));
+    if (id in tab.at) updates.push({ row: tab.at[id], cells: cells });
+    else appends.push(cells);
+  });
+  accrualLedgerWriteRows_(sheet, updates, appends);
+  const back = accrualLedgerRowsToMap_(accrualLedgerReadRows_(sheet), keep);
+  ids.forEach(function (id) {
+    if (tab.bad[id]) return;
+    if (back.bad[id] || !accrualLedgerCovers_(back.byEmp[id], legacy[id], keep)) {
+      out.kept.push(PTO_ACCRUAL_LEDGER_PREFIX + id + ' — the tab read back does not hold every month');
+      return;
+    }
+    props.deleteProperty(PTO_ACCRUAL_LEDGER_PREFIX + id);
+    out.moved++;
+  });
   return out;
 }
 
@@ -4155,6 +4317,142 @@ function activityDayView_(mins, blockMin) {
   const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks };
 }
+// ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
+// delete"): the ActivityLog's raw pings are condensed, each night, into ONE
+// ActivitySummary row per rep per FINISHED day (the rep's own day, as Day Edit
+// draws it), kept indefinitely; a raw ping is purged only once its day has a
+// summary row and it is older than ACTIVITY_LOG_DAYS.
+
+/** PURE (Node-pinned) — a day's block counts as one compact string: one
+ *  base-36 digit per block, capped at 35 ('z'). */
+function activityBlocksEncode_(blocks) {
+  return (blocks || []).map(function (n) {
+    return Math.max(0, Math.min(35, Math.floor(Number(n) || 0))).toString(36);
+  }).join('');
+}
+/** PURE (Node-pinned) — the inverse: `n` counts, 0 for a missing or bad digit. */
+function activityBlocksDecode_(str, n) {
+  const out = new Array(n).fill(0);
+  const s = String(str || '');
+  for (let i = 0; i < n && i < s.length; i++) {
+    const v = parseInt(s.charAt(i), 36);
+    out[i] = isFinite(v) ? v : 0;
+  }
+  return out;
+}
+/** PURE (Node-pinned) — the summary rows a set of raw pings owes.
+ *  rows: [[empId, ms]] (any order); tzOf(empId) → tz; localOf(ms, tz) →
+ *  {date: 'YYYY-MM-DD', min}; todayOf(tz) → 'YYYY-MM-DD'; existing:
+ *  {'date|empId': true} already summarised. Only a FINISHED day (before the
+ *  rep's today) is condensed — a day still being worked would be cut short —
+ *  and a day already summarised is never summarised twice. Returns
+ *  {summaries: [{date, empId, tz, pings, first, last, activeMin, blocks}],
+ *  finished: {'date|empId': true}} — every finished day seen. */
+function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const days = {}, today = {};
+  (rows || []).forEach(function (r) {
+    const id = String((r && r[0]) || '').trim();
+    const ms = Number(r && r[1]);
+    if (!id || !(ms > 0)) return;
+    const tz = tzOf(id);
+    if (today[tz] == null) today[tz] = todayOf(tz);
+    const l = localOf(ms, tz);
+    if (!l || !l.date || !(l.date < today[tz])) return;
+    const k = l.date + '|' + id;
+    (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [] }).mins.push(l.min);
+  });
+  const summaries = [], finished = {};
+  Object.keys(days).sort().forEach(function (k) {
+    finished[k] = true;
+    if ((existing || {})[k]) return;
+    const d = days[k];
+    const v = activityDayView_(d.mins, size);
+    summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
+      activeMin: v.blocks.filter(function (n) { return n > 0; }).length * size, blocks: activityBlocksEncode_(v.blocks) });
+  });
+  return { summaries: summaries, finished: finished };
+}
+/** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
+ *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
+ *  has no summary row is NEVER deleted, so nothing goes before it is kept. */
+function activityPurgeIndexes_(rows, cutoffMs, summarised, tzOf, localOf, budget) {
+  const out = [];
+  for (let i = 0; i < (rows || []).length && out.length < budget; i++) {
+    const id = String((rows[i] && rows[i][0]) || '').trim();
+    const ms = Number(rows[i] && rows[i][1]);
+    if (!id || !(ms > 0) || !(ms < cutoffMs)) continue;
+    const l = localOf(ms, tzOf(id));
+    if (l && summarised[l.date + '|' + id]) out.push(i);
+  }
+  return out;
+}
+function getOrCreateActivitySummarySheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(ACTIVITY_SUMMARY_TAB);
+    sheet.appendRow(sheetSafeRow_(ACTIVITY_SUMMARY_HEADERS));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** The summary keys on file: {'date|empId': row number}. Plain-text cells, so
+ *  a date reads back as the string it was written as (g144). */
+function activitySummaryKeys_(sheet) {
+  const out = {};
+  const last = sheet ? sheet.getLastRow() : 0;
+  if (last < 2) return out;
+  sheet.getRange(2, 1, last - 1, 2).getValues().forEach(function (r, i) {
+    const d = String(r[0] || '').trim(), id = String(r[1] || '').trim();
+    if (d && id) out[d + '|' + id] = i + 2;
+  });
+  return out;
+}
+/** The nightly step, run by purgeOldDiagnostics under its lock: condense
+ *  every finished day not yet summarised, THEN purge raw pings past the
+ *  window whose day is summarised — on ActivityLog's own budget, so it never
+ *  starves the other tabs (or they it). A failed condense purges nothing. */
+function activityLogCondenseAndPurge_(ss, nowMs) {
+  const out = { condensed: 0, removed: 0, hitCap: false };
+  const raw = ss.getSheetByName(ACTIVITY_LOG_TAB);
+  const last = raw ? raw.getLastRow() : 0;
+  if (last < 2) return out;
+  const rows = raw.getRange(2, 2, last - 1, 2).getValues();
+  const roster = getEmployeeRosterRows_();
+  const tzById = {};
+  for (let i = 1; i < roster.length; i++) {
+    const id = String(roster[i][EMP.ID] || '').trim();
+    if (id) tzById[id] = String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE;
+  }
+  const tzOf = function (id) { return tzById[id] || CONFIG.TIMEZONE; };
+  const localOf = function (ms, tz) {
+    const s = Utilities.formatDate(new Date(ms), tz, 'yyyy-MM-dd HH:mm');
+    return { date: s.slice(0, 10), min: parseInt(s.slice(11, 13), 10) * 60 + parseInt(s.slice(14, 16), 10) };
+  };
+  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
+  const sumSheet = getOrCreateActivitySummarySheet_();
+  const existing = activitySummaryKeys_(sumSheet);
+  const c = activityCondense_(rows, tzOf, localOf, todayOf, existing, ACTIVITY_BLOCK_MIN);
+  if (c.summaries.length) {
+    const stamp = fmtDate_(new Date(nowMs)) + ' ' + fmtTime_(new Date(nowMs));
+    const newRows = c.summaries.map(function (s) {
+      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp];
+    });
+    appendRowsTextSafe_(sumSheet, newRows, ACTIVITY_SUMMARY_TEXT_IDX);
+    out.condensed = c.summaries.length;
+  }
+  const summarised = Object.assign({}, existing, c.finished);
+  const idx = activityPurgeIndexes_(rows, nowMs - ACTIVITY_LOG_DAYS * 86400000, summarised, tzOf, localOf, ACTIVITY_LOG_PURGE_MAX_PER_RUN);
+  if (idx.length) {
+    const rowsNo = idx.map(function (i) { return i + 2; });
+    if (rowsNo.length >= raw.getMaxRows() - 1) raw.insertRowAfter(raw.getMaxRows());   // never "every non-frozen row" (diagPurgeTab_'s guard)
+    contiguousRowRunsDesc_(rowsNo).forEach(function (r) { raw.deleteRows(r.start, r.count); });
+  }
+  out.removed = idx.length;
+  out.hitCap = idx.length >= ACTIVITY_LOG_PURGE_MAX_PER_RUN;
+  return out;
+}
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
  *  timezone, for Day Edit. `{date, timezone, pings, first, last, blocks,
  *  blockMin, gapMin}` or `{error}`; a day with no tab yet is zero pings, said
@@ -4170,11 +4468,28 @@ function managerGetDayActivity(empId, date) {
     const tz = empTz_(target);
     const startMs = Utilities.parseDate(date + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
     const endMs = Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
-    const sheet = getAdpSS_().getSheetByName(ACTIVITY_LOG_TAB);
+    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS, keptFrom: '' };
+    const ss = getAdpSS_();
+    // Batch G: a finished day's SUMMARY row is the whole day (it was written
+    // before any of its pings could be purged), so it is read first; the raw
+    // pings answer only for a day not yet condensed (today, last night's run).
+    const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+    const sumKeys = activitySummaryKeys_(sum);
+    Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
+    const sumRow = sumKeys[String(date) + '|' + target.id];
+    if (sumRow) {
+      const r = sum.getRange(sumRow, 1, 1, ACTIVITY_SUMMARY_HEADERS.length).getValues()[0];
+      return Object.assign(base, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
+        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+    }
+    const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
     const last = sheet ? sheet.getLastRow() : 0;
-    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: true });
+    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: !base.keptFrom });
     const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
+    if (msCol[0] > 0) {
+      const rawFrom = Utilities.formatDate(new Date(msCol[0]), tz, 'yyyy-MM-dd');
+      if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
+    }
     const lo = activityLowerBound_(msCol, startMs), hi = activityLowerBound_(msCol, endMs);
     const mins = [];
     if (hi > lo) {
@@ -9016,6 +9331,18 @@ function getMyPendingTasks() {
       });
     } catch (e) { (hrOk ? unavailable : notConfigured).push('coaching'); }
 
+    // oneOnOne — Batch F (operator 2026-11-02): a MANAGER gets ONE item while
+    // any rep on their team (roster column M) is due a 1-on-1 by their own
+    // cadence; a rep with none on record is due. HR-backed, so an unset store
+    // is notConfigured, a failed read unavailable (never "nobody due").
+    if (emp.isManager) {
+      try {
+        var ooToday = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        var ooDue = coachOneOnOnesDueFor_(emp.email, ooToday);
+        if (ooDue.length) items.push(coachOneOnOneTask_(ooDue));
+      } catch (e) { (hrOk ? unavailable : notConfigured).push('oneOnOne'); }
+    }
+
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
     // "couldn't check", never "0 missing" (F5 / INV-187).
@@ -9051,7 +9378,7 @@ function getMyPendingTasks() {
           items.push({
             kind: 'requests', title: 'Department replies running late',
             detail: late.map(function (d) { return d.dept + ' ' + d.late + ' of ' + d.open + ' past SLA'; }).join(' \u00b7 '),
-            dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' },
+            dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' },
           });
         }
       }
@@ -9098,41 +9425,27 @@ function getMyPendingTasks() {
     // and only when the rep owns at least one claim).
     if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
       try {
-        var spClaims = spanishClaimsMap_();
-        var me = String(emp.email || '').trim().toLowerCase();
-        // SP-1 (cycle 23): the pending ids decide, never "a manual resolve
-        // exists" — a repeat voicemail makes a resolved thread pending again.
-        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
-        if (anyMine) {
-          var spIds = spanishPendingIdsGet_(SPANISH_PENDING_WINDOW_DAYS);
-          var spFloors = spanishPendingFloorsGet_(SPANISH_PENDING_WINDOW_DAYS);   // SP-2 — a reopened request comes back unclaimed
-          var spEsc = spanishPendingEscalatedGet_(SPANISH_PENDING_WINDOW_DAYS);   // E4 (G5)
-          if (!spIds) {
-            var spRes = getSpanishInboxPending(SPANISH_PENDING_WINDOW_DAYS);
-            if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
-            spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
-            spFloors = {}; spEsc = {};
-            (spRes.pending || []).forEach(function (p) {
-              if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs;
-              if (p.escalated) spEsc[p.threadId] = true;
-            });
-          }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spFloors);
-          if (spOpen.length) {
-            var spOldest = spOpen[0];
-            var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
-            // E4 (cycle 25, G5): a claimed request waiting 7+ days makes the item OVERDUE.
-            var spEscN = spOpen.filter(function (o) { return spEsc[o.threadId]; }).length;
-            items.push({
-              kind: 'spanish',
-              title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
-              detail: (spEscN ? spEscN + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days · ' : '') +
-                (spAssigned ? spAssigned + ' assigned to you · ' : '') +
-                (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
-              dueIso: '', overdue: spEscN > 0, action: 'Open',
-              route: { tool: 'metrics', tab: 'metricsSpanish' },
-            });
-          }
+        // Batch C (operator 2026-11-02): ONE reader for the caller's open
+        // requests, shared with the assignee badge (g126) — the claims tab,
+        // the cached pending ids (SP-1: they decide, never "a manual resolve
+        // exists"), and a live read only on a miss for a rep who owns a claim.
+        var spMine = spanishMyOpen_(emp, spanishClaimsMap_());
+        var spEsc = spMine.escalated;   // E4 (G5)
+        var spOpen = spMine.open;
+        if (spOpen.length) {
+          var spOldest = spOpen[0];
+          var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
+          // E4 (cycle 25, G5): a claimed request waiting 7+ days makes the item OVERDUE.
+          var spEscN = spOpen.filter(function (o) { return spEsc[o.threadId]; }).length;
+          items.push({
+            kind: 'spanish',
+            title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
+            detail: (spEscN ? spEscN + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days · ' : '') +
+              (spAssigned ? spAssigned + ' assigned to you · ' : '') +
+              (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
+            dueIso: '', overdue: spEscN > 0, action: 'Open',
+            route: { tool: 'timeClock', tab: 'metricsSpanish' },
+          });
         }
       } catch (e) { unavailable.push('spanish'); }
     }
@@ -9181,7 +9494,7 @@ function empDocContentHashMatches_(stored, bodyMd, title, docType, empId, fields
 }
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
  *  {ok:false, error}. Whitelist-built. */
-function empDocValidateIssue_(payload) {
+function empDocValidateIssue_(payload, pdf) {
   payload = payload || {};
   const empId = String(payload.empId || '').trim();
   if (!empId) return { ok: false, error: 'Pick an employee.' };
@@ -9189,12 +9502,16 @@ function empDocValidateIssue_(payload) {
   if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
   const title = String(payload.title || '').trim();
   if (!title || title.length > EMPDOC_TITLE_MAX) return { ok: false, error: 'Title is required (max ' + EMPDOC_TITLE_MAX + ' chars).' };
-  const bodyMd = String(payload.bodyMd || '');
+  let bodyMd = String(payload.bodyMd || '');
+  // Batch H: a PDF document's written body is an optional NOTE, and the frozen
+  // body always ends with the line naming the PDF's SHA-256 — so the content
+  // hash (and every signature over it) binds the PDF's exact bytes.
+  if (pdf) bodyMd = (bodyMd.trim() ? bodyMd.trim() + '\n\n' : '') + empDocPdfLine_(pdf.sha, pdf.name);
   if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  const fv = empDocValidateFields_(payload.fields);
+  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf });
   if (!fv.ok) return { ok: false, error: fv.error };
   return { ok: true, doc: {
     empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
@@ -9208,7 +9525,7 @@ function empDocValidateIssue_(payload) {
 /** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
  *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
  *  stable slug id from the label when absent; dedupes ids. */
-function empDocValidateFields_(fields) {
+function empDocValidateFields_(fields, opts) {
   if (fields == null) return { ok: true, fields: [] };
   if (!Array.isArray(fields)) return { ok: false, error: 'Fields must be a list.' };
   if (fields.length > EMPDOC_FIELD_CAP) return { ok: false, error: 'Too many fields (max ' + EMPDOC_FIELD_CAP + ').' };
@@ -9226,9 +9543,45 @@ function empDocValidateFields_(fields) {
     let base = id, n = 2;
     while (seen[id]) { id = base + '-' + (n++); }
     seen[id] = true;
-    out.push({ id: id, label: label, type: type, required: f.required !== false });
+    const field = { id: id, label: label, type: type, required: f.required !== false };
+    // Batch H: a field BOX — where on the PDF the employee fills it in. Only a
+    // PDF document may carry one (a box on a written document points nowhere).
+    if (f.box != null) {
+      if (!(opts && opts.allowBoxes)) return { ok: false, error: 'Field boxes belong on a PDF document.' };
+      const b = empDocNormBox_(f.box);
+      if (!b) return { ok: false, error: 'The box for "' + label + '" is not on a page.' };
+      field.box = b;
+    }
+    out.push(field);
   }
   return { ok: true, fields: out };
+}
+/** PURE (Node-pinned) — a field box as {page, x, y, w, h}: a whole page number
+ *  (1..EMPDOC_PDF_MAX_PAGES) and a rectangle as fractions of that page, inside
+ *  it and big enough to type in; rounded to 4 places so the hashed JSON is the
+ *  same however the browser measured it. null for anything else. */
+function empDocNormBox_(box) {
+  if (!box || typeof box !== 'object') return null;
+  const page = Number(box.page);
+  if (!(page >= 1 && page <= EMPDOC_PDF_MAX_PAGES && page === Math.floor(page))) return null;
+  const r = function (v) { return Math.round(Number(v) * 10000) / 10000; };
+  const x = r(box.x), y = r(box.y), w = r(box.w), h = r(box.h);
+  if (![x, y, w, h].every(function (v) { return isFinite(v); })) return null;
+  if (x < 0 || y < 0 || w < 0.01 || h < 0.005 || x + w > 1.0001 || y + h > 1.0001) return null;
+  return { page: page, x: x, y: y, w: w, h: h };
+}
+/** PURE (Node-pinned) — the line a PDF document's frozen body ends with. The
+ *  name is the file's, made plain (no quotes, no line breaks, capped). */
+function empDocPdfLine_(sha, name) {
+  const n = String(name || 'document.pdf').replace(/["\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, EMPDOC_PDF_NAME_MAX) || 'document.pdf';
+  return 'PDF document "' + n + '" \u00b7 SHA-256 ' + String(sha || '').toLowerCase();
+}
+/** PURE (Node-pinned) — the PDF a frozen body names: {sha, name} from its LAST
+ *  line, or null for a written document. */
+function empDocPdfFromBody_(bodyMd) {
+  const lines = String(bodyMd || '').replace(/\s+$/, '').split('\n');
+  const m = /^PDF document "([^"]*)" \u00b7 SHA-256 ([a-f0-9]{64})$/.exec(lines[lines.length - 1] || '');
+  return m ? { name: m[1], sha: m[2] } : null;
 }
 /** Pure (Node-pinned) — validate the employee's responses against the doc's
  *  field schema. Every required field must be non-empty; sizes are bounded.
@@ -9295,6 +9648,7 @@ function empDocRowToObj_(row, ssTz) {
     fields: empDocParseJson_(row[ED.FIELDS], []),
     responsesRaw: String(row[ED.RESPONSES] || ''),
     responses: empDocParseJson_(row[ED.RESPONSES], {}),
+    pdfKey: EMPDOC_PDF_KEY_RE.test(String(row[ED.PDF_KEY] || '').trim()) ? String(row[ED.PDF_KEY]).trim() : '',
   };
 }
 /** Defensive JSON parse — corrupt blob never throws (returns the fallback). */

@@ -10,6 +10,182 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch H (Employee Docs from a PDF)
+
+**No new operator state** (the `EmpDocFiles` tab in the HR spreadsheet creates
+itself). Deploy: Team Tools `clasp push -f` + New version.
+
+- Issue Docs → **Content: PDF file**. Choose the PDF (up to 4 MB) — e.g. the PIP
+  exported from Google Docs with File → Download → PDF.
+- Pick a **Box type** and drag on a page (or tap) to place a highlighted box the
+  employee must fill in; name each box in the field list below. Remove one with
+  its ×.
+- The employee opens it in My Docs, fills the boxes on the page, and signs.
+- A signed document has a **Certificate** button (reader). It shows a PDF with
+  the document, the employee, the signature and every answer, plus the PDF's
+  SHA-256. **Try the certificate once after the deploy** — if it says "could not
+  be made into a PDF here", the domain blocks Apps Script's PDF conversion; the
+  signing itself is unaffected.
+- A PDF document cannot be saved as a template.
+
+## 2026-11-02 — Operator round, Batch F (Coaching: 1-on-1s, cadence, screenshots)
+
+**No new operator state** (three HR-store tabs create themselves — `OneOnOnes`,
+`CoachingSettings`, `CoachingImages`). Deploy: Team Tools `clasp push -f` + New
+version.
+
+- Coaching → Team → **Who needs a 1-on-1** now shows each rep's **last 1-on-1**
+  and **next 1-on-1**, and a **Log** button to record one (date + optional note).
+- Each manager sets how often 1-on-1s fall due from the button above the board
+  (default every 14 days; 0 turns the reminders off).
+- A manager with reps due gets **one Needs-you item**, and the daily brief (or,
+  while the brief is off, the overdue digest) lists them. Notes are never emailed.
+- **Expect, on the first day:** every rep with no 1-on-1 on record is due, so
+  the reminder lists the whole team until a 1-on-1 is logged for each.
+- Logging coaching takes an optional **screenshot** (Add screenshot, or paste);
+  the item shows a Screenshot chip to the rep and their managers.
+- The team is roster column M (ManagerEmail): a rep with it blank is on nobody's
+  board.
+
+## 2026-11-02 — Operator round, Batch G (activity log: condense, then delete)
+
+**No new operator state** (the `ActivitySummary` tab creates itself). Deploy:
+Team Tools `clasp push -f` + New version.
+
+- Each night, every finished day of app activity becomes **one row per rep**
+  in a new `ActivitySummary` tab (ADP spreadsheet): first and last activity,
+  active minutes, and the day's 10-minute activity map. These rows are kept.
+- Raw activity pings are now kept **14 days** (was 60), and a ping is only
+  ever deleted after its day has a summary row.
+- Day Edit's activity strip looks the same for any day — from the summary row
+  once the pings are gone — and says when a day is older than what was kept.
+- The first night after the deploy condenses the existing backlog (up to the
+  last 60 days).
+- Do not edit or delete `ActivitySummary` rows by hand.
+
+## 2026-11-02 — Operator round, Batch D (Dept Request follow-ups)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- When there are two or more **open** requests to the same department for the
+  same TRX #, they show as **one card**: the newest on top, with "3 open
+  requests for this TRX · 2 follow-ups with no response".
+- **Show N earlier requests** opens the others underneath. Each one still has
+  its own Expand, Show reply and Mark resolved.
+- The TRX # is read from the note's patient & TRX field ("TRX 47790", or the
+  one long number in it). A field with no number never folds.
+- Nothing is merged — the requests, their emails and their reply checks are
+  unchanged.
+
+## 2026-11-02 — Operator round, Batch E (Metrics folded away)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- The **Metrics** item is gone from the sidebar and the phone's bottom nav.
+- **Dashboard** now has the tabs Dashboard · **Stats** · Time / PTO · **Spanish
+  Inbox**. Stats is My Stats and Team Metrics in one tab: a **Me / Team**
+  switch at the top.
+- **Call Notes** now has a **Dept Requests** tab (between Sent Forms and Team
+  Notes).
+- Every old link still works — email links, a bookmarked `?tool=metricsSpanish`,
+  a refresh that lands on the last tab, a pop-out opened before the deploy.
+- The answer-rate alert badge moved to the Dashboard item, and it now shows on
+  the phone's bottom nav as well.
+
+## 2026-11-02 — Operator round, Batch C (Spanish Inbox)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- **Assigned to you:** a count on the Spanish Inbox tab (and the Metrics
+  sidebar link / phone nav), and a toast with **Open** when someone else
+  assigns you a new request while the app is open. The assignment email still
+  goes out as before.
+- **Resolve selected:** tick the cards, press **Resolve selected**, confirm.
+  Up to 50 at a time. A request it could not resolve stays ticked and the toast
+  says why.
+- **Grouping:** past 15 requests, the list folds into groups by **Date
+  received** or **Department**. The department comes from the department email
+  list (Admin → Config) and the roster's Departments column — a sender in
+  neither is "Other". Each card shows when it arrived.
+
+## 2026-11-02 — Operator round, Batch B (email-tool tags)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+Sending a department email now tags its note automatically:
+- **Close Order:** a tag for each reason:
+
+  | Reason | Tag |
+  |---|---|
+  | Changing suppliers | `close-change-supplier` |
+  | Dissatisfied with services | `close-dissatisfied` |
+  | Due to cost | `close-cost` |
+  | Patient deceased | `close-deceased` |
+  | Insurance change | `close-insurance` |
+  | No longer needed | `close-not-needed` |
+  | Patient request | `close-pt-request` |
+  | Other (typed) | `close-other` |
+
+- **OOP Order** `oop-order`, **Verified Shipping** `ver-ship`, **Repeat
+  Resupply** `resupply`.
+
+The tag names live in `CONFIG.CALL_NOTES` (`CLOSE_REASON_TAGS`,
+`EMAIL_TOOL_TAGS`). An archived tag is never added this way, and archiving a tag
+now also stops its keyword auto-tag rule from adding it. Older notes are not
+re-tagged.
+
+## 2026-11-02 — Operator round, Batch S (the Scratchpad)
+
+**No new operator state, and no new tab.** A page is a ROW of the rep's existing
+Scratchpad tab; their current pad becomes the first page, "Notes". Deploy:
+Team Tools `clasp push -f` + New version.
+
+What reps can now do in the Scratchpad:
+- Keep up to **10 named pages** (New / Rename / Delete).
+- Make a **checklist** whose boxes tick.
+- **Highlight** text, add a **heading**.
+- Get **links** from typed URLs (Ctrl/⌘+click opens one).
+- Insert the **time**.
+- **Send** selected text into the open note's Issue or Resolution.
+- **Find** in a page (Ctrl/⌘+F inside it).
+- **Open or close the Scratchpad from any page** with Ctrl/⌘+Shift+S (listed
+  in the shortcuts overlay).
+
+## 2026-11-02 — Operator round, Batch A (Team Tools small fixes)
+
+**No new operator state.** Deploy Team Tools (`clasp push -f` + New version),
+then the handbook app too (`npm run handbook:push` + New version): its copy of
+the colour tokens changed. What changed for people using the app:
+- The sidebar lists **Reference above Intake**.
+- The note template's "Highlight any text inside…" line is now an ⓘ tooltip on
+  the template's own copy hint.
+- **Scratchpad:** a colour or size picked with nothing selected applies to the
+  next typing, and the resize corner is visible.
+- The clock **reminders carry their punch**: Clock in, Clock out, and Lunch out
+  on the Lunch reminder, one click from any page. A rest break's reminder has no
+  button.
+- **Spanish Inbox:** Auto-assign shows "Assigning…" until it finishes. The
+  8am escalation email now covers the last 30 days only.
+- **Dept Requests:** each list has its own sort order (Oldest open and Incoming:
+  longest open first; My requests: newest; Recently resolved: latest resolved),
+  shown on its heading. For managers the summary row is at the very top.
+- The **amber buttons and chips** are a lighter amber with dark text in light
+  mode.
+
+## 2026-11-02 — Script Property consolidation (Team Tools)
+
+The Apps Script editor's Script Properties page had stopped letting the operator
+add or edit a property. Two auto-managed families made up much of the list: one
+`PTO_ACCRUAL_LEDGER_<empId>` key per accruing rep, and one
+`AUTOMATION_RUN_<action>` key per automation job. The PTO ledger's side copy is
+now the ADP sheet's **`PtoAccrualLedger`** tab, created on the next accrual
+credit or by the move. The job runs share ONE key, **`AUTOMATION_RUNS`**.
+**Deploy, then once:** in the Team Tools editor, as the script owner, run
+`moveLedgersOutOfScriptProperties`. Its log says how many keys of each family
+moved and names any it kept and why. Nothing is lost if it never runs (both
+readers still read the old keys), but the keys stay on the page until it does.
+Admin → System's Script Properties line counts what is still to move.
+
 ## 2026-11-02 — the handbook app's refresh, Batch 2 (HBR2)
 
 The section page and search results (Team Tools unchanged — the shared reader is

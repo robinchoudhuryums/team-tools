@@ -6,14 +6,16 @@ Script project synced via [clasp](https://github.com/google/clasp).
 ## Projects
 
 - **web-app/** — Multi-module browser app deployed at one Web App URL.
-  Hosts eight tools today, registered side-by-side in the `TOOLS`
-  registry in `script_core.html` — the seven feature modules below plus
+  Hosts seven tools today, registered side-by-side in the `TOOLS`
+  registry in `script_core.html` — the six feature modules below plus
   **Manage**, the consolidated manager/admin home (Manage Time,
   Coverage, Punctuality, and an admin-only Admin tab — config,
   system health, compliance audit, and team-member onboarding:
   add a rep with a validated form that also provisions their Call
   Notes Sheet, check per-rep readiness, offboard):
-  - **Time Clock** — cross-timezone time tracking, PTO requests
+  - **Dashboard (Time Clock)** — tabs Dashboard · Stats · Time / PTO ·
+    Spanish Inbox (the Metrics tool was folded in on 2026-11-02; every old
+    link still lands). Cross-timezone time tracking, PTO requests
     (single-day or a date range, which files one request per weekday),
     manager dashboard, ADP-format export, and a manager-only Coverage
     planner (forward staffing across timezones with PTO overlaid and
@@ -32,34 +34,39 @@ Script project synced via [clasp](https://github.com/google/clasp).
     month closed is still credited rather than lost. Their
     leave tile shows the credited balance, the rate in its own terms, and
     what they have earned so far this month, instead of draining from a
-    fixed allotment.
+    fixed allotment. **Stats** is My Stats and Team Metrics behind a
+    Me / Team switch, from the CDR Report's DQE Historical Data: the
+    previous workday's KPIs, a 30-day workday % Answered trend and
+    note-to-call coverage (CDR data is never same-day); the team aggregate
+    is for everyone, the per-rep table and diagnostics manager-only. The
+    **Spanish Inbox** tracks bilingual-assistance requests with a
+    per-member resolution-share chart, a manager auto-assign of unclaimed
+    requests (the assignee is emailed, sees a count on the tab and a toast
+    in the app, and the claim lands on their Needs-you list), a "Resolve
+    selected" for many at once, grouping by received day or sending
+    department once a section is long, and 8x8 voicemail notifications
+    folded in as task cards — a voicemail shorter than
+    `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the hidden
+    count reported so the filter can never fail silently. App activity is
+    kept as one summary row per rep per day (raw pings 14 days), which Day
+    Edit draws as the day's activity strip.
   - **Call Notes** — rolling-note panel for CSR call logging. Each
     rep writes to their own per-rep Google Sheet; Ctrl/⌘+Shift+C saves
     and auto-copies a CRM-friendly serialization. Department emails
     are a separate two-stage flow with preview gate. Three flag
     types (action / training / review) with EOD reminders for
-    unresolved action flags and weekly manager digests. A manager
+    unresolved action flags and weekly manager digests. A department
+    email's send tags its note (a Close Order by reason). A manager
     Admin tab adds tag taxonomy + a weekly tag-trend panel (which
     issue types are spiking), department/tax config, and compliance
-    audit.
-  - **Metrics** — CDR integration reading DQE Historical Data from
-    the CDR Report spreadsheet. Four tabs: "My Stats" (self-view —
-    the previous workday's KPIs, a 30-day workday % Answered trend,
-    note-to-call coverage; CDR data is never same-day), "Team
-    Metrics" (the team aggregate for everyone; the per-rep table
-    and diagnostics stay manager-only — date-range and preset
-    chips), "Spanish Inbox" (bilingual-assistance request
-    tracking with a per-member resolution-share chart, a manager
-    auto-assign of unclaimed requests (the assignee is emailed and
-    the claim lands on their Dashboard Needs-you list), and 8x8 voicemail
-    notifications folded in as task cards — a voicemail shorter than
-    `SPANISH_VM_MIN_SECONDS` is a hang-up and is suppressed, with the
-    hidden count reported so the filter can never fail silently), and "Dept
-    Requests" (inter-department request tracking with SLA status,
-    a sort and a date range; a department's reply resolves a request
-    unless it asks a question, and any request can be reopened).
-    CDR metrics also enrich the Call Notes Stats tab via a
-    best-effort overlay.
+    audit. The **Dept Requests** tab tracks inter-department requests
+    with SLA status, a sort and a date range; a department's reply
+    resolves a request unless it asks a question, any request can be
+    reopened, and open requests for one TRX # to one department fold into
+    one card that counts the follow-ups with no response. The floating
+    Scratchpad keeps up to ten named pages with checklists, highlights,
+    links and a find. CDR metrics also enrich the Call Notes Stats tab
+    via a best-effort overlay.
   - **Intake** — patient-intake forms ported from the bound
     `form-generator` Apps Script. Five tabs: PPD (a 46-item intake
     driving a clinical HCPCS recommendation engine), PMD and PAP
@@ -136,11 +143,18 @@ Script project synced via [clasp](https://github.com/google/clasp).
     templates (e.g. an annual review), carry employee-completable
     fields (free-text / paragraph / date in addition to the
     signature), and are saved as a draft then explicitly released to
-    the employee; the deadline reminds both sides. Coaching: granular,
+    the employee; the deadline reminds both sides. A document can also
+    be issued **as a PDF**: the manager draws highlighted boxes (text,
+    date, paragraph) on its pages for the employee to fill in place, the
+    signature is bound to the PDF's exact bytes by its SHA-256, and a
+    signed document has a certificate PDF. Coaching: granular,
     non-routine manager feedback on a specific patient/TRX interaction
     (severity-graded, rep-acknowledged) with a team-scoped manager
     dashboard and analytics (ack-rate, median time-to-acknowledge,
-    overdue, per-rep) — kept in the same HR store, never purged.
+    overdue, per-rep) — kept in the same HR store, never purged. A
+    coaching item may carry a screenshot; managers log each 1-on-1 and
+    set their own cadence, and a rep due one reaches the manager's
+    Needs-you list and the daily brief.
   - **QA** — call-recording review for managers plus the QA reviewers listed in
     Admin → Config
     (currently hidden from other reps by operator decision). The

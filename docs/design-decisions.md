@@ -18,6 +18,17 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   show ONE button per tool. Sub-navigation is a horizontal tab bar
   (`#tool-tab-bar`) rendered above the view area, populated by
   `renderToolTabBar(toolKey)` whenever a tool is opened.
+  **Amended (Batch E, operator 2026-11-02):** the Metrics tool folded away —
+  Stats and the Spanish Inbox moved into the Dashboard tool and Dept Requests
+  into Call Notes, every tab KEY unchanged. Two registry features carry it: a
+  tab may be `hidden` with `lights: '<tab>'` (Stats · Team is a real view —
+  its links, guards, cache and last-view restore are unchanged — reached by
+  the Stats tab's Me / Team switch, and it lights the Stats button), and
+  `enterTool` resolves a tool by its TAB first (`resolveToolTab_` —
+  tab keys are unique, so a tab names its tool wherever it moved; a retired
+  bare tool lands where `RETIRED_TOOLS` says). A stale `metrics` from an
+  older server's Needs-you route, a saved link or a fixture still lands.
+  Move a tab by moving its entry; nothing else needs to name the tool.
   **`managerOnly: true` tabs are both hidden from non-managers AND visually
   marked for managers** — `renderToolTabBar` adds a `.tt-mgr` class (a subtle
   upward `--accent-soft` gradient wash) + a small `.tt-mgr-mark` `manage` glyph
@@ -1147,6 +1158,17 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   scheduled-call reminders still run. Chosen over refreshing on every rollover
   tick and firing meanwhile: a reminder on the wrong day's state is the false
   positive the channel cannot afford.
+  **AMENDED (operator 2026-11-02): a punch reminder carries the punch.** The
+  still-clocked-in reminder carries **Clock out**, the not-clocked-in nudge
+  **Clock in**, and the Lunch break's reminder **Lunch out** (a rest break is
+  not punched, so its reminder has no button). The toast's existing action slot
+  calls the Clock view's own `submitPunch` from whatever page the rep is on.
+  The button is offered only when `empState.nextActions` allows that punch at
+  the time it fires, and checked again at the click. A reminder left on screen
+  after the rep punched in another window says the punches changed and records
+  nothing, and the server enforces the order regardless. The click is the
+  confirmation: the button names the punch. A browser notification cannot
+  carry a button inside the Apps Script sandbox, so it stays text.
 - <a id="two-way-sheet-entry-via-the-reconcile-pass-8"></a>**Two-way Sheet entry via the reconcile pass (#8).** Because the per-rep
   Sheets are real Google Sheets, a rep can type notes directly into the
   `Notes` tab. Such hand-entered rows lack the app-assigned `noteId`,
@@ -1499,6 +1521,21 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   (admin-gated, INV-136) so a rejected save and a
   sanitized read can never disagree; rules ride `getCallNotesDepartments`
   (reps) + `getAdminConfig` (the editor). Pinned by the auto-tag Node pins.
+  **AMENDED (Batch B, operator 2026-11-02).**
+  - **Tags at send:** a department email's SEND tags its note, on the server,
+    in the same subformData write as the email's selections:
+    - Close Order is tagged per REASON through `CONFIG.CALL_NOTES.CLOSE_REASON_TAGS`
+      (`close-change-supplier`, `close-cost`, …; a typed or legacy reason is
+      `close-other`). A tag is 2–24 characters, which the reasons as words would
+      not fit.
+    - OOP Order is `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply
+      `resupply` (`EMAIL_TOOL_TAGS`).
+  - **Limits:** the 8-tag cap holds (an eighth tag is never displaced), and an
+    archived tag is never added. The send returns the tags, so the card shows
+    them at once.
+  - **Archived rules:** a rep's browser is no longer sent the auto-tag rule of
+    an ARCHIVED tag (`cnRulesWithoutArchived_`). Archiving a tag used to hide it
+    from suggestions while its rule kept adding it.
 - <a id="intake-recommendation-feedback-operator-2026-08-13"></a>**Intake recommendation feedback (operator 2026-08-13).** Every intake email
   (PPD/PMD/PAP) carries a "Send feedback on this recommendation" button — an
   email client can't host a live comment box (most strip forms), so the button
@@ -4904,6 +4941,24 @@ pick them up without re-deriving the context.
   read reaches back past its stale hours (`auditWindowProvesAbsence_`, the
   follow-ups) — a fresh AuditLog proves nothing, so the fresh-deploy posture
   holds. Verify: the A1 and A2 pins, and FU-B6d.
+  **AMENDED (Script Property consolidation, operator 2026-11-02).** One key per
+  job was ten keys, and with the PTO ledger's one-per-rep keys they filled the
+  Apps Script editor's Script Properties page, where the operator sets
+  everything else. The jobs now share ONE key, `AUTOMATION_RUNS` =
+  `{action: {ts, notes}}`. That brings back the shared read-modify-write the
+  per-job keys avoided, so the stamp is serialised on the A8 user lock — the
+  one the error map already uses: every stamping job runs as the trigger
+  installer, and none of the user-lock holders writes an automation audit row,
+  so the lock is never taken twice. It fails open on contention like the error
+  map: a lost stamp leaves the AuditLog tail to answer, which is where liveness
+  stood before the ledger, never a false alarm. The legacy per-job keys are read
+  beside it (the newer stamp wins) until `moveLedgersOutOfScriptProperties()`
+  folds them in, reads the ledger back and deletes only what verified. The PTO
+  accrual ledger's side copy moved to a tab rather than one key, because it
+  grows with the roster and a JSON map of every rep would near the 9KB
+  per-value cap: the ADP sheet's `PtoAccrualLedger`, one plain-text row per rep,
+  written under the accrual job's ScriptLock (S2 now checks that the writer's
+  caller chain reaches that lock). Verify: A1, F17 and the two consolidation pins.
   **AMENDED (cycle 23 Batch 4a + follow-ons, 2026-10-01).** A send that did
   not happen is a stamped failure for every digest (the clean stamp lands only
   after the send); a health badge that could not compute is UNKNOWN —
@@ -4990,6 +5045,35 @@ pick them up without re-deriving the context.
   both are held to one case table. Rejected: Markdown markers (the operator
   wanted visible formatting) and keeping the modal with its backdrop removed
   (the focus trap would still have taken the rep's typing).
+  **AMENDED (operator 2026-11-02).** A colour or size chosen with NOTHING
+  selected now applies to what is typed next, as Bold already did
+  (`cnScratchPendingStyle_`). The palette classes are the app's, so the browser
+  cannot carry them. Instead, an empty span of the chosen class opens at the
+  caret, splitting the current run when the caret is inside one, holding a
+  zero-width placeholder. The save copies the editor and strips the placeholder
+  and any span left unused (`cnScratchHtmlOf_`). The panel was already
+  resizable (`resize: both`); a visible grip is now drawn over the browser's
+  own handle, with `pointer-events: none` so the drag still reaches it.
+  **AMENDED (Batch S, operator 2026-11-02): the Scratchpad grows.**
+  - **Named pages, one ROW each** of the rep's Scratchpad tab (A the page, B
+    its save time, C its format, D its name, E its id; at most 10). Row 1 stays
+    the legacy page `main`, so a pad from before pages is the first page and an
+    older client keeps writing row 1. Every save names the page its text was
+    typed on, so a switch mid-save never writes one page's text into another,
+    and a page load overtaken by another switch is dropped. A save whose page
+    was deleted in another window is REFUSED (`pageGone`); the client puts the
+    text on a new "Recovered text" page rather than into another page or the
+    bin.
+  - **New formatting:** checklists (`ul.cn-sp-check` / `li.cn-sp-done`, ticked
+    by clicking the box), highlights (`span.cn-sp-h-*`, the pending-style path
+    of Batch A), headings (`h3`), and links. A link keeps ONLY an http(s) href
+    on both sanitizers. A finished URL is wrapped as it is typed, and
+    Ctrl/⌘+click opens it; a blocked open says so (g135).
+  - **New tools:** Time inserts the time in the rep's zone. Issue / Resolution
+    append the selection to the note being written, firing input so the draft
+    and auto-tags follow. Find counts and steps through matches, drawn with the
+    CSS Highlight API, so the text is never rewritten. Ctrl/⌘+Shift+S opens and
+    closes the panel from any page.
 - <a id="a-spanish-assignment-tells-the-assignee"></a>**A Spanish assignment tells the assignee by email and on Needs you, and the email carries no request content (22post C-8, operator 2026-09-27).** The operator asked for both. The email builder takes only a count, the
   assigner's name and a link (`spanishAssignEmail_(count, actorName, url)`), so
   no subject, sender, body or thread id can reach it; it is sent after the
@@ -5000,6 +5084,28 @@ pick them up without re-deriving the context.
   IDS only for 15 minutes and the Needs-you producer reads that set first,
   and reads Gmail live only on a miss and only for a rep who holds a claim.
   A failed read is "couldn't check", never "nothing to do" (g53).
+  **Amended (Batch C, operator 2026-11-02 — "in-app notification for
+  auto-assigned to assigned agent in addition to email notification"):** the
+  assignee also gets a count on the Spanish Inbox tab, its tool in the sidebar
+  and the phone's bottom nav, and a sticky toast with **Open** when a NEW
+  request is assigned to them while the app is open. One reader serves both
+  this and the Needs-you item (`spanishMyOpen_`, g126); the endpoint
+  (`getMySpanishAssignments`) ships ids, times and the assigner only. The
+  toast is for news from someone else: a rep's own claim never toasts, the
+  first answer in a browser is a silent baseline (what was already assigned is
+  not news), and the seen ids live in `umsSpanishAssignSeen`, shared by every
+  window, so the pop-out and the main window announce once between them. A
+  failed or `{error}` poll keeps the last count (METUI-1). The same batch added
+  **Resolve selected** — one locked call, `resolveSpanishThreads`, judged per
+  thread by the single resolve's coverage rule (`spanishResolveCovered_`); a
+  thread it cannot resolve is named and stays selected, and Select all takes
+  only the cards a reader can see (not behind Show more, not in a closed
+  group). Past `SPANISH_GROUP_MIN` (15) cards a section groups under
+  collapsible headers by received day or sending department
+  (`umsSpanishGroupBy`); the department is the sender's department mailbox or
+  roster department (`spanishSenderDeptIndexFrom_`, never by domain), "Other"
+  otherwise, and a failed read is said beside the count rather than shown as
+  Other.
 - <a id="app-activity-counts-as-in-outside-the-philippines-team"></a>**App activity counts as IN outside the Philippines team, and it rides `status` (22post C-3, operator 2026-09-27).** The operator's rule: a rep active in the app with no clock-in is IN,
   except the Philippines team, who get the amber "active · not clocked in".
   One pure function decides it for both views (`presenceDisplay_(status,
@@ -5048,6 +5154,18 @@ pick them up without re-deriving the context.
   answers are counted per rule for the operator, never fed back into the rules
   — see "A held reply waits for a person, and the answers are counted, not
   learned from".
+  **Amended (Batch D, operator 2026-11-02 — "consolidate multiple open
+  requests for the same trx #, marking it in some way as having follow-up(s)
+  w/o response"):** in the three OPEN lists, two or more open requests to one
+  department for one TRX # are drawn as ONE fold — the newest on top, "N open
+  requests for this TRX · M follow-ups with no response", the earlier ones
+  behind a remembered toggle. It is display only (`drFoldList_`); every
+  request stays its own row with its own reply scan, Mark resolved and
+  Expand. The key is the TRX number (`drTrxKey_`: what follows "TRX", else the
+  cell's one 5+ digit run), never a name — a cell without a number does not
+  fold. A follow-up counts as unanswered only when no earlier request on the
+  fold had a department reply before it was sent, so a request the
+  department already answered is not reported as ignored.
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps
@@ -5747,6 +5865,20 @@ pick them up without re-deriving the context.
   digest (a 15-minute trigger, one more installable trigger, and a mail per
   false alarm — the operator chose in-app first); measuring from the
   30-minute presence stamp alone (it expires exactly at the threshold, g172).
+  **Batch G (operator 2026-11-02 — "condense, archive condensed, then delete;
+  the goal is accurate long-term data without bloat"):** the activity record
+  the alert and Day Edit read is kept in two tiers. Each night every FINISHED
+  day (the rep's own) is condensed into ONE `ActivitySummary` row per rep —
+  first and last ping, active minutes and the day's 10-minute map, so Day Edit
+  draws exactly what it drew from the raw pings — kept indefinitely; the raw
+  pings then age out at 14 days instead of 60. A ping is purged only once its
+  day is on file, and a condense that fails purges nothing (a partial run), so
+  nothing is ever deleted before it is kept. Day Edit reads the summary first —
+  it is the whole day by construction, where raw pings at the window's edge can
+  be a part-day — and says from when activity was kept, so "no activity" is a
+  verdict only inside that span. The purge has its own budget: at ~55 pings per
+  rep per day it would have outgrown the 2,000-row budget it shared with three
+  other tabs.
 - <a id="a-named-button-shows-its-screenshot"></a>**A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)**
   The operator asked that the screenshots showing where a CRM button is appear
   where the text names it ("Edit Patient (bottom-left)"), everywhere it is
@@ -6210,3 +6342,69 @@ pick them up without re-deriving the context.
     exclude each other). The reader is named by address (there is no roster),
     the topic rides an apostrophe (g144), and the search typed is never sent or
     stored (F9, g146): the dialog starts empty.
+- <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
+  The operator asked for a "Last 1-on-1" date, reminders for managers, an
+  adjustable cadence, and an optional screenshot on a logged issue.
+  - **A log, not a date field.** Each 1-on-1 is a row in the HR store's
+    `OneOnOnes` tab (the date it was held, the rep, who logged it, an optional
+    note in a plain-text cell). "Last 1-on-1" is DERIVED — the newest row that
+    is not void and not after today — so a mistaken entry is voided, never
+    edited, and the history is the HR record. Only the rep's roster manager
+    (column M) logs one; the logger or that manager may void it.
+  - **The cadence is the manager's** (`CoachingSettings`, one row per manager,
+    default `CONFIG.COACHING_ONE_ON_ONE_DAYS`, 0 = off) — a tab, not a Script
+    Property (g07: the editor's page had filled).
+  - **One due rule** (`coachOneOnOneStanding_`) serves the board, Needs-you,
+    the daily brief and the standalone overdue digest the brief suppresses —
+    so the two digests carry the same line (g151). A rep with no 1-on-1 on
+    record is DUE: "never" is not "not yet", and the reminder ends the moment
+    the manager logs one or sets the cadence to 0. Needs-you is ONE item per
+    manager (a count and the first names), overdue only once someone is past a
+    real due date. No reminder carries a 1-on-1's note.
+  - **The screenshot** is fitted in the browser by the article-paste fitter and
+    stored in the HR store's `CoachingImages` tab in the KbImages row shape
+    (Drive is disabled on this domain, DRV-1) — BEFORE the coaching row that
+    names it, so an item never points at bytes that are not there, and a
+    screenshot that cannot be stored logs nothing. It is read only through
+    `getCoachingImage`, which asks the item's own visibility rule (the rep
+    while the item is not void, or a manager `coachCanManagerSee_` admits),
+    and is never put in the shared ScriptCache (`spec.noCache`). Kept forever,
+    like the rest of the HR store. **Alternatives rejected:** a "last 1-on-1"
+    cell per rep (no history, and a typo erases the real date); counting a
+    rep's first 1-on-1 from the deploy (a team with none on record would never
+    be reminded); attaching a screenshot after the item is logged (not asked
+    for — a later ask).
+- <a id="an-employee-doc-may-be-issued-as-a-pdf"></a>**An employee document may be issued AS A PDF: its bytes are bound by SHA-256 through the frozen body, its fields may be highlighted boxes on its pages, and a signed one has a certificate PDF (Batch H, operator 2026-11-02)**
+  The operator's PIP is a Google Doc they can export, "future forms could be
+  PDFs, so it needs to at least work with PDFs", and they wanted "highlighted
+  text boxes to indicate those are the ones that need to be completed (like a
+  date field)".
+  - **Storage without Drive** (DRV-1): the PDF is stored in the HR store's
+    `EmpDocFiles` tab in the KbImages row shape, keyed by its SHA-256 and
+    append-only, BEFORE the document row that names it (a trailing `PdfKey`
+    column) — a PDF that cannot be stored issues nothing. Cap 4 MB.
+  - **The signature binds the exact bytes.** The SHA-256 is computed over the
+    file's BYTES (so anyone can check it with a standard tool) and the frozen
+    body ENDS with a line naming it (`empDocPdfLine_`), so the existing content
+    hash — and through it every signature hash — covers the PDF without a new
+    hash format. Every read (`getEmpDocPdf`) and every signature
+    (`acknowledgeDoc`) re-hashes the stored bytes against that line; a file
+    that is missing, unreadable or different is said and never signed, and
+    `verifyDocSignature` reports it (unreadable as unknown, g128).
+  - **Field boxes** are ordinary fields with a `box` — a page and a rectangle as
+    fractions of the page, rounded to four places so the hashed JSON is stable
+    — drawn by the manager on the pdf.js-rendered pages and filled in place by
+    the employee (an input sized to the box, named for a screen reader); their
+    answers are the same validated, attested responses as any field. A box is
+    refused on a written document and on a template.
+  - **The certificate** (`getEmpDocCertificate`) is HTML made into a PDF by Apps
+    Script's own conversion — the route the forms module already uses on this
+    domain: the document, employee, issue and signature times, the PDF's and the
+    signature's hashes, the signature image and every response. A failed
+    conversion is named. Downloading it, like the handbook's forms (HB4.1), may
+    be blocked by the page's sandbox; the viewer says so.
+  - **Alternatives rejected:** stamping the signature and answers INTO the PDF
+    (needs a PDF library server-side, which Apps Script lacks, or Drive);
+    converting the PDF to markdown (loses the layout the boxes point at);
+    hashing the base64 text (not checkable against the file with a standard
+    tool); PDF templates (not asked for — templates stay written documents).

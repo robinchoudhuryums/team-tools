@@ -218,6 +218,9 @@ function sendTrainingOverdueDigest() {
     };
     const overdueDocs = hrRead('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });            // scope per manager below
     const overdueCoaching = hrRead('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });   // scope per manager below
+    // Batch F: the 1-on-1s due rides here too — the brief carries it, and the
+    // brief suppresses this digest, so the two must carry the same lines.
+    const dueOneOnOnes = hrRead('1-on-1s due', function () { return coachOneOnOnesDueByManager_(todayIso); });   // {managerEmail: due[]}
     let sent = 0, sendFailed = 0, empFailed = 0, lastSendError = '';
     // #2 (INV-151): while the consolidated daily brief is on, the MANAGER
     // nudge rides the 8am brief instead — but the employee-side reminders
@@ -235,11 +238,12 @@ function sendTrainingOverdueDigest() {
         const scopedCoaching = overdueCoaching.filter(function (oc) {
           return coachCanManagerSee_(mgr, oc.item);
         });
+        const scopedOneOnOnes = dueOneOnOnes[String(email || '').toLowerCase().trim()] || [];
         // Silent only on a genuine all-clear: an unreadable source is not one.
-        const items = overdueTraining.length + scopedDocs.length + scopedCoaching.length;
+        const items = overdueTraining.length + scopedDocs.length + scopedCoaching.length + scopedOneOnOnes.length;
         if (!items && !unread.length) { logDigestDelivery_('trainingOverdue', email, 'empty', 0, 'nothing overdue'); return; }   // nothing for this manager (G3)
         try {
-          sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso, unread);
+          sendTrainingOverdueEmail_(email, overdueTraining, scopedDocs, scopedCoaching, todayIso, unread, scopedOneOnOnes);
           sent++;
           logDigestDelivery_('trainingOverdue', email, 'sent', items, unread.length ? 'incomplete — could not read ' + unread.join(' and ') : '');   // G3
         } catch (e) {
@@ -287,7 +291,7 @@ function sendTrainingOverdueDigest() {
 }
 /** Branded overdue-digest email to one manager (INV-105 — heading esc_'d in
  *  the wrapper, every user field esc_'d here; plain-text body fallback). */
-function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso, unread) {
+function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso, unread, oneOnOnes) {
   const P = CN_EMAIL_PALETTE;
   function section_(label, rowsHtml) {
     return '<div style="font-family:\'IBM Plex Mono\',monospace;font-size:10px;color:' + P.muted +
@@ -328,6 +332,17 @@ function sendTrainingOverdueEmail_(toEmail, training, docs, coaching, todayIso, 
     }).join('');
     html += section_('Un-acknowledged coaching (' + coaching.length + ')', rows);
     text += '\n\nUn-acknowledged coaching:\n' + coaching.map(function (oc) { return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')'; }).join('\n');
+  }
+  if (oneOnOnes && oneOnOnes.length) {
+    // Batch F: names and dates only — never a 1-on-1's note (HR content).
+    const rows = oneOnOnes.map(function (o) {
+      return '<tr>' +
+        '<td style="padding:6px 10px;color:' + P.ink + ';font-size:13px;"><strong>' + esc_(o.empName) + '</strong></td>' +
+        '<td style="padding:6px 10px;font-family:\'IBM Plex Mono\',monospace;font-size:11px;color:' + P.warnDeep + ';white-space:nowrap;text-align:right;">' + esc_(coachOneOnOneDueText_(o)) + '</td>' +
+        '</tr>';
+    }).join('');
+    html += section_('1-on-1s due (' + oneOnOnes.length + ')', rows);
+    text += '\n\n1-on-1s due:\n' + oneOnOnes.map(function (o) { return '  ' + o.empName + ' \u00b7 ' + coachOneOnOneDueText_(o); }).join('\n');
   }
   if (unread && unread.length) {
     // HR-3 (cycle 23): an empty section here is not an all-clear when the

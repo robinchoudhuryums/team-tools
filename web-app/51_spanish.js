@@ -589,6 +589,7 @@ function spanishPendingCore_(days, emp) {
     // (the claims are advisory) but says so, and auto-assign refuses on it.
     let claims = {}, claimsUnavailable = '';
     try { claims = spanishClaimsMap_(); } catch (eC) { claimsUnavailable = String(eC.message || eC); }
+    const deptIdx = spanishSenderDeptSafe_();   // Batch C — a failed read is said, never "Other"
     const out = [];
     const nowMs = Date.now();
     threads.forEach(function (th) {
@@ -610,6 +611,8 @@ function spanishPendingCore_(days, emp) {
       out.push({
         threadId: tid,
         requester: requester,
+        senderDept: deptIdx.index[requester.toLowerCase()] || '',   // Batch C — the grouping's department
+        receivedMs: open.reqMs,                                     // Batch C — the card's received date
         ageHours: Math.round((nowMs - open.reqMs) / 3600000),
         escalated: spanishEscalated_(nowMs - open.reqMs),   // E4 (G5): 7+ calendar days
         subject: req.getSubject() || '(no subject)',
@@ -649,6 +652,7 @@ function spanishPendingCore_(days, emp) {
         threadId: r.threadId,
         kind: 'voicemail',
         requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
+        receivedMs: r.reqMs,   // Batch C
         ageHours: Math.round((nowMs - r.reqMs) / 3600000),
         escalated: spanishEscalated_(nowMs - r.reqMs),   // E4 (G5)
         subject: r.subject || '(no subject)',
@@ -676,7 +680,7 @@ function spanishPendingCore_(days, emp) {
       // nobody can see is a filter that can fail silently forever.
       vmSuppressed: vmSuppressed, vmUnparsed: vmUnparsed, vmMinSeconds: vmMinSec,
       members: Object.keys(members), self: String((emp && emp.email) || '').trim().toLowerCase(),
-      claimsUnavailable: claimsUnavailable };
+      claimsUnavailable: claimsUnavailable, deptUnavailable: deptIdx.unavailable };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 /** Resolved Spanish-inbox requests over the window (canSeeSpanishInbox_-gated, live-read,
@@ -696,6 +700,7 @@ function getSpanishInboxResolved(days) {
     const haveMembers = Object.keys(members).length > 0;
     const threads = GmailApp.search(spanishSearchQuery_(addr, d), 0, SPANISH_THREAD_SCAN_MAX);
     const manual = spanishManualResolvedMap_();
+    const deptIdx = spanishSenderDeptSafe_();   // Batch C
     const out = [];
     const seenR = {};
     threads.forEach(function (th) {
@@ -714,6 +719,8 @@ function getSpanishInboxResolved(days) {
         out.push({
           threadId: th.getId(),
           requester: requester,
+          senderDept: deptIdx.index[requester.toLowerCase()] || '',   // Batch C
+          receivedMs: ep.reqMs,                                       // Batch C
           resolver: ep.resolverFrom,
           manual: ep.wasManual,
           // A manual mark-resolved has NO response time (the stamp is the click,
@@ -741,6 +748,7 @@ function getSpanishInboxResolved(days) {
         threadId: r.threadId,
         kind: 'voicemail',
         requester: spanishVmCaller_(r.subject) || emailAddrOnly_(r.from),
+        receivedMs: r.reqMs,   // Batch C
         resolver: r.resolverFrom,
         manual: r.wasManual,
         resolveMinutes: r.wasManual ? null : businessMinutesBetween_(r.reqMs, r.resolveMs),
@@ -756,7 +764,8 @@ function getSpanishInboxResolved(days) {
     // fairness check is exactly about them. Internal team emails, behind the
     // same canSeeSpanishInbox_ gate as everything else here.
     return { address: addr, days: d, resolved: out, members: Object.keys(members),
-      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmFoldR.truncated };
+      truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmFoldR.truncated,
+      deptUnavailable: deptIdx.unavailable };
   } catch (err) { return { error: 'Spanish inbox read failed: ' + err.message }; }
 }
 /** PURE (M5 follow-up) — which message a thread's body is read from: on a
@@ -925,8 +934,7 @@ function resolveSpanishThread(threadId) {
       // SP-1 (cycle 23): "already" only when the existing resolve covers the
       // thread's NEWEST message — a voicemail that arrived after it is new
       // work, and resolving it appends a later row (the fold keeps the latest).
-      const prior = spanishManualResolvedMap_()[tid];
-      if (prior && (!prior.ms || prior.ms >= spanishThreadLatestMs_(msgs))) return { success: true, already: true };
+      if (spanishResolveCovered_(spanishManualResolvedMap_()[tid], spanishThreadLatestMs_(msgs))) return { success: true, already: true };
       getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(),
       ]));
@@ -937,6 +945,173 @@ function resolveSpanishThread(threadId) {
     try { const c = spanishClaimsMap_()[tid]; if (c) spanishBustClaimants_([c.by]); } catch (_) {}
     return { success: true };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
+}
+/** PURE (Node-pinned) — SP-1: an existing manual resolve covers the thread
+ *  only when it is at least as new as the thread's NEWEST message (a later
+ *  voicemail or follow-up is new work). One rule for the single and the
+ *  bulk resolve. prior: the fold's {by, ms} | undefined. */
+function spanishResolveCovered_(prior, latestMs) {
+  return !!(prior && (!prior.ms || prior.ms >= Number(latestMs || 0)));
+}
+/** PURE (Node-pinned) — Batch C (operator 2026-11-02): the thread ids a bulk
+ *  resolve acts on — trimmed, de-duplicated, in the order given, non-strings
+ *  and blanks dropped. Over `max` → null (the caller refuses rather than
+ *  resolving a silent prefix). */
+function spanishBulkIds_(ids, max) {
+  if (!Array.isArray(ids)) return [];
+  const out = [], seen = {};
+  ids.forEach(function (x) {
+    if (typeof x !== 'string') return;
+    const t = x.trim();
+    if (!t || seen[t]) return;
+    seen[t] = true; out.push(t);
+  });
+  return out.length > max ? null : out;
+}
+/** Batch C (operator 2026-11-02 — "multi-select manual resolve"): resolve
+ *  several pending requests in ONE call. The single resolve's rules, each
+ *  thread judged on its own: the caller gate first (cycle 25 F58 — before any
+ *  read or the lock), every thread fetched and SCOPE-GUARDED outside the lock
+ *  (Gmail reads never hold it), then ONE lock, ONE read of the resolve fold
+ *  and ONE write of the rows not already covered (g145 — appendRowsSafe_).
+ *  A thread that cannot be resolved is NAMED in `failed`, never dropped;
+ *  `already` is the idempotent half. PHI-free audit row (counts + ids). */
+function resolveSpanishThreads(threadIds) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
+    const addr = getSpanishInboxAddress_();
+    if (!addr) return { error: 'Spanish inbox not configured.' };
+    const ids = spanishBulkIds_(threadIds, SPANISH_BULK_RESOLVE_MAX);
+    if (ids === null) return { error: 'Select at most ' + SPANISH_BULK_RESOLVE_MAX + ' requests at a time.' };
+    if (!ids.length) return { error: 'No requests selected.' };
+    const failed = [], ok = [];
+    ids.forEach(function (tid) {
+      try {
+        const th = GmailApp.getThreadById(tid);
+        if (!th) { failed.push({ threadId: tid, error: 'Thread not found.' }); return; }
+        const msgs = th.getMessages();
+        if (!msgs.length) { failed.push({ threadId: tid, error: 'Empty thread.' }); return; }
+        if (!spanishThreadInScope_(msgs[0], addr)) { failed.push({ threadId: tid, error: 'Not a Spanish-inbox thread.' }); return; }
+        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs) });
+      } catch (eT) { failed.push({ threadId: tid, error: String((eT && eT.message) || eT) }); }
+    });
+    const resolved = [], already = [];
+    if (ok.length) {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(15000);
+      try {
+        const manual = spanishManualResolvedMap_();
+        const now = new Date();
+        const stamp = fmtDate_(now) + ' ' + fmtTime_(now);
+        const rows = [];
+        ok.forEach(function (o) {
+          if (spanishResolveCovered_(manual[o.threadId], o.latestMs)) { already.push(o.threadId); return; }
+          rows.push([stamp, o.threadId, emp.email, now.getTime()]);
+          resolved.push(o.threadId);
+        });
+        if (rows.length) appendRowsSafe_(getOrCreateSpanishResolvedSheet_(), rows);
+      } finally { lock.releaseLock(); }
+    }
+    if (resolved.length) {
+      writeAuditLog_(emp, 'SpanishInboxResolveBulk', '', '', false, 0,
+        'resolved=' + resolved.length + ' already=' + already.length + ' failed=' + failed.length + ' threadIds=' + resolved.join(','));
+    }
+    resolved.forEach(spanishPendingIdsDrop_);
+    try {
+      const cm = spanishClaimsMap_();
+      spanishBustClaimants_(resolved.map(function (t) { return cm[t] && cm[t].by; }).filter(Boolean));
+    } catch (_) {}
+    return { success: true, resolved: resolved, already: already, failed: failed };
+  } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
+}
+/** PURE (Node-pinned) — Batch C: which department a request came from, as an
+ *  index {address: department}. A department's own mailbox (the department
+ *  map, Admin → Config) wins over a person who belongs to it; a roster member
+ *  (column N) counts for the FIRST of their departments in the map's order.
+ *  deptMap: {Dept: "a@x, b@x"}; roster: [{email, depts: [Dept, …]}]. Never a
+ *  domain match — one company domain is every department. */
+function spanishSenderDeptIndexFrom_(deptMap, roster) {
+  const keys = Object.keys(deptMap || {});
+  const order = {};
+  keys.forEach(function (k, i) { order[k] = i; });
+  const out = {};
+  keys.forEach(function (k) {
+    String((deptMap || {})[k] || '').split(/[,;\s]+/).forEach(function (a) {
+      const lc = a.trim().toLowerCase();
+      if (lc.indexOf('@') > 0 && !out[lc]) out[lc] = k;
+    });
+  });
+  (roster || []).forEach(function (p) {
+    const lc = String((p && p.email) || '').trim().toLowerCase();
+    if (!lc || out[lc]) return;
+    const ds = ((p && p.depts) || []).filter(function (d) { return order[d] != null; })
+      .sort(function (a, b) { return order[a] - order[b]; });
+    if (ds.length) out[lc] = ds[0];
+  });
+  return out;
+}
+/** The sender-department index over the live department map and roster.
+ *  Throws on an unreadable roster — the caller names it (deptUnavailable). */
+function spanishSenderDeptIndex_() {
+  const deptMap = getDepartmentEmails_() || {};
+  const keys = Object.keys(deptMap);
+  const rows = getEmployeeRosterRows_();
+  const roster = [];
+  for (let i = 1; i < rows.length; i++) {
+    const email = empRosterEmail_(rows[i]);
+    if (!email) continue;
+    roster.push({ email: email, depts: drParseDepartments_(String(rows[i][EMP.DEPARTMENTS] || ''), keys) });
+  }
+  return spanishSenderDeptIndexFrom_(deptMap, roster);
+}
+/** Batch C — the index, or {index: {}, unavailable: message}. A department
+ *  that could not be read is said beside the list, never shown as "Other". */
+function spanishSenderDeptSafe_() {
+  try { return { index: spanishSenderDeptIndex_(), unavailable: '' }; }
+  catch (e) { return { index: {}, unavailable: String((e && e.message) || e) }; }
+}
+/** The caller's own open Spanish requests (claimed, or assigned by a manager
+ *  or the auto-assign) — ONE reader for Needs-you and the assignee badge
+ *  (g126). claims: spanishClaimsMap_() (throws on an unreadable tab). The
+ *  pending ids come from the cache getSpanishInboxPending keeps; a miss reads
+ *  the inbox once, and only when the caller owns a claim. Throws on a failed
+ *  read — "nothing assigned" must never stand in for "could not look".
+ *  Returns {open: [{threadId, atMs, assignedBy}], escalated: {threadId: true}}. */
+function spanishMyOpen_(emp, claims) {
+  const me = String((emp && emp.email) || '').trim().toLowerCase();
+  const anyMine = Object.keys(claims || {}).some(function (t) { return claims[t].by === me; });
+  if (!anyMine) return { open: [], escalated: {} };
+  let ids = spanishPendingIdsGet_(SPANISH_PENDING_WINDOW_DAYS);
+  let floors = spanishPendingFloorsGet_(SPANISH_PENDING_WINDOW_DAYS);   // SP-2 — a reopened request comes back unclaimed
+  let esc = spanishPendingEscalatedGet_(SPANISH_PENDING_WINDOW_DAYS);   // E4 (G5)
+  if (!ids) {
+    const res = spanishPendingCore_(SPANISH_PENDING_WINDOW_DAYS, emp);
+    if (!res || res.error) throw new Error((res && res.error) || 'unreadable');
+    ids = (res.pending || []).map(function (p) { return p.threadId; });
+    floors = {}; esc = {};
+    (res.pending || []).forEach(function (p) {
+      if (p.claimFloorMs) floors[p.threadId] = p.claimFloorMs;
+      if (p.escalated) esc[p.threadId] = true;
+    });
+  }
+  return { open: spanishMyOpenClaims_(claims, me, ids, floors), escalated: esc };
+}
+/** Batch C (operator 2026-11-02 — "in-app notification for auto-assigned to
+ *  assigned agent"): the caller's open Spanish requests, for the badge and the
+ *  new-assignment toast. Light: the claims tab + the cached pending ids. Ids,
+ *  times and the assigner only — never subject or body. `{error}` on a failed
+ *  read, which the client treats as unknown (it keeps the last badge). */
+function getMySpanishAssignments() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    if (!getSpanishInboxAddress_()) return { configured: false, items: [], count: 0 };
+    const mine = spanishMyOpen_(emp, spanishClaimsMap_());
+    return { configured: true, items: mine.open, count: mine.open.length,
+      self: String(emp.email || '').trim().toLowerCase() };
+  } catch (err) { return { error: 'Spanish assignments read failed: ' + err.message }; }
 }
 function getOrCreateSpanishClaimsSheet_() {
   const ss = getAdpSS_();

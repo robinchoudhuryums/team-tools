@@ -3332,3 +3332,229 @@ per-change detail. By delta:
   drawn, the results showing) rather than on 20 ms and 80 ms margins over a
   60 ms answer and a 300 ms debounce — the likeliest race a loaded runner loses.
   Both of its bites were re-run and bite.
+
+## Script Property consolidation — the PTO accrual ledger tab and one run ledger (2026-11-02)
+
+- **Pure** — F17's record half now drives the real reader, writer and move over
+  a fake ADP sheet (`accrualLedgerTabCtx_`): one row per rep rewritten in place,
+  every cell written formatted '@', no per-rep property written, a legacy key
+  folded into the row and read beside the tab (the higher figure per month), an
+  unreadable row claiming no coverage and never overwritten, a failed tab read
+  leaving the legacy copy with no coverage. A new drive of the move: copied,
+  read back, deleted only where the tab covers the key; an unparseable key, a
+  rep with a broken row and a read-back that lost the write each KEEP the key
+  and say why; a second run finds nothing; the keep-12 floor and the two-decimal
+  rule of `accrualLedgerCovers_`. A1 drives the one `AUTOMATION_RUNS` ledger
+  (two jobs' stamps both kept, each under the A8 lock, a legacy key read beside
+  it either way, the fold-read-back-delete move, an unverified move kept, and
+  the shrinker's notes-then-oldest order). A structural pin orders the move's
+  manager gate, owner check, lock and moves. FU3 drives the Storage Health
+  clause that names what is still to move. **S2 gained a caller-chain check:**
+  a plain-text appender that runs inside a locked job (`accrualLedgerWriteRows_`)
+  may not take the ScriptLock itself (A8), so S2 now requires every chain of
+  callers to reach a function that takes it before the call.
+- Bite-checks: see the implement block.
+
+## Operator round 2026-11-02, Batch A (2026-11-02)
+
+- **DOM:**
+  - A drive of the Scratchpad's pending style: a colour with nothing selected,
+    then typing; a split inside a red run; an unused pending span; and the save
+    carrying no placeholder.
+  - A drive of a punch reminder: the button is offered only when the punch is
+    allowed, one click records it from the Call Notes page, a stale reminder
+    punches nothing, and a rest break has no button.
+  - C-N4 now holds the auto-assign run in flight (`clearResponder`) and checks
+    the busy look survives a list render.
+  - A-7 checks the summary row comes before the controls and each heading names
+    its order.
+- **Pure:**
+  - A-6 drives the per-list defaults (`drSortFor_`) and the Recently resolved
+    order.
+  - The sticky-reminder pin reads the new options object and the three
+    reminders' punch wiring.
+  - MRD-5 requires every `--on-warn` rule to sit on `--warn-fill`.
+  - The escalation digest sandbox reads 30.
+- **Visual:** the clock, deptreq, spanish, cn-log and cn-scratchpad scenarios
+  measure clean.
+
+## Operator round 2026-11-02, Batch S — the Scratchpad (2026-11-02)
+
+- **Pure** — a driven server pin for pages over a fake sheet:
+  - the legacy row 1 is `main`, and an older client writes row 1;
+  - add, rename, the page limit, delete (never the last);
+  - a save to a deleted page is refused with nothing written, and a load of one
+    says so.
+
+  The shared sanitizer cases gained checklists, highlights, h3 and links (http(s)
+  only; data: and javascript: dropped). B-2c reads the page's row. The
+  fixture-shape pin reads the page list's items against `scratchpadPageList_`.
+  S2's raw-text writers name `scratchpadPageOp`.
+- **DOM** — the client sanitizer twin carries the same cases. Two drives:
+  - **Pages:** a switch saves the old page under its id first; a load
+    overtaken by another switch is dropped; a deleted page's save moves the text
+    to "Recovered text".
+  - **Extras:** a checklist box ticks, a finished URL links (one being typed
+    does not), Ctrl+click opens and a blocked open is said, Send appends to
+    Issue as an input, Time inserts, Find counts and steps and its Escape stays
+    in the find bar, and Ctrl/Cmd+Shift+S toggles the panel.
+- **Visual** — the cn-scratchpad scenarios measure clean with the page bar and
+  the wider toolbar.
+
+## Operator round 2026-11-02, Batch B — email-tool tags (2026-11-02)
+
+- **Pure** — a driven pin:
+  - every Close Order reason (and Other) has its own tag, each surviving
+    `sanitizeTagsArray_` unchanged;
+  - the tool tags by update type, and none for a type without a tool;
+  - no double tag, no archived tag, no ninth tag;
+  - the reps' rule list without archived tags;
+  - wiring: the tag rides the subformData merge before the write, both success
+    returns carry the tags, and the card mirrors them.
+
+  The auto-tag delivery pin now reads the filtered line for reps and the full
+  one for the admin editor.
+
+## Operator round 2026-11-02, Batch C — the Spanish Inbox (2026-11-02)
+
+- **Pure** — four pins:
+  - `resolveSpanishThreads` driven over a fake Gmail and sheet: the gate before
+    any read, a selection over the cap refused whole, every read before the
+    ONE lock, one fold read and one write, the covered thread idempotent, the
+    unresolvable ones named, then the audit row, the id drop and the owner's
+    Needs-you;
+  - the sender-department index (mailbox over person, the map's order, never
+    a domain), the safe wrapper naming a failed read, and both list readers
+    carrying `senderDept` / `receivedMs` / `deptUnavailable`;
+  - `getMySpanishAssignments` (gated, unconfigured said, an unreadable claims
+    tab an error) and Needs-you reading through the same `spanishMyOpen_`;
+  - the client's pure helpers: the day and department groups, the toast's
+    "news only" rule and words, the bulk result text, the id list.
+
+  The Needs-you drives (F14, E4) and the C-8 / SP-2 source pins moved to the
+  shared reader; the SP-1 drive loads the shared coverage rule; the Spanish
+  list sandboxes stub the department index; the display-cap pin reads the
+  section renderer.
+- **DOM** — three drives: multi-select (one call, ids in list order, busy,
+  a failed thread stays selected and named, a refused call keeps everything);
+  grouping (flat at the threshold, by day then by department, a closed group's
+  cards not taken by Select all, a re-render keeping both); the badge and
+  toast (silent baseline, news once, self-claims never, every nav form and the
+  tab, an unreadable answer keeps the count, zero clears it).
+- **Visual** — two scenarios, `spanish-grouped-light-wide` and
+  `spanish-grouped-dept-dark-mobile`. The first run measured the phone
+  overflowing sideways and a crowded card's requester squeezed to 4px; the
+  card head now wraps.
+
+## Operator round 2026-11-02, Batch E — Metrics folded away (2026-11-02)
+
+- **Pure** — two pins: the registry (no Metrics tool; the Dashboard's and Call
+  Notes' tabs; Team hidden and lighting Stats; the Spanish gate moved with it)
+  with `resolveToolTab_` driven over the stale, bare, unchanged and unknown
+  pairs; and a DERIVED check that every server Needs-you route and every client
+  `enterTool('tool', 'tab')` literal names the tool that holds its tab.
+
+  F8 (a mobile scenario per tool) dropped Metrics and asks the Stats tab for a
+  phone shot; the Dashboard click-through pin names the Dashboard tool; the
+  module-map floor follows the registry; the C-8 route pin names the Dashboard.
+- **DOM** — one drive: the tab bar without a Team tab, the Team view lighting
+  Stats, the switch's pressed state, `metrics` landing on the Dashboard (with
+  and without a tab), Dept Requests under Call Notes, no Metrics nav item, and
+  the answer-rate badge on both nav forms of the Dashboard and clearing from
+  both. Every DOM drive that opened `metrics` now opens the tool that holds
+  the tab.
+- **Visual** — every scenario that named `metrics` names its tool now; the
+  a11y name sweep visits Stats.
+
+## Operator round 2026-11-02, Batch D — Dept Request folds (2026-11-02)
+
+- **Pure** — one driven pin over `drTrxKey_` (the TRX forms, a name alone, two
+  bare numbers) and `drFoldList_` (the fold at the first one's place, newest
+  first; another department, a resolved request and a number-less request
+  alone; the unanswered rule before, between and after a reply; an unknown send
+  time), with the wiring (three open lists fold, Recently resolved does not,
+  the key read off the fold).
+- **DOM** — one drive: the fold's head and order, the toggle and its memory
+  across a re-render, another TRX alone, and Mark resolved on a folded card
+  patching it in place.
+- **Visual** — `deptreq-fold-light-wide` (opened) and
+  `deptreq-fold-dark-mobile`. The first shot stretched the fold's neighbours to
+  its height; a list with a fold now aligns its cards to the top.
+
+## Operator round 2026-11-02, Batch H — Employee Docs from a PDF (2026-11-04)
+
+- **Pure** — five pins: the body line and the box (the line round-trips, the
+  note is optional, a box is rounded and refused on a written document or a
+  template, ten bad boxes refused); the PDF item and the read (the SHA-256 over
+  the BYTES — real `crypto` behind the `Utilities` stub — type, magic and size
+  refused; altered, missing and unreadable apart; the reader's gate); the issue
+  and sign order (stored before the row, PdfKey, the byte check after the
+  content gate and before any write, verify's unknown); the certificate
+  (escaped, PNG-only signature, the endpoint's gate and its named conversion
+  failure); the client geometry (percent boxes, drag and tap boxes, the note
+  without the line). Moved: X1 (four reads gained fixtures and left the list),
+  VIS-COVER (`myDocs` and `docsManage` are covered), SH-02 (the reader's Close
+  is now the LAST footer button).
+- **DOM** — three drives with a stand-in pdf.js (`hFakePdf_` — two pages,
+  `getContext` stubbed): the reader (boxes on their pages, named inputs, box
+  answers in the responses, the fingerprint line, a failed PDF said and Sign
+  disabled, the signed view read-only with Certificate); the certificate viewer
+  (drawn, Download on; a failure said, Download off); issuing (the toggle, a
+  non-PDF refused, no file refused, a box drawn, renamed and removed, no
+  template, the payload's PDF, name and boxes).
+- **Visual** — four scenarios (`empdocs-pdf-sign-light-wide`,
+  `-dark-mobile`, `empdocs-cert-light-wide`, `empdocs-issue-pdf-light-wide`)
+  over hand-built one-page PDFs, served the local pdf.js; a scenario may now
+  carry `{ wait }` for a post hook that draws pages. The first shots found the
+  SHA-256 line running off the reader (now a wrapped fingerprint line) and the
+  new box's label focus scrolling the page away from the PDF
+  (`preventScroll`).
+
+## Operator round 2026-11-02, Batch F — coaching 1-on-1s, cadence and screenshot (2026-11-04)
+
+- **Pure** — five pins: the standing rule driven (a void or future row never
+  counts, none on record is due, cadence 0 is off, due on the day, never-first
+  ordering); logging's validation and the team (column M, offboarded and the
+  manager out); the reminders (one Needs-you item, overdue only past a real
+  date, the brief and the standalone digest on the one rule, no note in any
+  email — driven with a note that must not appear); the endpoints over a fake
+  sheet (the gate before the lock, another manager's rep refused, plain-text
+  columns, id-only audit, void in place and idempotent, the cadence row
+  rewritten in place); the screenshot (stored before the row, a bad or
+  unstorable image logs nothing, the reader's gate, `noCache`, "not stored"
+  apart from "could not read").
+
+  Moved: PR4-1 (the trailing ImageKey), PR4-6 (the fixture carries it), PR6-1
+  and C-8 (the declared `oneOnOne` kind), S2 (the 1-on-1 appender and the
+  cadence stamp), F9 (three gate rows in `test_managerGates_rejectNonManager`),
+  X1 (four fixtures), and the CORE-01 / HR-3 / G3 sandboxes gained the 1-on-1
+  reader. The `COACH_MEET_*` names carry no digit because S2's `_TEXT_IDX`
+  match is `[A-Z_]+`.
+- **DOM** — three drives: the board's columns (late, never, off-team, the
+  named Log button, a failed read named and no columns drawn); the log dialog
+  (today and never ahead, escaped history, the call's arguments, the close
+  without the discard ask, Void asks, the cadence validator); the screenshot
+  (the fitter, Log waiting, Remove, a non-image refused, the chip fetching
+  only when opened, a failed read said).
+- **Visual** — `coaching-1on1-light-wide`, `coaching-1on1-dark-mobile`,
+  `coaching-shot-light-wide`; the existing coaching scenarios now carry the two
+  columns (a phone keeps Employee, Signal and Next 1-on-1). All twelve measure
+  clean.
+
+## Operator round 2026-11-02, Batch G — the activity log condenses (2026-11-02)
+
+- **Pure** — three pins: the condense and purge rules driven (the block map's
+  round trip, only a finished day of the rep's own, never twice, the summary's
+  blocks equal Day Edit's; a raw ping purgeable only when old AND summarised);
+  the nightly step over a real-shaped tab (the plain-text columns, only old
+  pings of summarised days deleted, a second run idempotent, a failed write
+  deleting nothing) with the job's partial outcome; and Day Edit's read
+  (summary first, raw for a day not yet condensed, the kept-from date).
+
+  The E2a pins moved: the sandbox carries the summary helpers, and the purge
+  pin names the condense step in place of the shared-budget timestamp purge.
+  S2 names the new plain-text appender and its locked caller; the RT-1 purge
+  contract reads the job's partial list.
+- **DOM** — the Day Edit no-activity line says when a day predates what was
+  kept, and a plain "none" inside it.
+

@@ -207,6 +207,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   stamp is not. `propShrinkDropOldest_` drops oldest-first UNTIL IT FITS rather than
   one entry per call, because a caller's retry loop is a safety net and a large map
   would exhaust it and clear the property. See INV-201.
+  **A third cap is the PAGE, not the store (operator 2026-11-02).** The Apps
+  Script editor's Script Properties page is where the operator sets ids, gate
+  lists and secrets, and it stopped letting them add or edit one long before
+  the store was full: a key PER REP (`PTO_ACCRUAL_LEDGER_<empId>`) and a key PER
+  JOB (`AUTOMATION_RUN_<action>`) had filled the list. A family of keys that
+  grows with the roster or the job list does not belong in Script Properties:
+  a per-entity record goes in a tab (the PtoAccrualLedger tab), and a small
+  fixed family goes in ONE bounded blob (`AUTOMATION_RUNS`). Both moved; the
+  owner's `moveLedgersOutOfScriptProperties()` takes the old keys off the page
+  once each copy reads back. A property you must set past the page's limit can
+  be set from a one-line editor function
+  (`PropertiesService.getScriptProperties().setProperty(k, v)`).
 
 <a id="g08-a-test-function-defined-twice-silently-wins"></a>
 
@@ -2835,6 +2847,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   bottom nav never got it. `cnRenderStaleBadge_` writes every form, the health
   dot's pattern; on the column-shaped bottom-nav button it sits on the icon's
   corner. Verify: the CNUI-09 DOM pin.
+  **AMENDED (Batch E, operator 2026-11-02): a THIRD instance, and the
+  `data-tool="metrics"` above is gone.** The answer-rate alert badge was written
+  to the sidebar link only, so no phone user ever saw it; when the Metrics tool
+  folded into the Dashboard the badge moved to `VIEW_TO_TOOL.metricsTeam`'s tool
+  and is written to every nav form (`mAlertBadgeLinks_`). The Spanish assignee
+  count (Batch C) was built the same way from the start. Verify: the Batch E DOM
+  drive.
 
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 
@@ -5369,7 +5388,8 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `auditScanComplete` was computed and never read. Two fixes, one per
   direction: the evidence no longer scrolls — `writeAuditLog_` stamps a
   per-job run ledger (`AUTOMATION_RUN_<action>`, one Script Property per job,
-  so no shared read-modify-write) and `automationLastRunMerge_` keeps the newer
+  so no shared read-modify-write — ONE key, `AUTOMATION_RUNS`, under the A8
+  user lock since the 2026-11-02 Script Property consolidation) and `automationLastRunMerge_` keeps the newer
   of ledger and tail — and a missing row is weighed against the window
   actually read: the report ships `auditWindow` (a truncated scan names its
   OLDEST row), and `auditWindowCoversMonth_` lets "not run this month" stand
@@ -5439,7 +5459,13 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   month a cut-short tail is no longer reported. A failed side write drops the
   coverage claim. Verify: the F17 drive. The side copies grow with the roster,
   so Storage Health's Script Properties line names their count and bytes
-  (cycle 25 Batch 7 FU3).
+  (cycle 25 Batch 7 FU3). **Since the Script Property consolidation (operator
+  2026-11-02)** the side copy is the ADP sheet's `PtoAccrualLedger` tab, one
+  plain-text row per rep. A row that cannot be read is a hole, so it claims no
+  coverage and is never overwritten. A legacy per-rep key is read beside the tab
+  (the higher figure wins) until the owner's one-time
+  `moveLedgersOutOfScriptProperties()` copies it, reads the tab back and deletes
+  it; Storage Health names any key still to move.
   **AMENDED (cycle 25 F42 + F43, 2026-10-14): QA reviews and intake volume.** A
   shared QA review's scorecards and comments were read from 4,000-row tails, so an
   old review rendered with no scores and no comments once newer reviews pushed its
@@ -5959,6 +5985,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `--destructive` or `--info`. Verify: MRD-3 (no white on a filled accent,
   anywhere in `web-app/`), MRD-4 (none on a semantic fill), MRD-5 (amber text is
   `--on-warn`) — each a sweep over every themed partial.
+
+  **AMENDED (operator 2026-11-02): a filled amber paints `--warn-fill`.** The
+  dark text on `#b7791f` read muddy. `--warn` could not get lighter: it is also
+  amber TEXT on white in ~30 places, where a lighter amber fails (2.26:1). The
+  filled surfaces (the Lunch Out button, the pressed amber chips, the amber
+  badges) now paint `--warn-fill`, a lighter amber in light mode (`#dda23a`,
+  8.02:1 under the ink) and `--warn` itself in dark mode. MRD-5 now requires
+  every `--on-warn` rule to sit on `--warn-fill`. Verify: MRD-5.
 
 <a id="g171-a-visually-hidden-absolute-element-escapes-its-scroller"></a>
 

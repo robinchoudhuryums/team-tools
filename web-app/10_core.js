@@ -1232,7 +1232,7 @@ function purgeOldDiagnostics() {
     lock.waitLock(15000);
     let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
     let ks = { removed: 0, hitCap: false }, ksError = '';
-    let al = { removed: 0, hitCap: false };
+    let al = { removed: 0, hitCap: false, condensed: 0 }, alError = '';
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1245,9 +1245,12 @@ function purgeOldDiagnostics() {
       }
       dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
       budget -= dd.removed;
-      // 25post round 12 E2: the app-activity record keeps ACTIVITY_LOG_DAYS.
-      al = diagPurgeTab_(ss.getSheetByName(ACTIVITY_LOG_TAB), Date.now() - ACTIVITY_LOG_DAYS * 86400000, budget);
-      budget -= al.removed;
+      // Batch G: the app-activity record is CONDENSED (one summary row per
+      // rep per finished day, kept) and only then purged past
+      // ACTIVITY_LOG_DAYS — on its own budget. A failed condense purges
+      // nothing and makes the run partial, named.
+      try { al = activityLogCondenseAndPurge_(ss, Date.now()); }
+      catch (eA) { alError = String(eA.message || eA); }
       // E6: the search signal lives on the KB store. One that cannot be opened
       // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
       // a store with no signal tab has nothing to purge.
@@ -1264,15 +1267,19 @@ function purgeOldDiagnostics() {
     const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap || al.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
-      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityLogRemoved=${al.removed}` +
+      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityDaysCondensed=` + (alError ? 'not run' : al.condensed) + `; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s)` +
-      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') + '.');
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s); condensed ${al.condensed} activity day(s)` +
+      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') +
+      (alError ? ' — the activity log was not condensed (nothing of it purged): ' + alError : '') + '.');
+    const partial = [];
+    if (ksError) partial.push({ what: 'the search signal was not purged — the KB store could not be opened: ' + ksError, name: 'KbSearchSignal' });
+    if (alError) partial.push({ what: 'the activity log was not condensed, so none of it was purged: ' + alError, name: 'ActivityLog' });
     return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
-             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed,
-             outcome: ksError ? automationOutcome_('partial', 'the search signal was not purged — the KB store could not be opened: ' + ksError, ['KbSearchSignal'])
-                              : automationOutcome_('ok') };
+             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed, activityDaysCondensed: al.condensed,
+             outcome: partial.length ? automationOutcome_('partial', partial.map(function (p) { return p.what; }).join('; '), partial.map(function (p) { return p.name; }))
+                                     : automationOutcome_('ok') };
   });
 }
 
@@ -1374,30 +1381,166 @@ function runAutomationJob_(key, body) {
   res.outcome = recordAutomationOutcome_(key, res.outcome);
   return res;
 }
-/** A1 (cycle 22) — the run ledger: one Script Property per automation action
- *  (AUTOMATION_RUN_<action>), stamped beside the action's audit row. Its own
- *  key, so no read-modify-write and no lock; best-effort, like every stamp. */
+/** A1 (cycle 22) — the run ledger: each automation action's last run, stamped
+ *  beside the action's audit row. Since the Script Property consolidation
+ *  (operator 2026-11-02) every action shares ONE property,
+ *  AUTOMATION_RUNS = {action: {ts, notes}} — a read-modify-write, so it
+ *  is serialised on the A8 user lock (withAutomationErrorLock_: every stamping
+ *  job runs as the trigger installer, and none of the user-lock holders writes
+ *  an automation audit row, so the lock is never taken twice). Fail-open on
+ *  contention, like the error map: a stamp written without the lock beats one
+ *  never written, and a lost one leaves the AuditLog tail to answer, as before
+ *  the ledger. Best-effort, like every stamp. */
 function automationRunKey_(action) { return AUTOMATION_RUN_PROP_PREFIX + String(action || ''); }
+/** PURE (Node-pinned) — a stored run-ledger value as a map; anything else is
+ *  an empty ledger (a stamp is never written on top of an unreadable one
+ *  without starting it afresh, which costs one job's stamp at most). */
+function automationRunLedgerParse_(str) {
+  let m = null;
+  try { m = JSON.parse(str || 'null'); } catch (_) { m = null; }
+  return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+}
+/** PURE (Node-pinned) — is run stamp `a` newer than `b`? The stamps are
+ *  writeAuditLog_'s 'yyyy-MM-dd HH:mm:ss' (CONFIG.TIMEZONE), which order as
+ *  text; a well-formed stamp beats a malformed one, and a missing one loses. */
+function automationRunNewer_(a, b) {
+  const re = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+  const ta = String((a && a.ts) || ''), tb = String((b && b.ts) || '');
+  if (!re.test(ta)) return false;
+  if (!re.test(tb)) return true;
+  return ta > tb;
+}
+/** Degrade shrinker for the run ledger (Q1): strips the OLDEST stamp's notes
+ *  first, then drops the oldest stamps — the newest run is the one worth
+ *  keeping. Ten jobs with 300-character notes sit near 4KB, so this is a
+ *  backstop. Pure. */
+function propShrinkRunLedger_(str, max) {
+  const map = automationRunLedgerParse_(str);
+  const cap = (typeof max === 'number' && max > 0) ? max : PROP_VALUE_MAX;
+  const order = Object.keys(map).sort(function (a, b) {
+    const sa = String((map[a] && map[a].ts) || ''), sb = String((map[b] && map[b].ts) || '');
+    return sa < sb ? -1 : sa > sb ? 1 : (a < b ? -1 : 1);
+  });
+  for (let i = 0; i < order.length; i++) {
+    if (map[order[i]] && map[order[i]].notes) {
+      map[order[i]] = { ts: String(map[order[i]].ts || ''), notes: '' };
+      const next = JSON.stringify(map);
+      if (utf8Len_(next) <= cap) return next;
+    }
+  }
+  for (let i = 0; i < order.length; i++) {
+    delete map[order[i]];
+    if (!Object.keys(map).length) return null;
+    const next = JSON.stringify(map);
+    if (utf8Len_(next) <= cap) return next;
+  }
+  return null;
+}
 function stampAutomationRun_(action, ts, notes) {
-  try {
-    propSetBounded_(automationRunKey_(action),
-      JSON.stringify({ ts: String(ts || ''), notes: String(notes || '').slice(0, 300) }),
-      { mode: 'degrade', shrink: propShrinkStripFields_(['notes']) });
-  } catch (e) { /* best-effort — the audit row itself already landed */ }
+  withAutomationErrorLock_(function () {
+    try {
+      const props = PropertiesService.getScriptProperties();
+      const map = automationRunLedgerParse_(props.getProperty(AUTOMATION_RUN_LEDGER_PROP));
+      map[String(action || '')] = { ts: String(ts || ''), notes: String(notes || '').slice(0, 300) };
+      propSetBounded_(AUTOMATION_RUN_LEDGER_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkRunLedger_ });
+    } catch (e) { /* best-effort — the audit row itself already landed */ }
+  });
+}
+/** PURE (Node-pinned) — {action: {ts, notes}} from the ledger value and every
+ *  Script Property (`props`), whose AUTOMATION_RUN_<action> keys are the legacy
+ *  copy: per action the NEWER stamp (automationRunNewer_). Only the actions in
+ *  `actions` are read. `legacy` names the legacy keys still there. */
+function automationRunLedgerCombine_(ledgerStr, props, actions) {
+  const out = { byAction: {}, legacy: [] };
+  const map = automationRunLedgerParse_(ledgerStr);
+  const p = props || {};
+  (actions || []).forEach(function (a) {
+    let best = null;
+    const fromLedger = map[a];
+    if (fromLedger && typeof fromLedger === 'object' && fromLedger.ts) best = fromLedger;
+    const key = automationRunKey_(a);
+    if (Object.prototype.hasOwnProperty.call(p, key)) {
+      out.legacy.push(key);
+      const v = automationRunLedgerParse_(p[key]);
+      if (v.ts && (!best || automationRunNewer_(v, best))) best = v;
+    }
+    if (best) out.byAction[a] = { ts: String(best.ts), notes: String(best.notes || '') };
+  });
+  return out;
 }
 /** {action: {ts, notes}} for every action that has stamped the ledger. A job
  *  missing here has not run since the ledger shipped (the tail scan covers it). */
 function readAutomationRunLedger_() {
-  const out = {};
-  let props;
-  try { props = PropertiesService.getScriptProperties(); } catch (e) { return out; }
-  AUTOMATION_AUDIT_ACTIONS.forEach(function (a) {
-    try {
-      const v = JSON.parse(props.getProperty(automationRunKey_(a)) || 'null');
-      if (v && typeof v === 'object' && v.ts) out[a] = { ts: String(v.ts), notes: String(v.notes || '') };
-    } catch (_) { /* an unreadable stamp is a missing stamp */ }
+  let all;
+  try { all = PropertiesService.getScriptProperties().getProperties() || {}; } catch (e) { return {}; }
+  return automationRunLedgerCombine_(all[AUTOMATION_RUN_LEDGER_PROP], all, AUTOMATION_AUDIT_ACTIONS).byAction;
+}
+/** Script Property consolidation — fold every legacy AUTOMATION_RUN_<action>
+ *  key into the one ledger (the newer stamp wins), READ IT BACK, and delete
+ *  each key whose stamp the ledger now holds at least as new. Anything not
+ *  verified is kept and named; it stays readable beside the ledger. */
+function moveAutomationRunsToLedger_() {
+  const props = PropertiesService.getScriptProperties();
+  const out = { found: 0, moved: 0, kept: [] };
+  let legacy = [];
+  withAutomationErrorLock_(function () {
+    const all = props.getProperties() || {};
+    const c = automationRunLedgerCombine_(all[AUTOMATION_RUN_LEDGER_PROP], all, AUTOMATION_AUDIT_ACTIONS);
+    legacy = c.legacy;
+    out.found = legacy.length;
+    if (!legacy.length) return;
+    const map = automationRunLedgerParse_(all[AUTOMATION_RUN_LEDGER_PROP]);
+    Object.keys(c.byAction).forEach(function (a) { map[a] = c.byAction[a]; });
+    propSetBounded_(AUTOMATION_RUN_LEDGER_PROP, JSON.stringify(map), { mode: 'degrade', shrink: propShrinkRunLedger_ });
+    const back = automationRunLedgerParse_(props.getProperty(AUTOMATION_RUN_LEDGER_PROP));
+    legacy.forEach(function (key) {
+      const a = key.slice(AUTOMATION_RUN_PROP_PREFIX.length);
+      const was = automationRunLedgerParse_(all[key]);
+      const now = back[a];
+      if (was.ts && !(now && now.ts && !automationRunNewer_(was, now))) {
+        out.kept.push(key + ' — the ledger read back does not hold its run');
+        return;
+      }
+      props.deleteProperty(key);
+      out.moved++;
+    });
   });
   return out;
+}
+/** Script Property consolidation (operator 2026-11-02) — the one-time move,
+ *  run from the Apps Script editor by the script owner: the PTO accrual side
+ *  ledger's per-rep keys into the PtoAccrualLedger tab, and the per-job
+ *  AUTOMATION_RUN_<action> keys into AUTOMATION_RUNS. Each copy is READ
+ *  BACK before its key is deleted, and a key that does not verify is kept and
+ *  named (both readers still read it, so keeping it loses nothing). Safe to
+ *  run again: a second run finds nothing to move. Logs and returns the report;
+ *  one counts-only audit row. */
+function moveLedgersOutOfScriptProperties() {
+  assertManagerCaller_('moveLedgersOutOfScriptProperties');
+  if (!callerIsScriptOwner_()) {
+    throw new Error('moveLedgersOutOfScriptProperties runs from the Apps Script editor as the script owner — not from the browser. Nothing was changed.');
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  const report = { pto: null, runs: null };
+  try {
+    try { report.pto = moveAccrualLedgerToTab_(); }
+    catch (e) { report.pto = { found: 0, moved: 0, kept: [], error: String((e && e.message) || e) }; }
+    try { report.runs = moveAutomationRunsToLedger_(); }
+    catch (e) { report.runs = { found: 0, moved: 0, kept: [], error: String((e && e.message) || e) }; }
+  } finally { lock.releaseLock(); }
+  const line = function (label, r) {
+    return label + ': ' + r.moved + ' of ' + r.found + ' moved' +
+      (r.kept.length ? '; KEPT ' + r.kept.length + ' — ' + r.kept.join('; ') : '') +
+      (r.error ? '; FAILED before anything was deleted — ' + r.error : '');
+  };
+  Logger.log(line('PTO accrual ledger → ' + PTO_ACCRUAL_LEDGER_TAB + ' tab', report.pto));
+  Logger.log(line('Automation runs → ' + AUTOMATION_RUN_LEDGER_PROP, report.runs));
+  writeAuditLog_({ id: 'SYSTEM', name: 'System', email: '' }, 'ScriptPropertyLedgerMove', fmtDate_(new Date()), '', false, 0,
+    'pto=' + report.pto.moved + '/' + report.pto.found + ' runs=' + report.runs.moved + '/' + report.runs.found +
+    ' kept=' + (report.pto.kept.length + report.runs.kept.length) +
+    ((report.pto.error || report.runs.error) ? ' failed=1' : ''));
+  return report;
 }
 /** PURE-ish (the two converters are passed) — folds the run ledger into the
  *  tail scan's {action: last} map IN PLACE. The NEWER run wins, so a ledger
@@ -3539,12 +3682,14 @@ function propBudgetsFor_(keys) {
 function scriptPropertiesStatus_() {
   const out = { valueMax: PROP_VALUE_MAX, storeMax: PROP_STORE_MAX, warnPct: PROP_WARN_PCT,
                 count: null, bytes: null, largestKey: '', largestBytes: null, error: '',
-                accrualLedger: null };   // cycle 25 FU3 — {count, bytes} of the F17 per-rep side copies
+                accrualLedger: null,     // cycle 25 FU3 — {count, bytes} of the F17 per-rep side copies (legacy keys since the consolidation)
+                runLedgerLegacy: null }; // the consolidation — legacy AUTOMATION_RUN_<action> keys not yet moved
   try {
     const all = PropertiesService.getScriptProperties().getProperties() || {};
     const keys = Object.keys(all);
     let total = 0, bigKey = '', big = 0;
     const led = { count: 0, bytes: 0 };
+    let runs = 0;
     keys.forEach(function (k) {
       const vb = utf8Len_(all[k]);
       total += utf8Len_(k) + vb;
@@ -3552,9 +3697,11 @@ function scriptPropertiesStatus_() {
       // FU3: one Script Property per accruing rep grows with the roster, so
       // its share of the store is named rather than lost in the total.
       if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX) === 0 && k !== PTO_ACCRUAL_LEDGER_SINCE) { led.count++; led.bytes += utf8Len_(k) + vb; }
+      if (k.indexOf(AUTOMATION_RUN_PROP_PREFIX) === 0) runs++;
     });
     out.count = keys.length; out.bytes = total; out.largestKey = bigKey; out.largestBytes = keys.length ? big : 0;
     out.accrualLedger = led;
+    out.runLedgerLegacy = runs;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 }
@@ -4144,6 +4291,7 @@ function managerBriefSections_(data) {
     { key: 'training',    label: 'Overdue training' },
     { key: 'docs',        label: 'Unsigned documents' },
     { key: 'coaching',    label: 'Un-acknowledged coaching' },
+    { key: 'oneOnOnes',   label: '1-on-1s due' },
     { key: 'deptOverdue', label: 'Dept requests past SLA' },
   ];
   const out = [];
@@ -4231,6 +4379,12 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
       text += d.coaching.map(function (oc) {
         return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
       }).join('\n');
+    } else if (s.key === 'oneOnOnes') {
+      // Batch F: names and dates only — never a 1-on-1's note (HR content).
+      html += table(d.oneOnOnes.map(function (o) {
+        return row2('<strong>' + esc_(o.empName) + '</strong>', coachOneOnOneDueText_(o));
+      }).join(''));
+      text += d.oneOnOnes.map(function (o) { return '  ' + o.empName + ' \u00b7 ' + coachOneOnOneDueText_(o); }).join('\n');
     } else if (s.key === 'deptOverdue') {
       html += table(d.deptOverdue.map(function (o) {
         return row2('<strong>' + esc_(o.dept) + '</strong> · ' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown'),
@@ -4306,6 +4460,7 @@ function sendManagerDailyBrief() {
     const training    = src('overdue training', function () { return trainOverdueForRoster_(todayIso); });
     const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
     const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
+    const oneOnOnes   = src('1-on-1s due', function () { return coachOneOnOnesDueByManager_(todayIso); });   // Batch F — {managerEmail: due[]}
     const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
 
     let sent = 0, sendFailed = 0, lastSendError = '';
@@ -4317,6 +4472,7 @@ function sendManagerDailyBrief() {
         training: training,
         docs: docs.filter(function (od) { return empDocCanManagerSee_(mgr, od.doc); }),
         coaching: coaching.filter(function (oc) { return coachCanManagerSee_(mgr, oc.item); }),
+        oneOnOnes: oneOnOnes[String(email || '').toLowerCase().trim()] || [],   // their own team only
         deptOverdue: deptOverdue,
       };
       d.failedSources = failedSources;

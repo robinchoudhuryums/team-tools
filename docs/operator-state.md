@@ -719,7 +719,7 @@ entry says which it is.
   as "Half day — works part of the shift", counted as a tentative presence
   across the shift rather than as a day off.
 <a id="operator-spanish-inbox-tracking-gmail-needs-3-things"></a>
-- **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
+- **Spanish-inbox tracking (Gmail) needs 3 things.** The Dashboard → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
   scans the **deploying account's** Gmail for threads addressed to the group
   inbox and times first-inbound → first-reply-from-a-member — **in BUSINESS
@@ -899,8 +899,9 @@ entry says which it is.
   (`sendSpanishEscalationDigest`, riding `runDailyChecks` — no new trigger, so
   re-running `installAutomationTriggers` is not required) emails the managers
   the escalated requests: age, email or voicemail, who has it, and the Gmail
-  link — never the subject, text or requester. It reads the tab's widest
-  window (90 days), heartbeats as `spanishEscalation` (stale past 26 h), logs
+  link — never the subject, text or requester. It reads the last 30 days —
+  the one pending window (operator 2026-11-02; it read 90 until then), so a
+  request older than that is no longer emailed — heartbeats as `spanishEscalation` (stale past 26 h), logs
   each decision under Admin → System → Email deliveries, and a morning with
   none sends nothing. It does nothing while `SPANISH_INBOX_ADDRESS` is unset.
 
@@ -999,7 +1000,7 @@ entry says which it is.
   (2) the **sender or a manager** clicks "Mark resolved" in-app →
   `resolveDeptRequest(requestId)` (rep-callable, owner-or-manager-checked) — for
   when the recipient replied "done" without clicking. The surface is the
-  rep-visible **Metrics → Dept Requests** tab (`metricsDeptReq` →
+  rep-visible **Call Notes → Dept Requests** tab (Metrics → Dept Requests before Batch E, 2026-11-02) (`metricsDeptReq` →
   `enterDeptRequestsView`, read-only list + resolve buttons): `getDeptRequests`
   (rep-callable) returns the caller's own requests (open/resolved + elapsed);
   managers ALSO get a per-department resolution-time aggregate (`deptStats`
@@ -1577,7 +1578,7 @@ entry says which it is.
 <a id="operator-employees-sheet-column-n-departments"></a>
 - **`Employees` sheet column N = `Departments`** (DeptRequests v2, INV-138) —
   a `;`/`,`-separated list of department names (matching the `DEPARTMENT_EMAILS`
-  keys, case-insensitive) the rep STAFFS. Drives the Metrics → Dept Requests
+  keys, case-insensitive) the rep STAFFS. Drives the Call Notes → Dept Requests
   **Incoming inbox** (open requests addressed to a dept the rep staffs) + lets a
   dept member resolve in-app. Blank for most reps; fill it only for dept-desk
   staff. Unknown names are dropped (`drParseDepartments_`). `ROSTER_CACHE_KEY`
@@ -1851,7 +1852,7 @@ entry says which it is.
 <a id="operator-script-property-spanish-vm-min-seconds"></a>
 - **Script Property `SPANISH_VM_MIN_SECONDS`** (optional — operator 2026-09-16).
   An 8x8 A_Q_Spanish voicemail SHORTER than this many seconds is treated as a
-  hang-up and never becomes a task card on Metrics → Spanish Inbox. **Unset is
+  hang-up and never becomes a task card on Dashboard → Spanish Inbox. **Unset is
   fine:** `CONFIG.SPANISH_VM_MIN_SECONDS` seeds **5**, so the gate is on from
   the first deploy with no action. Set the property to change the threshold, or
   to **`0` to disable the gate entirely** — that is the escape hatch if 8x8
@@ -1888,7 +1889,7 @@ entry says which it is.
 <a id="operator-script-property-cdr-queue-groups"></a>
 - **Script Property `CDR_QUEUE_GROUPS`** (optional — cycle-14 Phase 4). JSON
   `{"Department": ["A_Q_Queue", ...]}` mapping transfer queues to departments
-  for the Metrics → Team Metrics **"By department"** mode. **Unset is fine:**
+  for the Dashboard → Stats → Team **"By department"** mode. **Unset is fine:**
   `CONFIG.CDR_QUEUE_GROUPS` already ships the four operator-supplied groups
   (Sales / Customer Success / Field Operations / Power), so the mode works on
   deploy with no action. Set the property only to change the mapping without a
@@ -2242,6 +2243,41 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-empdocfiles-tab-batch-h"></a>
+- **The `EmpDocFiles` tab (HR store, `HR_DOCS_SS_ID`) and EmpDocs' trailing
+  `PdfKey` column — documents issued as PDFs (Batch H, operator 2026-11-02).**
+  **Nothing to set up:** the tab is created by the first document issued as a
+  PDF, and the column self-heals. Each PDF is stored in the KbImages row shape
+  (Key · Sha · Type · Kind · Part · Data · ImportedAt), keyed by the SHA-256 of
+  its bytes, append-only; up to 4 MB per file. **Never edit or delete these
+  rows:** every read and every signature re-hashes the stored bytes, so a
+  changed or missing row makes the document unreadable and unsignable (Verify
+  reports it as tampered), and an edited header row makes every PDF read as
+  "could not be read" (restore the seven names above). The signed certificate
+  is made by Apps Script's own HTML→PDF conversion (no Drive); if the domain
+  blocks it, the app says "could not be made into a PDF here". Downloading a
+  certificate may be blocked by the page's sandbox, as with the handbook's forms.
+<a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
+- **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
+  `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each
+  is auto-provisioned on its first write. `OneOnOnes` holds one row per 1-on-1 a
+  manager logs from Coaching → Team → Who needs a 1-on-1 (OneOnOneId · EmpId ·
+  EmpName · MeetDate · LoggedBy · Note · LoggedAt · Status — the name, date,
+  note and stamp are plain-text cells); a mistaken row is marked `void`, never
+  deleted. `CoachingSettings` holds one row per manager who changed their
+  cadence (ManagerEmail · CadenceDays · UpdatedAt); a manager with no row uses
+  `CONFIG.COACHING_ONE_ON_ONE_DAYS` (14), and 0 turns their reminders off.
+  `CoachingImages` holds coaching screenshots in the KbImages row shape (Key ·
+  Sha · Type · Kind · Part · Data · ImportedAt), append-only. **Who is "on a
+  manager's team" is roster column M** — a rep whose ManagerEmail is blank or
+  someone else's never appears on that manager's board or reminders. **What to
+  expect after the deploy:** every rep with no 1-on-1 on record is due, so each
+  manager sees one Needs-you item ("N 1-on-1s due … with none on record"), and
+  the daily brief (or the standalone overdue digest while the brief is off)
+  lists them, until a 1-on-1 is logged for each or the cadence is set to 0.
+  Never edit these tabs by hand: a hand-typed date that is not yyyy-MM-dd is
+  ignored, and an edited `CoachingImages` header row makes every screenshot
+  read as "could not be read" (restore it to the seven names above).
 <a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
@@ -2249,8 +2285,21 @@ entry says which it is.
   the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
   milliseconds — the column Day Edit searches). One row per presence ping —
   a real gesture, at most one per app window per 10 minutes — so roughly six
-  rows an hour per active rep; ids and times only. The nightly diagnostics
-  purge removes rows older than 60 days (`ACTIVITY_LOG_DAYS`). **Timesheet
+  rows an hour per active rep; ids and times only. **Since Batch G
+  (2026-11-02)** the nightly diagnostics purge first CONDENSES every finished
+  day (the rep's own day) into the auto-provisioned **`ActivitySummary`** tab —
+  one row per rep per day: Date · EmpId · Timezone · Pings · First · Last ·
+  ActiveMin (active 10-minute blocks × 10) · Blocks (the day's 10-minute map,
+  one base-36 digit per block) · CondensedAt, all text cells kept as text —
+  kept INDEFINITELY, and only then removes raw pings older than 14 days
+  (`ACTIVITY_LOG_DAYS`; was 60) whose day is on file, on their own per-run
+  budget (`ACTIVITY_LOG_PURGE_MAX_PER_RUN`). Day Edit reads a day's summary
+  row first and the raw pings only for a day not condensed yet. Do not edit
+  or delete a summary row by hand — it is the only copy once the raw pings
+  are gone; a failed condense is a partial run on Automation Health and
+  purges nothing. The first night after the deploy condenses the whole
+  backlog (up to 60 days); its oldest day may be partial if the old 60-day
+  purge had already cut into it. **Timesheet
   column J** ("Source", named the first time it is written) carries
   `Inferred (app activity)` on a Clock In / Clock Out a manager saved from
   Day Edit's suggestion; the ADP export copies columns A–I only, so the
@@ -2577,11 +2626,28 @@ entry says which it is.
   reach in its four-minute budget, is NAMED; re-run to cover it. Optional,
   never blocking; once the list is empty it never needs running again.
 <a id="operator-the-automation-run-ledger-cycle-22"></a>
-- **The automation run ledger — `AUTOMATION_RUN_<action>` (cycle 22 A1,
-  2026-09-25).** Auto-managed; nothing to set. Each automation job's audit row
-  (`CallNotesReconcile`, `AdpExportAuto`, the purges and archives,
-  `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps one Script Property named
-  `AUTOMATION_RUN_<action>` with `{ts, notes}` (CONFIG.TIMEZONE wall time). The
+- **The automation run ledger — `AUTOMATION_RUNS`, once `AUTOMATION_RUN_<action>`
+  (cycle 22 A1, 2026-09-25; one key since 2026-11-02).** Auto-managed; nothing
+  to set. Each automation job's audit row (`CallNotesReconcile`, `AdpExportAuto`,
+  the purges and archives, `PtoAccrualCredit`, `DiagnosticsPurge`) also stamps
+  its run, `{ts, notes}` (CONFIG.TIMEZONE wall time), into the ONE Script
+  Property `AUTOMATION_RUNS` = `{action: {ts, notes}}` — until 2026-11-02 each
+  job had its own `AUTOMATION_RUN_<action>` key. **The Script Property
+  consolidation (operator 2026-11-02) — a one-time step after deploying it:**
+  in the Team Tools Apps Script editor, as the script owner (who must also be
+  in `MANAGER_EMAILS`), run `moveLedgersOutOfScriptProperties`. It moves the
+  per-job keys into `AUTOMATION_RUNS` and the PTO accrual ledger's per-rep
+  `PTO_ACCRUAL_LEDGER_<empId>` keys into the ADP sheet's new
+  **`PtoAccrualLedger`** tab (one plain-text row per rep: EmpId, the month map
+  as JSON, when it was written — the app writes it; do not edit it), reads each
+  copy BACK, and deletes only the keys that verified. The log says how many of
+  each moved and names any it KEPT and why (a key that is not a ledger map, a
+  rep whose tab row cannot be read, a read-back that did not hold every month);
+  a kept key is still read beside its new home, so keeping it loses nothing.
+  Running it again moves nothing. Until it runs, both readers read the old keys
+  beside the new home, and Admin → System's Script Properties line says how
+  many are still to move. `PTO_ACCRUAL_LEDGER_SINCE` stays a Script Property.
+  A browser call is refused before anything is read. The
   Automation Health panel, the health dot and the failure digest read it before
   the AuditLog tail, so a job's last run no longer disappears when its row
   scrolls out of the 4,000-row scan. **After deploy every job has an empty
@@ -2589,7 +2655,8 @@ entry says which it is.
   "no run on record — cannot confirm" when the AuditLog window read does not
   reach far enough, and a monthly job is not called "not run this month" unless
   the window reaches back past the 1st. That is expected, not a fault; it clears
-  on each job's next run. Delete one key to forget that job's last run.
+  on each job's next run. Delete `AUTOMATION_RUNS` to forget every job's last
+  run.
   **25post (2026-10-16): `AUTOMATION_WATCH_SINCE`**, also auto-managed — when
   each digest and each enabled job was FIRST WATCHED. A digest a deploy adds,
   or a job a deploy or a setting turns on, is not called "never ran" or "no run

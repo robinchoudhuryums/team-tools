@@ -99,6 +99,7 @@ const CONFIG = {
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
   COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  COACHING_ONE_ON_ONE_DAYS: 14,         // Batch F (operator 2026-11-02) — the default 1-on-1 cadence; each manager adjusts their own in the CoachingSettings tab (0 = no reminders)
   QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
@@ -376,6 +377,19 @@ const CONFIG = {
       'Changing suppliers', 'Dissatisfied with services', 'Due to cost',
       'Patient deceased', 'Insurance change', 'No longer needed', 'Patient request',
     ],
+    // Batch B (operator 2026-11-02): the TAG a department email adds to its note
+    // when it is sent (cnEmailToolTag_). Close Order is tagged PER REASON — the
+    // operator asked for that — through this map, because a tag is 2–24
+    // characters (sanitizeTagsArray_) and "close-dissatisfied-with-services"
+    // would not fit; a typed ("Other") or legacy reason is `close-other`. Every
+    // reason above needs an entry (a pin checks); keep the tags ≤ 24 characters.
+    CLOSE_REASON_TAGS: {
+      'Changing suppliers': 'close-change-supplier', 'Dissatisfied with services': 'close-dissatisfied',
+      'Due to cost': 'close-cost', 'Patient deceased': 'close-deceased', 'Insurance change': 'close-insurance',
+      'No longer needed': 'close-not-needed', 'Patient request': 'close-pt-request', 'Other': 'close-other',
+    },
+    // The other email tools, by updateInfoToSubformKey_'s key.
+    EMAIL_TOOL_TAGS: { shipping: 'ver-ship', resupply: 'resupply', oop: 'oop-order' },
     // Always offered alongside dept-specific suggestions
     UPDATE_SUGGESTIONS_DEFAULT: [
       'Verified Shipping', 'Repeat Resupply', 'Close Order', 'OOP Order', 'Supervisor/Complaint',
@@ -969,7 +983,18 @@ const IDLE_ALERT_MIN = 30;
 // ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
 const ACTIVITY_LOG_TAB = 'ActivityLog';
 const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
-const ACTIVITY_LOG_DAYS = 60;
+// Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
+// each night every FINISHED day's pings become ONE ActivitySummary row per rep
+// (the day's 10-minute map included, so Day Edit draws it unchanged), kept
+// indefinitely; the raw pings are then kept only ACTIVITY_LOG_DAYS (was 60),
+// and never purged before their day is summarised. The purge has its own
+// per-run budget, apart from DIAG_PURGE_MAX_ROWS_PER_RUN, so the busiest tab
+// cannot starve the others.
+const ACTIVITY_LOG_DAYS = 14;
+const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
+const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';
+const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt'];
+const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8];   // g144: a date, an "08:05" and the block string read back as written
 const ACTIVITY_BLOCK_MIN = 10;
 // 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
 // radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,
@@ -1077,11 +1102,17 @@ const AUTOMATION_SYNCFAIL_WINDOW_DAYS = 30;
 // CN_AUDIT_MAX_SCAN AuditLog rows, so the monthly accrual row scrolled out of
 // that window within days of the 1st (a daily false "has not run this month")
 // and a dead daily job went SILENT the moment its last row scrolled out.
-// writeAuditLog_ now stamps one Script Property per automation action —
-// AUTOMATION_RUN_<action> = {ts, notes} — on every automation audit row. One key
-// per job, so two jobs finishing together never race a shared read-modify-write.
-// Auto-managed; delete a key to forget that job's last run.
-const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';
+// writeAuditLog_ stamps the job's run on every automation audit row.
+// Script Property consolidation (operator 2026-11-02): the stamps share ONE
+// property, AUTOMATION_RUNS = {action: {ts, notes}}, written under the A8
+// user lock (the same serialisation as AUTOMATION_LAST_ERRORS), where each job
+// used to own an AUTOMATION_RUN_<action> key — ten keys the Apps Script editor's
+// Script Properties page had to list. The per-action keys are LEGACY: read
+// beside the ledger (the newer stamp wins) until
+// moveLedgersOutOfScriptProperties() folds them in and deletes them.
+// Auto-managed; delete the ledger to forget every job's last run.
+const AUTOMATION_RUN_LEDGER_PROP = 'AUTOMATION_RUNS';   // not 'AUTOMATION_RUN_…': no prefix scan can mistake it for a legacy key
+const AUTOMATION_RUN_PROP_PREFIX = 'AUTOMATION_RUN_';   // legacy keys only — never written
 // S7 (cycle 22) — who has been offboarded, lowercased, newest last. Offboarding
 // clears the roster EMAIL cell, so afterwards nothing on the roster can say an
 // address in MANAGER_EMAILS / ADMIN_EMAILS belongs to someone who left; the
@@ -1469,7 +1500,21 @@ const PTO_ACCRUAL_RECONCILE_MONTHS = 3;
 // `…_SINCE` is the first month the side copy existed (manager tz): a window whose
 // oldest month is at or after it is fully covered, so a truncated tail read no
 // longer matters there. Each rep's map keeps its newest KEEP months.
-const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';
+//
+// Script Property consolidation (operator 2026-11-02): the side copy now lives
+// in the ADP sheet's PtoAccrualLedger tab — one row per rep, every cell plain
+// text: the EmpId, the {"YYYY-MM": hours} map as JSON, and when it was written.
+// One Script Property per accruing rep grew with the roster and filled the Apps
+// Script editor's Script Properties page. The PTO_ACCRUAL_LEDGER_<empId> keys
+// are LEGACY: read beside the tab (per month the higher figure wins, so neither
+// copy can lower what was paid for) until moveLedgersOutOfScriptProperties()
+// has copied them, read them back and deleted each one the tab holds. `…_SINCE`
+// stays a Script Property: one key, and the coverage claim it carries is
+// unchanged.
+const PTO_ACCRUAL_LEDGER_TAB = 'PtoAccrualLedger';
+const PTO_ACCRUAL_LEDGER_HEADERS = ['EmpId', 'Months', 'Updated'];
+const PTO_ACCRUAL_LEDGER_TEXT_IDX = [0, 1, 2];   // every column plain text (g144): an id, a JSON map, a stamp
+const PTO_ACCRUAL_LEDGER_PREFIX = 'PTO_ACCRUAL_LEDGER_';   // legacy keys only — never written
 const PTO_ACCRUAL_LEDGER_SINCE = 'PTO_ACCRUAL_LEDGER_SINCE';
 const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // Dispatcher → the top-level handlers it runs, IN ORDER. Every name must be a
@@ -1688,16 +1733,23 @@ const SPANISH_PENDING_WINDOW_DAYS = 30;
 // once it has waited this many CALENDAR days (wall clock — the tab's own age
 // measure). It reads "Escalated · N days" on the tab and the Dashboard card,
 // its claimant's Needs-you item turns overdue, and the 8am escalation digest
-// lists it to the managers. The digest reads the tab's widest window, so a
-// request older than the 30-day default is still escalated, not forgotten.
+// lists it to the managers. The digest read the tab's widest window (90) so a
+// request older than the 30-day default was still escalated; the operator
+// (2026-11-02) asked for the last 30 days only, so it now reads the ONE
+// pending window every other reader uses — an older request still shows on
+// the tab when its select is widened.
 const SPANISH_ESCALATE_DAYS = 7;
-const SPANISH_ESCALATE_READ_DAYS = 90;
+const SPANISH_ESCALATE_READ_DAYS = SPANISH_PENDING_WINDOW_DAYS;
 // 22post C-8: the PHI-free set of pending THREAD IDS (no subject, no body) that
 // getSpanishInboxPending last read, per window — so the Dashboard's Needs-you
 // list can tell which of a rep's claims are still pending WITHOUT a Gmail read
 // on every dashboard paint. A miss falls back to one live read.
 const SPANISH_PENDING_IDS_PREFIX = 'spanish_pending_ids_v1:';
 const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request leaves Needs-you within this
+// Batch C (operator 2026-11-02 — "multi-select manual resolve"): the most
+// requests one Resolve-selected call may act on. A bigger selection is refused
+// whole (never a silent prefix); every thread is a Gmail read before the lock.
+const SPANISH_BULK_RESOLVE_MAX = 50;
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -1728,6 +1780,14 @@ const SC = { ID: 0, EMP_ID: 1, WHEN_MS: 2, LEAD_MIN: 3, LABEL: 4, STATUS: 5, CRE
 // INV-167-guarded field the employee builders populate).
 const SCRATCHPAD_TAB = 'Scratchpad';
 const SCRATCHPAD_MAX_CHARS = 40000;   // comfortably under the ~50k cell limit
+// Batch S (operator 2026-11-02): named PAGES — one row of the Scratchpad tab
+// each: A the page (the same '@' html cell), B its save time, C its format,
+// D its name, E its id. Row 1 is the legacy pad, page `main` (named in D1
+// once renamed; "Notes" until then), so a pad from before pages is simply the
+// first page and an older client keeps reading and writing row 1.
+const SCRATCHPAD_MAX_PAGES = 10;
+const SCRATCHPAD_PAGE_NAME_MAX = 40;
+const SCRATCHPAD_MAIN_PAGE = 'main';
 /** Inter-department requests for the caller (rep: own; manager: all) + a
  *  per-department resolution-time aggregate for managers. Manager-gated fields
  *  (the aggregate + cross-rep rows) only return for managers. */
@@ -1902,7 +1962,7 @@ var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
 var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
-var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
@@ -2749,9 +2809,12 @@ const TQR = { RESET_AT:0, QUIZ_ID:1, EMP_ID:2, RESET_BY:3, AT_MS:4 };
 // EXCLUDED from every retention purge: HR records are keep-forever.
 const EMPDOC_TAB = 'EmpDocs';
 const EMPDOC_SIG_TAB = 'DocSignatures';
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
+// Batch H (operator 2026-11-02): ONE more trailing column, PdfKey — the issued
+// PDF's key in the EmpDocFiles tab (blank for a written document and every
+// older row; getOrCreateEmpDocSheet_ self-heals the header).
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15 };
 // HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
 // that read as a date or number was coerced on write, so the content hash
 // recomputed from the cell never matched — the doc could not be signed and
@@ -2773,6 +2836,20 @@ const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+// ── Batch H (operator 2026-11-02 — "it needs to at least work with PDFs; can I
+// add highlighted boxes that indicate what needs to be completed, like a date"):
+// a document may be ISSUED AS A PDF. The bytes live in the HR store's
+// EmpDocFiles tab (the KbImages row shape — Drive is disabled here, DRV-1),
+// keyed by their SHA-256; the frozen body ends with a line naming that SHA-256
+// (empDocPdfLine_), so the content hash — and through it every signature hash —
+// binds the PDF's exact bytes, and the sign path re-hashes the stored bytes
+// before it accepts a signature. A field may carry a BOX — a page and a
+// rectangle as fractions of the page — that the employee fills in place.
+const EMPDOC_FILES_TAB = 'EmpDocFiles';
+const EMPDOC_PDF_KEY_RE = /^empdocpdf-[a-f0-9]{24}$/;
+const EMPDOC_PDF_MAX_BYTES = 4194304;          // 4 MB — a Google Doc exported as PDF is ~100 KB
+const EMPDOC_PDF_NAME_MAX = 120;
+const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box may name
 // Bump when the acknowledgment copy below changes, so stored signatures
 // prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
 const EMPDOC_ACK_VERSION = 1;
@@ -2814,8 +2891,11 @@ const COACH_TAB = 'Coaching';
 // note's DateLocal — the drill-through is date-keyed, so the id alone could
 // never open it, K5) and QaFileId (the QA recording's Drive id, K13). All of
 // them stay in the HR store; none reaches the shared AuditLog.
-const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'];
-const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18 };
+// Batch F (operator 2026-11-02): ONE more trailing column, the same
+// self-healing back-compat — ImageKey, the optional screenshot's key in the
+// CoachingImages tab (blank for no screenshot, and for every older row).
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId','ImageKey'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18, IMAGE_KEY:19 };
 // HR-1 (cycle 23) — the coaching free text is written into '@' cells (a TRX
 // "0012" lost its zeros, a "3/4" became a Date).
 const COACH_TEXT_IDX = [CO.PATIENT_TRX, CO.WHAT_HAPPENED, CO.WHAT_SHOULD, CO.VOID_REASON, CO.REP_RESPONSE];
@@ -2830,6 +2910,31 @@ const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
+// ── Batch F (operator 2026-11-02 — "Last 1-on-1 date, reminders for managers,
+// adjustable cadence; optional screenshot on a logged issue"). Three HR-store
+// tabs, all keep-forever and team-scoped like Coaching itself:
+//   • OneOnOnes — one row per 1-on-1 a manager logs (the date it was held, the
+//     rep, who logged it, an optional note in a plain-text cell). Never
+//     deleted: a mistaken row is VOIDED, and a voided row never counts.
+//   • CoachingSettings — one row per manager: their 1-on-1 cadence in days
+//     (0 = no reminders). Not a Script Property (g07: the editor's page filled).
+//   • CoachingImages — a coaching item's optional screenshot, in the KbImages
+//     row shape (KBMG), keyed by content hash and append-only. Read only
+//     through getCoachingImage, which asks the coaching item's own visibility
+//     rule (the rep, or a manager coachCanManagerSee_ admits) — never cached.
+const COACH_MEET_TAB = 'OneOnOnes';
+const COACH_MEET_HEADERS = ['OneOnOneId','EmpId','EmpName','MeetDate','LoggedBy','Note','LoggedAt','Status'];
+const CMT = { ID:0, EMP_ID:1, EMP_NAME:2, MEET_DATE:3, LOGGED_BY:4, NOTE:5, LOGGED_AT:6, STATUS:7 };
+const COACH_MEET_TEXT_IDX = [CMT.EMP_NAME, CMT.MEET_DATE, CMT.NOTE, CMT.LOGGED_AT];
+const COACH_MEET_NOTE_MAX = 2000;
+const COACH_MEET_HISTORY = 5;          // the latest N 1-on-1s per rep the board's dialog lists
+const COACH_MEET_BACK_DAYS = 366;      // a 1-on-1 may be logged up to a year back, never ahead
+const COACH_CADENCE_MAX = 90;          // the longest cadence a manager may set (0 = off)
+const COACH_SETTINGS_TAB = 'CoachingSettings';
+const COACH_SETTINGS_HEADERS = ['ManagerEmail','CadenceDays','UpdatedAt'];
+const COACH_SETTINGS_TEXT_IDX = [0, 2];
+const COACH_IMAGES_TAB = 'CoachingImages';
+const COACH_IMAGE_KEY_RE = /^coachimg-[a-f0-9]{24}$/;
 const QA_RECORDINGS_TAB = 'QaRecordings';
 /** The Script Property naming the Drive folder QA recordings are dropped into —
  *  ONE name, read by qaFolderId_ and probed by Admin → System's Drive line (DRV-1). */

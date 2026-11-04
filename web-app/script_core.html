@@ -67,9 +67,22 @@ const TOOLS = {
     label: 'Dashboard',
     sidebarIcon: 'clock',
     defaultTab: 'clock',
+    // Operator 2026-11-02 (Batch E): the Metrics tool folded in here. Its tab
+    // KEYS are unchanged (deep links, email links, umsLastView, the Dashboard's
+    // buttons and every `currentView ===` guard keep working); enterTool finds
+    // a tab's tool by the tab, so a stale `metrics` still lands.
     tabs: {
       clock:    { label: 'Dashboard', icon: 'clock',    enter: 'enterClockCombinedView' },
+      // ONE Stats tab: My Stats and Team Metrics behind a Me / Team switch. The
+      // Team key stays a real (hidden) tab so its links and guards keep
+      // working; `lights` names the tab button it lights.
+      metricsMyStats:  { label: 'Stats',          icon: 'chart',  enter: 'enterMetricsMyStatsView' },
+      // Operator 2026-08-18: not managerOnly — reps get the TEAM AGGREGATE
+      // view (the server strips the per-rep rows + diagnostics via
+      // teamMetricsRepView_; INV-124's individual-numbers boundary holds).
+      metricsTeam:     { label: 'Stats · Team',   icon: 'manage', enter: 'enterMetricsTeamView', hidden: true, lights: 'metricsMyStats' },
       timeoff:  { label: 'Time / PTO', icon: 'timeoff',  enter: 'enterTimeoffView' },
+      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true, also: 'canSeeSpanish' },
     },
   },
   callNotes: {
@@ -86,21 +99,20 @@ const TOOLS = {
       callNotesHistory: { label: 'History',     icon: 'list',    enter: 'enterCallNotesHistoryView' },
       callNotesSearch:  { label: 'Search',      icon: 'search',  enter: 'enterCallNotesSearchView' },
       callNotesForms:   { label: 'Sent Forms',  icon: 'send',    enter: 'enterCallNotesFormsView' },
+      // Operator 2026-11-02 (Batch E): Dept Requests are raised from a note,
+      // so they live with the notes. The key is the old Metrics one.
+      metricsDeptReq:   { label: 'Dept Requests', icon: 'outbox', enter: 'enterDeptRequestsView' },
       callNotesManage:  { label: 'Team Notes',  icon: 'manage',  enter: 'enterCallNotesManageView', managerOnly: true },
     },
   },
-  metrics: {
-    label: 'Metrics',
-    sidebarIcon: 'chart',
-    defaultTab: 'metricsMyStats',
+  // Operator 2026-11-02: Reference sits above Intake — the sidebar and the
+  // mobile nav follow this object's key order (renderShell).
+  reference: {
+    label: 'Reference',
+    sidebarIcon: 'list',
+    defaultTab: 'reference',
     tabs: {
-      metricsMyStats:  { label: 'My Stats',      icon: 'chart',  enter: 'enterMetricsMyStatsView' },
-      // Operator 2026-08-18: no longer managerOnly — reps get the TEAM
-      // AGGREGATE view (the server strips the per-rep rows + diagnostics via
-      // teamMetricsRepView_; INV-124's individual-numbers boundary holds).
-      metricsTeam:     { label: 'Team Metrics',   icon: 'manage', enter: 'enterMetricsTeamView' },
-      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true, also: 'canSeeSpanish' },
-      metricsDeptReq:  { label: 'Dept Requests',  icon: 'outbox', enter: 'enterDeptRequestsView' },
+      reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
     },
   },
   intake: {
@@ -113,14 +125,6 @@ const TOOLS = {
       intakePapAccount: { label: 'PAP Account',        icon: 'airflow',        enter: 'enterIntakePapView' },
       intakeSent:       { label: 'Sent',               icon: 'outbox',         enter: 'enterIntakeSentView' },
       intakeCatalog:    { label: 'Catalog',            icon: 'list',           enter: 'enterIntakeCatalogView' },
-    },
-  },
-  reference: {
-    label: 'Reference',
-    sidebarIcon: 'list',
-    defaultTab: 'reference',
-    tabs: {
-      reference: { label: 'Browse', icon: 'list', enter: 'enterReferenceView' },
     },
   },
   develop: {
@@ -189,6 +193,18 @@ const VIEW_TO_TOOL = {};
 Object.keys(TOOLS).forEach(toolKey => {
   Object.keys(TOOLS[toolKey].tabs).forEach(tabKey => { VIEW_TO_TOOL[tabKey] = toolKey; });
 });
+// Batch E (operator 2026-11-02): tools that no longer exist, and where their
+// bare name (no tab) lands. A stale `metrics` reaches here from an older
+// server's Needs-you route, a saved link or a pop-out opened before a deploy.
+const RETIRED_TOOLS = { metrics: { tool: 'timeClock', tab: 'metricsMyStats' } };
+/** PURE — the tool a (tool, tab) pair opens. The TAB decides: tab keys are
+ *  globally unique, so a tab names its tool wherever it moved; a retired tool
+ *  with no tab lands where RETIRED_TOOLS says; anything else is unchanged. */
+function resolveToolTab_(toolKey, tabKey) {
+  if (tabKey && VIEW_TO_TOOL[tabKey]) return { tool: VIEW_TO_TOOL[tabKey], tab: tabKey };
+  if (!TOOLS[toolKey] && RETIRED_TOOLS[toolKey]) return { tool: RETIRED_TOOLS[toolKey].tool, tab: RETIRED_TOOLS[toolKey].tab };
+  return { tool: toolKey, tab: tabKey };
+}
 
 /** Whether the current user may see a tab. adminOnly → isAdmin; managerOnly →
  *  isManager OR an `also` empState flag (e.g. metricsSpanish → canSeeSpanish);
@@ -354,6 +370,7 @@ window.addEventListener('load', () => {
       bootTimingArm_();
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
+      if (typeof spAssignStart_ === 'function') spAssignStart_();   // Batch C — the Spanish assignee badge + toast
       startHealthBadgePolling_();
       // Break / clock-out reminders run at the SHELL level so they reach the
       // pinned Call Notes pop-out, not only the Clock tab (operator 2026-08-11).
@@ -1158,6 +1175,8 @@ function applySidebarWidth_(sb, w) {
  *  or the URL ?tab=<k> on initial boot). Non-manager users skip managerOnly
  *  tabs and fall through to the default. */
 function enterTool(toolKey, tabKey) {
+  const _rt = resolveToolTab_(toolKey, tabKey);   // Batch E — the tab decides
+  toolKey = _rt.tool; tabKey = _rt.tab;
   const tool = TOOLS[toolKey];
   if (!tool) return;
   // If every tab in this tool is gated away for the user (e.g. a non-manager
@@ -1255,7 +1274,9 @@ function renderToolTabBar(toolKey) {
   const tool = TOOLS[toolKey];
   const bar = document.getElementById('tool-tab-bar');
   if (!bar || !tool) return;
-  const tabs = Object.keys(tool.tabs).filter(k => tabVisibleForUser_(tool.tabs[k]));
+  // A `hidden` tab (Batch E — Stats · Team) is reached by its view's own
+  // switch and by links; its button is the tab it `lights`.
+  const tabs = Object.keys(tool.tabs).filter(k => !tool.tabs[k].hidden && tabVisibleForUser_(tool.tabs[k]));
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
     // Privileged (managerOnly/adminOnly) tabs get a subtle upward accent gradient
@@ -1273,6 +1294,8 @@ function renderToolTabBar(toolKey) {
       <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}${mgrMark}
     </button>`;
   }).join('');
+  // Batch C — a rebuilt tab bar gets its counts back (the Spanish assignee badge).
+  if (typeof spAssignPaint_ === 'function') spAssignPaint_();
 }
 
 /** Dispatch to a specific tab's enter handler. The active tab's button gets
@@ -1395,8 +1418,9 @@ function showView(view) {
   // Tab bar active state. A11 (cycle 13): `aria-current` rides alongside the
   // `.active` class — the class alone is invisible to assistive tech, so a
   // screen-reader user was never told which sub-tab they were on.
+  const _lit = (_tab && _tab.lights) || view;   // Batch E — a hidden tab lights its host's button
   document.querySelectorAll('.tt-btn').forEach(b => {
-    const on = b.dataset.tab === view;
+    const on = b.dataset.tab === _lit;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
@@ -2281,12 +2305,19 @@ function notifyRequestDesktop_() {
 }
 
 /** The one entry point every reminder uses. `tone` rides the toast variant. */
-function notifyRemind_(msg, tone) {
+function notifyRemind_(msg, tone, action) {
   var p = notifyPrefs_();
   // STICKY (operator 2026-08-12): the chime calls the rep back to the window
   // and the toast had already timed out by the time they got there. A reminder
   // is the one toast class that must wait for its reader.
-  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', { sticky: true });
+  // Operator 2026-11-02: a punch reminder carries the punch itself, so it can
+  // be done from whatever page the rep is on (remindPunchAction_).
+  var opts = { sticky: true };
+  if (action && action.punch) {
+    opts.actionLabel = action.label;
+    opts.onAction = function () { remindPunchNow_(action.punch); };
+  }
+  if (typeof showToast === 'function') showToast(msg, tone || 'toast-warn', opts);
   if (p.sound) notifyChime_();
   if (p.desktop && notifyDesktopReady_()) {
     try { new Notification('Team Tools', { body: msg, tag: 'ums-remind' }); } catch (e) {}
@@ -2494,14 +2525,33 @@ function remindFiredShared_(day) {
  *  intervals are started seconds apart per window, so concurrent same-minute
  *  ticks read the shared set before the other writes only in a sub-second
  *  race — and that worst case is the pre-fix behavior, never worse. */
-function remindOnce_(key, msg, tone) {
+// Operator 2026-11-02 — the punch a reminder offers. Offered only when the
+// rep's state allows it NOW (getNextActions_'s list, which the server also
+// enforces), and checked again at the click: a reminder left on screen while
+// the rep punched in another window must not punch twice. The click is the
+// confirmation — the button names the punch — so there is no second dialog.
+var REMIND_PUNCH_LABELS = { ClockIn: 'Clock in', ClockOut: 'Clock out', LunchOut: 'Lunch out' };
+function remindPunchAction_(type) {
+  var acts = (empState && empState.nextActions) || [];
+  if (!REMIND_PUNCH_LABELS[type] || acts.indexOf(type) < 0) return null;
+  return { label: REMIND_PUNCH_LABELS[type], punch: type };
+}
+function remindPunchNow_(type) {
+  var acts = (empState && empState.nextActions) || [];
+  if (acts.indexOf(type) < 0) {
+    showToast('Your punches changed since this reminder — open the Dashboard to see where you are', 'toast-info');
+    return;
+  }
+  if (typeof submitPunch === 'function') submitPunch(type, null);
+}
+function remindOnce_(key, msg, tone, action) {
   if (_remindFired[key]) return false;
   var shared = remindFiredShared_(_remindDay);
   if (shared.keys[key]) { _remindFired[key] = true; return false; }   // another window already fired it
   _remindFired[key] = true;
   shared.keys[key] = true;
   try { localStorage.setItem('umsRemindFired', JSON.stringify(shared)); } catch (e) {}
-  notifyRemind_(msg, tone);
+  notifyRemind_(msg, tone, action);
   return true;
 }
 
@@ -2631,8 +2681,11 @@ function remindersTick_() {
       var b = breaks[i];
       var until = b.startMin - nowMin;
       if (until >= 0 && until <= lead) {
+        // Only the LUNCH break is punched (Lunch out); a rest break is not, so
+        // its reminder carries no button.
         remindOnce_(today + ':brk:' + b.startMin,
-          b.label + (until <= 0 ? ' starts now' : ' in ' + until + ' min'), 'toast-warn');
+          b.label + (until <= 0 ? ' starts now' : ' in ' + until + ' min'), 'toast-warn',
+          /lunch/i.test(String(b.label || '')) ? remindPunchAction_('LunchOut') : null);
       }
     }
 
@@ -2645,7 +2698,8 @@ function remindersTick_() {
     if (plan.outAt != null && nowMin >= endMin + 5 && nowMin <= endMin + 120) {
       if (remindPunchState_() === 'in') {
         remindOnce_(today + ':out', 'Your shift ended at ' + remindFmtMin_(endMin) +
-          ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn');
+          ' and you are still clocked in — clock out so your timesheet is right.', 'toast-warn',
+          remindPunchAction_('ClockOut'));
       }
       remindMaybeRefreshState_();
     }
@@ -2677,7 +2731,7 @@ function remindersTick_() {
         remindPunchState_() === 'out' && !_remindFired[today + ':in']) {
       if (Date.now() - _remindStateOkAt < REMIND_STATE_CONFIRM_MS) {
         remindOnce_(today + ':in', 'You are using Team Tools but not clocked in — ' +
-          'clock in so today counts on your timesheet.', 'toast-warn');
+          'clock in so today counts on your timesheet.', 'toast-warn', remindPunchAction_('ClockIn'));
       } else {
         remindMaybeRefreshState_();
       }
@@ -3295,6 +3349,12 @@ document.addEventListener('keydown', function (e) {
   // when focus is in a form field (the point is mid-note lookup).
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K') && !e.shiftKey && !e.altKey) {
     if (typeof kbDrawerToggle_ === 'function') { e.preventDefault(); kbDrawerToggle_(); }
+    return;
+  }
+  // Batch S (operator 2026-11-02): Ctrl/Cmd + Shift + S opens or closes the
+  // Scratchpad from any page — and, like Ctrl/Cmd + K, from inside a field.
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+    if (typeof cnToggleScratchpad_ === 'function') { e.preventDefault(); cnToggleScratchpad_(); }
     return;
   }
   // Ctrl/Cmd + / opens the Call Notes shortcuts overlay (if present)

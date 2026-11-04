@@ -3570,6 +3570,253 @@
     "kbManualBundle_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Script Property consolidation: the PTO accrual ledger tab and the one automation-run ledger",
+   "added": [
+    "AUTOMATION_RUN_LEDGER_PROP",
+    "PTO_ACCRUAL_LEDGER_HEADERS",
+    "PTO_ACCRUAL_LEDGER_TAB",
+    "PTO_ACCRUAL_LEDGER_TEXT_IDX",
+    "accrualLedgerCells_",
+    "accrualLedgerCovers_",
+    "accrualLedgerMergeMaps_",
+    "accrualLedgerReadRows_",
+    "accrualLedgerRowsToMap_",
+    "accrualLedgerSheet_",
+    "accrualLedgerWriteRows_",
+    "accrualSideLedgerCombine_",
+    "automationRunLedgerCombine_",
+    "automationRunLedgerParse_",
+    "automationRunNewer_",
+    "moveAccrualLedgerToTab_",
+    "moveAutomationRunsToLedger_",
+    "moveLedgersOutOfScriptProperties",
+    "propShrinkRunLedger_"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_RUN_PROP_PREFIX",
+    "PTO_ACCRUAL_LEDGER_PREFIX",
+    "readAccrualSideLedger_",
+    "readAutomationRunLedger_",
+    "recordAccrualLedger_",
+    "scriptPropertiesStatus_",
+    "stampAutomationRun_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Operator round 2026-11-02 Batch A: the Spanish escalation digest reads the one 30-day pending window",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "SPANISH_ESCALATE_READ_DAYS"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Batch S: scratchpad pages and the widened allowlist",
+   "added": [
+    "SCRATCHPAD_MAIN_PAGE",
+    "SCRATCHPAD_MAX_PAGES",
+    "SCRATCHPAD_PAGE_NAME_MAX",
+    "SCRATCH_HREF_RE_",
+    "SCRATCH_TAG_CLASS_RE_",
+    "scratchpadPageList_",
+    "scratchpadPageName_",
+    "scratchpadPageOp",
+    "scratchpadPagesFromRows_",
+    "scratchpadReadPages_"
+   ],
+   "removed": [],
+   "changed": [
+    "SCRATCH_ALLOWED_TAGS_",
+    "SCRATCH_CLASS_RE_",
+    "getMyScratchpad",
+    "saveMyScratchpad",
+    "scratchpadSanitizeHtml_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-02",
+   "why": "Batch B: email-tool tags at send, and archived tags out of the reps' auto-tag rules",
+   "added": [
+    "cnEmailToolTag_",
+    "cnRulesWithoutArchived_",
+    "cnTagsWithSendTag_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "emailFromCallNote",
+    "getCallNotesDepartments"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch C (operator 2026-11-02): the Spanish Inbox — resolveSpanishThreads (bulk resolve, one lock), the shared coverage rule spanishResolveCovered_, the sender-department index on the list items, received dates, getMySpanishAssignments and the shared reader spanishMyOpen_ (Needs-you reads through it), SPANISH_BULK_RESOLVE_MAX",
+   "added": [
+    "SPANISH_BULK_RESOLVE_MAX",
+    "getMySpanishAssignments",
+    "resolveSpanishThreads",
+    "spanishBulkIds_",
+    "spanishMyOpen_",
+    "spanishResolveCovered_",
+    "spanishSenderDeptIndexFrom_",
+    "spanishSenderDeptIndex_",
+    "spanishSenderDeptSafe_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks",
+    "getSpanishInboxResolved",
+    "resolveSpanishThread",
+    "spanishPendingCore_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch E (operator 2026-11-02): the Needs-you routes name the tools that now hold Dept Requests (Call Notes) and the Spanish Inbox (Dashboard)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch G (operator 2026-11-02): the ActivityLog condenses into ActivitySummary (one row per rep per finished day) before its raw pings are purged at 14 days on their own budget; Day Edit reads the summary first",
+   "added": [
+    "ACTIVITY_LOG_PURGE_MAX_PER_RUN",
+    "ACTIVITY_SUMMARY_HEADERS",
+    "ACTIVITY_SUMMARY_TAB",
+    "ACTIVITY_SUMMARY_TEXT_IDX",
+    "activityBlocksDecode_",
+    "activityBlocksEncode_",
+    "activityCondense_",
+    "activityLogCondenseAndPurge_",
+    "activityPurgeIndexes_",
+    "activitySummaryKeys_",
+    "getOrCreateActivitySummarySheet_"
+   ],
+   "removed": [],
+   "changed": [
+    "ACTIVITY_LOG_DAYS",
+    "managerGetDayActivity",
+    "purgeOldDiagnostics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch G: the summary rows built before the one plain-text append",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "activityLogCondenseAndPurge_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch F (operator 2026-11-02): coaching 1-on-1 log, cadence and screenshot — new 82_coaching.js helpers/endpoints, COACH_MEET_* / COACH_SETTINGS_* / COACH_IMAGES_* constants, CONFIG.COACHING_ONE_ON_ONE_DAYS",
+   "added": [
+    "CMT",
+    "COACH_CADENCE_MAX",
+    "COACH_IMAGES_TAB",
+    "COACH_IMAGE_KEY_RE",
+    "COACH_MEET_BACK_DAYS",
+    "COACH_MEET_HEADERS",
+    "COACH_MEET_HISTORY",
+    "COACH_MEET_NOTE_MAX",
+    "COACH_MEET_TAB",
+    "COACH_MEET_TEXT_IDX",
+    "COACH_SETTINGS_HEADERS",
+    "COACH_SETTINGS_TAB",
+    "COACH_SETTINGS_TEXT_IDX",
+    "coachCadenceOf_",
+    "coachImageItem_",
+    "coachImageStoreCallerLocked_",
+    "coachIsoAddDays_",
+    "coachIsoDaysBetween_",
+    "coachNormCadence_",
+    "coachOneOnOneDueSort_",
+    "coachOneOnOneDueText_",
+    "coachOneOnOneFor_",
+    "coachOneOnOneLogs_",
+    "coachOneOnOneStanding_",
+    "coachOneOnOneTask_",
+    "coachOneOnOneValidate_",
+    "coachOneOnOnesDueByManager_",
+    "coachOneOnOnesDueFor_",
+    "coachSettingsRead_",
+    "coachTeamReps_",
+    "getCoachingImage",
+    "logOneOnOne",
+    "setOneOnOneCadence",
+    "voidOneOnOne"
+   ],
+   "removed": [],
+   "changed": [
+    "CO",
+    "COACH_HEADERS",
+    "CONFIG",
+    "PENDING_TASKS_KINDS",
+    "coachRowToObj_",
+    "createCoaching",
+    "getCoachingDashboard",
+    "getMyPendingTasks",
+    "kbImageTabServe_",
+    "managerBriefSections_",
+    "sendManagerBriefEmail_",
+    "sendManagerDailyBrief",
+    "sendTrainingOverdueDigest",
+    "sendTrainingOverdueEmail_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch H (operator 2026-11-02): Employee Docs from an uploaded PDF — EMPDOC_FILES_TAB / EMPDOC_PDF_* constants, PdfKey column, field boxes, getEmpDocPdf / getEmpDocCertificate and their helpers",
+   "added": [
+    "EMPDOC_FILES_TAB",
+    "EMPDOC_PDF_KEY_RE",
+    "EMPDOC_PDF_MAX_BYTES",
+    "EMPDOC_PDF_MAX_PAGES",
+    "EMPDOC_PDF_NAME_MAX",
+    "empDocCertificateHtml_",
+    "empDocNormBox_",
+    "empDocPdfCheck_",
+    "empDocPdfFromBody_",
+    "empDocPdfItem_",
+    "empDocPdfLine_",
+    "empDocPdfStoreCallerLocked_",
+    "getEmpDocCertificate",
+    "getEmpDocPdf"
+   ],
+   "removed": [],
+   "changed": [
+    "ED",
+    "EMPDOC_HEADERS",
+    "acknowledgeDoc",
+    "empDocRowToObj_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "getDocsDashboard",
+    "getMyDoc",
+    "getMyDocs",
+    "issueDoc",
+    "verifyDocSignature"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3602,12 +3849,17 @@
   "ACTIVITY_LOG_DAYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8b21e39683a05fc7"
+   "sha": "2506503b49d02e61"
   },
   "ACTIVITY_LOG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "e505c21fd4c7cd11"
+  },
+  "ACTIVITY_LOG_PURGE_MAX_PER_RUN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "11cebbd81700b1df"
   },
   "ACTIVITY_LOG_TAB": {
    "file": "00_config.js",
@@ -3618,6 +3870,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "46ddb07ec8694106"
+  },
+  "ACTIVITY_SUMMARY_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a99621b3feebffc5"
+  },
+  "ACTIVITY_SUMMARY_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a72e64f00396be7b"
+  },
+  "ACTIVITY_SUMMARY_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f129a7ba9fe51ba0"
   },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
@@ -3679,10 +3946,15 @@
    "kind": "const",
    "sha": "4248aee1b68073c0"
   },
+  "AUTOMATION_RUN_LEDGER_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f61e019cd2df00f7"
+  },
   "AUTOMATION_RUN_PROP_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8aa67bf5b762459e"
+   "sha": "804d74cd4ff5fa78"
   },
   "AUTOMATION_SYNCFAIL_WINDOW_DAYS": {
    "file": "00_config.js",
@@ -3833,6 +4105,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "885725c06817589f"
+  },
+  "CMT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "12723bab8233d5c7"
   },
   "CN": {
    "file": "00_config.js",
@@ -4032,17 +4309,77 @@
   "CO": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6edbca5ea3fd7d19"
+   "sha": "331d808ca09777be"
+  },
+  "COACH_CADENCE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9501399506be52f2"
   },
   "COACH_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "09b584b1614a6549"
+   "sha": "59ee9880fefb7cd6"
+  },
+  "COACH_IMAGES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "972d7d86b254319a"
+  },
+  "COACH_IMAGE_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f1bbf8b4e4ff298b"
+  },
+  "COACH_MEET_BACK_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3230e1067ac9b709"
+  },
+  "COACH_MEET_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b4c171ada2d8ab86"
+  },
+  "COACH_MEET_HISTORY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7c1b66be15208b16"
+  },
+  "COACH_MEET_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3cb5eaa37317c102"
+  },
+  "COACH_MEET_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2fbdf7f77c2191c8"
+  },
+  "COACH_MEET_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1466e6ebbe23ce22"
   },
   "COACH_RESPONSE_MAX": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "64efc128883d3fbc"
+  },
+  "COACH_SETTINGS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef7699cd3c2e2038"
+  },
+  "COACH_SETTINGS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6f31068c69af52c9"
+  },
+  "COACH_SETTINGS_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b31b510726373cbf"
   },
   "COACH_SEVERITIES": {
    "file": "00_config.js",
@@ -4082,7 +4419,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b0403b358d5ed5b0"
+   "sha": "5e8cc8f32dc0118a"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -4342,7 +4679,7 @@
   "ED": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c0063f8f2a2c7f4c"
+   "sha": "76193755be033096"
   },
   "EDS": {
    "file": "00_config.js",
@@ -4389,6 +4726,11 @@
    "kind": "const",
    "sha": "e0f01189d8b6b629"
   },
+  "EMPDOC_FILES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0943217a745a9a42"
+  },
   "EMPDOC_HASH_DELIM_LEGACY": {
    "file": "00_config.js",
    "kind": "var",
@@ -4397,7 +4739,27 @@
   "EMPDOC_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "bead7a97eb1f3d0c"
+   "sha": "20a1f378f149417f"
+  },
+  "EMPDOC_PDF_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "36c5e4ae3245dd6f"
+  },
+  "EMPDOC_PDF_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c127a668922bcd36"
+  },
+  "EMPDOC_PDF_MAX_PAGES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "993343b0729d4322"
+  },
+  "EMPDOC_PDF_NAME_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "417f30782a501150"
   },
   "EMPDOC_RESPONSE_MAX": {
    "file": "00_config.js",
@@ -5597,7 +5959,7 @@
   "PENDING_TASKS_KINDS": {
    "file": "00_config.js",
    "kind": "var",
-   "sha": "3bbd9f9b97b6e532"
+   "sha": "69524cc92453c118"
   },
   "PRESENCE_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -5639,6 +6001,11 @@
    "kind": "const",
    "sha": "7df6b02ee6be477f"
   },
+  "PTO_ACCRUAL_LEDGER_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "282cb50b5418e526"
+  },
   "PTO_ACCRUAL_LEDGER_KEEP_MONTHS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5647,12 +6014,22 @@
   "PTO_ACCRUAL_LEDGER_PREFIX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0aa6d9fe92b803d2"
+   "sha": "1a15a2af24f9ce95"
   },
   "PTO_ACCRUAL_LEDGER_SINCE": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "26e4d82567fe421b"
+  },
+  "PTO_ACCRUAL_LEDGER_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "84ff5c333db0b8dc"
+  },
+  "PTO_ACCRUAL_LEDGER_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb4c9fbba09c161a"
   },
   "PTO_ACCRUAL_RECONCILE_MONTHS": {
    "file": "00_config.js",
@@ -5999,10 +6376,25 @@
    "kind": "const",
    "sha": "1a99d04fe5c42015"
   },
+  "SCRATCHPAD_MAIN_PAGE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4035f88e847bb86a"
+  },
   "SCRATCHPAD_MAX_CHARS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "2d6e2d4d9361b94f"
+  },
+  "SCRATCHPAD_MAX_PAGES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6e43ec22fb9d463a"
+  },
+  "SCRATCHPAD_PAGE_NAME_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a8b32d00abedace3"
   },
   "SCRATCHPAD_TAB": {
    "file": "00_config.js",
@@ -6012,12 +6404,22 @@
   "SCRATCH_ALLOWED_TAGS_": {
    "file": "30_callnotes.js",
    "kind": "const",
-   "sha": "fa89d942812e3b3e"
+   "sha": "a2f5ef9952694736"
   },
   "SCRATCH_CLASS_RE_": {
    "file": "30_callnotes.js",
    "kind": "const",
-   "sha": "c79a8902c3788643"
+   "sha": "f8ad4fab095cfa36"
+  },
+  "SCRATCH_HREF_RE_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "c66b1617ea5ebfcd"
+  },
+  "SCRATCH_TAG_CLASS_RE_": {
+   "file": "30_callnotes.js",
+   "kind": "const",
+   "sha": "df73026be4939852"
   },
   "SELF_TEST_RESULT_PROP": {
    "file": "00_config.js",
@@ -6028,6 +6430,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "1a64e9138d22e365"
+  },
+  "SPANISH_BULK_RESOLVE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "010761e6d87c8fba"
   },
   "SPANISH_CLAIMS_TAB": {
    "file": "00_config.js",
@@ -6047,7 +6454,7 @@
   "SPANISH_ESCALATE_READ_DAYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "4cfb3d5510265f55"
+   "sha": "62eb6eef421c9f69"
   },
   "SPANISH_PENDING_IDS_PREFIX": {
    "file": "00_config.js",
@@ -6489,15 +6896,50 @@
    "kind": "function",
    "sha": "3e4f6d85e71d9b24"
   },
+  "accrualLedgerCells_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "71d3994b859c3193"
+  },
+  "accrualLedgerCovers_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b377505eac3fa151"
+  },
+  "accrualLedgerMergeMaps_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "95064cb740016c1e"
+  },
   "accrualLedgerPut_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "b8727a0c000181af"
   },
+  "accrualLedgerReadRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ca4c1abdb9ab0545"
+  },
+  "accrualLedgerRowsToMap_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "374dd52e40f98a09"
+  },
+  "accrualLedgerSheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "fc46fc2ebc6e479b"
+  },
   "accrualLedgerWindowFromIso_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "531a1fe7b40ed443"
+  },
+  "accrualLedgerWriteRows_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9761a33e505ae32e"
   },
   "accrualMonthList_": {
    "file": "20_timeclock.js",
@@ -6523,6 +6965,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8fd0c569c66285bf"
+  },
+  "accrualSideLedgerCombine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c7ffe7adbafdc683"
   },
   "accrualStampNote_": {
    "file": "20_timeclock.js",
@@ -6567,7 +7014,22 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "df83ecfc4e87c13a"
+   "sha": "54466f7566f0f697"
+  },
+  "activityBlocksDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d12628c5a9d6286d"
+  },
+  "activityBlocksEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7c310c1908c30e50"
+  },
+  "activityCondense_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "20d6f5af281ea09a"
   },
   "activityDayView_": {
    "file": "20_timeclock.js",
@@ -6579,10 +7041,25 @@
    "kind": "function",
    "sha": "ddb5653e1d3ad4cd"
   },
+  "activityLogCondenseAndPurge_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c81c48ab995f5462"
+  },
   "activityLowerBound_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "7403e00a892d6365"
+  },
+  "activityPurgeIndexes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ea0fe6f9e5e51cc6"
+  },
+  "activitySummaryKeys_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "96d05c6cfc23fd0f"
   },
   "addDaysIso_": {
    "file": "10_core.js",
@@ -6838,6 +7315,21 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "7d755636e574b28a"
+  },
+  "automationRunLedgerCombine_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "9f4e382ff39f9802"
+  },
+  "automationRunLedgerParse_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "d209dcdefbb1873e"
+  },
+  "automationRunNewer_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "a39a7994ff1f65fe"
   },
   "automationWatchMerge_": {
    "file": "10_core.js",
@@ -7299,6 +7791,11 @@
    "kind": "function",
    "sha": "cefdb748ec3ea19a"
   },
+  "cnEmailToolTag_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "412d6ebef276c279"
+  },
   "cnEnrolledSheetId_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -7359,6 +7856,11 @@
    "kind": "function",
    "sha": "36e35b3cbeb7183d"
   },
+  "cnRulesWithoutArchived_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "4b61c3187e91e36d"
+  },
   "cnTagAdminStartAudit_": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -7373,6 +7875,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "541b0c684a0e4aa6"
+  },
+  "cnTagsWithSendTag_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "eda2bc90fb5d239f"
   },
   "cnTimestampString_": {
    "file": "30_callnotes.js",
@@ -7404,6 +7911,11 @@
    "kind": "function",
    "sha": "20a682c5036f423a"
   },
+  "coachCadenceOf_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d5397a3f77db44d3"
+  },
   "coachCanManagerSee_": {
    "file": "82_coaching.js",
    "kind": "function",
@@ -7414,20 +7926,90 @@
    "kind": "function",
    "sha": "f89c579b0a9e2df8"
   },
+  "coachImageItem_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d5961d8b068a9c33"
+  },
+  "coachImageStoreCallerLocked_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a44d111a9e4967f1"
+  },
+  "coachIsoAddDays_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "064443face065192"
+  },
   "coachIsoDateOrBlank_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "aa8537fa6c64abd9"
+  },
+  "coachIsoDaysBetween_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "6c2a54d6646faae3"
   },
   "coachMedian_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "5e629d485c5e1bc9"
   },
+  "coachNormCadence_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d312b554ae9b7765"
+  },
   "coachNudgeMailHtml_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "616d9c9897175bd6"
+  },
+  "coachOneOnOneDueSort_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "28145a8923914673"
+  },
+  "coachOneOnOneDueText_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "facbdbc5a4697e31"
+  },
+  "coachOneOnOneFor_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "b5c690b60d234e11"
+  },
+  "coachOneOnOneLogs_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "cfbe0a08864fbd36"
+  },
+  "coachOneOnOneStanding_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "1998bfc158c262d4"
+  },
+  "coachOneOnOneTask_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "8737975ef2791b1f"
+  },
+  "coachOneOnOneValidate_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a45e462537e8e580"
+  },
+  "coachOneOnOnesDueByManager_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0389a188183e615f"
+  },
+  "coachOneOnOnesDueFor_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "687e303433884fbe"
   },
   "coachParseTs_": {
    "file": "82_coaching.js",
@@ -7447,17 +8029,27 @@
   "coachRowToObj_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "b03551031d26d71d"
+   "sha": "76b870e7f808c9c3"
   },
   "coachSendMail_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "a3b69ce96f21ffba"
   },
+  "coachSettingsRead_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "5e89167e1d860901"
+  },
   "coachStampDayMgr_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "e6766865b7ec722b"
+  },
+  "coachTeamReps_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "44162a0a8980b795"
   },
   "coachUnackedAll_": {
    "file": "82_coaching.js",
@@ -7542,7 +8134,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "62a0211971f2fef7"
+   "sha": "9eb558b6f31f6c32"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -7952,7 +8544,7 @@
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "dfdccb969a5ee62e"
+   "sha": "33d5aa15e71790e1"
   },
   "empDepartments_": {
    "file": "20_timeclock.js",
@@ -7963,6 +8555,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "216fccb42590745d"
+  },
+  "empDocCertificateHtml_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "2294574dde720e58"
   },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
@@ -7979,10 +8576,40 @@
    "kind": "function",
    "sha": "cbcc2abac833a636"
   },
+  "empDocNormBox_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "212ca53514ac5a6a"
+  },
   "empDocParseJson_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "a5b30e8e33172812"
+  },
+  "empDocPdfCheck_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d68e19cac26e5b78"
+  },
+  "empDocPdfFromBody_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "10459edf9da752b0"
+  },
+  "empDocPdfItem_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "56bba6d5f4376fc6"
+  },
+  "empDocPdfLine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "db686ebce1fee0dd"
+  },
+  "empDocPdfStoreCallerLocked_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "57aaf546cf66904f"
   },
   "empDocReadIntegrity_": {
    "file": "81_empdocs.js",
@@ -7992,7 +8619,7 @@
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0305d4f31f2119a9"
+   "sha": "7f3ed0939932435d"
   },
   "empDocSha256Hex_": {
    "file": "20_timeclock.js",
@@ -8017,12 +8644,12 @@
   "empDocValidateFields_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0f3485fc013cc8ea"
+   "sha": "2e964e2717c3d59d"
   },
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "add22bafc7ec31cd"
+   "sha": "8492509e4234866c"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
@@ -8392,7 +9019,7 @@
   "getCallNotesDepartments": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "1da219a7f4f94233"
+   "sha": "7e923b02551a0b5b"
   },
   "getCallNotesEnrollment": {
    "file": "30_callnotes.js",
@@ -8467,7 +9094,12 @@
   "getCoachingDashboard": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "1d35be7f4c1edb29"
+   "sha": "6529d77b09470ea4"
+  },
+  "getCoachingImage": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "22757cf66b0bcc83"
   },
   "getCompanyHolidays_": {
    "file": "10_core.js",
@@ -8562,12 +9194,22 @@
   "getDocsDashboard": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "44424ea0e4c716c4"
+   "sha": "5343756b5cb42e1f"
   },
   "getEmailTemplates_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "6b95fa08f7a27f6a"
+  },
+  "getEmpDocCertificate": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d5c24b86b84b804f"
+  },
+  "getEmpDocPdf": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "b74dc28f25470c72"
   },
   "getEmpDocTemplates": {
    "file": "81_empdocs.js",
@@ -8812,12 +9454,12 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "0971c5592dddc6e0"
+   "sha": "a8e4a823e38f8f83"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "e81c4917fda1b904"
+   "sha": "eb8c2b0956f4a22c"
   },
   "getMyMetrics": {
    "file": "40_metrics.js",
@@ -8842,7 +9484,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "075c12bc33ce0a71"
+   "sha": "fa575567132d4fcc"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -8872,12 +9514,17 @@
   "getMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "012272addf8644f9"
+   "sha": "8b78c86a4bc4e73b"
   },
   "getMySentForms": {
    "file": "61_forms.js",
    "kind": "function",
    "sha": "f5828e19123b13e3"
+  },
+  "getMySpanishAssignments": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "1eda48420aa7d46f"
   },
   "getMyTraining": {
    "file": "80_training.js",
@@ -8923,6 +9570,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "71fb74417f40b00a"
+  },
+  "getOrCreateActivitySummarySheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b9d99d23dca6109b"
   },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
@@ -9197,7 +9849,7 @@
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "832fcdaf1ca01896"
+   "sha": "2a5ebd8b86327e8d"
   },
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
@@ -9757,7 +10409,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "421554291802357f"
+   "sha": "13aea12eeaa679ba"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -10082,7 +10734,7 @@
   "kbImageTabServe_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b0ee1a6be0bb1d57"
+   "sha": "7e7c31acdd24dcc9"
   },
   "kbImagesStoreLocked_": {
    "file": "70_kb.js",
@@ -10569,6 +11221,11 @@
    "kind": "function",
    "sha": "775dbbdb14eeb531"
   },
+  "logOneOnOne": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0f7f7626e905d9ed"
+  },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -10607,7 +11264,7 @@
   "managerBriefSections_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "596f55a3a7a2ae60"
+   "sha": "9ba2aecafa7106cc"
   },
   "managerBriefSuppressionActive_": {
    "file": "10_core.js",
@@ -10632,7 +11289,7 @@
   "managerGetDayActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d42b4244adafc606"
+   "sha": "f9fa108ab87b77c8"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -10753,6 +11410,21 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "febfb48554030de4"
+  },
+  "moveAccrualLedgerToTab_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "837899cabd7aed19"
+  },
+  "moveAutomationRunsToLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "87dabc95a004ca98"
+  },
+  "moveLedgersOutOfScriptProperties": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "1636878e2c4f366f"
   },
   "normalizeAuditTs_": {
    "file": "10_core.js",
@@ -11159,6 +11831,11 @@
    "kind": "function",
    "sha": "5226a7cd26a34600"
   },
+  "propShrinkRunLedger_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "ce7c8030ac28dace"
+  },
   "propShrinkStripFields_": {
    "file": "10_core.js",
    "kind": "function",
@@ -11242,7 +11919,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8a1d31de153d5141"
+   "sha": "98e3c067c1d004e0"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -11662,7 +12339,7 @@
   "readAccrualSideLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6a9649ea133709b4"
+   "sha": "9fc40bfae826c65c"
   },
   "readAutomationErrors_": {
    "file": "10_core.js",
@@ -11672,7 +12349,7 @@
   "readAutomationRunLedger_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5afecaac60eb73d9"
+   "sha": "ef1b274d537be00b"
   },
   "readCallNoteRowsInRange_": {
    "file": "30_callnotes.js",
@@ -11707,7 +12384,7 @@
   "recordAccrualLedger_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "343d2c8bb27759ac"
+   "sha": "65b0865ac55ba271"
   },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
@@ -11842,7 +12519,12 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "15904ba9cd47a7d2"
+   "sha": "db059a4f31330a17"
+  },
+  "resolveSpanishThreads": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "38cb3fca9f152970"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -12012,7 +12694,7 @@
   "saveMyScratchpad": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "25e10831267e1b69"
+   "sha": "21d44b03097e675d"
   },
   "saveQaMembers": {
    "file": "90_qa.js",
@@ -12084,10 +12766,35 @@
    "kind": "function",
    "sha": "81f48d8e0cac462f"
   },
+  "scratchpadPageList_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "2ed49430ab9b01bf"
+  },
+  "scratchpadPageName_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "1dd2317400d59b6e"
+  },
+  "scratchpadPageOp": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "abe4ae73068f8ded"
+  },
+  "scratchpadPagesFromRows_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "dea3fd1e3c16b64d"
+  },
+  "scratchpadReadPages_": {
+   "file": "30_callnotes.js",
+   "kind": "function",
+   "sha": "ada56b19d4d750e6"
+  },
   "scratchpadSanitizeHtml_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "38cca7badad104d5"
+   "sha": "0dfd052566e68f55"
   },
   "scratchpadSheet_": {
    "file": "30_callnotes.js",
@@ -12102,7 +12809,7 @@
   "scriptPropertiesStatus_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "4349ab6f483f7d3a"
+   "sha": "e0221711159ac030"
   },
   "searchInsurancePayors": {
    "file": "70_kb.js",
@@ -12192,12 +12899,12 @@
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6bfb34f9b80479a0"
+   "sha": "a72aafe6b7402c0a"
   },
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "1996a99454348c23"
+   "sha": "358153ea2d20b8ee"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -12222,12 +12929,12 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "cfdd68e7f27414ad"
+   "sha": "4146982c200ddf89"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "fb86f4f5f51001aa"
+   "sha": "943e978d26cb6856"
   },
   "serveExternalForm_": {
    "file": "61_forms.js",
@@ -12278,6 +12985,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "7581016b92e0bf0e"
+  },
+  "setOneOnOneCadence": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "df3645df614ea38d"
   },
   "setScheduledCallStatus": {
    "file": "30_callnotes.js",
@@ -12349,6 +13061,11 @@
    "kind": "function",
    "sha": "4b8e1d00a5a74e5b"
   },
+  "spanishBulkIds_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "563657b4997db35a"
+  },
   "spanishBustClaimants_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -12419,6 +13136,11 @@
    "kind": "function",
    "sha": "d3039aa8c0600d34"
   },
+  "spanishMyOpen_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2bb463c7796738e1"
+  },
   "spanishNotifyAssignees_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -12432,7 +13154,7 @@
   "spanishPendingCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "b19bc9b780753d0d"
+   "sha": "ea5417eeb8dfd38d"
   },
   "spanishPendingEscalatedGet_": {
    "file": "51_spanish.js",
@@ -12459,10 +13181,30 @@
    "kind": "function",
    "sha": "76c72f71fda5da24"
   },
+  "spanishResolveCovered_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "65ddcee73afc1efa"
+  },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "7f80063af231a396"
+  },
+  "spanishSenderDeptIndexFrom_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5cd1c577d4ab79db"
+  },
+  "spanishSenderDeptIndex_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "fc9102acd0f00b6a"
+  },
+  "spanishSenderDeptSafe_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "1e53400a00fb547f"
   },
   "spanishSpanRows_": {
    "file": "51_spanish.js",
@@ -12562,7 +13304,7 @@
   "stampAutomationRun_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "a36bfaf04f1ba7c5"
+   "sha": "ea2a0fda70ba8ee5"
   },
   "stampDigestLastRun_": {
    "file": "10_core.js",
@@ -12912,7 +13654,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "3bdf8f1efd5a92df"
+   "sha": "3abfdc88d411a9ca"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",
@@ -12948,6 +13690,11 @@
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "bad6bdbbd42d42e4"
+  },
+  "voidOneOnOne": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "3785814272ebec0b"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",
