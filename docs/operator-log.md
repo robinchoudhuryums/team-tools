@@ -10,6 +10,24 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch H (Employee Docs from a PDF)
+
+**No new operator state** (the `EmpDocFiles` tab in the HR spreadsheet creates
+itself). Deploy: Team Tools `clasp push -f` + New version.
+
+- Issue Docs → **Content: PDF file**. Choose the PDF (up to 4 MB) — e.g. the PIP
+  exported from Google Docs with File → Download → PDF.
+- Pick a **Box type** and drag on a page (or tap) to place a highlighted box the
+  employee must fill in; name each box in the field list below. Remove one with
+  its ×.
+- The employee opens it in My Docs, fills the boxes on the page, and signs.
+- A signed document has a **Certificate** button (reader). It shows a PDF with
+  the document, the employee, the signature and every answer, plus the PDF's
+  SHA-256. **Try the certificate once after the deploy** — if it says "could not
+  be made into a PDF here", the domain blocks Apps Script's PDF conversion; the
+  signing itself is unaffected.
+- A PDF document cannot be saved as a template.
+
 ## 2026-11-02 — Operator round, Batch F (Coaching: 1-on-1s, cadence, screenshots)
 
 **No new operator state** (three HR-store tabs create themselves — `OneOnOnes`,

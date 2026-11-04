@@ -6374,3 +6374,37 @@ pick them up without re-deriving the context.
     rep's first 1-on-1 from the deploy (a team with none on record would never
     be reminded); attaching a screenshot after the item is logged (not asked
     for — a later ask).
+- <a id="an-employee-doc-may-be-issued-as-a-pdf"></a>**An employee document may be issued AS A PDF: its bytes are bound by SHA-256 through the frozen body, its fields may be highlighted boxes on its pages, and a signed one has a certificate PDF (Batch H, operator 2026-11-02)**
+  The operator's PIP is a Google Doc they can export, "future forms could be
+  PDFs, so it needs to at least work with PDFs", and they wanted "highlighted
+  text boxes to indicate those are the ones that need to be completed (like a
+  date field)".
+  - **Storage without Drive** (DRV-1): the PDF is stored in the HR store's
+    `EmpDocFiles` tab in the KbImages row shape, keyed by its SHA-256 and
+    append-only, BEFORE the document row that names it (a trailing `PdfKey`
+    column) — a PDF that cannot be stored issues nothing. Cap 4 MB.
+  - **The signature binds the exact bytes.** The SHA-256 is computed over the
+    file's BYTES (so anyone can check it with a standard tool) and the frozen
+    body ENDS with a line naming it (`empDocPdfLine_`), so the existing content
+    hash — and through it every signature hash — covers the PDF without a new
+    hash format. Every read (`getEmpDocPdf`) and every signature
+    (`acknowledgeDoc`) re-hashes the stored bytes against that line; a file
+    that is missing, unreadable or different is said and never signed, and
+    `verifyDocSignature` reports it (unreadable as unknown, g128).
+  - **Field boxes** are ordinary fields with a `box` — a page and a rectangle as
+    fractions of the page, rounded to four places so the hashed JSON is stable
+    — drawn by the manager on the pdf.js-rendered pages and filled in place by
+    the employee (an input sized to the box, named for a screen reader); their
+    answers are the same validated, attested responses as any field. A box is
+    refused on a written document and on a template.
+  - **The certificate** (`getEmpDocCertificate`) is HTML made into a PDF by Apps
+    Script's own conversion — the route the forms module already uses on this
+    domain: the document, employee, issue and signature times, the PDF's and the
+    signature's hashes, the signature image and every response. A failed
+    conversion is named. Downloading it, like the handbook's forms (HB4.1), may
+    be blocked by the page's sandbox; the viewer says so.
+  - **Alternatives rejected:** stamping the signature and answers INTO the PDF
+    (needs a PDF library server-side, which Apps Script lacks, or Drive);
+    converting the PDF to markdown (loses the layout the boxes point at);
+    hashing the base64 text (not checkable against the file with a standard
+    tool); PDF templates (not asked for — templates stay written documents).

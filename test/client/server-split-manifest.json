@@ -3782,6 +3782,41 @@
     "sendTrainingOverdueEmail_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch H (operator 2026-11-02): Employee Docs from an uploaded PDF — EMPDOC_FILES_TAB / EMPDOC_PDF_* constants, PdfKey column, field boxes, getEmpDocPdf / getEmpDocCertificate and their helpers",
+   "added": [
+    "EMPDOC_FILES_TAB",
+    "EMPDOC_PDF_KEY_RE",
+    "EMPDOC_PDF_MAX_BYTES",
+    "EMPDOC_PDF_MAX_PAGES",
+    "EMPDOC_PDF_NAME_MAX",
+    "empDocCertificateHtml_",
+    "empDocNormBox_",
+    "empDocPdfCheck_",
+    "empDocPdfFromBody_",
+    "empDocPdfItem_",
+    "empDocPdfLine_",
+    "empDocPdfStoreCallerLocked_",
+    "getEmpDocCertificate",
+    "getEmpDocPdf"
+   ],
+   "removed": [],
+   "changed": [
+    "ED",
+    "EMPDOC_HEADERS",
+    "acknowledgeDoc",
+    "empDocRowToObj_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "getDocsDashboard",
+    "getMyDoc",
+    "getMyDocs",
+    "issueDoc",
+    "verifyDocSignature"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4644,7 +4679,7 @@
   "ED": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c0063f8f2a2c7f4c"
+   "sha": "76193755be033096"
   },
   "EDS": {
    "file": "00_config.js",
@@ -4691,6 +4726,11 @@
    "kind": "const",
    "sha": "e0f01189d8b6b629"
   },
+  "EMPDOC_FILES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "0943217a745a9a42"
+  },
   "EMPDOC_HASH_DELIM_LEGACY": {
    "file": "00_config.js",
    "kind": "var",
@@ -4699,7 +4739,27 @@
   "EMPDOC_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "bead7a97eb1f3d0c"
+   "sha": "20a1f378f149417f"
+  },
+  "EMPDOC_PDF_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "36c5e4ae3245dd6f"
+  },
+  "EMPDOC_PDF_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "c127a668922bcd36"
+  },
+  "EMPDOC_PDF_MAX_PAGES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "993343b0729d4322"
+  },
+  "EMPDOC_PDF_NAME_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "417f30782a501150"
   },
   "EMPDOC_RESPONSE_MAX": {
    "file": "00_config.js",
@@ -6954,7 +7014,7 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "df83ecfc4e87c13a"
+   "sha": "54466f7566f0f697"
   },
   "activityBlocksDecode_": {
    "file": "20_timeclock.js",
@@ -8496,6 +8556,11 @@
    "kind": "function",
    "sha": "216fccb42590745d"
   },
+  "empDocCertificateHtml_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "2294574dde720e58"
+  },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -8511,10 +8576,40 @@
    "kind": "function",
    "sha": "cbcc2abac833a636"
   },
+  "empDocNormBox_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "212ca53514ac5a6a"
+  },
   "empDocParseJson_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "a5b30e8e33172812"
+  },
+  "empDocPdfCheck_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d68e19cac26e5b78"
+  },
+  "empDocPdfFromBody_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "10459edf9da752b0"
+  },
+  "empDocPdfItem_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "56bba6d5f4376fc6"
+  },
+  "empDocPdfLine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "db686ebce1fee0dd"
+  },
+  "empDocPdfStoreCallerLocked_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "57aaf546cf66904f"
   },
   "empDocReadIntegrity_": {
    "file": "81_empdocs.js",
@@ -8524,7 +8619,7 @@
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0305d4f31f2119a9"
+   "sha": "7f3ed0939932435d"
   },
   "empDocSha256Hex_": {
    "file": "20_timeclock.js",
@@ -8549,12 +8644,12 @@
   "empDocValidateFields_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0f3485fc013cc8ea"
+   "sha": "2e964e2717c3d59d"
   },
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "add22bafc7ec31cd"
+   "sha": "8492509e4234866c"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
@@ -9099,12 +9194,22 @@
   "getDocsDashboard": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "44424ea0e4c716c4"
+   "sha": "5343756b5cb42e1f"
   },
   "getEmailTemplates_": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "6b95fa08f7a27f6a"
+  },
+  "getEmpDocCertificate": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d5c24b86b84b804f"
+  },
+  "getEmpDocPdf": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "b74dc28f25470c72"
   },
   "getEmpDocTemplates": {
    "file": "81_empdocs.js",
@@ -9349,12 +9454,12 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "0971c5592dddc6e0"
+   "sha": "a8e4a823e38f8f83"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "e81c4917fda1b904"
+   "sha": "eb8c2b0956f4a22c"
   },
   "getMyMetrics": {
    "file": "40_metrics.js",
@@ -10304,7 +10409,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "421554291802357f"
+   "sha": "13aea12eeaa679ba"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -13549,7 +13654,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "3bdf8f1efd5a92df"
+   "sha": "3abfdc88d411a9ca"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",

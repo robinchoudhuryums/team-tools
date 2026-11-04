@@ -15373,8 +15373,8 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
 // being called — must leave the list. The list only shrinks.
 const X1_NO_FIXTURE_READS = [   // reads no scenario photographs yet — each is owed a fixture when one does
     'adminScanStoredFormulas', 'exportAdpRange', 'exportCallNotesRange', 'getCallNoteAuditHistory', 'getDeployStamp',
-    'getDocsDashboard', 'getEmpDocTemplates', 'getFormByToken', 'getFormCatalog', 'getFormSubmission',
-    'getIntakeAgents', 'getMyDoc', 'getMyDocs', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
+    'getFormByToken', 'getFormCatalog', 'getFormSubmission',
+    'getIntakeAgents', 'getMySentForms', 'getQuiz', 'getQuizAnalytics',
     'getQuizzes', 'getTrainingDashboard', 'intakePreviewPAP',
     'intakePreviewPMD', 'intakePreviewPPD', 'kbGetFacetGuidance', 'kbGetImageData', 'kbGetRevisions',
     'kbGetSearchConfig', 'kbMapDistances', 'managerGetFormSubmission', 'managerGetShiftStats', 'managerSearchCallNotes',
@@ -42932,6 +42932,163 @@ test('Batch F: the screenshot — stored BEFORE the coaching row and only then n
   const serve = stripJsComments_(extractRawFunction('Code.js', 'kbImageTabServe_'));
   assert.ok(/if \(!spec\.noCache\) \{\s*try \{ hit = cache\.getAll/.test(serve) && /if \(!spec\.noCache && url\.length <= 95000\)/.test(serve), 'spec.noCache skips both the read and the put');
   assert.ok(/imageKey: COACH_IMAGE_KEY_RE\.test\(/.test(extractRawFunction('Code.js', 'coachRowToObj_')), 'a cell that is not a coaching image key reads as none');
+});
+
+console.log('\nOperator round 2026-11-02 — Batch H (Employee Docs from a PDF, field boxes, the certificate)');
+
+const hCtx_ = (extra) => {
+  const crypto = require('crypto');
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, RegExp, console: { warn() {} },
+    Utilities: {
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      computeDigest: (alg, p) => Array.from(crypto.createHash('sha256').update(typeof p === 'string' ? Buffer.from(p, 'utf8') : Buffer.from(p.map((b) => b & 255))).digest()).map((b) => (b > 127 ? b - 256 : b)),
+      base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
+      base64Encode: (b) => Buffer.from(b.map((x) => x & 255)).toString('base64'),
+      getUuid: () => 'doc-1',
+    } }, extra || {}));
+  ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];',
+    'const EMPDOC_FIELD_CAP = \\d+;', 'const EMPDOC_FIELD_LABEL_MAX = \\d+;', 'const EMPDOC_PDF_KEY_RE = /[^;]*;', 'const EMPDOC_PDF_MAX_BYTES = \\d+;',
+    'const EMPDOC_PDF_NAME_MAX = \\d+;', 'const EMPDOC_PDF_MAX_PAGES = \\d+;', "const EMPDOC_FILES_TAB = '[^']*';", "const EMPDOC_SIG_TAB = '[^']*';",
+    'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['empDocSha256Hex_', 'empDocValidateIssue_', 'empDocValidateFields_', 'empDocNormBox_', 'empDocPdfLine_', 'empDocPdfFromBody_',
+    'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const hJ = (x) => JSON.parse(JSON.stringify(x));
+const hPdfB64 = Buffer.from('%PDF-1.4\n1 0 obj << >> endobj\n%%EOF\n').toString('base64');
+
+test('Batch H: a PDF document\'s frozen body ENDS with the line naming its file\'s SHA-256 (so the content hash binds the bytes), the note is optional, a field box is a page and a rectangle inside it — rounded, and refused on a written document (driven)', () => {
+  const c = hCtx_();
+  const sha = 'a'.repeat(64);
+  const line = c.empDocPdfLine_(sha, 'PIP "final"\nv2.pdf');
+  assert.strictEqual(line, 'PDF document "PIP final v2.pdf" · SHA-256 ' + sha, 'the name made plain — no quotes, no line breaks');
+  assert.deepStrictEqual(hJ(c.empDocPdfFromBody_('A note.\n\n' + line + '\n')), { name: 'PIP final v2.pdf', sha: sha }, 'the line reads back');
+  assert.strictEqual(c.empDocPdfFromBody_('Just a written document.'), null);
+  assert.strictEqual(c.empDocPdfFromBody_(line + '\nmore text'), null, 'only the LAST line names a file');
+  const base = { empId: 'E1', docType: 'pip', title: 'PIP' };
+  let v = hJ(c.empDocValidateIssue_(base, { sha: sha, name: 'p.pdf' }));
+  assert.ok(v.ok && v.doc.bodyMd === c.empDocPdfLine_(sha, 'p.pdf'), 'no note: the body is the line alone');
+  v = hJ(c.empDocValidateIssue_(Object.assign({ bodyMd: '  Read and sign.  ' }, base), { sha: sha, name: 'p.pdf' }));
+  assert.strictEqual(v.doc.bodyMd, 'Read and sign.\n\n' + c.empDocPdfLine_(sha, 'p.pdf'));
+  assert.ok(!c.empDocValidateIssue_(base, null).ok, 'a written document still needs a body');
+  const box = { page: 2, x: 0.123456, y: 0.5, w: 0.25, h: 0.03 };
+  v = hJ(c.empDocValidateIssue_(Object.assign({ fields: [{ label: 'Review date', type: 'date', box: box }, { label: 'Notes' }] }, base), { sha: sha, name: 'p.pdf' }));
+  assert.deepStrictEqual(v.doc.fields[0].box, { page: 2, x: 0.1235, y: 0.5, w: 0.25, h: 0.03 }, 'rounded to 4 places — the hashed JSON is stable');
+  assert.ok(!('box' in v.doc.fields[1]), 'a field without a box stays a listed field');
+  v = hJ(c.empDocValidateIssue_(Object.assign({ bodyMd: 'x', fields: [{ label: 'D', box: box }] }, base), null));
+  assert.ok(!v.ok && /belong on a PDF/.test(v.error), 'a box on a written document is refused');
+  assert.ok(!hJ(c.empDocValidateFields_([{ label: 'D', box: box }])).ok, 'and so is one on a template (no PDF)');
+  [{ page: 0, x: 0, y: 0, w: 0.2, h: 0.03 }, { page: 1.5, x: 0, y: 0, w: 0.2, h: 0.03 }, { page: 201, x: 0, y: 0, w: 0.2, h: 0.03 },
+   { page: 1, x: 0.9, y: 0, w: 0.2, h: 0.03 }, { page: 1, x: 0, y: 0.99, w: 0.2, h: 0.03 }, { page: 1, x: 0, y: 0, w: 0.001, h: 0.03 },
+   { page: 1, x: -0.1, y: 0, w: 0.2, h: 0.03 }, { page: 1, x: 'a', y: 0, w: 0.2, h: 0.03 }, null, 'box']
+    .forEach((b) => assert.strictEqual(c.empDocNormBox_(b), null, 'refused: ' + JSON.stringify(b)));
+});
+
+test('Batch H: a PDF is checked (type, magic, size) and hashed over its BYTES; the read re-hashes the stored bytes against the body\'s SHA-256 — "altered", "missing" and "unreadable" are three answers; only the owner (released) or an admitted manager reads it (driven)', () => {
+  const c = hCtx_({ kbParseImageDataUrl_: () => null });
+  const crypto = require('crypto');
+  const bytesSha = crypto.createHash('sha256').update(Buffer.from(hPdfB64, 'base64')).digest('hex');
+  const it = hJ(c.empDocPdfItem_('data:application/pdf;base64,' + hPdfB64, 'p.pdf'));
+  assert.strictEqual(it.sha, bytesSha, 'THE RULE: the SHA-256 is over the file\'s bytes (checkable with any tool), not its base64');
+  assert.strictEqual(it.key, 'empdocpdf-' + bytesSha.slice(0, 24));
+  assert.ok(/must be a PDF/.test(c.empDocPdfItem_('data:image/png;base64,' + hPdfB64).error));
+  assert.ok(/not a PDF/.test(c.empDocPdfItem_('data:application/pdf;base64,' + Buffer.from('<html>').toString('base64')).error), 'the bytes must start like a PDF');
+  assert.ok(/over the 4 MB limit/.test(c.empDocPdfItem_('data:application/pdf;base64,JVBERi0' + 'A'.repeat(5600000)).error));
+  // The check, over a fake tab reader.
+  let serve = null;
+  const mk = (opts) => hCtx_(Object.assign({ getHrDocsSS_: () => ({ getSheetByName: () => ({}) }),
+    kbImageTabServe_: (sh, keys, spec) => { serve = spec; return opts.serve; } }, opts.extra || {}));
+  const key = 'empdocpdf-' + bytesSha.slice(0, 24);
+  const d = (sha) => ({ pdfKey: key, bodyMd: 'Note\n\nPDF document "p.pdf" · SHA-256 ' + sha });
+  let x = mk({ serve: { images: { [key]: 'data:application/pdf;base64,' + hPdfB64 }, missing: [], failed: [] } });
+  assert.deepStrictEqual(hJ(x.empDocPdfCheck_(d(bytesSha))), { ok: true, base64: hPdfB64, sha: bytesSha, name: 'p.pdf' });
+  assert.ok(serve.noCache === true && serve.keyRe.test(key) && serve.types.join() === 'application/pdf' && serve.batch === 1, 'never cached; one key of the PDF shape');
+  assert.strictEqual(x.empDocPdfCheck_(d('b'.repeat(64))).why, 'altered', 'bytes that hash to anything else are not the issued file');
+  x = mk({ serve: { images: {}, missing: [key], failed: [] } });
+  assert.strictEqual(x.empDocPdfCheck_(d(bytesSha)).why, 'missing');
+  x = mk({ serve: { images: {}, missing: [], failed: [key], headerChanged: true } });
+  const un = x.empDocPdfCheck_(d(bytesSha));
+  assert.ok(un.why === 'unreadable' && /header row was changed/.test(un.error), '"could not read" is its own answer (g128)');
+  assert.strictEqual(x.empDocPdfCheck_({ pdfKey: '', bodyMd: '' }).why, 'missing');
+  // The reader's gate.
+  const doc = Object.assign({ empId: 'E1', status: 'issued' }, d(bytesSha));
+  const reader = (caller, docOver, sees) => mk({ serve: { images: { [key]: 'data:application/pdf;base64,' + hPdfB64 }, missing: [], failed: [] },
+    extra: { getEmployeeInfo_: () => caller, findEmpDocRow_: () => ({ rowIdx: 2, doc: Object.assign({}, doc, docOver || {}) }), empDocCanManagerSee_: () => !!sees } });
+  assert.ok(hJ(reader({ id: 'E1' }).getEmpDocPdf('d1')).success, 'the owner reads it');
+  assert.ok(/not found/.test(reader({ id: 'E1' }, { status: 'draft' }).getEmpDocPdf('d1').error), 'not before it is released');
+  assert.ok(/not found/.test(reader({ id: 'M9', isManager: true }, null, false).getEmpDocPdf('d1').error), 'a manager the doc rule does not admit');
+  assert.ok(hJ(reader({ id: 'M1', isManager: true }, null, true).getEmpDocPdf('d1')).success);
+  const alt = reader({ id: 'E1' }, { bodyMd: d('c'.repeat(64)).bodyMd }).getEmpDocPdf('d1');
+  assert.ok(!alt.success && alt.why === 'altered', 'a file that no longer matches is SAID, never shown as the document');
+});
+
+test('Batch H: the issue stores the PDF BEFORE the row that names it (a store that fails issues nothing), the row carries PdfKey; the sign path re-hashes the bytes after the content gate and before any write; verify reports the file, unreadable as unknown (source + driven)', () => {
+  const issue = stripJsComments_(extractRawFunction('Code.js', 'issueDoc'));
+  const at = (re) => issue.search(re);
+  assert.ok(at(/empDocPdfItem_\(payload\.pdf, payload\.pdfName\)/) > 0 && at(/empDocPdfItem_/) < at(/empDocValidateIssue_\(payload, pdf \?/), 'the PDF is checked and hashed first — its SHA-256 goes into the validated body');
+  assert.ok(at(/empDocPdfStoreCallerLocked_\(pdf\)/) > at(/lookupEmployeeById_/) && at(/empDocPdfStoreCallerLocked_\(pdf\)/) < at(/appendRowsTextSafe_/), 'stored before the row');
+  assert.ok(/fieldsRaw, '', pdf \? pdf\.key : '',\s*\]\]/.test(issue), 'the PdfKey cell');
+  assert.ok(at(/lock\.waitLock/) < at(/empDocPdfStoreCallerLocked_/), 'under the lock (append-only tab, g17)');
+  const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeDoc'));
+  const gate = ack.search(/empDocContentHashMatches_\(d\.contentHash/), pdfAt = ack.search(/empDocPdfCheck_\(d\)/), write = ack.search(/sheet\.getRange\(found\.rowIdx/);
+  assert.ok(gate > 0 && pdfAt > gate && pdfAt < write, 'THE RULE: a PDF document is signed over its bytes — re-hashed after the content gate, before anything is written');
+  assert.ok(/if \(!pc\.ok\) return \{ success: false/.test(ack));
+  const ver = stripJsComments_(extractRawFunction('Code.js', 'verifyDocSignature'));
+  assert.ok(/pdfMatch = pc\.ok \? true : \(pc\.why === 'altered' \|\| pc\.why === 'missing' \? false : null\)/.test(ver), 'unreadable is unknown (null), never a verdict');
+  assert.ok((ver.match(/pdfMatch === false/g) || []).length === 2, 'both return paths count a changed file as tampering');
+  assert.ok(/pdfKey: EMPDOC_PDF_KEY_RE\.test\(/.test(extractRawFunction('Code.js', 'empDocRowToObj_')), 'a cell that is not a PDF key reads as none');
+  const hdr = arrayLiteral_(codeSrc, 'EMPDOC_HEADERS');
+  assert.strictEqual(hdr[hdr.length - 1], 'PdfKey', 'trailing (back-compat — the header self-heals)');
+  assert.strictEqual(/EMPDOC_PDF_MAX_BYTES = (\d+)/.exec(codeSrc)[1], /ED_PDF_MAX_BYTES = (\d+)/.exec(fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8'))[1], 'the client cap mirrors the server');
+});
+
+test('Batch H: the certificate — every stored string escaped, the signature drawn only as a PNG data URL, each response named (with its page); only for a signed or completed document the caller may see, and a conversion that fails is NAMED (driven)', () => {
+  const sha = 'd'.repeat(64);
+  const c = hCtx_({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') });
+  const html = c.empDocCertificateHtml_({ title: 'PIP <b>', docType: 'pip', empId: 'E1', empName: 'Ann "A"', issuedAt: '2026-11-01 09:00:00', issuedBy: 'm@x',
+    signed: true, signedAt: '2026-11-03 10:00:00', pdf: { name: 'p.pdf', sha: sha }, contentHash: 'c1', sigHash: 's1', ackText: 'I ack',
+    fields: [{ id: 'd', label: 'Review date', box: { page: 2 } }, { id: 'n', label: 'Notes' }], responses: { d: '2026-11-10', n: '<script>' },
+    signature: 'data:image/png;base64,AAAA' });
+  assert.ok(/PIP &lt;b>/.test(html) && /Ann &quot;A&quot;/.test(html) && /&lt;script>/.test(html) && !/<script>/.test(html), 'escaped');
+  assert.ok(/Review date \(page 2\)/.test(html) && /2026-11-10/.test(html) && /Notes/.test(html) && new RegExp(sha).test(html), 'the responses and the PDF\'s SHA-256');
+  assert.ok(/<img alt="Signature"[^>]*src="data:image\/png;base64,AAAA">/.test(html));
+  const bad = c.empDocCertificateHtml_({ fields: [], signature: 'javascript:alert(1)' });
+  assert.ok(!/<img/.test(bad), 'anything but a PNG data URL is not drawn');
+  // The endpoint.
+  const sigRow = ['doc-1', 'E1', '2026-11-03 10:00:00', 'data:image/png;base64,AAAA', 1, 'sighash', '{}'];
+  const mk = (caller, status, conv) => hCtx_({ esc_: (x) => String(x), getEmployeeInfo_: () => caller,
+    findEmpDocRow_: () => ({ rowIdx: 2, doc: { docId: 'doc-1', empId: 'E1', status: status, title: 'PIP: v1/2', docType: 'pip', bodyMd: 'x', fields: [], responses: {}, pdfKey: '' } }),
+    empDocCanManagerSee_: () => false, lookupEmployeeById_: () => ({ name: 'Ann' }), trainCellTs_: (v) => String(v), EMPDOC_ACK_TEXT: 'ack',
+    getHrDocsSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC', getSheetByName: () => ({ getLastRow: () => 2,
+      getRange: (r, col, n, w) => ({ getValues: () => (w ? [sigRow] : [[sigRow[0]]]) }) }) }) }, conv);
+  let x = mk({ id: 'E1' }, 'signed', {});
+  x.Utilities.newBlob = () => ({ getAs: () => ({ getBytes: () => [37, 80, 68, 70] }) });
+  const ok = hJ(x.getEmpDocCertificate('doc-1'));
+  assert.ok(ok.success && ok.dataUri === 'data:application/pdf;base64,JVBERg==' && ok.fileName === 'PIP v1 2 - certificate.pdf', JSON.stringify(ok));
+  x = mk({ id: 'E1' }, 'issued', {});
+  assert.ok(/once the document is signed/.test(x.getEmpDocCertificate('doc-1').error));
+  x = mk({ id: 'E2', isManager: true }, 'signed', {});
+  assert.ok(/not found/.test(x.getEmpDocCertificate('doc-1').error), 'a caller the document\'s rule does not admit');
+  x = mk({ id: 'E1' }, 'signed', {});
+  x.Utilities.newBlob = () => ({ getAs: () => { throw new Error('conversion blocked'); } });
+  assert.ok(/could not be made into a PDF here: conversion blocked/.test(x.getEmpDocCertificate('doc-1').error), 'a failed conversion is named, never a blank file');
+});
+
+test('Batch H: the client\'s box geometry — a box sits in PERCENTAGES of its page; a drag makes the rectangle between its points, clamped inside the page; a tap makes a standard box for its type; the note shown is the body without the file line (driven)', () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp });
+  ['edBoxStyle_', 'edBoxFromDrag_', 'edPdfNoteOf_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  assert.strictEqual(ctx.edBoxStyle_({ x: 0.1235, y: 0.5, w: 0.25, h: 0.03 }), 'left:12.35%;top:50%;width:25%;height:3%');
+  assert.deepStrictEqual(hJ(ctx.edBoxFromDrag_(0.6, 0.4, 0.2, 0.3, 'text')), { x: 0.2, y: 0.3, w: 0.4, h: 0.1 }, 'a drag up-and-left is the same rectangle');
+  assert.deepStrictEqual(hJ(ctx.edBoxFromDrag_(0.5, 0.5, 1.4, 0.6, 'text')), { x: 0.5, y: 0.5, w: 0.5, h: 0.1 }, 'clamped to the page edge');
+  assert.deepStrictEqual(hJ(ctx.edBoxFromDrag_(0.9, 0.99, 0.9, 0.99, 'date')), { x: 0.8, y: 0.972, w: 0.2, h: 0.028 }, 'a tap near the corner: a standard date box, kept inside the page');
+  assert.strictEqual(ctx.edBoxFromDrag_(0.1, 0.1, 0.1, 0.1, 'textarea').w, 0.5, 'a paragraph box is wider and taller');
+  const sha = 'e'.repeat(64);
+  assert.strictEqual(ctx.edPdfNoteOf_('Read this.\n\nPDF document "p.pdf" · SHA-256 ' + sha), 'Read this.');
+  assert.strictEqual(ctx.edPdfNoteOf_('PDF document "p.pdf" · SHA-256 ' + sha), '');
+  assert.strictEqual(ctx.edPdfNoteOf_('A written line.'), 'A written line.', 'a written body is untouched');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

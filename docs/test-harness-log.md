@@ -3481,6 +3481,35 @@ per-change detail. By delta:
   `deptreq-fold-dark-mobile`. The first shot stretched the fold's neighbours to
   its height; a list with a fold now aligns its cards to the top.
 
+## Operator round 2026-11-02, Batch H — Employee Docs from a PDF (2026-11-04)
+
+- **Pure** — five pins: the body line and the box (the line round-trips, the
+  note is optional, a box is rounded and refused on a written document or a
+  template, ten bad boxes refused); the PDF item and the read (the SHA-256 over
+  the BYTES — real `crypto` behind the `Utilities` stub — type, magic and size
+  refused; altered, missing and unreadable apart; the reader's gate); the issue
+  and sign order (stored before the row, PdfKey, the byte check after the
+  content gate and before any write, verify's unknown); the certificate
+  (escaped, PNG-only signature, the endpoint's gate and its named conversion
+  failure); the client geometry (percent boxes, drag and tap boxes, the note
+  without the line). Moved: X1 (four reads gained fixtures and left the list),
+  VIS-COVER (`myDocs` and `docsManage` are covered), SH-02 (the reader's Close
+  is now the LAST footer button).
+- **DOM** — three drives with a stand-in pdf.js (`hFakePdf_` — two pages,
+  `getContext` stubbed): the reader (boxes on their pages, named inputs, box
+  answers in the responses, the fingerprint line, a failed PDF said and Sign
+  disabled, the signed view read-only with Certificate); the certificate viewer
+  (drawn, Download on; a failure said, Download off); issuing (the toggle, a
+  non-PDF refused, no file refused, a box drawn, renamed and removed, no
+  template, the payload's PDF, name and boxes).
+- **Visual** — four scenarios (`empdocs-pdf-sign-light-wide`,
+  `-dark-mobile`, `empdocs-cert-light-wide`, `empdocs-issue-pdf-light-wide`)
+  over hand-built one-page PDFs, served the local pdf.js; a scenario may now
+  carry `{ wait }` for a post hook that draws pages. The first shots found the
+  SHA-256 line running off the reader (now a wrapped fingerprint line) and the
+  new box's label focus scrolling the page away from the PDF
+  (`preventScroll`).
+
 ## Operator round 2026-11-02, Batch F — coaching 1-on-1s, cadence and screenshot (2026-11-04)
 
 - **Pure** — five pins: the standing rule driven (a void or future row never

@@ -295,6 +295,13 @@ const SCENARIOS = [
   ['coaching-1on1-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenOneOnOne_('E-1042')"],
   ['coaching-1on1-dark-mobile',  { tool: 'develop', tab: 'coaching' }, MOBILE, 'dark', '', "coachOpenOneOnOne_('E-1042')"],
   ['coaching-shot-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenImage_('c1')"],
+  // Batch H (operator 2026-11-02): a PDF document — signing it with its boxes (wide and phone), its
+  // certificate, and the manager drawing a box on a chosen PDF (the post hook feeds the fixture PDF in).
+  ['empdocs-pdf-sign-light-wide',  { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  ['empdocs-pdf-sign-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  ['empdocs-cert-light-wide',      { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenCertificate_('d-signed')", { wait: 1500 }],
+  ['empdocs-issue-pdf-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],
@@ -649,7 +656,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   if (CI && !gate.CI_SCENARIOS.includes(name)) continue;
   if (only && !only.some((o) => name.includes(o))) continue;
   if (AXE && !(opts && opts.page === 'handbook')) continue;
-  // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant }.
+  // opts (optional 7th entry): { tz: <IANA browser timezone>, utc: [h, m] frozen instant, wait: extra ms after the post hook }.
   const ctxOpts = { viewport: vp, colorScheme: mode === 'dark' ? 'dark' : 'light' };
   if (opts && opts.tz) ctxOpts.timezoneId = opts.tz;
   const ctx = await browser.newContext(ctxOpts);
@@ -681,7 +688,7 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   }
   if (post) {
     await page.evaluate((code) => { try { (0, eval)(code); } catch (e) { console.error('post hook threw: ' + e.message); } }, post);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1000 + ((opts && opts.wait) || 0));   // Batch H: a post hook that draws PDF pages needs longer
   }
   if (AXE) {
     await page.addScriptTag({ content: AXE_SRC });

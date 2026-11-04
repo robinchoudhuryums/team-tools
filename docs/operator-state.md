@@ -2243,6 +2243,20 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-empdocfiles-tab-batch-h"></a>
+- **The `EmpDocFiles` tab (HR store, `HR_DOCS_SS_ID`) and EmpDocs' trailing
+  `PdfKey` column — documents issued as PDFs (Batch H, operator 2026-11-02).**
+  **Nothing to set up:** the tab is created by the first document issued as a
+  PDF, and the column self-heals. Each PDF is stored in the KbImages row shape
+  (Key · Sha · Type · Kind · Part · Data · ImportedAt), keyed by the SHA-256 of
+  its bytes, append-only; up to 4 MB per file. **Never edit or delete these
+  rows:** every read and every signature re-hashes the stored bytes, so a
+  changed or missing row makes the document unreadable and unsignable (Verify
+  reports it as tampered), and an edited header row makes every PDF read as
+  "could not be read" (restore the seven names above). The signed certificate
+  is made by Apps Script's own HTML→PDF conversion (no Drive); if the domain
+  blocks it, the app says "could not be made into a PDF here". Downloading a
+  certificate may be blocked by the page's sandbox, as with the handbook's forms.
 <a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
 - **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
   `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each

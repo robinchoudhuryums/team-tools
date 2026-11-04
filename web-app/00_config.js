@@ -2809,9 +2809,12 @@ const TQR = { RESET_AT:0, QUIZ_ID:1, EMP_ID:2, RESET_BY:3, AT_MS:4 };
 // EXCLUDED from every retention purge: HR records are keep-forever.
 const EMPDOC_TAB = 'EmpDocs';
 const EMPDOC_SIG_TAB = 'DocSignatures';
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson'];
+// Batch H (operator 2026-11-02): ONE more trailing column, PdfKey — the issued
+// PDF's key in the EmpDocFiles tab (blank for a written document and every
+// older row; getOrCreateEmpDocSheet_ self-heals the header).
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14 };
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15 };
 // HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
 // that read as a date or number was coerced on write, so the content hash
 // recomputed from the cell never matched — the doc could not be signed and
@@ -2833,6 +2836,20 @@ const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+// ── Batch H (operator 2026-11-02 — "it needs to at least work with PDFs; can I
+// add highlighted boxes that indicate what needs to be completed, like a date"):
+// a document may be ISSUED AS A PDF. The bytes live in the HR store's
+// EmpDocFiles tab (the KbImages row shape — Drive is disabled here, DRV-1),
+// keyed by their SHA-256; the frozen body ends with a line naming that SHA-256
+// (empDocPdfLine_), so the content hash — and through it every signature hash —
+// binds the PDF's exact bytes, and the sign path re-hashes the stored bytes
+// before it accepts a signature. A field may carry a BOX — a page and a
+// rectangle as fractions of the page — that the employee fills in place.
+const EMPDOC_FILES_TAB = 'EmpDocFiles';
+const EMPDOC_PDF_KEY_RE = /^empdocpdf-[a-f0-9]{24}$/;
+const EMPDOC_PDF_MAX_BYTES = 4194304;          // 4 MB — a Google Doc exported as PDF is ~100 KB
+const EMPDOC_PDF_NAME_MAX = 120;
+const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box may name
 // Bump when the acknowledgment copy below changes, so stored signatures
 // prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
 const EMPDOC_ACK_VERSION = 1;

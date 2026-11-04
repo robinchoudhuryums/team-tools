@@ -101,7 +101,7 @@ function getMyDocs() {
         docId: d.docId, docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedAt: d.issuedAt,
         dueAt: d.dueAt, signedAt: d.signedAt,
-        fieldCount: (d.fields || []).length, needsAction: empDocNeedsAction_(d),
+        fieldCount: (d.fields || []).length, needsAction: empDocNeedsAction_(d), hasPdf: !!d.pdfKey,
       });
     }
     docs.sort(function (a, b) { return a.issuedAt < b.issuedAt ? 1 : -1; });
@@ -140,6 +140,9 @@ function getMyDoc(docId) {
       // never reported as altered, the F-24 rule). The signature half stays
       // behind Verify (it reads a second tab).
       integrity: empDocReadIntegrity_(d),
+      // Batch H: a PDF document names its file; the bytes come from
+      // getEmpDocPdf, which re-hashes them on every read.
+      pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null,
     };
     // The owner gets the completion affordance while the doc is still issued
     // (signature ack text when it requires a signature, regardless for fields).
@@ -194,6 +197,13 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     }
     if (!empDocContentHashMatches_(d.contentHash, d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw)) {
       return { success: false, error: 'Integrity check failed — this document was altered after issue. Ask your manager to re-issue it.' };
+    }
+    // Batch H: a PDF document is signed over its BYTES — the stored file is
+    // re-hashed against the SHA-256 its frozen body names, and a file that is
+    // missing, unreadable or changed is never signed.
+    if (d.pdfKey) {
+      const pc = empDocPdfCheck_(d);
+      if (!pc.ok) return { success: false, error: pc.error + ' It cannot be signed — ask your manager to re-issue it.' };
     }
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
@@ -259,10 +269,19 @@ function issueDoc(payload) {
   lock.waitLock(15000);
   let notifyAfter = null;
   try {
-    const v = empDocValidateIssue_(payload);
+    // Batch H: a PDF is checked and hashed first; its SHA-256 goes into the
+    // frozen body (empDocValidateIssue_), and the bytes are stored BEFORE the
+    // row that names them — a PDF that cannot be stored issues nothing.
+    let pdf = null;
+    if (payload && payload.pdf) {
+      pdf = empDocPdfItem_(payload.pdf, payload.pdfName);
+      if (pdf.error) return { success: false, error: pdf.error };
+    }
+    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name } : null);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.doc.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
+    if (pdf) empDocPdfStoreCallerLocked_(pdf);
     const docId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
@@ -273,10 +292,10 @@ function issueDoc(payload) {
     appendRowsTextSafe_(getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS), [[
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
       v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
-      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '',
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '', pdf ? pdf.key : '',
     ]], EMPDOC_TEXT_IDX);
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
-      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status, callerEmp.email);
+      'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status + (pdf ? '; pdf=yes' : ''), callerEmp.email);
     // Only a RELEASED (issued) doc is visible to the employee — drafts stay silent.
     if (v.doc.status === 'issued') notifyAfter = function () { notifyEmpDocIssued_(target, v.doc); };   // M-7: post-lock
     // Follow-up to T10 (cycle 22): an issued (non-draft) document is a task the
@@ -343,7 +362,7 @@ function getDocsDashboard() {
         docType: d.docType, title: d.title, status: d.status,
         requiresSignature: d.requiresSignature, issuedBy: d.issuedBy,
         issuedAt: d.issuedAt, dueAt: d.dueAt, signedAt: d.signedAt,
-        fieldCount: (d.fields || []).length,
+        fieldCount: (d.fields || []).length, hasPdf: !!d.pdfKey,
         overdue: empDocNeedsAction_(d) && !!d.dueAt && todayIso > d.dueAt,
       });
     }
@@ -405,7 +424,16 @@ function verifyDocSignature(docId) {
     }
     // F-24: a null contentMatch is "cannot verify", not "verified" — say so.
     const hashWarning = (contentMatch === null) ? 'No content hash on record — integrity cannot be verified (legacy or hand-entered row).' : '';
-    if (!sigRow) return { signed: false, contentMatch: contentMatch, tampered: (contentMatch === false), warning: hashWarning };
+    // Batch H: a PDF document's file is re-hashed too. A file that no longer
+    // matches is tampering; one that cannot be READ is unknown (null), never
+    // a verdict either way (g128).
+    let pdfMatch = null, pdfNote = '';
+    if (d.pdfKey) {
+      const pc = empDocPdfCheck_(d);
+      pdfMatch = pc.ok ? true : (pc.why === 'altered' || pc.why === 'missing' ? false : null);
+      if (!pc.ok) pdfNote = pc.error;
+    }
+    if (!sigRow) return { signed: false, contentMatch: contentMatch, pdfMatch: pdfMatch, pdfNote: pdfNote, tampered: (contentMatch === false || pdfMatch === false), warning: hashWarning };
     const rowSig = String(sigRow[EDS.SIGNATURE] || '');
     // Cycle-9 M-8: an EMPTY signature cell marks a fields-only COMPLETION row
     // (acknowledgeDoc's else-branch) — same hash machinery, no signature
@@ -442,11 +470,153 @@ function verifyDocSignature(docId) {
       completed: isCompletion,
       contentMatch: contentMatch,
       match: match,
-      tampered: (contentMatch === false || match === false),
+      pdfMatch: pdfMatch, pdfNote: pdfNote,   // Batch H
+      tampered: (contentMatch === false || match === false || pdfMatch === false),
       warning: hashWarning,   // F-24
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()),
       ackVersion: String(sigRow[EDS.ACK_VERSION] || ''),
     };
+  } catch (err) { return { error: err.message }; }
+}
+// ── Batch H (operator 2026-11-02): a document issued AS A PDF ───────────────
+/** A chosen PDF as an EmpDocFiles item — {key, sha, contentType, kind, base64,
+ *  bytes, name} — or { error }. The SHA-256 is over the file's BYTES, so anyone
+ *  can check it against the file with a standard tool. */
+function empDocPdfItem_(dataUrl, name) {
+  const m = /^data:application\/pdf;base64,([A-Za-z0-9+\/=\s]+)$/i.exec(String(dataUrl || ''));
+  if (!m) return { error: 'The document must be a PDF file.' };
+  const b64 = m[1].replace(/\s+/g, '');
+  if (b64.indexOf('JVBERi0') !== 0) return { error: 'That file is not a PDF (it does not start like one).' };
+  const bytes = Math.floor(b64.length * 3 / 4);
+  if (bytes > EMPDOC_PDF_MAX_BYTES) return { error: 'The PDF is ' + (Math.round(bytes / 104857.6) / 10) + ' MB — over the ' + (EMPDOC_PDF_MAX_BYTES / 1048576) + ' MB limit.' };
+  const sha = empDocSha256Hex_(Utilities.base64Decode(b64));
+  return { key: 'empdocpdf-' + sha.substring(0, 24), sha: sha, contentType: 'application/pdf', kind: 'empdoc',
+    base64: b64, bytes: bytes, name: String(name || '') };
+}
+/** Under the CALLER's lock (issueDoc): store one PDF, append-only and keyed by
+ *  content (the same file twice is one row set). A tab whose header someone
+ *  changed is refused by name (g142) — and so is the document, which is never
+ *  issued pointing at bytes nobody can find. */
+function empDocPdfStoreCallerLocked_(item) {
+  const ss = getHrDocsSS_();
+  let sheet = ss.getSheetByName(EMPDOC_FILES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(EMPDOC_FILES_TAB);
+    sheet.appendRow(sheetSafeRow_(KB_MANUAL_IMAGES_HEADERS));
+    sheet.setFrozenRows(1);
+  }
+  if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_IMAGES_HEADERS)) {
+    throw new Error('the ' + EMPDOC_FILES_TAB + ' tab’s header row was changed — restore it to ' + KB_MANUAL_IMAGES_HEADERS.join(', ') + ' (nothing was issued)');
+  }
+  if (kbImageTabLedger_(sheet, KB_MANUAL_IMAGES_HEADERS, EMPDOC_PDF_KEY_RE)[item.key]) return { reused: true };
+  appendRowsSafe_(sheet, kbManualImagesRows_([item], fmtDate_(new Date()) + ' ' + fmtTime_(new Date())));
+  return { reused: false };
+}
+/** A document's PDF, read and RE-HASHED: {ok:true, base64, sha} when the bytes
+ *  on file are the ones its frozen body names; otherwise {ok:false, error,
+ *  why: 'missing' | 'unreadable' | 'altered'} — never a guess (g128). Never
+ *  cached (HR content). */
+function empDocPdfCheck_(d) {
+  const named = empDocPdfFromBody_(d && d.bodyMd);
+  if (!d || !d.pdfKey || !named) return { ok: false, why: 'missing', error: 'This document has no PDF on record.' };
+  const r = kbImageTabServe_(getHrDocsSS_().getSheetByName(EMPDOC_FILES_TAB), [d.pdfKey], {
+    headers: KB_MANUAL_IMAGES_HEADERS, keyRe: EMPDOC_PDF_KEY_RE, batch: 1, types: ['application/pdf'],
+    maxBytes: EMPDOC_PDF_MAX_BYTES, cachePrefix: '', headerChangedFails: true, noCache: true });
+  const url = r.images[d.pdfKey];
+  if (!url) {
+    return r.failed.length
+      ? { ok: false, why: 'unreadable', error: 'The PDF could not be read' + (r.headerChanged ? ' — the ' + EMPDOC_FILES_TAB + ' tab’s header row was changed' : '') + '.' }
+      : { ok: false, why: 'missing', error: 'The PDF is not stored.' };
+  }
+  const b64 = url.slice(url.indexOf(',') + 1);
+  const sha = empDocSha256Hex_(Utilities.base64Decode(b64));
+  if (sha !== named.sha) return { ok: false, why: 'altered', error: 'The PDF on file is not the one that was issued (its SHA-256 differs).' };
+  return { ok: true, base64: b64, sha: sha, name: named.name };
+}
+/** Employee-callable, read-only — a document's PDF for exactly who may read
+ *  the document (getMyDoc's rule: the owner once released, or a manager
+ *  empDocCanManagerSee_ admits). The bytes are re-hashed on every read, so a
+ *  file that no longer matches what was issued is said, never shown as it. */
+function getEmpDocPdf(docId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    if (isOwner && d.status === 'draft') return { error: 'Document not found.' };
+    const pc = empDocPdfCheck_(d);
+    if (!pc.ok) return { error: pc.error, why: pc.why };
+    return { success: true, dataUri: 'data:application/pdf;base64,' + pc.base64, sha: pc.sha, name: pc.name };
+  } catch (err) { return { error: err.message }; }
+}
+/** PURE (Node-pinned) — the signed certificate's HTML (the forms module's
+ *  HTML→PDF route makes it a PDF). Every stored string is escaped; the
+ *  signature is the stored PNG data URL, and only that shape is drawn. */
+function empDocCertificateHtml_(c) {
+  const row = function (k, v) { return '<tr><th style="text-align:left;padding:4px 10px 4px 0;color:#555;font-weight:600;vertical-align:top;white-space:nowrap">' + esc_(k) + '</th><td style="padding:4px 0;vertical-align:top;word-break:break-all">' + esc_(v) + '</td></tr>'; };
+  const fields = (c.fields || []).map(function (f) {
+    const v = (c.responses || {})[f.id];
+    return row(f.label + (f.box ? ' (page ' + f.box.page + ')' : ''), v == null || v === '' ? '—' : String(v));
+  }).join('');
+  const sig = /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(c.signature || ''))
+    ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Signature</p><img alt="Signature" style="max-width:320px;max-height:120px;border:1px solid #ccc" src="' + c.signature + '">'
+    : '';
+  return '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:28px">' +
+    '<h1 style="font-size:18px;margin:0 0 4px">Certificate of ' + (c.signed ? 'signature' : 'completion') + '</h1>' +
+    '<p style="margin:0 0 14px;color:#555">UMS Team Tools · Employee documents</p>' +
+    '<table style="border-collapse:collapse">' +
+      row('Document', c.title) + row('Type', c.docType) + row('Employee', c.empName + ' (' + c.empId + ')') +
+      row('Issued', c.issuedAt + (c.issuedBy ? ' by ' + c.issuedBy : '')) +
+      row(c.signed ? 'Signed' : 'Completed', c.signedAt) +
+      (c.pdf ? row('PDF file', c.pdf.name) + row('PDF SHA-256', c.pdf.sha) : '') +
+      row('Content hash', c.contentHash) + row('Signature hash', c.sigHash) +
+      row('Acknowledgement', c.ackText) +
+    '</table>' +
+    (fields ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Responses</p><table style="border-collapse:collapse">' + fields + '</table>' : '') +
+    sig +
+    '<p style="margin:18px 0 0;color:#777;font-size:10px">The SHA-256 of the PDF is computed over the file’s bytes. The signature hash covers the content hash, the employee, the document, the signature and the responses; recompute both from the HR record to verify.</p>' +
+    '</body></html>';
+}
+/** Employee-callable, read-only — the signed (or completed) document's
+ *  certificate as a PDF, for the owner or a manager who can see the document.
+ *  Built from HTML by Apps Script's own conversion (the forms module's route,
+ *  no Drive); a conversion that fails is named, never a blank file. */
+function getEmpDocCertificate(docId) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    if (d.status !== 'signed' && d.status !== 'completed') return { error: 'A certificate exists once the document is signed or completed.' };
+    const sigSheet = getHrDocsSS_().getSheetByName(EMPDOC_SIG_TAB);
+    const last = sigSheet ? sigSheet.getLastRow() : 0;
+    let sigRow = null;
+    if (last >= 2) {
+      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, last - 1, 1).getValues();
+      for (let i = ids.length - 1; i >= 0; i--) {
+        if (String(ids[i][0]).trim() === d.docId) { sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0]; break; }
+      }
+    }
+    if (!sigRow) return { error: 'No signature record was found for this document.' };
+    const target = lookupEmployeeById_(d.empId);
+    const html = empDocCertificateHtml_({
+      title: d.title, docType: d.docType, empId: d.empId, empName: target ? target.name : 'former employee',
+      issuedAt: d.issuedAt, issuedBy: d.issuedBy, signed: d.status === 'signed',
+      signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()) || d.signedAt,
+      pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null, contentHash: d.contentHash,
+      sigHash: String(sigRow[EDS.SIG_HASH] || ''), ackText: EMPDOC_ACK_TEXT,
+      fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || '') });
+    let pdf;
+    try { pdf = Utilities.newBlob(html, 'text/html', 'certificate.html').getAs('application/pdf'); }
+    catch (e) { return { error: 'The certificate could not be made into a PDF here: ' + ((e && e.message) || e) }; }
+    const name = (String(d.title || 'document').replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' - certificate.pdf';
+    return { success: true, dataUri: 'data:application/pdf;base64,' + Utilities.base64Encode(pdf.getBytes()), fileName: name };
   } catch (err) { return { error: err.message }; }
 }
 function findEmpDocTemplateRow_(templateId) {

@@ -9494,7 +9494,7 @@ function empDocContentHashMatches_(stored, bodyMd, title, docType, empId, fields
 }
 /** Pure — issueDoc payload validation (Node-pinned). Returns {ok, doc} or
  *  {ok:false, error}. Whitelist-built. */
-function empDocValidateIssue_(payload) {
+function empDocValidateIssue_(payload, pdf) {
   payload = payload || {};
   const empId = String(payload.empId || '').trim();
   if (!empId) return { ok: false, error: 'Pick an employee.' };
@@ -9502,12 +9502,16 @@ function empDocValidateIssue_(payload) {
   if (EMPDOC_TYPES.indexOf(docType) < 0) return { ok: false, error: 'Invalid document type.' };
   const title = String(payload.title || '').trim();
   if (!title || title.length > EMPDOC_TITLE_MAX) return { ok: false, error: 'Title is required (max ' + EMPDOC_TITLE_MAX + ' chars).' };
-  const bodyMd = String(payload.bodyMd || '');
+  let bodyMd = String(payload.bodyMd || '');
+  // Batch H: a PDF document's written body is an optional NOTE, and the frozen
+  // body always ends with the line naming the PDF's SHA-256 — so the content
+  // hash (and every signature over it) binds the PDF's exact bytes.
+  if (pdf) bodyMd = (bodyMd.trim() ? bodyMd.trim() + '\n\n' : '') + empDocPdfLine_(pdf.sha, pdf.name);
   if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  const fv = empDocValidateFields_(payload.fields);
+  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf });
   if (!fv.ok) return { ok: false, error: fv.error };
   return { ok: true, doc: {
     empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
@@ -9521,7 +9525,7 @@ function empDocValidateIssue_(payload) {
 /** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
  *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
  *  stable slug id from the label when absent; dedupes ids. */
-function empDocValidateFields_(fields) {
+function empDocValidateFields_(fields, opts) {
   if (fields == null) return { ok: true, fields: [] };
   if (!Array.isArray(fields)) return { ok: false, error: 'Fields must be a list.' };
   if (fields.length > EMPDOC_FIELD_CAP) return { ok: false, error: 'Too many fields (max ' + EMPDOC_FIELD_CAP + ').' };
@@ -9539,9 +9543,45 @@ function empDocValidateFields_(fields) {
     let base = id, n = 2;
     while (seen[id]) { id = base + '-' + (n++); }
     seen[id] = true;
-    out.push({ id: id, label: label, type: type, required: f.required !== false });
+    const field = { id: id, label: label, type: type, required: f.required !== false };
+    // Batch H: a field BOX — where on the PDF the employee fills it in. Only a
+    // PDF document may carry one (a box on a written document points nowhere).
+    if (f.box != null) {
+      if (!(opts && opts.allowBoxes)) return { ok: false, error: 'Field boxes belong on a PDF document.' };
+      const b = empDocNormBox_(f.box);
+      if (!b) return { ok: false, error: 'The box for "' + label + '" is not on a page.' };
+      field.box = b;
+    }
+    out.push(field);
   }
   return { ok: true, fields: out };
+}
+/** PURE (Node-pinned) — a field box as {page, x, y, w, h}: a whole page number
+ *  (1..EMPDOC_PDF_MAX_PAGES) and a rectangle as fractions of that page, inside
+ *  it and big enough to type in; rounded to 4 places so the hashed JSON is the
+ *  same however the browser measured it. null for anything else. */
+function empDocNormBox_(box) {
+  if (!box || typeof box !== 'object') return null;
+  const page = Number(box.page);
+  if (!(page >= 1 && page <= EMPDOC_PDF_MAX_PAGES && page === Math.floor(page))) return null;
+  const r = function (v) { return Math.round(Number(v) * 10000) / 10000; };
+  const x = r(box.x), y = r(box.y), w = r(box.w), h = r(box.h);
+  if (![x, y, w, h].every(function (v) { return isFinite(v); })) return null;
+  if (x < 0 || y < 0 || w < 0.01 || h < 0.005 || x + w > 1.0001 || y + h > 1.0001) return null;
+  return { page: page, x: x, y: y, w: w, h: h };
+}
+/** PURE (Node-pinned) — the line a PDF document's frozen body ends with. The
+ *  name is the file's, made plain (no quotes, no line breaks, capped). */
+function empDocPdfLine_(sha, name) {
+  const n = String(name || 'document.pdf').replace(/["\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, EMPDOC_PDF_NAME_MAX) || 'document.pdf';
+  return 'PDF document "' + n + '" \u00b7 SHA-256 ' + String(sha || '').toLowerCase();
+}
+/** PURE (Node-pinned) — the PDF a frozen body names: {sha, name} from its LAST
+ *  line, or null for a written document. */
+function empDocPdfFromBody_(bodyMd) {
+  const lines = String(bodyMd || '').replace(/\s+$/, '').split('\n');
+  const m = /^PDF document "([^"]*)" \u00b7 SHA-256 ([a-f0-9]{64})$/.exec(lines[lines.length - 1] || '');
+  return m ? { name: m[1], sha: m[2] } : null;
 }
 /** Pure (Node-pinned) — validate the employee's responses against the doc's
  *  field schema. Every required field must be non-empty; sizes are bounded.
@@ -9608,6 +9648,7 @@ function empDocRowToObj_(row, ssTz) {
     fields: empDocParseJson_(row[ED.FIELDS], []),
     responsesRaw: String(row[ED.RESPONSES] || ''),
     responses: empDocParseJson_(row[ED.RESPONSES], {}),
+    pdfKey: EMPDOC_PDF_KEY_RE.test(String(row[ED.PDF_KEY] || '').trim()) ? String(row[ED.PDF_KEY]).trim() : '',
   };
 }
 /** Defensive JSON parse — corrupt blob never throws (returns the fallback). */

@@ -524,6 +524,7 @@ INV-393 | **A tab names its tool — wherever the tab lives, a link to it lands 
 INV-394 | **A Dept Request fold is display only, keyed by a TRX NUMBER, and "no response" means none before the follow-up was sent (Batch D, operator 2026-11-02).** `drFoldList_` folds two or more OPEN requests with one `drTrxKey_` and one department, in the three open lists only, at the first one's place, newest first; every request keeps its own card and actions (drCardNodes_ still finds a folded card); `drTrxKey_` returns '' for a name alone or two bare numbers, so nothing folds by a guess; a follow-up is unanswered only when no earlier request on the fold had `repliedMs` at or before its send. Verify: the Batch D Node pin + DOM drive. | Subsystem: Client (Metrics views)
 INV-395 | **App activity is never deleted before it is kept (Batch G, operator 2026-11-02).** The nightly step condenses every FINISHED day (the rep's own) into one `ActivitySummary` row — written as plain text, never twice — BEFORE it purges; `activityPurgeIndexes_` deletes a raw ping only when it is older than `ACTIVITY_LOG_DAYS` AND its day is summarised; a condense that throws purges nothing and the job reports a partial run; the summary's block map draws exactly the raw pings' blocks, and Day Edit reads the summary first. The raw purge has its own budget. Verify: the three Batch G Node pins + the Day Edit kept-from DOM case. | Subsystem: Server, Client (Time Clock views)
 INV-396 | **A 1-on-1 is due by ONE rule, and a coaching screenshot is read only through the item's own gate (Batch F, operator 2026-11-02).** `coachOneOnOneStanding_` decides for the board, Needs-you, the daily brief and the standalone overdue digest: the newest `OneOnOnes` row that is not void and not after today, plus the manager's cadence (`CoachingSettings`, default `CONFIG.COACHING_ONE_ON_ONE_DAYS`, 0 = off); a rep with none on record is due. Only the rep's roster manager (column M) logs one; a mistaken row is voided, never deleted; no reminder carries a 1-on-1's note. A screenshot is stored in `CoachingImages` BEFORE the coaching row names it (a failed store logs nothing), and `getCoachingImage` serves it only to the rep (item not void) or a manager `coachCanManagerSee_` admits, never cached. | Pinned by the five Batch F pure pins and three DOM drives.
+INV-397 | **A PDF employee document is signed over its exact bytes (Batch H, operator 2026-11-02).** The PDF's SHA-256 is computed over its BYTES and named by the LAST line of the frozen body (`empDocPdfLine_`), so the content hash and every signature hash cover it; the bytes are stored in `EmpDocFiles` BEFORE the row names them (`PdfKey`), and `getEmpDocPdf`, `acknowledgeDoc` and `verifyDocSignature` re-hash the stored bytes against that line — missing, unreadable and altered are distinct answers, and only a match is shown or signed. A field box is a page and a rectangle as rounded fractions, refused on a written document or a template. The certificate PDF escapes every stored string and draws only a PNG signature; a failed conversion is named. | Pinned by the five Batch H pure pins and three DOM drives.
 
 ### Visual Audit Stage (project-local; every `/broad-scan` MUST run it)
 
@@ -637,12 +638,13 @@ Run it as **Stage 1.5**, between the broad pass and the deep dives:
    pass read it rather than checking it. Edit the marker only by adding a
    scenario or by accepting a new gap deliberately:**
 
-   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, docsManage, myDocs, trainingManage
+   VISUAL-GAP-TABS: callNotesForms, callNotesSearch, trainingManage
 
    Of those, `callNotesSearch` is the same card vocabulary the Log view
    already shoots (`callNotesHistory` gained its two scenarios with cycle 25
-   F35, for the all-time chip's note), and `myDocs` / `docsManage` /
-   `trainingManage` are the manager/rep halves of Training & Employee Docs.
+   F35, for the all-time chip's note), and `trainingManage` is the manager half
+   of Training (`myDocs` and `docsManage` gained their scenarios with Batch H,
+   2026-11-04 — the PDF reader, its certificate and the issue form).
    Also uncovered and NOT tab-shaped, so the marker cannot see them: **most
    modal/overlay states** (the sched modal, the Reference reader and — since
    A4 — the Day Edit modal have `post` scenarios; the rest do not),
@@ -2535,6 +2537,15 @@ S155 | Coaching 1-on-1s and screenshots (Batch F, operator 2026-11-02) | Subsyst
     - Log coaching on a rep with a pasted screenshot; open the item's Screenshot chip as the manager, then as the rep (Mine)
     - Sign in as a manager who is not that rep's roster manager and did not log the item; look for the item and its screenshot
   Expected: The board's Last / Next 1-on-1 columns show "none on record · due now" for reps never met and a date (red when late) otherwise; the line names the cadence and how many are due. The logged 1-on-1 appears in the dialog's Recent list with its note, the rep's Next moves out by the cadence; after Void it is gone again. Cadence 0 shows "reminders off" and Needs you drops the 1-on-1 item. The screenshot shows for the manager and the rep; the other manager sees neither the item nor its screenshot. The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs exist in the HR spreadsheet. Pinned by INV-396.
+S156 | Employee Docs from a PDF (Batch H, operator 2026-11-02) | Subsystem: Server, Client (Training views)
+  Steps:
+    - As a manager, open Training → Issue Docs, set Content to PDF file, choose the PIP exported from Google Docs as a PDF
+    - Pick Box type Date and drag a box over the review-date blank; pick Paragraph and drag one over the comments area; name both in the field list; remove a third box with its ×
+    - Pick yourself (or a TEST rep) as the employee, Issue & release
+    - As that employee, open My Docs → the document; fill both boxes on the page and sign
+    - Reopen it, press Certificate, then Download
+    - As the manager press Verify on the document
+  Expected: The pages show in the issue form and the boxes stay where they were drawn at any window width. The employee sees the PDF with two highlighted boxes, a date picker and a paragraph in place; a required box left empty refuses the signature with its name. After signing, the boxes show the answers. The certificate shows the document, the employee, the signed time, the PDF's SHA-256, the signature image and both answers (or says the conversion is blocked here). Verify reports the signature and content hashes match. The HR spreadsheet has an `EmpDocFiles` tab. Pinned by INV-397.
 
 ### Frozen Subsystems
 - **DELETED in cycle 13 (batch 5) — all three frozen directories are gone from the working tree and live only in git history (last present at commit `9586b29`).** They were `call-notes/` + `call-notes-legacy/` (the superseded Workspace Add-on scaffold) and `incoming/form-generator/` (the pre-port bound Apps Script the Intake module was rewritten from) — ~3k lines across 29 files that every grep hit, every agent read, and every audit had to consciously skip, while contributing nothing: `clasp` only ever pushed `web-app/`, and no live code, test, or CI step referenced them. The Add-on path is abandoned for good (org admin policy blocks Marketplace install without ticket-driven allowlisting, the same constraint that blocks the external `?form` route); the form-generator port shipped and was settled. Provenance comments in `Code.js` / `script_intake.html` now point at git history instead of a path that no longer exists.

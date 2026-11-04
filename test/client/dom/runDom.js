@@ -5901,6 +5901,140 @@ test('Batch F DOM: the screenshot — chosen or pasted into the drawer, it goes 
   assert.ok(/The screenshot is not stored/.test(h.$('#coach-img-body').textContent) && !h.$('.coach-img-full'), 'a failed read is said');
 });
 
+// Batch H: a stand-in pdf.js — `pages` pages of 612x792 points, drawing nothing.
+const hFakePdf_ = (h, pages, opts) => {
+  const log = { docs: 0 };
+  h.window.pdfjsWorker = {};
+  h.window.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: () => {
+    log.docs++;
+    if (opts && opts.fail) return { promise: Promise.reject(new Error('bad pdf')) };
+    return { promise: Promise.resolve({ numPages: pages, getPage: () => Promise.resolve({
+      getViewport: ({ scale }) => ({ width: 612 * scale, height: 792 * scale }),
+      render: () => ({ promise: Promise.resolve() }) }) }) };
+  } };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ({});
+  return log;
+};
+const hSettle_ = async (n) => { for (let i = 0; i < (n || 12); i++) await tick(); };
+const hPdfUri_ = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n%%EOF\n').toString('base64');
+const hPdfDoc_ = (over) => Object.assign({ docId: 'dp', title: 'PIP', status: 'issued', isOwner: true, canComplete: true, requiresSignature: true,
+  bodyMd: 'Read and sign.\n\nPDF document "PIP.pdf" · SHA-256 ' + 'f'.repeat(64), pdf: { name: 'PIP.pdf', sha: 'f'.repeat(64) },
+  fields: [{ id: 'review-date', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.2, y: 0.16, w: 0.25, h: 0.03 } },
+    { id: 'comments', label: 'Comments', type: 'textarea', required: false, box: { page: 2, x: 0.1, y: 0.2, w: 0.8, h: 0.08 } },
+    { id: 'else', label: 'Anything else', type: 'text', required: false }],
+  responses: {}, ackText: 'I have read this document.' }, over || {});
+
+test('Batch H DOM: a PDF document opens with its pages drawn and its boxes ON them — an input per box (named, in place), the rest listed; what is typed in a box is a response like any field; the body shows the note and a wrapped fingerprint, not the hash line; a PDF that will not load is said and the document cannot be signed from it', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  let pdfAnswer = { success: true, dataUri: hPdfUri_ };
+  const asked = [];
+  h.run.respond('getMyDoc', () => hPdfDoc_());
+  h.run.respond('getEmpDocPdf', (id) => { asked.push(id); return pdfAnswer; });
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const ov = h.$('#ed-reader-overlay');
+  assert.deepStrictEqual(asked, ['dp'], 'the PDF is asked for by the document\'s id');
+  const pages = ov.querySelectorAll('#ed-pdf-pages .ed-pdf-page');
+  assert.strictEqual(pages.length, 2, 'two pages drawn');
+  const p1 = pages[0].querySelectorAll('.ed-pdf-box'), p2 = pages[1].querySelectorAll('.ed-pdf-box');
+  assert.strictEqual(p1.length, 1); assert.strictEqual(p2.length, 1, 'each box on its own page');
+  assert.strictEqual(p1[0].getAttribute('style'), 'left:20%;top:16%;width:25%;height:3%');
+  const date = p1[0].querySelector('input.ed-resp');
+  assert.ok(date && date.type === 'date' && date.getAttribute('aria-label') === 'Review date (required)' && date.getAttribute('data-fid') === 'review-date', 'a named date input in the box');
+  assert.ok(p2[0].querySelector('textarea.ed-resp'), 'a paragraph box is a textarea');
+  const listed = Array.from(ov.querySelectorAll('.ed-fields .ed-resp')).map((e) => e.getAttribute('data-fid'));
+  assert.deepStrictEqual(listed, ['else'], 'only the field with no box is listed');
+  date.value = '2026-11-20';
+  p2[0].querySelector('textarea').value = 'Agreed.';
+  assert.deepStrictEqual(Object.assign({}, h.read('edGatherResponses_')()), { 'review-date': '2026-11-20', comments: 'Agreed.', else: '' }, 'box answers ride the same responses');
+  assert.ok(!/SHA-256 f{64}<\/p>/.test(ov.querySelector('.kb-article').innerHTML) && /Read and sign\./.test(ov.querySelector('.kb-article').textContent), 'the note, without the hash line');
+  assert.ok(/PIP\.pdf · SHA-256 f{64}/.test(ov.querySelector('.ed-pdf-id').textContent), 'the fingerprint line');
+  assert.ok(!h.$('#ed-sign-btn').disabled);
+  // A PDF that cannot be loaded.
+  h.read('edCloseDoc_')();
+  pdfAnswer = { error: 'The PDF on file is not the one that was issued (its SHA-256 differs).', why: 'altered' };
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  assert.ok(/not the one that was issued/.test(h.$('#ed-pdf-pages').textContent) && /cannot be completed until it shows here/.test(h.$('#ed-pdf-pages').textContent), 'said, in the reader');
+  assert.ok(h.$('#ed-sign-btn').disabled, 'and the document cannot be signed from a page the employee could not read');
+  // After signing: the boxes show the answers, and the certificate is offered.
+  h.read('edCloseDoc_')();
+  h.run.respond('getMyDoc', () => hPdfDoc_({ status: 'signed', canComplete: false, ackText: undefined, signedAt: '2026-11-04 10:00:00', responses: { 'review-date': '2026-11-20' } }));
+  pdfAnswer = { success: true, dataUri: hPdfUri_ };
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const shown = h.$('#ed-pdf-pages .ed-pdf-box.is-show');
+  assert.ok(shown && shown.textContent === '2026-11-20' && !h.$('#ed-pdf-pages input'), 'the answer, read-only');
+  assert.ok(h.$('[data-ed-cert="dp"]'), 'a Certificate button on a signed document');
+});
+
+test('Batch H DOM: the certificate opens in a viewer — drawn by pdf.js with Download enabled; a certificate that could not be made is said, and Download stays off', async () => {
+  const h = boot();
+  hFakePdf_(h, 1);
+  let ans = { success: true, dataUri: hPdfUri_, fileName: 'PIP - certificate.pdf' };
+  h.run.respond('getEmpDocCertificate', () => ans);
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  assert.strictEqual(h.$$('#ed-cert-pages .ed-pdf-page').length, 1, 'the certificate drawn');
+  assert.ok(!h.$('#ed-cert-dl').disabled, 'Download is on');
+  h.click('[data-ed-cert-close]');
+  assert.ok(!h.$('#ed-cert-overlay.open'), 'Close goes through closeOverlay');
+  ans = { error: 'The certificate could not be made into a PDF here: conversion blocked' };
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  assert.ok(/conversion blocked/.test(h.$('#ed-cert-pages').textContent) && h.$('#ed-cert-dl').disabled, 'said, and nothing to download');
+});
+
+test('Batch H DOM: issuing a PDF — the Content toggle shows the PDF picker (the note optional); a chosen PDF is drawn, a box drawn on it becomes a named field with its page, removing it takes it off the page; the issue sends the PDF, its name and each box; a non-PDF, or a PDF with no file, is refused; a PDF document is not a template', async () => {
+  const h = boot(); mount_(h, 'view-area');
+  hFakePdf_(h, 2);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  const wrap = h.$('#ed-is-pdf-wrap');
+  assert.ok(wrap.hidden, 'written by default');
+  h.click('[data-ed-mode="pdf"]');
+  assert.ok(!wrap.hidden && h.$('[data-ed-mode="pdf"]').getAttribute('aria-pressed') === 'true' && /Note shown above the PDF/.test(h.$('#ed-is-body-lbl').textContent));
+  h.window.edIssuePdfFile_(new h.window.File(['hello'], 'notes.txt', { type: 'text/plain' }));
+  assert.ok(/Choose a PDF file/.test(h.$('#ed-is-pdf-msg').textContent), 'a non-PDF is refused with a reason');
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.$('#ed-is-emp').value = 'e1';
+  h.$('#ed-is-title').value = 'PIP';
+  h.window.edSubmitIssue_(true);
+  await tick();
+  assert.strictEqual(sent.length, 0, 'no PDF chosen: nothing is issued');
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'PIP - Nina.pdf', { type: 'application/pdf' }));
+  await hSettle_(20);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-page').length, 2, 'the chosen PDF is drawn');
+  assert.ok(/PIP - Nina\.pdf · 2 pages/.test(h.$('#ed-is-pdf-msg').textContent));
+  h.$('#ed-box-type').value = 'date';
+  h.window.edAddBox_(2, { x: 0.2, y: 0.5, w: 0.25, h: 0.03 });
+  const box = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="2"] .ed-pdf-box.is-edit');
+  assert.ok(box && /Date 1/.test(box.textContent), 'the box is on page 2, named for its type');
+  assert.ok(/Box · page 2/.test(h.$('#ed-fields-list').textContent), 'and listed as a field with its page');
+  const lbl = h.$('#ed-fields-list .ed-field-label');
+  lbl.value = 'Review date'; lbl.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(/Review date/.test(h.$('#ed-is-pdf-pages .ed-pdf-box').textContent), 'renaming the field renames its box');
+  h.window.edAddBox_(1, { x: 0.1, y: 0.1, w: 0.5, h: 0.08 });
+  h.window.edRemoveField_(1);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-box').length, 1, 'removing a field takes its box off the page');
+  h.window.edSaveAsTemplate_();
+  assert.ok(/cannot be a template/.test(h.document.body.textContent), 'a PDF document is not a template');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  const p = sent[0];
+  assert.ok(/^data:application\/pdf;base64,/.test(p.pdf) && p.pdfName === 'PIP - Nina.pdf', 'the PDF and its name ride the issue');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.fields)), [{ label: 'Review date', type: 'date', required: true, box: { page: 2, x: 0.2, y: 0.5, w: 0.25, h: 0.03 } }]);
+  assert.strictEqual(h.read('ED_STATE.issuePdf'), null, 'an issue resets the PDF with the form');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -8825,7 +8959,7 @@ test('SH-02: the close buttons go through closeOverlay — focus returns to the 
   check('What\'s new', () => h.window.whatsNewOpen_(), () => h.$('#whatsnew-overlay .btn-modal-ok'));
   check('quiz editor (clean)', () => h.read('trainOpenQuizEditor_')(null), () => h.$('#train-qed-overlay .foot .kb-btn'));
   const doc = { docId: 'd2', title: 'Handbook', bodyMd: 'x', status: 'signed', canComplete: false, fields: [], responses: {}, signedAt: '2026-09-01' };
-  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn'));
+  check('employee document', () => { h.read('edOpenDoc_')('d2'); h.run.flushSuccess(doc, 'getMyDoc'); }, () => h.$('#ed-reader-overlay .foot .kb-btn:last-child'));   // Batch H: a signed doc's Certificate sits before Close
 });
 
 test('Seams F4 (cycle 24): the Search synonyms and Revision history × close through closeOverlay — focus returns to the opener (INV-358)', () => {

@@ -512,6 +512,16 @@ the newest on top with "N open requests for this TRX · M follow-ups with no
 response", the earlier ones behind "Show N earlier requests". Each is still a
 full card; Recently resolved never folds.
 
+**Batch H (operator 2026-11-02):** Issue Docs takes a **PDF file** as well as
+a written document. The manager chooses the PDF, sees its pages, and drags (or
+taps) to place **highlighted boxes** — short text, date or paragraph — each one
+a field they name; a short note can sit above it. The employee reads the PDF in
+the app and fills each box in place, then signs as before. The PDF's SHA-256 is
+part of what is signed, and the app re-checks the file on every read and before
+every signature. A signed or completed document has a **Certificate** (a PDF of
+the document, the employee, the times, the hashes, the signature and every
+answer).
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)

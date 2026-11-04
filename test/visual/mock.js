@@ -2681,6 +2681,38 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         kbEmbeds: { total: 1, probed: 1, reachable: 1, broken: [], truncated: false },
       };
     })(),
+    // Batch H (operator 2026-11-02): Employee Docs — a PIP issued as a PDF with
+    // two highlighted boxes (a date, a paragraph) and one listed field, plus a
+    // signed policy; the PDFs are tiny hand-built files (one page of text).
+    getMyDocs: { docs: [
+      { docId: 'd-pdf', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, needsAction: true, hasPdf: true },
+      { docId: 'd-signed', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
+        issuedAt: daysAgo(20) + ' 09:00:00', dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', fieldCount: 0, needsAction: false, hasPdf: false }] },
+    getMyDoc: function (id) {
+      var sha = '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8';
+      if (id === 'd-signed') {
+        return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
+          bodyMd: 'Answer within three rings, name the company, and confirm the caller\'s identity before discussing an order.', issuedAt: daysAgo(20) + ' 09:00:00',
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null };
+      }
+      return { docId: 'd-pdf', empId: 'E-1042', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        bodyMd: 'Please read the plan, fill in the highlighted boxes, and sign below.\n\nPDF document "PIP - Sam Ortiz.pdf" \u00b7 SHA-256 ' + sha,
+        issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', voidReason: '', isOwner: true, integrity: 'ok',
+        pdf: { name: 'PIP - Sam Ortiz.pdf', sha: sha },
+        fields: [
+          { id: 'review-date', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.215, y: 0.163, w: 0.25, h: 0.03 } },
+          { id: 'employee-comments', label: 'Employee comments', type: 'textarea', required: false, box: { page: 1, x: 0.098, y: 0.226, w: 0.8, h: 0.075 } },
+          { id: 'anything-else', label: 'Anything else you want on record?', type: 'text', required: false }],
+        responses: {}, canComplete: true, ackText: 'I acknowledge that I have read and understood this document. I understand this electronic acknowledgment has the same effect as a handwritten signature.', ackVersion: 1 };
+    },
+    getEmpDocPdf: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFBJUCAtIFNhbSBPcnRpeikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDcwMCBUZCAoUGVyZm9ybWFuY2UgSW1wcm92ZW1lbnQgUGxhbikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDY3NCBUZCAoR29hbHM6IGFuc3dlciB3aXRoaW4gMyByaW5nczsgbm90ZXMgb24gZXZlcnkgY2FsbC4pIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NDggVGQgKFJldmlldyBkYXRlOiBfX19fX19fX19fX19fXykgVGogRVQKQlQgL0YxIDExIFRmIDYwIDYyMiBUZCAoRW1wbG95ZWUgY29tbWVudHM6KSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTk2IFRkICgpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1NzAgVGQgKCkgVGogRVQKQlQgL0YxIDExIFRmIDYwIDU0NCBUZCAoTWFuYWdlcjogUm9iaW4gQ2hvdWRodXJ5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDcwOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3OQolJUVPRgo=', sha: '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8', name: 'PIP - Sam Ortiz.pdf' },
+    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' },
+    getDocsDashboard: { docs: [
+      { docId: 'd-pdf', empId: 'E-1088', empName: 'Sam Ortiz', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
+        issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],
+      ackVersion: 1 },
+    getEmpDocTemplates: { templates: [] },
     // Batch F: the screenshot reader and the three 1-on-1 writes.
     getCoachingImage: { success: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' },
     logOneOnOne: { success: true, id: 'oo-new', date: todayIso },
