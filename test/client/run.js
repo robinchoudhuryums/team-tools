@@ -42507,11 +42507,11 @@ test('Batch C: the client\'s pure helpers — groups by day (Today / Yesterday /
   const items = [
     { threadId: 'a', receivedMs: at(2), senderDept: 'Intake' }, { threadId: 'b', receivedMs: at(3), senderDept: 'Billing' },
     { threadId: 'c', receivedMs: at(3, 12), senderDept: '' }, { threadId: 'd', receivedMs: at(4), senderDept: 'Billing', kind: 'voicemail' },
-    { threadId: 'e', receivedMs: 0, senderDept: 'Billing' }];
+    { threadId: 'e', receivedMs: 0, senderDept: 'Billing' }, { threadId: 'f', receivedMs: at(4, 10), senderDept: '' }];   // Other outnumbers Intake: only the tail rule puts it after
   const dateLabels = G(items, 'date');
   assert.ok(/^Mon, Nov 2:a$|^Mon Nov 2:a$|Nov 2:a$/.test(dateLabels[0]), 'an older day reads as a date: ' + dateLabels[0]);
-  assert.deepStrictEqual(dateLabels.slice(1), ['Yesterday:bc', 'Today:d', 'Date unknown:e'], 'the list\'s order inside a day; no stamp is never "today"');
-  assert.deepStrictEqual(G(items, 'dept'), ['Billing:be', 'Intake:a', 'Other:c', 'Voicemail:d'], 'largest first; a voicemail is Voicemail whatever its sender');
+  assert.deepStrictEqual(dateLabels.slice(1), ['Yesterday:bc', 'Today:df', 'Date unknown:e'], 'the list\'s order inside a day; no stamp is never "today"');
+  assert.deepStrictEqual(G(items, 'dept'), ['Billing:be', 'Intake:a', 'Other:cf', 'Voicemail:d'], 'largest first, but Other last however large; a voicemail is Voicemail whatever its sender');
   assert.deepStrictEqual(G([{ threadId: 'x', senderDept: 'zeta' }, { threadId: 'y', senderDept: 'Alpha' }], 'dept'), ['Alpha:y', 'zeta:x'], 'a tie is alphabetical, case-blind');
   const fresh = J(ctx.spAssignNew_([{ threadId: 't1', assignedBy: 'boss@x' }, { threadId: 't2', assignedBy: 'Me@x' }, { threadId: 't3', assignedBy: '' }, { threadId: 't4', assignedBy: 'boss@x' }], ['t4'], 'me@x'));
   assert.deepStrictEqual(fresh.map((o) => o.threadId), ['t1'], 'news only: not seen, and assigned by someone else');
