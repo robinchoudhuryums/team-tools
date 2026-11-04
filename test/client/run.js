@@ -42668,6 +42668,8 @@ test('Batch G: a day of pings condenses to ONE row that draws the same blocks �
   const idx = gJ(c.activityPurgeIndexes_(rows, cut, { '2026-11-02|E1': true }, tzOf, gLocal_, 99));
   assert.deepStrictEqual(idx, [0, 1, 2], 'only E1\'s summarised day goes; E2\'s old ping with no summary is KEPT, today\'s is not old');
   assert.deepStrictEqual(gJ(c.activityPurgeIndexes_(rows, cut, { '2026-11-02|E1': true }, tzOf, gLocal_, 2)), [0, 1], 'the budget caps it');
+  assert.deepStrictEqual(gJ(c.activityPurgeIndexes_(rows, cut, { '2026-11-02|E1': true, '2026-11-03|E1': true }, tzOf, gLocal_, 99)), [0, 1, 2],
+    'a summarised day INSIDE the window keeps its pings — summarised is not enough, it must also be old');
 });
 
 test('Batch G: the nightly step over a real-shaped tab — condenses the finished days into ActivitySummary as plain text, then deletes only their old pings on its OWN budget; a summary that cannot be written deletes NOTHING; the job names a failed condense as a partial run (driven + source)', () => {
