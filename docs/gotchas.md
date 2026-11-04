@@ -2847,6 +2847,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   bottom nav never got it. `cnRenderStaleBadge_` writes every form, the health
   dot's pattern; on the column-shaped bottom-nav button it sits on the icon's
   corner. Verify: the CNUI-09 DOM pin.
+  **AMENDED (Batch E, operator 2026-11-02): a THIRD instance, and the
+  `data-tool="metrics"` above is gone.** The answer-rate alert badge was written
+  to the sidebar link only, so no phone user ever saw it; when the Metrics tool
+  folded into the Dashboard the badge moved to `VIEW_TO_TOOL.metricsTeam`'s tool
+  and is written to every nav form (`mAlertBadgeLinks_`). The Spanish assignee
+  count (Batch C) was built the same way from the start. Verify: the Batch E DOM
+  drive.
 
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 

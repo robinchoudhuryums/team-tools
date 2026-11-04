@@ -87,6 +87,8 @@ Client (Call Notes views):
   web-app/cn/script_callnotes.html
 Client (Metrics views):
   web-app/metrics/script_metrics.html, web-app/metrics/script_deptrequests.html
+  (the `metrics` TOOL is retired since Batch E, 2026-11-02 — these partials now serve the Dashboard's Stats and
+   Spanish Inbox tabs and Call Notes' Dept Requests tab; the subsystem keeps its name so scenarios still resolve)
 Client (Intake views):
   web-app/intake/script_intake.html
 Client (Reference views):
