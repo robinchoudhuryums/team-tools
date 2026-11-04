@@ -14,7 +14,7 @@
 // EXPAND cache + open state — the A5 spanishExpand_ shape. State, not the
 // DOM, is the source of truth, so a card repaint keeps an open card open and
 // a second Expand costs no RPC.
-const DR_STATE = { data: null, bodies: {}, expanded: {}, replies: {}, replyOpen: {} };
+const DR_STATE = { data: null, bodies: {}, expanded: {}, replies: {}, replyOpen: {}, foldOpen: {} };
 
 function enterDeptRequestsView(area) {
   stopClock();
@@ -417,7 +417,7 @@ function drRender_(area, data, errorMsg) {
       '</div>'
     : '';
   const mineHtml = mine.length
-    ? spCappedTasksHtml_(mine.map(drRequestCardHtml_), DR_SHOWN.mine, "drShowMore_('mine')")
+    ? spCappedTasksHtml_(drFoldedCardsHtml_(mine), DR_SHOWN.mine, "drShowMore_('mine')")
     : (mineAll.length
         ? '<div class="dr-empty">No matching requests' + (DR_DEPT_FILTER.length ? ' for the selected department(s)' : '') + (drRangeActive_() ? ' in this date range' : '') + ' in this list.</div>'
         : '<div class="dr-empty">No tracked requests yet. Send a department email from Call Notes to start one.</div>');
@@ -433,7 +433,7 @@ function drRender_(area, data, errorMsg) {
   if (data && data.myDepts && data.myDepts.length) {
     const inc = drListView_(data.incoming || [], 'incoming');
     const incHtml = inc.length
-      ? spCappedTasksHtml_(inc.map(drRequestCardHtml_), DR_SHOWN.incoming, "drShowMore_('incoming')")
+      ? spCappedTasksHtml_(drFoldedCardsHtml_(inc), DR_SHOWN.incoming, "drShowMore_('incoming')")
       : '<div class="dr-empty">No open requests to your department right now.</div>';
     incomingSection =
       '<div class="day-section-label" style="margin:14px 0 8px">Incoming · ' + esc(data.myDepts.join(', ')) + ' · ' + inc.length +
@@ -517,6 +517,102 @@ function drCardStatusHtml_(item) {
     return '<span class="sp-task-age" style="color:var(--warning-deep)"' + ttl + '>' + esc('At risk · ' + elapsed) + '</span>';
   }
   return '<span class="sp-task-age" style="color:var(--warning-deep)"' + ttl + '>' + esc('Open · ' + elapsed) + '</span>';
+}
+
+// ── Batch D (operator 2026-11-02 — "consolidate multiple open requests for
+// the same trx #, marking it as having follow-up(s) w/o response") ──────────
+// DISPLAY ONLY: nothing is merged in the data. In each open list, the OPEN
+// requests to one department about one TRX # sit in one fold — the newest on
+// top, the earlier ones behind "Show N earlier" — each still its own card with
+// its own Expand, reply and Mark resolved, so the in-place resolve and
+// repaint (drCardNodes_ by data-req) are unchanged. A request with no TRX
+// number never folds: a patient's name alone is not a key.
+
+/** PURE (Node-pinned) — the TRX number in a "patient name & TRX" cell, as a
+ *  key: what follows "TRX" ("TRX 12345", "trx#12345", "TRX: A-1234"), else
+ *  the cell's ONE run of 5+ digits; '' when there is neither, or more than
+ *  one bare run (two numbers cannot be told apart). */
+function drTrxKey_(patientTrx) {
+  const s = String(patientTrx || '');
+  const m = /\btrx\s*[#:.]?\s*([A-Za-z0-9][A-Za-z0-9-]{2,})/i.exec(s);
+  if (m) return m[1].toLowerCase();
+  const runs = s.match(/\b\d{5,}\b/g) || [];
+  return runs.length === 1 ? runs[0] : '';
+}
+/** PURE — the fold an OPEN request belongs to ('' = it stands alone). */
+function drFoldKey_(item) {
+  if (!item || item.status === 'resolved') return '';
+  const trx = drTrxKey_(item.patientTrx);
+  return trx ? trx + '|' + String(item.toDept || '').trim().toLowerCase() : '';
+}
+/** PURE (Node-pinned) — a sorted list as entries, in the list's own order: a
+ *  lone request is {items:[r]}; two or more open requests with one fold key
+ *  are ONE entry at the first one's place, {key, items (newest first), followUps,
+ *  unanswered}. A follow-up is every request after the first; it is
+ *  UNANSWERED when no earlier request on the fold had a department reply
+ *  before it was sent. An unknown send time is a follow-up, never counted
+ *  as unanswered (it cannot be judged). */
+function drFoldList_(list) {
+  const out = [], at = {};
+  (list || []).forEach(function (r) {
+    const k = drFoldKey_(r);
+    if (!k) { out.push({ items: [r] }); return; }
+    if (at[k] == null) { at[k] = out.length; out.push({ key: k, items: [] }); }
+    out[at[k]].items.push(r);
+  });
+  out.forEach(function (e) {
+    if (!e.key) return;
+    if (e.items.length < 2) { delete e.key; return; }
+    const asc = e.items.slice().sort(function (a, b) { return (a.createdMs || Infinity) - (b.createdMs || Infinity); });
+    let unanswered = 0;
+    for (let i = 1; i < asc.length; i++) {
+      const sent = asc[i].createdMs;
+      if (!sent) continue;
+      const answered = asc.slice(0, i).some(function (p) { return p.repliedMs && p.repliedMs <= sent; });
+      if (!answered) unanswered++;
+    }
+    e.followUps = asc.length - 1;
+    e.unanswered = unanswered;
+    e.items = asc.slice().reverse();   // newest first
+  });
+  return out;
+}
+/** The card HTML for a sorted list, folds included — one entry per card slot
+ *  (the display cap counts a fold once). */
+function drFoldedCardsHtml_(list) {
+  return drFoldList_(list).map(function (e) { return e.key ? drFoldHtml_(e) : drRequestCardHtml_(e.items[0]); });
+}
+function drFoldId_(key) { return 'dr-fold-' + String(key || '').replace(/[^A-Za-z0-9_-]/g, '_'); }
+function drFoldHtml_(e) {
+  const n = e.items.length, earlier = n - 1;
+  const open = !!(DR_STATE.foldOpen || {})[e.key];
+  const moreId = drFoldId_(e.key);
+  const fu = e.unanswered
+    ? '<span class="dr-fold-fu">' + esc(String(e.unanswered)) + ' follow-up' + (e.unanswered === 1 ? '' : 's') + ' with no response</span>'
+    : esc(String(e.followUps)) + ' follow-up' + (e.followUps === 1 ? '' : 's');
+  return '<div class="dr-fold" data-dr-fold="' + esc(e.key) + '">' +
+    '<div class="dr-fold-head">' + icon('outbox', 12) + ' <b>' + esc(String(n)) + ' open requests</b> for this TRX · ' + fu + '</div>' +
+    drRequestCardHtml_(e.items[0]) +
+    // g133: the fold's key is read off the wrapper, never written into the handler.
+    '<button type="button" class="sp-more dr-fold-toggle" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="' + moreId +
+      '" onclick="drFoldToggle_(this)">' + (open ? 'Hide the earlier request' + (earlier === 1 ? '' : 's') : 'Show ' + earlier + ' earlier request' + (earlier === 1 ? '' : 's')) + '</button>' +
+    '<div class="dr-fold-more" id="' + moreId + '"' + (open ? '' : ' hidden') + '>' + e.items.slice(1).map(drRequestCardHtml_).join('') + '</div>' +
+  '</div>';
+}
+/** Open or close a fold's earlier requests in place; remembered (state, not
+ *  the DOM) so a filter or a refresh re-render keeps it. */
+function drFoldToggle_(btn) {
+  const wrap = btn && btn.closest('.dr-fold');
+  const key = wrap && wrap.getAttribute('data-dr-fold');
+  if (!key) return;
+  DR_STATE.foldOpen = DR_STATE.foldOpen || {};
+  const open = !DR_STATE.foldOpen[key];
+  if (open) DR_STATE.foldOpen[key] = true; else delete DR_STATE.foldOpen[key];
+  const more = wrap.querySelector('.dr-fold-more');
+  if (more) more.hidden = !open;
+  const earlier = more ? more.querySelectorAll('.sp-task[data-req]').length : 0;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.textContent = open ? 'Hide the earlier request' + (earlier === 1 ? '' : 's') : 'Show ' + earlier + ' earlier request' + (earlier === 1 ? '' : 's');
 }
 
 function drRequestCardHtml_(item) {
@@ -818,7 +914,7 @@ function drMgrTeamHtml_(data) {
   const open = drListView_(openAllTeam, 'team');
   const openCount = (DR_DEPT_FILTER.length || drRangeActive_()) ? (open.length + ' of ' + openAllTeam.length) : String(openAllTeam.length);
   const openHtml = open.length
-    ? spCappedTasksHtml_(open.map(drRequestCardHtml_), DR_SHOWN.team, "drShowMore_('team')")
+    ? spCappedTasksHtml_(drFoldedCardsHtml_(open), DR_SHOWN.team, "drShowMore_('team')")
     : '<div class="dr-empty">No ' + (DR_DEPT_FILTER.length ? 'matching ' : '') + 'open requests across the team.</div>';
 
   return '<div id="dr-mgr-team">' +
@@ -1192,6 +1288,17 @@ function drFmtMin_(min) {
   /* Note #6 (operator 2026-09-10) — the subject's patient & TRX half, and the
      Expand detail panel (label column + value; stacks on a phone — A2). */
   .dr-subj-trx { font-weight: 500; color: var(--muted); }
+  /* Batch D — open requests for one TRX # to one department, in one fold:
+     the newest card, then the earlier ones behind a toggle. */
+  .dr-fold { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--radius-md); min-width: 0; }
+  .dr-fold-head { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .dr-fold-head b { color: var(--ink); }
+  .dr-fold-fu { color: var(--warning-deep); font-weight: 600; }
+  .dr-fold-toggle { align-self: flex-start; }
+  .dr-fold-more { display: flex; flex-direction: column; gap: 6px; }
+  .dr-fold-more[hidden] { display: none; }
+  /* an open fold is tall — its row's other cards keep their own height (measured) */
+  .sp-tasks:has(> .dr-fold) { align-items: start; }
   /* 22post D — the department replied, but a person must look. */
   .dr-needs-look { color: var(--info-deep); font-weight: 600; }
   /* E4 (cycle 25, ST1): the "Replies to check" group — an info-toned card per

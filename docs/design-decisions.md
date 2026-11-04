@@ -5154,6 +5154,18 @@ pick them up without re-deriving the context.
   answers are counted per rule for the operator, never fed back into the rules
   — see "A held reply waits for a person, and the answers are counted, not
   learned from".
+  **Amended (Batch D, operator 2026-11-02 — "consolidate multiple open
+  requests for the same trx #, marking it in some way as having follow-up(s)
+  w/o response"):** in the three OPEN lists, two or more open requests to one
+  department for one TRX # are drawn as ONE fold — the newest on top, "N open
+  requests for this TRX · M follow-ups with no response", the earlier ones
+  behind a remembered toggle. It is display only (`drFoldList_`); every
+  request stays its own row with its own reply scan, Mark resolved and
+  Expand. The key is the TRX number (`drTrxKey_`: what follows "TRX", else the
+  cell's one 5+ digit run), never a name — a cell without a number does not
+  fold. A follow-up counts as unanswered only when no earlier request on the
+  fold had a department reply before it was sent, so a request the
+  department already answered is not reported as ignored.
 - <a id="the-dashboard-is-a-widget-grid-that-is-never-empty"></a>**The Dashboard is a widget grid resolved own → team default → standard, and it is never empty (22post E, operator 2026-09-27).** The operator wanted customization with an optional manager default and a
   base everyone falls back to. The widget ids are one registry on each side
   (`CLK_DASH_WIDGETS`, `DASH_WIDGET_IDS`, pinned equal), and each widget keeps

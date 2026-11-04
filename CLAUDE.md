@@ -963,9 +963,9 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1502 | `node test/client/run.js` |
-| DOM harness tests | 364 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 226 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1503 | `node test/client/run.js` |
+| DOM harness tests | 365 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 228 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 103 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
@@ -973,8 +973,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 22 | `ums…` literals in `web-app/` |
-| Invariant library entries | 379 | `.cycle/config.md` |
-| Regression scenarios (S*) | 147 | `.cycle/config.md` |
+| Invariant library entries | 380 | `.cycle/config.md` |
+| Regression scenarios (S*) | 148 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

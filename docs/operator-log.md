@@ -10,6 +10,20 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch D (Dept Request follow-ups)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- When there are two or more **open** requests to the same department for the
+  same TRX #, they show as **one card**: the newest on top, with "3 open
+  requests for this TRX · 2 follow-ups with no response".
+- **Show N earlier requests** opens the others underneath. Each one still has
+  its own Expand, Show reply and Mark resolved.
+- The TRX # is read from the note's patient & TRX field ("TRX 47790", or the
+  one long number in it). A field with no number never folds.
+- Nothing is merged — the requests, their emails and their reply checks are
+  unchanged.
+
 ## 2026-11-02 — Operator round, Batch E (Metrics folded away)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version.

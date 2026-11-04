@@ -506,6 +506,12 @@ keeps only an http(s) href.
 **Batch E (operator 2026-11-02):** Dept Requests is a Call Notes tab (it was
 under Metrics), between Sent Forms and Team Notes.
 
+**Batch D (operator 2026-11-02):** open requests to one department for the
+same TRX # show as one fold in My requests, Incoming and the team-wide list —
+the newest on top with "N open requests for this TRX · M follow-ups with no
+response", the earlier ones behind "Show N earlier requests". Each is still a
+full card; Recently resolved never folds.
+
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
 - OOP Order `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply

@@ -3466,3 +3466,18 @@ per-change detail. By delta:
 - **Visual** — every scenario that named `metrics` names its tool now; the
   a11y name sweep visits Stats.
 
+## Operator round 2026-11-02, Batch D — Dept Request folds (2026-11-02)
+
+- **Pure** — one driven pin over `drTrxKey_` (the TRX forms, a name alone, two
+  bare numbers) and `drFoldList_` (the fold at the first one's place, newest
+  first; another department, a resolved request and a number-less request
+  alone; the unanswered rule before, between and after a reply; an unknown send
+  time), with the wiring (three open lists fold, Recently resolved does not,
+  the key read off the fold).
+- **DOM** — one drive: the fold's head and order, the toggle and its memory
+  across a re-render, another TRX alone, and Mark resolved on a folded card
+  patching it in place.
+- **Visual** — `deptreq-fold-light-wide` (opened) and
+  `deptreq-fold-dark-mobile`. The first shot stretched the fold's neighbours to
+  its height; a list with a fold now aligns its cards to the top.
+

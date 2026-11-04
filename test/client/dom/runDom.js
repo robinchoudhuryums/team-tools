@@ -5743,6 +5743,42 @@ test('Batch E DOM: Stats is ONE tab — Me and Team are its switch, the Team vie
   assert.strictEqual(h.$$('.m-alert-badge').length, 0, 'and clears from both');
 });
 
+test('Batch D DOM: open requests for one TRX to one department are ONE card — the newest on top, "N follow-ups with no response", the earlier ones behind a toggle that a re-render remembers; each is still its own card, and Mark resolved on a folded one patches in place; the display cap counts the fold once', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const it = (id, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'Close Order', patientTrx: 'J. Rivera · TRX 47790', createdAt: 'd' + id, createdMs: ms,
+    byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 }, extra || {});
+  const data = { isManager: false, myDepts: [], departments: ['Billing'], incoming: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100,
+    mine: [it('a', 3000), it('b', 2000), it('c', 1000), it('z', 2500, { patientTrx: 'K · TRX 11111' })], mineTotal: 4, incomingTotal: 0 };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(data)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  const folds = h.$$('.dr-fold');
+  assert.strictEqual(folds.length, 1, 'one fold');
+  const f = folds[0];
+  assert.ok(/3 open requests/.test(f.querySelector('.dr-fold-head').textContent) && /2 follow-ups with no response/.test(f.querySelector('.dr-fold-head').textContent));
+  const ids = (sel) => Array.from(f.querySelectorAll(sel)).map((n) => n.getAttribute('data-req'));
+  assert.deepStrictEqual(ids(':scope > .sp-task[data-req]'), ['a'], 'the newest on top');
+  assert.deepStrictEqual(ids('.dr-fold-more .sp-task[data-req]'), ['b', 'c'], 'the earlier ones, newest first');
+  assert.ok(f.querySelector('.dr-fold-more').hidden, 'closed at first');
+  const tog = f.querySelector('.dr-fold-toggle');
+  assert.ok(/Show 2 earlier requests/.test(tog.textContent) && tog.getAttribute('aria-expanded') === 'false');
+  h.window.drFoldToggle_(tog);
+  assert.ok(!f.querySelector('.dr-fold-more').hidden && tog.getAttribute('aria-expanded') === 'true');
+  h.window.drRerender_();
+  assert.ok(!h.$('.dr-fold .dr-fold-more').hidden, 'a re-render keeps it open (state, not the DOM)');
+  assert.strictEqual(h.$$('.sp-tasks > .sp-task[data-req="z"]').length, 1, 'another TRX stands alone');
+  // Resolve the OLDEST (inside the fold).
+  h.window.drResolveClick_(h.$('.dr-fold-more .sp-resolve[data-req="c"]'));
+  const ok = h.$('.ui-dialog-ok'); if (ok) h.click(ok);
+  await tick();
+  h.run.flushSuccess({ success: true }, 'resolveDeptRequest');
+  h.flushTimers();
+  const c = h.$$('.sp-task[data-req="c"]')[0];
+  assert.ok(c && /marked in app/.test(c.textContent), 'the folded card flipped to resolved in place');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

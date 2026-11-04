@@ -314,6 +314,10 @@ const SCENARIOS = [
   // table) STACKS in the pop-out; and the sort + date controls in dark mode.
   ['deptreq-light-compact', { tool: 'callNotes', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1'],
   ['deptreq-dark-wide',     { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'dark', ''],
+  // Batch D (operator 2026-11-02) — three OPEN requests to Billing for one TRX fold into one card:
+  // the newest on top, "2 follow-ups with no response", then the earlier two opened.
+  ['deptreq-fold-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})();drFoldToggle_(document.querySelector('.dr-fold-toggle'))"],
+  ['deptreq-fold-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})()"],
   // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
   ['deptreq-looks-light-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
   // 22post A-2a — the Scratchpad with the standard modal buttons.

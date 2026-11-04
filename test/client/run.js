@@ -42590,6 +42590,42 @@ test('Batch E: every route and tab link names the tool that HOLDS its tab — th
   assert.ok(n >= 3, 'the client\'s literal links were found (' + n + ')');
 });
 
+console.log('\nOperator round 2026-11-02 — Batch D (open requests for one TRX fold into one card)');
+
+test('Batch D: the TRX key and the fold — what follows "TRX", else the ONE long digit run; no number never folds; only OPEN requests to the SAME department fold, at the first one\'s place, newest first; a follow-up is unanswered only when no earlier request had a reply before it was sent (driven)', () => {
+  const dr = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  const ctx = vm.createContext({ String, Infinity });
+  ['drTrxKey_', 'drFoldKey_', 'drFoldList_'].forEach((n) => vm.runInContext(extractFnFrom(dr, n), ctx));
+  const K = (s) => ctx.drTrxKey_(s);
+  assert.strictEqual(K('J. Rivera · TRX 47790'), '47790');
+  assert.strictEqual(K('j rivera trx#47790'), '47790', 'case and a # do not matter');
+  assert.strictEqual(K('Pat · TRX: A-1234'), 'a-1234', 'a lettered TRX is kept');
+  assert.strictEqual(K('Maria Lopez 4812233'), '4812233', 'a lone long number is the TRX');
+  assert.strictEqual(K('Maria Lopez'), '', 'a name alone is never a key');
+  assert.strictEqual(K('Pat 48122 / 99341'), '', 'two bare numbers cannot be told apart');
+  assert.strictEqual(K(''), '');
+  const r = (id, ms, extra) => Object.assign({ requestId: id, toDept: 'Billing', status: 'open', patientTrx: 'J · TRX 47790', createdMs: ms }, extra || {});
+  const list = [
+    r('a', 300), r('x', 250, { patientTrx: 'K · TRX 11111' }), r('b', 200), r('c', 100),
+    r('d', 150, { toDept: 'Shipping' }), r('e', 90, { status: 'resolved' }), r('f', 80, { patientTrx: 'no number' }), r('g', 70, { patientTrx: 'no number' })];
+  const L = JSON.parse(JSON.stringify(ctx.drFoldList_(list)));
+  assert.deepStrictEqual(L.map((e) => e.items.map((i) => i.requestId).join('')), ['abc', 'x', 'd', 'e', 'f', 'g'],
+    'a, b and c fold at a\'s place (newest first); another department, a resolved request and no-number requests stand alone');
+  const fold = L[0];
+  assert.deepStrictEqual([fold.followUps, fold.unanswered], [2, 2], 'two follow-ups, neither answered');
+  const replied = JSON.parse(JSON.stringify(ctx.drFoldList_([r('a', 300), r('b', 200), r('c', 100, { repliedMs: 150 })])))[0];
+  assert.deepStrictEqual([replied.followUps, replied.unanswered], [2, 0], 'the first was answered before either follow-up was sent');
+  const between = JSON.parse(JSON.stringify(ctx.drFoldList_([r('a', 300), r('b', 200), r('c', 100, { repliedMs: 250 })])))[0];
+  assert.deepStrictEqual([between.followUps, between.unanswered], [2, 1], 'answered after the first follow-up, before the second');
+  const unknown = JSON.parse(JSON.stringify(ctx.drFoldList_([r('a', null), r('c', 100)])))[0];
+  assert.deepStrictEqual([unknown.followUps, unknown.unanswered], [1, 0], 'an unknown send time is a follow-up, never judged unanswered');
+  assert.ok(!JSON.parse(JSON.stringify(ctx.drFoldList_([r('a', 300)])))[0].key, 'one request is not a fold');
+  // Wiring: the three OPEN lists fold; Recently resolved does not.
+  assert.strictEqual((dr.match(/spCappedTasksHtml_\(drFoldedCardsHtml_\(/g) || []).length, 3, 'mine, incoming and the team list fold');
+  assert.ok(/spCappedTasksHtml_\(list\.map\(drRequestCardHtml_\)/.test(extractFnFrom(dr, 'drRecentHtml_')), 'Recently resolved never folds');
+  assert.ok(/this\.closest|btn\.closest\('\.dr-fold'\)/.test(extractFnFrom(dr, 'drFoldToggle_')) && !/drFoldToggle_\(\\?'/.test(dr), 'g133: the key is read off the fold, never written into the handler');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
