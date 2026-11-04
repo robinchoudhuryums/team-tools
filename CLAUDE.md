@@ -62,9 +62,8 @@ rows from the registry, so the two cannot drift again).
 <!-- MODULE-MAP:BEGIN -->
 | Tool (`TOOLS` key) | Tabs | Store | Gate | Detail |
 |---|---|---|---|---|
-| **Dashboard** / Time Clock (`timeClock`) | Dashboard · Time / PTO | ADP (`ADP_SS_ID`) | employee | [modules.md](docs/modules.md#time-clock) |
-| **Call Notes** (`callNotes`) | Log · History · Search · Sent Forms · Team Notes* | per-rep Sheet (roster col L); Forms PHI store | employee; Team Notes manager | [modules.md](docs/modules.md#call-notes) |
-| **Metrics** (`metrics`) | My Stats · Team Metrics · Spanish Inbox*† · Dept Requests | CDR Report (`CDR_SS_ID`, read-only); DeptRequests | employee; Spanish `canSeeSpanishInbox_` | [modules.md](docs/modules.md#metrics) |
+| **Dashboard** / Time Clock (`timeClock`) | Dashboard · Stats (Me / Team) · Time / PTO · Spanish Inbox*† | ADP (`ADP_SS_ID`); CDR Report (`CDR_SS_ID`, read-only) | employee; Spanish `canSeeSpanishInbox_` | [modules.md](docs/modules.md#time-clock) · [Stats, Spanish](docs/modules.md#metrics) |
+| **Call Notes** (`callNotes`) | Log · History · Search · Sent Forms · Dept Requests · Team Notes* | per-rep Sheet (roster col L); Forms PHI store; DeptRequests | employee; Team Notes manager | [modules.md](docs/modules.md#call-notes) |
 | **Intake** (`intake`) | PPD · PMD Account · PAP Account · Sent · Catalog | Intake (`INTAKE_SS_ID`) — **PHI** | employee | [modules.md](docs/modules.md#intake) |
 | **Reference** (`reference`) | Browse (+ the Ctrl/⌘+K drawer, shell-wide) | KB (`KB_SS_ID`) — PHI-free by policy | employee; authoring admin | [modules.md](docs/modules.md#reference) |
 | **Training & Employee Docs** (`develop`) | My Training · Team Training* · Coaching · My Docs · Issue Docs* | KB (training tabs) + HR (`HR_DOCS_SS_ID`, never purged) | employee; manager surfaces team-scoped | [modules.md](docs/modules.md#training-employee-docs) |
@@ -964,8 +963,8 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1500 | `node test/client/run.js` |
-| DOM harness tests | 363 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1502 | `node test/client/run.js` |
+| DOM harness tests | 364 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 226 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
@@ -974,8 +973,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 22 | `ums…` literals in `web-app/` |
-| Invariant library entries | 378 | `.cycle/config.md` |
-| Regression scenarios (S*) | 146 | `.cycle/config.md` |
+| Invariant library entries | 379 | `.cycle/config.md` |
+| Regression scenarios (S*) | 147 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

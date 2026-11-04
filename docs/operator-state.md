@@ -719,7 +719,7 @@ entry says which it is.
   as "Half day — works part of the shift", counted as a tentative presence
   across the shift rather than as a day off.
 <a id="operator-spanish-inbox-tracking-gmail-needs-3-things"></a>
-- **Spanish-inbox tracking (Gmail) needs 3 things.** The Metrics → **Spanish
+- **Spanish-inbox tracking (Gmail) needs 3 things.** The Dashboard → **Spanish
   Inbox** tab (`getSpanishInboxStats`, manager-gated, read-only, 5-min cached)
   scans the **deploying account's** Gmail for threads addressed to the group
   inbox and times first-inbound → first-reply-from-a-member — **in BUSINESS
@@ -1000,7 +1000,7 @@ entry says which it is.
   (2) the **sender or a manager** clicks "Mark resolved" in-app →
   `resolveDeptRequest(requestId)` (rep-callable, owner-or-manager-checked) — for
   when the recipient replied "done" without clicking. The surface is the
-  rep-visible **Metrics → Dept Requests** tab (`metricsDeptReq` →
+  rep-visible **Call Notes → Dept Requests** tab (Metrics → Dept Requests before Batch E, 2026-11-02) (`metricsDeptReq` →
   `enterDeptRequestsView`, read-only list + resolve buttons): `getDeptRequests`
   (rep-callable) returns the caller's own requests (open/resolved + elapsed);
   managers ALSO get a per-department resolution-time aggregate (`deptStats`
@@ -1578,7 +1578,7 @@ entry says which it is.
 <a id="operator-employees-sheet-column-n-departments"></a>
 - **`Employees` sheet column N = `Departments`** (DeptRequests v2, INV-138) —
   a `;`/`,`-separated list of department names (matching the `DEPARTMENT_EMAILS`
-  keys, case-insensitive) the rep STAFFS. Drives the Metrics → Dept Requests
+  keys, case-insensitive) the rep STAFFS. Drives the Call Notes → Dept Requests
   **Incoming inbox** (open requests addressed to a dept the rep staffs) + lets a
   dept member resolve in-app. Blank for most reps; fill it only for dept-desk
   staff. Unknown names are dropped (`drParseDepartments_`). `ROSTER_CACHE_KEY`
@@ -1852,7 +1852,7 @@ entry says which it is.
 <a id="operator-script-property-spanish-vm-min-seconds"></a>
 - **Script Property `SPANISH_VM_MIN_SECONDS`** (optional — operator 2026-09-16).
   An 8x8 A_Q_Spanish voicemail SHORTER than this many seconds is treated as a
-  hang-up and never becomes a task card on Metrics → Spanish Inbox. **Unset is
+  hang-up and never becomes a task card on Dashboard → Spanish Inbox. **Unset is
   fine:** `CONFIG.SPANISH_VM_MIN_SECONDS` seeds **5**, so the gate is on from
   the first deploy with no action. Set the property to change the threshold, or
   to **`0` to disable the gate entirely** — that is the escape hatch if 8x8
@@ -1889,7 +1889,7 @@ entry says which it is.
 <a id="operator-script-property-cdr-queue-groups"></a>
 - **Script Property `CDR_QUEUE_GROUPS`** (optional — cycle-14 Phase 4). JSON
   `{"Department": ["A_Q_Queue", ...]}` mapping transfer queues to departments
-  for the Metrics → Team Metrics **"By department"** mode. **Unset is fine:**
+  for the Dashboard → Stats → Team **"By department"** mode. **Unset is fine:**
   `CONFIG.CDR_QUEUE_GROUPS` already ships the four operator-supplied groups
   (Sales / Customer Success / Field Operations / Power), so the mode works on
   deploy with no action. Set the property only to change the mapping without a

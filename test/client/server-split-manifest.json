@@ -3680,6 +3680,16 @@
     "spanishPendingCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch E (operator 2026-11-02): the Needs-you routes name the tools that now hold Dept Requests (Call Notes) and the Spanish Inbox (Dashboard)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -9072,7 +9082,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b3b575a917face52"
+   "sha": "a120a888e2658f32"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",

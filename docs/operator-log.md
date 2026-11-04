@@ -10,6 +10,21 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch E (Metrics folded away)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- The **Metrics** item is gone from the sidebar and the phone's bottom nav.
+- **Dashboard** now has the tabs Dashboard · **Stats** · Time / PTO · **Spanish
+  Inbox**. Stats is My Stats and Team Metrics in one tab: a **Me / Team**
+  switch at the top.
+- **Call Notes** now has a **Dept Requests** tab (between Sent Forms and Team
+  Notes).
+- Every old link still works — email links, a bookmarked `?tool=metricsSpanish`,
+  a refresh that lands on the last tab, a pop-out opened before the deploy.
+- The answer-rate alert badge moved to the Dashboard item, and it now shows on
+  the phone's bottom nav as well.
+
 ## 2026-11-02 — Operator round, Batch C (Spanish Inbox)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version.

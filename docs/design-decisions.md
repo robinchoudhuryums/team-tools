@@ -18,6 +18,17 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   show ONE button per tool. Sub-navigation is a horizontal tab bar
   (`#tool-tab-bar`) rendered above the view area, populated by
   `renderToolTabBar(toolKey)` whenever a tool is opened.
+  **Amended (Batch E, operator 2026-11-02):** the Metrics tool folded away —
+  Stats and the Spanish Inbox moved into the Dashboard tool and Dept Requests
+  into Call Notes, every tab KEY unchanged. Two registry features carry it: a
+  tab may be `hidden` with `lights: '<tab>'` (Stats · Team is a real view —
+  its links, guards, cache and last-view restore are unchanged — reached by
+  the Stats tab's Me / Team switch, and it lights the Stats button), and
+  `enterTool` resolves a tool by its TAB first (`resolveToolTab_` —
+  tab keys are unique, so a tab names its tool wherever it moved; a retired
+  bare tool lands where `RETIRED_TOOLS` says). A stale `metrics` from an
+  older server's Needs-you route, a saved link or a fixture still lands.
+  Move a tab by moving its entry; nothing else needs to name the tool.
   **`managerOnly: true` tabs are both hidden from non-managers AND visually
   marked for managers** — `renderToolTabBar` adds a `.tt-mgr` class (a subtle
   upward `--accent-soft` gradient wash) + a small `.tt-mgr-mark` `manage` glyph

@@ -82,6 +82,9 @@
   margin-left: 6px;
 }
 
+/* ── Batch E — the Stats tab's Me / Team switch, above the date controls ── */
+.m-stats-switch { margin: 0 0 var(--space-sm); width: fit-content; }
+
 /* ── Batch C — the Spanish Inbox assignee count (the cn-stale-badge shape) ── */
 .sp-assign-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -581,6 +584,7 @@ function enterMetricsMyStatsView() {
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">My Call Metrics</h1>' +
     '</div>' +
+    mStatsSwitchHtml_('me') +
     '<div class="m-controls">' +
       // Yesterday/7D/30D presets — Yesterday = the previous WORKDAY's rich
       // single-day view (own-vs-team series; CDR data is never same-day, so a
@@ -1343,6 +1347,21 @@ function mGroupDetailHtml_(g) {
 
 // ── Team Metrics view (manager-only) ──────────────────────────────────
 
+/** Batch E (operator 2026-11-02 — "combine My Stats and Team Metrics"): the
+ *  Stats tab's Me / Team switch. Each half is still its own view (its own tab
+ *  key, guard, cache and last-view restore); the switch is a navigation, so a
+ *  link to either half lands on it. Shown in the pop-out too, where the title
+ *  row is hidden. Reps see the team AGGREGATE (INV-124 — the server strips
+ *  the per-rep rows). */
+function mStatsSwitchHtml_(which) {
+  var mk = function (key, view, label) {
+    return '<button type="button" class="toolbar-tab" data-m-stats="' + key + '" aria-pressed="' + (which === key) + '"' +
+      (which === key ? '' : ' onclick="showView(\'' + view + '\')"') + '>' + label + '</button>';
+  };
+  return '<div class="toolbar-tabs m-stats-switch" role="group" aria-label="Whose stats">' +
+    mk('me', 'metricsMyStats', 'Me') + mk('team', 'metricsTeam', 'Team') + '</div>';
+}
+
 function enterMetricsTeamView() {
   // Stop the Clock view's intervals (INV-73 — see enterMetricsMyStatsView).
   if (typeof stopClock === 'function') stopClock();
@@ -1356,6 +1375,7 @@ function enterMetricsTeamView() {
         '<div class="view-title-row" style="' + (COMPACT_MODE ? 'display:none' : '') + '">' +
       '<h1 class="view-title">Team Call Metrics</h1>' +
     '</div>' +
+    mStatsSwitchHtml_('team') +
     // #2 — same control vocabulary as My Stats: pressed-state preset chips +
     // the Custom… disclosure hiding the raw date inputs until wanted.
     // (A1 still holds: every chip is a <button>, keyboard-reachable.)
@@ -1933,9 +1953,10 @@ function mPollAmbient_() {
       // not "the team is fine" — keep the last badge, as a failed poll does.
       if (!res || res.unavailable === 'cdr') return;
       if (!res.badge) { mClearBadge_(); return; }
-      var link = document.querySelector('.sb-link[data-tool="metrics"]')
-              || document.querySelector('.nav-btn[data-tool="metrics"]');
-      if (!link) return;
+      // Batch E: the badge rides the tool that now holds Team Metrics, looked
+      // up (never written in), on EVERY nav form — the `||` lookup always found
+      // the hidden sidebar link on a phone (g99, CNUI-09).
+      mAlertBadgeLinks_().forEach(function (link) {
       var badge = link.querySelector('.m-alert-badge');
       if (!badge) {
         badge = document.createElement('span');
@@ -1948,6 +1969,7 @@ function mPollAmbient_() {
       // F-08 (2026-09-17): a badge exists ONLY with a published target, so the
   // threshold is always on the response — the `|| 85` was a client mirror.
   badge.title = 'Previous workday (' + res.badge.date + '): ' + res.badge.label + ' answered — below the ' + res.threshold + '% Dashboard Standards target';
+      });
     })
     // METUI-1 (cycle 23): one transient transport failure removed a real
     // below-target alert for five minutes (g53). A failed poll changes nothing.
@@ -1955,12 +1977,16 @@ function mPollAmbient_() {
     .getMetricsAmbient();
 }
 
+/** The nav links (sidebar and phone bottom nav) of the tool that holds Team Metrics. */
+function mAlertBadgeLinks_() {
+  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL.metricsTeam) || 'timeClock';
+  return Array.prototype.slice.call(document.querySelectorAll('.sb-link[data-tool="' + tool + '"], .nav-btn[data-tool="' + tool + '"]'));
+}
 function mClearBadge_() {
-  var links = document.querySelectorAll('.sb-link[data-tool="metrics"], .nav-btn[data-tool="metrics"]');
-  for (var i = 0; i < links.length; i++) {
-    var badge = links[i].querySelector('.m-alert-badge');
+  mAlertBadgeLinks_().forEach(function (link) {
+    var badge = link.querySelector('.m-alert-badge');
     if (badge) badge.remove();
-  }
+  });
 }
 
 // ── Batch C (operator 2026-11-02 — "in-app notification for auto-assigned to
@@ -2065,7 +2091,7 @@ function spAssignApply_(res) {
  *  never written in: the tab may move tools. */
 function spAssignPaint_() {
   var n = SP_ASSIGN.count;
-  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL.metricsSpanish) || 'metrics';
+  var tool = (typeof VIEW_TO_TOOL === 'object' && VIEW_TO_TOOL.metricsSpanish) || 'timeClock';
   var title = n + ' Spanish Inbox request' + (n === 1 ? ' is' : 's are') + ' yours and still pending';
   var hosts = document.querySelectorAll('.sb-link[data-tool="' + tool + '"], .nav-btn[data-tool="' + tool + '"], .tt-btn[data-tab="metricsSpanish"]');
   Array.prototype.forEach.call(hosts, function (host) {

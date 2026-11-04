@@ -3446,3 +3446,23 @@ per-change detail. By delta:
   overflowing sideways and a crowded card's requester squeezed to 4px; the
   card head now wraps.
 
+## Operator round 2026-11-02, Batch E — Metrics folded away (2026-11-02)
+
+- **Pure** — two pins: the registry (no Metrics tool; the Dashboard's and Call
+  Notes' tabs; Team hidden and lighting Stats; the Spanish gate moved with it)
+  with `resolveToolTab_` driven over the stale, bare, unchanged and unknown
+  pairs; and a DERIVED check that every server Needs-you route and every client
+  `enterTool('tool', 'tab')` literal names the tool that holds its tab.
+
+  F8 (a mobile scenario per tool) dropped Metrics and asks the Stats tab for a
+  phone shot; the Dashboard click-through pin names the Dashboard tool; the
+  module-map floor follows the registry; the C-8 route pin names the Dashboard.
+- **DOM** — one drive: the tab bar without a Team tab, the Team view lighting
+  Stats, the switch's pressed state, `metrics` landing on the Dashboard (with
+  and without a tab), Dept Requests under Call Notes, no Metrics nav item, and
+  the answer-rate badge on both nav forms of the Dashboard and clearing from
+  both. Every DOM drive that opened `metrics` now opens the tool that holds
+  the tab.
+- **Visual** — every scenario that named `metrics` names its tool now; the
+  a11y name sweep visits Stats.
+

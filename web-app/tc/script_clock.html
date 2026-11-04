@@ -1067,8 +1067,8 @@ function clkDashCarouselHtml_(key, title) {
   // pill; the seg chip beside it keeps the pill because it carries state.
   var openTab = (key === 'mine') ? 'metricsMyStats' : 'metricsTeam';
   var openLbl = (key === 'mine') ? 'My Stats' : 'Team Metrics';
-  var openBtn = '<button type="button" class="dash-open-btn" title="Open ' + openLbl + ' in Metrics"' +
-    ' onclick="enterTool(\'metrics\',\'' + openTab + '\')">' + esc(openLbl) + ' ' + icon('chevronRight', 10) + '</button>';
+  var openBtn = '<button type="button" class="dash-open-btn" title="Open ' + openLbl + ' in Stats"' +
+    ' onclick="enterTool(\'timeClock\',\'' + openTab + '\')">' + esc(openLbl) + ' ' + icon('chevronRight', 10) + '</button>';
   return '<div class="dash-card">' +
     '<div class="dash-card-head"><h2 class="dash-seclabel">' + esc(title) + '</h2>' +
     '<div class="dash-head-right">' + openBtn + clkDashSegHtml_(key) + '</div></div>' +
@@ -1554,7 +1554,7 @@ function clkDashSpanishCard_(res, pendingRes) {
   // failed — render the warn card, not `.dash-empty`. No outer esc(): the
   // helper escapes internally.
   if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
-  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
+  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'timeClock\',\'metricsSpanish\')">Open Spanish Inbox →</a></div>';
   var pend = (pendingRes && pendingRes.pending) ? pendingRes.pending : null;
   // Batch 6b follow-on (cycle 25): the card reads TWO windows — the pending
   // list over the tab's (SPANISH_PENDING_WINDOW_DAYS, F14) and the stats over
@@ -1626,7 +1626,7 @@ function clkDashRequestsCard_(res) {
   // failed — render the warn card, not `.dash-empty`. No outer esc(): the
   // helper escapes internally.
   if (!res || res.error) return errorStateHtml_((res && res.error) || 'No data');
-  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'metrics\',\'metricsDeptReq\')">Open Dept Requests →</a></div>';
+  var openLink = '<div class="dash-card-foot"><a class="dash-link" href="#" onclick="event.preventDefault();enterTool(\'callNotes\',\'metricsDeptReq\')">Open Dept Requests →</a></div>';
   if (res.deptStats) {   // manager — team aggregate
     var stats = res.deptStats, open = 0, resolved = 0;
     stats.forEach(function (d) { open += d.open || 0; resolved += d.resolved || 0; });

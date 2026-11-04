@@ -2861,7 +2861,7 @@ test('A5: Spanish card — Expand fetches once, Collapse restores the snippet wi
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
   let bodyCalls = 0;
   h.run.respond('getSpanishInboxThreadBody', (tid) => { bodyCalls++; return { threadId: tid, body: 'El paciente necesita ayuda con el formulario.\nGracias' }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const sel = '.sp-more.sp-toggle[data-thread="abc123"]';
   const btn = () => h.$(sel);
@@ -2932,7 +2932,7 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
   let fail = false, calls = 0;
   h.run.respond('resolveSpanishThread', () => { calls++; return fail ? { error: 'Gmail said no' } : { success: true }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
@@ -3002,7 +3002,7 @@ test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, c
     { threadId: 'f2', requester: 'b@x.com', ageHours: 3, subject: 'Dos', snippet: 'y', permalink: 'https://mail.google.com/2', claim: { by: 'sam@x.com', atMs: 5 }, followUp: false, claimFloorMs: 0 }],
     members: ['sam@x.com', 'ines@x.com'], self: 'me@x.com', truncated: false }));
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
   assert.ok(card('f1').querySelector('.sp-followup-pill'), 'the reopened card says follow-up');
@@ -3041,7 +3041,7 @@ test('SP4 DOM: the Pending header reports what the voicemail gate hid and what i
     h.run.respond('getSpanishInboxStats', stats);
     h.run.respond('getSpanishInboxPending', pendingFn);
     h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-    h.window.enterTool('metrics', 'metricsSpanish');
+    h.window.enterTool('timeClock', 'metricsSpanish');
     h.flushTimers();
     return h;
   };
@@ -3291,7 +3291,7 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   h0.run.respond('getSpanishInboxStats', stats);
   h0.run.respond('getSpanishInboxPending', pendingFixture);
   h0.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['sam@x.com'], truncated: false }));
-  h0.window.enterTool('metrics', 'metricsSpanish');
+  h0.window.enterTool('timeClock', 'metricsSpanish');
   h0.flushTimers();
   assert.ok(h0.$('.sp-task'), 'the member sees the list');
   assert.strictEqual(h0.$('#sp-autoassign'), null, 'but no Auto-assign button (manager-only)');
@@ -3306,7 +3306,7 @@ test('C-N4 DOM: Auto-assign — manager-only button counts the UNCLAIMED, a canc
   h.run.respond('autoAssignSpanishThreads', (days) => { rpcs++; rpcDays = days; return { success: true, unclaimed: 2, assigned: [
     { threadId: 't1', claim: { by: 'ines@x.com', assignedBy: 'me@x.com', atMs: 2 } },
     { threadId: 't3', claim: { by: 'sam@x.com', assignedBy: 'me@x.com', atMs: 2 } }] }; });
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const btn = () => h.$('#sp-autoassign');
   assert.ok(btn(), 'the manager sees the button');
@@ -3365,7 +3365,7 @@ test('C-N6 DOM: Dept Requests — the subject carries patient & TRX (escaped; la
       note: { callback: '555', caller: 'Ana', relationship: 'Self', patientAndTrx: 'Ana <b>Ruiz</b> · TRX 1',
         issue: 'Bill <img src=x onerror="alert(1)"> wrong', transferredTo: '', resolution: 'Escalated **today**', dateLocal: '2026-09-01' } };
   });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const card = (id) => h.$$('.sp-task[data-req]').filter((n) => n.getAttribute('data-req') === id)[0];
   assert.ok(card('q1') && card('q2'), 'both cards render');
@@ -3426,7 +3426,7 @@ test('DR-3/DR-4 DOM: Show reply — only on a request the department answered; O
   h.run.respond('getDeptRequestReply', (id) => { replyCalls++; return { requestId: id, reply: { from: 'Dana <b>W</b>', at: 'Oct 27, 2026 10:15 AM', verdict: 'needs-look',
     body: 'Which patient — the <img src=x> one?\n\nThanks,\nDana\nBilling Specialist\nUMS\n\nOn Mon, Oct 27, 2026 at 8:30 AM Me <me@x.com> wrote:\n> Please close the order.\n> --\n> You received this message because you are subscribed to the Google Groups "Billing" group.' } }; });
   h.run.respond('resolveDeptRequest', () => ({ success: true }));
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const look = () => h.$('#dr-looks .dr-look[data-req="r1"]');
   const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
@@ -5264,7 +5264,7 @@ test('22post A-7 DOM: a manager\'s Dept Requests page leads with the team-wide c
     truncated: false, listCap: 100, mineTotal: 2, incomingTotal: 1, allOpenTotal: 1,
     teamKpis: { open: 4, overdue: 0, resolved: 9, total: 13, medianMin: 45, manualCount: 0 },
     deptStats: [{ dept: 'Billing', open: 4, resolved: 9, overdueOpen: 0, slaDays: 2, avgMinutes: 50, medianMinutes: 45, manualResolved: 0, untrackedResolved: 0 }] }));
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const top = h.$('.dr-top-row');
   assert.ok(top, 'the manager top row renders');
@@ -5552,7 +5552,7 @@ test('E4 DOM (cycle 25, ST1): "Replies to check" leads the Dept Requests tab —
     recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 2 };
   let reads = 0;
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   const looks = () => h.$$('#dr-looks .dr-look');
   const body = h.$('#dr-body').textContent;
@@ -5599,7 +5599,7 @@ test('E4 DOM (cycle 25, G5): an escalated Spanish request reads "Escalated · N 
     { threadId: 'new', requester: 'b@x.com', ageHours: 30, escalated: false, subject: 'Hola', snippet: 's', hasMore: false, permalink: 'https://mail/new', claim: null }],
     members: ['me@x.com'], self: 'me@x.com', truncated: false }));
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false }));
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   const card = (tid) => h.$('.sp-resolve[data-thread="' + tid + '"]').closest('.sp-task');
   assert.ok(card('old').classList.contains('sp-escalated') && /Escalated · 9 days/.test(card('old').querySelector('.sp-esc-pill').textContent));
@@ -5617,7 +5617,7 @@ const spBatchC_ = (pending, resolved, over) => {
     membersConfigured: true, threadsScanned: 2, truncated: false }));
   h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pending)), members: ['me@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '' }));
   h.run.respond('getSpanishInboxResolved', () => ({ resolved: JSON.parse(JSON.stringify(resolved || [])), members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
-  h.window.enterTool('metrics', 'metricsSpanish');
+  h.window.enterTool('timeClock', 'metricsSpanish');
   h.flushTimers();
   return h;
 };
@@ -5708,10 +5708,39 @@ test('Batch C DOM: the assignee badge and toast — the first answer in a browse
   assert.strictEqual(toasts().length, 1, 'once: a request already announced never toasts again');
   h.window.spAssignApply_({ error: 'Spanish assignments read failed: x' });
   assert.ok(badges().every((t) => t === '1'), 'an unreadable answer is unknown — the last count stands');
-  h.window.renderToolTabBar('metrics');
+  h.window.renderToolTabBar('timeClock');
   assert.ok(h.$('.tt-btn[data-tab="metricsSpanish"] .sp-assign-badge'), 'a rebuilt tab bar gets its count back');
   h.window.spAssignApply_({ configured: true, items: [], count: 0, self: 'me@x.com' });
   assert.deepStrictEqual(badges(), [], 'zero clears it everywhere');
+});
+
+test('Batch E DOM: Stats is ONE tab — Me and Team are its switch, the Team view lights the Stats button and draws no tab of its own; a stale `metrics` lands on the Dashboard tool; Dept Requests is a Call Notes tab; the answer-rate badge rides EVERY nav form of the tool that holds Team Metrics', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  h.window.enterTool('metrics', 'metricsTeam');
+  const tabs = () => h.$$('#tool-tab-bar .tt-btn').map((b) => b.getAttribute('data-tab'));
+  assert.deepStrictEqual(tabs(), ['clock', 'metricsMyStats', 'timeoff', 'metricsSpanish'], 'Dashboard · Stats · Time / PTO · Spanish Inbox — no Team tab');
+  assert.strictEqual(h.read('currentView'), 'metricsTeam', 'the Team view is its own view (its guards, cache and restore are unchanged)');
+  const stats = h.$('.tt-btn[data-tab="metricsMyStats"]');
+  assert.ok(stats.classList.contains('active') && stats.getAttribute('aria-current') === 'page', 'the Team view lights Stats');
+  assert.ok(h.$('.sb-link[data-tool="timeClock"]').classList.contains('active'), 'a stale `metrics` lands on the Dashboard tool');
+  assert.strictEqual(h.$('[data-m-stats="team"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.$('[data-m-stats="me"]').getAttribute('aria-pressed'), 'false');
+  h.window.enterTool('metrics');
+  assert.strictEqual(h.read('currentView'), 'metricsMyStats', 'the bare retired tool opens Stats');
+  assert.strictEqual(h.$('[data-m-stats="me"]').getAttribute('aria-pressed'), 'true');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  assert.ok(tabs().indexOf('metricsDeptReq') >= 0 && h.$('.sb-link[data-tool="callNotes"]').classList.contains('active'), 'Dept Requests is a Call Notes tab');
+  assert.ok(!h.$('.sb-link[data-tool="metrics"]') && !h.$('.nav-btn[data-tool="metrics"]'), 'no Metrics in the sidebar or the phone nav');
+  h.run.respond('getMetricsAmbient', () => ({ badge: { label: '71%', date: '2026-11-03' }, threshold: 85 }));
+  h.window.mPollAmbient_();
+  const hosts = h.$$('.m-alert-badge').map((b) => b.parentNode);
+  assert.ok(hosts.some((x) => x.matches('.sb-link[data-tool="timeClock"]')) && hosts.some((x) => x.matches('.nav-btn[data-tool="timeClock"]')),
+    'the answer-rate badge is on the Dashboard tool, on both nav forms (g99)');
+  h.run.respond('getMetricsAmbient', () => ({ badge: null }));
+  h.window.mPollAmbient_();
+  assert.strictEqual(h.$$('.m-alert-badge').length, 0, 'and clears from both');
 });
 
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
@@ -5726,7 +5755,7 @@ test('22post D DOM: a reply-resolved card says so and credits the replier, a nee
     recentResolvedTotal: 1, reopenDays: 7, truncated: false, listCap: 100, mineTotal: 1, incomingTotal: 1 };
   let reads = 0;
   h.run.respond('getDeptRequests', () => { reads++; return JSON.parse(JSON.stringify(data)); });
-  h.window.enterTool('metrics', 'metricsDeptReq');
+  h.window.enterTool('callNotes', 'metricsDeptReq');
   h.flushTimers();
   // E4 (cycle 25): the request CARDS — a "Replies to check" row (.dr-look) carries the same data-req.
   const card = (id) => h.$$('.sp-task[data-req]:not(.dr-look)').filter((n) => n.getAttribute('data-req') === id)[0];
@@ -7625,7 +7654,7 @@ test('F53 (cycle 25): My Stats says when the call data or the day-by-day trend c
 test('F56 (cycle 25): a server {error} on a background refresh keeps the painted last-good Metrics view (My Stats and Team Metrics) and says so — the transport-failure path already did', () => {
   const h = boot(); h.bootShell();
   h.run.drain();   // the shell's own Dashboard calls getMyMetrics at boot
-  h.window.enterTool('metrics', 'metricsMyStats');
+  h.window.enterTool('timeClock', 'metricsMyStats');
   const good = c25MyDay_({ cdr: { totalRung: 20, totalAnswered: 18, totalMissed: 2, pctAnswered: 90, tttFormatted: '0:30:00', attFormatted: '1:40', tttSeconds: 1800, attSeconds: 100 } });
   h.run.flushSuccess(good, 'getMyMetrics');
   assert.ok(/90/.test(h.$('#m-my-content').textContent), 'painted (non-vacuous)');
@@ -8085,7 +8114,7 @@ test('METUI-1: the Metrics alert badge survives a poll that could not read the c
   const h = boot();
   h.bootShell({ isManager: true });
   h.run.drain();
-  const badge = () => h.$('[data-tool="metrics"] .m-alert-badge');
+  const badge = () => h.$('[data-tool="timeClock"] .m-alert-badge');   // Batch E: the tool that holds Team Metrics
   const poll = () => h.read('mPollAmbient_')();
   poll(); h.run.flushSuccess({ badge: { label: '80%', date: '2026-09-30' }, threshold: 92 }, 'getMetricsAmbient');
   assert.ok(badge() && badge().textContent === '80%', 'sanity: a below-target day badges');

@@ -67,9 +67,22 @@ const TOOLS = {
     label: 'Dashboard',
     sidebarIcon: 'clock',
     defaultTab: 'clock',
+    // Operator 2026-11-02 (Batch E): the Metrics tool folded in here. Its tab
+    // KEYS are unchanged (deep links, email links, umsLastView, the Dashboard's
+    // buttons and every `currentView ===` guard keep working); enterTool finds
+    // a tab's tool by the tab, so a stale `metrics` still lands.
     tabs: {
       clock:    { label: 'Dashboard', icon: 'clock',    enter: 'enterClockCombinedView' },
+      // ONE Stats tab: My Stats and Team Metrics behind a Me / Team switch. The
+      // Team key stays a real (hidden) tab so its links and guards keep
+      // working; `lights` names the tab button it lights.
+      metricsMyStats:  { label: 'Stats',          icon: 'chart',  enter: 'enterMetricsMyStatsView' },
+      // Operator 2026-08-18: not managerOnly — reps get the TEAM AGGREGATE
+      // view (the server strips the per-rep rows + diagnostics via
+      // teamMetricsRepView_; INV-124's individual-numbers boundary holds).
+      metricsTeam:     { label: 'Stats · Team',   icon: 'manage', enter: 'enterMetricsTeamView', hidden: true, lights: 'metricsMyStats' },
       timeoff:  { label: 'Time / PTO', icon: 'timeoff',  enter: 'enterTimeoffView' },
+      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true, also: 'canSeeSpanish' },
     },
   },
   callNotes: {
@@ -86,21 +99,10 @@ const TOOLS = {
       callNotesHistory: { label: 'History',     icon: 'list',    enter: 'enterCallNotesHistoryView' },
       callNotesSearch:  { label: 'Search',      icon: 'search',  enter: 'enterCallNotesSearchView' },
       callNotesForms:   { label: 'Sent Forms',  icon: 'send',    enter: 'enterCallNotesFormsView' },
+      // Operator 2026-11-02 (Batch E): Dept Requests are raised from a note,
+      // so they live with the notes. The key is the old Metrics one.
+      metricsDeptReq:   { label: 'Dept Requests', icon: 'outbox', enter: 'enterDeptRequestsView' },
       callNotesManage:  { label: 'Team Notes',  icon: 'manage',  enter: 'enterCallNotesManageView', managerOnly: true },
-    },
-  },
-  metrics: {
-    label: 'Metrics',
-    sidebarIcon: 'chart',
-    defaultTab: 'metricsMyStats',
-    tabs: {
-      metricsMyStats:  { label: 'My Stats',      icon: 'chart',  enter: 'enterMetricsMyStatsView' },
-      // Operator 2026-08-18: no longer managerOnly — reps get the TEAM
-      // AGGREGATE view (the server strips the per-rep rows + diagnostics via
-      // teamMetricsRepView_; INV-124's individual-numbers boundary holds).
-      metricsTeam:     { label: 'Team Metrics',   icon: 'manage', enter: 'enterMetricsTeamView' },
-      metricsSpanish:  { label: 'Spanish Inbox',  icon: 'mail',   enter: 'enterSpanishInboxView', managerOnly: true, also: 'canSeeSpanish' },
-      metricsDeptReq:  { label: 'Dept Requests',  icon: 'outbox', enter: 'enterDeptRequestsView' },
     },
   },
   // Operator 2026-11-02: Reference sits above Intake — the sidebar and the
@@ -191,6 +193,18 @@ const VIEW_TO_TOOL = {};
 Object.keys(TOOLS).forEach(toolKey => {
   Object.keys(TOOLS[toolKey].tabs).forEach(tabKey => { VIEW_TO_TOOL[tabKey] = toolKey; });
 });
+// Batch E (operator 2026-11-02): tools that no longer exist, and where their
+// bare name (no tab) lands. A stale `metrics` reaches here from an older
+// server's Needs-you route, a saved link or a pop-out opened before a deploy.
+const RETIRED_TOOLS = { metrics: { tool: 'timeClock', tab: 'metricsMyStats' } };
+/** PURE — the tool a (tool, tab) pair opens. The TAB decides: tab keys are
+ *  globally unique, so a tab names its tool wherever it moved; a retired tool
+ *  with no tab lands where RETIRED_TOOLS says; anything else is unchanged. */
+function resolveToolTab_(toolKey, tabKey) {
+  if (tabKey && VIEW_TO_TOOL[tabKey]) return { tool: VIEW_TO_TOOL[tabKey], tab: tabKey };
+  if (!TOOLS[toolKey] && RETIRED_TOOLS[toolKey]) return { tool: RETIRED_TOOLS[toolKey].tool, tab: RETIRED_TOOLS[toolKey].tab };
+  return { tool: toolKey, tab: tabKey };
+}
 
 /** Whether the current user may see a tab. adminOnly → isAdmin; managerOnly →
  *  isManager OR an `also` empState flag (e.g. metricsSpanish → canSeeSpanish);
@@ -1161,6 +1175,8 @@ function applySidebarWidth_(sb, w) {
  *  or the URL ?tab=<k> on initial boot). Non-manager users skip managerOnly
  *  tabs and fall through to the default. */
 function enterTool(toolKey, tabKey) {
+  const _rt = resolveToolTab_(toolKey, tabKey);   // Batch E — the tab decides
+  toolKey = _rt.tool; tabKey = _rt.tab;
   const tool = TOOLS[toolKey];
   if (!tool) return;
   // If every tab in this tool is gated away for the user (e.g. a non-manager
@@ -1258,7 +1274,9 @@ function renderToolTabBar(toolKey) {
   const tool = TOOLS[toolKey];
   const bar = document.getElementById('tool-tab-bar');
   if (!bar || !tool) return;
-  const tabs = Object.keys(tool.tabs).filter(k => tabVisibleForUser_(tool.tabs[k]));
+  // A `hidden` tab (Batch E — Stats · Team) is reached by its view's own
+  // switch and by links; its button is the tab it `lights`.
+  const tabs = Object.keys(tool.tabs).filter(k => !tool.tabs[k].hidden && tabVisibleForUser_(tool.tabs[k]));
   bar.innerHTML = tabs.map(k => {
     const t = tool.tabs[k];
     // Privileged (managerOnly/adminOnly) tabs get a subtle upward accent gradient
@@ -1400,8 +1418,9 @@ function showView(view) {
   // Tab bar active state. A11 (cycle 13): `aria-current` rides alongside the
   // `.active` class — the class alone is invisible to assistive tech, so a
   // screen-reader user was never told which sub-tab they were on.
+  const _lit = (_tab && _tab.lights) || view;   // Batch E — a hidden tab lights its host's button
   document.querySelectorAll('.tt-btn').forEach(b => {
-    const on = b.dataset.tab === view;
+    const on = b.dataset.tab === _lit;
     b.classList.toggle('active', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });

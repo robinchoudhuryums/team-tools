@@ -681,9 +681,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         { kind: 'notes', title: '3 calls without a note', detail: 'Answered ' + daysAgo(1) + ' · notes at 84%', dueIso: daysAgo(1), overdue: false, action: 'File', route: { tool: 'callNotes', tab: 'callNotes', hint: { date: daysAgo(1), missingCount: 3 } } },
         { kind: 'training', title: 'HIPAA refresher', detail: 'Training module · due ' + daysAgo(-6), dueIso: daysAgo(-6), overdue: false, action: 'Start', route: { tool: 'develop', tab: 'trainingHome' } },
         // E1 (operator 2026-10-27): the ONE manager item — departments with ≥25% of their open requests past SLA and more than three.
-        { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' } },
+        { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' } },
         // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
-        { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'metrics', tab: 'metricsSpanish' } },
+        { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'timeClock', tab: 'metricsSpanish' } },
       ],
       total: 7, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },

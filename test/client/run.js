@@ -10988,8 +10988,8 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   // tabs; team card -> metricsTeam, own card -> metricsMyStats.
   const car = nc(extractFunction('tc/script_clock.html', 'clkDashCarouselHtml_'));
   assert.ok(/'mine'\) \? 'metricsMyStats' : 'metricsTeam'/.test(car), 'per-card destination tabs');
-  assert.ok(/<button type="button" class="dash-open-btn"/.test(car) && /enterTool\(\\'metrics\\'/.test(car),
-    'the click-through is a real button into the Metrics tool');
+  assert.ok(/<button type="button" class="dash-open-btn"/.test(car) && /enterTool\(\\'timeClock\\'/.test(car),
+    'the click-through is a real button into the Stats tab (Batch E: the Dashboard tool holds it)');
 });
 
 console.log('\nemails — the three CN digests share the branded chrome (operator 2026-08-13)');
@@ -12782,9 +12782,11 @@ test('F8: every rep-facing tool has a mobile visual scenario', () => {
   const names = mobile.map((m) => m[1]);
   assert.ok(names.includes('timeoff-light-mobile'),
     'Time / PTO has a mobile scenario (F8); got ' + names.join(', '));
-  ['timeClock', 'callNotes', 'metrics', 'intake', 'reference', 'develop'].forEach((t) => {
+  ['timeClock', 'callNotes', 'intake', 'reference', 'develop'].forEach((t) => {
     assert.ok(tools.has(t), t + ' has at least one MOBILE scenario');
   });
+  // Batch E: the Metrics tool folded into the Dashboard — its Stats tab keeps a phone shot of its own.
+  assert.ok(mobile.some((m) => m[3] === "'metricsMyStats'"), 'the Stats tab has a MOBILE scenario');
 });
 
 // ── Cycle-18 batches 3+4 ────────────────────────────────────────────────────
@@ -26685,7 +26687,7 @@ test('D2: the module map covers every TOOLS key, and every detail link resolves'
   }
   assert.ok(end > ti, 'the TOOLS object closes');
   const keys = [...core.slice(ti, end).matchAll(/^  ([A-Za-z][A-Za-z0-9]*): \{$/gm)].map((m) => m[1]);
-  assert.ok(keys.length >= 8, 'the registry parse found the tools (got ' + keys.length + ')');
+  assert.ok(keys.length >= 7, 'the registry parse found the tools (got ' + keys.length + ')');   // Batch E folded Metrics away
 
   const claude = fs.readFileSync(path.join(__dirname, '../../CLAUDE.md'), 'utf8');
   const mi = claude.indexOf('<!-- MODULE-MAP:BEGIN -->');
@@ -30498,7 +30500,7 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(myOpen.indexOf('spanishPendingIdsGet_(') < myOpen.indexOf('spanishPendingCore_(') && /if \(!anyMine\) return/.test(myOpen),
     'the cached ids first; a live read only on a miss, and only for a rep who owns a claim');
   assert.ok(/unavailable\.push\('spanish'\)/.test(pt), 'a failed read is "couldn\'t check", never "nothing to do"');
-  assert.ok(/route: \{ tool: 'metrics', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
+  assert.ok(/route: \{ tool: 'timeClock', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
   const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
   assert.ok(/spanish: 'mail'/.test(clk) && /spanish: 'Spanish Inbox'/.test(clk), 'the Dashboard has its icon and label');
   const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
@@ -42524,6 +42526,68 @@ test('Batch C: the client\'s pure helpers — groups by day (Today / Yesterday /
   assert.deepStrictEqual(J(ids.spanishBulkIds_([' a', 'a', '', 'b', 3, null], 5)), ['a', 'b']);
   assert.strictEqual(ids.spanishBulkIds_(['a', 'b', 'c'], 2), null, 'over the cap is null — refused, never cut');
   assert.deepStrictEqual(J(ids.spanishBulkIds_('a', 5)), [], 'not a list is nothing');
+});
+
+console.log('\nOperator round 2026-11-02 — Batch E (Metrics folded into the Dashboard and Call Notes)');
+
+const batchERegistry_ = () => {
+  const core = extractScript('script_core.html');
+  const ctx = vm.createContext({ Object });
+  const ti = core.indexOf('const TOOLS = {');
+  const vi = core.indexOf('const VIEW_TO_TOOL = {};');
+  const ri = core.indexOf('function resolveToolTab_(');
+  const re = core.indexOf('\n}\n', ri) + 2;
+  vm.runInContext(core.slice(ti, core.indexOf('\n};\n', ti) + 3).replace('const TOOLS', 'var TOOLS'), ctx);
+  vm.runInContext(core.slice(vi, ri).replace(/const /g, 'var ') + core.slice(ri, re), ctx);
+  return { core, ctx };
+};
+
+test('Batch E: the Metrics tool is gone — the Dashboard holds Stats (one tab; Team a hidden tab that lights it) and the Spanish Inbox, Call Notes holds Dept Requests, every tab KEY unchanged; and a tool is resolved by its TAB, so a stale `metrics` still lands (driven)', () => {
+  const { core, ctx } = batchERegistry_();
+  const T = JSON.parse(JSON.stringify(ctx.TOOLS));
+  assert.ok(!T.metrics, 'no Metrics tool');
+  assert.deepStrictEqual(Object.keys(T.timeClock.tabs), ['clock', 'metricsMyStats', 'metricsTeam', 'timeoff', 'metricsSpanish']);
+  assert.strictEqual(T.timeClock.tabs.metricsMyStats.label, 'Stats');
+  assert.ok(T.timeClock.tabs.metricsTeam.hidden === true && T.timeClock.tabs.metricsTeam.lights === 'metricsMyStats', 'Team is a real tab, drawn as Stats');
+  assert.ok(T.timeClock.tabs.metricsSpanish.managerOnly && T.timeClock.tabs.metricsSpanish.also === 'canSeeSpanish', 'the Spanish gate moved with it');
+  const cn = Object.keys(T.callNotes.tabs);
+  assert.strictEqual(cn.indexOf('metricsDeptReq'), cn.indexOf('callNotesManage') - 1, 'Dept Requests sits before Team Notes in Call Notes');
+  const R = (t, b) => JSON.parse(JSON.stringify(ctx.resolveToolTab_(t, b)));
+  assert.deepStrictEqual(R('metrics', 'metricsSpanish'), { tool: 'timeClock', tab: 'metricsSpanish' }, 'an older server\'s route still lands');
+  assert.deepStrictEqual(R('metrics', 'metricsDeptReq'), { tool: 'callNotes', tab: 'metricsDeptReq' });
+  assert.deepStrictEqual(R('metrics', null), { tool: 'timeClock', tab: 'metricsMyStats' }, 'the bare retired tool lands on Stats');
+  assert.deepStrictEqual(R('intake', 'intakePpd'), { tool: 'intake', tab: 'intakePpd' }, 'everything else is unchanged');
+  assert.deepStrictEqual(R('timeClock', null), { tool: 'timeClock', tab: null });
+  assert.deepStrictEqual(R('nope', 'alsoNope'), { tool: 'nope', tab: 'alsoNope' }, 'an unknown pair passes through for enterTool to refuse');
+  assert.ok(/const _rt = resolveToolTab_\(toolKey, tabKey\);/.test(extractFnFrom(core, 'enterTool')), 'enterTool resolves first');
+  assert.ok(/!tool\.tabs\[k\]\.hidden && tabVisibleForUser_/.test(extractFnFrom(core, 'renderToolTabBar')), 'a hidden tab draws no button');
+  assert.ok(/const _lit = \(_tab && _tab\.lights\) \|\| view;/.test(extractFnFrom(core, 'showView')), 'a hidden tab lights its host');
+});
+
+test('Batch E: every route and tab link names the tool that HOLDS its tab — the Needs-you routes on the server and every enterTool literal in the client (derived from the registry)', () => {
+  const { ctx } = batchERegistry_();
+  const owner = {};
+  Object.keys(ctx.TOOLS).forEach((t) => Object.keys(ctx.TOOLS[t].tabs).forEach((k) => { owner[k] = t; }));
+  const routes = [...serverSource().matchAll(/route: \{ tool: '([A-Za-z]+)', tab: '([A-Za-z]+)'/g)];
+  assert.ok(routes.length >= 5, 'the server\'s routes were found (' + routes.length + ')');
+  routes.forEach((m) => assert.strictEqual(owner[m[2]], m[1], 'the route to ' + m[2] + ' names ' + m[1]));
+  const files = [];
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+    const f = path.join(d, e.name);
+    if (e.isDirectory()) walk(f); else if (/\.html$/.test(e.name)) files.push(f);
+  });
+  walk(PA_WEB);
+  let n = 0;
+  const Q = "\\\\?'";
+  const lit = new RegExp('enterTool\\(' + Q + '([A-Za-z]+)' + Q + ',\\s*' + Q + '([A-Za-z]+)' + Q + '\\)', 'g');
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    [...src.matchAll(lit)].forEach((m) => {
+      n++;
+      assert.strictEqual(owner[m[2]], m[1], path.basename(f) + ': enterTool(' + m[1] + ', ' + m[2] + ') — the tab is in ' + owner[m[2]]);
+    });
+  });
+  assert.ok(n >= 3, 'the client\'s literal links were found (' + n + ')');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -503,6 +503,9 @@ lighter `--warn-fill`.
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 
+**Batch E (operator 2026-11-02):** Dept Requests is a Call Notes tab (it was
+under Metrics), between Sent Forms and Team Notes.
+
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
 - OOP Order `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply
@@ -512,6 +515,11 @@ The 8-tag cap and the archived set hold. An archived tag's keyword rule is no
 longer sent to reps.
 
 ## Metrics
+
+   **Since Batch E (operator 2026-11-02) there is no Metrics tool:** My Stats
+   and Team Metrics are the Dashboard's **Stats** tab (a Me / Team switch),
+   the Spanish Inbox is a Dashboard tab, and Dept Requests is a Call Notes tab
+   — the partials, tab keys and behaviour below are unchanged.
 
    - **Metrics** — CDR integration module that reads DQE Historical
      Data from the CDR Report spreadsheet (the same sheet backing the

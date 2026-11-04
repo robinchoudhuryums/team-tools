@@ -9213,7 +9213,7 @@ function getMyPendingTasks() {
           items.push({
             kind: 'requests', title: 'Department replies running late',
             detail: late.map(function (d) { return d.dept + ' ' + d.late + ' of ' + d.open + ' past SLA'; }).join(' \u00b7 '),
-            dueIso: '', overdue: true, action: 'Open', route: { tool: 'metrics', tab: 'metricsDeptReq' },
+            dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' },
           });
         }
       }
@@ -9279,7 +9279,7 @@ function getMyPendingTasks() {
               (spAssigned ? spAssigned + ' assigned to you · ' : '') +
               (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
             dueIso: '', overdue: spEscN > 0, action: 'Open',
-            route: { tool: 'metrics', tab: 'metricsSpanish' },
+            route: { tool: 'timeClock', tab: 'metricsSpanish' },
           });
         }
       } catch (e) { unavailable.push('spanish'); }
