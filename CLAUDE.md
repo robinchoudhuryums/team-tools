@@ -538,7 +538,7 @@ for the reasoning, which is usually the part that matters.
 - [Email composer Internal/External tab merge](docs/design-decisions.md#email-composer-internal-external-tab-merge)
 - [Tag taxonomy rename/merge/archive batch-edits across reps](docs/design-decisions.md#tag-taxonomy-rename-merge-archive-batch-edits-across-reps)
 - [`uiConfirm` / `uiPrompt` replace native `window.confirm` / `window.prompt`](docs/design-decisions.md#uiconfirm-uiprompt-replace-native-window-confirm-window-prom)
-- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1)
+- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1) · [Coaching keeps a 1-on-1 log with a per-manager cadence, and a screenshot in the HR store (Batch F, 2026-11-02)](docs/design-decisions.md#coaching-keeps-a-one-on-one-log-and-a-cadence)
 - [Operator feedback round (2026-06-12) — note-template ergonomics for the pinned pop-out workflow](docs/design-decisions.md#operator-feedback-round-2026-06-12-note-template-ergonomics)
 - [Onboarding tour — hand-rolled coach-marks (`script_tour.html`)](docs/design-decisions.md#onboarding-tour-hand-rolled-coach-marks-script-tour-html)
 - [The Script-Property budget badge has ONE home (`propBudgetHtml_` + `.prop-budget`, Batch Q)](docs/design-decisions.md#the-script-property-budget-badge-has-one-home-propbudgethtml)
@@ -618,7 +618,7 @@ one-pane-of-glass for this table. Keep them in one Drive folder for sanity.
 | Dept Requests | `DEPT_REQUESTS_SS_ID` (**falls back to the ADP sheet**) — only while UNSET; a set but unopenable id THROWS by name since cycle 22 A3 | DeptRequests (the inter-department request tracker — its `PatientTrx` column names a patient, operator testing note 6; then ThreadId, ReopenedAt, RepliedAt, ReplyVerdict for the reply scan, 22post D, and ReplyReason, cycle 25 E4 — no reply text is stored), DeptReplyReviews (cycle 25 E4 — each answer to a held reply: id, rule, answer, who; PHI-free) | **PHI-adjacent** | kept | `getDeptRequestsSS_` — Storage Health probes it since Batch 5 (2026-09-18) and warns while unset: set it to the Intake spreadsheet, the `FORMS_SS_ID` recommendation |
 | Forms | `FORMS_SS_ID` (**falls back to the ADP sheet**) | FormTokens, FormSubmissions, ScheduledCalls (scheduled-call reminders — labels may name a patient, so PHI-class; epoch-ms NUMBER cells; pilot round 2) | **PHI** | 90-day purge (if enabled; ScheduledCalls is NOT purged) | `getFormsSS_` |
 | Knowledge Base + Training | `KB_SS_ID` (CONFIG placeholder) | KB, KbViews, KbFeedback, KbContentRequests, KbComments (per-article discussion — append-only + soft-delete moderation, pilot round 3), KbRevisions, TrainingAssignments, TrainingCompletions, Quizzes, QuizAttempts, QuizResets (the retry limit's manager resets — ids only, cycle 23 TRN-1), **the THREE operator-maintained, app-never-writes lookup tables:** InsurancePayors (payor acceptance, 2026-08-25), OopPricing (out-of-pocket prices — **every column discovered BY HEADER STEM, including the item name**: a name-ish header wins and column A is only the fallback, because the operator's real sheet has `HCPCS` in A and the item in C. EVERY price-role column is kept and labelled, since one item carries pick-up / with-shipping / with-tech-delivery totals that are all correct for different fulfilments; any other column passes through verbatim. **The Area Eligibility column is READ BY AN ENGINE** (and also shown verbatim, as an `area` chip on each price result — seams F16 corrected "not displayed") — see INV-209 — and a quoted price is re-verified against this tab at SEND time, see INV-208) and LocationAcceptance (delivery reach — headers in ROW 1; `Type` = warehouse rows with a geocoded Address, or city rows with State + Accepts; both 2026-09-16. Since T7 (2026-09-22) the city rows DECIDE for an item whose Area Eligibility says `listed cities`, and a tab that yields nothing usable is a named finding rather than an empty registry), ManualImport (the procedures-manual import ledger — per `man-…` id the export's SourceHash and the hash of what the import wrote, 22post M1) and ManualMeta (the manual's version, call router, changelog and — since M5b — the glossary's search synonyms, as JSON in A2, 22post M2) and ManualImages (the manual's images themselves — base64 split across rows by key and part, with the content hash; M4-FU3, since the domain disables Apps Script's Drive) and KbImages (article images — the same row shape, APPEND-ONLY and keyed by content hash; cycle 23 DRV-3) and KbSearchSignal (the Reference search signal — admin-vocabulary terms only, no rep, no query; 90-day purge; cycle 25 E6) and KbSearchSignalHb (the handbook app's searches, the same shape, appendRow only, read and purged with it — HB1.4) and KbSearchConfig (Team Tools' synonyms + auto-tag rules mirrored for the handbook app, A2 — HB1.4) and ManualQuizzes (the handbook's official quizzes with their answer keys, written by the manual import only when changed — HB3.1) and ManualFiles (the handbook's form PDFs in the ManualImages row shape plus title, summary and sections; written by the import only when changed — HB4.1) | PHI-free by policy | kept (KbSearchSignal: 90-day purge) | `getKbSS_` |
-| Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
+| Employee Docs (HR) | `HR_DOCS_SS_ID` (**no fallback**) | EmpDocs, DocSignatures, EmpDocTemplates, Coaching (its trailing ImageKey since Batch F), OneOnOnes (the 1-on-1 log — voided, never deleted), CoachingSettings (each manager's 1-on-1 cadence), CoachingImages (a coaching item's screenshot, KbImages row shape) — the last three Batch F, auto-provisioned | HR — keep-forever | **never purged** (INV-122/INV-134) | `getHrDocsSS_` |
 | QA (recordings) | `QA_SS_ID` (**no fallback**) | QaRecordings (Drive-folder index: status/assignee/agent/shared — Phase 2 added the trailing Agent column; Phase 3 the SharedMs release stamp, 0 = unshared; design handoff PR 5 added DurationSec + SkipReason, header self-heals), QaExemptions (PR 5 — the audit-period exemption ledger: EmpName/Period/GrantedBy/GrantedMs/Active, append-only, latest row per (name, period) wins; written only by the manager-gated `qaSetExemption`), QaComments (timestamped review comments — soft-delete, append-only), QaScorecards (structured review scores — append-only, latest per (recording, reviewer) wins) | QA/HR-adjacent (comments may name patients; reviews reference agents) | optional review-record purge (`QA_REVIEW_RETENTION_DAYS`, default 0 — QaComments + QaScorecards ONLY; the recordings index + Drive files are never touched) | `getQaSS_` |
 | Call Notes (per-rep) | `Employees` col L (`CallNotesSheetId`) | Notes, NotesArchive (cold tier), Scratchpad (one row per PAGE since Batch S, 2026-11-02 — A the page in a plain-text-pinned cell, B its save time, C its format (`html` or `text` since 22post B), D its name, E its id; row 1 is the legacy page `main`; at most 10 — the server-backed personal scratchpad, pilot round 3; PHI-plausible free text, so it rides the per-rep PHI store; NOT touched by the archive/purge tiers) — one Sheet **per rep** | **PHI** | optional archive + optional purge (live + cold) | `getCallNotesSheet_` |
 
@@ -725,7 +725,7 @@ the dated round entries that used to sit here moved to
 - [The `OopPricing` and `LocationAcceptance` tabs (KB spreadsheet)](docs/operator-state.md#operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet)
 - [Script Property `CDR_QUEUE_GROUPS`](docs/operator-state.md#operator-script-property-cdr-queue-groups)
 - [Script Property `DR_SLA_TARGETS`](docs/operator-state.md#operator-script-property-dr-sla-targets)
-- [Set Script Property `HR_DOCS_SS_ID`](docs/operator-state.md#operator-set-script-property-hr-docs-ss-id)
+- [Set Script Property `HR_DOCS_SS_ID`](docs/operator-state.md#operator-set-script-property-hr-docs-ss-id) · [its `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs — the 1-on-1 log, each manager's cadence (default 14 days, 0 = off) and coaching screenshots; team = roster column M (Batch F)](docs/operator-state.md#operator-the-coaching-one-on-one-tabs-batch-f)
 - [`Employees` sheet column P = `PayRate`](docs/operator-state.md#operator-employees-sheet-column-p-payrate)
 - [`Employees` sheet column Q = `PtoAccrual`](docs/operator-state.md#operator-employees-sheet-column-q-ptoaccrual)
 - [`CONFIG.PTO_ACCRUAL_BASIS_HOURS` (80) + `CONFIG.PTO_HOURS_PER_DAY` (8)](docs/operator-state.md#operator-config-pto-accrual-basis-hours-80-config-pto-hours-per-day-8)
@@ -963,18 +963,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1506 | `node test/client/run.js` |
-| DOM harness tests | 365 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 228 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1511 | `node test/client/run.js` |
+| DOM harness tests | 368 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 231 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 103 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Manager-gated endpoints | 106 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 22 | `ums…` literals in `web-app/` |
-| Invariant library entries | 381 | `.cycle/config.md` |
-| Regression scenarios (S*) | 149 | `.cycle/config.md` |
+| Invariant library entries | 382 | `.cycle/config.md` |
+| Regression scenarios (S*) | 150 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

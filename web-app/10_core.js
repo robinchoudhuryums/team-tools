@@ -4291,6 +4291,7 @@ function managerBriefSections_(data) {
     { key: 'training',    label: 'Overdue training' },
     { key: 'docs',        label: 'Unsigned documents' },
     { key: 'coaching',    label: 'Un-acknowledged coaching' },
+    { key: 'oneOnOnes',   label: '1-on-1s due' },
     { key: 'deptOverdue', label: 'Dept requests past SLA' },
   ];
   const out = [];
@@ -4378,6 +4379,12 @@ function sendManagerBriefEmail_(toEmail, sections, d, todayIso) {
       text += d.coaching.map(function (oc) {
         return '  ' + oc.empName + ' · ' + (COACH_SEV_LABELS[oc.item.severity] || oc.item.severity) + ' (since ' + String(oc.item.createdAt).substring(0, 10) + ')';
       }).join('\n');
+    } else if (s.key === 'oneOnOnes') {
+      // Batch F: names and dates only — never a 1-on-1's note (HR content).
+      html += table(d.oneOnOnes.map(function (o) {
+        return row2('<strong>' + esc_(o.empName) + '</strong>', coachOneOnOneDueText_(o));
+      }).join(''));
+      text += d.oneOnOnes.map(function (o) { return '  ' + o.empName + ' \u00b7 ' + coachOneOnOneDueText_(o); }).join('\n');
     } else if (s.key === 'deptOverdue') {
       html += table(d.deptOverdue.map(function (o) {
         return row2('<strong>' + esc_(o.dept) + '</strong> · ' + esc_(o.label || 'request') + ' — ' + esc_(o.byName || 'unknown'),
@@ -4453,6 +4460,7 @@ function sendManagerDailyBrief() {
     const training    = src('overdue training', function () { return trainOverdueForRoster_(todayIso); });
     const docs        = src('unsigned documents', function () { return empDocsOverdueAll_(todayIso); });
     const coaching    = src('un-acknowledged coaching', function () { return coachUnackedAll_(Date.now()); });
+    const oneOnOnes   = src('1-on-1s due', function () { return coachOneOnOnesDueByManager_(todayIso); });   // Batch F — {managerEmail: due[]}
     const deptOverdue = src('overdue department requests', function () { return deptRequestsOverdueOpen_(); });
 
     let sent = 0, sendFailed = 0, lastSendError = '';
@@ -4464,6 +4472,7 @@ function sendManagerDailyBrief() {
         training: training,
         docs: docs.filter(function (od) { return empDocCanManagerSee_(mgr, od.doc); }),
         coaching: coaching.filter(function (oc) { return coachCanManagerSee_(mgr, oc.item); }),
+        oneOnOnes: oneOnOnes[String(email || '').toLowerCase().trim()] || [],   // their own team only
         deptOverdue: deptOverdue,
       };
       d.failedSources = failedSources;

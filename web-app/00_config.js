@@ -99,6 +99,7 @@ const CONFIG = {
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
   COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  COACHING_ONE_ON_ONE_DAYS: 14,         // Batch F (operator 2026-11-02) — the default 1-on-1 cadence; each manager adjusts their own in the CoachingSettings tab (0 = no reminders)
   QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
   // are sent to this group address; "resolved" = first reply from a configured
@@ -1961,7 +1962,7 @@ var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
 var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
-var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
@@ -2873,8 +2874,11 @@ const COACH_TAB = 'Coaching';
 // note's DateLocal — the drill-through is date-keyed, so the id alone could
 // never open it, K5) and QaFileId (the QA recording's Drive id, K13). All of
 // them stay in the HR store; none reaches the shared AuditLog.
-const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'];
-const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18 };
+// Batch F (operator 2026-11-02): ONE more trailing column, the same
+// self-healing back-compat — ImageKey, the optional screenshot's key in the
+// CoachingImages tab (blank for no screenshot, and for every older row).
+const COACH_HEADERS = ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId','ImageKey'];
+const CO = { COACH_ID:0, EMP_ID:1, EMP_NAME:2, PATIENT_TRX:3, SEVERITY:4, WHAT_HAPPENED:5, WHAT_SHOULD:6, NOTE_ID:7, STATUS:8, CREATED_BY:9, CREATED_AT:10, ACK_AT:11, ACK_BY:12, VOID_REASON:13, REP_RESPONSE:14, FOLLOW_UP_AT:15, NUDGED_AT:16, NOTE_DATE:17, QA_FILE_ID:18, IMAGE_KEY:19 };
 // HR-1 (cycle 23) — the coaching free text is written into '@' cells (a TRX
 // "0012" lost its zeros, a "3/4" became a Date).
 const COACH_TEXT_IDX = [CO.PATIENT_TRX, CO.WHAT_HAPPENED, CO.WHAT_SHOULD, CO.VOID_REASON, CO.REP_RESPONSE];
@@ -2889,6 +2893,31 @@ const COACH_TEXT_MAX = 4000;
 const COACH_TRX_MAX = 200;
 const COACH_RESPONSE_MAX = 2000;
 const COACH_VOIDED_CAP = 50;
+// ── Batch F (operator 2026-11-02 — "Last 1-on-1 date, reminders for managers,
+// adjustable cadence; optional screenshot on a logged issue"). Three HR-store
+// tabs, all keep-forever and team-scoped like Coaching itself:
+//   • OneOnOnes — one row per 1-on-1 a manager logs (the date it was held, the
+//     rep, who logged it, an optional note in a plain-text cell). Never
+//     deleted: a mistaken row is VOIDED, and a voided row never counts.
+//   • CoachingSettings — one row per manager: their 1-on-1 cadence in days
+//     (0 = no reminders). Not a Script Property (g07: the editor's page filled).
+//   • CoachingImages — a coaching item's optional screenshot, in the KbImages
+//     row shape (KBMG), keyed by content hash and append-only. Read only
+//     through getCoachingImage, which asks the coaching item's own visibility
+//     rule (the rep, or a manager coachCanManagerSee_ admits) — never cached.
+const COACH_MEET_TAB = 'OneOnOnes';
+const COACH_MEET_HEADERS = ['OneOnOneId','EmpId','EmpName','MeetDate','LoggedBy','Note','LoggedAt','Status'];
+const CMT = { ID:0, EMP_ID:1, EMP_NAME:2, MEET_DATE:3, LOGGED_BY:4, NOTE:5, LOGGED_AT:6, STATUS:7 };
+const COACH_MEET_TEXT_IDX = [CMT.EMP_NAME, CMT.MEET_DATE, CMT.NOTE, CMT.LOGGED_AT];
+const COACH_MEET_NOTE_MAX = 2000;
+const COACH_MEET_HISTORY = 5;          // the latest N 1-on-1s per rep the board's dialog lists
+const COACH_MEET_BACK_DAYS = 366;      // a 1-on-1 may be logged up to a year back, never ahead
+const COACH_CADENCE_MAX = 90;          // the longest cadence a manager may set (0 = off)
+const COACH_SETTINGS_TAB = 'CoachingSettings';
+const COACH_SETTINGS_HEADERS = ['ManagerEmail','CadenceDays','UpdatedAt'];
+const COACH_SETTINGS_TEXT_IDX = [0, 2];
+const COACH_IMAGES_TAB = 'CoachingImages';
+const COACH_IMAGE_KEY_RE = /^coachimg-[a-f0-9]{24}$/;
 const QA_RECORDINGS_TAB = 'QaRecordings';
 /** The Script Property naming the Drive folder QA recordings are dropped into —
  *  ONE name, read by qaFolderId_ and probed by Admin → System's Drive line (DRV-1). */

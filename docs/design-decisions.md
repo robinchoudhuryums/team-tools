@@ -6342,3 +6342,35 @@ pick them up without re-deriving the context.
     exclude each other). The reader is named by address (there is no roster),
     the topic rides an apostrophe (g144), and the search typed is never sent or
     stored (F9, g146): the dialog starts empty.
+- <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
+  The operator asked for a "Last 1-on-1" date, reminders for managers, an
+  adjustable cadence, and an optional screenshot on a logged issue.
+  - **A log, not a date field.** Each 1-on-1 is a row in the HR store's
+    `OneOnOnes` tab (the date it was held, the rep, who logged it, an optional
+    note in a plain-text cell). "Last 1-on-1" is DERIVED — the newest row that
+    is not void and not after today — so a mistaken entry is voided, never
+    edited, and the history is the HR record. Only the rep's roster manager
+    (column M) logs one; the logger or that manager may void it.
+  - **The cadence is the manager's** (`CoachingSettings`, one row per manager,
+    default `CONFIG.COACHING_ONE_ON_ONE_DAYS`, 0 = off) — a tab, not a Script
+    Property (g07: the editor's page had filled).
+  - **One due rule** (`coachOneOnOneStanding_`) serves the board, Needs-you,
+    the daily brief and the standalone overdue digest the brief suppresses —
+    so the two digests carry the same line (g151). A rep with no 1-on-1 on
+    record is DUE: "never" is not "not yet", and the reminder ends the moment
+    the manager logs one or sets the cadence to 0. Needs-you is ONE item per
+    manager (a count and the first names), overdue only once someone is past a
+    real due date. No reminder carries a 1-on-1's note.
+  - **The screenshot** is fitted in the browser by the article-paste fitter and
+    stored in the HR store's `CoachingImages` tab in the KbImages row shape
+    (Drive is disabled on this domain, DRV-1) — BEFORE the coaching row that
+    names it, so an item never points at bytes that are not there, and a
+    screenshot that cannot be stored logs nothing. It is read only through
+    `getCoachingImage`, which asks the item's own visibility rule (the rep
+    while the item is not void, or a manager `coachCanManagerSee_` admits),
+    and is never put in the shared ScriptCache (`spec.noCache`). Kept forever,
+    like the rest of the HR store. **Alternatives rejected:** a "last 1-on-1"
+    cell per rep (no history, and a typo erases the real date); counting a
+    rep's first 1-on-1 from the deploy (a team with none on record would never
+    be reminded); attaching a screenshot after the item is logged (not asked
+    for — a later ask).

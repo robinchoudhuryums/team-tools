@@ -2243,6 +2243,27 @@ entry says which it is.
   reminded of, and neither tab was surfaced by Storage Health. Both windows
   default 0, so a fresh deploy still keeps everything; set them only when
   the tabs bother you.
+<a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
+- **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
+  `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each
+  is auto-provisioned on its first write. `OneOnOnes` holds one row per 1-on-1 a
+  manager logs from Coaching → Team → Who needs a 1-on-1 (OneOnOneId · EmpId ·
+  EmpName · MeetDate · LoggedBy · Note · LoggedAt · Status — the name, date,
+  note and stamp are plain-text cells); a mistaken row is marked `void`, never
+  deleted. `CoachingSettings` holds one row per manager who changed their
+  cadence (ManagerEmail · CadenceDays · UpdatedAt); a manager with no row uses
+  `CONFIG.COACHING_ONE_ON_ONE_DAYS` (14), and 0 turns their reminders off.
+  `CoachingImages` holds coaching screenshots in the KbImages row shape (Key ·
+  Sha · Type · Kind · Part · Data · ImportedAt), append-only. **Who is "on a
+  manager's team" is roster column M** — a rep whose ManagerEmail is blank or
+  someone else's never appears on that manager's board or reminders. **What to
+  expect after the deploy:** every rep with no 1-on-1 on record is due, so each
+  manager sees one Needs-you item ("N 1-on-1s due … with none on record"), and
+  the daily brief (or the standalone overdue digest while the brief is off)
+  lists them, until a 1-on-1 is logged for each or the cadence is set to 0.
+  Never edit these tabs by hand: a hand-typed date that is not yyyy-MM-dd is
+  ignored, and an edited `CoachingImages` header row makes every screenshot
+  read as "could not be read" (restore it to the seven names above).
 <a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing

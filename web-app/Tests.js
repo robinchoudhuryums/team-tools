@@ -955,6 +955,7 @@ function cleanupTestData() {
       // M-9 (cycle 10) — the fixture's Coaching + EmpDocTemplates tabs were
       // outside the sweep (per-test finally only; an aborted run orphaned rows).
       _cleanupRowsByPrefix(hrSs.getSheetByName(COACH_TAB), 'TEST_', CO.EMP_ID, 2);
+      _cleanupRowsByPrefix(hrSs.getSheetByName(COACH_MEET_TAB), 'TEST_', CMT.EMP_ID, 2);   // Batch F
       _cleanupRowsByPrefix(hrSs.getSheetByName(EMPDOC_TPL_TAB), 'TEST_', EDT.NAME, 2);
     }
   } catch (e) { Logger.log('cleanupTestData: empdocs cleanup skipped: ' + e.message); }
@@ -6816,6 +6817,10 @@ function test_managerGates_rejectNonManager() {
     // Design handoff PR 4 (K10/K11) — both are manager-gated + team-scoped.
     ['setCoachingFollowUp',            function () { return setCoachingFollowUp('no-such-coach', ''); }],
     ['nudgeCoaching',                  function () { return nudgeCoaching('no-such-coach'); }],
+    // Batch F — the 1-on-1 log and cadence are manager-gated (team-scoped beyond the gate).
+    ['logOneOnOne',                    function () { return logOneOnOne(_TEST_INDIA_ID, '2026-01-05', 'gate'); }],
+    ['voidOneOnOne',                   function () { return voidOneOnOne('no-such-1on1'); }],
+    ['setOneOnOneCadence',             function () { return setOneOnOneCadence(14); }],
     // Design handoff PR 5 (Q4) — exemptions are a MANAGER decision (a QA
     // member reviews; a manager decides who may skip a period).
     ['qaSetExemption',                 function () { return qaSetExemption('A Name', '2026-09', true); }],

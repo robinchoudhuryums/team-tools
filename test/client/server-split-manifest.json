@@ -3724,6 +3724,64 @@
     "activityLogCondenseAndPurge_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch F (operator 2026-11-02): coaching 1-on-1 log, cadence and screenshot — new 82_coaching.js helpers/endpoints, COACH_MEET_* / COACH_SETTINGS_* / COACH_IMAGES_* constants, CONFIG.COACHING_ONE_ON_ONE_DAYS",
+   "added": [
+    "CMT",
+    "COACH_CADENCE_MAX",
+    "COACH_IMAGES_TAB",
+    "COACH_IMAGE_KEY_RE",
+    "COACH_MEET_BACK_DAYS",
+    "COACH_MEET_HEADERS",
+    "COACH_MEET_HISTORY",
+    "COACH_MEET_NOTE_MAX",
+    "COACH_MEET_TAB",
+    "COACH_MEET_TEXT_IDX",
+    "COACH_SETTINGS_HEADERS",
+    "COACH_SETTINGS_TAB",
+    "COACH_SETTINGS_TEXT_IDX",
+    "coachCadenceOf_",
+    "coachImageItem_",
+    "coachImageStoreCallerLocked_",
+    "coachIsoAddDays_",
+    "coachIsoDaysBetween_",
+    "coachNormCadence_",
+    "coachOneOnOneDueSort_",
+    "coachOneOnOneDueText_",
+    "coachOneOnOneFor_",
+    "coachOneOnOneLogs_",
+    "coachOneOnOneStanding_",
+    "coachOneOnOneTask_",
+    "coachOneOnOneValidate_",
+    "coachOneOnOnesDueByManager_",
+    "coachOneOnOnesDueFor_",
+    "coachSettingsRead_",
+    "coachTeamReps_",
+    "getCoachingImage",
+    "logOneOnOne",
+    "setOneOnOneCadence",
+    "voidOneOnOne"
+   ],
+   "removed": [],
+   "changed": [
+    "CO",
+    "COACH_HEADERS",
+    "CONFIG",
+    "PENDING_TASKS_KINDS",
+    "coachRowToObj_",
+    "createCoaching",
+    "getCoachingDashboard",
+    "getMyPendingTasks",
+    "kbImageTabServe_",
+    "managerBriefSections_",
+    "sendManagerBriefEmail_",
+    "sendManagerDailyBrief",
+    "sendTrainingOverdueDigest",
+    "sendTrainingOverdueEmail_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4013,6 +4071,11 @@
    "kind": "const",
    "sha": "885725c06817589f"
   },
+  "CMT": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "12723bab8233d5c7"
+  },
   "CN": {
    "file": "00_config.js",
    "kind": "const",
@@ -4211,17 +4274,77 @@
   "CO": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "6edbca5ea3fd7d19"
+   "sha": "331d808ca09777be"
+  },
+  "COACH_CADENCE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "9501399506be52f2"
   },
   "COACH_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "09b584b1614a6549"
+   "sha": "59ee9880fefb7cd6"
+  },
+  "COACH_IMAGES_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "972d7d86b254319a"
+  },
+  "COACH_IMAGE_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f1bbf8b4e4ff298b"
+  },
+  "COACH_MEET_BACK_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3230e1067ac9b709"
+  },
+  "COACH_MEET_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b4c171ada2d8ab86"
+  },
+  "COACH_MEET_HISTORY": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7c1b66be15208b16"
+  },
+  "COACH_MEET_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3cb5eaa37317c102"
+  },
+  "COACH_MEET_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2fbdf7f77c2191c8"
+  },
+  "COACH_MEET_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1466e6ebbe23ce22"
   },
   "COACH_RESPONSE_MAX": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "64efc128883d3fbc"
+  },
+  "COACH_SETTINGS_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ef7699cd3c2e2038"
+  },
+  "COACH_SETTINGS_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "6f31068c69af52c9"
+  },
+  "COACH_SETTINGS_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b31b510726373cbf"
   },
   "COACH_SEVERITIES": {
    "file": "00_config.js",
@@ -4261,7 +4384,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b5d4498aea7c83e4"
+   "sha": "5e8cc8f32dc0118a"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -5776,7 +5899,7 @@
   "PENDING_TASKS_KINDS": {
    "file": "00_config.js",
    "kind": "var",
-   "sha": "3bbd9f9b97b6e532"
+   "sha": "69524cc92453c118"
   },
   "PRESENCE_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -7728,6 +7851,11 @@
    "kind": "function",
    "sha": "20a682c5036f423a"
   },
+  "coachCadenceOf_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d5397a3f77db44d3"
+  },
   "coachCanManagerSee_": {
    "file": "82_coaching.js",
    "kind": "function",
@@ -7738,20 +7866,90 @@
    "kind": "function",
    "sha": "f89c579b0a9e2df8"
   },
+  "coachImageItem_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d5961d8b068a9c33"
+  },
+  "coachImageStoreCallerLocked_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a44d111a9e4967f1"
+  },
+  "coachIsoAddDays_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "064443face065192"
+  },
   "coachIsoDateOrBlank_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "aa8537fa6c64abd9"
+  },
+  "coachIsoDaysBetween_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "6c2a54d6646faae3"
   },
   "coachMedian_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "5e629d485c5e1bc9"
   },
+  "coachNormCadence_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "d312b554ae9b7765"
+  },
   "coachNudgeMailHtml_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "616d9c9897175bd6"
+  },
+  "coachOneOnOneDueSort_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "28145a8923914673"
+  },
+  "coachOneOnOneDueText_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "facbdbc5a4697e31"
+  },
+  "coachOneOnOneFor_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "b5c690b60d234e11"
+  },
+  "coachOneOnOneLogs_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "cfbe0a08864fbd36"
+  },
+  "coachOneOnOneStanding_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "1998bfc158c262d4"
+  },
+  "coachOneOnOneTask_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "8737975ef2791b1f"
+  },
+  "coachOneOnOneValidate_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "a45e462537e8e580"
+  },
+  "coachOneOnOnesDueByManager_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0389a188183e615f"
+  },
+  "coachOneOnOnesDueFor_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "687e303433884fbe"
   },
   "coachParseTs_": {
    "file": "82_coaching.js",
@@ -7771,17 +7969,27 @@
   "coachRowToObj_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "b03551031d26d71d"
+   "sha": "76b870e7f808c9c3"
   },
   "coachSendMail_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "a3b69ce96f21ffba"
   },
+  "coachSettingsRead_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "5e89167e1d860901"
+  },
   "coachStampDayMgr_": {
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "e6766865b7ec722b"
+  },
+  "coachTeamReps_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "44162a0a8980b795"
   },
   "coachUnackedAll_": {
    "file": "82_coaching.js",
@@ -7866,7 +8074,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "62a0211971f2fef7"
+   "sha": "9eb558b6f31f6c32"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -8791,7 +8999,12 @@
   "getCoachingDashboard": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "1d35be7f4c1edb29"
+   "sha": "6529d77b09470ea4"
+  },
+  "getCoachingImage": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "22757cf66b0bcc83"
   },
   "getCompanyHolidays_": {
    "file": "10_core.js",
@@ -9166,7 +9379,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a120a888e2658f32"
+   "sha": "fa575567132d4fcc"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -10416,7 +10629,7 @@
   "kbImageTabServe_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "b0ee1a6be0bb1d57"
+   "sha": "7e7c31acdd24dcc9"
   },
   "kbImagesStoreLocked_": {
    "file": "70_kb.js",
@@ -10903,6 +11116,11 @@
    "kind": "function",
    "sha": "775dbbdb14eeb531"
   },
+  "logOneOnOne": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0f7f7626e905d9ed"
+  },
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -10941,7 +11159,7 @@
   "managerBriefSections_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "596f55a3a7a2ae60"
+   "sha": "9ba2aecafa7106cc"
   },
   "managerBriefSuppressionActive_": {
    "file": "10_core.js",
@@ -12576,12 +12794,12 @@
   "sendManagerBriefEmail_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6bfb34f9b80479a0"
+   "sha": "a72aafe6b7402c0a"
   },
   "sendManagerDailyBrief": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "1996a99454348c23"
+   "sha": "358153ea2d20b8ee"
   },
   "sendManagerFlagDigest_": {
    "file": "30_callnotes.js",
@@ -12606,12 +12824,12 @@
   "sendTrainingOverdueDigest": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "cfdd68e7f27414ad"
+   "sha": "4146982c200ddf89"
   },
   "sendTrainingOverdueEmail_": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "fb86f4f5f51001aa"
+   "sha": "943e978d26cb6856"
   },
   "serveExternalForm_": {
    "file": "61_forms.js",
@@ -12662,6 +12880,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "7581016b92e0bf0e"
+  },
+  "setOneOnOneCadence": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "df3645df614ea38d"
   },
   "setScheduledCallStatus": {
    "file": "30_callnotes.js",
@@ -13362,6 +13585,11 @@
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "bad6bdbbd42d42e4"
+  },
+  "voidOneOnOne": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "3785814272ebec0b"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

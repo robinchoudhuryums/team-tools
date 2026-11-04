@@ -20750,8 +20750,8 @@ console.log('\ndesign handoff PR 4 — Coaching');
 
 test('PR4-1: server contract — 19 trailing-column headers ↔ CO indices, validate accepts the new fields, reply only on the open→acked transition, praise never counts as open, voided capped + reported', () => {
   const headers = arrayLiteral_(codeSrc, 'COACH_HEADERS');
-  assert.strictEqual(headers.join('|'), ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId'].join('|'),
-    'the five PR-4 columns are TRAILING (back-compat like CN_HEADERS — operator decision 2)');
+  assert.strictEqual(headers.join('|'), ['CoachId','EmpId','EmpName','PatientTRX','Severity','WhatHappened','WhatShould','NoteId','Status','CreatedBy','CreatedAt','AcknowledgedAt','AckBy','VoidReason','RepResponse','FollowUpAt','NudgedAt','NoteDate','QaFileId','ImageKey'].join('|'),
+    'the five PR-4 columns are TRAILING (back-compat like CN_HEADERS — operator decision 2), and Batch F\'s ImageKey after them');
   const coSrc = /const CO = \{([^}]*)\};/.exec(codeSrc)[1];
   const co = {}; [...coSrc.matchAll(/(\w+):\s*(\d+)/g)].forEach((m) => { co[m[1]] = +m[2]; });
   assert.strictEqual(Object.keys(co).length, headers.length, 'CO names every header');
@@ -28216,11 +28216,11 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
   assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
-    'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known sixteen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names)');
-  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
-    'submitCallNote'].sort(),
-    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation), and the activity summary (Batch G)');
+    'setOneOnOneCadence', 'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
+    'the raw plain-text writers are exactly the known seventeen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names; Batch F a manager\'s cadence stamp)');
+  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'logOneOnOne', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+    'setOneOnOneCadence', 'submitCallNote'].sort(),
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation), the activity summary (Batch G), and the 1-on-1 log and cadence (Batch F)');
   // Every caller chain of a CALLER_LOCKED helper reaches a lock holder: a
   // function that takes the ScriptLock BEFORE its call, or a helper whose own
   // callers are checked the same way. A chain with no caller at all is a bug.
@@ -29683,7 +29683,7 @@ test('FU-B6b: the daily brief names urgent-note rep Sheets it could not read, in
     CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-09-25' },
     assertManagerCaller_() {}, stampDigestLastRun_() {}, getFlag_: () => true, getManagerEmails_: () => ['m@x'],
     computeMissedClockOuts_: () => [], managerAggregateUrgent_: () => ({ results: [{ id: 'n1' }], skippedReps: ['Ann', 'Bo'] }),
-    trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+    trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], coachOneOnOnesDueByManager_: () => ({}), deptRequestsOverdueOpen_: () => [],
     stampAutomationError_: (k, m) => stamped.push(k + ':' + m), clearAutomationError_() {},
     empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: (d) => (d.urgent.length ? ['u'] : []),
     sendManagerBriefEmail_: (e, secs, d) => { sentD = d; } });
@@ -30501,7 +30501,7 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
   assert.ok(myOpen.indexOf('spanishPendingIdsGet_(') < myOpen.indexOf('spanishPendingCore_(') && /if \(!anyMine\) return/.test(myOpen),
     'the cached ids first; a live read only on a miss, and only for a rep who owns a claim');
   assert.ok(/unavailable\.push\('spanish'\)/.test(pt), 'a failed read is "couldn\'t check", never "nothing to do"');
-  assert.ok(/route: \{ tool: 'timeClock', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
+  assert.ok(/route: \{ tool: 'timeClock', tab: 'metricsSpanish' \}/.test(pt) && /PENDING_TASKS_KINDS = \[[^\]]*'spanish'/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
   const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
   assert.ok(/spanish: 'mail'/.test(clk) && /spanish: 'Spanish Inbox'/.test(clk), 'the Dashboard has its icon and label');
   const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
@@ -33206,7 +33206,7 @@ test('CORE-01 (cycle 23): the daily brief heartbeats only once it has DELIVERED 
     const ctx = c23AutoCtx_(log, { CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' }, Utilities: { formatDate: () => '2026-10-01' },
       getFlag_: () => opts.flag !== false, getManagerEmails_: opts.mgrs || (() => ['a@x', 'b@x']),
       computeMissedClockOuts_: () => [{ id: 1 }], managerAggregateUrgent_: () => ({ results: [], skippedReps: [] }),
-      trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+      trainOverdueForRoster_: () => [], empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], coachOneOnOnesDueByManager_: () => ({}), deptRequestsOverdueOpen_: () => [],
       empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true, managerBriefSections_: () => ['s'],
       sendManagerBriefEmail_: (e) => { if ((opts.failFor || []).indexOf(e) >= 0) throw new Error('quota'); log.mail.push(e); } });
     autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendManagerDailyBrief'), ctx);
@@ -33294,7 +33294,7 @@ test('HR-3 + MAIL-4 (cycle 23): the training digest still sends, SAYS which HR s
   const run = (opts) => {
     const log = c23Log_();
     const ctx = c23AutoCtx_(log, { getManagerEmails_: () => ['m@x'], trainTodayIso_: () => '2026-10-01', trainOverdueForRoster_: () => [],
-      empDocsOverdueAll_: opts.docs || (() => []), coachUnackedAll_: () => [], managerBriefSuppressionActive_: () => false,
+      empDocsOverdueAll_: opts.docs || (() => []), coachUnackedAll_: () => [], coachOneOnOnesDueByManager_: () => ({}), managerBriefSuppressionActive_: () => false,
       empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true,
       sendTrainingOverdueEmail_: (e, t, d, c, iso, unread) => { if (opts.mgrThrows) throw new Error('quota'); log.mail.push(Array.from(unread || [])); },
       sendEmployeeOverdueDocsEmail_: () => { if (opts.empThrows) throw new Error('bounce'); } });
@@ -38734,7 +38734,7 @@ test('G3 (cycle 25 E1): every manager digest logs its decision — sent, suppres
   // The brief is per manager: one sent, one failed, one with nothing.
   const b = mk({ getFlag_: () => true, getManagerEmails_: () => ['a@x', 'b@x', 'c@x'],
     computeMissedClockOuts_: () => [], managerAggregateUrgent_: () => ({ results: [], skippedReps: [] }), trainOverdueForRoster_: () => [],
-    empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], deptRequestsOverdueOpen_: () => [],
+    empDocsOverdueAll_: () => [], coachUnackedAll_: () => [], coachOneOnOnesDueByManager_: () => ({}), deptRequestsOverdueOpen_: () => [],
     empDocCanManagerSee_: () => true, coachCanManagerSee_: () => true,
     managerBriefSections_: (d) => (d.docs === undefined ? [] : []), sendManagerBriefEmail_: (e) => { if (e === 'b@x') throw new Error('quota'); } });
   b.managerBriefSections_ = function () { return b.__sections.shift(); };
@@ -42731,6 +42731,207 @@ test('Batch G: Day Edit reads a day\'s SUMMARY first (complete by construction),
   assert.strictEqual(r.keptFrom, '2026-10-26', 'kept from the oldest summary or raw day');
   sumRows = [];
   assert.strictEqual(gJ(c.managerGetDayActivity('E1', '2026-10-27')).keptFrom, '2026-10-27', 'no summaries: the raw tab\'s first day');
+});
+
+console.log('\nOperator round 2026-11-02 — Batch F (coaching 1-on-1s, cadence, screenshot)');
+
+const fCtx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, RegExp, console: { warn() {} } }, extra || {}));
+  ["const COACH_MEET_TAB = '[^']*';", 'const COACH_MEET_HEADERS = \\[[^\\]]*\\];', 'const CMT = \\{[^}]*\\};', 'const COACH_MEET_TEXT_IDX = \\[[^\\]]*\\];',
+    'const COACH_MEET_NOTE_MAX = \\d+;', 'const COACH_MEET_HISTORY = \\d+;', 'const COACH_MEET_BACK_DAYS = \\d+;', 'const COACH_CADENCE_MAX = \\d+;',
+    "const COACH_SETTINGS_TAB = '[^']*';", 'const COACH_SETTINGS_HEADERS = \\[[^\\]]*\\];', 'const COACH_SETTINGS_TEXT_IDX = \\[[^\\]]*\\];',
+    "const COACH_IMAGES_TAB = '[^']*';", 'const COACH_IMAGE_KEY_RE = /[^;]*;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['coachIsoDateOrBlank_', 'coachIsoAddDays_', 'coachIsoDaysBetween_', 'coachNormCadence_', 'coachOneOnOneValidate_', 'coachOneOnOneStanding_',
+    'coachTeamReps_', 'coachOneOnOneDueSort_', 'coachOneOnOneTask_', 'coachOneOnOneDueText_', 'coachCadenceOf_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const fJ = (x) => JSON.parse(JSON.stringify(x));
+
+test('Batch F: a rep\'s 1-on-1 standing — the latest real 1-on-1 + the cadence makes the next due date; a voided or future row never counts; none on record is DUE; cadence 0 is never due; the due list sorts never-first, then the most days late (driven)', () => {
+  const c = fCtx_();
+  assert.strictEqual(c.coachIsoAddDays_('2026-10-25', 14), '2026-11-08', 'calendar days, across a month');
+  assert.strictEqual(c.coachIsoAddDays_('11/04/2026', 1), '', 'a string that is not yyyy-MM-dd is no date (a shaped impossible date ROLLS, which is how validate refuses it)');
+  assert.strictEqual(c.coachIsoDaysBetween_('2026-11-01', '2026-11-04'), 3);
+  const reps = [{ empId: 'A', empName: 'Ann' }, { empId: 'B', empName: 'Bo' }, { empId: 'C', empName: 'Cy' }, { empId: 'D', empName: 'Di' }];
+  const logs = [
+    { empId: 'A', meetDate: '2026-10-01', status: 'ok' }, { empId: 'A', meetDate: '2026-10-20', status: 'ok' },
+    { empId: 'A', meetDate: '2026-11-02', status: 'void' },                      // voided: never counts
+    { empId: 'B', meetDate: '2026-10-28', status: 'ok' },
+    { empId: 'C', meetDate: '2026-11-20', status: 'ok' },                        // after today: not a 1-on-1 that happened
+    { empId: 'D', meetDate: '2026-10-21', status: '' }];                          // a blank status is a real row
+  const st = fJ(c.coachOneOnOneStanding_(reps, logs, 14, '2026-11-04'));
+  const by = {}; st.forEach((s) => { by[s.empId] = s; });
+  assert.deepStrictEqual([by.A.last, by.A.count, by.A.nextDue, by.A.due, by.A.daysOver], ['2026-10-20', 2, '2026-11-03', true, 1], 'Ann: the void is skipped — a day late');
+  assert.deepStrictEqual([by.B.nextDue, by.B.due, by.B.daysOver], ['2026-11-11', false, null], 'Bo: not due yet');
+  assert.deepStrictEqual([by.C.last, by.C.due, by.C.daysOver], ['', true, null], 'Cy: a future row does not count — none on record is DUE, with no days to count');
+  assert.deepStrictEqual([by.D.nextDue, by.D.due, by.D.daysOver], ['2026-11-04', true, 0], 'Di: due ON the day it falls due');
+  assert.ok(fJ(c.coachOneOnOneStanding_(reps, logs, 0, '2026-11-04')).every((s) => !s.due && s.nextDue === ''), 'cadence 0: reminders off — nobody is due');
+  assert.ok(fJ(c.coachOneOnOneStanding_(reps, logs, 'abc', '2026-11-04')).every((s) => !s.due), 'a cadence that is not one is off, never a guess');
+  const sorted = fJ(c.coachOneOnOneDueSort_(st.filter((s) => s.due))).map((s) => s.empId);
+  assert.deepStrictEqual(sorted, ['C', 'A', 'D'], 'none on record first, then the most days late');
+  [['14', 14], [0, 0], [90, 90], [91, null], [-1, null], [2.5, null], ['', null], [null, null], [true, null]].forEach(([v, want]) =>
+    assert.strictEqual(c.coachNormCadence_(v), want, 'cadence ' + JSON.stringify(v)));
+});
+
+test('Batch F: logging a 1-on-1 — a real date, not ahead of the manager\'s today and within a year; the note trimmed and capped; the team is the roster\'s column M, offboarded reps and the manager left out (driven)', () => {
+  const c = fCtx_({ EMP: { ID: 0, NAME: 1, MANAGER_EMAIL: 2 }, empRosterEmail_: (r) => r[3] });
+  const V = (d, n) => fJ(c.coachOneOnOneValidate_('E1', d, n, '2026-11-04'));
+  assert.deepStrictEqual(V('2026-11-04', '  covered goals  '), { ok: true, empId: 'E1', date: '2026-11-04', note: 'covered goals' });
+  assert.ok(!V('2026-11-05').ok && /not come yet/.test(V('2026-11-05').error), 'never ahead of today');
+  assert.ok(!V('2025-11-01').ok && /more than a year/.test(V('2025-11-01').error));
+  assert.ok(!V('2026-02-30').ok, 'a date that does not exist is refused, not rolled into March');
+  assert.ok(!V('').ok && !fJ(c.coachOneOnOneValidate_('', '2026-11-04', '', '2026-11-04')).ok);
+  assert.ok(!V('2026-11-04', 'x'.repeat(2001)).ok, 'the note is capped');
+  const roster = [['Id', 'Name', 'Mgr', 'Email'],
+    ['E2', 'Zed', 'boss@x', 'zed@x'], ['E1', 'Amy', 'BOSS@x ', 'amy@x'], ['E3', 'Off', 'boss@x', ''], ['E4', 'Other', 'other@x', 'o@x'], ['M1', 'Boss', 'boss@x', 'boss@x']];
+  assert.deepStrictEqual(fJ(c.coachTeamReps_('Boss@X', roster)), [{ empId: 'E1', empName: 'Amy' }, { empId: 'E2', empName: 'Zed' }],
+    'column M (any case), sorted; offboarded (no roster email), another manager\'s rep and the manager themself are out');
+  assert.deepStrictEqual(fJ(c.coachTeamReps_('', roster)), [], 'no caller email → no team, never everyone');
+  assert.strictEqual(c.coachCadenceOf_({ 'boss@x': { days: 7 } }, 'BOSS@x'), 7);
+});
+
+test('Batch F: the reminders — ONE Needs-you item per manager (a count, three names, "none on record"), overdue only once someone is PAST due; the brief, the standalone digest and Needs-you read ONE due rule; no reminder ever carries a 1-on-1\'s note (driven + source)', () => {
+  const c = fCtx_();
+  const due = [{ empId: 'A', empName: 'Ann', last: '2026-10-21', nextDue: '2026-11-04', due: true, daysOver: 0 },
+    { empId: 'B', empName: 'Bo', last: '', nextDue: '', due: true, daysOver: null },
+    { empId: 'C', empName: 'Cy', last: '2026-10-01', nextDue: '2026-10-15', due: true, daysOver: 20 },
+    { empId: 'D', empName: 'Di', last: '', nextDue: '', due: true, daysOver: null }];
+  const t = fJ(c.coachOneOnOneTask_(due));
+  assert.strictEqual(t.title, '4 1-on-1s due');
+  assert.strictEqual(t.detail, 'Bo, Di, Cy +1 more · 2 with none on record', 'never-first order, then the most days late');
+  assert.ok(t.overdue === true && t.kind === 'oneOnOne' && t.route.tool === 'develop' && t.route.tab === 'coaching');
+  assert.strictEqual(fJ(c.coachOneOnOneTask_([due[0], due[1]])).overdue, false, 'due today and never-logged are DUE, not overdue — nobody is past a date');
+  assert.strictEqual(fJ(c.coachOneOnOneTask_([due[0]])).title, '1 1-on-1 due');
+  assert.strictEqual(c.coachOneOnOneDueText_(due[2]), 'last 2026-10-01 · due 2026-10-15');
+  assert.strictEqual(c.coachOneOnOneDueText_(due[1]), 'none on record');
+  // Wiring: every reader goes through the ONE standing rule; Needs-you is a manager's own team.
+  const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
+  assert.ok(/if \(emp\.isManager\) \{\s*try \{[\s\S]*?coachOneOnOnesDueFor_\(emp\.email, ooToday\)[\s\S]*?coachOneOnOneTask_\(ooDue\)[\s\S]*?\} catch \(e\) \{ \(hrOk \? unavailable : notConfigured\)\.push\('oneOnOne'\); \}/.test(pt),
+    'a manager-only item; an unset HR store is notConfigured, a failed read unavailable');
+  ['coachOneOnOnesDueFor_', 'coachOneOnOnesDueByManager_', 'coachOneOnOneFor_'].forEach((f) =>
+    assert.ok(/coachOneOnOneStanding_\(/.test(extractRawFunction('Code.js', f)), f + ' reads the one standing rule'));
+  const brief = stripJsComments_(extractRawFunction('Code.js', 'sendManagerDailyBrief'));
+  assert.ok(/src\('1-on-1s due', function \(\) \{ return coachOneOnOnesDueByManager_\(todayIso\); \}\)/.test(brief) &&
+    /oneOnOnes: oneOnOnes\[String\(email \|\| ''\)\.toLowerCase\(\)\.trim\(\)\] \|\| \[\]/.test(brief), 'the brief: a failed read is a named source; each manager gets their OWN team');
+  const dig = stripJsComments_(extractRawFunction('Code.js', 'sendTrainingOverdueDigest'));
+  assert.ok(/hrRead\('1-on-1s due'/.test(dig) && /scopedOneOnOnes\.length/.test(dig), 'the standalone digest the brief suppresses carries the same line, and counts it toward "silent only on an all-clear"');
+  // The emails — names and dates only. Driven with a note that must never appear.
+  const sent = [];
+  const ctx = vm.createContext({ String, CN_EMAIL_PALETTE: { muted: '#1', warnDeep: '#2', ink: '#3' }, COACH_SEV_LABELS: {}, esc_: (x) => String(x).replace(/</g, '&lt;'),
+    buildBrandedEmailHtml_: (h, body) => body, safeWebAppUrl_: () => '', appSendMail_: (m) => sent.push(m), coachOneOnOneDueText_: c.coachOneOnOneDueText_ });
+  vm.runInContext(extractRawFunction('Code.js', 'sendTrainingOverdueEmail_'), ctx);
+  const withNote = due.map((d) => Object.assign({ note: 'SECRET NOTE' }, d));
+  ctx.sendTrainingOverdueEmail_('m@x', [], [], [], '2026-11-04', [], [{ empName: '<Ann>', last: '2026-10-21', nextDue: '2026-11-04', note: 'SECRET NOTE' }].concat(withNote.slice(1)));
+  assert.ok(/1-on-1s due \(4\)/.test(sent[0].htmlBody) && /&lt;Ann>/.test(sent[0].htmlBody) && /none on record/.test(sent[0].body));
+  assert.ok(!/SECRET NOTE/.test(sent[0].htmlBody + sent[0].body), 'a 1-on-1\'s note never reaches an inbox');
+  const be = extractRawFunction('Code.js', 'sendManagerBriefEmail_');
+  assert.ok(/s\.key === 'oneOnOnes'/.test(be) && !/\.note\b/.test(/s\.key === 'oneOnOnes'[\s\S]*?\} else if/.exec(be)[0]), 'the brief\'s rows carry no note');
+  assert.ok(/\{ key: 'oneOnOnes',\s+label: '1-on-1s due' \}/.test(extractRawFunction('Code.js', 'managerBriefSections_')));
+});
+
+test('Batch F: the endpoints — a 1-on-1 is logged only by the rep\'s own roster manager, as plain text under the lock, and busts their Needs-you; void keeps the row and re-checks its id under the lock; the cadence row is rewritten in place (driven)', () => {
+  const mk = (opts) => {
+    const log = { appended: [], set: [], audit: [], bust: [], locked: 0 };
+    const meet = (opts.meet || []).map((r) => r.slice());
+    const settings = (opts.settings || []).map((r) => r.slice());
+    const sheetOf = (rows) => ({ getLastRow: () => rows.length + 1,
+      getRange: (r, col, n, w) => ({ getValues: () => rows.slice(r - 2, r - 2 + (n || 1)).map((x) => x.slice(col - 1, col - 1 + (w || 1))),
+        getValue: () => rows[r - 2][col - 1], setValue: (v) => { log.set.push([r, col, v]); return { }; },
+        setNumberFormat: () => ({ setValue: (v) => log.set.push([r, col, v]) }) }) });
+    const c = fCtx_({ CONFIG: { TIMEZONE: 'UTC', MANAGER_TIMEZONE: 'UTC', COACHING_ONE_ON_ONE_DAYS: 14 },
+      Utilities: { formatDate: () => '2026-11-04', getUuid: () => 'uuid-1' },
+      getEmployeeInfo_: () => opts.caller, lookupEmployeeById_: (id) => (opts.reps || {})[id] || null,
+      LockService: { getScriptLock: () => ({ waitLock() { log.locked++; }, releaseLock() {} }) },
+      getHrDocsSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC', getSheetByName: (t) => (t === 'OneOnOnes' ? sheetOf(meet) : t === 'CoachingSettings' ? sheetOf(settings) : null) }),
+      getOrCreateEmpDocSheet_: (t) => (t === 'OneOnOnes' ? sheetOf(meet) : sheetOf(settings)),
+      appendRowsTextSafe_: (sh, rows, idx) => log.appended.push({ rows, idx }),
+      writeAuditLog_: (e, a, d1, d2, b, n, notes) => log.audit.push(a + ':' + notes), pendingTasksBust_: (id) => log.bust.push(id),
+      fmtDate_: () => '2026-11-04', fmtTime_: () => '10:00:00', trainCellDate_: (v) => String(v || '').slice(0, 10),
+      sheetSafe_: (v) => v, sheetText_: (v) => v });
+    ['coachOneOnOneLogs_', 'coachSettingsRead_', 'logOneOnOne', 'voidOneOnOne', 'setOneOnOneCadence'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+    return { c, log, meet };
+  };
+  const mgr = { id: 'M1', email: 'Boss@x', isManager: true };
+  const reps = { E1: { id: 'E1', name: 'Amy', managerEmail: 'boss@x' }, E2: { id: 'E2', name: 'Zed', managerEmail: 'other@x' } };
+  let t = mk({ caller: { id: 'R', email: 'r@x', isManager: false }, reps });
+  assert.ok(/Manager access required/.test(t.c.logOneOnOne('E1', '2026-11-04', '').error) && t.log.locked === 0, 'the gate is first, before the lock');
+  t = mk({ caller: mgr, reps });
+  assert.ok(/own manager/.test(t.c.logOneOnOne('E2', '2026-11-04', '').error) && !t.log.appended.length && t.log.locked === 0, 'another manager\'s rep: refused before the lock');
+  assert.ok(/not come yet/.test(t.c.logOneOnOne('E1', '2026-11-05', '').error));
+  const ok = fJ(t.c.logOneOnOne('E1', '2026-11-03', ' goals '));
+  assert.deepStrictEqual(ok, { success: true, id: 'uuid-1', date: '2026-11-03' });
+  assert.deepStrictEqual(fJ(t.log.appended[0].rows[0]), ['uuid-1', 'E1', 'Amy', '2026-11-03', 'boss@x', 'goals', '2026-11-04 10:00:00', 'ok']);
+  assert.deepStrictEqual(fJ(t.log.appended[0].idx), [2, 3, 5, 6], 'the name, date, note and stamp are plain text (g144)');
+  assert.ok(t.log.bust.indexOf('M1') >= 0 && /^CoachingOneOnOne:id=uuid-1; empId=E1$/.test(t.log.audit[0]), 'the audit row carries ids only — never the date or the note');
+  // Void: the logger or the rep's roster manager; idempotent; the id re-read under the lock.
+  t = mk({ caller: mgr, reps, meet: [['x1', 'E1', 'Amy', '2026-10-01', 'boss@x', '', '', 'ok'], ['x2', 'E2', 'Zed', '2026-10-01', 'other@x', '', '', 'ok'], ['x3', 'E1', 'Amy', '2026-10-02', 'boss@x', '', '', 'void']] });
+  assert.ok(fJ(t.c.voidOneOnOne('x1')).success && t.log.set.some((s) => s[0] === 2 && s[1] === 8 && s[2] === 'void'), 'the row is kept, its Status void');
+  assert.ok(/not found/.test(t.c.voidOneOnOne('x2').error), 'not the logger and not the rep\'s manager');
+  assert.strictEqual(fJ(t.c.voidOneOnOne('x3')).alreadyVoid, true);
+  // Cadence: an existing row is rewritten in place, a new manager appended.
+  t = mk({ caller: mgr, reps, settings: [['boss@x', 14, '2026-10-01 09:00:00']] });
+  assert.deepStrictEqual(fJ(t.c.setOneOnOneCadence(21)), { success: true, cadenceDays: 21 });
+  assert.ok(!t.log.appended.length && t.log.set.some((s) => s[0] === 2 && s[1] === 2 && s[2] === 21), 'rewritten in place');
+  assert.ok(/whole number/.test(t.c.setOneOnOneCadence(91).error) && /whole number/.test(t.c.setOneOnOneCadence('x').error));
+  t = mk({ caller: mgr, reps, settings: [] });
+  t.c.setOneOnOneCadence(0);
+  assert.deepStrictEqual(fJ(t.log.appended[0].rows[0]), ['boss@x', 0, '2026-11-04 10:00:00'], '0 is a real setting — reminders off');
+});
+
+test('Batch F: the screenshot — stored BEFORE the coaching row and only then named on it; a bad or unstorable image logs nothing; read back only by the rep (not voided) or a manager who can see the item, never cached, and "not stored" is not "could not read" (driven)', () => {
+  const run = (opts) => {
+    const log = { appended: [], stored: [], cacheTouched: false };
+    const c = fCtx_({ CONFIG: { TIMEZONE: 'UTC' }, KB_IMG_UPLOAD_MAX_CHARS: 4194304, KB_IMG_UPLOAD_TYPES: ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
+      KB_IMAGE_MAX_BYTES: 1572864, KB_MANUAL_IMAGES_HEADERS: ['Key', 'Sha', 'Type', 'Kind', 'Part', 'Data', 'ImportedAt'], KBMG: { KEY: 0, SHA: 1, TYPE: 2, KIND: 3, PART: 4, DATA: 5 },
+      COACH_TAB: 'Coaching', COACH_HEADERS: [], COACH_TEXT_IDX: [3], COACH_SEV_LABELS: {},
+      getEmployeeInfo_: () => opts.caller, lookupEmployeeById_: () => ({ id: 'E1', name: 'Amy' }),
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      coachValidate_: () => ({ ok: true, item: { empId: 'E1', severity: 'minor', whatHappened: 'w', whatShould: '', patientTRX: '', noteId: '', followUpAt: '', noteDate: '', qaFileId: '' } }),
+      coachImageStoreCallerLocked_: (it) => { if (opts.storeThrows) throw new Error('header changed'); log.stored.push(it.key); log.order = (log.order || '') + 'img;'; },
+      kbParseImageDataUrl_: (u) => { const m = /^data:([^;]+);base64,(.*)$/.exec(u); return m ? { contentType: m[1], base64: m[2] } : null; },
+      kbSha256Hex_: () => 'ab'.repeat(32),
+      getOrCreateEmpDocSheet_: () => ({}), appendRowsTextSafe_: (sh, rows) => { log.appended.push(rows[0]); log.order = (log.order || '') + 'row;'; },
+      Utilities: { getUuid: () => 'cid' }, fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, pendingTasksBust_: () => {},
+      findCoachingRow_: () => (opts.item ? { rowIdx: 2, item: opts.item } : null), coachCanManagerSee_: (e, it) => !!opts.mgrSees,
+      getHrDocsSS_: () => ({ getSheetByName: () => (opts.noTab ? null : { getLastRow: () => 1 }) }),
+      kbImageTabServe_: (sh, keys, spec) => { log.spec = spec; return opts.serve || { images: {}, missing: keys, failed: [] }; },
+      CacheService: { getScriptCache: () => { log.cacheTouched = true; return {}; } } });
+    ['kbImageItem_', 'coachImageItem_', 'createCoaching', 'getCoachingImage'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+    return { c, log };
+  };
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  let r = run({ caller: { id: 'M1', email: 'm@x', isManager: true } });
+  assert.ok(fJ(r.c.createCoaching({ image: png })).success);
+  assert.strictEqual(r.log.order, 'img;row;', 'the image is stored BEFORE the row that names it');
+  assert.strictEqual(r.log.appended[0][19], 'coachimg-' + 'ab'.repeat(12), 'the row\'s ImageKey is the content key');
+  r = run({ caller: { id: 'M1', email: 'm@x', isManager: true } });
+  r.c.createCoaching({});
+  assert.strictEqual(r.log.appended[0][19], '', 'no screenshot → a blank ImageKey');
+  r = run({ caller: { id: 'M1', email: 'm@x', isManager: true } });
+  assert.ok(/PNG, JPEG, GIF or WebP/.test(r.c.createCoaching({ image: 'data:text/html;base64,PGI+' }).error) && !r.log.appended.length, 'a non-image logs nothing');
+  r = run({ caller: { id: 'M1', email: 'm@x', isManager: true }, storeThrows: true });
+  assert.ok(/header changed/.test(r.c.createCoaching({ image: png }).error) && !r.log.appended.length, 'an image that cannot be stored logs NOTHING — never a row pointing at missing bytes');
+  // The reader's gate.
+  const item = { coachId: 'c1', empId: 'E1', status: 'open', imageKey: 'coachimg-' + 'ab'.repeat(12) };
+  r = run({ caller: { id: 'E1', email: 'e1@x' }, item, serve: { images: { [item.imageKey]: 'data:image/png;base64,AAAA' }, missing: [], failed: [] } });
+  assert.deepStrictEqual(fJ(r.c.getCoachingImage('c1')), { success: true, dataUrl: 'data:image/png;base64,AAAA' }, 'the rep reads their own');
+  assert.ok(r.log.spec.noCache === true && r.log.spec.keyRe.test(item.imageKey) && r.log.spec.batch === 1, 'never cached; one key, of the coaching shape');
+  r = run({ caller: { id: 'E1', email: 'e1@x' }, item: Object.assign({}, item, { status: 'void' }) });
+  assert.ok(/not found/.test(r.c.getCoachingImage('c1').error), 'a voided item is hidden from the rep — and so is its screenshot');
+  r = run({ caller: { id: 'E9', email: 'e9@x', isManager: true }, item, mgrSees: false });
+  assert.ok(/not found/.test(r.c.getCoachingImage('c1').error), 'a manager the item\'s rule does not admit');
+  r = run({ caller: { id: 'M1', email: 'm@x', isManager: true }, item, mgrSees: true, serve: { images: {}, missing: [], failed: [item.imageKey], headerChanged: true } });
+  assert.ok(/could not be read/.test(r.c.getCoachingImage('c1').error), '"could not read" (g128)');
+  r = run({ caller: { id: 'M1', email: 'm@x', isManager: true }, item, mgrSees: true });
+  assert.ok(/not stored/.test(r.c.getCoachingImage('c1').error), '"not stored" is its own answer');
+  r = run({ caller: { id: 'E1', email: 'e1@x' }, item: Object.assign({}, item, { imageKey: '' }) });
+  assert.ok(/no screenshot/.test(r.c.getCoachingImage('c1').error));
+  // The shared reader honours noCache: no cache read, no cache write.
+  const serve = stripJsComments_(extractRawFunction('Code.js', 'kbImageTabServe_'));
+  assert.ok(/if \(!spec\.noCache\) \{\s*try \{ hit = cache\.getAll/.test(serve) && /if \(!spec\.noCache && url\.length <= 95000\)/.test(serve), 'spec.noCache skips both the read and the put');
+  assert.ok(/imageKey: COACH_IMAGE_KEY_RE\.test\(/.test(extractRawFunction('Code.js', 'coachRowToObj_')), 'a cell that is not a coaching image key reads as none');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

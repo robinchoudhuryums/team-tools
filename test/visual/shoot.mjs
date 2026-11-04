@@ -291,6 +291,10 @@ const SCENARIOS = [
   ['coaching-light-mobile',      { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', ''],
   ['coaching-mine-light-mobile', { tool: 'develop', tab: 'coaching' }, MOBILE, 'light', '?role=rep'],
   ['coaching-error-light-wide',  { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '?failrpc=getCoachingDashboard'],
+  // Batch F (operator 2026-11-02): the 1-on-1 log dialog (wide and phone) and a coaching item's screenshot.
+  ['coaching-1on1-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenOneOnOne_('E-1042')"],
+  ['coaching-1on1-dark-mobile',  { tool: 'develop', tab: 'coaching' }, MOBILE, 'dark', '', "coachOpenOneOnOne_('E-1042')"],
+  ['coaching-shot-light-wide',   { tool: 'develop', tab: 'coaching' }, WIDE, 'light', '', "coachOpenImage_('c1')"],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],

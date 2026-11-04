@@ -4844,8 +4844,12 @@ function kbImageTabServe_(sheet, keys, spec) {
   const ledger = kbImageTabLedger_(sheet, spec.headers, spec.keyRe);
   const cache = CacheService.getScriptCache();
   let hit = {};
-  try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return spec.cachePrefix + ledger[k].sha; })) || {}; }
-  catch (e) { hit = {}; }
+  // Batch F: spec.noCache — an HR screenshot (CoachingImages) is never put in
+  // the shared ScriptCache, whose entries outlive the gate that admitted them.
+  if (!spec.noCache) {
+    try { hit = cache.getAll(want.filter(function (k) { return ledger[k]; }).map(function (k) { return spec.cachePrefix + ledger[k].sha; })) || {}; }
+    catch (e) { hit = {}; }
+  }
   const need = [];
   want.forEach(function (k) {
     const led = ledger[k];
@@ -4870,7 +4874,7 @@ function kbImageTabServe_(sheet, keys, spec) {
     }
     const url = 'data:' + type + ';base64,' + b64;
     res.images[k] = url;
-    if (url.length <= 95000) put[spec.cachePrefix + led.sha] = url;   // one cache value holds 100 KB
+    if (!spec.noCache && url.length <= 95000) put[spec.cachePrefix + led.sha] = url;   // one cache value holds 100 KB
   });
   if (Object.keys(put).length) { try { cache.putAll(put, 21600); } catch (e) {} }
   return res;

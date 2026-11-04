@@ -9331,6 +9331,18 @@ function getMyPendingTasks() {
       });
     } catch (e) { (hrOk ? unavailable : notConfigured).push('coaching'); }
 
+    // oneOnOne — Batch F (operator 2026-11-02): a MANAGER gets ONE item while
+    // any rep on their team (roster column M) is due a 1-on-1 by their own
+    // cadence; a rep with none on record is due. HR-backed, so an unset store
+    // is notConfigured, a failed read unavailable (never "nobody due").
+    if (emp.isManager) {
+      try {
+        var ooToday = Utilities.formatDate(new Date(), CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE, 'yyyy-MM-dd');
+        var ooDue = coachOneOnOnesDueFor_(emp.email, ooToday);
+        if (ooDue.length) items.push(coachOneOnOneTask_(ooDue));
+      } catch (e) { (hrOk ? unavailable : notConfigured).push('oneOnOne'); }
+    }
+
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
     // "couldn't check", never "0 missing" (F5 / INV-187).

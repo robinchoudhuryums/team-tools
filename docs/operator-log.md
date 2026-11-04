@@ -10,6 +10,25 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch F (Coaching: 1-on-1s, cadence, screenshots)
+
+**No new operator state** (three HR-store tabs create themselves — `OneOnOnes`,
+`CoachingSettings`, `CoachingImages`). Deploy: Team Tools `clasp push -f` + New
+version.
+
+- Coaching → Team → **Who needs a 1-on-1** now shows each rep's **last 1-on-1**
+  and **next 1-on-1**, and a **Log** button to record one (date + optional note).
+- Each manager sets how often 1-on-1s fall due from the button above the board
+  (default every 14 days; 0 turns the reminders off).
+- A manager with reps due gets **one Needs-you item**, and the daily brief (or,
+  while the brief is off, the overdue digest) lists them. Notes are never emailed.
+- **Expect, on the first day:** every rep with no 1-on-1 on record is due, so
+  the reminder lists the whole team until a 1-on-1 is logged for each.
+- Logging coaching takes an optional **screenshot** (Add screenshot, or paste);
+  the item shows a Screenshot chip to the rep and their managers.
+- The team is roster column M (ManagerEmail): a rep with it blank is on nobody's
+  board.
+
 ## 2026-11-02 — Operator round, Batch G (activity log: condense, then delete)
 
 **No new operator state** (the `ActivitySummary` tab creates itself). Deploy:

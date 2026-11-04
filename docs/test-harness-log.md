@@ -3481,6 +3481,37 @@ per-change detail. By delta:
   `deptreq-fold-dark-mobile`. The first shot stretched the fold's neighbours to
   its height; a list with a fold now aligns its cards to the top.
 
+## Operator round 2026-11-02, Batch F — coaching 1-on-1s, cadence and screenshot (2026-11-04)
+
+- **Pure** — five pins: the standing rule driven (a void or future row never
+  counts, none on record is due, cadence 0 is off, due on the day, never-first
+  ordering); logging's validation and the team (column M, offboarded and the
+  manager out); the reminders (one Needs-you item, overdue only past a real
+  date, the brief and the standalone digest on the one rule, no note in any
+  email — driven with a note that must not appear); the endpoints over a fake
+  sheet (the gate before the lock, another manager's rep refused, plain-text
+  columns, id-only audit, void in place and idempotent, the cadence row
+  rewritten in place); the screenshot (stored before the row, a bad or
+  unstorable image logs nothing, the reader's gate, `noCache`, "not stored"
+  apart from "could not read").
+
+  Moved: PR4-1 (the trailing ImageKey), PR4-6 (the fixture carries it), PR6-1
+  and C-8 (the declared `oneOnOne` kind), S2 (the 1-on-1 appender and the
+  cadence stamp), F9 (three gate rows in `test_managerGates_rejectNonManager`),
+  X1 (four fixtures), and the CORE-01 / HR-3 / G3 sandboxes gained the 1-on-1
+  reader. The `COACH_MEET_*` names carry no digit because S2's `_TEXT_IDX`
+  match is `[A-Z_]+`.
+- **DOM** — three drives: the board's columns (late, never, off-team, the
+  named Log button, a failed read named and no columns drawn); the log dialog
+  (today and never ahead, escaped history, the call's arguments, the close
+  without the discard ask, Void asks, the cadence validator); the screenshot
+  (the fitter, Log waiting, Remove, a non-image refused, the chip fetching
+  only when opened, a failed read said).
+- **Visual** — `coaching-1on1-light-wide`, `coaching-1on1-dark-mobile`,
+  `coaching-shot-light-wide`; the existing coaching scenarios now carry the two
+  columns (a phone keeps Employee, Signal and Next 1-on-1). All twelve measure
+  clean.
+
 ## Operator round 2026-11-02, Batch G — the activity log condenses (2026-11-02)
 
 - **Pure** — three pins: the condense and purge rules driven (the block map's

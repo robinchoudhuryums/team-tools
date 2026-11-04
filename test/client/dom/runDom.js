@@ -5782,6 +5782,125 @@ test('Batch D DOM: open requests for one TRX to one department are ONE card — 
   assert.ok(c && /marked in app/.test(c.textContent), 'the folded card flipped to resolved in place');
 });
 
+const fDash_ = (oneOnOne, items) => ({ items: items || [], voided: [], voidedTotal: 0, counts: { open: 0, acknowledged: 0, overdueUnacked: 0, praise: 0 },
+  reminderDays: 7, businessDayMinutes: 540, todayIso: '2026-11-04', analytics: { total: 0, perRep: [], bySeverity: {} }, oneOnOne });
+const fBootCoach_ = (oneOnOne, items, more) => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getCoachingDashboard', () => fDash_(oneOnOne, items));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'E1', name: 'Ann Lee' }, { id: 'E2', name: 'Bo <Ray>' }, { id: 'E3', name: 'Cy Diaz' }] }));
+  Object.keys(more || {}).forEach((k) => h.run.respond(k, more[k]));
+  h.window.localStorage.setItem('umsCoachingMode', 'team');
+  h.window.enterTool('develop', 'coaching');
+  h.flushTimers();
+  return h;
+};
+const fOO_ = { cadenceDays: 14, cadenceSet: true, defaultDays: 14, maxDays: 90, todayIso: '2026-11-04',
+  reps: [{ empId: 'E1', empName: 'Ann Lee', last: '2026-10-15', count: 2, nextDue: '2026-10-29', due: true, daysOver: 6 },
+    { empId: 'E2', empName: 'Bo <Ray>', last: '', count: 0, nextDue: '', due: true, daysOver: null }],
+  history: { E1: [{ id: 'oo-1', date: '2026-10-15', byName: 'Robin', note: 'Talked <holds>', mine: true }] } };
+
+test('Batch F DOM: the board shows each rep\'s last and next 1-on-1 — late in red, none on record as "due now", a rep off the team as a dash with no Log; the head names the cadence and the count; a failed log read is said, and the columns are not drawn', () => {
+  const h = fBootCoach_(fOO_);
+  const board = h.$('.coach-board');
+  assert.ok(board && board.classList.contains('has-1on1'), 'the 1-on-1 columns are on');
+  const heads = Array.from(board.querySelectorAll('th')).map((th) => th.textContent.trim());
+  assert.ok(heads.some((x) => /Last 1-on-1/.test(x)) && heads.some((x) => /Next 1-on-1/.test(x)), heads.join('|'));
+  const row = (name) => Array.from(board.querySelectorAll('tbody tr')).find((tr) => tr.textContent.indexOf(name) >= 0);
+  const ann = row('Ann Lee'), bo = row('Bo <Ray>'), cy = row('Cy Diaz');
+  assert.ok(/15 Oct/.test(ann.textContent) && ann.querySelector('.kicker-pill[data-tone="destructive"]') && /6d late/.test(ann.textContent), 'Ann: last 15 Oct, six days late, in red');
+  assert.ok(/none on record/.test(bo.textContent) && bo.querySelector('.kicker-pill[data-tone="warn"]') && /due now/.test(bo.textContent), 'Bo: none on record is due now');
+  assert.ok(!cy.querySelector('[data-coach-1on1]') && /—/.test(cy.textContent), 'Cy is not on this manager\'s team: a dash, no Log');
+  assert.strictEqual(ann.querySelector('[data-coach-1on1]').getAttribute('aria-label'), 'Log a 1-on-1 with Ann Lee', 'a named button (g133: the id rides a data attribute)');
+  assert.ok(/1-on-1s every 14 days/.test(h.$('.coach-1on1-head').textContent) && /2 due/.test(h.$('.coach-1on1-head').textContent));
+  const h2 = fBootCoach_({ error: 'Could not read the 1-on-1 log: timed out' });
+  assert.ok(/Could not read the 1-on-1 log: timed out/.test(h2.$('.coach-1on1-head').textContent), 'a failed read is named, never an empty team (g53)');
+  assert.ok(!h2.$('.coach-board').classList.contains('has-1on1') && !h2.$('[data-coach-1on1]'), 'and no 1-on-1 column pretends to know');
+});
+
+test('Batch F DOM: Log opens a named dialog for that rep — today by default and never ahead, their recent 1-on-1s escaped; Log sends (empId, date, note) and closes; Void asks first; the cadence prompt refuses a bad number and saves a good one', async () => {
+  const calls = [];
+  const h = fBootCoach_(fOO_, [], {
+    logOneOnOne: (id, d, n) => { calls.push(['log', id, d, n]); return { success: true, id: 'oo-9', date: d }; },
+    voidOneOnOne: (id) => { calls.push(['void', id]); return { success: true }; },
+    setOneOnOneCadence: (d) => { calls.push(['cad', d]); return { success: true, cadenceDays: d }; } });
+  h.click('[data-coach-1on1="E1"]');
+  const ov = h.$('#coach-1on1-overlay');
+  assert.ok(ov && ov.classList.contains('open') && ov.getAttribute('aria-labelledby') === 'coach-1on1-title', 'a named dialog');
+  assert.ok(/1-on-1 · Ann Lee/.test(h.$('#coach-1on1-title').textContent));
+  const date = h.$('#coach-1on1-date');
+  assert.deepStrictEqual([date.value, date.getAttribute('max')], ['2026-11-04', '2026-11-04'], 'today, and the picker stops at today');
+  assert.ok(/Talked <holds>/.test(ov.querySelector('.coach-1on1-note').textContent) && !ov.querySelector('holds'), 'the old note is text, never markup');
+  h.$('#coach-1on1-note').value = 'goals for Q4';
+  date.value = '2026-11-03';
+  h.click('#coach-1on1-go');
+  await tick(); h.flushTimers();
+  assert.deepStrictEqual(calls[0], ['log', 'E1', '2026-11-03', 'goals for Q4']);
+  assert.ok(!h.$('#coach-1on1-overlay').classList.contains('open'), 'a saved 1-on-1 closes its dialog without the discard ask');
+  // Void asks first.
+  let asked = null;
+  h.window.uiConfirm = (o) => { asked = o; return Promise.resolve(true); };
+  h.click('[data-coach-1on1="E1"]');
+  h.click('[data-coach-1on1-void="oo-1"]');
+  await tick(); await tick(); h.flushTimers();
+  assert.ok(asked && /Void this 1-on-1/.test(asked.title) && calls.some((c) => c[0] === 'void' && c[1] === 'oo-1'), 'confirmed, then voided');
+  // Cadence: the prompt's validator refuses 91 and "x", the saved value is a number.
+  let prompt = null;
+  h.window.uiPrompt = (o) => { prompt = o; return Promise.resolve('21'); };
+  h.click('[data-coach-cadence]');
+  await tick(); await tick();
+  assert.ok(prompt.validator('91') && prompt.validator('x') && !prompt.validator('0') && !prompt.validator('90'), 'whole days 0..90');
+  assert.deepStrictEqual(calls.filter((c) => c[0] === 'cad'), [['cad', 21]], 'sent as a number');
+});
+
+test('Batch F DOM: the screenshot — chosen or pasted into the drawer, it goes through the shared fitter and rides createCoaching as `image`; Log waits while it is prepared; Remove drops it; a card with one opens it on demand, and a failed read is said, not a blank frame', async () => {
+  const sent = [];
+  const item = { coachId: 'c1', empId: 'E1', empName: 'Ann Lee', severity: 'minor', status: 'open', whatHappened: 'w', whatShould: '', patientTRX: '',
+    createdAt: '2026-11-01 10:00:00', imageKey: 'coachimg-0123456789abcdef01234567', ageDays: 1, overdueUnacked: false };
+  let imgAnswer = { success: true, dataUrl: 'data:image/png;base64,AAAA' };
+  const imgAsked = [];
+  const h = fBootCoach_(fOO_, [item], {
+    createCoaching: (p) => { sent.push(p); return { success: true, coachId: 'c9' }; },
+    getCoachingImage: (id) => { imgAsked.push(id); return imgAnswer; } });
+  h.click('#coach-open-drawer');
+  assert.ok(h.$('[data-coach-img-pick]'), 'the drawer offers a screenshot');
+  h.read('kbImgPrepare_ = function (u, cb) { window.__fitCb = function () { cb(null, "data:image/jpeg;base64,FITTED"); }; }');
+  h.window.coachImgFile_(new h.window.Blob(['raw'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.window.__fitCb; i++) await tick();
+  assert.ok(/Preparing the screenshot/.test(h.$('#coach-img-slot').textContent), 'busy while it is fitted');
+  h.$('#coach-emp').value = 'E1'; h.$('#coach-what').value = 'what happened';
+  h.click('#coach-go');
+  assert.strictEqual(sent.length, 0, 'Log waits for the screenshot');
+  h.window.__fitCb();
+  assert.ok(h.$('.coach-img-thumb') && /FITTED/.test(h.$('.coach-img-thumb').getAttribute('src')), 'the FITTED image is shown');
+  h.click('#coach-go');
+  await tick(); h.flushTimers();
+  assert.strictEqual(sent[0].image, 'data:image/jpeg;base64,FITTED', 'the fitted image rides the create call');
+  // Remove drops it.
+  h.click('#coach-open-drawer');
+  h.window.coachImgFile_(new h.window.Blob(['raw'], { type: 'image/png' }));
+  for (let i = 0; i < 20 && !h.$('.coach-img-thumb'); i++) { await tick(); if (h.window.__fitCb) h.window.__fitCb(); }
+  h.click('[data-coach-img-clear]');
+  assert.ok(!h.$('.coach-img-thumb') && h.$('[data-coach-img-pick]'));
+  h.window.coachImgFile_(new h.window.Blob(['x'], { type: 'application/pdf' }));
+  assert.ok(/PNG, JPEG, GIF or WebP/.test(h.document.body.textContent), 'a non-image is refused with a reason');
+  h.read('coachCloseDrawer_')();
+  // A card with a screenshot opens it on demand.
+  assert.deepStrictEqual(imgAsked, [], 'nothing is fetched until a screenshot is opened');
+  const chip = h.$('[data-coach-img="c1"]');
+  assert.ok(chip && /Screenshot/.test(chip.textContent), 'the card carries the chip');
+  h.click('[data-coach-img="c1"]');
+  await tick(); h.flushTimers();
+  assert.ok(h.$('#coach-img-overlay.open .coach-img-full') && h.$('.coach-img-full').getAttribute('src') === 'data:image/png;base64,AAAA');
+  assert.deepStrictEqual(imgAsked, ['c1'], 'fetched only when opened, by the item\'s id');
+  imgAnswer = { error: 'The screenshot is not stored.' };
+  h.click('[data-coach-img-close]');
+  h.click('[data-coach-img="c1"]');
+  await tick(); h.flushTimers();
+  assert.ok(/The screenshot is not stored/.test(h.$('#coach-img-body').textContent) && !h.$('.coach-img-full'), 'a failed read is said');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

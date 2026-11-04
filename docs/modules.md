@@ -512,6 +512,16 @@ the newest on top with "N open requests for this TRX · M follow-ups with no
 response", the earlier ones behind "Show N earlier requests". Each is still a
 full card; Recently resolved never folds.
 
+**Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
+each rep's last 1-on-1 and when the next is due (late in red, none on record as
+"due now"), with a **Log** button that records one (the date, an optional note)
+and lists the rep's recent 1-on-1s, each voidable. Each manager sets their own
+cadence (default 14 days, 0 = off) from the board's head. A manager with reps
+due gets one Needs-you item and a line in the daily brief or the overdue digest.
+The coaching composer takes one optional screenshot (chosen or pasted, shrunk in
+the browser), stored in the HR store and shown from a **Screenshot** chip on the
+item to the rep and the managers who can see it.
+
 **Batch G (operator 2026-11-02):** app activity is kept long-term as one
 summary row per rep per day (first and last activity, active minutes, the
 10-minute map), written nightly before the raw pings — now kept 14 days — are
