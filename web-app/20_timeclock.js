@@ -4317,6 +4317,142 @@ function activityDayView_(mins, blockMin) {
   const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
   return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks };
 }
+// ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
+// delete"): the ActivityLog's raw pings are condensed, each night, into ONE
+// ActivitySummary row per rep per FINISHED day (the rep's own day, as Day Edit
+// draws it), kept indefinitely; a raw ping is purged only once its day has a
+// summary row and it is older than ACTIVITY_LOG_DAYS.
+
+/** PURE (Node-pinned) — a day's block counts as one compact string: one
+ *  base-36 digit per block, capped at 35 ('z'). */
+function activityBlocksEncode_(blocks) {
+  return (blocks || []).map(function (n) {
+    return Math.max(0, Math.min(35, Math.floor(Number(n) || 0))).toString(36);
+  }).join('');
+}
+/** PURE (Node-pinned) — the inverse: `n` counts, 0 for a missing or bad digit. */
+function activityBlocksDecode_(str, n) {
+  const out = new Array(n).fill(0);
+  const s = String(str || '');
+  for (let i = 0; i < n && i < s.length; i++) {
+    const v = parseInt(s.charAt(i), 36);
+    out[i] = isFinite(v) ? v : 0;
+  }
+  return out;
+}
+/** PURE (Node-pinned) — the summary rows a set of raw pings owes.
+ *  rows: [[empId, ms]] (any order); tzOf(empId) → tz; localOf(ms, tz) →
+ *  {date: 'YYYY-MM-DD', min}; todayOf(tz) → 'YYYY-MM-DD'; existing:
+ *  {'date|empId': true} already summarised. Only a FINISHED day (before the
+ *  rep's today) is condensed — a day still being worked would be cut short —
+ *  and a day already summarised is never summarised twice. Returns
+ *  {summaries: [{date, empId, tz, pings, first, last, activeMin, blocks}],
+ *  finished: {'date|empId': true}} — every finished day seen. */
+function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const days = {}, today = {};
+  (rows || []).forEach(function (r) {
+    const id = String((r && r[0]) || '').trim();
+    const ms = Number(r && r[1]);
+    if (!id || !(ms > 0)) return;
+    const tz = tzOf(id);
+    if (today[tz] == null) today[tz] = todayOf(tz);
+    const l = localOf(ms, tz);
+    if (!l || !l.date || !(l.date < today[tz])) return;
+    const k = l.date + '|' + id;
+    (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [] }).mins.push(l.min);
+  });
+  const summaries = [], finished = {};
+  Object.keys(days).sort().forEach(function (k) {
+    finished[k] = true;
+    if ((existing || {})[k]) return;
+    const d = days[k];
+    const v = activityDayView_(d.mins, size);
+    summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
+      activeMin: v.blocks.filter(function (n) { return n > 0; }).length * size, blocks: activityBlocksEncode_(v.blocks) });
+  });
+  return { summaries: summaries, finished: finished };
+}
+/** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
+ *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
+ *  has no summary row is NEVER deleted, so nothing goes before it is kept. */
+function activityPurgeIndexes_(rows, cutoffMs, summarised, tzOf, localOf, budget) {
+  const out = [];
+  for (let i = 0; i < (rows || []).length && out.length < budget; i++) {
+    const id = String((rows[i] && rows[i][0]) || '').trim();
+    const ms = Number(rows[i] && rows[i][1]);
+    if (!id || !(ms > 0) || !(ms < cutoffMs)) continue;
+    const l = localOf(ms, tzOf(id));
+    if (l && summarised[l.date + '|' + id]) out.push(i);
+  }
+  return out;
+}
+function getOrCreateActivitySummarySheet_() {
+  const ss = getAdpSS_();
+  let sheet = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(ACTIVITY_SUMMARY_TAB);
+    sheet.appendRow(sheetSafeRow_(ACTIVITY_SUMMARY_HEADERS));
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+/** The summary keys on file: {'date|empId': row number}. Plain-text cells, so
+ *  a date reads back as the string it was written as (g144). */
+function activitySummaryKeys_(sheet) {
+  const out = {};
+  const last = sheet ? sheet.getLastRow() : 0;
+  if (last < 2) return out;
+  sheet.getRange(2, 1, last - 1, 2).getValues().forEach(function (r, i) {
+    const d = String(r[0] || '').trim(), id = String(r[1] || '').trim();
+    if (d && id) out[d + '|' + id] = i + 2;
+  });
+  return out;
+}
+/** The nightly step, run by purgeOldDiagnostics under its lock: condense
+ *  every finished day not yet summarised, THEN purge raw pings past the
+ *  window whose day is summarised — on ActivityLog's own budget, so it never
+ *  starves the other tabs (or they it). A failed condense purges nothing. */
+function activityLogCondenseAndPurge_(ss, nowMs) {
+  const out = { condensed: 0, removed: 0, hitCap: false };
+  const raw = ss.getSheetByName(ACTIVITY_LOG_TAB);
+  const last = raw ? raw.getLastRow() : 0;
+  if (last < 2) return out;
+  const rows = raw.getRange(2, 2, last - 1, 2).getValues();
+  const roster = getEmployeeRosterRows_();
+  const tzById = {};
+  for (let i = 1; i < roster.length; i++) {
+    const id = String(roster[i][EMP.ID] || '').trim();
+    if (id) tzById[id] = String(roster[i][EMP.TIMEZONE] || '').trim() || CONFIG.TIMEZONE;
+  }
+  const tzOf = function (id) { return tzById[id] || CONFIG.TIMEZONE; };
+  const localOf = function (ms, tz) {
+    const s = Utilities.formatDate(new Date(ms), tz, 'yyyy-MM-dd HH:mm');
+    return { date: s.slice(0, 10), min: parseInt(s.slice(11, 13), 10) * 60 + parseInt(s.slice(14, 16), 10) };
+  };
+  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
+  const sumSheet = getOrCreateActivitySummarySheet_();
+  const existing = activitySummaryKeys_(sumSheet);
+  const c = activityCondense_(rows, tzOf, localOf, todayOf, existing, ACTIVITY_BLOCK_MIN);
+  if (c.summaries.length) {
+    const stamp = fmtDate_(new Date(nowMs)) + ' ' + fmtTime_(new Date(nowMs));
+    const newRows = c.summaries.map(function (s) {
+      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp];
+    });
+    appendRowsTextSafe_(sumSheet, newRows, ACTIVITY_SUMMARY_TEXT_IDX);
+    out.condensed = c.summaries.length;
+  }
+  const summarised = Object.assign({}, existing, c.finished);
+  const idx = activityPurgeIndexes_(rows, nowMs - ACTIVITY_LOG_DAYS * 86400000, summarised, tzOf, localOf, ACTIVITY_LOG_PURGE_MAX_PER_RUN);
+  if (idx.length) {
+    const rowsNo = idx.map(function (i) { return i + 2; });
+    if (rowsNo.length >= raw.getMaxRows() - 1) raw.insertRowAfter(raw.getMaxRows());   // never "every non-frozen row" (diagPurgeTab_'s guard)
+    contiguousRowRunsDesc_(rowsNo).forEach(function (r) { raw.deleteRows(r.start, r.count); });
+  }
+  out.removed = idx.length;
+  out.hitCap = idx.length >= ACTIVITY_LOG_PURGE_MAX_PER_RUN;
+  return out;
+}
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
  *  timezone, for Day Edit. `{date, timezone, pings, first, last, blocks,
  *  blockMin, gapMin}` or `{error}`; a day with no tab yet is zero pings, said
@@ -4332,11 +4468,28 @@ function managerGetDayActivity(empId, date) {
     const tz = empTz_(target);
     const startMs = Utilities.parseDate(date + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
     const endMs = Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
-    const sheet = getAdpSS_().getSheetByName(ACTIVITY_LOG_TAB);
+    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS, keptFrom: '' };
+    const ss = getAdpSS_();
+    // Batch G: a finished day's SUMMARY row is the whole day (it was written
+    // before any of its pings could be purged), so it is read first; the raw
+    // pings answer only for a day not yet condensed (today, last night's run).
+    const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+    const sumKeys = activitySummaryKeys_(sum);
+    Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
+    const sumRow = sumKeys[String(date) + '|' + target.id];
+    if (sumRow) {
+      const r = sum.getRange(sumRow, 1, 1, ACTIVITY_SUMMARY_HEADERS.length).getValues()[0];
+      return Object.assign(base, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
+        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+    }
+    const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
     const last = sheet ? sheet.getLastRow() : 0;
-    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: true });
+    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: !base.keptFrom });
     const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
+    if (msCol[0] > 0) {
+      const rawFrom = Utilities.formatDate(new Date(msCol[0]), tz, 'yyyy-MM-dd');
+      if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
+    }
     const lo = activityLowerBound_(msCol, startMs), hi = activityLowerBound_(msCol, endMs);
     const mins = [];
     if (hi > lo) {

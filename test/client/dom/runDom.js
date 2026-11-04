@@ -2223,8 +2223,11 @@ test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, off
   assert.match(h3.document.getElementById('de-act').textContent, /could not be read for this day/);
   assert.ok(!h3.document.getElementById('de-save').disabled, 'Save stays live');
   // No pings: said as such, no suggestion.
-  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', retentionDays: 60 }, { clockInEmpty: true });
-  assert.ok(/No app activity recorded on this day \(activity is kept 60 days\)/.test(v) && !/data-de-apply/.test(v));
+  const v = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', date: '2026-08-01', keptFrom: '2026-09-01' }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day \(activity before 2026-09-01 was not kept\)/.test(v) && !/data-de-apply/.test(v),
+    'Batch G: a day before what was kept says so — "none" is only a verdict inside the kept span');
+  const kept = h3.read('deActivityHtml_')({ pings: 0, first: '', last: '', date: '2026-09-10', keptFrom: '2026-09-01' }, { clockInEmpty: true });
+  assert.ok(/No app activity recorded on this day\.</.test(kept), 'inside the kept span, a plain none');
   // The text comes from the payload only through the HH:mm check.
   const bad = h3.read('deActivityHtml_')({ pings: 3, first: '<b>x', last: '17:00', blocks: [] }, { clockInEmpty: true });
   assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');

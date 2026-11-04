@@ -3481,3 +3481,20 @@ per-change detail. By delta:
   `deptreq-fold-dark-mobile`. The first shot stretched the fold's neighbours to
   its height; a list with a fold now aligns its cards to the top.
 
+## Operator round 2026-11-02, Batch G — the activity log condenses (2026-11-02)
+
+- **Pure** — three pins: the condense and purge rules driven (the block map's
+  round trip, only a finished day of the rep's own, never twice, the summary's
+  blocks equal Day Edit's; a raw ping purgeable only when old AND summarised);
+  the nightly step over a real-shaped tab (the plain-text columns, only old
+  pings of summarised days deleted, a second run idempotent, a failed write
+  deleting nothing) with the job's partial outcome; and Day Edit's read
+  (summary first, raw for a day not yet condensed, the kept-from date).
+
+  The E2a pins moved: the sandbox carries the summary helpers, and the purge
+  pin names the condense step in place of the shared-budget timestamp purge.
+  S2 names the new plain-text appender and its locked caller; the RT-1 purge
+  contract reads the job's partial list.
+- **DOM** — the Day Edit no-activity line says when a day predates what was
+  kept, and a plain "none" inside it.
+

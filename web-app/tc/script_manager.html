@@ -1963,8 +1963,10 @@ function deActivityHtml_(d, o) {
   var hm = function (s) { return /^\d{2}:\d{2}$/.test(String(s || '')) ? s : ''; };
   var first = hm(d && d.first), last = hm(d && d.last);
   if (!d || !(d.pings > 0) || !first) {
+    // Batch G: activity is condensed and kept, so "none" is only a verdict
+    // inside what was kept — a day before it says so, never a plain "none".
     return head + '</div><div class="de-act-note">No app activity recorded on this day' +
-      (d && d.retentionDays ? ' (activity is kept ' + esc(String(d.retentionDays)) + ' days)' : '') + '.</div>';
+      (d && d.keptFrom && d.date && d.date < d.keptFrom ? ' (activity before ' + esc(String(d.keptFrom)) + ' was not kept)' : '') + '.</div>';
   }
   head += '<span>first ' + esc(dispTime(first)) + ' · last ' + esc(dispTime(last)) + '</span></div>';
   var size = d.blockMin > 0 ? d.blockMin : 10, per = Math.round(60 / size);

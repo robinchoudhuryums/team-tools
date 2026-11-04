@@ -512,6 +512,12 @@ the newest on top with "N open requests for this TRX · M follow-ups with no
 response", the earlier ones behind "Show N earlier requests". Each is still a
 full card; Recently resolved never folds.
 
+**Batch G (operator 2026-11-02):** app activity is kept long-term as one
+summary row per rep per day (first and last activity, active minutes, the
+10-minute map), written nightly before the raw pings — now kept 14 days — are
+purged. Day Edit's activity strip reads the summary for any condensed day and
+says when a day predates what was kept.
+
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.
 - OOP Order `oop-order`, Verified Shipping `ver-ship`, Repeat Resupply

@@ -24897,7 +24897,8 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   // HB1.4: and the handbook app's own signal tab, on the same window.
   assert.ok(/ks = diagPurgeTab_\(kbSs\.getSheetByName\(KB_SEARCH_SIGNAL_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget\)/.test(f) &&
             /diagPurgeTab_\(kbSs\.getSheetByName\(KB_SEARCH_SIGNAL_HB_TAB\), Date\.now\(\) - KB_SEARCH_SIGNAL_DAYS \* 86400000, budget - ks\.removed\)/.test(f) &&
-            /ksError \? automationOutcome_\('partial', [^)]*\['KbSearchSignal'\]\)/.test(f), 'the search signal keeps 90 days; an unopenable KB store is named, partial');
+            /if \(ksError\) partial\.push\(\{ what: 'the search signal was not purged[^']*' \+ ksError, name: 'KbSearchSignal' \}\)/.test(f) &&
+            /partial\.length \? automationOutcome_\('partial',/.test(f), 'the search signal keeps 90 days; an unopenable KB store is named, partial (Batch G: beside a failed activity condense)');
   const call = raw.slice(raw.indexOf("writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge'"));
   assert.ok(/viewUsageDays=\$\{vuDays\}; clientErrDays=\$\{ceDays\}; digestDeliveryDays=\$\{ddDays\}; viewUsageRemoved=\$\{vu\.removed\}; clientErrorsRemoved=\$\{ce\.removed\}; digestDeliveriesRemoved=\$\{dd\.removed\}/.test(call),
     'counts-only audit note on every run (the INV-161 heartbeat)');
@@ -28171,7 +28172,7 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   const src = serverSource();
   const re = /^function ([A-Za-z0-9_]+)\s*\(/gm; let m;
   const uses = [], appenders = [], bad = [], callerLocked = [];
-  const CALLER_LOCKED = ['accrualLedgerWriteRows_'];
+  const CALLER_LOCKED = ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_'];   // Batch G: the activity summary is written by the nightly purge, under its lock
   const bodies = {};
   while ((m = re.exec(src)) !== null) {
     const name = m[1];
@@ -28217,9 +28218,9 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
     'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
     'the raw plain-text writers are exactly the known sixteen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names)');
-  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'submitCallNote'].sort(),
-    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation)');
+    'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation), and the activity summary (Batch G)');
   // Every caller chain of a CALLER_LOCKED helper reaches a lock holder: a
   // function that takes the ScriptLock BEFORE its call, or a helper whose own
   // callers are checked the same way. A chain with no caller at all is a bug.
@@ -40560,9 +40561,10 @@ const e2aCtx_ = (extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error,
     console: { warn() {} } }, extra || {}));
   ['const ADP = \\{[\\s\\S]*?\\};', "const ADP_INFERRED_MARK = '[^']*';", 'const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
-    'const ACTIVITY_LOG_DAYS = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;']
+    'const ACTIVITY_LOG_DAYS = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;',
+    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['activityDayView_', 'activityLowerBound_', 'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
+  ['activityDayView_', 'activityLowerBound_', 'activityBlocksDecode_', 'activitySummaryKeys_', 'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'E2a#' + f }));
   return ctx;
 };
@@ -40619,7 +40621,8 @@ test('E2a: every presence ping is also recorded — best-effort, unlocked, ids a
   c.getOrCreateActivityLogSheet_ = () => { throw new Error('quota'); };
   assert.strictEqual(c.activityLogAppend_('E1', 1), false, 'a failure is swallowed — the presence stamp never depends on it');
   const pg = stripJsComments_(extractRawFunction('Code.js', 'purgeOldDiagnostics'));
-  assert.ok(/diagPurgeTab_\(ss\.getSheetByName\(ACTIVITY_LOG_TAB\), Date\.now\(\) - ACTIVITY_LOG_DAYS \* 86400000, budget\)/.test(pg), 'the nightly purge keeps 60 days');
+  assert.ok(/try \{ al = activityLogCondenseAndPurge_\(ss, Date\.now\(\)\); \}/.test(pg) && !/diagPurgeTab_\(ss\.getSheetByName\(ACTIVITY_LOG_TAB\)/.test(pg),
+    'Batch G: the nightly job condenses, then purges — never the shared-budget timestamp purge');
   assert.ok(/activityLogRemoved=\$\{al\.removed\}/.test(pg), 'and its audit row counts them');
 });
 test('E2a: the inferred mark is column J, past the ADP upload\'s nine — set and cleared on a real grid, and the export\'s upload rows never carry it (driven)', () => {
@@ -42624,6 +42627,108 @@ test('Batch D: the TRX key and the fold — what follows "TRX", else the ONE lon
   assert.strictEqual((dr.match(/spCappedTasksHtml_\(drFoldedCardsHtml_\(/g) || []).length, 3, 'mine, incoming and the team list fold');
   assert.ok(/spCappedTasksHtml_\(list\.map\(drRequestCardHtml_\)/.test(extractFnFrom(dr, 'drRecentHtml_')), 'Recently resolved never folds');
   assert.ok(/this\.closest|btn\.closest\('\.dr-fold'\)/.test(extractFnFrom(dr, 'drFoldToggle_')) && !/drFoldToggle_\(\\?'/.test(dr), 'g133: the key is read off the fold, never written into the handler');
+});
+
+console.log('\nOperator round 2026-11-02 — Batch G (the activity log condenses, then purges)');
+
+const gCtx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, console: { warn() {} } }, extra || {}));
+  ['const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_LOG_DAYS = \\d+;', 'const ACTIVITY_LOG_PURGE_MAX_PER_RUN = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';",
+    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];', 'const ACTIVITY_SUMMARY_TEXT_IDX = \\[[^\\]]*\\];', 'const ACTIVITY_PING_GAP_MIN = \\d+;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['activityDayView_', 'activityLowerBound_', 'activityBlocksEncode_', 'activityBlocksDecode_', 'activityCondense_', 'activityPurgeIndexes_',
+    'activitySummaryKeys_', 'activityLogCondenseAndPurge_', 'managerGetDayActivity'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const gJ = (x) => JSON.parse(JSON.stringify(x));
+// A UTC-offset clock for the sandbox: tz 'UTC' or 'UTC+5' (whole hours).
+const gOff_ = (tz) => (/^UTC([+-]\d+)$/.exec(tz) ? Number(/^UTC([+-]\d+)$/.exec(tz)[1]) : 0) * 3600000;
+const gLocal_ = (ms, tz) => { const d = new Date(ms + gOff_(tz)).toISOString(); return { date: d.slice(0, 10), min: Number(d.slice(11, 13)) * 60 + Number(d.slice(14, 16)) }; };
+
+test('Batch G: a day of pings condenses to ONE row that draws the same blocks — only a FINISHED day (the rep\'s own), never twice, the block map round-trips; and a raw ping is purgeable only when old AND its day is summarised (driven)', () => {
+  const c = gCtx_();
+  const blocks = [0, 1, 3, 40, 0, 2];
+  assert.strictEqual(c.activityBlocksEncode_(blocks), '013z02', 'one base-36 digit per block, capped at 35');
+  assert.deepStrictEqual(gJ(c.activityBlocksDecode_('013z02', 8)), [0, 1, 3, 35, 0, 2, 0, 0], 'short strings pad with zeros');
+  assert.deepStrictEqual(gJ(c.activityBlocksDecode_('0!1', 3)), [0, 0, 1], 'a bad digit is no activity');
+  const H = 3600000, d1 = Date.UTC(2026, 10, 2), d2 = Date.UTC(2026, 10, 3), now = Date.UTC(2026, 10, 3, 15);
+  const rows = [['E1', d1 + 8 * H], ['E1', d1 + 8 * H + 6e5], ['E1', d1 + 17 * H], ['E2', d1 + 9 * H], ['E1', d2 + 9 * H], ['', d1], ['E1', 'x'],
+    ['E3', d1 + 20 * H]];   // E3 is UTC+5: 01:00 on Nov 3, its TODAY at 20:00 local — not finished
+  const tzOf = (id) => (id === 'E3' ? 'UTC+5' : 'UTC');
+  const todayOf = (tz) => gLocal_(now, tz).date;
+  const r = gJ(c.activityCondense_(rows, tzOf, gLocal_, todayOf, { '2026-11-02|E2': true }, 10));
+  assert.deepStrictEqual(r.summaries.map((s) => s.date + '|' + s.empId), ['2026-11-02|E1'], 'E2\'s day is on file already; E1 today and E3\'s today are not finished; junk rows are skipped');
+  const s = r.summaries[0];
+  assert.deepStrictEqual([s.pings, s.first, s.last, s.activeMin, s.tz], [3, '08:00', '17:00', 30, 'UTC'], 'three pings in three blocks — 30 active minutes');
+  assert.strictEqual(s.blocks.length, 144);
+  const view = gJ(c.activityDayView_([480, 490, 1020], 10));
+  assert.deepStrictEqual(gJ(c.activityBlocksDecode_(s.blocks, 144)), view.blocks, 'THE RULE: the summary draws the SAME blocks Day Edit drew from the raw pings');
+  assert.deepStrictEqual(Object.keys(r.finished).sort(), ['2026-11-02|E1', '2026-11-02|E2']);
+  const cut = d2;   // everything before Nov 3 is "old"
+  const idx = gJ(c.activityPurgeIndexes_(rows, cut, { '2026-11-02|E1': true }, tzOf, gLocal_, 99));
+  assert.deepStrictEqual(idx, [0, 1, 2], 'only E1\'s summarised day goes; E2\'s old ping with no summary is KEPT, today\'s is not old');
+  assert.deepStrictEqual(gJ(c.activityPurgeIndexes_(rows, cut, { '2026-11-02|E1': true }, tzOf, gLocal_, 2)), [0, 1], 'the budget caps it');
+});
+
+test('Batch G: the nightly step over a real-shaped tab — condenses the finished days into ActivitySummary as plain text, then deletes only their old pings on its OWN budget; a summary that cannot be written deletes NOTHING; the job names a failed condense as a partial run (driven + source)', () => {
+  const H = 3600000, old = Date.UTC(2026, 9, 1), recent = Date.UTC(2026, 10, 2), now = Date.UTC(2026, 10, 3, 15);
+  const run = (opts) => {
+    const raw = [['E1', old + 8 * H], ['E1', old + 9 * H], ['E2', old + 9 * H], ['E1', recent + 8 * H], ['E1', now - H]];
+    const appended = [], deleted = [];
+    const rawSheet = { getLastRow: () => raw.length + 1, getMaxRows: () => 1000, insertRowAfter() {},
+      getRange: (r, col, n, w) => ({ getValues: () => raw.slice(r - 2, r - 2 + n).map((x) => x.slice(0, w)) }),
+      deleteRows: (st, n) => deleted.push([st, n]) };
+    const sumRows = (opts.existing || []);
+    const sumSheet = { getLastRow: () => sumRows.length + 1, getRange: (r, col, n) => ({ getValues: () => sumRows.slice(r - 2, r - 2 + n) }) };
+    const c = gCtx_({ CONFIG: { TIMEZONE: 'UTC' }, EMP: { ID: 0, TIMEZONE: 1 },
+      getEmployeeRosterRows_: () => [['Id', 'Tz'], ['E1', 'UTC'], ['E2', '']],
+      Utilities: { formatDate: (d, tz, f) => { const iso = new Date(d.getTime() + gOff_(tz)).toISOString(); return f === 'yyyy-MM-dd' ? iso.slice(0, 10) : iso.slice(0, 10) + ' ' + iso.slice(11, 16); } },
+      getOrCreateActivitySummarySheet_: () => sumSheet, fmtDate_: () => '2026-11-03', fmtTime_: () => '15:00:00',
+      appendRowsTextSafe_: (sh, rows, idx) => { if (opts.appendThrows) throw new Error('quota'); appended.push({ rows, idx }); },
+      contiguousRowRunsDesc_: (nums) => nums.slice().sort((a, b) => b - a).map((n) => ({ start: n, count: 1 })) });
+    const ss = { getSheetByName: (t) => (t === 'ActivityLog' ? rawSheet : null) };
+    let res = null, err = null;
+    try { res = gJ(c.activityLogCondenseAndPurge_(ss, now)); } catch (e) { err = e.message; }
+    return { res, err, appended: gJ(appended), deleted };
+  };
+  const a = run({});
+  assert.deepStrictEqual(a.appended[0].rows.map((r) => r[0] + '|' + r[1]), ['2026-10-01|E1', '2026-10-01|E2', '2026-11-02|E1'], 'every finished day, once; today\'s ping waits');
+  assert.deepStrictEqual(a.appended[0].idx, [0, 1, 2, 4, 5, 7, 8], 'date, id, tz, first, last, the block map and the stamp are plain text (g144)');
+  assert.deepStrictEqual(a.deleted.map((d) => d[0]).sort(), [2, 3, 4], 'only October\'s pings (older than the window) are deleted — Nov 2 is inside it, today is not summarised');
+  assert.deepStrictEqual([a.res.condensed, a.res.removed], [3, 3]);
+  const again = run({ existing: [['2026-10-01', 'E1'], ['2026-10-01', 'E2'], ['2026-11-02', 'E1']] });
+  assert.strictEqual(again.appended.length, 0, 'a second run condenses nothing — the rows are on file');
+  assert.strictEqual(again.deleted.length, 3, 'and the old pings of summarised days still go');
+  const bad = run({ appendThrows: true });
+  assert.ok(bad.err && !bad.deleted.length, 'THE RULE: a summary that could not be written purges NOTHING');
+  const pg = stripJsComments_(extractRawFunction('Code.js', 'purgeOldDiagnostics'));
+  assert.ok(/try \{ al = activityLogCondenseAndPurge_\(ss, Date\.now\(\)\); \}\s*catch \(eA\) \{ alError = String\(eA\.message \|\| eA\); \}/.test(pg), 'the job catches a failed condense');
+  assert.ok(/if \(alError\) partial\.push\(\{ what: 'the activity log was not condensed, so none of it was purged: ' \+ alError, name: 'ActivityLog' \}\)/.test(pg), 'and names it — a partial run (ST2)');
+  assert.ok(/activityDaysCondensed=` \+ \(alError \? 'not run' : al\.condensed\)/.test(pg), 'the audit row counts the condensed days');
+  const cfg = fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8');
+  assert.ok(/const ACTIVITY_LOG_DAYS = 14;/.test(cfg) && /const ACTIVITY_LOG_PURGE_MAX_PER_RUN = \d+;/.test(cfg), 'raw pings 14 days, on their own budget');
+});
+
+test('Batch G: Day Edit reads a day\'s SUMMARY first (complete by construction), the raw pings only for a day not yet condensed, and says from when activity was kept (driven)', () => {
+  const H = 3600000, day0 = Date.UTC(2026, 9, 27);
+  const raw = [[day0 + 8 * H, 'E1'], [day0 + 9 * H, 'E1']];
+  const blocks = new Array(144).fill(0); blocks[48] = 2; blocks[102] = 1;
+  let sumRows = [['2026-10-26', 'E1', 'UTC', 3, '08:00', '17:05', 20, '0'.repeat(48) + '2' + '0'.repeat(53) + '1' + '0'.repeat(41), 'stamp']];
+  const sum = { getLastRow: () => sumRows.length + 1, getRange: (r, col, n, w) => ({ getValues: () => sumRows.slice(r - 2, r - 2 + (n || 1)).map((x) => x.slice(col - 1, col - 1 + (w || 2))) }) };
+  const rawSheet = { getLastRow: () => raw.length + 1, getRange: (r, col, n) => ({ getValues: () => raw.slice(r - 2, r - 2 + n).map((x) => [col === 3 ? x[0] : x[1]]) }) };
+  const c = gCtx_({ getEmployeeInfo_: () => ({ isManager: true }), lookupEmployeeById_: (id) => ({ id }), empTz_: () => 'UTC',
+    getAdpSS_: () => ({ getSheetByName: (t) => (t === 'ActivityLog' ? rawSheet : t === 'ActivitySummary' ? sum : null) }),
+    isoFromUtc_: (d) => d.toISOString().substring(0, 10),
+    Utilities: { parseDate: (s) => new Date(s.replace(' ', 'T') + 'Z'),
+      formatDate: (d, tz, f) => (f === 'yyyy-MM-dd' ? d.toISOString().substring(0, 10) : d.toISOString().substring(11, 16)) } });
+  const s = gJ(c.managerGetDayActivity('E1', '2026-10-26'));
+  assert.ok(s.fromSummary && s.pings === 3 && s.first === '08:00' && s.last === '17:05', 'a condensed day comes from its summary');
+  assert.deepStrictEqual(s.blocks, blocks, 'and draws its blocks');
+  const r = gJ(c.managerGetDayActivity('E1', '2026-10-27'));
+  assert.ok(!r.fromSummary && r.pings === 2 && r.first === '08:00', 'a day not condensed yet reads the raw pings');
+  assert.strictEqual(r.keptFrom, '2026-10-26', 'kept from the oldest summary or raw day');
+  sumRows = [];
+  assert.strictEqual(gJ(c.managerGetDayActivity('E1', '2026-10-27')).keptFrom, '2026-10-27', 'no summaries: the raw tab\'s first day');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

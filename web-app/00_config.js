@@ -982,7 +982,18 @@ const IDLE_ALERT_MIN = 30;
 // ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
 const ACTIVITY_LOG_TAB = 'ActivityLog';
 const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
-const ACTIVITY_LOG_DAYS = 60;
+// Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
+// each night every FINISHED day's pings become ONE ActivitySummary row per rep
+// (the day's 10-minute map included, so Day Edit draws it unchanged), kept
+// indefinitely; the raw pings are then kept only ACTIVITY_LOG_DAYS (was 60),
+// and never purged before their day is summarised. The purge has its own
+// per-run budget, apart from DIAG_PURGE_MAX_ROWS_PER_RUN, so the busiest tab
+// cannot starve the others.
+const ACTIVITY_LOG_DAYS = 14;
+const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
+const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';
+const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt'];
+const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8];   // g144: a date, an "08:05" and the block string read back as written
 const ACTIVITY_BLOCK_MIN = 10;
 // 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
 // radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,

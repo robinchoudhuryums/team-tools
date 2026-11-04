@@ -2250,8 +2250,21 @@ entry says which it is.
   the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
   milliseconds — the column Day Edit searches). One row per presence ping —
   a real gesture, at most one per app window per 10 minutes — so roughly six
-  rows an hour per active rep; ids and times only. The nightly diagnostics
-  purge removes rows older than 60 days (`ACTIVITY_LOG_DAYS`). **Timesheet
+  rows an hour per active rep; ids and times only. **Since Batch G
+  (2026-11-02)** the nightly diagnostics purge first CONDENSES every finished
+  day (the rep's own day) into the auto-provisioned **`ActivitySummary`** tab —
+  one row per rep per day: Date · EmpId · Timezone · Pings · First · Last ·
+  ActiveMin (active 10-minute blocks × 10) · Blocks (the day's 10-minute map,
+  one base-36 digit per block) · CondensedAt, all text cells kept as text —
+  kept INDEFINITELY, and only then removes raw pings older than 14 days
+  (`ACTIVITY_LOG_DAYS`; was 60) whose day is on file, on their own per-run
+  budget (`ACTIVITY_LOG_PURGE_MAX_PER_RUN`). Day Edit reads a day's summary
+  row first and the raw pings only for a day not condensed yet. Do not edit
+  or delete a summary row by hand — it is the only copy once the raw pings
+  are gone; a failed condense is a partial run on Automation Health and
+  purges nothing. The first night after the deploy condenses the whole
+  backlog (up to 60 days); its oldest day may be partial if the old 60-day
+  purge had already cut into it. **Timesheet
   column J** ("Source", named the first time it is written) carries
   `Inferred (app activity)` on a Clock In / Clock Out a manager saved from
   Day Edit's suggestion; the ADP export copies columns A–I only, so the

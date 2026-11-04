@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch G (activity log: condense, then delete)
+
+**No new operator state** (the `ActivitySummary` tab creates itself). Deploy:
+Team Tools `clasp push -f` + New version.
+
+- Each night, every finished day of app activity becomes **one row per rep**
+  in a new `ActivitySummary` tab (ADP spreadsheet): first and last activity,
+  active minutes, and the day's 10-minute activity map. These rows are kept.
+- Raw activity pings are now kept **14 days** (was 60), and a ping is only
+  ever deleted after its day has a summary row.
+- Day Edit's activity strip looks the same for any day — from the summary row
+  once the pings are gone — and says when a day is older than what was kept.
+- The first night after the deploy condenses the existing backlog (up to the
+  last 60 days).
+- Do not edit or delete `ActivitySummary` rows by hand.
+
 ## 2026-11-02 — Operator round, Batch D (Dept Request follow-ups)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version.

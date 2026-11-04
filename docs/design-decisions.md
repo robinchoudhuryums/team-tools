@@ -5865,6 +5865,20 @@ pick them up without re-deriving the context.
   digest (a 15-minute trigger, one more installable trigger, and a mail per
   false alarm — the operator chose in-app first); measuring from the
   30-minute presence stamp alone (it expires exactly at the threshold, g172).
+  **Batch G (operator 2026-11-02 — "condense, archive condensed, then delete;
+  the goal is accurate long-term data without bloat"):** the activity record
+  the alert and Day Edit read is kept in two tiers. Each night every FINISHED
+  day (the rep's own) is condensed into ONE `ActivitySummary` row per rep —
+  first and last ping, active minutes and the day's 10-minute map, so Day Edit
+  draws exactly what it drew from the raw pings — kept indefinitely; the raw
+  pings then age out at 14 days instead of 60. A ping is purged only once its
+  day is on file, and a condense that fails purges nothing (a partial run), so
+  nothing is ever deleted before it is kept. Day Edit reads the summary first —
+  it is the whole day by construction, where raw pings at the window's edge can
+  be a part-day — and says from when activity was kept, so "no activity" is a
+  verdict only inside that span. The purge has its own budget: at ~55 pings per
+  rep per day it would have outgrown the 2,000-row budget it shared with three
+  other tabs.
 - <a id="a-named-button-shows-its-screenshot"></a>**A button the handbook names shows its locator screenshot on hover, focus or a tap; the full-size viewer is the slideshow (25post round 5, operator 2026-10-23)**
   The operator asked that the screenshots showing where a CRM button is appear
   where the text names it ("Edit Patient (bottom-left)"), everywhere it is

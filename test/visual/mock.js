@@ -1953,7 +1953,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
     managerGetDayActivity: function (empId, date) {
       var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
-      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 60,
+      return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
         pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
     },
     managerGetPendingAdjustments: { requests: [

@@ -3690,6 +3690,40 @@
     "getMyPendingTasks"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch G (operator 2026-11-02): the ActivityLog condenses into ActivitySummary (one row per rep per finished day) before its raw pings are purged at 14 days on their own budget; Day Edit reads the summary first",
+   "added": [
+    "ACTIVITY_LOG_PURGE_MAX_PER_RUN",
+    "ACTIVITY_SUMMARY_HEADERS",
+    "ACTIVITY_SUMMARY_TAB",
+    "ACTIVITY_SUMMARY_TEXT_IDX",
+    "activityBlocksDecode_",
+    "activityBlocksEncode_",
+    "activityCondense_",
+    "activityLogCondenseAndPurge_",
+    "activityPurgeIndexes_",
+    "activitySummaryKeys_",
+    "getOrCreateActivitySummarySheet_"
+   ],
+   "removed": [],
+   "changed": [
+    "ACTIVITY_LOG_DAYS",
+    "managerGetDayActivity",
+    "purgeOldDiagnostics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch G: the summary rows built before the one plain-text append",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "activityLogCondenseAndPurge_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3722,12 +3756,17 @@
   "ACTIVITY_LOG_DAYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "8b21e39683a05fc7"
+   "sha": "2506503b49d02e61"
   },
   "ACTIVITY_LOG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "e505c21fd4c7cd11"
+  },
+  "ACTIVITY_LOG_PURGE_MAX_PER_RUN": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "11cebbd81700b1df"
   },
   "ACTIVITY_LOG_TAB": {
    "file": "00_config.js",
@@ -3738,6 +3777,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "46ddb07ec8694106"
+  },
+  "ACTIVITY_SUMMARY_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a99621b3feebffc5"
+  },
+  "ACTIVITY_SUMMARY_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a72e64f00396be7b"
+  },
+  "ACTIVITY_SUMMARY_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f129a7ba9fe51ba0"
   },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
@@ -6779,6 +6833,21 @@
    "kind": "function",
    "sha": "df83ecfc4e87c13a"
   },
+  "activityBlocksDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "d12628c5a9d6286d"
+  },
+  "activityBlocksEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "7c310c1908c30e50"
+  },
+  "activityCondense_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "20d6f5af281ea09a"
+  },
   "activityDayView_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -6789,10 +6858,25 @@
    "kind": "function",
    "sha": "ddb5653e1d3ad4cd"
   },
+  "activityLogCondenseAndPurge_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "c81c48ab995f5462"
+  },
   "activityLowerBound_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "7403e00a892d6365"
+  },
+  "activityPurgeIndexes_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ea0fe6f9e5e51cc6"
+  },
+  "activitySummaryKeys_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "96d05c6cfc23fd0f"
   },
   "addDaysIso_": {
    "file": "10_core.js",
@@ -9169,6 +9253,11 @@
    "kind": "function",
    "sha": "71fb74417f40b00a"
   },
+  "getOrCreateActivitySummarySheet_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b9d99d23dca6109b"
+  },
   "getOrCreateAuditSheet_": {
    "file": "10_core.js",
    "kind": "function",
@@ -10877,7 +10966,7 @@
   "managerGetDayActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d42b4244adafc606"
+   "sha": "f9fa108ab87b77c8"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -11507,7 +11596,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "8a1d31de153d5141"
+   "sha": "98e3c067c1d004e0"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",

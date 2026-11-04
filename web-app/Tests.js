@@ -1031,6 +1031,15 @@ function cleanupTestData() {
     ledProps.getKeys().forEach(function (k) {
       if (k.indexOf(PTO_ACCRUAL_LEDGER_PREFIX + 'TEST_') === 0) ledProps.deleteProperty(k);
     });
+    // Batch G: the presence test's pings for a TEST_ rep are condensed into
+    // ActivitySummary each night — kept indefinitely — so the sweep reaches
+    // both tiers (EmpId is column B in each).
+    _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(ACTIVITY_SUMMARY_TAB), 2, function (r) {
+      return String(r[1] || '').trim().indexOf('TEST_') === 0;
+    });
+    _deleteRowsWhereLocked_(getAdpSS_().getSheetByName(ACTIVITY_LOG_TAB), 2, function (r) {
+      return String(r[1] || '').trim().indexOf('TEST_') === 0;
+    });
   } catch (e) { Logger.log('cleanupTestData: accrual side-ledger sweep skipped: ' + e.message); }
 
   // F-22 (2026-09-18): the two LIVE tabs the suite probes and never swept.

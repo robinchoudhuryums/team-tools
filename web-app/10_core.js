@@ -1232,7 +1232,7 @@ function purgeOldDiagnostics() {
     lock.waitLock(15000);
     let vu = { removed: 0, hitCap: false }, ce = { removed: 0, hitCap: false }, dd = { removed: 0, hitCap: false };
     let ks = { removed: 0, hitCap: false }, ksError = '';
-    let al = { removed: 0, hitCap: false };
+    let al = { removed: 0, hitCap: false, condensed: 0 }, alError = '';
     try {
       let budget = DIAG_PURGE_MAX_ROWS_PER_RUN;
       if (vuDays) {
@@ -1245,9 +1245,12 @@ function purgeOldDiagnostics() {
       }
       dd = diagPurgeTab_(ss.getSheetByName(DIGEST_DELIVERIES_TAB), Date.now() - ddDays * 86400000, budget);
       budget -= dd.removed;
-      // 25post round 12 E2: the app-activity record keeps ACTIVITY_LOG_DAYS.
-      al = diagPurgeTab_(ss.getSheetByName(ACTIVITY_LOG_TAB), Date.now() - ACTIVITY_LOG_DAYS * 86400000, budget);
-      budget -= al.removed;
+      // Batch G: the app-activity record is CONDENSED (one summary row per
+      // rep per finished day, kept) and only then purged past
+      // ACTIVITY_LOG_DAYS — on its own budget. A failed condense purges
+      // nothing and makes the run partial, named.
+      try { al = activityLogCondenseAndPurge_(ss, Date.now()); }
+      catch (eA) { alError = String(eA.message || eA); }
       // E6: the search signal lives on the KB store. One that cannot be opened
       // is a PARTIAL run, named — the 90-day promise is not being kept (g53);
       // a store with no signal tab has nothing to purge.
@@ -1264,15 +1267,19 @@ function purgeOldDiagnostics() {
     const capped = vu.hitCap || ce.hitCap || dd.hitCap || ks.hitCap || al.hitCap;
     writeAuditLog_(_SYSTEM_AUDIT_EMP_, 'DiagnosticsPurge', '', '', false, 0,
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
-      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityLogRemoved=${al.removed}` +
+      `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityDaysCondensed=` + (alError ? 'not run' : al.condensed) + `; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
       (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
-    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s)` +
-      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') + '.');
+    Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s); condensed ${al.condensed} activity day(s)` +
+      (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') +
+      (alError ? ' — the activity log was not condensed (nothing of it purged): ' + alError : '') + '.');
+    const partial = [];
+    if (ksError) partial.push({ what: 'the search signal was not purged — the KB store could not be opened: ' + ksError, name: 'KbSearchSignal' });
+    if (alError) partial.push({ what: 'the activity log was not condensed, so none of it was purged: ' + alError, name: 'ActivityLog' });
     return { success: true, viewUsageRemoved: vu.removed, clientErrorsRemoved: ce.removed, digestDeliveriesRemoved: dd.removed,
-             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed,
-             outcome: ksError ? automationOutcome_('partial', 'the search signal was not purged — the KB store could not be opened: ' + ksError, ['KbSearchSignal'])
-                              : automationOutcome_('ok') };
+             searchSignalRemoved: ks.removed, activityLogRemoved: al.removed, activityDaysCondensed: al.condensed,
+             outcome: partial.length ? automationOutcome_('partial', partial.map(function (p) { return p.what; }).join('; '), partial.map(function (p) { return p.name; }))
+                                     : automationOutcome_('ok') };
   });
 }
 
