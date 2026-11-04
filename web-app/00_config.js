@@ -1734,6 +1734,10 @@ const SPANISH_ESCALATE_READ_DAYS = SPANISH_PENDING_WINDOW_DAYS;
 // on every dashboard paint. A miss falls back to one live read.
 const SPANISH_PENDING_IDS_PREFIX = 'spanish_pending_ids_v1:';
 const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request leaves Needs-you within this
+// Batch C (operator 2026-11-02 — "multi-select manual resolve"): the most
+// requests one Resolve-selected call may act on. A bigger selection is refused
+// whole (never a silent prefix); every thread is a Gmail read before the lock.
+const SPANISH_BULK_RESOLVE_MAX = 50;
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder

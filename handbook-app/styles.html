@@ -1475,6 +1475,31 @@
     border-radius: var(--radius); padding: 2px 6px; max-width: 140px;
   }
   .sp-claim-release { color: var(--warning-deep); }
+  /* Batch C (operator 2026-11-02) — the received date beside the age in the
+     card's top corner; the corner takes the head's free space (margin-left:
+     auto), so the pills sit beside the requester. */
+  .sp-task-corner { margin-left: auto; display: inline-flex; align-items: baseline; gap: 8px; flex-shrink: 0; }
+  /* With the date in the corner a crowded head (pills + date + age) no longer
+     fits one line at phone width: it WRAPS rather than squeezing the
+     requester to a sliver or pushing the page sideways (both measured). */
+  .sp-task-head:has(.sp-task-corner) { flex-wrap: wrap; row-gap: 4px; justify-content: flex-start; }
+  .sp-task-recv { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .sp-sel { flex-shrink: 0; margin: 0 2px 0 0; align-self: center; width: 15px; height: 15px; accent-color: var(--accent); }
+  /* The multi-select bar above the Pending cards — wraps on a phone. */
+  .sp-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--paper-card); }
+  .sp-bulk-all { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+  .sp-bulk-all input { width: 15px; height: 15px; accent-color: var(--accent); }
+  .sp-bulk-n { font-size: 12px; color: var(--muted); }
+  /* Grouping past SPANISH_GROUP_MIN: the switch, then one collapsible group
+     per received day or sending department. */
+  .sp-group-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .sp-group-lbl { font-size: 12px; color: var(--muted); }
+  .sp-group { margin: 0 0 10px; }
+  .sp-group-head { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 2px; font-size: 13px; font-weight: 600; color: var(--ink); width: fit-content; }
+  .sp-group-n { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--muted); background: var(--paper-2); border-radius: var(--radius-pill); padding: 0 7px; }
+  .sp-group > .sp-tasks { margin-top: 4px; }
+  .sp-groups { display: block; }
+  .sp-group-name { min-width: 0; overflow-wrap: anywhere; }
 
   /* ─── ADMIN · TEAM MEMBERS (onboarding readiness) ─────────────
      A COLUMN grid, not a wrapping chip row: each readiness dimension owns a

@@ -356,6 +356,7 @@ window.addEventListener('load', () => {
       bootTimingArm_();
       // Start ambient pollers — badges update regardless of active tool
       if (typeof mStartAmbientPolling_ === 'function') mStartAmbientPolling_();
+      if (typeof spAssignStart_ === 'function') spAssignStart_();   // Batch C — the Spanish assignee badge + toast
       startHealthBadgePolling_();
       // Break / clock-out reminders run at the SHELL level so they reach the
       // pinned Call Notes pop-out, not only the Clock tab (operator 2026-08-11).
@@ -1275,6 +1276,8 @@ function renderToolTabBar(toolKey) {
       <span class="tt-icon">${icon(t.icon, 14)}</span>${esc(t.label)}${mgrMark}
     </button>`;
   }).join('');
+  // Batch C — a rebuilt tab bar gets its counts back (the Spanish assignee badge).
+  if (typeof spAssignPaint_ === 'function') spAssignPaint_();
 }
 
 /** Dispatch to a specific tab's enter handler. The active tab's button gets

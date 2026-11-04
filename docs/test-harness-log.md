@@ -3415,3 +3415,34 @@ per-change detail. By delta:
   The auto-tag delivery pin now reads the filtered line for reps and the full
   one for the admin editor.
 
+## Operator round 2026-11-02, Batch C — the Spanish Inbox (2026-11-02)
+
+- **Pure** — four pins:
+  - `resolveSpanishThreads` driven over a fake Gmail and sheet: the gate before
+    any read, a selection over the cap refused whole, every read before the
+    ONE lock, one fold read and one write, the covered thread idempotent, the
+    unresolvable ones named, then the audit row, the id drop and the owner's
+    Needs-you;
+  - the sender-department index (mailbox over person, the map's order, never
+    a domain), the safe wrapper naming a failed read, and both list readers
+    carrying `senderDept` / `receivedMs` / `deptUnavailable`;
+  - `getMySpanishAssignments` (gated, unconfigured said, an unreadable claims
+    tab an error) and Needs-you reading through the same `spanishMyOpen_`;
+  - the client's pure helpers: the day and department groups, the toast's
+    "news only" rule and words, the bulk result text, the id list.
+
+  The Needs-you drives (F14, E4) and the C-8 / SP-2 source pins moved to the
+  shared reader; the SP-1 drive loads the shared coverage rule; the Spanish
+  list sandboxes stub the department index; the display-cap pin reads the
+  section renderer.
+- **DOM** — three drives: multi-select (one call, ids in list order, busy,
+  a failed thread stays selected and named, a refused call keeps everything);
+  grouping (flat at the threshold, by day then by department, a closed group's
+  cards not taken by Select all, a re-render keeping both); the badge and
+  toast (silent baseline, news once, self-claims never, every nav form and the
+  tab, an unreadable answer keeps the count, zero clears it).
+- **Visual** — two scenarios, `spanish-grouped-light-wide` and
+  `spanish-grouped-dept-dark-mobile`. The first run measured the phone
+  overflowing sideways and a crowded card's requester squeezed to 4px; the
+  card head now wraps.
+

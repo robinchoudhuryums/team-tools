@@ -10,6 +10,22 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+## 2026-11-02 — Operator round, Batch C (Spanish Inbox)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version.
+
+- **Assigned to you:** a count on the Spanish Inbox tab (and the Metrics
+  sidebar link / phone nav), and a toast with **Open** when someone else
+  assigns you a new request while the app is open. The assignment email still
+  goes out as before.
+- **Resolve selected:** tick the cards, press **Resolve selected**, confirm.
+  Up to 50 at a time. A request it could not resolve stays ticked and the toast
+  says why.
+- **Grouping:** past 15 requests, the list folds into groups by **Date
+  received** or **Department**. The department comes from the department email
+  list (Admin → Config) and the roster's Departments column — a sender in
+  neither is "Other". Each card shows when it arrived.
+
 ## 2026-11-02 — Operator round, Batch B (email-tool tags)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version.

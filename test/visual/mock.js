@@ -1317,15 +1317,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       // Oldest-first (the tab's own sort) — and the CLAIMED item leads, so the
       // Dashboard Spanish card's slide 1 (index 0) carries the pill on camera.
       // E4 (cycle 25, G5): it has waited 9 days — escalated (the server's flag), so the pill and stripe are on camera on the tab and the Dashboard card.
-      { threadId: 't2', requester: 'mgarcia@umsupply.com', ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
-      { threadId: 't1', requester: 'jrivera@umsupply.com', ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
-      { threadId: 't5', requester: 'lchen@umsupply.com', ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
+      { threadId: 't2', requester: 'mgarcia@umsupply.com', senderDept: 'Intake', receivedMs: Date.now() - (9 * 24 + 5) * 3600000, ageHours: 9 * 24 + 5, escalated: true, subject: 'Ayuda con formulario de admisión', snippet: 'El paciente necesita ayuda para completar el formulario…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t2', claim: { by: 'sam@umsupply.com', assignedBy: 'avery@umsupply.com', atMs: Date.now() - 3600000 } },
+      { threadId: 't1', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 3.2 * 3600000, ageHours: 3.2, subject: 'Paciente pregunta por su pedido', snippet: 'La paciente llama para preguntar cuándo llega…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t1', claim: null, followUp: true, claimFloorMs: Date.now() - 4 * 3600000 },   // SP-2 — a reopened request, back unclaimed (the follow-up pill on camera)
+      { threadId: 't5', requester: 'lchen@umsupply.com', senderDept: '', receivedMs: Date.now() - 1.1 * 3600000, ageHours: 1.1, subject: 'Verificación de seguro', snippet: 'El paciente quiere verificar la cobertura antes de la cita…', permalink: 'https://mail.google.com/mail/u/0/#inbox/t5', claim: { by: 'avery@umsupply.com', atMs: Date.now() - 600000 } },
       // Operator 2026-08-25: an 8x8 voicemail item (kind:'voicemail' — the
       // sender+subject fold) so the VM pill is on camera.
-      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
+      { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', receivedMs: Date.now() - 0.6 * 3600000, ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
       medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
-      self: 'avery@umsupply.com' },
+      deptUnavailable: '', self: 'avery@umsupply.com' },
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
     // overdue (PAST the 30-min schedTick_ fire window, so the sched-modal
     // scenario shows the overdue tone WITHOUT a sticky toast covering the
@@ -1591,11 +1591,27 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       });
       return { success: true, unclaimed: unclaimed.length, assigned: assigned };
     },
+    // Batch C (operator 2026-11-02) — the assignee badge's read: the caller's
+    // open requests (Code.js getMySpanishAssignments — ids, times, the
+    // assigner; never content). t5 is avery's own claim, so the badge reads 1
+    // and, being self-claimed, never toasts.
+    getMySpanishAssignments: { configured: true, items: [{ threadId: 't5', atMs: Date.now() - 600000, assignedBy: '' }], count: 1, self: 'avery@umsupply.com' },
+    // Batch C — Resolve selected. Shape mirrors resolveSpanishThreads'
+    // ({success, resolved, already, failed}) AND its write: the resolved
+    // requests leave the pending fixture.
+    resolveSpanishThreads: function (ids) {
+      const pd = FIXTURES.getSpanishInboxPending;
+      const want = {};
+      (ids || []).forEach(function (t) { want[t] = true; });
+      const resolved = (pd.pending || []).filter(function (p) { return want[p.threadId]; }).map(function (p) { return p.threadId; });
+      pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
+      return { success: true, resolved: resolved, already: [], failed: [] };
+    },
     getSpanishInboxResolved: { resolved: [
-      { threadId: 't3', requester: 'jrivera@umsupply.com', resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
+      { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
       // Note #3 (2026-09-10): a MANUAL mark-resolve carries null minutes — the
       // server never invents a reply time for a request handled outside the thread.
-      { threadId: 't4', requester: 'lchen@umsupply.com', resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
+      { threadId: 't4', requester: 'lchen@umsupply.com', senderDept: '', receivedMs: Date.now() - 3 * 86400000, resolver: 'sam@umsupply.com', manual: true, resolveMinutes: null, resolveWallMinutes: null, resolvedAtMs: Date.now() - 86400000, subject: 'Cita de seguimiento', permalink: 'https://mail.google.com/mail/u/0/#inbox/t4' }],
       // Resolution-share chart (2026-08-17): members incl. one who resolved
       // nothing, so the zero-bar row is on camera.
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],

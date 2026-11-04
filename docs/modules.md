@@ -784,6 +784,19 @@ longer sent to reps.
   resolved latest-resolved. A chosen sort applies to every list. A manager's
   summary row is at the very top, above the chips and the sort.
 
+**Operator round 2026-11-02 (Batch C) — the Spanish Inbox:**
+- A request assigned to you is counted on the Spanish Inbox tab and its tool
+  (sidebar and phone nav), and a new one assigned by someone else while the app
+  is open brings a toast with **Open** (polled every 3 minutes; your own claims
+  never toast).
+- Every pending card has a checkbox; **Resolve selected** marks them resolved
+  in one call, and anything it could not resolve stays selected with the reason
+  in the toast. **Select all shown** takes only the cards you can see.
+- Over 15 requests in a section, the cards group under collapsible headers by
+  **Date received** or **Department** (the sender's department mailbox or
+  roster department, else Other; voicemails as Voicemail); the choice is kept
+  in the browser. Every card shows the date it came in, top right.
+
 ## Intake
 
    - **Intake** — patient-intake forms ported from the bound

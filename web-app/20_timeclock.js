@@ -9260,41 +9260,27 @@ function getMyPendingTasks() {
     // and only when the rep owns at least one claim).
     if (canSeeSpanishInbox_(emp) && getSpanishInboxAddress_()) {
       try {
-        var spClaims = spanishClaimsMap_();
-        var me = String(emp.email || '').trim().toLowerCase();
-        // SP-1 (cycle 23): the pending ids decide, never "a manual resolve
-        // exists" — a repeat voicemail makes a resolved thread pending again.
-        var anyMine = Object.keys(spClaims).some(function (t) { return spClaims[t].by === me; });
-        if (anyMine) {
-          var spIds = spanishPendingIdsGet_(SPANISH_PENDING_WINDOW_DAYS);
-          var spFloors = spanishPendingFloorsGet_(SPANISH_PENDING_WINDOW_DAYS);   // SP-2 — a reopened request comes back unclaimed
-          var spEsc = spanishPendingEscalatedGet_(SPANISH_PENDING_WINDOW_DAYS);   // E4 (G5)
-          if (!spIds) {
-            var spRes = getSpanishInboxPending(SPANISH_PENDING_WINDOW_DAYS);
-            if (!spRes || spRes.error) throw new Error((spRes && spRes.error) || 'unreadable');
-            spIds = (spRes.pending || []).map(function (p) { return p.threadId; });
-            spFloors = {}; spEsc = {};
-            (spRes.pending || []).forEach(function (p) {
-              if (p.claimFloorMs) spFloors[p.threadId] = p.claimFloorMs;
-              if (p.escalated) spEsc[p.threadId] = true;
-            });
-          }
-          var spOpen = spanishMyOpenClaims_(spClaims, me, spIds, spFloors);
-          if (spOpen.length) {
-            var spOldest = spOpen[0];
-            var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
-            // E4 (cycle 25, G5): a claimed request waiting 7+ days makes the item OVERDUE.
-            var spEscN = spOpen.filter(function (o) { return spEsc[o.threadId]; }).length;
-            items.push({
-              kind: 'spanish',
-              title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
-              detail: (spEscN ? spEscN + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days · ' : '') +
-                (spAssigned ? spAssigned + ' assigned to you · ' : '') +
-                (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
-              dueIso: '', overdue: spEscN > 0, action: 'Open',
-              route: { tool: 'metrics', tab: 'metricsSpanish' },
-            });
-          }
+        // Batch C (operator 2026-11-02): ONE reader for the caller's open
+        // requests, shared with the assignee badge (g126) — the claims tab,
+        // the cached pending ids (SP-1: they decide, never "a manual resolve
+        // exists"), and a live read only on a miss for a rep who owns a claim.
+        var spMine = spanishMyOpen_(emp, spanishClaimsMap_());
+        var spEsc = spMine.escalated;   // E4 (G5)
+        var spOpen = spMine.open;
+        if (spOpen.length) {
+          var spOldest = spOpen[0];
+          var spAssigned = spOpen.filter(function (o) { return o.assignedBy; }).length;
+          // E4 (cycle 25, G5): a claimed request waiting 7+ days makes the item OVERDUE.
+          var spEscN = spOpen.filter(function (o) { return spEsc[o.threadId]; }).length;
+          items.push({
+            kind: 'spanish',
+            title: spOpen.length + ' Spanish Inbox request' + (spOpen.length === 1 ? '' : 's') + ' to work',
+            detail: (spEscN ? spEscN + ' waiting ' + SPANISH_ESCALATE_DAYS + '+ days · ' : '') +
+              (spAssigned ? spAssigned + ' assigned to you · ' : '') +
+              (spOldest.atMs ? 'oldest since ' + Utilities.formatDate(new Date(spOldest.atMs), tz, 'MMM d, h:mm a') : 'yours'),
+            dueIso: '', overdue: spEscN > 0, action: 'Open',
+            route: { tool: 'metrics', tab: 'metricsSpanish' },
+          });
         }
       } catch (e) { unavailable.push('spanish'); }
     }

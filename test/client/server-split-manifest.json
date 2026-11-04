@@ -3657,6 +3657,29 @@
     "getCallNotesDepartments"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-04",
+   "why": "Batch C (operator 2026-11-02): the Spanish Inbox — resolveSpanishThreads (bulk resolve, one lock), the shared coverage rule spanishResolveCovered_, the sender-department index on the list items, received dates, getMySpanishAssignments and the shared reader spanishMyOpen_ (Needs-you reads through it), SPANISH_BULK_RESOLVE_MAX",
+   "added": [
+    "SPANISH_BULK_RESOLVE_MAX",
+    "getMySpanishAssignments",
+    "resolveSpanishThreads",
+    "spanishBulkIds_",
+    "spanishMyOpen_",
+    "spanishResolveCovered_",
+    "spanishSenderDeptIndexFrom_",
+    "spanishSenderDeptIndex_",
+    "spanishSenderDeptSafe_"
+   ],
+   "removed": [],
+   "changed": [
+    "getMyPendingTasks",
+    "getSpanishInboxResolved",
+    "resolveSpanishThread",
+    "spanishPendingCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -6160,6 +6183,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "1a64e9138d22e365"
+  },
+  "SPANISH_BULK_RESOLVE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "010761e6d87c8fba"
   },
   "SPANISH_CLAIMS_TAB": {
    "file": "00_config.js",
@@ -9044,7 +9072,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "075c12bc33ce0a71"
+   "sha": "b3b575a917face52"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -9080,6 +9108,11 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "f5828e19123b13e3"
+  },
+  "getMySpanishAssignments": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "1eda48420aa7d46f"
   },
   "getMyTraining": {
    "file": "80_training.js",
@@ -9399,7 +9432,7 @@
   "getSpanishInboxResolved": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "832fcdaf1ca01896"
+   "sha": "2a5ebd8b86327e8d"
   },
   "getSpanishInboxStats": {
    "file": "51_spanish.js",
@@ -12064,7 +12097,12 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "15904ba9cd47a7d2"
+   "sha": "db059a4f31330a17"
+  },
+  "resolveSpanishThreads": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "38cb3fca9f152970"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -12596,6 +12634,11 @@
    "kind": "function",
    "sha": "4b8e1d00a5a74e5b"
   },
+  "spanishBulkIds_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "563657b4997db35a"
+  },
   "spanishBustClaimants_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -12666,6 +12709,11 @@
    "kind": "function",
    "sha": "d3039aa8c0600d34"
   },
+  "spanishMyOpen_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2bb463c7796738e1"
+  },
   "spanishNotifyAssignees_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -12679,7 +12727,7 @@
   "spanishPendingCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "b19bc9b780753d0d"
+   "sha": "ea5417eeb8dfd38d"
   },
   "spanishPendingEscalatedGet_": {
    "file": "51_spanish.js",
@@ -12706,10 +12754,30 @@
    "kind": "function",
    "sha": "76c72f71fda5da24"
   },
+  "spanishResolveCovered_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "65ddcee73afc1efa"
+  },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "7f80063af231a396"
+  },
+  "spanishSenderDeptIndexFrom_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "5cd1c577d4ab79db"
+  },
+  "spanishSenderDeptIndex_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "fc9102acd0f00b6a"
+  },
+  "spanishSenderDeptSafe_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "1e53400a00fb547f"
   },
   "spanishSpanRows_": {
    "file": "51_spanish.js",

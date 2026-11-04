@@ -5073,6 +5073,28 @@ pick them up without re-deriving the context.
   IDS only for 15 minutes and the Needs-you producer reads that set first,
   and reads Gmail live only on a miss and only for a rep who holds a claim.
   A failed read is "couldn't check", never "nothing to do" (g53).
+  **Amended (Batch C, operator 2026-11-02 — "in-app notification for
+  auto-assigned to assigned agent in addition to email notification"):** the
+  assignee also gets a count on the Spanish Inbox tab, its tool in the sidebar
+  and the phone's bottom nav, and a sticky toast with **Open** when a NEW
+  request is assigned to them while the app is open. One reader serves both
+  this and the Needs-you item (`spanishMyOpen_`, g126); the endpoint
+  (`getMySpanishAssignments`) ships ids, times and the assigner only. The
+  toast is for news from someone else: a rep's own claim never toasts, the
+  first answer in a browser is a silent baseline (what was already assigned is
+  not news), and the seen ids live in `umsSpanishAssignSeen`, shared by every
+  window, so the pop-out and the main window announce once between them. A
+  failed or `{error}` poll keeps the last count (METUI-1). The same batch added
+  **Resolve selected** — one locked call, `resolveSpanishThreads`, judged per
+  thread by the single resolve's coverage rule (`spanishResolveCovered_`); a
+  thread it cannot resolve is named and stays selected, and Select all takes
+  only the cards a reader can see (not behind Show more, not in a closed
+  group). Past `SPANISH_GROUP_MIN` (15) cards a section groups under
+  collapsible headers by received day or sending department
+  (`umsSpanishGroupBy`); the department is the sender's department mailbox or
+  roster department (`spanishSenderDeptIndexFrom_`, never by domain), "Other"
+  otherwise, and a failed read is said beside the count rather than shown as
+  Other.
 - <a id="app-activity-counts-as-in-outside-the-philippines-team"></a>**App activity counts as IN outside the Philippines team, and it rides `status` (22post C-3, operator 2026-09-27).** The operator's rule: a rep active in the app with no clock-in is IN,
   except the Philippines team, who get the amber "active · not clocked in".
   One pure function decides it for both views (`presenceDisplay_(status,

@@ -5606,6 +5606,114 @@ test('E4 DOM (cycle 25, G5): an escalated Spanish request reads "Escalated · N 
   assert.ok(!card('new').classList.contains('sp-escalated') && !card('new').querySelector('.sp-esc-pill'), 'a day-old request is not escalated, however late it is');
 });
 
+// Batch C (operator 2026-11-02) — the Spanish Inbox: multi-select resolve,
+// grouping past the threshold with received dates, and the assignee badge.
+const spBatchC_ = (pending, resolved, over) => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell(Object.assign({ isManager: false, canSeeSpanish: true }, over || {}));
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: pending.length, resolved: (resolved || []).length, avgMinutes: null, medianMinutes: null,
+    avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true },
+    membersConfigured: true, threadsScanned: 2, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pending)), members: ['me@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '' }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: JSON.parse(JSON.stringify(resolved || [])), members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
+  h.window.enterTool('metrics', 'metricsSpanish');
+  h.flushTimers();
+  return h;
+};
+const spItem_ = (tid, ageHours, extra) => Object.assign({ threadId: tid, requester: tid + '@x.com', ageHours: ageHours, receivedMs: Date.now() - ageHours * 3600000,
+  subject: 'S ' + tid, snippet: 's', hasMore: false, permalink: 'https://mail/' + tid, claim: null }, extra || {});
+
+test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar counts the selection, ONE call carries the ids in list order, the bar is busy while it runs, a resolved card leaves and one the server could not resolve STAYS selected and is named', async () => {
+  const h = spBatchC_([spItem_('a', 30), spItem_('b', 20), spItem_('c', 10)],
+    [{ threadId: 'r1', requester: 'r@x.com', resolver: 'me@x.com', manual: true, resolveMinutes: null, resolvedAtMs: Date.now() - 3600000, receivedMs: Date.now() - 7200000, subject: 'R', permalink: 'https://mail/r1' }]);
+  const box = (tid) => h.$('input.sp-sel[data-thread="' + tid + '"]');
+  assert.deepStrictEqual(h.$$('input.sp-sel').map((b) => b.getAttribute('data-thread')), ['a', 'b', 'c'], 'one box per pending card, none on a resolved card');
+  assert.ok(h.$('#sp-bulk-go').disabled && /None selected/.test(h.$('#sp-bulk-n').textContent), 'nothing selected: Resolve selected is off');
+  // The harness runs no inline on* attributes: drive the handler the box names.
+  const tickBox = (tid, on) => { const b = box(tid); b.checked = on; h.window.spanishSelToggle_(b); };
+  tickBox('c', true); tickBox('a', true);
+  assert.ok(/2 selected/.test(h.$('#sp-bulk-n').textContent) && !h.$('#sp-bulk-go').disabled);
+  assert.ok(h.$('#sp-sel-all').indeterminate, 'Select all shown reads partial');
+  h.window.spanishResolveSelected_();
+  h.click(h.$('.ui-dialog-ok'));
+  await tick();
+  const call = h.run.pending('resolveSpanishThreads')[0];
+  assert.ok(call, 'ONE call');
+  assert.deepStrictEqual(Array.from(call.args[0]), ['a', 'c'], 'the ids, in the list\'s order');
+  assert.ok(h.$('#sp-bulk-go').disabled && h.$('#sp-bulk-go').getAttribute('aria-busy') === 'true' && /Resolving/.test(h.$('#sp-bulk-go').textContent), 'busy while it runs');
+  h.run.flushSuccess({ success: true, resolved: ['a'], already: [], failed: [{ threadId: 'c', error: 'Thread not found.' }] }, 'resolveSpanishThreads');
+  h.flushTimers();
+  assert.ok(!box('a'), 'the resolved request left the list');
+  assert.ok(box('c') && box('c').checked, 'THE RULE: a request the server could not resolve stays, still selected');
+  assert.ok(/1 selected/.test(h.$('#sp-bulk-n').textContent));
+  const toast = h.$$('#toast-stack .toast-msg').map((t) => t.textContent).join(' | ');
+  assert.ok(/Marked 1 resolved · 1 could not be resolved — still selected \(Thread not found\.\)/.test(toast), 'the toast names both halves: ' + toast);
+  // Select all shown, then a refused call keeps everything.
+  h.window.spanishSelAll_(true);
+  assert.ok(box('b').checked && box('c').checked && /2 selected/.test(h.$('#sp-bulk-n').textContent));
+  h.window.spanishResolveSelected_(); h.click(h.$('.ui-dialog-ok')); await tick();
+  h.run.flushSuccess({ error: 'Spanish Inbox access required.' }, 'resolveSpanishThreads');
+  h.flushTimers();
+  assert.ok(box('b').checked && box('c').checked && !h.$('#sp-bulk-go').disabled, 'a refused call removes nothing and the bar is usable again');
+});
+
+test('Batch C DOM: past SPANISH_GROUP_MIN the list groups — by received day, or by sending department (largest first, Other and Voicemail last), remembered in this browser; a closed group\'s cards are not "shown" to Select all; at the threshold the list stays flat; every card shows its received date', () => {
+  const MIN = 15;
+  const depts = ['Billing', 'Intake', 'Billing', '', 'Billing'];
+  const many = [];
+  for (let i = 0; i < MIN + 3; i++) many.push(spItem_('g' + i, 200 - i * 10, { senderDept: depts[i % depts.length], kind: i === 4 ? 'voicemail' : undefined }));
+  let h = spBatchC_(many.slice(0, MIN), []);
+  assert.strictEqual(h.read('SPANISH_GROUP_MIN'), MIN, 'the threshold the operator was told');
+  assert.ok(!h.$('.sp-group') && !h.$('.sp-group-switch'), 'at the threshold: flat, no switch');
+  assert.ok(h.$$('.sp-task-recv').length >= 1 && /\d/.test(h.$('.sp-task-recv').textContent), 'the received date is in the card\'s corner');
+  h = spBatchC_(many, []);
+  const names = () => h.$$('.sp-group .sp-group-name').map((n) => n.textContent);
+  assert.ok(h.$('.sp-group-switch') && h.$('[data-sp-group="date"]').getAttribute('aria-pressed') === 'true', 'past it: grouped, by date first');
+  const dayCount = h.$$('.sp-group').length;
+  assert.ok(dayCount > 1 && h.$$('.sp-group').every((g) => g.open), 'one open group per received day');
+  const total = h.$$('.sp-group .sp-group-n').reduce((a, n) => a + Number(n.textContent), 0);
+  assert.strictEqual(total, MIN + 3, 'every request is in exactly one group');
+  h.window.spanishSetGroupBy_('dept');
+  assert.deepStrictEqual(names(), ['Billing', 'Intake', 'Other', 'Voicemail'], 'largest first; a sender in no department is Other, a voicemail is Voicemail — both last');
+  assert.strictEqual(h.window.localStorage.getItem('umsSpanishGroupBy'), 'dept', 'the choice is kept in this browser');
+  // Close the Billing group: Select all shown skips its cards.
+  const billing = h.$$('.sp-group')[0];
+  const billingIds = Array.from(billing.querySelectorAll('input.sp-sel')).map((b) => b.getAttribute('data-thread'));
+  billing.open = false; h.window.spanishGroupToggled_(billing);
+  h.window.spanishSelAll_(true);
+  const sel = h.read('spanishSelIds_()');
+  assert.ok(sel.length > 0 && billingIds.every((t) => sel.indexOf(t) < 0), 'THE RULE: a request inside a closed group is never resolved unseen');
+  // A re-render keeps the group closed and the selection.
+  h.window.spanishRenderList_();
+  assert.ok(!h.$$('.sp-group')[0].open && h.read('spanishSelIds_()').length === sel.length, 'state, not the DOM: a re-render keeps both');
+});
+
+test('Batch C DOM: the assignee badge and toast — the first answer in a browser is a silent baseline; a NEW request assigned by someone else toasts once with Open, a self-claim never does; the count sits on every nav form and the tab; an unreadable answer keeps the last count; zero clears it', () => {
+  const h = spBatchC_([spItem_('a', 3)], []);
+  assert.ok(h.read('SP_ASSIGN.started') === true, 'the poll starts for a member at boot');
+  const toasts = () => h.$$('#toast-stack .toast-msg').map((t) => t.textContent).filter((t) => /assigned to you/.test(t));
+  const badges = () => h.$$('.sp-assign-badge').map((b) => b.textContent);
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'a', atMs: 1, assignedBy: 'boss@x.com' }], count: 1, self: 'me@x.com' });
+  assert.deepStrictEqual(toasts(), [], 'the first answer in this browser is the baseline — what was already there is not news');
+  const hosts = h.$$('.sp-assign-badge').map((b) => b.parentNode);
+  assert.ok(hosts.some((x) => x.classList.contains('sb-link')) && hosts.some((x) => x.classList.contains('nav-btn')) && hosts.some((x) => x.getAttribute('data-tab') === 'metricsSpanish'),
+    'the count is on the sidebar link, the phone nav and the tab (g99)');
+  assert.ok(badges().every((t) => t === '1'));
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'a', atMs: 1, assignedBy: 'boss@x.com' }, { threadId: 'b', atMs: 2, assignedBy: 'boss@x.com' }, { threadId: 'c', atMs: 3, assignedBy: '' }], count: 3, self: 'me@x.com' });
+  assert.deepStrictEqual(toasts(), ['A Spanish Inbox request was assigned to you by boss'], 'b is news; c is the rep\'s own claim');
+  assert.ok(h.$('#toast-stack .toast-act') && /Open/.test(h.$('#toast-stack .toast-act').textContent), 'with Open');
+  assert.ok(badges().every((t) => t === '3'));
+  h.window.spAssignApply_({ configured: true, items: [{ threadId: 'b', atMs: 2, assignedBy: 'boss@x.com' }], count: 1, self: 'me@x.com' });
+  assert.strictEqual(toasts().length, 1, 'once: a request already announced never toasts again');
+  h.window.spAssignApply_({ error: 'Spanish assignments read failed: x' });
+  assert.ok(badges().every((t) => t === '1'), 'an unreadable answer is unknown — the last count stands');
+  h.window.renderToolTabBar('metrics');
+  assert.ok(h.$('.tt-btn[data-tab="metricsSpanish"] .sp-assign-badge'), 'a rebuilt tab bar gets its count back');
+  h.window.spAssignApply_({ configured: true, items: [], count: 0, self: 'me@x.com' });
+  assert.deepStrictEqual(badges(), [], 'zero clears it everywhere');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

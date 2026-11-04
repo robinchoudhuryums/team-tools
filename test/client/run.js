@@ -11695,8 +11695,12 @@ test('card-list display cap: capped render + real Show-more button, counts stay 
   // with a distinct per-section key, and each page RESETS its shown-state on a
   // full render so a stale expansion never pins a huge DOM.
   const met = nc(extractScript('metrics/script_metrics.html'));
-  assert.ok(/spCappedTasksHtml_\(pending\.map\(spanishTaskCard_\)[\s\S]{0,120}spanishShowMore_\('pending'\)/.test(met) &&
-            /spCappedTasksHtml_\(resolved\.map\(spanishResolvedCard_\)[\s\S]{0,120}spanishShowMore_\('resolved'\)/.test(met),
+  // Batch C: both sections render through spanishSectionHtml_, which caps a
+  // flat section under its own key and every GROUP under section|group.
+  assert.ok(/spanishSectionHtml_\('pending', pending, spanishTaskCard_/.test(met) &&
+            /spanishSectionHtml_\('resolved', resolved, spanishResolvedCard_/.test(met) &&
+            /spCappedTasksHtml_\(items\.map\(cardFn\), shown\[section\], "spanishShowMore_\('" \+ section \+ "'\)"/.test(met) &&
+            /spCappedTasksHtml_\(g\.items\.map\(cardFn\), shown\[gk\]/.test(met),
     'both Spanish sections are capped with their own keys');
   assert.ok(/SPANISH_STATE\.shown = \{\};/.test(nc(extractFunction('metrics/script_metrics.html', 'spanishRender_'))),
     'Spanish resets the cap on every full render');
@@ -29626,9 +29630,9 @@ test('F14 (cycle 25): ONE Spanish pending window — Needs-you, the scheduled au
       SPANISH_PENDING_WINDOW_DAYS: windowDays, canSeeSpanishInbox_: () => true, getSpanishInboxAddress_: () => 'sp@x',
       spanishClaimsMap_: () => ({ old: { by: 'ana@x', atMs: 1000, assignedBy: '' } }),
       spanishPendingIdsGet_: () => null, spanishPendingFloorsGet_: () => ({}), spanishPendingEscalatedGet_: () => ({}), SPANISH_ESCALATE_DAYS: 7,
-      getSpanishInboxPending: (d) => { asked.push(d); return { pending: pend.filter((p) => p.ageDays <= d) }; },
+      spanishPendingCore_: (d) => { asked.push(d); return { pending: pend.filter((p) => p.ageDays <= d) }; },   // Batch C: the shared reader reads the core
       spanishClaimLive_: (c) => c, Utilities: { formatDate: () => 'Oct 4, 9:00 AM' } });
-    vm.runInContext(extractRawFunction('Code.js', 'spanishMyOpenClaims_'), ctx);
+    ['spanishMyOpenClaims_', 'spanishMyOpen_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
     vm.runInContext('function nyBlock_(emp, tz, items, unavailable) {\n' + tc.slice(a, b) + '\n}', ctx);
     const items = [], unavailable = [];
     ctx.nyBlock_({ email: 'Ana@x' }, 'America/Chicago', items, unavailable);
@@ -30488,7 +30492,10 @@ test('C-8: the notices, busts and Needs-you item are wired — after the lock, o
     'the floors map is built from the cards — a number per id, no content');
   const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
   assert.ok(/if \(canSeeSpanishInbox_\(emp\) && getSpanishInboxAddress_\(\)\)/.test(pt), 'members only');
-  assert.ok(pt.indexOf('spanishPendingIdsGet_(') < pt.indexOf('getSpanishInboxPending(') && /if \(anyMine\)/.test(pt),
+  // Batch C: the read moved into ONE reader shared with the assignee badge.
+  const myOpen = stripJsComments_(extractRawFunction('Code.js', 'spanishMyOpen_'));
+  assert.ok(/spanishMyOpen_\(emp, spanishClaimsMap_\(\)\)/.test(pt), 'Needs-you reads through the shared reader');
+  assert.ok(myOpen.indexOf('spanishPendingIdsGet_(') < myOpen.indexOf('spanishPendingCore_(') && /if \(!anyMine\) return/.test(myOpen),
     'the cached ids first; a live read only on a miss, and only for a rep who owns a claim');
   assert.ok(/unavailable\.push\('spanish'\)/.test(pt), 'a failed read is "couldn\'t check", never "nothing to do"');
   assert.ok(/route: \{ tool: 'metrics', tab: 'metricsSpanish' \}/.test(pt) && /'spanish'\]/.test(fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8')), 'a routed, declared kind');
@@ -33863,7 +33870,7 @@ test('SP-1 (cycle 23): a voicemail that arrives AFTER a manual resolve can be re
       getOrCreateSpanishResolvedSheet_: () => ({ appendRow: (r) => appended.push(r) }), sheetSafeRow_: (r) => r,
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, spanishPendingIdsDrop_: (t) => dropped.push(t),
       spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {} });
-    ['spanishThreadLatestMs_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));   // Batch C: the coverage rule is shared with the bulk resolve
     return { r: JSON.parse(JSON.stringify(c.resolveSpanishThread('t1'))), appended, dropped };
   };
   let r = run({ by: 'a@x', ms: 100 }, 400);
@@ -36156,7 +36163,8 @@ const b13CourtesySrc_ = () => {
     extractRawFunction('Code.js', 'drReplyNewText_') + '\n' + extractRawFunction('Code.js', 'spanishIsCourtesyOnly_');
 };
 // b10Ctx_ plus the courtesy rule the roles read (SP-2 follow-up).
-const b13Ctx_ = (fns, extra) => { const ctx = b10Ctx_([], extra); vm.runInContext(b13CourtesySrc_(), ctx); fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx)); return ctx; };
+// Batch C: the list readers' department index is stubbed (empty, readable) unless a test names it.
+const b13Ctx_ = (fns, extra) => { const ctx = b10Ctx_([], Object.assign({ spanishSenderDeptSafe_: () => ({ index: {}, unavailable: '' }) }, extra)); vm.runInContext(b13CourtesySrc_(), ctx); fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx)); return ctx; };
 const b13Th_ = (id, msgs) => ({ getId: () => id, getMessages: () => msgs, getPermalink: () => 'https://mail/' + id });
 const b13Addr_ = (x) => String(x || '').replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase();
 
@@ -36339,9 +36347,9 @@ test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs
   const req = b13Msg_('jo@x', 1, 'primera'), staff = b13Msg_('m@x', 2, 'resp'), fu = b13Msg_('Jo <jo@x>', 3, 'segunda');
   assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff, fu], 'no-reply@8x8.com', 'A_Q_Spanish').msg, fu, 'the requester\'s NEWEST message — what the reopened card shows');
   assert.strictEqual(bctx.spanishThreadBodyMessage_([req, staff], 'no-reply@8x8.com', 'A_Q_Spanish').msg, req, 'one request message: as before');
-  const pt = stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'));
-  assert.ok(/spanishMyOpenClaims_\(spClaims, me, spIds, spFloors\)/.test(pt) && /spFloors = spanishPendingFloorsGet_\(SPANISH_PENDING_WINDOW_DAYS\)/.test(pt)
-    && /if \(p\.claimFloorMs\) spFloors\[p\.threadId\] = p\.claimFloorMs;/.test(pt), 'Needs-you drops a claim from before the reopen — cached floors, or the live read\'s');
+  const pt = stripJsComments_(extractRawFunction('Code.js', 'spanishMyOpen_'));   // Batch C: Needs-you's read, shared with the badge
+  assert.ok(/spanishMyOpenClaims_\(claims, me, ids, floors\)/.test(pt) && /floors = spanishPendingFloorsGet_\(SPANISH_PENDING_WINDOW_DAYS\)/.test(pt)
+    && /if \(p\.claimFloorMs\) floors\[p\.threadId\] = p\.claimFloorMs;/.test(pt), 'Needs-you drops a claim from before the reopen — cached floors, or the live read\'s');
   const core = stripJsComments_(extractRawFunction('Code.js', 'spanishAutoAssignCore_'));
   assert.ok(/!spanishClaimLive_\(live\[p\.threadId\], floors\[p\.threadId\]\)/.test(core), 'auto-assign hands out a reopened request whose only claim is from before the reopen');
   const claim = stripJsComments_(extractRawFunction('Code.js', 'claimSpanishThread'));
@@ -39478,9 +39486,9 @@ test('E4 (cycle 25, G5): Needs-you — a claimed request waiting 7+ days turns t
       canSeeSpanishInbox_: () => true, getSpanishInboxAddress_: () => 'sp@x',
       spanishClaimsMap_: () => ({ t1: { by: 'ana@x', atMs: 1000, assignedBy: '' }, t2: { by: 'ana@x', atMs: 2000, assignedBy: '' } }),
       spanishPendingIdsGet_: () => ['t1', 't2'], spanishPendingFloorsGet_: () => ({}), spanishPendingEscalatedGet_: () => esc,
-      getSpanishInboxPending: () => { throw new Error('no live read on a cache hit'); },
+      spanishPendingCore_: () => { throw new Error('no live read on a cache hit'); },
       spanishClaimLive_: (c) => c, Utilities: { formatDate: () => 'Oct 4, 9:00 AM' } });
-    vm.runInContext(extractRawFunction('Code.js', 'spanishMyOpenClaims_'), ctx);
+    ['spanishMyOpenClaims_', 'spanishMyOpen_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
     vm.runInContext('function nyBlock_(emp, tz, items, unavailable) {\n' + tc.slice(a, b) + '\n}', ctx);
     const items = [], unavailable = [];
     ctx.nyBlock_({ email: 'Ana@x' }, 'America/Chicago', items, unavailable);
@@ -42406,6 +42414,116 @@ test('HB4.1-f: the import result says what happened to the forms — checked, st
   assert.ok(f.warn && /NOT stored/.test(f.html) && /press Import again/.test(f.html));
   assert.ok(/No forms in this file — the stored forms are left as they are/.test(t(null, false)));
   assert.ok(/qz\.html \+ fm\.html/.test(kb) && /\(r\.forms && r\.forms\.error\)/.test(kb), 'the dialog draws it, and a failed forms write turns the toast to a warning');
+});
+
+console.log('\nOperator round 2026-11-02 — Batch C (the Spanish Inbox)');
+const J = (x) => JSON.parse(JSON.stringify(x));   // cross-realm values compare as plain data
+
+test('Batch C: resolveSpanishThreads — the caller gate before any read, a selection over the cap refused WHOLE, every thread read and scope-checked OUTSIDE the lock, ONE lock and ONE write of the rows not already covered, a thread it cannot resolve NAMED (never dropped), each resolved thread leaving the cached pending ids, a counts-and-ids audit row (driven)', () => {
+  const run = (opts) => {
+    const log = [];
+    const threads = {
+      t1: [{ getDate: () => new Date(100) }],                  // covered by an earlier resolve
+      t2: [{ getDate: () => new Date(200) }, { getDate: () => new Date(300) }],
+      t4: [{ getDate: () => new Date(50), out: true }],
+    };
+    const c = vm.createContext({ String, Number, Date, Math, Array, Object,
+      SPANISH_BULK_RESOLVE_MAX: 4,
+      getEmployeeInfo_: () => ({ email: 'm@x' }), canSeeSpanishInbox_: () => opts.allowed !== false,
+      GmailApp: { getThreadById: (t) => { log.push('read:' + t); return threads[t] ? { getMessages: () => threads[t] } : null; } },
+      getSpanishInboxAddress_: () => 'sp@x', spanishThreadInScope_: (m) => !m.out,
+      LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+      spanishManualResolvedMap_: () => { log.push('fold'); return { t1: { by: 'a@x', ms: 150 } }; },
+      getOrCreateSpanishResolvedSheet_: () => 'SHEET', appendRowsSafe_: (sh, rows) => { log.push('write:' + rows.map((r) => r[1]).join(',')); },
+      fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a, x, y, z, n, note) => log.push('audit:' + a + ':' + note),
+      spanishPendingIdsDrop_: (t) => log.push('drop:' + t), spanishClaimsMap_: () => ({ t2: { by: 'ana@x' } }), spanishBustClaimants_: (e) => log.push('bust:' + e.join(',')) });
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishBulkIds_', 'resolveSpanishThreads'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    return { r: J(c.resolveSpanishThreads(opts.ids)), log };
+  };
+  let x = run({ allowed: false, ids: ['t2'] });
+  assert.ok(x.r.error && !x.log.length, 'refused before any Gmail read or the lock (F58)');
+  x = run({ ids: ['t1', 't2', 't3', 't4', 't5'] });
+  assert.ok(/at most 4/.test(x.r.error) && !x.log.length, 'over the cap: refused whole, never a silent prefix');
+  x = run({ ids: [] });
+  assert.ok(x.r.error && !x.log.length, 'nothing selected is refused');
+  x = run({ ids: ['t1', ' t2', 't2', 't3', 't4', 7] });
+  assert.deepStrictEqual(x.r.resolved, ['t2']);
+  assert.deepStrictEqual(x.r.already, ['t1'], 'a thread whose newest message is covered by an earlier resolve is idempotent (the shared SP-1 rule)');
+  assert.deepStrictEqual(x.r.failed.map((f) => f.threadId + ':' + f.error), ['t3:Thread not found.', 't4:Not a Spanish-inbox thread.'], 'THE RULE: what it could not resolve is named');
+  const lockAt = x.log.indexOf('lock');
+  assert.ok(x.log.slice(0, lockAt).every((e) => /^read:/.test(e)) && x.log.filter((e) => /^read:/.test(e)).length === 4, 'every Gmail read is BEFORE the lock, once per distinct id');
+  assert.deepStrictEqual(x.log.slice(lockAt), ['lock', 'fold', 'write:t2', 'unlock', 'audit:SpanishInboxResolveBulk:resolved=1 already=1 failed=2 threadIds=t2', 'drop:t2', 'bust:ana@x'],
+    'ONE lock, ONE fold read, ONE write; then the audit row, the pending-id drop and the owner\'s Needs-you');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThreads'));
+  assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads subject or body');
+  assert.ok(/spanishResolveCovered_\(/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'the single resolve uses the same coverage rule');
+});
+
+test('Batch C: the sending department — a department MAILBOX wins over a person in it, a roster member counts for the FIRST of their departments in the map\'s order, a domain is never a match; the list readers carry senderDept and receivedMs, and a failed read is NAMED beside the list (driven)', () => {
+  const ctx = vm.createContext({ String, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishSenderDeptIndexFrom_'), ctx);
+  const idx = J(ctx.spanishSenderDeptIndexFrom_({ Billing: 'billing@ums.com, Bill2@ums.com', Intake: 'intake@ums.com' },
+    [{ email: 'Pat@ums.com', depts: ['Intake', 'Billing'] }, { email: 'billing@ums.com', depts: ['Intake'] }, { email: 'lee@ums.com', depts: [] }, { email: 'kim@ums.com', depts: ['Gone'] }]));
+  assert.deepStrictEqual(idx, { 'billing@ums.com': 'Billing', 'bill2@ums.com': 'Billing', 'intake@ums.com': 'Intake', 'pat@ums.com': 'Billing' },
+    'Pat is in Intake and Billing — Billing comes first in the map; the Billing mailbox stays Billing; no department, or one not in the map, is no entry');
+  assert.ok(!('ums.com' in idx), 'never by domain');
+  const safe = vm.createContext({ String, spanishSenderDeptIndex_: () => { throw new Error('roster down'); } });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishSenderDeptSafe_'), safe);
+  assert.deepStrictEqual(J(safe.spanishSenderDeptSafe_()), { index: {}, unavailable: 'roster down' }, 'a failed read is said, not an empty index');
+  const pend = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
+  const res = stripJsComments_(extractRawFunction('Code.js', 'getSpanishInboxResolved'));
+  [pend, res].forEach((src) => {
+    assert.ok(/const deptIdx = spanishSenderDeptSafe_\(\);/.test(src) && /deptUnavailable: deptIdx\.unavailable/.test(src), 'both readers ship the read\'s outcome');
+    assert.ok(/senderDept: deptIdx\.index\[requester\.toLowerCase\(\)\] \|\| ''/.test(src), 'an email request carries its department');
+  });
+  assert.strictEqual((pend.match(/receivedMs: /g) || []).length, 2, 'pending: email and voicemail carry the received time');
+  assert.strictEqual((res.match(/receivedMs: /g) || []).length, 2, 'resolved: both kinds too');
+});
+
+test('Batch C: getMySpanishAssignments — gated, ids/times/assigner only, an unreadable claims tab is an ERROR (never "nothing is yours"), and Needs-you reads through the SAME reader (driven)', () => {
+  const run = (o) => {
+    const c = vm.createContext({ String, Object, Error, SPANISH_PENDING_WINDOW_DAYS: 30,
+      getEmployeeInfo_: () => ({ email: 'Ana@x' }), canSeeSpanishInbox_: () => o.allowed !== false, getSpanishInboxAddress_: () => (o.addr === undefined ? 'sp@x' : o.addr),
+      spanishClaimsMap_: () => { if (o.claimsThrow) throw new Error('tab'); return { t1: { by: 'ana@x', atMs: 5, assignedBy: 'boss@x' }, t2: { by: 'sam@x', atMs: 1 } }; },
+      spanishPendingIdsGet_: () => ['t1', 't2'], spanishPendingFloorsGet_: () => ({}), spanishPendingEscalatedGet_: () => ({}),
+      spanishPendingCore_: () => { throw new Error('no live read on a hit'); }, spanishClaimLive_: (cl) => cl });
+    ['spanishMyOpenClaims_', 'spanishMyOpen_', 'getMySpanishAssignments'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+    return J(c.getMySpanishAssignments());
+  };
+  assert.ok(run({ allowed: false }).error, 'gated on canSeeSpanishInbox_');
+  assert.deepStrictEqual(run({ addr: '' }), { configured: false, items: [], count: 0 }, 'an unconfigured inbox is said, not an error');
+  assert.ok(/read failed/.test(run({ claimsThrow: true }).error), 'THE RULE: an unreadable claims tab is an error the client keeps the last count on');
+  assert.deepStrictEqual(run({}), { configured: true, items: [{ threadId: 't1', atMs: 5, assignedBy: 'boss@x' }], count: 1, self: 'ana@x' }, 'only my open requests; ids, times and the assigner');
+  assert.ok(/spanishMyOpen_\(emp, spanishClaimsMap_\(\)\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getMyPendingTasks'))), 'Needs-you shares the reader (g126)');
+});
+
+test('Batch C: the client\'s pure helpers — groups by day (Today / Yesterday / a date / Date unknown) or department (largest first, Other then Voicemail last), the list\'s order kept inside a group; the assignment toast only for news from someone else; the bulk result names all three halves; the id list de-duplicated and capped (driven)', () => {
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Date, isNaN, Object, Array, JSON });
+  ['spanishLocalIso_', 'spanishGroupOf_', 'spanishGroups_', 'spAssignNew_', 'spAssignToastText_', 'spanishBulkResultText_'].forEach((n) => vm.runInContext(extractFnFrom(met, n), ctx));
+  const now = new Date(2026, 10, 4, 15, 0).getTime();
+  const at = (d, h) => new Date(2026, 10, d, h || 9).getTime();
+  const G = (items, mode) => J(ctx.spanishGroups_(items, mode, now)).map((g) => g.label + ':' + g.items.map((t) => t.threadId).join(''));
+  const items = [
+    { threadId: 'a', receivedMs: at(2), senderDept: 'Intake' }, { threadId: 'b', receivedMs: at(3), senderDept: 'Billing' },
+    { threadId: 'c', receivedMs: at(3, 12), senderDept: '' }, { threadId: 'd', receivedMs: at(4), senderDept: 'Billing', kind: 'voicemail' },
+    { threadId: 'e', receivedMs: 0, senderDept: 'Billing' }];
+  const dateLabels = G(items, 'date');
+  assert.ok(/^Mon, Nov 2:a$|^Mon Nov 2:a$|Nov 2:a$/.test(dateLabels[0]), 'an older day reads as a date: ' + dateLabels[0]);
+  assert.deepStrictEqual(dateLabels.slice(1), ['Yesterday:bc', 'Today:d', 'Date unknown:e'], 'the list\'s order inside a day; no stamp is never "today"');
+  assert.deepStrictEqual(G(items, 'dept'), ['Billing:be', 'Intake:a', 'Other:c', 'Voicemail:d'], 'largest first; a voicemail is Voicemail whatever its sender');
+  assert.deepStrictEqual(G([{ threadId: 'x', senderDept: 'zeta' }, { threadId: 'y', senderDept: 'Alpha' }], 'dept'), ['Alpha:y', 'zeta:x'], 'a tie is alphabetical, case-blind');
+  const fresh = J(ctx.spAssignNew_([{ threadId: 't1', assignedBy: 'boss@x' }, { threadId: 't2', assignedBy: 'Me@x' }, { threadId: 't3', assignedBy: '' }, { threadId: 't4', assignedBy: 'boss@x' }], ['t4'], 'me@x'));
+  assert.deepStrictEqual(fresh.map((o) => o.threadId), ['t1'], 'news only: not seen, and assigned by someone else');
+  assert.strictEqual(ctx.spAssignToastText_([{ assignedBy: 'boss@x.com' }]), 'A Spanish Inbox request was assigned to you by boss');
+  assert.strictEqual(ctx.spAssignToastText_([{}, {}]), '2 Spanish Inbox requests were assigned to you');
+  assert.strictEqual(ctx.spanishBulkResultText_({ resolved: ['a', 'b'], already: ['c'], failed: [{ threadId: 'd', error: 'Thread not found.' }] }),
+    'Marked 2 resolved · 1 already resolved · 1 could not be resolved — still selected (Thread not found.)');
+  const ids = vm.createContext({ Array, String });
+  vm.runInContext(extractRawFunction('Code.js', 'spanishBulkIds_'), ids);
+  assert.deepStrictEqual(J(ids.spanishBulkIds_([' a', 'a', '', 'b', 3, null], 5)), ['a', 'b']);
+  assert.strictEqual(ids.spanishBulkIds_(['a', 'b', 'c'], 2), null, 'over the cap is null — refused, never cut');
+  assert.deepStrictEqual(J(ids.spanishBulkIds_('a', 5)), [], 'not a list is nothing');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

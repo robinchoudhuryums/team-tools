@@ -324,6 +324,11 @@ const SCENARIOS = [
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  // Batch C (operator 2026-11-02) — past SPANISH_GROUP_MIN the list folds into
+  // collapsible groups: by received day, and by sending department with two
+  // requests selected (the bar's count and Resolve selected on camera).
+  ['spanish-grouped-light-wide', { tool: 'metrics', tab: 'metricsSpanish' }, WIDE, 'light', '', "(function(){var b=SPANISH_STATE.pendingRes.pending.slice();var d=['Billing','Intake','Billing','','Resupply','Intake'];var out=[];for(var i=0;i<18;i++){var x=Object.assign({},b[i%b.length]);x.threadId='g'+i;x.receivedMs=Date.now()-Math.floor(i/5)*86400000-i*600000;x.ageHours=Math.round((Date.now()-x.receivedMs)/3600000);x.senderDept=d[i%d.length];x.escalated=x.ageHours>=168;out.push(x);}out.sort(function(a,c){return c.ageHours-a.ageHours});SPANISH_STATE.pendingRes.pending=out;spanishRenderList_();})();spAssignPoll_()"],
+  ['spanish-grouped-dept-dark-mobile', { tool: 'metrics', tab: 'metricsSpanish' }, MOBILE, 'dark', '', "(function(){var b=SPANISH_STATE.pendingRes.pending.slice();var d=['Billing','Intake','Billing','','Resupply','Intake'];var out=[];for(var i=0;i<18;i++){var x=Object.assign({},b[i%b.length]);x.threadId='g'+i;x.receivedMs=Date.now()-Math.floor(i/5)*86400000-i*600000;x.ageHours=Math.round((Date.now()-x.receivedMs)/3600000);x.senderDept=d[i%d.length];x.escalated=x.ageHours>=168;out.push(x);}out.sort(function(a,c){return c.ageHours-a.ageHours});SPANISH_STATE.pendingRes.pending=out;spanishRenderList_();})();spanishSetGroupBy_('dept');document.querySelectorAll('input.sp-sel')[0].click();document.querySelectorAll('input.sp-sel')[1].click()"],
   // Operator 2026-08-18 (width round): Punctuality had never been shot — the
   // inner 780/820px caps survived two width passes because of it.
   ['punctuality-light-wide', { tool: 'manage', tab: 'punctuality' }, WIDE, 'light', ''],

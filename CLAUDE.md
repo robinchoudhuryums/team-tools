@@ -964,18 +964,18 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1496 | `node test/client/run.js` |
-| DOM harness tests | 360 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 224 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1500 | `node test/client/run.js` |
+| DOM harness tests | 363 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 226 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 103 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
-| localStorage keys | 20 | `ums…` literals in `web-app/` |
-| Invariant library entries | 377 | `.cycle/config.md` |
-| Regression scenarios (S*) | 145 | `.cycle/config.md` |
+| localStorage keys | 22 | `ums…` literals in `web-app/` |
+| Invariant library entries | 378 | `.cycle/config.md` |
+| Regression scenarios (S*) | 146 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
