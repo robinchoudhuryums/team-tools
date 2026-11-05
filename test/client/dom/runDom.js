@@ -9192,7 +9192,10 @@ test('P1 DOM: the pay-week item — "Check your timesheet" with Review and a Don
   assert.ok(/Needs you\(1\)/.test(host.querySelector('.dash-card-head').textContent), 'and the count follows');
   const went = [];
   h.window.enterTool = (tool, tab) => went.push(tool + '/' + tab);
-  h.read('clkNeedsYouGo_')(1);
+  // The link's OWN index (the inline handler is not run by the harness — read it).
+  const link = host.querySelector('li[data-kind="coaching"] a.ny-link');
+  const linkIdx = +/clkNeedsYouGo_\((\d+)\)/.exec(link.getAttribute('onclick'))[1];
+  h.read('clkNeedsYouGo_')(linkIdx);
   assert.deepStrictEqual(went, ['develop/coaching'], 'the remaining item keeps its own link (its index into the payload)');
   NEEDS.data = { items: [pay('Monthly:2026-12-01'), coach], total: 2, unavailable: [], todayIso: '2026-12-28' };
   render();
