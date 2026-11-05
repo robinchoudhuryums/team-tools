@@ -4347,7 +4347,7 @@ test('KB-HL (operator 2026-10-27): a search word is marked where a WORD STARTS �
 // status-chip renderer, and the signature-pad export-cap parity tripwire.
 console.log('\nempdocs — validator / chip / pad export cap (T3)');
 ['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX',
- 'EMPDOC_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX'].forEach((name) => {
+ 'EMPDOC_FIELD_TYPES', 'EMPDOC_SIGN_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX'].forEach((name) => {
   const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
   assert.ok(m, name + ' declaration found in Code.js');
   vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
@@ -42946,13 +42946,13 @@ const hCtx_ = (extra) => {
       base64Encode: (b) => Buffer.from(b.map((x) => x & 255)).toString('base64'),
       getUuid: () => 'doc-1',
     } }, extra || {}));
-  ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];',
+  ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_SIGN_FIELD_TYPES = \\[[^\\]]*\\];',
     'const EMPDOC_FIELD_CAP = \\d+;', 'const EMPDOC_FIELD_LABEL_MAX = \\d+;', 'const EMPDOC_PDF_KEY_RE = /[^;]*;', 'const EMPDOC_PDF_MAX_BYTES = \\d+;',
     'const EMPDOC_PDF_NAME_MAX = \\d+;', 'const EMPDOC_PDF_MAX_PAGES = \\d+;', "const EMPDOC_FILES_TAB = '[^']*';", "const EMPDOC_SIG_TAB = '[^']*';",
     'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
   ['empDocSha256Hex_', 'empDocValidateIssue_', 'empDocValidateFields_', 'empDocNormBox_', 'empDocPdfLine_', 'empDocPdfFromBody_',
-    'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate']
+    'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
@@ -43089,6 +43089,137 @@ test('Batch H: the client\'s box geometry — a box sits in PERCENTAGES of its p
   assert.strictEqual(ctx.edPdfNoteOf_('Read this.\n\nPDF document "p.pdf" · SHA-256 ' + sha), 'Read this.');
   assert.strictEqual(ctx.edPdfNoteOf_('PDF document "p.pdf" · SHA-256 ' + sha), '');
   assert.strictEqual(ctx.edPdfNoteOf_('A written line.'), 'A written line.', 'a written body is untouched');
+});
+
+
+// ── ED1 (operator 2026-11-05): signature + initials boxes, boxes coloured by
+// type, page-relative box text, capacity and overfill.
+console.log('\nOperator round 2026-11-05 — ED1 (Employee Docs fill & sign fixes)');
+test('ED1: a signature or initials field exists only as a BOX on a document that requires a signature; its "response" is never typed or stored, and a required one never blocks the responses check (driven)', () => {
+  const c = hCtx_();
+  const box = { page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 };
+  assert.ok(/must be a box on a PDF page/.test(hJ(c.empDocValidateFields_([{ label: 'Sign here', type: 'signature' }], { allowBoxes: true })).error), 'no box: refused');
+  assert.ok(/must be a box on a PDF page/.test(hJ(c.empDocValidateFields_([{ label: 'Initial', type: 'initials' }])).error), 'a template (no PDF) cannot hold one either');
+  const ok = hJ(c.empDocValidateFields_([{ label: 'Sign here', type: 'signature', box: box }, { label: 'Initial', type: 'initials', box: box }], { allowBoxes: true }));
+  assert.ok(ok.ok && ok.fields[0].type === 'signature' && ok.fields[1].type === 'initials', JSON.stringify(ok));
+  const pdf = { sha: 'a'.repeat(64), name: 'p.pdf' };
+  const base = { empId: 'E1', docType: 'pip', title: 'PIP', fields: [{ label: 'Sign here', type: 'signature', box: box }] };
+  assert.ok(/must require a signature/.test(hJ(c.empDocValidateIssue_(Object.assign({}, base, { requiresSignature: false }), pdf)).error), 'a signature box on a no-signature document is refused');
+  assert.ok(hJ(c.empDocValidateIssue_(Object.assign({}, base, { requiresSignature: true }), pdf)).ok);
+  const r = hJ(sb.empDocValidateResponses_([{ id: 's', label: 'Sign here', type: 'signature', required: true }, { id: 'n', label: 'Note', type: 'text', required: false }], { s: 'typed?', n: 'hi' }));
+  assert.deepStrictEqual(r, { ok: true, responses: { n: 'hi' } }, 'a required signature box needs no typed answer, and a value sent for one is dropped');
+  assert.ok(/EMPDOC_SIGN_FIELD_TYPES = \['signature','initials'\]/.test(serverSource()));
+});
+
+test('ED1: the initials — a document with an initials box needs a drawn PNG (capped); any other stores none whatever was sent; the signature hash covers them only when present, so every earlier signature still verifies; the sign path writes them beside the signature and verify reads them back (driven + source)', () => {
+  const c = hCtx_();
+  vm.runInContext(extractRawFunction('Code.js', 'empDocInitialsCheck_'), c);
+  vm.runInContext(extractRawFunction('Code.js', 'empDocSignatureHash_'), c);
+  vm.runInContext(new RegExp('const EMPDOC_INITIALS_MAX_CHARS = \\d+;').exec(serverSource())[0].replace(/^const /, 'var '), c);
+  const ini = [{ id: 'i', type: 'initials' }];
+  assert.deepStrictEqual(hJ(c.empDocInitialsCheck_([{ id: 't', type: 'text' }], 'data:image/png;base64,AAAA')), { initials: '' }, 'no initials box: nothing kept');
+  assert.ok(/Draw your initials/.test(c.empDocInitialsCheck_(ini, '').error), 'missing');
+  assert.ok(/Draw your initials/.test(c.empDocInitialsCheck_(ini, 'javascript:alert(1)').error), 'not a PNG data URL');
+  assert.ok(/too large/.test(c.empDocInitialsCheck_(ini, 'data:image/png;base64,' + 'A'.repeat(20000)).error), 'over the cap');
+  assert.strictEqual(c.empDocInitialsCheck_(ini, 'data:image/png;base64,AAAA').initials, 'data:image/png;base64,AAAA');
+  const h0 = c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}');
+  assert.strictEqual(c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}', undefined, ''), h0, 'no initials: the hash every earlier signature carries');
+  const h1 = c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}', undefined, 'data:image/png;base64,AAAA');
+  assert.ok(h1 !== h0, 'initials change the hash');
+  assert.ok(c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '', undefined, 'data:image/png;base64,AAAA') !== c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, 'data:image/png;base64,AAAA'),
+    'tagged: initials can never pass for a responses segment');
+  const ack = extractRawFunction('Code.js', 'acknowledgeDoc');
+  assert.ok(/empDocInitialsCheck_\(d\.fields, initialsDataUrl\)/.test(ack) && /EMPDOC_ACK_VERSION, responsesRaw, undefined, ini\.initials\)/.test(ack) && /sigHash, cert, ini\.initials\]/.test(ack), 'checked, hashed and stored');
+  assert.ok(ack.indexOf('empDocInitialsCheck_') < ack.indexOf('appendRow'), 'checked before anything is written');
+  assert.ok(/'\|initials'/.test(ack), 'the certificate JSON names what the hash covers');
+  const ver = extractRawFunction('Code.js', 'verifyDocSignature');
+  assert.ok(/rowInitials = String\(sigRow\[EDS\.INITIALS\]/.test(ver) && /d\.responsesRaw, undefined, rowInitials\)/.test(ver), 'verify recomputes with the row\'s initials');
+  assert.ok(/'InitialsDataUrl'\]/.test(serverSource()) && /INITIALS:7 \}/.test(serverSource()), 'a trailing column on DocSignatures');
+});
+
+test('ED1: a signed document shows its drawings — getMyDoc reads the newest signature row for a signed document with a signature or initials box; the row reader re-checks the key it found (g164); the certificate names signature and initials boxes and draws the initials only as a PNG (driven + source)', () => {
+  const c = hCtx_({ esc_: (x) => String(x) });
+  const rows = [['d0', 'E1', 't', 'old', 1, 'h', '{}', ''], ['d1', 'E1', 't', 'data:image/png;base64,SIG', 1, 'h', '{}', 'data:image/png;base64,INI']];
+  let swapped = false;
+  c.getHrDocsSS_ = () => ({ getSheetByName: () => ({ getLastRow: () => 3,
+    getRange: (r, col, n, w) => ({ getValues: () => (w === 1 && n === 2 ? rows.map((x) => [x[0]]) : [swapped ? rows[0] : rows[r - 2]]) }) }) });
+  assert.strictEqual(c.empDocLatestSigRow_('d1')[7], 'data:image/png;base64,INI', 'the newest row for the doc');
+  assert.strictEqual(c.empDocLatestSigRow_('zz'), null);
+  swapped = true;
+  assert.strictEqual(c.empDocLatestSigRow_('d1'), null, 'a row that no longer carries the key it was found by is refused');
+  const gm = extractRawFunction('Code.js', 'getMyDoc');
+  assert.ok(/d\.status === 'signed' && \(d\.fields \|\| \[\]\)\.some\(function \(f\) \{ return EMPDOC_SIGN_FIELD_TYPES\.indexOf\(f\.type\) >= 0; \}\)/.test(gm) && /out\.signatureImage = /.test(gm) && /out\.initialsImage = /.test(gm), 'only a signed document with a drawing box carries them');
+  assert.ok(gm.indexOf('empDocCanManagerSee_') < gm.indexOf('empDocLatestSigRow_'), 'after the read gate');
+  const html = c.empDocCertificateHtml_({ title: 'T', fields: [{ id: 's', label: 'Sign', type: 'signature', box: { page: 2 } }, { id: 'i', label: 'Init', type: 'initials', box: { page: 1 } }],
+    responses: {}, signature: 'data:image/png;base64,AAAA', initials: 'data:image/png;base64,BBBB' });
+  assert.ok(/Sign \(page 2\)[\s\S]*The signature below/.test(html) && /Init \(page 1\)[\s\S]*The initials below/.test(html), html);
+  assert.ok(/<img alt="Initials"[^>]*src="data:image\/png;base64,BBBB">/.test(html));
+  assert.ok(!/<img alt="Initials"/.test(c.empDocCertificateHtml_({ fields: [], initials: 'javascript:x' })), 'anything else is not drawn');
+});
+
+test('ED1: the client geometry in POINTS — a tap makes its type\'s standard box in points (the same on Letter and A4), a drag shorter than one line is raised to it, Batch H\'s fractions stand without a page size; the capacity, the size readout and the overfill rule; the client\'s sign types mirror the server\'s (driven)', () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp });
+  ['ED_SIGN_TYPES', 'ED_BOX_FS', 'ED_BOX_FS_MIN', 'ED_BOX_DEFAULT_PTS', 'ED_BOX_MIN_H_PTS', 'ED_BOX_KEYS'].forEach((n) => {
+    const m = new RegExp('var ' + n + ' = [^;]+;').exec(ed); assert.ok(m, n); vm.runInContext(m[0], ctx);
+  });
+  ['edBoxFromDrag_', 'edBoxPts_', 'edBoxCapacity_', 'edBoxSizeText_', 'edBoxTextOver_', 'edBoxLegendHtml_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  const letter = { w: 612, h: 792 }, a4 = { w: 595.28, h: 841.89 };
+  const tl = hJ(ctx.edBoxFromDrag_(0.1, 0.1, 0.1, 0.1, 'text', letter)), ta = hJ(ctx.edBoxFromDrag_(0.1, 0.1, 0.1, 0.1, 'text', a4));
+  assert.deepStrictEqual(hJ(ctx.edBoxPts_(tl, letter)).w.toFixed(0), '180');
+  assert.strictEqual(Math.round(ctx.edBoxPts_(ta, a4).w), 180, 'the same 180pt box on A4');
+  assert.strictEqual(Math.round(ctx.edBoxPts_(hJ(ctx.edBoxFromDrag_(0.5, 0.5, 0.5, 0.5, 'signature', letter)), letter).h), 40, 'a signature box is 40pt tall');
+  const thin = hJ(ctx.edBoxFromDrag_(0.1, 0.5, 0.5, 0.51, 'text', letter));   // ~8pt tall: a drag, not a tap
+  assert.strictEqual(Math.round(thin.h * 792), 12, 'a drag shorter than a line of text is raised to 12pt');
+  assert.deepStrictEqual(hJ(ctx.edBoxFromDrag_(0.9, 0.99, 0.9, 0.99, 'date')), { x: 0.8, y: 0.972, w: 0.2, h: 0.028 }, 'no page size: Batch H\'s fractions');
+  assert.strictEqual(ctx.edBoxCapacity_('text', { w: 180, h: 16 }, 7), 49);
+  assert.strictEqual(ctx.edBoxCapacity_('textarea', { w: 186, h: 50 }, 10), 36 * 4, 'per line × lines');
+  assert.strictEqual(ctx.edBoxCapacity_('date', { w: 96, h: 16 }), null);
+  assert.strictEqual(ctx.edBoxCapacity_('signature', { w: 180, h: 40 }), null);
+  assert.strictEqual(ctx.edBoxSizeText_('text', { w: 180, h: 16 }), '2.5 \u00d7 0.22 in \u00b7 about 34\u201349 characters');
+  assert.strictEqual(ctx.edBoxSizeText_('signature', { w: 180, h: 40 }), '2.5 \u00d7 0.56 in');
+  assert.ok(/too short for a line of text/.test(ctx.edBoxSizeText_('text', { w: 180, h: 8 })));
+  assert.strictEqual(ctx.edBoxTextOver_('text', 'x'.repeat(49), { w: 180, h: 16 }), false);
+  assert.strictEqual(ctx.edBoxTextOver_('text', 'x'.repeat(50), { w: 180, h: 16 }), true);
+  assert.strictEqual(ctx.edBoxTextOver_('text', 'x'.repeat(500), null), false, 'no page size: the browser\'s measure decides');
+  const lg = ctx.edBoxLegendHtml_(['signature', 'text']);
+  assert.ok(/t-text">Short text/.test(lg) && /t-signature">Signature/.test(lg) && !/t-date/.test(lg), 'only the types given, in the picker\'s order');
+  assert.ok((ctx.edBoxLegendHtml_().match(/ed-box-key/g) || []).length === 5);
+  assert.deepStrictEqual(Array.from(ctx.ED_SIGN_TYPES), JSON.parse(/EMPDOC_SIGN_FIELD_TYPES = (\[[^\]]*\])/.exec(serverSource())[1].replace(/'/g, '"')), 'mirrors EMPDOC_SIGN_FIELD_TYPES');
+});
+
+test('ED1: a box\'s text is sized against its PAGE, never the window; each type has its colour (fixed, on paper); an optional box is dashed; the marks sit outside the box; the table title buttons and the file picker are styled (source)', () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const css = ed.slice(0, ed.indexOf('</style>'));
+  assert.ok(/\.ed-pdf-page \{[^}]*container-type: inline-size/.test(css), 'the page is a size container');
+  assert.ok(/font-size: calc\(100cqw \* var\(--ed-fs\) \/ var\(--ed-pw\)\)/.test(css), 'box text in page units');
+  assert.ok(!/clamp\([^)]*vw/.test(css), 'no box text sized by the viewport');
+  assert.ok(/wrap\.style\.setProperty\('--ed-pw'/.test(ed), 'each page carries its width in points');
+  ['text', 'date', 'textarea', 'signature', 'initials'].forEach((t) => assert.ok(new RegExp('\\.t-' + t + ' \\{ --ed-c: #[0-9a-f]{6}; --ed-t: rgba').test(css), t + ' has a fixed colour'));
+  assert.ok(/border: 2px dashed var\(--ed-c\)/.test(css) && /\.ed-pdf-box\.is-req \{ border-style: solid; \}/.test(css));
+  assert.ok(/\.ed-pdf-box-more, \.ed-pdf-count \{ position: absolute; right: -2px; bottom: 100%/.test(css), 'outside the box');
+  assert.ok(/\.tr-table \.tr-title \{/.test(css), 'the Issue Docs table\'s title buttons');
+  assert.ok(/id="ed-is-pdf-btn"/.test(ed) && /<input type="file" id="ed-is-pdf"[^>]* hidden>/.test(ed), 'a styled button over a hidden file control');
+});
+
+test('ED1: the box markup — the type\'s class, required solid; a fill box\'s input is capped at what fits at the floor size with a counter; a signature box is filled by the pad, never typed; the read-only view draws only a PNG and marks an answer longer than its box (driven)', () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '' });
+  ['ED_BOX_LABELS', 'ED_SIGN_TYPES', 'ED_BOX_FS', 'ED_BOX_FS_MIN'].forEach((n) => vm.runInContext(new RegExp('var ' + n + ' = [^;]+;').exec(ed)[0], ctx));
+  ['edBoxStyle_', 'edBoxPts_', 'edBoxCapacity_', 'edBoxSizeText_', 'edBoxTextOver_', 'edSignBoxPh_', 'edBoxesHtml_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  const letter = { w: 612, h: 792 };
+  const fields = [{ id: 'a', label: 'Name', type: 'text', required: false, box: { page: 1, x: 0.1, y: 0.1, w: 180 / 612, h: 16 / 792 } },
+    { id: 's', label: 'Sign here', type: 'signature', required: true, box: { page: 1, x: 0.1, y: 0.5, w: 0.3, h: 0.05 } }];
+  const fill = ctx.edBoxesHtml_(fields, 1, 'fill', {}, { pagePts: letter });
+  assert.ok(/class="ed-pdf-box t-text is-fill" data-ed-fi="0" data-ed-cap="49"/.test(fill) && /maxlength="49"/.test(fill) && /ed-pdf-count/.test(fill), fill);
+  assert.ok(/class="ed-pdf-box t-signature is-req is-fill" data-ed-sign="signature"/.test(fill) && /filled when you sign/.test(fill) && !/data-fid="s"/.test(fill), 'the signature box has no input');
+  const show = ctx.edBoxesHtml_(fields, 1, 'show', { a: 'x'.repeat(60) }, { pagePts: letter, signature: 'data:image/png;base64,QUJD' });
+  assert.ok(/is-show is-over/.test(show) && /in full below/.test(show), 'past capacity: marked');
+  assert.ok(/<img class="ed-pdf-sig" alt="Sign here" src="data:image\/png;base64,QUJD">/.test(show));
+  assert.ok(!/<img/.test(ctx.edBoxesHtml_(fields, 1, 'show', {}, { pagePts: letter, signature: 'javascript:alert(1)' })), 'only a PNG data URL is drawn');
+  assert.ok(/aria-hidden="true"/.test(ctx.edSignBoxPh_('initials', 'Initial', true)) && !/Initial/.test(ctx.edSignBoxPh_('initials', 'Initial', true)), 'an initials box is too small for words: a mark, its name on the title');
+  const edit = ctx.edBoxesHtml_(fields, 1, 'edit', null, { pagePts: letter });
+  assert.ok(/class="ed-pdf-box t-text is-edit" data-ed-box="0"[^>]*title="2\.5 × 0\.22 in · about 34–49 characters"/.test(edit), edit);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

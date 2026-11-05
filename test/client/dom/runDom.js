@@ -6035,6 +6035,138 @@ test('Batch H DOM: issuing a PDF — the Content toggle shows the PDF picker (th
   assert.strictEqual(h.read('ED_STATE.issuePdf'), null, 'an issue resets the PDF with the form');
 });
 
+// ED1 (operator 2026-11-05) — signature + initials boxes, page-relative text,
+// capacity and overfill, the issue form's picker and readout.
+const ed1Canvas_ = (h) => {
+  const ctx = { scale() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, clearRect() {}, fillText() {}, measureText: () => ({ width: 60 }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ctx;
+  h.window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,QUJD';
+};
+const ed1Doc_ = (over) => hPdfDoc_(Object.assign({
+  fields: [{ id: 'name', label: 'Printed name', type: 'text', required: true, box: { page: 1, x: 0.1, y: 0.1, w: 180 / 612, h: 16 / 792 } },
+    { id: 'sign-here', label: 'Sign here', type: 'signature', required: true, box: { page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 } },
+    { id: 'initial', label: 'Initial', type: 'initials', required: true, box: { page: 2, x: 0.8, y: 0.9, w: 0.09, h: 0.035 } }] }, over || {}));
+
+test('ED1 DOM: signing a PDF with a signature box and an initials box — the legend names the types on the page; the initials pad appears; what is drawn (or typed) paints every such box live; Sign waits for the initials; the sign call carries them; a text box is capped at what fits and counts down near its limit', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  ed1Canvas_(h);
+  const acks = [];
+  h.run.respond('getMyDoc', () => ed1Doc_());
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.run.respond('acknowledgeDoc', (id, sig, resp, ini) => { acks.push([id, sig, resp, ini]); return { success: true, signedAt: '2026-11-05 10:00:00' }; });
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const ov = h.$('#ed-reader-overlay');
+  const legend = Array.from(ov.querySelectorAll('.ed-box-legend .ed-box-key')).map((e) => e.textContent);
+  assert.deepStrictEqual(legend, ['Short text', 'Signature', 'Initials'], 'only the types on this document, in order');
+  const sigBox = ov.querySelector('.ed-pdf-box[data-ed-sign="signature"]');
+  assert.ok(sigBox && sigBox.classList.contains('t-signature') && /filled when you sign/.test(sigBox.textContent) && !sigBox.querySelector('input,textarea'), 'a signature box is never typed into');
+  assert.ok(h.$('#ed-ini-canvas'), 'the initials pad');
+  const name = ov.querySelector('input[data-fid="name"]');
+  assert.strictEqual(name.getAttribute('maxlength'), '49', 'capped at what fits at the floor size');
+  const count = name.parentNode.querySelector('.ed-pdf-count');
+  assert.ok(count.hidden, 'no counter while far from the limit');
+  name.value = 'x'.repeat(44); name.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!count.hidden && count.textContent === '5 left', 'counts down near the limit');
+  name.value = 'Nina Patel'; name.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.click('#ed-ack-check');
+  const typed = h.$('#ed-sig-typed-input');
+  typed.value = 'Nina Patel'; typed.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(ov.querySelector('.ed-pdf-box[data-ed-sign="signature"] img.ed-pdf-sig'), 'the drawing paints the signature box');
+  assert.ok(!ov.querySelector('.ed-pdf-box[data-ed-sign="initials"] img'), 'the initials box waits for the initials');
+  h.click('#ed-sign-btn');
+  await tick();
+  assert.strictEqual(acks.length, 0, 'Sign waits for the initials');
+  assert.ok(/Draw your initials too/.test(h.document.body.textContent));
+  const ti = h.$('#ed-ini-typed-input');
+  ti.value = 'NP'; ti.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(ov.querySelector('.ed-pdf-box[data-ed-sign="initials"] img.ed-pdf-sig'), 'and the initials paint theirs');
+  h.click('#ed-sign-btn');
+  await hSettle_();
+  assert.strictEqual(acks.length, 1);
+  assert.deepStrictEqual([acks[0][0], acks[0][1], acks[0][3]], ['dp', 'data:image/png;base64,QUJD', 'data:image/png;base64,QUJD'], 'the signature and the initials ride the sign call');
+  assert.deepStrictEqual(Object.assign({}, acks[0][2]), { name: 'Nina Patel' }, 'no typed answer for a drawing box');
+});
+
+test('ED1 DOM: Clear empties both pads, and every signature and initials box goes back to its placeholder', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  ed1Canvas_(h);
+  h.run.respond('getMyDoc', () => ed1Doc_());
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.click('#ed-ack-check');
+  const typed = h.$('#ed-sig-typed-input'), ti = h.$('#ed-ini-typed-input');
+  typed.value = 'Nina'; typed.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  ti.value = 'NP'; ti.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.$$('#ed-pdf-pages .ed-pdf-box[data-ed-sign] img').length, 2);
+  h.click('#ed-sig-clear');
+  assert.strictEqual(h.$$('#ed-pdf-pages .ed-pdf-box[data-ed-sign] img').length, 0, 'both boxes are empty again');
+  assert.ok(h.read('ED_STATE.sigPad').isEmpty() && h.read('ED_STATE.iniPad').isEmpty());
+});
+
+test('ED1 DOM: a signed PDF document — its signature and initials boxes show what was drawn; an answer longer than its box is marked on the page and listed IN FULL under the pages, never cut off unseen', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  h.run.respond('getMyDoc', () => ed1Doc_({ status: 'signed', canComplete: false, ackText: undefined, signedAt: '2026-11-05 10:00:00',
+    responses: { name: 'Nina Bartholomew-Patel of the Northern Regional Office, Building C' },
+    signatureImage: 'data:image/png;base64,U0lH', initialsImage: 'data:image/png;base64,SU5J' }));
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const pages = h.$('#ed-pdf-pages');
+  assert.strictEqual(pages.querySelector('[data-ed-sign="signature"] img').getAttribute('src'), 'data:image/png;base64,U0lH');
+  assert.strictEqual(pages.querySelector('[data-ed-sign="initials"] img').getAttribute('src'), 'data:image/png;base64,SU5J');
+  const nameBox = pages.querySelector('.ed-pdf-box.t-text');
+  assert.ok(nameBox.classList.contains('is-over') && /in full below/.test(nameBox.textContent), 'marked on the page');
+  const list = h.$('#ed-pdf-over');
+  assert.ok(/answers longer than their box/.test(list.textContent) && /Printed name \(page 1\)/.test(list.textContent) && /Building C/.test(list.textContent), 'and listed in full');
+  assert.ok(!pages.querySelector('input, textarea'), 'read-only');
+});
+
+test('ED1 DOM: issuing — a styled Choose PDF button opens the hidden file control and names the file; the legend sits under the box picker; a signature box turns "Require signature" on and says so; each box field shows its page, size and what it holds; the box is coloured by its type and the issue sends it', async () => {
+  const h = boot(); mount_(h, 'view-area');
+  hFakePdf_(h, 2);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.click('[data-ed-mode="pdf"]');
+  let clicked = 0;
+  h.$('#ed-is-pdf').click = () => { clicked++; };
+  h.click('#ed-is-pdf-btn');
+  assert.strictEqual(clicked, 1, 'the button opens the file control');
+  assert.ok(h.$('#ed-is-pdf').hidden && h.$('#ed-is-pdf-wrap .ed-box-legend'), 'the raw control is hidden; the legend is shown');
+  assert.strictEqual(h.$$('#ed-is-pdf-wrap .ed-box-legend .ed-box-key').length, 5);
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'PIP - Nina.pdf', { type: 'application/pdf' }));
+  await hSettle_(20);
+  assert.strictEqual(h.$('#ed-is-pdf-name').textContent, 'PIP - Nina.pdf', 'the chosen file is named');
+  h.$('#ed-is-sig').checked = false;
+  h.$('#ed-box-type').value = 'signature';
+  h.window.edAddBox_(1, h.read('edBoxFromDrag_')(0.1, 0.8, 0.1, 0.8, 'signature', { w: 612, h: 792 }));
+  assert.ok(h.$('#ed-is-sig').checked && /needs a signature/.test(h.document.body.textContent), 'turned on, and said');
+  const box = h.$('#ed-is-pdf-pages .ed-pdf-box.is-edit');
+  assert.ok(box.classList.contains('t-signature') && box.getAttribute('title') === '2.5 × 0.56 in', box.outerHTML);
+  assert.ok(/Box · page 1 · 2\.5 × 0\.56 in/.test(h.$('#ed-fields-list').textContent), 'the field list names its size');
+  h.$('#ed-box-type').value = 'text';
+  h.window.edAddBox_(2, h.read('edBoxFromDrag_')(0.2, 0.2, 0.2, 0.2, 'text', { w: 612, h: 792 }));
+  assert.ok(/about 34–49 characters/.test(h.$('#ed-fields-list').textContent), 'a text box says what it holds');
+  const typeSel = h.$$('#ed-fields-list .ed-field-type')[0];
+  assert.ok(Array.from(typeSel.options).some((o) => o.value === 'initials'), 'a box field may become initials');
+  h.$('#ed-is-emp').value = 'e1'; h.$('#ed-is-title').value = 'PIP';
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  assert.ok(sent[0].requiresSignature === true && sent[0].fields[0].type === 'signature' && sent[0].fields[0].box.page === 1, JSON.stringify(sent[0].fields));
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

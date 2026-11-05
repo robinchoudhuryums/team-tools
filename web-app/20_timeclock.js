@@ -9513,6 +9513,11 @@ function empDocValidateIssue_(payload, pdf) {
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
   const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf });
   if (!fv.ok) return { ok: false, error: fv.error };
+  // ED1: a signature or initials box is filled by the sign panel, so a
+  // document that carries one must ask for the signature.
+  if (payload.requiresSignature === false && fv.fields.some(function (f) { return EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0; })) {
+    return { ok: false, error: 'A document with a signature or initials box must require a signature.' };
+  }
   return { ok: true, doc: {
     empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
     requiresSignature: payload.requiresSignature !== false,
@@ -9538,6 +9543,8 @@ function empDocValidateFields_(fields, opts) {
     if (label.length > EMPDOC_FIELD_LABEL_MAX) return { ok: false, error: 'A field label is too long.' };
     const type = String(f.type || 'text').trim().toLowerCase();
     if (EMPDOC_FIELD_TYPES.indexOf(type) < 0) return { ok: false, error: 'Invalid field type "' + type + '".' };
+    // ED1: signature and initials exist only as a box on the PDF's page.
+    if (EMPDOC_SIGN_FIELD_TYPES.indexOf(type) >= 0 && f.box == null) return { ok: false, error: '"' + label + '" is a ' + type + ' field — it must be a box on a PDF page.' };
     let id = String(f.id || f.label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (!id) id = 'f' + (i + 1);
     let base = id, n = 2;
@@ -9593,6 +9600,7 @@ function empDocValidateResponses_(fields, responses) {
   const out = {};
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
+    if (EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0) continue;   // ED1: filled by the sign panel's pads, never typed
     const raw = responses[f.id];
     const val = raw == null ? '' : String(raw).trim();
     if (f.required && !val) return { ok: false, error: 'Please complete: ' + f.label };

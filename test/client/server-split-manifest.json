@@ -3817,6 +3817,32 @@
     "verifyDocSignature"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "ED1: signature/initials box types (EMPDOC_SIGN_FIELD_TYPES, EMPDOC_INITIALS_MAX_CHARS), the initials check and the shared latest-signature-row reader",
+   "added": [
+    "EMPDOC_INITIALS_MAX_CHARS",
+    "EMPDOC_SIGN_FIELD_TYPES",
+    "empDocInitialsCheck_",
+    "empDocLatestSigRow_"
+   ],
+   "removed": [],
+   "changed": [
+    "EDS",
+    "EMPDOC_FIELD_TYPES",
+    "EMPDOC_SIG_HEADERS",
+    "acknowledgeDoc",
+    "empDocCertificateHtml_",
+    "empDocSignatureHash_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "empDocValidateResponses_",
+    "getEmpDocCertificate",
+    "getMyDoc",
+    "verifyDocSignature"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4684,7 +4710,7 @@
   "EDS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "f378680227e3a122"
+   "sha": "02fb3fe2b9bdddfa"
   },
   "EDT": {
    "file": "00_config.js",
@@ -4724,7 +4750,7 @@
   "EMPDOC_FIELD_TYPES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e0f01189d8b6b629"
+   "sha": "6590e2c7c0c06785"
   },
   "EMPDOC_FILES_TAB": {
    "file": "00_config.js",
@@ -4740,6 +4766,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "20a1f378f149417f"
+  },
+  "EMPDOC_INITIALS_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee272c1d87e7e4fb"
   },
   "EMPDOC_PDF_KEY_RE": {
    "file": "00_config.js",
@@ -4766,10 +4797,15 @@
    "kind": "const",
    "sha": "9ab5765a17a19207"
   },
+  "EMPDOC_SIGN_FIELD_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb78fb35a19596cd"
+  },
   "EMPDOC_SIG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "24f1ba1ff32bb27f"
+   "sha": "8d243352913d7be2"
   },
   "EMPDOC_SIG_MAX_CHARS": {
    "file": "00_config.js",
@@ -7014,7 +7050,7 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "54466f7566f0f697"
+   "sha": "c9ac50676df01edd"
   },
   "activityBlocksDecode_": {
    "file": "20_timeclock.js",
@@ -8559,7 +8595,7 @@
   "empDocCertificateHtml_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "2294574dde720e58"
+   "sha": "f58c3d40a2c5a2c5"
   },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
@@ -8570,6 +8606,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "38b8379999a27a42"
+  },
+  "empDocInitialsCheck_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "c02fadb7ee48c3bd"
+  },
+  "empDocLatestSigRow_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d5bcbd50cb94c73c"
   },
   "empDocNeedsAction_": {
    "file": "20_timeclock.js",
@@ -8629,7 +8675,7 @@
   "empDocSignatureHash_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "d1a76f04e5a9277d"
+   "sha": "65ede354d74b559b"
   },
   "empDocTemplateRowToObj_": {
    "file": "20_timeclock.js",
@@ -8644,17 +8690,17 @@
   "empDocValidateFields_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2e964e2717c3d59d"
+   "sha": "e041bba73147f3ac"
   },
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "8492509e4234866c"
+   "sha": "a1f2db1fe5c9f2dd"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "93365bb830d6aa3f"
+   "sha": "7ca0a4efdfc1bf23"
   },
   "empDocsOverdueAll_": {
    "file": "20_timeclock.js",
@@ -9204,7 +9250,7 @@
   "getEmpDocCertificate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "d5c24b86b84b804f"
+   "sha": "de086397c5173ba9"
   },
   "getEmpDocPdf": {
    "file": "81_empdocs.js",
@@ -9454,7 +9500,7 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "a8e4a823e38f8f83"
+   "sha": "82826cbd3d6900d5"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
@@ -13654,7 +13700,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "3abfdc88d411a9ca"
+   "sha": "5c72be2813a94c9c"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",

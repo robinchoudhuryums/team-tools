@@ -61,10 +61,14 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim) {
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim, initialsDataUrl) {
   const d = (delim === undefined) ? '\u0000' : delim;
   let base = String(contentHash || '') + d + String(empId || '') + d + String(docId || '') + d + String(signatureDataUrl || '') + d + String(ackVersion || '');
   if (responsesJson) base += d + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+  // ED1 — drawn initials are attested too: appended only when present, behind
+  // their own tag (so they can never read as a responses segment), which keeps
+  // every hash signed before them unchanged.
+  if (initialsDataUrl) base += d + 'initials' + d + String(initialsDataUrl);
   return empDocSha256Hex_(base);
 }
 /** Bounded id-column lookup → { rowIdx, doc } or null. */
@@ -116,6 +120,21 @@ function empDocReadIntegrity_(d) {
 }
 /** Owner-or-AUTHORIZED-manager scoped (§3b) — the full doc incl. the frozen
  *  body. Includes the ack text/version when a signature is still needed. */
+/** A document's newest DocSignatures row (a bottom-up id-column scan), or
+ *  null. No lock: rows are append-only and the scan reads only the id column. */
+function empDocLatestSigRow_(docId) {
+  const sigSheet = getHrDocsSS_().getSheetByName(EMPDOC_SIG_TAB);
+  const last = sigSheet ? sigSheet.getLastRow() : 0;
+  if (last < 2) return null;
+  const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, last - 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]).trim() === docId) {
+      const row = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0];
+      return String(row[EDS.DOC_ID]).trim() === docId ? row : null;   // g164: the fetched row still carries its key
+    }
+  }
+  return null;
+}
 function getMyDoc(docId) {
   try {
     const emp = getEmployeeInfo_();
@@ -150,8 +169,25 @@ function getMyDoc(docId) {
       out.canComplete = true;
       if (d.requiresSignature) { out.ackText = EMPDOC_ACK_TEXT; out.ackVersion = EMPDOC_ACK_VERSION; }
     }
+    // ED1: a signed document's signature and initials boxes show what was
+    // drawn — read from its signature row, for exactly who may read the doc.
+    if (d.status === 'signed' && (d.fields || []).some(function (f) { return EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0; })) {
+      const sr = empDocLatestSigRow_(d.docId);
+      if (sr) { out.signatureImage = String(sr[EDS.SIGNATURE] || ''); out.initialsImage = String(sr[EDS.INITIALS] || ''); }
+    }
     return out;
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (Node-pinned) — ED1: the initials a signature carries. A document
+ *  with an initials box needs a drawn PNG (the pad's export, capped); one
+ *  without stores none, whatever the browser sent. → {initials} or {error}. */
+function empDocInitialsCheck_(fields, initialsDataUrl) {
+  const wants = (Array.isArray(fields) ? fields : []).some(function (f) { return f && f.type === 'initials'; });
+  if (!wants) return { initials: '' };
+  const v = String(initialsDataUrl || '');
+  if (!/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(v)) return { error: 'Draw your initials before signing.' };
+  if (v.length > EMPDOC_INITIALS_MAX_CHARS) return { error: 'The initials image is too large — clear it and draw them again.' };
+  return { initials: v };
 }
 /** Rep-callable, locked (INV-01), OWNER-only — managers cannot sign on an
  *  employee's behalf (the signature's value is that the employee made it).
@@ -159,7 +195,7 @@ function getMyDoc(docId) {
  *  to sign), bounds the signature payload (INV-96), writes the append-only
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
-function acknowledgeDoc(docId, signatureDataUrl, responses) {
+function acknowledgeDoc(docId, signatureDataUrl, responses, initialsDataUrl) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
@@ -184,6 +220,10 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
       if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
     }
+    // ED1: a document with an initials box takes the employee's drawn initials
+    // (once — they fill every initials box). Any other document stores none.
+    const ini = empDocInitialsCheck_(d.fields, initialsDataUrl);
+    if (ini.error) return { success: false, error: ini.error };
     // Integrity gate: the row must still hash to what was issued (incl.
     // fields). C13 dual-verify — a doc issued before the NUL-delimiter change
     // carries a legacy space-form hash and must still sign.
@@ -211,13 +251,13 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     // Persist responses first (so a signed doc's responses are what was attested).
     if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(sheetSafe_(responsesRaw));
     if (d.requiresSignature) {
-      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw);
+      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw, undefined, ini.initials);
       const cert = JSON.stringify({
         docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
-        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : ''),
+        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : '') + (ini.initials ? '|initials' : ''),
       });
       getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]));
+        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert, ini.initials]));
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('signed'));
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(sheetSafe_(ts));
       writeWitnessAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
@@ -450,8 +490,9 @@ function verifyDocSignature(docId) {
     // content-hash recompute (a pre-change sign hashed a space-form expect;
     // a post-change sign hashes the NUL form).
     const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
+    const rowInitials = String(sigRow[EDS.INITIALS] || '');   // ED1 — blank on every row signed before initials existed
     const recomputed = empDocSignatureHash_(
-      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw);
+      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw, undefined, rowInitials);
     const expectContentLegacy = empDocContentHash_(
       d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
     const recomputedLegacy = empDocSignatureHash_(
@@ -557,13 +598,20 @@ function getEmpDocPdf(docId) {
  *  signature is the stored PNG data URL, and only that shape is drawn. */
 function empDocCertificateHtml_(c) {
   const row = function (k, v) { return '<tr><th style="text-align:left;padding:4px 10px 4px 0;color:#555;font-weight:600;vertical-align:top;white-space:nowrap">' + esc_(k) + '</th><td style="padding:4px 0;vertical-align:top;word-break:break-all">' + esc_(v) + '</td></tr>'; };
+  const png = function (v) { return /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(v || '')); };
   const fields = (c.fields || []).map(function (f) {
+    const where = f.box ? ' (page ' + f.box.page + ')' : '';
+    // ED1: a signature or initials box holds the drawing shown below, never text.
+    if (f.type === 'signature') return row(f.label + where, 'The signature below');
+    if (f.type === 'initials') return row(f.label + where, png(c.initials) ? 'The initials below' : '—');
     const v = (c.responses || {})[f.id];
-    return row(f.label + (f.box ? ' (page ' + f.box.page + ')' : ''), v == null || v === '' ? '—' : String(v));
+    return row(f.label + where, v == null || v === '' ? '—' : String(v));
   }).join('');
-  const sig = /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(c.signature || ''))
+  const sig = (png(c.signature)
     ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Signature</p><img alt="Signature" style="max-width:320px;max-height:120px;border:1px solid #ccc" src="' + c.signature + '">'
-    : '';
+    : '') + (png(c.initials)
+    ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Initials</p><img alt="Initials" style="max-width:160px;max-height:70px;border:1px solid #ccc" src="' + c.initials + '">'
+    : '');
   return '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:28px">' +
     '<h1 style="font-size:18px;margin:0 0 4px">Certificate of ' + (c.signed ? 'signature' : 'completion') + '</h1>' +
     '<p style="margin:0 0 14px;color:#555">UMS Team Tools · Employee documents</p>' +
@@ -577,7 +625,7 @@ function empDocCertificateHtml_(c) {
     '</table>' +
     (fields ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Responses</p><table style="border-collapse:collapse">' + fields + '</table>' : '') +
     sig +
-    '<p style="margin:18px 0 0;color:#777;font-size:10px">The SHA-256 of the PDF is computed over the file’s bytes. The signature hash covers the content hash, the employee, the document, the signature and the responses; recompute both from the HR record to verify.</p>' +
+    '<p style="margin:18px 0 0;color:#777;font-size:10px">The SHA-256 of the PDF is computed over the file’s bytes. The signature hash covers the content hash, the employee, the document, the signature, the responses and any initials; recompute both from the HR record to verify.</p>' +
     '</body></html>';
 }
 /** Employee-callable, read-only — the signed (or completed) document's
@@ -594,15 +642,7 @@ function getEmpDocCertificate(docId) {
     const isOwner = d.empId === emp.id;
     if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
     if (d.status !== 'signed' && d.status !== 'completed') return { error: 'A certificate exists once the document is signed or completed.' };
-    const sigSheet = getHrDocsSS_().getSheetByName(EMPDOC_SIG_TAB);
-    const last = sigSheet ? sigSheet.getLastRow() : 0;
-    let sigRow = null;
-    if (last >= 2) {
-      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, last - 1, 1).getValues();
-      for (let i = ids.length - 1; i >= 0; i--) {
-        if (String(ids[i][0]).trim() === d.docId) { sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0]; break; }
-      }
-    }
+    const sigRow = empDocLatestSigRow_(d.docId);
     if (!sigRow) return { error: 'No signature record was found for this document.' };
     const target = lookupEmployeeById_(d.empId);
     const html = empDocCertificateHtml_({
@@ -611,7 +651,8 @@ function getEmpDocCertificate(docId) {
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()) || d.signedAt,
       pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null, contentHash: d.contentHash,
       sigHash: String(sigRow[EDS.SIG_HASH] || ''), ackText: EMPDOC_ACK_TEXT,
-      fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || '') });
+      fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || ''),
+      initials: String(sigRow[EDS.INITIALS] || '') });
     let pdf;
     try { pdf = Utilities.newBlob(html, 'text/html', 'certificate.html').getAs('application/pdf'); }
     catch (e) { return { error: 'The certificate could not be made into a PDF here: ' + ((e && e.message) || e) }; }

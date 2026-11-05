@@ -299,9 +299,16 @@ const SCENARIOS = [
   // certificate, and the manager drawing a box on a chosen PDF (the post hook feeds the fixture PDF in).
   ['empdocs-pdf-sign-light-wide',  { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
   ['empdocs-pdf-sign-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  // ED1: signing with a typed signature and initials — both kinds of box paint
+  // live; the same PIP signed, its drawings in place and the over-long comment
+  // marked on the page and listed in full beneath it.
+  ['empdocs-pdf-signing-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf'); setTimeout(function () { var c = document.getElementById('ed-ack-check'); if (c) { c.checked = true; c.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-sig-typed-toggle'); if (t) t.click(); var a = document.getElementById('ed-sig-typed-input'); if (a) { a.value = 'Sam Ortiz'; a.dispatchEvent(new Event('input')); } var b = document.getElementById('ed-ini-typed-input'); if (b) { b.value = 'SO'; b.dispatchEvent(new Event('input')); } var n = document.querySelector('[data-fid=\"employee-comments\"]'); if (n) { n.value = 'I understand the goals and will check in after the first week.'; n.dispatchEvent(new Event('input')); } if (document.activeElement) document.activeElement.blur(); var bd = document.querySelector('#ed-reader-overlay .body'); if (bd) bd.scrollTop = 0; }, 1300);", { wait: 2200 }],
+  ['empdocs-pdf-signed-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf-signed')", { wait: 1500 }],
+  ['empdocs-pdf-signed-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var o = document.getElementById('ed-pdf-over'); if (o) o.scrollIntoView(); }, 1300)", { wait: 2000 }],
   ['empdocs-cert-light-wide',      { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenCertificate_('d-signed')", { wait: 1500 }],
   ['empdocs-issue-pdf-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
-    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); if (t) t.value = 'signature'; edAddBox_(1, edBoxFromDrag_(0.098, 0.335, 0.098, 0.335, 'signature', { w: 612, h: 792 })); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],

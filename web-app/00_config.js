@@ -2813,14 +2813,14 @@ const EMPDOC_SIG_TAB = 'DocSignatures';
 // PDF's key in the EmpDocFiles tab (blank for a written document and every
 // older row; getOrCreateEmpDocSheet_ self-heals the header).
 const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey'];
-const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
+const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate','InitialsDataUrl'];
 const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15 };
 // HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
 // that read as a date or number was coerced on write, so the content hash
 // recomputed from the cell never matched — the doc could not be signed and
 // verified as TAMPERED.
 const EMPDOC_TEXT_IDX = [ED.TITLE, ED.BODY_MD, ED.VOID_REASON];
-const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
+const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6, INITIALS:7 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
 // v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
 // Org-wide + PHI-free (form shells, not employee data) → not team-scoped.
@@ -2828,7 +2828,16 @@ const EMPDOC_TPL_TAB = 'EmpDocTemplates';
 const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
 const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
 // v2 — employee-completable fields on a doc (in addition to the signature).
-const EMPDOC_FIELD_TYPES = ['text','textarea','date'];
+const EMPDOC_FIELD_TYPES = ['text','textarea','date','signature','initials'];
+// ED1 (operator 2026-11-05 — "a 'signature' box type that allows for a
+// mouse-drawn signature"): a SIGNATURE or INITIALS field is a box on a PDF the
+// employee does not type into — the sign panel's pads fill every such box. It
+// stores no response (empDocValidateResponses_ skips it); it is only valid as a
+// box, on a document that requires a signature (empDocValidateIssue_). The
+// initials are drawn once, kept in the DocSignatures row's trailing
+// InitialsDataUrl column, and covered by the signature hash when present.
+const EMPDOC_SIGN_FIELD_TYPES = ['signature','initials'];
+const EMPDOC_INITIALS_MAX_CHARS = 20000;   // the pad exports at <= 300px wide
 const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
 const EMPDOC_FIELD_LABEL_MAX = 200;
 const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response

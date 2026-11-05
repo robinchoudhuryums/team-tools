@@ -61,17 +61,52 @@
      on it use fixed colours (g58) — a highlighter yellow, dark ink. */
   .ed-issue .row[hidden] { display: none; }
   .ed-pdf { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
-  .ed-pdf-page { position: relative; border: 1px solid var(--line); background: #ffffff; }
+  /* ED1: a page is a size container, and every box's text is sized against the
+     PAGE (100cqw is the drawn page width, --ed-pw its width in points), so 10pt
+     on paper is 10pt of that page on any screen — the box holds the same text
+     wherever it is drawn. --ed-fs is the box's size in points (the fit loop
+     lowers it toward ED_BOX_FS_MIN). */
+  .ed-pdf-page { position: relative; border: 1px solid var(--line); background: #ffffff; container-type: inline-size; }
   .ed-pdf-page canvas { display: block; width: 100%; height: auto; }
   .ed-pdf-layer { position: absolute; inset: 0; }
-  .ed-pdf-box { position: absolute; box-sizing: border-box; border: 2px solid #d9a400; background: rgba(255, 221, 87, .38); border-radius: 3px; color: #111111; }
-  .ed-pdf-box.is-req { border-color: #b86e00; }
-  .ed-pdf-input { display: block; width: 100%; height: 100%; box-sizing: border-box; border: 0; margin: 0; padding: 0 4px; background: transparent; color: #111111; font: inherit; font-size: clamp(10px, 1.5vw, 14px); resize: none; }
+  /* ED1: a box's colour says its TYPE (fixed colours — the page is paper in
+     every theme, g58): --ed-c is the border and the label ink (each a dark
+     enough shade for small text on the tint), --ed-t the tint. An optional
+     box is dashed; a required one solid. */
+  .ed-pdf-box { --ed-c: #8a6400; --ed-t: rgba(255, 221, 87, .34); position: absolute; box-sizing: border-box; border: 2px dashed var(--ed-c); background: var(--ed-t); border-radius: 3px; color: #111111; }
+  .ed-pdf-box.is-req { border-style: solid; }
+  .t-text { --ed-c: #0b4f9c; --ed-t: rgba(37, 120, 220, .16); }
+  .t-date { --ed-c: #5b2a99; --ed-t: rgba(130, 70, 210, .16); }
+  .t-textarea { --ed-c: #075e53; --ed-t: rgba(13, 150, 130, .16); }
+  .t-signature { --ed-c: #1f5e2c; --ed-t: rgba(46, 150, 70, .18); }
+  .t-initials { --ed-c: #8a3b0e; --ed-t: rgba(225, 120, 40, .18); }
+  .ed-pdf-page { --ed-pw: 612; }
+  .ed-pdf-box.is-show, .ed-pdf-input { --ed-fs: 10; font-size: calc(100cqw * var(--ed-fs) / var(--ed-pw)); line-height: 1.2; }
+  .ed-pdf-input { display: block; width: 100%; height: 100%; box-sizing: border-box; border: 0; margin: 0; padding: 0 3px; background: transparent; color: #111111; font-family: inherit; resize: none; }
   .ed-pdf-input:focus { outline: 2px solid #0b5cad; outline-offset: 1px; background: rgba(255, 255, 255, .75); }
-  .ed-pdf-box.is-show { font-size: clamp(9px, 1.3vw, 13px); line-height: 1.25; padding: 1px 4px; overflow: hidden; white-space: pre-wrap; background: rgba(255, 221, 87, .22); }
+  .ed-pdf-box.is-show { padding: 0 3px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
   .ed-pdf-box.is-show em { color: #555555; }
-  .ed-pdf-box-lbl { display: block; padding: 1px 18px 1px 4px; font-size: 11px; color: #5a4300; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .ed-pdf-box-x { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #b86e00; background: #ffffff; color: #5a4300; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  .ed-pdf-box.is-over { border-color: #b3261e; }
+  /* The marks that sit OUTSIDE a box's corner, so a small box keeps its text. */
+  .ed-pdf-box-more, .ed-pdf-count { position: absolute; right: -2px; bottom: 100%; margin-bottom: 1px; padding: 0 4px; border-radius: 4px; background: #ffffff; border: 1px solid #b3261e; color: #8c1d18; font-size: 10px; line-height: 14px; white-space: nowrap; pointer-events: none; }
+  .ed-pdf-count { border-color: var(--ed-c); color: var(--ed-c); }
+  .ed-pdf-count[hidden] { display: none; }
+  .ed-pdf-sig { display: block; width: 100%; height: 100%; object-fit: contain; object-position: left center; }
+  .ed-pdf-box-ph { display: block; padding: 0 3px; font-size: 10px; line-height: 1.2; color: var(--ed-c); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ed-pdf-box-lbl { display: block; padding: 1px 18px 1px 4px; font-size: 11px; color: var(--ed-c); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .ed-pdf-box-x { position: absolute; top: -9px; right: -9px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--ed-c); background: #ffffff; color: var(--ed-c); display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  .ed-box-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 4px 0; font-size: .76rem; color: var(--muted); }
+  .ed-box-key { display: inline-flex; align-items: center; gap: 5px; }
+  .ed-box-key::before { content: ''; width: 14px; height: 10px; border: 2px solid var(--ed-c); background: var(--ed-t); border-radius: 2px; }
+  .ed-box-chip.is-warn { color: var(--warning-deep); }
+  .ed-over .ed-resp-ro { margin-top: 2px; }
+  .ed-ini { margin-top: 10px; }
+  .ed-ini-lbl { display: block; font-size: .8rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  .ed-ini .ed-sig-wrap { max-width: 240px; }
+  .ed-file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ed-file-name { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+  .tr-table .tr-title { font: inherit; font-size: .9rem; font-weight: 600; background: none; border: none; color: var(--ink); cursor: pointer; text-align: left; padding: 0; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+  .tr-table .tr-title:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
   .ed-pdf-box.is-ghost { border-style: dashed; pointer-events: none; }
   .ed-pdf-box.is-edit { cursor: default; }
   #ed-is-pdf-pages .ed-pdf-page { cursor: crosshair; touch-action: none; }
@@ -118,7 +153,13 @@ function edChipHtml_(doc) {
 // background and is printed on paper, so a theme ink (dark mode's near-white
 // --ink) produced a signature nobody could read on the printed record.
 var ED_SIG_INK = '#101418';
-function edInitSigPad_(canvas, placeholderEl) {
+function edInitSigPad_(canvas, placeholderEl, opts) {
+  // ED1: opts.height (the pad's height, 140 by default — the initials pad is
+  // smaller), opts.maxW (the export's width cap) and opts.onChange (called when
+  // a stroke ends or the typed name changes — the boxes on the page repaint).
+  opts = opts || {};
+  var PAD_H = opts.height || 140;
+  var changed = function () { if (opts.onChange) { try { opts.onChange(); } catch (e) {} } };
   var ctx = canvas.getContext('2d');
   var drawing = false, hasDrawn = false;
   function resizeCanvas() {
@@ -126,9 +167,9 @@ function edInitSigPad_(canvas, placeholderEl) {
     if (!rect.width) return;             // hidden — re-run on reveal (S61 gotcha)
     var dpr = window.devicePixelRatio || 1;
     canvas.width = rect.width * dpr;
-    canvas.height = 140 * dpr;
+    canvas.height = PAD_H * dpr;
     canvas.style.width = rect.width + 'px';
-    canvas.style.height = '140px';
+    canvas.style.height = PAD_H + 'px';
     ctx.scale(dpr, dpr);
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -155,7 +196,7 @@ function edInitSigPad_(canvas, placeholderEl) {
     ctx.lineTo(p.x, p.y); ctx.stroke();
     e.preventDefault();
   }
-  function end() { drawing = false; }
+  function end() { if (drawing) { drawing = false; if (hasDrawn) changed(); } }
   canvas.addEventListener('mousedown', start);
   canvas.addEventListener('mousemove', move);
   canvas.addEventListener('mouseup', end);
@@ -170,10 +211,10 @@ function edInitSigPad_(canvas, placeholderEl) {
     name = String(name || '').trim();
     resizeCanvas();
     hasDrawn = false;
-    if (!name) { if (placeholderEl) placeholderEl.style.display = ''; return; }
+    if (!name) { if (placeholderEl) placeholderEl.style.display = ''; changed(); return; }
     if (placeholderEl) placeholderEl.style.display = 'none';
     var w = parseFloat(canvas.style.width) || 300;
-    var size = 34;
+    var size = Math.min(34, Math.round(PAD_H * 0.45));
     var face = 'italic {s}px "Segoe Script","Brush Script MT","Lucida Handwriting",cursive';
     ctx.font = face.replace('{s}', size);
     var tw = ctx.measureText(name).width;
@@ -183,8 +224,9 @@ function edInitSigPad_(canvas, placeholderEl) {
     }
     ctx.fillStyle = ED_SIG_INK;
     ctx.textBaseline = 'middle';
-    ctx.fillText(name, 12, 70);
+    ctx.fillText(name, 12, PAD_H / 2);
     hasDrawn = true;
+    changed();
   }
   return {
     isEmpty: function () { return !hasDrawn; },
@@ -193,6 +235,7 @@ function edInitSigPad_(canvas, placeholderEl) {
       hasDrawn = false;
       resizeCanvas();
       if (placeholderEl) placeholderEl.style.display = '';
+      changed();
     },
     resize: function () { if (!hasDrawn) resizeCanvas(); },
     setTypedName: drawTypedName,
@@ -200,14 +243,38 @@ function edInitSigPad_(canvas, placeholderEl) {
     // SIG_PAD.toDataURL (retina capture canvases yield base64 large enough
     // to trip the server's per-cell cap; line art downscales crisply).
     toDataURL: function () {
-      var MAX_W = 600;
-      if (!hasDrawn || canvas.width <= MAX_W) return canvas.toDataURL('image/png');
+      var MAX_W = 600;   // INV-96 — the cap; a smaller pad may ask for less
+      if (opts.maxW && opts.maxW < MAX_W) MAX_W = opts.maxW;
+      // ED1: the export is TRIMMED to the ink (plus a small margin), so a
+      // signature fills the box it is placed in rather than sitting small in
+      // the corner of a wide, empty pad. A canvas that cannot be read back
+      // exports whole, as before.
+      var src = canvas, sx = 0, sy = 0, sw = canvas.width, sh = canvas.height;
+      if (hasDrawn) {
+        try {
+          var px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          var x0 = canvas.width, y0 = canvas.height, x1 = -1, y1 = -1;
+          for (var yy = 0; yy < canvas.height; yy++) {
+            for (var xx = 0; xx < canvas.width; xx++) {
+              if (px[(yy * canvas.width + xx) * 4 + 3] > 16) {
+                if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
+              }
+            }
+          }
+          if (x1 >= x0 && y1 >= y0) {
+            var pad = Math.round(6 * (window.devicePixelRatio || 1));
+            sx = Math.max(0, x0 - pad); sy = Math.max(0, y0 - pad);
+            sw = Math.min(canvas.width, x1 + pad + 1) - sx; sh = Math.min(canvas.height, y1 + pad + 1) - sy;
+          }
+        } catch (e) { sx = 0; sy = 0; sw = canvas.width; sh = canvas.height; }
+      }
+      if (sx === 0 && sy === 0 && sw === canvas.width && sh === canvas.height && canvas.width <= MAX_W) return canvas.toDataURL('image/png');
       try {
-        var scale = MAX_W / canvas.width;
+        var scale = Math.min(1, MAX_W / sw);
         var tmp = document.createElement('canvas');
-        tmp.width = MAX_W;
-        tmp.height = Math.max(1, Math.round(canvas.height * scale));
-        tmp.getContext('2d').drawImage(canvas, 0, 0, tmp.width, tmp.height);
+        tmp.width = Math.max(1, Math.round(sw * scale));
+        tmp.height = Math.max(1, Math.round(sh * scale));
+        tmp.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, tmp.width, tmp.height);
         return tmp.toDataURL('image/png');
       } catch (e) { return canvas.toDataURL('image/png'); }
     },
@@ -274,11 +341,12 @@ function edRenderMy_() {
 function edOpenDoc_(docId) {
   ED_STATE.readerDocId = docId;
   ED_STATE.sigPad = null;
+  ED_STATE.iniPad = null;
   // UI-ESC (cycle 23): guarded — a filled field or a drawn signature is asked
   // about before Escape or the backdrop discards it; a submit in flight is not.
   var overlay = ensureOverlay('ed-reader-overlay', { label: 'Employee document', onClose: edCloseDoc_,
     unsaved: { what: 'this document', busy: function () { return !!ED_STATE.submitting; },
-      dirty: function () { return !!(ED_STATE.sigPad && !ED_STATE.sigPad.isEmpty()); } } });
+      dirty: function () { return !!((ED_STATE.sigPad && !ED_STATE.sigPad.isEmpty()) || (ED_STATE.iniPad && !ED_STATE.iniPad.isEmpty())); } } });
   overlay.innerHTML = '<div class="modal ed-reader"><div class="body"><div class="m-loading" role="status"><span class="lo-dots"><span></span><span></span><span></span></span> Loading&hellip;</div></div></div>';
   google.script.run
     .withSuccessHandler(function (doc) {
@@ -325,8 +393,12 @@ function edRenderDoc_(doc) {
   // Its pages, drawn once getEmpDocPdf answers; its boxed fields live on the
   // pages, so the list below holds only the rest.
   if (doc.pdf) {
+    var boxTypes = [];
+    (doc.fields || []).forEach(function (f) { if (f.box && boxTypes.indexOf(f.type) < 0) boxTypes.push(f.type); });
     body += '<p class="ed-pdf-id">' + icon('fileText', 12) + ' ' + esc(doc.pdf.name) + ' \u00b7 SHA-256 <code>' + esc(doc.pdf.sha) + '</code></p>' +
-      '<div class="ed-pdf" id="ed-pdf-pages" aria-busy="true"><div class="m-loading" role="status">Loading the PDF\u2026</div></div>';
+      (boxTypes.length ? edBoxLegendHtml_(boxTypes) : '') +
+      '<div class="ed-pdf" id="ed-pdf-pages" aria-busy="true"><div class="m-loading" role="status">Loading the PDF\u2026</div></div>' +
+      '<div id="ed-pdf-over"></div>';
   }
 
   // Fillable fields: editable for the owner while issued; read-only (showing
@@ -352,15 +424,21 @@ function edRenderDoc_(doc) {
   }
 
   var canSign = !!doc.ackText;   // server includes it only for owner + issued + requiresSignature
+  var wantsInitials = canSign && (doc.fields || []).some(function (f) { return f.type === 'initials'; });
   if (canSign) {
     body += '<div class="ed-ack">' +
       '<label class="ack"><input type="checkbox" id="ed-ack-check"> <span>' + esc(doc.ackText) + '</span></label>' +
       '<div class="ed-sig-section" id="ed-sig-section">' +
         '<div class="ed-sig-wrap"><canvas id="ed-sig-canvas"></canvas><div class="ed-sig-ph" id="ed-sig-ph">Tap or click and drag here to sign</div></div>' +
+        // ED1: a document with an initials box takes the initials once, here.
+        (wantsInitials ? '<div class="ed-ini"><span class="ed-ini-lbl" id="ed-ini-lbl">Your initials \u2014 they fill every initials box</span>' +
+          '<div class="ed-sig-wrap"><canvas id="ed-ini-canvas" aria-labelledby="ed-ini-lbl"></canvas><div class="ed-sig-ph" id="ed-ini-ph">Draw your initials</div></div></div>' : '') +
         '<button type="button" class="ed-sig-typed-toggle" id="ed-sig-typed-toggle" aria-expanded="false">Can’t use the pad? Type your signature instead</button>' +
         '<div id="ed-sig-typed-field" style="display:none;margin:6px 0 2px">' +
           '<label for="ed-sig-typed-input" style="display:block;font-size:12px;color:var(--muted);margin-bottom:3px">Type your full legal name as your signature</label>' +
           '<input type="text" id="ed-sig-typed-input" maxlength="80" autocomplete="name" style="width:100%;max-width:340px">' +
+          (wantsInitials ? '<label for="ed-ini-typed-input" style="display:block;font-size:12px;color:var(--muted);margin:6px 0 3px">Type your initials</label>' +
+            '<input type="text" id="ed-ini-typed-input" maxlength="6" style="width:100%;max-width:120px">' : '') +
         '</div>' +
         '<div class="ed-sig-row">' +
           '<button class="kb-btn" id="ed-sig-clear">Clear</button>' +
@@ -390,19 +468,30 @@ function edRenderDoc_(doc) {
   if (doc.pdf) edLoadDocPdf_(doc);
   if (canSign) {
     var canvas = document.getElementById('ed-sig-canvas');
-    ED_STATE.sigPad = edInitSigPad_(canvas, document.getElementById('ed-sig-ph'));
+    // ED1: every stroke repaints the signature (and initials) boxes on the page.
+    ED_STATE.sigPad = edInitSigPad_(canvas, document.getElementById('ed-sig-ph'), {
+      onChange: function () { var p = ED_STATE.sigPad; edSignBoxesPaint_('signature', p && !p.isEmpty() ? p.toDataURL() : ''); } });
+    ED_STATE.iniPad = wantsInitials ? edInitSigPad_(document.getElementById('ed-ini-canvas'), document.getElementById('ed-ini-ph'), {
+      height: 70, maxW: 300,
+      onChange: function () { var p = ED_STATE.iniPad; edSignBoxesPaint_('initials', p && !p.isEmpty() ? p.toDataURL() : ''); } }) : null;
     document.getElementById('ed-ack-check').addEventListener('change', function () {
       var sec = document.getElementById('ed-sig-section');
       sec.classList.toggle('show', this.checked);
       // The canvas had a 0-width box while hidden — re-size on reveal,
       // guarded so an uncheck→recheck can't wipe a drawn signature (S61).
       if (this.checked && ED_STATE.sigPad && ED_STATE.sigPad.isEmpty()) ED_STATE.sigPad.resize();
+      if (this.checked && ED_STATE.iniPad && ED_STATE.iniPad.isEmpty()) ED_STATE.iniPad.resize();
     });
     document.getElementById('ed-sig-clear').addEventListener('click', function () {
       if (ED_STATE.sigPad) ED_STATE.sigPad.clear();
+      if (ED_STATE.iniPad) ED_STATE.iniPad.clear();
       var ti = document.getElementById('ed-sig-typed-input');
       if (ti) ti.value = '';
+      var tii = document.getElementById('ed-ini-typed-input');
+      if (tii) tii.value = '';
     });
+    var iniTyped = document.getElementById('ed-ini-typed-input');
+    if (iniTyped) iniTyped.addEventListener('input', function () { if (ED_STATE.iniPad) ED_STATE.iniPad.setTypedName(iniTyped.value); });
     // Typed-signature alternative (a11y) — toggle reveals a text input whose
     // value renders onto the pad via the pad's setTypedName.
     var tglBtn = document.getElementById('ed-sig-typed-toggle');
@@ -438,6 +527,10 @@ function edSubmitSignature_(docId, btn, needsSig) {
     showToast('Draw your signature first.', 'error');
     return;
   }
+  if (needsSig && ED_STATE.iniPad && ED_STATE.iniPad.isEmpty()) {   // ED1
+    showToast('Draw your initials too \u2014 they fill the initials boxes.', 'error');
+    return;
+  }
   var label = needsSig ? ' Sign document' : ' Submit';
   if (btn) { btn.disabled = true; btn.textContent = needsSig ? 'Signing…' : 'Submitting…'; }
   ED_STATE.submitting = true;
@@ -465,13 +558,15 @@ function edSubmitSignature_(docId, btn, needsSig) {
       if (btn) { btn.disabled = false; btn.innerHTML = icon('check', 13) + label; }
       showToast('Could not submit: ' + ((err && err.message) || err), 'error');
     })
-    .acknowledgeDoc(docId, needsSig && ED_STATE.sigPad ? ED_STATE.sigPad.toDataURL() : '', edGatherResponses_());
+    .acknowledgeDoc(docId, needsSig && ED_STATE.sigPad ? ED_STATE.sigPad.toDataURL() : '', edGatherResponses_(),
+      needsSig && ED_STATE.iniPad ? ED_STATE.iniPad.toDataURL() : '');
 }
 
 /** Idempotent (ensureOverlay contract). */
 function edCloseDoc_() {
   ED_STATE.readerDocId = null;
   ED_STATE.sigPad = null;
+  ED_STATE.iniPad = null;
   var o = document.getElementById('ed-reader-overlay');
   if (o) { o.classList.remove('open'); o.innerHTML = ''; }
 }
@@ -487,7 +582,17 @@ function edCloseDoc_() {
 var ED_PDF_MAX_BYTES = 4194304;   // = EMPDOC_PDF_MAX_BYTES (pinned)
 var ED_PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
 var ED_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' | 'failed'
-var ED_BOX_LABELS = { text: 'Text', date: 'Date', textarea: 'Paragraph' };
+var ED_BOX_LABELS = { text: 'Text', date: 'Date', textarea: 'Paragraph', signature: 'Signature', initials: 'Initials' };
+// ED1 — the legend's words for each box type, in the order the picker lists them.
+var ED_BOX_KEYS = [['text', 'Short text'], ['date', 'Date'], ['textarea', 'Paragraph'], ['signature', 'Signature'], ['initials', 'Initials']];
+var ED_SIGN_TYPES = ['signature', 'initials'];   // = EMPDOC_SIGN_FIELD_TYPES (pinned): filled by the sign panel's pads
+// ED1 — a box's text, in POINTS of its page: 10pt, shrinking to 7pt when the
+// answer is long, never smaller. Default sizes (a tap) and the smallest height
+// a drag may make are in points too, so a box means the same on every PDF.
+var ED_BOX_FS = 10;
+var ED_BOX_FS_MIN = 7;
+var ED_BOX_DEFAULT_PTS = { text: [180, 16], date: [96, 16], textarea: [360, 72], signature: [180, 40], initials: [54, 28] };
+var ED_BOX_MIN_H_PTS = { text: 12, date: 12, textarea: 24, signature: 24, initials: 18 };
 /** pdf.js, loaded once (the handbook app's loader): done(lib) or done(null). */
 function edPdfJs_(done) {
   if (ED_PDFJS.state === '' && window.pdfjsLib && window.pdfjsWorker) ED_PDFJS.state = 'ready';
@@ -535,41 +640,191 @@ function edBoxStyle_(b) {
 }
 /** PURE (Node-pinned) — the box a drag (or a tap) makes, as fractions of the
  *  page: the rectangle between the two points, clamped inside the page; a
- *  drag too small to type in becomes a standard box at the press point. */
-function edBoxFromDrag_(x0, y0, x1, y1, type) {
+ *  drag too small to type in becomes a standard box at the press point.
+ *  ED1: given the page's size in points (pagePts {w, h}), the standard box is
+ *  its type's size in POINTS, and a drag shorter than one line of its type is
+ *  raised to that line — so a tap makes the same box on a Letter page and an
+ *  A4 one. Without it, the fractions Batch H used. */
+function edBoxFromDrag_(x0, y0, x1, y1, type, pagePts) {
   var cl = function (v) { return Math.max(0, Math.min(1, Number(v) || 0)); };
   x0 = cl(x0); y0 = cl(y0); x1 = cl(x1); y1 = cl(y1);
   var x = Math.min(x0, x1), y = Math.min(y0, y1), w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+  var pw = pagePts && pagePts.w > 0 ? pagePts.w : 0, ph = pagePts && pagePts.h > 0 ? pagePts.h : 0;
   if (w < 0.02 || h < 0.008) {
-    w = type === 'textarea' ? 0.5 : (type === 'date' ? 0.2 : 0.32);
-    h = type === 'textarea' ? 0.08 : 0.028;
+    if (pw && ph) {
+      var d = ED_BOX_DEFAULT_PTS[type] || ED_BOX_DEFAULT_PTS.text;
+      w = Math.min(1, d[0] / pw); h = Math.min(1, d[1] / ph);
+    } else {
+      w = type === 'textarea' ? 0.5 : (type === 'date' ? 0.2 : 0.32);
+      h = type === 'textarea' ? 0.08 : 0.028;
+    }
     x = Math.min(x0, 1 - w); y = Math.min(y0, 1 - h);
+  } else if (ph) {
+    var minH = (ED_BOX_MIN_H_PTS[type] || ED_BOX_MIN_H_PTS.text) / ph;
+    if (h < minH) { h = Math.min(1, minH); y = Math.min(y, 1 - h); }
   }
   var r = function (v) { return Math.round(v * 10000) / 10000; };
   return { x: r(x), y: r(y), w: r(w), h: r(h) };
+}
+/** PURE (Node-pinned) — ED1: a box's size in points, from its fractions and
+ *  its page's size in points; null when the page size is not known. */
+function edBoxPts_(box, pagePts) {
+  if (!box || !pagePts || !(pagePts.w > 0) || !(pagePts.h > 0)) return null;
+  return { w: Number(box.w) * pagePts.w, h: Number(box.h) * pagePts.h };
+}
+/** PURE (Node-pinned) — ED1: how many characters a box holds at a font size
+ *  (points): an average character is half the size wide (a sans face), a line
+ *  1.2 sizes tall, less a little padding. A date, a signature and initials have
+ *  no character limit (null). Never below 1 for a text box. */
+function edBoxCapacity_(type, pts, fs) {
+  if (!pts || type === 'date' || ED_SIGN_TYPES.indexOf(type) >= 0) return null;
+  fs = fs || ED_BOX_FS_MIN;
+  var perLine = Math.max(1, Math.floor((pts.w - 6) / (fs * 0.5)));
+  if (type !== 'textarea') return perLine;
+  var lines = Math.max(1, Math.floor((pts.h - 2) / (fs * 1.2)));
+  return perLine * lines;
+}
+/** PURE (Node-pinned) — ED1: the size readout the manager sees for a box:
+ *  inches to two places, then what it holds — "2.5 × 0.22 in · about 34–49
+ *  characters" (at full size, then with the text shrunk to the floor); a box
+ *  shorter than one line at the floor says so. */
+function edBoxSizeText_(type, pts) {
+  if (!pts) return '';
+  var inch = function (v) { return String(Math.round(v / 72 * 100) / 100); };
+  var t = inch(pts.w) + ' \u00d7 ' + inch(pts.h) + ' in';
+  if (ED_SIGN_TYPES.indexOf(type) >= 0 || type === 'date') return t;
+  if (pts.h < ED_BOX_FS_MIN * 1.2 + 2) return t + ' \u00b7 too short for a line of text';
+  var lo = edBoxCapacity_(type, pts, ED_BOX_FS), hi = edBoxCapacity_(type, pts, ED_BOX_FS_MIN);
+  return t + ' \u00b7 about ' + (lo === hi ? lo : lo + '\u2013' + hi) + ' characters';
+}
+/** PURE (Node-pinned) — ED1: is an answer longer than its box can ever show?
+ *  (past the floor size's capacity). The browser's measure catches the rest. */
+function edBoxTextOver_(type, text, pts) {
+  var cap = edBoxCapacity_(type, pts, ED_BOX_FS_MIN);
+  return cap != null && String(text || '').length > cap;
+}
+/** PURE (Node-pinned) — ED1: the legend under the box picker and above a
+ *  document's pages: a swatch per type, only the types given (all when none). */
+function edBoxLegendHtml_(types) {
+  var want = types && types.length ? types : null;
+  var keys = ED_BOX_KEYS.filter(function (k) { return !want || want.indexOf(k[0]) >= 0; });
+  if (!keys.length) return '';
+  return '<div class="ed-box-legend" aria-label="Box colours">' + keys.map(function (k) {
+    return '<span class="ed-box-key t-' + k[0] + '">' + k[1] + '</span>';
+  }).join('') + '</div>';
 }
 /** The boxes on one page, as markup. mode: 'fill' (the owner completing it —
  *  an input in each box, read by edGatherResponses_ like any field), 'show'
  *  (what was written, read-only) or 'edit' (the manager placing them — each
  *  names its field and can be removed). */
-function edBoxesHtml_(fields, page, mode, responses) {
+function edBoxesHtml_(fields, page, mode, responses, opts) {
+  opts = opts || {};
+  var png = function (v) { return /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(v || '')); };
   return (fields || []).map(function (f, i) {
     var b = f.box;
     if (!b || b.page !== page) return '';
+    var type = ED_BOX_LABELS[f.type] ? f.type : 'text';
+    var sign = ED_SIGN_TYPES.indexOf(type) >= 0;
+    var pts = edBoxPts_(b, opts.pagePts);
+    var cls = 'ed-pdf-box t-' + type + (f.required !== false || sign ? ' is-req' : '');
     var st = ' style="' + edBoxStyle_(b) + '"';
     if (mode === 'edit') {
-      return '<div class="ed-pdf-box is-edit" data-ed-box="' + i + '"' + st + '><span class="ed-pdf-box-lbl">' + esc(f.label || ED_BOX_LABELS[f.type] || 'Field') + '</span>' +
+      var size = edBoxSizeText_(type, pts);
+      return '<div class="' + cls + ' is-edit" data-ed-box="' + i + '"' + st + (size ? ' title="' + esc(size) + '"' : '') + '><span class="ed-pdf-box-lbl">' + esc(f.label || ED_BOX_LABELS[type] || 'Field') + '</span>' +
         '<button type="button" class="ed-pdf-box-x" data-ed-field-del="' + i + '" aria-label="Remove the box ' + esc(f.label || '') + '">' + icon('x', 10) + '</button></div>';
+    }
+    // ED1: a signature or initials box shows the drawing — live from the pad
+    // while the owner signs (edSignBoxesPaint_), the stored one afterwards.
+    if (sign) {
+      var img = mode === 'show' ? (type === 'signature' ? opts.signature : opts.initials) : '';
+      var inner = png(img) ? '<img class="ed-pdf-sig" alt="' + esc(f.label) + '" src="' + img + '">' : edSignBoxPh_(type, f.label, mode === 'fill');
+      return '<div class="' + cls + (mode === 'fill' ? ' is-fill' : ' is-show') + '" data-ed-sign="' + type + '" data-ed-fi="' + i + '"' + st + ' title="' + esc(f.label) + '">' + inner + '</div>';
     }
     var val = responses && responses[f.id] != null ? String(responses[f.id]) : '';
     if (mode === 'fill') {
       var nm = esc(f.label) + (f.required ? ' (required)' : '');
-      var input = f.type === 'textarea' ? '<textarea class="ed-resp ed-pdf-input" aria-label="' + nm + '" data-fid="' + esc(f.id) + '">' + esc(val) + '</textarea>'
-        : '<input type="' + (f.type === 'date' ? 'date' : 'text') + '" class="ed-resp ed-pdf-input" aria-label="' + nm + '" data-fid="' + esc(f.id) + '" maxlength="8000" value="' + esc(val) + '">';
-      return '<div class="ed-pdf-box is-fill' + (f.required ? ' is-req' : '') + '"' + st + ' title="' + esc(f.label) + '">' + input + '</div>';
+      var cap = edBoxCapacity_(type, pts, ED_BOX_FS_MIN);
+      var max = ' maxlength="' + (cap != null ? Math.min(cap, 8000) : 8000) + '"';
+      var input = type === 'textarea' ? '<textarea class="ed-resp ed-pdf-input" aria-label="' + nm + '" data-fid="' + esc(f.id) + '"' + max + '>' + esc(val) + '</textarea>'
+        : '<input type="' + (type === 'date' ? 'date' : 'text') + '" class="ed-resp ed-pdf-input" aria-label="' + nm + '" data-fid="' + esc(f.id) + '"' + (type === 'date' ? '' : max) + ' value="' + esc(val) + '">';
+      return '<div class="' + cls + ' is-fill" data-ed-fi="' + i + '"' + (cap != null ? ' data-ed-cap="' + cap + '"' : '') + st + ' title="' + esc(f.label) + '">' + input +
+        (cap != null ? '<span class="ed-pdf-count" aria-live="polite" hidden></span>' : '') + '</div>';
     }
-    return '<div class="ed-pdf-box is-show"' + st + ' title="' + esc(f.label) + '">' + (val ? esc(val) : '<em>' + esc(f.label) + '</em>') + '</div>';
+    var over = val && edBoxTextOver_(type, val, pts);
+    return '<div class="' + cls + ' is-show' + (over ? ' is-over' : '') + '" data-ed-fi="' + i + '"' + st + ' title="' + esc(f.label) + '">' + (val ? esc(val) : '<em>' + esc(f.label) + '</em>') +
+      (over ? '<span class="ed-pdf-box-more" aria-hidden="true">in full below</span>' : '') + '</div>';
   }).join('');
+}
+/** ED1 — fit each box's text to its box: from ED_BOX_FS down to the floor in
+ *  half points while the browser measures an overflow. A fill box shows how
+ *  many characters are left near its limit; a show box that still overflows
+ *  at the floor (or is past its capacity) is marked and listed IN FULL under
+ *  the pages — the page never silently hides what was written. */
+function edFitBoxes_(host, fields, mode) {
+  if (!host) return [];
+  var over = [];
+  var measureOver = function (el) { return !!el && (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1); };
+  // The size rides the element that carries the text (the input, or the show
+  // box itself), so a box's own position style is never rewritten.
+  var fit = function (el) {
+    if (!el) return false;
+    var fs = ED_BOX_FS;
+    el.style.setProperty('--ed-fs', String(fs));
+    while (measureOver(el) && fs > ED_BOX_FS_MIN) { fs -= 0.5; el.style.setProperty('--ed-fs', String(fs)); }
+    return measureOver(el);
+  };
+  host.querySelectorAll('.ed-pdf-box[data-ed-fi]').forEach(function (box) {
+    if (box.hasAttribute('data-ed-sign')) return;
+    var f = (fields || [])[+box.getAttribute('data-ed-fi')];
+    if (!f) return;
+    if (mode === 'fill') {
+      var el = box.querySelector('.ed-pdf-input');
+      var count = box.querySelector('.ed-pdf-count');
+      var cap = +box.getAttribute('data-ed-cap') || 0;
+      var refresh = function () {
+        fit(el);
+        if (!count || !cap) return;
+        var left = cap - String(el.value || '').length;
+        var show = left <= Math.max(10, Math.round(cap * 0.2));
+        count.hidden = !show;
+        count.textContent = show ? (left <= 0 ? 'Box full' : left + ' left') : '';
+      };
+      if (el && !el._edFit) { el._edFit = true; el.addEventListener('input', refresh); }
+      refresh();
+      return;
+    }
+    var shown = fit(box);
+    var marked = box.classList.contains('is-over');
+    if (shown && !marked) {
+      box.classList.add('is-over');
+      box.insertAdjacentHTML('beforeend', '<span class="ed-pdf-box-more" aria-hidden="true">in full below</span>');
+      marked = true;
+    }
+    if (marked) over.push(f);
+  });
+  return over;
+}
+/** ED1 — the answers longer than their box, in full, under the pages. */
+function edOverListHtml_(fields, responses) {
+  if (!fields || !fields.length) return '';
+  return '<div class="ed-fields ed-over"><div class="ed-fields-h">In full \u2014 answers longer than their box</div>' + fields.map(function (f) {
+    return '<div class="ed-field"><label>' + esc(f.label) + (f.box ? ' (page ' + f.box.page + ')' : '') + '</label><div class="ed-resp-ro">' + esc(String((responses || {})[f.id] || '')) + '</div></div>';
+  }).join('') + '</div>';
+}
+/** ED1 — an empty signature or initials box: a signature box says what it
+ *  waits for; an initials box is too small for words, so it carries a pen mark
+ *  (its name rides the box's title). */
+function edSignBoxPh_(kind, label, filling) {
+  if (kind === 'initials') return '<span class="ed-pdf-box-ph" aria-hidden="true">' + icon('adjust', 11) + '</span>';
+  return '<span class="ed-pdf-box-ph">' + esc(label) + (filling ? ' \u2014 filled when you sign' : '') + '</span>';
+}
+/** ED1 — paint every signature (or initials) box from the pad as it is
+ *  drawn, so the employee sees where it lands before signing. */
+function edSignBoxesPaint_(kind, dataUrl) {
+  document.querySelectorAll('#ed-pdf-pages .ed-pdf-box[data-ed-sign="' + kind + '"]').forEach(function (box) {
+    var lbl = box.getAttribute('title') || ED_BOX_LABELS[kind];
+    box.innerHTML = dataUrl ? '<img class="ed-pdf-sig" alt="' + esc(lbl) + '" src="' + dataUrl + '">' : edSignBoxPh_(kind, lbl, true);
+  });
 }
 /** Draw a PDF's pages into `host`, one under another, each a positioned
  *  wrapper (the canvas, then the box layer). opts: alive() — still wanted?;
@@ -599,13 +854,17 @@ function edRenderPdfPages_(host, bytes, opts, done) {
               var wrap = document.createElement('div');
               wrap.className = 'ed-pdf-page';
               wrap.setAttribute('data-page', String(pn));
+              // ED1: the page's width in points — what box text is sized against.
+              var pagePts = { w: vp1.width, h: vp1.height };
+              wrap.style.setProperty('--ed-pw', String(Math.round(vp1.width * 100) / 100));
+              if (opts.onPage) opts.onPage(pn, pagePts);
               var cv = document.createElement('canvas');
               cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
               cv.setAttribute('role', 'img');
               cv.setAttribute('aria-label', (opts.label || 'Document') + ' — page ' + pn + ' of ' + n);
               var layer = document.createElement('div');
               layer.className = 'ed-pdf-layer';
-              layer.innerHTML = opts.boxes ? opts.boxes(pn) : '';
+              layer.innerHTML = opts.boxes ? opts.boxes(pn, pagePts) : '';
               wrap.appendChild(cv); wrap.appendChild(layer);
               host.appendChild(wrap);
               var ctx = cv.getContext && cv.getContext('2d');
@@ -638,9 +897,20 @@ function edLoadDocPdf_(doc) {
       var bytes; try { bytes = edDataUriBytes_(res.dataUri); } catch (e) { fail('The PDF arrived damaged.'); return; }
       var mode = doc.canComplete ? 'fill' : 'show';
       edRenderPdfPages_(host, bytes, { alive: alive, label: doc.title,
-        boxes: function (pn) { return edBoxesHtml_(doc.fields, pn, mode, doc.responses); } }, function (err) {
+        boxes: function (pn, pagePts) { return edBoxesHtml_(doc.fields, pn, mode, doc.responses,
+          { pagePts: pagePts, signature: doc.signatureImage, initials: doc.initialsImage }); } }, function (err) {
         if (err) { fail(err + (err.slice(-1) === '.' ? '' : '.')); return; }
         host.removeAttribute('aria-busy');
+        // ED1: fit every box's text; in the read-only view an answer the box
+        // cannot show is listed in full beneath the pages.
+        var over = edFitBoxes_(host, doc.fields, mode);
+        var oh = document.getElementById('ed-pdf-over');
+        if (oh) oh.innerHTML = mode === 'show' ? edOverListHtml_(over, doc.responses) : '';
+        // A pad drawn before the pages arrived paints its boxes now.
+        if (mode === 'fill') {
+          if (ED_STATE.sigPad && !ED_STATE.sigPad.isEmpty()) edSignBoxesPaint_('signature', ED_STATE.sigPad.toDataURL());
+          if (ED_STATE.iniPad && !ED_STATE.iniPad.isEmpty()) edSignBoxesPaint_('initials', ED_STATE.iniPad.toDataURL());
+        }
       });
     })
     .withFailureHandler(function (err) { if (alive()) fail('The PDF could not be loaded: ' + ((err && err.message) || err)); })
@@ -710,6 +980,7 @@ function edIssueMode_(mode) {
 function edIssuePdfFile_(file) {
   var say = function (t, bad) { var m = document.getElementById('ed-is-pdf-msg'); if (m) { m.textContent = t; m.classList.toggle('bad', !!bad); } };
   if (!file) return;
+  var nameEl = document.getElementById('ed-is-pdf-name'); if (nameEl) nameEl.textContent = file.name || 'PDF';   // ED1
   if (String(file.type || '').toLowerCase() !== 'application/pdf' && !/\.pdf$/i.test(file.name || '')) { say('Choose a PDF file.', true); return; }
   if (file.size > ED_PDF_MAX_BYTES) { say('That PDF is over the ' + (ED_PDF_MAX_BYTES / 1048576) + ' MB limit.', true); return; }
   var seq = ED_STATE.issuePdfSeq = (ED_STATE.issuePdfSeq || 0) + 1;
@@ -722,16 +993,19 @@ function edIssuePdfFile_(file) {
     var bytes; try { bytes = edDataUriBytes_(dataUrl); } catch (e) { say('That file could not be read.', true); return; }
     // Boxes belong to the PDF they were drawn on — a new file starts clean.
     ED_STATE.issueFields = (ED_STATE.issueFields || []).filter(function (f) { return !f.box; });
+    ED_STATE.issuePageSizes = {};   // ED1: each page's size in points, as it is drawn
     edRenderIssueFields_();
     var host = document.getElementById('ed-is-pdf-pages');
     if (!host) return;
     host.setAttribute('aria-busy', 'true');
     edRenderPdfPages_(host, bytes, { alive: function () { return seq === ED_STATE.issuePdfSeq && !!document.getElementById('ed-is-pdf-pages'); },
-      label: file.name, boxes: function (pn) { return edBoxesHtml_(ED_STATE.issueFields, pn, 'edit'); },
+      label: file.name, boxes: function (pn, pagePts) { return edBoxesHtml_(ED_STATE.issueFields, pn, 'edit', null, { pagePts: pagePts }); },
+      onPage: function (pn, pagePts) { ED_STATE.issuePageSizes[pn] = pagePts; },
       onCount: function (n) { ED_STATE.issuePdfPages = n; } }, function (err) {
       host.removeAttribute('aria-busy');
       if (err) { ED_STATE.issuePdf = null; host.innerHTML = ''; say(err + ' Choose another file.', true); return; }
       ED_STATE.issuePdf = { dataUrl: dataUrl, name: file.name || 'document.pdf' };
+      edRenderIssueFields_();   // ED1: the boxes' size readouts now know their pages
       say(file.name + ' · ' + (ED_STATE.issuePdfPages || 0) + ' page' + (ED_STATE.issuePdfPages === 1 ? '' : 's') + '. Drag on a page to place a box the employee fills in.');
     });
   };
@@ -743,6 +1017,13 @@ function edIssuePdfFile_(file) {
 function edAddBox_(page, rect) {
   var type = (document.getElementById('ed-box-type') || {}).value || 'text';
   if (!ED_BOX_LABELS[type]) type = 'text';
+  // ED1: a signature or initials box is filled by the sign panel, so the
+  // document must ask for a signature — turned on, and said.
+  var sigEl = document.getElementById('ed-is-sig');
+  if (ED_SIGN_TYPES.indexOf(type) >= 0 && sigEl && !sigEl.checked) {
+    sigEl.checked = true;
+    showToast('A ' + ED_BOX_LABELS[type].toLowerCase() + ' box needs a signature \u2014 "Require signature" is now on.', 'info');
+  }
   var n = (ED_STATE.issueFields || []).filter(function (f) { return f.box; }).length + 1;
   ED_STATE.issueFields.push({ label: ED_BOX_LABELS[type] + ' ' + n, type: type, required: true,
     box: { page: page, x: rect.x, y: rect.y, w: rect.w, h: rect.h } });
@@ -758,7 +1039,8 @@ function edAddBox_(page, rect) {
 function edRepaintIssueBoxes_() {
   document.querySelectorAll('#ed-is-pdf-pages .ed-pdf-page').forEach(function (pg) {
     var layer = pg.querySelector('.ed-pdf-layer');
-    if (layer) layer.innerHTML = edBoxesHtml_(ED_STATE.issueFields, +pg.getAttribute('data-page'), 'edit');
+    var pn = +pg.getAttribute('data-page');
+    if (layer) layer.innerHTML = edBoxesHtml_(ED_STATE.issueFields, pn, 'edit', null, { pagePts: (ED_STATE.issuePageSizes || {})[pn] });
   });
 }
 /** Pointer drawing on the issue form's pages: press, drag, release. */
@@ -789,7 +1071,8 @@ function edIssuePdfPointer_(host) {
     if (d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
     if (e.type === 'pointercancel') return;
     var p = frac(d.pg, e);
-    edAddBox_(+d.pg.getAttribute('data-page'), edBoxFromDrag_(d.x0, d.y0, p.x, p.y, (document.getElementById('ed-box-type') || {}).value));
+    var pn = +d.pg.getAttribute('data-page');
+    edAddBox_(pn, edBoxFromDrag_(d.x0, d.y0, p.x, p.y, (document.getElementById('ed-box-type') || {}).value, (ED_STATE.issuePageSizes || {})[pn]));
   };
   host.addEventListener('pointerup', end);
   host.addEventListener('pointercancel', end);
@@ -892,10 +1175,16 @@ function edRenderMgr_() {
     '<div class="row"><div><label id="ed-is-mode-lbl">Content</label><div class="toolbar-tabs" role="group" aria-labelledby="ed-is-mode-lbl">' +
       '<button type="button" class="toolbar-tab active" aria-pressed="true" data-ed-mode="text">Written</button>' +
       '<button type="button" class="toolbar-tab" aria-pressed="false" data-ed-mode="pdf">PDF file</button></div></div></div>' +
-    '<div class="row" id="ed-is-pdf-wrap" hidden><div style="flex:1;width:100%;"><label for="ed-is-pdf">PDF file (up to ' + (ED_PDF_MAX_BYTES / 1048576) + ' MB)</label>' +
-      '<input type="file" id="ed-is-pdf" accept="application/pdf,.pdf">' +
-      '<div class="ed-box-bar"><label for="ed-box-type">Box type</label><select id="ed-box-type"><option value="text">Short text</option><option value="date">Date</option><option value="textarea">Paragraph</option></select>' +
-      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in. Each box is a field below \u2014 name it there.</span></div>' +
+    // ED1: the browser's raw file control is hidden behind a styled button
+    // that names the chosen file.
+    '<div class="row" id="ed-is-pdf-wrap" hidden><div style="flex:1;width:100%;"><label id="ed-is-pdf-lbl">PDF file (up to ' + (ED_PDF_MAX_BYTES / 1048576) + ' MB)</label>' +
+      '<div class="ed-file-pick"><button type="button" class="kb-btn" id="ed-is-pdf-btn" aria-describedby="ed-is-pdf-lbl">' + icon('upload', 13) + ' Choose PDF\u2026</button>' +
+      '<span class="ed-file-name" id="ed-is-pdf-name">No file chosen</span>' +
+      '<input type="file" id="ed-is-pdf" accept="application/pdf,.pdf" aria-label="PDF file" hidden></div>' +
+      '<div class="ed-box-bar"><label for="ed-box-type">Box type</label><select id="ed-box-type"><option value="text">Short text</option><option value="date">Date</option><option value="textarea">Paragraph</option>' +
+        '<option value="signature">Signature</option><option value="initials">Initials</option></select>' +
+      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in. Each box is a field below \u2014 name it there. A signature or initials box is filled by what the employee draws when signing.</span></div>' +
+      edBoxLegendHtml_() +
       '<div class="hint" id="ed-is-pdf-msg" role="status"></div>' +
       '<div class="ed-pdf" id="ed-is-pdf-pages"></div></div></div>' +
     '<div class="row"><div style="flex:1;width:100%;"><label for="ed-is-body" id="ed-is-body-lbl">Body (markdown — frozen at issue)</label>' +
@@ -969,6 +1258,8 @@ function edRenderMgr_() {
   el.querySelectorAll('[data-ed-mode]').forEach(function (b) { b.addEventListener('click', function () { edIssueMode_(this.getAttribute('data-ed-mode')); }); });
   var pf = document.getElementById('ed-is-pdf');
   if (pf) pf.addEventListener('change', function () { edIssuePdfFile_(this.files && this.files[0]); });
+  var pfb = document.getElementById('ed-is-pdf-btn');
+  if (pfb && pf) pfb.addEventListener('click', function () { pf.click(); });
   edIssuePdfPointer_(document.getElementById('ed-is-pdf-pages'));
   document.getElementById('ed-is-go').addEventListener('click', function () { edSubmitIssue_(true); });
   document.getElementById('ed-save-draft').addEventListener('click', function () { edSubmitIssue_(false); });
@@ -1005,9 +1296,12 @@ function edRenderIssueFields_() {
         '<option value="text"' + (f.type === 'text' ? ' selected' : '') + '>Short text</option>' +
         '<option value="textarea"' + (f.type === 'textarea' ? ' selected' : '') + '>Paragraph</option>' +
         '<option value="date"' + (f.type === 'date' ? ' selected' : '') + '>Date</option>' +
+        // ED1: signature and initials exist only as boxes on a PDF page.
+        (f.box ? '<option value="signature"' + (f.type === 'signature' ? ' selected' : '') + '>Signature</option>' +
+          '<option value="initials"' + (f.type === 'initials' ? ' selected' : '') + '>Initials</option>' : '') +
       '</select>' +
       '<label class="ed-field-req"><input type="checkbox" data-ed-fi="' + i + '"' + (f.required !== false ? ' checked' : '') + '> Required</label>' +
-      (f.box ? '<span class="ed-tpl-meta ed-box-chip">Box \u00b7 page ' + f.box.page + '</span>' : '') +
+      (f.box ? edBoxChipHtml_(f) : '') +
       '<button class="tr-revoke-btn" data-ed-field-del="' + i + '">' + icon('x', 12) + '</button>' +
     '</div>';
   });
@@ -1017,11 +1311,26 @@ function edRenderIssueFields_() {
     el.addEventListener('input', function () { ED_STATE.issueFields[+this.dataset.edFi].label = this.value; edRepaintIssueBoxes_(); });
   });
   host.querySelectorAll('.ed-field-type').forEach(function (el) {
-    el.addEventListener('change', function () { ED_STATE.issueFields[+this.dataset.edFi].type = this.value; });
+    el.addEventListener('change', function () {
+      var f = ED_STATE.issueFields[+this.dataset.edFi];
+      f.type = this.value;
+      if (f.box && ED_SIGN_TYPES.indexOf(f.type) >= 0) {   // ED1 — the same rule as placing one
+        var sigEl = document.getElementById('ed-is-sig');
+        if (sigEl && !sigEl.checked) { sigEl.checked = true; showToast('A ' + ED_BOX_LABELS[f.type].toLowerCase() + ' box needs a signature \u2014 "Require signature" is now on.', 'info'); }
+      }
+      edRenderIssueFields_();
+      edRepaintIssueBoxes_();   // ED1: its colour and size readout follow its type
+    });
   });
   host.querySelectorAll('.ed-field-req input').forEach(function (el) {
     el.addEventListener('change', function () { ED_STATE.issueFields[+this.dataset.edFi].required = this.checked; });
   });
+}
+/** ED1 — a box field's chip in the field list: its page, its size and what
+ *  it holds (edBoxSizeText_); a box too short for a line is marked. */
+function edBoxChipHtml_(f) {
+  var size = edBoxSizeText_(f.type, edBoxPts_(f.box, (ED_STATE.issuePageSizes || {})[f.box.page]));
+  return '<span class="ed-tpl-meta ed-box-chip' + (/too short/.test(size) ? ' is-warn' : '') + '">Box \u00b7 page ' + f.box.page + (size ? ' \u00b7 ' + esc(size) : '') + '</span>';
 }
 function edAddField_() {
   ED_STATE.issueFields.push({ label: '', type: 'text', required: true });
