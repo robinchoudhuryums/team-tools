@@ -43280,12 +43280,14 @@ test('P1: the Needs-you item — only while active; "Check your timesheet" namin
 
 test('P1: the email job — manager-gated, heartbeat before the toggle; off it sends nothing; on, each rep is emailed only in the hour that is 9am in THEIR timezone on THEIR reminder day, with a delivery row per send; a failed send is a partial run naming the rep; it rides the hourly dispatcher with every health registry (driven + source)', () => {
   const sent = [], log = [], stamps = [];
-  let flag = true, nowHour = { 'Asia/Kolkata': 9, 'America/Chicago': 9, 'Asia/Manila': 14 }, failFor = '';
+  let flag = true, nowHour = { 'Asia/Kolkata': 9, 'America/Chicago': 9, 'Asia/Manila': 14, 'Europe/London': 9 }, failFor = '';
+  const nowDate = { 'Europe/London': '2026-11-20' };   // 9am there too, but not a reminder day
   const rows = [['hdr'],
     { id: 'E1', name: 'Asha Rao', email: 'asha@x', tz: 'Asia/Kolkata', cycle: 'Monthly' },
     { id: 'E2', name: 'Bo Ray', email: 'bo@x', tz: 'America/Chicago', cycle: 'Biweekly' },
     { id: 'E3', name: 'Cy Diaz', email: 'cy@x', tz: 'Asia/Manila', cycle: 'Monthly' },
-    { id: 'E4', name: 'Gone', email: '', tz: 'Asia/Kolkata', cycle: 'Monthly' }];
+    { id: 'E4', name: 'Gone', email: '', tz: 'Asia/Kolkata', cycle: 'Monthly' },
+    { id: 'E5', name: 'Dee Lowe', email: 'dee@x', tz: 'Europe/London', cycle: 'Monthly' }];
   const c = p1Ctx_({
     assertManagerCaller_: () => {}, stampDigestLastRun_: (k) => stamps.push(k),
     getFlag_: (k) => (k === 'payWeekReminderEmail' ? flag : false),
@@ -43294,7 +43296,7 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
     empRosterEmail_: (r) => r.email || '', safeTimezone_: (t) => t, EMP: {},
     empPayCycle_: (r, a) => ({ payCycle: r.cycle, payAnchor: r.cycle === 'Biweekly' ? a : null }),
     companyHolidayMap_: () => ({}),
-    Utilities: { formatDate: (d, tz, f) => (tz === 'UTC' ? d.toISOString().slice(0, 10) : (f === 'H' ? String(nowHour[tz]) : '2026-11-23')) },
+    Utilities: { formatDate: (d, tz, f) => (tz === 'UTC' ? d.toISOString().slice(0, 10) : (f === 'H' ? String(nowHour[tz]) : (nowDate[tz] || '2026-11-23'))) },
     appSendMail_: (m) => { if (m.to === failFor) throw new Error('quota'); sent.push(m); },
     logDigestDelivery_: (kind, to, status, n, note) => log.push([kind, to, status, note]),
     buildBrandedEmailHtml_: (t, inner, o) => '<h>' + t + '</h>' + inner + '|' + o.ctaUrl, esc_: (x) => String(x), safeWebAppUrl_: (k) => 'https://app/?tool=' + k,
@@ -43307,7 +43309,7 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   flag = true;
   const r = c.sendPayWeekReminders();
   assert.strictEqual(r.outcome.status, 'ok');
-  assert.deepStrictEqual(sent.map((m) => m.to), ['asha@x', 'bo@x'], 'Nov 23 is the monthly day and the Monday of the biweekly period ending Nov 29; Manila is at 14:00, and a row with no email is nobody');
+  assert.deepStrictEqual(sent.map((m) => m.to), ['asha@x', 'bo@x'], 'Nov 23 is the monthly day and the Monday of the biweekly period ending Nov 29; Manila is at 14:00, London is at 9am on a day that is not its reminder day, and a row with no email is nobody');
   assert.deepStrictEqual(log.map((x) => x.slice(0, 3)), [['payWeek', 'asha@x', 'sent'], ['payWeek', 'bo@x', 'sent']]);
   const m = sent[0];
   assert.ok(/Check your timesheet \u2014 pay period ends Mon Nov 30/.test(m.subject) && /Nov 1 \u2013 Nov 30/.test(m.htmlBody) && /\?tool=timeoff/.test(m.htmlBody) && /Hi Asha,/.test(m.body), m.subject);
@@ -43316,7 +43318,7 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   const f = c.sendPayWeekReminders();
   assert.ok(f.outcome.status === 'partial' && /1 pay-week reminder email\(s\) failed to send \(quota\)/.test(f.outcome.message) && f.outcome.names[0] === 'Bo Ray', JSON.stringify(f.outcome));
   assert.deepStrictEqual(log.map((x) => x[2]), ['sent', 'failed'], 'the failed send is a delivery row too');
-  nowHour = { 'Asia/Kolkata': 10, 'America/Chicago': 10, 'Asia/Manila': 10 };
+  nowHour = { 'Asia/Kolkata': 10, 'America/Chicago': 10, 'Asia/Manila': 10, 'Europe/London': 10 };
   assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle', 'an hour that is nobody\'s 9am did nothing');
   const src = extractRawFunction('Code.js', 'sendPayWeekReminders');
   assert.ok(src.indexOf("assertManagerCaller_('sendPayWeekReminders')") < src.indexOf('runAutomationJob_') && src.indexOf("stampDigestLastRun_('payWeek')") < src.indexOf("getFlag_('payWeekReminderEmail')"), 'gate first; heartbeat before the toggle');
