@@ -3843,6 +3843,34 @@
     "verifyDocSignature"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "P1: the pay-week reminder — its pure rule, the Needs-you task, the email and the hourly job",
+   "added": [
+    "PAY_WEEK_MONTHLY_MIN_DAYS",
+    "PAY_WEEK_REMINDER_HOUR",
+    "payWeekDateText_",
+    "payWeekEmail_",
+    "payWeekForEmp_",
+    "payWeekReminder_",
+    "payWeekTask_",
+    "sendPayWeekReminders"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_DELIVERY_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "FEATURE_FLAGS",
+    "PENDING_TASKS_KINDS",
+    "TRIGGER_GROUPS",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "buildCalendarForEmployee_",
+    "computeAutomationHealth_",
+    "getMyPendingTasks"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3950,7 +3978,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "d1a43a7bc1326b8a"
+   "sha": "fe10da82995d9188"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -4535,7 +4563,7 @@
   "DIGEST_DELIVERY_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "aba6b56d0c5dc866"
+   "sha": "ff6536d2023eb212"
   },
   "DIGEST_DELIVERY_REASON_MAX": {
    "file": "00_config.js",
@@ -4565,7 +4593,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "29bca763bf685464"
+   "sha": "c69de68c0c97b069"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -4860,7 +4888,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c50415b97f5fad3c"
+   "sha": "a17c5d3325ff9f7f"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -5977,6 +6005,16 @@
    "kind": "const",
    "sha": "34002a38529dc907"
   },
+  "PAY_WEEK_MONTHLY_MIN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54da5dec9afe17d3"
+  },
+  "PAY_WEEK_REMINDER_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "baa4ada82c9d768b"
+  },
   "PENDING_TASKS_CACHE_PREFIX": {
    "file": "00_config.js",
    "kind": "var",
@@ -5995,7 +6033,7 @@
   "PENDING_TASKS_KINDS": {
    "file": "00_config.js",
    "kind": "var",
-   "sha": "69524cc92453c118"
+   "sha": "447ee4d043a5da01"
   },
   "PRESENCE_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -6710,12 +6748,12 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "7c698612c32d8487"
+   "sha": "b2b9600d6787457a"
   },
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "976df472abb4acab"
+   "sha": "59cc58f608fb4452"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -7495,7 +7533,7 @@
   "buildCalendarForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0b6ac7a3c6cb3aff"
+   "sha": "e28174e7e8ca623e"
   },
   "buildCallNoteEmailHtml_": {
    "file": "30_callnotes.js",
@@ -8120,7 +8158,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5efe2ba4b8eb11e8"
+   "sha": "be02d5d0ba91fbfb"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -9530,7 +9568,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "fa575567132d4fcc"
+   "sha": "023830d7f9b4f4ed"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -11782,6 +11820,31 @@
    "kind": "function",
    "sha": "decaf510e241fbda"
   },
+  "payWeekDateText_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0f598521479883cc"
+  },
+  "payWeekEmail_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "65146aad0421489c"
+  },
+  "payWeekForEmp_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bb66451ce8700ae5"
+  },
+  "payWeekReminder_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "6e1089255b793d1e"
+  },
+  "payWeekTask_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "25fc670d8c70f8ab"
+  },
   "payrollSubjectId_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -12961,6 +13024,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "4357d276cbf865ee"
+  },
+  "sendPayWeekReminders": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "87946ef656dd8e21"
   },
   "sendRepEmail_": {
    "file": "10_core.js",

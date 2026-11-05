@@ -1715,6 +1715,9 @@
 
   /* Cap calendar size so it doesn't sprawl at fullscreen */
   .cal-card { max-width: 720px; margin: 0 auto; }
+  /* P1: the pay-week banner atop the Time / PTO calendar. */
+  .cal-payweek { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--info-soft); color: var(--ink); font-size: 13px; line-height: 1.45; border-left: 3px solid var(--info); }
+  .cal-payweek svg { flex: none; margin-top: 2px; color: var(--info-deep); }
 
   /* ─── TIME OFF: 2-col layout (calendar left, PTO ring right) ───────────── */
   .timeoff-layout {

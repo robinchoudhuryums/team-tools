@@ -1235,6 +1235,7 @@ const DIGEST_ERROR_KEYS = {
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
   spanishEscalation: 'SpanishEscalationDigest',   // E4 (cycle 25, G5)
+  payWeek: 'PayWeekReminders',   // P1 (operator 2026-11-05)
 };
 // The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
 // tabled key takes the table's label). ONE map, shipped on each stamp by
@@ -1251,6 +1252,7 @@ const AUTOMATION_ERROR_LABELS = {
   OpenPunchCheck: 'Daily open-punch check',
   NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
   SpanishEscalationDigest: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
+  PayWeekReminders: 'Pay-week timesheet reminders',   // P1
 };
 // ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
 // Every installable-trigger job — the standalone TARGETS and every handler a
@@ -1299,6 +1301,7 @@ const DIGEST_DELIVERY_LABELS = {
   missedPunchRep: 'Missed clock-out reminder (to the rep)', trainingOverdueRep: 'Overdue-documents reminder (to the employee)',
   selfTest: 'Nightly self-test failure alert', clientErrSpike: 'Client-error spike alert',
   spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
+  payWeek: 'Pay-week timesheet reminder (to the rep)',   // P1
 };
 // A delivery row that could not be WRITTEN is counted here — {count, firstMs,
 // lastMs, lastError} — and the Admin panel says so for a failure inside its
@@ -1524,7 +1527,7 @@ const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // unchanged. Order inside a group: the cheapest / bounded jobs first, the
 // cross-rep walk last, so a job that runs long cannot starve the others.
 const TRIGGER_GROUPS = {
-  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral)
+  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'sendPayWeekReminders', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral); P1: the pay-week reminder too
   runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
   runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
   // 8am manager-tz. checkOpenPunches STAMPS and sendAutomationHealthDigest
@@ -1557,6 +1560,7 @@ const TRIGGER_HANDLER_JOB_KEYS = {
   checkOpenPunches:                  'OpenPunchCheck',
   sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
   sendSpanishEscalationDigest:       'SpanishEscalationDigest',
+  sendPayWeekReminders:              'PayWeekReminders',
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
@@ -1647,6 +1651,9 @@ const FEATURE_FLAGS = [
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
+  { key: 'payWeekReminderEmail', label: 'Pay-week timesheet reminder email',
+    description: 'On the Monday of each pay period\'s final week (biweekly), or the last Monday with at least 4 days left in the month (monthly), email each employee at 9am their time asking them to check their timesheet and request any edits before the period ends. The Needs-you item and the Time / PTO banner show either way. Rides the hourly dispatcher — no new trigger.',
+    default: true, scope: 'server' },
   { key: 'deptReplyResolve', label: 'Dept Request reply resolves',
     description: 'Every hour, read each open department request\'s email thread (in the mailbox the app runs as). A reply from the department that arrived after the send (or the last reopen), is not automatic, and neither asks a question nor puts the request on hold RESOLVES it, credited to the replier; a reply that asks or holds marks it "Responded — needs a look". Only requests sent after this feature shipped carry a thread to read. Off = replies are never read; the resolve link and Mark resolved still work.',
     default: true, scope: 'server' },
@@ -1962,7 +1969,17 @@ var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
 var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
-var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne', 'payWeek'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due; P1: the pay-week timesheet check
+// P1 (operator 2026-11-05 — "a reminder to team members to check their
+// timesheet and request edits if needed on pay weeks"): ONE rule for the day
+// (payWeekReminder_). Biweekly: the Monday of the period's final week. Monthly
+// (the India team, finalized on the month's last day): the last Monday with at
+// least PAY_WEEK_MONTHLY_MIN_DAYS days left in the month, counting that Monday
+// and the last day. A Monday that is a company holiday moves to the next
+// workday. The email goes at the rep's local PAY_WEEK_REMINDER_HOUR on that day
+// (the hourly dispatcher), while the `payWeekReminderEmail` toggle is on.
+const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
+const PAY_WEEK_REMINDER_HOUR = 9;
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —

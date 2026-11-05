@@ -21568,7 +21568,9 @@ test('PR6-2: "Needs you" client — compact gate, leads the main column, pending
     icon: (n) => '<svg data-i="' + n + '"></svg>', errorStateHtml_: (m) => '<div role="alert">' + m + '</div>' };
   vm.createContext(ctx);
   const consts = raw.match(/var CLK_NEEDS_ICON = \{[^\n]*\n/)[0] + raw.match(/var CLK_NEEDS_LABEL = \{[^\n]*\n/)[0];
-  vm.runInContext(consts + extractFunction('tc/script_clock.html', 'clkNeedsYouSkel_') + '\n' + extractFunction('tc/script_clock.html', 'clkNeedsYouHtml_'), ctx);
+  vm.runInContext(consts + 'var CLK_PAYWEEK_DONE_KEY = "umsPayWeekDone"; var localStorage = { getItem: function () { return null; } };\n' +
+    extractFunction('tc/script_clock.html', 'clkPayWeekDoneKey_') + '\n' +
+    extractFunction('tc/script_clock.html', 'clkNeedsYouSkel_') + '\n' + extractFunction('tc/script_clock.html', 'clkNeedsYouHtml_'), ctx);
   assert.ok(/role="status"/.test(ctx.clkNeedsYouHtml_(undefined)), 'skeleton announces loading');
   assert.ok(/role="alert"/.test(ctx.clkNeedsYouHtml_(null)), 'null → the error card');
   assert.strictEqual(ctx.clkNeedsYouHtml_({ items: [], unavailable: [] }), '', 'clean-empty → nothing');
@@ -43220,6 +43222,107 @@ test('ED1: the box markup — the type\'s class, required solid; a fill box\'s i
   assert.ok(/aria-hidden="true"/.test(ctx.edSignBoxPh_('initials', 'Initial', true)) && !/Initial/.test(ctx.edSignBoxPh_('initials', 'Initial', true)), 'an initials box is too small for words: a mark, its name on the title');
   const edit = ctx.edBoxesHtml_(fields, 1, 'edit', null, { pagePts: letter });
   assert.ok(/class="ed-pdf-box t-text is-edit" data-ed-box="0"[^>]*title="2\.5 × 0\.22 in · about 34–49 characters"/.test(edit), edit);
+});
+
+
+// ── P1 (operator 2026-11-05): the pay-week timesheet reminder ──────────────
+console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
+const p1Ctx_ = (extra) => {
+  const utcIso = (d) => d.toISOString().slice(0, 10);
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, RegExp, console: { warn() {} },
+    Utilities: { formatDate: (d, tz) => { if (tz !== 'UTC') throw new Error('a rep tz needs the test\'s own stub'); return utcIso(d); } } }, extra || {}));
+  ['const PAY_WEEK_MONTHLY_MIN_DAYS = \\d+;', 'const PAY_WEEK_REMINDER_HOUR = \\d+;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['addDaysIso_', 'isoFromUtc_', 'biweeklyRangeFor_', 'payWeekReminder_', 'payWeekForEmp_', 'payWeekDateText_', 'payWeekTask_', 'payWeekEmail_', 'sendPayWeekReminders']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const p1J = (x) => JSON.parse(JSON.stringify(x));
+
+test('P1: the reminder day — biweekly, the Monday of the period\'s final week; monthly, the last Monday with at least four days left (that Monday and the last day counted); a company holiday or weekend moves it to the next workday, never past the period\'s end; active from that day to the end; a biweekly rep with no anchor has none (driven)', () => {
+  const c = p1Ctx_();
+  // The org anchor is a period END (biweeklyRangeFor_): Sun Nov 1 2026 → Oct 19 – Nov 1.
+  const b = p1J(c.payWeekReminder_('Biweekly', '2026-10-28', '2026-11-01', {}));
+  assert.deepStrictEqual([b.start, b.end, b.remindOn, b.active, b.periodKey], ['2026-10-19', '2026-11-01', '2026-10-26', true, 'Biweekly:2026-10-19']);
+  assert.strictEqual(c.payWeekReminder_('Biweekly', '2026-10-25', '2026-11-01', {}).active, false, 'not before the day');
+  assert.strictEqual(c.payWeekReminder_('Biweekly', '2026-11-02', '2026-11-01', {}).start, '2026-11-02', 'the next period after the end');
+  // Monthly: Nov 2026 ends Mon 30 → Mon 23 (the 30th has only one day left); Dec ends Thu 31 → Mon 28 (four days: 28–31).
+  assert.strictEqual(c.payWeekReminder_('Monthly', '2026-11-05', null, {}).remindOn, '2026-11-23');
+  assert.strictEqual(c.payWeekReminder_('Monthly', '2026-12-01', null, {}).remindOn, '2026-12-28');
+  assert.strictEqual(c.payWeekReminder_('Monthly', '2026-02-10', null, {}).remindOn, '2026-02-23', 'Feb 2026 ends Sat 28: Mon 23');
+  const nov = p1J(c.payWeekReminder_('Monthly', '2026-11-24', null, {}));
+  assert.deepStrictEqual([nov.start, nov.end, nov.active], ['2026-11-01', '2026-11-30', true]);
+  // A holiday Monday moves to Tuesday; two holidays to Wednesday.
+  assert.strictEqual(c.payWeekReminder_('Monthly', '2026-11-05', null, { '2026-11-23': true }).remindOn, '2026-11-24');
+  assert.strictEqual(c.payWeekReminder_('Monthly', '2026-11-05', null, { '2026-11-23': true, '2026-11-24': true }).remindOn, '2026-11-25');
+  // Never past the end: a closed final week reminds on the last day.
+  const shut = {}; ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'].forEach((d) => { shut[d] = true; });
+  assert.strictEqual(c.payWeekReminder_('Biweekly', '2026-10-28', '2026-11-01', shut).remindOn, '2026-11-01');
+  assert.strictEqual(c.payWeekReminder_('Biweekly', '2026-10-28', null, {}), null, 'no anchor: no period, no reminder');
+  assert.strictEqual(c.payWeekReminder_('Monthly', 'nope', null, {}), null);
+  assert.strictEqual(c.payWeekReminder_('', '2026-11-05', null, {}).cycle, 'Monthly', 'empPayCycle_\'s default is monthly');
+});
+
+test('P1: the Needs-you item — only while active; "Check your timesheet" naming the period and the last day; Review opens Time / PTO; it carries its period key for Done; getMyPendingTasks adds it from the rep\'s own today, and the calendar payload carries the same window (driven + source)', () => {
+  const c = p1Ctx_();
+  const pw = c.payWeekReminder_('Monthly', '2026-11-24', null, {});
+  const t = p1J(c.payWeekTask_(pw));
+  assert.deepStrictEqual([t.kind, t.title, t.detail, t.dueIso, t.overdue, t.action, t.periodKey, t.route.tool, t.route.tab],
+    ['payWeek', 'Check your timesheet', 'Pay period Nov 1 – Nov 30 · request any edits by Mon Nov 30', '2026-11-30', false, 'Review', 'Monthly:2026-11-01', 'timeClock', 'timeoff']);
+  assert.strictEqual(c.payWeekTask_(c.payWeekReminder_('Monthly', '2026-11-05', null, {})), null, 'inactive: no item');
+  assert.strictEqual(c.payWeekTask_(null), null);
+  const pt = extractRawFunction('Code.js', 'getMyPendingTasks');
+  assert.ok(/payWeekTask_\(payWeekForEmp_\(emp, todayIso\)\)/.test(pt), 'from the rep\'s own today');
+  const cal = extractRawFunction('Code.js', 'buildCalendarForEmployee_');
+  assert.ok(/payWeek: \(function \(\) \{ try \{ const pw = payWeekForEmp_\(emp, todayStr\); return pw && pw\.active \? pw : null;/.test(cal), 'the calendar banner\'s window is the item\'s');
+  assert.ok(/'payWeek'\]/.test(/var PENDING_TASKS_KINDS = \[[^\]]*\]/.exec(serverSource())[0]), 'a Needs-you kind');
+});
+
+test('P1: the email job — manager-gated, heartbeat before the toggle; off it sends nothing; on, each rep is emailed only in the hour that is 9am in THEIR timezone on THEIR reminder day, with a delivery row per send; a failed send is a partial run naming the rep; it rides the hourly dispatcher with every health registry (driven + source)', () => {
+  const sent = [], log = [], stamps = [];
+  let flag = true, nowHour = { 'Asia/Kolkata': 9, 'America/Chicago': 9, 'Asia/Manila': 14 }, failFor = '';
+  const rows = [['hdr'],
+    { id: 'E1', name: 'Asha Rao', email: 'asha@x', tz: 'Asia/Kolkata', cycle: 'Monthly' },
+    { id: 'E2', name: 'Bo Ray', email: 'bo@x', tz: 'America/Chicago', cycle: 'Biweekly' },
+    { id: 'E3', name: 'Cy Diaz', email: 'cy@x', tz: 'Asia/Manila', cycle: 'Monthly' },
+    { id: 'E4', name: 'Gone', email: '', tz: 'Asia/Kolkata', cycle: 'Monthly' }];
+  const c = p1Ctx_({
+    assertManagerCaller_: () => {}, stampDigestLastRun_: (k) => stamps.push(k),
+    getFlag_: (k) => (k === 'payWeekReminderEmail' ? flag : false),
+    runAutomationJob_: (k, fn) => fn(), automationOutcome_: (s, m, n) => ({ status: s, message: m || '', names: n || [] }),
+    getEmployeeRosterRows_: () => rows, orgBiweeklyAnchor_: () => '2026-11-29',
+    empRosterEmail_: (r) => r.email || '', safeTimezone_: (t) => t, EMP: {},
+    empPayCycle_: (r, a) => ({ payCycle: r.cycle, payAnchor: r.cycle === 'Biweekly' ? a : null }),
+    companyHolidayMap_: () => ({}),
+    Utilities: { formatDate: (d, tz, f) => (tz === 'UTC' ? d.toISOString().slice(0, 10) : (f === 'H' ? String(nowHour[tz]) : '2026-11-23')) },
+    appSendMail_: (m) => { if (m.to === failFor) throw new Error('quota'); sent.push(m); },
+    logDigestDelivery_: (kind, to, status, n, note) => log.push([kind, to, status, note]),
+    buildBrandedEmailHtml_: (t, inner, o) => '<h>' + t + '</h>' + inner + '|' + o.ctaUrl, esc_: (x) => String(x), safeWebAppUrl_: (k) => 'https://app/?tool=' + k,
+    CN_EMAIL_PALETTE: { muted: '#777', accent: '#0a0' } });
+  // EMP lookups read rows[r][EMP.X]; map the fixture's fields through a proxy.
+  c.EMP = { TIMEZONE: 'tz', NAME: 'name' };
+  flag = false;
+  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle');
+  assert.deepStrictEqual([sent.length, stamps], [0, ['payWeek']], 'off: a heartbeat, no mail');
+  flag = true;
+  const r = c.sendPayWeekReminders();
+  assert.strictEqual(r.outcome.status, 'ok');
+  assert.deepStrictEqual(sent.map((m) => m.to), ['asha@x', 'bo@x'], 'Nov 23 is the monthly day and the Monday of the biweekly period ending Nov 29; Manila is at 14:00, and a row with no email is nobody');
+  assert.deepStrictEqual(log.map((x) => x.slice(0, 3)), [['payWeek', 'asha@x', 'sent'], ['payWeek', 'bo@x', 'sent']]);
+  const m = sent[0];
+  assert.ok(/Check your timesheet \u2014 pay period ends Mon Nov 30/.test(m.subject) && /Nov 1 \u2013 Nov 30/.test(m.htmlBody) && /\?tool=timeoff/.test(m.htmlBody) && /Hi Asha,/.test(m.body), m.subject);
+  assert.ok(!/hour|punch/i.test(m.body), 'it names the period and the day, nothing from the timesheet');
+  sent.length = 0; log.length = 0; failFor = 'bo@x';
+  const f = c.sendPayWeekReminders();
+  assert.ok(f.outcome.status === 'partial' && /1 pay-week reminder email\(s\) failed to send \(quota\)/.test(f.outcome.message) && f.outcome.names[0] === 'Bo Ray', JSON.stringify(f.outcome));
+  assert.deepStrictEqual(log.map((x) => x[2]), ['sent', 'failed'], 'the failed send is a delivery row too');
+  nowHour = { 'Asia/Kolkata': 10, 'America/Chicago': 10, 'Asia/Manila': 10 };
+  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle', 'an hour that is nobody\'s 9am did nothing');
+  const src = extractRawFunction('Code.js', 'sendPayWeekReminders');
+  assert.ok(src.indexOf("assertManagerCaller_('sendPayWeekReminders')") < src.indexOf('runAutomationJob_') && src.indexOf("stampDigestLastRun_('payWeek')") < src.indexOf("getFlag_('payWeekReminderEmail')"), 'gate first; heartbeat before the toggle');
+  const cfg = serverSource();
+  assert.ok(/runHourlyJobs:\s*\[[^\]]*'sendPayWeekReminders'/.test(cfg) && /sendPayWeekReminders:\s*'PayWeekReminders'/.test(cfg) && /payWeek: 'PayWeekReminders'/.test(cfg) && /PayWeekReminders: 'Pay-week timesheet reminders'/.test(cfg) && /payWeek: 2 \}/.test(cfg), 'the dispatcher and every health registry');
+  assert.ok(/key: 'payWeekReminderEmail'[\s\S]*?default: true, scope: 'server'/.test(cfg), 'a server toggle, on by default (the operator asked for the email)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -683,9 +683,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // E1 (operator 2026-10-27): the ONE manager item — departments with ≥25% of their open requests past SLA and more than three.
         { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' } },
         // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
+        // P1 (operator 2026-11-05): the pay-week timesheet check, with its Done button.
+        { kind: 'payWeek', title: 'Check your timesheet', detail: 'Pay period Nov 1 \u2013 Nov 30 \u00b7 request any edits by Mon Nov 30', dueIso: daysAgo(-6), overdue: false, action: 'Review', periodKey: 'Monthly:2026-11-01', route: { tool: 'timeClock', tab: 'timeoff' } },
         { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'timeClock', tab: 'metricsSpanish' } },
       ],
-      total: 7, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
+      total: 8, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
@@ -1658,7 +1660,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // mirror the server payload exactly (INV-185); the legacy
         // fixed-allotment tile is source-pinned (blank Q = byte-identical).
         ptoAccrualPer80: 3.08, ptoAccrualBasisHours: 80, ptoHoursPerDay: 8,
-        ptoAccrualMtd: { hours: 96, days: 0.46 } };
+        ptoAccrualMtd: { hours: 96, days: 0.46 },
+        // P1 (operator 2026-11-05): the pay-week banner — the fixture's "today"
+        // is the 24th, inside the month's final week.
+        payWeek: { cycle: 'Monthly', start: year + '-' + m2 + '-01', end: year + '-' + m2 + '-' + String(lastDay).padStart(2, '0'),
+          remindOn: year + '-' + m2 + '-23', active: true, periodKey: 'Monthly:' + year + '-' + m2 + '-01' } };
     },
     // Pay-period side-rail block (always-on since the 2026-08-18 Time/PTO
     // consolidation). Shape mirrors buildTimesheetForEmployee_'s return:

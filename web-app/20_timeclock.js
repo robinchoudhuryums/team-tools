@@ -5966,6 +5966,131 @@ function payPeriodsForClose_(todayIso, cycles, biweeklyAnchor) {
   }
   return out;
 }
+/** PURE (Node-pinned) — P1 (operator 2026-11-05): the pay-week timesheet
+ *  reminder for one rep's pay cycle on `todayIso`. cycle 'Biweekly' (the
+ *  org-anchor 14-day period, biweeklyRangeFor_ — the export's own period) or
+ *  'Monthly' (the calendar month); anchor: a biweekly period END; holidays:
+ *  {iso: true}. The day: biweekly, the Monday of the period's final week;
+ *  monthly, the last Monday with at least PAY_WEEK_MONTHLY_MIN_DAYS days left
+ *  counting that Monday and the last day; then past a weekend or a company
+ *  holiday to the next workday, never past the period's end. → null (a
+ *  biweekly rep with no anchor — no period can be placed) or {cycle, start,
+ *  end, remindOn, active (remindOn ≤ today ≤ end), periodKey}. */
+function payWeekReminder_(cycle, todayIso, anchor, holidays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
+  const dow = function (iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); };
+  const mondayOnOrBefore = function (iso) { return addDaysIso_(iso, -((dow(iso) + 6) % 7)); };
+  let start, end, base;
+  if (String(cycle) === 'Biweekly') {
+    if (!anchor) return null;
+    const r = biweeklyRangeFor_(anchor, todayIso);
+    start = r.start; end = r.end;
+    base = mondayOnOrBefore(end);
+  } else {
+    const y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    start = todayIso.slice(0, 7) + '-01';
+    end = todayIso.slice(0, 7) + '-' + (last < 10 ? '0' : '') + last;
+    base = mondayOnOrBefore(addDaysIso_(end, -(PAY_WEEK_MONTHLY_MIN_DAYS - 1)));
+  }
+  let remindOn = base;
+  for (let n = 0; n < 14 && remindOn < end; n++) {
+    const d = dow(remindOn);
+    if (d !== 0 && d !== 6 && !(holidays && holidays[remindOn])) break;
+    remindOn = addDaysIso_(remindOn, 1);
+  }
+  if (remindOn > end) remindOn = end;
+  return { cycle: String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly', start: start, end: end, remindOn: remindOn,
+    active: todayIso >= remindOn && todayIso <= end, periodKey: (String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly') + ':' + start };
+}
+/** P1 — one rep's pay-week reminder for their own today: their cycle and
+ *  anchor (getEmployeeInfo_'s empPayCycle_, the org anchor for biweekly) and
+ *  the company calendar around today. A calendar that cannot be read is no
+ *  holidays — the day is then a Monday, which is the safe direction. */
+function payWeekForEmp_(emp, todayIso) {
+  let hol = {};
+  try { hol = companyHolidayMap_(addDaysIso_(todayIso, -40), addDaysIso_(todayIso, 40)) || {}; } catch (e) { hol = {}; }
+  return payWeekReminder_(emp && emp.payCycle, todayIso, emp && emp.payAnchor, hol);
+}
+/** PURE (Node-pinned) — P1: the human dates for the reminder ("Mon Nov 23",
+ *  and a period as "Nov 1 – Nov 30"). */
+function payWeekDateText_(iso, withDay) {
+  const d = new Date(String(iso) + 'T12:00:00Z');
+  if (isNaN(d.getTime())) return String(iso || '');
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()];
+  return (withDay ? day + ' ' : '') + mon + ' ' + d.getUTCDate();
+}
+/** PURE (Node-pinned) — P1: the Needs-you item for an active reminder, or
+ *  null. Review opens Time / PTO; the client hides it for the period on Done. */
+function payWeekTask_(pw) {
+  if (!pw || !pw.active) return null;
+  return { kind: 'payWeek', title: 'Check your timesheet',
+    detail: 'Pay period ' + payWeekDateText_(pw.start) + ' \u2013 ' + payWeekDateText_(pw.end) + ' \u00b7 request any edits by ' + payWeekDateText_(pw.end, true),
+    dueIso: pw.end, overdue: false, action: 'Review', periodKey: pw.periodKey,
+    route: { tool: 'timeClock', tab: 'timeoff' } };
+}
+/** Trigger handler (hourly, via runHourlyJobs) — P1: on a rep's reminder day,
+ *  at their local PAY_WEEK_REMINDER_HOUR, email them to check their timesheet.
+ *  Manager-gated like every handler (INV-44). Heartbeat first, so a dead
+ *  trigger stays visible while the toggle is off; hour-equality per rep, the
+ *  EOD digest's rule (one match per rep per day). Every send is a delivery
+ *  row; the run ends through the outcome contract (ST2). */
+function sendPayWeekReminders() {
+  assertManagerCaller_('sendPayWeekReminders');
+  return runAutomationJob_('PayWeekReminders', function () {
+    stampDigestLastRun_('payWeek');
+    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('idle') };
+    const rows = getEmployeeRosterRows_();
+    const orgAnchor = orgBiweeklyAnchor_(rows);
+    const now = new Date();
+    let attempted = 0, sent = 0, failed = 0, lastError = '';
+    const failedNames = [];
+    for (let r = 1; r < rows.length; r++) {
+      const email = empRosterEmail_(rows[r]);
+      if (!email) continue;
+      const tz = safeTimezone_(String(rows[r][EMP.TIMEZONE] || '').trim());
+      if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) continue;
+      const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+      const pc = empPayCycle_(rows[r], orgAnchor);
+      const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
+      if (!pw || pw.remindOn !== today) continue;
+      attempted++;
+      const name = String(rows[r][EMP.NAME] || '').trim();
+      try {
+        appSendMail_(payWeekEmail_(email, name, pw));
+        sent++;
+        logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
+      } catch (e) {
+        failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
+        logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+      }
+    }
+    if (failed) {
+      return { sent: sent, outcome: automationOutcome_(sent ? 'partial' : 'failed',
+        failed + ' pay-week reminder email(s) failed to send (' + lastError + ')', failedNames) };
+    }
+    return { sent: sent, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
+  });
+}
+/** P1 — the reminder email (the shared branded chrome, a link to Time / PTO).
+ *  It names the period and the last day only — no hours, no punches. */
+function payWeekEmail_(email, name, pw) {
+  const first = String(name || '').split(' ')[0] || 'there';
+  const period = payWeekDateText_(pw.start) + ' \u2013 ' + payWeekDateText_(pw.end);
+  const by = payWeekDateText_(pw.end, true);
+  return {
+    to: email,
+    subject: 'Check your timesheet \u2014 pay period ends ' + by,
+    body: 'Hi ' + first + ',\n\nThe pay period ' + period + ' ends ' + by + '. Please check your days in Time / PTO and request any edits before then.\n\n\u2014 UMS Team Tools (automated)\n',
+    htmlBody: buildBrandedEmailHtml_('Check your timesheet',
+      '<p style="margin:0 0 10px;">Hi ' + esc_(first) + ',</p>' +
+      '<p style="margin:0 0 12px;">The pay period <b>' + esc_(period) + '</b> ends <b>' + esc_(by) + '</b>. Please check your days in Time / PTO and request any edits before then, so payroll is right the first time.</p>' +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Everything looks right? Then there is nothing to do.</p>',
+      { accent: CN_EMAIL_PALETTE.accent, subLabel: 'Time Clock', statusLabel: 'Pay week',
+        ctaUrl: safeWebAppUrl_('timeoff'), ctaLabel: 'Open Time / PTO' }),
+  };
+}
 /** PURE (Node-pinned): what stands between each period and a clean export.
  *  roster: [{id, name, payCycle, offboarded, timezone}] — every payroll subject.
  *  perDayByEmp: workedHoursByEmpForRange_'s per-day map. toRows / parRows: the
@@ -6562,6 +6687,9 @@ function buildCalendarForEmployee_(emp, year, month) {
     // through would be a different month's number beside today's balance).
     // Not a credit: the trigger credits in arrears on the 1st.
     ptoAccrualMtd: ptoAccrualMtd,
+    // P1: the pay-week reminder for the rep's own today (the calendar's banner
+    // in the same window as the Needs-you item); null outside it.
+    payWeek: (function () { try { const pw = payWeekForEmp_(emp, todayStr); return pw && pw.active ? pw : null; } catch (e) { return null; } })(),
   };
 }
 
@@ -9342,6 +9470,14 @@ function getMyPendingTasks() {
         if (ooDue.length) items.push(coachOneOnOneTask_(ooDue));
       } catch (e) { (hrOk ? unavailable : notConfigured).push('oneOnOne'); }
     }
+
+    // payWeek — P1 (operator 2026-11-05): from the reminder day to the end of
+    // the rep's pay period, one item to check the timesheet (Review opens Time
+    // / PTO). Pure date arithmetic plus the company calendar; nothing to fail.
+    try {
+      var pwTask = payWeekTask_(payWeekForEmp_(emp, todayIso));
+      if (pwTask) items.push(pwTask);
+    } catch (e) { unavailable.push('payWeek'); }
 
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is

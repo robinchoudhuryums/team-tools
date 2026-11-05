@@ -9169,6 +9169,54 @@ test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archi
   assert.ok(!/timesheet archive could not be read/.test(area.innerHTML), 'a clean read shows no note');
 });
 
+test('P1 DOM: the pay-week item — "Check your timesheet" with Review and a Done button; Done hides it for THAT period (kept in the browser) while the other items keep their own links; the next period\'s item shows again', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const host = h.$('#dash-needsyou');
+  const NEEDS = h.read('CLK_NEEDS');
+  NEEDS.busy = false;
+  const render = h.read('clkRenderNeedsYou_');
+  const pay = (key) => ({ kind: 'payWeek', title: 'Check your timesheet', detail: 'Pay period Nov 1 – Nov 30 · request any edits by Mon Nov 30',
+    dueIso: '2026-11-30', overdue: false, action: 'Review', periodKey: key, route: { tool: 'timeClock', tab: 'timeoff' } });
+  const coach = { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Minor', dueIso: '', overdue: false, action: 'Open', route: { tool: 'develop', tab: 'coaching' } };
+  NEEDS.data = { items: [pay('Monthly:2026-11-01'), coach], total: 2, unavailable: [], todayIso: '2026-11-24' };
+  render();
+  const row = host.querySelector('li[data-kind="payWeek"]');
+  assert.ok(row && /Check your timesheet/.test(row.textContent) && /Review/.test(row.querySelector('.ny-go').textContent), 'the item');
+  const done = row.querySelector('button.ny-done');
+  assert.ok(done && done.getAttribute('data-ny-done') === 'Monthly:2026-11-01' && /hide until the next pay period/.test(done.getAttribute('aria-label')), 'a named Done button');
+  h.read('clkPayWeekDone_')(done.getAttribute('data-ny-done'));
+  assert.strictEqual(h.window.localStorage.getItem('umsPayWeekDone'), 'Monthly:2026-11-01', 'kept per browser, for that period');
+  assert.ok(!host.querySelector('li[data-kind="payWeek"]'), 'hidden');
+  assert.ok(/Needs you\(1\)/.test(host.querySelector('.dash-card-head').textContent), 'and the count follows');
+  const went = [];
+  h.window.enterTool = (tool, tab) => went.push(tool + '/' + tab);
+  h.read('clkNeedsYouGo_')(1);
+  assert.deepStrictEqual(went, ['develop/coaching'], 'the remaining item keeps its own link (its index into the payload)');
+  NEEDS.data = { items: [pay('Monthly:2026-12-01'), coach], total: 2, unavailable: [], todayIso: '2026-12-28' };
+  render();
+  assert.ok(host.querySelector('li[data-kind="payWeek"]'), 'the next period\'s item shows again');
+  h.read('clkNeedsYouGo_')(0);
+  assert.deepStrictEqual(went[1], 'timeClock/timeoff', 'Review opens Time / PTO');
+});
+
+test('P1 DOM: the Time / PTO calendar carries the pay-week banner while the reminder is active — the period and its last day — and none otherwise', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const cal = (payWeek) => ({ year: 2026, month: 11, monthName: 'November 2026', lastDay: 30, firstDayOfWeek: 0,
+    workedDates: [], workedHoursByDate: {}, archiveError: '', timeOffRequests: [], teammates: [], holidays: [], allRequests: [],
+    today: '2026-11-24', timezone: 'Asia/Kolkata', ptoEnabled: false, annualLeave: 0, sickLeave: 0, payWeek: payWeek });
+  const area = h.document.createElement('div'); h.document.body.appendChild(area);
+  h.read('renderTimeOffView')(area, cal({ cycle: 'Monthly', start: '2026-11-01', end: '2026-11-30', remindOn: '2026-11-23', active: true, periodKey: 'Monthly:2026-11-01' }));
+  const b = area.querySelector('.cal-card .cal-payweek');
+  assert.ok(b && b.getAttribute('role') === 'status' && /Pay week\./.test(b.textContent) && /Nov 1 – Nov 30 ends Mon Nov 30/.test(b.textContent), b && b.textContent);
+  h.read('renderTimeOffView')(area, cal(null));
+  assert.ok(!area.querySelector('.cal-payweek'), 'outside the window: nothing');
+});
+
 test('Seams F7 (cycle 24, operator-approved): both email composers ASK before a close discards typed work — Keep editing leaves the email and the saved note as they were; Discard runs the rollback unchanged; an untouched composer closes at once', async () => {
   const arm = (toExternal) => {
     const h = bootLog();
