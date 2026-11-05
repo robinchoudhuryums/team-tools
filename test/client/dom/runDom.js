@@ -9215,6 +9215,8 @@ test('P1 DOM: the Time / PTO calendar carries the pay-week banner while the remi
   assert.ok(b && b.getAttribute('role') === 'status' && /Pay week\./.test(b.textContent) && /Nov 1 – Nov 30 ends Mon Nov 30/.test(b.textContent), b && b.textContent);
   h.read('renderTimeOffView')(area, cal(null));
   assert.ok(!area.querySelector('.cal-payweek'), 'outside the window: nothing');
+  h.read('renderTimeOffView')(area, cal({ cycle: 'Monthly', start: '2026-11-01', end: '2026-11-30', remindOn: '2026-11-23', active: false, periodKey: 'Monthly:2026-11-01' }));
+  assert.ok(!area.querySelector('.cal-payweek'), 'a reminder that is not active says nothing either');
 });
 
 test('Seams F7 (cycle 24, operator-approved): both email composers ASK before a close discards typed work — Keep editing leaves the email and the saved note as they were; Discard runs the rollback unchanged; an untouched composer closes at once', async () => {
