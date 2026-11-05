@@ -2257,6 +2257,10 @@ entry says which it is.
   is made by Apps Script's own HTML→PDF conversion (no Drive); if the domain
   blocks it, the app says "could not be made into a PDF here". Downloading a
   certificate may be blocked by the page's sandbox, as with the handbook's forms.
+  **ED1 (2026-11-05):** DocSignatures gains a trailing `InitialsDataUrl`
+  column (self-healing — nothing to set up), filled only for a document with
+  an initials box; like the signature cell beside it, never edit it — it is
+  inside the signature hash.
 <a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
 - **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
   `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each

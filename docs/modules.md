@@ -522,6 +522,17 @@ every signature. A signed or completed document has a **Certificate** (a PDF of
 the document, the employee, the times, the hashes, the signature and every
 answer).
 
+**ED1 (operator 2026-11-05):** a PDF document's boxes are coloured by type
+(short text, date, paragraph, **signature**, **initials**) with a legend. A
+signature or initials box is filled by what the employee draws when signing —
+the initials once, on a second small pad — and shows the drawing afterwards.
+Box text is sized in points of the page, so a box holds the same text on any
+screen; it shrinks to fit, a box stops accepting text when full (with a
+counter near the limit), and an answer too long for its box is listed in full
+under the pages. The manager sees each box's size and roughly how many
+characters it holds. The PDF picker and the issued documents' titles are
+styled buttons.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)

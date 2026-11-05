@@ -6408,3 +6408,35 @@ pick them up without re-deriving the context.
     converting the PDF to markdown (loses the layout the boxes point at);
     hashing the base64 text (not checkable against the file with a standard
     tool); PDF templates (not asked for — templates stay written documents).
+- <a id="ed1-signature-boxes-and-page-sized-box-text"></a>**A signature or initials box is filled by the sign panel, and a box's text is sized in points of its page (ED1, operator 2026-11-05)**
+  The operator's notes after the first real use of Batch H: "box type
+  'signature' … that allows for mouse-drawn signature", "color-code by box
+  type", "sizing those boxes is a bit hard to gauge and may appear awkwardly",
+  and "a 'paragraph' box … overfills the allotted box size; what happens?"
+  (answer before this: the read-only view cut it off).
+  - **Signature and Initials are box types, not typed fields.** They exist only
+    as boxes on a PDF that requires a signature (`empDocValidateFields_`,
+    `empDocValidateIssue_`), store no response, and are filled by what the
+    employee draws in the sign panel — the signature once, the initials once on
+    a second, smaller pad shown only when the document has an initials box —
+    painted live into every such box. The initials are kept in DocSignatures'
+    trailing `InitialsDataUrl` column and appended to the signature hash behind
+    their own tag ONLY when present, so every signature made before them still
+    recomputes to its stored hash. A pad's export is trimmed to the ink, so a
+    signature fills its box.
+  - **Colour says the type.** Fixed colours (the page is paper in every theme,
+    g58) with a legend in the issue form and above the reader's pages; an
+    optional box is dashed, a required one solid.
+  - **A box's text is sized against its PAGE.** Each drawn page is a size
+    container carrying its width in points, and box text is `100cqw × size ÷
+    page width`, so 10pt is 10pt of that page on any screen — what the manager
+    sees when placing a box is what the employee types into. The text shrinks
+    to a 7pt floor before it overflows; a fill box is capped at what fits at
+    the floor (a counter appears near the limit); a read-only answer that still
+    overflows is marked on the page and listed in full beneath the pages.
+  - **Boxes are made in points.** A tap places its type's standard size in
+    points (the same box on Letter and A4) and a drag shorter than one line is
+    raised to it; each box field states its size in inches and roughly how many
+    characters it holds.
+  - **Deferred to ED2/ED3:** moving and resizing a box, zoom, detecting a PDF's
+    own form fields, and a filled PDF with the answers stamped in.

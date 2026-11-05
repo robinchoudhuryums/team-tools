@@ -538,7 +538,7 @@ for the reasoning, which is usually the part that matters.
 - [Email composer Internal/External tab merge](docs/design-decisions.md#email-composer-internal-external-tab-merge)
 - [Tag taxonomy rename/merge/archive batch-edits across reps](docs/design-decisions.md#tag-taxonomy-rename-merge-archive-batch-edits-across-reps)
 - [`uiConfirm` / `uiPrompt` replace native `window.confirm` / `window.prompt`](docs/design-decisions.md#uiconfirm-uiprompt-replace-native-window-confirm-window-prom)
-- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1) · [Coaching keeps a 1-on-1 log with a per-manager cadence, and a screenshot in the HR store (Batch F, 2026-11-02)](docs/design-decisions.md#coaching-keeps-a-one-on-one-log-and-a-cadence) · [an employee document may be issued as a PDF — bytes bound by SHA-256, highlighted field boxes, a certificate PDF (Batch H)](docs/design-decisions.md#an-employee-doc-may-be-issued-as-a-pdf)
+- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1) · [Coaching keeps a 1-on-1 log with a per-manager cadence, and a screenshot in the HR store (Batch F, 2026-11-02)](docs/design-decisions.md#coaching-keeps-a-one-on-one-log-and-a-cadence) · [an employee document may be issued as a PDF — bytes bound by SHA-256, highlighted field boxes, a certificate PDF (Batch H)](docs/design-decisions.md#an-employee-doc-may-be-issued-as-a-pdf) · [signature/initials boxes filled by the sign panel, box text sized to the page (ED1)](docs/design-decisions.md#ed1-signature-boxes-and-page-sized-box-text)
 - [Operator feedback round (2026-06-12) — note-template ergonomics for the pinned pop-out workflow](docs/design-decisions.md#operator-feedback-round-2026-06-12-note-template-ergonomics)
 - [Onboarding tour — hand-rolled coach-marks (`script_tour.html`)](docs/design-decisions.md#onboarding-tour-hand-rolled-coach-marks-script-tour-html)
 - [The Script-Property budget badge has ONE home (`propBudgetHtml_` + `.prop-budget`, Batch Q)](docs/design-decisions.md#the-script-property-budget-badge-has-one-home-propbudgethtml)
@@ -973,8 +973,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 12 | `TRIGGER_GROUPS` |
 | localStorage keys | 22 | `ums…` literals in `web-app/` |
-| Invariant library entries | 383 | `.cycle/config.md` |
-| Regression scenarios (S*) | 151 | `.cycle/config.md` |
+| Invariant library entries | 384 | `.cycle/config.md` |
+| Regression scenarios (S*) | 152 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least
