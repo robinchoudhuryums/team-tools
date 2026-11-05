@@ -3871,6 +3871,16 @@
     "getMyPendingTasks"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "P1: drop the dead clamp in payWeekReminder_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "payWeekReminder_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -11838,7 +11848,7 @@
   "payWeekReminder_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6e1089255b793d1e"
+   "sha": "eb252522b95c204e"
   },
   "payWeekTask_": {
    "file": "20_timeclock.js",

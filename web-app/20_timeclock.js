@@ -5999,7 +5999,8 @@ function payWeekReminder_(cycle, todayIso, anchor, holidays) {
     if (d !== 0 && d !== 6 && !(holidays && holidays[remindOn])) break;
     remindOn = addDaysIso_(remindOn, 1);
   }
-  if (remindOn > end) remindOn = end;
+  // The loop stops AT the end (base is never after it), so the day can never
+  // pass the period — a bite-check showed a separate clamp here was dead code.
   return { cycle: String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly', start: start, end: end, remindOn: remindOn,
     active: todayIso >= remindOn && todayIso <= end, periodKey: (String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly') + ':' + start };
 }
