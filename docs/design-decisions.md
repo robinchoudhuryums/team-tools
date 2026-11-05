@@ -6440,3 +6440,27 @@ pick them up without re-deriving the context.
     characters it holds.
   - **Deferred to ED2/ED3:** moving and resizing a box, zoom, detecting a PDF's
     own form fields, and a filled PDF with the answers stamped in.
+- <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
+  The operator: "a reminder notification to team members to check their
+  timesheet and request edits if needed on pay weeks — on the Monday of the
+  pay week; Indian employees are paid monthly and their payroll is finalized
+  on the last day of the month."
+  - **One rule, the export's periods.** `payWeekReminder_` takes the rep's pay
+    cycle (`empPayCycle_`) and the org biweekly anchor — the same
+    `biweeklyRangeFor_` period the ADP export and the close checklist use —
+    so a reminder can never name a different period from the one payroll
+    closes. Biweekly: the Monday of the period's final week. Monthly: the last
+    Monday with at least four days left (that Monday and the last day
+    counted) — the operator approved the worked examples Nov 23 and Dec 28.
+    A weekend or company holiday moves it to the next workday, never past the
+    period's end.
+  - **In the app for the whole window, by email once.** A Needs-you item and
+    a Time / PTO banner from the day to the end of the period; Done hides the
+    item for that period in the browser (a convenience, so `umsPayWeekDone`,
+    not a server record). The email goes at 9am in the rep's own timezone on
+    the day, from the hourly dispatcher — no new trigger against the quota —
+    behind a server toggle that is on by default because the operator asked
+    for it, with a heartbeat, a delivery row per send and the outcome contract.
+  - **Not done:** naming what to check (an open day, a pending request) — the
+    close checklist already finds those for the manager, and repeating them
+    to every rep is a second reader of the same data.

@@ -522,6 +522,16 @@ every signature. A signed or completed document has a **Certificate** (a PDF of
 the document, the employee, the times, the hashes, the signature and every
 answer).
 
+**P1 (operator 2026-11-05):** on each employee's pay week a **Check your
+timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
+until the next period) and a banner sits atop the Time / PTO calendar, from
+the reminder day to the period's last day. The day is the Monday of a
+biweekly period's final week, or for a monthly rep the last Monday with at
+least four days left in the month; a holiday Monday moves to the next
+workday. An email goes at 9am in the employee's own timezone that day, while
+the `payWeekReminderEmail` toggle is on (Manage → Admin → Feature Toggles; on
+by default).
+
 **ED1 (operator 2026-11-05):** a PDF document's boxes are coloured by type
 (short text, date, paragraph, **signature**, **initials**) with a legend. A
 signature or initials box is filled by what the employee draws when signing —
