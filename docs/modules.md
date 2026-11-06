@@ -524,16 +524,19 @@ answer).
 
 **I1 (operator 2026-11-05):** on the PMD and PAP account forms, leaving a
 field tidies what it can read — a phone to 469-111-3333 (a leading +1 or 1
-dropped), a date to MM/DD/YYYY, a Medicare ID to 1EG4-TE5-MK72 with or
-without dashes or spaces, a height to inches (5'4" or 64 in → 64; the label
+dropped), a date to MM/DD/YYYY (a two-digit year written out — 1/2/50 →
+01/02/1950), an insurance line that is cleanly Medicare and its ID to
+Medicare · 1EG4-TE5-MK72 (anything else kept as typed), a height to inches (5'4" or 64 in → 64; the label
 reads "Height (inches)", so the email names the unit — operator 2026-11-06) — and says what looks off under the
 field in amber (a short phone, the secondary the same as the primary, a
-two-digit year, a future date of birth, a likely email typo, an address with
+future date of birth, a likely email typo, an address with
 no ZIP or state). Nothing is refused: Preview asks once about everything that
 looks off beside any blank recommended field, and Continue anyway previews.
-The SSN is masked on screen while the field is not focused. With the
-`intakeAddressCheck` toggle on (off by default), leaving the address asks
-Google Maps whether it exists and offers Google's spelling as **Use this**.
+The SSN is shown as typed. With the `intakeAddressCheck` toggle on (off by
+default), leaving the address asks Google Maps whether it exists and suggests
+Google's spelling, taken only with **Use suggestion**. (Operator 2026-11-06
+settled the two-digit year, the clean-only Medicare tidy, the visible SSN and
+the suggestion wording.)
 
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it

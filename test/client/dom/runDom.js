@@ -9768,7 +9768,7 @@ section('Intake — I1 format safeguards and the address check (operator 2026-11
 
 const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
 
-test('I1 DOM: leaving a PMD field tidies what it can read and says what looks off, under the field, in amber — a phone, the secondary equal to the primary, a two-digit year, a Medicare ID; the SSN is masked and the phone fields offer the number pad; the tidy value is what the draft keeps', () => {
+test('I1 DOM: leaving a PMD field tidies what it can read and says what looks off, under the field, in amber — a phone, the secondary equal to the primary, a future date of birth; a two-digit year written out; a clean Medicare ID tidied, anything else kept as typed; the SSN shown as typed (operator 2026-11-06) and the phone fields offer the number pad; the tidy value is what the draft keeps', () => {
   const { h, field } = bootAcct('pmd');
   const rowOf = (i) => field(i).closest('.intk-row');
   i1Leave_(h, field(2), '+1 (469) 111 3333');
@@ -9776,16 +9776,19 @@ test('I1 DOM: leaving a PMD field tidies what it can read and says what looks of
   assert.ok(!rowOf(2).classList.contains('intk-fmtwarn') && !rowOf(2).querySelector('.intk-fmt-note'), 'and nothing to say');
   i1Leave_(h, field(3), '4691113333');
   assert.ok(rowOf(3).classList.contains('intk-fmtwarn') && /Same as the primary number/.test(rowOf(3).querySelector('.intk-fmt-note').textContent), 'the same number twice');
-  i1Leave_(h, field(5), '1/2/50');
+  i1Leave_(h, field(5), '12/01/2030');
   const note5 = rowOf(5).querySelector('.intk-fmt-note');
-  assert.ok(note5 && note5.getAttribute('role') === 'status' && /Two-digit year/.test(note5.textContent) && field(5).value === '1/2/50', 'asked, not guessed');
-  i1Leave_(h, field(5), '01021950');
-  assert.ok(field(5).value === '01/02/1950' && !rowOf(5).querySelector('.intk-fmt-note'), 'a readable date is tidied and the note goes');
+  assert.ok(note5 && note5.getAttribute('role') === 'status' && /in the future/.test(note5.textContent), 'said, under the field');
+  i1Leave_(h, field(5), '1/2/50');
+  assert.ok(field(5).value === '01/02/1950' && !rowOf(5).querySelector('.intk-fmt-note'), 'a two-digit year is written out and the note goes');
   i1Leave_(h, field(8), 'medicare 1eg4 te5 mk72');
   assert.strictEqual(field(8).value, 'Medicare · 1EG4-TE5-MK72');
+  i1Leave_(h, field(9), 'Medicare Advantage via Humana H1234');
+  assert.ok(field(9).value === 'Medicare Advantage via Humana H1234' && !rowOf(9).querySelector('.intk-fmt-note'), 'not a clean Medicare ID: kept as typed, nothing said');
   i1Leave_(h, field(15), '5\'4"');
   assert.ok(field(15).value === '64' && /Height \(inches\)/.test(rowOf(15).textContent) && !rowOf(15).querySelector('.intk-fmt-note'), 'a height is asked in inches and feet-and-inches become inches');
-  assert.ok(field(10).classList.contains('intk-ssn') && field(10).getAttribute('inputmode') === 'numeric', 'the SSN is masked and numeric');
+  i1Leave_(h, field(10), '123456789');
+  assert.ok(field(10).value === '123-45-6789' && !field(10).classList.contains('intk-ssn') && field(10).getAttribute('inputmode') === 'numeric', 'the SSN is tidied, shown and numeric');
   assert.strictEqual(field(2).getAttribute('inputmode'), 'tel');
   h.read('intakeFlushDraftNow_')();
   const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
@@ -9834,10 +9837,10 @@ test('I1 DOM: the address check — nothing is sent while the toggle is off (or 
   assert.deepStrictEqual(asked, ['123 elm street dallas tx 75201'], 'the address only');
   const row = field(6).closest('.intk-row');
   const note = row.querySelector('.intk-addr-note');
-  assert.ok(note && /Google Maps found this address: 123 Elm St, Dallas, TX 75201/.test(note.textContent));
+  assert.ok(note && /suggests writing it as: 123 Elm St, Dallas, TX 75201/.test(note.textContent) && note.querySelector('.intk-addr-use').textContent === 'Use suggestion');
   note.querySelector('.intk-addr-use').click();
   await tick(); await tick();
-  assert.strictEqual(field(6).value, '123 Elm St, Dallas, TX 75201', 'Use this takes Google\'s spelling');
+  assert.strictEqual(field(6).value, '123 Elm St, Dallas, TX 75201', 'the suggestion is taken only when the rep chooses it');
   i1Leave_(h, field(6), '1 Nowhere Lane, Dallas, TX 75201');
   await tick(); await tick();
   assert.ok(/could not find this address/.test(row.querySelector('.intk-addr-note').textContent) && /could not find/.test(row.getAttribute('data-addr-warn')));

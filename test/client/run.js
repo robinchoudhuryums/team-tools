@@ -43360,13 +43360,15 @@ test('I1: phones are read loosely and tidied to 469-111-3333 — +1 and a leadin
   assert.strictEqual(ctx.intakeFmtCheck_('phone2', '214-555-0100', { primary: '4691113333' }).warn, '');
 });
 
-test('I1: dates are read in several shapes and tidied to MM/DD/YYYY; a two-digit year is ASKED about, never guessed; a date of birth in the future or over 120 years, a discharge date already past, and a date that does not exist are warned; a discharge "unknown" is left alone (driven)', () => {
+test('I1: dates are read in several shapes and tidied to MM/DD/YYYY; a two-digit year is ACCEPTED and written out (operator 2026-11-06: a date of birth 20yy only when not past this year, else 19yy; a discharge 20yy); a date of birth in the future or over 120 years, a discharge date already past, and a date that does not exist are warned; a discharge "unknown" is left alone (driven)', () => {
   const { ctx } = i1Ctx_();
   const today = '2026-11-06';
   ['1/2/1950', '01-02-1950', '01021950', '1950-01-02', '1.2.1950'].forEach((r) =>
     assert.deepStrictEqual(i1J(ctx.intakeFmtDate_(r, today, 'dob')), { value: '01/02/1950', warn: '', iso: '1950-01-02' }, r));
-  const yy = i1J(ctx.intakeFmtDate_('1/2/50', today, 'dob'));
-  assert.ok(yy.value === '1/2/50' && /Two-digit year — write the full year \(for example 1950 or 2050\)/.test(yy.warn), 'not guessed');
+  [['1/2/50', '01/02/1950'], ['01-02-50', '01/02/1950'], ['010250', '01/02/1950'], ['3/4/21', '03/04/2021'], ['3/4/26', '03/04/2026'], ['3/4/27', '03/04/1927']].forEach(([r, want]) =>
+    assert.deepStrictEqual(i1J(ctx.intakeFmtDate_(r, today, 'dob')), { value: want, warn: '', iso: want.slice(6) + '-' + want.slice(0, 2) + '-' + want.slice(3, 5) }, r + ' (date of birth)'));
+  assert.deepStrictEqual(i1J(ctx.intakeFmtDate_('12/1/26', today, 'future')), { value: '12/01/2026', warn: '', iso: '2026-12-01' }, 'a discharge date is this century');
+  assert.ok(/in the future/.test(ctx.intakeFmtDate_('12/1/26', today, 'dob').warn), 'a two-digit DOB this year that is still ahead is still warned');
   assert.ok(/in the future/.test(ctx.intakeFmtDate_('12/01/2030', today, 'dob').warn));
   assert.ok(/over 120/.test(ctx.intakeFmtDate_('01/01/1890', today, 'dob').warn));
   assert.ok(/not a real date/.test(ctx.intakeFmtDate_('02/30/1950', today, 'dob').warn));
@@ -43376,21 +43378,21 @@ test('I1: dates are read in several shapes and tidied to MM/DD/YYYY; a two-digit
   assert.deepStrictEqual(i1J(ctx.intakeFmtDate_('unknown', today, 'future')), { value: 'unknown', warn: '', iso: '' }, 'words are a fine discharge answer');
 });
 
-test('I1: email — the shape is checked, the domain lower-cased, and a common domain typo NAMED with the likely fix (never changed for the rep); the Medicare ID is found in the insurance line with or without dashes, spaces or lower case and tidied, an invalid or missing one warned, an Advantage plan left alone (driven)', () => {
+test('I1: email — the shape is checked, the domain lower-cased, and a common domain typo NAMED with the likely fix (never changed for the rep); the insurance line is tidied ONLY when it is cleanly Medicare + a valid MBI (with or without dashes, spaces, lower case or an MBI/ID label); anything else — an extra word, an invalid MBI, an Advantage member ID — is kept exactly as typed and never warned (operator 2026-11-06) (driven)', () => {
   const { ctx } = i1Ctx_();
   assert.deepStrictEqual(i1J(ctx.intakeFmtEmail_(' Ana.Ruiz@GMAIL.com ')), { value: 'Ana.Ruiz@gmail.com', warn: '' });
   const typo = i1J(ctx.intakeFmtEmail_('ana@gmial.com'));
   assert.ok(typo.value === 'ana@gmial.com' && /Did you mean ana@gmail\.com\?/.test(typo.warn), 'named, not changed');
   assert.ok(/does not look like an email/.test(ctx.intakeFmtEmail_('ana at gmail').warn));
-  ['Medicare 1EG4-TE5-MK72', 'medicare 1eg4 te5 mk72', 'Medicare · 1EG4TE5MK72', 'Medicare MBI# 1EG4-TE5-MK72'].forEach((r) =>
+  ['Medicare 1EG4-TE5-MK72', 'medicare 1eg4 te5 mk72', 'Medicare · 1EG4TE5MK72', 'Medicare MBI# 1EG4-TE5-MK72', 'Medicare ID: 1EG4 - TE5 - MK72', ' MEDICARE 1EG4TE5MK72 '].forEach((r) =>
     assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_(r)), { value: 'Medicare · 1EG4-TE5-MK72', warn: '' }, r));
-  assert.ok(/does not look like a Medicare ID/.test(ctx.intakeFmtInsurance_('Medicare 1SG4-TE5-MK72').warn), 'an S is never in an MBI');
-  assert.ok(/No Medicare ID \(MBI\) found/.test(ctx.intakeFmtInsurance_('Medicare').warn));
+  ['Medicare 1SG4-TE5-MK72', 'Medicare', 'Medicare H1234567890', 'Medicare 1EG4-TE5-MK72 primary', 'Medicare 1EG4-TE5-MK7', 'Wellcare Medicare 1EG4TE5MK72', '1EG4-TE5-MK72'].forEach((r) =>
+    assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_(r)), { value: r, warn: '' }, r + ' is kept as typed, unwarned'));
   assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_('Humana Medicare Advantage H1234')), { value: 'Humana Medicare Advantage H1234', warn: '' }, 'an Advantage plan has its own member ID');
   assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_('Aetna W123456789')), { value: 'Aetna W123456789', warn: '' }, 'not Medicare: not checked');
 });
 
-test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a lower-case code before the ZIP, or the name); a height (asked IN INCHES, operator 2026-11-06) is read loosely and tidied to the number of inches — 64, never 5\'4" — the label saying inches; an SSN of nine digits is tidied and masked on screen, anything else warned (driven + source)', () => {
+test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a lower-case code before the ZIP, or the name); a height (asked IN INCHES, operator 2026-11-06) is read loosely and tidied to the number of inches — 64, never 5\'4" — the label saying inches; an SSN of nine digits is tidied and SHOWN (operator 2026-11-06), anything else warned (driven + source)', () => {
   const { ctx, src } = i1Ctx_();
   assert.strictEqual(ctx.intakeFmtAddress_('123 Elm St, Dallas, TX 75201').warn, '');
   assert.strictEqual(ctx.intakeFmtAddress_('123 elm st dallas tx 75201').warn, '', 'a lower-case code right before the ZIP');
@@ -43406,7 +43408,7 @@ test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a
   ['tall', '163 cm', "5'14"].forEach((r) => { const o = ctx.intakeFmtHeight_(r); assert.ok(/in inches, like 64/.test(o.warn) && o.value === r, r + ' is left as typed and asked about'); });
   assert.deepStrictEqual(i1J(ctx.intakeFmtSsn_('123 45 6789')), { value: '123-45-6789', warn: '' });
   assert.ok(/9 digits/.test(ctx.intakeFmtSsn_('12345').warn));
-  assert.ok(/\.intk-ssn:not\(:focus\) \{ -webkit-text-security: disc; \}/.test(src), 'masked while not being typed in');
+  assert.ok(!/-webkit-text-security|intk-ssn/.test(src), 'the SSN is not masked — the rep reads it back');
   assert.deepStrictEqual(i1J(ctx.INTAKE_FMT_FIELDS.pmd), { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'height', 20: 'future' });
   // The map's indexes name the fields they claim to (the English banks).
   const bank = (name) => { const i = src.indexOf('var ' + name + ' = {'); return vm.runInContext('(' + src.slice(i + ('var ' + name + ' = ').length, src.indexOf('};', i) + 1) + ')', vm.createContext({})).EN; };
@@ -43425,7 +43427,7 @@ test('I1: before Preview, what looks off is asked about in the SAME question as 
   assert.ok(/f\.addEventListener\('change', function \(e\) \{ intakeFmtOnChange_\(form, e\.target\); \}\);/.test(extractFnFrom(src, 'intakeEnterAcct_')));
 });
 
-test('I1: the Maps address check — the verdict: a street address is found, an area is not, a partial match is a guess, not-found and outside-the-US are named, and a service failure is "could not check", never "not found" (g128); the rep\'s message offers Use this only for a found address Google spelled differently, never for a partial guess (driven)', () => {
+test('I1: the Maps address check — the verdict: a street address is found, an area is not, a partial match is a guess, not-found and outside-the-US are named, and a service failure is "could not check", never "not found" (g128); the rep\'s message offers Google\'s spelling as a SUGGESTION only for a found address Google spelled differently, never for a partial guess (driven)', () => {
   const c = vm.createContext({ String, Array, Math });
   vm.runInContext(new RegExp("const KB_GEO_US_COUNTRIES = [^;]+;").exec(serverSource())[0].replace(/^const /, 'var '), c);
   ['kbGeoOutsideUs_', 'intakeAddrVerdict_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
@@ -43438,7 +43440,7 @@ test('I1: the Maps address check — the verdict: a street address is found, an 
   assert.strictEqual(v({ formatted: '1 Bay St, Toronto, ON, Canada', country: 'CA', types: ['street_address'] }).status, 'outside');
   const { ctx } = i1Ctx_();
   const m = (r, typed) => i1J(ctx.intakeAddrMessage_(r, typed));
-  assert.deepStrictEqual(m({ status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }, '123 elm street dallas tx'), { text: 'Google Maps found this address: 123 Elm St, Dallas, TX 75201', warn: false, offer: '123 Elm St, Dallas, TX 75201' });
+  assert.deepStrictEqual(m({ status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }, '123 elm street dallas tx'), { text: 'Google Maps found this address and suggests writing it as: 123 Elm St, Dallas, TX 75201', warn: false, offer: '123 Elm St, Dallas, TX 75201' });
   assert.deepStrictEqual(m({ status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }, '123 Elm St, Dallas, TX 75201'), { text: 'Google Maps found this address.', warn: false, offer: '' }, 'nothing to offer when it is already Google\'s spelling');
   const p = m({ status: 'partial', formatted: 'Irving, TX 75038' }, '500 Main');
   assert.ok(p.warn && p.offer === '' && /matched only part/.test(p.text), 'a guess is named, never offered');

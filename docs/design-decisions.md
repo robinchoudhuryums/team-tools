@@ -6478,8 +6478,13 @@ pick them up without re-deriving the context.
     A height is asked IN INCHES (operator 2026-11-06): the label is "Height
     (inches)" in both banks, so the email names the unit whatever was typed,
     and 5'4", 64 in or 64" become 64.
-    A two-digit year is ASKED about, never guessed — the reader would otherwise
-    choose a century for a date of birth. The map is checked against the
+    A two-digit year is ACCEPTED (operator 2026-11-06, replacing the first
+    build's ask) and written out so the rep sees the century: a date of birth
+    takes 20yy only when that is not past this year, else 19yy; a discharge
+    date 20yy. The insurance line is tidied ONLY when it is cleanly "Medicare"
+    and a valid MBI; anything else is kept as typed and never warned — a line
+    that says Medicare may carry an Advantage plan's own member ID, which is not
+    wrong for failing the MBI shape. The map is checked against the
     English banks by a pin, so a renumbered question cannot silently move a
     reader onto the wrong field.
   - **One question before Preview.** The blank-recommended ask and the format
@@ -6494,10 +6499,12 @@ pick them up without re-deriving the context.
     the address line goes to Google's geocoder — no name, no audit row, no
     log — cached for six hours by a hash of the text, under a 24-hour cap.
     "Found", "partly matched" (an area, not a street), "not found" and "could
-    not check" are four different answers; only a full match is offered as
-    Use this, and an answer that arrives after the rep changed the field is
+    not check" are four different answers; only a full match is offered, as a
+    suggestion the rep takes with Use suggestion, and an answer that arrives after the rep changed the field is
     dropped. Whether Google Maps may see a patient's address under the BAA is
     the operator's call before turning it on.
+  - **The SSN is shown** (operator 2026-11-06): the first build masked it on
+    screen, but the rep reads it back to the caller, and it stays inside the
+    Google Workspace environment it is sent within.
   - **Not done:** the PPD form (its controls are engine values, not free
-    text), and the SSN still reaches the intake email exactly as before — the
-    mask is on screen only.
+    text).

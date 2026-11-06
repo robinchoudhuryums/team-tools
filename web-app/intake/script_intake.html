@@ -229,7 +229,6 @@
   .intk-addr-info, .intk-addr-busy { color: var(--muted); }
   .intk-addr-use { font: inherit; font-size: .74rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; }
   .intk-addr-use:hover { border-color: var(--border-strong); }
-  .intk-ssn:not(:focus) { -webkit-text-security: disc; }
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -2083,7 +2082,10 @@ function intakeFmtPhone_(raw) {
   return { value: value, warn: '' };
 }
 /** PURE (Node-pinned) — a date read loosely: 1/2/1950, 01-02-1950, 01021950,
- *  1950-01-02 → 01/02/1950. A two-digit year is asked about, never guessed.
+ *  1950-01-02 → 01/02/1950. A two-digit year is ACCEPTED (operator
+ *  2026-11-06) and written out in full so the rep sees the century chosen: a
+ *  date of birth takes 20yy only when that is not past this year, else 19yy
+ *  (1/2/50 → 01/02/1950, 3/4/21 → 03/04/2021); a discharge date takes 20yy.
  *  mode 'dob': not in the future, not over 120 years; mode 'future' (a
  *  discharge date): warned when already past, and free words ("unknown") are
  *  left alone. → {value, warn, iso}. */
@@ -2092,10 +2094,13 @@ function intakeFmtDate_(raw, todayIso, mode) {
   if (!s) return { value: '', warn: '', iso: '' };
   var y, mo, da, m;
   if ((m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; da = +m[3]; }
-  else if ((m = /^(\d{1,2})[-\/.\s](\d{1,2})[-\/.\s](\d{2}|\d{4})$/.exec(s))) {
-    if (m[3].length === 2) return { value: s, warn: 'Two-digit year — write the full year (for example 19' + m[3] + ' or 20' + m[3] + ').', iso: '' };
+  else if ((m = /^(\d{1,2})[-\/.\s](\d{1,2})[-\/.\s](\d{2}|\d{4})$/.exec(s)) || (m = /^(\d{2})(\d{2})(\d{4}|\d{2})$/.exec(s))) {
     mo = +m[1]; da = +m[2]; y = +m[3];
-  } else if ((m = /^(\d{2})(\d{2})(\d{4})$/.exec(s))) { mo = +m[1]; da = +m[2]; y = +m[3]; }
+    if (m[3].length === 2) {
+      var nowYear = /^\d{4}/.test(String(todayIso || '')) ? +String(todayIso).slice(0, 4) : new Date().getFullYear();
+      y = (mode === 'dob' && 2000 + y > nowYear) ? 1900 + y : 2000 + y;
+    }
+  }
   else {
     if (mode === 'future' && !/\d/.test(s)) return { value: s, warn: '', iso: '' };
     return { value: s, warn: 'Write the date as MM/DD/YYYY.', iso: '' };
@@ -2126,23 +2131,19 @@ function intakeFmtEmail_(raw) {
   if (INTAKE_EMAIL_TYPOS[domain]) return { value: value, warn: 'Did you mean ' + local + '@' + INTAKE_EMAIL_TYPOS[domain] + '?' };
   return { value: value, warn: '' };
 }
-/** PURE (Node-pinned) — the insurance line when it names original MEDICARE
- *  (an Advantage, supplement or replacement plan carries its own member ID, so
- *  it is left alone). The ID is read with or without dashes, spaces or lower
- *  case; a valid one is tidied to "Medicare · 1EG4-TE5-MK72" when the line
- *  holds nothing else; a missing or malformed one is warned about. */
+/** PURE (Node-pinned) — the insurance line, tidied ONLY when it is cleanly
+ *  "Medicare" and a valid Medicare ID (MBI) — with or without dashes, spaces,
+ *  lower case or a label like MBI/ID/# (operator 2026-11-06): "medicare
+ *  1eg4 te5 mk72" → "Medicare · 1EG4-TE5-MK72". Anything else is kept exactly
+ *  as typed and never warned about — a line that says Medicare may carry an
+ *  Advantage plan's own member ID, which is not an MBI and is not wrong. */
 function intakeFmtInsurance_(raw) {
   var s = String(raw == null ? '' : raw).trim();
-  if (!s || !/medicare/i.test(s) || /advantage|supplement|medigap|replacement|\bhmo\b|\bppo\b|part\s*c\b/i.test(s)) return { value: s, warn: '' };
-  var rest = s.replace(/medicare|\bmbi\b|\bmember\b|\bid\b|\bno\.?(?=\s|$)|\bnumber\b|#/gi, ' ');
-  var compact = rest.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  if (!compact) return { value: s, warn: 'No Medicare ID (MBI) found — 11 characters, like 1EG4-TE5-MK72.' };
-  if (compact.length === 11 && INTAKE_MBI_RE.test(compact)) {
-    return { value: 'Medicare · ' + compact.slice(0, 4) + '-' + compact.slice(4, 7) + '-' + compact.slice(7), warn: '' };
-  }
-  var runs = rest.toUpperCase().replace(/[\s\-]+(?=[A-Z0-9])/g, '').match(/[A-Z0-9]{11}/g) || [];
-  if (runs.some(function (r) { return INTAKE_MBI_RE.test(r); })) return { value: s, warn: '' };
-  return { value: s, warn: 'That does not look like a Medicare ID (MBI) — 11 characters like 1EG4-TE5-MK72, with no S, L, O, I, B or Z.' };
+  var m = /^medicare\s*(?:(?:mbi|member\s*id|id|number|no\.?|#)\s*)*[:#\-–·]?\s*([A-Za-z0-9](?:[\s-]*[A-Za-z0-9]){10})$/i.exec(s);
+  if (!m) return { value: s, warn: '' };
+  var compact = m[1].replace(/[\s-]/g, '').toUpperCase();
+  if (!INTAKE_MBI_RE.test(compact)) return { value: s, warn: '' };
+  return { value: 'Medicare · ' + compact.slice(0, 4) + '-' + compact.slice(4, 7) + '-' + compact.slice(7), warn: '' };
 }
 /** PURE (Node-pinned) — an address: spaces tidied; warned when it carries no
  *  5-digit ZIP or no state (a two-letter code, or the name). */
@@ -2178,7 +2179,7 @@ function intakeFmtHeight_(raw) {
   return { value: value, warn: '' };
 }
 /** PURE (Node-pinned) — an SSN: nine digits become 123-45-6789; anything else
- *  is warned about. (On screen it is masked while not being typed in.) */
+ *  is warned about. It is shown as typed (operator 2026-11-06). */
 function intakeFmtSsn_(raw) {
   var s = String(raw == null ? '' : raw).trim();
   if (!s) return { value: '', warn: '' };
@@ -2259,12 +2260,16 @@ function intakeFmtIssues_(form) {
 // ── I1: the Google Maps address check (Admin → Feature Toggles, off by default) ──
 /** PURE (Node-pinned) — what the rep is told for one check: {html-free text,
  *  warn (true when it should be listed before Preview), offer (the formatted
- *  address to offer with Use this, or '')}. */
+ *  address to offer as a suggestion, or '')}. */
 function intakeAddrMessage_(r, typed) {
   var st = r && r.status;
   var f = String((r && r.formatted) || '');
   var same = function (a, b) { return String(a).toLowerCase().replace(/[^a-z0-9]/g, '') === String(b).toLowerCase().replace(/[^a-z0-9]/g, ''); };
-  if (st === 'found') return { text: 'Google Maps found this address' + (f && !same(f, typed) ? ': ' + f : '.'), warn: false, offer: f && !same(f, typed) ? f : '' };
+  // Google's spelling is a SUGGESTION (operator 2026-11-06) — the rep's text
+  // stays until they choose it.
+  if (st === 'found') return f && !same(f, typed)
+    ? { text: 'Google Maps found this address and suggests writing it as: ' + f, warn: false, offer: f }
+    : { text: 'Google Maps found this address.', warn: false, offer: '' };
   if (st === 'area') return { text: 'Google Maps found the area but not this street address' + (f ? ' (' + f + ')' : '') + ' — check the street and number.', warn: true, offer: '' };
   // A partial match is the geocoder guessing (K5) — named, never offered.
   if (st === 'partial') return { text: 'Google Maps matched only part of this address' + (f ? ' (closest: ' + f + ')' : '') + ' — check the street, number and ZIP.', warn: true, offer: '' };
@@ -2295,7 +2300,7 @@ function intakeAddrCheck_(form, el) {
     if (!msg.text) { intakeFmtNote_(row, 'intk-addr-note', ''); return; }
     intakeFmtNote_(row, 'intk-addr-note', '<span class="intk-addr-' + (msg.warn ? 'warn' : (r && r.status === 'found' ? 'ok' : 'info')) + '">' +
       icon(msg.warn ? 'warning' : (r && r.status === 'found' ? 'check' : 'info'), 12) + ' ' + esc(msg.text) + '</span>' +
-      (msg.offer ? ' <button type="button" class="intk-addr-use">Use this</button>' : ''));
+      (msg.offer ? ' <button type="button" class="intk-addr-use">Use suggestion</button>' : ''));
     var use = row.querySelector('.intk-addr-use');
     if (use) use.addEventListener('click', function () {
       el.value = msg.offer;
@@ -2760,10 +2765,10 @@ function intakeRenderAcctSections_(form, lang) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
-      // I1: a phone or SSN field offers the number pad on a phone; the SSN is
-      // masked on screen while it is not being typed in (.intk-ssn).
+      // I1: a phone or SSN field offers the number pad on a phone. The SSN is
+      // shown as typed so the rep can read it back (operator 2026-11-06).
       var fk = (INTAKE_FMT_FIELDS[form] || {})[i];
-      var fAttr = (fk === 'phone' || fk === 'phone2') ? ' inputmode="tel"' : (fk === 'ssn' ? ' inputmode="numeric" class="intk-ssn"' : (fk === 'email' ? ' inputmode="email"' : ''));
+      var fAttr = (fk === 'phone' || fk === 'phone2') ? ' inputmode="tel"' : (fk === 'ssn' ? ' inputmode="numeric"' : (fk === 'email' ? ' inputmode="email"' : ''));
       control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + fAttr + phAttr + '>';
     }
     var isYnSel = L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No';
