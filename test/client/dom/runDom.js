@@ -9851,16 +9851,17 @@ test('I3 DOM: with a card image attached, Read the insurance details offers what
   for (let i = 0; i < 6; i++) await tick();
   assert.strictEqual(calls, 1, 'one image, one read');
   const val = (k) => host().querySelector('[data-card-key="' + k + '"]').value;
-  assert.deepStrictEqual([val('memberId'), val('group'), val('rxBin'), val('rxPcn'), val('rxGrp')], ['XOF923456781', '028914', '610014', 'MEDDPRIME', 'TX3829']);
+  assert.deepStrictEqual([val('memberId'), val('group')], ['XOF923456781', '028914']);
+  assert.ok(!host().querySelector('[data-card-key^="rx"]') && !/Rx/.test(host().textContent), 'no Rx numbers are offered (not used)');
   assert.ok(/check each value against the card/.test(host().textContent) && /not sent anywhere to be read/.test(host().textContent));
   // The rep corrects the payer; the line follows.
   const payer = host().querySelector('[data-card-key="payer"]');
   payer.value = 'BCBS of Texas';
   payer.dispatchEvent(new h.window.Event('input', { bubbles: true }));
-  assert.strictEqual(host().querySelector('[data-card-line]').textContent, 'BCBS of Texas · ID XOF923456781 · Group 028914 · RxBIN 610014 · RxPCN MEDDPRIME · RxGrp TX3829');
+  assert.strictEqual(host().querySelector('[data-card-line]').textContent, 'BCBS of Texas · ID XOF923456781 · Group 028914');
   host().querySelector('[data-card-use="8"]').click();
   await tick();
-  assert.strictEqual(field(8).value, 'BCBS of Texas · ID XOF923456781 · Group 028914 · RxBIN 610014 · RxPCN MEDDPRIME · RxGrp TX3829', 'written into the primary insurance');
+  assert.strictEqual(field(8).value, 'BCBS of Texas · ID XOF923456781 · Group 028914', 'written into the primary insurance');
   assert.ok(host().querySelector('[data-card-read]') && !host().querySelector('.intk-card-panel'), 'the panel closes and the button returns');
   // Again, into a secondary that already holds something: asked first.
   field(9).value = 'Medicaid 123';
@@ -9900,7 +9901,7 @@ test('I3a DOM: each image is read on its own — a broken one is NAMED and the o
   // Image 1 reads; image 2 is broken.
   const shaky = 'Member ID: H71938642';
   const sp = sure(shaky); sp[14] = 0.41;   // the reader was unsure of one of the ID's own characters
-  reads['data:image/png;base64,GOOD'] = [L('Humana Gold Plus (HMO)', 0), L(shaky, 40, sp), L('RxBIN: 015581', 80)];
+  reads['data:image/png;base64,GOOD'] = [L('Humana Gold Plus (HMO)', 0), L(shaky, 40, sp)];
   h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,GOOD", "data:image/png;base64,BROKEN"]');
   h.read('intakeRenderGallery_')('pmd');
   host().querySelector('[data-card-read]').click();
@@ -9911,7 +9912,7 @@ test('I3a DOM: each image is read on its own — a broken one is NAMED and the o
   const lab = box('memberId').closest('.intk-card-f');
   assert.ok(lab.classList.contains('intk-card-unsure') && /Check this one/.test(lab.textContent) && box('memberId').getAttribute('aria-describedby'), 'unsure: marked, with no percentage');
   assert.ok(!/%/.test(host().textContent), 'never a percentage');
-  assert.ok(!box('rxBin').closest('.intk-card-f').classList.contains('intk-card-unsure'), 'a sure value is not marked');
+  assert.ok(!box('payer').closest('.intk-card-f').classList.contains('intk-card-unsure'), 'a sure value is not marked');
   assert.ok(box('group').value === '' && box('group').getAttribute('placeholder') === 'Not found on the card — type it', 'an empty box says it was not found');
   box('memberId').value = 'H71938642';
   box('memberId').dispatchEvent(new h.window.Event('input', { bubbles: true }));

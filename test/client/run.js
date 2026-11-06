@@ -43560,9 +43560,9 @@ test('I3 cards: the card parser reads what the REAL reader returned for four spe
   const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
   const want = {
     'c-medicare': { payer: 'Medicare', mbi: '1EG4TE5MK72', memberId: '', advantage: false },
-    'c-bcbs': { memberId: 'XOF923456781', group: '028914', rxBin: '610014', rxPcn: 'MEDDPRIME', rxGrp: 'TX3829', mbi: '' },
-    'c-humana': { memberId: 'H71938642', group: 'X1234005', rxBin: '015581', rxPcn: '03200000', rxGrp: 'XUA02', mbi: '', advantage: true },
-    'c-uhc': { memberId: '912345678', group: '0701234', rxBin: '610279', rxPcn: '9999', rxGrp: 'UHEALTH', mbi: '' },
+    'c-bcbs': { memberId: 'XOF923456781', group: '028914', mbi: '' },
+    'c-humana': { memberId: 'H71938642', group: 'X1234005', mbi: '', advantage: true },
+    'c-uhc': { memberId: '912345678', group: '0701234', mbi: '' },
   };
   const keys = Object.keys(lines);
   assert.strictEqual(keys.length, 16, 'four cards × four conditions');
@@ -43572,6 +43572,7 @@ test('I3 cards: the card parser reads what the REAL reader returned for four spe
     Object.keys(w).forEach((field) => assert.strictEqual(f[field], w[field], k + ' ' + field + ' (got ' + JSON.stringify(f) + ')'));
     if (k.startsWith('c-humana')) assert.ok(/^Humana/.test(f.payer), k);
     if (k.startsWith('c-uhc')) assert.strictEqual(f.payer, 'UnitedHealthcare', k);
+    assert.deepStrictEqual(Object.keys(f).filter((x) => /^rx/i.test(x)), [], k + ': no Rx numbers are offered (not used — operator 2026-11-06)');
   });
   assert.strictEqual(ctx.intakeCardLine_(ctx.intakeCardParse_(ctx.intakeCardRows_(lines['c-medicare/rough']))), 'Medicare 1EG4TE5MK72', 'what I1 then tidies to Medicare · 1EG4-TE5-MK72');
 });
@@ -43588,21 +43589,23 @@ test('I3 cards: rows are built from the read lines in reading order — levelled
   assert.deepStrictEqual(i1J(ctx.intakeCardRows_(tilted.map((l) => Object.assign({}, l, { ang: 0 })))).map((r) => r.items.length).join(','), '1,1,1,1', 'not levelled, they would not');
 });
 
-test('I3 cards: a label finds its value glued, spaced, after a colon, or printed under it; a value must look like its field or it is left for the rep; Rx Grp is not the group, the payer ID is not the member ID, and a word the value ran into is cut (driven)', () => {
+test('I3 cards: a label finds its value glued, spaced, after a colon, or printed under it; a value must look like its field or it is left for the rep; the Rx labels are recognised but never offered, so an Rx group is never the group and the payer ID never the member ID; a word the value ran into is cut (driven)', () => {
   const { ctx } = i3Ctx_();
   const P = (...rows) => i1J(ctx.intakeCardParse_(rows));
   let f = P(i3Row_('RxBIN610014'), i3Row_('RXPCNMEDDPRIME'), i3Row_('RxGRPTX3829'), i3Row_('Group Number0701234'), i3Row_('MemberID:H71938642'));
-  assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group, f.memberId], ['610014', 'MEDDPRIME', 'TX3829', '0701234', 'H71938642'], 'glued');
+  assert.deepStrictEqual([f.group, f.memberId, f.rxBin, f.rxGrp], ['0701234', 'H71938642', undefined, undefined], 'glued; and no Rx value is offered');
   f = P(i3Row_('RxBIN:015581 RxPCN:03200000RxGRP:XUA02'));
-  assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group], ['015581', '03200000', 'XUA02', ''], 'three on one row, and "RxGRP" is not the group');
-  f = P(i3Row_('Rx Grp: XUA02'));
-  assert.deepStrictEqual([f.rxGrp, f.group], ['XUA02', ''], 'nor is a spaced "Rx Grp"');
+  assert.deepStrictEqual([f.group, f.memberId], ['', ''], 'three Rx labels on one row: none of their values becomes the group or the member ID');
+  f = P(i3Row_('Rx Grp: XUA02'), i3Row_('Rx Group 1234567'));
+  assert.deepStrictEqual([f.group, f.memberId], ['', ''], 'nor a spaced "Rx Grp" / "Rx Group"');
+  f = P(i3Row_('ID No. W123456789  RxBIN 610502'));
+  assert.strictEqual(f.memberId, 'W123456789', 'an Rx label still bounds the value before it');
   f = P({ items: [{ text: 'Identification No.', x: 0, w: 200 }, { text: 'Group No.', x: 400, w: 120 }] }, { items: [{ text: 'XOF923456781', x: 0, w: 220 }, { text: '028914', x: 400, w: 110 }] });
   assert.deepStrictEqual([f.memberId, f.group], ['XOF923456781', '028914'], 'printed under the label, by column');
   f = P(i3Row_('Group#:X1234005CMS H5619-079'), i3Row_('Payer ID: 87726'), i3Row_('Member ID: 12'), i3Row_('Group No. ABC'), i3Row_('Rx Bin: 61027'));
-  assert.deepStrictEqual([f.group, f.memberId, f.rxBin], ['X1234005', '', ''], 'CMS cut; the payer ID never the member ID; too short, no digit, five digits — left blank, never guessed');
-  f = P(i3Row_('RBIN610014'));
-  assert.strictEqual(f.rxBin, '610014', 'a misread "Rx" as "R"');
+  assert.deepStrictEqual([f.group, f.memberId], ['X1234005', ''], 'CMS cut; the payer ID never the member ID; too short, no digit — left blank, never guessed');
+  f = P(i3Row_('RBIN610014'), i3Row_('Group 0701234'));
+  assert.strictEqual(f.group, '0701234', 'a misread "Rx" as "R" is still an Rx label, not the group\'s');
 });
 
 test('I3 cards: original Medicare is the card that names Medicare and carries an MBI (spaces, dashes or glued to its label); an Advantage card\'s number is its plan\'s member ID — never offered as an MBI; the payer is a known name as the card spells it (driven)', () => {
@@ -43641,15 +43644,15 @@ test('I3a: a value is marked "check this" when the reader was unsure of one of I
   assert.strictEqual(i1J(ctx.intakeCardMerge_({ memberId: 'A1234567' }, { memberId: 'B7654321', unsure: { memberId: true } })).unsure.memberId, undefined, 'the other read\'s doubt about a value not used is dropped');
   const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
   let marked = 0, values = 0;
-  Object.keys(lines).forEach((k) => { const r = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines[k]))); ['payer', 'memberId', 'group', 'rxBin', 'rxPcn', 'rxGrp', 'mbi'].forEach((x) => { if (r[x]) values++; }); marked += Object.keys(r.unsure).length; });
-  assert.ok(values >= 75 && marked <= 3, 'over the real reads, at most a few correct values are marked (' + marked + ' of ' + values + ')');
+  Object.keys(lines).forEach((k) => { const r = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines[k]))); ['payer', 'memberId', 'group', 'mbi'].forEach((x) => { if (r[x]) values++; }); marked += Object.keys(r.unsure).length; });
+  assert.ok(values >= 44 && marked <= 2, 'over the real reads, at most a few correct values are marked (' + marked + ' of ' + values + ')');
 });
 
-test('I3 cards: front and back merge — the first value found for a field wins; the line the field gets is Medicare + MBI, or Payer · ID · Group · RxBIN · RxPCN · RxGrp with only what was found (driven)', () => {
+test('I3 cards: front and back merge — the first value found for a field wins; the line the field gets is Medicare + MBI, or Payer · ID · Group with only what was found — never an Rx number (driven)', () => {
   const { ctx } = i3Ctx_();
-  const m = i1J(ctx.intakeCardMerge_({ payer: 'Aetna', memberId: 'W123456789', group: '', rxBin: '' }, { payer: 'X', memberId: 'other1', group: '0701234', rxBin: '610502', rxPcn: 'AE', rxGrp: 'RX1234' }));
-  assert.deepStrictEqual([m.payer, m.memberId, m.group, m.rxBin], ['Aetna', 'W123456789', '0701234', '610502']);
-  assert.strictEqual(ctx.intakeCardLine_(m), 'Aetna · ID W123456789 · Group 0701234 · RxBIN 610502 · RxPCN AE · RxGrp RX1234');
+  const m = i1J(ctx.intakeCardMerge_({ payer: 'Aetna', memberId: 'W123456789', group: '' }, { payer: 'X', memberId: 'other1', group: '0701234', rxBin: '610502' }));
+  assert.deepStrictEqual([m.payer, m.memberId, m.group, m.rxBin], ['Aetna', 'W123456789', '0701234', undefined]);
+  assert.strictEqual(ctx.intakeCardLine_(Object.assign({ rxBin: '610502', rxPcn: 'AE' }, m)), 'Aetna · ID W123456789 · Group 0701234', 'an Rx number never reaches the line');
   assert.strictEqual(ctx.intakeCardLine_({ payer: 'Medicare', mbi: '1EG4TE5MK72' }), 'Medicare 1EG4TE5MK72');
   assert.strictEqual(ctx.intakeCardLine_({ memberId: '912345678' }), 'ID 912345678');
   assert.strictEqual(i1J(ctx.intakeCardMerge_({ mbi: '1EG4TE5MK72' }, { advantage: true })).mbi, '', 'an Advantage back side voids the MBI');

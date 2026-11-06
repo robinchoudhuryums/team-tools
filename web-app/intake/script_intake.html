@@ -3111,7 +3111,7 @@ function intakeRemoveImage_(form, idx) {
 }
 
 // ── I3 (operator 2026-11-06): reading an insurance card IN THE BROWSER ─────
-// The card's payer, member ID, group and Rx numbers are read from the photo
+// The card's payer, member ID and group (or Medicare ID) are read from the photo
 // on the rep's own computer and OFFERED — nothing is filled until the rep
 // presses Use. No image leaves the browser to be read: Google Cloud Vision and
 // a Claude vision call were ruled out on BAA grounds. The reader is PaddleOCR
@@ -3312,16 +3312,19 @@ function intakeCardRows_(lines) {
 // The labels a card prints, in the order they are tried — Rx group before
 // group (so "Rx Grp" is claimed first, and a later overlapping hit is
 // dropped; "RxGRP" is never "GRP" either, as no label starts after a
-// letter), payer ID only so it is never taken for the member ID. The reader
+// letter), payer ID only so it is never taken for the member ID. The Rx and
+// payer-ID labels are RECOGNISED but never offered (`skip`) — the team does
+// not use the Rx numbers (operator 2026-11-06); recognising them still keeps
+// their values out of the group and member ID. The reader
 // often drops the space between a label and its value ("RxPCNMEDDPRIME",
 // "Group Number0701234"), so a label is found without a word boundary after
 // it where its own letters make it unmistakable. A value must look like its
 // field, or it is not taken — the rep types it instead.
 var INTAKE_CARD_LABELS = [
-  { key: 'rxBin', re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i, ok: /^\d{6}$/ },
-  { key: 'rxPcn', re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i, ok: /^[A-Z0-9-]{2,15}$/ },
-  { key: 'rxGrp', re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i, ok: /^[A-Z0-9-]{2,15}$/ },
-  { key: 'payerId', re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i, ok: /^[A-Z0-9-]{3,10}$/ },
+  { key: 'rxBin', skip: true, re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
+  { key: 'rxPcn', skip: true, re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i },
+  { key: 'rxGrp', skip: true, re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
+  { key: 'payerId', skip: true, re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i },
   { key: 'mbi', re: /(?<![a-z])(?:medicare\s*(?:number|no\.?|#|id|claim\s*number)|mbi)(?![a-z])/i, ok: null },
   { key: 'memberId', re: /(?<![a-z])(?:member\s*(?:identification|id|#|no\.?|number)|subscriber\s*(?:id|#|no\.?|number)|identification\s*(?:no\.?|number|#)|id\s*(?:no\.?|number|#))(?![a-z]{2})/i, ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
   { key: 'group', re: /(?<![a-z])(?:group|grp)(?:\s*(?:number|no\.?|#|id)(?![a-z]))?/i, ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
@@ -3359,14 +3362,14 @@ function intakeCardMbiAt_(s) {
 // sat under 0.35 and no correctly read value under 0.8.
 var INTAKE_CARD_SURE = 0.8;
 /** PURE (Node-pinned) — what a card's rows say: {payer, memberId, group,
- *  rxBin, rxPcn, rxGrp, mbi, advantage, unsure}. A label's value is the text
+ *  mbi, advantage, unsure} — no Rx numbers (not used). A label's value is the text
  *  after it on its row, else the piece of the NEXT row under it (cards print
  *  the label above the number). A Medicare ID is taken only in the MBI shape,
  *  and an Advantage card's number is its plan's member ID, never an MBI.
  *  unsure[key] is true when the reader was not sure of one of that value's
  *  own characters (I3a). */
 function intakeCardParse_(rows) {
-  var out = { payer: '', memberId: '', group: '', rxBin: '', rxPcn: '', rxGrp: '', mbi: '', advantage: false, unsure: {} };
+  var out = { payer: '', memberId: '', group: '', mbi: '', advantage: false, unsure: {} };
   rows = rows || [];
   var rowText = function (r) { return r.items.map(function (i) { return i.text; }).join('  '); };
   var probsOf = function (it) { return it.probs || it.text.split('').map(function () { return 1; }); };
@@ -3395,12 +3398,12 @@ function intakeCardParse_(rows) {
       while ((m = re.exec(text))) {
         if (!m[0]) { re.lastIndex++; continue; }
         if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
-        hits.push({ key: L.key, ok: L.ok, start: m.index, end: m.index + m[0].length });
+        hits.push({ key: L.key, ok: L.ok, skip: !!L.skip, start: m.index, end: m.index + m[0].length });
       }
     });
     hits.sort(function (a, b) { return a.start - b.start; });
     hits.forEach(function (h, k) {
-      if (out[h.key]) return;
+      if (h.skip || out[h.key]) return;   // a skipped label only bounds its neighbours' values
       var zone = text.slice(h.end, k + 1 < hits.length ? hits[k + 1].start : text.length);
       if (h.key === 'mbi') {
         var mb = intakeCardMbiAt_(zone);
@@ -3457,7 +3460,7 @@ function intakeCardParse_(rows) {
  *  found for each field wins. */
 function intakeCardMerge_(a, b) {
   var out = { unsure: {} };
-  ['payer', 'memberId', 'group', 'rxBin', 'rxPcn', 'rxGrp', 'mbi'].forEach(function (k) {
+  ['payer', 'memberId', 'group', 'mbi'].forEach(function (k) {
     var from = (a && a[k]) ? a : ((b && b[k]) ? b : null);   // the value and its "check this" come from the same read
     out[k] = from ? from[k] : '';
     if (from && from.unsure && from.unsure[k]) out.unsure[k] = true;
@@ -3468,16 +3471,14 @@ function intakeCardMerge_(a, b) {
 }
 /** PURE (Node-pinned) — the one insurance line the form's field holds:
  *  "Medicare 1EG4TE5MK72" (I1 tidies it to "Medicare · 1EG4-TE5-MK72"), or
- *  "Payer · ID … · Group … · RxBIN … · RxPCN … · RxGrp …". */
+ *  "Payer · ID … · Group …". */
 function intakeCardLine_(f) {
   f = f || {};
   if (f.mbi && /^medicare$/i.test(f.payer || 'Medicare')) return 'Medicare ' + f.mbi;
-  return [f.payer, f.memberId ? 'ID ' + f.memberId : '', f.group ? 'Group ' + f.group : '',
-    f.rxBin ? 'RxBIN ' + f.rxBin : '', f.rxPcn ? 'RxPCN ' + f.rxPcn : '', f.rxGrp ? 'RxGrp ' + f.rxGrp : '']
-    .filter(Boolean).join(' · ');
+  return [f.payer, f.memberId ? 'ID ' + f.memberId : '', f.group ? 'Group ' + f.group : ''].filter(Boolean).join(' · ');
 }
 
-var INTAKE_CARD_FIELDS = [['payer', 'Payer'], ['memberId', 'Member ID'], ['mbi', 'Medicare ID (MBI)'], ['group', 'Group'], ['rxBin', 'Rx BIN'], ['rxPcn', 'Rx PCN'], ['rxGrp', 'Rx Group']];
+var INTAKE_CARD_FIELDS = [['payer', 'Payer'], ['memberId', 'Member ID'], ['mbi', 'Medicare ID (MBI)'], ['group', 'Group']];
 
 /** Read every attached image and offer what was found. Each image is read on
  *  its own (I3a): one that will not open or read is NAMED and the others still
