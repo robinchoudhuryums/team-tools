@@ -6571,6 +6571,20 @@ pick them up without re-deriving the context.
     primary/secondary writes that line into the field (asking before
     replacing), where I1 tidies and checks it and the I2 draft keeps it — the
     image itself is never kept in a draft.
-  - **Not done:** names and dates on the card (not asked for), the PPD form
-    (no card images), and a confidence score per value — the rep checks every
-    value against the card, and the panel says so.
+  - **"Check this one", never a percentage (I3a, operator 2026-11-06).** The
+    recognizer's per-character probabilities are not odds — a digit can come
+    back at 97% and be wrong — and a number on screen invites the trust that
+    stops a rep comparing it with the card. So a value is MARKED when one of
+    its OWN characters (never its label, a colon or a space; the payer on its
+    letters and digits) is below `INTAKE_CARD_SURE`, 0.8. Measured on the
+    spike's reads: every true misread sat under 0.35, and 2 of 80 correctly
+    read values are marked. Editing the box clears the mark; the mark travels
+    with its value through the front/back merge.
+  - **"Not found" and "could not read" are different answers (g128, g142).**
+    An empty box says "Not found on the card — type it"; each image is read on
+    its own, so a broken one is named ("Could not read image 2 — what is shown
+    comes from the others") and a lone broken one says to try a clearer photo;
+    "could not be read in this browser" is kept for a reader that will not
+    start; a read that finds nothing says so, with only Dismiss.
+  - **Not done:** names and dates on the card (not asked for), and the PPD
+    form (no card images).

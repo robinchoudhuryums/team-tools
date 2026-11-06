@@ -542,7 +542,10 @@ the suggestion wording.)
 insurance details from the card** reads each image on the rep's computer
 (nothing is sent anywhere to be read) and offers the payer, member ID, group,
 Rx BIN/PCN/group or the Medicare ID in boxes the rep can correct, with **Use as
-primary insurance** / **Use as secondary insurance**. The reader (~30 MB) is
+primary insurance** / **Use as secondary insurance**. A value the reader was
+unsure of is marked **Check this one** (I3a), an empty box says it was not
+found, and an image that will not read is named while the others still count.
+The reader (~30 MB) is
 downloaded the first time it is pressed and kept by the browser; if it cannot
 load, the rep is told to type the details.
 
