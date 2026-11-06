@@ -9783,6 +9783,8 @@ test('I1 DOM: leaving a PMD field tidies what it can read and says what looks of
   assert.ok(field(5).value === '01/02/1950' && !rowOf(5).querySelector('.intk-fmt-note'), 'a readable date is tidied and the note goes');
   i1Leave_(h, field(8), 'medicare 1eg4 te5 mk72');
   assert.strictEqual(field(8).value, 'Medicare · 1EG4-TE5-MK72');
+  i1Leave_(h, field(15), '5\'4"');
+  assert.ok(field(15).value === '64' && /Height \(inches\)/.test(rowOf(15).textContent) && !rowOf(15).querySelector('.intk-fmt-note'), 'a height is asked in inches and feet-and-inches become inches');
   assert.ok(field(10).classList.contains('intk-ssn') && field(10).getAttribute('inputmode') === 'numeric', 'the SSN is masked and numeric');
   assert.strictEqual(field(2).getAttribute('inputmode'), 'tel');
   h.read('intakeFlushDraftNow_')();

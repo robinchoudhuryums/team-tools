@@ -3910,6 +3910,17 @@
     "kbGeocodeOne_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "I1 follow-up (operator 2026-11-06): the PMD/PAP Height label says inches",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PAP_Q_EN",
+    "INTAKE_PMD_Q_EN"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5062,7 +5073,7 @@
   "INTAKE_PAP_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9d4e1f8b721cf386"
+   "sha": "c572ca6f29e230cb"
   },
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
@@ -5072,7 +5083,7 @@
   "INTAKE_PMD_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "fd5277eb8ea0fd4b"
+   "sha": "d49e1d36a42816ef"
   },
   "INTAKE_PPD_EMAIL_COMBOS": {
    "file": "00_config.js",

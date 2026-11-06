@@ -43390,7 +43390,7 @@ test('I1: email — the shape is checked, the domain lower-cased, and a common d
   assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_('Aetna W123456789')), { value: 'Aetna W123456789', warn: '' }, 'not Medicare: not checked');
 });
 
-test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a lower-case code before the ZIP, or the name); a height is read loosely and tidied to 5\'4"; an SSN of nine digits is tidied and masked on screen, anything else warned (driven + source)', () => {
+test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a lower-case code before the ZIP, or the name); a height (asked IN INCHES, operator 2026-11-06) is read loosely and tidied to the number of inches — 64, never 5\'4" — the label saying inches; an SSN of nine digits is tidied and masked on screen, anything else warned (driven + source)', () => {
   const { ctx, src } = i1Ctx_();
   assert.strictEqual(ctx.intakeFmtAddress_('123 Elm St, Dallas, TX 75201').warn, '');
   assert.strictEqual(ctx.intakeFmtAddress_('123 elm st dallas tx 75201').warn, '', 'a lower-case code right before the ZIP');
@@ -43398,9 +43398,12 @@ test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a
   assert.ok(/No state in this address/.test(ctx.intakeFmtAddress_('123 Elm St, Dallas 75201').warn));
   assert.ok(/No 5-digit ZIP in this address/.test(ctx.intakeFmtAddress_('123 Elm St, Dallas, TX').warn));
   assert.ok(/No state or 5-digit ZIP/.test(ctx.intakeFmtAddress_('123 Elm St in town').warn), 'the word "in" is not Indiana');
-  ['5\'4"', '5 4', '5ft 4in', '5-4', '64 in', '64', '5’4”'].forEach((r) => assert.deepStrictEqual(i1J(ctx.intakeFmtHeight_(r)), { value: '5\'4"', warn: '' }, r));
-  assert.ok(/outside 3'0"–7'6"/.test(ctx.intakeFmtHeight_('8\'2"').warn));
-  assert.ok(/feet and inches/.test(ctx.intakeFmtHeight_('tall').warn));
+  ['64', '64 in', '64 in.', '64 inches', '64"', '5\'4"', '5 4', '5ft 4in', '5-4', '5’4”'].forEach((r) => assert.deepStrictEqual(i1J(ctx.intakeFmtHeight_(r)), { value: '64', warn: '' }, r));
+  assert.deepStrictEqual(i1J(ctx.intakeFmtHeight_('64.5')), { value: '64.5', warn: '' }, 'a half inch kept');
+  assert.deepStrictEqual(i1J(ctx.intakeFmtHeight_("6'")), { value: '72', warn: '' }, 'feet alone');
+  assert.ok(/outside 36–90 inches/.test(ctx.intakeFmtHeight_('8\'2"').warn) && ctx.intakeFmtHeight_('8\'2"').value === '98');
+  assert.ok(/outside 36–90 inches/.test(ctx.intakeFmtHeight_('20').warn), 'too short');
+  ['tall', '163 cm', "5'14"].forEach((r) => { const o = ctx.intakeFmtHeight_(r); assert.ok(/in inches, like 64/.test(o.warn) && o.value === r, r + ' is left as typed and asked about'); });
   assert.deepStrictEqual(i1J(ctx.intakeFmtSsn_('123 45 6789')), { value: '123-45-6789', warn: '' });
   assert.ok(/9 digits/.test(ctx.intakeFmtSsn_('12345').warn));
   assert.ok(/\.intk-ssn:not\(:focus\) \{ -webkit-text-security: disc; \}/.test(src), 'masked while not being typed in');
@@ -43408,8 +43411,8 @@ test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a
   // The map's indexes name the fields they claim to (the English banks).
   const bank = (name) => { const i = src.indexOf('var ' + name + ' = {'); return vm.runInContext('(' + src.slice(i + ('var ' + name + ' = ').length, src.indexOf('};', i) + 1) + ')', vm.createContext({})).EN; };
   const pmd = bank('INTAKE_PMD_Q'), pap = bank('INTAKE_PAP_Q');
-  assert.deepStrictEqual([pmd[2], pmd[3], pmd[5], pmd[6], pmd[10], pmd[15], pmd[20]], ['Patient Primary Contact Phone #', 'Secondary Contact Ph#', 'DOB', 'Home Address', 'SSN # (if insurance details N/A)', 'Height', 'If in facility what is the approximate discharge date?']);
-  assert.deepStrictEqual([pap[13], pap[14], pap[15], pap[16]], ['MDO Ph#', 'MDO Fax#', 'MDO Address', 'Height']);
+  assert.deepStrictEqual([pmd[2], pmd[3], pmd[5], pmd[6], pmd[10], pmd[15], pmd[20]], ['Patient Primary Contact Phone #', 'Secondary Contact Ph#', 'DOB', 'Home Address', 'SSN # (if insurance details N/A)', 'Height (inches)', 'If in facility what is the approximate discharge date?']);
+  assert.deepStrictEqual([pap[13], pap[14], pap[15], pap[16]], ['MDO Ph#', 'MDO Fax#', 'MDO Address', 'Height (inches)']);
 });
 
 test('I1: before Preview, what looks off is asked about in the SAME question as the blank recommended fields — once, with Continue anyway; the PPD form is not checked; leaving a field tidies it and the draft saves the tidy value (source)', () => {

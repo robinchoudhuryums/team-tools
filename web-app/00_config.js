@@ -2054,7 +2054,7 @@ const INTAKE_PMD_Q_EN = [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
     "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height (inches)", "Weight (lbs)",
     "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
     "If in facility what is the approximate discharge date?",
     "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
@@ -2065,7 +2065,7 @@ const INTAKE_PMD_Q_EN = [
 const INTAKE_PAP_Q_EN = [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height (inches)", "Weight (lbs)",
     "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
     "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
     "If so please provide Sleep Study details (approx. date & provider details)",

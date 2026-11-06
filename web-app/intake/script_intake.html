@@ -604,7 +604,7 @@ var INTAKE_PMD_Q = {
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
     "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height (inches)", "Weight (lbs)",
     "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
     "If in facility what is the approximate discharge date?",
     "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
@@ -617,7 +617,7 @@ var INTAKE_PMD_Q = {
     "Número de Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento (DOB)", "Dirección de Casa",
     "Información del Seguro", "Seguro Primario y Número de ID de Miembro", "Seguro Secundario y Número de ID de Miembro",
     "Número de Seguro Social (SSN) (si no hay detalles de seguro)",
-    "Información de Clínica", "Nombre del Doctor Primario (PCP)", "Teléfono de clínica", "Fax de clínica", "Estatura", "Peso (libras)",
+    "Información de Clínica", "Nombre del Doctor Primario (PCP)", "Teléfono de clínica", "Fax de clínica", "Estatura (pulgadas)", "Peso (libras)",
     "Dispositivos de movilidad que utilizas", "Diagnósticos", "¿Está en casa o en un centro médico?",
     "Si está en un centro, ¿cuál es la fecha aproximada de salida?",
     "Evaluación de Movilidad y Programación", "¿Ya tuvo una Evaluación de Movilidad en los últimos 6 meses?",
@@ -631,7 +631,7 @@ var INTAKE_PAP_Q = {
   EN: [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height (inches)", "Weight (lbs)",
     "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
     "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
     "If so please provide Sleep Study details (approx. date & provider details)",
@@ -640,7 +640,7 @@ var INTAKE_PAP_Q = {
   ES: [
     "Datos Demográficos", "Nombre Completo del Paciente", "Teléfono de Contacto Primario", "Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento", "Dirección de Casa",
     "Seguro", "Seguro Primario y ID de Miembro", "Seguro Secundario y ID de Miembro", "SSN (si no hay detalles de seguro)",
-    "Información Clínica", "Nombre del doctor primario", "Teléfono de la oficina del doctor", "Numero de Fax del doctor", "Dirección del oficina", "Estatura", "Peso (libras)",
+    "Información Clínica", "Nombre del doctor primario", "Teléfono de la oficina del doctor", "Numero de Fax del doctor", "Dirección del oficina", "Estatura (pulgadas)", "Peso (libras)",
     "Detalles de PAP/máquina", "¿Ya tienes una CPAP/máquina?", "¿Marca y Modelo del CPAP (si aplica)?", "¿Cuánto tiempo ha tenido el CPAP (si aplica)?",
     "¿Qué tipo de mascarilla usa (marca/modelo/tamaño)?", "¿Busca Máquina, Suministros de PAP, o Ambos?", "¿Ha tenido un Estudio del Sueño en el pasado?",
     "Si es así, proporcione detalles (fecha y doctor)",
@@ -2159,19 +2159,22 @@ function intakeFmtAddress_(raw) {
   if (!zip) miss.push('5-digit ZIP');
   return { value: s, warn: miss.length ? 'No ' + miss.join(' or ') + ' in this address.' : '' };
 }
-/** PURE (Node-pinned) — a height read loosely (5'4", 5 4, 5ft 4in, 5-4,
- *  64 in) and tidied to 5'4"; warned outside 3'0"–7'6" or when unreadable. */
+/** PURE (Node-pinned) — a height, which the form asks for IN INCHES
+ *  (operator 2026-11-06): a bare number (64, 64.5), inches with a unit
+ *  (64 in, 64", 64 inches) or feet and inches (5'4", 5 4, 5ft 4in, 5-4) all
+ *  become the number of inches, "64" — the label carries the unit, so the
+ *  email reads "Height (inches): 64". Warned outside 36–90 inches or when
+ *  unreadable (left as typed). */
 function intakeFmtHeight_(raw) {
   var s = String(raw == null ? '' : raw).trim();
   if (!s) return { value: '', warn: '' };
   var t = s.toLowerCase().replace(/[’′]/g, "'").replace(/[”″]/g, '"').replace(/''/g, '"');
-  var ft = null, inch = null, m;
-  if ((m = /^(\d)\s*(?:'|ft\.?|feet|foot|-|\s)\s*(\d{1,2}(?:\.\d)?)?\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t))) { ft = +m[1]; inch = m[2] ? Math.round(+m[2]) : 0; }
-  else if ((m = /^(\d{2,3}(?:\.\d)?)\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t)) && +m[1] >= 30) { var all = Math.round(+m[1]); ft = Math.floor(all / 12); inch = all % 12; }
-  if (ft == null || inch > 11) return { value: s, warn: 'Write the height as feet and inches, like 5\'4".' };
-  var value = ft + '\'' + inch + '"';
-  var total = ft * 12 + inch;
-  if (total < 36 || total > 90) return { value: value, warn: 'That height is outside 3\'0"–7\'6" — check it.' };
+  var total = null, m;
+  if ((m = /^(\d{2,3}(?:\.\d)?)\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t))) total = +m[1];
+  else if ((m = /^(\d)\s*(?:'|ft\.?|feet|foot|-|\s)\s*(\d{1,2}(?:\.\d)?)?\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t)) && !(m[2] && +m[2] >= 12)) total = +m[1] * 12 + (m[2] ? +m[2] : 0);
+  if (total == null) return { value: s, warn: 'Write the height in inches, like 64.' };
+  var value = String(Math.round(total * 10) / 10);
+  if (total < 36 || total > 90) return { value: value, warn: 'That height is outside 36–90 inches — check it.' };
   return { value: value, warn: '' };
 }
 /** PURE (Node-pinned) — an SSN: nine digits become 123-45-6789; anything else
