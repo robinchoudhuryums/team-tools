@@ -43542,6 +43542,112 @@ test('I2 drafts: the saved drafts are their own ums… key read and written in t
   assert.ok(/not kept in a draft/.test(save) && /uiConfirm\(/.test(save), 'card images are named before they are left behind');
 });
 
+const i3Ctx_ = () => {
+  const src = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array, JSON });
+  ['INTAKE_MBI_RE', 'INTAKE_CARD_LABELS', 'INTAKE_CARD_TAIL_WORDS', 'INTAKE_CARD_PAYERS', 'INTAKE_OCR_FILES', 'INTAKE_OCR_CDN'].forEach((n) => {
+    const i = src.indexOf('var ' + n + ' = ');
+    assert.ok(i >= 0, n);
+    vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx);
+  });
+  ['intakeCardRows_', 'intakeCardMbiIn_', 'intakeCardParse_', 'intakeCardMerge_', 'intakeCardLine_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  return { ctx, src };
+};
+const i3Row_ = (...texts) => ({ items: texts.map((t, i) => ({ text: t, x: i * 300, w: 250 })) });
+
+test('I3 cards: the card parser reads what the REAL reader returned for four specimen cards in four photo conditions (clean, phone, rotated with glare and shadow, small) — every field right, never a wrong value (driven over the captured reader output)', () => {
+  const { ctx } = i3Ctx_();
+  const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
+  const want = {
+    'c-medicare': { payer: 'Medicare', mbi: '1EG4TE5MK72', memberId: '', advantage: false },
+    'c-bcbs': { memberId: 'XOF923456781', group: '028914', rxBin: '610014', rxPcn: 'MEDDPRIME', rxGrp: 'TX3829', mbi: '' },
+    'c-humana': { memberId: 'H71938642', group: 'X1234005', rxBin: '015581', rxPcn: '03200000', rxGrp: 'XUA02', mbi: '', advantage: true },
+    'c-uhc': { memberId: '912345678', group: '0701234', rxBin: '610279', rxPcn: '9999', rxGrp: 'UHEALTH', mbi: '' },
+  };
+  const keys = Object.keys(lines);
+  assert.strictEqual(keys.length, 16, 'four cards × four conditions');
+  keys.forEach((k) => {
+    const f = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines[k])));
+    const w = want[k.split('/')[0]];
+    Object.keys(w).forEach((field) => assert.strictEqual(f[field], w[field], k + ' ' + field + ' (got ' + JSON.stringify(f) + ')'));
+    if (k.startsWith('c-humana')) assert.ok(/^Humana/.test(f.payer), k);
+    if (k.startsWith('c-uhc')) assert.strictEqual(f.payer, 'UnitedHealthcare', k);
+  });
+  assert.strictEqual(ctx.intakeCardLine_(ctx.intakeCardParse_(ctx.intakeCardRows_(lines['c-medicare/rough']))), 'Medicare 1EG4TE5MK72', 'what I1 then tidies to Medicare · 1EG4-TE5-MK72');
+});
+
+test('I3 cards: rows are built from the read lines in reading order — levelled by the lines\' typical tilt first, joined by a shared middle, left to right (driven)', () => {
+  const { ctx } = i3Ctx_();
+  const flat = [{ text: 'B', x: 300, y: 10, w: 100, h: 20 }, { text: 'A', x: 0, y: 12, w: 100, h: 20 }, { text: 'C', x: 0, y: 60, w: 100, h: 20 }];
+  assert.deepStrictEqual(i1J(ctx.intakeCardRows_(flat)).map((r) => r.items.map((i) => i.text)), [['A', 'B'], ['C']]);
+  // A photo tilted ~6°: the second piece of row 1 sits LOWER than the start of row 2 would allow if read level.
+  const t = 0.105, rot = (x, y) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)];
+  const mk = (text, x, y) => { const [cx, cy] = rot(x + 100, y + 10); return { text, x: cx - 100, y: cy - 10, w: 200, h: 20, ang: t }; };
+  const tilted = [mk('Member ID:', 0, 0), mk('H71938642', 420, 0), mk('Group #:', 0, 34), mk('X1234005', 420, 34)];
+  assert.deepStrictEqual(i1J(ctx.intakeCardRows_(tilted)).map((r) => r.items.map((i) => i.text)), [['Member ID:', 'H71938642'], ['Group #:', 'X1234005']], 'levelled, the rows hold');
+  assert.deepStrictEqual(i1J(ctx.intakeCardRows_(tilted.map((l) => Object.assign({}, l, { ang: 0 })))).map((r) => r.items.length).join(','), '1,1,1,1', 'not levelled, they would not');
+});
+
+test('I3 cards: a label finds its value glued, spaced, after a colon, or printed under it; a value must look like its field or it is left for the rep; Rx Grp is not the group, the payer ID is not the member ID, and a word the value ran into is cut (driven)', () => {
+  const { ctx } = i3Ctx_();
+  const P = (...rows) => i1J(ctx.intakeCardParse_(rows));
+  let f = P(i3Row_('RxBIN610014'), i3Row_('RXPCNMEDDPRIME'), i3Row_('RxGRPTX3829'), i3Row_('Group Number0701234'), i3Row_('MemberID:H71938642'));
+  assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group, f.memberId], ['610014', 'MEDDPRIME', 'TX3829', '0701234', 'H71938642'], 'glued');
+  f = P(i3Row_('RxBIN:015581 RxPCN:03200000RxGRP:XUA02'));
+  assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group], ['015581', '03200000', 'XUA02', ''], 'three on one row, and "RxGRP" is not the group');
+  f = P({ items: [{ text: 'Identification No.', x: 0, w: 200 }, { text: 'Group No.', x: 400, w: 120 }] }, { items: [{ text: 'XOF923456781', x: 0, w: 220 }, { text: '028914', x: 400, w: 110 }] });
+  assert.deepStrictEqual([f.memberId, f.group], ['XOF923456781', '028914'], 'printed under the label, by column');
+  f = P(i3Row_('Group#:X1234005CMS H5619-079'), i3Row_('Payer ID: 87726'), i3Row_('Member ID: 12'), i3Row_('Group No. ABC'), i3Row_('Rx Bin: 61027'));
+  assert.deepStrictEqual([f.group, f.memberId, f.rxBin], ['X1234005', '', ''], 'CMS cut; the payer ID never the member ID; too short, no digit, five digits — left blank, never guessed');
+  f = P(i3Row_('RBIN610014'));
+  assert.strictEqual(f.rxBin, '610014', 'a misread "Rx" as "R"');
+});
+
+test('I3 cards: original Medicare is the card that names Medicare and carries an MBI (spaces, dashes or glued to its label); an Advantage card\'s number is its plan\'s member ID — never offered as an MBI; the payer is a known name as the card spells it (driven)', () => {
+  const { ctx } = i3Ctx_();
+  const P = (...rows) => i1J(ctx.intakeCardParse_(rows));
+  let f = P(i3Row_('MEDICARE'), i3Row_('Medicare Number/Número de Medicare'), i3Row_('1EG4 TE5 MK72'));
+  assert.deepStrictEqual([f.payer, f.mbi, f.advantage], ['Medicare', '1EG4TE5MK72', false]);
+  assert.strictEqual(P(i3Row_('MEDICARE NUMBER1EG4TE5MK72')).mbi, '1EG4TE5MK72', 'glued to its label');
+  assert.strictEqual(P(i3Row_('MEDICARE'), i3Row_('1SG4-TE5-MK72')).mbi, '', 'an S is never in an MBI');
+  f = P(i3Row_('Humana Gold Plus (HMO)'), i3Row_('Medicare Advantage Plan'), i3Row_('Member ID: H71938642'), i3Row_('1EG4TE5MK72'));
+  assert.deepStrictEqual([f.payer, f.memberId, f.mbi, f.advantage], ['Humana Gold Plus (HMO)', 'H71938642', '', true]);
+  assert.strictEqual(P(i3Row_('Some Local Plan'), i3Row_('Member ID: ZZ12345')).payer, '', 'an unknown payer is left for the rep');
+  assert.strictEqual(ctx.intakeCardMbiIn_('Name JOHN 1EG4-TE5-MK72 x'), '1EG4TE5MK72');
+});
+
+test('I3 cards: front and back merge — the first value found for a field wins; the line the field gets is Medicare + MBI, or Payer · ID · Group · RxBIN · RxPCN · RxGrp with only what was found (driven)', () => {
+  const { ctx } = i3Ctx_();
+  const m = i1J(ctx.intakeCardMerge_({ payer: 'Aetna', memberId: 'W123456789', group: '', rxBin: '' }, { payer: 'X', memberId: 'other1', group: '0701234', rxBin: '610502', rxPcn: 'AE', rxGrp: 'RX1234' }));
+  assert.deepStrictEqual([m.payer, m.memberId, m.group, m.rxBin], ['Aetna', 'W123456789', '0701234', '610502']);
+  assert.strictEqual(ctx.intakeCardLine_(m), 'Aetna · ID W123456789 · Group 0701234 · RxBIN 610502 · RxPCN AE · RxGrp RX1234');
+  assert.strictEqual(ctx.intakeCardLine_({ payer: 'Medicare', mbi: '1EG4TE5MK72' }), 'Medicare 1EG4TE5MK72');
+  assert.strictEqual(ctx.intakeCardLine_({ memberId: '912345678' }), 'ID 912345678');
+  assert.strictEqual(i1J(ctx.intakeCardMerge_({ mbi: '1EG4TE5MK72' }, { advantage: true })).mbi, '', 'an Advantage back side voids the MBI');
+});
+
+test('I3 cards: the reader runs only in the browser — every file it loads is a pinned version with a SHA-256 checked BEFORE use, the runtime is injected from the checked bytes (never a second download), a failed load is not kept, and the module sends nothing to the server (source)', () => {
+  const { ctx, src } = i3Ctx_();
+  const files = ctx.INTAKE_OCR_FILES;
+  assert.deepStrictEqual(Object.keys(files).sort(), ['det', 'keys', 'mjs', 'ort', 'rec', 'wasm']);
+  Object.keys(files).forEach((k) => {
+    assert.ok(/^[a-f0-9]{64}$/.test(files[k].sha256), k + ' has a SHA-256');
+    assert.ok(/@\d+\.\d+\.\d+\//.test(files[k].path), k + ' is a pinned version');
+  });
+  assert.ok(/^https:\/\/cdn\.jsdelivr\.net\/npm\/$/.test(ctx.INTAKE_OCR_CDN));
+  const fetchFn = extractFnFrom(src, 'intakeOcrFetch_');
+  assert.ok(/crypto\.subtle\.digest\('SHA-256', buf\)/.test(fetchFn) && /if \(intakeOcrHex_\(d\) !== f\.sha256\) throw/.test(fetchFn), 'checked, and refused on a mismatch');
+  const eng = extractFnFrom(src, 'intakeOcrEngine_');
+  assert.ok(/s\.textContent = new TextDecoder\(\)\.decode\(got\.ort\)/.test(eng) && !/s\.src\s*=/.test(eng), 'the runtime runs from the checked bytes');
+  assert.ok(/wasmBinary = got\.wasm/.test(eng) && /createObjectURL\(new Blob\(\[got\.mjs\]/.test(eng), 'the wasm and its loader come from the checked bytes too');
+  assert.ok(/INTAKE_OCR\.state = err \? '' : 'ready'/.test(eng), 'a failure is not kept (g129) — the next press tries again');
+  const start = src.indexOf('// ── I3 (operator 2026-11-06)');
+  const block = src.slice(start, src.indexOf('// ── Draft autosave', start));
+  assert.ok(start > 0 && !/google\.script\.run/.test(block), 'no image or value is sent to the server to be read');
+  assert.ok(/fetch\(INTAKE_OCR_CDN \+ f\.path/.test(block) && (block.match(/fetch\(/g) || []).length === 1, 'the one fetch is a pinned file');
+  assert.ok(/delete INTAKE_CARD\[form\]/.test(extractFnFrom(src, 'intakeClearForm_')), 'what was read goes with the form');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

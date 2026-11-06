@@ -215,7 +215,7 @@
   .intk-card-head svg { flex: 0 0 auto; margin-top: 2px; }
   .intk-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 10px; }
   .intk-card-f { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; color: var(--muted); min-width: 0; }
-  .intk-card-f input { font: inherit; font-size: .88rem; color: var(--ink); min-width: 0; }
+  .intk-card-f input { padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: .88rem; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; min-width: 0; }
   .intk-card-line { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
   .intk-card-line span { color: var(--muted); }
   .intk-card-acts { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -3095,8 +3095,10 @@ function intakeRenderGallery_(form) {
   if (INTAKE_CARD[form]) { intakeCardPanel_(form); return; }
   host._seq = (host._seq || 0) + 1;   // a read in flight for the old set of images is dropped
   var n = (INTAKE_STATE[form].images || []).length;
-  host.innerHTML = n ? '<button type="button" class="intk-btn" data-card-read="1" onclick="intakeCardRead_(\'' + form + '\')">' + icon('fileText', 14) + ' ' +
+  host.innerHTML = n ? '<button type="button" class="intk-btn" data-card-read="1">' + icon('fileText', 14) + ' ' +
     esc(INTAKE_STATE[form].lang === 'ES' ? 'Leer los datos del seguro de la tarjeta' : 'Read the insurance details from the card') + '</button>' : '';
+  var rb = host.querySelector('[data-card-read]');
+  if (rb) rb.addEventListener('click', function () { intakeCardRead_(form); });
 }
 
 function intakeRemoveImage_(form, idx) {

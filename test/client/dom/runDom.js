@@ -9833,6 +9833,61 @@ test('I2 DOM: Save draft parks the form as a saved draft and clears it for the n
   assert.deepStrictEqual(labels(), ['Ana Ruiz', 'Bo Lee'], 'the list repaints — Ana\'s re-save made it the newest');
 });
 
+section('Intake — I3 reading an insurance card in the browser (operator 2026-11-06)');
+
+test('I3 DOM: with a card image attached, Read the insurance details offers what the reader found in boxes the rep can correct; Use as primary writes the line (I1 tidies it), Use as secondary asks before replacing; a reader that fails says so with Try again; Clear drops what was read (driven, reader stood in)', async () => {
+  const { h, field } = bootAcct('pmd');
+  const lines = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'i3-card-lines.json'), 'utf8'));
+  let calls = 0, fail = false;
+  h.window.INTAKE_OCR_ENGINE = { read: () => { calls++; return fail ? Promise.reject(new Error('no wasm')) : Promise.resolve(lines['c-bcbs/phone']); } };
+  h.read('intakeCardImage_ = function () { return Promise.resolve({}); }');
+  const host = () => h.$('#intk-card-read');
+  assert.strictEqual(host().textContent.trim(), '', 'no images, no button');
+  h.read('INTAKE_STATE.pmd.images.push("data:image/png;base64,AAAA")');
+  h.read('intakeRenderGallery_')('pmd');
+  const btn = host().querySelector('[data-card-read]');
+  assert.ok(btn && /Read the insurance details from the card/.test(btn.textContent));
+  btn.click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.strictEqual(calls, 1, 'one image, one read');
+  const val = (k) => host().querySelector('[data-card-key="' + k + '"]').value;
+  assert.deepStrictEqual([val('memberId'), val('group'), val('rxBin'), val('rxPcn'), val('rxGrp')], ['XOF923456781', '028914', '610014', 'MEDDPRIME', 'TX3829']);
+  assert.ok(/check each value against the card/.test(host().textContent) && /not sent anywhere to be read/.test(host().textContent));
+  // The rep corrects the payer; the line follows.
+  const payer = host().querySelector('[data-card-key="payer"]');
+  payer.value = 'BCBS of Texas';
+  payer.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(host().querySelector('[data-card-line]').textContent, 'BCBS of Texas · ID XOF923456781 · Group 028914 · RxBIN 610014 · RxPCN MEDDPRIME · RxGrp TX3829');
+  host().querySelector('[data-card-use="8"]').click();
+  await tick();
+  assert.strictEqual(field(8).value, 'BCBS of Texas · ID XOF923456781 · Group 028914 · RxBIN 610014 · RxPCN MEDDPRIME · RxGrp TX3829', 'written into the primary insurance');
+  assert.ok(host().querySelector('[data-card-read]') && !host().querySelector('.intk-card-panel'), 'the panel closes and the button returns');
+  // Again, into a secondary that already holds something: asked first.
+  field(9).value = 'Medicaid 123';
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 6; i++) await tick();
+  host().querySelector('[data-card-use="9"]').click();
+  await tick();
+  assert.ok(asked.length === 1 && /Replace the secondary insurance\?/.test(asked[0].title) && field(9).value === 'Medicaid 123', 'asked, and Keep it keeps it');
+  // A reader that cannot start says so, offers Try again, and names no value.
+  host().querySelector('[data-card-close]').click();
+  fail = true;
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.ok(/could not be read in this browser — type the insurance details instead/.test(host().textContent) && host().querySelector('.intk-card-retry'));
+  fail = false;
+  host().querySelector('.intk-card-retry').click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.ok(host().querySelector('.intk-card-panel'), 'Try again reads');
+  // Clear drops what was read with the form.
+  h.read('intakeClearForm_')('pmd');
+  assert.strictEqual(h.read('INTAKE_CARD.pmd'), undefined, 'what was read goes with the form');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
 section('Intake — I1 format safeguards and the address check (operator 2026-11-05/06)');
 
 const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
