@@ -31,3 +31,5 @@ FOLLOW-ON ITEMS:
 DOCUMENTATION UPDATES NEEDED:
 - None — design decision (`#i1-intake-safeguards-and-address-check`), modules.md, operator-state.md (the toggle + `INTAKE_ADDR_CHECKS_24H`), INV-400, S159 and the running totals were written in this batch.
 ---END BROAD SCAN IMPLEMENTATION SUMMARY---
+
+AMENDED 2026-11-06 (operator: "Height should actually be in inches … or could just add (inches) next to the Height field"): the PMD/PAP label is "Height (inches)" / "Estatura (pulgadas)" in the client and server banks (the email's label comes from the server bank, so it names the unit whatever was typed), the placeholder reads "e.g. 64", and `intakeFmtHeight_` now tidies 64 / 64 in / 64" / 64 inches / 5'4" / 5 4 / 5ft 4in to the number of inches ("64", a half inch kept), warned outside 36–90 inches and left as typed when unreadable (163 cm, 5'14"). Pins updated (the I1 pure pin, both bank-label pins, a DOM step on field 15); 4 of 4 new mutations bite; the intake-pmd visual scenarios re-shot, 0 overflow.

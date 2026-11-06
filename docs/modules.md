@@ -525,7 +525,8 @@ answer).
 **I1 (operator 2026-11-05):** on the PMD and PAP account forms, leaving a
 field tidies what it can read — a phone to 469-111-3333 (a leading +1 or 1
 dropped), a date to MM/DD/YYYY, a Medicare ID to 1EG4-TE5-MK72 with or
-without dashes or spaces, a height to 5'4" — and says what looks off under the
+without dashes or spaces, a height to inches (5'4" or 64 in → 64; the label
+reads "Height (inches)", so the email names the unit — operator 2026-11-06) — and says what looks off under the
 field in amber (a short phone, the secondary the same as the primary, a
 two-digit year, a future date of birth, a likely email typo, an address with
 no ZIP or state). Nothing is refused: Preview asks once about everything that

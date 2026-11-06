@@ -6475,6 +6475,9 @@ pick them up without re-deriving the context.
     date, email, insurance, address, height, SSN); a value it can read is
     rewritten in one shape and saved to the draft, a value it cannot is left
     exactly as typed with an amber note under the field saying what looks off.
+    A height is asked IN INCHES (operator 2026-11-06): the label is "Height
+    (inches)" in both banks, so the email names the unit whatever was typed,
+    and 5'4", 64 in or 64" become 64.
     A two-digit year is ASKED about, never guessed — the reader would otherwise
     choose a century for a date of birth. The map is checked against the
     English banks by a pin, so a renumbered question cannot silently move a
