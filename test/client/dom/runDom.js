@@ -6167,6 +6167,175 @@ test('ED1 DOM: issuing — a styled Choose PDF button opens the hidden file cont
   assert.ok(sent[0].requiresSignature === true && sent[0].fields[0].type === 'signature' && sent[0].fields[0].box.page === 1, JSON.stringify(sent[0].fields));
 });
 
+// ED2 (operator 2026-11-06) — the box editor, zoom, the upload's warnings and
+// a fillable PDF's own fields. A stand-in pdf.js whose pages can carry a size,
+// a rotation, text items and form-field widgets; it counts canvas draws.
+const ed2FakePdf_ = (h, pages) => {
+  const log = { renders: 0 };
+  h.window.pdfjsWorker = {};
+  h.window.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve({ numPages: pages.length,
+    getPage: (n) => {
+      const p = pages[n - 1];
+      return Promise.resolve({ rotate: p.rotate || 0,
+        getViewport: ({ scale }) => ({ width: p.w * scale, height: p.h * scale,
+          convertToViewportRectangle: (r) => [r[0] * scale, (p.h - r[1]) * scale, r[2] * scale, (p.h - r[3]) * scale] }),
+        render: () => { log.renders++; return { promise: Promise.resolve(), cancel() {} }; },
+        getTextContent: () => Promise.resolve({ items: (p.text || []).map((sz) => ({ str: 'words', transform: [sz, 0, 0, sz, 50, 50] })) }),
+        getAnnotations: () => Promise.resolve(p.widgets || []) });
+    } }) }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ({});
+  return log;
+};
+const ed2Mgr_ = async (pages) => {
+  const h = boot(); mount_(h, 'view-area');
+  const log = ed2FakePdf_(h, pages);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.click('[data-ed-mode="pdf"]');
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Agreement.pdf', { type: 'application/pdf' }));
+  await hSettle_(30);
+  return { h, log, sent };
+};
+const ed2Letter_ = (extra) => Object.assign({ w: 612, h: 792, text: Array(8).fill(11) }, extra || {});
+const ed2Ev_ = (h, el, type, x, y, extra) => el.dispatchEvent(new h.window.MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: x, clientY: y }, extra || {})));
+
+test('ED2 DOM: a chosen PDF is warned about (a Legal page, a rotated page, small text) and its own form fields are offered; Use them as boxes adds each as a named, typed field on its page — a checkbox counted, never added — and turns "Require signature" on only if it was off (driven)', async () => {
+  const W = (o) => Object.assign({ subtype: 'Widget', fieldType: 'Tx', rect: [100, 680, 300, 698] }, o);
+  const { h } = await ed2Mgr_([
+    ed2Letter_({ widgets: [W({ fieldName: 'employee_name', alternativeText: 'employee_name' }), W({ fieldName: 'start_date', rect: [100, 640, 200, 658] }),
+      W({ fieldName: 'agree', fieldType: 'Btn', rect: [100, 600, 114, 614] }), W({ fieldName: 'Sig1', fieldType: 'Sig', alternativeText: 'Employee signature', rect: [100, 500, 300, 540] }),
+      { subtype: 'Link', rect: [0, 0, 10, 10] }] }),
+    { w: 612, h: 1008, rotate: 90, text: Array(8).fill(5) }]);
+  const warn = [...h.$$('#ed-is-pdf-warn li')].map((l) => l.textContent);
+  assert.deepStrictEqual(warn, ['Page 2 is 8.5 × 14 in, not Letter or A4 — it may be scaled to fit when printed.',
+    'Page 2 is stored rotated (90°). It shows upright here, but if a box lands wrong on it, save the PDF upright and choose it again.',
+    'Page 2 has small text (about 5 pt) — zoom in to place boxes, and check it can be read at Fit width.']);
+  assert.ok(!h.$('#ed-is-pdf-warn').hidden);
+  const offer = h.$('#ed-is-pdf-offer');
+  assert.ok(!offer.hidden && /This PDF has 3 fill-in fields of its own\. \(1 checkbox or button left out/.test(offer.textContent), offer.textContent);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-box').length, 0, 'offered, not added');
+  h.$('#ed-is-sig').checked = false;
+  h.click('[data-ed-form-use]');
+  const fields = h.read('ED_STATE.issueFields').map((f) => [f.label, f.type, f.box.page]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(fields)), [['Employee name', 'text', 1], ['Start date', 'date', 1], ['Employee signature', 'signature', 1]]);
+  const b0 = h.read('ED_STATE.issueFields[0].box');
+  assert.ok(Math.abs(b0.x - 100 / 612) < 0.0002 && Math.abs(b0.y - (792 - 698) / 792) < 0.0002, 'placed where the PDF put it: ' + JSON.stringify(b0));
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-box.is-edit').length, 3, 'drawn on the page');
+  assert.ok(offer.hidden && h.$('#ed-is-sig').checked && /3 boxes added from the PDF’s own fields/.test(h.document.body.textContent) && /"Require signature" is now on/.test(h.document.body.textContent));
+  // A PDF with no warnings and no fields says nothing.
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Plain.pdf', { type: 'application/pdf' }));
+  ed2FakePdf_(h, [ed2Letter_()]);
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Plain.pdf', { type: 'application/pdf' }));
+  await hSettle_(30);
+  assert.ok(h.$('#ed-is-pdf-warn').hidden && h.$('#ed-is-pdf-offer').hidden, 'nothing to say, nothing shown');
+  assert.strictEqual(h.read('ED_STATE.issueFields').length, 0, 'a new file starts clean');
+});
+
+test('ED2 DOM: a placed box moves when dragged and resizes from its corner — on the 1/8-inch grid, Alt freely, a press that does not travel only selects it; arrow keys nudge the selected box and Shift resizes it; Duplicate adds the next in its series under it, selected (driven)', async () => {
+  const { h } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  const pg = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"]');
+  pg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 612, height: 792 });
+  h.$('#ed-box-type').value = 'date';
+  h.window.edAddBox_(1, { x: 90 / 612, y: 90 / 792, w: 0.25, h: 0.03 });
+  const box = () => h.$('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="0"]');
+  const fb = () => JSON.parse(JSON.stringify(h.read('ED_STATE.issueFields[0].box')));
+  assert.ok(box().getAttribute('tabindex') === '0' && /Arrow keys move it; Shift with an arrow key resizes it/.test(box().getAttribute('aria-label')), 'focusable, and says how');
+  assert.ok(box().querySelector('[data-ed-box-dup]') && box().querySelector('[data-ed-box-rs]'), 'Duplicate and the resize corner');
+  // A press that does not travel: selected, not moved.
+  const placed = fb();
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 101, 102); ed2Ev_(h, box(), 'pointerup', 101, 102);
+  assert.deepStrictEqual(fb(), placed, 'unchanged');
+  assert.strictEqual(h.document.activeElement, box(), 'but selected');
+  // Drag the body 23px right, 11px down: snapped to the 9pt grid.
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 123, 111); ed2Ev_(h, box(), 'pointerup', 123, 111);
+  let b = fb();
+  assert.ok(Math.abs(b.x * 612 - 117) < 0.1 && Math.abs(b.y * 792 - 99) < 0.1 && b.w === 0.25, 'moved onto the grid: ' + JSON.stringify(b));
+  assert.strictEqual(h.document.activeElement, box(), 'the moved box stays selected');
+  assert.ok(/Box · page 1 · 2\.13 × 0\.33 in/.test(h.$('#ed-fields-list').textContent), 'its chip follows');
+  // Alt: exactly where it was let go.
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 105, 104, { altKey: true }); ed2Ev_(h, box(), 'pointerup', 105, 104);
+  b = fb();
+  assert.ok(Math.abs(b.x * 612 - 122) < 0.1 && Math.abs(b.y * 792 - 103) < 0.1, 'Alt: freely');
+  // The corner resizes; the top-left stays.
+  const before = fb();
+  const rs = box().querySelector('[data-ed-box-rs]');
+  ed2Ev_(h, rs, 'pointerdown', 300, 130); ed2Ev_(h, rs, 'pointermove', 340, 150); ed2Ev_(h, rs, 'pointerup', 340, 150);
+  b = fb();
+  assert.ok(b.x === before.x && b.y === before.y && b.w > before.w && b.h > before.h, 'resized from its corner');
+  assert.ok(Math.abs(Math.round((b.x + b.w) * 612 / 9) - (b.x + b.w) * 612 / 9) < 0.02, 'its right edge on the grid');
+  // Arrow keys.
+  const kb = (key, shift) => box().dispatchEvent(new h.window.KeyboardEvent('keydown', { key, shiftKey: !!shift, bubbles: true, cancelable: true }));
+  const x0 = fb().x, h0 = fb().h;
+  kb('ArrowLeft');
+  assert.ok(fb().x < x0 && h.document.activeElement === box(), 'nudged left, still selected');
+  kb('ArrowDown', true);
+  const bot = (fb().y + fb().h) * 792;
+  assert.ok(fb().h > h0 && (fb().h - h0) * 792 <= 13.6 && Math.abs(Math.round(bot / 9) - bot / 9) < 0.02, 'Shift + Down: taller, its bottom edge on the next grid line');
+  kb('a');
+  // Duplicate.
+  box().querySelector('[data-ed-box-dup]').click();
+  const fs2 = h.read('ED_STATE.issueFields');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(fs2.map((f) => f.label))), ['Date 1', 'Date 2']);
+  assert.ok(fs2[1].box.y > fs2[0].box.y + fs2[0].box.h && fs2[1].box.x === fs2[0].box.x && fs2[1].type === 'date', 'under the original, the same type');
+  assert.strictEqual(h.document.activeElement, h.$('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="1"]'), 'the copy is selected');
+});
+
+test('ED2 DOM: zoom — the bar appears with the pages; + and 100% size each page by its points and redraw only the canvases (the box layer and its node stay), Fit width returns; the reader zooms the same way and keeps what the employee typed (driven)', async () => {
+  const { h, log } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  const bar = h.$('.ed-zoom[data-ed-zoom-for="ed-is-pdf-pages"]');
+  assert.ok(bar && !bar.hidden, 'shown once the pages are drawn');
+  h.window.edAddBox_(1, { x: 0.1, y: 0.1, w: 0.25, h: 0.03 });
+  const layer = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-layer');
+  const drawn = log.renders;
+  bar.querySelector('[data-ed-zoom="1"]').click();
+  const wraps = h.$$('#ed-is-pdf-pages .ed-pdf-page');
+  assert.ok(wraps.every((w) => w.style.width === '816px') && h.$('#ed-is-pdf-pages').classList.contains('is-zoomed'), '100%: 8.5 in at 96 px an inch');
+  assert.strictEqual(log.renders, drawn + 2, 'each canvas redrawn once');
+  assert.strictEqual(h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-layer'), layer, 'the box layer is the same node');
+  assert.ok(bar.querySelector('[data-ed-zoom="1"]').getAttribute('aria-pressed') === 'true' && bar.querySelector('.ed-zoom-val').textContent === '100%');
+  bar.querySelector('[data-ed-zoom="in"]').click();
+  assert.strictEqual(wraps[0].style.width, '1020px', '125%');
+  bar.querySelector('[data-ed-zoom="fit"]').click();
+  assert.ok(wraps.every((w) => !w.style.width) && !h.$('#ed-is-pdf-pages').classList.contains('is-zoomed') && /^Fit/.test(bar.querySelector('.ed-zoom-val').textContent), 'Fit width');
+  // The reader.
+  const r = boot();
+  ed2FakePdf_(r, [ed2Letter_(), ed2Letter_()]);
+  r.run.respond('getMyDoc', () => hPdfDoc_());
+  r.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  r.read('edOpenDoc_')('dp');
+  await hSettle_(20);
+  const rbar = r.$('.ed-zoom[data-ed-zoom-for="ed-pdf-pages"]');
+  assert.ok(rbar && !rbar.hidden, 'the reader has the bar');
+  const input = r.$('#ed-pdf-pages .ed-resp[data-fid="review-date"]');
+  input.value = '2026-11-20';
+  rbar.querySelector('[data-ed-zoom="in"]').click(); rbar.querySelector('[data-ed-zoom="in"]').click();
+  assert.ok(/px$/.test(r.$('#ed-pdf-pages .ed-pdf-page').style.width), 'zoomed');
+  assert.ok(r.$('#ed-pdf-pages .ed-resp[data-fid="review-date"]') === input && input.value === '2026-11-20', 'what was typed is still there, in the same box');
+});
+
+test('ED2 DOM: a box on a page the PDF does not have, or past its edge, is refused at Issue with its name — nothing is sent; a PDF on the page sends its page count for the server\'s own check (driven)', async () => {
+  const { h, sent } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  h.$('#ed-is-emp').value = 'e1'; h.$('#ed-is-title').value = 'PIP';
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edAddBox_(2, { x: 0.1, y: 0.1, w: 0.25, h: 0.03 });
+  h.read('ED_STATE.issueFields[0].box.page = 3');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 0, 'nothing is sent');
+  assert.ok(/The box "Text 1" \(page 3\) is not on the PDF — it has 2 pages\. Move or remove it\./.test(h.document.body.textContent));
+  h.read('ED_STATE.issueFields[0].box.page = 2');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].pdfPages, 2, 'the count the browser read rides the issue');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

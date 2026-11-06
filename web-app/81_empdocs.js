@@ -317,7 +317,7 @@ function issueDoc(payload) {
       pdf = empDocPdfItem_(payload.pdf, payload.pdfName);
       if (pdf.error) return { success: false, error: pdf.error };
     }
-    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name } : null);
+    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name, pages: pdf.pages } : null);
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.doc.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
@@ -530,9 +530,14 @@ function empDocPdfItem_(dataUrl, name) {
   if (b64.indexOf('JVBERi0') !== 0) return { error: 'That file is not a PDF (it does not start like one).' };
   const bytes = Math.floor(b64.length * 3 / 4);
   if (bytes > EMPDOC_PDF_MAX_BYTES) return { error: 'The PDF is ' + (Math.round(bytes / 104857.6) / 10) + ' MB — over the ' + (EMPDOC_PDF_MAX_BYTES / 1048576) + ' MB limit.' };
-  const sha = empDocSha256Hex_(Utilities.base64Decode(b64));
+  const raw = Utilities.base64Decode(b64);
+  const sha = empDocSha256Hex_(raw);
+  // ED2: its page count, where the bytes say it in the clear (boxes are
+  // checked against it at issue).
+  let pages = null;
+  try { pages = empDocPdfPageCount_(Utilities.newBlob(raw).getDataAsString('ISO-8859-1')); } catch (e) { pages = null; }
   return { key: 'empdocpdf-' + sha.substring(0, 24), sha: sha, contentType: 'application/pdf', kind: 'empdoc',
-    base64: b64, bytes: bytes, name: String(name || '') };
+    base64: b64, bytes: bytes, name: String(name || ''), pages: pages };
 }
 /** Under the CALLER's lock (issueDoc): store one PDF, append-only and keyed by
  *  content (the same file twice is one row set). A tab whose header someone

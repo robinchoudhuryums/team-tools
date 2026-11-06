@@ -9650,7 +9650,7 @@ function empDocValidateIssue_(payload, pdf) {
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf });
+  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf, pages: pdf ? empDocPdfPagesOf_(pdf.pages, payload.pdfPages) : 0 });
   if (!fv.ok) return { ok: false, error: fv.error };
   // ED1: a signature or initials box is filled by the sign panel, so a
   // document that carries one must ask for the signature.
@@ -9696,6 +9696,9 @@ function empDocValidateFields_(fields, opts) {
       if (!(opts && opts.allowBoxes)) return { ok: false, error: 'Field boxes belong on a PDF document.' };
       const b = empDocNormBox_(f.box);
       if (!b) return { ok: false, error: 'The box for "' + label + '" is not on a page.' };
+      // ED2: nor on a page the PDF does not have — the employee could never
+      // see it, and a required one could never be completed.
+      if (opts.pages > 0 && b.page > opts.pages) return { ok: false, error: 'The box for "' + label + '" is on page ' + b.page + ', but the PDF has ' + opts.pages + ' page' + (opts.pages === 1 ? '' : 's') + '.' };
       field.box = b;
     }
     out.push(field);
@@ -9715,6 +9718,45 @@ function empDocNormBox_(box) {
   if (![x, y, w, h].every(function (v) { return isFinite(v); })) return null;
   if (x < 0 || y < 0 || w < 0.01 || h < 0.005 || x + w > 1.0001 || y + h > 1.0001) return null;
   return { page: page, x: x, y: y, w: w, h: h };
+}
+/** PURE (Node-pinned) — ED2: how many pages a PDF says it has, read from its
+ *  bytes (a latin-1 string): the largest /Count of a /Type /Pages dictionary
+ *  written in the clear. null when none is — a PDF that keeps its page tree
+ *  in a compressed object stream cannot be counted here. */
+function empDocPdfPageCount_(raw) {
+  const s = String(raw || '');
+  const re = /\/Type\s*\/Pages(?![A-Za-z])/g;
+  let best = 0, m;
+  while ((m = re.exec(s))) {
+    // The dictionary the name sits in: back to its "<<", then forward over it,
+    // keeping only its own keys (a nested dictionary, e.g. inherited
+    // /Resources, is skipped).
+    let start = -1, depth = 0;
+    for (let p = m.index - 1; p >= 0 && p >= m.index - 4000; p--) {
+      const two = s.substr(p, 2);
+      if (two === '>>') { depth++; p--; } else if (two === '<<') { if (depth === 0) { start = p; break; } depth--; p--; }
+    }
+    if (start < 0) continue;
+    let own = '';
+    depth = 0;
+    for (let q = start + 2; q < s.length && q < start + 20000; q++) {
+      const two = s.substr(q, 2);
+      if (two === '<<') { depth++; q++; continue; }
+      if (two === '>>') { if (depth === 0) break; depth--; q++; continue; }
+      if (depth === 0) own += s.charAt(q);
+    }
+    const c = /\/Count\s+(\d+)/.exec(own);
+    if (c) best = Math.max(best, Number(c[1]));
+  }
+  return best > 0 ? best : null;
+}
+/** PURE (Node-pinned) — ED2: the page count boxes are checked against: the
+ *  bytes' own count when it can be read, else the count the browser's pdf.js
+ *  read (a whole number in range), else 0 (unknown — only the page cap holds). */
+function empDocPdfPagesOf_(counted, claimed) {
+  if (counted > 0) return Math.min(counted, EMPDOC_PDF_MAX_PAGES);
+  const n = Number(claimed);
+  return n >= 1 && n <= EMPDOC_PDF_MAX_PAGES && n === Math.floor(n) ? n : 0;
 }
 /** PURE (Node-pinned) — the line a PDF document's frozen body ends with. The
  *  name is the file's, made plain (no quotes, no line breaks, capped). */

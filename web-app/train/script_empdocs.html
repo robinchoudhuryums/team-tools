@@ -108,7 +108,24 @@
   .tr-table .tr-title { font: inherit; font-size: .9rem; font-weight: 600; background: none; border: none; color: var(--ink); cursor: pointer; text-align: left; padding: 0; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
   .tr-table .tr-title:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
   .ed-pdf-box.is-ghost { border-style: dashed; pointer-events: none; }
-  .ed-pdf-box.is-edit { cursor: default; }
+  .ed-pdf-box.is-edit { cursor: move; }
+  /* ED2 — the box editor: a selected box's ring, its Duplicate button beside
+     Remove, its corner resize handle; the zoom bar; a zoomed document scrolls
+     sideways inside its column; the upload's warnings and form-field offer. */
+  .ed-pdf-box.is-edit:focus { outline: 2px solid #0b5cad; outline-offset: 2px; }
+  .ed-pdf-box.is-moving { opacity: .8; }
+  .ed-pdf-box-x.ed-pdf-box-dup { right: 12px; }
+  .ed-pdf-box.is-edit .ed-pdf-box-lbl { padding-right: 40px; }
+  .ed-pdf-box-rs { position: absolute; right: -6px; bottom: -6px; width: 11px; height: 11px; box-sizing: border-box; border: 2px solid var(--ed-c); border-radius: 2px; background: #ffffff; cursor: nwse-resize; }
+  .ed-zoom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+  .ed-zoom[hidden] { display: none; }
+  .ed-zoom .kb-btn[aria-pressed="true"] { border-color: var(--accent-ink); color: var(--accent-ink); }
+  .ed-zoom-val { min-width: 5.5em; text-align: center; font-size: .8rem; color: var(--muted); }
+  .ed-pdf.is-zoomed { overflow-x: auto; padding: 10px 10px 4px; }
+  .ed-pdf.is-zoomed .ed-pdf-page { flex: none; margin: 0 auto; }
+  .ed-pdf-warn { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--warning-deep); }
+  .ed-pdf-warn[hidden], .ed-pdf-offer[hidden] { display: none; }
+  .ed-pdf-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); font-size: .84rem; color: var(--ink); }
   #ed-is-pdf-pages .ed-pdf-page { cursor: crosshair; touch-action: none; }
   .ed-box-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
   .ed-box-bar label { margin: 0; }
@@ -396,7 +413,7 @@ function edRenderDoc_(doc) {
     var boxTypes = [];
     (doc.fields || []).forEach(function (f) { if (f.box && boxTypes.indexOf(f.type) < 0) boxTypes.push(f.type); });
     body += '<p class="ed-pdf-id">' + icon('fileText', 12) + ' ' + esc(doc.pdf.name) + ' \u00b7 SHA-256 <code>' + esc(doc.pdf.sha) + '</code></p>' +
-      (boxTypes.length ? edBoxLegendHtml_(boxTypes) : '') +
+      (boxTypes.length ? edBoxLegendHtml_(boxTypes) : '') + edZoomBarHtml_('ed-pdf-pages') +
       '<div class="ed-pdf" id="ed-pdf-pages" aria-busy="true"><div class="m-loading" role="status">Loading the PDF\u2026</div></div>' +
       '<div id="ed-pdf-over"></div>';
   }
@@ -586,6 +603,7 @@ var ED_BOX_LABELS = { text: 'Text', date: 'Date', textarea: 'Paragraph', signatu
 // ED1 — the legend's words for each box type, in the order the picker lists them.
 var ED_BOX_KEYS = [['text', 'Short text'], ['date', 'Date'], ['textarea', 'Paragraph'], ['signature', 'Signature'], ['initials', 'Initials']];
 var ED_SIGN_TYPES = ['signature', 'initials'];   // = EMPDOC_SIGN_FIELD_TYPES (pinned): filled by the sign panel's pads
+var ED_FIELD_CAP = 40;   // = EMPDOC_FIELD_CAP (pinned): ED2's duplicate and form-field offer stop there
 // ED1 — a box's text, in POINTS of its page: 10pt, shrinking to 7pt when the
 // answer is long, never smaller. Default sizes (a tap) and the smallest height
 // a drag may make are in points too, so a box means the same on every PDF.
@@ -672,6 +690,210 @@ function edBoxPts_(box, pagePts) {
   if (!box || !pagePts || !(pagePts.w > 0) || !(pagePts.h > 0)) return null;
   return { w: Number(box.w) * pagePts.w, h: Number(box.h) * pagePts.h };
 }
+// ED2 (operator 2026-11-06) — the box editor. A placed box moves (drag its
+// body) and resizes (drag its corner) on a 1/8-inch grid of its page — 9
+// points — and never leaves the page; Alt held places it freely. Arrow keys
+// move a focused box one step, Shift with them resizes it. Duplicate puts a
+// copy just under the original (the next row of a form), or wherever it fits.
+var ED_BOX_GRID_PTS = 9;
+var ED_BOX_MIN_W_PTS = 18;
+/** PURE (Node-pinned) — ED2: a fraction of a page dimension `dimPts` points
+ *  long, moved to the nearest 1/8-inch line; unchanged when the size is not
+ *  known. */
+function edBoxSnap_(v, dimPts) {
+  if (!(dimPts > 0)) return Number(v) || 0;
+  var step = ED_BOX_GRID_PTS / dimPts;
+  return Math.round((Number(v) || 0) / step) * step;
+}
+/** PURE (Node-pinned) — ED2: a box moved by (dx, dy) fractions of its page:
+ *  its corner on the grid (unless `free`), its size kept, and clamped so the
+ *  whole box stays on the page. */
+function edBoxMoved_(box, dx, dy, pagePts, free) {
+  var pw = pagePts && pagePts.w > 0 ? pagePts.w : 0, ph = pagePts && pagePts.h > 0 ? pagePts.h : 0;
+  var w = Math.min(1, Math.max(0, Number(box.w) || 0)), h = Math.min(1, Math.max(0, Number(box.h) || 0));
+  var x = (Number(box.x) || 0) + (Number(dx) || 0), y = (Number(box.y) || 0) + (Number(dy) || 0);
+  if (!free) { x = edBoxSnap_(x, pw); y = edBoxSnap_(y, ph); }
+  x = Math.max(0, Math.min(1 - w, x)); y = Math.max(0, Math.min(1 - h, y));
+  var r = function (v) { return Math.round(v * 10000) / 10000; };
+  return { page: box.page, x: r(x), y: r(y), w: r(w), h: r(h) };
+}
+/** PURE (Node-pinned) — ED2: a box resized from its bottom-right corner by
+ *  (dw, dh): that corner on the grid (unless `free`), never smaller than one
+ *  line of its type (ED_BOX_MIN_H_PTS) or 1/4 inch wide, never past the page's
+ *  edge. Its top-left corner does not move. */
+function edBoxResized_(box, dw, dh, type, pagePts, free) {
+  var pw = pagePts && pagePts.w > 0 ? pagePts.w : 0, ph = pagePts && pagePts.h > 0 ? pagePts.h : 0;
+  var x = Math.max(0, Math.min(1, Number(box.x) || 0)), y = Math.max(0, Math.min(1, Number(box.y) || 0));
+  var right = x + (Number(box.w) || 0) + (Number(dw) || 0), bottom = y + (Number(box.h) || 0) + (Number(dh) || 0);
+  if (!free) { right = edBoxSnap_(right, pw); bottom = edBoxSnap_(bottom, ph); }
+  var minW = pw ? ED_BOX_MIN_W_PTS / pw : 0.02;
+  var minH = ph ? (ED_BOX_MIN_H_PTS[type] || ED_BOX_MIN_H_PTS.text) / ph : 0.008;
+  right = Math.min(1, Math.max(x + minW, right)); bottom = Math.min(1, Math.max(y + minH, bottom));
+  var r = function (v) { return Math.round(v * 10000) / 10000; };
+  return { page: box.page, x: r(x), y: r(y), w: r(right - x), h: r(bottom - y) };
+}
+/** PURE (Node-pinned) — ED2: what an arrow key does to a focused box: one
+ *  grid step of movement, or with Shift one step of size; null for any other
+ *  key. */
+function edBoxNudge_(box, key, shift, type, pagePts) {
+  var dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key];
+  if (!dir) return null;
+  var sx = pagePts && pagePts.w > 0 ? ED_BOX_GRID_PTS / pagePts.w : 0.01;
+  var sy = pagePts && pagePts.h > 0 ? ED_BOX_GRID_PTS / pagePts.h : 0.01;
+  return shift ? edBoxResized_(box, dir[0] * sx, dir[1] * sy, type, pagePts)
+    : edBoxMoved_(box, dir[0] * sx, dir[1] * sy, pagePts);
+}
+/** PURE (Node-pinned) — ED2: where a duplicate goes: one grid step under the
+ *  original, else above it, else to its right or left; on a page with room
+ *  for none of those, a quarter inch down and clamped onto the page. */
+function edBoxDuplicate_(box, pagePts) {
+  var pw = pagePts && pagePts.w > 0 ? pagePts.w : 0, ph = pagePts && pagePts.h > 0 ? pagePts.h : 0;
+  var gx = pw ? ED_BOX_GRID_PTS / pw : 0.015, gy = ph ? ED_BOX_GRID_PTS / ph : 0.012;
+  var x = Number(box.x) || 0, y = Number(box.y) || 0, w = Number(box.w) || 0, h = Number(box.h) || 0;
+  var tries = [[0, h + gy], [0, -(h + gy)], [w + gx, 0], [-(w + gx), 0]];
+  for (var i = 0; i < tries.length; i++) {
+    var nx = x + tries[i][0], ny = y + tries[i][1];
+    if (nx >= -1e-9 && ny >= -1e-9 && nx + w <= 1 + 1e-9 && ny + h <= 1 + 1e-9) return edBoxMoved_(box, tries[i][0], tries[i][1], pagePts, true);
+  }
+  return edBoxMoved_(box, 0, 2 * gy, pagePts, true);
+}
+/** PURE (Node-pinned) — ED2: a duplicate's name: a trailing number counts up
+ *  past every name in use ("Initial 2" → "Initial 3"); any other name gains
+ *  " 2" (or the next free number). */
+function edBoxDupLabel_(label, used) {
+  var have = {};
+  (used || []).forEach(function (u) { have[String(u || '').trim().toLowerCase()] = true; });
+  var m = /^(.*?)\s*(\d+)$/.exec(String(label || '').trim());
+  var stem = m ? m[1] : String(label || '').trim() || 'Field';
+  var n = m ? Number(m[2]) + 1 : 2;
+  while (have[(stem + ' ' + n).toLowerCase()]) n++;
+  return (stem + ' ' + n).slice(0, 200);
+}
+/** PURE (Node-pinned) — ED2: which boxes are not on the PDF — a page past its
+ *  last, or a rectangle outside the page; '' when every box is on it. */
+function edBoxesOffPage_(fields, pages) {
+  var bad = [];
+  (fields || []).forEach(function (f) {
+    var b = f && f.box;
+    if (!b) return;
+    var on = b.page >= 1 && (!(pages > 0) || b.page <= pages) && b.x >= 0 && b.y >= 0 && b.w > 0 && b.h > 0 && b.x + b.w <= 1.0001 && b.y + b.h <= 1.0001;
+    if (!on) bad.push('"' + (f.label || 'Box') + '" (page ' + b.page + ')');
+  });
+  if (!bad.length) return '';
+  return (bad.length === 1 ? 'The box ' + bad[0] + ' is' : 'The boxes ' + bad.join(', ') + ' are') + ' not on the PDF' + (pages > 0 ? ' — it has ' + pages + ' page' + (pages === 1 ? '' : 's') : '') + '. Move or remove ' + (bad.length === 1 ? 'it' : 'them') + '.';
+}
+// ED2 — zoom. A scale of 1 is 100% (an inch of the page is 96 screen pixels);
+// 'fit' draws each page the width of its column, as before.
+var ED_ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+/** PURE (Node-pinned) — ED2: the zoom one press of + (dir 1) or − (dir -1)
+ *  goes to from `cur` ('fit' counts as the scale it draws at, fitScale). */
+function edZoomNext_(cur, dir, fitScale) {
+  var s = cur === 'fit' ? (Number(fitScale) || 1) : Number(cur) || 1;
+  var st = ED_ZOOM_STEPS;
+  if (dir > 0) { for (var i = 0; i < st.length; i++) if (st[i] > s + 0.001) return st[i]; return st[st.length - 1]; }
+  for (var j = st.length - 1; j >= 0; j--) if (st[j] < s - 0.001) return st[j];
+  return st[0];
+}
+/** PURE (Node-pinned) — ED2: the zoom readout. */
+function edZoomLabel_(zoom, fitScale) {
+  return zoom === 'fit' ? 'Fit' + (fitScale > 0 ? ' · ' + Math.round(fitScale * 100) + '%' : '') : Math.round(Number(zoom) * 100) + '%';
+}
+/** The zoom bar above a document's pages (hidden until they are drawn). */
+function edZoomBarHtml_(forId) {
+  return '<div class="ed-zoom" role="group" aria-label="Zoom" data-ed-zoom-for="' + forId + '" hidden>' +
+    '<button type="button" class="kb-btn" data-ed-zoom="fit" aria-pressed="true">Fit width</button>' +
+    '<button type="button" class="kb-btn" data-ed-zoom="1" aria-pressed="false">100%</button>' +
+    '<button type="button" class="kb-btn" data-ed-zoom="out" aria-label="Zoom out">−</button>' +
+    '<span class="ed-zoom-val" aria-live="polite">Fit</span>' +
+    '<button type="button" class="kb-btn" data-ed-zoom="in" aria-label="Zoom in">+</button></div>';
+}
+// ED2 — what a chosen PDF is told about before boxes go on it. None blocks:
+// each says what may go wrong and what to do.
+var ED_PDF_TINY_PTS = 7;
+/** PURE (Node-pinned) — ED2: "Page 2", "Pages 2 and 3", "Pages 1, 4 and 6". */
+function edPageList_(nums) {
+  var n = (nums || []).slice().sort(function (a, b) { return a - b; });
+  if (n.length === 1) return 'Page ' + n[0];
+  return 'Pages ' + n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+}
+/** PURE (Node-pinned) — ED2: the warnings a chosen PDF earns, from what pdf.js
+ *  read of each page ({page: {w, h, rotate, textSizes}} in points): a page
+ *  that is neither Letter nor A4 (either way up), a page stored rotated, and
+ *  a page whose typical (median) text is under ED_PDF_TINY_PTS. Pages with
+ *  the same warning are named together. */
+function edPdfWarnings_(info) {
+  var near = function (a, b) { return Math.abs(a - b) <= 3; };
+  var paper = function (w, h) { return (near(w, 612) && near(h, 792)) || (near(w, 792) && near(h, 612)) || (near(w, 595.28) && near(h, 841.89)) || (near(w, 841.89) && near(h, 595.28)); };
+  var inch = function (v) { return String(Math.round(v / 72 * 100) / 100); };
+  var sizes = {}, rot = {}, tiny = [], tinyAt = 99, order = [];
+  Object.keys(info || {}).map(Number).sort(function (a, b) { return a - b; }).forEach(function (pn) {
+    var p = info[pn] || {};
+    if (p.w > 0 && p.h > 0 && !paper(p.w, p.h)) {
+      var k = inch(p.w) + ' × ' + inch(p.h) + ' in';
+      if (!sizes[k]) { sizes[k] = []; order.push(['size', k]); }
+      sizes[k].push(pn);
+    }
+    var deg = ((Number(p.rotate) || 0) % 360 + 360) % 360;
+    if (deg) {
+      if (!rot[deg]) { rot[deg] = []; order.push(['rot', deg]); }
+      rot[deg].push(pn);
+    }
+    var ts = (p.textSizes || []).filter(function (s) { return s > 0; }).sort(function (a, b) { return a - b; });
+    if (ts.length >= 5) {
+      var med = ts[Math.floor(ts.length / 2)];
+      if (med < ED_PDF_TINY_PTS) { tiny.push(pn); tinyAt = Math.min(tinyAt, med); }
+    }
+  });
+  var out = [];
+  order.forEach(function (o) {
+    if (o[0] === 'size') {
+      var ps = sizes[o[1]];
+      out.push(edPageList_(ps) + (ps.length === 1 ? ' is ' : ' are ') + o[1] + ', not Letter or A4 — ' + (ps.length === 1 ? 'it' : 'they') + ' may be scaled to fit when printed.');
+    } else {
+      var pr = rot[o[1]];
+      out.push(edPageList_(pr) + (pr.length === 1 ? ' is' : ' are') + ' stored rotated (' + o[1] + '°). ' + (pr.length === 1 ? 'It shows' : 'They show') + ' upright here, but if a box lands wrong on ' + (pr.length === 1 ? 'it' : 'them') + ', save the PDF upright and choose it again.');
+    }
+  });
+  if (tiny.length) out.push(edPageList_(tiny) + (tiny.length === 1 ? ' has' : ' have') + ' small text (about ' + (Math.round(tinyAt * 2) / 2) + ' pt) — zoom in to place boxes, and check it can be read at Fit width.');
+  return out;
+}
+/** PURE (Node-pinned) — ED2: a fillable PDF's own form fields as boxes. Each
+ *  widget is {page, name, alt, ftype ('Tx' | 'Ch' | 'Sig' | 'Btn'), multiline,
+ *  hidden, x, y, w, h (fractions of its page), pagePts}. A text or choice
+ *  field is a text box (a paragraph when multi-line, a date or initials when
+ *  its name says so); a signature field a signature box; a checkbox, radio or
+ *  button has no box type and is counted, not offered. One box per field name
+ *  (a field shown twice is one answer). Named by the field's tooltip (made
+ *  readable when it is an identifier), else its name made readable. Sized up to one line of its type and kept on its page.
+ *  Returns {fields, buttons, repeats}. */
+function edPdfFormBoxes_(widgets) {
+  var seen = {}, fields = [], buttons = 0, repeats = 0;
+  var readable = function (s) {
+    var t = String(s || '').split('.').pop().replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_\-]+/g, ' ').replace(/\[\d+\]/g, '').replace(/\s+/g, ' ').trim();
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : '';
+  };
+  (widgets || []).forEach(function (wd) {
+    if (!wd || wd.hidden) return;
+    if (wd.ftype === 'Btn') { buttons++; return; }
+    if (['Tx', 'Ch', 'Sig'].indexOf(wd.ftype) < 0) return;
+    var key = String(wd.name || '').trim();
+    if (key && seen[key]) { repeats++; return; }
+    if (key) seen[key] = true;
+    // A tooltip written as words is kept; one that is an identifier (many
+    // forms copy the field name into it) is made readable like the name.
+    var alt = String(wd.alt || '').replace(/\s+/g, ' ').trim();
+    var label = (/\s/.test(alt) ? alt : readable(alt)) || readable(wd.name) || ('Field ' + (fields.length + 1));
+    var words = label + ' ' + String(wd.name || '');
+    var type = wd.ftype === 'Sig' ? 'signature' : (/\binitials?\b|\binit\b/i.test(readable(words)) ? 'initials'
+      : (/\bdate\b|\bdob\b/i.test(readable(words)) ? 'date' : (wd.multiline ? 'textarea' : 'text')));
+    var pw = wd.pagePts && wd.pagePts.w > 0 ? wd.pagePts.w : 0, ph = wd.pagePts && wd.pagePts.h > 0 ? wd.pagePts.h : 0;
+    var w = Math.min(1, Math.max(Number(wd.w) || 0, pw ? ED_BOX_MIN_W_PTS / pw : 0.02));
+    var h = Math.min(1, Math.max(Number(wd.h) || 0, ph ? (ED_BOX_MIN_H_PTS[type] || ED_BOX_MIN_H_PTS.text) / ph : 0.008));
+    var box = edBoxMoved_({ page: wd.page, x: Number(wd.x) || 0, y: Number(wd.y) || 0, w: w, h: h }, 0, 0, wd.pagePts, true);
+    fields.push({ label: label.slice(0, 200), type: type, required: true, box: box });
+  });
+  return { fields: fields, buttons: buttons, repeats: repeats };
+}
 /** PURE (Node-pinned) — ED1: how many characters a box holds at a font size
  *  (points): an average character is half the size wide (a sans face), a line
  *  1.2 sizes tall, less a little padding. A date, a signature and initials have
@@ -730,8 +952,15 @@ function edBoxesHtml_(fields, page, mode, responses, opts) {
     var st = ' style="' + edBoxStyle_(b) + '"';
     if (mode === 'edit') {
       var size = edBoxSizeText_(type, pts);
-      return '<div class="' + cls + ' is-edit" data-ed-box="' + i + '"' + st + (size ? ' title="' + esc(size) + '"' : '') + '><span class="ed-pdf-box-lbl">' + esc(f.label || ED_BOX_LABELS[type] || 'Field') + '</span>' +
-        '<button type="button" class="ed-pdf-box-x" data-ed-field-del="' + i + '" aria-label="Remove the box ' + esc(f.label || '') + '">' + icon('x', 10) + '</button></div>';
+      // ED2: focusable (arrow keys move it, Shift resizes), a Duplicate
+      // button beside Remove, and a corner handle that resizes it.
+      var nm = f.label || ED_BOX_LABELS[type] || 'Field';
+      return '<div class="' + cls + ' is-edit" data-ed-box="' + i + '"' + st + (size ? ' title="' + esc(size) + '"' : '') +
+        ' tabindex="0" role="group" aria-label="' + esc('Box ' + nm + ', page ' + b.page + (size ? ', ' + size : '') + '. Arrow keys move it; Shift with an arrow key resizes it.') + '">' +
+        '<span class="ed-pdf-box-lbl">' + esc(nm) + '</span>' +
+        '<button type="button" class="ed-pdf-box-x ed-pdf-box-dup" data-ed-box-dup="' + i + '" aria-label="Duplicate the box ' + esc(f.label || '') + '">' + icon('copy', 10) + '</button>' +
+        '<button type="button" class="ed-pdf-box-x" data-ed-field-del="' + i + '" aria-label="Remove the box ' + esc(f.label || '') + '">' + icon('x', 10) + '</button>' +
+        '<span class="ed-pdf-box-rs" data-ed-box-rs="1" aria-hidden="true"></span></div>';
     }
     // ED1: a signature or initials box shows the drawing — live from the pad
     // while the owner signs (edSignBoxesPaint_), the stored one afterwards.
@@ -828,8 +1057,12 @@ function edSignBoxesPaint_(kind, dataUrl) {
 }
 /** Draw a PDF's pages into `host`, one under another, each a positioned
  *  wrapper (the canvas, then the box layer). opts: alive() — still wanted?;
- *  label; boxes(page) → markup for that page's layer. done(err) once all are
- *  drawn or when one cannot be. */
+ *  label; boxes(page) → markup for that page's layer; onPage(page, pagePts,
+ *  rotate); inspect — ED2: also read each page's text sizes and form fields,
+ *  passed to onInspect(page, {textSizes, widgets}). done(err) once all are
+ *  drawn or when one cannot be. ED2: the pages are kept on host._edPdf, so a
+ *  zoom (edPdfSetZoom_) redraws only the canvases — the box layers, and
+ *  whatever is typed in them, stay. */
 function edRenderPdfPages_(host, bytes, opts, done) {
   opts = opts || {};
   var alive = opts.alive || function () { return true; };
@@ -839,7 +1072,9 @@ function edRenderPdfPages_(host, bytes, opts, done) {
     lib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise.then(function (doc) {
       if (!alive()) return null;
       host.innerHTML = '';
+      host.classList.remove('is-zoomed');
       var n = doc.numPages, chain = Promise.resolve();
+      var keep = host._edPdf = { pages: {}, zoom: 'fit', label: opts.label || 'Document', n: n };
       if (opts.onCount) opts.onCount(n);
       for (var i = 1; i <= n; i++) {
         (function (pn) {
@@ -847,19 +1082,15 @@ function edRenderPdfPages_(host, bytes, opts, done) {
             if (!alive()) return null;
             return doc.getPage(pn).then(function (page) {
               if (!alive()) return null;
-              var width = Math.max(240, (host.clientWidth || 640) - 4);
               var vp1 = page.getViewport({ scale: 1 });
-              var ratio = window.devicePixelRatio || 1;
-              var vp = page.getViewport({ scale: (width / vp1.width) * ratio });
               var wrap = document.createElement('div');
               wrap.className = 'ed-pdf-page';
               wrap.setAttribute('data-page', String(pn));
               // ED1: the page's width in points — what box text is sized against.
               var pagePts = { w: vp1.width, h: vp1.height };
               wrap.style.setProperty('--ed-pw', String(Math.round(vp1.width * 100) / 100));
-              if (opts.onPage) opts.onPage(pn, pagePts);
+              if (opts.onPage) opts.onPage(pn, pagePts, Number(page.rotate) || 0);
               var cv = document.createElement('canvas');
-              cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
               cv.setAttribute('role', 'img');
               cv.setAttribute('aria-label', (opts.label || 'Document') + ' — page ' + pn + ' of ' + n);
               var layer = document.createElement('div');
@@ -867,8 +1098,12 @@ function edRenderPdfPages_(host, bytes, opts, done) {
               layer.innerHTML = opts.boxes ? opts.boxes(pn, pagePts) : '';
               wrap.appendChild(cv); wrap.appendChild(layer);
               host.appendChild(wrap);
-              var ctx = cv.getContext && cv.getContext('2d');
-              return ctx ? page.render({ canvasContext: ctx, viewport: vp }).promise : null;
+              var kp = keep.pages[pn] = { page: page, vp1: vp1, wrap: wrap, cv: cv, task: null };
+              var drawn = edPdfDrawPage_(host, kp);
+              if (!opts.inspect) return drawn;
+              return Promise.resolve(drawn).then(function () { return edPdfInspectPage_(page, vp1, pn); }).then(function (got) {
+                if (alive() && opts.onInspect) opts.onInspect(pn, got);
+              });
             });
           });
         })(i);
@@ -876,6 +1111,91 @@ function edRenderPdfPages_(host, bytes, opts, done) {
       return chain.then(function () { if (alive()) done(null); });
     }).catch(function () { if (alive()) done('The PDF could not be shown.'); });
   });
+}
+/** ED2 — the CSS width a page is drawn at: its column ('fit') or its size in
+ *  points at the zoom (100% = 96 px an inch). */
+function edPdfPageCssWidth_(host, vp1, zoom) {
+  if (zoom === 'fit') return Math.max(240, (host.clientWidth || 640) - 4);
+  return Math.max(120, Math.round(vp1.width * Number(zoom) * 96 / 72));
+}
+/** ED2 — draw (or redraw) one kept page's canvas at the host's zoom; a draw
+ *  still running is cancelled first (pdf.js refuses two on one canvas). */
+function edPdfDrawPage_(host, kp) {
+  var zoom = (host._edPdf && host._edPdf.zoom) || 'fit';
+  var cssW = edPdfPageCssWidth_(host, kp.vp1, zoom);
+  if (zoom === 'fit') kp.wrap.style.removeProperty('width'); else kp.wrap.style.width = cssW + 'px';
+  var ratio = window.devicePixelRatio || 1;
+  var vp = kp.page.getViewport({ scale: (cssW / kp.vp1.width) * ratio });
+  if (kp.task && kp.task.cancel) { try { kp.task.cancel(); } catch (e) {} }
+  kp.cv.width = Math.floor(vp.width); kp.cv.height = Math.floor(vp.height);
+  var ctx = kp.cv.getContext && kp.cv.getContext('2d');
+  if (!ctx) return null;
+  kp.task = kp.page.render({ canvasContext: ctx, viewport: vp });
+  return kp.task && kp.task.promise ? kp.task.promise.catch(function (e) { if (!e || e.name !== 'RenderingCancelledException') throw e; }) : null;
+}
+/** ED2 — what one page holds besides its picture: the size of each piece of
+ *  text (points, from pdf.js's text layer) and its form fields, each as a
+ *  widget edPdfFormBoxes_ reads. A page pdf.js cannot read either from gives
+ *  none (a scan has no text — nothing is guessed). */
+function edPdfInspectPage_(page, vp1, pn) {
+  var out = { textSizes: [], widgets: [] };
+  var text = typeof page.getTextContent === 'function' ? Promise.resolve(page.getTextContent()).then(function (tc) {
+    ((tc && tc.items) || []).forEach(function (it) {
+      var t = it && it.transform;
+      if (!t || !String(it.str || '').trim()) return;
+      var sz = Math.sqrt(t[2] * t[2] + t[3] * t[3]);
+      if (sz > 0) out.textSizes.push(Math.round(sz * 100) / 100);
+    });
+  }).catch(function () {}) : null;
+  var ann = typeof page.getAnnotations === 'function' ? Promise.resolve(page.getAnnotations()).then(function (list) {
+    (list || []).forEach(function (a) {
+      if (!a || a.subtype !== 'Widget' || !a.rect) return;
+      var r = vp1.convertToViewportRectangle ? vp1.convertToViewportRectangle(a.rect) : [a.rect[0], vp1.height - a.rect[3], a.rect[2], vp1.height - a.rect[1]];
+      var x0 = Math.min(r[0], r[2]), x1 = Math.max(r[0], r[2]), y0 = Math.min(r[1], r[3]), y1 = Math.max(r[1], r[3]);
+      out.widgets.push({ page: pn, name: a.fieldName || '', alt: a.alternativeText || '', ftype: a.fieldType || '',
+        multiline: !!a.multiLine, hidden: !!a.hidden, pagePts: { w: vp1.width, h: vp1.height },
+        x: x0 / vp1.width, y: y0 / vp1.height, w: (x1 - x0) / vp1.width, h: (y1 - y0) / vp1.height });
+    });
+  }).catch(function () {}) : null;
+  return Promise.all([text, ann]).then(function () { return out; });
+}
+/** ED2 — zoom a drawn document: 'fit', a scale, 'in' or 'out'. Only the
+ *  canvases are redrawn; the bar's buttons and readout follow. */
+function edPdfSetZoom_(host, zoom) {
+  var keep = host && host._edPdf;
+  if (!keep) return;
+  var first = keep.pages[1];
+  var fit = first ? edPdfPageCssWidth_(host, first.vp1, 'fit') / (first.vp1.width * 96 / 72) : 1;
+  if (zoom === 'in' || zoom === 'out') zoom = edZoomNext_(keep.zoom, zoom === 'in' ? 1 : -1, fit);
+  keep.zoom = zoom === 'fit' ? 'fit' : (Number(zoom) || 1);
+  host.classList.toggle('is-zoomed', keep.zoom !== 'fit');
+  Object.keys(keep.pages).forEach(function (pn) { edPdfDrawPage_(host, keep.pages[pn]); });
+  var bar = document.querySelector('.ed-zoom[data-ed-zoom-for="' + host.id + '"]');
+  if (!bar) return;
+  bar.querySelectorAll('[data-ed-zoom="fit"], [data-ed-zoom="1"]').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-ed-zoom') === String(keep.zoom)));
+  });
+  var val = bar.querySelector('.ed-zoom-val'); if (val) val.textContent = edZoomLabel_(keep.zoom, fit);
+  var inB = bar.querySelector('[data-ed-zoom="in"]'), outB = bar.querySelector('[data-ed-zoom="out"]');
+  var s = keep.zoom === 'fit' ? fit : keep.zoom;
+  if (inB) inB.disabled = s >= ED_ZOOM_STEPS[ED_ZOOM_STEPS.length - 1] - 0.001;
+  if (outB) outB.disabled = s <= ED_ZOOM_STEPS[0] + 0.001;
+}
+/** ED2 — show the zoom bar for a drawn document and wire its buttons once. */
+function edZoomBarShow_(hostId) {
+  var bar = document.querySelector('.ed-zoom[data-ed-zoom-for="' + hostId + '"]');
+  var host = document.getElementById(hostId);
+  if (!bar || !host) return;
+  bar.hidden = false;
+  if (!bar._edWired) {
+    bar._edWired = true;
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-ed-zoom]');
+      var h = document.getElementById(hostId);
+      if (b && h) edPdfSetZoom_(h, b.getAttribute('data-ed-zoom'));
+    });
+  }
+  edPdfSetZoom_(host, host._edPdf ? host._edPdf.zoom : 'fit');
 }
 /** The reader: fetch the document's PDF (re-hashed by the server) and draw it
  *  with its boxes — inputs for the owner while it is open, the answers after. */
@@ -901,6 +1221,7 @@ function edLoadDocPdf_(doc) {
           { pagePts: pagePts, signature: doc.signatureImage, initials: doc.initialsImage }); } }, function (err) {
         if (err) { fail(err + (err.slice(-1) === '.' ? '' : '.')); return; }
         host.removeAttribute('aria-busy');
+        edZoomBarShow_('ed-pdf-pages');   // ED2
         // ED1: fit every box's text; in the read-only view an answer the box
         // cannot show is listed in full beneath the pages.
         var over = edFitBoxes_(host, doc.fields, mode);
@@ -994,19 +1315,32 @@ function edIssuePdfFile_(file) {
     // Boxes belong to the PDF they were drawn on — a new file starts clean.
     ED_STATE.issueFields = (ED_STATE.issueFields || []).filter(function (f) { return !f.box; });
     ED_STATE.issuePageSizes = {};   // ED1: each page's size in points, as it is drawn
+    ED_STATE.issuePageInfo = {};    // ED2: size, rotation and text sizes, for the warnings
+    ED_STATE.issueWidgets = [];     // ED2: the PDF's own form fields
+    ED_STATE.issueFormOffer = null;
+    edIssuePdfNotes_([], null);
     edRenderIssueFields_();
     var host = document.getElementById('ed-is-pdf-pages');
     if (!host) return;
     host.setAttribute('aria-busy', 'true');
     edRenderPdfPages_(host, bytes, { alive: function () { return seq === ED_STATE.issuePdfSeq && !!document.getElementById('ed-is-pdf-pages'); },
       label: file.name, boxes: function (pn, pagePts) { return edBoxesHtml_(ED_STATE.issueFields, pn, 'edit', null, { pagePts: pagePts }); },
-      onPage: function (pn, pagePts) { ED_STATE.issuePageSizes[pn] = pagePts; },
+      onPage: function (pn, pagePts, rotate) { ED_STATE.issuePageSizes[pn] = pagePts; ED_STATE.issuePageInfo[pn] = { w: pagePts.w, h: pagePts.h, rotate: rotate, textSizes: [] }; },
+      inspect: true,
+      onInspect: function (pn, got) {
+        if (ED_STATE.issuePageInfo[pn]) ED_STATE.issuePageInfo[pn].textSizes = got.textSizes;
+        ED_STATE.issueWidgets = ED_STATE.issueWidgets.concat(got.widgets);
+      },
       onCount: function (n) { ED_STATE.issuePdfPages = n; } }, function (err) {
       host.removeAttribute('aria-busy');
-      if (err) { ED_STATE.issuePdf = null; host.innerHTML = ''; say(err + ' Choose another file.', true); return; }
+      if (err) { ED_STATE.issuePdf = null; host.innerHTML = ''; host._edPdf = null; say(err + ' Choose another file.', true); return; }
       ED_STATE.issuePdf = { dataUrl: dataUrl, name: file.name || 'document.pdf' };
       edRenderIssueFields_();   // ED1: the boxes' size readouts now know their pages
       say(file.name + ' · ' + (ED_STATE.issuePdfPages || 0) + ' page' + (ED_STATE.issuePdfPages === 1 ? '' : 's') + '. Drag on a page to place a box the employee fills in.');
+      var offer = edPdfFormBoxes_(ED_STATE.issueWidgets);
+      ED_STATE.issueFormOffer = offer.fields.length ? offer : null;
+      edIssuePdfNotes_(edPdfWarnings_(ED_STATE.issuePageInfo), offer);
+      edZoomBarShow_('ed-is-pdf-pages');
     });
   };
   reader.readAsDataURL(file);
@@ -1034,6 +1368,63 @@ function edAddBox_(page, rect) {
   // not jump the view down to the field list.
   if (inputs.length) { var last = inputs[inputs.length - 1]; try { last.focus({ preventScroll: true }); } catch (e) { last.focus(); } if (last.select) last.select(); }
 }
+/** ED2 — the chosen PDF's warnings, and the offer of its own form fields. */
+function edIssuePdfNotes_(warnings, offer) {
+  var wl = document.getElementById('ed-is-pdf-warn');
+  if (wl) {
+    wl.innerHTML = (warnings || []).map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('');
+    wl.hidden = !(warnings && warnings.length);
+  }
+  var ob = document.getElementById('ed-is-pdf-offer');
+  if (!ob) return;
+  var n = offer && offer.fields ? offer.fields.length : 0;
+  if (!n) { ob.hidden = true; ob.innerHTML = ''; return; }
+  var left = [];
+  if (offer.buttons) left.push(offer.buttons + ' checkbox' + (offer.buttons === 1 ? '' : 'es') + ' or button' + (offer.buttons === 1 ? '' : 's') + ' left out — a box takes text, a date, a signature or initials');
+  if (offer.repeats) left.push(offer.repeats + ' repeat' + (offer.repeats === 1 ? '' : 's') + ' of a field shown twice left out — one box, one answer');
+  ob.innerHTML = '<span>This PDF has ' + n + ' fill-in field' + (n === 1 ? '' : 's') + ' of its own.' + (left.length ? ' (' + esc(left.join('; ')) + '.)' : '') + '</span>' +
+    '<button type="button" class="kb-btn" data-ed-form-use="1">' + icon('plus', 12) + ' Use ' + (n === 1 ? 'it as a box' : 'them as boxes') + '</button>';
+  ob.hidden = false;
+}
+/** ED2 — the offer taken: the PDF's own fields become boxes (up to the field
+ *  cap), each named and typed as edPdfFormBoxes_ read it, to check. */
+function edUseFormBoxes_() {
+  var offer = ED_STATE.issueFormOffer;
+  if (!offer || !ED_STATE.issuePdf) return;
+  var room = Math.max(0, ED_FIELD_CAP - (ED_STATE.issueFields || []).length);
+  var take = offer.fields.slice(0, room);
+  take.forEach(function (f) { ED_STATE.issueFields.push({ label: f.label, type: f.type, required: f.required, box: Object.assign({}, f.box) }); });
+  var sigEl = document.getElementById('ed-is-sig');
+  var sign = take.some(function (f) { return ED_SIGN_TYPES.indexOf(f.type) >= 0; });
+  var turnedOn = sign && sigEl && !sigEl.checked;
+  if (turnedOn) sigEl.checked = true;
+  ED_STATE.issueFormOffer = null;
+  edIssuePdfNotes_(edPdfWarnings_(ED_STATE.issuePageInfo || {}), null);
+  edRenderIssueFields_();
+  edRepaintIssueBoxes_();
+  showToast(take.length + ' box' + (take.length === 1 ? '' : 'es') + ' added from the PDF’s own fields — check each one’s name and type.' +
+    (offer.fields.length > take.length ? ' ' + (offer.fields.length - take.length) + ' more did not fit (a document holds at most ' + ED_FIELD_CAP + ' fields).' : '') +
+    (turnedOn ? ' "Require signature" is now on.' : ''), take.length ? 'success' : 'error');
+}
+/** ED2 — a copy of a box, just under it (edBoxDuplicate_), named the next in
+ *  its series, listed after it, and focused so the arrow keys move it. */
+function edDuplicateBox_(i) {
+  var f = (ED_STATE.issueFields || [])[i];
+  if (!f || !f.box) return;
+  if (ED_STATE.issueFields.length >= ED_FIELD_CAP) { showToast('A document holds at most ' + ED_FIELD_CAP + ' fields.', 'error'); return; }
+  var used = ED_STATE.issueFields.map(function (x) { return x.label; });
+  ED_STATE.issueFields.splice(i + 1, 0, { label: edBoxDupLabel_(f.label, used), type: f.type, required: f.required,
+    box: edBoxDuplicate_(f.box, (ED_STATE.issuePageSizes || {})[f.box.page]) });
+  edBoxCommit_(i + 1);
+}
+/** ED2 — after a box moved, resized or was copied: the field list (its chip)
+ *  and the page layers repainted, and focus put back on the box. */
+function edBoxCommit_(i) {
+  edRenderIssueFields_();
+  edRepaintIssueBoxes_();
+  var el = document.querySelector('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="' + i + '"]');
+  if (el) { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } }
+}
 /** Repaint every page's box layer from the fields (after an add, a remove or
  *  a rename) — the canvases are left alone. */
 function edRepaintIssueBoxes_() {
@@ -1043,15 +1434,32 @@ function edRepaintIssueBoxes_() {
     if (layer) layer.innerHTML = edBoxesHtml_(ED_STATE.issueFields, pn, 'edit', null, { pagePts: (ED_STATE.issuePageSizes || {})[pn] });
   });
 }
-/** Pointer drawing on the issue form's pages: press, drag, release. */
+/** Pointer drawing on the issue form's pages: press, drag, release. ED2: a
+ *  press on a placed box moves it (its corner handle resizes it) on the 1/8-
+ *  inch grid, Alt held placing it freely; a press that does not travel 3px
+ *  only selects it. Arrow keys on a selected box nudge it (Shift: resize). */
 function edIssuePdfPointer_(host) {
   if (!host || host._edDraw) return;
   host._edDraw = true;
-  var drag = null;
+  var drag = null, edit = null;
   var frac = function (pg, e) { var r = pg.getBoundingClientRect(); return { x: r.width ? (e.clientX - r.left) / r.width : 0, y: r.height ? (e.clientY - r.top) / r.height : 0 }; };
   host.addEventListener('pointerdown', function (e) {
     var pg = e.target.closest && e.target.closest('.ed-pdf-page');
-    if (!pg || e.target.closest('.ed-pdf-box')) return;
+    if (!pg) return;
+    var bx = e.target.closest('.ed-pdf-box.is-edit');
+    if (bx) {
+      if (e.target.closest('button')) return;   // Duplicate and Remove are clicks
+      var i = +bx.getAttribute('data-ed-box'), f = (ED_STATE.issueFields || [])[i];
+      if (!f || !f.box) return;
+      var r = pg.getBoundingClientRect();
+      edit = { pg: pg, el: bx, i: i, resize: !!e.target.closest('[data-ed-box-rs]'), sx: e.clientX, sy: e.clientY,
+        rw: r.width || 1, rh: r.height || 1, from: Object.assign({}, f.box), next: null };
+      try { pg.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+      try { bx.focus({ preventScroll: true }); } catch (_) { bx.focus(); }
+      return;
+    }
+    if (e.target.closest('.ed-pdf-box')) return;
     var p = frac(pg, e);
     var ghost = document.createElement('div');
     ghost.className = 'ed-pdf-box is-ghost';
@@ -1061,11 +1469,29 @@ function edIssuePdfPointer_(host) {
     e.preventDefault();
   });
   host.addEventListener('pointermove', function (e) {
+    if (edit) {
+      var px = e.clientX - edit.sx, py = e.clientY - edit.sy;
+      if (!edit.next && Math.abs(px) < 3 && Math.abs(py) < 3) return;
+      var f = ED_STATE.issueFields[edit.i], pts = (ED_STATE.issuePageSizes || {})[edit.from.page];
+      edit.next = edit.resize ? edBoxResized_(edit.from, px / edit.rw, py / edit.rh, f.type, pts, e.altKey)
+        : edBoxMoved_(edit.from, px / edit.rw, py / edit.rh, pts, e.altKey);
+      edit.el.classList.add('is-moving');
+      edit.el.style.cssText = edBoxStyle_(edit.next);
+      return;
+    }
     if (!drag) return;
     var p = frac(drag.pg, e);
     drag.ghost.setAttribute('style', edBoxStyle_({ x: Math.min(drag.x0, p.x), y: Math.min(drag.y0, p.y), w: Math.abs(p.x - drag.x0), h: Math.abs(p.y - drag.y0) }));
   });
   var end = function (e) {
+    if (edit) {
+      var ed = edit; edit = null;
+      ed.el.classList.remove('is-moving');
+      if (e.type === 'pointercancel' || !ed.next) { ed.el.style.cssText = edBoxStyle_(ed.from); return; }
+      ED_STATE.issueFields[ed.i].box = ed.next;
+      edBoxCommit_(ed.i);
+      return;
+    }
     if (!drag) return;
     var d = drag; drag = null;
     if (d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
@@ -1076,6 +1502,17 @@ function edIssuePdfPointer_(host) {
   };
   host.addEventListener('pointerup', end);
   host.addEventListener('pointercancel', end);
+  host.addEventListener('keydown', function (e) {
+    var bx = e.target && e.target.classList && e.target.classList.contains('is-edit') ? e.target : null;
+    if (!bx) return;
+    var i = +bx.getAttribute('data-ed-box'), f = (ED_STATE.issueFields || [])[i];
+    if (!f || !f.box) return;
+    var next = edBoxNudge_(f.box, e.key, e.shiftKey, f.type, (ED_STATE.issuePageSizes || {})[f.box.page]);
+    if (!next) return;
+    e.preventDefault();
+    f.box = next;
+    edBoxCommit_(i);
+  });
 }
 
 // ── Manager view: Issue Docs ───────────────────────────────────────────────
@@ -1183,9 +1620,14 @@ function edRenderMgr_() {
       '<input type="file" id="ed-is-pdf" accept="application/pdf,.pdf" aria-label="PDF file" hidden></div>' +
       '<div class="ed-box-bar"><label for="ed-box-type">Box type</label><select id="ed-box-type"><option value="text">Short text</option><option value="date">Date</option><option value="textarea">Paragraph</option>' +
         '<option value="signature">Signature</option><option value="initials">Initials</option></select>' +
-      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in. Each box is a field below \u2014 name it there. A signature or initials box is filled by what the employee draws when signing.</span></div>' +
+      '<span class="hint">Drag on a page (or tap it) to place a highlighted box the employee fills in. Drag a box to move it, or its corner to resize it \u2014 both snap to 1/8 inch (hold Alt to place it freely); a selected box moves with the arrow keys, and resizes with Shift and an arrow key. Each box is a field below \u2014 name it there. A signature or initials box is filled by what the employee draws when signing.</span></div>' +
       edBoxLegendHtml_() +
       '<div class="hint" id="ed-is-pdf-msg" role="status"></div>' +
+      // ED2: what the chosen PDF is warned about, its own form fields offered
+      // as boxes, and the zoom bar.
+      '<ul class="ed-pdf-warn" id="ed-is-pdf-warn" hidden></ul>' +
+      '<div class="ed-pdf-offer" id="ed-is-pdf-offer" role="status" hidden></div>' +
+      edZoomBarHtml_('ed-is-pdf-pages') +
       '<div class="ed-pdf" id="ed-is-pdf-pages"></div></div></div>' +
     '<div class="row"><div style="flex:1;width:100%;"><label for="ed-is-body" id="ed-is-body-lbl">Body (markdown — frozen at issue)</label>' +
       '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
@@ -1277,6 +1719,8 @@ function edRenderMgr_() {
       if ((t = e.target.closest('[data-ed-release]'))) { edRelease_(t.getAttribute('data-ed-release')); return; }
       if ((t = e.target.closest('[data-ed-tpl-del]'))) { edDeleteTemplate_(t.getAttribute('data-ed-tpl-del')); return; }
       if ((t = e.target.closest('[data-ed-field-del]'))) { edRemoveField_(+t.getAttribute('data-ed-field-del')); return; }
+      if ((t = e.target.closest('[data-ed-box-dup]'))) { edDuplicateBox_(+t.getAttribute('data-ed-box-dup')); return; }   // ED2
+      if ((t = e.target.closest('[data-ed-form-use]'))) { edUseFormBoxes_(); return; }   // ED2
       if ((t = e.target.closest('[data-ed-void]'))) edVoid_(t.getAttribute('data-ed-void'));
     });
   }
@@ -1462,8 +1906,13 @@ function edSubmitIssue_(release) {
   if (asPdf) {
     // Batch H: the PDF is the document; the body is an optional note.
     if (!ED_STATE.issuePdf) { showToast('Choose the PDF file first.', 'error'); return; }
+    // ED2: a box off the PDF (a page it does not have, or past an edge) is
+    // refused here, and again by the server.
+    var off = edBoxesOffPage_(payload.fields, ED_STATE.issuePdfPages);
+    if (off) { showToast(off, 'error'); return; }
     payload.pdf = ED_STATE.issuePdf.dataUrl;
     payload.pdfName = ED_STATE.issuePdf.name;
+    payload.pdfPages = ED_STATE.issuePdfPages || 0;
   } else if (!payload.bodyMd.trim()) { showToast('Document body is required.', 'error'); return; }
   uiConfirm({
     title: release ? 'Issue & release document?' : 'Save as draft?',

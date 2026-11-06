@@ -42947,6 +42947,7 @@ const hCtx_ = (extra) => {
       base64Decode: (s) => Array.from(Buffer.from(s, 'base64')).map((b) => (b > 127 ? b - 256 : b)),
       base64Encode: (b) => Buffer.from(b.map((x) => x & 255)).toString('base64'),
       getUuid: () => 'doc-1',
+      newBlob: (bytes) => ({ getDataAsString: () => Buffer.from(bytes.map((x) => x & 255)).toString('latin1') }),   // ED2
     } }, extra || {}));
   ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_SIGN_FIELD_TYPES = \\[[^\\]]*\\];',
     'const EMPDOC_FIELD_CAP = \\d+;', 'const EMPDOC_FIELD_LABEL_MAX = \\d+;', 'const EMPDOC_PDF_KEY_RE = /[^;]*;', 'const EMPDOC_PDF_MAX_BYTES = \\d+;',
@@ -42954,7 +42955,7 @@ const hCtx_ = (extra) => {
     'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
   ['empDocSha256Hex_', 'empDocValidateIssue_', 'empDocValidateFields_', 'empDocNormBox_', 'empDocPdfLine_', 'empDocPdfFromBody_',
-    'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
+    'empDocPdfPageCount_', 'empDocPdfPagesOf_', 'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
@@ -43226,6 +43227,135 @@ test('ED1: the box markup — the type\'s class, required solid; a fill box\'s i
 
 
 // ── P1 (operator 2026-11-05): the pay-week timesheet reminder ──────────────
+console.log('\nOperator round 2026-11-06 — ED2 (Employee Docs box editor & zoom)');
+const ed2Ctx_ = () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array });
+  ['ED_SIGN_TYPES', 'ED_FIELD_CAP', 'ED_BOX_MIN_H_PTS', 'ED_BOX_GRID_PTS', 'ED_BOX_MIN_W_PTS', 'ED_ZOOM_STEPS', 'ED_PDF_TINY_PTS'].forEach((n) => {
+    const m = new RegExp('var ' + n + ' = [^;]+;').exec(ed); assert.ok(m, n); vm.runInContext(m[0], ctx);
+  });
+  ['edBoxSnap_', 'edBoxMoved_', 'edBoxResized_', 'edBoxNudge_', 'edBoxDuplicate_', 'edBoxDupLabel_', 'edBoxesOffPage_', 'edZoomNext_', 'edZoomLabel_',
+    'edPageList_', 'edPdfWarnings_', 'edPdfFormBoxes_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  return { ctx, ed };
+};
+const ed2Letter = { w: 612, h: 792 };
+const ed2OnGrid = (v, dim) => Math.abs(Math.round(v * dim / 9) - v * dim / 9) < 0.01;
+
+test('ED2: a box moves and resizes on the 1/8-inch grid of its page and never leaves it — Alt places it freely; resizing keeps its top-left corner and never goes below one line of its type or 1/4 inch wide; arrow keys move one step and Shift resizes (driven)', () => {
+  const { ctx } = ed2Ctx_();
+  const b = { page: 2, x: 0.1, y: 0.1, w: 0.3, h: 0.03 };
+  let m = hJ(ctx.edBoxMoved_(b, 0.0123, 0.0071, ed2Letter));
+  assert.ok(ed2OnGrid(m.x, 612) && ed2OnGrid(m.y, 792), 'the corner lands on a 9pt line: ' + JSON.stringify(m));
+  assert.ok(m.page === 2 && m.w === 0.3 && m.h === 0.03, 'its page and size are kept');
+  m = hJ(ctx.edBoxMoved_(b, 0.0123, 0.0071, ed2Letter, true));
+  assert.deepStrictEqual([m.x, m.y], [0.1123, 0.1071], 'Alt: exactly where it was put');
+  m = hJ(ctx.edBoxMoved_(b, 2, -2, ed2Letter));
+  assert.deepStrictEqual([m.x, m.y], [0.7, 0], 'dragged past the edge: on the page, whole');
+  let r = hJ(ctx.edBoxResized_(b, 0.05, 0.004, 'text', ed2Letter));
+  assert.ok(r.x === 0.1 && r.y === 0.1, 'the top-left corner stays');
+  assert.ok(ed2OnGrid(r.x + r.w, 612) && ed2OnGrid(r.y + r.h, 792), 'the dragged corner lands on the grid');
+  r = hJ(ctx.edBoxResized_(b, -1, -1, 'textarea', ed2Letter));
+  assert.ok(Math.abs(r.w * 612 - 18) < 0.1 && Math.abs(r.h * 792 - 24) < 0.1, 'never below 1/4 inch wide or a paragraph\'s line: ' + JSON.stringify(r));
+  r = hJ(ctx.edBoxResized_(b, 5, 5, 'text', ed2Letter));
+  assert.ok(r.x + r.w <= 1.0001 && r.y + r.h <= 1.0001, 'never past the page');
+  const on = { page: 1, x: 90 / 612, y: 90 / 792, w: 180 / 612, h: 18 / 792 };
+  m = hJ(ctx.edBoxNudge_(on, 'ArrowRight', false, 'text', ed2Letter));
+  assert.ok(Math.abs(m.x * 612 - 99) < 0.1 && Math.abs(m.y * 792 - 90) < 0.1, 'one step right');
+  m = hJ(ctx.edBoxNudge_(on, 'ArrowUp', false, 'text', ed2Letter));
+  assert.ok(Math.abs(m.y * 792 - 81) < 0.1, 'one step up');
+  m = hJ(ctx.edBoxNudge_(on, 'ArrowDown', true, 'text', ed2Letter));
+  assert.ok(Math.abs(m.h * 792 - 27) < 0.1 && Math.abs(m.y * 792 - 90) < 0.1, 'Shift: one step taller, in place');
+  assert.strictEqual(ctx.edBoxNudge_(on, 'Enter', false, 'text', ed2Letter), null, 'any other key does nothing');
+});
+
+test('ED2: Duplicate puts the copy one grid step under the original, else above, else beside it, and always on the page; it is named the next in its series; a box off the PDF is named, and Issue is refused for it (driven)', () => {
+  const { ctx } = ed2Ctx_();
+  const b = { page: 1, x: 0.2, y: 0.3, w: 0.3, h: 0.03 };
+  let d = hJ(ctx.edBoxDuplicate_(b, ed2Letter));
+  assert.ok(d.x === 0.2 && Math.abs(d.y - (0.3 + 0.03 + 9 / 792)) < 0.0002 && d.page === 1 && d.w === 0.3, 'under it: ' + JSON.stringify(d));
+  d = hJ(ctx.edBoxDuplicate_(Object.assign({}, b, { y: 0.96 }), ed2Letter));
+  assert.ok(d.y < 0.96 && d.y + d.h <= 0.96, 'no room below: above');
+  d = hJ(ctx.edBoxDuplicate_({ page: 1, x: 0.1, y: 0, w: 0.3, h: 1 }, ed2Letter));
+  assert.ok(d.x > 0.4 && d.y === 0, 'a full-height box: beside it');
+  d = hJ(ctx.edBoxDuplicate_({ page: 1, x: 0, y: 0, w: 1, h: 1 }, ed2Letter));
+  assert.ok(d.x === 0 && d.y === 0 && d.w === 1, 'nowhere to go: still on the page');
+  assert.strictEqual(ctx.edBoxDupLabel_('Initial 1', ['Initial 1', 'Initial 2']), 'Initial 3', 'counts past the names in use');
+  assert.strictEqual(ctx.edBoxDupLabel_('Review date', ['Review date']), 'Review date 2');
+  assert.strictEqual(ctx.edBoxDupLabel_('', []), 'Field 2');
+  const f = (label, box) => ({ label, type: 'text', box });
+  assert.strictEqual(ctx.edBoxesOffPage_([f('A', { page: 1, x: 0, y: 0, w: 1, h: 1 }), { label: 'No box' }], 2), '', 'on the page, and a field with no box, pass');
+  assert.strictEqual(ctx.edBoxesOffPage_([f('Late', { page: 3, x: 0.1, y: 0.1, w: 0.2, h: 0.02 })], 2), 'The box "Late" (page 3) is not on the PDF — it has 2 pages. Move or remove it.');
+  assert.ok(/The boxes "Edge" \(page 1\), "Late" \(page 4\) are not on the PDF/.test(ctx.edBoxesOffPage_([f('Edge', { page: 1, x: 0.9, y: 0.1, w: 0.2, h: 0.02 }), f('Late', { page: 4, x: 0, y: 0, w: 0.1, h: 0.1 })], 2)), 'past an edge, or past the last page');
+  assert.strictEqual(ctx.ED_FIELD_CAP, Number(/const EMPDOC_FIELD_CAP = (\d+);/.exec(serverSource())[1]), 'the cap the copies stop at is the server\'s');
+});
+
+test('ED2: zoom — + and − step through 50%…300% from wherever the page is (Fit counts as the scale it draws at), stop at the ends, and say what they show (driven)', () => {
+  const { ctx } = ed2Ctx_();
+  assert.deepStrictEqual([ctx.edZoomNext_('fit', 1, 0.62), ctx.edZoomNext_('fit', -1, 0.62)], [0.75, 0.5]);
+  assert.deepStrictEqual([ctx.edZoomNext_(1, 1), ctx.edZoomNext_(1, -1), ctx.edZoomNext_(1.1, -1)], [1.25, 0.75, 1]);
+  assert.deepStrictEqual([ctx.edZoomNext_(3, 1), ctx.edZoomNext_(0.5, -1)], [3, 0.5], 'the ends hold');
+  assert.deepStrictEqual([ctx.edZoomLabel_('fit', 0.814), ctx.edZoomLabel_(1.25), ctx.edZoomLabel_('fit')], ['Fit · 81%', '125%', 'Fit']);
+});
+
+test('ED2: a chosen PDF is warned about a page that is neither Letter nor A4 (either way up), a page stored rotated, and a page whose typical text is under 7 pt — pages with the same warning named together, a page with too little text never judged (driven)', () => {
+  const { ctx } = ed2Ctx_();
+  const many = (pt) => Array(9).fill(pt);
+  assert.deepStrictEqual(hJ(ctx.edPdfWarnings_({ 1: { w: 612, h: 792, rotate: 0, textSizes: many(11) }, 2: { w: 792, h: 612 }, 3: { w: 595.28, h: 841.89 }, 4: { w: 842, h: 595 } })), [], 'Letter and A4, either way up');
+  const w = hJ(ctx.edPdfWarnings_({ 1: { w: 612, h: 1008, textSizes: many(5).concat([12, 12]) }, 2: { w: 612, h: 1008, rotate: 90 }, 3: { w: 612, h: 792, rotate: -270, textSizes: [4, 4] }, 4: { w: 612, h: 792, rotate: 360, textSizes: many(6.2) } }));
+  assert.deepStrictEqual(w, [
+    'Pages 1 and 2 are 8.5 × 14 in, not Letter or A4 — they may be scaled to fit when printed.',
+    'Pages 2 and 3 are stored rotated (90°). They show upright here, but if a box lands wrong on them, save the PDF upright and choose it again.',
+    'Pages 1 and 4 have small text (about 5 pt) — zoom in to place boxes, and check it can be read at Fit width.']);
+  assert.deepStrictEqual(hJ(ctx.edPdfWarnings_({ 1: { w: 612, h: 792, textSizes: many(5).concat(many(12)) } })), [], 'a little fine print under normal text is not small text');
+  assert.strictEqual(ctx.edPageList_([5, 1, 3]), 'Pages 1, 3 and 5');
+});
+
+test('ED2: a fillable PDF\'s own fields become boxes — text, paragraph, date, initials and signature by what the field is and says; a checkbox or button is counted, never offered; a field shown twice is one box; named by its tooltip (made readable when it is an identifier) or its name; raised to one line and kept on its page (driven)', () => {
+  const { ctx } = ed2Ctx_();
+  const W = (o) => Object.assign({ page: 1, ftype: 'Tx', x: 0.1, y: 0.1, w: 0.3, h: 0.025, pagePts: ed2Letter }, o);
+  const o = hJ(ctx.edPdfFormBoxes_([
+    W({ name: 'employee_name', alt: 'employee_name' }),
+    W({ name: 'Text7', alt: 'Work location and hours', multiline: true }),
+    W({ name: 'startDate' }),
+    W({ name: 'emp_initials', w: 0.01, h: 0.002 }),
+    W({ name: 'sig1', ftype: 'Sig', alt: 'Employee signature' }),
+    W({ name: 'agree', ftype: 'Btn' }), W({ name: 'opt', ftype: 'Btn' }),
+    W({ name: 'employee_name', page: 2 }),
+    W({ name: 'secret', hidden: true }),
+    W({ name: 'form.sub.lastName', x: 0.95, w: 0.2 }),
+    W({ name: '', alt: '' })]));
+  assert.deepStrictEqual(o.fields.map((f) => [f.label, f.type]), [['Employee name', 'text'], ['Work location and hours', 'textarea'], ['Start Date', 'date'],
+    ['Emp initials', 'initials'], ['Employee signature', 'signature'], ['Last Name', 'text'], ['Field 7', 'text']]);
+  assert.deepStrictEqual([o.buttons, o.repeats], [2, 1], 'two checkboxes counted, the repeat of employee_name dropped');
+  assert.ok(o.fields.every((f) => f.required === true && f.box.page === 1));
+  const ini = o.fields[3].box;
+  assert.ok(Math.abs(ini.w * 612 - 18) < 0.1 && Math.abs(ini.h * 792 - 18) < 0.1, 'raised to 1/4 inch wide and one initials line: ' + JSON.stringify(ini));
+  const last = o.fields[5].box;
+  assert.ok(last.x + last.w <= 1.0001 && last.x === 0.8, 'kept on its page');
+});
+
+test('ED2: the server bounds a box by the PDF\'s page count — read from the bytes where the page tree is written in the clear (a nested dictionary skipped, a /Page never counted), else the count the browser read, else only the page cap; a box past it is refused by name; the upload carries the count to the check (driven + source)', () => {
+  const c = hCtx_();
+  assert.strictEqual(c.empDocPdfPageCount_('1 0 obj << /Type /Catalog /Pages 2 0 R >> 2 0 obj << /Type /Pages /Resources << /Font << /F1 5 0 R >> >> /Kids [3 0 R 4 0 R] /Count 2 >> 3 0 obj << /Type /Page /Parent 2 0 R >>'), 2);
+  assert.strictEqual(c.empDocPdfPageCount_('<< /Type /Pages /Kids [<< /Count 9 >>] /Count 4 >> << /Type /Pages /Count 1 >>'), 4, 'a nested /Count is not the tree\'s; the root (the largest) is');
+  assert.strictEqual(c.empDocPdfPageCount_('<</Count 3/Type/Pages/Kids[1 0 R]>>'), 3, 'any key order, no spaces');
+  assert.strictEqual(c.empDocPdfPageCount_('<< /Type /Page /Count 7 >> << /Type /PagesX /Count 7 >>'), null, 'a page, or another name, is not the tree');
+  const real = (f) => c.empDocPdfPageCount_(fs.readFileSync(path.join(__dirname, '..', '..', 'forms', f)).toString('latin1'));
+  assert.strictEqual(real('Sample PT OT Rx.pdf'), 1, 'a real one-page form');
+  assert.strictEqual(real('EAA (Economic Assistance Application) Form.pdf'), null, 'a page tree in an object stream: not guessed');
+  assert.deepStrictEqual([c.empDocPdfPagesOf_(3, 9), c.empDocPdfPagesOf_(null, 2), c.empDocPdfPagesOf_(null, 2.5), c.empDocPdfPagesOf_(null, 999), c.empDocPdfPagesOf_(null, '')], [3, 2, 0, 0, 0],
+    'the bytes win; a claim must be a whole page count in range');
+  const sha = 'a'.repeat(64);
+  const base = { empId: 'E1', docType: 'pip', title: 'PIP', fields: [{ label: 'Late', box: { page: 3, x: 0.1, y: 0.1, w: 0.2, h: 0.02 } }] };
+  assert.strictEqual(hJ(c.empDocValidateIssue_(base, { sha, name: 'p.pdf', pages: 2 })).error, 'The box for "Late" is on page 3, but the PDF has 2 pages.');
+  assert.strictEqual(hJ(c.empDocValidateIssue_(Object.assign({ pdfPages: 2 }, base), { sha, name: 'p.pdf', pages: null })).error, 'The box for "Late" is on page 3, but the PDF has 2 pages.', 'the browser\'s count, when the bytes cannot say');
+  assert.ok(hJ(c.empDocValidateIssue_(Object.assign({ pdfPages: 2 }, base), { sha, name: 'p.pdf', pages: 3 })).ok, 'the bytes\' count over the claim');
+  assert.ok(hJ(c.empDocValidateIssue_(base, { sha, name: 'p.pdf', pages: null })).ok, 'unknown: the page cap alone');
+  const item = hJ(c.empDocPdfItem_('data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n<< /Type /Pages /Kids [] /Count 5 >>\n%%EOF').toString('base64'), 'p.pdf'));
+  assert.strictEqual(item.pages, 5, 'the upload is counted from its own bytes');
+  assert.ok(/empDocValidateIssue_\(payload, pdf \? \{ sha: pdf\.sha, name: pdf\.name, pages: pdf\.pages \} : null\)/.test(extractRawFunction('Code.js', 'issueDoc')), 'issueDoc carries the count to the check');
+});
+
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
 const p1Ctx_ = (extra) => {
   const utcIso = (d) => d.toISOString().slice(0, 10);

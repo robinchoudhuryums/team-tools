@@ -3921,6 +3921,22 @@
     "INTAKE_PMD_Q_EN"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "ED2: empDocPdfPageCount_ + empDocPdfPagesOf_ (box page bound at issue)",
+   "added": [
+    "empDocPdfPageCount_",
+    "empDocPdfPagesOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "empDocPdfItem_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "issueDoc"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8753,12 +8769,22 @@
   "empDocPdfItem_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "56bba6d5f4376fc6"
+   "sha": "891083727fa44b78"
   },
   "empDocPdfLine_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "db686ebce1fee0dd"
+  },
+  "empDocPdfPageCount_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1ab9103883950a54"
+  },
+  "empDocPdfPagesOf_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9d7e3e772c610f66"
   },
   "empDocPdfStoreCallerLocked_": {
    "file": "81_empdocs.js",
@@ -8798,12 +8824,12 @@
   "empDocValidateFields_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e041bba73147f3ac"
+   "sha": "66adbbbf5dc22c6d"
   },
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a1f2db1fe5c9f2dd"
+   "sha": "c0d015a63f25a591"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
@@ -10573,7 +10599,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "13aea12eeaa679ba"
+   "sha": "e6f17720e4ae86a6"
   },
   "kbAddComment": {
    "file": "70_kb.js",

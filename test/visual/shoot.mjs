@@ -327,6 +327,17 @@ const SCENARIOS = [
   ['empdocs-cert-light-wide',      { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenCertificate_('d-signed')", { wait: 1500 }],
   ['empdocs-issue-pdf-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
     "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); if (t) t.value = 'signature'; edAddBox_(1, edBoxFromDrag_(0.098, 0.335, 0.098, 0.335, 'signature', { w: 612, h: 792 })); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
+  // ED2 (operator 2026-11-06): the box editor — a box duplicated and the copy selected (its ring,
+  // Duplicate, Remove and the resize corner), the page zoomed to 125%; a FILLABLE PDF chosen — its
+  // warnings and the offer of its own fields; on a phone, the offer taken; the reader zoomed in.
+  ['empdocs-issue-edit-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); edDuplicateBox_(0); edPdfSetZoom_(document.getElementById('ed-is-pdf-pages'), 1.25); var b = document.querySelector('#ed-is-pdf-pages [data-ed-box=\"1\"]'); if (b) { b.focus(); b.scrollIntoView({ block: 'center' }); } }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2600 }],
+  ['empdocs-issue-form-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); edIssuePdfFile_(new File([edDataUriBytes_(ED2_FORM_PDF_URI)], 'Remote Work Agreement.pdf', { type: 'application/pdf' })); setTimeout(function () { var w = document.getElementById('ed-is-pdf-wrap'); if (w) w.scrollIntoView(); }, 1600);", { wait: 2400 }],
+  ['empdocs-issue-form-dark-mobile', { tool: 'develop', tab: 'docsManage' }, MOBILE, 'dark', '',
+    "edIssueMode_('pdf'); edIssuePdfFile_(new File([edDataUriBytes_(ED2_FORM_PDF_URI)], 'Remote Work Agreement.pdf', { type: 'application/pdf' })); setTimeout(function () { var u = document.querySelector('[data-ed-form-use]'); if (u) u.click(); var p = document.getElementById('ed-is-pdf-pages'); if (p) p.scrollIntoView(); }, 1600);", { wait: 2600 }],
+  ['empdocs-pdf-zoom-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf'); setTimeout(function () { var i = document.querySelector('[data-ed-zoom-for=\"ed-pdf-pages\"] [data-ed-zoom=\"in\"]'); if (i) { i.click(); i.click(); } }, 1300);", { wait: 2200 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],

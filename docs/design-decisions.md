@@ -6440,6 +6440,56 @@ pick them up without re-deriving the context.
     characters it holds.
   - **Deferred to ED2/ED3:** moving and resizing a box, zoom, detecting a PDF's
     own form fields, and a filled PDF with the answers stamped in.
+- <a id="ed2-box-editor-and-zoom"></a>**A placed box moves and resizes on a 1/8-inch grid of its page, the pages zoom, a chosen PDF is warned about, and a fillable PDF's own fields are offered as boxes (ED2, operator 2026-11-06)**
+  The plan's ED2: "move and resize handles, snap to 1/8 inch, arrow-key nudge,
+  duplicate; zoom (fit width / 100% / in / out) in the issue form and the
+  reader; warnings on upload (non-Letter/A4 pages, rotated pages, tiny text),
+  boxes off the page refused; a fillable PDF's own form fields offered as boxes".
+  - **The grid is the page's, in points.** A box is still a page and fractions
+    of it (Batch H), so the grid is 9 points of THAT page (`ED_BOX_GRID_PTS`):
+    dragging a box moves its corner onto the grid, dragging its corner handle
+    moves the bottom-right edge onto it, and Alt places it freely. The pure
+    `edBoxMoved_` / `edBoxResized_` clamp the whole box onto its page and never
+    make it smaller than one line of its type or 1/4 inch wide. Creating a box
+    by a drag is unchanged (ED1's point sizes), so a box is snapped the first
+    time it is moved. A box stays on its page; moving it to another page is
+    remove-and-place.
+  - **The keyboard is the precise path.** A placed box is focusable; the arrow
+    keys move it one grid step and Shift with them resizes it (`edBoxNudge_`).
+    Each change repaints the layer and puts focus back on the box (g141).
+  - **Duplicate copies under.** The copy goes one grid step under the original
+    (the next row of a form), else above, else beside it (`edBoxDuplicate_`), is
+    named the next in its series (`edBoxDupLabel_`), listed after it and
+    selected. It and the form-field offer stop at the server's field cap
+    (`ED_FIELD_CAP`, pinned to `EMPDOC_FIELD_CAP`).
+  - **Zoom redraws canvases only.** The pages are kept on the host
+    (`host._edPdf`); a zoom sets each page's width (100% = 96 px an inch, + and
+    − step 50%–300%, Fit width = the column) and redraws only the canvases, so
+    the box layers — and in the reader what the employee has typed — stay the
+    same nodes. Box text was already sized in container units of the page
+    (ED1), so it scales with it. A zoomed document scrolls sideways inside its
+    column.
+  - **Warnings advise, never block.** After a PDF is drawn, pdf.js's own
+    reading of each page gives `edPdfWarnings_` its size (neither Letter nor
+    A4, either way up), its stored rotation, and its text sizes (a median under
+    7 pt). Each warning says what may go wrong and what to do; pages with the
+    same warning are named together. A scan has no text and is not judged.
+  - **A fillable PDF's fields are offered, not applied.** `edPdfFormBoxes_`
+    reads pdf.js's widgets: a text or choice field becomes a text box (a
+    paragraph when multi-line, a date or initials when its name says so), a
+    signature field a signature box; checkboxes, radios and buttons have no box
+    type and are counted in the offer; a field shown twice is one box. Each is
+    named by its tooltip, or its name made readable, and sized up to one line.
+    The manager presses "Use them as boxes" and checks each.
+  - **Off the page is refused twice.** The client refuses an Issue whose box is
+    past the PDF's last page or edge (`edBoxesOffPage_`) and sends the page
+    count pdf.js read; the server bounds every box by the bytes' own page count
+    where the page tree is written in the clear (`empDocPdfPageCount_`), else
+    the browser's count, else only `EMPDOC_PDF_MAX_PAGES`
+    (`empDocPdfPagesOf_`) — a PDF that keeps its page tree in a compressed
+    object stream cannot be counted on the server, and that is said rather than
+    guessed. A box on a page the PDF does not have would never show, and a
+    required one could never be completed.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

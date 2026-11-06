@@ -578,6 +578,15 @@ under the pages. The manager sees each box's size and roughly how many
 characters it holds. The PDF picker and the issued documents' titles are
 styled buttons.
 
+**ED2 (operator 2026-11-06):** in the issue form a placed box can be dragged to
+move it or resized from its corner, both snapping to 1/8 inch (Alt places it
+freely); a selected box moves with the arrow keys and resizes with Shift; a
+Duplicate button copies it just under itself. The issue form and the reader
+zoom (Fit width, 100%, + and −) without losing what was typed. A chosen PDF is
+warned about pages that are not Letter or A4, pages stored rotated and small
+text, and a fillable PDF's own fields are offered as boxes in one press. A box
+on a page the PDF does not have is refused, by the form and by the server.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)
