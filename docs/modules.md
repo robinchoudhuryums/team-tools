@@ -528,7 +528,8 @@ until the next period) and a banner sits atop the Time / PTO calendar, from
 the reminder day to the period's last day. The day is the Monday of a
 biweekly period's final week, or for a monthly rep the last Monday with at
 least four days left in the month; a holiday Monday moves to the next
-workday. An email goes at 9am in the employee's own timezone that day, while
+workday. An email goes at 9am Central that day — the same time for everyone, in
+working hours (operator 2026-11-06) — while
 the `payWeekReminderEmail` toggle is on (Manage → Admin → Feature Toggles; on
 by default).
 

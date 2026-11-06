@@ -6457,9 +6457,10 @@ pick them up without re-deriving the context.
   - **In the app for the whole window, by email once.** A Needs-you item and
     a Time / PTO banner from the day to the end of the period; Done hides the
     item for that period in the browser (a convenience, so `umsPayWeekDone`,
-    not a server record). The email goes at 9am in the rep's own timezone on
-    the day, from the hourly dispatcher — no new trigger against the quota —
-    behind a server toggle that is on by default because the operator asked
+    not a server record). The email goes at 9am Central on the day — one time
+    for everyone, inside working hours (operator 2026-11-06, replacing the first
+    build's 9am in each rep's own timezone) — from the hourly dispatcher, with
+    no new trigger against the quota, behind a server toggle that is on by default because the operator asked
     for it, with a heartbeat, a delivery row per send and the outcome contract.
   - **Not done:** naming what to check (an open day, a pending request) — the
     close checklist already finds those for the manager, and repeating them

@@ -2163,7 +2163,7 @@ entry says which it is.
   when inspecting Script Properties. Only registry keys are honored; flips
   take effect server-side on the next request and client-side on the next
   config fetch. **P1 (2026-11-05):** `payWeekReminderEmail` (default ON) —
-  the pay-week timesheet reminder email at 9am each employee's time on their
+  the pay-week timesheet reminder email at 9am Central (one time for everyone) on their
   pay-week Monday; it rides the hourly dispatcher, so no trigger to install.
   Turning it off keeps the Needs-you item and the Time / PTO banner. A
   biweekly employee gets no reminder while no roster row carries a biweekly

@@ -3881,6 +3881,17 @@
     "payWeekReminder_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "P1: the pay-week email at 9am Central for everyone (operator 2026-11-06)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "sendPayWeekReminders"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4898,7 +4909,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a17c5d3325ff9f7f"
+   "sha": "0c31822e4bf6cccc"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -13038,7 +13049,7 @@
   "sendPayWeekReminders": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "87946ef656dd8e21"
+   "sha": "b0cf6e77f042e1a7"
   },
   "sendRepEmail_": {
    "file": "10_core.js",

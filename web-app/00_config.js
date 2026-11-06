@@ -1652,7 +1652,7 @@ const FEATURE_FLAGS = [
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
   { key: 'payWeekReminderEmail', label: 'Pay-week timesheet reminder email',
-    description: 'On the Monday of each pay period\'s final week (biweekly), or the last Monday with at least 4 days left in the month (monthly), email each employee at 9am their time asking them to check their timesheet and request any edits before the period ends. The Needs-you item and the Time / PTO banner show either way. Rides the hourly dispatcher — no new trigger.',
+    description: 'On the Monday of each pay period\'s final week (biweekly), or the last Monday with at least 4 days left in the month (monthly), email each employee at 9am Central (the same time for everyone, inside working hours) asking them to check their timesheet and request any edits before the period ends. The Needs-you item and the Time / PTO banner show either way. Rides the hourly dispatcher — no new trigger.',
     default: true, scope: 'server' },
   { key: 'deptReplyResolve', label: 'Dept Request reply resolves',
     description: 'Every hour, read each open department request\'s email thread (in the mailbox the app runs as). A reply from the department that arrived after the send (or the last reopen), is not automatic, and neither asks a question nor puts the request on hold RESOLVES it, credited to the replier; a reply that asks or holds marks it "Responded — needs a look". Only requests sent after this feature shipped carry a thread to read. Off = replies are never read; the resolve link and Mark resolved still work.',
@@ -1976,8 +1976,9 @@ var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched',
 // (the India team, finalized on the month's last day): the last Monday with at
 // least PAY_WEEK_MONTHLY_MIN_DAYS days left in the month, counting that Monday
 // and the last day. A Monday that is a company holiday moves to the next
-// workday. The email goes at the rep's local PAY_WEEK_REMINDER_HOUR on that day
-// (the hourly dispatcher), while the `payWeekReminderEmail` toggle is on.
+// workday. The email goes at PAY_WEEK_REMINDER_HOUR CENTRAL (CONFIG.MANAGER_TIMEZONE)
+// on that day for everyone (operator 2026-11-06), from the hourly dispatcher,
+// while the `payWeekReminderEmail` toggle is on.
 const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
 const PAY_WEEK_REMINDER_HOUR = 9;
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];

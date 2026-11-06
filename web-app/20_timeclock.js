@@ -6031,28 +6031,30 @@ function payWeekTask_(pw) {
     dueIso: pw.end, overdue: false, action: 'Review', periodKey: pw.periodKey,
     route: { tool: 'timeClock', tab: 'timeoff' } };
 }
-/** Trigger handler (hourly, via runHourlyJobs) — P1: on a rep's reminder day,
- *  at their local PAY_WEEK_REMINDER_HOUR, email them to check their timesheet.
- *  Manager-gated like every handler (INV-44). Heartbeat first, so a dead
- *  trigger stays visible while the toggle is off; hour-equality per rep, the
- *  EOD digest's rule (one match per rep per day). Every send is a delivery
+/** Trigger handler (hourly, via runHourlyJobs) — P1: on the reminder day, at
+ *  PAY_WEEK_REMINDER_HOUR CENTRAL (CONFIG.MANAGER_TIMEZONE) — one time for
+ *  everyone, inside working hours (operator 2026-11-06: "9am CST for all users
+ *  to keep it uniform, and so they are able to make changes during work
+ *  hours") — email every employee whose reminder day it is, by the Central
+ *  date. Manager-gated like every handler (INV-44). Heartbeat first, so a dead
+ *  trigger stays visible while the toggle is off; every send is a delivery
  *  row; the run ends through the outcome contract (ST2). */
 function sendPayWeekReminders() {
   assertManagerCaller_('sendPayWeekReminders');
   return runAutomationJob_('PayWeekReminders', function () {
     stampDigestLastRun_('payWeek');
     if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('idle') };
+    const tz = CONFIG.MANAGER_TIMEZONE;
+    const now = new Date();
+    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
+    const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
     const rows = getEmployeeRosterRows_();
     const orgAnchor = orgBiweeklyAnchor_(rows);
-    const now = new Date();
     let attempted = 0, sent = 0, failed = 0, lastError = '';
     const failedNames = [];
     for (let r = 1; r < rows.length; r++) {
       const email = empRosterEmail_(rows[r]);
       if (!email) continue;
-      const tz = safeTimezone_(String(rows[r][EMP.TIMEZONE] || '').trim());
-      if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) continue;
-      const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
       const pc = empPayCycle_(rows[r], orgAnchor);
       const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
       if (!pw || pw.remindOn !== today) continue;
