@@ -31,4 +31,5 @@ FOLLOW-ON ITEMS:
 
 DOCUMENTATION UPDATES NEEDED:
 - None beyond those made: design-decisions (new entry + CLAUDE.md index link), modules.md, operator-state.md (the toggle), .cycle/config.md (INV-399, S158), the counts block.
+AMENDED 2026-11-06 (operator): the email goes at 9am CENTRAL (CONFIG.MANAGER_TIMEZONE) for everyone, by the Central date — no longer each rep's own 9am. The job pin was rewritten for it; 2/2 new mutations bite (no Central hour gate; a rep's own timezone).
 ---END BROAD SCAN IMPLEMENTATION SUMMARY---
