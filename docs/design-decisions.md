@@ -6533,3 +6533,44 @@ pick them up without re-deriving the context.
   - **Not done:** drafts that follow the rep to another computer — the operator
     asked for the browser only, and a server copy would be PHI at rest in a
     new place.
+- <a id="i3-insurance-cards-read-in-the-browser"></a>**Insurance cards are read in the browser by PaddleOCR — every file checksum-pinned — and what is read is offered, never filled (I3, operator 2026-11-06)**
+  The operator: "pull insurance details automatically from uploaded photos …
+  save those details in a draft rather than the images"; then, choosing the
+  in-browser route ("B or C are most likely out due to BAA questions") and
+  "the most accurate option available for this particular task".
+  - **Nothing leaves the browser to be read.** Google Cloud Vision and a Claude
+    vision call would each send a card — PHI — to a vendor; both were ruled out
+    on BAA grounds. The reader runs on the rep's computer, and the module makes
+    no server call at all (pinned).
+  - **The reader was chosen by measurement.** A spike rendered four specimen
+    cards (original Medicare, a commercial PPO, a Medicare Advantage HMO, a
+    commercial table layout — fake data) in four conditions (clean; a phone
+    shot with glare; rotated 5° with glare, shadow and blur; small and
+    compressed) and read them with both candidates in Chromium: PaddleOCR
+    (PP-OCRv4 on ONNX Runtime Web) recovered 88 of 88 text fields, Tesseract.js
+    with its best English model 67. PaddleOCR first failed every rotated photo —
+    it boxed text level — until each box was cut along its line's own angle;
+    the parser then read 72 of 72 card fields end to end, and the reader's
+    real output is a committed fixture the pins parse.
+  - **On the page's thread, from checked bytes.** The Apps Script sandbox
+    cannot start a worker from another origin (the HB4.1 pdf.js posture), so
+    ONNX Runtime runs single-threaded on the page. Its script, its WebAssembly
+    and loader, the two models and the dictionary (~30 MB, first press only —
+    the browser keeps them) come from jsDelivr at pinned versions, and each is
+    checked against a SHA-256 in the code before it is used: the runtime is
+    injected from the checked bytes, the WebAssembly is handed over as checked
+    bytes, and a file that does not match is refused. A failed load is not
+    kept (g129) — the next press tries again — and the rep is told to type
+    the details instead.
+  - **Offered, corrected, then used.** The parser finds labels glued to their
+    values ("RxPCNMEDDPRIME"), values printed under their labels, and a card
+    photographed at an angle (rows are levelled by the lines' typical tilt); a
+    value must look like its field or it is left blank — never a guess. An
+    Advantage card's number is its plan's member ID, never an MBI. Each value
+    sits in a box the rep can correct, beside the line it will make; Use as
+    primary/secondary writes that line into the field (asking before
+    replacing), where I1 tidies and checks it and the I2 draft keeps it — the
+    image itself is never kept in a draft.
+  - **Not done:** names and dates on the card (not asked for), the PPD form
+    (no card images), and a confidence score per value — the rep checks every
+    value against the card, and the panel says so.

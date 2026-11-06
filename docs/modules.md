@@ -538,6 +538,14 @@ Google's spelling, taken only with **Use suggestion**. (Operator 2026-11-06
 settled the two-digit year, the clean-only Medicare tidy, the visible SSN and
 the suggestion wording.)
 
+**I3 (operator 2026-11-06):** under the PMD/PAP card images, **Read the
+insurance details from the card** reads each image on the rep's computer
+(nothing is sent anywhere to be read) and offers the payer, member ID, group,
+Rx BIN/PCN/group or the Medicare ID in boxes the rep can correct, with **Use as
+primary insurance** / **Use as secondary insurance**. The reader (~30 MB) is
+downloaded the first time it is pressed and kept by the browser; if it cannot
+load, the rep is told to type the details.
+
 **I2 (operator 2026-11-05):** each intake form's rail has **Save draft** and
 **Drafts**. Save draft parks the form — named by the patient line or name — in
 this browser for the signed-in rep, for 24 hours, and clears the form for the
