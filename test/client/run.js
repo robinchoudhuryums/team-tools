@@ -43545,12 +43545,12 @@ test('I2 drafts: the saved drafts are their own ums… key read and written in t
 const i3Ctx_ = () => {
   const src = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
   const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array, JSON });
-  ['INTAKE_MBI_RE', 'INTAKE_CARD_LABELS', 'INTAKE_CARD_TAIL_WORDS', 'INTAKE_CARD_PAYERS', 'INTAKE_OCR_FILES', 'INTAKE_OCR_CDN'].forEach((n) => {
+  ['INTAKE_MBI_RE', 'INTAKE_CARD_LABELS', 'INTAKE_CARD_TAIL_WORDS', 'INTAKE_CARD_PAYERS', 'INTAKE_OCR_FILES', 'INTAKE_OCR_CDN', 'INTAKE_CARD_SURE'].forEach((n) => {
     const i = src.indexOf('var ' + n + ' = ');
     assert.ok(i >= 0, n);
     vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx);
   });
-  ['intakeCardRows_', 'intakeCardMbiIn_', 'intakeCardParse_', 'intakeCardMerge_', 'intakeCardLine_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  ['intakeCardRows_', 'intakeCardMbiIn_', 'intakeCardMbiAt_', 'intakeCardParse_', 'intakeCardMerge_', 'intakeCardLine_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
   return { ctx, src };
 };
 const i3Row_ = (...texts) => ({ items: texts.map((t, i) => ({ text: t, x: i * 300, w: 250 })) });
@@ -43618,6 +43618,31 @@ test('I3 cards: original Medicare is the card that names Medicare and carries an
   assert.deepStrictEqual([f.mbi, f.memberId], ['', 'W12345678'], 'even a LABELLED Medicare number is not offered from an Advantage card');
   assert.strictEqual(P(i3Row_('Some Local Plan'), i3Row_('Member ID: ZZ12345')).payer, '', 'an unknown payer is left for the rep');
   assert.strictEqual(ctx.intakeCardMbiIn_('Name JOHN 1EG4-TE5-MK72 x'), '1EG4TE5MK72');
+});
+
+test('I3a: a value is marked "check this" when the reader was unsure of one of ITS OWN characters (below INTAKE_CARD_SURE) — never because of its label, a colon or a space; the payer is judged on its letters and digits; the flag rides the merge with its value; over the reader\'s real output only a few correct values are marked (driven)', () => {
+  const { ctx } = i3Ctx_();
+  assert.strictEqual(ctx.INTAKE_CARD_SURE, 0.8, 'measured: every true misread under 0.35, no correctly read value under 0.8 (the decision entry)');
+  const row = (text, probs) => ({ items: [{ text, x: 0, w: 300, probs }] });
+  const ones = (t) => t.split('').map(() => 0.99);
+  const t = 'Member ID: H71938642';
+  let p = ones(t); p[3] = 0.1; p[9] = 0.1;   // unsure of a label letter and the colon only
+  assert.deepStrictEqual(i1J(ctx.intakeCardParse_([row(t, p)]).unsure), {}, 'the label and the colon are not the value');
+  p = ones(t); p[15] = 0.62;   // one of the ID's own characters
+  let f = i1J(ctx.intakeCardParse_([row(t, p)]));
+  assert.ok(f.memberId === 'H71938642' && f.unsure.memberId === true);
+  const below = [{ items: [{ text: 'Group No.', x: 0, w: 120, probs: ones('Group No.') }] }, { items: [{ text: '028914', x: 0, w: 100, probs: [0.99, 0.99, 0.5, 0.99, 0.99, 0.99] }] }];
+  assert.strictEqual(i1J(ctx.intakeCardParse_(below)).unsure.group, true, 'a value read under its label is judged on its own characters too');
+  const payer = 'Humana Gold Plus (HMO)';
+  const pp = ones(payer); pp[6] = 0.2; pp[16] = 0.2;   // a space and a bracket
+  assert.deepStrictEqual(i1J(ctx.intakeCardParse_([row(payer, pp)]).unsure), {}, 'the payer on its letters and digits');
+  const m = i1J(ctx.intakeCardMerge_({ memberId: 'A1234567', unsure: { memberId: true } }, { memberId: 'B7654321', group: '0701234', unsure: { group: true } }));
+  assert.deepStrictEqual([m.memberId, m.unsure], ['A1234567', { memberId: true, group: true }], 'each flag travels with the value it belongs to');
+  assert.strictEqual(i1J(ctx.intakeCardMerge_({ memberId: 'A1234567' }, { memberId: 'B7654321', unsure: { memberId: true } })).unsure.memberId, undefined, 'the other read\'s doubt about a value not used is dropped');
+  const lines = JSON.parse(fs.readFileSync(path.join(__dirname, 'i3-card-lines.json'), 'utf8'));
+  let marked = 0, values = 0;
+  Object.keys(lines).forEach((k) => { const r = i1J(ctx.intakeCardParse_(ctx.intakeCardRows_(lines[k]))); ['payer', 'memberId', 'group', 'rxBin', 'rxPcn', 'rxGrp', 'mbi'].forEach((x) => { if (r[x]) values++; }); marked += Object.keys(r.unsure).length; });
+  assert.ok(values >= 75 && marked <= 3, 'over the real reads, at most a few correct values are marked (' + marked + ' of ' + values + ')');
 });
 
 test('I3 cards: front and back merge — the first value found for a field wins; the line the field gets is Medicare + MBI, or Payer · ID · Group · RxBIN · RxPCN · RxGrp with only what was found (driven)', () => {

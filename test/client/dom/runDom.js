@@ -9872,19 +9872,64 @@ test('I3 DOM: with a card image attached, Read the insurance details offers what
   host().querySelector('[data-card-use="9"]').click();
   await tick();
   assert.ok(asked.length === 1 && /Replace the secondary insurance\?/.test(asked[0].title) && field(9).value === 'Medicaid 123', 'asked, and Keep it keeps it');
-  // A reader that cannot start says so, offers Try again, and names no value.
+  // A reader that cannot START says so (the browser), offers Try again, and names no value.
   host().querySelector('[data-card-close]').click();
-  fail = true;
+  h.read('window.__eng = intakeOcrEngine_; intakeOcrEngine_ = function () { return Promise.reject(new Error("no wasm")); }');
   host().querySelector('[data-card-read]').click();
   for (let i = 0; i < 6; i++) await tick();
   assert.ok(/could not be read in this browser — type the insurance details instead/.test(host().textContent) && host().querySelector('.intk-card-retry'));
-  fail = false;
+  h.read('intakeOcrEngine_ = window.__eng');
   host().querySelector('.intk-card-retry').click();
   for (let i = 0; i < 6; i++) await tick();
   assert.ok(host().querySelector('.intk-card-panel'), 'Try again reads');
   // Clear drops what was read with the form.
   h.read('intakeClearForm_')('pmd');
   assert.strictEqual(h.read('INTAKE_CARD.pmd'), undefined, 'what was read goes with the form');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
+test('I3a DOM: each image is read on its own — a broken one is NAMED and the others still count, and a lone broken image says to try a clearer photo (never "in this browser"); nothing found says so with only Dismiss; a value the reader was unsure of is marked "Check this one" until the rep touches it; an empty box says it was not found (driven, reader stood in)', async () => {
+  const { h } = bootAcct('pmd');
+  const host = () => h.$('#intk-card-read');
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const sure = (t) => t.split('').map(() => 0.99);
+  let reads = {};
+  h.window.INTAKE_OCR_ENGINE = { read: (img) => Promise.resolve(reads[img.src] || []) };
+  h.read('intakeCardImage_ = function (src) { return /BROKEN/.test(src) ? Promise.reject(new Error("image")) : Promise.resolve({ src: src }); }');
+  const L = (text, y, probs) => ({ text, x: 0, y, w: 300, h: 20, probs: probs || sure(text) });
+  // Image 1 reads; image 2 is broken.
+  const shaky = 'Member ID: H71938642';
+  const sp = sure(shaky); sp[14] = 0.41;   // the reader was unsure of one of the ID's own characters
+  reads['data:image/png;base64,GOOD'] = [L('Humana Gold Plus (HMO)', 0), L(shaky, 40, sp), L('RxBIN: 015581', 80)];
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,GOOD", "data:image/png;base64,BROKEN"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/Could not read image 2 — what is shown comes from the others/.test(host().textContent), 'the broken one named');
+  const box = (k) => host().querySelector('[data-card-key="' + k + '"]');
+  assert.strictEqual(box('memberId').value, 'H71938642', 'the good image still counts');
+  const lab = box('memberId').closest('.intk-card-f');
+  assert.ok(lab.classList.contains('intk-card-unsure') && /Check this one/.test(lab.textContent) && box('memberId').getAttribute('aria-describedby'), 'unsure: marked, with no percentage');
+  assert.ok(!/%/.test(host().textContent), 'never a percentage');
+  assert.ok(!box('rxBin').closest('.intk-card-f').classList.contains('intk-card-unsure'), 'a sure value is not marked');
+  assert.ok(box('group').value === '' && box('group').getAttribute('placeholder') === 'Not found on the card — type it', 'an empty box says it was not found');
+  box('memberId').value = 'H71938642';
+  box('memberId').dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!lab.classList.contains('intk-card-unsure') && !/Check this one/.test(lab.textContent), 'touched: the flag goes');
+  // A lone broken image: try a clearer photo — not the browser.
+  host().querySelector('[data-card-close]').click();
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,BROKEN"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/The image could not be read — try a clearer photo, or type the details/.test(host().textContent) && !/in this browser/.test(host().textContent) && host().querySelector('.intk-card-retry'));
+  // Read, but nothing usable: said, with only Dismiss.
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,BLANK"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/No insurance details were found in the images — type them on the form/.test(host().textContent));
+  assert.ok(!host().querySelector('[data-card-use]') && host().querySelector('[data-card-close]'), 'nothing to use — only Dismiss');
   delete h.window.INTAKE_OCR_ENGINE;
 });
 
