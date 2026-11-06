@@ -6508,3 +6508,28 @@ pick them up without re-deriving the context.
     Google Workspace environment it is sent within.
   - **Not done:** the PPD form (its controls are engine values, not free
     text).
+- <a id="i2-intake-saved-drafts"></a>**Intake drafts are saved in the browser, several per form, for 24 hours — the autosave stays as crash protection (I2, operator 2026-11-05)**
+  The operator: save-draft for intake forms, "drafts per browser only".
+  - **Two kinds of draft, kept apart.** The existing autosave (`umsIntakeDrafts`)
+    is one silent copy per form, there so a closed tab or a crash loses
+    nothing. A saved draft (`umsIntakeSaved`) is the rep PARKING a form to take
+    the next call: **Save draft** stores it under the patient line or name and
+    clears the form; the **Drafts** list (every form's, newest first) opens one
+    back into its own form. Folding the two together would have made every
+    keystroke a "draft" in the list.
+  - **The autosave's PHI rules apply unchanged.** A saved draft carries patient
+    answers, so it is the signed-in rep's only (INT2-3 — the boot sweep drops
+    another rep's and an expired one), it lives 24 hours from its last save,
+    and a send removes the draft it came from. At most 20 per rep, and a 21st
+    is refused rather than an old one dropped silently. Insurance card images
+    are not kept — localStorage is small and the images are the largest PHI on
+    the form — and Save draft says so before it clears them.
+  - **Opening rides the amend prefill.** An opened draft is parked on
+    `INTAKE_AMEND_PREFILL` with its `savedId`, so the form is entered blank in
+    the draft's language (the autosave restore is skipped — it is another
+    call's work) and then filled; the autosave then mirrors it. Opening over a
+    form with unsaved answers asks first. Re-saving an opened draft updates it;
+    Clear only detaches the form from it.
+  - **Not done:** drafts that follow the rep to another computer — the operator
+    asked for the browser only, and a server copy would be PHI at rest in a
+    new place.

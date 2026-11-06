@@ -538,6 +538,13 @@ Google's spelling, taken only with **Use suggestion**. (Operator 2026-11-06
 settled the two-digit year, the clean-only Medicare tidy, the visible SSN and
 the suggestion wording.)
 
+**I2 (operator 2026-11-05):** each intake form's rail has **Save draft** and
+**Drafts**. Save draft parks the form — named by the patient line or name — in
+this browser for the signed-in rep, for 24 hours, and clears the form for the
+next call (insurance card images are not kept). Drafts lists every form's
+saved drafts, newest first, with Open and Delete; a send removes the draft it
+came from. The silent autosave is unchanged.
+
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
 until the next period) and a banner sits atop the Time / PTO calendar, from
