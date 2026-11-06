@@ -206,6 +206,19 @@
   .intk-amend-chip.superseded { color: var(--warning-deep); background: var(--warn-soft); }
   .intk-amend-banner { display: flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; }
   .intk-amend-banner.superseded { color: var(--warning-deep); background: var(--warn-soft); }
+  /* I2 — saved drafts: the count on the rail button and the Drafts list. */
+  .intk-drafts-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--paper-card); font-family: var(--mono); font-size: 11px; line-height: 18px; text-align: center; }
+  .intk-modal.intk-drafts-modal { width: min(560px, calc(100vw - 32px)); }
+  .intk-drafts-modal .body { overflow-y: auto; }
+  .intk-drafts-note { margin: 0 0 10px; font-size: .8rem; color: var(--muted); }
+  .intk-drafts-empty { margin: 8px 0; color: var(--muted); font-size: .9rem; }
+  .intk-drafts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .intk-draft-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); }
+  .intk-draft-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .intk-draft-form { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .intk-draft-label { font-weight: 600; overflow-wrap: anywhere; }
+  .intk-draft-meta { font-size: .78rem; color: var(--muted); }
+  .intk-draft-acts { display: flex; gap: 6px; flex: 0 0 auto; }
   .intk-amend-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; }
   .intk-amend-x { appearance: none; background: none; border: none; font: inherit; font-size: .76rem; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
   .intk-amend-x:hover { color: var(--ink); }
@@ -979,6 +992,8 @@ function enterIntakePpdView(area) {
 
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
+        '<button class="intk-btn" onclick="intakeSaveNamedDraft_(\'ppd\')">' + icon('bookmark', 14) + ' Save draft</button>' +
+        '<button class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_()">' + icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_() + '</button>' +
         '<button class="intk-btn" onclick="intakeConfirmClear_(\'ppd\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
@@ -2624,6 +2639,7 @@ function intakePpdSend_(confirmedExternal) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
+      intakeSavedRemove_(INTAKE_STATE.ppd.savedId); INTAKE_STATE.ppd.savedId = null;   // I2: and the saved draft it came from
       // Re-render the (now-cleared) form only if the rep is still on this
       // view — a late success after nav-away must not clobber #view-area.
       // State still resets so stale images can't ride into the next send.
@@ -2663,6 +2679,8 @@ function intakeEnterAcct_(form, title, area) {
         intakeRingHtml_(form) +
         '<span class="intk-rail-count" id="intk-' + form + '-count">0 / 0</span>' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
+        '<button class="intk-btn" onclick="intakeSaveNamedDraft_(\'' + form + '\')">' + icon('bookmark', 14) + ' Save draft</button>' +
+        '<button class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_()">' + icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_() + '</button>' +
         '<button class="intk-btn" onclick="intakeConfirmClear_(\'' + form + '\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
@@ -2935,6 +2953,7 @@ function intakeAcctSend_(form, confirmedExternal) {
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
+      intakeSavedRemove_(INTAKE_STATE[form].savedId); INTAKE_STATE[form].savedId = null;   // I2: and the saved draft it came from
       if (currentView === requestedView) intakeClearForm_(form);
       else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
       // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
@@ -3099,6 +3118,7 @@ function intakeDraftsKept_(all, owner, now) {
 function intakeSweepDrafts_() {
   var owner = intakeDraftOwner_();
   if (!owner) return;
+  try { intakeSavedMine_(); } catch (e) {}   // I2: the saved drafts follow the same owner + 24h rule
   var r = intakeDraftsKept_(intakeReadDrafts_(), owner, Date.now());
   if (!r.dropped) return;
   if (Object.keys(r.kept).length) intakeWriteDrafts_(r.kept);
@@ -3193,6 +3213,192 @@ function intakeClearDraft_(form) {
   }
   var all = intakeReadDrafts_();
   if (all[form]) { delete all[form]; intakeWriteDrafts_(all); }
+}
+
+// ── I2 (operator 2026-11-05): saved drafts — Save draft + the Drafts list ──
+// The autosave above is ONE crash-protection copy per form. A saved draft is
+// the rep PARKING a form to take the next call: several per form, in THIS
+// browser only (umsIntakeSaved), the signed-in rep's own, 24 hours from its
+// last save, at most INTAKE_SAVED_MAX. Patient answers are PHI, so the same
+// owner + expiry rules as the autosave apply (INT2-3), and a send removes the
+// draft it came from. Insurance card images are not kept (localStorage is
+// small, and images are the largest PHI on the form).
+var INTAKE_SAVED_KEY = 'umsIntakeSaved';
+var INTAKE_SAVED_MAX = 20;
+var INTAKE_FORM_NAMES = { ppd: 'PPD', pmd: 'PMD Account', pap: 'PAP Account' };
+
+/** PURE (Node-pinned) — the saved drafts to KEEP: the owner's own, saved
+ *  within INTAKE_DRAFT_MAX_AGE_MS. Anything else (another rep's, expired, no
+ *  owner, malformed) is dropped. */
+function intakeSavedKept_(list, owner, now) {
+  var kept = [], dropped = 0;
+  (Array.isArray(list) ? list : []).forEach(function (d) {
+    var ok = d && d.id && INTAKE_FORM_NAMES[d.form] && owner && d.owner === owner && d.at && (now - d.at) <= INTAKE_DRAFT_MAX_AGE_MS;
+    if (ok) kept.push(d); else dropped++;
+  });
+  return { kept: kept, dropped: dropped };
+}
+/** PURE (Node-pinned) — what a saved draft is called in the list: the PPD's
+ *  patient line, an account form's patient name (question 1), else
+ *  "Unnamed patient". */
+function intakeSavedLabel_(form, snap) {
+  var t = form === 'ppd' ? (snap && snap.patientInfo) : (snap && snap.answers && snap.answers[1]);
+  t = String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+  return t ? t.slice(0, 80) : 'Unnamed patient';
+}
+/** PURE (Node-pinned) — save one draft into the list: the entry with the same
+ *  id is REPLACED (re-saving an opened draft updates it); a new one is added
+ *  unless the owner already has `max`. → {list, error}. */
+function intakeSavedUpsert_(list, entry, max) {
+  var out = (list || []).filter(function (d) { return d.id !== entry.id; });
+  if (out.length === (list || []).length && out.length >= max) {
+    return { list: list || [], error: 'You already have ' + max + ' saved drafts — open or delete one first.' };
+  }
+  out.push(entry);
+  return { list: out, error: '' };
+}
+/** PURE (Node-pinned) — "expires in 13 h" / "expires in 40 min". */
+function intakeSavedExpiresIn_(at, now) {
+  var left = (at + INTAKE_DRAFT_MAX_AGE_MS) - now;
+  if (left <= 0) return 'expired';
+  var mins = Math.ceil(left / 60000);
+  return mins < 60 ? 'expires in ' + mins + ' min' : 'expires in ' + Math.floor(mins / 60) + ' h';
+}
+
+function intakeSavedRead_() {
+  var raw;
+  try { raw = JSON.parse(localStorage.getItem(INTAKE_SAVED_KEY) || '[]'); } catch (e) { raw = []; }
+  return Array.isArray(raw) ? raw : [];
+}
+function intakeSavedWrite_(list) {
+  try {
+    if (list && list.length) localStorage.setItem(INTAKE_SAVED_KEY, JSON.stringify(list));
+    else localStorage.removeItem(INTAKE_SAVED_KEY);
+    return true;
+  } catch (e) { return false; }
+}
+/** The signed-in rep's live drafts, newest first (expired and other users'
+ *  are swept from storage as a side effect). */
+function intakeSavedMine_() {
+  var all = intakeSavedRead_();
+  var r = intakeSavedKept_(all, intakeDraftOwner_(), Date.now());
+  if (r.dropped) intakeSavedWrite_(r.kept);
+  return r.kept.slice().sort(function (a, b) { return b.at - a.at; });
+}
+function intakeSavedRemove_(id) {
+  if (!id) return;
+  var all = intakeSavedRead_();
+  var out = all.filter(function (d) { return d && d.id !== id; });
+  if (out.length !== all.length) intakeSavedWrite_(out);
+}
+function intakeSavedCountHtml_() {
+  var n = intakeSavedMine_().length;
+  return n ? ' <span class="intk-drafts-n">' + n + '</span>' : '';
+}
+function intakeSavedRefreshButtons_() {
+  var html = icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_();
+  document.querySelectorAll('.intk-drafts-btn').forEach(function (b) { b.innerHTML = html; });
+}
+
+/** Save draft: park this form as a saved draft and clear it for the next call. */
+function intakeSaveNamedDraft_(form) {
+  var snap = null;
+  try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; }
+  if (!snap || !intakeFilledCount_(snap, null)) { showToast('Nothing to save yet — the form is empty.', 'toast-warn'); return; }
+  var owner = intakeDraftOwner_();
+  if (!owner) { showToast('Could not save — sign-in not confirmed yet.', 'toast-warn'); return; }
+  var images = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
+  var go = function () {
+    var id = INTAKE_STATE[form].savedId || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    var entry = { id: id, form: form, owner: owner, at: Date.now(), label: intakeSavedLabel_(form, snap),
+      answers: snap.answers || {}, patientInfo: form === 'ppd' ? (snap.patientInfo || '') : '',
+      lang: INTAKE_STATE[form].lang || 'EN', amendOf: INTAKE_STATE[form].amendOf || null };
+    var r = intakeSavedUpsert_(intakeSavedMine_(), entry, INTAKE_SAVED_MAX);
+    if (r.error) { showToast(r.error, 'toast-warn'); return; }
+    if (!intakeSavedWrite_(r.list)) { showToast('Could not save the draft — this browser is not keeping data (private window?).', 'toast-error'); return; }
+    INTAKE_STATE[form].savedId = null;
+    intakeClearForm_(form);
+    showToast('Draft saved for ' + entry.label + ' — open it from Drafts (kept 24 hours, in this browser).', 'toast-success');
+  };
+  if (!images.length) { go(); return; }
+  uiConfirm({ title: 'Save draft without the card images?', confirmLabel: 'Save draft', cancelLabel: 'Keep working',
+    message: 'The ' + images.length + ' insurance card image' + (images.length === 1 ? ' is' : 's are') + ' not kept in a draft — attach ' + (images.length === 1 ? 'it' : 'them') + ' again when you open it.' })
+    .then(function (ok) { if (ok) go(); });
+}
+
+/** The Drafts list — every form's saved drafts for this rep, newest first. */
+function intakeOpenDraftsList_() {
+  var ov = ensureOverlay('intk-drafts-overlay', { labelledBy: 'intk-drafts-title' });
+  var paint = function () {
+    var list = intakeSavedMine_();
+    var now = Date.now();
+    var rows = list.map(function (d) {
+      return '<li class="intk-draft-row">' +
+        '<div class="intk-draft-main"><span class="intk-draft-form">' + esc(INTAKE_FORM_NAMES[d.form]) + '</span>' +
+          '<span class="intk-draft-label">' + esc(d.label || 'Unnamed patient') + '</span>' +
+          '<span class="intk-draft-meta">Saved ' + esc(new Date(d.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + ' · ' + esc(intakeSavedExpiresIn_(d.at, now)) + '</span></div>' +
+        '<div class="intk-draft-acts"><button type="button" class="intk-btn primary" data-draft-open="' + esc(d.id) + '">Open</button>' +
+          '<button type="button" class="intk-btn" data-draft-del="' + esc(d.id) + '" aria-label="Delete the draft for ' + esc(d.label || 'Unnamed patient') + '">Delete</button></div></li>';
+    }).join('');
+    ov.innerHTML = '<div class="modal intk-modal intk-drafts-modal">' +
+      '<div class="head"><h3 id="intk-drafts-title">Saved drafts</h3><button class="xclose" data-drafts-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
+      '<div class="body"><p class="intk-drafts-note">Kept in this browser for you only, 24 hours from the last save. Insurance card images are not kept.</p>' +
+      (rows ? '<ul class="intk-drafts-list">' + rows + '</ul>' : '<p class="intk-drafts-empty">No saved drafts. <b>Save draft</b> on a form parks it here while you take the next call.</p>') +
+      '</div></div>';
+  };
+  paint();
+  if (!ov._intkDraftsWired) {
+    ov._intkDraftsWired = true;
+    ov.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target : null;
+      if (!t) return;
+      if (t.closest('[data-drafts-close]')) { closeOverlay(ov); return; }
+      var open = t.closest('[data-draft-open]');
+      if (open) { intakeOpenSavedDraft_(open.getAttribute('data-draft-open')); return; }
+      var del = t.closest('[data-draft-del]');
+      if (del) {
+        var id = del.getAttribute('data-draft-del');
+        uiConfirm({ title: 'Delete this draft?', tone: 'danger', confirmLabel: 'Delete draft', cancelLabel: 'Keep it',
+          message: 'The saved answers will be erased from this browser. This cannot be undone.' })
+          .then(function (ok) {
+            if (!ok) return;
+            intakeSavedRemove_(id);
+            Object.keys(INTAKE_FORM_NAMES).forEach(function (f) { if (INTAKE_STATE[f].savedId === id) INTAKE_STATE[f].savedId = null; });
+            if (ov.classList.contains('open')) ov._intkDraftsPaint();
+            intakeSavedRefreshButtons_();
+          });
+      }
+    });
+  }
+  ov._intkDraftsPaint = paint;
+}
+
+/** Open a saved draft into its form — through the amend prefill's path, so
+ *  the form is entered blank (no autosave restore) in the draft's language,
+ *  then filled. Asks first when that form holds unsaved answers. */
+function intakeOpenSavedDraft_(id) {
+  var d = intakeSavedMine_().filter(function (x) { return x.id === id; })[0];
+  if (!d) { showToast('That draft has expired or was deleted.', 'toast-warn'); var o = document.getElementById('intk-drafts-overlay'); if (o && o._intkDraftsPaint) o._intkDraftsPaint(); return; }
+  var form = d.form;
+  var go = function () {
+    var ov = document.getElementById('intk-drafts-overlay');
+    if (ov) closeOverlay(ov);
+    intakeClearDraft_(form);   // the working copy is being replaced; its autosave goes with it
+    INTAKE_STATE[form].images = [];
+    INTAKE_STATE[form].lang = d.lang === 'ES' ? 'ES' : 'EN';
+    window.INTAKE_AMEND_PREFILL = { form: form, savedId: d.id, savedLabel: d.label, amendOf: d.amendOf || null,
+      patientInfo: d.patientInfo || '', answers: d.answers || {}, language: d.lang || 'EN' };
+    enterTool('intake', form === 'ppd' ? 'intakePpd' : (form === 'pmd' ? 'intakePmdAccount' : 'intakePapAccount'));
+  };
+  // What is on that form now, if it is the one on screen; otherwise its autosave.
+  var snap = null;
+  if (intakeFormRoot_(form)) { try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; } }
+  else { var a = intakeReadDrafts_()[form]; snap = (a && a.owner === intakeDraftOwner_()) ? a : null; }
+  var n = intakeFilledCount_(snap, INTAKE_STATE[form].images);
+  if (!n || INTAKE_STATE[form].savedId === d.id) { go(); return; }
+  uiConfirm({ title: 'Replace what is on the ' + INTAKE_FORM_NAMES[form] + ' form?', tone: 'danger', confirmLabel: 'Open draft', cancelLabel: 'Keep the form',
+    message: n + ' answer' + (n === 1 ? '' : 's') + ' on the form now will be replaced — Save draft first to keep them.' })
+    .then(function (ok) { if (ok) go(); });
 }
 
 // ── Sent tab (P15) — in-app viewer for past intake submissions ─────────────
@@ -3681,9 +3887,19 @@ function intakeConsumeAmendPrefill_(form) {
       intakeReenterForm_(form);
       return;
     }
-    INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
-    intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
-    showToast('Amending the submission sent ' + p.timestamp + ' — the new send will be marked AMENDED.', 'toast-info');
+    if (p.savedId) {
+      // I2: a saved draft opened from the Drafts list (an amendment it was
+      // parked from rides along). The autosave then mirrors it at once.
+      INTAKE_STATE[form].amendOf = p.amendOf || null;
+      INTAKE_STATE[form].savedId = p.savedId;
+      intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers });
+      try { intakeDraftSaveNow_(form); } catch (e) {}
+      showToast('Draft opened — ' + (p.savedLabel || 'Unnamed patient') + '.', 'toast-info');
+    } else {
+      INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
+      intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
+      showToast('Amending the submission sent ' + p.timestamp + ' — the new send will be marked AMENDED.', 'toast-info');
+    }
   }
   intakeRenderAmendBar_(form);
 }
@@ -3805,6 +4021,7 @@ function intakeConfirmClear_(form) {
 function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
+  INTAKE_STATE[form].savedId = null;   // I2: a cleared form is no longer that saved draft (the draft itself stays in the list)
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;

@@ -9764,6 +9764,75 @@ function bootAcct(form, lang) {
   return { h, root, field, type, count };
 }
 
+section('Intake — I2 saved drafts (operator 2026-11-05)');
+
+test('I2 DOM: Save draft parks the form as a saved draft and clears it for the next call; the Drafts list shows every form\'s drafts newest first; Open restores one into its own form (another form included), re-saving updates it, opening over unsaved answers asks first, and Delete asks then removes (driven)', async () => {
+  const h = boot();
+  h.bootShell();   // empState.email = rep@umsupply.com
+  h.run.drain();
+  mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeSaved');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.enterTool('intake', 'intakePmdAccount');
+  h.run.drain();
+  const f = (i) => h.$('#intk-pmd-form [data-intk-idx="' + i + '"]');
+  const saved = () => JSON.parse(h.window.localStorage.getItem('umsIntakeSaved') || '[]');
+  h.read('intakeSaveNamedDraft_')('pmd');
+  assert.ok(!saved().length && b10Toasts(h).some((t) => /Nothing to save yet/.test(t)), 'an empty form saves nothing');
+  f(1).value = 'Ana Ruiz'; f(2).value = '469-111-3333';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  let list = saved();
+  assert.ok(list.length === 1 && list[0].label === 'Ana Ruiz' && list[0].form === 'pmd' && list[0].owner === 'rep@umsupply.com' && list[0].answers['2'] === '469-111-3333', JSON.stringify(list));
+  assert.strictEqual(f(1).value, '', 'the form is cleared for the next call');
+  assert.ok(/Drafts\s*1/.test(h.$('.intk-drafts-btn').textContent), 'the rail counts the drafts');
+  // A second draft, and a PPD one saved earlier.
+  f(1).value = 'Bo Lee';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  list = saved();
+  list[0].at -= 60000;   // Ana's is the older one
+  list.push({ id: 'ppd1', form: 'ppd', owner: 'rep@umsupply.com', at: Date.now() - 120000, label: 'Cy Doe — TRX 9', patientInfo: 'Cy Doe — TRX 9', answers: { 38: '210' }, lang: 'EN' });
+  h.window.localStorage.setItem('umsIntakeSaved', JSON.stringify(list));
+  h.read('intakeOpenDraftsList_')();
+  const labels = () => h.$$('#intk-drafts-overlay .intk-draft-label').map((x) => x.textContent);
+  assert.deepStrictEqual(labels(), ['Bo Lee', 'Ana Ruiz', 'Cy Doe — TRX 9'], 'every form, newest first');
+  // Open Ana's — the PMD form is empty, so no question.
+  const ana = list.find((d) => d.label === 'Ana Ruiz');
+  h.$('[data-draft-open="' + ana.id + '"]').click();
+  h.run.drain();
+  assert.ok(!h.$('#intk-drafts-overlay.open'), 'the list closes');
+  assert.ok(f(1).value === 'Ana Ruiz' && f(2).value === '469-111-3333', 'restored into the form');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.savedId'), ana.id);
+  assert.ok(b10Toasts(h).some((t) => /Draft opened — Ana Ruiz/.test(t)));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts')).pmd.answers['1'], 'Ana Ruiz', 'the autosave mirrors it at once');
+  // Re-saving updates the same draft.
+  f(3).value = '214-555-0101';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  assert.strictEqual(saved().length, 3, 'still three — updated, not duplicated');
+  assert.strictEqual(saved().find((d) => d.id === ana.id).answers['3'], '214-555-0101');
+  // Opening another draft over unsaved typing asks first.
+  f(1).value = 'Typed, unsaved';
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.read('intakeOpenSavedDraft_')(saved().find((d) => d.label === 'Bo Lee').id);
+  await tick();
+  assert.ok(asked.length === 1 && /Replace what is on the PMD Account form\?/.test(asked[0].title) && f(1).value === 'Typed, unsaved', 'asked, and Keep the form keeps it');
+  // A PPD draft opens into the PPD form.
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(true); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.read('intakeOpenSavedDraft_')('ppd1');
+  h.run.drain();
+  assert.strictEqual(h.$('#intk-ppd-patient').value, 'Cy Doe — TRX 9', 'the PPD form, filled');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.savedId'), 'ppd1');
+  // Delete asks, then removes.
+  h.read('intakeOpenDraftsList_')();
+  h.$('[data-draft-del="ppd1"]').click();
+  await tick(); await tick();
+  assert.ok(/Delete this draft\?/.test(asked[asked.length - 1].title));
+  assert.ok(!saved().some((d) => d.id === 'ppd1') && h.read('INTAKE_STATE.ppd.savedId') === null, 'removed, and the form no longer points at it');
+  assert.deepStrictEqual(labels(), ['Ana Ruiz', 'Bo Lee'], 'the list repaints — Ana\'s re-save made it the newest');
+});
+
 section('Intake — I1 format safeguards and the address check (operator 2026-11-05/06)');
 
 const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };

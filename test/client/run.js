@@ -43473,6 +43473,75 @@ test('I1: the address check endpoint — employee-gated, OFF unless the toggle i
   assert.ok(/types: \(r\.types \|\| \[\]\)\.slice\(0, 8\)\.map\(String\)/.test(geo), 'the geocode carries its match types');
 });
 
+const i2Ctx_ = () => {
+  const src = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, Date, Object, Array, JSON });
+  ['INTAKE_DRAFT_MAX_AGE_MS', 'INTAKE_FORM_NAMES'].forEach((n) => {
+    const i = src.indexOf('var ' + n + ' = ');
+    assert.ok(i >= 0, n);
+    vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx);
+  });
+  ['intakeSavedKept_', 'intakeSavedLabel_', 'intakeSavedUpsert_', 'intakeSavedExpiresIn_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  return { ctx, src };
+};
+
+test('I2 drafts: a saved draft is kept only while it is the signed-in rep\'s own and under 24 hours old — another rep\'s, an ownerless, an expired or a malformed one is dropped (driven)', () => {
+  const { ctx } = i2Ctx_();
+  const now = Date.UTC(2026, 10, 6, 12);
+  const H = 3600000;
+  const mine = { id: 'a', form: 'pmd', owner: 'rep@x.com', at: now - 23 * H };
+  const list = [mine,
+    { id: 'b', form: 'pmd', owner: 'other@x.com', at: now },
+    { id: 'c', form: 'ppd', at: now },
+    { id: 'd', form: 'pap', owner: 'rep@x.com', at: now - 25 * H },
+    { id: 'e', form: 'nope', owner: 'rep@x.com', at: now },
+    { form: 'pmd', owner: 'rep@x.com', at: now }, null];
+  const r = i1J(ctx.intakeSavedKept_(list, 'rep@x.com', now));
+  assert.deepStrictEqual(r, { kept: [mine], dropped: 6 });
+  assert.deepStrictEqual(i1J(ctx.intakeSavedKept_(list, '', now)).kept, [], 'no signed-in owner: nothing is anyone\'s');
+  assert.deepStrictEqual(i1J(ctx.intakeSavedKept_('junk', 'rep@x.com', now)), { kept: [], dropped: 0 });
+  assert.strictEqual(ctx.intakeSavedExpiresIn_(now - 23 * H, now), 'expires in 1 h');
+  assert.strictEqual(ctx.intakeSavedExpiresIn_(now - 23.5 * H, now), 'expires in 30 min');
+  assert.strictEqual(ctx.intakeSavedExpiresIn_(now - 2 * H, now), 'expires in 22 h');
+  assert.strictEqual(ctx.intakeSavedExpiresIn_(now - 25 * H, now), 'expired');
+});
+
+test('I2 drafts: a saved draft is named by the PPD patient line or the account form\'s patient name, else "Unnamed patient"; saving an opened draft REPLACES it, a new one is added, and the 21st is refused (driven)', () => {
+  const { ctx } = i2Ctx_();
+  assert.strictEqual(ctx.intakeSavedLabel_('ppd', { patientInfo: '  Jane   Doe — TRX 1 ' }), 'Jane Doe — TRX 1');
+  assert.strictEqual(ctx.intakeSavedLabel_('pmd', { answers: { 1: 'Ana Ruiz', 2: '469' } }), 'Ana Ruiz');
+  assert.strictEqual(ctx.intakeSavedLabel_('pap', { answers: { 2: '469' } }), 'Unnamed patient');
+  assert.strictEqual(ctx.intakeSavedLabel_('pmd', { answers: { 1: 'x'.repeat(200) } }).length, 80);
+  const e = (id) => ({ id: id });
+  let r = i1J(ctx.intakeSavedUpsert_([e('a'), e('b')], { id: 'a', v: 2 }, 20));
+  assert.deepStrictEqual(r, { list: [e('b'), { id: 'a', v: 2 }], error: '' }, 'the same id is replaced, not duplicated');
+  r = i1J(ctx.intakeSavedUpsert_([e('a')], e('c'), 20));
+  assert.deepStrictEqual(r.list.map((x) => x.id), ['a', 'c']);
+  const full = Array.from({ length: 20 }, (_, i) => e('d' + i));
+  r = i1J(ctx.intakeSavedUpsert_(full, e('new'), 20));
+  assert.ok(r.list.length === 20 && /already have 20 saved drafts/.test(r.error), 'a 21st is refused — never an old one silently dropped');
+  assert.strictEqual(i1J(ctx.intakeSavedUpsert_(full, { id: 'd3', v: 9 }, 20)).error, '', 'updating one at the cap is fine');
+});
+
+test('I2 drafts: the saved drafts are their own ums… key read and written in try/catch; Save draft and Drafts are on every form\'s rail; a send removes the draft it came from and Clear only detaches it; the boot sweep covers them; an opened draft rides the amend prefill and skips the autosave restore (source)', () => {
+  const { src } = i2Ctx_();
+  assert.ok(/var INTAKE_SAVED_KEY = 'umsIntakeSaved';/.test(src));
+  const rd = extractFnFrom(src, 'intakeSavedRead_'), wr = extractFnFrom(src, 'intakeSavedWrite_');
+  assert.ok(/try \{[^}]*localStorage\.getItem\(INTAKE_SAVED_KEY\)/.test(rd) && /try \{[\s\S]*localStorage\.setItem\(INTAKE_SAVED_KEY/.test(wr), 'every read and write in a try/catch (g112)');
+  assert.strictEqual((src.match(/onclick="intakeSaveNamedDraft_\(/g) || []).length, 2, 'PPD and the shared account rail');
+  assert.strictEqual((src.match(/class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_\(\)"/g) || []).length, 2);
+  assert.strictEqual((src.match(/intakeSavedRemove_\(INTAKE_STATE(\.ppd|\[form\])\.savedId\)/g) || []).length, 2, 'both send paths drop the saved draft they sent');
+  assert.ok(/INTAKE_STATE\[form\]\.savedId = null;/.test(extractFnFrom(src, 'intakeClearForm_')), 'a cleared form is no longer that draft');
+  assert.ok(!/intakeSavedRemove_/.test(extractFnFrom(src, 'intakeClearForm_')), '…but Clear never deletes the saved draft');
+  assert.ok(/intakeSavedMine_\(\)/.test(extractFnFrom(src, 'intakeSweepDrafts_')), 'the boot sweep drops other reps\' and expired saved drafts too');
+  const open = extractFnFrom(src, 'intakeOpenSavedDraft_');
+  assert.ok(/window\.INTAKE_AMEND_PREFILL = \{ form: form, savedId: d\.id/.test(open) && /enterTool\('intake'/.test(open));
+  assert.ok(/if \(p\.savedId\) \{[\s\S]*?INTAKE_STATE\[form\]\.savedId = p\.savedId;[\s\S]*?intakeDraftSaveNow_\(form\)/.test(extractFnFrom(src, 'intakeConsumeAmendPrefill_')), 'opened, then mirrored into the autosave');
+  const save = extractFnFrom(src, 'intakeSaveNamedDraft_');
+  assert.ok(/INTAKE_STATE\[form\]\.savedId \|\|/.test(save), 're-saving an opened draft keeps its id');
+  assert.ok(/not kept in a draft/.test(save) && /uiConfirm\(/.test(save), 'card images are named before they are left behind');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);
