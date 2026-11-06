@@ -3299,7 +3299,9 @@ function intakeCardRows_(lines) {
 }
 
 // The labels a card prints, in the order they are tried — Rx group before
-// group, payer ID only so it is never taken for the member ID. The reader
+// group (so "Rx Grp" is claimed first, and a later overlapping hit is
+// dropped; "RxGRP" is never "GRP" either, as no label starts after a
+// letter), payer ID only so it is never taken for the member ID. The reader
 // often drops the space between a label and its value ("RxPCNMEDDPRIME",
 // "Group Number0701234"), so a label is found without a word boundary after
 // it where its own letters make it unmistakable. A value must look like its
@@ -3362,7 +3364,6 @@ function intakeCardParse_(rows) {
       var re = new RegExp(L.re.source, 'gi'), m;
       while ((m = re.exec(text))) {
         if (!m[0]) { re.lastIndex++; continue; }
-        if (L.key === 'group' && /rx\s*$/i.test(text.slice(0, m.index))) continue;   // "Rx Grp" is the Rx group's
         if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
         hits.push({ key: L.key, ok: L.ok, start: m.index, end: m.index + m[0].length });
       }

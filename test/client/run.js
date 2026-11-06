@@ -43595,6 +43595,8 @@ test('I3 cards: a label finds its value glued, spaced, after a colon, or printed
   assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group, f.memberId], ['610014', 'MEDDPRIME', 'TX3829', '0701234', 'H71938642'], 'glued');
   f = P(i3Row_('RxBIN:015581 RxPCN:03200000RxGRP:XUA02'));
   assert.deepStrictEqual([f.rxBin, f.rxPcn, f.rxGrp, f.group], ['015581', '03200000', 'XUA02', ''], 'three on one row, and "RxGRP" is not the group');
+  f = P(i3Row_('Rx Grp: XUA02'));
+  assert.deepStrictEqual([f.rxGrp, f.group], ['XUA02', ''], 'nor is a spaced "Rx Grp"');
   f = P({ items: [{ text: 'Identification No.', x: 0, w: 200 }, { text: 'Group No.', x: 400, w: 120 }] }, { items: [{ text: 'XOF923456781', x: 0, w: 220 }, { text: '028914', x: 400, w: 110 }] });
   assert.deepStrictEqual([f.memberId, f.group], ['XOF923456781', '028914'], 'printed under the label, by column');
   f = P(i3Row_('Group#:X1234005CMS H5619-079'), i3Row_('Payer ID: 87726'), i3Row_('Member ID: 12'), i3Row_('Group No. ABC'), i3Row_('Rx Bin: 61027'));
@@ -43612,6 +43614,8 @@ test('I3 cards: original Medicare is the card that names Medicare and carries an
   assert.strictEqual(P(i3Row_('MEDICARE'), i3Row_('1SG4-TE5-MK72')).mbi, '', 'an S is never in an MBI');
   f = P(i3Row_('Humana Gold Plus (HMO)'), i3Row_('Medicare Advantage Plan'), i3Row_('Member ID: H71938642'), i3Row_('1EG4TE5MK72'));
   assert.deepStrictEqual([f.payer, f.memberId, f.mbi, f.advantage], ['Humana Gold Plus (HMO)', 'H71938642', '', true]);
+  f = P(i3Row_('Wellcare Medicare Advantage (PPO)'), i3Row_('Medicare Number: 1EG4TE5MK72'), i3Row_('Member ID: W12345678'));
+  assert.deepStrictEqual([f.mbi, f.memberId], ['', 'W12345678'], 'even a LABELLED Medicare number is not offered from an Advantage card');
   assert.strictEqual(P(i3Row_('Some Local Plan'), i3Row_('Member ID: ZZ12345')).payer, '', 'an unknown payer is left for the rep');
   assert.strictEqual(ctx.intakeCardMbiIn_('Name JOHN 1EG4-TE5-MK72 x'), '1EG4TE5MK72');
 });
