@@ -2167,7 +2167,13 @@ entry says which it is.
   pay-week Monday; it rides the hourly dispatcher, so no trigger to install.
   Turning it off keeps the Needs-you item and the Time / PTO banner. A
   biweekly employee gets no reminder while no roster row carries a biweekly
-  `PayAnchor` (the export needs one too).
+  `PayAnchor` (the export needs one too). **I1 (2026-11-06):**
+  `intakeAddressCheck` (default OFF) — leaving an intake address asks Google
+  Maps whether it exists. It sends the address line only (no name, nothing
+  logged), but that line is a patient's address: confirm Google Maps may see
+  it under the BAA before turning it on. Its auto-managed counter
+  `INTAKE_ADDR_CHECKS_24H` (24 hourly counts, the route-lookup counter's shape) caps the checks at 1,000 a day;
+  delete it to reset.
 <a id="operator-script-property-automation-digest-last-runs"></a>
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
   object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign|missedPunch|exportCheck|automationHealth:

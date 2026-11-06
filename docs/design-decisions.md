@@ -6465,3 +6465,36 @@ pick them up without re-deriving the context.
   - **Not done:** naming what to check (an open day, a pending request) — the
     close checklist already finds those for the manager, and repeating them
     to every rep is a second reader of the same data.
+- <a id="i1-intake-safeguards-and-address-check"></a>**Intake safeguards warn and never block; the address check asks Google Maps only when an admin turns it on (I1, operator 2026-11-05)**
+  The operator: "intake safeguards, e.g. phone formatting 4691113333 →
+  469-111-3333, with +1 handled … proceed with warnings, flexible formats, e.g.
+  a Medicare ID with or without dashes or trailing spaces … validate the
+  address with Google Maps."
+  - **Read loosely, tidy on leaving, never refuse.** Each PMD and PAP field the
+    map `INTAKE_FMT_FIELDS` names is read by a pure reader on `change` (phone,
+    date, email, insurance, address, height, SSN); a value it can read is
+    rewritten in one shape and saved to the draft, a value it cannot is left
+    exactly as typed with an amber note under the field saying what looks off.
+    A two-digit year is ASKED about, never guessed — the reader would otherwise
+    choose a century for a date of birth. The map is checked against the
+    English banks by a pin, so a renumbered question cannot silently move a
+    reader onto the wrong field.
+  - **One question before Preview.** The blank-recommended ask and the format
+    list are ONE `uiConfirm` (Go back / Continue anyway): a second dialog in a
+    row is the one a rep learns to click through. Continue anyway always
+    previews — a warning is advice, and a rep with the patient on the phone
+    knows things the reader does not.
+  - **The address check is opt-in and fails closed.** The `intakeAddressCheck`
+    toggle starts OFF and the client sends nothing unless it reads `true` from
+    the loaded flags (the generic flag reader defaults to ON when no flags are
+    loaded, which is the wrong default for sending patient data out). On, only
+    the address line goes to Google's geocoder — no name, no audit row, no
+    log — cached for six hours by a hash of the text, under a 24-hour cap.
+    "Found", "partly matched" (an area, not a street), "not found" and "could
+    not check" are four different answers; only a full match is offered as
+    Use this, and an answer that arrives after the rep changed the field is
+    dropped. Whether Google Maps may see a patient's address under the BAA is
+    the operator's call before turning it on.
+  - **Not done:** the PPD form (its controls are engine values, not free
+    text), and the SSN still reaches the intake email exactly as before — the
+    mask is on screen only.

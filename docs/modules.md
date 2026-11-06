@@ -522,6 +522,18 @@ every signature. A signed or completed document has a **Certificate** (a PDF of
 the document, the employee, the times, the hashes, the signature and every
 answer).
 
+**I1 (operator 2026-11-05):** on the PMD and PAP account forms, leaving a
+field tidies what it can read — a phone to 469-111-3333 (a leading +1 or 1
+dropped), a date to MM/DD/YYYY, a Medicare ID to 1EG4-TE5-MK72 with or
+without dashes or spaces, a height to 5'4" — and says what looks off under the
+field in amber (a short phone, the secondary the same as the primary, a
+two-digit year, a future date of birth, a likely email typo, an address with
+no ZIP or state). Nothing is refused: Preview asks once about everything that
+looks off beside any blank recommended field, and Continue anyway previews.
+The SSN is masked on screen while the field is not focused. With the
+`intakeAddressCheck` toggle on (off by default), leaving the address asks
+Google Maps whether it exists and offers Google's spelling as **Use this**.
+
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
 until the next period) and a banner sits atop the Time / PTO calendar, from
