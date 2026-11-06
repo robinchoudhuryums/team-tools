@@ -215,6 +215,21 @@
      a recommendation, so Preview stays open. */
   .intk-row.intk-recwarn { background: var(--destructive-soft); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
   .intk-recwarn-note { grid-column: 1 / -1; font-size: .74rem; color: var(--danger-deep); }
+  /* I1: what looks off is amber (a warning, never a block); the Maps check's
+     answer sits under the address. */
+  .intk-row.intk-fmtwarn { background: var(--warn-soft); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
+  .intk-fmt-note, .intk-addr-note { grid-column: 1 / -1; font-size: .76rem; display: flex; gap: 4px 8px; }
+  /* The warning's icon stays beside its text however long it wraps. */
+  .intk-fmt-note { color: var(--warning-deep); align-items: flex-start; }
+  .intk-addr-note { align-items: center; flex-wrap: wrap; }
+  .intk-fmt-note svg, .intk-addr-note svg { flex: none; }
+  .intk-fmt-note svg { margin-top: 2px; }
+  .intk-addr-ok { color: var(--success-deep); }
+  .intk-addr-warn { color: var(--warning-deep); }
+  .intk-addr-info, .intk-addr-busy { color: var(--muted); }
+  .intk-addr-use { font: inherit; font-size: .74rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .intk-addr-use:hover { border-color: var(--border-strong); }
+  .intk-ssn:not(:focus) { -webkit-text-security: disc; }
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -2007,16 +2022,285 @@ function intakeWarnRecommended_(form) {
     }
     marked.push(b);
   });
-  if (!marked.length) return Promise.resolve(true);
-  var first = intakeRecwarnLocate_(form, marked[0].key);
+  // I1: on the account forms, what looks off is asked about in the SAME
+  // question — one ask before Preview, never a block.
+  var fmt = form === 'ppd' ? [] : intakeFmtIssues_(form);
+  if (!marked.length && !fmt.length) return Promise.resolve(true);
+  var first = marked.length ? intakeRecwarnLocate_(form, marked[0].key) : intakeRecwarnLocate_(form, fmt[0].key);
   if (first && first.scrollIntoView) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  var names = marked.slice(0, 5).map(function (m) {
-    return intakeRecwarnLabel_(form, m.key) + (m.hoursOnly ? ' (hours)' : '');
+  var parts = [];
+  if (marked.length) {
+    var names = marked.slice(0, 5).map(function (m) {
+      return intakeRecwarnLabel_(form, m.key) + (m.hoursOnly ? ' (hours)' : '');
+    });
+    parts.push(marked.length + ' strongly-recommended field(s) are blank:\n\u2022 ' + names.join('\n\u2022 ') +
+      (marked.length > 5 ? '\n\u2026and ' + (marked.length - 5) + ' more' : ''));
+  }
+  if (fmt.length) {
+    parts.push(fmt.length + ' answer(s) look off:\n\u2022 ' + fmt.slice(0, 6).map(function (x) { return x.label + ' \u2014 ' + x.warn; }).join('\n\u2022 ') +
+      (fmt.length > 6 ? '\n\u2026and ' + (fmt.length - 6) + ' more' : ''));
+  }
+  var msg = parts.join('\n\n') + '\n\nThey are highlighted on the form. Continue to preview anyway?';
+  var title = marked.length && fmt.length ? 'Check before preview' : (marked.length ? 'Recommended fields are blank' : 'Some answers look off');
+  return uiConfirm({ title: title, message: msg, confirmLabel: 'Continue anyway', cancelLabel: 'Go back' });
+}
+
+// ── I1 (operator 2026-11-05): format safeguards on the account forms ──────
+// "For most of these safeguards, I want the user to be able to proceed, but
+// have it at least warn if format looks incorrect. It should also be somewhat
+// flexible on format." Every check here WARNS and never blocks; what can be
+// read is tidied when the rep leaves the field (a phone to 469-111-3333, a date
+// to MM/DD/YYYY, a Medicare ID to 1EG4-TE5-MK72), and what cannot is left as
+// typed with a note under it. The list of what still looks off is asked about
+// once, beside the blank recommended fields, before Preview.
+// Field kinds by bank index — the PMD and PAP layouts (INTAKE_PMD_Q / _PAP_Q).
+var INTAKE_FMT_FIELDS = {
+  pmd: { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'height', 20: 'future' },
+  pap: { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'address', 16: 'height' },
+};
+var INTAKE_US_STATE_CODES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+var INTAKE_US_STATE_NAMES = ['alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'district of columbia', 'florida', 'georgia', 'hawaii', 'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana', 'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi', 'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey', 'new mexico', 'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon', 'pennsylvania', 'puerto rico', 'rhode island', 'south carolina', 'south dakota', 'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington', 'west virginia', 'wisconsin', 'wyoming'];
+var INTAKE_EMAIL_TYPOS = { 'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmal.com': 'gmail.com', 'gnail.com': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com',
+  'hotmial.com': 'hotmail.com', 'hotmal.com': 'hotmail.com', 'hotmail.co': 'hotmail.com', 'yaho.com': 'yahoo.com', 'yahooo.com': 'yahoo.com', 'yahoo.co': 'yahoo.com', 'yahoo.con': 'yahoo.com',
+  'outlok.com': 'outlook.com', 'outloo.com': 'outlook.com', 'iclod.com': 'icloud.com', 'icloud.co': 'icloud.com', 'aol.co': 'aol.com' };
+// The Medicare Beneficiary Identifier: 11 characters, never S L O I B Z.
+var INTAKE_MBI_RE = /^[1-9][AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9][0-9][AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9][0-9][AC-HJKMNP-RT-Y]{2}[0-9]{2}$/;
+
+/** PURE (Node-pinned) — a phone number read loosely: digits only, a leading
+ *  US 1 (+1) dropped, an "x123" / "ext 123" kept; ten digits become
+ *  469-111-3333. → {value, warn}; an empty field is fine. */
+function intakeFmtPhone_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var ext = '';
+  var m = /^(.*?)\s*(?:x|ext\.?|extension)\s*(\d{1,6})\s*$/i.exec(s);
+  if (m && /\d/.test(m[1])) { s = m[1]; ext = ' x' + m[2]; }
+  var d = s.replace(/\D/g, '');
+  if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if (d.length !== 10) return { value: String(raw).trim(), warn: 'Expected a 10-digit US phone number (this has ' + d.length + ' digit' + (d.length === 1 ? '' : 's') + ').' };
+  var value = d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6) + ext;
+  if (d.charAt(0) === '0' || d.charAt(0) === '1') return { value: value, warn: 'A US area code never starts with 0 or 1 — check the number.' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — a date read loosely: 1/2/1950, 01-02-1950, 01021950,
+ *  1950-01-02 → 01/02/1950. A two-digit year is asked about, never guessed.
+ *  mode 'dob': not in the future, not over 120 years; mode 'future' (a
+ *  discharge date): warned when already past, and free words ("unknown") are
+ *  left alone. → {value, warn, iso}. */
+function intakeFmtDate_(raw, todayIso, mode) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '', iso: '' };
+  var y, mo, da, m;
+  if ((m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; da = +m[3]; }
+  else if ((m = /^(\d{1,2})[-\/.\s](\d{1,2})[-\/.\s](\d{2}|\d{4})$/.exec(s))) {
+    if (m[3].length === 2) return { value: s, warn: 'Two-digit year — write the full year (for example 19' + m[3] + ' or 20' + m[3] + ').', iso: '' };
+    mo = +m[1]; da = +m[2]; y = +m[3];
+  } else if ((m = /^(\d{2})(\d{2})(\d{4})$/.exec(s))) { mo = +m[1]; da = +m[2]; y = +m[3]; }
+  else {
+    if (mode === 'future' && !/\d/.test(s)) return { value: s, warn: '', iso: '' };
+    return { value: s, warn: 'Write the date as MM/DD/YYYY.', iso: '' };
+  }
+  var dt = new Date(Date.UTC(y, mo - 1, da));
+  if (mo < 1 || mo > 12 || da < 1 || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== da) return { value: s, warn: 'That is not a real date — check the month and day.', iso: '' };
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var iso = y + '-' + pad(mo) + '-' + pad(da);
+  var value = pad(mo) + '/' + pad(da) + '/' + y;
+  var today = String(todayIso || '');
+  if (mode === 'dob' && today) {
+    if (iso > today) return { value: value, warn: 'The date of birth is in the future — check the year.', iso: iso };
+    if (+today.slice(0, 4) - y > 120) return { value: value, warn: 'That makes the patient over 120 — check the year.', iso: iso };
+  }
+  if (mode === 'future' && today && iso < today) return { value: value, warn: 'This date has already passed.', iso: iso };
+  return { value: value, warn: '', iso: iso };
+}
+/** PURE (Node-pinned) — an email: trimmed, the domain lower-cased; the shape
+ *  checked, and a common domain typo named with the likely fix (never changed
+ *  for the rep — the patient said what they said). */
+function intakeFmtEmail_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var at = s.lastIndexOf('@');
+  if (at < 1 || /\s/.test(s) || !/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(s)) return { value: s, warn: 'That does not look like an email address (name@example.com).' };
+  var local = s.slice(0, at), domain = s.slice(at + 1).toLowerCase();
+  var value = local + '@' + domain;
+  if (INTAKE_EMAIL_TYPOS[domain]) return { value: value, warn: 'Did you mean ' + local + '@' + INTAKE_EMAIL_TYPOS[domain] + '?' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — the insurance line when it names original MEDICARE
+ *  (an Advantage, supplement or replacement plan carries its own member ID, so
+ *  it is left alone). The ID is read with or without dashes, spaces or lower
+ *  case; a valid one is tidied to "Medicare · 1EG4-TE5-MK72" when the line
+ *  holds nothing else; a missing or malformed one is warned about. */
+function intakeFmtInsurance_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s || !/medicare/i.test(s) || /advantage|supplement|medigap|replacement|\bhmo\b|\bppo\b|part\s*c\b/i.test(s)) return { value: s, warn: '' };
+  var rest = s.replace(/medicare|\bmbi\b|\bmember\b|\bid\b|\bno\.?(?=\s|$)|\bnumber\b|#/gi, ' ');
+  var compact = rest.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (!compact) return { value: s, warn: 'No Medicare ID (MBI) found — 11 characters, like 1EG4-TE5-MK72.' };
+  if (compact.length === 11 && INTAKE_MBI_RE.test(compact)) {
+    return { value: 'Medicare · ' + compact.slice(0, 4) + '-' + compact.slice(4, 7) + '-' + compact.slice(7), warn: '' };
+  }
+  var runs = rest.toUpperCase().replace(/[\s\-]+(?=[A-Z0-9])/g, '').match(/[A-Z0-9]{11}/g) || [];
+  if (runs.some(function (r) { return INTAKE_MBI_RE.test(r); })) return { value: s, warn: '' };
+  return { value: s, warn: 'That does not look like a Medicare ID (MBI) — 11 characters like 1EG4-TE5-MK72, with no S, L, O, I, B or Z.' };
+}
+/** PURE (Node-pinned) — an address: spaces tidied; warned when it carries no
+ *  5-digit ZIP or no state (a two-letter code, or the name). */
+function intakeFmtAddress_(raw) {
+  var s = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+  if (!s) return { value: '', warn: '' };
+  var zip = /\b\d{5}(?:-\d{4})?\b/.test(s);
+  var codes = INTAKE_US_STATE_CODES.join('|');
+  var state = new RegExp('\\b(' + codes + ')\\b').test(s) ||
+    new RegExp('\\b(' + codes + ')\\s*,?\\s*\\d{5}\\b', 'i').test(s) ||
+    INTAKE_US_STATE_NAMES.some(function (n) { return new RegExp('\\b' + n + '\\b', 'i').test(s); });
+  var miss = [];
+  if (!state) miss.push('state');
+  if (!zip) miss.push('5-digit ZIP');
+  return { value: s, warn: miss.length ? 'No ' + miss.join(' or ') + ' in this address.' : '' };
+}
+/** PURE (Node-pinned) — a height read loosely (5'4", 5 4, 5ft 4in, 5-4,
+ *  64 in) and tidied to 5'4"; warned outside 3'0"–7'6" or when unreadable. */
+function intakeFmtHeight_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var t = s.toLowerCase().replace(/[’′]/g, "'").replace(/[”″]/g, '"').replace(/''/g, '"');
+  var ft = null, inch = null, m;
+  if ((m = /^(\d)\s*(?:'|ft\.?|feet|foot|-|\s)\s*(\d{1,2}(?:\.\d)?)?\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t))) { ft = +m[1]; inch = m[2] ? Math.round(+m[2]) : 0; }
+  else if ((m = /^(\d{2,3}(?:\.\d)?)\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t)) && +m[1] >= 30) { var all = Math.round(+m[1]); ft = Math.floor(all / 12); inch = all % 12; }
+  if (ft == null || inch > 11) return { value: s, warn: 'Write the height as feet and inches, like 5\'4".' };
+  var value = ft + '\'' + inch + '"';
+  var total = ft * 12 + inch;
+  if (total < 36 || total > 90) return { value: value, warn: 'That height is outside 3\'0"–7\'6" — check it.' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — an SSN: nine digits become 123-45-6789; anything else
+ *  is warned about. (On screen it is masked while not being typed in.) */
+function intakeFmtSsn_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var d = s.replace(/\D/g, '');
+  if (d.length !== 9) return { value: s, warn: 'A Social Security number has 9 digits.' };
+  return { value: d.slice(0, 3) + '-' + d.slice(3, 5) + '-' + d.slice(5), warn: '' };
+}
+/** PURE (Node-pinned) — one field's check by kind. ctx: {todayIso, primary}
+ *  (the primary phone, for the secondary's "same number" warning). */
+function intakeFmtCheck_(kind, raw, ctx) {
+  ctx = ctx || {};
+  if (kind === 'phone') return intakeFmtPhone_(raw);
+  if (kind === 'phone2') {
+    var r = intakeFmtPhone_(raw);
+    var p = intakeFmtPhone_(ctx.primary);
+    if (!r.warn && r.value && p.value && r.value.replace(/\D/g, '') === p.value.replace(/\D/g, '')) return { value: r.value, warn: 'Same as the primary number.' };
+    return r;
+  }
+  if (kind === 'email') return intakeFmtEmail_(raw);
+  if (kind === 'dob') return intakeFmtDate_(raw, ctx.todayIso, 'dob');
+  if (kind === 'future') return intakeFmtDate_(raw, ctx.todayIso, 'future');
+  if (kind === 'insurance') return intakeFmtInsurance_(raw);
+  if (kind === 'address') return intakeFmtAddress_(raw);
+  if (kind === 'height') return intakeFmtHeight_(raw);
+  if (kind === 'ssn') return intakeFmtSsn_(raw);
+  return { value: String(raw == null ? '' : raw), warn: '' };
+}
+/** I1 — the note under a field (amber, a status for a screen reader), or none. */
+function intakeFmtNote_(row, cls, html) {
+  if (!row) return;
+  var n = row.querySelector('.' + cls);
+  if (!html) { if (n) n.remove(); return; }
+  if (!n) { n = document.createElement('div'); n.className = cls; n.setAttribute('role', 'status'); row.appendChild(n); }
+  n.innerHTML = html;
+}
+function intakeFmtCtx_(form) {
+  var root = intakeFormRoot_(form);
+  return { todayIso: (typeof isoDateTz === 'function' && typeof empTz === 'function') ? isoDateTz(empTz()) : '',
+    primary: root ? intakeAcctGetVal_(root, 2) : '' };
+}
+/** I1 — a field the rep just left: tidy what can be read, say what looks off.
+ *  A tidy-up is a change like any other (the draft saves it). */
+function intakeFmtOnChange_(form, el) {
+  if (!el || !el.getAttribute) return;
+  var idx = el.getAttribute('data-intk-idx');
+  var kind = (INTAKE_FMT_FIELDS[form] || {})[idx];
+  if (!kind) return;
+  var r = intakeFmtCheck_(kind, el.value, intakeFmtCtx_(form));
+  if (r.value !== el.value) { el.value = r.value; intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); }
+  var row = el.closest('.intk-row');
+  if (row) row.classList.toggle('intk-fmtwarn', !!r.warn);
+  intakeFmtNote_(row, 'intk-fmt-note', r.warn ? icon('warning', 12) + ' ' + esc(r.warn) : '');
+  if (kind === 'phone' && idx === '2') {   // the secondary's "same number" follows the primary
+    var sec = intakeFormRoot_(form) && intakeFormRoot_(form).querySelector('[data-intk-idx="3"]');
+    if (sec && sec.value) intakeFmtOnChange_(form, sec);
+  }
+  if (kind === 'address') intakeAddrCheck_(form, el);
+}
+/** I1 — every field's check now (before Preview): [{key, label, warn}], each
+ *  row marked; an address the Maps check could not confirm is listed too. */
+function intakeFmtIssues_(form) {
+  var root = intakeFormRoot_(form);
+  var map = INTAKE_FMT_FIELDS[form];
+  if (!root || !map) return [];
+  var ctx = intakeFmtCtx_(form), out = [];
+  Object.keys(map).forEach(function (k) {
+    var el = root.querySelector('[data-intk-idx="' + k + '"]');
+    if (!el) return;
+    var r = intakeFmtCheck_(map[k], el.value, ctx);
+    var row = el.closest('.intk-row');
+    var warn = r.warn || (row && row.getAttribute('data-addr-warn')) || '';
+    if (row) row.classList.toggle('intk-fmtwarn', !!r.warn);
+    if (r.warn) intakeFmtNote_(row, 'intk-fmt-note', icon('warning', 12) + ' ' + esc(r.warn));
+    if (warn) out.push({ key: +k, label: intakeRecwarnLabel_(form, +k), warn: warn });
   });
-  var msg = marked.length + ' strongly-recommended field(s) are blank:\n\u2022 ' + names.join('\n\u2022 ') +
-    (marked.length > 5 ? '\n\u2026and ' + (marked.length - 5) + ' more' : '') +
-    '\n\nThey are highlighted on the form. Continue to preview anyway?';
-  return uiConfirm({ title: 'Recommended fields are blank', message: msg, confirmLabel: 'Continue anyway', cancelLabel: 'Go back' });
+  return out;
+}
+// ── I1: the Google Maps address check (Admin → Feature Toggles, off by default) ──
+/** PURE (Node-pinned) — what the rep is told for one check: {html-free text,
+ *  warn (true when it should be listed before Preview), offer (the formatted
+ *  address to offer with Use this, or '')}. */
+function intakeAddrMessage_(r, typed) {
+  var st = r && r.status;
+  var f = String((r && r.formatted) || '');
+  var same = function (a, b) { return String(a).toLowerCase().replace(/[^a-z0-9]/g, '') === String(b).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  if (st === 'found') return { text: 'Google Maps found this address' + (f && !same(f, typed) ? ': ' + f : '.'), warn: false, offer: f && !same(f, typed) ? f : '' };
+  if (st === 'area') return { text: 'Google Maps found the area but not this street address' + (f ? ' (' + f + ')' : '') + ' — check the street and number.', warn: true, offer: '' };
+  // A partial match is the geocoder guessing (K5) — named, never offered.
+  if (st === 'partial') return { text: 'Google Maps matched only part of this address' + (f ? ' (closest: ' + f + ')' : '') + ' — check the street, number and ZIP.', warn: true, offer: '' };
+  if (st === 'notFound') return { text: 'Google Maps could not find this address — check it.', warn: true, offer: '' };
+  if (st === 'outside') return { text: 'Google Maps places this address outside the US' + (f ? ' (' + f + ')' : '') + '.', warn: true, offer: '' };
+  if (st === 'skipped' || st === 'off') return { text: '', warn: false, offer: '' };
+  return { text: 'The address could not be checked just now.', warn: false, offer: '' };
+}
+/** I1 — check one address field (only while the toggle is on). The answer is
+ *  dropped if the field changed while it was out (g147); no address ever
+ *  rides an error message (g146). */
+function intakeAddrCheck_(form, el) {
+  // Fails CLOSED: flagOn_ reads "no flags loaded yet" as on, which is the
+  // wrong default for a check that sends a patient's address to Google — only
+  // a loaded flag that is exactly true turns it on (the server refuses too).
+  if (!(typeof empState !== 'undefined' && empState && empState.flags && empState.flags.intakeAddressCheck === true)) return;
+  var row = el && el.closest('.intk-row');
+  if (!row) return;
+  var addr = String(el.value || '').trim();
+  row.removeAttribute('data-addr-warn');
+  var seq = el._intkAddrSeq = (el._intkAddrSeq || 0) + 1;
+  if (!addr) { intakeFmtNote_(row, 'intk-addr-note', ''); return; }
+  intakeFmtNote_(row, 'intk-addr-note', '<span class="intk-addr-busy">Checking the address with Google Maps…</span>');
+  var done = function (r) {
+    if (el._intkAddrSeq !== seq || String(el.value || '').trim() !== addr) return;
+    var msg = intakeAddrMessage_(r, addr);
+    if (msg.warn) row.setAttribute('data-addr-warn', msg.text); else row.removeAttribute('data-addr-warn');
+    if (!msg.text) { intakeFmtNote_(row, 'intk-addr-note', ''); return; }
+    intakeFmtNote_(row, 'intk-addr-note', '<span class="intk-addr-' + (msg.warn ? 'warn' : (r && r.status === 'found' ? 'ok' : 'info')) + '">' +
+      icon(msg.warn ? 'warning' : (r && r.status === 'found' ? 'check' : 'info'), 12) + ' ' + esc(msg.text) + '</span>' +
+      (msg.offer ? ' <button type="button" class="intk-addr-use">Use this</button>' : ''));
+    var use = row.querySelector('.intk-addr-use');
+    if (use) use.addEventListener('click', function () {
+      el.value = msg.offer;
+      intakeSaveDraft_(form);
+      intakeFmtOnChange_(form, el);
+    });
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function () { done({ status: 'unavailable' }); }).checkIntakeAddress(addr);
 }
 
 function intakePpdPreview_() {
@@ -2380,6 +2664,8 @@ function intakeEnterAcct_(form, title, area) {
     // Yes/No toggles are <button>s (no 'input' event) — refresh progress on click too.
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
+    // I1: leaving a field tidies it and says what looks off.
+    f.addEventListener('change', function (e) { intakeFmtOnChange_(form, e.target); });
   }
   intakeAvailWire_(f);
   intakeSetupImageUpload_(form);
@@ -2471,7 +2757,11 @@ function intakeRenderAcctSections_(form, lang) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
-      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + phAttr + '>';
+      // I1: a phone or SSN field offers the number pad on a phone; the SSN is
+      // masked on screen while it is not being typed in (.intk-ssn).
+      var fk = (INTAKE_FMT_FIELDS[form] || {})[i];
+      var fAttr = (fk === 'phone' || fk === 'phone2') ? ' inputmode="tel"' : (fk === 'ssn' ? ' inputmode="numeric" class="intk-ssn"' : (fk === 'email' ? ' inputmode="email"' : ''));
+      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + fAttr + phAttr + '>';
     }
     var isYnSel = L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No';
     var labelFor = (L.checkboxes.indexOf(i) >= 0 || isYnSel) ? '' : ' for="intk-' + form + '-q' + i + '"';

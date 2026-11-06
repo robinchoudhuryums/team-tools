@@ -1651,6 +1651,10 @@ const FEATURE_FLAGS = [
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
+  { key: 'intakeAddressCheck', label: 'Intake address check (Google Maps)',
+    description: 'On the PMD and PAP account forms, check the patient\'s home address (and the PAP form\'s doctor address) with Google Maps when the rep leaves the field: found, found only the area, matched only part, or not found — with "Use this" for Google\'s spelling. A warning only; nothing is blocked. Address only, cached for 6 hours, at most 1,000 checks a day.',
+    default: false, scope: 'both',
+    danger: 'The typed address (and nothing else from the form) is sent to Google Maps, which may not be covered by the organization\'s Google Workspace business associate agreement. Confirm before turning it on.' },
   { key: 'payWeekReminderEmail', label: 'Pay-week timesheet reminder email',
     description: 'On the Monday of each pay period\'s final week (biweekly), or the last Monday with at least 4 days left in the month (monthly), email each employee at 9am Central (the same time for everyone, inside working hours) asking them to check their timesheet and request any edits before the period ends. The Needs-you item and the Time / PTO banner show either way. Rides the hourly dispatcher — no new trigger.',
     default: true, scope: 'server' },
@@ -1979,6 +1983,12 @@ var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched',
 // workday. The email goes at PAY_WEEK_REMINDER_HOUR CENTRAL (CONFIG.MANAGER_TIMEZONE)
 // on that day for everyone (operator 2026-11-06), from the hourly dispatcher,
 // while the `payWeekReminderEmail` toggle is on.
+// I1 (operator 2026-11-05/06): the intake address check's own daily counter
+// (one Script Property, 24 hourly buckets — the route-lookup shape) and cap,
+// kept apart from the route lookups so neither starves the other.
+const INTAKE_ADDR_CHECK_PROP = 'INTAKE_ADDR_CHECKS_24H';
+const INTAKE_ADDR_CHECK_CAP = 1000;
+const INTAKE_ADDR_CACHE_SECONDS = 21600;
 const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
 const PAY_WEEK_REMINDER_HOUR = 9;
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];

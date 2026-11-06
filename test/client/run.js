@@ -43329,6 +43329,145 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   assert.ok(/key: 'payWeekReminderEmail'[\s\S]*?default: true, scope: 'server'/.test(cfg), 'a server toggle, on by default (the operator asked for the email)');
 });
 
+
+// ── I1 (operator 2026-11-05/06): intake format safeguards + the address check ──
+console.log('\nOperator round 2026-11-05 — I1 (intake safeguards and the Maps address check)');
+const i1Ctx_ = () => {
+  const src = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Date, Object, Array, JSON });
+  ['INTAKE_FMT_FIELDS', 'INTAKE_US_STATE_CODES', 'INTAKE_US_STATE_NAMES', 'INTAKE_EMAIL_TYPOS', 'INTAKE_MBI_RE'].forEach((n) => {
+    const i = src.indexOf('var ' + n + ' = ');
+    assert.ok(i >= 0, n);
+    const end = src.indexOf(';\n', i);
+    vm.runInContext(src.slice(i, end + 1), ctx);
+  });
+  ['intakeFmtPhone_', 'intakeFmtDate_', 'intakeFmtEmail_', 'intakeFmtInsurance_', 'intakeFmtAddress_', 'intakeFmtHeight_', 'intakeFmtSsn_', 'intakeFmtCheck_', 'intakeAddrMessage_']
+    .forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  return { ctx, src };
+};
+const i1J = (x) => JSON.parse(JSON.stringify(x));
+
+test('I1: phones are read loosely and tidied to 469-111-3333 — +1 and a leading 1 dropped, punctuation ignored, an extension kept; a wrong digit count or an area code starting 0/1 is a warning, never a block; the secondary equal to the primary is said (driven)', () => {
+  const { ctx } = i1Ctx_();
+  ['4691113333', '(469) 111 3333', '+1 469-111-3333', '1.469.111.3333', '469 111-3333'].forEach((r) =>
+    assert.deepStrictEqual(i1J(ctx.intakeFmtPhone_(r)), { value: '469-111-3333', warn: '' }, r));
+  assert.strictEqual(ctx.intakeFmtPhone_('469-111-3333 ext 42').value, '469-111-3333 x42');
+  const short = i1J(ctx.intakeFmtPhone_('469-111-333'));
+  assert.ok(short.value === '469-111-333' && /10-digit US phone number \(this has 9 digits\)/.test(short.warn), 'kept as typed, warned');
+  assert.ok(/never starts with 0 or 1/.test(ctx.intakeFmtPhone_('0691113333').warn));
+  assert.deepStrictEqual(i1J(ctx.intakeFmtPhone_('')), { value: '', warn: '' }, 'an empty field is fine');
+  assert.ok(/Same as the primary number/.test(ctx.intakeFmtCheck_('phone2', '(469) 111-3333', { primary: '4691113333' }).warn));
+  assert.strictEqual(ctx.intakeFmtCheck_('phone2', '214-555-0100', { primary: '4691113333' }).warn, '');
+});
+
+test('I1: dates are read in several shapes and tidied to MM/DD/YYYY; a two-digit year is ASKED about, never guessed; a date of birth in the future or over 120 years, a discharge date already past, and a date that does not exist are warned; a discharge "unknown" is left alone (driven)', () => {
+  const { ctx } = i1Ctx_();
+  const today = '2026-11-06';
+  ['1/2/1950', '01-02-1950', '01021950', '1950-01-02', '1.2.1950'].forEach((r) =>
+    assert.deepStrictEqual(i1J(ctx.intakeFmtDate_(r, today, 'dob')), { value: '01/02/1950', warn: '', iso: '1950-01-02' }, r));
+  const yy = i1J(ctx.intakeFmtDate_('1/2/50', today, 'dob'));
+  assert.ok(yy.value === '1/2/50' && /Two-digit year — write the full year \(for example 1950 or 2050\)/.test(yy.warn), 'not guessed');
+  assert.ok(/in the future/.test(ctx.intakeFmtDate_('12/01/2030', today, 'dob').warn));
+  assert.ok(/over 120/.test(ctx.intakeFmtDate_('01/01/1890', today, 'dob').warn));
+  assert.ok(/not a real date/.test(ctx.intakeFmtDate_('02/30/1950', today, 'dob').warn));
+  assert.ok(/Write the date as MM\/DD\/YYYY/.test(ctx.intakeFmtDate_('born in spring', today, 'dob').warn));
+  assert.ok(/already passed/.test(ctx.intakeFmtDate_('11/01/2026', today, 'future').warn));
+  assert.strictEqual(ctx.intakeFmtDate_('11/20/2026', today, 'future').warn, '');
+  assert.deepStrictEqual(i1J(ctx.intakeFmtDate_('unknown', today, 'future')), { value: 'unknown', warn: '', iso: '' }, 'words are a fine discharge answer');
+});
+
+test('I1: email — the shape is checked, the domain lower-cased, and a common domain typo NAMED with the likely fix (never changed for the rep); the Medicare ID is found in the insurance line with or without dashes, spaces or lower case and tidied, an invalid or missing one warned, an Advantage plan left alone (driven)', () => {
+  const { ctx } = i1Ctx_();
+  assert.deepStrictEqual(i1J(ctx.intakeFmtEmail_(' Ana.Ruiz@GMAIL.com ')), { value: 'Ana.Ruiz@gmail.com', warn: '' });
+  const typo = i1J(ctx.intakeFmtEmail_('ana@gmial.com'));
+  assert.ok(typo.value === 'ana@gmial.com' && /Did you mean ana@gmail\.com\?/.test(typo.warn), 'named, not changed');
+  assert.ok(/does not look like an email/.test(ctx.intakeFmtEmail_('ana at gmail').warn));
+  ['Medicare 1EG4-TE5-MK72', 'medicare 1eg4 te5 mk72', 'Medicare · 1EG4TE5MK72', 'Medicare MBI# 1EG4-TE5-MK72'].forEach((r) =>
+    assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_(r)), { value: 'Medicare · 1EG4-TE5-MK72', warn: '' }, r));
+  assert.ok(/does not look like a Medicare ID/.test(ctx.intakeFmtInsurance_('Medicare 1SG4-TE5-MK72').warn), 'an S is never in an MBI');
+  assert.ok(/No Medicare ID \(MBI\) found/.test(ctx.intakeFmtInsurance_('Medicare').warn));
+  assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_('Humana Medicare Advantage H1234')), { value: 'Humana Medicare Advantage H1234', warn: '' }, 'an Advantage plan has its own member ID');
+  assert.deepStrictEqual(i1J(ctx.intakeFmtInsurance_('Aetna W123456789')), { value: 'Aetna W123456789', warn: '' }, 'not Medicare: not checked');
+});
+
+test('I1: an address is warned without a state or a 5-digit ZIP (a state code, a lower-case code before the ZIP, or the name); a height is read loosely and tidied to 5\'4"; an SSN of nine digits is tidied and masked on screen, anything else warned (driven + source)', () => {
+  const { ctx, src } = i1Ctx_();
+  assert.strictEqual(ctx.intakeFmtAddress_('123 Elm St, Dallas, TX 75201').warn, '');
+  assert.strictEqual(ctx.intakeFmtAddress_('123 elm st dallas tx 75201').warn, '', 'a lower-case code right before the ZIP');
+  assert.strictEqual(ctx.intakeFmtAddress_('9 Oak Rd, Austin, Texas 78701').warn, '');
+  assert.ok(/No state in this address/.test(ctx.intakeFmtAddress_('123 Elm St, Dallas 75201').warn));
+  assert.ok(/No 5-digit ZIP in this address/.test(ctx.intakeFmtAddress_('123 Elm St, Dallas, TX').warn));
+  assert.ok(/No state or 5-digit ZIP/.test(ctx.intakeFmtAddress_('123 Elm St in town').warn), 'the word "in" is not Indiana');
+  ['5\'4"', '5 4', '5ft 4in', '5-4', '64 in', '64', '5’4”'].forEach((r) => assert.deepStrictEqual(i1J(ctx.intakeFmtHeight_(r)), { value: '5\'4"', warn: '' }, r));
+  assert.ok(/outside 3'0"–7'6"/.test(ctx.intakeFmtHeight_('8\'2"').warn));
+  assert.ok(/feet and inches/.test(ctx.intakeFmtHeight_('tall').warn));
+  assert.deepStrictEqual(i1J(ctx.intakeFmtSsn_('123 45 6789')), { value: '123-45-6789', warn: '' });
+  assert.ok(/9 digits/.test(ctx.intakeFmtSsn_('12345').warn));
+  assert.ok(/\.intk-ssn:not\(:focus\) \{ -webkit-text-security: disc; \}/.test(src), 'masked while not being typed in');
+  assert.deepStrictEqual(i1J(ctx.INTAKE_FMT_FIELDS.pmd), { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'height', 20: 'future' });
+  // The map's indexes name the fields they claim to (the English banks).
+  const bank = (name) => { const i = src.indexOf('var ' + name + ' = {'); return vm.runInContext('(' + src.slice(i + ('var ' + name + ' = ').length, src.indexOf('};', i) + 1) + ')', vm.createContext({})).EN; };
+  const pmd = bank('INTAKE_PMD_Q'), pap = bank('INTAKE_PAP_Q');
+  assert.deepStrictEqual([pmd[2], pmd[3], pmd[5], pmd[6], pmd[10], pmd[15], pmd[20]], ['Patient Primary Contact Phone #', 'Secondary Contact Ph#', 'DOB', 'Home Address', 'SSN # (if insurance details N/A)', 'Height', 'If in facility what is the approximate discharge date?']);
+  assert.deepStrictEqual([pap[13], pap[14], pap[15], pap[16]], ['MDO Ph#', 'MDO Fax#', 'MDO Address', 'Height']);
+});
+
+test('I1: before Preview, what looks off is asked about in the SAME question as the blank recommended fields — once, with Continue anyway; the PPD form is not checked; leaving a field tidies it and the draft saves the tidy value (source)', () => {
+  const { src } = i1Ctx_();
+  const warn = extractFnFrom(src, 'intakeWarnRecommended_');
+  assert.ok(/var fmt = form === 'ppd' \? \[\] : intakeFmtIssues_\(form\);/.test(warn) && /if \(!marked\.length && !fmt\.length\) return Promise\.resolve\(true\);/.test(warn), 'one ask, nothing when clean');
+  assert.ok(/answer\(s\) look off/.test(warn) && /confirmLabel: 'Continue anyway'/.test(warn) && !/uiConfirm[\s\S]*uiConfirm/.test(warn), 'one question, never a block');
+  const chg = extractFnFrom(src, 'intakeFmtOnChange_');
+  assert.ok(/if \(r\.value !== el\.value\) \{ el\.value = r\.value; intakeSaveDraft_\(form\);/.test(chg), 'a tidy-up is saved like any change');
+  assert.ok(/f\.addEventListener\('change', function \(e\) \{ intakeFmtOnChange_\(form, e\.target\); \}\);/.test(extractFnFrom(src, 'intakeEnterAcct_')));
+});
+
+test('I1: the Maps address check — the verdict: a street address is found, an area is not, a partial match is a guess, not-found and outside-the-US are named, and a service failure is "could not check", never "not found" (g128); the rep\'s message offers Use this only for a found address Google spelled differently, never for a partial guess (driven)', () => {
+  const c = vm.createContext({ String, Array, Math });
+  vm.runInContext(new RegExp("const KB_GEO_US_COUNTRIES = [^;]+;").exec(serverSource())[0].replace(/^const /, 'var '), c);
+  ['kbGeoOutsideUs_', 'intakeAddrVerdict_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const v = (g) => i1J(c.intakeAddrVerdict_(g));
+  assert.deepStrictEqual(v({ formatted: '123 Elm St, Dallas, TX 75201, USA', country: 'US', types: ['street_address'] }), { status: 'found', formatted: '123 Elm St, Dallas, TX 75201' });
+  assert.deepStrictEqual(v({ formatted: 'Dallas, TX, USA', country: 'US', types: ['locality', 'political'] }), { status: 'area', formatted: 'Dallas, TX' });
+  assert.deepStrictEqual(v({ partial: true, formatted: 'Irving, TX 75038, USA' }), { status: 'partial', formatted: 'Irving, TX 75038' });
+  assert.deepStrictEqual(v(null), { status: 'notFound' });
+  assert.deepStrictEqual(v({ unavailable: true, status: 'OVER_QUERY_LIMIT' }), { status: 'unavailable' });
+  assert.strictEqual(v({ formatted: '1 Bay St, Toronto, ON, Canada', country: 'CA', types: ['street_address'] }).status, 'outside');
+  const { ctx } = i1Ctx_();
+  const m = (r, typed) => i1J(ctx.intakeAddrMessage_(r, typed));
+  assert.deepStrictEqual(m({ status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }, '123 elm street dallas tx'), { text: 'Google Maps found this address: 123 Elm St, Dallas, TX 75201', warn: false, offer: '123 Elm St, Dallas, TX 75201' });
+  assert.deepStrictEqual(m({ status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }, '123 Elm St, Dallas, TX 75201'), { text: 'Google Maps found this address.', warn: false, offer: '' }, 'nothing to offer when it is already Google\'s spelling');
+  const p = m({ status: 'partial', formatted: 'Irving, TX 75038' }, '500 Main');
+  assert.ok(p.warn && p.offer === '' && /matched only part/.test(p.text), 'a guess is named, never offered');
+  assert.ok(m({ status: 'notFound' }, 'x').warn && m({ status: 'area', formatted: 'Dallas, TX' }, 'x').warn && m({ status: 'outside' }, 'x').warn);
+  assert.deepStrictEqual(m({ status: 'unavailable' }, 'x'), { text: 'The address could not be checked just now.', warn: false, offer: '' }, 'a failure is not the rep\'s address being wrong');
+});
+
+test('I1: the address check endpoint — employee-gated, OFF unless the toggle is on (default off, a danger note for the Admin), the address only, cached under a HASH of it, its own daily cap (a capped or unreadable count is "could not check"), and no message or audit row ever carries the address (source + driven)', () => {
+  const ep = extractRawFunction('Code.js', 'checkIntakeAddress');
+  assert.ok(ep.indexOf('getEmployeeInfo_()') < ep.indexOf("getFlag_('intakeAddressCheck')") && ep.indexOf("getFlag_('intakeAddressCheck')") < ep.indexOf('kbGeocodeOne_'), 'gate, then toggle, then the one geocode');
+  assert.ok(/computeDigest\(Utilities\.DigestAlgorithm\.SHA_256, a\.toLowerCase\(\)\)/.test(ep) && /'iac:' \+ Utilities\.base64EncodeWebSafe/.test(ep), 'the cache key is a hash, never the address');
+  assert.ok(/if \(!room\.ok\) return \{ status: 'unavailable'/.test(ep) && /if \(v\.status !== 'unavailable'\)/.test(ep), 'capped is "could not check", and a failure is never cached (g129)');
+  assert.ok(!/writeAuditLog_|writeWitnessAuditLog_|logClientError|Logger\.log/.test(ep), 'no audit row, no log line');
+  assert.ok(!/\+ a\b|\+ address\b/.test(ep.replace(/a\.toLowerCase\(\)/, '')), 'no message quotes the address (g146)');
+  const cfg = serverSource();
+  assert.ok(/key: 'intakeAddressCheck'[\s\S]*?default: false, scope: 'both',\s*danger: /.test(cfg), 'off by default, shipped to the client, with a danger note');
+  assert.ok(/const INTAKE_ADDR_CHECK_PROP = 'INTAKE_ADDR_CHECKS_24H';/.test(cfg) && /const INTAKE_ADDR_CHECK_CAP = 1000;/.test(cfg));
+  // The reserve: refuses past the cap and on an unreadable count.
+  let stored = null, throwRead = false;
+  const c = vm.createContext({ Math, Date, JSON, String, Number, Object, Array,
+    INTAKE_ADDR_CHECK_PROP: 'P', INTAKE_ADDR_CHECK_CAP: 2,
+    propSetBounded_: (k, v) => { stored = v; },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => { if (throwRead) throw new Error('quota'); return stored; } }) } });
+  ['routeLookupWindow_', 'intakeAddrCheckReserve_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  assert.ok(c.intakeAddrCheckReserve_().ok && c.intakeAddrCheckReserve_().ok);
+  assert.strictEqual(c.intakeAddrCheckReserve_().ok, false, 'past the cap');
+  throwRead = true;
+  assert.ok(c.intakeAddrCheckReserve_().ok === false && /quota/.test(c.intakeAddrCheckReserve_().error), 'an unknown count is not room');
+  const geo = extractRawFunction('Code.js', 'kbGeocodeOne_');
+  assert.ok(/types: \(r\.types \|\| \[\]\)\.slice\(0, 8\)\.map\(String\)/.test(geo), 'the geocode carries its match types');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

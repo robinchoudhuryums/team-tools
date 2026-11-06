@@ -3892,6 +3892,24 @@
     "sendPayWeekReminders"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "I1: the intake address check (endpoint, verdict, counter, toggle)",
+   "added": [
+    "INTAKE_ADDR_CACHE_SECONDS",
+    "INTAKE_ADDR_CHECK_CAP",
+    "INTAKE_ADDR_CHECK_PROP",
+    "checkIntakeAddress",
+    "intakeAddrCheckReserve_",
+    "intakeAddrVerdict_"
+   ],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "kbGeocodeOne_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4909,7 +4927,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "0c31822e4bf6cccc"
+   "sha": "5017f86050c8a46b"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -4985,6 +5003,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7a6bc47407650baa"
+  },
+  "INTAKE_ADDR_CACHE_SECONDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1781d5d7a813ba0d"
+  },
+  "INTAKE_ADDR_CHECK_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f112f305fbdd2b15"
+  },
+  "INTAKE_ADDR_CHECK_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f1b643ae25876b13"
   },
   "INTAKE_EMAIL_IMG_WIDTH": {
    "file": "60_intake.js",
@@ -7776,6 +7809,11 @@
    "kind": "function",
    "sha": "82f001cfb516c7f2"
   },
+  "checkIntakeAddress": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "45f650d632dd70a7"
+  },
   "checkOopEligibility": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10166,6 +10204,16 @@
    "kind": "function",
    "sha": "63c60babe95c2d87"
   },
+  "intakeAddrCheckReserve_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "f1748a5507fdbd3c"
+  },
+  "intakeAddrVerdict_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "7ae4f703d79126b5"
+  },
   "intakeAmendBannerHtml_": {
    "file": "60_intake.js",
    "kind": "function",
@@ -10739,7 +10787,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "81fe7aac06a1f2e1"
+   "sha": "a93d280d19c09b09"
   },
   "kbGeocodePartialMsg_": {
    "file": "70_kb.js",

@@ -5902,8 +5902,11 @@ function kbGeocodeOne_(addr) {
     let cityFrom = '';
     if (!city && borough) { city = borough; cityFrom = 'borough'; }
     else if (!city && hood) { city = hood; cityFrom = 'neighborhood'; }
+    // I1: the match's own TYPES (street_address, premise, locality, …) ride
+    // along, so a caller can tell a street address from an area — additive.
     return { lat: r.geometry.location.lat, lng: r.geometry.location.lng,
-      formatted: String(r.formatted_address || ''), state: state, city: city, cityFrom: cityFrom, country: country };
+      formatted: String(r.formatted_address || ''), state: state, city: city, cityFrom: cityFrom, country: country,
+      types: (r.types || []).slice(0, 8).map(String) };
   } catch (e) { return { unavailable: true, status: 'ERROR', message: String((e && e.message) || e) }; }
 }
 /** PURE (Node-pinned) — KB2-3 (cycle 23): a geocode whose COUNTRY is known and

@@ -1666,7 +1666,7 @@ test('recommended check: marks only listed blanks, confirm gates, filling clears
   assert.ok(confirmOpts && /strongly-recommended/.test(confirmOpts.message), 'one confirm, naming the count');
   assert.strictEqual(proceeded, false, 'Go back resolves false — the preview does not fire');
   // fill the field → the mark clears itself on input
-  row2.querySelector('input').value = '555-0100';
+  row2.querySelector('input').value = '469-555-0100';   // I1: a whole number — a short one is a format warning now
   row2.dispatchEvent(new h.window.Event('input', { bubbles: true }));
   assert.ok(!row2.classList.contains('intk-recwarn'), 'mark clears when the field gains a value');
   assert.ok(!row2.querySelector('.intk-recwarn-note'), 'note removed with it');
@@ -9763,6 +9763,92 @@ function bootAcct(form, lang) {
   const count = () => h.$('#intk-' + form + '-count').textContent;
   return { h, root, field, type, count };
 }
+
+section('Intake — I1 format safeguards and the address check (operator 2026-11-05/06)');
+
+const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+
+test('I1 DOM: leaving a PMD field tidies what it can read and says what looks off, under the field, in amber — a phone, the secondary equal to the primary, a two-digit year, a Medicare ID; the SSN is masked and the phone fields offer the number pad; the tidy value is what the draft keeps', () => {
+  const { h, field } = bootAcct('pmd');
+  const rowOf = (i) => field(i).closest('.intk-row');
+  i1Leave_(h, field(2), '+1 (469) 111 3333');
+  assert.strictEqual(field(2).value, '469-111-3333', 'tidied');
+  assert.ok(!rowOf(2).classList.contains('intk-fmtwarn') && !rowOf(2).querySelector('.intk-fmt-note'), 'and nothing to say');
+  i1Leave_(h, field(3), '4691113333');
+  assert.ok(rowOf(3).classList.contains('intk-fmtwarn') && /Same as the primary number/.test(rowOf(3).querySelector('.intk-fmt-note').textContent), 'the same number twice');
+  i1Leave_(h, field(5), '1/2/50');
+  const note5 = rowOf(5).querySelector('.intk-fmt-note');
+  assert.ok(note5 && note5.getAttribute('role') === 'status' && /Two-digit year/.test(note5.textContent) && field(5).value === '1/2/50', 'asked, not guessed');
+  i1Leave_(h, field(5), '01021950');
+  assert.ok(field(5).value === '01/02/1950' && !rowOf(5).querySelector('.intk-fmt-note'), 'a readable date is tidied and the note goes');
+  i1Leave_(h, field(8), 'medicare 1eg4 te5 mk72');
+  assert.strictEqual(field(8).value, 'Medicare · 1EG4-TE5-MK72');
+  assert.ok(field(10).classList.contains('intk-ssn') && field(10).getAttribute('inputmode') === 'numeric', 'the SSN is masked and numeric');
+  assert.strictEqual(field(2).getAttribute('inputmode'), 'tel');
+  h.read('intakeFlushDraftNow_')();
+  const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  assert.ok(!draft.pmd || draft.pmd.answers[2] === '469-111-3333', 'the draft keeps the tidy value');
+});
+
+test('I1 DOM: Preview asks ONCE about what looks off, beside any blank recommended fields — Go back stays on the form with the rows marked; Continue anyway previews; a clean form previews with no question', async () => {
+  const { h, field } = bootAcct('pmd');
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  const previewed = [];
+  h.window.intakeAcctPreviewGo_ = (form) => previewed.push(form);
+  h.read('intakeAcctPreviewGo_ = window.intakeAcctPreviewGo_');
+  field(1).value = 'Ana Ruiz';
+  field(4).value = 'ana@gmial.com';
+  field(2).value = '469 111 33';
+  h.window.intakeAcctPreview_('pmd');
+  await tick(); await tick();
+  assert.strictEqual(asked.length, 1, 'one question');
+  assert.ok(/look off/.test(asked[0].message) && /Did you mean ana@gmail\.com\?/.test(asked[0].message) && /10-digit US phone number/.test(asked[0].message), asked[0].message);
+  assert.strictEqual(asked[0].confirmLabel, 'Continue anyway');
+  assert.strictEqual(previewed.length, 0, 'Go back: no preview');
+  assert.ok(field(4).closest('.intk-row').classList.contains('intk-fmtwarn'), 'the rows are marked');
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(true); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.window.intakeAcctPreview_('pmd');
+  await tick(); await tick();
+  assert.deepStrictEqual(previewed, ['pmd'], 'Continue anyway previews — a warning never blocks');
+});
+
+test('I1 DOM: the address check — nothing is sent while the toggle is off (or not loaded); on, leaving the address asks Google Maps once, a found address Google spells differently offers Use this, a not-found one is listed before Preview, and an answer that arrives after the field changed is dropped', async () => {
+  const { h, field } = bootAcct('pmd');
+  const asked = [];
+  h.run.respond('checkIntakeAddress', (a) => { asked.push(a); return /nowhere/i.test(a) ? { status: 'notFound' } : { status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }; });
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick();
+  assert.strictEqual(asked.length, 0, 'flags not loaded: off (fails closed)');
+  h.read('empState = { flags: { intakeAddressCheck: false } }');
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick();
+  assert.strictEqual(asked.length, 0, 'toggle off: nothing sent');
+  h.read('empState = { flags: { intakeAddressCheck: true } }');
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick(); await tick();
+  assert.deepStrictEqual(asked, ['123 elm street dallas tx 75201'], 'the address only');
+  const row = field(6).closest('.intk-row');
+  const note = row.querySelector('.intk-addr-note');
+  assert.ok(note && /Google Maps found this address: 123 Elm St, Dallas, TX 75201/.test(note.textContent));
+  note.querySelector('.intk-addr-use').click();
+  await tick(); await tick();
+  assert.strictEqual(field(6).value, '123 Elm St, Dallas, TX 75201', 'Use this takes Google\'s spelling');
+  i1Leave_(h, field(6), '1 Nowhere Lane, Dallas, TX 75201');
+  await tick(); await tick();
+  assert.ok(/could not find this address/.test(row.querySelector('.intk-addr-note').textContent) && /could not find/.test(row.getAttribute('data-addr-warn')));
+  const issues = h.read('intakeFmtIssues_')('pmd');
+  assert.ok(issues.some((x) => x.key === 6 && /could not find/.test(x.warn)), 'listed before Preview');
+  // A late answer for an address the rep has since changed is dropped.
+  h.run.clearResponder('checkIntakeAddress');   // hold the answer
+  i1Leave_(h, field(6), '9 Old Rd, Nowhere, TX 75201');
+  field(6).value = '10 New Rd, Dallas, TX 75201';   // typed over before the answer arrives
+  h.run.flushSuccess({ status: 'notFound' }, 'checkIntakeAddress');
+  await tick();
+  assert.ok(!/could not find/.test(row.querySelector('.intk-addr-note').textContent), 'the stale answer is not painted');
+});
 
 test('B1 DOM: the PMD form draws the PRIMARY phone as required and the secondary phone as optional, and optional rows never count toward the ring', () => {
   const { h, root, field, type, count } = bootAcct('pmd');

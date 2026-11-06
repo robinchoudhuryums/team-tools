@@ -2734,6 +2734,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],
       ackVersion: 1 },
     getEmpDocTemplates: { templates: [] },
+    // I1 (operator 2026-11-05/06): the intake address check — an address with
+    // "Elm" in it is found (Google's spelling differs, so Use this shows), one
+    // with "Nowhere" is not found, and anything else is found only as an area.
+    checkIntakeAddress: function (addr) {
+      var a = String(addr || '');
+      if (/nowhere/i.test(a)) return { status: 'notFound' };
+      if (/elm/i.test(a)) return { status: 'found', formatted: '123 Elm St, Dallas, TX 75201' };
+      return { status: 'area', formatted: 'Dallas, TX' };
+    },
     // Batch F: the screenshot reader and the three 1-on-1 writes.
     getCoachingImage: { success: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' },
     logOneOnOne: { success: true, id: 'oo-new', date: todayIso },
