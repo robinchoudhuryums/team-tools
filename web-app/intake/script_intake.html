@@ -206,6 +206,20 @@
   .intk-amend-chip.superseded { color: var(--warning-deep); background: var(--warn-soft); }
   .intk-amend-banner { display: flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; }
   .intk-amend-banner.superseded { color: var(--warning-deep); background: var(--warn-soft); }
+  /* I3 — reading an insurance card: the button, the status line and the suggestion. */
+  .intk-card-read { margin-top: 10px; }
+  .intk-card-status { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); }
+  .intk-card-fail { color: var(--warn); }
+  .intk-card-panel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .intk-card-head { display: flex; align-items: flex-start; gap: 6px; font-weight: 600; font-size: .88rem; }
+  .intk-card-head svg { flex: 0 0 auto; margin-top: 2px; }
+  .intk-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 10px; }
+  .intk-card-f { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; color: var(--muted); min-width: 0; }
+  .intk-card-f input { font: inherit; font-size: .88rem; color: var(--ink); min-width: 0; }
+  .intk-card-line { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
+  .intk-card-line span { color: var(--muted); }
+  .intk-card-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .intk-card-note { margin: 0; font-size: .75rem; color: var(--muted); }
   /* I2 — saved drafts: the count on the rail button and the Drafts list. */
   .intk-drafts-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--paper-card); font-family: var(--mono); font-size: 11px; line-height: 18px; text-align: center; }
   .intk-modal.intk-drafts-modal { width: min(560px, calc(100vw - 32px)); }
@@ -2955,7 +2969,7 @@ function intakeAcctSend_(form, confirmedExternal) {
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
       intakeSavedRemove_(INTAKE_STATE[form].savedId); INTAKE_STATE[form].savedId = null;   // I2: and the saved draft it came from
       if (currentView === requestedView) intakeClearForm_(form);
-      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
+      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; delete INTAKE_CARD[form]; }   // drop PHI payload after send (F3)
       // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
@@ -2981,6 +2995,7 @@ function intakeImagesSectionHtml_(form, lang) {
       ? 'También puede pegar una captura de pantalla (Ctrl+V). Frente y reverso de cada tarjeta, hasta 12 imágenes. Las fotos grandes se reducen antes de enviarse.'
       : 'You can also paste a screenshot (Ctrl+V). Front and back of each card, up to 12 images. Large photos are shrunk before they are sent.') + '</p>' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
+    '<div class="intk-card-read" id="intk-card-read" aria-live="polite"></div>' +   // I3: read the card's details
   '</div></div>';
 }
 
@@ -3074,11 +3089,446 @@ function intakeRenderGallery_(form) {
       '<button type="button" class="rm" aria-label="Remove image ' + (idx + 1) + '"' +   // A1
       ' onclick="intakeRemoveImage_(\'' + form + '\',' + idx + ')">&#10005;</button></div>';
   }).join('');
+  // I3: the card reader's button under the images (or its open suggestion).
+  var host = document.getElementById('intk-card-read');
+  if (!host) return;
+  if (INTAKE_CARD[form]) { intakeCardPanel_(form); return; }
+  host._seq = (host._seq || 0) + 1;   // a read in flight for the old set of images is dropped
+  var n = (INTAKE_STATE[form].images || []).length;
+  host.innerHTML = n ? '<button type="button" class="intk-btn" data-card-read="1" onclick="intakeCardRead_(\'' + form + '\')">' + icon('fileText', 14) + ' ' +
+    esc(INTAKE_STATE[form].lang === 'ES' ? 'Leer los datos del seguro de la tarjeta' : 'Read the insurance details from the card') + '</button>' : '';
 }
 
 function intakeRemoveImage_(form, idx) {
   INTAKE_STATE[form].images.splice(idx, 1);
   intakeRenderGallery_(form);
+}
+
+// ── I3 (operator 2026-11-06): reading an insurance card IN THE BROWSER ─────
+// The card's payer, member ID, group and Rx numbers are read from the photo
+// on the rep's own computer and OFFERED — nothing is filled until the rep
+// presses Use. No image leaves the browser to be read: Google Cloud Vision and
+// a Claude vision call were ruled out on BAA grounds. The reader is PaddleOCR
+// (PP-OCRv4 detection + recognition) on ONNX Runtime Web, run on this page's
+// thread — the Apps Script sandbox cannot start a worker from another origin
+// (the HB4.1 pdf.js posture) — chosen over Tesseract.js by a spike on card
+// photos (rotated, glare, small: 88 of 88 fields against 67). The code and the
+// models (~30 MB, first use only; the browser keeps them) come from jsDelivr
+// at pinned versions, and EVERY file is checked against its SHA-256 below
+// before it runs — a file that does not match is refused, never used.
+var INTAKE_OCR_CDN = 'https://cdn.jsdelivr.net/npm/';
+var INTAKE_OCR_FILES = {
+  ort:  { path: 'onnxruntime-web@1.30.0/dist/ort.wasm.min.js', sha256: 'faece07e84faa9001f5104bbe4e5c70861d06cb2376a0dea1fa0ad33a67adc81' },
+  mjs:  { path: 'onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.mjs', sha256: 'e13f7f94fc51b4ca72b12faeb1ee95f4ace6dfbc8939bc718aabdc0a27c4299b' },
+  wasm: { path: 'onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm', sha256: '3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2' },
+  det:  { path: '@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_det_infer.onnx', sha256: '30a86f5731181461d08021402766601e4302a9b9b9666be8aff402696339cdff' },
+  rec:  { path: '@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_rec_infer.onnx', sha256: '06b3e6af6c59a1ba5d53790ed8c2e4b2de389870b6cf5a97f349f3412cb269c0' },
+  keys: { path: '@gutenye/ocr-models@1.4.2/assets/ppocr_keys_v1.txt', sha256: '28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7' },
+};
+var INTAKE_OCR = { state: '', waiting: [], det: null, rec: null, dict: null };   // state '' | 'loading' | 'ready'
+var INTAKE_CARD = {};   // per form: { fields, read, of } — the open suggestion
+
+function intakeOcrHex_(buf) {
+  return Array.prototype.map.call(new Uint8Array(buf), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+}
+/** One pinned file, checked: resolves to its bytes, or rejects naming the file. */
+function intakeOcrFetch_(key) {
+  var f = INTAKE_OCR_FILES[key];
+  return fetch(INTAKE_OCR_CDN + f.path, { credentials: 'omit' })
+    .then(function (r) { if (!r.ok) throw new Error('could not download ' + key); return r.arrayBuffer(); })
+    .then(function (buf) {
+      return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+        if (intakeOcrHex_(d) !== f.sha256) throw new Error(key + ' did not match its checksum');
+        return buf;
+      });
+    });
+}
+/** The reader, loaded once. A failed load is NOT kept (g129) — the next
+ *  press tries again. Resolves to the engine; a test or the visual matrix may
+ *  stand one in as window.INTAKE_OCR_ENGINE. */
+function intakeOcrEngine_() {
+  if (window.INTAKE_OCR_ENGINE) return Promise.resolve(window.INTAKE_OCR_ENGINE);
+  if (INTAKE_OCR.state === 'ready') return Promise.resolve(INTAKE_OCR_PIPE);
+  return new Promise(function (ok, no) {
+    INTAKE_OCR.waiting.push({ ok: ok, no: no });
+    if (INTAKE_OCR.state === 'loading') return;
+    INTAKE_OCR.state = 'loading';
+    var settle = function (err) {
+      var w = INTAKE_OCR.waiting; INTAKE_OCR.waiting = [];
+      INTAKE_OCR.state = err ? '' : 'ready';
+      w.forEach(function (x) { if (err) x.no(err); else x.ok(INTAKE_OCR_PIPE); });
+    };
+    var got = {};
+    var keys = Object.keys(INTAKE_OCR_FILES);
+    Promise.all(keys.map(function (k) { return intakeOcrFetch_(k).then(function (b) { got[k] = b; }); }))
+      .then(function () {
+        if (!window.ort) {
+          var s = document.createElement('script');
+          s.textContent = new TextDecoder().decode(got.ort);   // the checked bytes, never a second download
+          document.head.appendChild(s);
+        }
+        if (!window.ort) throw new Error('the reader did not start');
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
+        ort.env.wasm.wasmBinary = got.wasm;
+        ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([got.mjs], { type: 'text/javascript' })) };
+        INTAKE_OCR.dict = new TextDecoder().decode(got.keys).split('\n').concat([' ']);
+        return ort.InferenceSession.create(new Uint8Array(got.det), { executionProviders: ['wasm'] });
+      })
+      .then(function (det) { INTAKE_OCR.det = det; return ort.InferenceSession.create(new Uint8Array(got.rec), { executionProviders: ['wasm'] }); })
+      .then(function (rec) { INTAKE_OCR.rec = rec; settle(null); })
+      .catch(function (e) { settle(e || new Error('the reader did not start')); });
+  });
+}
+
+/** The PP-OCR pipeline over ONNX Runtime, without OpenCV: the detection map's
+ *  connected regions become text boxes along their OWN angle (a tilted card
+ *  reads level — the spike's rotated photos read nothing until this), each is
+ *  cut out, read, and decoded (CTC, greedy). → [{text, x, y, w, h}]. */
+var INTAKE_OCR_PIPE = {
+  read: function (img) {
+    return intakeOcrDetect_(img).then(function (boxes) {
+      var lines = [];
+      var next = function (i) {
+        if (i >= boxes.length) return Promise.resolve(lines);
+        return intakeOcrRecognize_(img, boxes[i]).then(function (r) {
+          if (r.text && r.conf >= 0.5) lines.push({ text: r.text, x: boxes[i].cx - boxes[i].w / 2, y: boxes[i].cy - boxes[i].h / 2, w: boxes[i].w, h: boxes[i].h, ang: boxes[i].ang });
+          return next(i + 1);
+        });
+      };
+      return next(0);
+    });
+  },
+};
+function intakeOcrTensor_(ctx, w, h, mean, std) {
+  var d = ctx.getImageData(0, 0, w, h).data, n = w * h, f = new Float32Array(3 * n);
+  for (var i = 0; i < n; i++) {   // the models take BGR planes
+    f[i] = (d[i * 4 + 2] / 255 - mean[0]) / std[0];
+    f[n + i] = (d[i * 4 + 1] / 255 - mean[1]) / std[1];
+    f[2 * n + i] = (d[i * 4] / 255 - mean[2]) / std[2];
+  }
+  return new ort.Tensor('float32', f, [1, 3, h, w]);
+}
+function intakeOcrDetect_(img) {
+  var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+  var r = Math.min(1, 960 / Math.max(W, H));
+  var w = Math.max(32, Math.round(W * r / 32) * 32), h = Math.max(32, Math.round(H * r / 32) * 32);
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+  var feeds = {}; feeds[INTAKE_OCR.det.inputNames[0]] = intakeOcrTensor_(ctx, w, h, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]);
+  return INTAKE_OCR.det.run(feeds).then(function (out) {
+    var prob = out[INTAKE_OCR.det.outputNames[0]].data, thr = 0.3, seen = new Uint8Array(w * h), stack = new Int32Array(w * h), boxes = [];
+    for (var p = 0; p < w * h; p++) {
+      if (seen[p] || prob[p] <= thr) continue;
+      var top = 0; stack[top++] = p; seen[p] = 1;
+      var pts = [], sum = 0, mx = 0, my = 0;
+      while (top) {
+        var q = stack[--top], qx = q % w, qy = (q / w) | 0;
+        sum += prob[q]; pts.push(qx, qy); mx += qx; my += qy;
+        if (qx > 0 && !seen[q - 1] && prob[q - 1] > thr) { seen[q - 1] = 1; stack[top++] = q - 1; }
+        if (qx < w - 1 && !seen[q + 1] && prob[q + 1] > thr) { seen[q + 1] = 1; stack[top++] = q + 1; }
+        if (qy > 0 && !seen[q - w] && prob[q - w] > thr) { seen[q - w] = 1; stack[top++] = q - w; }
+        if (qy < h - 1 && !seen[q + w] && prob[q + w] > thr) { seen[q + w] = 1; stack[top++] = q + w; }
+      }
+      var cnt = pts.length / 2;
+      if (cnt < 9 || sum / cnt < 0.6) continue;
+      mx /= cnt; my /= cnt;
+      var sxx = 0, syy = 0, sxy = 0;
+      for (var m = 0; m < pts.length; m += 2) { var dx = pts[m] - mx, dy = pts[m + 1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+      var ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+      if (Math.abs(ang) > Math.PI / 4 || sxx < syy * 2) ang = 0;   // a near-square blob reads level
+      var ca = Math.cos(ang), sa = Math.sin(ang), u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+      for (var k = 0; k < pts.length; k += 2) {
+        var ex = pts[k] - mx, ey = pts[k + 1] - my, u = ex * ca + ey * sa, v = -ex * sa + ey * ca;
+        if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+      }
+      var bw = u1 - u0 + 1, bh = v1 - v0 + 1;
+      if (Math.min(bw, bh) < 3) continue;
+      var dist = (bw * bh * 1.6) / (2 * (bw + bh));   // the box grown past the map's tight core (PP-OCR's "unclip")
+      var cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+      boxes.push({ cx: (mx + cu * ca - cv * sa) * W / w, cy: (my + cu * sa + cv * ca) * H / h, w: (bw + 2 * dist) * W / w, h: (bh + 2 * dist) * H / h, ang: ang });
+    }
+    return boxes;
+  });
+}
+function intakeOcrRecognize_(img, box) {
+  var hh = 48, ww = Math.max(16, Math.min(1600, Math.round(box.w * hh / box.h)));
+  var c = document.createElement('canvas'); c.width = ww; c.height = hh;
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ww, hh);
+  ctx.setTransform(ww / box.w, 0, 0, hh / box.h, ww / 2, hh / 2);
+  ctx.rotate(-box.ang);
+  ctx.drawImage(img, -box.cx, -box.cy);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  var feeds = {}; feeds[INTAKE_OCR.rec.inputNames[0]] = intakeOcrTensor_(ctx, ww, hh, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]);
+  return INTAKE_OCR.rec.run(feeds).then(function (out) {
+    var o = out[INTAKE_OCR.rec.outputNames[0]], T = o.dims[1], C = o.dims[2], d = o.data;
+    var text = '', last = -1, sum = 0, n = 0;
+    for (var t = 0; t < T; t++) {
+      var best = 0, bv = -1;
+      for (var k = 0; k < C; k++) { var v = d[t * C + k]; if (v > bv) { bv = v; best = k; } }
+      if (best !== 0 && best !== last) { text += INTAKE_OCR.dict[best - 1] || ''; sum += bv; n++; }
+      last = best;
+    }
+    return { text: text, conf: n ? sum / n : 0 };
+  });
+}
+
+/** PURE (Node-pinned) — the read lines as ROWS in reading order: the card is
+ *  first levelled by its lines' typical tilt (a photo taken at an angle), then
+ *  a line joins the row whose middle it shares (within half the shorter
+ *  height), and a row reads left to right. → [{y, h, items: [{text, x, w}]}]. */
+function intakeCardRows_(lines) {
+  var rows = [];
+  var angs = (lines || []).filter(function (l) { return l.ang && l.w > l.h * 3; }).map(function (l) { return l.ang; }).sort(function (a, b) { return a - b; });
+  var tilt = angs.length ? angs[angs.length >> 1] : 0, ct = Math.cos(-tilt), st = Math.sin(-tilt);
+  var level = (lines || []).map(function (l) {
+    var cx = l.x + l.w / 2, cy = l.y + l.h / 2, nx = cx * ct - cy * st, ny = cx * st + cy * ct;
+    return { text: l.text, x: nx - l.w / 2, y: ny - l.h / 2, w: l.w, h: l.h };
+  });
+  level.sort(function (a, b) { return (a.y + a.h / 2) - (b.y + b.h / 2); }).forEach(function (l) {
+    var cy = l.y + l.h / 2, row = rows[rows.length - 1];
+    if (row && Math.abs(cy - row.cy) < Math.min(l.h, row.h) * 0.5) row.items.push(l);
+    else rows.push({ cy: cy, h: l.h, items: [l] });
+  });
+  return rows.map(function (r) {
+    return { y: r.cy, h: r.h, items: r.items.sort(function (a, b) { return a.x - b.x; }).map(function (i) { return { text: String(i.text).trim(), x: i.x, w: i.w }; }) };
+  });
+}
+
+// The labels a card prints, in the order they are tried — Rx group before
+// group, payer ID only so it is never taken for the member ID. The reader
+// often drops the space between a label and its value ("RxPCNMEDDPRIME",
+// "Group Number0701234"), so a label is found without a word boundary after
+// it where its own letters make it unmistakable. A value must look like its
+// field, or it is not taken — the rep types it instead.
+var INTAKE_CARD_LABELS = [
+  { key: 'rxBin', re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i, ok: /^\d{6}$/ },
+  { key: 'rxPcn', re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i, ok: /^[A-Z0-9-]{2,15}$/ },
+  { key: 'rxGrp', re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i, ok: /^[A-Z0-9-]{2,15}$/ },
+  { key: 'payerId', re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i, ok: /^[A-Z0-9-]{3,10}$/ },
+  { key: 'mbi', re: /(?<![a-z])(?:medicare\s*(?:number|no\.?|#|id|claim\s*number)|mbi)(?![a-z])/i, ok: null },
+  { key: 'memberId', re: /(?<![a-z])(?:member\s*(?:identification|id|#|no\.?|number)|subscriber\s*(?:id|#|no\.?|number)|identification\s*(?:no\.?|number|#)|id\s*(?:no\.?|number|#))(?![a-z]{2})/i, ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
+  { key: 'group', re: /(?<![a-z])(?:group|grp)(?:\s*(?:number|no\.?|#|id)(?![a-z]))?/i, ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
+];
+// Words a value can run into when the reader drops a space ("X1234005CMS").
+var INTAKE_CARD_TAIL_WORDS = ['CMS', 'RXBIN', 'RXPCN', 'RXGRP', 'BIN', 'PCN', 'RX', 'PLAN', 'ISSUER', 'PAYER', 'PCP', 'EFF'];
+// Payers a rep will see on a card, matched with the spaces taken out; the
+// card's own words on that line are what is offered.
+var INTAKE_CARD_PAYERS = ['bluecrossblueshield', 'bluecross', 'blueshield', 'aetna', 'cigna', 'unitedhealthcare', 'uhc', 'humana', 'wellcare', 'molina', 'ambetter', 'anthem', 'kaiser', 'tricare', 'oscar', 'superiorhealthplan', 'amerigroup', 'wellpoint', 'devoted', 'clover', 'scott&white', 'baylorscott', 'communityhealthchoice', 'cookchildren', 'texaschildren', 'parkland', 'driscoll', 'elpasohealth', 'firstcare', 'allwell', 'caresource', 'highmark', 'floridablue', 'horizon', 'medicaid', 'aarp', 'mutualofomaha'];
+
+/** PURE (Node-pinned) — the first Medicare ID (MBI) in a piece of text, read
+ *  with its separators taken out; a token that starts one is preferred. */
+function intakeCardMbiIn_(s) {
+  var up = String(s || '').toUpperCase();
+  var toks = up.split(/[^A-Z0-9-]+/).filter(Boolean);
+  for (var i = 0; i < toks.length; i++) {   // a token on its own, or the next one or two joined (spaces inside the ID)
+    for (var n = 1; n <= 3 && i + n <= toks.length; n++) {
+      var c = toks.slice(i, i + n).join('').replace(/-/g, '');
+      if (c.length === 11 && INTAKE_MBI_RE.test(c)) return c;
+      if (c.length > 11) break;
+    }
+  }
+  var compact = up.replace(/[^A-Z0-9]/g, '');   // glued to a label: "MEDICARENUMBER1EG4TE5MK72"
+  for (var k = 0; k + 11 <= compact.length; k++) if (INTAKE_MBI_RE.test(compact.slice(k, k + 11))) return compact.slice(k, k + 11);
+  return '';
+}
+
+/** PURE (Node-pinned) — what a card's rows say: {payer, memberId, group,
+ *  rxBin, rxPcn, rxGrp, mbi, advantage}. A label's value is the text after it
+ *  on its row, else the piece of the NEXT row under it (cards print the label
+ *  above the number). A Medicare ID is taken only in the MBI shape, and an
+ *  Advantage card's number is its plan's member ID, never an MBI. */
+function intakeCardParse_(rows) {
+  var out = { payer: '', memberId: '', group: '', rxBin: '', rxPcn: '', rxGrp: '', mbi: '', advantage: false };
+  rows = rows || [];
+  var rowText = function (r) { return r.items.map(function (i) { return i.text; }).join('  '); };
+  var all = rows.map(rowText).join('\n');
+  var valueOf = function (zone, ok) {
+    var run = (String(zone || '').replace(/^[\s:#.\-–]+/, '').match(/^[A-Za-z0-9][A-Za-z0-9-]*/) || [''])[0].toUpperCase();
+    if (!run) return '';
+    for (var t = 0; t < INTAKE_CARD_TAIL_WORDS.length; t++) {   // a word the value ran into, when what is left is still the field's shape
+      var w = INTAKE_CARD_TAIL_WORDS[t];
+      if (ok && run.length > w.length && run.slice(-w.length) === w && ok.test(run.slice(0, -w.length))) return run.slice(0, -w.length);
+    }
+    return !ok || ok.test(run) ? run : '';
+  };
+  rows.forEach(function (row, ri) {
+    var text = rowText(row);
+    var hits = [];
+    INTAKE_CARD_LABELS.forEach(function (L) {
+      var re = new RegExp(L.re.source, 'gi'), m;
+      while ((m = re.exec(text))) {
+        if (!m[0]) { re.lastIndex++; continue; }
+        if (L.key === 'group' && /rx\s*$/i.test(text.slice(0, m.index))) continue;   // "Rx Grp" is the Rx group's
+        if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
+        hits.push({ key: L.key, ok: L.ok, start: m.index, end: m.index + m[0].length });
+      }
+    });
+    hits.sort(function (a, b) { return a.start - b.start; });
+    hits.forEach(function (h, k) {
+      if (out[h.key]) return;
+      var zone = text.slice(h.end, k + 1 < hits.length ? hits[k + 1].start : text.length);
+      var val = h.key === 'mbi' ? intakeCardMbiIn_(zone) : valueOf(zone, h.ok);
+      if (!val && rows[ri + 1]) {
+        // Nothing after the label: the piece of the next row under the label's own piece.
+        var at = 0, item = null;
+        for (var n = 0; n < row.items.length; n++) {
+          var end = at + row.items[n].text.length;
+          if (h.start >= at && h.start < end) { item = row.items[n]; break; }
+          at = end + 2;
+        }
+        if (item) {
+          var cx = item.x + item.w / 2;
+          var near = rows[ri + 1].items.filter(function (b) { return b.x - 4 <= item.x + item.w && b.x + b.w + 4 >= item.x; })
+            .sort(function (a, b) { return Math.abs(a.x + a.w / 2 - cx) - Math.abs(b.x + b.w / 2 - cx); })[0];
+          if (near) val = h.key === 'mbi' ? intakeCardMbiIn_(near.text) : valueOf(near.text, h.ok);
+        }
+      }
+      if (val) out[h.key] = val;
+    });
+  });
+  out.advantage = /medicare\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\s*c(?![a-z])|gold\s*plus/i.test(all);
+  var flat = function (s) { return s.toLowerCase().replace(/[^a-z&]/g, ''); };
+  for (var r = 0; r < rows.length && !out.payer; r++) {
+    for (var i = 0; i < rows[r].items.length && !out.payer; i++) {
+      var t = rows[r].items[i].text, f = flat(t);
+      if (INTAKE_CARD_PAYERS.some(function (p) { return f.indexOf(p) >= 0; })) out.payer = t.replace(/\s+/g, ' ').trim().slice(0, 60);
+    }
+  }
+  // Original Medicare: the card names Medicare and carries an MBI, with no plan of its own.
+  if (!out.advantage && /medicare/i.test(all)) {
+    if (!out.mbi) out.mbi = intakeCardMbiIn_(all);
+    if (out.mbi && (!out.payer || /^medicare$/i.test(out.payer))) out.payer = 'Medicare';
+  }
+  if (out.advantage) out.mbi = '';
+  return out;
+}
+/** PURE (Node-pinned) — two reads (front and back) merged: the first value
+ *  found for each field wins. */
+function intakeCardMerge_(a, b) {
+  var out = {};
+  ['payer', 'memberId', 'group', 'rxBin', 'rxPcn', 'rxGrp', 'mbi'].forEach(function (k) { out[k] = (a && a[k]) || (b && b[k]) || ''; });
+  out.advantage = !!((a && a.advantage) || (b && b.advantage));
+  if (out.advantage) out.mbi = '';
+  return out;
+}
+/** PURE (Node-pinned) — the one insurance line the form's field holds:
+ *  "Medicare 1EG4TE5MK72" (I1 tidies it to "Medicare · 1EG4-TE5-MK72"), or
+ *  "Payer · ID … · Group … · RxBIN … · RxPCN … · RxGrp …". */
+function intakeCardLine_(f) {
+  f = f || {};
+  if (f.mbi && /^medicare$/i.test(f.payer || 'Medicare')) return 'Medicare ' + f.mbi;
+  return [f.payer, f.memberId ? 'ID ' + f.memberId : '', f.group ? 'Group ' + f.group : '',
+    f.rxBin ? 'RxBIN ' + f.rxBin : '', f.rxPcn ? 'RxPCN ' + f.rxPcn : '', f.rxGrp ? 'RxGrp ' + f.rxGrp : '']
+    .filter(Boolean).join(' · ');
+}
+
+var INTAKE_CARD_FIELDS = [['payer', 'Payer'], ['memberId', 'Member ID'], ['mbi', 'Medicare ID (MBI)'], ['group', 'Group'], ['rxBin', 'Rx BIN'], ['rxPcn', 'Rx PCN'], ['rxGrp', 'Rx Group']];
+
+/** Read every attached image and offer what was found. */
+function intakeCardRead_(form) {
+  var imgs = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
+  var host = document.getElementById('intk-card-read');
+  if (!imgs.length || !host) return;
+  var es = INTAKE_STATE[form].lang === 'ES';
+  var status = function (msg) { host.innerHTML = '<p class="intk-card-status" role="status">' + icon('refresh', 13) + ' ' + esc(msg) + '</p>'; };
+  status(INTAKE_OCR.state === 'ready' || window.INTAKE_OCR_ENGINE ? (es ? 'Leyendo la tarjeta…' : 'Reading the card…')
+    : (es ? 'Cargando el lector (unos 30 MB la primera vez)…' : 'Loading the card reader (about 30 MB the first time)…'));
+  var seq = host._seq = (host._seq || 0) + 1;
+  var images = imgs.slice();
+  intakeOcrEngine_().then(function (engine) {
+    var merged = null, i = 0;
+    var next = function () {
+      if (host._seq !== seq) return null;
+      if (i >= images.length) return merged;
+      status((es ? 'Leyendo la imagen ' : 'Reading image ') + (i + 1) + (es ? ' de ' : ' of ') + images.length + '…');
+      return intakeCardImage_(images[i]).then(function (img) { return engine.read(img); }).then(function (lines) {
+        var f = intakeCardParse_(intakeCardRows_(lines));
+        merged = merged ? intakeCardMerge_(merged, f) : f;
+        i++;
+        return next();
+      });
+    };
+    return next();
+  }).then(function (fields) {
+    if (host._seq !== seq || !fields) return;
+    INTAKE_CARD[form] = { fields: fields };
+    intakeCardPanel_(form);
+  }).catch(function () {
+    if (host._seq !== seq) return;
+    // No image or typed text rides this message (g146) — and it says what failed.
+    host.innerHTML = '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + ' ' +
+      esc(es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.') +
+      ' <button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button></p>';
+    var b = host.querySelector('.intk-card-retry');
+    if (b) b.addEventListener('click', function () { intakeCardRead_(form); });
+  });
+}
+function intakeCardImage_(src) {
+  return new Promise(function (ok, no) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { no(new Error('image')); }; i.src = src; });
+}
+/** The suggestion: each value in a box the rep can correct, the line it makes,
+ *  and Use as primary / secondary. Nothing reaches the form until then. */
+function intakeCardPanel_(form) {
+  var host = document.getElementById('intk-card-read');
+  var st = INTAKE_CARD[form];
+  if (!host || !st) return;
+  var es = INTAKE_STATE[form].lang === 'ES';
+  var f = st.fields;
+  var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
+  var any = INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
+  host.innerHTML = '<div class="intk-card-panel" role="group" aria-label="' + esc(es ? 'Datos leídos de la tarjeta' : 'Details read from the card') + '">' +
+    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(any ? (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card')
+      : (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')) + '</div>' +
+    (any ? '<div class="intk-card-grid">' + shown.map(function (p) {
+      return '<label class="intk-card-f"><span>' + esc(p[1]) + '</span><input type="text" autocomplete="off" aria-label="' + esc(p[1]) + '" data-card-key="' + p[0] + '" value="' + esc(f[p[0]] || '') + '"></label>';
+    }).join('') + '</div>' +
+    '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
+    '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
+      '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' : '<div class="intk-card-acts">') +
+      '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button></div>' +
+    '<p class="intk-card-note">' + esc(es ? 'Leído en este navegador — las imágenes no se envían a ningún lugar para leerlas.' : 'Read in this browser — the images are not sent anywhere to be read.') + '</p>' +
+  '</div>';
+  host.oninput = function (e) {
+    var k = e.target && e.target.getAttribute('data-card-key');
+    if (!k) return;
+    f[k] = String(e.target.value || '').trim();
+    var line = host.querySelector('[data-card-line]');
+    if (line) line.textContent = intakeCardLine_(f);
+  };
+  host.onclick = function (e) {
+    var t = e.target.closest ? e.target.closest('button') : null;
+    if (!t) return;
+    if (t.hasAttribute('data-card-close')) { delete INTAKE_CARD[form]; host.innerHTML = ''; intakeRenderGallery_(form); return; }
+    var idx = t.getAttribute('data-card-use');
+    if (idx) intakeCardUse_(form, parseInt(idx, 10));
+  };
+}
+/** Write the line into the primary (8) or secondary (9) insurance field —
+ *  asking first when that field already holds something — then let I1 tidy
+ *  and check it and the draft save it. */
+function intakeCardUse_(form, idx) {
+  var st = INTAKE_CARD[form];
+  var el = document.querySelector('#intk-' + form + '-form [data-intk-idx="' + idx + '"]');
+  if (!st || !el) return;
+  var line = intakeCardLine_(st.fields);
+  if (!line) return;
+  var go = function () {
+    el.value = line;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    delete INTAKE_CARD[form];
+    var host = document.getElementById('intk-card-read');
+    if (host) host.innerHTML = '';
+    intakeRenderGallery_(form);
+    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.', 'toast-success');
+  };
+  var cur = String(el.value || '').trim();
+  if (!cur || cur === line) { go(); return; }
+  uiConfirm({ title: 'Replace the ' + (idx === 8 ? 'primary' : 'secondary') + ' insurance?', confirmLabel: 'Replace', cancelLabel: 'Keep it',
+    message: 'That field already says: ' + cur })
+    .then(function (ok) { if (ok) go(); });
 }
 
 // ── Draft autosave (parity with Call Notes) ───────────────────────────────
@@ -3385,6 +3835,7 @@ function intakeOpenSavedDraft_(id) {
     if (ov) closeOverlay(ov);
     intakeClearDraft_(form);   // the working copy is being replaced; its autosave goes with it
     INTAKE_STATE[form].images = [];
+    delete INTAKE_CARD[form];
     INTAKE_STATE[form].lang = d.lang === 'ES' ? 'ES' : 'EN';
     window.INTAKE_AMEND_PREFILL = { form: form, savedId: d.id, savedLabel: d.label, amendOf: d.amendOf || null,
       patientInfo: d.patientInfo || '', answers: d.answers || {}, language: d.lang || 'EN' };
@@ -4022,6 +4473,7 @@ function intakeClearForm_(form) {
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
   INTAKE_STATE[form].savedId = null;   // I2: a cleared form is no longer that saved draft (the draft itself stays in the list)
+  delete INTAKE_CARD[form];   // I3: a card's details read for this patient go with the form
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;
