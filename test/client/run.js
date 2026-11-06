@@ -43279,7 +43279,7 @@ test('ED2: Duplicate puts the copy one grid step under the original, else above,
   assert.ok(d.x > 0.4 && d.y === 0, 'a full-height box: beside it');
   d = hJ(ctx.edBoxDuplicate_({ page: 1, x: 0, y: 0, w: 1, h: 1 }, ed2Letter));
   assert.ok(d.x === 0 && d.y === 0 && d.w === 1, 'nowhere to go: still on the page');
-  assert.strictEqual(ctx.edBoxDupLabel_('Initial 1', ['Initial 1', 'Initial 2']), 'Initial 3', 'counts past the names in use');
+  assert.strictEqual(ctx.edBoxDupLabel_('Initial 1', ['Initial 1', 'Initial 2', 'Initial 3']), 'Initial 4', 'counts past EVERY name in use');
   assert.strictEqual(ctx.edBoxDupLabel_('Review date', ['Review date']), 'Review date 2');
   assert.strictEqual(ctx.edBoxDupLabel_('', []), 'Field 2');
   const f = (label, box) => ({ label, type: 'text', box });
