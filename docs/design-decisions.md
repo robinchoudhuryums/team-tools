@@ -6586,5 +6586,9 @@ pick them up without re-deriving the context.
     comes from the others") and a lone broken one says to try a clearer photo;
     "could not be read in this browser" is kept for a reader that will not
     start; a read that finds nothing says so, with only Dismiss.
+  - **No Rx numbers (operator 2026-11-06: "we do not use those").** The Rx
+    BIN, PCN and group are not offered; their labels are still RECOGNISED (a
+    `skip` label), because a label the parser did not know would let its value
+    run into the group or member ID beside it.
   - **Not done:** names and dates on the card (not asked for), and the PPD
     form (no card images).
