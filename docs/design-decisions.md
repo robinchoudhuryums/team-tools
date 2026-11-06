@@ -6490,6 +6490,58 @@ pick them up without re-deriving the context.
     object stream cannot be counted on the server, and that is said rather than
     guessed. A box on a page the PDF does not have would never show, and a
     required one could never be completed.
+- <a id="ed3-finished-documents"></a>**A finished document's copy is built in the browser from the verified original, printed or emailed from a preview, and labelled a copy — the certificate stays the record (ED3, operator 2026-11-06)**
+  The plan's ED3: "Filled copy built in the browser (answers and signature
+  drawn in, an overflow page, the certificate appended, labelled a copy);
+  Print with preview; Email with preview (the employee, optionally managers,
+  an outside address only after a confirm, audit row, attachment size limit)".
+  - **Made in the browser, never stored.** A signed or completed document's
+    reader offers Print… and Email…; both open a preview of a copy made then
+    by pdf-lib (`edBuildCopy_`): for a PDF document, the original re-fetched
+    (the server re-hashes it) and hashed again in the browser against the
+    SHA-256 the document names — a mismatch makes no copy — with every answer
+    and the signature and initials drawn into their boxes; for a written
+    document, its text set on Letter pages (`edMdBlocks_`: headings, list
+    items, paragraphs), its answers and drawings after it. The certificate
+    (`getEmpDocCertificate`) is appended. Nothing about the copy is kept on
+    the server; the HR record and the certificate are unchanged.
+  - **The same box rules as the screen.** `edFillLayout_` sets an answer at
+    10 pt shrinking to 7 (ED1's sizes) against the real font's widths; what
+    still does not fit is cut with "…" and set in full on an answers page,
+    which also carries any field with no box. A date is written MM/DD/YYYY.
+    A character the standard font cannot write becomes "?" (`edWinAnsi_`),
+    never a failed build.
+  - **A page stored turned is followed.** A box was placed on the page as
+    pdf.js shows it; `edFillPoint_` maps that point into the PDF's own space
+    for a stored rotation of 0/90/180/270 and an offset crop box (pinned
+    against pdf.js's own conversion), and text and drawings are turned the
+    same, so they read upright where they were placed. ED2's upload warning
+    for rotated pages stays — it still helps the issuer check.
+  - **Every page says it is a copy.** `edCopyLabel_`: "COPY · made <date>
+    from the signed original (PDF SHA-256 …) · the certificate is the record",
+    at the foot of every page, the certificate's included; the file's title
+    and name say copy.
+  - **pdf-lib is pinned like the intake reader.** Fetched only when a copy is
+    first made, from `cdn.jsdelivr.net/npm/pdf-lib@1.17.1` (the npm file, so
+    the bytes are the package's), its SHA-256 checked before it runs and run
+    from those bytes; a failed load is not kept (g129). The test harnesses
+    install the same version, and a pin hashes the installed file.
+  - **Print through the one print block.** The pages are drawn as images
+    into a print-only container that becomes the one print subject
+    (`kbPrintEls_`, print rule 8) — measured in Chromium: one page a sheet,
+    the preview and its buttons left out. Download gives the PDF itself.
+  - **Email: one builder for the preview and the send.** `emailEmpDocCopy`
+    with `preview` returns exactly what would be sent (To: the employee; Cc:
+    the issuer and the roster manager when chosen, and up to five other
+    addresses); an address off the org's domains is shown and needs a
+    confirm, and the server refuses it without `outsideOk`. The send attaches
+    the copy's bytes (a PDF within `EMPDOC_COPY_MAX_BYTES`, 10 MB — larger is
+    refused with "download it and attach it yourself", and the client
+    disables Email), through `sendRepEmail_` (the sender's identity and their
+    own copy), and writes an `EmpDocCopyEmailed` audit row with the document,
+    the copy's SHA-256 and size, the org addresses and only the domain of an
+    outside one (g36) — never contents. Who may email it is who may read it:
+    the owner, or a manager `empDocCanManagerSee_` admits.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

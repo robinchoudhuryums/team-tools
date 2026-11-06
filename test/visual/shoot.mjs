@@ -338,6 +338,14 @@ const SCENARIOS = [
     "edIssueMode_('pdf'); edIssuePdfFile_(new File([edDataUriBytes_(ED2_FORM_PDF_URI)], 'Remote Work Agreement.pdf', { type: 'application/pdf' })); setTimeout(function () { var u = document.querySelector('[data-ed-form-use]'); if (u) u.click(); var p = document.getElementById('ed-is-pdf-pages'); if (p) p.scrollIntoView(); }, 1600);", { wait: 2600 }],
   ['empdocs-pdf-zoom-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
     "edOpenDoc_('d-pdf'); setTimeout(function () { var i = document.querySelector('[data-ed-zoom-for=\"ed-pdf-pages\"] [data-ed-zoom=\"in\"]'); if (i) { i.click(); i.click(); } }, 1300);", { wait: 2200 }],
+  // ED3 (operator 2026-11-06): a signed PDF's finished copy (answers, drawings, the certificate,
+  // the copy line); its email panel on a phone with an outside address; a written document's copy.
+  ['empdocs-copy-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"print\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
+  ['empdocs-copy-email-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '',
+    "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"email\"]'); if (b) b.click(); setTimeout(function () { var m = document.getElementById('ed-mail-mgr'); if (m) { m.checked = true; } var x = document.getElementById('ed-mail-extra'); if (x) { x.value = 'sam.ortiz.home@gmail.com'; x.dispatchEvent(new Event('change')); } var n = document.getElementById('ed-mail-note'); if (n) n.value = 'For your records.'; if (document.activeElement) document.activeElement.blur(); var p = document.getElementById('ed-copy-mail'); if (p) p.scrollIntoView(); }, 1800); }, 1300);", { wait: 4000 }],
+  ['empdocs-copy-written-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"print\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],
@@ -703,6 +711,10 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
     return route.fulfill({ path: file, contentType: 'text/javascript' });
   });
+  // ED3: the finished copy fetches pdf-lib from jsDelivr (SHA-256 pinned);
+  // the harness serves the same pinned file from node_modules.
+  await ctx.route('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', (route) =>
+    route.fulfill({ path: path.join(HERE, 'node_modules/pdf-lib/dist/pdf-lib.min.js'), contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } }));
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

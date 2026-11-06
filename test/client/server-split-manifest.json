@@ -3937,6 +3937,22 @@
     "issueDoc"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "ED3: EMPDOC_COPY_* constants, emailEmpDocCopy and its pure helpers",
+   "added": [
+    "EMPDOC_COPY_EXTRA_MAX",
+    "EMPDOC_COPY_MAX_BYTES",
+    "emailEmpDocCopy",
+    "empDocCopyAuditNote_",
+    "empDocCopyEmailParts_",
+    "empDocCopyFileName_",
+    "empDocCopyRecipients_"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
   }
  ],
  "order": [
@@ -4830,6 +4846,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "0e9567ddd1ce886b"
+  },
+  "EMPDOC_COPY_EXTRA_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e2d5f85d5d0afb7b"
+  },
+  "EMPDOC_COPY_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "830acdece0549369"
   },
   "EMPDOC_FIELD_CAP": {
    "file": "00_config.js",
@@ -8701,6 +8727,11 @@
    "kind": "function",
    "sha": "fac7039c5ea3dec6"
   },
+  "emailEmpDocCopy": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6e4e61db9b7208de"
+  },
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -8730,6 +8761,26 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "38b8379999a27a42"
+  },
+  "empDocCopyAuditNote_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "604459e5505cddd4"
+  },
+  "empDocCopyEmailParts_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "fde574ee0d7ea613"
+  },
+  "empDocCopyFileName_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "65bcf69b6d00d214"
+  },
+  "empDocCopyRecipients_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "5b3229bd854eecdb"
   },
   "empDocInitialsCheck_": {
    "file": "81_empdocs.js",

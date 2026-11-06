@@ -42951,11 +42951,11 @@ const hCtx_ = (extra) => {
     } }, extra || {}));
   ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_SIGN_FIELD_TYPES = \\[[^\\]]*\\];',
     'const EMPDOC_FIELD_CAP = \\d+;', 'const EMPDOC_FIELD_LABEL_MAX = \\d+;', 'const EMPDOC_PDF_KEY_RE = /[^;]*;', 'const EMPDOC_PDF_MAX_BYTES = \\d+;',
-    'const EMPDOC_PDF_NAME_MAX = \\d+;', 'const EMPDOC_PDF_MAX_PAGES = \\d+;', "const EMPDOC_FILES_TAB = '[^']*';", "const EMPDOC_SIG_TAB = '[^']*';",
+    'const EMPDOC_PDF_NAME_MAX = \\d+;', 'const EMPDOC_PDF_MAX_PAGES = \\d+;', 'const EMPDOC_COPY_MAX_BYTES = \\d+;', 'const EMPDOC_COPY_EXTRA_MAX = \\d+;', "const EMPDOC_FILES_TAB = '[^']*';", "const EMPDOC_SIG_TAB = '[^']*';",
     'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
   ['empDocSha256Hex_', 'empDocValidateIssue_', 'empDocValidateFields_', 'empDocNormBox_', 'empDocPdfLine_', 'empDocPdfFromBody_',
-    'empDocPdfPageCount_', 'empDocPdfPagesOf_', 'empDocPdfItem_', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
+    'empDocPdfPageCount_', 'empDocPdfPagesOf_', 'empDocPdfItem_', 'empDocCopyRecipients_', 'empDocCopyFileName_', 'empDocCopyEmailParts_', 'empDocCopyAuditNote_', 'emailEmpDocCopy', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
@@ -43354,6 +43354,137 @@ test('ED2: the server bounds a box by the PDF\'s page count — read from the by
   const item = hJ(c.empDocPdfItem_('data:application/pdf;base64,' + Buffer.from('%PDF-1.4\n<< /Type /Pages /Kids [] /Count 5 >>\n%%EOF').toString('base64'), 'p.pdf'));
   assert.strictEqual(item.pages, 5, 'the upload is counted from its own bytes');
   assert.ok(/empDocValidateIssue_\(payload, pdf \? \{ sha: pdf\.sha, name: pdf\.name, pages: pdf\.pages \} : null\)/.test(extractRawFunction('Code.js', 'issueDoc')), 'issueDoc carries the count to the check');
+});
+
+console.log('\nOperator round 2026-11-06 — ED3 (Employee Docs finished documents: filled copy, Print, Email)');
+const ed3Ctx_ = () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array });
+  ['ED_BOX_FS', 'ED_BOX_FS_MIN', 'ED_WINANSI_EXTRA', 'ED_COPY_MAX_BYTES', 'ED_PDFLIB_URL', 'ED_PDFLIB_SHA256'].forEach((n) => {
+    const m = new RegExp('var ' + n + ' = [^;]+;').exec(ed); assert.ok(m, n); vm.runInContext(m[0], ctx);
+  });
+  ['edWinAnsi_', 'edFillDate_', 'edFillPoint_', 'edFillWrap_', 'edFillLayout_', 'edFillEllipsis_', 'edCopyLabel_', 'edMdBlocks_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  return { ctx, ed };
+};
+const ed3W = (s, z) => String(s).length * z * 0.5;   // a stand-in measure: half the size per character
+
+test('ED3: a filled copy writes what the standard font can (tab a space, an unknown character "?", line breaks kept); a date as MM/DD/YYYY; a point placed on the page AS SHOWN maps to the PDF\'s own space for every stored rotation and an offset page box (driven)', () => {
+  const { ctx } = ed3Ctx_();
+  assert.strictEqual(ctx.edWinAnsi_('Café\t“ok” – €5 ☃ 漢\r\nnext'), 'Café “ok” – €5 ? ?\nnext');
+  assert.strictEqual(ctx.edWinAnsi_(null), '');
+  assert.deepStrictEqual([ctx.edFillDate_('2026-11-20'), ctx.edFillDate_('next week'), ctx.edFillDate_(null)], ['11/20/2026', 'next week', '']);
+  const g = (rot) => ({ W: 612, H: 792, x0: 0, y0: 0, rot });
+  // The numbers pdf.js's own viewport.convertToPdfPoint gives for (100, 37) on a
+  // 612 x 792 page at each rotation (measured; the DOM drive checks a real copy).
+  assert.deepStrictEqual(hJ([0, 90, 180, 270].map((r) => ctx.edFillPoint_(g(r), 100, 37))), [[100, 755], [37, 100], [512, 37], [575, 692]]);
+  assert.deepStrictEqual(hJ(ctx.edFillPoint_({ W: 600, H: 800, x0: 20, y0: 30, rot: 0 }, 10, 10)), [30, 820], 'a crop box that does not start at 0');
+});
+
+test('ED3: an answer is laid out in its box the way the reader shows it — 10 pt shrinking by half points to 7, a paragraph wrapped (a long word broken), a line or a date kept to one line; what still does not fit is cut with "…" and marked over (driven)', () => {
+  const { ctx } = ed3Ctx_();
+  assert.deepStrictEqual(hJ(ctx.edFillWrap_('aa bb cc\ndd', 30, 10, ed3W)), ['aa bb', 'cc', 'dd'], 'words wrap; a line break is kept');
+  assert.deepStrictEqual(hJ(ctx.edFillWrap_('abcdefghij', 20, 10, ed3W)), ['abcd', 'efgh', 'ij'], 'a word wider than the line is broken');
+  let l = hJ(ctx.edFillLayout_('text', 'Sam Ortiz', { w: 186, h: 16 }, ed3W));
+  assert.deepStrictEqual([l.size, l.lines, l.over], [10, ['Sam Ortiz'], false], 'fits at full size');
+  l = hJ(ctx.edFillLayout_('text', 'x'.repeat(40), { w: 186, h: 16 }, ed3W));
+  assert.ok(l.size < 10 && l.size >= 7 && !l.over && l.lines.length === 1, 'shrinks to fit: ' + JSON.stringify(l));
+  l = hJ(ctx.edFillLayout_('date', 'x'.repeat(80), { w: 186, h: 16 }, ed3W));
+  assert.ok(l.over && l.size === 7 && /…$/.test(l.lines[0]) && ed3W(l.lines[0], 7) <= 180 && l.lines.length === 1, 'cut at the floor, one line, marked over');
+  l = hJ(ctx.edFillLayout_('textarea', 'word '.repeat(30), { w: 186, h: 60 }, ed3W));
+  assert.ok(!l.over && l.lines.length > 1 && l.lines.length * l.size * 1.2 <= 58.01, 'a paragraph wraps inside its height');
+  l = hJ(ctx.edFillLayout_('textarea', 'word '.repeat(400), { w: 186, h: 30 }, ed3W));
+  assert.ok(l.over && l.size === 7 && l.lines.length === Math.floor(28 / 8.4) && /…$/.test(l.lines[l.lines.length - 1]), 'too long even at 7 pt: the lines that fit, the last cut');
+  l = hJ(ctx.edFillLayout_('text', 'one\ntwo', { w: 186, h: 16 }, ed3W));
+  assert.deepStrictEqual(l.lines, ['one two'], 'a one-line box takes no line break');
+});
+
+test('ED3: every page of a copy says it is one — when, from which original (its SHA-256), and that the certificate is the record; a written document\'s markdown is set as headings, list items and paragraphs, its marks taken out and a link\'s address kept (driven)', () => {
+  const { ctx } = ed3Ctx_();
+  assert.strictEqual(ctx.edCopyLabel_({ madeOn: '2026-11-06', signed: true, sha: 'ab'.repeat(32) }), 'COPY · made 2026-11-06 from the signed original (PDF SHA-256 abababababab…) · the certificate is the record');
+  assert.strictEqual(ctx.edCopyLabel_({ madeOn: '2026-11-06', signed: false }), 'COPY · made 2026-11-06 from the completed original · the certificate is the record');
+  const b = hJ(ctx.edMdBlocks_('# Title\n\nA **bold** and _soft_ `code` [site](https://ex.org) line\ncontinues.\n\n## Part\n- one\n2. two\n> quoted\n\n---\n![img](x.png)'));
+  assert.deepStrictEqual(b, [{ k: 'h1', t: 'Title' }, { k: 'p', t: 'A bold and soft code site (https://ex.org) line continues.' }, { k: 'h2', t: 'Part' },
+    { k: 'li', t: 'one', mark: '•' }, { k: 'li', t: 'two', mark: '2.' }, { k: 'p', t: 'quoted' }, { k: 'p', t: 'img' }]);
+});
+
+test('ED3: pdf-lib loads only when a copy is made, from the pinned version whose SHA-256 is checked before it runs (and run from the checked bytes, never a second download); a failed load is not kept; the copy limit mirrors the server\'s (source + the installed file)', () => {
+  const { ctx, ed } = ed3Ctx_();
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+  assert.strictEqual(ctx.ED_PDFLIB_URL, 'https://cdn.jsdelivr.net/npm/pdf-lib@' + pkg.devDependencies['pdf-lib'] + '/dist/pdf-lib.min.js', 'the URL names the version the harness installs');
+  const loader = extractFnFrom(ed, 'edPdfLib_');
+  assert.ok(/crypto\.subtle\.digest\('SHA-256', buf\)/.test(loader) && /if \(edHex_\(d\) !== ED_PDFLIB_SHA256\) throw/.test(loader), 'checked, refused on a mismatch');
+  assert.ok(/s\.textContent = new TextDecoder\(\)\.decode\(buf\)/.test(loader) && !/\.src\s*=/.test(loader), 'run from the checked bytes');
+  assert.ok(/ED_PDFLIB\.state = lib \? 'ready' : ''/.test(loader), 'a failure is not kept (g129)');
+  assert.strictEqual(ctx.ED_COPY_MAX_BYTES, Number(/const EMPDOC_COPY_MAX_BYTES = (\d+);/.exec(serverSource())[1]));
+  const css = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  const pb = css.lastIndexOf('@media print {');
+  assert.ok(pb > 0 && css.indexOf("(8) — an employee document's finished copy", pb) > pb && css.indexOf(':root[data-print-one] .ed-print-pages.print-one', pb) > pb, 'its print rule lives in the one print block (g64)');
+});
+testNeedsDeps(['pdf-lib'], 'ED3: the pinned SHA-256 is the installed pdf-lib file\'s — the same bytes jsDelivr serves for that npm version (driven over the file)', () => {
+  const { ctx } = ed3Ctx_();
+  const file = require.resolve('pdf-lib/dist/pdf-lib.min.js', { paths: [path.join(__dirname, '../..')] });
+  assert.strictEqual(require('crypto').createHash('sha256').update(fs.readFileSync(file)).digest('hex'), ctx.ED_PDFLIB_SHA256);
+});
+
+test('ED3: a copy goes to the employee (To), the managers if chosen and other addresses (Cc) — each once; an address that is not one is refused by name; an outside one is listed for a confirm; with no employee address the first Cc is To; the file is named for the title and says copy (driven)', () => {
+  const c = hCtx_({ esc_: (x) => String(x) });
+  const org = (a) => /@ums\.com$/.test(a);
+  let r = hJ(c.empDocCopyRecipients_('Ann@UMS.com', ['boss@ums.com', '', 'ann@ums.com', 'boss@ums.com'], [' X@Gmail.com ', 'x@gmail.com', 'nope', 'hr@ums.com'], org));
+  assert.deepStrictEqual(r, { to: ['ann@ums.com'], cc: ['boss@ums.com', 'x@gmail.com', 'hr@ums.com'], outside: ['x@gmail.com'], bad: ['nope'] });
+  r = hJ(c.empDocCopyRecipients_('', ['boss@ums.com'], [], org));
+  assert.deepStrictEqual([r.to, r.cc], [['boss@ums.com'], []], 'an offboarded employee: the first Cc is To');
+  assert.deepStrictEqual(hJ(c.empDocCopyRecipients_('', [], [], org)).to, []);
+  assert.strictEqual(c.empDocCopyFileName_('PIP: v1/2 "final"'), 'PIP v1 2 final (copy).pdf');
+  assert.strictEqual(c.empDocCopyFileName_(''), 'document (copy).pdf');
+});
+
+test('ED3: the email says what the file is — a copy made from the signed original, the certificate the record — with every name and the sender\'s note escaped (note capped); the audit row names the document, the copy\'s SHA-256 and size, the org addresses and only the DOMAIN of an outside one, never contents (driven)', () => {
+  const c = hCtx_({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') });
+  const p = hJ(c.empDocCopyEmailParts_({ title: 'PIP <b>', empName: 'Ann "A"', signed: true, signedAt: '2026-11-03 10:00:00', senderName: 'Boss & Co', note: '<i>hi</i>' + 'x'.repeat(2000), fileName: 'PIP (copy).pdf' }));
+  assert.strictEqual(p.subject, 'Copy: PIP <b> (signed 2026-11-03)');
+  assert.ok(/PIP &lt;b>/.test(p.inner) && /Ann &quot;A&quot;/.test(p.inner) && /Boss &amp; Co/.test(p.inner) && /&lt;i>hi/.test(p.inner) && !/<i>hi/.test(p.inner), 'escaped');
+  assert.ok(/a copy made from the signed original\. The certificate on its last pages is the record/.test(p.inner) && /The certificate on its last pages is the record/.test(p.body));
+  assert.ok(!/x{1001}/.test(p.inner), 'the note is capped at 1000 characters');
+  assert.ok(!/wrote/.test(c.empDocCopyEmailParts_({ title: 'T', empName: 'A', signed: false, senderName: 'B', fileName: 'f' }).inner), 'no note, no line for it');
+  const note = c.empDocCopyAuditNote_('doc-1', 'f'.repeat(64), 1234, { to: ['ann@ums.com'], cc: ['boss@ums.com', 'x@gmail.com'] }, (a) => /@ums\.com$/.test(a));
+  assert.strictEqual(note, 'docId=doc-1; sha256=' + 'f'.repeat(64) + '; bytes=1234; to=ann@ums.com,boss@ums.com; outside=gmail.com');
+});
+
+test('ED3: emailEmpDocCopy — only who may read the document, once signed or completed; preview returns exactly what would be sent and sends nothing; an outside address needs outsideOk; the file must be a PDF within the limit; the send carries the attachment under the title\'s name and writes the audit row; a failed send is said (driven)', () => {
+  const sent = [], audit = [];
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.7 copy').toString('base64');
+  const mk = (caller, status, extra) => hCtx_(Object.assign({ esc_: (x) => String(x), getEmployeeInfo_: () => caller,
+    findEmpDocRow_: () => ({ rowIdx: 2, doc: { docId: 'doc-1', empId: 'E1', status: status, title: 'PIP', issuedBy: 'boss@ums.com', signedAt: '2026-11-03 10:00:00' } }),
+    empDocCanManagerSee_: (e) => !!e.isManager, lookupEmployeeById_: () => ({ name: 'Ann', email: 'ann@ums.com', managerEmail: 'mgr@ums.com' }),
+    isOrgEmail_: (a) => /@ums\.com$/.test(a), sendRepEmail_: (e, o) => sent.push(o), writeAuditLog_: (e, a, d, t, adj, n, note) => audit.push([a, note]),
+    buildBrandedEmailHtml_: (h, inner) => '<html>' + inner + '</html>', fmtDate_: () => '2026-11-06' }, extra || {}));
+  const blobs = [];
+  const withBlob = (x) => { x.Utilities.newBlob = (bytes, type, name) => { blobs.push([bytes.length, type, name]); return { name }; }; return x; };
+  let x = withBlob(mk({ id: 'E9', name: 'Other' }, 'signed'));
+  assert.strictEqual(x.emailEmpDocCopy('doc-1', { preview: true }).error, 'Document not found.', 'a stranger');
+  x = withBlob(mk({ id: 'E1', name: 'Ann' }, 'issued'));
+  assert.ok(/once the document is signed or completed/.test(x.emailEmpDocCopy('doc-1', { preview: true }).error));
+  x = withBlob(mk({ id: 'M1', name: 'Boss', isManager: true }, 'signed'));
+  const pv = hJ(x.emailEmpDocCopy('doc-1', { preview: true, managers: true, extra: ['out@gmail.com'], note: 'FYI' }));
+  assert.ok(pv.success && pv.preview && pv.fileName === 'PIP (copy).pdf' && /Boss sent you a copy/.test(pv.html) && /FYI/.test(pv.html));
+  assert.deepStrictEqual([pv.to, pv.cc, pv.outside], [['ann@ums.com'], ['boss@ums.com', 'mgr@ums.com', 'out@gmail.com'], ['out@gmail.com']]);
+  assert.strictEqual(sent.length + audit.length, 0, 'a preview sends nothing');
+  assert.ok(x.emailEmpDocCopy('doc-1', { managers: true, extra: ['out@gmail.com'], pdf }).needsConfirm, 'outside needs the confirm');
+  assert.ok(/did not arrive as a PDF/.test(x.emailEmpDocCopy('doc-1', { pdf: 'data:application/pdf;base64,' + Buffer.from('<html>').toString('base64') }).error));
+  assert.ok(/At most 5 other addresses/.test(x.emailEmpDocCopy('doc-1', { extra: ['a@ums.com', 'b@ums.com', 'c@ums.com', 'd@ums.com', 'e@ums.com', 'f@ums.com'] }).error));
+  assert.ok(/Not an email address: nope/.test(x.emailEmpDocCopy('doc-1', { extra: ['nope'], preview: true }).error));
+  const big = withBlob(mk({ id: 'E1', name: 'Ann' }, 'signed'));
+  vm.runInContext('EMPDOC_COPY_MAX_BYTES = 4', big);
+  assert.ok(/over the .* MB email limit\. Download it and attach it yourself/.test(big.emailEmpDocCopy('doc-1', { pdf }).error), 'over the limit');
+  assert.strictEqual(sent.length, 0);
+  const ok = hJ(x.emailEmpDocCopy('doc-1', { managers: true, extra: ['out@gmail.com'], outsideOk: true, note: 'FYI', pdf }));
+  assert.ok(ok.success && ok.sent === 4, JSON.stringify(ok));
+  assert.deepStrictEqual([sent[0].to, sent[0].cc, sent[0].subject], ['ann@ums.com', 'boss@ums.com,mgr@ums.com,out@gmail.com', 'Copy: PIP (signed 2026-11-03)']);
+  assert.deepStrictEqual(blobs[blobs.length - 1], [13, 'application/pdf', 'PIP (copy).pdf'], 'the attachment, under the title\'s name');
+  const sha = require('crypto').createHash('sha256').update('%PDF-1.7 copy').digest('hex');
+  assert.deepStrictEqual(audit[0], ['EmpDocCopyEmailed', 'docId=doc-1; sha256=' + sha + '; bytes=13; to=ann@ums.com,boss@ums.com,mgr@ums.com; outside=gmail.com']);
+  const boom = withBlob(mk({ id: 'E1', name: 'Ann' }, 'signed', { sendRepEmail_: () => { throw new Error('Service invoked too many times'); } }));
+  assert.strictEqual(boom.emailEmpDocCopy('doc-1', { pdf }).error, 'The copy was not sent: Service invoked too many times');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

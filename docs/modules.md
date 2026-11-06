@@ -587,6 +587,16 @@ warned about pages that are not Letter or A4, pages stored rotated and small
 text, and a fillable PDF's own fields are offered as boxes in one press. A box
 on a page the PDF does not have is refused, by the form and by the server.
 
+**ED3 (operator 2026-11-06):** a signed or completed document's reader has
+Print… and Email…. Both show a preview of a copy made in the browser from the
+verified original: the answers and the signature drawn into their boxes (or a
+written document's text set on pages), answers too long for a box in full on
+an answers page, the certificate at the end, and every page labelled a copy.
+Print prints those pages; Download saves the PDF; Email sends it to the
+employee, and to the managers or other addresses if chosen (an address outside
+the company is confirmed first), with a preview of the message, a 10 MB limit
+and an audit row. The certificate stays the record.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)

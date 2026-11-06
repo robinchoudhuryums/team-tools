@@ -665,6 +665,114 @@ function getEmpDocCertificate(docId) {
     return { success: true, dataUri: 'data:application/pdf;base64,' + Utilities.base64Encode(pdf.getBytes()), fileName: name };
   } catch (err) { return { error: err.message }; }
 }
+// ── ED3 (operator 2026-11-06): a finished document's copy, emailed ──────────
+/** PURE (Node-pinned) — ED3: who a finished document's copy goes to. The
+ *  employee is To; the managers (when chosen) and any other addresses are Cc;
+ *  each address once, lower-cased. An address that is not one is listed in
+ *  `bad`; one off the org's domains in `outside` (it needs a confirm). With no
+ *  employee address (an offboarded employee) the first Cc becomes To. */
+function empDocCopyRecipients_(empEmail, managerEmails, extra, isOrg) {
+  const out = { to: [], cc: [], outside: [], bad: [] };
+  const seen = {};
+  const add = function (list, a) { if (!a || seen[a]) return; seen[a] = true; list.push(a); };
+  const norm = function (a) { return String(a || '').trim().toLowerCase(); };
+  if (norm(empEmail)) add(out.to, norm(empEmail));
+  (managerEmails || []).forEach(function (m) { add(out.cc, norm(m)); });
+  (extra || []).forEach(function (x) {
+    const a = norm(x);
+    if (!a) return;
+    if (!/^[^\s@,;<>"']+@[^\s@,;<>"']+\.[a-z]{2,}$/.test(a)) { out.bad.push(String(x).trim()); return; }
+    if (seen[a]) return;
+    add(out.cc, a);
+    if (!isOrg(a)) out.outside.push(a);
+  });
+  if (!out.to.length && out.cc.length) out.to.push(out.cc.shift());
+  return out;
+}
+/** PURE (Node-pinned) — ED3: the copy's file name, from the document's title
+ *  (never the browser's): safe on every system, and saying it is a copy. */
+function empDocCopyFileName_(title) {
+  return (String(title || 'document').replace(/[\\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' (copy).pdf';
+}
+/** PURE (Node-pinned) — ED3: the email's subject, plain text and inner HTML
+ *  (the branded chrome wraps it). Every stored or typed string is escaped; the
+ *  note is the sender's own words, capped. The message says what the file is:
+ *  a copy made from the signed original, the certificate at its end the record. */
+function empDocCopyEmailParts_(c) {
+  const what = c.signed ? 'signed' : 'completed';
+  const note = String(c.note || '').trim().slice(0, 1000);
+  const when = String(c.signedAt || '').slice(0, 10);
+  const subject = 'Copy: ' + String(c.title || 'Document') + ' (' + what + (when ? ' ' + when : '') + ')';
+  const lines = [
+    c.senderName + ' sent you a copy of "' + c.title + '", ' + what + ' by ' + c.empName + (when ? ' on ' + when : '') + '.',
+    note ? '\n' + c.senderName + ' wrote: ' + note : '',
+    '\nThe attached PDF (' + c.fileName + ') is a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.',
+  ];
+  const inner = '<p style="margin:0 0 12px;">' + esc_(c.senderName) + ' sent you a copy of <b>' + esc_(c.title) + '</b>, ' + what + ' by ' + esc_(c.empName) + (when ? ' on ' + esc_(when) : '') + '.</p>' +
+    (note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>' + esc_(c.senderName) + ' wrote:</i> ' + esc_(note) + '</p>' : '') +
+    '<p style="margin:0 0 4px;">Attached: <b>' + esc_(c.fileName) + '</b> — a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.</p>';
+  return { subject: subject, body: lines.join('\n'), inner: inner };
+}
+/** PURE (Node-pinned) — ED3: the audit row's note: the document, the copy's
+ *  SHA-256 and size (so any copy can be matched to the send), the org
+ *  addresses, and only the DOMAIN of an outside one (g36). Never contents. */
+function empDocCopyAuditNote_(docId, sha, bytes, r, isOrg) {
+  const all = r.to.concat(r.cc);
+  const org = all.filter(function (a) { return isOrg(a); });
+  const out = all.filter(function (a) { return !isOrg(a); }).map(function (a) { return a.split('@')[1]; });
+  return 'docId=' + docId + '; sha256=' + sha + '; bytes=' + bytes + '; to=' + org.join(',') + (out.length ? '; outside=' + out.join(',') : '');
+}
+/** Employee-callable — ED3: email a finished document's filled copy (built in
+ *  the browser) to the employee, the managers if chosen (its issuer and the
+ *  roster manager), and up to EMPDOC_COPY_EXTRA_MAX other addresses — an
+ *  outside one only with `outsideOk`. Who may: whoever may read the document
+ *  (the owner, or a manager empDocCanManagerSee_ admits), once it is signed
+ *  or completed. `preview: true` returns exactly what would be sent (one
+ *  builder) and needs no file. The file must be a PDF within
+ *  EMPDOC_COPY_MAX_BYTES; its SHA-256 rides the audit row. A failed send is
+ *  said, never a success. */
+function emailEmpDocCopy(docId, opts) {
+  try {
+    opts = opts || {};
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    if (d.status !== 'signed' && d.status !== 'completed') return { error: 'A copy can be emailed once the document is signed or completed.' };
+    const extra = Array.isArray(opts.extra) ? opts.extra : [];
+    if (extra.length > EMPDOC_COPY_EXTRA_MAX) return { error: 'At most ' + EMPDOC_COPY_EXTRA_MAX + ' other addresses.' };
+    const target = lookupEmployeeById_(d.empId);
+    const managers = opts.managers ? [d.issuedBy, target && target.managerEmail] : [];
+    const r = empDocCopyRecipients_(target && target.email, managers, extra, isOrgEmail_);
+    if (r.bad.length) return { error: 'Not an email address: ' + r.bad.join(', ') + '.' };
+    if (!r.to.length) return { error: 'There is no one to send it to — the employee has no email on the roster.' };
+    const fileName = empDocCopyFileName_(d.title);
+    const parts = empDocCopyEmailParts_({ title: d.title, empName: target ? target.name : 'a former employee', signed: d.status === 'signed',
+      signedAt: d.signedAt, senderName: emp.name, note: opts.note, fileName: fileName });
+    if (opts.preview) {
+      return { success: true, preview: true, to: r.to, cc: r.cc, outside: r.outside, subject: parts.subject, html: parts.inner, fileName: fileName,
+        maxBytes: EMPDOC_COPY_MAX_BYTES };
+    }
+    if (r.outside.length && opts.outsideOk !== true) {
+      return { error: 'Sending outside the company (' + r.outside.join(', ') + ') needs a confirm.', needsConfirm: true, outside: r.outside };
+    }
+    const m = /^data:application\/pdf;base64,([A-Za-z0-9+\/=]+)$/.exec(String(opts.pdf || ''));
+    if (!m || m[1].indexOf('JVBERi0') !== 0) return { error: 'The copy did not arrive as a PDF.' };
+    const raw = Utilities.base64Decode(m[1]);
+    if (raw.length > EMPDOC_COPY_MAX_BYTES) {
+      return { error: 'The copy is ' + (Math.round(raw.length / 104857.6) / 10) + ' MB — over the ' + (EMPDOC_COPY_MAX_BYTES / 1048576) + ' MB email limit. Download it and attach it yourself.' };
+    }
+    const sha = empDocSha256Hex_(raw);
+    sendRepEmail_(emp, { to: r.to.join(','), cc: r.cc.join(','), subject: parts.subject, body: parts.body,
+      htmlBody: buildBrandedEmailHtml_('A copy of ' + d.title, parts.inner, { subLabel: 'Employee documents', statusLabel: 'Copy' }),
+      attachments: [Utilities.newBlob(raw, 'application/pdf', fileName)] });
+    writeAuditLog_(emp, 'EmpDocCopyEmailed', fmtDate_(new Date()), '', false, 0, empDocCopyAuditNote_(d.docId, sha, raw.length, r, isOrgEmail_));
+    return { success: true, sent: r.to.length + r.cc.length, to: r.to, cc: r.cc };
+  } catch (err) { return { error: 'The copy was not sent: ' + ((err && err.message) || err) }; }
+}
 function findEmpDocTemplateRow_(templateId) {
   templateId = String(templateId || '').trim();
   if (!templateId) return null;

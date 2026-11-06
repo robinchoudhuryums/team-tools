@@ -3034,5 +3034,13 @@
     /* A slide's details (operator 2026-10-28) print in full; the toggle does not. */
     .kb-gal-notes.kb-gal-notes-off { display: block !important; }
     .kb-gal-more { display: none !important; }
+
+    /* (8) — an employee document's finished copy (ED3, operator 2026-11-06)
+       prints from its preview: edPrintCopy_ draws each page as an image into
+       .ed-print-pages and makes it the one subject (rule 4), so it shows on
+       paper only — one page a sheet, the preview and its buttons left out. */
+    :root[data-print-one] .ed-print-pages.print-one { display: block !important; }
+    .ed-print-pages img { display: block; width: 100%; height: auto; break-after: page; }
+    .ed-print-pages img:last-child { break-after: auto; }
   }
 </style>

@@ -6336,6 +6336,204 @@ test('ED2 DOM: a box on a page the PDF does not have, or past its edge, is refus
   assert.strictEqual(sent[0].pdfPages, 2, 'the count the browser read rides the issue');
 });
 
+// ED3 (operator 2026-11-06) — the finished copy, built by the REAL pdf-lib
+// inside the page and read back by the real pdf.js in Node: what is on which
+// page, where, and that every page says it is a copy.
+const ed3Fs = require('fs'), ed3Path = require('path');
+const ed3Lib = require(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdf-lib'));
+const ed3PdfJs = require(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.js'));
+const ed3Src = ed3Fs.readFileSync(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdf-lib', 'dist', 'pdf-lib.min.js'), 'utf8');
+const ED3_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+/** A two-page original (the second stored turned 90°) and a one-page certificate, made in Node. */
+const ed3Fixtures_ = async () => {
+  const mk = async (pages, line) => {
+    const d = await ed3Lib.PDFDocument.create(); const f = await d.embedFont(ed3Lib.StandardFonts.Helvetica);
+    pages.forEach((rot, i) => { const p = d.addPage([612, 792]); if (rot) p.setRotation(ed3Lib.degrees(rot)); p.drawText(line + ' ' + (i + 1), { x: 60, y: 740, size: 12, font: f }); });
+    return Buffer.from(await d.save());
+  };
+  const orig = await mk([0, 90], 'Original page');
+  const cert = await mk([0], 'Certificate of signature');
+  return { orig, cert, sha: require('crypto').createHash('sha256').update(orig).digest('hex'),
+    origUri: 'data:application/pdf;base64,' + orig.toString('base64'), certUri: 'data:application/pdf;base64,' + cert.toString('base64') };
+};
+const ed3Doc_ = (fx, over) => Object.assign({ docId: 'dp', title: 'PIP', status: 'signed', isOwner: true, requiresSignature: true,
+  bodyMd: 'Read and sign.\n\nPDF document "PIP.pdf" · SHA-256 ' + fx.sha, pdf: { name: 'PIP.pdf', sha: fx.sha }, signedAt: '2026-11-03 10:00:00',
+  fields: [{ id: 'name', label: 'Printed name', type: 'text', required: true, box: { page: 1, x: 0.2, y: 0.2, w: 0.4, h: 0.03 } },
+    { id: 'when', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.2, y: 0.26, w: 0.2, h: 0.03 } },
+    { id: 'long', label: 'Comments', type: 'textarea', required: false, box: { page: 1, x: 0.1, y: 0.4, w: 0.3, h: 0.03 } },
+    { id: 'sig', label: 'Sign here', type: 'signature', required: true, box: { page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 } },
+    { id: 'turned', label: 'On the turned page', type: 'text', required: true, box: { page: 2, x: 0.1, y: 0.1, w: 0.4, h: 0.05 } },
+    { id: 'else', label: 'Anything else', type: 'text', required: false }],
+  responses: { name: 'Sam Ortiz', when: '2026-11-20', long: 'word '.repeat(80) + 'END', turned: 'Upright answer', else: 'No box here' },
+  signatureImage: ED3_PNG }, over || {});
+/** Boot with the page's pdf.js stood in (the preview), the real pdf-lib in the page, and a WebCrypto. */
+const ed3Boot_ = (fx, doc) => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  if (!(h.window.crypto && h.window.crypto.subtle)) Object.defineProperty(h.window, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+  h.read(ed3Src);
+  const asked = [];
+  h.run.respond('getMyDoc', () => doc);
+  h.run.respond('getEmpDocPdf', (id) => { asked.push(['pdf', id]); return { success: true, dataUri: fx.origUri, sha: fx.sha, name: 'PIP.pdf' }; });
+  h.run.respond('getEmpDocCertificate', (id) => { asked.push(['cert', id]); return { success: true, dataUri: fx.certUri, fileName: 'PIP - certificate.pdf' }; });
+  return { h, asked };
+};
+const ed3Until_ = async (h, fn, ms) => {
+  const t0 = Date.now();
+  while (!fn()) { if (Date.now() - t0 > (ms || 10000)) throw new Error('timed out waiting'); h.flushTimers(); await new Promise((r) => setTimeout(r, 15)); }
+};
+/** Each page of a copy as {text, items: [{s, x, y}] (viewport points from top-left), images}. */
+const ed3Read_ = async (bytes) => {
+  const doc = await ed3PdfJs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, verbosity: 0 }).promise;
+  const out = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p); const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent(); const ops = await page.getOperatorList();
+    out.push({ w: vp.width, h: vp.height, text: tc.items.map((i) => i.str).join(' | '),
+      items: tc.items.map((i) => { const [x, y] = vp.convertToViewportPoint(i.transform[4], i.transform[5]); return { s: i.str, x, y }; }),
+      images: ops.fnArray.filter((f) => f === ed3PdfJs.OPS.paintImageXObject).length });
+  }
+  return out;
+};
+
+test('ED3 DOM: Print… makes the finished copy from the VERIFIED original — every answer in its box (a date as MM/DD/YYYY, a long one cut with "…"), the signature drawn, the answer on a page stored turned upright in its box, the answers in full and the box-less answers on an answers page, the certificate appended, every page labelled a copy; Download saves it as "(copy).pdf" (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h, asked } = ed3Boot_(fx, ed3Doc_(fx));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const foot = h.$('#ed-reader-overlay .foot');
+  assert.deepStrictEqual([...foot.querySelectorAll('button')].map((b) => b.textContent.trim()), ['Certificate', 'Print…', 'Email…', 'Close']);
+  const before = asked.length;
+  foot.querySelector('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy') && !h.$('#ed-copy-overlay [data-ed-copy-act="print"]').disabled);
+  assert.deepStrictEqual(asked.slice(before), [['pdf', 'dp'], ['cert', 'dp']], 'the original (fetched again, and hashed here) and the certificate, by the document\'s id');
+  const bytes = Buffer.from(h.read('ED_STATE.copy.bytes'));
+  assert.strictEqual(h.read('ED_STATE.copy.name'), 'PIP (copy).pdf');
+  assert.ok(/^0\.\d MB$/.test(h.$('#ed-copy-msg').textContent), h.$('#ed-copy-msg').textContent);
+  const pages = await ed3Read_(bytes);
+  assert.strictEqual(pages.length, 4, 'two original pages, the answers page, the certificate');
+  const at = (pg, s) => pages[pg].items.find((i) => i.s.indexOf(s) === 0);
+  const name = at(0, 'Sam Ortiz');
+  assert.ok(name && Math.abs(name.x - (0.2 * 612 + 3)) < 1 && name.y > 0.2 * 792 && name.y < 0.23 * 792, 'in its box: ' + JSON.stringify(name));
+  assert.ok(at(0, '11/20/2026'), 'the date as written on paper');
+  assert.ok(pages[0].items.some((i) => /…$/.test(i.s)) && !/END/.test(pages[0].text), 'the long answer is cut in its box');
+  assert.ok(pages[0].images >= 1, 'the signature is drawn');
+  assert.ok(pages[1].w === 792 && pages[1].h === 612, 'the second page shows turned');
+  const up = at(1, 'Upright answer');
+  assert.ok(up && Math.abs(up.x - (0.1 * 792 + 3)) < 1 && up.y > 0.1 * 612 && up.y < 0.15 * 612, 'placed in its box as the page is shown: ' + JSON.stringify(up));
+  assert.ok(/Answers in full — longer than their box/.test(pages[2].text) && /Comments \(page 1\)/.test(pages[2].text) && /END/.test(pages[2].text), 'the long answer in full');
+  assert.ok(/Other answers/.test(pages[2].text) && /Anything else/.test(pages[2].text) && /No box here/.test(pages[2].text), 'the answer with no box');
+  assert.ok(/Certificate of signature 1/.test(pages[3].text), 'the certificate appended');
+  assert.ok(pages.every((p) => /COPY · made \d{4}-\d{2}-\d{2} from the signed original \(PDF SHA-256 [a-f0-9]{12}… ?\) · the certificate is the record/.test(p.text.replace(/ \| /g, ' '))), 'every page labelled');
+  const dl = [];
+  h.window.URL.createObjectURL = (b) => { dl.push(['blob', b.size]); return 'blob:x'; };
+  h.window.URL.revokeObjectURL = () => {};
+  h.window.HTMLAnchorElement.prototype.click = function () { dl.push(['click', this.getAttribute('download')]); };
+  h.$('#ed-copy-overlay [data-ed-copy-act="download"]').click();
+  assert.deepStrictEqual(dl, [['blob', bytes.length], ['click', 'PIP (copy).pdf']]);
+});
+
+test('ED3 DOM: a written document\'s copy is its text set on pages — title, body, the answers, the signature — then the certificate; no PDF is asked for (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const doc = ed3Doc_(fx, { pdf: null, status: 'completed', bodyMd: '# Phone policy\n\nAnswer within **three** rings.\n\n- Name the company', fields: [{ id: 'ok', label: 'Questions?', type: 'text', required: false }], responses: { ok: 'None' } });
+  const { h, asked } = ed3Boot_(fx, doc);
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy'));
+  assert.deepStrictEqual(asked, [['cert', 'dp']], 'only the certificate');
+  const pages = await ed3Read_(Buffer.from(h.read('ED_STATE.copy.bytes')));
+  assert.strictEqual(pages.length, 2);
+  const t = pages[0].text;
+  assert.ok(/PIP/.test(t) && /Phone policy/.test(t) && /Answer within three rings\./.test(t) && /• Name the company/.test(t) && /Responses/.test(t) && /Questions\?/.test(t) && /None/.test(t), t);
+  assert.ok(pages[0].images >= 1 && /Signature/.test(t), 'the signature');
+  assert.ok(/from the completed original · the certificate is the record/.test(t.replace(/ \| /g, ' ')) && /Certificate of signature/.test(pages[1].text));
+});
+
+test('ED3 DOM: no copy is made from a PDF that is not the one issued, nor without the PDF tools — each is said, nothing is offered; a failed load is not kept, and a file that fails its checksum never runs (driven)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed3Doc_(fx, { pdf: { name: 'PIP.pdf', sha: 'e'.repeat(64) } }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => /not the one that was issued/.test(h.$('#ed-copy-pages').textContent));
+  assert.ok(!h.read('ED_STATE.copy') && [...h.$$('#ed-copy-overlay [data-ed-copy-act]')].filter((b) => b.disabled).length === 3, 'nothing to print, download or email');
+  // Without pdf-lib: the load fails, is said, and the next press tries again.
+  const r = boot();
+  hFakePdf_(r, 2);
+  if (!(r.window.crypto && r.window.crypto.subtle)) Object.defineProperty(r.window, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+  r.run.respond('getMyDoc', () => ed3Doc_(fx));
+  r.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: fx.origUri }));
+  r.run.respond('getEmpDocCertificate', () => ({ success: true, dataUri: fx.certUri }));
+  const fetched = [];
+  let answer = () => Promise.reject(new Error('blocked'));
+  r.window.fetch = (u) => { fetched.push(u); return answer(); };
+  r.read('fetch = window.fetch');
+  r.read('edOpenDoc_')('dp');
+  await hSettle_();
+  r.$('[data-ed-copy="print"]').click();
+  await ed3Until_(r, () => /PDF tools could not load in this browser/.test(r.$('#ed-copy-pages').textContent));
+  assert.deepStrictEqual(fetched, ['https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js']);
+  answer = () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode('window.PDFLib = { PDFDocument: {} };').buffer) });
+  r.$('[data-ed-copy-act="close"]').click();
+  r.$('[data-ed-copy="print"]').click();
+  await ed3Until_(r, () => fetched.length === 2 && /PDF tools could not load/.test(r.$('#ed-copy-pages').textContent));
+  assert.ok(![...r.document.querySelectorAll('script')].some((s) => /window\.PDFLib = /.test(s.textContent)), 'a file that fails its checksum is never put on the page');
+  assert.strictEqual(r.read('ED_PDFLIB.state'), '', 'and is not kept');
+});
+
+test('ED3 DOM: Email… opens the panel once the copy is made; its preview is the server\'s (one builder) and follows the choices; an outside address is confirmed before sending — declined sends nothing; the send carries the copy\'s own bytes; success closes the panel, a refusal stays with Send back; a copy over the limit cannot be emailed (driven)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed3Doc_(fx));
+  const calls = [];
+  let sendAnswer = { error: 'Service invoked too many times for one day: email.' };
+  h.run.respond('emailEmpDocCopy', (id, o) => {
+    calls.push([id, JSON.parse(JSON.stringify(o))]);
+    if (o.preview) {
+      const out = (o.extra || []).filter((a) => !/@ums\.com$/.test(a));
+      return { success: true, preview: true, to: ['ann@ums.com'], cc: (o.managers ? ['boss@ums.com'] : []).concat(o.extra || []), outside: out, subject: 'Copy: PIP (signed 2026-11-03)', html: '<p>Boss sent you a copy of <b>PIP</b>.</p>', fileName: 'PIP (copy).pdf' };
+    }
+    return sendAnswer;
+  });
+  const confirms = [];
+  let confirmAnswer = false;
+  h.window.__stubConfirm = (o) => { confirms.push(o.title); return Promise.resolve(confirmAnswer); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="email"]').click();
+  await ed3Until_(h, () => h.$('#ed-copy-mail') && !h.$('#ed-copy-mail').hidden && h.$('#ed-mail-preview .ed-mail-kv'));
+  assert.deepStrictEqual(calls[0], ['dp', { managers: false, extra: [], note: '', preview: true }], 'the first preview: the employee only');
+  assert.ok(/To ann@ums\.com/.test(h.$('#ed-mail-preview').textContent) && /Boss sent you a copy of PIP/.test(h.$('#ed-mail-preview').textContent) && /PIP \(copy\)\.pdf \(0\.\d MB\)/.test(h.$('#ed-mail-preview').textContent));
+  h.$('#ed-mail-mgr').checked = true; h.$('#ed-mail-mgr').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  h.$('#ed-mail-extra').value = 'me@gmail.com, hr@ums.com'; h.$('#ed-mail-extra').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await hSettle_();
+  assert.deepStrictEqual(calls[calls.length - 1][1], { managers: true, extra: ['me@gmail.com', 'hr@ums.com'], note: '', preview: true });
+  assert.ok(/Outside the company: me@gmail\.com/.test(h.$('#ed-mail-preview').textContent));
+  const n = calls.length;
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  assert.deepStrictEqual(confirms, ['Send outside the company?']);
+  assert.strictEqual(calls.length, n, 'declined: nothing sent');
+  confirmAnswer = true;
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  const sent = calls[calls.length - 1][1];
+  assert.ok(sent.outsideOk === true && !sent.preview && sent.managers === true, JSON.stringify(Object.assign({}, sent, { pdf: '…' })));
+  assert.ok(Buffer.from(sent.pdf.split(',')[1], 'base64').equals(Buffer.from(h.read('ED_STATE.copy.bytes'))), 'the copy\'s own bytes');
+  assert.ok(/Service invoked too many times/.test(h.$('#ed-mail-msg').textContent) && !h.$('#ed-mail-send').disabled && !h.$('#ed-copy-mail').hidden, 'a refusal is said; Send is back');
+  sendAnswer = { success: true, sent: 4 };
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  assert.ok(h.$('#ed-copy-mail').hidden && /Copy sent to 4 people/.test(h.document.body.textContent), 'sent: said, the panel closes');
+  // Over the limit: no email.
+  h.read('ED_COPY_MAX_BYTES = 10');
+  h.$('[data-ed-copy-act="close"]').click();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy') && !h.$('#ed-copy-overlay [data-ed-copy-act="print"]').disabled);
+  assert.ok(h.$('#ed-copy-overlay [data-ed-copy-act="email"]').disabled && /over the 0\.0+\d* MB email limit|over the .* MB email limit; download it and attach it yourself/.test(h.$('#ed-copy-msg').textContent), h.$('#ed-copy-msg').textContent);
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

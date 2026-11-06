@@ -538,7 +538,7 @@ for the reasoning, which is usually the part that matters.
 - [Email composer Internal/External tab merge](docs/design-decisions.md#email-composer-internal-external-tab-merge)
 - [Tag taxonomy rename/merge/archive batch-edits across reps](docs/design-decisions.md#tag-taxonomy-rename-merge-archive-batch-edits-across-reps)
 - [`uiConfirm` / `uiPrompt` replace native `window.confirm` / `window.prompt`](docs/design-decisions.md#uiconfirm-uiprompt-replace-native-window-confirm-window-prom)
-- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1) · [Coaching keeps a 1-on-1 log with a per-manager cadence, and a screenshot in the HR store (Batch F, 2026-11-02)](docs/design-decisions.md#coaching-keeps-a-one-on-one-log-and-a-cadence) · [an employee document may be issued as a PDF — bytes bound by SHA-256, highlighted field boxes, a certificate PDF (Batch H)](docs/design-decisions.md#an-employee-doc-may-be-issued-as-a-pdf) · [signature/initials boxes filled by the sign panel, box text sized to the page (ED1)](docs/design-decisions.md#ed1-signature-boxes-and-page-sized-box-text) · [the pay-week timesheet reminder (P1)](docs/design-decisions.md#p1-the-pay-week-reminder) · [intake fields are warned, never blocked; the Maps address check is opt-in (I1)](docs/design-decisions.md#i1-intake-safeguards-and-address-check) · [intake drafts are saved in the browser, several per form, 24 hours (I2)](docs/design-decisions.md#i2-intake-saved-drafts) · [insurance cards are read in the browser, checksum-pinned, offered to confirm (I3)](docs/design-decisions.md#i3-insurance-cards-read-in-the-browser) · [boxes move and resize on a 1/8-inch grid, pages zoom, a fillable PDF's fields are offered as boxes (ED2)](docs/design-decisions.md#ed2-box-editor-and-zoom)
+- [Training rides ON the Reference/KB layer (T1)](docs/design-decisions.md#training-rides-on-the-reference-kb-layer-t1) · [Coaching keeps a 1-on-1 log with a per-manager cadence, and a screenshot in the HR store (Batch F, 2026-11-02)](docs/design-decisions.md#coaching-keeps-a-one-on-one-log-and-a-cadence) · [an employee document may be issued as a PDF — bytes bound by SHA-256, highlighted field boxes, a certificate PDF (Batch H)](docs/design-decisions.md#an-employee-doc-may-be-issued-as-a-pdf) · [signature/initials boxes filled by the sign panel, box text sized to the page (ED1)](docs/design-decisions.md#ed1-signature-boxes-and-page-sized-box-text) · [the pay-week timesheet reminder (P1)](docs/design-decisions.md#p1-the-pay-week-reminder) · [intake fields are warned, never blocked; the Maps address check is opt-in (I1)](docs/design-decisions.md#i1-intake-safeguards-and-address-check) · [intake drafts are saved in the browser, several per form, 24 hours (I2)](docs/design-decisions.md#i2-intake-saved-drafts) · [insurance cards are read in the browser, checksum-pinned, offered to confirm (I3)](docs/design-decisions.md#i3-insurance-cards-read-in-the-browser) · [boxes move and resize on a 1/8-inch grid, pages zoom, a fillable PDF's fields are offered as boxes (ED2)](docs/design-decisions.md#ed2-box-editor-and-zoom) · [a finished document's copy is made in the browser and printed or emailed from a preview (ED3)](docs/design-decisions.md#ed3-finished-documents)
 - [Operator feedback round (2026-06-12) — note-template ergonomics for the pinned pop-out workflow](docs/design-decisions.md#operator-feedback-round-2026-06-12-note-template-ergonomics)
 - [Onboarding tour — hand-rolled coach-marks (`script_tour.html`)](docs/design-decisions.md#onboarding-tour-hand-rolled-coach-marks-script-tour-html)
 - [The Script-Property budget badge has ONE home (`propBudgetHtml_` + `.prop-budget`, Batch Q)](docs/design-decisions.md#the-script-property-budget-badge-has-one-home-propbudgethtml)
@@ -963,9 +963,9 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1548 | `node test/client/run.js` |
-| DOM harness tests | 387 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 248 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1556 | `node test/client/run.js` |
+| DOM harness tests | 391 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 251 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 59 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 107 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
@@ -973,8 +973,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 13 | `TRIGGER_GROUPS` |
 | localStorage keys | 24 | `ums…` literals in `web-app/` |
-| Invariant library entries | 389 | `.cycle/config.md` |
-| Regression scenarios (S*) | 157 | `.cycle/config.md` |
+| Invariant library entries | 390 | `.cycle/config.md` |
+| Regression scenarios (S*) | 158 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

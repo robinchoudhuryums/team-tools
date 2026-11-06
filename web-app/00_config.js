@@ -2887,6 +2887,11 @@ const EMPDOC_PDF_KEY_RE = /^empdocpdf-[a-f0-9]{24}$/;
 const EMPDOC_PDF_MAX_BYTES = 4194304;          // 4 MB — a Google Doc exported as PDF is ~100 KB
 const EMPDOC_PDF_NAME_MAX = 120;
 const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box may name
+// ED3 (operator 2026-11-06): a finished document's filled copy is built in the
+// browser and may be emailed — up to this size (the PDF and its certificate),
+// to the employee, the managers if chosen, and at most this many other addresses.
+const EMPDOC_COPY_MAX_BYTES = 10485760;        // 10 MB
+const EMPDOC_COPY_EXTRA_MAX = 5;
 // Bump when the acknowledgment copy below changes, so stored signatures
 // prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
 const EMPDOC_ACK_VERSION = 1;
