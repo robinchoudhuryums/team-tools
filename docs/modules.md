@@ -597,6 +597,15 @@ employee, and to the managers or other addresses if chosen (an address outside
 the company is confirmed first), with a preview of the message, a 10 MB limit
 and an audit row. The certificate stays the record.
 
+**ED4 (operator 2026-11-09):** the admin keeps the company letterheads
+(UniversalMed Supply, Infimed Solutions: logo, address, footer) under Manage →
+Admin → Config. An employee document starts on the letterhead of the
+employee's company (roster column S) and the issuer can pick another or none.
+A written document is read on its letterhead, and can centre or right-align
+lines, break pages and place a signature block, with Insert buttons and a
+Preview of exactly what the employee will see. The letterhead also heads the
+certificate and the printed copy.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)

@@ -8032,6 +8032,7 @@ function lookupEmployeeById_(empId) {
       departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
       scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),
       ptoAccrualPerBasis: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),
+      company: String(rows[i][EMP.COMPANY] == null ? '' : rows[i][EMP.COMPANY]).trim(),   // ED4: column S
     };
   }
   return null;
@@ -9838,6 +9839,7 @@ function empDocRowToObj_(row, ssTz) {
     responsesRaw: String(row[ED.RESPONSES] || ''),
     responses: empDocParseJson_(row[ED.RESPONSES], {}),
     pdfKey: EMPDOC_PDF_KEY_RE.test(String(row[ED.PDF_KEY] || '').trim()) ? String(row[ED.PDF_KEY]).trim() : '',
+    letterheadId: /^[a-z0-9-]{1,40}$/.test(String(row[ED.LETTERHEAD] || '').trim()) ? String(row[ED.LETTERHEAD]).trim() : '',   // ED4
   };
 }
 /** Defensive JSON parse — corrupt blob never throws (returns the fallback). */

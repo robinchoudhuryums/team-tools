@@ -2086,13 +2086,14 @@ entry says which it is.
   reduce a balance: a month that now reads fewer hours than were credited is
   reported on Admin → Automation Health as a shortfall and left alone.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v12'`** — bumped for the
+  `Company` column (S, ED4 letterheads, 2026-11-09); v11 for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);
   previously v10 for `PtoAccrual` (Q, same day), v9 for
   `PayRate` (P, pay statement, 2026-08-17), v8 for the `Schedule`
   column (O, Turn D per-rep shift override), v7 for Departments/DeptRequests
   v2, v6 for `ManagerEmail`/T3, v5 for CallNotesSheetId. After deploying,
-  stale v10 cache entries expire naturally within 5 min (or run
+  stale v11 cache entries expire naturally within 5 min (or run
   `clearCaches_()` from the editor).
 <a id="operator-call-notes-department-list-state-tax-rates"></a>
 - **Call-notes department list + state tax rates** are read by
@@ -2272,6 +2273,26 @@ entry says which it is.
   column (self-healing — nothing to set up), filled only for a document with
   an initials box; like the signature cell beside it, never edit it — it is
   inside the signature hash.
+<a id="operator-letterheads-and-roster-company-ed4"></a>
+- **Letterheads (ED4, operator 2026-11-09) — `Employees` column S =
+  `Company`, the `EMPDOC_LETTERHEADS` Script Property and the
+  `LetterheadLogos` tab (HR store).** **To set up:** Manage → Admin → Config →
+  *Letterheads*: give each company its address (up to four lines), a footer
+  and a logo (PNG or JPEG; the browser shrinks a large one to 600 × 240 px and
+  300 KB), and Save. Until the first Save the two companies, *UniversalMed
+  Supply* and *Infimed Solutions*, are offered by name alone. Then write each
+  India-based employee's company — `Infimed Solutions` (or its id,
+  `infimed`) — in roster **column S**; a blank or unknown company gets the
+  first letterhead. The issuer can pick another (or none) per document. The
+  letterheads are ONE Script Property (`EMPDOC_LETTERHEADS`, written through
+  the bounded writer — at most six, never edit it by hand); the logos are
+  rows of the `LetterheadLogos` tab, created by the first logo, append-only and
+  keyed by content (never edit or delete a row — a letterhead pointing at a
+  missing logo shows its name and address alone). A document's letterhead id
+  rides EmpDocs' trailing `LetterheadId` column (self-healing); a letterhead
+  is how a document is dressed, not what it says — it is not in the content
+  hash, so an edited address shows on old documents too, and a deleted
+  letterhead leaves them without one.
 <a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
 - **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
   `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each

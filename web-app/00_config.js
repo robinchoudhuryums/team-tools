@@ -488,6 +488,7 @@ const EMP = {
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
   PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate: PTO HOURS EARNED PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS` HOURS WORKED (operator 2026-08-19; PH team = 3.08 per 80). HOURS-DRIVEN, not calendar-driven: creditMonthlyPtoAccruals (daily trigger) credits `hoursWorked(month) × rate / basis / PTO_HOURS_PER_DAY` days into the col-I balance, in arrears. IDEMPOTENT ON HOURS PAID FOR, not on "this month was processed" (INV-205, 2026-09-15): col R still decides which months are OWED, but it no longer closes a month against correction — every run re-values the last PTO_ACCRUAL_RECONCILE_MONTHS completed months against the PtoAccrualCredit audit rows and credits the difference, so a punch approved after the month closed is picked up instead of lost. A month with no worked hours accrues NOTHING *at the time* — that is the rule, not a failure — and it accrues later if hours appear. Blank/garbage = no accrual at all (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
+  COMPANY:18,         // column S — ED4 (operator 2026-11-09): the company the employee works for, by letterhead name or id (e.g. "Infimed Solutions" for the India team); it picks the default letterhead on an issued document. Blank or unknown = the first letterhead.
   ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank (or unreadable) = the run first asks the credit history (25post): with a PtoAccrualCredit on record it plans from the newest month paid for, so a cleared cell loses nothing; with none it SEEDS (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Either way a PtoAccrualStamp audit row says which. Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
 };
 /** Pure month arithmetic for the accrual credit (Node-pinned). IN ARREARS:
@@ -777,7 +778,7 @@ const CSR_TRANSFER_EXPECTED_HEADERS = {
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const ROSTER_CACHE_KEY = 'employee_roster_v11';   // bumped: AccruedThrough column R (automated accrual credits, operator 2026-08-18)
+const ROSTER_CACHE_KEY = 'employee_roster_v12';   // bumped: Company column S (ED4 letterheads, operator 2026-11-09); v11 was AccruedThrough column R
 const ROSTER_CACHE_TTL = 300;
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
 // staleActionCount, todayTotal} aggregate so the 60s sidebar polling doesn't
@@ -2840,9 +2841,12 @@ const EMPDOC_SIG_TAB = 'DocSignatures';
 // Batch H (operator 2026-11-02): ONE more trailing column, PdfKey — the issued
 // PDF's key in the EmpDocFiles tab (blank for a written document and every
 // older row; getOrCreateEmpDocSheet_ self-heals the header).
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey'];
+// ED4 (operator 2026-11-09): ONE more trailing column, LetterheadId — the
+// letterhead the issuer picked (blank = none, and every older row). It is how
+// the document is DRESSED, not what it says, so it is not in the content hash.
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey','LetterheadId'];
 const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate','InitialsDataUrl'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15 };
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15, LETTERHEAD:16 };
 // HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
 // that read as a date or number was coerced on write, so the content hash
 // recomputed from the cell never matched — the doc could not be signed and
@@ -2892,6 +2896,18 @@ const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box m
 // to the employee, the managers if chosen, and at most this many other addresses.
 const EMPDOC_COPY_MAX_BYTES = 10485760;        // 10 MB
 const EMPDOC_COPY_EXTRA_MAX = 5;
+// ED4 (operator 2026-11-09): the company letterheads an employee document is
+// dressed in — each a name, an address (lines), a footer and a logo. The admin
+// keeps them (Manage → Admin → Config → Letterheads) in ONE Script Property;
+// until then the two companies are offered by name alone. Logos live in the HR
+// store's LetterheadLogos tab (the KbImages row shape, keyed by content).
+const EMPDOC_LETTERHEADS_PROP = 'EMPDOC_LETTERHEADS';
+const EMPDOC_LETTERHEAD_SEED = [{ id: 'ums', name: 'UniversalMed Supply' }, { id: 'infimed', name: 'Infimed Solutions' }];
+const EMPDOC_LETTERHEAD_MAX = 6;
+const EMPDOC_LOGO_TAB = 'LetterheadLogos';
+const EMPDOC_LOGO_KEY_RE = /^lhlogo-[a-f0-9]{24}$/;
+const EMPDOC_LOGO_MAX_BYTES = 307200;          // 300 KB — the browser fits a logo under it
+const EMPDOC_LOGO_TYPES = ['image/png', 'image/jpeg'];   // what the certificate and pdf-lib both draw
 // Bump when the acknowledgment copy below changes, so stored signatures
 // prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
 const EMPDOC_ACK_VERSION = 1;

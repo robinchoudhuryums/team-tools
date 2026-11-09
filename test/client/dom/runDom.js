@@ -6534,6 +6534,163 @@ test('ED3 DOM: Email… opens the panel once the copy is made; its preview is th
   assert.ok(h.$('#ed-copy-overlay [data-ed-copy-act="email"]').disabled && /over the 0\.0+\d* MB email limit|over the .* MB email limit; download it and attach it yourself/.test(h.$('#ed-copy-msg').textContent), h.$('#ed-copy-msg').textContent);
 });
 
+// ED4 (operator 2026-11-09) — letterheads and written-document formatting.
+const ED4_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const ed4Lhs_ = () => ({ letterheads: [
+  { id: 'ums', name: 'UniversalMed Supply', address: '1 Main St\nPlano, TX', footer: 'UMS · Confidential', logoKey: 'lhlogo-' + 'a'.repeat(24), logo: ED4_PNG },
+  { id: 'infimed', name: 'Infimed Solutions', address: 'Pune, India', footer: '', logoKey: '', logo: '' }],
+  forEmp: { e1: 'ums', e2: 'infimed' }, canEdit: true, stored: true });
+const ED4_BODY = ':::center\n**Customer Service**\n:::\n\nAnswer within three rings.\n\n[page break]\n\nI agree.\n\n[signature]';
+const ed4WrittenDoc_ = (over) => Object.assign({ docId: 'dw', title: 'Phone policy', docType: 'policy', status: 'signed', isOwner: true, requiresSignature: true,
+  bodyMd: ED4_BODY, signedAt: '2026-11-03 10:00:00', empName: 'Ann Lee', fields: [], responses: {}, integrity: 'ok', pdf: null,
+  letterhead: { id: 'ums', name: 'UniversalMed Supply', address: '1 Main St\nPlano, TX', footer: 'UMS · Confidential', logo: ED4_PNG },
+  signatureImage: ED4_PNG }, over || {});
+
+test('ED4 DOM: a written document is read on its letterhead — the logo, name and address above, the footer below — with its centred lines, a marked page break and the signature block (the drawing, the name and the date once signed; lines to sign on before); a document with no letterhead has none (driven)', async () => {
+  const h = boot();
+  let doc = ed4WrittenDoc_();
+  h.run.respond('getMyDoc', () => doc);
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  const paper = h.$('#ed-reader-overlay .ed-paper');
+  assert.ok(paper && paper.querySelector('.ed-lh .ed-lh-name').textContent === 'UniversalMed Supply' && /1 Main St\s*Plano, TX/.test(paper.querySelector('.ed-lh-addr').textContent));
+  assert.strictEqual(paper.querySelector('.ed-lh-logo').getAttribute('src'), ED4_PNG);
+  assert.strictEqual(paper.querySelector('.ed-lh-foot').textContent, 'UMS · Confidential');
+  assert.ok(paper.firstElementChild.classList.contains('ed-lh') && paper.lastElementChild.classList.contains('ed-lh-foot'), 'the letterhead above, its footer below');
+  assert.strictEqual(paper.querySelector('.ed-al-center strong').textContent, 'Customer Service');
+  assert.ok(paper.querySelector('.ed-pagebreak[role="separator"]'), 'the page break is marked');
+  const sig = paper.querySelector('.ed-sigblock');
+  assert.ok(sig.querySelector('.ed-sigblock-img').getAttribute('src') === ED4_PNG && /Name: Ann Lee/.test(sig.textContent) && /Date: 2026-11-03/.test(sig.textContent));
+  assert.ok(!/\[signature\]|\[page break\]|:::/.test(paper.textContent), 'no marker shows as text');
+  h.read('edCloseDoc_')();
+  doc = ed4WrittenDoc_({ status: 'issued', canComplete: true, ackText: 'I have read it.', signatureImage: '', letterhead: null });
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  const p2 = h.$('#ed-reader-overlay .ed-paper');
+  assert.ok(!p2.querySelector('.ed-lh') && !p2.querySelector('.ed-lh-foot'), 'no letterhead');
+  assert.ok(!p2.querySelector('.ed-sigblock-img') && /Date:$/.test(p2.querySelector('.ed-sigblock-row').textContent.trim()), 'not signed: lines to sign on, no date');
+});
+
+const ed4Mgr_ = (lhAnswer) => {
+  const h = boot(); mount_(h, 'view-area');
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Ann Lee' }, { id: 'e2', name: 'Raj Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('getEmpDocLetterheads', () => (typeof lhAnswer === 'function' ? lhAnswer() : lhAnswer));
+  h.run.respond('issueDoc', (p) => { sent.push(JSON.parse(JSON.stringify(p))); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  return { h, sent };
+};
+const ed4Pick_ = (h, id, v) => { const el = h.$('#' + id); el.value = v; el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+
+test('ED4 DOM: the issue form\'s letterhead follows the employee\'s company until the manager picks one, and the issue carries it; Preview shows the body on that letterhead with its formatting; the insert buttons write the markers; a letterhead read that fails is said, the picker off, and the document goes out with none (driven)', async () => {
+  const { h, sent } = ed4Mgr_(ed4Lhs_());
+  await hSettle_();
+  const sel = h.$('#ed-is-lh');
+  assert.deepStrictEqual([...sel.options].map((o) => o.textContent), ['UniversalMed Supply', 'Infimed Solutions', 'No letterhead']);
+  ed4Pick_(h, 'ed-is-emp', 'e2');
+  assert.strictEqual(sel.value, 'infimed', 'the India employee: Infimed');
+  ed4Pick_(h, 'ed-is-emp', 'e1');
+  assert.strictEqual(sel.value, 'ums');
+  ed4Pick_(h, 'ed-is-lh', '');
+  ed4Pick_(h, 'ed-is-emp', 'e2');
+  assert.strictEqual(sel.value, '', 'a manager\'s pick stays when the employee changes');
+  ed4Pick_(h, 'ed-is-lh', 'ums');
+  const ta = h.$('#ed-is-body');
+  ta.value = 'Intro'; ta.setSelectionRange(5, 5);
+  h.click('[data-ed-ins="signature"]');
+  assert.strictEqual(ta.value, 'Intro\n[signature]\n');
+  ta.setSelectionRange(0, 5);
+  h.click('[data-ed-ins="center"]');
+  assert.ok(/^:::center\nIntro\n:::\n\[signature\]/.test(ta.value), ta.value);
+  h.$('#ed-is-title').value = 'Remote work';
+  h.click('[data-ed-wp="preview"]');
+  const pv = h.$('#ed-is-preview');
+  assert.ok(!pv.hidden && ta.hidden && h.$('#ed-is-insert').hidden, 'Preview shows; the body and the inserts hide');
+  assert.ok(/UniversalMed Supply/.test(pv.querySelector('.ed-lh').textContent) && pv.querySelector('.ed-al-center') && /Name: Raj Patel/.test(pv.querySelector('.ed-sigblock').textContent) && pv.querySelector('h1').textContent === 'Remote work');
+  ed4Pick_(h, 'ed-is-lh', 'infimed');
+  assert.ok(/Infimed Solutions/.test(h.$('#ed-is-preview .ed-lh').textContent), 'it follows the picker');
+  h.click('[data-ed-wp="write"]');
+  assert.ok(h.$('#ed-is-preview').hidden && !ta.hidden);
+  h.click('[data-ed-mode="pdf"]');
+  assert.ok(h.$('#ed-is-wp').hidden, 'a PDF document has no Write / Preview');
+  h.click('[data-ed-mode="text"]');
+  h.$('#ed-is-emp').value = 'e2';
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent[0].letterheadId, 'infimed', 'the issue carries it');
+  // A failed read.
+  const f = ed4Mgr_({ error: 'The HR store could not be opened.' });
+  await hSettle_();
+  assert.ok(f.h.$('#ed-is-lh').disabled && /could not be opened\. The document will go out without one\./.test(f.h.$('#ed-is-lh-note').textContent));
+  f.h.$('#ed-is-emp').value = 'e1'; f.h.$('#ed-is-title').value = 'T'; f.h.$('#ed-is-body').value = 'B';
+  f.h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(f.sent[0].letterheadId, '', 'none, never a guess');
+});
+
+test('ED4 DOM: the admin\'s letterhead cards — each with its preview; Save sends the edited fields, a refusal stays on the card; Delete asks first; a new card adds one; Remove logo clears it (driven)', async () => {
+  const h = boot();
+  mount_(h, 'view-area');
+  const calls = [];
+  let saveAnswer = { error: 'The company name is too long (max 80 characters).' };
+  h.run.respond('getEmpDocLetterheads', () => ed4Lhs_());
+  h.run.respond('saveEmpDocLetterhead', (lh) => { calls.push(['save', JSON.parse(JSON.stringify(lh))]); return saveAnswer; });
+  h.run.respond('deleteEmpDocLetterhead', (id) => { calls.push(['delete', id]); return { success: true }; });
+  h.run.respond('setEmpDocLetterheadLogo', (id, d) => { calls.push(['logo', id, d]); return { success: true, logoKey: '' }; });
+  const confirms = [];
+  h.window.__stubConfirm = (o) => { confirms.push(o.title); return Promise.resolve(true); };
+  h.read('uiConfirm = window.__stubConfirm');
+  const host = h.document.createElement('div'); host.id = 'ed-admin-lh'; h.$('#view-area').appendChild(host);
+  h.window.edLetterheadsMount_(host);
+  await hSettle_();
+  const cards = h.$$('#ed-admin-lh .ed-lh-card');
+  assert.strictEqual(cards.length, 3, 'two letterheads and a new card');
+  assert.ok(cards[0].querySelector('.ed-lh-preview .ed-lh-logo') && /UniversalMed Supply/.test(cards[0].querySelector('.ed-lh-preview').textContent));
+  cards[0].querySelector('.ed-lh-in-addr').value = '2 Main St';
+  cards[0].querySelector('[data-ed-lh-act="save"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[0], ['save', { id: 'ums', name: 'UniversalMed Supply', address: '2 Main St', footer: 'UMS · Confidential' }]);
+  assert.ok(/too long/.test(cards[0].querySelector('.ed-lh-msg').textContent) && !cards[0].querySelector('[data-ed-lh-act="save"]').disabled, 'a refusal stays on the card');
+  saveAnswer = { success: true, id: 'acme' };
+  const fresh = h.$$('#ed-admin-lh .ed-lh-card')[2];
+  fresh.querySelector('.ed-lh-in-name').value = 'Acme';
+  fresh.querySelector('[data-ed-lh-act="save"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[1], ['save', { id: '', name: 'Acme', address: '', footer: '' }], 'a new one has no id yet');
+  h.$$('#ed-admin-lh .ed-lh-card')[1].querySelector('[data-ed-lh-act="delete"]').click();
+  await hSettle_();
+  assert.deepStrictEqual([confirms, calls[2]], [['Delete this letterhead?'], ['delete', 'infimed']]);
+  h.$$('#ed-admin-lh .ed-lh-card')[0].querySelector('[data-ed-lh-act="nologo"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[3], ['logo', 'ums', '']);
+});
+
+test('ED4 DOM: a written document\'s printed copy is on its letterhead — the name and address on the first page, the footer on every page of the document — its centred line centred, a page break a new page, the signature block with the name and date, the signature drawn there and not again (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed4WrittenDoc_());
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy'));
+  const pages = await ed3Read_(Buffer.from(h.read('ED_STATE.copy.bytes')));
+  assert.strictEqual(pages.length, 3, 'two written pages, then the certificate');
+  const t1 = pages[0].text, t2 = pages[1].text;
+  assert.ok(/UniversalMed Supply/.test(t1) && /1 Main St/.test(t1) && /Plano, TX/.test(t1) && !/UniversalMed Supply \|/.test(t2), 'the letterhead on the first page only');
+  assert.ok(/UMS · Confidential/.test(t1) && /UMS · Confidential/.test(t2), 'the footer on every page');
+  const cs = pages[0].items.find((i) => i.s === 'Customer Service');
+  const body = pages[0].items.find((i) => /^Answer within/.test(i.s));
+  assert.ok(cs && body && Math.abs(body.x - 54) < 1 && cs.x > 220 && cs.x < 290, 'centred, where the body starts at the margin: ' + JSON.stringify([cs, body]));
+  assert.ok(/Answer within three rings\./.test(t1) && !/I agree/.test(t1) && /I agree\./.test(t2), 'the page break starts a new page');
+  assert.ok(/Employee signature/.test(t2) && /Name: Ann Lee/.test(t2) && /Date: 2026-11-03/.test(t2) && pages[1].images >= 1, 'the signature block, drawn');
+  assert.ok(!/(^| \| )Signature( \| |$)/.test(t2), 'not drawn again after the answers');
+  assert.ok(pages[0].images >= 1, 'the logo');
+});
+
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));

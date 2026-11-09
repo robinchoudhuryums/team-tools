@@ -11916,7 +11916,7 @@ test('Time-off RANGE + accrual PTO tile (operator 2026-08-18)', () => {
     'the emp builders read column Q through the parser, named for its real unit');
   assert.ok(/ptoAccrualPer80: emp\.ptoAccrualPerBasis \|\| null/.test(code),
     'the calendar payload ships the rate');
-  assert.ok(/ROSTER_CACHE_KEY = 'employee_roster_v11'/.test(code), 'INV-28 — cache key bumped for column R');
+  assert.ok(/ROSTER_CACHE_KEY = 'employee_roster_v1[1-9]'/.test(code), 'INV-28 — cache key bumped for column R (and since: v12 for ED4\'s column S)');
   vm.runInContext(extractRawFunction('Code.js', 'empPtoAccrual_'), sb, { filename: 'Code.js#empPtoAccrual_' });
   const pa = sb.empPtoAccrual_;
   assert.strictEqual(pa('3.08'), 3.08, 'the PH rate parses');
@@ -42941,6 +42941,7 @@ console.log('\nOperator round 2026-11-02 — Batch H (Employee Docs from a PDF, 
 const hCtx_ = (extra) => {
   const crypto = require('crypto');
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, RegExp, console: { warn() {} },
+    empDocLetterheadView_: () => null,   // ED4 — a document with no letterhead unless a pin gives one
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       computeDigest: (alg, p) => Array.from(crypto.createHash('sha256').update(typeof p === 'string' ? Buffer.from(p, 'utf8') : Buffer.from(p.map((b) => b & 255))).digest()).map((b) => (b > 127 ? b - 256 : b)),
@@ -43032,7 +43033,7 @@ test('Batch H: the issue stores the PDF BEFORE the row that names it (a store th
   const at = (re) => issue.search(re);
   assert.ok(at(/empDocPdfItem_\(payload\.pdf, payload\.pdfName\)/) > 0 && at(/empDocPdfItem_/) < at(/empDocValidateIssue_\(payload, pdf \?/), 'the PDF is checked and hashed first — its SHA-256 goes into the validated body');
   assert.ok(at(/empDocPdfStoreCallerLocked_\(pdf\)/) > at(/lookupEmployeeById_/) && at(/empDocPdfStoreCallerLocked_\(pdf\)/) < at(/appendRowsTextSafe_/), 'stored before the row');
-  assert.ok(/fieldsRaw, '', pdf \? pdf\.key : '',\s*\]\]/.test(issue), 'the PdfKey cell');
+  assert.ok(/fieldsRaw, '', pdf \? pdf\.key : '',( lhPick\.id,)?\s*\]\]/.test(issue), 'the PdfKey cell (then ED4\'s LetterheadId)');
   assert.ok(at(/lock\.waitLock/) < at(/empDocPdfStoreCallerLocked_/), 'under the lock (append-only tab, g17)');
   const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeDoc'));
   const gate = ack.search(/empDocContentHashMatches_\(d\.contentHash/), pdfAt = ack.search(/empDocPdfCheck_\(d\)/), write = ack.search(/sheet\.getRange\(found\.rowIdx/);
@@ -43043,7 +43044,7 @@ test('Batch H: the issue stores the PDF BEFORE the row that names it (a store th
   assert.ok((ver.match(/pdfMatch === false/g) || []).length === 2, 'both return paths count a changed file as tampering');
   assert.ok(/pdfKey: EMPDOC_PDF_KEY_RE\.test\(/.test(extractRawFunction('Code.js', 'empDocRowToObj_')), 'a cell that is not a PDF key reads as none');
   const hdr = arrayLiteral_(codeSrc, 'EMPDOC_HEADERS');
-  assert.strictEqual(hdr[hdr.length - 1], 'PdfKey', 'trailing (back-compat — the header self-heals)');
+  assert.strictEqual(hdr[hdr.indexOf('ResponsesJson') + 1], 'PdfKey', 'trailing after the v2 columns (back-compat — the header self-heals); ED4\'s LetterheadId follows it');
   assert.strictEqual(/EMPDOC_PDF_MAX_BYTES = (\d+)/.exec(codeSrc)[1], /ED_PDF_MAX_BYTES = (\d+)/.exec(fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8'))[1], 'the client cap mirrors the server');
 });
 
@@ -43151,7 +43152,7 @@ test('ED1: a signed document shows its drawings — getMyDoc reads the newest si
   swapped = true;
   assert.strictEqual(c.empDocLatestSigRow_('d1'), null, 'a row that no longer carries the key it was found by is refused');
   const gm = extractRawFunction('Code.js', 'getMyDoc');
-  assert.ok(/d\.status === 'signed' && \(d\.fields \|\| \[\]\)\.some\(function \(f\) \{ return EMPDOC_SIGN_FIELD_TYPES\.indexOf\(f\.type\) >= 0; \}\)/.test(gm) && /out\.signatureImage = /.test(gm) && /out\.initialsImage = /.test(gm), 'only a signed document with a drawing box carries them');
+  assert.ok(/d\.status === 'signed' && \(?\(d\.fields \|\| \[\]\)\.some\(function \(f\) \{ return EMPDOC_SIGN_FIELD_TYPES\.indexOf\(f\.type\) >= 0; \}\)/.test(gm) && /out\.signatureImage = /.test(gm) && /out\.initialsImage = /.test(gm), 'only a signed document with a drawing box carries them');
   assert.ok(gm.indexOf('empDocCanManagerSee_') < gm.indexOf('empDocLatestSigRow_'), 'after the read gate');
   const html = c.empDocCertificateHtml_({ title: 'T', fields: [{ id: 's', label: 'Sign', type: 'signature', box: { page: 2 } }, { id: 'i', label: 'Init', type: 'initials', box: { page: 1 } }],
     responses: {}, signature: 'data:image/png;base64,AAAA', initials: 'data:image/png;base64,BBBB' });
@@ -43485,6 +43486,141 @@ test('ED3: emailEmpDocCopy — only who may read the document, once signed or co
   assert.deepStrictEqual(audit[0], ['EmpDocCopyEmailed', 'docId=doc-1; sha256=' + sha + '; bytes=13; to=ann@ums.com,boss@ums.com,mgr@ums.com; outside=gmail.com']);
   const boom = withBlob(mk({ id: 'E1', name: 'Ann' }, 'signed', { sendRepEmail_: () => { throw new Error('Service invoked too many times'); } }));
   assert.strictEqual(boom.emailEmpDocCopy('doc-1', { pdf }).error, 'The copy was not sent: Service invoked too many times');
+});
+
+console.log('\nOperator round 2026-11-09 — ED4 (Employee Docs letterheads & written-document formatting)');
+const ed4ServerCtx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, RegExp, Error }, extra || {}));
+  ['const EMPDOC_LETTERHEAD_SEED = \\[[^\\]]*\\];', 'const EMPDOC_LETTERHEAD_MAX = \\d+;', 'const EMPDOC_LOGO_KEY_RE = /[^;]*;', "const EMPDOC_LETTERHEADS_PROP = '[^']*';",
+    "const EMPDOC_LOGO_TAB = '[^']*';", 'const EMPDOC_LOGO_MAX_BYTES = \\d+;', 'const EMPDOC_LOGO_TYPES = \\[[^\\]]*\\];']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['empDocLetterheadList_', 'empDocLetterheadFor_', 'empDocLetterheadUpsert_', 'empDocLetterheadPick_', 'empDocHasSigBlock_',
+    'getEmpDocLetterheads', 'saveEmpDocLetterhead', 'deleteEmpDocLetterhead', 'setEmpDocLetterheadLogo', 'empDocLetterheads_']
+    .forEach((f) => { if (!(extra && extra[f])) vm.runInContext(extractRawFunction('Code.js', f), ctx); });
+  return ctx;
+};
+const ed4Client_ = () => {
+  const ed = fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array,
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') });
+  const m = /var ED_LOGO_MAX_BYTES = [^;]+;/.exec(ed); assert.ok(m); vm.runInContext(m[0], ctx);
+  ['edDocSegments_', 'edLetterheadHtml_', 'edInsertDirective_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  return { ctx, ed };
+};
+
+test('ED4: the letterheads are the stored list or, until one is saved (or when it cannot be read or is empty), the two companies by name; each kept with a slug id, a name, up to four address lines, a footer and a logo key only of its shape; at most six (driven)', () => {
+  const c = ed4ServerCtx_();
+  assert.deepStrictEqual(hJ(c.empDocLetterheadList_(null)).map((l) => [l.id, l.name]), [['ums', 'UniversalMed Supply'], ['infimed', 'Infimed Solutions']], 'none stored: the two companies');
+  assert.deepStrictEqual(hJ(c.empDocLetterheadList_('{not json')).map((l) => l.id), ['ums', 'infimed'], 'unreadable: never no letterheads');
+  assert.deepStrictEqual(hJ(c.empDocLetterheadList_('[]')).map((l) => l.id), ['ums', 'infimed'], 'empty: the same');
+  const l = hJ(c.empDocLetterheadList_(JSON.stringify([
+    { id: 'Acme', name: '  Acme   Co ', address: ' 1 Main \r\n\n 2 Side \n3\n4\n5 ', footer: ' F ', logoKey: 'lhlogo-' + 'a'.repeat(24) },
+    { id: 'bad id', name: 'X' }, { id: 'noname', name: '' }, { id: 'acme', name: 'Dup' }, { id: 'b', name: 'B', logoKey: 'kbimg-x' },
+    { id: 'c', name: 'C' }, { id: 'd', name: 'D' }, { id: 'e', name: 'E' }, { id: 'f', name: 'F' }, { id: 'g', name: 'G' }])));
+  assert.deepStrictEqual(l.map((x) => x.id), ['acme', 'b', 'c', 'd', 'e', 'f'], 'slugs only, no name no letterhead, a repeated id once, six at most');
+  assert.deepStrictEqual([l[0].name, l[0].address, l[0].footer, l[0].logoKey], ['Acme Co', '1 Main\n2 Side\n3\n4', 'F', 'lhlogo-' + 'a'.repeat(24)]);
+  assert.strictEqual(l[1].logoKey, '', 'a key not of the logo shape is dropped');
+});
+
+test('ED4: an employee\'s document starts on the letterhead the roster Company names — by id or by name, case and spacing ignored — else the first; the issue takes "none" or one that exists; a signature block is a [signature] line of its own (driven)', () => {
+  const c = ed4ServerCtx_();
+  const list = hJ(c.empDocLetterheadList_(null));
+  assert.deepStrictEqual(['Infimed Solutions', ' infimed ', 'INFIMEDSOLUTIONS', 'ums', '', 'Someone Else', null].map((x) => c.empDocLetterheadFor_(x, list)),
+    ['infimed', 'infimed', 'infimed', 'ums', 'ums', 'ums', 'ums']);
+  assert.deepStrictEqual([hJ(c.empDocLetterheadPick_('', list)), hJ(c.empDocLetterheadPick_(undefined, list)), hJ(c.empDocLetterheadPick_('infimed', list))], [{ id: '' }, { id: '' }, { id: 'infimed' }]);
+  assert.ok(/no longer exists/.test(c.empDocLetterheadPick_('gone', list).error));
+  assert.deepStrictEqual(['Read.\n[signature]', '  [Signature]  \nnext', 'Sign: [signature] here', '[signatures]'].map((b) => c.empDocHasSigBlock_(b)), [true, true, false, false]);
+});
+
+test('ED4: an admin\'s edit replaces its letterhead (keeping its logo) or adds one with an id from its name, made unique; no name, a long field, a removed id or a seventh is refused (driven)', () => {
+  const c = ed4ServerCtx_();
+  const list = hJ(c.empDocLetterheadList_(JSON.stringify([{ id: 'ums', name: 'UniversalMed Supply', logoKey: 'lhlogo-' + 'b'.repeat(24) }, { id: 'infimed', name: 'Infimed Solutions' }])));
+  let r = hJ(c.empDocLetterheadUpsert_(list, { id: 'ums', name: 'UMS', address: 'A\nB', footer: 'F' }));
+  assert.deepStrictEqual([r.id, r.list[0].name, r.list[0].address, r.list[0].logoKey], ['ums', 'UMS', 'A\nB', 'lhlogo-' + 'b'.repeat(24)], 'replaced, the logo kept');
+  r = hJ(c.empDocLetterheadUpsert_(list, { name: 'Infimed Solutions' }));
+  assert.strictEqual(r.id, 'infimed-solutions', 'a new one: its id from its name');
+  r = hJ(c.empDocLetterheadUpsert_(r.list, { name: 'Infimed Solutions!' }));
+  assert.strictEqual(r.id, 'infimed-solutions-2', 'made unique');
+  assert.ok(/needs a company name/.test(c.empDocLetterheadUpsert_(list, { name: '  ' }).error));
+  assert.ok(/too long/.test(c.empDocLetterheadUpsert_(list, { name: 'x'.repeat(81) }).error));
+  assert.ok(/address is too long/.test(c.empDocLetterheadUpsert_(list, { name: 'A', address: 'x'.repeat(301) }).error));
+  assert.ok(/no longer exists/.test(c.empDocLetterheadUpsert_(list, { id: 'gone', name: 'A' }).error));
+  const six = hJ(c.empDocLetterheadList_(JSON.stringify(['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({ id, name: id })))));
+  assert.ok(/At most 6 letterheads/.test(c.empDocLetterheadUpsert_(six, { name: 'G' }).error));
+});
+
+test('ED4: the letterhead endpoints — the read is any manager\'s (with each employee\'s default from roster column S), the writes are the admin\'s, through propSetBounded_ under the lock, audited; the last letterhead cannot be deleted; a logo must be a PNG or JPEG that starts like one, stored in its own HR-store tab by content (driven)', () => {
+  let stored = null; const audit = [], appended = [], props = {};
+  const sheet = { getLastRow: () => 1, appendRow: () => {}, setFrozenRows: () => {} };
+  const mk = (emp) => ed4ServerCtx_({ getEmployeeInfo_: () => emp,
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k === 'EMPDOC_LETTERHEADS' ? stored : props[k] || null) }) },
+    propSetBounded_: (k, v) => { assert.strictEqual(k, 'EMPDOC_LETTERHEADS'); stored = v; },
+    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    writeAuditLog_: (e, a, d, t, x, n, note) => audit.push([a, note]), fmtDate_: () => '2026-11-09', fmtTime_: () => '09:00:00',
+    getEmployeeRosterRows_: () => [['hdr'], ['a@ums.com', 'E1', 'Ann', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Infimed Solutions'], ['b@ums.com', 'E2', 'Bo'], ['', 'E3', 'Gone']],
+    empRosterEmail_: (row) => row[0], EMP: { ID: 1, COMPANY: 18 },
+    empDocLogoUrls_: () => ({}), getHrDocsSS_: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }),
+    kbParseImageDataUrl_: (u) => { const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(u); return m ? { contentType: m[1], base64: m[2] } : null; },
+    kbImageItem_: (t, b64) => ({ sha: 'c'.repeat(64), bytes: Math.floor(b64.length * 3 / 4), contentType: t, base64: b64 }),
+    kbSha256Hex_: () => 'c'.repeat(64), kbImageTabHeaderOk_: () => true, kbImageTabLedger_: () => ({}), KB_MANUAL_IMAGES_HEADERS: ['Key'],
+    appendRowsSafe_: (s, rows) => appended.push(rows), kbManualImagesRows_: (items) => items.map((i) => [i.key]), sheetSafeRow_: (r) => r });
+  assert.strictEqual(mk({ id: 'E2' }).getEmpDocLetterheads().error, 'Manager access required.');
+  const m = hJ(mk({ id: 'M', isManager: true }).getEmpDocLetterheads());
+  assert.deepStrictEqual([m.letterheads.map((l) => l.id), m.forEmp, m.canEdit, m.stored], [['ums', 'infimed'], { E1: 'infimed', E2: 'ums' }, false, false], 'defaults from column S; an offboarded row has none');
+  const mgr = mk({ id: 'M', isManager: true });
+  ['saveEmpDocLetterhead', 'deleteEmpDocLetterhead', 'setEmpDocLetterheadLogo'].forEach((f) => assert.strictEqual(mgr[f]('ums', '').error, 'Admin access required.', f + ' is the admin\'s'));
+  const adm = mk({ id: 'A', isManager: true, isAdmin: true, email: 'a@ums.com' });
+  assert.ok(hJ(adm.saveEmpDocLetterhead({ id: 'ums', name: 'UniversalMed Supply', address: '1 Main' })).success);
+  assert.strictEqual(JSON.parse(stored)[0].address, '1 Main');
+  assert.deepStrictEqual(audit[0], ['EmpDocLetterheadSave', 'id=ums']);
+  assert.ok(/not a readable PNG or JPEG/.test(adm.setEmpDocLetterheadLogo('ums', 'data:image/png;base64,R0lGODlh').error), 'a PNG label on other bytes');
+  assert.ok(/must be a PNG or JPEG/.test(adm.setEmpDocLetterheadLogo('ums', 'data:image/gif;base64,R0lGODlh').error));
+  const ok = hJ(adm.setEmpDocLetterheadLogo('ums', 'data:image/png;base64,iVBORw0KGgoAAAA'));
+  assert.ok(ok.success && ok.logoKey === 'lhlogo-' + 'c'.repeat(24) && appended.length === 1 && JSON.parse(stored)[0].logoKey === ok.logoKey, 'stored by content, named on the letterhead');
+  assert.strictEqual(hJ(adm.setEmpDocLetterheadLogo('ums', '')).logoKey, '', 'cleared');
+  assert.ok(hJ(adm.deleteEmpDocLetterhead('infimed')).success);
+  assert.ok(/Keep at least one letterhead/.test(adm.deleteEmpDocLetterhead('ums').error));
+});
+
+test('ED4: a document carries its letterhead id beside the PdfKey (not in the content hash); getMyDoc carries the letterhead and the employee\'s name, and the drawing for a [signature] block; the certificate is headed by the letterhead — every word escaped, a logo only as a PNG or JPEG data URL — and ends with its footer; roster column S is the Company, and the cache key moved (source + driven)', () => {
+  const issue = extractRawFunction('Code.js', 'issueDoc');
+  assert.ok(/const lhPick = empDocLetterheadPick_\(payload && payload\.letterheadId, empDocLetterheads_\(\)\);(\s*\/\/[^\n]*)?\s*if \(lhPick\.error\) return \{ success: false, error: lhPick\.error \};/.test(issue) && /pdf \? pdf\.key : '', lhPick\.id,/.test(issue));
+  assert.ok(!/letterhead/i.test(extractRawFunction('Code.js', 'empDocContentHash_')), 'the letterhead is not hashed');
+  const gm = extractRawFunction('Code.js', 'getMyDoc');
+  assert.ok(/letterhead: empDocLetterheadView_\(d\.letterheadId\)/.test(gm) && /empName: \(lookupEmployeeById_\(d\.empId\) \|\| \{\}\)\.name/.test(gm) && /\|\| empDocHasSigBlock_\(d\.bodyMd\)/.test(gm));
+  const src = serverSource();
+  assert.ok(/COMPANY:18,/.test(src) && /const ROSTER_CACHE_KEY = 'employee_roster_v12'/.test(src) && /'PdfKey','LetterheadId'\]/.test(src) && /PDF_KEY:15, LETTERHEAD:16 \}/.test(src));
+  assert.ok(/company: String\(rows\[i\]\[EMP\.COMPANY\]/.test(extractRawFunction('Code.js', 'lookupEmployeeById_')));
+  const c = hCtx_({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') });
+  const base = { title: 'T', docType: 'policy', empId: 'E1', empName: 'Ann', issuedAt: '', signed: true, signedAt: '', contentHash: '', sigHash: '', ackText: '', fields: [] };
+  const html = c.empDocCertificateHtml_(Object.assign({ letterhead: { name: 'Acme <Co>', address: '1 Main\n<b>2</b>', footer: 'Conf & ident', logo: 'data:image/png;base64,QUJD' } }, base));
+  assert.ok(/Acme &lt;Co>/.test(html) && /1 Main<br>&lt;b>2&lt;\/b>/.test(html) && /Conf &amp; ident/.test(html) && /<img alt="" style="max-height:56px;max-width:180px" src="data:image\/png;base64,QUJD">/.test(html));
+  assert.ok(html.indexOf('Acme') < html.indexOf('Certificate of') && html.indexOf('Conf &amp; ident') > html.indexOf('signature hash covers'), 'head first, footer last');
+  const bad = c.empDocCertificateHtml_(Object.assign({ letterhead: { name: 'A', logo: 'javascript:alert(1)' } }, base));
+  assert.ok(!/javascript:/.test(bad) && !/<img alt=""/.test(bad), 'a logo not a PNG or JPEG data URL is not drawn');
+  assert.ok(!/border-bottom:2px solid #1b3a5c/.test(c.empDocCertificateHtml_(base)), 'no letterhead, no head');
+});
+
+test('ED4: a written body\'s formatting — :::center / :::right … ::: aligns the lines between, [page break] and [signature] stand on their own lines; the letterhead\'s head and foot are escaped and draw a logo only as a PNG or JPEG data URL; the insert buttons wrap the selection or put a line of their own at the caret; the logo limit mirrors the server\'s (driven)', () => {
+  const { ctx, ed } = ed4Client_();
+  const seg = hJ(ctx.edDocSegments_('Intro\n:::center\n**Title**\n:::\nBody\n\n[page break]\n:::right\n[signature]\n:::\n:::center\nleft open'));
+  assert.deepStrictEqual(seg, [{ k: 'md', md: 'Intro', align: '' }, { k: 'md', md: '**Title**', align: 'center' }, { k: 'md', md: 'Body\n', align: '' }, { k: 'pb' },
+    { k: 'sig', align: 'right' }, { k: 'md', md: 'left open', align: 'center' }]);
+  assert.deepStrictEqual(hJ(ctx.edDocSegments_('Sign [signature] here')), [{ k: 'md', md: 'Sign [signature] here', align: '' }], 'only a line of its own');
+  const lh = hJ(ctx.edLetterheadHtml_({ name: 'A&B <x>', address: 'l1\nl2', footer: 'f"t', logo: 'data:image/jpeg;base64,QUJD' }));
+  assert.ok(/A&amp;B &lt;x&gt;/.test(lh.head) && /l1<br>l2/.test(lh.head) && /src="data:image\/jpeg;base64,QUJD"/.test(lh.head) && /f&quot;t/.test(lh.foot));
+  assert.ok(!/<img/.test(ctx.edLetterheadHtml_({ name: 'A', logo: 'data:image/svg+xml;base64,PHN2Zz4=' }).head), 'no SVG (it can carry script)');
+  assert.deepStrictEqual(hJ(ctx.edLetterheadHtml_(null)), { head: '', foot: '' });
+  let r = hJ(ctx.edInsertDirective_('one\ntwo', 4, 7, 'center'));
+  assert.strictEqual(r.text, 'one\n:::center\ntwo\n:::');
+  r = hJ(ctx.edInsertDirective_('abc', 1, 1, 'pagebreak'));
+  assert.deepStrictEqual(r, { text: 'a\n[page break]\nbc', caret: 15 });
+  r = hJ(ctx.edInsertDirective_('', 0, 0, 'signature'));
+  assert.deepStrictEqual(r.text, '[signature]\n');
+  r = hJ(ctx.edInsertDirective_('x', 1, 1, 'right'));
+  assert.ok(r.text === 'x\n:::right\n\n:::' && r.text.slice(0, r.caret) === 'x\n:::right\n', 'an empty pair, the caret between');
+  assert.strictEqual(ctx.ED_LOGO_MAX_BYTES, Number(/const EMPDOC_LOGO_MAX_BYTES = (\d+);/.exec(serverSource())[1]));
+  assert.ok(/edDocPaperHtml_\(doc\.title, doc\.bodyMd, \{ letterhead: doc\.letterhead/.test(extractFnFrom(ed, 'edRenderDoc_')), 'the reader reads a written document on its paper');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

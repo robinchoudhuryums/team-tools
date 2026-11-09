@@ -346,6 +346,17 @@ const SCENARIOS = [
     "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"email\"]'); if (b) b.click(); setTimeout(function () { var m = document.getElementById('ed-mail-mgr'); if (m) { m.checked = true; } var x = document.getElementById('ed-mail-extra'); if (x) { x.value = 'sam.ortiz.home@gmail.com'; x.dispatchEvent(new Event('change')); } var n = document.getElementById('ed-mail-note'); if (n) n.value = 'For your records.'; if (document.activeElement) document.activeElement.blur(); var p = document.getElementById('ed-copy-mail'); if (p) p.scrollIntoView(); }, 1800); }, 1300);", { wait: 4000 }],
   ['empdocs-copy-written-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
     "edOpenDoc_('d-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"print\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
+  // ED4 (operator 2026-11-09): a written document on its letterhead (centred heading, page break,
+  // the signature block signed); the issue form's Preview on the employee's letterhead; the
+  // admin's letterhead cards; the written document's printed copy.
+  ['empdocs-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  ['empdocs-letterhead-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  ['empdocs-issue-preview-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "setTimeout(function () { var e = document.getElementById('ed-is-emp'); if (e) { e.value = e.options[1] ? e.options[1].value : ''; e.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-is-title'); if (t) t.value = 'Remote work policy'; var b = document.getElementById('ed-is-body'); if (b) b.value = ':::center\\n**Remote work policy**\\n:::\\n\\nYou may work from home on Fridays with your manager\u2019s approval.\\n\\n[signature]'; var p = document.querySelector('[data-ed-wp=\\\"preview\\\"]'); if (p) p.click(); var w = document.getElementById('ed-is-wp'); if (w) w.scrollIntoView(); }, 800);", { wait: 1800 }],
+  ['empdocs-letterheads-admin-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '',
+    "cnAdminTab_('config'); setTimeout(function () { var h = document.getElementById('ed-admin-lh'); if (h) h.scrollIntoView(); }, 1000);", { wait: 2000 }],
+  ['empdocs-copy-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\\\"print\\\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],

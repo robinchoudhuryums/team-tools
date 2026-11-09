@@ -6796,6 +6796,11 @@ function test_managerGates_rejectNonManager() {
     ['getEmpDocTemplates',             function () { return getEmpDocTemplates(); }],
     ['saveEmpDocTemplate',             function () { return saveEmpDocTemplate({ name: 'gate', bodyMd: 'x' }); }],
     ['deleteEmpDocTemplate',           function () { return deleteEmpDocTemplate('no-such-tpl'); }],
+    // ED4 — the letterheads (the read is manager-gated, the three writes admin-gated).
+    ['getEmpDocLetterheads',           function () { return getEmpDocLetterheads(); }],
+    ['saveEmpDocLetterhead',           function () { return saveEmpDocLetterhead({ name: 'gate' }); }],
+    ['deleteEmpDocLetterhead',         function () { return deleteEmpDocLetterhead('no-such-lh'); }],
+    ['setEmpDocLetterheadLogo',        function () { return setEmpDocLetterheadLogo('no-such-lh', ''); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -6843,6 +6848,7 @@ function test_managerGates_rejectNonManager() {
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
+    saveEmpDocLetterhead: 1, deleteEmpDocLetterhead: 1, setEmpDocLetterheadLogo: 1,   // ED4
     // Team-member onboarding (2026-08-07) — roster management, admin tier.
     addEmployee: 1, offboardEmployee: 1, getOnboardingPanel: 1,
     getOnboardingCdrReadiness: 1,

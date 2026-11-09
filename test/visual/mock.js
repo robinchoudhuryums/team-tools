@@ -2714,9 +2714,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         return signed;
       }
       if (id === 'd-signed') {
+        // ED4: on its letterhead, with a centred heading, a page break and a
+        // signature block filled by the drawing.
+        var lh = FIXTURES.getEmpDocLetterheads().letterheads[0];
         return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
-          bodyMd: 'Answer within three rings, name the company, and confirm the caller\'s identity before discussing an order.', issuedAt: daysAgo(20) + ' 09:00:00',
-          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null };
+          bodyMd: ':::center\n**Customer Service Department**\n:::\n\nAnswer within three rings, name the company, and confirm the caller\'s identity before discussing an order.\n\n- Smile while you speak\n- Never place a caller on hold for more than two minutes\n\n[page break]\n\nI have read and will follow this policy.\n\n[signature]',
+          issuedAt: daysAgo(20) + ' 09:00:00', empName: 'Avery Blake',
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null,
+          letterhead: { id: lh.id, name: lh.name, address: lh.address, footer: lh.footer, logo: lh.logo },
+          signatureImage: FIXTURES.getMyDoc('d-pdf-signed').signatureImage };
       }
       return { docId: 'd-pdf', empId: 'E-1042', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
         bodyMd: 'Please read the plan, fill in the highlighted boxes, and sign below.\n\nPDF document "PIP - Sam Ortiz.pdf" \u00b7 SHA-256 ' + sha,
@@ -2732,6 +2738,19 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         responses: {}, canComplete: true, ackText: 'I acknowledge that I have read and understood this document. I understand this electronic acknowledgment has the same effect as a handwritten signature.', ackVersion: 1 };
     },
     getEmpDocPdf: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFBJUCAtIFNhbSBPcnRpeikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDcwMCBUZCAoUGVyZm9ybWFuY2UgSW1wcm92ZW1lbnQgUGxhbikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDY3NCBUZCAoR29hbHM6IGFuc3dlciB3aXRoaW4gMyByaW5nczsgbm90ZXMgb24gZXZlcnkgY2FsbC4pIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NDggVGQgKFJldmlldyBkYXRlOiBfX19fX19fX19fX19fXykgVGogRVQKQlQgL0YxIDExIFRmIDYwIDYyMiBUZCAoRW1wbG95ZWUgY29tbWVudHM6KSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTk2IFRkICgpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1NzAgVGQgKCkgVGogRVQKQlQgL0YxIDExIFRmIDYwIDU0NCBUZCAoTWFuYWdlcjogUm9iaW4gQ2hvdWRodXJ5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDcwOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3OQolJUVPRgo=', sha: 'bd9eb7e92d79bf00a6aaa5c3bc7ea6d191a3cd0ad476b6cbb99aa4e55a165b66', name: 'PIP - Sam Ortiz.pdf' },
+    // ED4 (operator 2026-11-09): the letterheads — the two companies, one
+    // with a small logo and an address; the roster's Company picks Infimed
+    // for the India rep.
+    getEmpDocLetterheads: function () {
+      var logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAA/UlEQVR42u3a0Q3CMAwE0NuDTZil+69RkJD4aCG48TmyzUX9bO17f40T7MUXBBBAANq63bfnw3ptHeAV6P3Q3w8EHKLMAZwMEKN7ANMMcNM7ARMGEKNTAFcZ4KZnAewGcNMTAUYDuOm5AEs1cPvRAT8LgtssAjCu2Row0SkIMCgLbps4wLfKTQHTPUIBH4t3BHgaRAPO9QXIBnBWXwA4tGgH0FxIAAEEEEAAAQRwAPQzl+BnThsaAZwAjVUSADRaTAAoP53WAUcOQPkzsg6nlFe7riy1/9FJvb33miKuHVnh2yqWEKHfkvfEhW9sDQLR3183lah6a1FzIQFKrwfN2p5OeNE+GAAAAABJRU5ErkJggg==';   // a real 64 × 64 PNG (a pdf-lib embed of a made-up one never returns)
+      return { letterheads: [
+        { id: 'ums', name: 'UniversalMed Supply', address: '1200 Commerce Dr, Suite 400\nPlano, TX 75093\n(800) 555-0142', footer: 'UniversalMed Supply · Confidential employee record', logoKey: 'lhlogo-' + 'a'.repeat(24), logo: logo },
+        { id: 'infimed', name: 'Infimed Solutions', address: 'Unit 7, Tech Park\nPune 411057, India', footer: '', logoKey: '', logo: '' }],
+        forEmp: { 'E-1088': 'ums', 'E-1042': 'ums', 'E-2001': 'infimed' }, canEdit: true, stored: true };
+    },
+    saveEmpDocLetterhead: { success: true, id: 'ums', letterheads: [] },
+    deleteEmpDocLetterhead: { success: true, letterheads: [] },
+    setEmpDocLetterheadLogo: { success: true, logoKey: '' },
     // ED3 (operator 2026-11-06): a finished copy emailed — the preview the
     // server builds (empDocCopyRecipients_ / empDocCopyEmailParts_'s shape),
     // then a send.

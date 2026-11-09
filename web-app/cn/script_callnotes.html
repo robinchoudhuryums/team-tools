@@ -14253,6 +14253,13 @@ function cnRenderAdminBody_(cfg) {
       '</div>' +
     '</div>' +
 
+    // ED4 (operator 2026-11-09) — the Employee Docs letterheads; the editor
+    // lives with Employee Docs (script_empdocs.html) and mounts here.
+    '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
+      '<div class="day-section-label" style="margin-bottom:10px">' + icon('fileText', 14) + ' Letterheads — employee documents</div>' +
+      '<div id="ed-admin-lh"></div>' +
+    '</div>' +
+
     // DeptRequests v2 — per-department resolution SLA targets (WORKING DAYS since M6, cycle 22)
     '<div style="background:var(--paper-card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:20px">' +
       '<div class="day-section-label" style="margin-bottom:10px">' + icon('outbox', 14) + ' Dept-Request SLA targets</div>' +
@@ -14644,6 +14651,7 @@ function cnRenderAdminBody_(cfg) {
     }
   });
 
+  if (typeof edLetterheadsMount_ === 'function') edLetterheadsMount_(document.getElementById('ed-admin-lh'));   // ED4
   document.getElementById('cn-admin-save-atags').addEventListener('click', function () {
     var btn = this;
     var rows = document.querySelectorAll('#cn-admin-atag-list .cn-admin-atag-row');

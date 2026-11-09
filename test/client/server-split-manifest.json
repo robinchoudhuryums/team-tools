@@ -3953,6 +3953,68 @@
    "removed": [],
    "changed": [],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: letterheads (constants, list/pick/upsert helpers, admin endpoints), EMP.COMPANY, ED.LETTERHEAD",
+   "added": [
+    "EMPDOC_LETTERHEADS_PROP",
+    "EMPDOC_LETTERHEAD_MAX",
+    "EMPDOC_LETTERHEAD_SEED",
+    "EMPDOC_LOGO_KEY_RE",
+    "EMPDOC_LOGO_MAX_BYTES",
+    "EMPDOC_LOGO_TAB",
+    "EMPDOC_LOGO_TYPES",
+    "deleteEmpDocLetterhead",
+    "empDocHasSigBlock_",
+    "empDocLetterheadFor_",
+    "empDocLetterheadList_",
+    "empDocLetterheadPick_",
+    "empDocLetterheadUpsert_",
+    "empDocLetterheadView_",
+    "empDocLetterheads_",
+    "empDocLogoUrls_",
+    "getEmpDocLetterheads",
+    "saveEmpDocLetterhead",
+    "setEmpDocLetterheadLogo"
+   ],
+   "removed": [],
+   "changed": [
+    "ED",
+    "EMP",
+    "EMPDOC_HEADERS",
+    "ROSTER_CACHE_KEY",
+    "empDocCertificateHtml_",
+    "empDocRowToObj_",
+    "getEmpDocCertificate",
+    "getMyDoc",
+    "issueDoc",
+    "lookupEmployeeById_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: letterheads write through propSetBounded_; the certificate carries the letterhead",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "deleteEmpDocLetterhead",
+    "empDocCertificateHtml_",
+    "saveEmpDocLetterhead",
+    "setEmpDocLetterheadLogo"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: a logo's bytes must start like a PNG or JPEG",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "setEmpDocLetterheadLogo"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4815,7 +4877,7 @@
   "ED": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "76193755be033096"
+   "sha": "b1d44cc670ab5464"
   },
   "EDS": {
    "file": "00_config.js",
@@ -4830,7 +4892,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5faf10242c45115b"
+   "sha": "fc70627f6d27dbec"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",
@@ -4885,12 +4947,47 @@
   "EMPDOC_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "20a1f378f149417f"
+   "sha": "41ca5550bfc9cd10"
   },
   "EMPDOC_INITIALS_MAX_CHARS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "ee272c1d87e7e4fb"
+  },
+  "EMPDOC_LETTERHEADS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "abbb8b5c65ef906c"
+  },
+  "EMPDOC_LETTERHEAD_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5b8e652ea6b8ceee"
+  },
+  "EMPDOC_LETTERHEAD_SEED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e4f8918a1328e054"
+  },
+  "EMPDOC_LOGO_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "91e8062bf105b085"
+  },
+  "EMPDOC_LOGO_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a1acdb2c0019f3cc"
+  },
+  "EMPDOC_LOGO_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54b716f360abe541"
+  },
+  "EMPDOC_LOGO_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "99e3f38aa41a385b"
   },
   "EMPDOC_PDF_KEY_RE": {
    "file": "00_config.js",
@@ -6510,7 +6607,7 @@
   "ROSTER_CACHE_KEY": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "143b765761ddc7b8"
+   "sha": "21570351fa0e9c2d"
   },
   "ROSTER_CACHE_TTL": {
    "file": "00_config.js",
@@ -8422,6 +8519,11 @@
    "kind": "function",
    "sha": "18f87cb855a75b34"
   },
+  "deleteEmpDocLetterhead": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "b64d900048c9d0e3"
+  },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -8750,7 +8852,7 @@
   "empDocCertificateHtml_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "f58c3d40a2c5a2c5"
+   "sha": "815c4f76ce760eb5"
   },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
@@ -8782,6 +8884,11 @@
    "kind": "function",
    "sha": "5b3229bd854eecdb"
   },
+  "empDocHasSigBlock_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "11a579835170fd04"
+  },
   "empDocInitialsCheck_": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -8791,6 +8898,41 @@
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "d5bcbd50cb94c73c"
+  },
+  "empDocLetterheadFor_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6cb4de16569bc383"
+  },
+  "empDocLetterheadList_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "cb0237532845c2cd"
+  },
+  "empDocLetterheadPick_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "edafdb3041aa56f4"
+  },
+  "empDocLetterheadUpsert_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "92511dbcb4422fcb"
+  },
+  "empDocLetterheadView_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "e1eb8b6edaa61d6d"
+  },
+  "empDocLetterheads_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "c0f25ba83b42f3ec"
+  },
+  "empDocLogoUrls_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "4128f68e9ba8e9a9"
   },
   "empDocNeedsAction_": {
    "file": "20_timeclock.js",
@@ -8850,7 +8992,7 @@
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7f3ed0939932435d"
+   "sha": "e77c36a1c3b2f4e3"
   },
   "empDocSha256Hex_": {
    "file": "20_timeclock.js",
@@ -9435,7 +9577,12 @@
   "getEmpDocCertificate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "de086397c5173ba9"
+   "sha": "0d37a0c750eebc13"
+  },
+  "getEmpDocLetterheads": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "4cd6877bd63d3d6e"
   },
   "getEmpDocPdf": {
    "file": "81_empdocs.js",
@@ -9685,7 +9832,7 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "82826cbd3d6900d5"
+   "sha": "f4ca212d3ec8d52b"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
@@ -10650,7 +10797,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "e6f17720e4ae86a6"
+   "sha": "ec024abbdb31bd26"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -11470,7 +11617,7 @@
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "23252f4eaaa34c97"
+   "sha": "68179a933701fe65"
   },
   "mailBccAll_": {
    "file": "10_core.js",
@@ -12937,6 +13084,11 @@
    "kind": "function",
    "sha": "d67e37af1a0fa42b"
   },
+  "saveEmpDocLetterhead": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "184e809e02c2406f"
+  },
   "saveEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -13256,6 +13408,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "7581016b92e0bf0e"
+  },
+  "setEmpDocLetterheadLogo": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "589fb908b85de98a"
   },
   "setOneOnOneCadence": {
    "file": "82_coaching.js",

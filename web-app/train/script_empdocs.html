@@ -125,6 +125,50 @@
   .ed-pdf.is-zoomed .ed-pdf-page { flex: none; margin: 0 auto; }
   .ed-pdf-warn { margin: 6px 0 0; padding-left: 18px; font-size: .8rem; color: var(--warning-deep); }
   .ed-pdf-warn[hidden], .ed-pdf-offer[hidden] { display: none; }
+  /* ED4 — a written document on its paper (the letterhead above, its footer
+     below, alignment, page breaks, the signature block); Write / Preview and
+     the insert buttons; the admin's letterhead cards. The paper is white in
+     every theme (g58), so its text colours are fixed. */
+  .ed-paper { background: #ffffff; color: #111111; border: 1px solid var(--line); border-radius: 6px; padding: 22px 26px; margin-top: 4px; }
+  .ed-paper .kb-article { color: #111111; }
+  .ed-paper .kb-article h1 { color: #111111; }
+  .ed-lh { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 2px solid #1b3a5c; }
+  .ed-lh-logo { max-height: 56px; max-width: 180px; object-fit: contain; }
+  .ed-lh-text { min-width: 0; }
+  .ed-lh-name { font-size: 1.05rem; font-weight: 700; color: #1b3a5c; }
+  .ed-lh-addr { font-size: .78rem; color: #555555; line-height: 1.35; }
+  .ed-lh-foot { margin-top: 18px; padding-top: 8px; border-top: 1px solid #cccccc; font-size: .72rem; color: #666666; text-align: center; }
+  .ed-al-center { text-align: center; }
+  .ed-al-right { text-align: right; }
+  .ed-pagebreak { display: flex; align-items: center; gap: 8px; margin: 18px 0; color: #777777; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; }
+  .ed-pagebreak::before, .ed-pagebreak::after { content: ''; flex: 1; border-top: 1px dashed #aaaaaa; }
+  .ed-sigblock { margin: 20px 0 10px; max-width: 320px; }
+  .ed-sigblock.ed-al-center { margin-left: auto; margin-right: auto; }
+  .ed-sigblock.ed-al-right { margin-left: auto; }
+  .ed-sigblock-line { height: 56px; border-bottom: 1px solid #333333; display: flex; align-items: flex-end; }
+  .ed-sigblock-img, .ed-paper .kb-article .ed-sigblock-img { max-height: 52px; max-width: 100%; object-fit: contain; border: 0; border-radius: 0; box-shadow: none; padding: 0; margin: 0; background: none; }
+  .ed-sigblock-cap { font-size: .72rem; color: #555555; margin-top: 3px; }
+  .ed-sigblock-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: .84rem; margin-top: 4px; color: #111111; }
+  .ed-wp-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 6px; }
+  .ed-wp-bar[hidden], .ed-ins[hidden], .ed-preview[hidden] { display: none; }
+  .ed-ins { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ed-preview { max-height: 70vh; overflow: auto; }
+  .ed-preview-empty { margin: 8px 0; color: var(--muted); font-size: .84rem; }
+  .ed-lh-hint { font-size: .8rem; color: var(--muted); margin-bottom: 10px; }
+  .ed-lh-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .ed-lh-fields { display: flex; flex-direction: column; gap: 6px; }
+  .ed-lh-fields label { display: flex; flex-direction: column; gap: 3px; font-size: .78rem; color: var(--muted); margin: 0; }
+  .ed-lh-in-name, .ed-lh-in-addr, .ed-lh-in-foot { font: inherit; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-card); color: var(--ink); }
+  .ed-lh-in-addr { resize: vertical; }
+  .ed-lh-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .ed-lh-preview { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-height: 48px; }
+  .ed-lh-preview .ed-lh { margin: 0; }
+  .ed-lh-none { font-size: .8rem; color: #777777; }
+  .ed-lh-logo-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ed-lh-file { display: none; }
+  .ed-lh-acts { grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .ed-lh-msg { font-size: .8rem; color: var(--danger-deep); margin-right: auto; }
+  @media (max-width: 640px) { .ed-lh-card { grid-template-columns: minmax(0, 1fr); } }
   /* ED3 — the finished copy's preview, its email panel; the print-only pages
      are shown by rule (8) of the one print block (styles.html). */
   .ed-copy-note { margin: 4px 0 0; font-size: .8rem; color: var(--muted); }
@@ -424,7 +468,10 @@ function edRenderDoc_(doc) {
   // Batch H: a PDF document's frozen body ends with the line naming its file's
   // SHA-256; it is drawn as a wrapped fingerprint under the note, not as prose.
   var shownMd = doc.pdf ? edPdfNoteOf_(doc.bodyMd) : (doc.bodyMd || '');
-  body += '<div class="kb-article"><h1>' + esc(doc.title) + '</h1>' + kbMd_(shownMd) + '</div>';
+  // ED4: a written document is read on its paper — its letterhead, and its
+  // alignment, page breaks and signature block; a PDF document's note as before.
+  body += doc.pdf ? '<div class="kb-article"><h1>' + esc(doc.title) + '</h1>' + kbMd_(shownMd) + '</div>'
+    : edDocPaperHtml_(doc.title, doc.bodyMd, { letterhead: doc.letterhead, empName: doc.empName, signature: doc.signatureImage, signedAt: doc.status === 'signed' ? doc.signedAt : '' });
   // Its pages, drawn once getEmpDocPdf answers; its boxed fields live on the
   // pages, so the list below holds only the rest.
   if (doc.pdf) {
@@ -1318,6 +1365,7 @@ var ED_PDFLIB_URL = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.mi
 var ED_PDFLIB_SHA256 = '0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f';
 var ED_PDFLIB = { state: '', waiting: [] };
 var ED_COPY_MAX_BYTES = 10485760;   // = EMPDOC_COPY_MAX_BYTES (pinned)
+var ED_LOGO_MAX_BYTES = 307200;     // = EMPDOC_LOGO_MAX_BYTES (pinned) — ED4
 /** A digest as lower-case hex. */
 function edHex_(buf) {
   return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
@@ -1509,39 +1557,99 @@ function edCopyDrawBoxes_(lib, out, doc, font, imgs, rest) {
 }
 /** ED3 — a flowing writer on new Letter pages (a written document, the
  *  answers page): a line at a time, a new page when one fills. */
-function edCopyFlow_(lib, out, font, bold) {
+function edCopyFlow_(lib, out, font, bold, opts) {
+  opts = opts || {};
   var W = 612, H = 792, M = 54, ink = lib.rgb(0.07, 0.07, 0.07), page = null, y = 0;
-  var fresh = function () { page = out.addPage([W, H]); y = H - M; };
+  // ED4: a letterhead's footer on every page this writer makes, and its header
+  // (opts.head, drawn once) on the first.
+  var fresh = function () {
+    page = out.addPage([W, H]); y = H - M;
+    if (opts.footer) {
+      var ft = edWinAnsi_(opts.footer), fs = 8;
+      while (fs > 6 && font.widthOfTextAtSize(ft, fs) > W - 2 * M) fs -= 0.5;
+      page.drawText(ft, { x: (W - font.widthOfTextAtSize(ft, fs)) / 2, y: M - 26, size: fs, font: font, color: lib.rgb(0.42, 0.42, 0.42) });
+    }
+    if (opts.head) { var hd = opts.head; opts.head = null; y = hd(page, y, W, M); }
+  };
   var w = { font: font, bold: bold };
   w.gap = function (h) { if (page) y -= h; };
-  w.text = function (s, size, f, indent) {
+  w.text = function (s, size, f, indent, align) {
     f = f || font; indent = indent || 0;
     edFillWrap_(edWinAnsi_(s), W - 2 * M - indent, size, function (t, z) { return f.widthOfTextAtSize(t, z); }).forEach(function (ln) {
       if (!page || y - size * 1.3 < M) fresh();
       y -= size * 1.3;
-      page.drawText(ln, { x: M + indent, y: y, size: size, font: f, color: ink });
+      var lw = f.widthOfTextAtSize(ln, size);
+      var x = align === 'center' ? (W - lw) / 2 : (align === 'right' ? W - M - lw : M + indent);
+      page.drawText(ln, { x: x, y: y, size: size, font: f, color: ink });
     });
   };
-  w.image = function (img, maxW, maxH) {
+  w.image = function (img, maxW, maxH, align) {
     var sc = Math.min(maxW / img.width, maxH / img.height, 1), iw = img.width * sc, ih = img.height * sc;
     if (!page || y - ih - 4 < M) fresh();
     y -= ih + 4;
-    page.drawImage(img, { x: M, y: y, width: iw, height: ih });
+    var x = align === 'center' ? (W - iw) / 2 : (align === 'right' ? W - M - iw : M);
+    page.drawImage(img, { x: x, y: y, width: iw, height: ih });
+  };
+  w.rule = function (wd, align) {
+    if (!page || y - 6 < M) fresh();
+    y -= 4;
+    var x = align === 'center' ? (W - wd) / 2 : (align === 'right' ? W - M - wd : M);
+    page.drawLine({ start: { x: x, y: y }, end: { x: x + wd, y: y }, thickness: 0.8, color: lib.rgb(0.25, 0.25, 0.25) });
   };
   w.page = function () { fresh(); };
+  w.ensure = function () { if (!page) fresh(); };
   return w;
 }
+/** ED4 — the letterhead at the top of a written copy's first page: the logo,
+ *  then the company's name and address beside it, a rule under them. Returns
+ *  where the text starts. */
+function edCopyHead_(lib, lh, logo, font, bold) {
+  return function (page, y, W, M) {
+    var x = M, top = y + 18;
+    if (logo) {
+      var sc = Math.min(150 / logo.width, 50 / logo.height, 1);
+      page.drawImage(logo, { x: M, y: top - logo.height * sc, width: logo.width * sc, height: logo.height * sc });
+      x = M + logo.width * sc + 12;
+    }
+    page.drawText(edWinAnsi_(lh.name), { x: x, y: top - 14, size: 14, font: bold, color: lib.rgb(0.11, 0.23, 0.36) });
+    var ay = top - 26;
+    String(lh.address || '').split('\n').filter(Boolean).forEach(function (ln) {
+      page.drawText(edWinAnsi_(ln), { x: x, y: ay, size: 8.5, font: font, color: lib.rgb(0.33, 0.33, 0.33) });
+      ay -= 10.5;
+    });
+    var bottom = Math.min(ay + 4, logo ? top - 54 : ay + 4);
+    page.drawLine({ start: { x: M, y: bottom - 4 }, end: { x: W - M, y: bottom - 4 }, thickness: 1.5, color: lib.rgb(0.11, 0.23, 0.36) });
+    return bottom - 16;
+  };
+}
 /** ED3 — a written document set as text: its title, its body, the answers to
- *  its fields, and the signature and initials drawn. */
+ *  its fields, and the signature and initials drawn. ED4: on its letterhead,
+ *  with its alignment, page breaks and signature block (the signature is drawn
+ *  there, not after the answers). */
 function edCopyWritten_(lib, out, doc, font, bold, imgs, rest) {
-  var w = edCopyFlow_(lib, out, font, bold);
+  var lh = doc.letterhead && doc.letterhead.name ? doc.letterhead : null;
+  var w = edCopyFlow_(lib, out, font, bold, lh ? { head: edCopyHead_(lib, lh, imgs.logo, font, bold), footer: lh.footer } : {});
   w.text(doc.title, 16, bold);
   w.gap(6);
-  edMdBlocks_(doc.bodyMd).forEach(function (b) {
-    if (b.k === 'h1') { w.gap(6); w.text(b.t, 13, bold); }
-    else if (b.k === 'h2') { w.gap(4); w.text(b.t, 11.5, bold); }
-    else if (b.k === 'li') w.text(b.mark + ' ' + b.t, 11, font, 14);
-    else { w.text(b.t, 11); w.gap(4); }
+  var segs = edDocSegments_(doc.bodyMd), blockSigned = false;
+  segs.forEach(function (seg) {
+    if (seg.k === 'pb') { w.page(); return; }
+    if (seg.k === 'sig') {
+      blockSigned = true;
+      w.gap(14);
+      if (imgs.signature && doc.status === 'signed') w.image(imgs.signature, 200, 60, seg.align); else w.gap(36);
+      w.rule(220, seg.align);
+      w.text('Employee signature', 8.5, font, 0, seg.align);
+      w.text('Name: ' + (doc.empName || '') + '     Date: ' + (doc.status === 'signed' ? String(doc.signedAt || '').slice(0, 10) : ''), 10, font, 0, seg.align);
+      w.gap(6);
+      return;
+    }
+    edMdBlocks_(seg.md).forEach(function (b) {
+      if (b.k === 'h1') { w.gap(6); w.text(b.t, 13, bold, 0, seg.align); }
+      else if (b.k === 'h2') { w.gap(4); w.text(b.t, 11.5, bold, 0, seg.align); }
+      else if (b.k === 'li') w.text(b.mark + ' ' + b.t, 11, font, 14, seg.align);
+      else { w.text(b.t, 11, font, 0, seg.align); w.gap(4); }
+    });
   });
   (doc.fields || []).forEach(function (f) {
     if (f.type === 'signature' || f.type === 'initials') return;
@@ -1549,7 +1657,7 @@ function edCopyWritten_(lib, out, doc, font, bold, imgs, rest) {
     rest.push({ label: f.label, text: v == null || v === '' ? '—' : (f.type === 'date' ? edFillDate_(v) : String(v)), why: 'field' });
   });
   if (rest.length) { w.gap(10); edCopyAnswers_(w, rest, 'Responses'); rest.length = 0; }
-  if (imgs.signature) { w.gap(12); w.text('Signature', 10, bold); w.image(imgs.signature, 220, 80); }
+  if (imgs.signature && !blockSigned) { w.gap(12); w.text('Signature', 10, bold); w.image(imgs.signature, 220, 80); }
   if (imgs.initials) { w.gap(8); w.text('Initials', 10, bold); w.image(imgs.initials, 110, 50); }
 }
 /** ED3 — answers set in full: each one's label (and page), then its text. */
@@ -1589,6 +1697,11 @@ function edBuildCopy_(lib, doc, srcBytes, certBytes, madeOn) {
     var jobs = [];
     if (png(doc.signatureImage)) jobs.push(out.embedPng(doc.signatureImage).then(function (i) { imgs.signature = i; }));
     if (png(doc.initialsImage)) jobs.push(out.embedPng(doc.initialsImage).then(function (i) { imgs.initials = i; }));
+    // ED4: a written copy's letterhead logo (a PNG or JPEG); one that will not
+    // embed leaves the name and address alone.
+    var logo = !doc.pdf && doc.letterhead ? String(doc.letterhead.logo || '') : '';
+    if (/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(logo)) jobs.push(out.embedPng(logo).then(function (i) { imgs.logo = i; }, function () {}));
+    else if (/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(logo)) jobs.push(out.embedJpg(logo).then(function (i) { imgs.logo = i; }, function () {}));
     return Promise.all(jobs);
   }).then(function () {
     if (doc.pdf) {
@@ -1849,6 +1962,285 @@ function edCopyMailSend_() {
   uiConfirm({ title: 'Send outside the company?', message: 'This copy of an employee document will also go to ' + pv.outside.join(', ') + ', outside the company.', confirmLabel: 'Send', tone: 'danger' })
     .then(function (ok) { if (ok) go(true); });
 }
+// ── ED4 (operator 2026-11-09): letterheads and written-document formatting ──
+// A written document may carry, each on a line of its own:
+//   :::center … :::  and  :::right … :::   the lines between, aligned
+//   [page break]                            a new page on paper
+//   [signature]                             the employee's signature block
+// They are plain text in the frozen body (so the content hash covers them) and
+// mean the same on screen (edDocBodyHtml_), on the certificate's document and
+// in the printed copy (edCopyWritten_). The letterhead — the company's logo,
+// name and address above, its footer below — dresses a document; it is not
+// part of what was agreed, so it is not hashed.
+/** PURE (Node-pinned) — ED4: a written body as segments: markdown with its
+ *  alignment ({k:'md', md, align}), page breaks ({k:'pb'}) and signature
+ *  blocks ({k:'sig', align}). An unclosed alignment ends with the body. */
+function edDocSegments_(md) {
+  var out = [], buf = [], align = '';
+  var flush = function () {
+    if (!buf.length) return;
+    var t = buf.join('\n');
+    if (t.trim()) out.push({ k: 'md', md: t, align: align });
+    buf = [];
+  };
+  String(md || '').replace(/\r\n?/g, '\n').split('\n').forEach(function (ln) {
+    var t = ln.trim(), m;
+    if ((m = /^:::\s*(center|right|left)\s*$/i.exec(t))) { flush(); align = m[1].toLowerCase() === 'left' ? '' : m[1].toLowerCase(); return; }
+    if (/^:::$/.test(t)) { flush(); align = ''; return; }
+    if (/^\[page break\]$/i.test(t)) { flush(); out.push({ k: 'pb' }); return; }
+    if (/^\[signature\]$/i.test(t)) { flush(); out.push({ k: 'sig', align: align }); return; }
+    buf.push(ln);
+  });
+  flush();
+  return out;
+}
+/** PURE (Node-pinned) — ED4: a letterhead's header and footer as markup —
+ *  the logo only as a PNG or JPEG data URL, every word escaped; '' for none. */
+function edLetterheadHtml_(lh) {
+  if (!lh || !lh.name) return { head: '', foot: '' };
+  var logo = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(String(lh.logo || '')) ? '<img class="ed-lh-logo" alt="" src="' + lh.logo + '">' : '';
+  var addr = String(lh.address || '').split('\n').filter(Boolean).map(esc).join('<br>');
+  return { head: '<header class="ed-lh">' + logo + '<div class="ed-lh-text"><div class="ed-lh-name">' + esc(lh.name) + '</div>' +
+      (addr ? '<div class="ed-lh-addr">' + addr + '</div>' : '') + '</div></header>',
+    foot: lh.footer ? '<footer class="ed-lh-foot">' + esc(lh.footer) + '</footer>' : '' };
+}
+/** ED4 — a signature block: the drawn signature once signed (a PNG only), the
+ *  employee's name and the date — lines to sign on before then. */
+function edSigBlockHtml_(seg, o) {
+  var png = /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(o.signature || ''));
+  return '<div class="ed-sigblock' + (seg.align ? ' ed-al-' + seg.align : '') + '">' +
+    '<div class="ed-sigblock-line">' + (png ? '<img class="ed-sigblock-img" alt="Signature" src="' + o.signature + '">' : '') + '</div>' +
+    '<div class="ed-sigblock-cap">Employee signature</div>' +
+    '<div class="ed-sigblock-row"><span>Name: <b>' + esc(o.empName || '') + '</b></span><span>Date: <b>' + esc(o.signedAt ? String(o.signedAt).slice(0, 10) : '') + '</b></span></div></div>';
+}
+/** ED4 — a written document's body as it is read: its segments drawn with
+ *  kbMd_ (aligned), page breaks marked, signature blocks in place. */
+function edDocBodyHtml_(md, o) {
+  o = o || {};
+  return edDocSegments_(md).map(function (seg) {
+    if (seg.k === 'pb') return '<div class="ed-pagebreak" role="separator" aria-label="Page break"><span>Page break</span></div>';
+    if (seg.k === 'sig') return edSigBlockHtml_(seg, o);
+    var html = kbMd_(seg.md);
+    return seg.align ? '<div class="ed-al-' + seg.align + '">' + html + '</div>' : html;
+  }).join('');
+}
+/** ED4 — a written document on its paper: the letterhead above, the title,
+ *  the body, the letterhead's footer below. */
+function edDocPaperHtml_(title, md, o) {
+  o = o || {};
+  var lh = edLetterheadHtml_(o.letterhead);
+  return '<div class="ed-paper' + (lh.head ? ' has-lh' : '') + '">' + lh.head +
+    '<div class="kb-article"><h1>' + esc(title || '') + '</h1>' + edDocBodyHtml_(md, o) + '</div>' + lh.foot + '</div>';
+}
+/** PURE (Node-pinned) — ED4: what an insert button does to the body: a
+ *  center or right alignment wraps the selected lines (or adds an empty pair
+ *  to type between), a page break or a signature block goes on a line of its
+ *  own at the caret. → {text, caret}. */
+function edInsertDirective_(text, start, end, kind) {
+  text = String(text || ''); start = Math.max(0, Math.min(start, text.length)); end = Math.max(start, Math.min(end, text.length));
+  var before = text.slice(0, start), sel = text.slice(start, end), after = text.slice(end);
+  var nlBefore = before && !/\n$/.test(before) ? '\n' : '', nlAfter = after && !/^\n/.test(after) ? '\n' : '';
+  var ins;
+  if (kind === 'center' || kind === 'right') {
+    ins = ':::' + kind + '\n' + (sel || '') + '\n:::';
+    var caret = before.length + nlBefore.length + 4 + kind.length + (sel ? sel.length : 0);
+    return { text: before + nlBefore + ins + nlAfter + after, caret: caret };
+  }
+  ins = kind === 'pagebreak' ? '[page break]' : '[signature]';
+  var t = before + nlBefore + ins + (after ? nlAfter : '\n') + after;
+  return { text: t, caret: (before + nlBefore + ins).length + 1 };
+}
+// The issue form's side: the letterhead picker, Write / Preview.
+/** Load the letterheads for the picker (beside the form, never blocking it:
+ *  a failure is said under the picker and the document goes out with none). */
+function edLoadLetterheads_() {
+  var seq = ED_STATE.lhSeq = (ED_STATE.lhSeq || 0) + 1;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== ED_STATE.lhSeq) return;
+      ED_STATE.letterheads = res && !res.error ? res : { error: (res && res.error) || 'The letterheads could not be loaded.' };
+      edFillLetterheadPicker_();
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== ED_STATE.lhSeq) return;
+      ED_STATE.letterheads = { error: 'The letterheads could not be loaded: ' + ((err && err.message) || err) };
+      edFillLetterheadPicker_();
+    })
+    .getEmpDocLetterheads();
+}
+/** Fill (or refill) the picker, keeping a choice the manager made. */
+function edFillLetterheadPicker_() {
+  var sel = document.getElementById('ed-is-lh'), note = document.getElementById('ed-is-lh-note');
+  if (!sel) return;
+  var st = ED_STATE.letterheads || {};
+  var keep = ED_STATE.lhTouched ? sel.value : null;
+  var list = st.letterheads || [];
+  sel.innerHTML = list.map(function (l) { return '<option value="' + esc(l.id) + '">' + esc(l.name) + '</option>'; }).join('') + '<option value="">No letterhead</option>';
+  sel.disabled = !!st.error;
+  if (note) note.textContent = st.error ? st.error + ' The document will go out without one.' : '';
+  if (keep != null && list.some(function (l) { return l.id === keep; })) sel.value = keep;
+  else if (keep === '') sel.value = '';
+  else edLetterheadDefault_();
+}
+/** The employee's company decides the letterhead until the manager picks one. */
+function edLetterheadDefault_() {
+  var sel = document.getElementById('ed-is-lh');
+  var st = ED_STATE.letterheads || {};
+  if (!sel || st.error || ED_STATE.lhTouched) return;
+  var emp = (document.getElementById('ed-is-emp') || {}).value || '';
+  var list = st.letterheads || [];
+  sel.value = (emp && st.forEmp && st.forEmp[emp]) || (list[0] && list[0].id) || '';
+  edIssuePreviewRefresh_();
+}
+/** The letterhead the picker names, as a document carries it (or null). */
+function edPickedLetterhead_() {
+  var v = (document.getElementById('ed-is-lh') || {}).value || '';
+  return ((ED_STATE.letterheads || {}).letterheads || []).filter(function (l) { return l.id === v; })[0] || null;
+}
+/** Write / Preview: the body as the employee will read it, on its letterhead. */
+function edIssueWritePreview_(mode) {
+  ED_STATE.issueWp = mode === 'preview' ? 'preview' : 'write';
+  var pv = ED_STATE.issueWp === 'preview';
+  document.querySelectorAll('[data-ed-wp]').forEach(function (b) {
+    var on = b.getAttribute('data-ed-wp') === ED_STATE.issueWp;
+    b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+  var ta = document.getElementById('ed-is-body'), box = document.getElementById('ed-is-preview'), ins = document.getElementById('ed-is-insert');
+  if (ta) ta.hidden = pv;
+  if (ins) ins.hidden = pv;
+  if (box) box.hidden = !pv;
+  edIssuePreviewRefresh_();
+}
+function edIssuePreviewRefresh_() {
+  var box = document.getElementById('ed-is-preview');
+  if (!box || box.hidden) return;
+  var empSel = document.getElementById('ed-is-emp');
+  var empName = empSel && empSel.selectedIndex > 0 ? empSel.options[empSel.selectedIndex].text : '';
+  var body = (document.getElementById('ed-is-body') || {}).value || '';
+  box.innerHTML = body.trim() ? edDocPaperHtml_((document.getElementById('ed-is-title') || {}).value || 'Untitled', body,
+    { letterhead: edPickedLetterhead_(), empName: empName })
+    : '<p class="ed-preview-empty">Nothing written yet — switch to Write.</p>';
+}
+/** An insert button: the directive goes into the body where the caret is. */
+function edIssueInsert_(kind) {
+  var ta = document.getElementById('ed-is-body');
+  if (!ta) return;
+  var r = edInsertDirective_(ta.value, ta.selectionStart || 0, ta.selectionEnd || 0, kind);
+  ta.value = r.text;
+  try { ta.focus(); ta.setSelectionRange(r.caret, r.caret); } catch (e) {}
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+// The admin's side: Manage → Admin → Config → Letterheads.
+/** Mount the letterhead editor into an Admin host (called by the Config tab). */
+function edLetterheadsMount_(host) {
+  if (!host) return;
+  host.innerHTML = '<div class="m-loading" role="status">Loading the letterheads…</div>';
+  var seq = ED_STATE.lhAdminSeq = (ED_STATE.lhAdminSeq || 0) + 1;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== ED_STATE.lhAdminSeq || !host.isConnected) return;
+      if (!res || res.error) { host.innerHTML = errorStateHtml_((res && res.error) || 'The letterheads could not be loaded.'); return; }
+      edLetterheadsRender_(host, res);
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== ED_STATE.lhAdminSeq || !host.isConnected) return;
+      host.innerHTML = errorStateHtml_('The letterheads could not be loaded: ' + ((err && err.message) || err));
+    })
+    .getEmpDocLetterheads();
+}
+function edLetterheadsRender_(host, res) {
+  var list = res.letterheads || [];
+  var card = function (l, i) {
+    var id = l ? l.id : '';
+    var pv = edLetterheadHtml_(l && l.name ? l : null);
+    return '<div class="ed-lh-card" data-ed-lh="' + esc(id) + '">' +
+      '<div class="ed-lh-fields">' +
+        '<label>Company name<input type="text" class="ed-lh-in-name" aria-label="Company name" maxlength="80" value="' + esc(l ? l.name : '') + '"></label>' +
+        '<label>Address (up to 4 lines)<textarea class="ed-lh-in-addr" aria-label="Address" rows="3" maxlength="300">' + esc(l ? l.address : '') + '</textarea></label>' +
+        '<label>Footer<input type="text" class="ed-lh-in-foot" aria-label="Footer" maxlength="200" value="' + esc(l ? l.footer : '') + '"></label>' +
+      '</div>' +
+      '<div class="ed-lh-side">' +
+        '<div class="ed-lh-preview">' + (pv.head || '<span class="ed-lh-none">Save to preview</span>') + '</div>' +
+        (id ? '<div class="ed-lh-logo-row"><button type="button" class="kb-btn" data-ed-lh-act="logo">' + icon('upload', 12) + (l.logo ? ' Change logo' : ' Add logo') + '</button>' +
+          (l.logo ? '<button type="button" class="kb-btn" data-ed-lh-act="nologo">Remove logo</button>' : '') +
+          '<input type="file" class="ed-lh-file" accept="image/png,image/jpeg" aria-label="Logo image for ' + esc(l.name) + '" hidden></div>' : '') +
+      '</div>' +
+      '<div class="ed-lh-acts"><span class="ed-lh-msg" role="status"></span>' +
+        (id && list.length > 1 ? '<button type="button" class="tr-revoke-btn" data-ed-lh-act="delete">Delete</button>' : '') +
+        '<button type="button" class="btn-modal-ok" data-ed-lh-act="save">' + (id ? 'Save' : 'Add letterhead') + '</button></div></div>';
+  };
+  host.innerHTML = '<div class="ed-lh-hint">Each employee document can carry one of these at its top, with the footer at its foot — on the screen, the certificate and the printed copy. The roster’s Company column (S) picks an employee’s default; a blank or unknown company gets the first. PNG or JPEG logo, up to 300 KB (a larger one is shrunk).' +
+      (res.stored ? '' : ' <b>Not saved yet</b> — the two companies are offered by name until you save.') + '</div>' +
+    list.map(card).join('') + (list.length < 6 ? card(null) : '');
+  if (host._edLhWired) return;
+  host._edLhWired = true;
+  host.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-ed-lh-act]');
+    if (!b) return;
+    var cardEl = b.closest('.ed-lh-card'), id = cardEl.getAttribute('data-ed-lh'), act = b.getAttribute('data-ed-lh-act');
+    var msg = cardEl.querySelector('.ed-lh-msg');
+    var after = function (res2, okText) {
+      if (!res2 || res2.error) { if (msg) msg.textContent = (res2 && res2.error) || 'Not saved.'; b.disabled = false; return; }
+      showToast(okText, 'success');
+      edLetterheadsMount_(host);
+    };
+    var fail = function (err) { if (msg) msg.textContent = 'Not saved: ' + ((err && err.message) || err); b.disabled = false; };
+    if (act === 'save') {
+      b.disabled = true;
+      google.script.run.withSuccessHandler(function (r) { after(r, 'Letterhead saved.'); }).withFailureHandler(fail).saveEmpDocLetterhead({ id: id,
+        name: cardEl.querySelector('.ed-lh-in-name').value, address: cardEl.querySelector('.ed-lh-in-addr').value, footer: cardEl.querySelector('.ed-lh-in-foot').value });
+    } else if (act === 'delete') {
+      uiConfirm({ title: 'Delete this letterhead?', message: 'A document that uses it will be shown without a letterhead.', confirmLabel: 'Delete', tone: 'danger' }).then(function (ok) {
+        if (!ok) return;
+        b.disabled = true;
+        google.script.run.withSuccessHandler(function (r) { after(r, 'Letterhead deleted.'); }).withFailureHandler(fail).deleteEmpDocLetterhead(id);
+      });
+    } else if (act === 'nologo') {
+      b.disabled = true;
+      google.script.run.withSuccessHandler(function (r) { after(r, 'Logo removed.'); }).withFailureHandler(fail).setEmpDocLetterheadLogo(id, '');
+    } else if (act === 'logo') cardEl.querySelector('.ed-lh-file').click();
+  });
+  host.addEventListener('change', function (e) {
+    var input = e.target;
+    if (!input.classList || !input.classList.contains('ed-lh-file') || !input.files || !input.files[0]) return;
+    var cardEl = input.closest('.ed-lh-card'), id = cardEl.getAttribute('data-ed-lh'), msg = cardEl.querySelector('.ed-lh-msg');
+    if (msg) msg.textContent = 'Uploading the logo…';
+    edFitLogo_(input.files[0], function (dataUrl, err) {
+      if (!dataUrl) { if (msg) msg.textContent = err; return; }
+      google.script.run
+        .withSuccessHandler(function (r) { if (!r || r.error) { if (msg) msg.textContent = (r && r.error) || 'The logo was not saved.'; return; } showToast('Logo saved.', 'success'); edLetterheadsMount_(host); })
+        .withFailureHandler(function (er) { if (msg) msg.textContent = 'The logo was not saved: ' + ((er && er.message) || er); })
+        .setEmpDocLetterheadLogo(id, dataUrl);
+    });
+  });
+}
+/** ED4 — a chosen logo as a data URL the server will take: a PNG or JPEG,
+ *  shrunk to at most 600 × 240 px, as PNG while that is small enough, else
+ *  JPEG. done(dataUrl) or done(null, why). */
+function edFitLogo_(file, done) {
+  if (!/^image\/(png|jpeg)$/.test(String(file.type || ''))) { done(null, 'The logo must be a PNG or JPEG image.'); return; }
+  var reader = new FileReader();
+  reader.onerror = function () { done(null, 'That file could not be read.'); };
+  reader.onload = function () {
+    var img = new Image();
+    img.onerror = function () { done(null, 'That image could not be opened.'); };
+    img.onload = function () {
+      var sc = Math.min(1, 600 / (img.naturalWidth || 1), 240 / (img.naturalHeight || 1));
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round((img.naturalWidth || 1) * sc)); cv.height = Math.max(1, Math.round((img.naturalHeight || 1) * sc));
+      var ctx = cv.getContext('2d');
+      if (!ctx) { done(String(reader.result)); return; }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      var out = cv.toDataURL('image/png');
+      if (out.length * 0.75 > ED_LOGO_MAX_BYTES) out = cv.toDataURL('image/jpeg', 0.9);
+      if (out.length * 0.75 > ED_LOGO_MAX_BYTES) { done(null, 'The logo is too large even shrunk — use a smaller image.'); return; }
+      done(out);
+    };
+    img.src = String(reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
 // The manager's side: issue a document AS A PDF and draw its boxes.
 /** Show the issue form's written or PDF content (the toggle). */
 function edIssueMode_(mode) {
@@ -1861,6 +2253,9 @@ function edIssueMode_(mode) {
   var p = document.getElementById('ed-is-pdf-wrap'); if (p) p.hidden = !pdf;
   var lbl = document.getElementById('ed-is-body-lbl'); if (lbl) lbl.textContent = pdf ? 'Note shown above the PDF (optional)' : 'Body (markdown — frozen at issue)';
   var conv = document.getElementById('ed-is-convert-wrap'); if (conv) conv.hidden = pdf;
+  // ED4: Write / Preview and the formatting are for a written document.
+  if (pdf && ED_STATE.issueWp === 'preview') edIssueWritePreview_('write');
+  var wp = document.getElementById('ed-is-wp'); if (wp) wp.hidden = pdf;
   var ta = document.getElementById('ed-is-body'); if (ta) ta.placeholder = pdf ? 'A short note for the employee (optional) \u2014 the PDF is the document.' : 'Write the document here, or convert a Google Doc below.';
 }
 /** A PDF the manager chose: checked, read, drawn with an empty box layer the
@@ -2118,6 +2513,7 @@ function edLoadMgr_() {
   google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.dash = d; done(); }).withFailureHandler(onFail).getDocsDashboard();
   google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.emps = d; done(); }).withFailureHandler(onFail).getEmployeesList();
   google.script.run.withSuccessHandler(function (d) { if (seq !== ED_STATE.mgrSeq) return; ED_STATE.templates = d; done(); }).withFailureHandler(onFail).getEmpDocTemplates();
+  edLoadLetterheads_();   // ED4 — beside the form, never holding it up
 }
 
 /** D6 (cycle 22): is the manager's "Create a document" form mounted and to be
@@ -2173,6 +2569,8 @@ function edRenderMgr_() {
         '<option value="policy">Policy acknowledgment</option>' +
         '<option value="other">Other</option></select></div>' +
       '<div><label for="ed-is-due">Due date (optional)</label><input type="date" id="ed-is-due"></div>' +
+      // ED4: the letterhead it is dressed in — the employee's company until picked.
+      '<div><label for="ed-is-lh">Letterhead</label><select id="ed-is-lh"><option value="">Loading\u2026</option></select><div class="hint" id="ed-is-lh-note" role="status"></div></div>' +
       '<div><label>Signature</label><label style="font-weight:400;font-size:.84rem;display:flex;align-items:center;gap:6px;margin-top:8px;"><input type="checkbox" id="ed-is-sig" checked> Require signature</label></div>' +
     '</div>' +
     '<div class="row"><div style="flex:1;min-width:280px;"><label for="ed-is-title">Title</label><input type="text" id="ed-is-title" maxlength="200" placeholder="e.g. 2026 Annual Performance Review"></div></div>' +
@@ -2198,7 +2596,17 @@ function edRenderMgr_() {
       edZoomBarHtml_('ed-is-pdf-pages') +
       '<div class="ed-pdf" id="ed-is-pdf-pages"></div></div></div>' +
     '<div class="row"><div style="flex:1;width:100%;"><label for="ed-is-body" id="ed-is-body-lbl">Body (markdown — frozen at issue)</label>' +
+      // ED4: Write / Preview, and the formatting a written document understands.
+      '<div class="ed-wp-bar" id="ed-is-wp"><div class="toolbar-tabs" role="group" aria-label="Write or preview">' +
+        '<button type="button" class="toolbar-tab active" aria-pressed="true" data-ed-wp="write">Write</button>' +
+        '<button type="button" class="toolbar-tab" aria-pressed="false" data-ed-wp="preview">Preview</button></div>' +
+        '<div class="ed-ins" id="ed-is-insert" role="group" aria-label="Insert">' +
+          '<button type="button" class="kb-btn" data-ed-ins="center">Center</button>' +
+          '<button type="button" class="kb-btn" data-ed-ins="right">Right-align</button>' +
+          '<button type="button" class="kb-btn" data-ed-ins="pagebreak">Page break</button>' +
+          '<button type="button" class="kb-btn" data-ed-ins="signature">Signature block</button></div></div>' +
       '<textarea id="ed-is-body" placeholder="Write the document here, or convert a Google Doc below."></textarea>' +
+      '<div class="ed-preview" id="ed-is-preview" aria-live="polite" hidden></div>' +
       '<div class="hint">Content is hashed and locked when you issue — a correction means voiding and re-issuing. ' +
       '<span id="ed-is-convert-wrap"><button class="tr-link" id="ed-is-convert">Convert a Google Doc to markdown</button></span></div></div></div>' +
     '<div class="row"><div style="flex:1;width:100%;"><label>Fields the employee completes (optional)</label>' +
@@ -2263,7 +2671,16 @@ function edRenderMgr_() {
   el.innerHTML = issueHtml + '<div id="ed-mgr-rest">' + h + '</div>';
 
   ED_STATE.issuePdf = null; ED_STATE.issueMode = 'text';
+  ED_STATE.lhTouched = false; ED_STATE.issueWp = 'write';   // ED4
   edRenderIssueFields_();
+  // ED4 — the letterhead picker, Write / Preview and the insert buttons.
+  edFillLetterheadPicker_();
+  var lhSel = document.getElementById('ed-is-lh');
+  if (lhSel) lhSel.addEventListener('change', function () { ED_STATE.lhTouched = true; edIssuePreviewRefresh_(); });
+  var empSelEl = document.getElementById('ed-is-emp');
+  if (empSelEl) empSelEl.addEventListener('change', edLetterheadDefault_);
+  el.querySelectorAll('[data-ed-wp]').forEach(function (b) { b.addEventListener('click', function () { edIssueWritePreview_(this.getAttribute('data-ed-wp')); }); });
+  el.querySelectorAll('[data-ed-ins]').forEach(function (b) { b.addEventListener('click', function () { edIssueInsert_(this.getAttribute('data-ed-ins')); }); });
   // Batch H — the content toggle, the PDF picker and drawing boxes on its pages.
   el.querySelectorAll('[data-ed-mode]').forEach(function (b) { b.addEventListener('click', function () { edIssueMode_(this.getAttribute('data-ed-mode')); }); });
   var pf = document.getElementById('ed-is-pdf');
@@ -2467,6 +2884,7 @@ function edSubmitIssue_(release) {
     requiresSignature: !!(document.getElementById('ed-is-sig') || {}).checked,
     fields: edGatherFields_(),
     release: !!release,
+    letterheadId: (function () { var l = document.getElementById('ed-is-lh'); return l && !l.disabled ? l.value : ''; })(),   // ED4
   };
   var asPdf = ED_STATE.issueMode === 'pdf';
   if (!payload.empId) { showToast('Pick an employee.', 'error'); return; }

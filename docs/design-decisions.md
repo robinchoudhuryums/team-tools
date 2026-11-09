@@ -6542,6 +6542,51 @@ pick them up without re-deriving the context.
     the copy's SHA-256 and size, the org addresses and only the domain of an
     outside one (g36) — never contents. Who may email it is who may read it:
     the owner, or a manager `empDocCanManagerSee_` admits.
+- <a id="ed4-letterheads-and-formatting"></a>**A letterhead dresses an employee document — the admin keeps them, the roster's Company picks one, the issuer may change it, and it is not hashed; a written document carries alignment, page breaks and a signature block as plain markers (ED4, operator 2026-11-09)**
+  The plan's ED4: "Two letterheads in Admin (UniversalMed Supply, Infimed
+  Solutions: name, logo upload, address, footer); roster Company column;
+  per-document picker; Write / Preview switch; alignment, signature block,
+  page breaks; letterhead on the certificate and printouts" — Infimed
+  Solutions for the India-based employees.
+  - **Kept by the admin, in one place each.** The letterheads are ONE Script
+    Property (`EMPDOC_LETTERHEADS`, through `propSetBounded_`, at most six) of
+    {id, name, address, footer, logoKey}; until the first save the two
+    companies are offered by name (`EMPDOC_LETTERHEAD_SEED` — real names, no
+    invented address, g122). Logos are rows of the HR store's
+    `LetterheadLogos` tab in the KbImages row shape, keyed by content, PNG or
+    JPEG only (what both the certificate and pdf-lib draw) and checked to start
+    like one; the browser shrinks a chosen logo first. Editing is admin-gated;
+    the list is readable by any manager (the issue form's picker).
+  - **The roster says the company, the issuer decides.** Column S (`Company`,
+    cache key v12) names a letterhead by id or name, case and spacing ignored
+    (`empDocLetterheadFor_`); blank or unknown gets the first. The issue form's
+    picker follows the employee until the manager picks, and offers "No
+    letterhead". A failed read is said under the picker and the document goes
+    out with none — never a guessed one. The issue refuses an id that no longer
+    exists (`empDocLetterheadPick_`).
+  - **Presentation, not content.** The chosen id rides EmpDocs' trailing
+    `LetterheadId` column and is NOT in the content hash: a letterhead is how a
+    document is dressed, and changing an address must not make every signed
+    document "altered". The cost, stated: an edited letterhead shows on older
+    documents, and a deleted one leaves them without one.
+  - **Formatting as plain markers.** A written body may hold `:::center` /
+    `:::right` … `:::`, `[page break]` and `[signature]`, each on a line of its
+    own (`edDocSegments_`). They are text in the frozen body, so the hash covers
+    them, and they mean the same on the screen (`edDocBodyHtml_`: aligned
+    blocks, a marked break, a signature block with the drawing, the employee's
+    name and the date once signed — `getMyDoc` carries the drawing for a
+    document with a `[signature]` line), in Preview and in ED3's printed copy
+    (`edCopyWritten_`: aligned lines, a new page, the block where it stands).
+    Insert buttons write them; kbMd_ is untouched, so the handbook is not.
+  - **Write / Preview.** The issue form's body switches to a preview of the
+    document on the picked letterhead with the employee's name in the
+    signature block — what the employee will read.
+  - **Where the letterhead shows.** A written document's reader (its paper:
+    the logo, name and address above, the footer below), the certificate of
+    every document (a table head, escaped, a PNG/JPEG data-URL logo only) and
+    a written document's printed copy (the head on the first page, the footer
+    on every page of the document). A PDF document is its own paper, so the
+    letterhead shows on its certificate only.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the
