@@ -338,6 +338,8 @@
   .kb-ins-cell .v.bad { color: var(--danger-deep); }
   .kb-ins-cell .v.warn { color: var(--warning-deep); }
   .kb-ins-cell .v.info { color: var(--info-deep); }
+  .kb-ins-note { display: flex; gap: 6px; align-items: flex-start; font-size: .78rem; color: var(--ink); background: var(--warn-soft); border-left: 3px solid var(--warning-deep); border-radius: var(--radius-sm); padding: 7px 10px; margin: 6px 0 8px; line-height: 1.45; }
+  .kb-ins-note svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning-deep); }
   .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
   .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
   .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
@@ -2600,6 +2602,18 @@ function insLookupInput_(inp) {
   }, 350);
 }
 
+/** PT1a: the payor sheet's standing note — the rule its source states for
+ *  every plan — above every answer (a match or none). A note the server could
+ *  not read is said, never dropped: it is a rule reps act on (g53). */
+function insNoteHtml_(res) {
+  if (res && res.note) {
+    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span><b>For every plan:</b> ' + esc(res.note) + '</span></div>';
+  }
+  if (res && res.noteError) {
+    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span>The payor sheet’s standing note could not be read — check the source sheet’s top note before quoting.</span></div>';
+  }
+  return '';
+}
 function insRenderResults_(suffix, q, res) {
   var host = document.getElementById('kb-ins-results' + suffix);
   if (!host) return;
@@ -2615,12 +2629,12 @@ function insRenderResults_(suffix, q, res) {
   }
   if (res.notFound || !(res.matches || []).length) {
     // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
-    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
+    host.innerHTML = insNoteHtml_(res) + '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
       'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
     oopRepaintXref_(suffix);
     return;
   }
-  var html = '';
+  var html = insNoteHtml_(res);
   // The join is BEST-EFFORT and its absence is reassuring, so it announces
   // itself when it fails: bare codes with no names look exactly like a payor
   // sheet whose columns were never codes (g53). `attempted` is the server's

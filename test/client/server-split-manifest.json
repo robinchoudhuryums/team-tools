@@ -4152,6 +4152,37 @@
     "spanishResolveReplyParts_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1a: source-format payor import (insPayorFromSource_) and the insurance lookup's standing note",
+   "added": [
+    "INS_PAYOR_NOTE_MAX",
+    "INS_PAYOR_NOTE_PROP",
+    "insCodeHeaderClean_",
+    "insPayorFromSource_",
+    "insPayorNote_",
+    "insPayorSlotOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_DATA_TABLES",
+    "getKbDataTables",
+    "kbDataTableSummary_",
+    "kbImportDataTable",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1a: the note write goes through propSetBounded_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportDataTable"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5326,6 +5357,16 @@
    "kind": "const",
    "sha": "cf86da545f2aca2d"
   },
+  "INS_PAYOR_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1dd4e9fc58869c2a"
+  },
+  "INS_PAYOR_NOTE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "72e7db785e9d3ad4"
+  },
   "INS_PAYOR_TAB": {
    "file": "00_config.js",
    "kind": "const",
@@ -5639,7 +5680,7 @@
   "KB_DATA_TABLES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b180d3d2fba911f6"
+   "sha": "4ed34129e37557bd"
   },
   "KB_DATA_TABLE_MAX_CELL_CHARS": {
    "file": "00_config.js",
@@ -10069,7 +10110,7 @@
   "getKbDataTables": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6b3c262dbf877637"
+   "sha": "275875a4b4df78ab"
   },
   "getKbImages": {
    "file": "70_kb.js",
@@ -10721,6 +10762,11 @@
    "kind": "function",
    "sha": "5823beeb234155f1"
   },
+  "insCodeHeaderClean_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "3e941f3814d8d8ff"
+  },
   "insNameCodeDetail_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10730,6 +10776,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "0dec995f961d2f17"
+  },
+  "insPayorFromSource_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "47d0813817457fd3"
   },
   "insPayorMatch_": {
    "file": "70_kb.js",
@@ -10741,6 +10792,11 @@
    "kind": "function",
    "sha": "c4e6063149f42dcc"
   },
+  "insPayorNote_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9a6f90479673edae"
+  },
   "insPayorRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10750,6 +10806,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "290eae6fc7f1aa39"
+  },
+  "insPayorSlotOf_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2a7dff2bf9068032"
   },
   "insStatesIn_": {
    "file": "70_kb.js",
@@ -11249,7 +11310,7 @@
   "kbDataTableSummary_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "aef3e84efd4d5a0d"
+   "sha": "1cd92393dfe59ace"
   },
   "kbDeleteComment": {
    "file": "70_kb.js",
@@ -11464,7 +11525,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "97153e10edcd13b7"
+   "sha": "3e978b2b8ee727ef"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -13564,7 +13625,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8e200514995276f4"
+   "sha": "5fc51d66bae0e11a"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

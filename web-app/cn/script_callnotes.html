@@ -1890,6 +1890,7 @@
   .cn-dt-prevbox { margin-top: 10px; border-left: 3px solid var(--accent); background: var(--paper-2); border-radius: var(--radius-sm); padding: 10px 12px; }
   .cn-dt-prevhead { font-size: 12px; color: var(--ink); }
   .cn-dt-note { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; word-break: break-word; }
+  .cn-dt-changes { font-size: 11px; color: var(--muted); margin: 3px 0 0; padding-left: 18px; line-height: 1.5; word-break: break-word; }
   .cn-dt-warn { font-size: 11px; color: var(--warning-deep); margin-top: 6px; line-height: 1.5; }
   @media (max-width: 560px) { .cn-dt-state { margin-left: 0; } }
   /* Auto-tag rules — compact editor (operator 2026-08-18): slim hairline rows,
@@ -13671,11 +13672,20 @@ function cnDTablePreviewHtml_(key, fileName, r) {
         ((r.blankNameRows || []).length ? ' (rows ' + (r.blankNameRows || []).join(', ') + (r.blankNameCount > (r.blankNameRows || []).length ? ', …' : '') + ')' : '') +
         ' — they will import but can never match a search.</div>' : '';
   var heads = (r.headers || []).slice(0, 8).map(function (h) { return '<code>' + esc(h || '(blank)') + '</code>'; }).join(' ');
+  // PT1a: a source-sheet export is converted on the server; every step is
+  // listed here before anything is written, and so is the standing note.
+  var conv = r.converted
+    ? '<div class="cn-dt-note"><strong>Converted from the source sheet’s export</strong> (' + esc(String(r.converted.sourceRows)) + ' source row(s)):</div>' +
+      '<ul class="cn-dt-changes">' + (r.converted.changes || []).map(function (c) { return '<li>' + esc(c) + '</li>'; }).join('') + '</ul>' +
+      '<div class="cn-dt-note">' + (r.converted.note
+        ? 'Every insurance result will show this note: <q>' + esc(r.converted.note) + '</q>'
+        : 'The source has no note in its top-left cell — the note on insurance results will be removed.') + '</div>'
+    : (r.currentNote ? '<div class="cn-dt-note">This file is already in the table’s shape — the note on insurance results stays as it is.</div>' : '');
   return '<div class="cn-dt-prevbox">' +
     '<div class="cn-dt-prevhead">' + esc(fileName) + ' — <strong>' + esc(String(r.rows)) + '</strong> row(s) × ' +
       esc(String(r.cols)) + ' column(s)</div>' +
     '<div class="cn-dt-note">Columns: ' + heads + ((r.headers || []).length > 8 ? ' +' + ((r.headers || []).length - 8) + ' more' : '') + '</div>' +
-    warn + dupes + blanks +
+    conv + warn + dupes + blanks +
     '<div class="cn-dt-note">Replaces the <strong>' + esc(String(r.replacingRows)) + '</strong> row(s) in <code>' + esc(r.tab) + '</code> today.</div>' +
     '<button type="button" class="btn-modal-ok" style="margin:10px 0 0" data-dt-import="' + esc(key) + '">Replace ' + esc(r.tab) + '</button>' +
   '</div>';

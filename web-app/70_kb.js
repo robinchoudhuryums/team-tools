@@ -1124,6 +1124,132 @@ function insPayorRowObj_(headers, row) {
   }
   return out;
 }
+/** PURE (Node-pinned) — PT1a: which reader slot a header fills, by the SAME
+ *  if-chain insPayorRowObj_ uses, or '' for a detail column. A second header
+ *  in one slot silently replaces the first on every row (the source's "Network
+ *  Last Update" would have blanked every Network Status), so the import
+ *  preview names any slot taken twice. */
+function insPayorSlotOf_(h) {
+  const s = String(h == null ? '' : h).trim();
+  if (!s) return '';
+  if (/waystar/i.test(s)) return 'waystar';
+  if (/network/i.test(s)) return 'network status';
+  if (/qualif/i.test(s)) return 'qualification';
+  if (/reimbur/i.test(s)) return 'reimbursement';
+  return '';
+}
+/** PURE (Node-pinned) — PT1a: a code header the code parser cannot read as one
+ *  code ("K0825 Up to 435 lbs", "K0827 (451- 600) No In HI", "K0843 (") becomes
+ *  the code with its note in parentheses, so the item join can name it. A
+ *  header that already parses, or that is still unreadable after the rewrite,
+ *  is left exactly as it was. */
+function insCodeHeaderClean_(h) {
+  const raw = String(h == null ? '' : h).trim();
+  if (hcpcsParse_(raw).certain) return raw;
+  const m = /^([A-Za-z]\d{4}(?:\s*\/\s*\d{1,4})*)\s*(.*)$/.exec(raw);
+  if (!m) return raw;
+  const rest = m[2].replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const out = m[1].replace(/\s+/g, '').toUpperCase() + (rest ? ' (' + rest + ')' : '');
+  return hcpcsParse_(out).certain ? out : raw;
+}
+/** PURE (Node-pinned) — PT1a (operator 2026-11-09): the source sheet's own
+ *  export, converted to this tab's shape. Returns null when the grid is not
+ *  the source shape — a file already in the tab's shape imports untouched.
+ *
+ *  THE SOURCE SHAPE: two header rows — the HCPCS codes on the SECOND, the other
+ *  titles on the first — with column A's first cell holding a rule that applies
+ *  to every plan, and a key ("X = Yes", "Z = Hawaii Only") as trailing column
+ *  headers. Recognised by the codes: at least three code headers on row 2 and
+ *  more there than on row 1 (in the tab's shape row 2 is data — X, NO, TRY).
+ *
+ *  WHAT IT DOES, each step listed in `changes` so the preview says it:
+ *   - one header row: row 2's title where it has one, else row 1's; column A
+ *     is "Insurance", and its row-1 text is the standing NOTE;
+ *   - a header that would take a reader slot it does not mean is renamed —
+ *     "Network Last Update" (network status), "OON reimbursement (% …)"
+ *     (reimbursement) — and the ones that mean a slot get the slot's name
+ *     ("Reimb. Status" was not read as reimbursement at all);
+ *   - a code header the parser cannot read is cleaned (insCodeHeaderClean_);
+ *   - key columns are dropped (their cells, if any, are a side list, not a
+ *     plan's data) and so is every other column with no data;
+ *   - a cell that is exactly a key letter other than X and NO — the sheet's
+ *     yes and no, which every reader already reads — becomes "<meaning>
+ *     (<letter>)", so "Z" reads "Hawaii Only (Z)";
+ *   - a blank row, and a row with no plan name (no search can find it), is
+ *     dropped, by source row number.
+ *  Nothing else is changed: values the key does not define stay verbatim. */
+function insPayorFromSource_(grid) {
+  if (!grid || grid.length < 3) return null;
+  const h1 = grid[0].map(function (x) { return String(x == null ? '' : x).trim(); });
+  const h2 = grid[1].map(function (x) { return String(x == null ? '' : x).trim(); });
+  const shaped = function (row) { return row.slice(1).filter(function (x) { return hcpcsParse_(x).shaped; }).length; };
+  const c2 = shaped(h2);
+  if (c2 < 3 || c2 <= shaped(h1)) return null;
+  const width = Math.max(h1.length, h2.length);
+  const body = grid.slice(2);
+  const changes = [], key = {}, keep = [];
+  const filled = function (c) {
+    let n = 0;
+    for (let r = 0; r < body.length; r++) if (String(body[r][c] == null ? '' : body[r][c]).trim()) n++;
+    return n;
+  };
+  const noteRaw = h1[0];
+  const note = /^(insurance|payors?|plans?)( name)?$/i.test(noteRaw) ? '' : noteRaw.replace(/\s+/g, ' ').trim().slice(0, INS_PAYOR_NOTE_MAX);
+  keep.push({ c: 0, h: 'Insurance' });
+  for (let c = 1; c < width; c++) {
+    const orig = h2[c] || h1[c] || '';
+    const n = filled(c);
+    const km = /^([A-Za-z]{1,3})\s*=\s*(\S.*)$/.exec(orig);
+    if (km) {
+      key[km[1]] = km[2].trim();
+      changes.push('Column "' + orig + '" is the key, not data — dropped' + (n ? ' with its ' + n + ' filled cell(s)' : '') + '.');
+      continue;
+    }
+    if (!n) { if (orig) changes.push('Column "' + orig + '" has no data — dropped.'); continue; }
+    let h = orig, why = '';
+    if (/network/i.test(orig) && /update/i.test(orig)) { h = 'Last Update'; why = 'it would have been read as the network status'; }
+    else if (/reimb/i.test(orig) && /(oon|%|out[\s-]*of[\s-]*network)/i.test(orig)) { h = 'OON Rate (% of Medicare)'; why = 'it would have been read as the reimbursement status'; }
+    else if (/reimb/i.test(orig)) { h = 'Reimbursement Status'; why = 'read as the reimbursement status'; }
+    else if (/waystar/i.test(orig)) { h = 'Waystar Reference #'; }
+    else if (/qualif/i.test(orig)) { h = 'Qualification Process'; }
+    else if (hcpcsParse_(orig).shaped) { h = insCodeHeaderClean_(orig); if (h !== orig) why = 'so it reads as one code'; }
+    if (h !== orig && why) changes.push('Header "' + orig + '" → "' + h + '" (' + why + ').');
+    keep.push({ c: c, h: h || orig });
+  }
+  const letters = Object.keys(key).filter(function (k) { return k !== 'X' && k !== 'NO'; });
+  const rewritten = {};
+  const rows = [], blankRows = [], unnamedRows = [];
+  for (let r = 0; r < body.length; r++) {
+    const line = r + 3;
+    const cells = body[r].map(function (x) { return String(x == null ? '' : x).trim(); });
+    if (!cells.some(function (x) { return x; })) { blankRows.push(line); continue; }
+    if (!cells[0]) { unnamedRows.push(line); continue; }
+    rows.push(keep.map(function (k) {
+      const v = cells[k.c] || '';
+      if (k.c > 0 && letters.indexOf(v) >= 0) { rewritten[v] = (rewritten[v] || 0) + 1; return key[v] + ' (' + v + ')'; }
+      return v;
+    }));
+  }
+  Object.keys(rewritten).forEach(function (l) {
+    changes.push(rewritten[l] + ' cell(s) reading "' + l + '" now read "' + key[l] + ' (' + l + ')", from the key.');
+  });
+  if (blankRows.length) changes.push(blankRows.length + ' blank row(s) dropped (source row ' + blankRows.slice(0, 12).join(', ') + (blankRows.length > 12 ? ', …' : '') + ').');
+  if (unnamedRows.length) changes.push(unnamedRows.length + ' row(s) with no plan name dropped — no search could find them (source row ' + unnamedRows.slice(0, 12).join(', ') + (unnamedRows.length > 12 ? ', …' : '') + ').');
+  return {
+    grid: [keep.map(function (k) { return k.h; })].concat(rows),
+    note: note, changes: changes, key: key,
+    sourceRows: body.length, unnamedRows: unnamedRows.length, blankRows: blankRows.length,
+  };
+}
+/** The standing note every insurance result shows — what the last source
+ *  upload said. '' when none is stored; THROWS when it cannot be read, so the
+ *  caller can say so (a rule reps should see must not vanish silently, g53). */
+function insPayorNote_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP);
+  if (!raw) return null;
+  const o = JSON.parse(raw);
+  return (o && o.text) ? { text: String(o.text), at: String(o.at || ''), by: String(o.by || '') } : null;
+}
 // ════════════════════════════════════════════════════════════════════════════
 //  OOP PRICING LOOKUP (operator 2026-09-16) — the NINTH store, read LIVE
 // ════════════════════════════════════════════════════════════════════════════
@@ -2891,7 +3017,12 @@ function searchInsurancePayors(query) {
         (m.details || []).forEach(function (d) { insNameCodeDetail_(d, idx.byToken); });
       });
     }
+    // PT1a: the source sheet's standing note rides every answer; a note that
+    // cannot be read is SAID, never dropped (it is a rule reps act on).
+    let note = null, noteError = '';
+    try { note = insPayorNote_(); } catch (eN) { noteError = String(eN.message || eN); }
     return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
+      note: note ? note.text : '', noteError: noteError,
       // NAMED, not inferred from empty `item` fields. A pricing tab that is
       // missing or unreadable produces exactly the same bare codes as a payor
       // sheet whose columns are not codes, and the rep must be able to tell
@@ -2945,6 +3076,20 @@ function kbDataTableSummary_(grid, spec) {
   if (headers.length < (spec.minCols || 2)) warnings.push('Only ' + headers.length + ' column(s) — this table expects at least ' + (spec.minCols || 2) + '.');
   if (spec.nameHeader && headers.length && !spec.nameHeader.test(headers[0])) {
     warnings.push('The first column is "' + (headers[0] || '(blank)') + '" — the lookup searches THAT column, so it should hold the payor/plan name.');
+  }
+  if (spec.sourceFormat === 'payorAcceptance') {
+    // PT1a: two columns in one reader slot — the later silently replaces the
+    // earlier on every row (insPayorRowObj_ assigns, it does not merge).
+    const bySlot = {};
+    headers.forEach(function (h, c) {
+      if (!c) return;
+      const sl = insPayorSlotOf_(h);
+      if (sl) (bySlot[sl] = bySlot[sl] || []).push(h);
+    });
+    Object.keys(bySlot).forEach(function (sl) {
+      if (bySlot[sl].length > 1) warnings.push('Columns ' + bySlot[sl].map(function (h) { return '"' + h + '"'; }).join(' and ') +
+        ' would both be read as the ' + sl + ' — only the last one would show. Rename all but one in the file.');
+    });
   }
   const blankHeaders = headers.filter(function (h) { return !h; }).length;
   if (blankHeaders) warnings.push(blankHeaders + ' column(s) have no header — those attributes will render with a blank label.');
@@ -3004,7 +3149,11 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     try { text = Utilities.newBlob(Utilities.base64Decode(b64)).getDataAsString(); }
     catch (e) { return { error: 'Could not read that file as text — is it a .csv?' }; }
 
-    const grid = kbParseCsv_(text);
+    let grid = kbParseCsv_(text);
+    // PT1a: the source sheet's own export is converted here, before every
+    // limit and the preview, so what the preview reports is what is written.
+    const conv = spec.sourceFormat === 'payorAcceptance' ? insPayorFromSource_(grid) : null;
+    if (conv) grid = conv.grid;
     if (grid.length < 2) return { error: 'That file has no data rows (a header row plus at least one row is required).' };
     if (grid.length - 1 > KB_DATA_TABLE_MAX_ROWS) {
       return { error: grid.length - 1 + ' rows exceeds the ' + KB_DATA_TABLE_MAX_ROWS + '-row limit for this table.' };
@@ -3024,6 +3173,14 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
       }
     }
     const summary = kbDataTableSummary_(grid, spec);
+    if (conv) {
+      summary.converted = { from: 'source', sourceRows: conv.sourceRows, changes: conv.changes, note: conv.note };
+    }
+    if (spec.sourceFormat === 'payorAcceptance') {
+      // The note the lookup shows NOW, so the preview can say what changes.
+      try { const cur = insPayorNote_(); summary.currentNote = cur ? cur.text : ''; }
+      catch (eN) { summary.currentNote = ''; summary.currentNoteError = String(eN.message || eN); }
+    }
 
     const ss = getKbSS_();
     const existing = ss.getSheetByName(spec.tab);
@@ -3075,8 +3232,17 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
         : '') };
     }
 
+    // PT1a: a source upload sets the standing note to what its A1 says — an
+    // empty A1 clears it; a file in the tab's shape carries no note and leaves
+    // it alone. After the table write, so a failed write changes neither.
+    if (conv) {
+      // Bounded (Q-1): the note is capped at INS_PAYOR_NOTE_MAX characters, far under a value's limit.
+      if (conv.note) propSetBounded_(INS_PAYOR_NOTE_PROP, JSON.stringify({ text: conv.note, at: new Date().toISOString(), by: emp.email || '' }));
+      else PropertiesService.getScriptProperties().deleteProperty(INS_PAYOR_NOTE_PROP);
+    }
     writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
-      'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows);
+      'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows +
+      (conv ? '; converted=source; note=' + (conv.note ? 'set' : 'cleared') : ''));
     summary.imported = true;
     return summary;
   } catch (err) {
@@ -3104,6 +3270,10 @@ function getKbDataTables() {
           out.cols = sh.getLastColumn();
         }
       } catch (e) { out.unreadable = true; }   // INV-187 — an unreadable tab is not an empty one
+      if (spec.sourceFormat === 'payorAcceptance') {   // PT1a: the standing note the lookup shows
+        try { const n = insPayorNote_(); out.note = n ? n.text : ''; out.noteAt = n ? n.at : ''; }
+        catch (eN) { out.noteError = String(eN.message || eN); }
+      }
       return out;
     });
     return { tables: tables };
