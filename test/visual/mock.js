@@ -1066,6 +1066,43 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         dateLocal: daysAgo(1) };
       return base;
     },
+    // DR1 (operator 2026-11-09): the manager's audit list — a function of the
+    // range (the server's default when it is blank), every request in it with
+    // its CRM mark; and the CRM mark's write, which the next read reflects
+    // (INV-185 — a fixture mirrors the server). Fictional patients.
+    getDeptRequestAudit: function (opts) {
+      const o = opts || {};
+      const to = o.to || daysAgo(0), from = o.from || daysAgo(29);
+      if (!FIXTURES._drAuditRows) {
+        const mk = function (id, d, hm, type, dept, trx, by, status, extra) {
+          const iso = daysAgo(d) + ' ' + hm;
+          return Object.assign({ requestId: id, createdMs: new Date(daysAgo(d) + 'T' + hm + ':00').getTime(), createdIso: iso,
+            createdAt: iso, type: type, toDept: dept, byName: by, patientTrx: trx, status: status, resolvedMs: null, resolvedAt: '', resolvedIso: '',
+            resolvedBy: '', resolvedVia: '', threadTracked: true, crmChecked: false, crmBy: '', crmAtMs: null }, extra || {});
+        };
+        FIXTURES._drAuditRows = [
+          mk('a1', 0, '09:12', 'Close Order', 'Eligibility MM&R', 'Maria Delgado · TRX 48211', 'Avery Blake', 'open'),
+          mk('a2', 1, '15:40', 'Close Order', 'Eligibility MM&R', 'J. Rivera · TRX 47790', 'Nina Patel', 'resolved',
+            { resolvedAt: daysAgo(1) + ' 16:05', resolvedIso: daysAgo(1) + ' 16:05', resolvedBy: 'priya@umsupply.com', resolvedVia: 'email', crmChecked: true, crmBy: 'avery@umsupply.com', crmAtMs: Date.now() - 3600000 }),
+          mk('a3', 2, '10:02', 'Verified Shipping', 'Shipping', 'K. Osei · TRX 48044', 'Sam Ortiz', 'resolved',
+            { resolvedAt: daysAgo(2) + ' 13:30', resolvedIso: daysAgo(2) + ' 13:30', resolvedBy: 'Shipping desk', resolvedVia: 'reply' }),
+          mk('a4', 4, '11:20', 'OOP Order', 'Billing, Shipping', 'L. Chen · TRX 47502', 'Avery Blake', 'open'),
+          mk('a5', 6, '14:45', 'Close Order', 'Eligibility MM&R', 'R. Haddad · TRX 46610', 'Leo Kim', 'resolved',
+            { resolvedAt: daysAgo(5) + ' 09:10', resolvedIso: daysAgo(5) + ' 09:10', resolvedBy: 'nina@umsupply.com', resolvedVia: 'app', threadTracked: false }),
+        ];
+      }
+      const rows = FIXTURES._drAuditRows.filter(function (r) { return r.createdIso.slice(0, 10) >= from && r.createdIso.slice(0, 10) <= to; });
+      const types = {}, depts = {};
+      rows.forEach(function (r) { types[r.type] = 1; String(r.toDept).split(',').forEach(function (d) { depts[d.trim()] = 1; }); });
+      return { from: from, to: to, rows: rows, types: Object.keys(types).sort(), departments: Object.keys(depts).sort(),
+        truncated: false, max: 2000, crmTruncated: false };
+    },
+    setDeptRequestCrmCheck: function (id, checked) {
+      const r = (FIXTURES._drAuditRows || []).filter(function (x) { return x.requestId === id; })[0];
+      if (!r) return { success: false, error: 'Request not found.' };
+      r.crmChecked = checked === true; r.crmBy = 'avery@umsupply.com'; r.crmAtMs = Date.now();
+      return { success: true, requestId: id, checked: r.crmChecked, by: r.crmBy, atMs: r.crmAtMs };
+    },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
         { requestId: 'r1', toDept: 'Shipping', label: 'Verified Shipping', patientTrx: 'Maria Delgado · TRX 48211', createdAt: daysAgo(0) + ' 09:12', createdMs: new Date(daysAgo(0) + 'T09:12:00').getTime(), byName: 'Avery Blake', status: 'open', elapsedMin: 72, elapsedWallMin: 190, slaBusiness: true, slaStatus: 'ontime', slaDays: 2 },

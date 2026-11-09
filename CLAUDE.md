@@ -968,7 +968,7 @@ this block, or the command that prints the number.
 | Visual matrix scenarios | 256 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 108 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Manager-gated endpoints | 110 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 13 | `TRIGGER_GROUPS` |

@@ -11537,7 +11537,9 @@ test('Spanish + Dept Requests use the full view width (operator 2026-08-17)', ()
   // The DR anchor wraps BOTH render branches — an error render must not snap
   // the view back to the narrow width mid-session.
   const render = nc(extractFunction('metrics/script_deptrequests.html', 'drRender_'));
-  assert.strictEqual((render.match(/id="dr-body"/g) || []).length, 2, 'both drRender_ branches emit #dr-body');
+  // DR1: a manager's Audit list is a third branch, and wraps in it too.
+  assert.strictEqual((render.match(/id="dr-body"/g) || []).length, (render.match(/area\.innerHTML = /g) || []).length, 'every drRender_ branch emits #dr-body');
+  assert.ok((render.match(/area\.innerHTML = /g) || []).length >= 3, 'the error, audit and tracker branches');
   // The Spanish top row: head + share side by side in .sp-top, whose base
   // multi-column grid carries a real viewport breakpoint (the A2 rule) — the
   // 480px pop-out rides the same breakpoint, so no data-compact override.
@@ -34051,7 +34053,7 @@ test('RES-1 (cycle 23): the resolve link changes nothing on GET — it shows a c
   // The button endpoint.
   const conf = (who, res) => {
     const c = vm.createContext({ String, getActiveUserEmail_: () => who, markDeptRequestResolved_: (t, by, via) => Object.assign({ via }, res),
-      CONFIG: { CALL_NOTES: { CC_EMAIL: 'ops@ums.com' } }, mailBccAll_: () => [], getEmployeeInfo_: () => null, empDepartments_: () => [] });
+      CONFIG: { CALL_NOTES: { CC_EMAIL: 'ops@ums.com' } }, mailBccAll_: () => [], getEmployeeInfo_: () => null, empDepartments_: () => [], drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e, });
     vm.runInContext(extractRawFunction('Code.js', 'confirmDeptRequestResolve'), c);
     return JSON.parse(JSON.stringify(c.confirmDeptRequestResolve('R9')));
   };
@@ -34096,7 +34098,7 @@ test('F55 (cycle 25): a resolve-link click by a COPY recipient — the CC mailbo
   let seen = null;
   const conf = (emp) => {
     const c = vm.createContext({ String, Array, getActiveUserEmail_: () => 'ops@ums.com', CONFIG: { CALL_NOTES: { CC_EMAIL: 'ops@ums.com' } }, mailBccAll_: () => ['audit@ums.com'],
-      getEmployeeInfo_: () => emp, empDepartments_: (e) => e.depts,
+      getEmployeeInfo_: () => emp, empDepartments_: (e) => e.depts, drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e,
       markDeptRequestResolved_: (t, by, v, cc) => { seen = JSON.parse(JSON.stringify(cc)); return { found: true, already: false, dept: 'Billing', copy: true }; } });
     vm.runInContext(extractRawFunction('Code.js', 'confirmDeptRequestResolve'), c);
     return JSON.parse(JSON.stringify(c.confirmDeptRequestResolve('R9')));
@@ -39390,7 +39392,7 @@ test('E4 (cycle 25): answerDeptReplyLook — the resolve rule decides who, the a
     getOrCreateDeptReplyReviewsSheet_: () => 'REVIEWS', appendRowsSafe_: (s, rows) => reviews.push([s].concat(rows[0])),
     drBumpCacheGen_() {}, pendingTasksBust_() {}, getActiveUserEmail_: () => '',
     markDeptRequestResolved_: (id, by, via) => { resolves.push([id, by, via]); return { found: true }; },
-    writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n) });
+    writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push(a + ' ' + n), drSendResolvedReply_: () => null, drResolvedReplyNote_: () => '', drResolverLabel_: (n, e) => n || e, });
   vm.runInContext(['DR_REPLY_REASONS', 'DR_REVIEW_ANSWERS'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), ctx);
   ['drStatus_', 'drFindRowByReqId_', 'drReplyReasonOf_', 'answerDeptReplyLook'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const J = (x) => JSON.parse(JSON.stringify(x));

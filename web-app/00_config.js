@@ -611,6 +611,20 @@ const DR_MAX_SCAN = 4000;
 // have >100 open requests to show. Reported alongside the lists as listCap +
 // *Total so the client can render "showing N of M" instead of implying N is all.
 const DR_LIST_CAP = 100;
+// DR1 (operator 2026-11-09) — the audit list and its "Checked in CRM" marks.
+// A mark is an APPEND-ONLY row in its own tab of the Dept Requests store (the
+// QaExemptions shape: the latest row per request wins), never a new
+// DeptRequests column: the live tab may carry an operator note column past
+// DR_HEADERS, and a column added there would write over it. Ids, a yes/no and
+// who — no patient data. The audit list reads a date SPAN found from the
+// CreatedAt column (the H3 span rule), so a range reaches past the list
+// read's DR_MAX_SCAN tail; DR_AUDIT_MAX_ROWS caps one answer, newest kept.
+const DR_CRM_TAB = 'DeptRequestCrmChecks';
+const DR_CRM_HEADERS = ['Timestamp', 'RequestId', 'Checked', 'By', 'AtMs'];
+const DR_CRM_SCAN_MAX = 20000;
+const DR_AUDIT_MAX_ROWS = 2000;
+const DR_AUDIT_MAX_DAYS = 366;
+const DR_AUDIT_DEFAULT_DAYS = 30;
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
   NOTE_ID:0, TIMESTAMP:1, DATE_LOCAL:2,
@@ -1661,6 +1675,9 @@ const FEATURE_FLAGS = [
     default: true, scope: 'server' },
   { key: 'deptReplyResolve', label: 'Dept Request reply resolves',
     description: 'Every hour, read each open department request\'s email thread (in the mailbox the app runs as). A reply from the department that arrived after the send (or the last reopen), is not automatic, and neither asks a question nor puts the request on hold RESOLVES it, credited to the replier; a reply that asks or holds marks it "Responded — needs a look". Only requests sent after this feature shipped carry a thread to read. Off = replies are never read; the resolve link and Mark resolved still work.',
+    default: true, scope: 'server' },
+  { key: 'deptResolvedReply', label: 'Dept Request resolved reply',
+    description: 'When someone marks a department request resolved \u2014 from the email\'s link or in the app \u2014 reply on the request\'s email thread (from the mailbox the app runs as, to the sender and the department) saying it was marked resolved, by whom and when. A request sent before thread tracking has no thread, so it gets no reply, and the person resolving it is told so. Off = no reply is sent; the resolve itself is unchanged.',
     default: true, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',

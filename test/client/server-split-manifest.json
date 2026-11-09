@@ -4015,6 +4015,43 @@
     "setEmpDocLetterheadLogo"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "DR1: Dept Request audit list, CRM marks and the resolved reply",
+   "added": [
+    "DR_AUDIT_DEFAULT_DAYS",
+    "DR_AUDIT_MAX_DAYS",
+    "DR_AUDIT_MAX_ROWS",
+    "DR_CRM_HEADERS",
+    "DR_CRM_SCAN_MAX",
+    "DR_CRM_TAB",
+    "drAuditFacets_",
+    "drAuditRange_",
+    "drAuditRowOf_",
+    "drAuditSpan_",
+    "drCellMs_",
+    "drCrmFold_",
+    "drCrmMarks_",
+    "drReplyThreadId_",
+    "drResolvedReplyNote_",
+    "drResolvedReplyParts_",
+    "drResolverLabel_",
+    "drSendResolvedReply_",
+    "drShiftIsoDay_",
+    "getDeptRequestAudit",
+    "getOrCreateDeptCrmChecksSheet_",
+    "setDeptRequestCrmCheck"
+   ],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "answerDeptReplyLook",
+    "confirmDeptRequestResolve",
+    "markDeptRequestResolved_",
+    "resolveDeptRequest"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4774,6 +4811,36 @@
    "kind": "const",
    "sha": "72e0ebdcd5e1fb58"
   },
+  "DR_AUDIT_DEFAULT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aae9ce2f4acbf78"
+  },
+  "DR_AUDIT_MAX_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "725340e4927dde12"
+  },
+  "DR_AUDIT_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4f335355eecfe5f3"
+  },
+  "DR_CRM_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3dabfecc5e5a5a5f"
+  },
+  "DR_CRM_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "faa4aa2aeb6b3422"
+  },
+  "DR_CRM_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4c86827942ed7ef8"
+  },
   "DR_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
@@ -5077,7 +5144,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5017f86050c8a46b"
+   "sha": "be88bbfb601cd52a"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -7442,7 +7509,7 @@
   "answerDeptReplyLook": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "ce09a7204b31e2be"
+   "sha": "8edc27ea36e21ad2"
   },
   "appSendMail_": {
    "file": "10_core.js",
@@ -8387,7 +8454,7 @@
   "confirmDeptRequestResolve": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "bd5a26f2cd4f3f41"
+   "sha": "8aadff52d2b869f0"
   },
   "contiguousRowRunsDesc_": {
    "file": "10_core.js",
@@ -8609,6 +8676,26 @@
    "kind": "function",
    "sha": "3415a7b9d04f9555"
   },
+  "drAuditFacets_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "52c62180f0a0e915"
+  },
+  "drAuditRange_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "a53a20893c007431"
+  },
+  "drAuditRowOf_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ce656874ed4fb49a"
+  },
+  "drAuditSpan_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "3a30207c63d090f1"
+  },
   "drBumpCacheGen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -8628,6 +8715,21 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "589e7815f209dd04"
+  },
+  "drCellMs_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "4c8d85e71f5a9fb8"
+  },
+  "drCrmFold_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "0c896e923690c57e"
+  },
+  "drCrmMarks_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "d9943a3979dff2a6"
   },
   "drDeptStats_": {
    "file": "50_deptrequests.js",
@@ -8724,6 +8826,11 @@
    "kind": "function",
    "sha": "8767aafcfccb2cfa"
   },
+  "drReplyThreadId_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "6fd835f25c9813de"
+  },
   "drReplyVerdictFull_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -8744,15 +8851,40 @@
    "kind": "function",
    "sha": "ae76c94ddde876a3"
   },
+  "drResolvedReplyNote_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "4f6fadae80360503"
+  },
+  "drResolvedReplyParts_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "56e0afc61bc68cfb"
+  },
   "drResolvedVia_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "eb9c7ae4eb1943d5"
   },
+  "drResolverLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "679c9dde5dda0fd9"
+  },
+  "drSendResolvedReply_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "80e9455911506746"
+  },
   "drSharedRequestIds_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "bba9b4dbad18812f"
+  },
+  "drShiftIsoDay_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9fcff499ed663713"
   },
   "drSlaAdminView_": {
    "file": "50_deptrequests.js",
@@ -9519,6 +9651,11 @@
    "kind": "function",
    "sha": "190f82f783a5ba7d"
   },
+  "getDeptRequestAudit": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "49a31d47a9085eb9"
+  },
   "getDeptRequestDetail": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -9963,6 +10100,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "c55ec5b69434238d"
+  },
+  "getOrCreateDeptCrmChecksSheet_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "395a68ed9caa82ba"
   },
   "getOrCreateDeptReplyReviewsSheet_": {
    "file": "50_deptrequests.js",
@@ -11747,7 +11889,7 @@
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "f87476f1687696dc"
+   "sha": "e0ebb43f1c0d7a8f"
   },
   "markTrainingComplete": {
    "file": "80_training.js",
@@ -12917,7 +13059,7 @@
   "resolveDeptRequest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "8b23c87c7dd69527"
+   "sha": "a813264facea1949"
   },
   "resolveEmailRecipients_": {
    "file": "30_callnotes.js",
@@ -13408,6 +13550,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "7581016b92e0bf0e"
+  },
+  "setDeptRequestCrmCheck": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ce634f25ce153782"
   },
   "setEmpDocLetterheadLogo": {
    "file": "81_empdocs.js",

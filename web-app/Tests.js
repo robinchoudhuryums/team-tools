@@ -6798,6 +6798,8 @@ function test_managerGates_rejectNonManager() {
     ['deleteEmpDocTemplate',           function () { return deleteEmpDocTemplate('no-such-tpl'); }],
     // ED4 — the letterheads (the read is manager-gated, the three writes admin-gated).
     ['getEmpDocLetterheads',           function () { return getEmpDocLetterheads(); }],
+    ['getDeptRequestAudit',            function () { return getDeptRequestAudit({}); }],
+    ['setDeptRequestCrmCheck',         function () { return setDeptRequestCrmCheck('no-such-req', true); }],
     ['saveEmpDocLetterhead',           function () { return saveEmpDocLetterhead({ name: 'gate' }); }],
     ['deleteEmpDocLetterhead',         function () { return deleteEmpDocLetterhead('no-such-lh'); }],
     ['setEmpDocLetterheadLogo',        function () { return setEmpDocLetterheadLogo('no-such-lh', ''); }],
