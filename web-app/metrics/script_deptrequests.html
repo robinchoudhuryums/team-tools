@@ -1444,7 +1444,8 @@ function drAuditSummaryHtml_(rows) {
   var all = (DR_AUDIT.data && DR_AUDIT.data.rows) || [];
   var checked = rows.filter(function (r) { return r.crmChecked; }).length;
   return '<b>' + rows.length + '</b>' + (rows.length !== all.length ? ' of ' + all.length : '') +
-    ' request' + (rows.length === 1 ? '' : 's') + ' · <b>' + checked + '</b> checked in CRM';
+    ' request' + ((rows.length !== all.length ? all.length : rows.length) === 1 ? '' : 's') +   // "1 of 3 requests", "1 request"
+    ' · <b>' + checked + '</b> checked in CRM';
 }
 function drAuditResultsHtml_() {
   var d = DR_AUDIT.data;
