@@ -44348,6 +44348,7 @@ test('PT1a: the source export becomes the tab — one header row, the four reade
   assert.strictEqual(at('K0814'), 'Hawaii Only (Z)');
   assert.strictEqual(at('K0825 (Up to 435 lbs)'), 'x', 'X (any case) and NO are the sheet\'s yes and no — never rewritten');
   assert.strictEqual(at('K0802'), 'NO');
+  assert.strictEqual(r.grid[1][r.grid[0].indexOf('K0814')], 'X', 'a plain X stays X — never "Yes (X)"');
   assert.strictEqual(at('OON Rate (% of Medicare)'), '100');
   assert.ok(!umr.some((v) => /Walnut|ba$/.test(v)), 'the key columns\' side list (a branch address, a stray "ba") is not carried onto a plan');
   const ch = r.changes.join('\n');
@@ -44375,6 +44376,10 @@ test('PT1a: only the source shape converts — a file already in the tab\'s shap
     ['Aetna H1610-002', '2', 'In-Network', 'X', 'X', 'X']];
   assert.strictEqual(c.insPayorFromSource_(tab), null, 'the tab shape: codes on row 1');
   assert.strictEqual(c.insPayorFromSource_(PT1A_SRC.slice(0, 2)), null, 'no data rows');
+  const tabNotes = [['Insurance', 'K0800', 'K0802', 'K0814', 'K0835', 'Notes'],
+    ['Aetna', 'NO - K0837', 'See K0835', 'K0861 only', 'X', 'K0838 too'],
+    ['Cigna', 'X', 'NO', 'X', 'X', '']];
+  assert.strictEqual(c.insPayorFromSource_(tabNotes), null, 'a tab whose first data row MENTIONS codes is still the tab shape — row 1 carries more codes');
   assert.strictEqual(c.insPayorFromSource_([['A', 'B'], ['x', 'K0800'], ['y', 'z']]), null, 'fewer than three code headers on row 2');
   const titled = PT1A_SRC.map((r) => r.slice());
   titled[0][0] = 'Insurance';
@@ -44388,7 +44393,8 @@ test('PT1a: insCodeHeaderClean_ — an unreadable code header becomes the code w
   const c = pt1aCtx_();
   [['K0825 Up to 435 lbs', 'K0825 (Up to 435 lbs)'], ['K0827 (451- 600) No In HI', 'K0827 (451- 600 No In HI)'], ['K0843 (', 'K0843'],
     ['K0800 ( 285-325 lb)', 'K0800 ( 285-325 lb)'], ['K0821/23/16 (Up to 285 lbs)', 'K0821/23/16 (Up to 285 lbs)'], ['E1161', 'E1161'],
-    ['k0825 up to 435', 'K0825 (up to 435)'], ['Power Chair K0816 group', 'Power Chair K0816 group'], ['NO - K0837', 'NO - K0837']]
+    ['k0825 up to 435', 'K0825 (up to 435)'], ['Power Chair K0816 group', 'Power Chair K0816 group'], ['NO - K0837', 'NO - K0837'],
+    ['K0821/2345 lbs', 'K0821/2345 lbs']]
     .forEach(([a, b]) => assert.strictEqual(c.insCodeHeaderClean_(a), b, a));
   const slotOf = { waystar: 'waystar', networkStatus: 'network status', qualification: 'qualification', reimbursement: 'reimbursement' };
   ['Waystar Ref#', 'Network Status', 'Network Last Update', 'Qualifaction Process', 'Reimbursement Status', 'OON reimbursement (%)', 'Reimb. Status',
