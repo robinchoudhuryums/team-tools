@@ -4100,6 +4100,16 @@
     "TRIGGER_GROUPS"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: the read-ahead warms the Stats default trend too",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "warmCdrMetricsCache"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -14397,7 +14407,7 @@
   "warmCdrMetricsCache": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "a67aec2e02a8da1c"
+   "sha": "e4719b5ba25e9eae"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

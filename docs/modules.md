@@ -796,6 +796,15 @@ longer sent to reps.
      stamps a reminder it could not send, and a failed read, as
      `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
 
+     **PF1 (operator 2026-11-09) — the Dashboard's numbers and Stats load
+     faster, with the same numbers.** Call data is read through the columns
+     each figure uses, the date column once per request, and every window's
+     totals are kept until the call data actually changes (checked every two
+     minutes) instead of for five minutes. An hourly job reads the Dashboard's
+     three periods and the Stats page's default 30-day trend ahead once new
+     data lands, so the first person of the day does not wait. Admin → System
+     lists it as "Dashboard call-data read-ahead".
+
      **DR1 (operator 2026-11-09) — the audit list and the resolved reply.** A
      manager's Dept Requests tab has a **Tracker / Audit list** switch. The
      audit list is every request sent in the chosen days (the last 30 by

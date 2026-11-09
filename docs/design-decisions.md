@@ -6587,6 +6587,45 @@ pick them up without re-deriving the context.
     a written document's printed copy (the head on the first page, the footer
     on every page of the document). A PDF document is its own paper, so the
     letterhead shows on its certificate only.
+- <a id="pf1-cdr-reads-cached-against-a-stamp"></a>**Call data is read through the columns used and cached until the data changes, and an hourly job reads the Dashboard's windows ahead (PF1, operator 2026-11-09)**
+  The operator: "the 'Your Numbers' and 'Department' metrics cards on the
+  dashboard take a very long time to load, as does the 'Stats' page … optimize
+  without compromising function or accuracy."
+  - **Where the time went.** Every DQE window (each period, its comparison,
+    the Stats trend and day) re-read the whole Date column, then read its span
+    34 columns wide twice — values and display text — where eight columns are
+    used and only the two durations need display text. The shared window cache
+    lived five minutes, the per-rep dashboard cache is skipped all morning
+    until the daily import lands (MET-5), and the 30-day breakdown behind Stats
+    had no cache at all — so the year-to-date window was re-scanned per person.
+  - **Narrower reads, the same numbers.** `cdrDqeReadSpan_` reads column 1
+    through TOTAL_ANSWERED as values (so `values[i][CDR.X - 1]` is unchanged)
+    and TTT..ATT as display text only (g00 / INV-64); the transfer read takes
+    its first seven columns unless the per-queue block is asked for. The date
+    column is read once per execution per tab (`cdrDateColIsos_`), keyed by the
+    spreadsheet, the sheet, the row count and tz — a sheet that cannot be named
+    is never memoized. Pinned value for value against the 34-column read.
+  - **Cached until the data changes, not for five minutes.** Each window
+    aggregate (DQE, transfer, the 30-day breakdown) is keyed by a STAMP of the
+    CDR data and kept six hours: each tab's row count and a digest of its
+    newest 300 rows (where the import writes — a re-import of yesterday
+    changes it), and the alias tab whole (an alias edit changes who a row
+    counts for). The stamp is re-probed at most every two minutes across all
+    users, so new data reaches every reader sooner than the old five-minute
+    tier did. No stamp (the probe failed) is the old key family and TTL; a
+    named failure, a round read without the aliases (F16) and every test-override
+    read are never kept. An edit deep in history — older than the newest 300
+    rows, with the row count unchanged — is the one change the stamp cannot
+    see; it shows within six hours, the same bound the dashboard's per-person
+    cache already had.
+  - **Read ahead.** `warmCdrMetricsCache` rides the hourly dispatcher: when
+    the stamp differs from the one it last warmed, it reads the Dashboard's
+    three windows and the Stats default 30-day trend for the one cohort list
+    (`cdrCohortNames_`, now shared by the cards and Stats so the keys match)
+    and remembers the stamp only when every read worked; otherwise idle.
+  - **Measured where it runs.** Both endpoints log "cached" or "read" with
+    their milliseconds to the execution log, so the before and after can be
+    read on the real sheets.
 - <a id="dr1-audit-list-and-resolved-reply"></a>**A manager checks Dept Requests against the CRM from an audit list with a per-request mark kept in its own tab; a person's Mark resolved replies on the request's email thread (DR1, operator 2026-11-09)**
   The operator: "make a list of 'Close Order' requests, so I can use that list
   and check the status in the CRM", and "can the 'Mark Resolved' button … then

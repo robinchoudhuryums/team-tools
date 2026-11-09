@@ -2487,8 +2487,9 @@ function getMetricsAmbient() {
 
 /** Hourly rider (TRIGGER_GROUPS.runHourlyJobs; PF1, operator 2026-11-09) —
  *  after the daily CDR import, read the dashboard's three windows (yesterday,
- *  month to date, year to date) for the whole cohort once, so the first person
- *  to open the Dashboard does not wait for a year of call data. It does
+ *  month to date, year to date) and the Stats page's default 30-day trend for
+ *  the whole cohort once, so the first person to open the Dashboard or Stats
+ *  does not wait for a year of call data. It does
  *  nothing while the CDR stamp is the one it last warmed (no data changed) and
  *  under the CDR test override. The windows are the ones getDashboardMetrics
  *  asks for in CONFIG.TIMEZONE's today; a rep in another timezone on another
@@ -2516,7 +2517,19 @@ function warmCdrMetricsCache() {
         if (tr && tr.meta && tr.meta.error) throw new Error(tr.meta.error);
       } catch (e) { failed.push(pk + ': ' + e.message); }
     });
-    console.log('warmCdrMetricsCache: ' + DASHBOARD_PERIOD_KEYS.length + ' windows, ' + (Date.now() - t0) + ' ms' + (failed.length ? ', failed ' + failed.join('; ') : ''));
+    // The Stats page's default view: the previous workday and its 30-day
+    // trend, read the way getMyMetrics reads them (the window and the cohort).
+    var statsDay = prevWorkdayIso_(todayIso);
+    if (statsDay) {
+      try {
+        var sFrom = isoFromUtc_(new Date(new Date(statsDay + 'T12:00:00Z').getTime() - 29 * 86400000));
+        var bd = getCdrDailyBreakdown_(sFrom, statsDay, names);
+        if (bd && bd.error) throw new Error(bd.error);
+        var str = getCsrTransferPerRepDaily_(sFrom, statsDay, names);
+        if (str && str.meta && str.meta.error) throw new Error(str.meta.error);
+      } catch (e) { failed.push('stats: ' + e.message); }
+    }
+    console.log('warmCdrMetricsCache: ' + DASHBOARD_PERIOD_KEYS.length + ' dashboard windows + the Stats trend, ' + (Date.now() - t0) + ' ms' + (failed.length ? ', failed ' + failed.join('; ') : ''));
     if (failed.length) return { outcome: automationOutcome_('partial', 'Some call-data windows could not be read ahead: ' + failed.join('; '), failed) };
     try { cache.put(CDR_WARM_CACHE_KEY, stamp, CDR_WINDOW_CACHE_TTL); } catch (e) {}
     return { outcome: automationOutcome_('ok') };

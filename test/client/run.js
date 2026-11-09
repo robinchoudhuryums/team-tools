@@ -7104,8 +7104,8 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   // derived from the team map, halving the cold-start reads.
   // PF1 (operator 2026-11-09): the call-data read-ahead job reads the
   // dashboard's windows the way shapeWindow does — a fourth, deliberately.
-  assert.strictEqual(calls - optedIn, 4,
-    'exactly the 4 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5 + warmCdrMetricsCache)');
+  assert.strictEqual(calls - optedIn, 5,
+    'exactly the 5 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5 + warmCdrMetricsCache\'s dashboard windows and Stats trend)');
   // Name the opted-in callers rather than counting them — a bare count has to
   // be edited every time the feature grows (Phase 2 tripped it immediately),
   // which trains the next author to bump the number instead of thinking. This
@@ -43862,6 +43862,243 @@ test('DR1: the client — a manager’s Tracker / Audit list switch under the ti
   assert.ok(/res\.replyNote/.test(nc(extractFnFrom(src, 'drResolveClick_'))) && /res\.replyNote/.test(nc(extractFnFrom(src, 'drLookAnswerClick_'))), 'both resolve toasts');
   assert.ok(/item\.threadTracked === false \? ' title="Sent before thread tracking/.test(extractFnFrom(src, 'drRequestCardHtml_')));
   assert.ok(/copyWithFeedback_\(drAuditTsv_\(rows\)/.test(extractFnFrom(src, 'drAuditCopy_')), 'Copy table reports its real outcome (g76)');
+});
+
+console.log('\nOperator round 2026-11-09 — PF1 (dashboard numbers + Stats load time)');
+const PF1_CDR = { DATE: 2, AGENT: 3, QUEUE_EXT: 4, TOTAL_UNIQUE: 5, TOTAL_RUNG: 6, TOTAL_MISSED: 7, TOTAL_ANSWERED: 8, TTT: 9, ATT: 10 };
+const pf1Md5Hex_ = (x) => require('crypto').createHash('md5').update(String(x)).digest('hex');
+// A DQE tab 34 columns wide, as the real one is. A duration cell read as a
+// VALUE comes back a Date shifted by the spreadsheet's tz (INV-64) — the stub
+// answers getValues on columns 9..10 with a wrong number so a reader that took
+// a duration from getValues would count it wrong. Columns past 10 throw, so a
+// read wider than the columns used fails the pin.
+const pf1DqeSheet_ = (data, opts) => {
+  const o = opts || {};
+  const reads = [];
+  const rows = [['Queue', 'Date', 'Agent', 'Ext', 'Unique', 'Rung', 'Missed', 'Answered', 'TTT', 'ATT']
+    .concat(Array.from({ length: 24 }, (_, i) => 'X' + i))].concat(data.map((r) => r.concat(Array.from({ length: 24 }, () => 'junk'))));
+  const sheet = {
+    getLastRow: () => rows.length,
+    getRange: (r, c, n, w) => {
+      reads.push([r, c, n, w]);
+      if (o.strict !== false && c + w - 1 > 10 && r > 1) throw new Error('read past column 10: ' + [r, c, n, w].join(','));
+      const slice = rows.slice(r - 1, r - 1 + n).map((row) => row.slice(c - 1, c - 1 + w));
+      return {
+        getValues: () => slice.map((row) => row.map((v, j) => ((c + j === 9 || c + j === 10) ? 99999 : v))),
+        getDisplayValues: () => slice.map((row) => row.map(String)),
+      };
+    },
+  };
+  if (o.ids) { sheet.getSheetId = () => 7; sheet.getParent = () => ({ getId: () => 'SS1' }); }
+  return { sheet, reads, rows };
+};
+const pf1Ctx_ = (sheet, extra) => {
+  const store = {}, puts = [];
+  const ctx = Object.assign({
+    CONFIG: { CDR_CACHE_KEY: 'cdr_metrics_v5', CDR_CACHE_TTL: 300 }, CDR: PF1_CDR,
+    CacheService: { getScriptCache: () => ({ get: (k) => (k in store ? store[k] : null), put: (k, v, t) => { store[k] = v; puts.push([k, t]); } }) },
+    getCdrSS_: () => ({ getSheetByName: () => sheet, getSpreadsheetTimeZone: () => 'UTC' }),
+    validateCdrColumns_: () => null, getCdrNameMap_: () => ({}), cdrRosterHash_: () => 'h',
+    cdrParseHms_: (x) => { const q = String(x || '').split(':').map(Number); return q.length === 3 ? q[0] * 3600 + q[1] * 60 + q[2] : 0; },
+    cdrFmtHms_: (n) => String(n), Utilities: { formatDate: () => '' }, console: { warn() {}, log() {} }, JSON, Error, Math, Object, Array, String, Number,
+    _store: store, _puts: puts,
+  }, extra || {});
+  vm.createContext(ctx);
+  vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_', 'getCdrDailyBreakdown_', 'cdrDailyBreakdownUncached_']
+    .map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  return pf1CdrHelpers_(ctx);
+};
+const pf1R_ = (date, agent, rung, missed, ans, ttt, att) => ['q', date, agent, '', 1, rung, missed, ans, ttt, att];
+
+test('PF1: a DQE window is read through the columns it uses — values for column 1 through Answered, DISPLAY text for the two durations only — and gives the same numbers as the full read (driven over a 34-column tab whose durations read wrong as values)', () => {
+  const data = [
+    pf1R_('2026-05-01', 'Ann', 10, 1, 9, '0:10:00', '0:01:00'),
+    pf1R_('2026-05-04', 'Ann', 10, 2, 8, '0:20:00', '0:02:00'),
+    pf1R_('2026-05-05', 'Bo', 5, 0, 5, '0:05:00', '0:01:00'),
+    pf1R_('2026-05-05', 'Ann', 2, 0, 2, '0:20:00', '0:10:00'),
+    pf1R_('2026-05-09', 'Bo', 6, 1, 5, '0:06:00', '0:01:00'),
+  ];
+  const t = pf1DqeSheet_(data);
+  const c = pf1Ctx_(t.sheet);
+  const agg = hJ(c.getCdrAgentMetrics_('2026-05-04', '2026-05-05', ['Ann', 'Bo']));
+  assert.deepStrictEqual([agg.agents.Ann.totalRung, agg.agents.Ann.totalMissed, agg.agents.Ann.totalAnswered, agg.agents.Ann.tttSeconds, agg.agents.Ann.attSeconds, agg.agents.Ann.daysActive],
+    [12, 2, 10, 2400, 216, 2], 'Ann: 10+2 rung, 8+2 answered, 20+20 min talk, ATT answered-weighted (8×120 + 2×600)/10');
+  assert.deepStrictEqual([agg.agents.Bo.totalAnswered, agg.agents.Bo.tttSeconds, agg.agents.Bo.attSeconds], [5, 300, 60]);
+  assert.deepStrictEqual(t.reads.slice(1), [[3, 1, 3, 8], [3, 9, 3, 2]], 'after the date column: rows 3..5, 8 value columns and the 2 duration columns as display text — nothing past column 10');
+  const bd = hJ(c.getCdrDailyBreakdown_('2026-05-04', '2026-05-05', ['Ann', 'Bo']));
+  assert.deepStrictEqual(bd.daily['2026-05-05'], { rung: 7, answered: 7, missed: 0, pctAnswered: 100 });
+  assert.deepStrictEqual([bd.agents.Ann.tttSeconds, bd.agents.Ann.attSeconds, bd.perRepDaily['2026-05-05'].Ann.attSeconds], [2400, 216, 600], 'the breakdown reads the same durations the same way');
+  // The full-width read the old code did, over the same tab, gives the same numbers.
+  const wide = pf1DqeSheet_(data, { strict: false });
+  const w = pf1Ctx_(wide.sheet);
+  w.cdrDqeReadSpan_ = (sheet, span) => { const r = sheet.getRange(span.startRow, 1, span.numRows, 34); return { values: r.getValues(), dur: r.getDisplayValues().map((row) => row.slice(8, 10)) }; };
+  assert.deepStrictEqual(hJ(w.getCdrAgentMetrics_('2026-05-04', '2026-05-05', ['Ann', 'Bo'])).agents, agg.agents, 'value for value, the narrowed read equals the 34-column one');
+});
+
+test('PF1: a tab\u2019s date column is read once per execution for every window over it — when the sheet can be named; a grown tab or an unnamed sheet reads it again (driven)', () => {
+  const data = [pf1R_('2026-05-04', 'Ann', 1, 0, 1, '0:01:00', '0:01:00'), pf1R_('2026-05-05', 'Ann', 1, 0, 1, '0:01:00', '0:01:00')];
+  const named = pf1DqeSheet_(data, { ids: true });
+  const c = pf1Ctx_(named.sheet);
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  c.getCdrDailyBreakdown_('2026-05-04', '2026-05-05', ['Ann']);
+  c.getCdrAgentMetrics_('2026-05-05', '2026-05-05', ['Ann']);
+  assert.strictEqual(named.reads.filter((r) => r[1] === 2 && r[3] === 1).length, 1, 'three windows, ONE date-column read');
+  named.rows.push(pf1R_('2026-05-06', 'Ann', 1, 0, 1, '0:01:00', '0:01:00').concat(Array(24).fill('junk')));
+  c.getCdrAgentMetrics_('2026-05-06', '2026-05-06', ['Ann']);
+  assert.strictEqual(named.reads.filter((r) => r[1] === 2 && r[3] === 1).length, 2, 'a grown tab is a new column — read again');
+  const anon = pf1DqeSheet_(data);
+  const a = pf1Ctx_(anon.sheet);
+  a.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  a.getCdrAgentMetrics_('2026-05-05', '2026-05-05', ['Ann']);
+  assert.strictEqual(anon.reads.filter((r) => r[1] === 2 && r[3] === 1).length, 2, 'a sheet that cannot be named is never served a memo');
+});
+
+test('PF1: a window aggregate is cached against the data\u2019s stamp for six hours — a new stamp is a new key, no stamp keeps the five-minute key family; a named failure, a round read without the aliases, and a test-override read are never kept (driven, all three readers)', () => {
+  const data = [pf1R_('2026-05-04', 'Ann', 3, 1, 2, '0:02:00', '0:01:00')];
+  let stamp = 'S1', degraded = false;
+  const t = pf1DqeSheet_(data);
+  const c = pf1Ctx_(t.sheet, { cdrDataStamp_: () => stamp, cdrNameMapDegraded_: () => degraded });
+  const spec = hJ(c.cdrWindowCacheSpec_('dqe', 'S1', 'h', '2026-05-04', '2026-05-04'));
+  assert.deepStrictEqual(spec, { key: 'cdr_metrics_v5:dqe:S1:h:2026-05-04:2026-05-04', ttl: 21600 });
+  assert.deepStrictEqual(hJ(c.cdrWindowCacheSpec_('csrt', '', 'h', 'a', 'b', 'q')), { key: 'cdr_metrics_v5:csrt:nostamp:h:a:b:q', ttl: 300 }, 'no stamp: the five-minute TTL');
+  const reads0 = () => t.reads.filter((r) => r[1] === 1 && r[3] === 8).length;
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.strictEqual(reads0(), 1, 'the second ask is served from the cache');
+  assert.deepStrictEqual(c._puts[0], ['cdr_metrics_v5:dqe:S1:h:2026-05-04:2026-05-04', 21600]);
+  stamp = 'S2';
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.strictEqual(reads0(), 2, 'THE RULE: new data (a new stamp) is read afresh — never the old aggregate');
+  stamp = '';
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.deepStrictEqual(c._puts[c._puts.length - 1], ['cdr_metrics_v5:dqe:nostamp:h:2026-05-04:2026-05-04', 300], 'a stamp that could not be read caches for five minutes, as before');
+  stamp = 'S3'; degraded = true;
+  const before = c._puts.length;
+  c.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']);
+  c.getCdrDailyBreakdown_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.strictEqual(c._puts.length, before, 'a round read without the aliases is never kept (F16)');
+  degraded = false;
+  c.getCdrDailyBreakdown_('2026-05-04', '2026-05-04', ['Ann']);
+  const bdReads = t.reads.length;
+  c.getCdrDailyBreakdown_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.strictEqual(t.reads.length, bdReads, 'the 30-day breakdown behind Stats is cached too (it had no cache at all)');
+  assert.ok(c._puts.some((p) => /^cdr_metrics_v5:daily:S3:h:/.test(p[0]) && p[1] === 21600));
+  // A missing tab: named, never cached.
+  const gone = pf1Ctx_(null, { cdrDataStamp_: () => 'S1' });
+  gone.getCdrSS_ = () => ({ getSheetByName: () => null, getSpreadsheetTimeZone: () => 'UTC' });
+  assert.ok(/not found/.test(gone.getCdrDailyBreakdown_('a', 'b', ['Ann']).error));
+  assert.ok(gone.getCdrAgentMetrics_('a', 'b', ['Ann']).meta.error);
+  assert.strictEqual(gone._puts.length, 0, 'a failure is not kept (g129)');
+  // Under the CDR test override nothing is read from or written to the cache, and the stamp is never probed.
+  let probed = 0;
+  const fx = pf1Ctx_(pf1DqeSheet_(data).sheet, { cdrDataStamp_: () => { probed++; return 'S1'; }, _TEST_OVERRIDE_CDR_SS_ID: 'fixture' });
+  fx.getCdrAgentMetrics_('2026-05-04', '2026-05-04', ['Ann']); fx.getCdrDailyBreakdown_('2026-05-04', '2026-05-04', ['Ann']);
+  assert.deepStrictEqual([fx._puts.length, probed], [0, 0], 'a fixture read never writes or stamps (F-31)');
+  // The transfer reader: the same key family and TTL.
+  const store = {}, tputs = [];
+  const tc = vm.createContext({ JSON, CONFIG: { CDR_CACHE_KEY: 'cdr_metrics_v5', CDR_CACHE_TTL: 300 }, cdrRosterHash_: () => 'h',
+    csrTransferReadUncached_: () => ({ perRepDaily: {}, agents: {}, meta: {} }), cdrDataStamp_: () => 'S9', cdrNameMapDegraded_: () => false,
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v, ttl) => { store[k] = v; tputs.push([k, ttl]); } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_'), tc);
+  pf1CdrHelpers_(tc);
+  tc.getCsrTransferPerRepDaily_('a', 'b', ['A']);
+  assert.deepStrictEqual(tputs, [['cdr_metrics_v5:csrt:S9:h:a:b:-', 21600]]);
+});
+
+test('PF1: the stamp — the same data is the same stamp; a new row, a changed cell in the newest rows, an alias edit or a missing tab changes it; it is probed at most every two minutes across users and once per execution; a probe that fails is "" and kept nowhere (driven)', () => {
+  const c = vm.createContext({ JSON, String });
+  vm.runInContext(extractRawFunction('Code.js', 'cdrStampFromProbes_'), c);
+  const P = (dqeLast, dqeTail, alias) => [{ name: 'DQE', lastRow: dqeLast, tail: dqeTail }, { name: 'T', lastRow: 5, tail: [['a']] }, { name: 'Alias', lastRow: 2, tail: alias }];
+  const base = c.cdrStampFromProbes_(P(10, [['x', 1]], [['h'], ['old', 'new', 'TRUE']]), pf1Md5Hex_);
+  assert.strictEqual(c.cdrStampFromProbes_(P(10, [['x', 1]], [['h'], ['old', 'new', 'TRUE']]), pf1Md5Hex_), base, 'the same data, the same stamp');
+  assert.notStrictEqual(c.cdrStampFromProbes_(P(11, [['x', 1]], [['h'], ['old', 'new', 'TRUE']]), pf1Md5Hex_), base, 'a new row');
+  assert.notStrictEqual(c.cdrStampFromProbes_(P(10, [['x', 2]], [['h'], ['old', 'new', 'TRUE']]), pf1Md5Hex_), base, 'a corrected cell in the newest rows (a re-import of yesterday)');
+  assert.notStrictEqual(c.cdrStampFromProbes_(P(10, [['x', 1]], [['h'], ['old', 'new', 'FALSE']]), pf1Md5Hex_), base, 'an alias switched off');
+  assert.notStrictEqual(c.cdrStampFromProbes_([{ name: 'DQE', missing: true }], pf1Md5Hex_), base, 'a missing tab');
+  // The probe: memo, cache, failure.
+  const store = {}, puts = [];
+  let opens = 0, fail = false;
+  const tab = (rows) => ({ getLastRow: () => rows.length, getRange: (r, col, n, w) => ({ getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w)) }) });
+  const tabs = { 'DQE Historical Data': tab([['h'], ['1'], ['2']]), 'CSR Transfer Historical Data': tab([['h'], ['t']]), 'Agent Alias Overrides': tab([['Old'], ['a']]) };
+  const mk = () => {
+    const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300 }, CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 }, CSR_TRANSFER_TAB: 'CSR Transfer Historical Data',
+      CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300,
+      Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
+      getCdrSS_: () => { opens++; if (fail) throw new Error('down'); return { getSheetByName: (n) => tabs[n] || null }; },
+      CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v, t) => { store[k] = v; puts.push([k, t]); } }) } });
+    vm.runInContext('var _cdrStampMemo = null;', ctx);
+    ['cdrDigestHex_', 'cdrStampFromProbes_', 'cdrDataStamp_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return ctx;
+  };
+  const a = mk();
+  const s1 = a.cdrDataStamp_();
+  assert.ok(/^[0-9a-f]{32}$/.test(s1) && a.cdrDataStamp_() === s1 && opens === 1, 'a 32-hex stamp; asked twice in one execution, probed once');
+  assert.deepStrictEqual(puts, [['cdr_stamp_v1', 120]], 'kept two minutes for every other user');
+  const b = mk();
+  assert.strictEqual(b.cdrDataStamp_(), s1); assert.strictEqual(opens, 1, 'another execution inside two minutes reads the kept stamp, not the sheet');
+  delete store.cdr_stamp_v1; fail = true;
+  const f = mk();
+  assert.strictEqual(f.cdrDataStamp_(), '', 'a probe that fails is no stamp');
+  assert.ok(!store.cdr_stamp_v1, 'and is kept nowhere');
+});
+
+test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle under the test override and while the stamp is the one it last warmed; on new data it reads the dashboard\u2019s three windows and the Stats default trend for the cohort, and remembers the stamp only when every read worked; no stamp is a failed run (driven + registries)', () => {
+  const asked = [], store = {};
+  let stamp = 'S1', fail = '';
+  const ctx = vm.createContext({ JSON, String, Date, Math, console: { log() {} }, CONFIG: { TIMEZONE: 'America/Chicago' },
+    DASHBOARD_PERIOD_KEYS: ['yesterday', 'mtd', 'ytd'], CDR_WARM_CACHE_KEY: 'cdr_warm_stamp_v1', CDR_WINDOW_CACHE_TTL: 21600, heartbeats: [],
+    assertManagerCaller_: (l) => asked.push('gate:' + l), runAutomationJob_: (k, fn) => ({ key: k, outcome: fn().outcome }),
+    automationOutcome_: (st, msg, sk) => ({ status: st, message: msg || '', skipped: sk || [] }),
+    stampDigestLastRun_: (k) => asked.push('beat:' + k), cdrDataStamp_: () => stamp,
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v) => { store[k] = v; } }) },
+    getEmployeeRosterRows_: () => [['h'], ['Ann', 'a@x'], ['Gone', ''], ['Bo', 'b@x']], EMP: { NAME: 0 }, empRosterEmail_: (r) => r[1],
+    Utilities: { formatDate: () => '2026-11-09' },
+    dashboardPeriodRange_: (pk) => ({ yesterday: { from: '2026-11-06', to: '2026-11-06' }, mtd: { from: '2026-11-01', to: '2026-11-06' }, ytd: { from: '2026-01-01', to: '2026-11-06' } })[pk],
+    prevWorkdayIso_: () => '2026-11-06', isoFromUtc_: (d) => d.toISOString().slice(0, 10),
+    getCdrAgentMetrics_: (f, t, n) => { asked.push('dqe ' + f + '..' + t + ' ' + n.join(',')); return fail === 'dqe' ? { agents: {}, meta: { error: 'gone' } } : { agents: {}, meta: {} }; },
+    cdrAgentsOrThrow_: (r) => { if (r.meta.error) throw new Error(r.meta.error); return r.agents; },
+    getCsrTransferPerRepDaily_: (f, t) => { asked.push('csrt ' + f + '..' + t); return { meta: {} }; },
+    getCdrDailyBreakdown_: (f, t) => { asked.push('daily ' + f + '..' + t); return {}; } });
+  ['cdrCohortNames_', 'warmCdrMetricsCache'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  let r = ctx.warmCdrMetricsCache();
+  assert.strictEqual(r.key, 'CdrCacheWarm');
+  assert.strictEqual(r.outcome.status, 'ok');
+  assert.deepStrictEqual(asked.slice(0, 2), ['gate:warmCdrMetricsCache', 'beat:cdrWarm'], 'gate, then the heartbeat');
+  assert.deepStrictEqual(asked.filter((x) => /^(dqe|daily)/.test(x)), ['dqe 2026-11-06..2026-11-06 Ann,Bo', 'dqe 2026-11-01..2026-11-06 Ann,Bo', 'dqe 2026-01-01..2026-11-06 Ann,Bo', 'daily 2026-10-08..2026-11-06'],
+    'the three dashboard windows for the cohort (no-email rows skipped — the cards\u2019 own list), then the Stats default 30-day trend');
+  assert.strictEqual(store.cdr_warm_stamp_v1, 'S1', 'the warmed stamp is remembered');
+  asked.length = 0;
+  assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'idle', 'nothing changed: idle');
+  assert.ok(!asked.some((x) => /^dqe/.test(x)), 'and reads nothing');
+  stamp = 'S2'; fail = 'dqe';
+  r = ctx.warmCdrMetricsCache();
+  assert.strictEqual(r.outcome.status, 'partial');
+  assert.ok(/yesterday: gone/.test(r.outcome.message) && r.outcome.skipped.length === 3);
+  assert.strictEqual(store.cdr_warm_stamp_v1, 'S1', 'a run that could not read is not remembered — the next hour tries again');
+  stamp = '';
+  assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'failed', 'no stamp: the CDR Report could not be read');
+  ctx._TEST_OVERRIDE_CDR_SS_ID = 'fixture'; stamp = 'S3'; asked.length = 0;
+  assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'idle');
+  assert.ok(!asked.some((x) => /^dqe/.test(x)), 'never under the test override');
+  const cfg = fs.readFileSync(path.join(__dirname, '../../web-app/00_config.js'), 'utf8');
+  assert.ok(/runHourlyJobs:\s*\[[^\]]*'warmCdrMetricsCache'/.test(cfg) && /warmCdrMetricsCache:\s*'CdrCacheWarm'/.test(cfg) && /cdrWarm: 'CdrCacheWarm'/.test(cfg) && /CdrCacheWarm: 'Dashboard call-data read-ahead'/.test(cfg), 'the dispatcher and every health registry');
+  assert.ok(/cdrWarm: 2 \}/.test(serverSource()), 'an hourly heartbeat, stale past 2h');
+  const cn = fs.readFileSync(path.join(__dirname, '../../web-app/cn/script_callnotes.html'), 'utf8');
+  assert.ok(/cdrWarm: 'Dashboard call-data read-ahead'/.test(cn) && /cdrWarm: \{ label: 'Dashboard call-data read-ahead'/.test(cn), 'named on Admin \u2192 System');
+});
+
+test('PF1: the cards and Stats take ONE cohort list, so the read-ahead\u2019s windows are the ones they ask for; the transfer read takes only its columns unless the per-queue block is asked for; both endpoints log their time (driven + source)', () => {
+  const c = vm.createContext({ String, EMP: { NAME: 0 }, empRosterEmail_: (r) => r[1] });
+  vm.runInContext(extractRawFunction('Code.js', 'cdrCohortNames_'), c);
+  assert.deepStrictEqual(hJ(c.cdrCohortNames_([['h'], [' Ann ', 'a@x'], ['', 'z@x'], ['Gone', ''], ['Bo', 'b@x']])), ['Ann', 'Bo'], 'named rows with an email, trimmed, in roster order');
+  ['getDashboardMetrics', 'getMyMetrics'].forEach((fn) => {
+    const b = extractRawFunction('Code.js', fn);
+    assert.ok(/var allNames = cdrCohortNames_\(getEmployeeRosterRows_\(\)\)/.test(b), fn + ' takes the one list');
+    assert.ok(/: cached, ' \+ \(Date\.now\(\) - t0\)/.test(b) && /: read, ' \+ \(Date\.now\(\) - t0\)/.test(b), fn + ' logs its time, cached or read');
+  });
+  const tr = extractRawFunction('Code.js', 'csrTransferReadUncached_');
+  assert.ok(/const trWidth = withQueues \? CSR_TRANSFER_NUM_COLS : CSRT\.TRANSFERRED \+ 1;/.test(tr) && /getRange\(span\.startRow, 1, span\.numRows, trWidth\)/.test(tr), 'the transfer read: 7 columns, or all 19 with the per-queue block');
+  assert.ok(/_cdrStampMemo = null;/.test(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8')), 'the editor suite resets the stamp memo across the override boundary');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

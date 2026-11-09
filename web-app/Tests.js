@@ -329,9 +329,11 @@ function _resetCdrCaches_() {
 function _clearCdrCacheForDate_(date) {
   try {
     const cache = CacheService.getScriptCache();
-    const keys = [
-      CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_([_TEST_INDIA_NAME]) + ':' + date + ':' + date,
-    ];
+    // PF1: the keys are built by the production spec — with the current stamp
+    // and with none (the five-minute family used when the stamp cannot be read).
+    const stamp = cdrDataStamp_();
+    const keyFor = function (h) { return [cdrWindowCacheSpec_('dqe', stamp, h, date, date).key, cdrWindowCacheSpec_('dqe', '', h, date, date).key]; };
+    let keys = keyFor(cdrRosterHash_([_TEST_INDIA_NAME]));
     const roster = getEmployeeRosterRows_();
     const names = [];
     for (let r = 1; r < roster.length; r++) {
@@ -344,7 +346,7 @@ function _clearCdrCacheForDate_(date) {
       const n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }
-    keys.push(CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_(names) + ':' + date + ':' + date);
+    keys = keys.concat(keyFor(cdrRosterHash_(names)));
     cache.removeAll(keys);
   } catch (e) {}
 }
