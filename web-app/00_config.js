@@ -1251,6 +1251,7 @@ const DIGEST_ERROR_KEYS = {
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
   spanishEscalation: 'SpanishEscalationDigest',   // E4 (cycle 25, G5)
   payWeek: 'PayWeekReminders',   // P1 (operator 2026-11-05)
+  cdrWarm: 'CdrCacheWarm',   // PF1 (operator 2026-11-09)
 };
 // The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
 // tabled key takes the table's label). ONE map, shipped on each stamp by
@@ -1268,6 +1269,7 @@ const AUTOMATION_ERROR_LABELS = {
   NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
   SpanishEscalationDigest: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
   PayWeekReminders: 'Pay-week timesheet reminders',   // P1
+  CdrCacheWarm: 'Dashboard call-data read-ahead',   // PF1
 };
 // ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
 // Every installable-trigger job — the standalone TARGETS and every handler a
@@ -1542,7 +1544,7 @@ const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // unchanged. Order inside a group: the cheapest / bounded jobs first, the
 // cross-rep walk last, so a job that runs long cannot starve the others.
 const TRIGGER_GROUPS = {
-  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'sendPayWeekReminders', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral); P1: the pay-week reminder too
+  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'sendPayWeekReminders', 'warmCdrMetricsCache', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral); P1: the pay-week reminder too; PF1: the call-data read-ahead
   runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
   runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
   // 8am manager-tz. checkOpenPunches STAMPS and sendAutomationHealthDigest
@@ -1576,6 +1578,7 @@ const TRIGGER_HANDLER_JOB_KEYS = {
   sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
   sendSpanishEscalationDigest:       'SpanishEscalationDigest',
   sendPayWeekReminders:              'PayWeekReminders',
+  warmCdrMetricsCache:               'CdrCacheWarm',   // PF1
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
@@ -1927,6 +1930,13 @@ var _cdrColumnsValidated = false;
 var _cdrColumnWarning = null;
 var _cdrNameMapCache = null;
 var _cdrNameMapExpiry = 0;
+// PF1 (operator 2026-11-09): the CDR "has the data changed" stamp, memoized
+// per execution (its CacheService tier is cdrDataStamp_'s), and each tab's
+// date column as ISO days, per execution — one window read after another
+// (the dashboard's period and its comparison, the Stats trend and the day)
+// read the whole column once, not once per window. _resetCdrCaches_ clears both.
+var _cdrStampMemo = null;
+var _cdrDateColMemo = {};
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;
@@ -1972,6 +1982,20 @@ var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
 // stays the documented trade: a load BEFORE the import pins the pre-import
 // aggregate for up to 6h (the Metrics tabs keep their 5-min caches).
 var DASHBOARD_CACHE_TTL = 21600;
+// PF1 (operator 2026-11-09 — "Your numbers", "Department" and Stats load
+// slowly). Every aggregate read from the CDR Report (a DQE window, a transfer
+// window, the 30-day breakdown) is cached against a STAMP of the data rather
+// than for five minutes: each tab's row count and a digest of its newest
+// CDR_STAMP_TAIL_ROWS rows (where the daily import writes), and the alias tab
+// whole. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
+// corrected data reaches every reader within that — sooner than the old
+// five-minute tier — and an unchanged tab is never re-scanned for the window
+// TTL. A stamp that cannot be read caches nothing longer than before.
+var CDR_STAMP_CACHE_KEY = 'cdr_stamp_v1';
+var CDR_STAMP_TTL = 120;
+var CDR_STAMP_TAIL_ROWS = 300;
+var CDR_WINDOW_CACHE_TTL = 21600;
+var CDR_WARM_CACHE_KEY = 'cdr_warm_stamp_v1';
 var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 // ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
 // (design handoff PR 6, T1). The dashboard already pays ~3 RPCs for the

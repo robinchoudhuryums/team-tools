@@ -4052,6 +4052,54 @@
     "resolveDeptRequest"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: narrowed CDR reads, stamp-keyed caches, the call-data read-ahead job",
+   "added": [
+    "CDR_STAMP_CACHE_KEY",
+    "CDR_STAMP_TAIL_ROWS",
+    "CDR_STAMP_TTL",
+    "CDR_WARM_CACHE_KEY",
+    "CDR_WINDOW_CACHE_TTL",
+    "_cdrDateColMemo",
+    "_cdrStampMemo",
+    "cdrCohortNames_",
+    "cdrDailyBreakdownUncached_",
+    "cdrDataStamp_",
+    "cdrDateColIsos_",
+    "cdrDigestHex_",
+    "cdrDqeReadSpan_",
+    "cdrStampFromProbes_",
+    "cdrWindowCacheSpec_",
+    "warmCdrMetricsCache"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "TRIGGER_GROUPS",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "cdrDqeWindowSpan_",
+    "computeAutomationHealth_",
+    "csrTransferReadUncached_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getCsrTransferPerRepDaily_",
+    "getDashboardMetrics",
+    "getMyMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: the read-ahead job ahead of the auto-assign in the hourly group",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "TRIGGER_GROUPS"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4159,7 +4207,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "fe10da82995d9188"
+   "sha": "7582710ead0e7fba"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -4276,6 +4324,21 @@
    "kind": "const",
    "sha": "c0fb04450cddb2d8"
   },
+  "CDR_STAMP_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "3582afdc9eabdc1b"
+  },
+  "CDR_STAMP_TAIL_ROWS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "1f3f441557d74991"
+  },
+  "CDR_STAMP_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "3eb1a5591d4f11ef"
+  },
   "CDR_STANDARDS_CACHE_KEY_": {
    "file": "40_metrics.js",
    "kind": "var",
@@ -4285,6 +4348,16 @@
    "file": "40_metrics.js",
    "kind": "var",
    "sha": "7cec94a50b2228c2"
+  },
+  "CDR_WARM_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "c37f0dd1fe199360"
+  },
+  "CDR_WINDOW_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "ecdf1ba5e33d85d1"
   },
   "CLIENT_ERRORS_TAB": {
    "file": "00_config.js",
@@ -4774,7 +4847,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c69de68c0c97b069"
+   "sha": "c1cee1774ae3829c"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -7019,12 +7092,12 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b2b9600d6787457a"
+   "sha": "3ee0a13c1791e26e"
   },
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "59cc58f608fb4452"
+   "sha": "5dfe51fc4007ef2d"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -7136,6 +7209,11 @@
    "kind": "var",
    "sha": "6b236581a4684097"
   },
+  "_cdrDateColMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "760adfc01aa77ea9"
+  },
   "_cdrHolidaysMemo": {
    "file": "00_config.js",
    "kind": "var",
@@ -7155,6 +7233,11 @@
    "file": "40_metrics.js",
    "kind": "var",
    "sha": "361f01ee3f6c0616"
+  },
+  "_cdrStampMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "5ce0ad68ac9cf42a"
   },
   "_cdrStandardsMemo": {
    "file": "00_config.js",
@@ -7951,15 +8034,45 @@
    "kind": "function",
    "sha": "73be1c0b23555f9f"
   },
+  "cdrCohortNames_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4758faafc976b589"
+  },
+  "cdrDailyBreakdownUncached_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "0b7e063b1d88ec94"
+  },
   "cdrDashboardDept_": {
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "cb4c6f541e38c6e1"
   },
+  "cdrDataStamp_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "11283761e9f4d929"
+  },
+  "cdrDateColIsos_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "af774be34786b8f9"
+  },
+  "cdrDigestHex_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "6fe68b9eaacef9bb"
+  },
+  "cdrDqeReadSpan_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "01ed64b75f2e5a4c"
+  },
   "cdrDqeWindowSpan_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e156543b35bc3378"
+   "sha": "19d6ae1b337012f6"
   },
   "cdrExcludeSet_": {
    "file": "40_metrics.js",
@@ -8016,6 +8129,11 @@
    "kind": "function",
    "sha": "c6d9f05b3cfd5420"
   },
+  "cdrStampFromProbes_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "3c5ce536d8876e0b"
+  },
   "cdrStandardProbe_": {
    "file": "10_core.js",
    "kind": "function",
@@ -8025,6 +8143,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "82f001cfb516c7f2"
+  },
+  "cdrWindowCacheSpec_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e0873bd6bce962c6"
   },
   "checkIntakeAddress": {
    "file": "60_intake.js",
@@ -8434,7 +8557,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "be02d5d0ba91fbfb"
+   "sha": "00c08b23f545a438"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -8519,7 +8642,7 @@
   "csrTransferReadUncached_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b786d7e17afd4d0e"
+   "sha": "ee5d18cffba22de6"
   },
   "dashLayoutCompact_": {
    "file": "20_timeclock.js",
@@ -9554,7 +9677,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "43ba56ce1f8088ea"
+   "sha": "275171ac1544bbdd"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -9564,7 +9687,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "96cc380dd76e688f"
+   "sha": "7ad88d18f86f5d2d"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -9619,7 +9742,7 @@
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "74d4f959133ad330"
+   "sha": "862be30580429762"
   },
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
@@ -9629,7 +9752,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "9e2312012b701b22"
+   "sha": "5a377c403edb7863"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -9979,7 +10102,7 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e77c728c92341337"
+   "sha": "7658e60f9958bff5"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
@@ -14270,6 +14393,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "3785814272ebec0b"
+  },
+  "warmCdrMetricsCache": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "a67aec2e02a8da1c"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

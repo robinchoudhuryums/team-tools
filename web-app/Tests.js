@@ -304,6 +304,8 @@ function _resetCdrCaches_() {
   try {
     _cdrNameMapCache = null;
     _cdrNameMapExpiry = 0;
+    _cdrStampMemo = null;   // PF1
+    _cdrDateColMemo = {};   // PF1
     _cdrColumnsValidated = false;
     _cdrColumnWarning = null;
     // F6 (cycle 12): the CSR Transfer tab's header check is once-per-session

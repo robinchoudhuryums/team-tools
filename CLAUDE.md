@@ -968,10 +968,10 @@ this block, or the command that prints the number.
 | Visual matrix scenarios | 260 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |
-| Manager-gated endpoints | 110 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
+| Manager-gated endpoints | 111 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
-| Jobs riding a dispatcher | 13 | `TRIGGER_GROUPS` |
+| Jobs riding a dispatcher | 14 | `TRIGGER_GROUPS` |
 | localStorage keys | 24 | `ums…` literals in `web-app/` |
 | Invariant library entries | 392 | `.cycle/config.md` |
 | Regression scenarios (S*) | 160 | `.cycle/config.md` |

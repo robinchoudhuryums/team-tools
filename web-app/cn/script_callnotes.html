@@ -13004,6 +13004,7 @@ var CN_DIGEST_LABELS_ = {
   automationHealth: 'Automation-health failure digest',
   spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
   payWeek: 'Pay-week timesheet reminders',   // P1
+  cdrWarm: 'Dashboard call-data read-ahead',   // PF1
   spanishAutoAssign: 'Spanish Inbox auto-assign',
   deptReplyScan: 'Dept Request reply scan',
 };
@@ -13321,6 +13322,7 @@ function cnRenderHealthPanel_(res) {
     automationHealth: { label: 'Automation-health failure digest', expect: 'daily 9am — stale past 26h; heartbeats on an all-clear morning too, and its own failure is stamped' },
     spanishEscalation: { label: 'Spanish Inbox escalation digest', expect: 'daily 8am — requests waiting 7+ days, to managers; heartbeats on a morning with none; stale past 26h' },   // E4
     payWeek: { label: 'Pay-week timesheet reminders', expect: 'hourly — at 9am Central on each employee\'s pay-week Monday, while the toggle is on; heartbeats every hour; stale past 2h' },   // P1 (cycle 25, G5)
+    cdrWarm: { label: 'Dashboard call-data read-ahead', expect: 'hourly — reads the Dashboard\'s three call-data periods ahead once new CDR data lands, so the first person does not wait; idle while nothing changed; heartbeats every hour; stale past 2h' },   // PF1
   };
   var digestsHtml = (res.digests || []).map(function (d) {
     var meta = DIGEST_LABELS[d.key] || { label: d.key, expect: '' };

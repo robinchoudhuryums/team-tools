@@ -240,15 +240,107 @@ function cdrDqeWindowSpan_(sheet, lastRow, fromIso, toIso, tz, dateCol) {
   if (lastRow < 2) return null;
   // M10 (cycle 22): `dateCol` (1-based) lets the CSR Transfer tab share the
   // span rule; omitted, it is the DQE Date column as before.
-  var dates = sheet.getRange(2, dateCol || CDR.DATE, lastRow - 1, 1).getValues();
+  // PF1: the column as ISO days, read once per execution per tab.
+  var isos = cdrDateColIsos_(sheet, lastRow, tz, dateCol || CDR.DATE);
   var first = -1, last = -1;
-  for (var i = 0; i < dates.length; i++) {
-    var iso = cdrRowDateIso_(dates[i][0], tz);
+  for (var i = 0; i < isos.length; i++) {
+    var iso = isos[i];
     if (!iso || iso < fromIso || iso > toIso) continue;
     if (first < 0) first = i;
     last = i;
   }
   return first < 0 ? null : { startRow: 2 + first, numRows: last - first + 1 };
+}
+/** PF1 — a tab's date column (data rows) as ISO days, read ONCE per
+ *  execution: the dashboard reads a period and its comparison window, and
+ *  Stats a 30-day trend and a day, each of which used to re-read the whole
+ *  column. Memoized only when the sheet can be named (its spreadsheet's id and
+ *  its own id) — keyed with the row count and tz, so a grown tab or another
+ *  spreadsheet is never served a stale column; an unnamed sheet reads fresh. */
+function cdrDateColIsos_(sheet, lastRow, tz, dateCol) {
+  var key = null;
+  try {
+    if (typeof sheet.getSheetId === 'function' && typeof sheet.getParent === 'function') {
+      key = sheet.getParent().getId() + ':' + sheet.getSheetId() + ':' + dateCol + ':' + lastRow + ':' + tz;
+    }
+  } catch (e) { key = null; }
+  if (key && _cdrDateColMemo[key]) return _cdrDateColMemo[key];
+  var dates = sheet.getRange(2, dateCol, lastRow - 1, 1).getValues();
+  var isos = new Array(dates.length);
+  for (var i = 0; i < dates.length; i++) isos[i] = cdrRowDateIso_(dates[i][0], tz);
+  if (key) _cdrDateColMemo[key] = isos;
+  return isos;
+}
+/** PF1 — the DQE columns a window read uses, and only those: plain values for
+ *  column 1 through TOTAL_ANSWERED (so `values[i][CDR.X - 1]` keeps its
+ *  meaning), and DISPLAY values for the two duration columns alone (g00 /
+ *  INV-64 — never getValues on a duration). The old read took 34 columns,
+ *  twice. `durTtt(i)` / `durAtt(i)` read the duration cells. */
+function cdrDqeReadSpan_(sheet, span) {
+  if (!span) return { values: [], dur: [] };
+  return {
+    values: sheet.getRange(span.startRow, 1, span.numRows, CDR.TOTAL_ANSWERED).getValues(),
+    dur: sheet.getRange(span.startRow, CDR.TTT, span.numRows, CDR.ATT - CDR.TTT + 1).getDisplayValues(),
+  };
+}
+/** PF1 — a short digest of a string (MD5, hex), for stamps and keys. */
+function cdrDigestHex_(str) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(str)).map(function (b) {
+    return (b < 0 ? b + 256 : b).toString(16).padStart(2, '0');
+  }).join('');
+}
+/** PURE (Node-pinned) — the stamp of the CDR data from each watched tab's
+ *  probe: `probes` = [{ name, lastRow, tail }] where `tail` is the tab's newest
+ *  rows as display text (the whole tab for the alias overrides), or
+ *  `missing: true`. The same data gives the same stamp; a new row, a changed
+ *  cell in the tail, a new alias or a missing tab changes it. `digest` is the
+ *  hash (cdrDigestHex_ in production). */
+function cdrStampFromProbes_(probes, digest) {
+  var parts = (probes || []).map(function (p) {
+    if (!p || p.missing) return (p && p.name) + ':none';
+    return p.name + ':' + p.lastRow + ':' + digest(JSON.stringify(p.tail || []));
+  });
+  return digest(parts.join('|'));
+}
+/** PF1 — the CDR data stamp: '' when it cannot be read (the callers then cache
+ *  for the old five minutes only). Probed at most every CDR_STAMP_TTL seconds
+ *  across all users (a CacheService entry) and once per execution. Watches the
+ *  DQE tab and the transfer tab (row count + the newest CDR_STAMP_TAIL_ROWS
+ *  rows of the columns the readers use) and the alias overrides whole — an
+ *  alias edit changes who a row counts for. Never under the CDR test override
+ *  (the callers bypass every cache there). */
+function cdrDataStamp_() {
+  if (_cdrStampMemo !== null) return _cdrStampMemo;
+  var cache = CacheService.getScriptCache();
+  try { var hit = cache.get(CDR_STAMP_CACHE_KEY); if (hit) { _cdrStampMemo = hit; return hit; } } catch (e) {}
+  var stamp = '';
+  try {
+    var ss = getCdrSS_();
+    var probes = [['DQE Historical Data', CDR.ATT], [CSR_TRANSFER_TAB, CSRT.TRANSFERRED + 1], ['Agent Alias Overrides', 3]].map(function (t) {
+      var sh = ss.getSheetByName(t[0]);
+      if (!sh) return { name: t[0], missing: true };
+      var last = sh.getLastRow();
+      var n = t[0] === 'Agent Alias Overrides' ? Math.max(0, last) : Math.min(CDR_STAMP_TAIL_ROWS, Math.max(0, last - 1));
+      var first = t[0] === 'Agent Alias Overrides' ? 1 : last - n + 1;
+      return { name: t[0], lastRow: last, tail: n > 0 ? sh.getRange(first, 1, n, t[1]).getDisplayValues() : [] };
+    });
+    stamp = cdrStampFromProbes_(probes, cdrDigestHex_);
+  } catch (e) {
+    console.warn('cdrDataStamp_: the CDR stamp could not be read (' + e.message + ') — caching for ' + CONFIG.CDR_CACHE_TTL + 's only');
+    stamp = '';
+  }
+  if (stamp) { try { cache.put(CDR_STAMP_CACHE_KEY, stamp, CDR_STAMP_TTL); } catch (e) {} }
+  _cdrStampMemo = stamp;
+  return stamp;
+}
+/** PURE (Node-pinned) — the key and TTL a CDR window aggregate is cached
+ *  under: with a stamp, keyed by it and kept CDR_WINDOW_CACHE_TTL; without,
+ *  the pre-PF1 key family and the five-minute TTL. */
+function cdrWindowCacheSpec_(family, stamp, rosterHash, from, to, extra) {
+  return {
+    key: CONFIG.CDR_CACHE_KEY + ':' + family + ':' + (stamp || 'nostamp') + ':' + rosterHash + ':' + from + ':' + to + (extra ? ':' + extra : ''),
+    ttl: stamp ? CDR_WINDOW_CACHE_TTL : CONFIG.CDR_CACHE_TTL,
+  };
 }
 function validateCdrColumns_(sheet) {
   if (_cdrColumnsValidated) return _cdrColumnWarning;
@@ -558,7 +650,6 @@ function cdrAgentsOrThrow_(res) {
  */
 function getCdrAgentMetrics_(from, to, rosterNames) {
   var rHash = cdrRosterHash_(rosterNames);
-  var cacheKey = CONFIG.CDR_CACHE_KEY + ':' + rHash + ':' + from + ':' + to;
   var cache = CacheService.getScriptCache();
   // F-31 (cycle 20): bypass the cache whenever a test points the CDR reader at
   // a fixture spreadsheet — the getMyMetrics pattern, which every OTHER cached
@@ -568,6 +659,9 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   // production reads). The editor suite cleared two guessed keys by hand
   // instead; a bypass needs no guessing.
   var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  // PF1: keyed by the data's stamp and kept until the data changes.
+  var spec = cdrWindowCacheSpec_('dqe', useCache ? cdrDataStamp_() : '', rHash, from, to);
+  var cacheKey = spec.key;
   var cached = useCache ? cache.get(cacheKey) : null;
   if (cached) {
     try { return JSON.parse(cached); } catch (_) {}
@@ -586,9 +680,9 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
   // H3: span-bounded -- the date column decides which rows are read at full
   // width; the per-row date filter below still decides which rows COUNT.
   var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
-  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
-  var values = range ? range.getValues() : [];
-  var displays = range ? range.getDisplayValues() : [];
+  var read = cdrDqeReadSpan_(sheet, span);   // PF1: the columns used, the durations as display text
+  var values = read.values, dur = read.dur;
+  var oTtt = 0, oAtt = CDR.ATT - CDR.TTT;
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -632,8 +726,8 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     a.totalMissed  += Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
     var ansRow = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
     a.totalAnswered += ansRow;
-    a.tttSeconds   += cdrParseHms_(displays[i][CDR.TTT - 1]);
-    var att = cdrParseHms_(displays[i][CDR.ATT - 1]);
+    a.tttSeconds   += cdrParseHms_(dur[i][oTtt]);
+    var att = cdrParseHms_(dur[i][oAtt]);
     // M3 (cycle 22): each DQE row is ONE DAY's average, so a range's ATT is
     // the ANSWERED-WEIGHTED mean of them. The plain mean gave a 2-call day the
     // same vote as a 60-call day (and disagreed with the team aggregate,
@@ -656,6 +750,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     offRosterAgents: Object.keys(offRoster).sort(), latestDate: latestDate } };   // F(M-11); MET-5
   try {
     if (!useCache) return result;   // F-31: a fixture read never writes prod's key
+    if (cdrNameMapDegraded_()) return result;   // F16 / PF1: a round read without the aliases is never kept for the window TTL
     var payload = JSON.stringify(result);
     // C10 (cycle 10): CacheService hard-caps values at 100KB — an oversized
     // put THROWS (caught below, but every subsequent read then re-reads the
@@ -669,7 +764,7 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
       if (payload.length > 90000) {
         console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
       }
-      cache.put(cacheKey, payload, CONFIG.CDR_CACHE_TTL);
+      cache.put(cacheKey, payload, spec.ttl);
     }
   } catch (e) {
     console.warn('CDR cache put failed: ' + (e.message || e));
@@ -682,6 +777,26 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
  * Returns { daily: { 'YYYY-MM-DD': { rung, answered, missed, pctAnswered } }, agents: {...} }
  */
 function getCdrDailyBreakdown_(from, to, rosterNames) {
+  // PF1: cached against the data's stamp like the other window readers (it
+  // was the one CDR reader with no cache at all — every Stats open re-read the
+  // roster's 30 days). A named failure or a round read without the aliases is
+  // never kept (g129, F16).
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  var spec = useCache ? cdrWindowCacheSpec_('daily', cdrDataStamp_(), cdrRosterHash_(rosterNames), from, to) : null;
+  if (spec) {
+    try { var hit = CacheService.getScriptCache().get(spec.key); if (hit) return JSON.parse(hit); } catch (_) {}
+  }
+  var out = cdrDailyBreakdownUncached_(from, to, rosterNames);
+  if (spec && out && !out.error && !cdrNameMapDegraded_()) {
+    try {
+      var payload = JSON.stringify(out);
+      if (payload.length <= 95000) CacheService.getScriptCache().put(spec.key, payload, spec.ttl);
+      else console.warn('CDR daily cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' + from + '..' + to);
+    } catch (_) {}
+  }
+  return out;
+}
+function cdrDailyBreakdownUncached_(from, to, rosterNames) {
   var ss = getCdrSS_();
   var sheet = ss.getSheetByName('DQE Historical Data');
   // MET-1 (cycle 23): a MISSING tab is not an empty one — it names itself
@@ -697,9 +812,9 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
 
   // H3: span-bounded (see cdrDqeWindowSpan_); the per-row filter below stays.
   var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz);
-  var range = span ? sheet.getRange(span.startRow, 1, span.numRows, 34) : null;
-  var values = range ? range.getValues() : [];
-  var displays = range ? range.getDisplayValues() : [];
+  var read = cdrDqeReadSpan_(sheet, span);   // PF1: the columns used, the durations as display text
+  var values = read.values, dur = read.dur;
+  var oTtt = 0, oAtt = CDR.ATT - CDR.TTT;
 
   var aliasMap = getCdrNameMap_();
   var nameSet = {};
@@ -726,7 +841,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     var rung    = Number(values[i][CDR.TOTAL_RUNG - 1]) || 0;
     var ans     = Number(values[i][CDR.TOTAL_ANSWERED - 1]) || 0;
     var missed  = Number(values[i][CDR.TOTAL_MISSED - 1]) || 0;
-    var attSec  = cdrParseHms_(displays[i][CDR.ATT - 1]);
+    var attSec  = cdrParseHms_(dur[i][oAtt]);
 
     if (!daily[dateIso]) daily[dateIso] = { rung: 0, answered: 0, missed: 0 };
     daily[dateIso].rung += rung;
@@ -741,7 +856,7 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
     }
     var a = agents[agent];
     a.totalRung += rung; a.totalAnswered += ans; a.totalMissed += missed;
-    a.tttSeconds += cdrParseHms_(displays[i][CDR.TTT - 1]);
+    a.tttSeconds += cdrParseHms_(dur[i][oTtt]);
     if (attSec > 0 && ans > 0) { a.attSum += attSec * ans; a.attCount += ans; }   // M3: answered-weighted
     if (!a._dates[dateIso]) { a._dates[dateIso] = true; a.daysActive++; }
 
@@ -923,14 +1038,16 @@ function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   // key family, TTL and fixture bypass — F-31), because a cold Dashboard load
   // called it up to four times and each call read the whole tab.
   const useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
-  const cacheKey = CONFIG.CDR_CACHE_KEY + ':csrt:' + cdrRosterHash_(rosterNames) + ':' + from + ':' + to + ':' + (withQueues ? 'q' : '-');
+  // PF1: keyed by the data's stamp and kept until the data changes.
+  const spec = cdrWindowCacheSpec_('csrt', useCache ? cdrDataStamp_() : '', cdrRosterHash_(rosterNames), from, to, withQueues ? 'q' : '-');
   if (useCache) {
-    try { const hit = CacheService.getScriptCache().get(cacheKey); if (hit) return JSON.parse(hit); } catch (_) {}
+    try { const hit = CacheService.getScriptCache().get(spec.key); if (hit) return JSON.parse(hit); } catch (_) {}
   }
   const out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
-  // Only a CLEAN read is cached — an error must not be served for five minutes (g129).
-  if (useCache && out && out.meta && !out.meta.error) {
-    try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (_) { /* over the 100KB value cap — uncached */ }
+  // Only a CLEAN read is cached — an error must not be served for five minutes (g129),
+  // nor a round read without the aliases (F16).
+  if (useCache && out && out.meta && !out.meta.error && !cdrNameMapDegraded_()) {
+    try { CacheService.getScriptCache().put(spec.key, JSON.stringify(out), spec.ttl); } catch (_) { /* over the 100KB value cap — uncached */ }
   }
   return out;
 }
@@ -945,7 +1062,10 @@ function csrTransferReadUncached_(from, to, rosterNames, withQueues) {
   // M10 (cycle 22): span-bounded by the Date column (the H3 rule, g125) —
   // the per-row date filter below still decides which rows COUNT.
   const span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz, CSRT.DATE + 1);
-  const displays = span ? sheet.getRange(span.startRow, 1, span.numRows, CSR_TRANSFER_NUM_COLS).getDisplayValues() : [];
+  // PF1: without the per-queue block, only the columns through TRANSFERRED are
+  // read (the indices below are unchanged — the read still starts at column 1).
+  const trWidth = withQueues ? CSR_TRANSFER_NUM_COLS : CSRT.TRANSFERRED + 1;
+  const displays = span ? sheet.getRange(span.startRow, 1, span.numRows, trWidth).getDisplayValues() : [];
   // Header row is a separate 1-row read — the data range starts at row 2.
   const queueCols = withQueues
     ? csrTransferQueueColumns_(sheet.getRange(1, 1, 1, CSR_TRANSFER_NUM_COLS).getDisplayValues()[0])
@@ -1466,12 +1586,33 @@ function dashboardTeamTransfer_(transferAgentsMap, minCohort) {
   if (cohort < minCohort) return { cohort: cohort, transfer: null };
   return { cohort: cohort, transfer: { totalCalls: calls, transferred: transferred, transferPct: calls > 0 ? Math.round((transferred / calls) * 1000) / 10 : null } };
 }
+/** PURE (Node-pinned; PF1) — the CDR cohort: every roster row with a name and
+ *  an email, in roster order. F4 (cycle 12): skip rows with no email — the skip
+ *  every sibling roster walk applies (getManagerDashboard, getTeammateStatus,
+ *  getEmployeesList, computeMissedClockOuts_, getCoveragePlan). These names are
+ *  the cohort for INV-124's N=3 anonymization guard AND the team benchmark, so
+ *  an offboarded/placeholder row (name kept, email cleared) whose name still
+ *  appears in DQE history both inflated the cohort and contaminated the average
+ *  reps compare themselves to. getDashboardMetrics, getMyMetrics and the warm
+ *  job each walked this list by hand; one list means one roster hash, so a
+ *  window the warm job reads is the window the cards ask for. */
+function cdrCohortNames_(roster) {
+  var out = [];
+  for (var r = 1; r < (roster || []).length; r++) {
+    var nm = String(roster[r][EMP.NAME] || '').trim();
+    if (!nm) continue;
+    if (!empRosterEmail_(roster[r])) continue;   // F3: one predicate
+    out.push(nm);
+  }
+  return out;
+}
 /** Dashboard carousels — period-aggregated own + cohort-guarded team CDR.
  *  Rep-callable (own is the caller's; team is anonymized per INV-124).
  *  periodKey ∈ DASHBOARD_PERIOD_KEYS. Result-cached per (emp, period) for
  *  CDR_CACHE_TTL, bypassed under the CDR test override (the getMyMetrics
  *  discipline). Returns own:null / team:null when there's no data / cohort < 3. */
 function getDashboardMetrics(periodKey) {
+  var t0 = Date.now();   // PF1: the time to the execution log
   try {
     var emp = getEmployeeInfo_();
     if (!emp) return { error: 'Account not registered.' };
@@ -1510,7 +1651,7 @@ function getDashboardMetrics(periodKey) {
     // carries the projection's workday basis — a v7 entry is a calendar-day one.
     var cacheKey = 'dash_metrics_v8:' + emp.id + ':' + periodKey + ':' + todayIso;
     if (useCache) {
-      try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; return co; } } catch (_) {}
+      try { var hit = cache.get(cacheKey); if (hit) { var co = JSON.parse(hit); co.cached = true; console.log('getDashboardMetrics ' + periodKey + ': cached, ' + (Date.now() - t0) + ' ms'); return co; } } catch (_) {}
     }
 
     var range = dashboardPeriodRange_(periodKey, todayIso);
@@ -1519,22 +1660,7 @@ function getDashboardMetrics(periodKey) {
     if (!range) return { error: 'Unknown period.' };
     var from = range.from, to = range.to;
 
-    var roster = getEmployeeRosterRows_();
-    var allNames = [];
-    for (var r = 1; r < roster.length; r++) {
-      var nm = String(roster[r][EMP.NAME] || '').trim();
-      if (!nm) continue;
-      // F4 (cycle 12): skip rows with no email — the skip every sibling roster
-      // walk applies (getManagerDashboard, getTeammateStatus, getEmployeesList,
-      // computeMissedClockOuts_, and getCoveragePlan since cycle-9 L-2). These
-      // names are the cohort for INV-124's N=3 anonymization guard AND the
-      // team benchmark, so an offboarded/placeholder row (name kept, email
-      // cleared) whose name still appears in DQE history both inflated the
-      // cohort — un-hiding the team line on a day fewer than 3 CURRENT reps
-      // reported — and contaminated the average reps compare themselves to.
-      if (!empRosterEmail_(roster[r])) continue;   // F3: one predicate
-      allNames.push(nm);
-    }
+    var allNames = cdrCohortNames_(getEmployeeRosterRows_());   // PF1: the one cohort list (the warm job reads the same, so its key matches)
 
     // OPERATOR DECISION (2026-08-06): the Dashboard Team/Department card shows
     // the team aggregate whenever ANY rep reported — the N=3 hide is dropped
@@ -1655,6 +1781,7 @@ function getDashboardMetrics(periodKey) {
     if (useCache && !noteRes.unavailable && !prevUnavailable && cur.team && !importPending && !cdrNameMapDegraded_()) {   // F16: never pin a round read without the aliases
       try { cache.put(cacheKey, JSON.stringify(result), DASHBOARD_CACHE_TTL); } catch (_) {}
     }
+    console.log('getDashboardMetrics ' + periodKey + ': read, ' + (Date.now() - t0) + ' ms');   // PF1
     return result;
   } catch (err) { return { error: err.message }; }
 }
@@ -1664,6 +1791,7 @@ function getDashboardMetrics(periodKey) {
  * Also returns a 30-day % Answered trend ending on the given date.
  */
 function getMyMetrics(date) {
+  var t0 = Date.now();   // PF1: the time to the execution log
   try {
     var emp = getEmployeeInfo_();
     if (!emp) return { error: 'Account not registered.' };
@@ -1688,7 +1816,7 @@ function getMyMetrics(date) {
     if (useMetricsCache) {
       try {
         var cachedMy = metricsCache.get(myCacheKey);
-        if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; return co; }
+        if (cachedMy) { var co = JSON.parse(cachedMy); co.cached = true; console.log('getMyMetrics: cached, ' + (Date.now() - t0) + ' ms'); return co; }
       } catch (_) {}
     }
 
@@ -1701,17 +1829,7 @@ function getMyMetrics(date) {
     // T4 #5/#6 — read the WHOLE roster's per-rep-per-day matrix so the team
     // average can be computed (anonymized, cohort-guarded). Only AGGREGATES
     // leave the server; no individual rep's row is ever returned to the caller.
-    var roster = getEmployeeRosterRows_();
-    var allNames = [];
-    for (var r = 1; r < roster.length; r++) {
-      var nm = String(roster[r][EMP.NAME] || '').trim();
-      if (!nm) continue;
-      // F4 (cycle 12): same no-email skip as getDashboardMetrics — this list is
-      // the cohort for the INV-124 N=3 anonymization guard and the team
-      // average. See the comment there for the full rationale.
-      if (!empRosterEmail_(roster[r])) continue;   // F3: one predicate
-      allNames.push(nm);
-    }
+    var allNames = cdrCohortNames_(getEmployeeRosterRows_());   // PF1: the one cohort list
     var breakdown = getCdrDailyBreakdown_(trendFrom, trendTo, allNames);
     var transfer = getCsrTransferPerRepDaily_(trendFrom, trendTo, allNames);
     var dqPRD = breakdown.perRepDaily || {};
@@ -1812,6 +1930,7 @@ function getMyMetrics(date) {
     if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable) {
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
+    console.log('getMyMetrics: read, ' + (Date.now() - t0) + ' ms');   // PF1
     return result;
   } catch (err) { return { error: err.message }; }
 }
@@ -2365,3 +2484,41 @@ function getMetricsAmbient() {
 //  Call Notes email flow (INV-41). The PPD recommendation engine
 //  (intakeFilterRecommendations_) is server-authoritative + Node-tested.
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Hourly rider (TRIGGER_GROUPS.runHourlyJobs; PF1, operator 2026-11-09) —
+ *  after the daily CDR import, read the dashboard's three windows (yesterday,
+ *  month to date, year to date) for the whole cohort once, so the first person
+ *  to open the Dashboard does not wait for a year of call data. It does
+ *  nothing while the CDR stamp is the one it last warmed (no data changed) and
+ *  under the CDR test override. The windows are the ones getDashboardMetrics
+ *  asks for in CONFIG.TIMEZONE's today; a rep in another timezone on another
+ *  date reads their own window as before. Heartbeats before anything else. */
+function warmCdrMetricsCache() {
+  assertManagerCaller_('warmCdrMetricsCache');  // see sendDailyMissedPunchAlerts note
+  return runAutomationJob_('CdrCacheWarm', function () {
+    stampDigestLastRun_('cdrWarm');
+    if (typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID) return { outcome: automationOutcome_('idle') };
+    var stamp = cdrDataStamp_();
+    if (!stamp) return { outcome: automationOutcome_('failed', 'The CDR Report could not be read to check for new data.') };
+    var cache = CacheService.getScriptCache();
+    var last = null;
+    try { last = cache.get(CDR_WARM_CACHE_KEY); } catch (e) { last = null; }
+    if (last === stamp) return { outcome: automationOutcome_('idle') };
+    var names = cdrCohortNames_(getEmployeeRosterRows_());
+    var todayIso = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    var t0 = Date.now(), failed = [];
+    DASHBOARD_PERIOD_KEYS.forEach(function (pk) {
+      var range = dashboardPeriodRange_(pk, todayIso);
+      if (!range) return;
+      try {
+        cdrAgentsOrThrow_(getCdrAgentMetrics_(range.from, range.to, names));
+        var tr = getCsrTransferPerRepDaily_(range.from, range.to, names);
+        if (tr && tr.meta && tr.meta.error) throw new Error(tr.meta.error);
+      } catch (e) { failed.push(pk + ': ' + e.message); }
+    });
+    console.log('warmCdrMetricsCache: ' + DASHBOARD_PERIOD_KEYS.length + ' windows, ' + (Date.now() - t0) + ' ms' + (failed.length ? ', failed ' + failed.join('; ') : ''));
+    if (failed.length) return { outcome: automationOutcome_('partial', 'Some call-data windows could not be read ahead: ' + failed.join('; '), failed) };
+    try { cache.put(CDR_WARM_CACHE_KEY, stamp, CDR_WINDOW_CACHE_TTL); } catch (e) {}
+    return { outcome: automationOutcome_('ok') };
+  });
+}

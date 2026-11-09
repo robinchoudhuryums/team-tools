@@ -1826,6 +1826,19 @@ test('M1 (cycle 22): a rep with no call data has NO answer rate — null on the 
 });
 
 // Shared stub harness for the two DQE readers (the H3-3 shape).
+/** PF1 — load the window-read helpers into a CDR test context: the narrowed
+ *  span read, the per-execution date-column memo, the cache spec. The stamp is
+ *  stubbed unreadable ('' — the five-minute key family) unless the context
+ *  already supplies cdrDataStamp_, and the alias map is healthy unless it
+ *  supplies cdrNameMapDegraded_. */
+function pf1CdrHelpers_(ctx) {
+  ['cdrDateColIsos_', 'cdrDqeReadSpan_', 'cdrWindowCacheSpec_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  if (!ctx._cdrDateColMemo) vm.runInContext('var _cdrDateColMemo = {};', ctx);
+  if (typeof ctx.CDR_WINDOW_CACHE_TTL === 'undefined') vm.runInContext('var CDR_WINDOW_CACHE_TTL = 21600;', ctx);
+  if (typeof ctx.cdrDataStamp_ !== 'function') ctx.cdrDataStamp_ = () => '';
+  if (typeof ctx.cdrNameMapDegraded_ !== 'function') ctx.cdrNameMapDegraded_ = () => false;
+  return ctx;
+}
 function m3CdrCtx_(rows, noSheet) {
   const sheet = {
     getLastRow: () => rows.length,
@@ -1846,8 +1859,8 @@ function m3CdrCtx_(rows, noSheet) {
   };
   vm.createContext(ctx);
   vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_',
-    'getCdrDailyBreakdown_', 'cdrAgentsOrThrow_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
-  return ctx;
+    'getCdrDailyBreakdown_', 'cdrDailyBreakdownUncached_', 'cdrAgentsOrThrow_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+  return pf1CdrHelpers_(ctx);
 }
 test('M3 (cycle 22): a range ATT is the ANSWERED-WEIGHTED mean of the daily averages, in both DQE readers', () => {
   const H = ['Queue', 'Date', 'Agent', 'Ext', 'Unique', 'Rung', 'Missed', 'Answered', 'TTT', 'ATT'];
@@ -5895,17 +5908,17 @@ test('F3: roster inclusion goes through ONE predicate (INV-124 cohort + F3)', ()
   // those are the walks where being wrong is expensive: the Metrics cohort
   // (cycle-12 F4 — a stale row un-hides the N=3 anonymized team line) and the
   // manager team table (cycle-15 F3 — a departed rep in the table and totals).
-  ['getDashboardMetrics', 'getMyMetrics', 'getTeamMetrics', 'getCoveragePlan',
-   'getMetricsAmbient', 'saveTrainingAssignment']   // C17-3 (cycle 17)
+  ['cdrCohortNames_', 'getTeamMetrics', 'getCoveragePlan',
+   'getMetricsAmbient', 'saveTrainingAssignment']   // C17-3 (cycle 17); PF1: the two cohort walks are cdrCohortNames_
     .forEach((fn) => {
       assert.ok(/empRosterEmail_\(/.test(extractRawFunction('Code.js', fn)),
         fn + ' routes roster inclusion through empRosterEmail_');
     });
   // …and in the two cohort walks the skip must still precede the collection.
+  const coh = extractRawFunction('Code.js', 'cdrCohortNames_');
+  assert.ok(coh.indexOf('empRosterEmail_') < coh.indexOf('out.push'), 'cdrCohortNames_ checks the email BEFORE collecting the name');
   ['getDashboardMetrics', 'getMyMetrics'].forEach((fn) => {
-    const b = extractRawFunction('Code.js', fn);
-    assert.ok(b.indexOf('empRosterEmail_') < b.indexOf('allNames.push'),
-      fn + ' checks the email BEFORE collecting the name');
+    assert.ok(/var allNames = cdrCohortNames_\(getEmployeeRosterRows_\(\)\)/.test(extractRawFunction('Code.js', fn)), fn + ' takes its cohort from cdrCohortNames_ (PF1)');
   });
 });
 
@@ -7089,8 +7102,10 @@ test('Phase 1: per-queue reading is opt-in; the three existing callers pass 3 ar
   // queue-free); the 2026-08-13 dashboard speedup then CONSOLIDATED
   // getDashboardMetrics's two calls (own + team) into one — the own row is
   // derived from the team map, halving the cold-start reads.
-  assert.strictEqual(calls - optedIn, 3,
-    'exactly the 3 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5)');
+  // PF1 (operator 2026-11-09): the call-data read-ahead job reads the
+  // dashboard's windows the way shapeWindow does — a fourth, deliberately.
+  assert.strictEqual(calls - optedIn, 4,
+    'exactly the 4 opt-out callers remain 3-arg (getDashboardMetrics shapeWindow + the getMyMetrics trend + getMyMetricsRange #5 + warmCdrMetricsCache)');
   // Name the opted-in callers rather than counting them — a bare count has to
   // be edited every time the feature grows (Phase 2 tripped it immediately),
   // which trains the next author to bump the number instead of thinking. This
@@ -7980,7 +7995,7 @@ console.log('\ncycle 17 — batch-2 (silent degradation) pins');
 // average of 0 — the per-rep-daily finalize must yield null, which both the
 // team mean (v != null) and the own-point builder skip.
 test('C17-4: perRepDaily attSeconds is null (absence), never 0, for an answered-nothing day', () => {
-  const body = c17strip(extractRawFunction('Code.js', 'getCdrDailyBreakdown_'));
+  const body = c17strip(extractRawFunction('Code.js', 'cdrDailyBreakdownUncached_'));   // PF1: the reader behind the cache
   assert.ok(/p\.attSeconds = p\._attCount > 0 \? Math\.round\(p\._attSum \/ p\._attCount\) : null/.test(body),
     'the per-rep-daily finalize must use null for absence (the pre-C17-4 literal 0 dragged the team benchmark toward 0)');
 });
@@ -22529,6 +22544,7 @@ test('H3-2: cdrDqeWindowSpan_ behavioural -- an out-of-order row WIDENS the span
   const ctx = { CDR: { DATE: 2 }, Utilities: { formatDate: () => '' } };
   vm.createContext(ctx);
   vm.runInContext(extractRawFunction('Code.js', 'cdrRowDateIso_') + '\n' + extractRawFunction('Code.js', 'cdrDqeWindowSpan_'), ctx);
+  pf1CdrHelpers_(ctx);
   const S = ctx.cdrDqeWindowSpan_;
   // Data rows (sheet rows 2..): a backfilled OLDER date sits BELOW newer rows.
   const rows = [
@@ -22583,6 +22599,7 @@ test('H3-3: getCdrAgentMetrics_ over the span equals the old full scan -- out-of
     };
     vm.createContext(ctx);
     vm.runInContext(['cdrRowDateIso_', 'cdrDqeWindowSpan_', 'cdrAnswerPct_', 'isCdrQueueSentinel_', 'getCdrAgentMetrics_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
+    pf1CdrHelpers_(ctx);
     if (mode === 'full') ctx.cdrDqeWindowSpan_ = (sheet, lastRow) => ({ startRow: 2, numRows: lastRow - 1 });   // the pre-H3 read, for the equivalence
     return { out: ctx.getCdrAgentMetrics_('2026-05-04', '2026-05-06', ['Ann', 'Bo']), reads };
   };
@@ -22592,21 +22609,24 @@ test('H3-3: getCdrAgentMetrics_ over the span equals the old full scan -- out-of
   assert.strictEqual(span.out.agents.Ann.totalAnswered, 8, 'the 05-09 row inside the span was DROPPED by the per-row filter');
   assert.strictEqual(span.out.agents.Bo.totalAnswered, 10, 'the backfilled 05-04 row below newer rows was COUNTED (a tail scan would have missed it)');
   assert.strictEqual(span.out.meta.rowsScanned, 4, 'rows 3..6 read, not 6');
-  assert.strictEqual(JSON.stringify(span.reads.slice(1)), JSON.stringify([[3, 1, 4, 34]]), 'after the date column, ONE full-width read of the span (rows 3..6)');
-  assert.strictEqual(JSON.stringify(full.reads), JSON.stringify([[2, 1, 6, 34]]), '(the old shape read every row, with no date-column pass)');
+  // PF1 (operator 2026-11-09): the span is read through the columns used —
+  // values for 1..TOTAL_ANSWERED, display text for TTT..ATT only — not 34 wide twice.
+  assert.strictEqual(JSON.stringify(span.reads.slice(1)), JSON.stringify([[3, 1, 4, 8], [3, 9, 4, 2]]), 'after the date column, the span (rows 3..6): values 8 wide, the two durations as display text');
+  assert.strictEqual(JSON.stringify(full.reads), JSON.stringify([[2, 1, 6, 8], [2, 9, 6, 2]]), '(the old shape read every row, with no date-column pass)');
 });
 
 test('H3-4: both DQE readers go through cdrDqeWindowSpan_ and KEEP their per-row date filter; no full-sheet DQE read survives', () => {
-  ['getCdrAgentMetrics_', 'getCdrDailyBreakdown_'].forEach((name) => {
+  ['getCdrAgentMetrics_', 'cdrDailyBreakdownUncached_'].forEach((name) => {
     const body = foNc(extractRawFunction('Code.js', name));
     assert.ok(/cdrDqeWindowSpan_\(sheet, lastRow, from, to, tz\)/.test(body), name + ' spans the window');
-    assert.ok(/span \? sheet\.getRange\(span\.startRow, 1, span\.numRows, 34\) : null/.test(body), name + ' reads only the span at full width');
+    assert.ok(/cdrDqeReadSpan_\(sheet, span\)/.test(body) && !/getRange\(span\.startRow, 1, span\.numRows, 34\)/.test(body), name + ' reads only the span, through the columns used (PF1)');
     assert.ok(!/getRange\(2, 1, lastRow - 1, 34\)/.test(body), name + ': the full-sheet read is gone');
     assert.ok(/if \(!dateIso \|\| dateIso < from \|\| dateIso > to\) continue;/.test(body), name + ' keeps the per-row date filter -- the span bounds the read, it never replaces the filter');
   });
   const helper = foNc(extractRawFunction('Code.js', 'cdrDqeWindowSpan_'));
-  assert.ok(/getRange\(2, dateCol \|\| CDR\.DATE, lastRow - 1, 1\)/.test(helper), 'the helper reads the DATE column by the enum, width 1 (M10: or the caller\'s date column)');
-  assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(helper), 'and resolves every cell through the one date reader (so a serial is a date here too)');
+  const col = foNc(extractRawFunction('Code.js', 'cdrDateColIsos_'));   // PF1: the column read, memoized per execution
+  assert.ok(/cdrDateColIsos_\(sheet, lastRow, tz, dateCol \|\| CDR\.DATE\)/.test(helper) && /getRange\(2, dateCol, lastRow - 1, 1\)/.test(col), 'the helper reads the DATE column by the enum, width 1 (M10: or the caller\'s date column)');
+  assert.ok(/cdrRowDateIso_\(dates\[i\]\[0\], tz\)/.test(col), 'and resolves every cell through the one date reader (so a serial is a date here too)');
 });
 
 // ── Batch 3 (2026-09-17 /broad-scan): the H1/H2 follow-through ──────────────
@@ -27408,6 +27428,7 @@ test('F-33: cdrQueueInventory_ reads the WINDOW, and `truncated` describes the w
   ['cdrRowDateIso_', 'isCdrQueueSentinel_', 'cdrDqeWindowSpan_', 'cdrQueueInventory_'].forEach((n) => {
     vm.runInContext(extractRawFunction('Code.js', n), sb, { filename: 'Code.js#' + n });
   });
+  pf1CdrHelpers_(sb);
 
   // 40 rows of old data, then 4 rows inside the window. cap is 10, so the old
   // tail scan would have read rows 35..44 — and reported truncated for ever.
@@ -29021,6 +29042,7 @@ test('M10: the CSR Transfer read is span-bounded and result-cached like the DQE 
     cdrRosterHash_: () => 'h', csrTransferReadUncached_: (f, t, r, q) => { reads++; return ctx._next; },
     CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v) => { store[k] = v; } }) } });
   vm.runInContext(extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_'), ctx);
+  pf1CdrHelpers_(ctx);
   ctx._next = { perRepDaily: {}, agents: { A: { transferred: 3 } }, meta: {} };
   ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
   const again = ctx.getCsrTransferPerRepDaily_('2026-09-01', '2026-09-20', ['A']);
@@ -43941,7 +43963,7 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   const src = extractRawFunction('Code.js', 'sendPayWeekReminders');
   assert.ok(src.indexOf("assertManagerCaller_('sendPayWeekReminders')") < src.indexOf('runAutomationJob_') && src.indexOf("stampDigestLastRun_('payWeek')") < src.indexOf("getFlag_('payWeekReminderEmail')"), 'gate first; heartbeat before the toggle');
   const cfg = serverSource();
-  assert.ok(/runHourlyJobs:\s*\[[^\]]*'sendPayWeekReminders'/.test(cfg) && /sendPayWeekReminders:\s*'PayWeekReminders'/.test(cfg) && /payWeek: 'PayWeekReminders'/.test(cfg) && /PayWeekReminders: 'Pay-week timesheet reminders'/.test(cfg) && /payWeek: 2 \}/.test(cfg), 'the dispatcher and every health registry');
+  assert.ok(/runHourlyJobs:\s*\[[^\]]*'sendPayWeekReminders'/.test(cfg) && /sendPayWeekReminders:\s*'PayWeekReminders'/.test(cfg) && /payWeek: 'PayWeekReminders'/.test(cfg) && /PayWeekReminders: 'Pay-week timesheet reminders'/.test(cfg) && /payWeek: 2[,\s}]/.test(cfg), 'the dispatcher and every health registry');
   assert.ok(/key: 'payWeekReminderEmail'[\s\S]*?default: true, scope: 'server'/.test(cfg), 'a server toggle, on by default (the operator asked for the email)');
 });
 
