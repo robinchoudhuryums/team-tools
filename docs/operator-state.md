@@ -2767,6 +2767,21 @@ entry says which it is.
   only to members clocked in and not on lunch, read from today's Timesheet in
   each member's own timezone — a member who works without clocking in gets
   none, and with nobody clocked in nothing is assigned.
+<a id="operator-pt1a-payor-source-import"></a>
+- **The payor upload takes the source export, and the standing note (PT1a,
+  operator 2026-11-09) — `INS_PAYOR_NOTE`.** **Nothing to set up.** To refresh
+  the insurance lookup, download the source "Payor/HCPCS Order Acceptance" tab
+  as CSV and drop it on Manage → Admin → Config → Reference data tables →
+  Insurance payor acceptance. The preview says it was converted and lists every
+  change (renamed headers, dropped key/empty columns, dropped rows by source row
+  number, key letters written out); read it, then Replace. A file already in the
+  tab's shape imports as before. **The note** in the source's top-left cell
+  ("No power orders in OR, WA…") is stored as the Script Property
+  `INS_PAYOR_NOTE` (`{text, at, by}` — auto-managed; do not edit by hand) and
+  shown above every insurance answer and on the Admin table row; a source upload
+  with an empty top-left cell removes it. Until the first source upload after
+  the deploy there is no note. If the preview warns that two columns would both
+  be read as one field, rename one in the source before importing.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

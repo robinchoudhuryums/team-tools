@@ -13564,6 +13564,12 @@ function cnDTableRowHtml_(t) {
         '<div class="cn-dt-sub">' + esc(t.describe) + ' · tab <code>' + esc(t.tab) + '</code></div></div>' +
       '<div class="cn-dt-state">' + state + '</div>' +
     '</div>' +
+    // PT1a: the standing note the insurance lookup shows — set by the last
+    // upload of the source sheet's own export (its top-left cell).
+    (t.noteError ? '<div class="cn-dt-warn">The standing note could not be read (' + esc(t.noteError) + ').</div>'
+      : (t.note !== undefined ? '<div class="cn-dt-note">' + (t.note
+          ? 'Note on every insurance result: <q>' + esc(t.note) + '</q>'
+          : 'No standing note — upload the source sheet’s own export to take the note from its top-left cell.') + '</div>' : '')) +
     '<div class="cn-dt-drop" tabindex="0" role="button" aria-label="Choose or drop a CSV for ' + esc(t.label) + '"' +
       ' data-dt-drop="' + esc(t.key) + '">' +
       icon('outbox', 16) + ' <span>Drop a .csv here, or <u>choose a file</u></span>' +

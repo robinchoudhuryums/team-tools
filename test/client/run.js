@@ -44310,6 +44310,213 @@ test('SP1: the wiring — the outcomes ride the pending read (never a client cop
   assert.ok(/if \(r\.noneOnShift\) \{ showToast\('No Spanish member is clocked in right now — nothing was assigned'/.test(met));
 });
 
+// ── PT1a (operator 2026-11-09): the source-format payor import + the standing note ──
+console.log('\nOperator round 2026-11-09 — PT1a (the payor import takes the source export; the standing note)');
+// The real export's shape, in miniature: its own header strings, row 1 / row 2
+// split, the A1 rule, the key columns (one holding a side list), a blank row
+// and an unnamed row. PHI-free: plan names and acceptance shorthand only.
+const PT1A_SRC = [
+  ['No Power Orders In OR, WA. (Hospice okay if Mobility Diagnosis differs.)', 'Waystar Ref#', '', '', 'Network Status', 'OON reimbursement (% of Medicare rates)', 'Qualifaction Process', 'Reimb. Status', '', '', 'Power Chair (K0816)', '', '', '', '', '', '', '', 'Network Last Update', '', '', '', ''],
+  ['', '', 'Plan Inserted Under Payor In UMS System?', 'Payor Name', '', '', '', '', 'K0800 ( 285-325 lb)', 'K0802', 'K0814', 'K0821/23/16 (Up to 285 lbs)', 'K0825 Up to 435 lbs', 'K0827 (451- 600) No In HI', 'K0843 (', 'K0862( up to 435)', 'Manual Wheelchairs', 'E1161', '', 'X = Yes', 'NO = No', 'Y = Yes, if Branch or Driver is located within 100 miles', 'Z = Hawaii Only'],
+  ['Traditional Medicare (No Hospice)', 'No general ID', '', '', 'In-Network', '', 'X', 'X', 'L ( 285-325 lb)', 'NO', 'X', 'X', 'X', 'X', 'X', 'X', '', 'X', 'Done', '', '', 'Branch Locations', ''],
+  ['UMR (UHC)', '39026', 'Yes', '', 'Out-of-Network', '100', 'X', 'NO', 'Y', 'NO', 'Z', 'TRY', 'x', 'SI/PR', 'Try', 'Z', '', 'Z', '', '', 'ba', '1329 W Walnut Hill ln, Irving, TX', ''],
+  ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+  ['', '', '', '', '', '', '', '', 'X', 'NO', 'X', '', '', '', '', '', '', '', '', '', '', '', ''],
+  ['Advantage Plus HMO H2962-036 (FL)', '', '', '', 'OON W/ PA', '', 'X', 'Testing', 'NO', 'NO', 'TRY', 'TRY', 'TRY', 'TRY', 'TRY', 'TRY', '', '', '', '', '', '', ''],
+];
+function pt1aCtx_(extra) {
+  const ctx = vm.createContext(Object.assign({ String, Array, Object, Math, Number, JSON, RegExp,
+    INS_PAYOR_NOTE_MAX: Number(m5bConst_('INS_PAYOR_NOTE_MAX')) }, extra || {}));
+  ['hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorRowObj_', 'insPayorSlotOf_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+
+test('PT1a: the source export becomes the tab — one header row, the four reader slots named once, code headers readable, the key and empty columns and unnamed rows dropped, a key letter written as its meaning, the A1 rule kept as the note (driven over the real header strings)', () => {
+  const c = pt1aCtx_();
+  const r = hJ(c.insPayorFromSource_(PT1A_SRC));
+  assert.deepStrictEqual(r.grid[0], ['Insurance', 'Waystar Reference #', 'Plan Inserted Under Payor In UMS System?', 'Network Status',
+    'OON Rate (% of Medicare)', 'Qualification Process', 'Reimbursement Status', 'K0800 ( 285-325 lb)', 'K0802', 'K0814',
+    'K0821/23/16 (Up to 285 lbs)', 'K0825 (Up to 435 lbs)', 'K0827 (451- 600 No In HI)', 'K0843', 'K0862( up to 435)', 'E1161', 'Last Update'],
+    'one header row: Payor Name, Manual Wheelchairs (no data) and the four key columns are gone; a header that parsed already is untouched');
+  assert.strictEqual(r.note, 'No Power Orders In OR, WA. (Hospice okay if Mobility Diagnosis differs.)', 'A1 is the standing note, its spaces collapsed');
+  assert.deepStrictEqual(r.grid.slice(1).map((x) => x[0]), ['Traditional Medicare (No Hospice)', 'UMR (UHC)', 'Advantage Plus HMO H2962-036 (FL)'],
+    'the blank row and the unnamed row are dropped');
+  const umr = r.grid[2];
+  const at = (h) => umr[r.grid[0].indexOf(h)];
+  assert.strictEqual(at('K0800 ( 285-325 lb)'), 'Yes, if Branch or Driver is located within 100 miles (Y)', 'a cell that IS a key letter reads its meaning, the letter kept');
+  assert.strictEqual(at('K0814'), 'Hawaii Only (Z)');
+  assert.strictEqual(at('K0825 (Up to 435 lbs)'), 'x', 'X (any case) and NO are the sheet\'s yes and no — never rewritten');
+  assert.strictEqual(at('K0802'), 'NO');
+  assert.strictEqual(at('OON Rate (% of Medicare)'), '100');
+  assert.ok(!umr.some((v) => /Walnut|ba$/.test(v)), 'the key columns\' side list (a branch address, a stray "ba") is not carried onto a plan');
+  const ch = r.changes.join('\n');
+  [/"Network Last Update" → "Last Update" \(it would have been read as the network status\)/,
+    /"OON reimbursement \(% of Medicare rates\)" → "OON Rate \(% of Medicare\)"/,
+    /"Reimb\. Status" → "Reimbursement Status"/,
+    /"K0825 Up to 435 lbs" → "K0825 \(Up to 435 lbs\)" \(so it reads as one code\)/,
+    /"Y = Yes, if Branch or Driver is located within 100 miles" is the key, not data — dropped with its 2 filled cell\(s\)/,
+    /"Manual Wheelchairs" has no data — dropped/,
+    /1 cell\(s\) reading "Y" now read "Yes, if Branch/,
+    /3 cell\(s\) reading "Z" now read "Hawaii Only \(Z\)"/,
+    /1 blank row\(s\) dropped \(source row 5\)/,
+    /1 row\(s\) with no plan name dropped — no search could find them \(source row 6\)/].forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
+  // As the reader sees it: each slot from exactly one column.
+  const o = hJ(c.insPayorRowObj_(r.grid[0], umr));
+  assert.deepStrictEqual([o.waystar, o.networkStatus, o.qualification, o.reimbursement], ['39026', 'Out-of-Network', 'X', 'NO']);
+  const codes = r.grid[0].filter((h) => hJ(c.hcpcsParse_(h)).shaped);
+  assert.ok(codes.length === 9 && codes.every((h) => c.hcpcsParse_(h).certain), 'every code header reads as one code: ' + codes);
+});
+
+test('PT1a: only the source shape converts — a file already in the tab\'s shape (row 2 is data, even a plan named with an H-code) is left alone, and so is a short or code-less file (driven)', () => {
+  const c = pt1aCtx_();
+  const tab = [['Insurance', 'Waystar Reference #', 'Network Status', 'K0800', 'K0802', 'K0814'],
+    ['Advantage Plus HMO H2962-036 (FL)', '1', 'In-Network', 'X', 'NO', 'TRY'],
+    ['Aetna H1610-002', '2', 'In-Network', 'X', 'X', 'X']];
+  assert.strictEqual(c.insPayorFromSource_(tab), null, 'the tab shape: codes on row 1');
+  assert.strictEqual(c.insPayorFromSource_(PT1A_SRC.slice(0, 2)), null, 'no data rows');
+  assert.strictEqual(c.insPayorFromSource_([['A', 'B'], ['x', 'K0800'], ['y', 'z']]), null, 'fewer than three code headers on row 2');
+  const titled = PT1A_SRC.map((r) => r.slice());
+  titled[0][0] = 'Insurance';
+  assert.strictEqual(c.insPayorFromSource_(titled).note, '', 'an A1 that is only a title is not a note');
+  const longNote = PT1A_SRC.map((r) => r.slice());
+  longNote[0][0] = 'x'.repeat(5000);
+  assert.strictEqual(c.insPayorFromSource_(longNote).note.length, Number(m5bConst_('INS_PAYOR_NOTE_MAX')), 'the note is capped');
+});
+
+test('PT1a: insCodeHeaderClean_ — an unreadable code header becomes the code with its note in parentheses; a readable one, or one still unreadable, is untouched; insPayorSlotOf_ names the slot insPayorRowObj_ fills (driven)', () => {
+  const c = pt1aCtx_();
+  [['K0825 Up to 435 lbs', 'K0825 (Up to 435 lbs)'], ['K0827 (451- 600) No In HI', 'K0827 (451- 600 No In HI)'], ['K0843 (', 'K0843'],
+    ['K0800 ( 285-325 lb)', 'K0800 ( 285-325 lb)'], ['K0821/23/16 (Up to 285 lbs)', 'K0821/23/16 (Up to 285 lbs)'], ['E1161', 'E1161'],
+    ['k0825 up to 435', 'K0825 (up to 435)'], ['Power Chair K0816 group', 'Power Chair K0816 group'], ['NO - K0837', 'NO - K0837']]
+    .forEach(([a, b]) => assert.strictEqual(c.insCodeHeaderClean_(a), b, a));
+  const slotOf = { waystar: 'waystar', networkStatus: 'network status', qualification: 'qualification', reimbursement: 'reimbursement' };
+  ['Waystar Ref#', 'Network Status', 'Network Last Update', 'Qualifaction Process', 'Reimbursement Status', 'OON reimbursement (%)', 'Reimb. Status',
+    'Waystar network', 'K0800', 'Total orders received for testing', ''].forEach((h) => {
+    const o = hJ(c.insPayorRowObj_(['Insurance', h], ['P', 'v']));
+    const filled = Object.keys(slotOf).filter((k) => o[k] === 'v');
+    assert.strictEqual(c.insPayorSlotOf_(h), filled.length ? slotOf[filled[0]] : '', 'the same if-chain: ' + h);
+  });
+});
+
+function pt1aImportCtx_(sheet, props) {
+  const book = { audits: [], bounded: [], deleted: [] };
+  const ctx = vm.createContext({ String, Array, Object, Math, Number, JSON, RegExp, Date, console: { warn: () => {} },
+    KB_DATA_TABLE_MAX_ROWS: 5000, KB_DATA_TABLE_MAX_COLS: 60, KB_DATA_TABLE_MAX_CHARS: 6000000,
+    KB_DATA_TABLE_MAX_CELL_CHARS: m5bConst_('KB_DATA_TABLE_MAX_CELL_CHARS'),
+    INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE', INS_PAYOR_NOTE_MAX: Number(m5bConst_('INS_PAYOR_NOTE_MAX')),
+    KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', label: 'Insurance payor acceptance', minCols: 2, nameHeader: /payor|plan|name|insur/i, sourceFormat: 'payorAcceptance' } },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    getEmployeeInfo_: () => ({ isAdmin: true, email: 'admin@x' }),
+    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }) },
+    SpreadsheetApp: { flush: () => {} },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] === undefined ? null : props[k]),
+      deleteProperty: (k) => { book.deleted.push(k); delete props[k]; } }) },
+    propSetBounded_: (k, v) => { book.bounded.push(k); props[k] = v; return v.length; },
+    getKbSS_: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }),
+    writeAuditLog_: (e, a, x, y, z, n, d) => { book.audits.push(d); } });
+  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
+    'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNote_']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return { ctx, book };
+}
+const pt1aCsv_ = (grid) => grid.map((r) => r.map((v) => (/[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v)).join(',')).join('\n');
+
+test('PT1a: kbImportDataTable — the preview converts and lists every step and the note, writing nothing; the write lands the converted table, stores the note through propSetBounded_ and audits it; an empty A1 clears the note; a tab-shaped file leaves it alone (driven)', () => {
+  const prevNote = JSON.stringify({ text: 'old rule', at: '2026-01-01', by: 'a@x' });
+  let props = { INS_PAYOR_NOTE: prevNote };
+  let sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
+  let s = pt1aImportCtx_(sh, props);
+  let res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), {}));
+  assert.ok(res.dryRun && res.converted && res.converted.from === 'source', JSON.stringify(res).slice(0, 300));
+  assert.strictEqual(res.rows, 3, 'the preview counts the CONVERTED rows');
+  assert.strictEqual(res.headers[0], 'Insurance');
+  assert.strictEqual(res.converted.sourceRows, 5);
+  assert.ok(res.converted.changes.some((x) => /Network Last Update/.test(x)) && /No Power Orders/.test(res.converted.note));
+  assert.strictEqual(res.currentNote, 'old rule', 'the preview names the note shown today');
+  assert.deepStrictEqual([sh.data.length, s.book.bounded.length, s.book.audits.length], [2, 0, 0], 'a dry run writes nothing');
+
+  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  assert.strictEqual(res.imported, true, JSON.stringify(res.error));
+  assert.strictEqual(sh.data[0][16], 'Last Update', 'the CONVERTED header row is what lands');
+  assert.strictEqual(sh.data.length, 4);
+  assert.deepStrictEqual(s.book.bounded, ['INS_PAYOR_NOTE'], 'the note goes through the bounded writer (Q-1)');
+  const stored = JSON.parse(props.INS_PAYOR_NOTE);
+  assert.ok(/No Power Orders/.test(stored.text) && stored.by === 'admin@x' && stored.at, 'who and when ride the note');
+  assert.ok(/converted=source; note=set/.test(s.book.audits[0]), s.book.audits[0]);
+
+  const blankA1 = PT1A_SRC.map((r) => r.slice());
+  blankA1[0][0] = '';
+  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(blankA1), { dryRun: false }));
+  assert.ok(res.imported && s.book.deleted.indexOf('INS_PAYOR_NOTE') >= 0 && props.INS_PAYOR_NOTE === undefined, 'a source with no note clears it');
+  assert.ok(/note=cleared/.test(s.book.audits[1]));
+
+  props = { INS_PAYOR_NOTE: prevNote };
+  sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
+  s = pt1aImportCtx_(sh, props);
+  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', 'Insurance,Network Status,K0800\nAetna,In-Network,X', { dryRun: false }));
+  assert.ok(res.imported && !res.converted, 'a tab-shaped file is not converted');
+  assert.deepStrictEqual([s.book.bounded.length, s.book.deleted.length, props.INS_PAYOR_NOTE], [0, 0, prevNote], 'and the note is left exactly as it was');
+  assert.ok(!/converted/.test(s.book.audits[0]));
+
+  // A write that fails changes neither the table nor the note.
+  props = { INS_PAYOR_NOTE: prevNote };
+  sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
+  sh.failWrites = 1;
+  s = pt1aImportCtx_(sh, props);
+  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  assert.ok(res.error && props.INS_PAYOR_NOTE === prevNote && !s.book.bounded.length, 'a failed write keeps the old note: ' + res.error);
+});
+
+test('PT1a: the preview warns when two columns would fill one reader slot — the later would silently replace the earlier on every row — for the tab shape too (driven)', () => {
+  const s = pt1aImportCtx_(adm05Sheet_([], 1000, 26), {});
+  const res = hJ(s.ctx.kbImportDataTable('InsurancePayors', 'Insurance,Network Status,Waystar,Network Last Update\nAetna,In-Network,1,Done', {}));
+  assert.ok(res.warnings.some((w) => /"Network Status" and "Network Last Update" would both be read as the network status — only the last one would show/.test(w)),
+    JSON.stringify(res.warnings));
+  const ok = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), {}));
+  assert.ok(!ok.warnings.some((w) => /would both be read/.test(w)), 'the converted source fills each slot once: ' + JSON.stringify(ok.warnings));
+});
+
+test('PT1a: the standing note rides every insurance answer and a note that cannot be read is NAMED; the Admin table list carries it (driven + source)', () => {
+  const ctx = vm.createContext({ String, JSON, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE', PropertiesService: { getScriptProperties: () => ({ getProperty: () => ctx.__raw }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorNote_'), ctx);
+  ctx.__raw = null;
+  assert.strictEqual(ctx.insPayorNote_(), null, 'none stored');
+  ctx.__raw = JSON.stringify({ text: 'Rule', at: 't', by: 'b' });
+  assert.deepStrictEqual(hJ(ctx.insPayorNote_()), { text: 'Rule', at: 't', by: 'b' });
+  ctx.__raw = '{bad';
+  assert.throws(() => ctx.insPayorNote_(), 'an unreadable note THROWS — the caller says so');
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
+  assert.ok(/try \{ note = insPayorNote_\(\); \} catch \(eN\) \{ noteError = /.test(srv) && /note: note \? note\.text : '', noteError: noteError/.test(srv),
+    'the answer carries the note and a read failure by name');
+  const list = nc(extractRawFunction('Code.js', 'getKbDataTables'));
+  assert.ok(/spec\.sourceFormat === 'payorAcceptance'/.test(list) && /out\.noteError/.test(list), 'the Admin list shows the note, or why it cannot');
+  assert.strictEqual(/sourceFormat: 'payorAcceptance'/.test(serverSource()), true, 'the InsurancePayors spec names its source format');
+});
+
+test('PT1a: the Admin preview lists every conversion step and the note it will set (or that it will remove it), escaped; a tab-shaped file says the note stays; the table list shows the note, none, or why it cannot be read (driven)', () => {
+  const ctx = vm.createContext({ String, Array, esc: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: () => '<svg></svg>' });
+  ['cnDTablePreviewHtml_', 'cnDTableRowHtml_'].forEach((n) => vm.runInContext(extractFunction('cn/script_callnotes.html', n), ctx));
+  const base = { rows: 3, cols: 17, headers: ['Insurance'], warnings: [], duplicateNames: [], blankNameCount: 0, replacingRows: 2, tab: 'InsurancePayors' };
+  let html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'src.csv', Object.assign({}, base, {
+    converted: { from: 'source', sourceRows: 5, note: 'No <b>power</b> orders', changes: ['Header "Network Last Update" → "Last Update" (x).', 'a <i>b</i>'] } }));
+  assert.ok(/Converted from the source sheet’s export<\/strong> \(5 source row\(s\)\)/.test(html), html.slice(0, 300));
+  assert.ok(/<li>Header &quot;Network Last Update&quot; → &quot;Last Update&quot; \(x\)\.<\/li><li>a &lt;i&gt;b&lt;\/i&gt;<\/li>/.test(html), 'every step, escaped');
+  assert.ok(/Every insurance result will show this note: <q>No &lt;b&gt;power&lt;\/b&gt; orders<\/q>/.test(html), 'the note it sets, escaped');
+  html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'src.csv', Object.assign({}, base, { converted: { from: 'source', sourceRows: 5, note: '', changes: [] } }));
+  assert.ok(/the note on insurance results will be removed/.test(html), 'a source with no note says the note goes');
+  html = ctx.cnDTablePreviewHtml_('InsurancePayors', 'tab.csv', Object.assign({}, base, { currentNote: 'old' }));
+  assert.ok(/already in the table’s shape — the note on insurance results stays/.test(html) && !/Converted/.test(html));
+  assert.ok(!/note/.test(ctx.cnDTablePreviewHtml_('T', 't.csv', base).replace(/cn-dt-note/g, '')), 'another table says nothing about a note');
+  const row = (t) => ctx.cnDTableRowHtml_(Object.assign({ key: 'InsurancePayors', tab: 'InsurancePayors', label: 'L', describe: 'D', present: true, rows: 1, cols: 2 }, t));
+  assert.ok(/Note on every insurance result: <q>Rule &lt;x&gt;<\/q>/.test(row({ note: 'Rule <x>' })));
+  assert.ok(/No standing note — upload the source sheet’s own export/.test(row({ note: '' })));
+  assert.ok(/standing note could not be read \(bad JSON\)/.test(row({ noteError: 'bad JSON' })));
+  assert.ok(!/standing note|Note on every/.test(row({})), 'a table with no note field shows none');
+});
+
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
 const p1Ctx_ = (extra) => {
   const utcIso = (d) => d.toISOString().slice(0, 10);

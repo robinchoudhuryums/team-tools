@@ -828,6 +828,14 @@ longer sent to reps.
      clocked in and not on lunch. The `spanishResolveReply` toggle turns the
      reply off.
 
+     **PT1a (operator 2026-11-09) — the payor upload takes the source export.**
+     Admin → Config → Reference data tables accepts the "Payor/HCPCS Order
+     Acceptance" sheet's own CSV and converts it (one header row, the column
+     names the lookup reads, readable code headers, the key and empty columns
+     and unnamed rows dropped, "Z" written as "Hawaii Only (Z)"), listing every
+     step in the preview before anything is replaced. The rule in the source's
+     top-left cell is shown above every insurance lookup answer.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

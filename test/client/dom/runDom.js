@@ -4204,6 +4204,35 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
+  const h = boot();
+  let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'In-Network', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('aetna');
+  const res = h.$('#kb-ins-results');
+  const note = res.querySelector('.kb-ins-note');
+  assert.ok(note && note.getAttribute('role') === 'note', 'a note box above the results');
+  assert.ok(/For every plan:\s*No power orders in OR, WA <b>MT<\/b>\./.test(note.textContent) && !Array.from(note.querySelectorAll('b')).some((b) => b.textContent === 'MT'),
+    'the note text, escaped: ' + note.innerHTML);
+  assert.ok(note.compareDocumentPosition(res.querySelector('.kb-ins-card')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING, 'ABOVE the first result');
+  answer = { total: 0, cap: 8, notFound: true, matches: [], note: 'Rule A.', noteError: '' };
+  await search('zzplan');
+  assert.ok(/Rule A\./.test((res.querySelector('.kb-ins-note') || {}).textContent || '') && res.querySelector('.kb-ins-guide'), 'and above the not-listed answer too');
+  answer = { total: 1, cap: 8, note: '', noteError: 'Unexpected token', matches: [{ name: 'AETNA', networkStatus: 'In-Network', details: [] }] };
+  await search('aetna2');
+  assert.ok(/standing note could not be read/.test((res.querySelector('.kb-ins-note') || {}).textContent || ''), 'an unreadable note is SAID');
+  answer = { total: 1, cap: 8, note: '', noteError: '', matches: [{ name: 'AETNA', networkStatus: 'In-Network', details: [] }] };
+  await search('aetna3');
+  assert.ok(!res.querySelector('.kb-ins-note') && res.querySelector('.kb-ins-card'), 'no note stored: no box');
+  answer = { error: 'Insurance lookup failed: boom' };
+  await search('aetna4');
+  assert.ok(!res.querySelector('.kb-ins-note'), 'an error answer carries no note box');
+});
+
 test('T1 DOM: one meaning, one look — an unclassifiable payor status renders like a blank one, and the meta is chips', async () => {
   const h = boot();
   h.run.respond('searchInsurancePayors', () => ({ total: 2, cap: 8, matches: [

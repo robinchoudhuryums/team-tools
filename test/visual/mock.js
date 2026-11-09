@@ -737,13 +737,20 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
     getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',
       label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
-      rows: 1035, cols: 25, present: true }] },
+      rows: 1035, cols: 25, present: true, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.', noteAt: '2026-11-09T15:00:00.000Z' }] },
     kbImportDataTable: function (key, b64, opts) {
       var dry = !opts || opts.dryRun !== false;
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
         headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
         sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
-        warnings: [], replacingRows: 1035 };
+        warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+        // PT1a: a source-sheet export is converted, each step listed.
+        converted: { from: 'source', sourceRows: 1147, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+          changes: ['Header "Network Last Update" → "Last Update" (it would have been read as the network status).',
+            'Header "K0825 Up to 435 lbs" → "K0825 (Up to 435 lbs)" (so it reads as one code).',
+            'Column "Z = Hawaii Only" is the key, not data — dropped.',
+            '18 cell(s) reading "Z" now read "Hawaii Only (Z)", from the key.',
+            '3 row(s) with no plan name dropped — no search could find them (source row 324, 645, 648).'] } };
       return dry ? Object.assign(base, { dryRun: true }) : Object.assign(base, { imported: true });
     },
     // Operator 2026-08-25 — the composer's editable Note Reference + the
@@ -2079,7 +2086,10 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // return sites (INV-185); the OOP rows carry MULTIPLE priced columns,
     // because a single-price item is exactly the shape that hid the prices[0]
     // defect from the operator's own post-deploy check.
-    searchInsurancePayors: { total: 4, cap: 8, matches: [
+    // PT1a: the source sheet's standing note rides every answer.
+    searchInsurancePayors: { total: 4, cap: 8, noteError: '',
+      note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
+      matches: [
       { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [

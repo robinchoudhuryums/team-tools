@@ -6699,6 +6699,38 @@ pick them up without re-deriving the context.
     button and the scheduled run hand requests only to them; nobody clocked in
     assigns nothing (the button says so, the scheduled run is idle), and a
     Timesheet that cannot be read refuses by name rather than guessing (g128).
+- <a id="pt1a-source-format-payor-import"></a>**The payor upload takes the source sheet's own export and converts it in the one import parse; the source's top-left rule rides every insurance answer (PT1a, operator 2026-11-09)**
+  The operator updates `InsurancePayors` from another department's "Payor/HCPCS
+  Order Acceptance" sheet, whose export is not the tab's shape: two header rows
+  (the codes on the second), a rule for every plan in its top-left cell, and a
+  key ("X = Yes", "Z = Hawaii Only") as trailing column headers. Every refresh
+  needed a hand conversion, and an unconverted file was quietly wrong rather
+  than refused: "Network Last Update" would have filled the network-status slot
+  (blank or "Done" for every plan), "OON reimbursement (% …)" the reimbursement
+  slot, and three code headers could not be read as codes.
+  - **Converted where the import already parses**, before every limit and the
+    preview, so the preview reports what is written (`insPayorFromSource_` in
+    `kbImportDataTable`). Recognised by its codes — three or more code headers
+    on row 2 and more than on row 1 — so a file already in the tab's shape
+    imports untouched.
+  - **Every step is listed in the preview**: the merged header row, each
+    rename and why, each dropped column (the key, and any column with no data —
+    the key columns' cells are a side list, not a plan's data), each dropped row
+    by source row number, and each cell rewritten from the key.
+  - **The key is read, not guessed.** A cell that is exactly a key letter
+    other than X and NO (the sheet's yes and no, which every reader reads)
+    becomes "<meaning> (<letter>)" — "Hawaii Only (Z)". "Y" had been left as
+    stray shorthand when the file carried no key; the source's key now defines
+    it. Values the key does not define stay verbatim (g41/g156).
+  - **A slot taken twice is warned for every upload**: `insPayorSlotOf_` is the
+    reader's own if-chain, and two columns in one slot mean the later replaces
+    the earlier on every row.
+  - **The note**: a source upload stores its top-left text (`INS_PAYOR_NOTE`,
+    through `propSetBounded_`, capped) after the table write; an empty cell
+    clears it; a tab-shaped file leaves it. `searchInsurancePayors` returns it
+    and a note that cannot be read by name, and the lookup draws it above a
+    match and above "not in the payor sheet" alike — it applies to every plan,
+    listed or not. No seed (g122): until the first source upload there is none.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the
