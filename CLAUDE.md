@@ -702,7 +702,7 @@ the dated round entries that used to sit here moved to
 - [`Employees` sheet column E = `PayCycle` — also decides the live-view presence rule (22post C-3)](docs/operator-state.md#operator-employees-sheet-column-e-paycycle)
 - [`Employees` sheet column K = `PtoEnabled`](docs/operator-state.md#operator-employees-sheet-column-k-ptoenabled)
 - [Onboarding a NEW team member no longer needs a hand-edit of the Employees sheet (2026-08-07)](docs/operator-state.md#operator-onboarding-a-new-team-member-no-longer-needs-a-hand-edit-of)
-- [Daily automation triggers](docs/operator-state.md#operator-daily-automation-triggers)
+- [Daily automation triggers](docs/operator-state.md#operator-daily-automation-triggers) · [the hourly Dashboard call-data read-ahead (PF1)](docs/operator-state.md#operator-cdr-read-ahead-pf1)
 - [Call-notes retention is OFF by default](docs/operator-state.md#operator-call-notes-retention-is-off-by-default)
 - [Call-notes cold-archive is the SAFE retention tier (also OFF by default)](docs/operator-state.md#operator-call-notes-cold-archive-is-the-safe-retention-tier-also-off)
 - [Call-notes 3rd-tier cold-store purge (also OFF by default)](docs/operator-state.md#operator-call-notes-3rd-tier-cold-store-purge-also-off-by-default)
@@ -973,8 +973,8 @@ this block, or the command that prints the number.
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 14 | `TRIGGER_GROUPS` |
 | localStorage keys | 24 | `ums…` literals in `web-app/` |
-| Invariant library entries | 392 | `.cycle/config.md` |
-| Regression scenarios (S*) | 160 | `.cycle/config.md` |
+| Invariant library entries | 393 | `.cycle/config.md` |
+| Regression scenarios (S*) | 161 | `.cycle/config.md` |
 
 Every figure above is DERIVED. Do not restate one in prose — a second
 copy is a second source of truth, and each of these has drifted at least

@@ -2719,6 +2719,19 @@ entry says which it is.
   them by hand. **One-time check after deploy:** the record starts empty, so
   review both lists for anyone offboarded BEFORE this deploy.
 
+<a id="operator-cdr-read-ahead-pf1"></a>
+- **The Dashboard call-data read-ahead (PF1, operator 2026-11-09) — nothing to
+  set up.** `warmCdrMetricsCache` rides the existing hourly dispatcher
+  (`runHourlyJobs`), so no trigger is added and none needs reinstalling: after
+  the deploy the next hourly run picks it up. It reads the Dashboard's three
+  call-data periods and the Stats default 30-day trend ahead whenever the CDR
+  data has changed, and is idle otherwise. Admin → System lists it as
+  "Dashboard call-data read-ahead" (heartbeat `cdrWarm`, stale past 2 h; error
+  key `CdrCacheWarm`). Everything it and the readers keep is in the script
+  cache (`cdr_stamp_v1`, the window entries, `cdr_warm_stamp_v1`) — no Script
+  Property, no tab; it all expires by itself. **To see the speed-up:** Apps
+  Script → Executions — `getDashboardMetrics` and `getMyMetrics` log "cached"
+  or "read" with their milliseconds.
 <a id="operator-dept-request-audit-and-resolved-reply-dr1"></a>
 - **Dept Request audit list and the resolved reply (DR1, operator 2026-11-09) —
   the `DeptRequestCrmChecks` tab and the `deptResolvedReply` toggle.** **Nothing
