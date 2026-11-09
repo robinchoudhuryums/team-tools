@@ -1431,7 +1431,11 @@ function drCrmToggle_(box) {
       var who = cell ? cell.querySelector('.dr-crm-who') : null;
       if (who && row) who.textContent = row.crmChecked ? (row.crmBy || '') + (row.crmAtMs ? (row.crmBy ? ' · ' : '') + new Date(row.crmAtMs).toLocaleDateString() : '') : '';
       var sum = document.getElementById('dr-audit-sum');
-      if (sum) sum.innerHTML = drAuditSummaryHtml_(drAuditRows_());
+      // Count what is ON SCREEN: the row stays in view (above) even when the
+      // filters would now leave it out, so the count must not disagree with it.
+      var shown = {};
+      Array.prototype.forEach.call(document.querySelectorAll('#dr-audit-results .dr-crm-box'), function (b) { shown[b.getAttribute('data-req')] = 1; });
+      if (sum) sum.innerHTML = drAuditSummaryHtml_(rows.filter(function (r) { return shown[r.requestId]; }));
     })
     .withFailureHandler(function (err) {
       done();
