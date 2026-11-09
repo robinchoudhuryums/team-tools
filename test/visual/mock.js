@@ -737,7 +737,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
     getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',
       label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
-      rows: 1035, cols: 25, present: true, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.', noteAt: '2026-11-09T15:00:00.000Z' }] },
+      rows: 1035, cols: 25, present: true, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.', noteAt: '2026-11-09T15:00:00.000Z' },
+      { key: 'MedicaidPayors', tab: 'MedicaidPayors', label: 'Primary Medicaid acceptance',
+        describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' }] },
     kbImportDataTable: function (key, b64, opts) {
       var dry = !opts || opts.dryRun !== false;
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
@@ -2087,10 +2089,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // because a single-price item is exactly the shape that hid the prices[0]
     // defect from the operator's own post-deploy check.
     // PT1a: the source sheet's standing note rides every answer.
-    searchInsurancePayors: { total: 4, cap: 8, noteError: '',
-      note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
+    // PT1: one search across the payor tables, each with its note and its sheet's key.
+    searchInsurancePayors: { total: 5, cap: 8,
+      tables: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', noteError: '',
+          note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
+          legend: { X: 'Yes', NO: 'No', Y: 'Yes, if Branch or Driver is located within 100 miles', Z: 'Hawaii Only' } },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', noteError: '',
+          note: 'Medicaid primary acceptance (test nursing home patients): no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. Can accept patients in facilities.',
+          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } }],
       matches: [
-      { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+      { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
           // T3: the server names each code column from the pricing tab. K0800
@@ -2108,11 +2117,13 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
             code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
           { label: 'Category', value: 'POV/Scooter',
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
-      { name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+      { table: 'InsurancePayors', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'InsurancePayors', name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'MedicaidPayors', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
+        reimbursement: 'Testing', details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
       // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
-      { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+      { table: 'InsurancePayors', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
         reimbursement: 'Yes', details: [], excludedState: 'TX' }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).

@@ -4183,6 +4183,27 @@
     "kbImportDataTable"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1: payor tables — MedicaidPayors, per-table notes and keys, one search across payor tables",
+   "added": [
+    "insPayorNotesParse_",
+    "insPayorNotes_",
+    "insPayorTables_"
+   ],
+   "removed": [
+    "insPayorNote_"
+   ],
+   "changed": [
+    "KB_DATA_TABLES",
+    "getKbDataTables",
+    "insPayorFromSource_",
+    "kbImportDataTable",
+    "kbSuggestPayorSynonyms",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5680,7 +5701,7 @@
   "KB_DATA_TABLES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "4ed34129e37557bd"
+   "sha": "8d3a36f0adcaa5ac"
   },
   "KB_DATA_TABLE_MAX_CELL_CHARS": {
    "file": "00_config.js",
@@ -10110,7 +10131,7 @@
   "getKbDataTables": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "275875a4b4df78ab"
+   "sha": "232d41be7172529a"
   },
   "getKbImages": {
    "file": "70_kb.js",
@@ -10780,7 +10801,7 @@
   "insPayorFromSource_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "47d0813817457fd3"
+   "sha": "397184444dfa1804"
   },
   "insPayorMatch_": {
    "file": "70_kb.js",
@@ -10792,10 +10813,15 @@
    "kind": "function",
    "sha": "c4e6063149f42dcc"
   },
-  "insPayorNote_": {
+  "insPayorNotesParse_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "9a6f90479673edae"
+   "sha": "cc79624ecca34f4d"
+  },
+  "insPayorNotes_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ba154ed8949fc881"
   },
   "insPayorRowObj_": {
    "file": "70_kb.js",
@@ -10811,6 +10837,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "2a7dff2bf9068032"
+  },
+  "insPayorTables_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7cc53031cc2e8565"
   },
   "insStatesIn_": {
    "file": "70_kb.js",
@@ -11525,7 +11556,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3e978b2b8ee727ef"
+   "sha": "111caeb335a7fdb8"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -11930,7 +11961,7 @@
   "kbSuggestPayorSynonyms": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f1bd49548a747ec7"
+   "sha": "0a3b8c959280a058"
   },
   "kbSynonymGroups_": {
    "file": "70_kb.js",
@@ -13625,7 +13656,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5fc51d66bae0e11a"
+   "sha": "92a4ea135003839d"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

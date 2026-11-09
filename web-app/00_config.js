@@ -2560,9 +2560,11 @@ const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
 // PT1a (operator 2026-11-09): the source sheet's standing note — the rule its
 // top-left cell states for every plan ("No power orders in OR, WA, ID…"). A
-// source-format import stores it here ({text, at, by}) and every insurance
-// result shows it. One key, a few hundred characters (g07); there is no seed —
-// it says what the last source upload said, or nothing.
+// source-format import stores it here and every insurance result shows it.
+// PT1: ONE key for every payor table, a map {dataTableKey: {text, key, at, by}}
+// — `key` is the source export's own key ("Try = Create account…"). A value
+// in PT1a's single-table shape ({text, at, by}) reads as InsurancePayors'.
+// A few hundred characters per table (g07); there is no seed.
 const INS_PAYOR_NOTE_PROP = 'INS_PAYOR_NOTE';
 const INS_PAYOR_NOTE_MAX = 2000;
 // D2 (operator 2026-10-27): payor alias FAMILIES the Synonyms editor offers
@@ -2624,6 +2626,19 @@ const KB_DATA_TABLES = {
     // rows, a note in A1, a key in the trailing columns) and converts it —
     // insPayorFromSource_. A file already in this tab's shape imports as before.
     sourceFormat: 'payorAcceptance',
+    // PT1: the label the insurance lookup groups this table's plans under.
+    payorTable: 'Medicare / MA',
+  },
+  // PT1 (operator 2026-11-09): the source sheet's Primary Medicaid tab — the
+  // same layout, its own rule and key; searched with every payor table.
+  MedicaidPayors: {
+    tab: 'MedicaidPayors',
+    label: 'Primary Medicaid acceptance',
+    describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|medicaid/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'Primary Medicaid',
   },
 };
 const KB_DATA_TABLE_MAX_ROWS = 5000;

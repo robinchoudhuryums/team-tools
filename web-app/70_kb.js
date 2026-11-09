@@ -972,10 +972,17 @@ function kbSuggestPayorSynonyms() {
   try {
     const emp = getEmployeeInfo_();
     if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
-    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
-    if (!sh) return { error: 'There is no "' + INS_PAYOR_TAB + '" tab in the KB spreadsheet to read payor names from.' };
-    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
-    const names = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (r) { return r[0]; }) : [];
+    // PT1: every payor table's names.
+    const ss = getKbSS_();
+    let names = [], found = 0;
+    insPayorTables_().forEach(function (t) {
+      const sh = ss.getSheetByName(t.tab);
+      if (!sh) return;
+      found++;
+      const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+      if (last >= 2) names = names.concat(sh.getRange(2, 1, last - 1, 1).getDisplayValues().map(function (r) { return r[0]; }));
+    });
+    if (!found) return { error: 'There is no "' + INS_PAYOR_TAB + '" tab in the KB spreadsheet to read payor names from.' };
     return { groups: insPayorAliasSuggest_(names, getKbSearchSynonyms_()), payors: names.filter(function (n) { return String(n).trim(); }).length };
   } catch (err) { return { error: 'Could not read the payor names: ' + err.message }; }
 }
@@ -1210,6 +1217,7 @@ function insPayorFromSource_(grid) {
     if (/network/i.test(orig) && /update/i.test(orig)) { h = 'Last Update'; why = 'it would have been read as the network status'; }
     else if (/reimb/i.test(orig) && /(oon|%|out[\s-]*of[\s-]*network)/i.test(orig)) { h = 'OON Rate (% of Medicare)'; why = 'it would have been read as the reimbursement status'; }
     else if (/reimb/i.test(orig)) { h = 'Reimbursement Status'; why = 'read as the reimbursement status'; }
+    else if (/^(network(\s*status)?|(in|out)[\s-]*of[\s-]*network|in[\s-]*network)$/i.test(orig) && orig !== 'Network Status') { h = 'Network Status'; why = 'its cells are the network status'; }
     else if (/waystar/i.test(orig)) { h = 'Waystar Reference #'; }
     else if (/qualif/i.test(orig)) { h = 'Qualification Process'; }
     else if (hcpcsParse_(orig).shaped) { h = insCodeHeaderClean_(orig); if (h !== orig) why = 'so it reads as one code'; }
@@ -1241,14 +1249,31 @@ function insPayorFromSource_(grid) {
     sourceRows: body.length, unnamedRows: unnamedRows.length, blankRows: blankRows.length,
   };
 }
-/** The standing note every insurance result shows — what the last source
- *  upload said. '' when none is stored; THROWS when it cannot be read, so the
- *  caller can say so (a rule reps should see must not vanish silently, g53). */
-function insPayorNote_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP);
-  if (!raw) return null;
+/** PT1: the payor tables the insurance lookup searches, in KB_DATA_TABLES
+ *  order — every allowlisted table that names a `payorTable` label. */
+function insPayorTables_() {
+  return Object.keys(KB_DATA_TABLES).filter(function (k) { return KB_DATA_TABLES[k].payorTable; })
+    .map(function (k) { return { key: k, tab: KB_DATA_TABLES[k].tab, label: KB_DATA_TABLES[k].payorTable }; });
+}
+/** PURE (Node-pinned) — PT1: the stored notes as a map {tableKey: {text, key,
+ *  at, by}}. PT1a's single-table value ({text, at, by}) is InsurancePayors'. */
+function insPayorNotesParse_(raw) {
+  if (!raw) return {};
   const o = JSON.parse(raw);
-  return (o && o.text) ? { text: String(o.text), at: String(o.at || ''), by: String(o.by || '') } : null;
+  if (!o || typeof o !== 'object') return {};
+  if (typeof o.text === 'string') return { InsurancePayors: { text: o.text, key: null, at: String(o.at || ''), by: String(o.by || '') } };
+  const out = {};
+  Object.keys(o).forEach(function (k) {
+    const e = o[k];
+    if (e && typeof e === 'object') out[k] = { text: String(e.text || ''), key: (e.key && typeof e.key === 'object') ? e.key : null, at: String(e.at || ''), by: String(e.by || '') };
+  });
+  return out;
+}
+/** Every payor table's standing note and source key — what the last source
+ *  upload of each said. THROWS when the value cannot be read, so the caller
+ *  can say so (a rule reps should see must not vanish silently, g53). */
+function insPayorNotes_() {
+  return insPayorNotesParse_(PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP));
 }
 // ════════════════════════════════════════════════════════════════════════════
 //  OOP PRICING LOOKUP (operator 2026-09-16) — the NINTH store, read LIVE
@@ -2975,29 +3000,47 @@ function searchInsurancePayors(query) {
     if (!emp) return { error: 'Not authorized.' };
     const q = String(query || '').trim();
     if (q.length < 2) return { matches: [], total: 0 };
-    const sh = getKbSS_().getSheetByName(INS_PAYOR_TAB);
-    if (!sh) return { error: 'Insurance lookup is not set up yet — import the payor CSV into a tab named "' + INS_PAYOR_TAB + '" in the KB spreadsheet.' };
-    const last = Math.min(sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
-    if (last < 2) return { matches: [], total: 0 };
-    const width = sh.getLastColumn();
-    const headers = sh.getRange(1, 1, 1, width).getDisplayValues()[0];
-    // Name-column scan for scoring; full rows fetched only for the top N.
-    const names = sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+    // PT1: every payor table (Medicare / MA, Primary Medicaid, …), one search.
+    // Each table's standing note and source key ride the answer by table; a
+    // value that cannot be read is SAID, never dropped (it is a rule reps act on).
+    let notes = {}, noteError = '';
+    try { notes = insPayorNotes_(); } catch (eN) { noteError = String(eN.message || eN); }
+    const ss = getKbSS_();
+    const tables = insPayorTables_().map(function (t) {
+      const n = notes[t.key];
+      return { key: t.key, tab: t.tab, label: t.label, sh: ss.getSheetByName(t.tab),
+        note: n ? n.text : '', legend: n ? n.key : null, noteError: noteError };
+    });
+    if (!tables.some(function (t) { return t.sh; })) {
+      return { error: 'Insurance lookup is not set up yet — import the payor CSV into a tab named "' + INS_PAYOR_TAB + '" in the KB spreadsheet.' };
+    }
     // D1–D3: states matched by code or name, aliases from the Synonyms list,
     // and a plan that EXCLUDES the searched state ranked after every other.
     const groups = getKbSearchSynonyms_();
     const scored = [];
-    for (let i = 0; i < names.length; i++) {
-      const sc = insPayorMatch_(names[i][0], q, groups);
-      if (sc.score > 0) scored.push({ i: i, score: sc.score, excluded: sc.excluded });
-    }
-    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score; });
+    tables.forEach(function (t, ti) {
+      if (!t.sh) return;
+      const last = Math.min(t.sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
+      if (last < 2) return;
+      t.width = t.sh.getLastColumn();
+      t.headers = t.sh.getRange(1, 1, 1, t.width).getDisplayValues()[0];
+      // Name-column scan for scoring; full rows fetched only for the top N.
+      const names = t.sh.getRange(2, 1, last - 1, 1).getDisplayValues();
+      for (let i = 0; i < names.length; i++) {
+        const sc = insPayorMatch_(names[i][0], q, groups);
+        if (sc.score > 0) scored.push({ ti: ti, i: i, score: sc.score, excluded: sc.excluded });
+      }
+    });
+    // One ranking across the tables; a tie keeps the tables' configured order.
+    scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score || a.ti - b.ti; });
     const top = scored.slice(0, INS_PAYOR_TOP);
     const matches = top.map(function (t) {
+      const tb = tables[t.ti];
       // getDisplayValues — a foreign-authored sheet's formats are not ours to
       // reinterpret (the INV-64 discipline).
-      const row = sh.getRange(t.i + 2, 1, 1, width).getDisplayValues()[0];
-      const o = insPayorRowObj_(headers, row);
+      const row = tb.sh.getRange(t.i + 2, 1, 1, tb.width).getDisplayValues()[0];
+      const o = insPayorRowObj_(tb.headers, row);
+      o.table = tb.key;
       if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
       return o;
     });
@@ -3017,12 +3060,10 @@ function searchInsurancePayors(query) {
         (m.details || []).forEach(function (d) { insNameCodeDetail_(d, idx.byToken); });
       });
     }
-    // PT1a: the source sheet's standing note rides every answer; a note that
-    // cannot be read is SAID, never dropped (it is a rule reps act on).
-    let note = null, noteError = '';
-    try { note = insPayorNote_(); } catch (eN) { noteError = String(eN.message || eN); }
     return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
-      note: note ? note.text : '', noteError: noteError,
+      tables: tables.filter(function (t) { return t.sh; }).map(function (t) {
+        return { key: t.key, label: t.label, note: t.note, legend: t.legend, noteError: t.noteError };
+      }),
       // NAMED, not inferred from empty `item` fields. A pricing tab that is
       // missing or unreadable produces exactly the same bare codes as a payor
       // sheet whose columns are not codes, and the rep must be able to tell
@@ -3178,7 +3219,7 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     }
     if (spec.sourceFormat === 'payorAcceptance') {
       // The note the lookup shows NOW, so the preview can say what changes.
-      try { const cur = insPayorNote_(); summary.currentNote = cur ? cur.text : ''; }
+      try { const cur = insPayorNotes_()[String(tabKey)]; summary.currentNote = cur ? cur.text : ''; }
       catch (eN) { summary.currentNote = ''; summary.currentNoteError = String(eN.message || eN); }
     }
 
@@ -3236,9 +3277,16 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     // empty A1 clears it; a file in the tab's shape carries no note and leaves
     // it alone. After the table write, so a failed write changes neither.
     if (conv) {
-      // Bounded (Q-1): the note is capped at INS_PAYOR_NOTE_MAX characters, far under a value's limit.
-      if (conv.note) propSetBounded_(INS_PAYOR_NOTE_PROP, JSON.stringify({ text: conv.note, at: new Date().toISOString(), by: emp.email || '' }));
-      else PropertiesService.getScriptProperties().deleteProperty(INS_PAYOR_NOTE_PROP);
+      // PT1: one map for every payor table; this table's entry carries its note
+      // and its source key. A map that cannot be read is started afresh rather
+      // than blocking an import that has already been written (the other
+      // tables' notes return with their next source upload) — and said.
+      let map = {};
+      try { map = insPayorNotesParse_(PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP)); }
+      catch (eM) { summary.noteWarning = 'The stored notes could not be read (' + eM.message + ') — only this table\'s note was kept; re-upload the other payor tables\' source exports to restore theirs.'; }
+      map[String(tabKey)] = { text: conv.note, key: conv.key, at: new Date().toISOString(), by: emp.email || '' };
+      // Bounded (Q-1): each note is capped at INS_PAYOR_NOTE_MAX characters, far under a value's limit.
+      propSetBounded_(INS_PAYOR_NOTE_PROP, JSON.stringify(map));
     }
     writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
       'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows +
@@ -3271,7 +3319,7 @@ function getKbDataTables() {
         }
       } catch (e) { out.unreadable = true; }   // INV-187 — an unreadable tab is not an empty one
       if (spec.sourceFormat === 'payorAcceptance') {   // PT1a: the standing note the lookup shows
-        try { const n = insPayorNote_(); out.note = n ? n.text : ''; out.noteAt = n ? n.at : ''; }
+        try { const n = insPayorNotes_()[k]; out.note = n ? n.text : ''; out.noteAt = n ? n.at : ''; }
         catch (eN) { out.noteError = String(eN.message || eN); }
       }
       return out;

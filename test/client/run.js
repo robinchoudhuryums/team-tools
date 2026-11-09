@@ -15147,8 +15147,10 @@ test('ELIG: the pricing + delivery tables are NAMED TABS in the KB store, beside
   // The InsurancePayors precedent, asserted so the three stay in step: all
   // three operator-maintained lookup tables resolve the same way in one store.
   const ins = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
-  assert.ok(/getKbSS_\(\)\.getSheetByName\(INS_PAYOR_TAB\)/.test(ins),
-    'the payor table it was modelled on still resolves the same way');
+  // PT1: every payor table is an allowlisted NAMED tab of the KB store, read the same way.
+  assert.ok(/const ss = getKbSS_\(\)/.test(ins) && /ss\.getSheetByName\(t\.tab\)/.test(ins) && /insPayorTables_\(\)/.test(ins),
+    'the payor tables it was modelled on still resolve as named KB tabs');
+  assert.ok(/KB_DATA_TABLES\[k\]\.payorTable/.test(nc(extractRawFunction('Code.js', 'insPayorTables_'))), 'and only the allowlisted ones');
 });
 
 test('ELIG: the endpoint is rep-gated and bounded, geocodes the customer address UNCACHED, and never returns an empty eligible list in place of an error', () => {
@@ -44422,7 +44424,7 @@ function pt1aImportCtx_(sheet, props) {
     getKbSS_: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }),
     writeAuditLog_: (e, a, x, y, z, n, d) => { book.audits.push(d); } });
   ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
-    'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNote_']
+    'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, book };
 }
@@ -44447,14 +44449,16 @@ test('PT1a: kbImportDataTable — the preview converts and lists every step and 
   assert.strictEqual(sh.data[0][16], 'Last Update', 'the CONVERTED header row is what lands');
   assert.strictEqual(sh.data.length, 4);
   assert.deepStrictEqual(s.book.bounded, ['INS_PAYOR_NOTE'], 'the note goes through the bounded writer (Q-1)');
-  const stored = JSON.parse(props.INS_PAYOR_NOTE);
-  assert.ok(/No Power Orders/.test(stored.text) && stored.by === 'admin@x' && stored.at, 'who and when ride the note');
+  const stored = JSON.parse(props.INS_PAYOR_NOTE).InsurancePayors;
+  assert.ok(/No Power Orders/.test(stored.text) && stored.by === 'admin@x' && stored.at, 'who and when ride the note, under its table');
+  assert.deepStrictEqual(stored.key, { X: 'Yes', NO: 'No', Y: 'Yes, if Branch or Driver is located within 100 miles', Z: 'Hawaii Only' }, 'PT1: and the source export\'s own key');
   assert.ok(/converted=source; note=set/.test(s.book.audits[0]), s.book.audits[0]);
 
   const blankA1 = PT1A_SRC.map((r) => r.slice());
   blankA1[0][0] = '';
   res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(blankA1), { dryRun: false }));
-  assert.ok(res.imported && s.book.deleted.indexOf('INS_PAYOR_NOTE') >= 0 && props.INS_PAYOR_NOTE === undefined, 'a source with no note clears it');
+  const cleared = JSON.parse(props.INS_PAYOR_NOTE).InsurancePayors;
+  assert.ok(res.imported && cleared.text === '' && cleared.key && cleared.key.Z === 'Hawaii Only', 'a source with no note clears its note (its key stays)');
   assert.ok(/note=cleared/.test(s.book.audits[1]));
 
   props = { INS_PAYOR_NOTE: prevNote };
@@ -44484,18 +44488,20 @@ test('PT1a: the preview warns when two columns would fill one reader slot — th
 });
 
 test('PT1a: the standing note rides every insurance answer and a note that cannot be read is NAMED; the Admin table list carries it (driven + source)', () => {
-  const ctx = vm.createContext({ String, JSON, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE', PropertiesService: { getScriptProperties: () => ({ getProperty: () => ctx.__raw }) } });
-  vm.runInContext(extractRawFunction('Code.js', 'insPayorNote_'), ctx);
+  const ctx = vm.createContext({ String, JSON, Object, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE', PropertiesService: { getScriptProperties: () => ({ getProperty: () => ctx.__raw }) } });
+  ['insPayorNotesParse_', 'insPayorNotes_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   ctx.__raw = null;
-  assert.strictEqual(ctx.insPayorNote_(), null, 'none stored');
+  assert.deepStrictEqual(hJ(ctx.insPayorNotes_()), {}, 'none stored');
   ctx.__raw = JSON.stringify({ text: 'Rule', at: 't', by: 'b' });
-  assert.deepStrictEqual(hJ(ctx.insPayorNote_()), { text: 'Rule', at: 't', by: 'b' });
+  assert.deepStrictEqual(hJ(ctx.insPayorNotes_()), { InsurancePayors: { text: 'Rule', key: null, at: 't', by: 'b' } }, 'PT1a\'s single-table value reads as InsurancePayors\'');
+  ctx.__raw = JSON.stringify({ InsurancePayors: { text: 'A', key: { X: 'Yes' }, at: 't', by: 'b' }, MedicaidPayors: { text: 'B', key: { Try: 'Create account' } } });
+  assert.deepStrictEqual(hJ(ctx.insPayorNotes_()).MedicaidPayors, { text: 'B', key: { Try: 'Create account' }, at: '', by: '' }, 'PT1: one entry per payor table, with its key');
   ctx.__raw = '{bad';
-  assert.throws(() => ctx.insPayorNote_(), 'an unreadable note THROWS — the caller says so');
+  assert.throws(() => ctx.insPayorNotes_(), 'an unreadable note THROWS — the caller says so');
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
-  assert.ok(/try \{ note = insPayorNote_\(\); \} catch \(eN\) \{ noteError = /.test(srv) && /note: note \? note\.text : '', noteError: noteError/.test(srv),
-    'the answer carries the note and a read failure by name');
+  assert.ok(/try \{ notes = insPayorNotes_\(\); \} catch \(eN\) \{ noteError = /.test(srv) && /note: t\.note, legend: t\.legend, noteError: t\.noteError/.test(srv),
+    'the answer carries each table\'s note and key, and a read failure by name');
   const list = nc(extractRawFunction('Code.js', 'getKbDataTables'));
   assert.ok(/spec\.sourceFormat === 'payorAcceptance'/.test(list) && /out\.noteError/.test(list), 'the Admin list shows the note, or why it cannot');
   assert.strictEqual(/sourceFormat: 'payorAcceptance'/.test(serverSource()), true, 'the InsurancePayors spec names its source format');
@@ -44521,6 +44527,101 @@ test('PT1a: the Admin preview lists every conversion step and the note it will s
   assert.ok(/No standing note — upload the source sheet’s own export/.test(row({ note: '' })));
   assert.ok(/standing note could not be read \(bad JSON\)/.test(row({ noteError: 'bad JSON' })));
   assert.ok(!/standing note|Note on every/.test(row({})), 'a table with no note field shows none');
+});
+
+// ── PT1 (operator 2026-11-09): payor tables — Primary Medicaid beside Medicare / MA, one search ──
+console.log('\nOperator round 2026-11-09 — PT1 (payor tables: one search across Medicare / MA and Primary Medicaid)');
+// The Medicaid tab's export, in miniature, with its own header strings: the
+// network column titled "Out-of-Network", a fifth key column ("Try= …"), the
+// "If This Payor Active Secondary…" column, a two-code header.
+const PT1_MCD = [
+  ['Medicaid Primary Acceptance (Test Nursing Home Patients) No Power Orders In OR. Can Accept Patients In Facilities..', 'Waystar Ref#', 'Out-of-Network', '', 'Qualifaction Process', 'Reimb. Status', 'Scooter', '', 'Power Chair', '', '', '', '', '', '', ''],
+  ['', '', '', 'If This Payor Active Secondary, Can we Accept an Order with a 30% + Co-insurance primary when we are INN with  Primary', '', '', 'K0800', 'K0801 (285-325 lbs)', 'K0814', 'K0816/K0823 (Up to 285 lbs)', 'K0842 Up to 435 lbs', 'Network Status Last Update', 'X = Yes', 'NO = No', 'Z = Hawaii Only', 'Try= Create account and insurance team will verify'],
+  ['Arizona Medicaid (Traditional  )', '', 'In-Network', 'Try Mark Testing', 'X', 'NO', 'NO', 'NO', 'X', 'X', 'TRY', '1/12/22', '', '', '', ''],
+  ['Arizona Complete Health ', '68069', 'OON W/ PA', '', '', '', 'L', 'L ( 285-325 lb)', 'Try', 'TRY', 'Z', 'done', '', '', '', 'H8552'],
+];
+
+test('PT1: the Primary Medicaid export converts with PT1a\'s one converter — its "Out-of-Network" title named Network Status, its fifth key column (Try) read and dropped, a two-code header kept, an exact key letter written out and the sheet\'s TRY left as it is (driven over its real header strings)', () => {
+  const c = pt1aCtx_();
+  const r = hJ(c.insPayorFromSource_(PT1_MCD));
+  assert.deepStrictEqual(r.grid[0], ['Insurance', 'Waystar Reference #', 'Network Status',
+    'If This Payor Active Secondary, Can we Accept an Order with a 30% + Co-insurance primary when we are INN with  Primary',
+    'Qualification Process', 'Reimbursement Status', 'K0800', 'K0801 (285-325 lbs)', 'K0814', 'K0816/K0823 (Up to 285 lbs)', 'K0842 (Up to 435 lbs)', 'Last Update']);
+  assert.deepStrictEqual(r.key, { X: 'Yes', NO: 'No', Z: 'Hawaii Only', Try: 'Create account and insurance team will verify' }, 'the sheet\'s own key, Try included');
+  assert.ok(r.changes.some((x) => /"Out-of-Network" → "Network Status" \(its cells are the network status\)/.test(x)), r.changes.join('\n'));
+  assert.ok(r.changes.some((x) => /"Try= Create account and insurance team will verify" is the key, not data — dropped with its 1 filled cell/.test(x)));
+  const row = r.grid[2], at = (h) => row[r.grid[0].indexOf(h)];
+  assert.strictEqual(at('K0814'), 'Create account and insurance team will verify (Try)', 'a cell that IS the key\'s "Try" reads its meaning');
+  assert.strictEqual(at('K0816/K0823 (Up to 285 lbs)'), 'TRY', 'the sheet\'s TRY (another spelling) is left exactly as it is');
+  assert.strictEqual(at('K0842 (Up to 435 lbs)'), 'Hawaii Only (Z)');
+  assert.strictEqual(at('K0800'), 'L', 'a value the key does not define stays verbatim');
+  const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[1]));
+  assert.deepStrictEqual([o.networkStatus, o.qualification, o.reimbursement], ['In-Network', 'X', 'NO'], 'each slot reads its own column, once');
+  assert.ok(/Can Accept Patients In Facilities/.test(r.note));
+  assert.ok(hJ(c.hcpcsParse_('K0816/K0823 (Up to 285 lbs)')).certain, 'the two-code header reads as two codes');
+});
+
+function pt1SearchCtx_(tabs, rawNotes) {
+  const sheet = (rows) => ({ getLastRow: () => rows.length, getLastColumn: () => rows[0].length,
+    getRange: (r, c, n, w) => ({ getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w)) }) });
+  const ctx = vm.createContext({ String, Array, Object, Math, Number, JSON, RegExp,
+    INS_PAYOR_TAB: 'InsurancePayors', INS_PAYOR_TOP: 8, INS_PAYOR_MAX_ROWS: 5000, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE',
+    KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', payorTable: 'Medicare / MA' }, OopPricing: { tab: 'X' },
+      MedicaidPayors: { tab: 'MedicaidPayors', payorTable: 'Primary Medicaid' } },
+    getEmployeeInfo_: () => ({ email: 'rep@x' }), getKbSearchSynonyms_: () => [],
+    insPayorMatch_: (name, q) => { const n = String(name).toLowerCase(); return { score: n.indexOf(q) >= 0 ? (n === q ? 10 : 5) : 0, excluded: '' }; },
+    oopCodeIndex_: () => ({ byToken: {}, error: '' }),
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
+    getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
+  ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_', 'searchInsurancePayors']
+    .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+test('PT1: searchInsurancePayors searches every payor table as ONE ranking, tags each plan with its table, and ships each table\'s note and sheet key; a table not imported yet is skipped; none imported is "not set up"; an unreadable note map is said (driven)', () => {
+  const MA = [['Insurance', 'Network Status'], ['Aetna Medicare', 'In-Network'], ['aetna', 'OON']];
+  const MCD = [['Insurance', 'Network Status'], ['Aetna Better Health TX', 'In-Network'], ['Molina', 'In-Network']];
+  const notes = JSON.stringify({ InsurancePayors: { text: 'MA rule', key: { X: 'Yes' } }, MedicaidPayors: { text: 'Medicaid rule', key: { Try: 'Create account' } } });
+  let c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, notes);
+  let r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual(r.matches.map((m) => m.table + ':' + m.name), ['InsurancePayors:aetna', 'InsurancePayors:Aetna Medicare', 'MedicaidPayors:Aetna Better Health TX'],
+    'one ranking across the tables (the exact name first), a tie keeping the tables\' order');
+  assert.strictEqual(r.total, 3);
+  assert.deepStrictEqual(r.tables, [
+    { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', legend: { X: 'Yes' }, noteError: '' },
+    { key: 'MedicaidPayors', label: 'Primary Medicaid', note: 'Medicaid rule', legend: { Try: 'Create account' }, noteError: '' }],
+    'each payor table (never another allowlisted table) with its note and sheet key, in configured order');
+  r = hJ(c.searchInsurancePayors('molina'));
+  assert.deepStrictEqual(r.matches.map((m) => m.table), ['MedicaidPayors'], 'a plan only Medicaid lists is found there');
+  c = pt1SearchCtx_({ InsurancePayors: MA }, JSON.stringify({ text: 'legacy rule' }));
+  r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual(r.tables.map((t) => t.key + ':' + t.note), ['InsurancePayors:legacy rule'], 'a table not imported yet is skipped; PT1a\'s value reads as InsurancePayors\'');
+  c = pt1SearchCtx_({}, null);
+  assert.ok(/not set up yet/.test(hJ(c.searchInsurancePayors('aetna')).error), 'no payor table imported: says what to create');
+  c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, '{bad');
+  r = hJ(c.searchInsurancePayors('aetna'));
+  assert.ok(r.matches.length === 3 && r.tables.every((t) => t.noteError && !t.note), 'an unreadable note map is NAMED on every table, and the search still answers');
+});
+
+test('PT1: the Medicaid table is allowlisted beside InsurancePayors with the same converter; its import writes ITS entry of the one note map and leaves the other table\'s; the alias suggestion reads every payor table (driven + source)', () => {
+  const spec = (serverSource().match(/  MedicaidPayors: \{[\s\S]*?\n  \},/) || [''])[0];
+  assert.ok(/tab: 'MedicaidPayors'/.test(spec) && /sourceFormat: 'payorAcceptance'/.test(spec) && /payorTable: 'Primary Medicaid'/.test(spec), spec);
+  assert.ok(/payorTable: 'Medicare \/ MA'/.test(serverSource()), 'InsurancePayors is labelled too');
+  const props = { INS_PAYOR_NOTE: JSON.stringify({ InsurancePayors: { text: 'MA rule', key: { X: 'Yes' }, at: 't', by: 'b' } }) };
+  const s = pt1aImportCtx_(adm05Sheet_([], 1000, 40), props);
+  s.ctx.KB_DATA_TABLES.MedicaidPayors = { tab: 'MedicaidPayors', label: 'Primary Medicaid acceptance', minCols: 2, nameHeader: /payor|plan|name|insur|medicaid/i, sourceFormat: 'payorAcceptance' };
+  const dry = hJ(s.ctx.kbImportDataTable('MedicaidPayors', pt1aCsv_(PT1_MCD), {}));
+  assert.ok(dry.converted && dry.currentNote === '', 'the preview reads THIS table\'s current note (none yet)');
+  const res = hJ(s.ctx.kbImportDataTable('MedicaidPayors', pt1aCsv_(PT1_MCD), { dryRun: false }));
+  assert.ok(res.imported, JSON.stringify(res.error));
+  const map = JSON.parse(props.INS_PAYOR_NOTE);
+  assert.strictEqual(map.InsurancePayors.text, 'MA rule', 'the other table\'s note is untouched');
+  assert.ok(/Can Accept Patients In Facilities/.test(map.MedicaidPayors.text) && map.MedicaidPayors.key.Try === 'Create account and insurance team will verify');
+  const props2 = { INS_PAYOR_NOTE: '{bad' };
+  const s2 = pt1aImportCtx_(adm05Sheet_([], 1000, 40), props2);
+  const res2 = hJ(s2.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  assert.ok(res2.imported && /could not be read/.test(res2.noteWarning) && JSON.parse(props2.INS_PAYOR_NOTE).InsurancePayors, 'an unreadable map: this table\'s note is kept and the loss is SAID');
+  const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  assert.ok(/insPayorTables_\(\)\.forEach/.test(nc(extractRawFunction('Code.js', 'kbSuggestPayorSynonyms'))), 'the alias suggestion reads every payor table\'s names');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

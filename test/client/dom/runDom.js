@@ -4204,6 +4204,44 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('PT1 DOM: one search across the payor tables — a group per table with matches, in the server\'s order, each named, with its own note and its sheet\'s key (escaped); a table with no match draws nothing; not listed shows every table\'s note (driven)', async () => {
+  const h = boot();
+  const tables = [
+    { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', noteError: '', legend: { X: 'Yes', Z: 'Hawaii Only' } },
+    { key: 'MedicaidPayors', label: 'Primary <i>Medicaid</i>', note: 'Medicaid rule', noteError: '', legend: { Try: 'Create account & <b>verify</b>' } }];
+  let answer = { total: 3, cap: 8, tables: tables, matches: [
+    { table: 'MedicaidPayors', name: 'AETNA BETTER HEALTH TX', networkStatus: 'In-Network', details: [] },
+    { table: 'InsurancePayors', name: 'AETNA MEDICARE', networkStatus: 'In-Network', details: [] },
+    { table: 'MedicaidPayors', name: 'AETNA MCO', networkStatus: 'OON W/ PA', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('aetna');
+  const res = h.$('#kb-ins-results');
+  const groups = Array.from(res.querySelectorAll('.kb-ins-group'));
+  assert.deepStrictEqual(groups.map((g) => g.querySelector('.kb-ins-group-h').textContent), ['Medicare / MA', 'Primary <i>Medicaid</i>'],
+    'a group per table, in the server\'s table order (not the ranking\'s), the label escaped');
+  assert.deepStrictEqual(groups.map((g) => Array.from(g.querySelectorAll('.kb-ins-name')).map((n) => n.textContent)),
+    [['AETNA MEDICARE'], ['AETNA BETTER HEALTH TX', 'AETNA MCO']], 'each plan under its own table, ranked order kept inside');
+  assert.ok(/For every plan in Medicare \/ MA:\s*MA rule/.test(groups[0].querySelector('.kb-ins-note').textContent), 'the note names its table');
+  assert.ok(/For every plan in Primary <i>Medicaid<\/i>:\s*Medicaid rule/.test(groups[1].querySelector('.kb-ins-note').textContent));
+  const key = groups[1].querySelector('.kb-ins-key');
+  assert.ok(key && /Sheet key:\s*Try = Create account & <b>verify<\/b>/.test(key.textContent) && !key.querySelector('b b'), 'the table\'s own key, escaped: ' + (key && key.innerHTML));
+  assert.ok(/X = Yes · Z = Hawaii Only/.test(groups[0].querySelector('.kb-ins-key').textContent));
+  answer = { total: 1, cap: 8, tables: tables, matches: [{ table: 'InsurancePayors', name: 'ONLY MA', networkStatus: 'In-Network', details: [] }] };
+  await search('only');
+  assert.strictEqual(res.querySelectorAll('.kb-ins-group').length, 1, 'a table with no match draws no group');
+  answer = { total: 0, cap: 8, notFound: true, matches: [], tables: tables };
+  await search('zzplan');
+  assert.deepStrictEqual(Array.from(res.querySelectorAll('.kb-ins-note')).map((n) => n.textContent.replace(/\s+/g, ' ').trim()),
+    ['For every plan in Medicare / MA: MA rule', 'For every plan in Primary <i>Medicaid</i>: Medicaid rule'], 'not listed: every table\'s note, then the TRY guide');
+  assert.ok(res.querySelector('.kb-ins-guide'));
+  answer = { total: 1, cap: 8, tables: [tables[0]], matches: [{ table: 'InsurancePayors', name: 'SOLO', networkStatus: 'In-Network', details: [] }] };
+  await search('solo');
+  assert.ok(!res.querySelector('.kb-ins-group-h') && /^For every plan:/.test(res.querySelector('.kb-ins-note').textContent.trim()), 'one table: no heading, an unnamed note');
+});
+
 test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
   const h = boot();
   let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',

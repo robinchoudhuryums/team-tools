@@ -340,6 +340,9 @@
   .kb-ins-cell .v.info { color: var(--info-deep); }
   .kb-ins-note { display: flex; gap: 6px; align-items: flex-start; font-size: .78rem; color: var(--ink); background: var(--warn-soft); border-left: 3px solid var(--warning-deep); border-radius: var(--radius-sm); padding: 7px 10px; margin: 6px 0 8px; line-height: 1.45; }
   .kb-ins-note svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning-deep); }
+  .kb-ins-group + .kb-ins-group { margin-top: 12px; }
+  .kb-ins-group-h { font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin: 4px 0 2px; }
+  .kb-ins-key { font-size: .72rem; color: var(--muted); margin: 6px 0 2px; line-height: 1.5; word-break: break-word; }
   .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
   .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
   .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
@@ -2605,14 +2608,32 @@ function insLookupInput_(inp) {
 /** PT1a: the payor sheet's standing note — the rule its source states for
  *  every plan — above every answer (a match or none). A note the server could
  *  not read is said, never dropped: it is a rule reps act on (g53). */
-function insNoteHtml_(res) {
-  if (res && res.note) {
-    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span><b>For every plan:</b> ' + esc(res.note) + '</span></div>';
+function insNoteHtml_(t, named) {
+  // PT1: one note per payor table; with more than one table on screen it
+  // names its table ("For every plan in Primary Medicaid:").
+  var who = named && t && t.label ? ' in ' + esc(t.label) : '';
+  if (t && t.note) {
+    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span><b>For every plan' + who + ':</b> ' + esc(t.note) + '</span></div>';
   }
-  if (res && res.noteError) {
+  if (t && t.noteError) {
     return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span>The payor sheet’s standing note could not be read — check the source sheet’s top note before quoting.</span></div>';
   }
   return '';
+}
+/** PT1: the key the table's own source export carries ("Try = Create account
+ *  and insurance team will verify") — the sheet's words, escaped. A table can
+ *  mean something different by a value than another does, so each group shows
+ *  its own. */
+function insKeyHtml_(legend) {
+  if (!legend || typeof legend !== 'object') return '';
+  var parts = Object.keys(legend).map(function (k) { return '<b>' + esc(k) + '</b> = ' + esc(String(legend[k])); });
+  return parts.length ? '<div class="kb-ins-key">Sheet key: ' + parts.join(' · ') + '</div>' : '';
+}
+/** PT1: the payor tables the answer covers, in the server's order. An answer
+ *  from before PT1 (one table, a top-level note) reads as one unnamed table. */
+function insTablesOf_(res) {
+  if (res && res.tables && res.tables.length) return res.tables;
+  return [{ key: '', label: '', note: (res && res.note) || '', noteError: (res && res.noteError) || '', legend: null }];
 }
 function insRenderResults_(suffix, q, res) {
   var host = document.getElementById('kb-ins-results' + suffix);
@@ -2627,14 +2648,18 @@ function insRenderResults_(suffix, q, res) {
     oopRepaintXref_(suffix);
     return;
   }
+  var tables = insTablesOf_(res);
+  var named = tables.length > 1;
   if (res.notFound || !(res.matches || []).length) {
     // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
-    host.innerHTML = insNoteHtml_(res) + '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
+    // Every table's note shows — each applies to plans it does not list.
+    host.innerHTML = tables.map(function (t) { return insNoteHtml_(t, named); }).join('') + '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
       'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
     oopRepaintXref_(suffix);
     return;
   }
-  var html = insNoteHtml_(res);
+  var html = '';
+  var cards = {};
   // The join is BEST-EFFORT and its absence is reassuring, so it announces
   // itself when it fails: bare codes with no names look exactly like a payor
   // sheet whose columns were never codes (g53). `attempted` is the server's
@@ -2685,10 +2710,21 @@ function insRenderResults_(suffix, q, res) {
     // D3: the server ranks a plan that excludes the searched state LAST and
     // names the state; the card says so beside the name.
     var excl = m.excludedState ? '<span class="kb-ins-excl" title="This plan’s name excludes ' + esc(m.excludedState) + '">' + esc(m.excludedState) + ' excluded</span>' : '';
-    html += '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
+    var tk = named ? String(m.table || '') : '';
+    cards[tk] = (cards[tk] || '') + '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
       '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl + pill + '</div>' +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
       detHtml + '</div>';
+  });
+  // PT1: a group per payor table that has matches, in the server's order —
+  // its name (when there is more than one table), its standing note, its
+  // cards, and the key from its own sheet.
+  tables.forEach(function (t) {
+    var tk = named ? String(t.key || '') : '';
+    if (!cards[tk]) return;
+    html += '<div class="kb-ins-group">' +
+      (named ? '<div class="kb-ins-group-h">' + esc(t.label) + '</div>' : '') +
+      insNoteHtml_(t, named) + cards[tk] + insKeyHtml_(t.legend) + '</div>';
   });
   if (res.total > res.matches.length) {
     html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';
