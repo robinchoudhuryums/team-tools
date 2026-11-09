@@ -6661,6 +6661,44 @@ pick them up without re-deriving the context.
     failed send is said, and the resolve stands. Off with the
     `deptResolvedReply` toggle. The reply carries the label, who and when — the
     thread already holds the note.
+- <a id="sp1-spanish-resolve-with-reply"></a>**A Spanish request is resolved with an outcome and an optional note, and the resolve replies on its email thread; auto-assign hands requests only to members who are clocked in (SP1, operator 2026-11-09)**
+  The operator: a resolve should record how the request ended — reached the
+  patient, left a voicemail, no answer, wrong number — with a short note, and
+  send a "resolved by" reply on the thread; a voicemail-only request from the
+  phone system has no email to answer; and auto-assign should not hand work to
+  someone who is not working.
+  - **The outcomes are the server's.** `SPANISH_RESOLVE_OUTCOMES` (00_config)
+    is the one list; it rides `getSpanishInboxPending` as `resolveOutcomes`
+    with `resolveNoteMax`, and the dialog draws exactly those, in that order.
+    The server refuses an unknown key before any Gmail read; no key at all (an
+    older page) still resolves, with no outcome named. The outcome is the
+    resolve row's fifth cell (an `Outcome` column the tab gains by itself);
+    the NOTE is never stored or audited — it is free text that may name a
+    patient, and it goes only into the reply on the thread it is about.
+  - **One dialog for one request and for many.** Mark resolved and Resolve
+    selected both open `spanishResolveAsk_`: Resolve stays off until an
+    outcome is picked, and a typed note asks "Discard changes?" before Escape
+    or the backdrop throws it away (g166). Resolve selected asks once; every
+    request gets the same outcome and note, and ITS OWN reply.
+  - **The reply.** After the lock is released (g34), `spanishSendResolveReply_`
+    replies-all on the thread's latest request message (a requester's
+    follow-up is the request being resolved), as "UMS Team Tools", saying who
+    resolved it, when, the outcome and the note, escaped. A voicemail thread is
+    resolved with no reply; a failed send is said in the toast and the audit
+    row, and the request stays resolved. The `spanishResolveReply` toggle turns
+    the reply off.
+  - **The app's own reply never reopens the request.** The reply carries a
+    marker line (`SPANISH_APP_REPLY_MARKER`); a message carrying it is neither a
+    requester's follow-up (`spanishThreadRoles_`) nor new activity on the
+    thread (`spanishThreadLatestMs_`, from the app's own addresses), so the
+    SP-2 rule — a requester who writes again after a resolve is a new request —
+    still holds for every message a person writes.
+  - **Auto-assign reads who is working.** `spanishWorkingMembers_` counts a
+    member as working when their LAST punch today, in their own timezone, is a
+    Clock In or a Lunch In (the latest time, never the last row — g14). The
+    button and the scheduled run hand requests only to them; nobody clocked in
+    assigns nothing (the button says so, the scheduled run is idle), and a
+    Timesheet that cannot be read refuses by name rather than guessing (g128).
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

@@ -817,6 +817,17 @@ longer sent to reps.
      tracking has no thread, so it gets none, and its button and the
      confirmation say so. The `deptResolvedReply` toggle turns the reply off.
 
+     **SP1 (operator 2026-11-09) — Spanish Inbox resolve with a reply.** Mark
+     resolved (and Resolve selected) asks how the request ended — reached the
+     patient, left a voicemail, no answer or wrong number — and for an optional
+     short note, then replies on the request's email thread saying who resolved
+     it, the outcome and the note. A voicemail from the phone system has no
+     email, so it is resolved without one. The app's own reply never brings the
+     request back; a requester who writes again still does. Auto-assign (the
+     button and the scheduled run) gives requests only to members who are
+     clocked in and not on lunch. The `spanishResolveReply` toggle turns the
+     reply off.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

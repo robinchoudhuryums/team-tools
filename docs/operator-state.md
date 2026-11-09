@@ -2752,6 +2752,21 @@ entry says which it is.
   none) is an AuditLog `DeptRequestResolvedReply` row, by id. **Tell the
   departments** that a resolved request now gets an automatic reply on its
   thread.
+<a id="operator-spanish-resolve-with-reply-sp1"></a>
+- **Spanish resolve with a reply (SP1, operator 2026-11-09) — the
+  `spanishResolveReply` toggle and the resolve tab's `Outcome` column.**
+  **Nothing to set up.** Mark resolved now asks for an outcome (reached the
+  patient / left a voicemail / no answer / wrong number) and an optional note,
+  and replies on the request's thread from the deploying mailbox (or the
+  `REP_SENDER_FROM` alias when set) as "UMS Team Tools" — the requester and
+  everyone on the thread receive it. Turn the reply off with Admin → Config →
+  feature toggles → `spanishResolveReply`; the resolve itself is unchanged.
+  `SpanishManualResolved` gains a fifth header, `Outcome`, written by itself on
+  the first resolve after the deploy (older rows stay blank); the note is never
+  stored. **Auto-assign** (the button and the scheduled run) now gives requests
+  only to members clocked in and not on lunch, read from today's Timesheet in
+  each member's own timezone — a member who works without clocking in gets
+  none, and with nobody clocked in nothing is assigned.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`
