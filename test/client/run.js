@@ -44579,13 +44579,15 @@ function pt1SearchCtx_(tabs, rawNotes) {
 }
 test('PT1: searchInsurancePayors searches every payor table as ONE ranking, tags each plan with its table, and ships each table\'s note and sheet key; a table not imported yet is skipped; none imported is "not set up"; an unreadable note map is said (driven)', () => {
   const MA = [['Insurance', 'Network Status'], ['Aetna Medicare', 'In-Network'], ['aetna', 'OON']];
-  const MCD = [['Insurance', 'Network Status'], ['Aetna Better Health TX', 'In-Network'], ['Molina', 'In-Network']];
+  const MCD = [['Insurance', 'Network Status'], ['Aetna Better Health TX', 'In-Network'], ['Molina', 'In-Network'], ['Aetna', 'OON W/ PA']];
+  const OTHER = [['Item', 'Price'], ['aetna kit', '$1']];   // an allowlisted NON-payor tab: never searched
   const notes = JSON.stringify({ InsurancePayors: { text: 'MA rule', key: { X: 'Yes' } }, MedicaidPayors: { text: 'Medicaid rule', key: { Try: 'Create account' } } });
-  let c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, notes);
+  let c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD, X: OTHER }, notes);
   let r = hJ(c.searchInsurancePayors('aetna'));
-  assert.deepStrictEqual(r.matches.map((m) => m.table + ':' + m.name), ['InsurancePayors:aetna', 'InsurancePayors:Aetna Medicare', 'MedicaidPayors:Aetna Better Health TX'],
-    'one ranking across the tables (the exact name first), a tie keeping the tables\' order');
-  assert.strictEqual(r.total, 3);
+  assert.deepStrictEqual(r.matches.map((m) => m.table + ':' + m.name),
+    ['InsurancePayors:aetna', 'MedicaidPayors:Aetna', 'InsurancePayors:Aetna Medicare', 'MedicaidPayors:Aetna Better Health TX'],
+    'ONE ranking across the tables — an exact name in either table outranks a partial one; a tie keeps the tables\' order; the non-payor tab is never searched');
+  assert.strictEqual(r.total, 4);
   assert.deepStrictEqual(r.tables, [
     { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', legend: { X: 'Yes' }, noteError: '' },
     { key: 'MedicaidPayors', label: 'Primary Medicaid', note: 'Medicaid rule', legend: { Try: 'Create account' }, noteError: '' }],
@@ -44599,7 +44601,7 @@ test('PT1: searchInsurancePayors searches every payor table as ONE ranking, tags
   assert.ok(/not set up yet/.test(hJ(c.searchInsurancePayors('aetna')).error), 'no payor table imported: says what to create');
   c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, '{bad');
   r = hJ(c.searchInsurancePayors('aetna'));
-  assert.ok(r.matches.length === 3 && r.tables.every((t) => t.noteError && !t.note), 'an unreadable note map is NAMED on every table, and the search still answers');
+  assert.ok(r.matches.length === 4 && r.tables.every((t) => t.noteError && !t.note), 'an unreadable note map is NAMED on every table, and the search still answers');
 });
 
 test('PT1: the Medicaid table is allowlisted beside InsurancePayors with the same converter; its import writes ITS entry of the one note map and leaves the other table\'s; the alias suggestion reads every payor table (driven + source)', () => {
