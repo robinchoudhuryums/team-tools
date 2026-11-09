@@ -33898,8 +33898,11 @@ test('SP-1 (cycle 23): a voicemail that arrives AFTER a manual resolve can be re
       spanishManualResolvedMap_: () => (prior ? { t1: prior } : {}),
       getOrCreateSpanishResolvedSheet_: () => ({ appendRow: (r) => appended.push(r) }), sheetSafeRow_: (r) => r,
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, spanishPendingIdsDrop_: (t) => dropped.push(t),
-      spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {} });
-    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));   // Batch C: the coverage rule is shared with the bulk resolve
+      spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
+      // SP1: the reply is its own pins' business here — no self addresses, no reply.
+      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }) });
+    vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));   // Batch C: the coverage rule is shared with the bulk resolve
     return { r: JSON.parse(JSON.stringify(c.resolveSpanishThread('t1'))), appended, dropped };
   };
   let r = run({ by: 'a@x', ms: 100 }, 400);
@@ -33955,7 +33958,8 @@ test('SP-3 + SP-4 (cycle 23): the pending list says when claims could not be rea
       spanishClaimsMap_: () => ({}), fmtDate_: () => 'd', fmtTime_: () => 't',
       spanishOpenLoad_: () => ({}), spanishAutoAssignPick_: (u) => u.map((x) => ({ threadId: x.threadId, by: 'a@x' })),
       appendRowsSafe_: () => {}, getOrCreateSpanishClaimsSheet_: () => ({}), writeAuditLog_: () => {},
-      spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 0 });
+      spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 0,
+      spanishMembersOnShift_: (m) => m });   // SP1: everyone clocked in here — the shift rule has its own pins
     vm.runInContext(extractRawFunction('Code.js', 'spanishAutoAssignCore_'), c);
     vm.runInContext(extractRawFunction('Code.js', 'spanishClaimLive_'), c);
     return { r: JSON.parse(JSON.stringify(c.spanishAutoAssignCore_({ email: 'installer@x' }, 7))), gatedCalls, locked };
@@ -36189,7 +36193,10 @@ const b13CourtesySrc_ = () => {
   const i = codeSrc.indexOf('const SPANISH_COURTESY_WORDS_ = [');
   if (i < 0) throw new Error('SPANISH_COURTESY_WORDS_ is not declared');
   return codeSrc.slice(i, codeSrc.indexOf('];', i) + 2).replace(/^const /, 'var ') + '\n' +
-    extractRawFunction('Code.js', 'drReplyNewText_') + '\n' + extractRawFunction('Code.js', 'spanishIsCourtesyOnly_');
+    extractRawFunction('Code.js', 'drReplyNewText_') + '\n' + extractRawFunction('Code.js', 'spanishIsCourtesyOnly_') + '\n' +
+    // SP1: the roles also read the app's own resolved reply as neutral.
+    ['SPANISH_APP_REPLY_MARKER', 'SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
+    extractRawFunction('Code.js', 'spanishIsAppReply_');
 };
 // b10Ctx_ plus the courtesy rule the roles read (SP-2 follow-up).
 // Batch C: the list readers' department index is stubbed (empty, readable) unless a test names it.
@@ -36395,7 +36402,7 @@ test('SP-2 (cycle 23 Batch 13): the wiring — Expand shows the follow-up, Needs
   assert.ok(/class="sp-followup-pill"/.test(pill({ followUp: true })) && /follow-up/.test(pill({ followUp: true })), 'a reopened card says so');
   const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.ok(/spanishVmPillHtml_\(t\) \+ spanishFollowUpPillHtml_\(t\) \+ claimPill/.test(met), 'the pending card head renders it');
-  assert.ok(/If the requester writes again, it comes back as a new request, unclaimed\./.test(extractFnFrom(met, 'spanishResolve_')), 'the resolve confirm no longer reads as permanent');
+  assert.ok(/if the requester writes again, it comes back as a new request, unclaimed\./.test(extractFnFrom(met, 'spanishResolveAsk_')), 'the resolve dialog (SP1) no longer reads as permanent');
   assert.ok(/\.sp-followup-pill \{/.test(fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8')), 'the pill has its rule (g140)');
   assert.ok(/followUp: true, claimFloorMs:/.test(fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8')), 'the fixture photographs it (INV-185)');
 });
@@ -42468,8 +42475,11 @@ test('Batch C: resolveSpanishThreads — the caller gate before any read, a sele
       spanishManualResolvedMap_: () => { log.push('fold'); return { t1: { by: 'a@x', ms: 150 } }; },
       getOrCreateSpanishResolvedSheet_: () => 'SHEET', appendRowsSafe_: (sh, rows) => { log.push('write:' + rows.map((r) => r[1]).join(',')); },
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a, x, y, z, n, note) => log.push('audit:' + a + ':' + note),
-      spanishPendingIdsDrop_: (t) => log.push('drop:' + t), spanishClaimsMap_: () => ({ t2: { by: 'ana@x' } }), spanishBustClaimants_: (e) => log.push('bust:' + e.join(',')) });
-    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishBulkIds_', 'resolveSpanishThreads'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+      spanishPendingIdsDrop_: (t) => log.push('drop:' + t), spanishClaimsMap_: () => ({ t2: { by: 'ana@x' } }), spanishBustClaimants_: (e) => log.push('bust:' + e.join(',')),
+      // SP1: the replies are the SP1 pins' business — none here.
+      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }) });
+    vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
     return { r: J(c.resolveSpanishThreads(opts.ids)), log };
   };
   let x = run({ allowed: false, ids: ['t2'] });
@@ -42484,10 +42494,10 @@ test('Batch C: resolveSpanishThreads — the caller gate before any read, a sele
   assert.deepStrictEqual(x.r.failed.map((f) => f.threadId + ':' + f.error), ['t3:Thread not found.', 't4:Not a Spanish-inbox thread.'], 'THE RULE: what it could not resolve is named');
   const lockAt = x.log.indexOf('lock');
   assert.ok(x.log.slice(0, lockAt).every((e) => /^read:/.test(e)) && x.log.filter((e) => /^read:/.test(e)).length === 4, 'every Gmail read is BEFORE the lock, once per distinct id');
-  assert.deepStrictEqual(x.log.slice(lockAt), ['lock', 'fold', 'write:t2', 'unlock', 'audit:SpanishInboxResolveBulk:resolved=1 already=1 failed=2 threadIds=t2', 'drop:t2', 'bust:ana@x'],
+  assert.deepStrictEqual(x.log.slice(lockAt), ['lock', 'fold', 'write:t2', 'unlock', 'audit:SpanishInboxResolveBulk:resolved=1 already=1 failed=2 replies=0 threadIds=t2', 'drop:t2', 'bust:ana@x'],
     'ONE lock, ONE fold read, ONE write; then the audit row, the pending-id drop and the owner\'s Needs-you');
   const src = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThreads'));
-  assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads subject or body');
+  assert.ok(!/getSubject|getPlainBody/.test(src), 'PHI-free — never reads subject or body (SP1: the reply reads the thread in spanishSendResolveReply_, never into the store)');
   assert.ok(/spanishResolveCovered_\(/.test(stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'))), 'the single resolve uses the same coverage rule');
 });
 

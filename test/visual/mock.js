@@ -1368,7 +1368,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', receivedMs: Date.now() - 0.6 * 3600000, ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
       medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
-      deptUnavailable: '', self: 'avery@umsupply.com' },
+      deptUnavailable: '', resolveOutcomes: { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' }, resolveNoteMax: 500, self: 'avery@umsupply.com' },   // SP1: the dialog's outcomes ride the pending read
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
     // overdue (PAST the 30-min schedTick_ fire window, so the sched-modal
     // scenario shows the overdue tone WITHOUT a sticky toast covering the
@@ -1646,9 +1646,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       const pd = FIXTURES.getSpanishInboxPending;
       const want = {};
       (ids || []).forEach(function (t) { want[t] = true; });
-      const resolved = (pd.pending || []).filter(function (p) { return want[p.threadId]; }).map(function (p) { return p.threadId; });
+      const picked = (pd.pending || []).filter(function (p) { return want[p.threadId]; });
+      const resolved = picked.map(function (p) { return p.threadId; });
       pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
-      return { success: true, resolved: resolved, already: [], failed: [] };
+      // SP1: one reply per resolved email thread; a voicemail gets none.
+      const vm = picked.filter(function (p) { return p.kind === 'voicemail'; }).length;
+      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, failed: [], off: false } };
     },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },

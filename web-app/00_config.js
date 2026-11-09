@@ -1666,6 +1666,9 @@ const FEATURE_FLAGS = [
   { key: 'managerDailyBrief', label: 'Consolidated manager daily brief',
     description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
     default: false, scope: 'server' },
+  { key: 'spanishResolveReply', label: 'Spanish Inbox resolved reply',
+    description: 'When someone marks a Spanish request resolved, reply on its email thread (from the mailbox the app runs as, to the requester and the inbox) with who resolved it, the outcome they chose and their note. A voicemail-only request gets no reply. Off = no reply is sent; the resolve itself is unchanged.',
+    default: true, scope: 'server' },
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
@@ -1782,6 +1785,17 @@ const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request le
 // requests one Resolve-selected call may act on. A bigger selection is refused
 // whole (never a silent prefix); every thread is a Gmail read before the lock.
 const SPANISH_BULK_RESOLVE_MAX = 50;
+// SP1 (operator 2026-11-09) — resolving a Spanish request names its OUTCOME
+// (one of these, PHI-free, kept in the SpanishManualResolved tab's trailing
+// Outcome column) and may carry a short note; the app then replies on the
+// request's email thread so the requester sees it was handled. The note rides
+// only that reply (the thread already holds the request) and is never stored —
+// the tab lives on the ADP sheet, which is PHI-free. A voicemail-only request
+// (the phone system's mail) gets no reply. The marker line identifies the
+// app's own reply, so it never reads as a requester's follow-up.
+const SPANISH_RESOLVE_OUTCOMES = { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' };
+const SPANISH_RESOLVE_NOTE_MAX = 500;
+const SPANISH_APP_REPLY_MARKER = 'Sent automatically by UMS Team Tools when this request was marked resolved.';
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder

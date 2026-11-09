@@ -401,6 +401,9 @@ const SCENARIOS = [
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  // SP1 (operator 2026-11-09): the resolve dialog — how it ended and a note — for one request and for three selected.
+  ['spanish-resolve-dialog-light-wide', { tool: 'timeClock', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishResolve_(document.querySelector('.sp-resolve[data-thread]'));setTimeout(function(){var r=document.querySelector('input[name=sp-res-outcome]');if(r){r.click();}var n=document.getElementById('sp-res-note');if(n)n.value='Called back, left the pick-up time with the daughter.';},50)"],
+  ['spanish-resolve-dialog-dark-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'dark', '', "spanishResolveAsk_(3)"],
   // Batch C (operator 2026-11-02) — past SPANISH_GROUP_MIN the list folds into
   // collapsible groups: by received day, and by sending department with two
   // requests selected (the bar's count and Resolve selected on camera).
