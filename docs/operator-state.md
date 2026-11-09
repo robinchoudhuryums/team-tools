@@ -2782,6 +2782,17 @@ entry says which it is.
   with an empty top-left cell removes it. Until the first source upload after
   the deploy there is no note. If the preview warns that two columns would both
   be read as one field, rename one in the source before importing.
+<a id="operator-pt1-payor-tables"></a>
+- **Payor tables — the `MedicaidPayors` tab (PT1, operator 2026-11-09).**
+  **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
+  data tables now lists **Primary Medicaid acceptance** under Insurance payor
+  acceptance. Download the source sheet's Primary Medicaid tab as CSV and drop
+  it there; the preview lists the conversion as for the Medicare / MA tab; the
+  app creates the `MedicaidPayors` tab in the KB spreadsheet on Replace and
+  never writes to it otherwise. Until it is imported the lookup searches the
+  Medicare / MA table alone. `INS_PAYOR_NOTE` now holds every payor table's
+  note and its sheet's key (one Script Property, auto-managed); each table's
+  source upload rewrites only its own entry.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

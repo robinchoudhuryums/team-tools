@@ -6731,6 +6731,31 @@ pick them up without re-deriving the context.
     and a note that cannot be read by name, and the lookup draws it above a
     match and above "not in the payor sheet" alike — it applies to every plan,
     listed or not. No seed (g122): until the first source upload there is none.
+- <a id="pt1-payor-tables"></a>**Payor tables are allowlisted tabs searched as one, each with its own note and its sheet's own key (PT1, operator 2026-11-09)**
+  The source sheet has a tab per payor family; the second to arrive is Primary
+  Medicaid — the same layout as Medicare / MA, its own rule in A1 (it names
+  nursing-home patients and facilities) and its own key, which defines TRY
+  differently ("Try = Create account and insurance team will verify").
+  - **A payor table is an allowlisted `KB_DATA_TABLES` entry with a
+    `payorTable` label** — `MedicaidPayors` beside `InsurancePayors`. The
+    allowlist stays the security boundary; adding a table is a code change.
+    Each takes its source export through PT1a's converter, which now also names
+    an "Out-of-Network" title as Network Status (its cells are the status).
+  - **One search, one ranking.** `searchInsurancePayors` scans every payor
+    table's name column and ranks the matches together (a tie keeps the
+    configured order); each plan carries its table. A table not imported yet is
+    skipped; none imported is "not set up". A rep does not choose a table — a
+    plan's name says what it is, and "Molina" can be in either.
+  - **A group per table.** The lookup draws, per table with matches and in
+    configured order: its name, its standing note ("For every plan in Primary
+    Medicaid: …"), its plans, and the key from its own sheet. The app's
+    acceptance legend is unchanged; the sheet's key sits beside it because two
+    tables can mean different things by one value. "Not listed" shows every
+    table's note.
+  - **One note map** (`INS_PAYOR_NOTE`): `{tableKey: {text, key, at, by}}`,
+    written by a source import for its own table only; PT1a's single-table
+    value reads as InsurancePayors'. An unreadable map is said on every result
+    group and, on import, the loss of the other tables' notes is said too.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

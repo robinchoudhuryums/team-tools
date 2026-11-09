@@ -836,6 +836,14 @@ longer sent to reps.
      step in the preview before anything is replaced. The rule in the source's
      top-left cell is shown above every insurance lookup answer.
 
+     **PT1 (operator 2026-11-09) — payor tables.** The insurance lookup
+     searches Primary Medicaid as well as Medicare / MA, as one search: the
+     answer is grouped by table, each group with its own standing note and the
+     key from its own sheet (Medicaid's TRY means "create account and the
+     insurance team will verify"). Its data is the `MedicaidPayors` tab,
+     uploaded from the source sheet's Primary Medicaid export on the same Admin
+     panel.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a
