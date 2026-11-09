@@ -2939,6 +2939,8 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   h.flushTimers();
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
+  // SP1: the resolve dialog answers "reached the patient", no note.
+  h.read('spanishResolveAsk_ = function () { return Promise.resolve({ outcome: "reached", note: "" }); }');
 
   const cards = () => h.$$('.sp-task');
   const assignBtn = () => h.$('#sp-autoassign');
@@ -3013,12 +3015,12 @@ test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, c
   assert.strictEqual(card('f1').querySelector('.sp-claim-pill'), null, 'and carries no claim — it came back unclaimed');
   assert.strictEqual(card('f2').querySelector('.sp-followup-pill'), null, 'a first request has no pill');
   assert.ok(/Auto-assign 1 unclaimed/.test(h.$('#sp-autoassign').textContent), 'the reopened request is in the unclaimed count');
-  let seen = null;
-  h.window.__stubConfirm = (o) => { seen = o; return Promise.resolve(false); };
-  h.read('uiConfirm = window.__stubConfirm');
+  // SP1: the resolve dialog says so (it replaced the plain confirm).
   h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="f2"]'));
   await tick();
-  assert.ok(seen && /If the requester writes again, it comes back as a new request, unclaimed\./.test(seen.message), 'the confirm no longer reads as permanent');
+  const dlg = h.$('#sp-resolve-overlay');
+  assert.ok(dlg && /if the requester writes again, it comes back as a new request, unclaimed\./.test(dlg.textContent), 'the dialog no longer reads as permanent');
+  h.window.closeOverlay(dlg);
 });
 
 // SP4 (operator 2026-09-16) — a suppressed voicemail card is invisible BY
@@ -5639,7 +5641,7 @@ test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar coun
   assert.ok(/2 selected/.test(h.$('#sp-bulk-n').textContent) && !h.$('#sp-bulk-go').disabled);
   assert.ok(h.$('#sp-sel-all').indeterminate, 'Select all shown reads partial');
   h.window.spanishResolveSelected_();
-  h.click(h.$('.ui-dialog-ok'));
+  h.window.spanishResolveConfirm_();   // SP1: the resolve dialog (no outcome list in this fixture: confirm only)
   await tick();
   const call = h.run.pending('resolveSpanishThreads')[0];
   assert.ok(call, 'ONE call');
@@ -5655,10 +5657,80 @@ test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar coun
   // Select all shown, then a refused call keeps everything.
   h.window.spanishSelAll_(true);
   assert.ok(box('b').checked && box('c').checked && /2 selected/.test(h.$('#sp-bulk-n').textContent));
-  h.window.spanishResolveSelected_(); h.click(h.$('.ui-dialog-ok')); await tick();
+  h.window.spanishResolveSelected_(); h.window.spanishResolveConfirm_(); await tick();
   h.run.flushSuccess({ error: 'Spanish Inbox access required.' }, 'resolveSpanishThreads');
   h.flushTimers();
   assert.ok(box('b').checked && box('c').checked && !h.$('#sp-bulk-go').disabled, 'a refused call removes nothing and the bar is usable again');
+});
+
+test('SP1 DOM: Mark resolved asks how it ended (the server\'s choices) and for a note — Resolve stays off until an outcome is picked; a typed note asks before Escape throws it away; the call carries the outcome and the note and the toast says what became of the reply; Resolve selected asks once for all and reports the replies; auto-assign with nobody clocked in says so (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  const outs = { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' };
+  const pend = [spItem_('a', 30), spItem_('b', 20), spItem_('v', 10, { kind: 'voicemail' })];
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: 3, resolved: 0, avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null,
+    businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 3, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pend)), members: ['me@x.com', 'sam@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '',
+    resolveOutcomes: outs, resolveNoteMax: 500 }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  const toasts = () => h.$$('#toast-stack .toast-msg').map((t) => t.textContent).join(' | ');
+  h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="a"]'));
+  await tick();
+  const dlg = h.$('#sp-resolve-overlay');
+  assert.ok(dlg && dlg.classList.contains('open') && dlg.getAttribute('aria-labelledby') === 'sp-res-h', 'a named dialog');
+  assert.deepStrictEqual(h.$$('input[name="sp-res-outcome"]').map((r) => r.value + ':' + r.parentNode.textContent.trim()),
+    ['reached:Reached the patient', 'voicemail:Left a voicemail', 'noanswer:No answer', 'wrong:Wrong number'], 'the server\'s choices, in its order');
+  assert.ok(h.$('#sp-res-go').disabled, 'Resolve is off until an outcome is picked');
+  const no = h.$('input[name="sp-res-outcome"][value="noanswer"]');
+  no.checked = true; h.window.spanishResolveSync_();   // the harness runs no inline handlers: drive the one the fieldset names
+  assert.ok(!h.$('#sp-res-go').disabled, 'picked: Resolve is on');
+  const note = h.$('#sp-res-note');
+  note.value = 'Tried twice <b>today</b>';
+  note.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.window.closeOverlay(dlg);   // Escape / the backdrop take this path
+  await tick();
+  assert.ok(h.$('.ui-dialog') && /Discard changes\?/.test(h.$('.ui-dialog').textContent), 'THE RULE: a typed note asks before it is thrown away (g166)');
+  assert.ok(dlg.classList.contains('open'), 'and the dialog stays until answered');
+  h.click(h.$('.ui-dialog-cancel'));
+  await tick();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  const call = h.run.pending('resolveSpanishThread')[0];
+  assert.deepStrictEqual(Array.from(call.args), ['a', 'noanswer', 'Tried twice <b>today</b>'], 'the outcome and the note ride the call');
+  assert.ok(!h.$('#sp-resolve-overlay'), 'the dialog closed');
+  h.run.flushSuccess({ success: true, reply: { sent: true }, replyNote: 'A reply saying so was sent on the email thread.' }, 'resolveSpanishThread');
+  assert.ok(/Marked resolved\. A reply saying so was sent on the email thread\./.test(toasts()), toasts());
+  h.flushTimers();
+  // Resolve selected: one question for all, the replies reported.
+  ['b', 'v'].forEach((t) => { const bx = h.$('input.sp-sel[data-thread="' + t + '"]'); bx.checked = true; h.window.spanishSelToggle_(bx); });
+  h.window.spanishResolveSelected_();
+  await tick();
+  assert.ok(/Mark 2 requests resolved/.test(h.$('#sp-res-h').textContent) && /Each request gets its own reply/.test(h.$('#sp-resolve-overlay').textContent));
+  h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  const bulk = h.run.pending('resolveSpanishThreads')[0];
+  assert.deepStrictEqual([Array.from(bulk.args[0]), bulk.args[1], bulk.args[2]], [['b', 'v'], 'reached', ''], 'ONE call: the ids, the outcome, no note');
+  h.run.flushSuccess({ success: true, resolved: ['b', 'v'], already: [], failed: [], replies: { sent: 1, voicemail: 1, failed: [], off: false } }, 'resolveSpanishThreads');
+  assert.ok(/Marked 2 resolved · 1 reply sent · 1 voicemail \(no email to reply to\)/.test(toasts()), toasts());
+  h.flushTimers();
+  // Auto-assign with nobody clocked in.
+  h.read('uiConfirm = function () { return Promise.resolve(true); }');
+  pend.push(spItem_('c', 5));
+  h.window.spanishLoadList_();
+  h.flushTimers();
+  const btn = h.$('#sp-autoassign');
+  if (btn) {
+    h.window.spanishAutoAssign_(btn);
+    await tick();
+    h.run.flushSuccess({ success: true, unclaimed: 0, assigned: [], noneOnShift: true, offShift: 2 }, 'autoAssignSpanishThreads');
+    assert.ok(/No Spanish member is clocked in right now — nothing was assigned/.test(toasts()), 'said, not "every request is already claimed": ' + toasts());
+  } else {
+    assert.fail('the auto-assign button is on a manager\'s list');
+  }
 });
 
 test('Batch C DOM: past SPANISH_GROUP_MIN the list groups — by received day, or by sending department (largest first, Other and Voicemail last), remembered in this browser; a closed group\'s cards are not "shown" to Select all; at the threshold the list stays flat; every card shows its received date', () => {

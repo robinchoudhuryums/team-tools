@@ -44111,6 +44111,205 @@ test('PF1: the cards and Stats take ONE cohort list, so the read-ahead\u2019s wi
   assert.ok(/_cdrStampMemo = null;/.test(fs.readFileSync(path.join(__dirname, '../../web-app/Tests.js'), 'utf8')), 'the editor suite resets the stamp memo across the override boundary');
 });
 
+console.log('\nOperator round 2026-11-09 — SP1 (Spanish resolve with a reply; auto-assign to clocked-in members)');
+const sp1Consts_ = () => ['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX', 'SPANISH_APP_REPLY_MARKER'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n');
+const sp1Ctx_ = (extra, fns) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, Error, RegExp, console: { warn() {} },
+    esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    cnNlBr_: (x) => String(x).replace(/\n/g, '<br>'), CN_EMAIL_PALETTE: { ink: '#111', accent: '#0a0', muted: '#777' },
+    emailAddrOnly_: (x) => String(x || '').replace(/^.*</, '').replace(/>.*$/, '').trim().toLowerCase() }, extra || {}));
+  vm.runInContext(sp1Consts_(), ctx);
+  (fns || []).forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const sp1Msg_ = (from, ms, body, log) => ({ getFrom: () => from, getDate: () => new Date(ms), getSubject: () => 'Ayuda', getPlainBody: () => body || '',
+  replyAll: (t, o) => { if (log) log.push(['reply', from, ms, t, o]); } });
+
+test('SP1: the outcome is one of the server’s four or none (an older page), an unknown one is refused; the note is trimmed, its line breaks kept and capped; the reply names who, the outcome and the note, escapes every word and carries the marker; the person is told what became of it (driven)', () => {
+  const c = sp1Ctx_({}, ['spanishResolveInput_', 'spanishResolveReplyParts_', 'spanishResolveReplyNote_', 'spanishIsAppReply_']);
+  assert.deepStrictEqual(hJ(c.spanishResolveInput_('noanswer', '  line one\r\nline two  ')), { outcome: 'noanswer', outcomeLabel: 'No answer', note: 'line one\nline two' });
+  assert.deepStrictEqual(hJ(c.spanishResolveInput_(undefined, null)), { outcome: '', outcomeLabel: '', note: '' }, 'none: an older page still resolves');
+  assert.ok(/how the request ended/.test(c.spanishResolveInput_('done', '').error), 'an unknown outcome is refused');
+  assert.ok(/how the request ended/.test(c.spanishResolveInput_('toString', '').error), 'never an inherited property');
+  assert.strictEqual(c.spanishResolveInput_('', 'x'.repeat(900)).note.length, 500, 'capped');
+  assert.deepStrictEqual(Object.keys(hJ(vm.runInContext('SPANISH_RESOLVE_OUTCOMES', c))), ['reached', 'voicemail', 'noanswer', 'wrong'], 'the four outcomes the operator was offered');
+  const p = hJ(c.spanishResolveReplyParts_({ by: 'Ana <x>', at: 'Nov 9', outcomeLabel: 'Reached the patient', note: 'Called back\n<b>ok</b>' }));
+  assert.ok(/^This request was marked resolved by Ana <x> on Nov 9\.\nOutcome: Reached the patient\.\nNote: Called back\n<b>ok<\/b>\n\nSent automatically by UMS Team Tools/.test(p.text), p.text);
+  assert.ok(p.html.includes('Ana &lt;x&gt;') && p.html.includes('Called back<br>&lt;b&gt;ok&lt;/b&gt;') && !p.html.includes('<b>ok'), 'escaped, the note’s lines kept');
+  assert.ok(c.spanishIsAppReply_(p.text) && c.spanishIsAppReply_(p.html), 'the marker rides both parts');
+  const bare = hJ(c.spanishResolveReplyParts_({ by: 'Ana' }));
+  assert.ok(!/Outcome:|Note:/.test(bare.text), 'no outcome and no note: no such lines');
+  assert.ok(/sent on the email thread/.test(c.spanishResolveReplyNote_({ sent: true })));
+  assert.ok(/voicemail request has no email/.test(c.spanishResolveReplyNote_({ sent: false, reason: 'voicemail' })));
+  assert.ok(/could not be sent .* still resolved/.test(c.spanishResolveReplyNote_({ sent: false, reason: 'failed' })));
+  assert.deepStrictEqual([c.spanishResolveReplyNote_(null), c.spanishResolveReplyNote_({ sent: false, reason: 'off' })], ['', '']);
+});
+
+test('SP1: the app’s own reply never reopens a request — on a thread the app’s own mailbox opened it is neutral, not a follow-up; it is not "new work" for the already-resolved check, while the same mailbox’s ordinary reply still is; the reply answers the LATEST request message (driven)', () => {
+  const c = sp1Ctx_({ spanishVmMatch_: () => false }, ['spanishIsAppReply_', 'spanishThreadRoles_', 'spanishManualStamps_', 'spanishEpisodes_', 'spanishThreadLatestMs_', 'spanishReplyTargetIdx_']);
+  vm.runInContext(b13CourtesySrc_(), c);
+  const marker = vm.runInContext('SPANISH_APP_REPLY_MARKER', c);
+  // The deployer opened the thread (a request sent from the app's own account), was resolved at 200, then the app replied.
+  const msgs = [sp1Msg_('ops@ums.com', 100, 'Necesito ayuda'), sp1Msg_('ops@ums.com', 210, 'This request was marked resolved by Ana.\n\n' + marker)];
+  const roles = hJ(c.spanishThreadRoles_(msgs, 'email', {}, false));
+  assert.deepStrictEqual(roles.map((r) => r.role), ['request', 'other'], 'THE RULE: the app’s reply from the requester’s own address is neutral');
+  const ep = hJ(c.spanishEpisodes_(roles, { by: 'ana@ums.com', ms: 200 }));
+  assert.ok(ep.episodes.every((e) => e.resolveMs != null), 'so the request stays resolved');
+  const real = [sp1Msg_('ops@ums.com', 100, 'Necesito ayuda'), sp1Msg_('ops@ums.com', 210, 'Otra pregunta sobre el pedido')];
+  assert.strictEqual(hJ(c.spanishThreadRoles_(real, 'email', {}, false))[1].role, 'request', 'a real follow-up still reopens');
+  const self = { 'ops@ums.com': true };
+  assert.strictEqual(c.spanishThreadLatestMs_(msgs, self), 100, 'the app’s reply is not new work — a second click is "already"');
+  assert.strictEqual(c.spanishThreadLatestMs_(real, self), 210, 'the same mailbox’s ordinary message is');
+  assert.strictEqual(c.spanishThreadLatestMs_(msgs, null), 210, 'with no self addresses known, every message counts (as before)');
+  assert.strictEqual(c.spanishReplyTargetIdx_([{ role: 'request' }, { role: 'resolver' }, { role: 'request' }, { role: 'other' }]), 2, 'the latest request message');
+  assert.strictEqual(c.spanishReplyTargetIdx_([{ role: 'other' }]), 0, 'none: the first message');
+});
+
+test('SP1: spanishSendResolveReply_ — off sends nothing; a voicemail gets no reply; an email thread is replied-all on its latest request message as UMS Team Tools, with who, the outcome and the note; a throw is a failed reply, never a failed resolve (driven)', () => {
+  const log = [];
+  let flag = true;
+  const c = sp1Ctx_({ getFlag_: (k) => (k === 'spanishResolveReply' ? flag : false), getSpanishInboxMembers_: () => ({ 'm@ums.com': true }),
+    Utilities: { formatDate: () => 'Nov 9, 2026 3:00 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago' }, repSenderFrom_: () => '' },
+  ['spanishIsAppReply_', 'spanishThreadRoles_', 'spanishReplyTargetIdx_', 'spanishResolveReplyParts_', 'drResolverLabel_', 'spanishSendResolveReply_']);
+  vm.runInContext(b13CourtesySrc_(), c);
+  c.spanishVmMatch_ = () => false;
+  const msgs = [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda', log), sp1Msg_('m@ums.com', 150, 'Listo', log), sp1Msg_('rep@ums.com', 200, 'Una pregunta mas?', log)];
+  const input = { outcome: 'reached', outcomeLabel: 'Reached the patient', note: 'Called her back' };
+  assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(msgs, 'email', { name: 'Ana', email: 'ana@ums.com' }, input)), { sent: true });
+  assert.strictEqual(log.length, 1);
+  assert.deepStrictEqual([log[0][1], log[0][2]], ['rep@ums.com', 200], 'the latest request message — the follow-up being resolved');
+  assert.ok(/marked resolved by Ana \(ana@ums\.com\) on Nov 9, 2026 3:00 PM CST\.\nOutcome: Reached the patient\.\nNote: Called her back/.test(log[0][3]) && log[0][4].name === 'UMS Team Tools' && /<p/.test(log[0][4].htmlBody));
+  assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(msgs, 'vm', {}, input)), { sent: false, reason: 'voicemail' }, 'a voicemail: no reply');
+  const boom = [{ getFrom: () => 'rep@ums.com', getDate: () => new Date(1), getPlainBody: () => '', replyAll: () => { throw new Error('quota'); } }];
+  assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(boom, 'email', {}, input)), { sent: false, reason: 'failed' });
+  flag = false;
+  assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(msgs, 'email', {}, input)), { sent: false, reason: 'off' });
+  assert.strictEqual(log.length, 1, 'off: nothing sent');
+});
+
+test('SP1: resolveSpanishThread — an unknown outcome is refused before any Gmail read; the row carries the outcome (never the note); the reply goes after the lock and only for a fresh resolve; the audit row names the outcome and the reply, never the note; the answer carries the reply note (driven)', () => {
+  const run = (outcome, prior) => {
+    const log = [];
+    const msgs = [sp1Msg_('rep@ums.com', 100, 'hola')];
+    const c = sp1Ctx_({ getEmployeeInfo_: () => ({ email: 'ana@ums.com', name: 'Ana' }), canSeeSpanishInbox_: () => true,
+      GmailApp: { getThreadById: () => { log.push('read'); return { getMessages: () => msgs }; } },
+      getSpanishInboxAddress_: () => 'sp@x', spanishThreadInScope_: () => true,
+      LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+      spanishManualResolvedMap_: () => (prior ? { t1: prior } : {}), spanishResolveCovered_: (p) => !!p,
+      getOrCreateSpanishResolvedSheet_: () => ({ appendRow: (r) => log.push(['row', r]) }), sheetSafeRow_: (r) => r,
+      fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a, x, y, z, n, note) => log.push(['audit', a, note]),
+      spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
+      spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: () => 100, spanishThreadKind_: () => 'email',
+      spanishSendResolveReply_: (m, k, e, inp) => { log.push(['reply', inp.outcome, inp.note]); return { sent: true }; } },
+    ['spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread']);
+    return { r: hJ(c.resolveSpanishThread('t1', outcome, 'a <note>')), log };
+  };
+  let x = run('done');
+  assert.ok(x.r.error && !x.log.length, 'refused before any read or the lock');
+  x = run('wrong');
+  const row = x.log.filter((e) => e[0] === 'row')[0][1];
+  assert.deepStrictEqual(hJ(row.slice(1)), ['t1', 'ana@ums.com', row[3], 'wrong'], 'the row: thread, who, when, the outcome');
+  assert.ok(!JSON.stringify(row).includes('note'), 'never the note (the tab is on the PHI-free ADP sheet)');
+  const order = x.log.map((e) => (Array.isArray(e) ? e[0] : e));
+  assert.ok(order.indexOf('unlock') < order.indexOf('reply'), 'the reply goes after the lock (g34)');
+  assert.deepStrictEqual(x.log.filter((e) => e[0] === 'reply')[0], ['reply', 'wrong', 'a <note>']);
+  const audit = x.log.filter((e) => e[0] === 'audit')[0];
+  assert.strictEqual(audit[2], 'threadId=t1; outcome=wrong; reply=sent');
+  assert.ok(/sent on the email thread/.test(x.r.replyNote) && x.r.reply.sent);
+  x = run('wrong', { by: 'b@x', ms: 500 });
+  assert.ok(x.r.already && !x.log.some((e) => e[0] === 'reply'), 'already resolved: no second reply');
+});
+
+test('SP1: resolveSpanishThreads — one outcome and note for all; ONE reply per resolved thread after the lock, a voicemail counted and not replied, an already-resolved thread not replied, a failed reply named; the audit row counts the replies (driven)', () => {
+  const log = [];
+  const th = (id, ms) => [sp1Msg_(id + '@ums.com', ms, 'hola')];
+  const threads = { a: th('a', 10), b: th('b', 20), v: th('v', 30), old: th('old', 5) };
+  const c = sp1Ctx_({ SPANISH_BULK_RESOLVE_MAX: 10, getEmployeeInfo_: () => ({ email: 'ana@ums.com' }), canSeeSpanishInbox_: () => true,
+    GmailApp: { getThreadById: (t) => (threads[t] ? { getMessages: () => threads[t] } : null) },
+    getSpanishInboxAddress_: () => 'sp@x', spanishThreadInScope_: () => true,
+    LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+    spanishManualResolvedMap_: () => ({ old: { by: 'x', ms: 99 } }), getOrCreateSpanishResolvedSheet_: () => 'SH',
+    appendRowsSafe_: (sh, rows) => log.push(['rows', rows.map((r) => r[1] + ':' + r[4])]), fmtDate_: () => 'd', fmtTime_: () => 't',
+    writeAuditLog_: (e, a, x, y, z, n, note) => log.push(['audit', note]), spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
+    spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: (m) => m[0].getDate().getTime(),
+    spanishThreadKind_: (m) => (m === threads.v ? 'vm' : 'email'),
+    spanishSendResolveReply_: (m, kind) => { log.push(['reply', m[0].getFrom()]); if (kind === 'vm') return { sent: false, reason: 'voicemail' }; return m === threads.b ? { sent: false, reason: 'failed' } : { sent: true }; } },
+  ['spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads']);
+  const r = hJ(c.resolveSpanishThreads(['a', 'b', 'v', 'old'], 'voicemail', 'left one'));
+  assert.deepStrictEqual([r.resolved, r.already], [['a', 'b', 'v'], ['old']]);
+  assert.deepStrictEqual(hJ(log.filter((e) => e[0] === 'rows')[0][1]), ['a:voicemail', 'b:voicemail', 'v:voicemail'], 'every row carries the one outcome');
+  assert.deepStrictEqual(log.filter((e) => e[0] === 'reply').map((e) => e[1]), ['a@ums.com', 'b@ums.com', 'v@ums.com'], 'one reply attempt per resolved thread — none for the already-resolved one');
+  assert.ok(log.indexOf('unlock') < log.findIndex((e) => e[0] === 'reply'), 'after the lock');
+  assert.deepStrictEqual(r.replies, { sent: 1, voicemail: 1, failed: ['b'], off: false });
+  assert.ok(/outcome=voicemail replies=1 threadIds=a,b,v$/.test(log.filter((e) => e[0] === 'audit')[0][1]) && !/left one/.test(JSON.stringify(log.filter((e) => e[0] === 'audit'))), 'counted, never the note');
+  assert.ok(/how the request ended/.test(c.resolveSpanishThreads(['a'], 'nope', '').error), 'an unknown outcome refuses the whole selection');
+});
+
+test('SP1: who is working — a member whose LAST punch today (their own timezone) is a Clock In or Lunch In; on lunch, clocked out, no punch today, another day’s punch or not on the roster is not; the latest TIME wins, never the last row (driven)', () => {
+  const c = sp1Ctx_({ EMP: { ID: 0, NAME: 1, EMAIL: 2, TIMEZONE: 3 }, ADP: { EMP_ID: 0, DATE: 1, TIME: 2, COMMENTS: 3 }, CONFIG: { TIMEZONE: 'America/Chicago' },
+    empRosterEmail_: (r) => String(r[2] || '').trim(), normalizeDate_: (x) => String(x), normalizeTime_: (x) => String(x), normalizeType_: (x) => String(x).replace(/^ADJ-/, '') },
+  ['spanishWorkingMembers_']);
+  const roster = [['h'], ['E1', 'In', 'in@x', 'America/Chicago'], ['E2', 'Lunch', 'lunch@x', ''], ['E3', 'Back', 'back@x', ''], ['E4', 'Out', 'out@x', ''],
+    ['E5', 'None', 'none@x', ''], ['E6', 'Manila', 'ph@x', 'Asia/Manila'], ['E7', 'Late', 'late@x', '']];
+  const ts = [['h'], ['h2'],
+    ['E1', '2026-11-09', '08:00:00', 'ClockIn'],
+    ['E2', '2026-11-09', '08:00:00', 'ClockIn'], ['E2', '2026-11-09', '12:00:00', 'LunchOut'],
+    ['E3', '2026-11-09', '12:30:00', 'LunchIn'], ['E3', '2026-11-09', '12:00:00', 'LunchOut'],   // appended out of order: the latest TIME is LunchIn
+    ['E4', '2026-11-09', '08:00:00', 'ClockIn'], ['E4', '2026-11-09', '17:00:00', 'ClockOut'],
+    ['E6', '2026-11-10', '08:00:00', 'ClockIn'],   // Manila is already on the 10th
+    ['E7', '2026-11-08', '08:00:00', 'ClockIn'],   // yesterday's punch
+    ['E5x', '2026-11-09', '08:00:00', 'ClockIn']];
+  const today = (tz) => (tz === 'Asia/Manila' ? '2026-11-10' : '2026-11-09');
+  const got = hJ(c.spanishWorkingMembers_(['in@x', 'lunch@x', 'back@x', 'out@x', 'none@x', 'ph@x', 'late@x', 'stranger@x', 'IN@X'], roster, ts, today));
+  assert.deepStrictEqual(got, ['in@x', 'back@x', 'ph@x', 'IN@X'], 'clocked in, back from lunch, a member clocked in on their own date — never lunch, out, none, yesterday or a stranger');
+});
+
+test('SP1: auto-assign hands requests only to members clocked in — the others get none and are counted; nobody clocked in assigns nothing (no lock) and the scheduled run is idle; a Timesheet that cannot be read refuses by name (driven + source)', () => {
+  let shift = (m) => m.filter((x) => x !== 'off@x');
+  let picksSeen = null, locked = 0;
+  const c = sp1Ctx_({ getSpanishInboxMembers_: () => ({ 'on@x': true, 'off@x': true }),
+    spanishMembersOnShift_: (m) => shift(m),
+    spanishPendingCore_: () => ({ pending: [{ threadId: 't1', claim: null }, { threadId: 't2', claim: null }] }),
+    LockService: { getScriptLock: () => ({ waitLock() { locked++; }, releaseLock() {} }) }, spanishClaimsMap_: () => ({}), fmtDate_: () => 'd', fmtTime_: () => 't',
+    spanishOpenLoad_: () => ({}), spanishClaimLive_: () => null,
+    spanishAutoAssignPick_: (u, members) => { picksSeen = members.slice(); return u.map((x) => ({ threadId: x.threadId, by: members[0] })); },
+    appendRowsSafe_: () => {}, getOrCreateSpanishClaimsSheet_: () => ({}), writeAuditLog_: () => {}, spanishBustClaimants_: () => {}, spanishNotifyAssignees_: () => 1 },
+  ['spanishAutoAssignCore_']);
+  let r = hJ(c.spanishAutoAssignCore_({ email: 'mgr@x' }, 30));
+  assert.deepStrictEqual(picksSeen, ['on@x'], 'THE RULE: only the clocked-in member is in the pick');
+  assert.deepStrictEqual([r.onShift, r.offShift, r.assigned.map((a) => a.claim.by)], [1, 1, ['on@x', 'on@x']]);
+  shift = () => []; locked = 0;
+  r = hJ(c.spanishAutoAssignCore_({ email: 'mgr@x' }, 30));
+  assert.deepStrictEqual([r.success, r.noneOnShift, r.assigned.length, locked], [true, true, 0, 0], 'nobody clocked in: nothing assigned, no lock');
+  shift = () => { throw new Error('Timesheet down'); };
+  assert.ok(/Could not tell who is clocked in \(Timesheet down\) — nothing was assigned/.test(c.spanishAutoAssignCore_({ email: 'mgr@x' }, 30).error));
+  const sched = stripJsComments_(extractRawFunction('Code.js', 'autoAssignSpanishThreadsScheduled'));
+  assert.ok(/if \(r\.noneOnShift\) \{[^}]*return \{ outcome: automationOutcome_\('idle'\) \}/.test(sched), 'the scheduled run is idle with nobody clocked in');
+  const onShift = stripJsComments_(extractRawFunction('Code.js', 'spanishMembersOnShift_'));
+  assert.ok(/spanishWorkingMembers_\(members, roster, ts, function \(tz\) \{ return fmtDateTz_\(new Date\(\), tz\); \}\)/.test(onShift), 'each member’s own today');
+});
+
+test('SP1: the wiring — the outcomes ride the pending read (never a client copy); the resolve tab gains an Outcome column that self-heals; the reply ships on behind its toggle; the dialog’s choices, the bulk reply text and the auto-assign toast (driven + source)', () => {
+  const core = stripJsComments_(extractRawFunction('Code.js', 'spanishPendingCore_'));
+  assert.ok(/resolveOutcomes: SPANISH_RESOLVE_OUTCOMES, resolveNoteMax: SPANISH_RESOLVE_NOTE_MAX/.test(core));
+  const sheet = stripJsComments_(extractRawFunction('Code.js', 'getOrCreateSpanishResolvedSheet_'));
+  assert.ok(/'ResolvedAtMs', 'Outcome'\]/.test(sheet) && /getLastColumn\(\) < 5\) \{\s*sh\.getRange\(1, 5\)\.setValue\(sheetSafe_\('Outcome'\)\)/.test(sheet), 'a new tab has it; an old tab gains the header once');
+  assert.ok(/key: 'spanishResolveReply'[\s\S]{0,700}default: true/.test(serverSource()));
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  const ctx = vm.createContext({ Object, String });
+  ['spanishResolveChoices_', 'spanishBulkReplyText_'].forEach((n) => vm.runInContext(extractFnFrom(met, n), ctx));
+  assert.deepStrictEqual(hJ(ctx.spanishResolveChoices_({ resolveOutcomes: { reached: 'Reached the patient', wrong: 'Wrong number' } })), [{ key: 'reached', label: 'Reached the patient' }, { key: 'wrong', label: 'Wrong number' }]);
+  assert.deepStrictEqual(hJ(ctx.spanishResolveChoices_({})), [], 'an older server: no choices, the dialog only confirms');
+  assert.strictEqual(ctx.spanishBulkReplyText_({ replies: { sent: 2, voicemail: 1, failed: ['x'], off: false } }), '2 replies sent · 1 voicemail (no email to reply to) · 1 reply could not be sent');
+  assert.strictEqual(ctx.spanishBulkReplyText_({ replies: { sent: 0, voicemail: 0, failed: [], off: true } }), '', 'toggle off: nothing said');
+  const ask = extractFnFrom(met, 'spanishResolveAsk_');
+  assert.ok(/ensureOverlay\('sp-resolve-overlay', \{ labelledBy: 'sp-res-h', unsaved: \{ what: 'this note' \}/.test(ask), 'a named dialog that asks before throwing a typed note away (g166)');
+  assert.ok(/onchange="event\.stopPropagation\(\); spanishResolveSync_\(\)"/.test(ask), 'picking an outcome alone is not work');
+  assert.ok(/closeOverlay\(ov, \{ discard: true \}\)/.test(extractFnFrom(met, 'spanishResolveConfirm_')), 'the confirm closes through the hook, so focus goes back (g100)');
+  assert.ok(/resolveSpanishThread\(tid, ans\.outcome, ans\.note\)/.test(met) && /resolveSpanishThreads\(ids, ans\.outcome, ans\.note\)/.test(met));
+  assert.ok(/if \(r\.noneOnShift\) \{ showToast\('No Spanish member is clocked in right now — nothing was assigned'/.test(met));
+});
+
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
 const p1Ctx_ = (extra) => {
   const utcIso = (d) => d.toISOString().slice(0, 10);

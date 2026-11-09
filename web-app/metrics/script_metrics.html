@@ -2409,7 +2409,7 @@ function spanishAutoAssign_(btn) {
   var requestedView = currentView;
   uiConfirm({
     title: 'Auto-assign ' + n + ' unclaimed request' + (n === 1 ? '' : 's') + '?',
-    message: 'Each unclaimed request goes to the member with the fewest claims, oldest request first. ' +
+    message: 'Each unclaimed request goes to the clocked-in member with the fewest claims, oldest request first — a member who is not clocked in (or is on lunch) gets none. ' +
       'Existing claims are kept. Members: ' +
       members.map(function (m) { return String(m).split('@')[0]; }).join(', ') + '.',
     confirmLabel: 'Auto-assign',
