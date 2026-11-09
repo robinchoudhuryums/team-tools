@@ -39450,7 +39450,8 @@ test('E4 (cycle 25): the Dept Requests tab — "Replies to check" lists every op
   const status = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drCardStatusHtml_'));
   assert.ok(/item\.replyReasonLabel/.test(status), 'the card\'s needs-a-look tooltip names the reason');
   const render = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drRender_'));
-  assert.ok(/head \+ intro \+ trunc \+ looks \+ body/.test(render), 'the group leads the page');
+  // DR1: a manager's Tracker / Audit list switch sits between the title and the page; the group still leads the page.
+  assert.ok(/head \+ \(data && data\.isManager \? drModeTabsHtml_\(\) : ''\) \+ intro \+ trunc \+ looks \+ body/.test(render), 'the group leads the page');
   const handler = stripJsComments_(extractFunction('metrics/script_deptrequests.html', 'drLookAnswerClick_'));
   assert.ok(/\.answerDeptReplyLook\(id, ans\)/.test(handler) && /r\.replyVerdict = 'kept-open'/.test(handler) && /drApplyResolved_\(id\)/.test(handler), 'the answer patches the cached payload both ways');
   const tc = fs.readFileSync(path.join(__dirname, '../../web-app/20_timeclock.js'), 'utf8');
@@ -43623,6 +43624,222 @@ test('ED4: a written body\'s formatting — :::center / :::right … ::: aligns 
   assert.ok(r.text === 'x\n:::right\n\n:::' && r.text.slice(0, r.caret) === 'x\n:::right\n', 'an empty pair, the caret between');
   assert.strictEqual(ctx.ED_LOGO_MAX_BYTES, Number(/const EMPDOC_LOGO_MAX_BYTES = (\d+);/.exec(serverSource())[1]));
   assert.ok(/edDocPaperHtml_\(doc\.title, doc\.bodyMd, \{ letterhead: doc\.letterhead/.test(extractFnFrom(ed, 'edRenderDoc_')), 'the reader reads a written document on its paper');
+});
+
+console.log('\nOperator round 2026-11-09 — DR1 (Dept Request audit list + the resolved reply)');
+const DR1_DR = Object.assign({}, DR_D_ENUM, { REPLY_REASON: 18 });
+const dr1Ctx_ = (extra, fns, consts) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, RegExp, Date, Error, isFinite, console,
+    DR: DR1_DR, DR_HEADERS: new Array(19).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply', 'self', 'copy'],
+    esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    CN_EMAIL_PALETTE: { ink: '#111', accent: '#0a0', muted: '#777' } }, extra || {}));
+  (consts || []).forEach((k) => vm.runInContext(extractConstDecl_(k).replace(/^const /, 'var '), ctx));
+  (fns || []).forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return ctx;
+};
+const dr1Client_ = () => {
+  const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_deptrequests.html'), 'utf8');
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, RegExp, Object, Array, JSON });
+  ['tsvCell_', 'tsvRow_'].forEach((n) => vm.runInContext(extractFnFrom(core, n), ctx));
+  vm.runInContext(/var DR_AUDIT_VIA = [^;]+;/.exec(src)[0], ctx);
+  ['drDeptsOf_', 'drAuditColumns_', 'drAuditFilter_', 'drAuditTsv_', 'drCsvCell_', 'drAuditCsv_'].forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  return { ctx, src };
+};
+const dr1Row_ = (o) => { const r = new Array(19).fill(''); Object.keys(o).forEach((k) => { r[DR1_DR[k]] = o[k]; }); return r; };
+
+test('DR1: the resolved reply goes on the NEWEST thread a request has; a request sent before thread tracking has none; the reply names who and how (the app, or the email link) and escapes every word; the person is told what became of it — sent, none (before tracking), thread gone, failed — and nothing when none was tried (driven)', () => {
+  const c = dr1Ctx_({}, ['drReplyThreadId_', 'drResolverLabel_', 'drResolvedReplyParts_', 'drResolvedReplyNote_']);
+  assert.strictEqual(c.drReplyThreadId_('t1 t2  t3'), 't3', 'a re-send’s thread is the one the department last saw');
+  assert.strictEqual(c.drReplyThreadId_('  '), '', 'no thread: sent before tracking');
+  assert.strictEqual(c.drReplyThreadId_(null), '');
+  assert.deepStrictEqual([c.drResolverLabel_('Ana Ruiz', 'ana@x.com'), c.drResolverLabel_('', 'ana@x.com'), c.drResolverLabel_('Ana', ''), c.drResolverLabel_('', '')],
+    ['Ana Ruiz (ana@x.com)', 'ana@x.com', 'Ana', 'someone']);
+  const app = hJ(c.drResolvedReplyParts_({ by: 'Ana <b>', at: 'Nov 9, 2026 3:04 PM CST', via: 'app', label: 'Close Order' }));
+  assert.ok(/^This Close Order request was marked resolved by Ana <b> on Nov 9, 2026 3:04 PM CST \(in UMS Team Tools\)\. No further action is needed\./.test(app.text), app.text);
+  assert.ok(/automatic message from UMS Team Tools/.test(app.text) && /automatic message/.test(app.html));
+  assert.ok(app.html.includes('Ana &lt;b&gt;') && !app.html.includes('Ana <b>'), 'escaped in the HTML');
+  ['email', 'self', 'copy'].forEach((v) => assert.ok(/\(from the link in the email\)/.test(hJ(c.drResolvedReplyParts_({ by: 'x', via: v })).text), v));
+  assert.ok(/^This request was marked/.test(hJ(c.drResolvedReplyParts_({ by: 'x', via: 'app', label: '  ' })).text), 'no label: "This request"');
+  assert.ok(/sent on the email thread/.test(c.drResolvedReplyNote_({ sent: true })));
+  assert.ok(/sent before thread tracking began/.test(c.drResolvedReplyNote_({ sent: false, reason: 'untracked' })));
+  assert.ok(/no longer in the mailbox/.test(c.drResolvedReplyNote_({ sent: false, reason: 'missing' })));
+  assert.ok(/could not be sent .* still resolved/.test(c.drResolvedReplyNote_({ sent: false, reason: 'failed' })));
+  assert.deepStrictEqual([c.drResolvedReplyNote_(null), c.drResolvedReplyNote_({ sent: false, reason: 'off' })], ['', ''], 'nothing tried: nothing said');
+});
+
+test('DR1: drSendResolvedReply_ — only after a FRESH resolve; the toggle off sends nothing; no thread is "untracked"; it replies-all to the thread’s FIRST message (the request email, never whoever wrote last) as UMS Team Tools; a missing thread or a throw is said, never thrown; each outcome is audited by id with no patient (driven)', () => {
+  let flag = true;
+  const sent = [], audits = [];
+  const threads = {
+    T1: [{ replyAll: (t, o) => sent.push(['first', t, o]) }, { replyAll: () => sent.push(['last']) }],
+    T2: [], T3: [{ replyAll: () => { throw new Error('quota'); } }],
+  };
+  const c = dr1Ctx_({ getFlag_: (k) => (k === 'deptResolvedReply' ? flag : false),
+    GmailApp: { getThreadById: (id) => (id === 'GONE' ? null : { getMessages: () => threads[id] || [] }) },
+    Utilities: { formatDate: () => 'Nov 9, 2026 3:04 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago' },
+    repSenderFrom_: () => '', writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push([e.id, a, n].join(' | ')) },
+  ['drReplyThreadId_', 'drResolvedReplyParts_', 'drSendResolvedReply_']);
+  const base = { found: true, already: false, reqId: 'R1', via: 'app', label: 'Close Order', byId: 'E1', byName: 'Nina', threadIds: 'T0 T1' };
+  assert.strictEqual(c.drSendResolvedReply_(Object.assign({}, base, { already: true }), 'Ana'), null, 'already resolved: nothing tried');
+  assert.strictEqual(c.drSendResolvedReply_({ found: false }, 'Ana'), null);
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(base, 'Ana (ana@x.com)')), { sent: true });
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0][0], 'first', 'THE RULE: the request email itself, so the reply reaches its sender, department and CC');
+  assert.ok(/marked resolved by Ana \(ana@x\.com\)/.test(sent[0][1]) && sent[0][2].name === 'UMS Team Tools' && /<p/.test(sent[0][2].htmlBody));
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: '' }), 'Ana')), { sent: false, reason: 'untracked' });
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'T2' }), 'Ana')), { sent: false, reason: 'missing' });
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'GONE' }), 'Ana')), { sent: false, reason: 'missing' });
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'T3' }), 'Ana')), { sent: false, reason: 'failed' }, 'a throw is a failed reply, never a failed resolve');
+  flag = false;
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(base, 'Ana')), { sent: false, reason: 'off' });
+  assert.strictEqual(sent.length, 1, 'off: nothing sent');
+  assert.deepStrictEqual(audits, ['E1 | DeptRequestResolvedReply | reqId=R1; sent', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=untracked',
+    'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=failed']);
+});
+
+test('DR1: every person-made resolve replies AFTER the resolve writer has released its lock — the in-app button, the email link’s confirm page and a Replies-to-check "Resolved" — and hands back what became of it; the writer returns the thread ids and who sent the request (source + driven)', () => {
+  const nc = (s) => s.replace(/\/\/[^\n]*/g, '');
+  const res = nc(extractRawFunction('Code.js', 'resolveDeptRequest'));
+  assert.ok(/markDeptRequestResolved_\([\s\S]*?\);[\s\S]*drSendResolvedReply_\(res, drResolverLabel_\(emp\.name/.test(res), 'in-app: after the writer');
+  assert.ok(/replyNote: drResolvedReplyNote_\(reply\)/.test(res));
+  const conf = nc(extractRawFunction('Code.js', 'confirmDeptRequestResolve'));
+  assert.ok(/if \(res\.already\)[\s\S]*drResolvedReplyNote_\(drSendResolvedReply_\(res, drResolverLabel_\(clickerName, by\)\)\)/.test(conf), 'the confirm page: after an already-check');
+  const look = nc(extractRawFunction('Code.js', 'answerDeptReplyLook'));
+  assert.ok(/lock\.releaseLock\(\); \}[\s\S]*markDeptRequestResolved_[\s\S]*drSendResolvedReply_\(res,/.test(look), 'the look answer: outside its own lock');
+  const mark = nc(extractRawFunction('Code.js', 'markDeptRequestResolved_'));
+  assert.ok(!/drSendResolvedReply_|GmailApp/.test(mark), 'never inside the writer (g34)');
+  // Driven: the writer's fresh-resolve answer carries what the reply needs.
+  const sh = drDSheet_([dr1Row_({ REQ_ID: 'R1', BY_ID: 'E1', BY_NAME: 'Nina', BY_EMAIL: 'nina@x.com', TO_DEPT: 'Billing', STATUS: 'open', LABEL: 'Close Order', THREAD_ID: 'T1 T2' })]);
+  const c = dr1Ctx_({ LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) }, getOrCreateDeptRequestsSheet_: () => sh,
+    sheetSafe_: (x) => x, drNowTs_: () => '2026-11-09T10:00:00', drBumpCacheGen_() {}, pendingTasksBust_() {}, writeAuditLog_() {}, formTokenIsoString_: (x) => String(x) },
+  ['drStatus_', 'drFindRowByReqId_', 'drSplitDepts_', 'drEmailClickVia_', 'markDeptRequestResolved_']);
+  const r = hJ(c.markDeptRequestResolved_('R1', 'bo@x.com', 'app'));
+  assert.deepStrictEqual([r.found, r.already, r.reqId, r.via, r.threadIds, r.label, r.byId, r.byName], [true, false, 'R1', 'app', 'T1 T2', 'Close Order', 'E1', 'Nina']);
+  assert.ok(!('threadIds' in hJ(c.markDeptRequestResolved_('R1', 'bo@x.com', 'app'))), 'an already-resolved answer carries nothing to reply with');
+});
+
+test('DR1: the in-app and confirm-page answers carry the reply note — the button endpoint and the confirm page say it was sent, or that a request sent before thread tracking got none (driven)', () => {
+  const mk = (reply) => {
+    const c = vm.createContext({ String, Object, getEmployeeInfo_: () => ({ id: 'E2', name: 'Bo', email: 'bo@x.com', isManager: true }),
+      getOrCreateDeptRequestsSheet_: () => ({}), drFindRowByReqId_: () => ({ row: [] }), drCanAct_: () => true, getActiveUserEmail_: () => 'bo@x.com',
+      markDeptRequestResolved_: () => ({ found: true, already: false, dept: 'Billing' }), pendingTasksBust_() {},
+      drSendResolvedReply_: () => reply, CONFIG: { CALL_NOTES: { CC_EMAIL: '' } }, mailBccAll_: () => [], empDepartments_: () => [] });
+    ['drResolverLabel_', 'drResolvedReplyNote_', 'resolveDeptRequest', 'confirmDeptRequestResolve'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+    return c;
+  };
+  let c = mk({ sent: true });
+  assert.ok(/sent on the email thread/.test(hJ(c.resolveDeptRequest('R1')).replyNote));
+  assert.ok(/recorded as resolved \(bo@x\.com\)\. A reply saying so was sent/.test(hJ(c.confirmDeptRequestResolve('R1')).message));
+  c = mk({ sent: false, reason: 'untracked' });
+  assert.ok(/sent before thread tracking/.test(hJ(c.confirmDeptRequestResolve('R1')).message), 'THE ASK: a request sent before thread tracking says it gets no reply');
+  c = mk({ sent: false, reason: 'off' });
+  assert.ok(/recorded as resolved \(bo@x\.com\)\.$/.test(hJ(c.confirmDeptRequestResolve('R1')).message), 'toggle off: the page says nothing about a reply');
+});
+
+test('DR1: the CRM marks fold to the latest per request — stored yes/no, a coerced TRUE read as checked, a blank id skipped; the audit range defaults to the last 30 days, takes inclusive calendar days, and refuses a bad day, a reversed range or one over a year; the span to read runs from the first to the last row in range, the newest kept past the cap (driven)', () => {
+  const c = dr1Ctx_({}, ['drCrmFold_', 'drShiftIsoDay_', 'drAuditRange_', 'drAuditSpan_'], ['DR_AUDIT_MAX_DAYS', 'DR_AUDIT_DEFAULT_DAYS']);
+  const m = hJ(c.drCrmFold_([['t', 'R1', 'yes', 'a@x', 100], ['t', 'R2', true, 'b@x', 200], ['t', ' R1 ', 'no', 'c@x', 300], ['t', '', 'yes', 'd', 1], ['t', 'R3', 'TRUE', '', 'x']]));
+  assert.deepStrictEqual(m, { R1: { checked: false, by: 'c@x', atMs: 300 }, R2: { checked: true, by: 'b@x', atMs: 200 }, R3: { checked: true, by: '', atMs: null } }, 'the last row wins');
+  const day = (iso) => Date.parse(iso + 'T06:00:00Z');   // a fixed-offset midnight stands in for the tz-aware parse
+  const r = hJ(c.drAuditRange_('', '', '2026-11-09', day));
+  assert.deepStrictEqual([r.from, r.to], ['2026-10-11', '2026-11-09'], 'default: 30 days to today, inclusive');
+  assert.strictEqual(r.toMs, day('2026-11-10') - 1, 'the end day is included');
+  assert.strictEqual(r.fromMs, day('2026-10-11'));
+  assert.deepStrictEqual(hJ(c.drAuditRange_('2026-03-01', '2026-03-01', '2026-11-09', day)).from, '2026-03-01', 'one day is a range');
+  assert.ok(/year-month-day/.test(c.drAuditRange_('11/01/2026', '', '2026-11-09', day).error));
+  assert.ok(/after the end/.test(c.drAuditRange_('2026-11-05', '2026-11-01', '2026-11-09', day).error));
+  assert.ok(/at most 366 days/.test(c.drAuditRange_('2025-01-01', '2026-11-01', '2026-11-09', day).error));
+  assert.deepStrictEqual(hJ(c.drAuditSpan_([1, null, 5, 7, 20, 6], 5, 10, 100)), { lo: 2, hi: 5, truncated: false }, 'first to last in range (an out-of-range row inside is filtered later)');
+  assert.strictEqual(c.drAuditSpan_([1, 2, null], 5, 10, 100), null, 'none in range');
+  assert.deepStrictEqual(hJ(c.drAuditSpan_([5, 6, 7, 8, 9], 5, 10, 3)), { lo: 2, hi: 4, truncated: true }, 'past the cap: the newest, said');
+});
+
+test('DR1: an audit row carries the request’s type, department, patient & TRX, status and how it was resolved, whether it has an email thread, and its CRM mark; resolver fields only on a resolved row; the menus are each distinct type (first spelling) and department component (driven)', () => {
+  const c = dr1Ctx_({ parseTimestampMs_: (s) => { const t = Date.parse(s + 'Z'); return isNaN(t) ? null : t; }, CONFIG: { TIMEZONE: 'UTC' }, DR_PATIENT_TRX_MAX: 120 },
+    ['drStatus_', 'drResolvedVia_', 'drCellMs_', 'drSplitDepts_', 'drAuditRowOf_', 'drAuditFacets_']);
+  const fmt = (ms) => 'F' + ms, iso = (ms) => 'I' + ms;
+  const t0 = Date.parse('2026-11-01T09:00:00Z');
+  const a = hJ(c.drAuditRowOf_(dr1Row_({ REQ_ID: 'R1', CREATED_AT: '2026-11-01T09:00:00', LABEL: ' Close Order ', TO_DEPT: 'Billing, Shipping', BY_NAME: 'Nina',
+    PATIENT_TRX: 'Pat · TRX 1', STATUS: 'resolved', RESOLVED_AT: '2026-11-01T10:00:00', RESOLVED_BY: 'bo@x', RESOLVED_VIA: 'Email', THREAD_ID: 'T1' }),
+    { R1: { checked: true, by: 'ana@x', atMs: 5 } }, fmt, iso));
+  assert.deepStrictEqual([a.requestId, a.createdMs, a.createdAt, a.createdIso, a.type, a.toDept, a.byName, a.patientTrx, a.status, a.resolvedBy, a.resolvedVia, a.threadTracked, a.crmChecked, a.crmBy, a.crmAtMs],
+    ['R1', t0, 'F' + t0, 'I' + t0, 'Close Order', 'Billing, Shipping', 'Nina', 'Pat · TRX 1', 'resolved', 'bo@x', 'email', true, true, 'ana@x', 5]);
+  const b = hJ(c.drAuditRowOf_(dr1Row_({ REQ_ID: 'R2', CREATED_AT: new Date(t0), LABEL: 'close order', TO_DEPT: 'Billing', STATUS: 'open', RESOLVED_BY: 'stale@x', RESOLVED_VIA: 'app' }), {}, fmt, iso));
+  assert.deepStrictEqual([b.createdMs, b.status, b.resolvedBy, b.resolvedVia, b.threadTracked, b.crmChecked], [t0, 'open', '', '', false, false], 'a coerced Date reads; an open row names no resolver; no thread = before tracking');
+  assert.deepStrictEqual(hJ(c.drAuditFacets_([a, b, { type: '', toDept: 'Power' }])), { types: ['Close Order'], departments: ['Billing', 'Power', 'Shipping'] });
+});
+
+test('DR1: the audit endpoints are managers’ only (the list names patients), the mark is checked before the lock and refuses an id of the wrong shape or one not found; a mark is an appended yes/no row with who and when in its own tab of the Dept Requests store — never a DeptRequests column (driven + source)', () => {
+  const appended = [];
+  let mgr = false, found = true;
+  const c = dr1Ctx_({ getEmployeeInfo_: () => ({ id: 'E1', email: 'ana@x.com', isManager: mgr }), getActiveUserEmail_: () => '',
+    getOrCreateDeptRequestsSheet_: () => ({}), drFindRowByReqId_: () => (found ? { row: [] } : null), drNowTs_: () => 'NOW',
+    LockService: { getScriptLock: () => ({ waitLock() { appended.push('lock'); }, releaseLock() { appended.push('unlock'); } }) },
+    getOrCreateDeptCrmChecksSheet_: () => 'CRM', appendRowsSafe_: (sh, rows) => appended.push([sh, rows[0]]) },
+  ['setDeptRequestCrmCheck', 'getDeptRequestAudit']);
+  assert.strictEqual(c.getDeptRequestAudit({}).error, 'Manager access required.');
+  assert.strictEqual(c.setDeptRequestCrmCheck('R1', true).error, 'Manager access required.');
+  assert.strictEqual(appended.length, 0, 'refused before the lock (F58)');
+  mgr = true;
+  assert.ok(/not found/.test(c.setDeptRequestCrmCheck('"><x', true).error));
+  found = false; assert.ok(/not found/.test(c.setDeptRequestCrmCheck('R9', true).error)); found = true;
+  assert.strictEqual(appended.length, 0);
+  const r = hJ(c.setDeptRequestCrmCheck(' R1 ', true));
+  assert.deepStrictEqual([r.success, r.requestId, r.checked, r.by], [true, 'R1', true, 'ana@x.com']);
+  c.setDeptRequestCrmCheck('R1', 'yes');
+  assert.deepStrictEqual(hJ(appended.filter((x) => x !== 'lock' && x !== 'unlock').map((x) => [x[0], x[1].slice(0, 4)])), [['CRM', ['NOW', 'R1', 'yes', 'ana@x.com']], ['CRM', ['NOW', 'R1', 'no', 'ana@x.com']]],
+    'only a real true checks it; every mark appended');
+  assert.deepStrictEqual(appended.filter((x) => typeof x === 'string'), ['lock', 'unlock', 'lock', 'unlock']);
+  assert.ok(/'RequestId','CreatedById'[\s\S]*'ReplyReason'\];/.test(extractConstDecl_('DR_HEADERS')) && !/Crm/i.test(extractConstDecl_('DR_HEADERS')), 'no CRM column on DeptRequests');
+  assert.deepStrictEqual(JSON.parse(extractConstDecl_('DR_CRM_HEADERS').replace(/^const DR_CRM_HEADERS = /, '').replace(/;$/, '').replace(/'/g, '"')), ['Timestamp', 'RequestId', 'Checked', 'By', 'AtMs']);
+  const tab = extractRawFunction('Code.js', 'getOrCreateDeptCrmChecksSheet_');
+  assert.ok(/getDeptRequestsSS_\(\)/.test(tab) && /DR_CRM_TAB/.test(tab), 'the Dept Requests store');
+  assert.ok(/key: 'deptResolvedReply'[\s\S]{0,900}default: true/.test(serverSource()), 'the reply ships on, behind its toggle');
+});
+
+test('DR1: the audit list’s filters — a type whole and case-blind, a department any component of a multi-department send, status, CRM mark; Copy table is TSV through tsvRow_ and the CSV quotes a comma, a quote or a line break and keeps the formula guard; both carry every column in one order (driven)', () => {
+  const { ctx } = dr1Client_();
+  const rows = [
+    { requestId: 'a', type: 'Close Order', toDept: 'Billing, Shipping', status: 'open', crmChecked: false, createdIso: '2026-11-09 09:12', patientTrx: 'Pat, Jr · TRX 1', byName: 'Nina', threadTracked: true },
+    { requestId: 'b', type: 'close order', toDept: 'Shipping', status: 'resolved', resolvedVia: 'email', resolvedIso: '2026-11-09 10:00', resolvedBy: 'bo@x', crmChecked: true, crmBy: 'ana@x', createdIso: '2026-11-08 08:00', patientTrx: '=HYPERLINK("x")', byName: 'Bo', threadTracked: false },
+    { requestId: 'c', type: 'OOP Order', toDept: 'Billing', status: 'open', crmChecked: false, createdIso: '2026-11-07 07:00', patientTrx: '', byName: 'Cy', threadTracked: true },
+  ];
+  const ids = (f) => ctx.drAuditFilter_(rows, f).map((r) => r.requestId).join('');
+  assert.strictEqual(ids({}), 'abc');
+  assert.strictEqual(ids({ type: 'CLOSE ORDER' }), 'ab', 'case-blind, whole');
+  assert.strictEqual(ids({ type: 'Close' }), '', 'never a part of a type');
+  assert.strictEqual(ids({ dept: 'shipping' }), 'ab', 'a component of "Billing, Shipping"');
+  assert.strictEqual(ids({ status: 'open' }) + '/' + ids({ status: 'resolved' }), 'ac/b');
+  assert.strictEqual(ids({ crm: 'unchecked' }) + '/' + ids({ crm: 'checked' }), 'ac/b');
+  assert.strictEqual(ids({ type: 'close order', crm: 'unchecked' }), 'a', 'the filters combine — the Close Orders still to check');
+  const tsv = ctx.drAuditTsv_(rows.slice(0, 2)).split('\n');
+  assert.strictEqual(tsv[0], 'Sent\tType\tDepartment\tPatient & TRX\tSent by\tStatus\tResolved\tResolved by\tHow\tEmail thread\tChecked in CRM\tChecked by');
+  assert.strictEqual(tsv[1], '2026-11-09 09:12\tClose Order\tBilling, Shipping\tPat, Jr · TRX 1\tNina\tOpen\t\t\t\tTracked\tNo\t');
+  assert.strictEqual(tsv[2], '2026-11-08 08:00\tclose order\tShipping\t\'=HYPERLINK("x")\tBo\tResolved\t2026-11-09 10:00\tbo@x\temail link\tBefore thread tracking\tYes\tana@x', 'a formula pastes as text');
+  const csv = ctx.drAuditCsv_(rows.slice(0, 2));
+  assert.ok(/\r\n$/.test(csv) && csv.split('\r\n').length === 4, 'CRLF lines, one per row plus the header');
+  const lines = csv.split('\r\n');
+  assert.strictEqual(lines[1], '2026-11-09 09:12,Close Order,"Billing, Shipping","Pat, Jr · TRX 1",Nina,Open,,,,Tracked,No,');
+  assert.strictEqual(lines[2].split(',')[3], '"\'=HYPERLINK(""x"")"', 'the guard, then quoted with the quotes doubled');
+  assert.deepStrictEqual([ctx.drCsvCell_('a\nb'), ctx.drCsvCell_(12), ctx.drCsvCell_(null), ctx.drCsvCell_('-5')], ['a b', '12', '', '-5'], 'a line break is a space (the TSV rule); a number stays a number');
+});
+
+test('DR1: the client — a manager’s Tracker / Audit list switch under the title in both modes; the audit list reloads on every switch to it and drops a late answer; a CRM box is disabled while saving and goes back if the save fails, patched in place (never a re-render); the resolve toasts carry the reply note; a request sent before thread tracking says so on its Mark resolved button (source)', () => {
+  const { src } = dr1Client_();
+  const nc = (s) => s.replace(/\/\/[^\n]*/g, '');
+  const render = nc(extractFnFrom(src, 'drRender_'));
+  assert.ok(/data\.isManager && DR_AUDIT\.open\)[\s\S]*head \+ drModeTabsHtml_\(\) \+ drAuditHtml_\(\)/.test(render), 'audit mode: the switch, then the list');
+  assert.ok(/head \+ \(data && data\.isManager \? drModeTabsHtml_\(\) : ''\) \+ intro/.test(render), 'tracker mode: the switch in the same place, managers only');
+  assert.ok(/if \(DR_AUDIT\.open && !DR_AUDIT\.loading\) drAuditLoad_\(\);/.test(nc(extractFnFrom(src, 'drSetAuditMode_'))), 'reloaded on every switch');
+  const load = nc(extractFnFrom(src, 'drAuditLoad_'));
+  assert.ok((load.match(/if \(seq !== DR_AUDIT\.seq\) return;/g) || []).length === 2 && /getDeptRequestAudit\(\{ from: DR_AUDIT\.from, to: DR_AUDIT\.to \}\)/.test(load), 'a late answer is dropped (g81)');
+  const tog = nc(extractFnFrom(src, 'drCrmToggle_'));
+  assert.ok(/box\.disabled = true/.test(tog) && (tog.match(/box\.checked = !want;/g) || []).length === 2 && /setDeptRequestCrmCheck\(id, want\)/.test(tog), 'disabled while saving; put back on a refusal or a failure');
+  assert.ok(!/drAuditPaint|drRerender_|drAuditResultsHtml_|drAuditHtml_/.test(tog), 'patched in place (g141)');
+  assert.ok(/res\.replyNote/.test(nc(extractFnFrom(src, 'drResolveClick_'))) && /res\.replyNote/.test(nc(extractFnFrom(src, 'drLookAnswerClick_'))), 'both resolve toasts');
+  assert.ok(/item\.threadTracked === false \? ' title="Sent before thread tracking/.test(extractFnFrom(src, 'drRequestCardHtml_')));
+  assert.ok(/copyWithFeedback_\(drAuditTsv_\(rows\)/.test(extractFnFrom(src, 'drAuditCopy_')), 'Copy table reports its real outcome (g76)');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

@@ -796,6 +796,18 @@ longer sent to reps.
      stamps a reminder it could not send, and a failed read, as
      `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
 
+     **DR1 (operator 2026-11-09) — the audit list and the resolved reply.** A
+     manager's Dept Requests tab has a **Tracker / Audit list** switch. The
+     audit list is every request sent in the chosen days (the last 30 by
+     default), newest first, filtered by type, department, status and CRM mark,
+     with **Copy table** and **Download CSV**, and a **Checked in CRM** box per
+     request — saved for every manager in the `DeptRequestCrmChecks` tab. When a
+     person marks a request resolved (the email's link, the in-app button or a
+     "Resolved" under Replies to check), the app replies on the request's email
+     thread saying who marked it and when; a request sent before thread
+     tracking has no thread, so it gets none, and its button and the
+     confirmation say so. The `deptResolvedReply` toggle turns the reply off.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

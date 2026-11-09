@@ -386,6 +386,13 @@ const SCENARIOS = [
   ['deptreq-fold-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})()"],
   // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
   ['deptreq-looks-light-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
+  // DR1 (operator 2026-11-09): the manager's Audit list — the range, the filters, Copy table / Download CSV and the
+  // Checked in CRM boxes (one checked, one row sent before thread tracking); wide, phone (the table's labelled
+  // stacked cells) and the pop-out, and one with a type filter applied.
+  ['deptreq-audit-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drSetAuditMode_(true)"],
+  ['deptreq-audit-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "drSetAuditMode_(true)"],
+  ['deptreq-audit-light-compact', { tool: 'callNotes', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1', "drSetAuditMode_(true)"],
+  ['deptreq-audit-filtered-dark-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'dark', '', "drSetAuditMode_(true);drAuditSetFilter_('type','Close Order');drAuditSetFilter_('crm','unchecked')"],
   // 22post A-2a — the Scratchpad with the standard modal buttons.
   ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow

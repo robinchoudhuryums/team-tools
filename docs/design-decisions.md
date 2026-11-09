@@ -6587,6 +6587,41 @@ pick them up without re-deriving the context.
     a written document's printed copy (the head on the first page, the footer
     on every page of the document). A PDF document is its own paper, so the
     letterhead shows on its certificate only.
+- <a id="dr1-audit-list-and-resolved-reply"></a>**A manager checks Dept Requests against the CRM from an audit list with a per-request mark kept in its own tab; a person's Mark resolved replies on the request's email thread (DR1, operator 2026-11-09)**
+  The operator: "make a list of 'Close Order' requests, so I can use that list
+  and check the status in the CRM", and "can the 'Mark Resolved' button … then
+  send a 'system' reply email that says it's been marked as resolved?" — with no
+  inbox pull, outside emails being rare.
+  - **The list reads a span, not the tail.** `getDeptRequestAudit` (managers —
+    the rows name patients) reads the CreatedAt column once, finds the first and
+    last rows inside the chosen days (`drAuditSpan_`, the H3 span rule) and reads
+    only that run, so a range reaches past the tracker's `DR_MAX_SCAN` tail. Past
+    `DR_AUDIT_MAX_ROWS` the newest are kept and the page says so; a range is at
+    most `DR_AUDIT_MAX_DAYS`, the default the last 30 days. Type, department,
+    status and CRM mark filter in the browser over the one answer.
+  - **A mark is a row in its own tab, never a DeptRequests column.** The live tab
+    may carry an operator note column past `DR_HEADERS`, and a column added there
+    would write over it; so `DeptRequestCrmChecks` is append-only (Timestamp,
+    RequestId, yes/no, who, when) in the Dept Requests store and the latest row
+    per request wins (`drCrmFold_`) — the QaExemptions shape, and its own record
+    of who checked what. A box is disabled while it saves, put back if the save
+    fails, and patched in place (g141).
+  - **Copy table and CSV are one column list.** `drAuditColumns_` serves the
+    table, the TSV (through `tsvRow_`) and the CSV, whose cells keep the
+    `tsvCell_` formula guard before RFC 4180 quoting — a spreadsheet opening the
+    file parses a cell as a paste does.
+  - **The reply is the request email's reply-all, after the lock, never thrown.**
+    `drSendResolvedReply_` runs once `markDeptRequestResolved_` has released the
+    lock (g34), for a fresh resolve only, from the email link's confirm page, the
+    in-app button and a Replies-to-check "Resolved". It replies-all to the
+    thread's FIRST message — Reply-To the sender and the deployer, To the
+    department, CC the deployer — so it reaches the people on the request,
+    never whoever wrote last; the newest thread of a re-sent request. A request
+    sent before thread tracking has none: the person is told it got no reply,
+    and its Mark resolved button says so beforehand. A missing thread or a
+    failed send is said, and the resolve stands. Off with the
+    `deptResolvedReply` toggle. The reply carries the label, who and when — the
+    thread already holds the note.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

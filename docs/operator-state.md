@@ -2719,6 +2719,26 @@ entry says which it is.
   them by hand. **One-time check after deploy:** the record starts empty, so
   review both lists for anyone offboarded BEFORE this deploy.
 
+<a id="operator-dept-request-audit-and-resolved-reply-dr1"></a>
+- **Dept Request audit list and the resolved reply (DR1, operator 2026-11-09) —
+  the `DeptRequestCrmChecks` tab and the `deptResolvedReply` toggle.** **Nothing
+  to set up.** Call Notes → Dept Requests → **Audit list** (managers): choose
+  the days, filter by type (e.g. Close Order), department, status and CRM mark,
+  then Copy table or Download CSV, and tick **Checked in CRM** on each request
+  as you check it. The marks are rows of the `DeptRequestCrmChecks` tab in the
+  Dept Requests store (created by the first tick, append-only — RequestId,
+  yes/no, who, when; never edit or delete a row: the latest row per request is
+  the mark, and the tab is the record of who checked what). **The reply:** when
+  a person marks a request resolved — the email's link, the in-app button or a
+  "Resolved" answer under Replies to check — the app replies on the request's
+  email thread from the mailbox it runs as, to the sender and the department,
+  saying who marked it and when. A request sent before thread tracking (before
+  the 22post D deploy) has no thread and gets no reply; the person is told so.
+  **Toggle:** `deptResolvedReply` (Admin → Config → feature toggles), ON by
+  default; off = no reply, the resolve unchanged. Each reply (or why there was
+  none) is an AuditLog `DeptRequestResolvedReply` row, by id. **Tell the
+  departments** that a resolved request now gets an automatic reply on its
+  thread.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

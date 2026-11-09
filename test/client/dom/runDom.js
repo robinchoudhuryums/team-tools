@@ -6691,6 +6691,104 @@ test('ED4 DOM: a written document\'s printed copy is on its letterhead — the n
   assert.ok(pages[0].images >= 1, 'the logo');
 });
 
+
+test('DR1 DOM: a manager\'s Audit list — every request in the range with its CRM box first; the type, department, status and CRM menus filter in place; Copy table hands over the filtered rows; a CRM box is disabled while saving, put back when the save fails, and on success says who checked it and updates the count with the row left where it is; a late answer to an earlier range is dropped (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const base = { isManager: true, myDepts: [], departments: ['Billing'], mine: [], incoming: [], allOpen: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7,
+    truncated: false, listCap: 100, mineTotal: 0, incomingTotal: 0, allOpenTotal: 0, deptStats: [], teamKpis: { open: 0, overdue: 0, resolved: 0, total: 0, medianMin: null, manualCount: 0 } };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(base)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  const modes = h.$$('.dr-mode .toolbar-tab');
+  assert.deepStrictEqual(modes.map((b) => b.textContent.trim()), ['Tracker', 'Audit list'], 'the switch, under the title');
+  const row = (id, extra) => Object.assign({ requestId: id, createdMs: 1, createdAt: 'Nov 9, 2026 9:12 AM', createdIso: '2026-11-09 09:12', type: 'Close Order', toDept: 'Eligibility',
+    byName: 'Nina', patientTrx: 'Pat ' + id + ' · TRX 1', status: 'open', resolvedAt: '', resolvedIso: '', resolvedBy: '', resolvedVia: '', threadTracked: true, crmChecked: false, crmBy: '', crmAtMs: null }, extra || {});
+  const audit = { from: '2026-10-11', to: '2026-11-09', truncated: false, max: 2000, crmTruncated: false, types: ['Close Order', 'OOP Order'], departments: ['Billing', 'Eligibility'],
+    rows: [row('a'), row('b', { type: 'OOP Order', toDept: 'Billing', status: 'resolved', resolvedVia: 'email', resolvedBy: 'bo@x' }), row('c', { crmChecked: true, crmBy: 'ana@x', threadTracked: false })] };
+  h.window.drSetAuditMode_(true);
+  const first = h.run.pending('getDeptRequestAudit');
+  assert.strictEqual(first.length, 1, 'switching to it reads the list');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(first[0].args[0])), { from: '', to: '' }, 'the server\'s default range on the first read');
+  h.window.drAuditLoad_();   // a second read before the first answers
+  h.run.flushSuccess({ from: '2026-10-11', to: '2026-11-09', rows: [row('stale')], types: [], departments: [], truncated: false, max: 2000 }, 'getDeptRequestAudit');
+  assert.ok(!h.$('.dr-crm-box[data-req="stale"]'), 'THE RULE: an earlier read answering late is dropped (g81)');
+  h.run.flushSuccess(JSON.parse(JSON.stringify(audit)), 'getDeptRequestAudit');
+  const ids = () => h.$$('.dr-audit-table .dr-crm-box').map((b) => b.getAttribute('data-req')).join('');
+  assert.strictEqual(ids(), 'abc');
+  assert.strictEqual(h.$('#dr-audit-from').value, '2026-10-11', 'the range the server read is shown');
+  assert.ok(h.$$('.dr-audit-table tbody tr').every((tr) => tr.querySelector('td:first-child .dr-crm-box')), 'the CRM box leads each row');
+  assert.ok(/Pat a · TRX 1/.test(h.$('.dr-crm-box[data-req="a"]').getAttribute('aria-label')), 'each box is named for its request');
+  assert.ok(/Before thread tracking/.test(h.$('#dr-audit-results').textContent));
+  assert.ok(/3 requests · 1 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')));
+  const pick = (label, value) => {
+    const sel = h.$$('#dr-audit select').filter((s) => s.getAttribute('aria-label') === label)[0];
+    // jsdom here does not run inline handlers: check the wiring, then call it.
+    assert.ok(new RegExp("drAuditSetFilter_\\('" + { Type: 'type', CRM: 'crm' }[label] + "', this\\.value\\)").test(sel.getAttribute('onchange')), label + ' is wired');
+    sel.value = value; h.window.drAuditSetFilter_({ Type: 'type', CRM: 'crm' }[label], sel.value);
+    return sel;
+  };
+  const typeSel = pick('Type', 'Close Order');
+  assert.strictEqual(ids(), 'ac', 'filtered by type');
+  assert.ok(h.document.body.contains(typeSel), 'the menu is not re-rendered under the manager');
+  pick('CRM', 'unchecked');
+  assert.strictEqual(ids(), 'a', 'the Close Orders still to check');
+  assert.ok(/1 of 3 requests · 0 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')));
+  let copied = null;
+  h.window.copyWithFeedback_ = (t) => { copied = t; };
+  h.window.drAuditCopy_(h.$('#dr-audit .refresh-btn'));
+  assert.ok(copied && copied.split('\n').length === 2 && /^Sent\tType/.test(copied) && /Pat a/.test(copied), 'Copy table: the header and the one filtered row');
+  // The CRM mark.
+  const box = h.$('.dr-crm-box[data-req="a"]');
+  assert.strictEqual(box.getAttribute('onchange'), 'drCrmToggle_(this)');
+  const change = () => h.window.drCrmToggle_(box);   // jsdom here does not run inline handlers
+  box.checked = true; change();
+  assert.ok(box.disabled, 'disabled while it saves');
+  assert.deepStrictEqual(Array.from(h.run.pending('setDeptRequestCrmCheck')[0].args), ['a', true]);
+  h.run.flushSuccess({ success: false, error: 'Request not found.' }, 'setDeptRequestCrmCheck');
+  assert.ok(!box.checked && !box.disabled, 'THE RULE: a refused save puts the box back');
+  box.checked = true; change();
+  h.run.flushFailure(new Error('offline'), 'setDeptRequestCrmCheck');
+  assert.ok(!box.checked && !box.disabled, 'and a failed one');
+  box.checked = true; change();
+  h.run.flushSuccess({ success: true, requestId: 'a', checked: true, by: 'mgr@x', atMs: Date.UTC(2026, 10, 9, 15) }, 'setDeptRequestCrmCheck');
+  assert.ok(box.checked && !box.disabled && h.document.body.contains(box), 'saved, and the same box (patched in place — g141)');
+  assert.ok(/mgr@x/.test(box.closest('.dr-crm').querySelector('.dr-crm-who').textContent), 'who checked it');
+  assert.ok(/1 of 3 requests · 1 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')), 'the count follows');
+  assert.strictEqual(ids(), 'a', 'the row stays in view until the filters are changed');
+  h.window.drSetAuditMode_(false);
+  assert.ok(!h.$('#dr-audit') && h.$('.dr-mode'), 'back to the tracker, the switch still there');
+});
+
+test('DR1 DOM: Mark resolved says what became of the reply on the email thread — sent, or none for a request sent before thread tracking — and that request\'s button says so before the click; a rep (not a manager) has no Audit list (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const it = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'Close Order', patientTrx: 'P ' + id + ' · TRX 5' + id, createdAt: 'd', createdMs: 1000,
+    byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2, threadTracked: true }, extra || {});
+  const data = { isManager: false, myDepts: [], departments: ['Billing'], incoming: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100,
+    mine: [it('1'), it('2', { threadTracked: false })], mineTotal: 2, incomingTotal: 0 };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(data)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  assert.ok(!h.$('.dr-mode'), 'a rep has no Audit list');
+  const btn = (id) => h.$('.sp-resolve[data-req="' + id + '"]');
+  assert.ok(/before thread tracking/.test(btn('2').getAttribute('title') || ''), 'said before the click');
+  assert.ok(!btn('1').getAttribute('title'), 'a tracked request needs no warning');
+  const toasts = () => h.$$('#toast-stack .toast').map((t) => t.textContent).join(' | ');
+  h.window.drResolveClick_(btn('1'));
+  const ok = h.$('.ui-dialog-ok'); if (ok) h.click(ok);
+  await tick();
+  h.run.flushSuccess({ success: true, already: false, reply: { sent: true }, replyNote: 'A reply saying so was sent on the email thread.' }, 'resolveDeptRequest');
+  assert.ok(/Marked resolved\. A reply saying so was sent on the email thread\./.test(toasts()), toasts());
+  h.window.drResolveClick_(btn('2'));
+  const ok2 = h.$('.ui-dialog-ok'); if (ok2) h.click(ok2);
+  await tick();
+  h.run.flushSuccess({ success: true, already: false, reply: { sent: false, reason: 'untracked' },
+    replyNote: 'No reply was sent on the email thread: this request was sent before thread tracking began, so it has no thread to reply on.' }, 'resolveDeptRequest');
+  assert.ok(/sent before thread tracking began/.test(toasts()), 'THE ASK: the request sent before thread tracking says it got no reply');
+});
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
