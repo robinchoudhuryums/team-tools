@@ -44298,7 +44298,7 @@ test('SP1: the wiring — the outcomes ride the pending read (never a client cop
   const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   const ctx = vm.createContext({ Object, String });
   ['spanishResolveChoices_', 'spanishBulkReplyText_'].forEach((n) => vm.runInContext(extractFnFrom(met, n), ctx));
-  assert.deepStrictEqual(hJ(ctx.spanishResolveChoices_({ resolveOutcomes: { reached: 'Reached the patient', wrong: 'Wrong number' } })), [{ key: 'reached', label: 'Reached the patient' }, { key: 'wrong', label: 'Wrong number' }]);
+  assert.deepStrictEqual(hJ(ctx.spanishResolveChoices_({ resolveOutcomes: { wrong: 'Wrong number', reached: 'Reached the patient' } })), [{ key: 'wrong', label: 'Wrong number' }, { key: 'reached', label: 'Reached the patient' }], 'the server\u2019s order, never sorted');
   assert.deepStrictEqual(hJ(ctx.spanishResolveChoices_({})), [], 'an older server: no choices, the dialog only confirms');
   assert.strictEqual(ctx.spanishBulkReplyText_({ replies: { sent: 2, voicemail: 1, failed: ['x'], off: false } }), '2 replies sent · 1 voicemail (no email to reply to) · 1 reply could not be sent');
   assert.strictEqual(ctx.spanishBulkReplyText_({ replies: { sent: 0, voicemail: 0, failed: [], off: true } }), '', 'toggle off: nothing said');
