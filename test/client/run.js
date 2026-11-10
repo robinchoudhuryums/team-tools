@@ -44648,6 +44648,7 @@ const PT2_UHC = (() => {
     pt2Row_(W, { 0: 'Nationwide Plans (Multiple States)', 5: 'NO', 6: 'TRY', 7: 'TRY' }),
     pt2Row_(W, { 0: "Alabama UHC HMO/PPO If It's Not Listed Below (In-Network)", 1: '87726', 2: 'In-Network', 3: 'Y', 4: 'X', 5: 'NO', 6: 'L ( Up To 285) & SI/PR', 7: 'NO', 8: 'TRY', 9: 'TRY', 10: 'TRY' }),
     pt2Row_(W, { 0: 'UHC Silver exchange family plan HMO', 2: 'INN', 5: 'NO', 6: 'SI', 7: 'PR/SI' }),
+    pt2Row_(W, { 0: 'Connecticut Medicaid (Traditional Only)', 2: 'OON', 5: 'NO', 6: 'NO', 7: 'NO' }),
     pt2Row_(W, { 0: "Conneticut UHC HMO If It's Not Listed Below", 2: 'Out-of-Network', 5: 'NO', 6: 'NO', 7: 'NO' }),
     pt2Row_(W, { 0: 'UHC Dual Complete CT-S001', 2: 'In Network', 5: 'NO', 6: 'X', 7: 'X' }),
     pt2Row_(W, { 0: "Vermont HMO If It's Not Listed Below" }),
@@ -44692,20 +44693,21 @@ test('PT2: the UHC tab — each plan carries the state of the section it sits in
     'Multi-state / other | Nationwide Plans (Multiple States)',
     "Alabama | Alabama UHC HMO/PPO If It's Not Listed Below (In-Network)",
     'Alabama | UHC Silver exchange family plan HMO',
+    'Connecticut | Connecticut Medicaid (Traditional Only)',
     "Connecticut | Conneticut UHC HMO If It's Not Listed Below",
     'Connecticut | UHC Dual Complete CT-S001',
     'Texas | TEXAS-All TX UHC Plans unless the specific plan code is below TRY it',
     'Texas | Tx UHC Bronze Virtual First exchange plan',
     'Texas | Florida Blue plan listed here by mistake',
-    "Wisconsin | Wisonsin UHC PPO If It's Not Listed Below"], 'each plan under its section\'s state; the name-only Vermont reminder dropped');
+    "Wisconsin | Wisonsin UHC PPO If It's Not Listed Below"], 'each plan under its section\'s state — a catch-all also covers the rows just above it that begin with its state; the name-only Vermont reminder dropped');
   assert.strictEqual(r.note, 'United Healthcare By State -- No Power Orders In OR. (Hospice okay.)', 'the note without its "Added:" wrapper and quotes');
   const ch = r.changes.join('\n');
   [/Column I has no title — dropped with its 1 filled cell/, /Column K has no title — dropped with its 1 filled cell/,
     /Column "X = Yes" is the key, not data — dropped with its 1 filled cell/,
     /grouped by state in the sheet — each now carries its State: 4 section\(s\) \(Alabama, Connecticut, Texas, Wisconsin\)/,
     /"Conneticut" → Connecticut, "Wisonsin" → Wisconsin/, /1 plan\(s\) come before the first state section — their State reads "Multi-state \/ other"/,
-    /1 plan\(s\) name a different state than the section they sit in and keep the section's state: "Florida Blue plan listed here by mistake" \(row 11, under Texas\)/,
-    /1 row\(s\) with a plan name and nothing recorded dropped — a reminder in the sheet, not an acceptance rule \(source row 8\)/]
+    /1 plan\(s\) name a different state than the section they sit in and keep the section's state: "Florida Blue plan listed here by mistake" \(row 12, under Texas\)/,
+    /1 row\(s\) with a plan name and nothing recorded dropped — a reminder in the sheet, not an acceptance rule \(source row 9\)/]
     .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
   const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[3]));
   assert.deepStrictEqual([o.state, o.catchAll, o.networkStatus], ['Alabama', false, 'INN'], 'the reader gives the plan its state');
