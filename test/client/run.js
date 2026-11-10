@@ -44680,6 +44680,8 @@ const PT2_BCBS = (() => {
     pt2Row_(W, { 1: 'BCBS of Arizona commercial PPO', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' }),
     pt2Row_(W, { 1: 'Blue Medicare Advantage Plus HMO H0302-001 (Medisun, Inc.) (AZ)', 5: 'TRY', 6: 'TRY', 7: 'TRY' }),
     pt2Row_(W, { 1: 'Arizona Blue Advantage Plus', 5: 'TRY', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 0: 'Colorado', 1: 'Anthem Colorado Blue Priority HMO', 3: 'OON', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 1: 'Anthem BCBS Colorado PPO', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' }),
     pt2Row_(W, { 0: 'Not State Specific', 1: 'BCBS Federal (When member ID Starts with R)', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' }),
   ];
 })();
@@ -44732,12 +44734,14 @@ test('PT2: the BCBS tab — the plan name is column B when column A is mostly em
     'BCBS of Arizona commercial PPO | Arizona | ',
     'Blue Medicare Advantage Plus HMO H0302-001 (Medisun, Inc.) (AZ) | Arizona | ',
     'Arizona Blue Advantage Plus | Arizona | ',
-    'BCBS Federal (When member ID Starts with R) | Not state specific | '], 'a state never becomes a Company; the name-only reference row dropped');
+    'Anthem Colorado Blue Priority HMO | Colorado | ',
+    'Anthem BCBS Colorado PPO | Colorado | ',
+    'BCBS Federal (When member ID Starts with R) | Not state specific | '], 'a state never becomes a Company — a column-A state opens its section even when the plan beside it is no catch-all; the name-only reference row dropped');
   assert.strictEqual(r.note, 'BCBS / Anthem HMO plans that we are OON do not try as OON w PA. No Power Orders In OR.');
   const ch = r.changes.join('\n');
   [/The plan name is column B; column A names the insurer or starts a state section/, /Column I has no title — dropped with its 3 filled cell/,
     /"K0825 - Up to 435" → "K0825 \(Up to 435\)"/, /Column A's insurer names are kept as the Company of their plan/,
-    /each now carries its State: 4 section\(s\) \(Alabama, Alaska, Arizona, Not state specific\)/]
+    /each now carries its State: 5 section\(s\) \(Alabama, Alaska, Arizona, Colorado, Not state specific\)/]
     .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
   const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[2]));
   assert.deepStrictEqual([o.name, o.company, o.state], ['medicaid', 'BCBS Arkansas', 'Multi-state / other']);
