@@ -844,6 +844,14 @@ longer sent to reps.
      uploaded from the source sheet's Primary Medicaid export on the same Admin
      panel.
 
+     **PT2 (operator 2026-11-10) — UHC by state and BCBS / Anthem.** Two more
+     payor tables in the same search. Their source tabs group plans by state,
+     so the upload gives every plan its State (and, on BCBS, its insurer) and
+     the search finds a plan by either; each card shows its state, and a
+     "not listed below" row says it covers any plan of its state the sheet does
+     not name. The legend reads SI, PR/SI, INN and "In Network" as the operator
+     defined them.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

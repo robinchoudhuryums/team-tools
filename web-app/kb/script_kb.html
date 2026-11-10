@@ -342,6 +342,8 @@
   .kb-ins-note svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning-deep); }
   .kb-ins-group + .kb-ins-group { margin-top: 12px; }
   .kb-ins-group-h { font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin: 4px 0 2px; }
+  .kb-ins-state { font-family: var(--mono); font-size: .66rem; font-weight: 600; color: var(--muted-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  .kb-ins-catch { font-size: .72rem; color: var(--info-deep); margin: 2px 0 2px; display: flex; gap: 4px; align-items: center; }
   .kb-ins-key { font-size: .72rem; color: var(--muted); margin: 6px 0 2px; line-height: 1.5; word-break: break-word; }
   .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
   .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
@@ -1569,12 +1571,20 @@ var INS_IS = {
   oonAny: function (v) { return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v); },
   planSpecific: function (v) { return /(^|[^a-z])plan[\s-]*specific([^a-z]|$)/.test(v); },
   location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v); },
-  siPr: function (v) { return v.indexOf('si/pr') >= 0; },
-  pr: function (v) { return insWord_(v, 'pr') && v.indexOf('si/pr') < 0; },
+  // PT2 (operator 2026-11-10): SI is secondary insurance, PR patient
+  // responsibility; "PR/SI" is the same rule as "SI/PR".
+  siPr: function (v) { return v.indexOf('si/pr') >= 0 || v.indexOf('pr/si') >= 0; },
+  si: function (v) { return insWord_(v, 'si') && v.indexOf('si/pr') < 0 && v.indexOf('pr/si') < 0; },
+  pr: function (v) { return insWord_(v, 'pr') && v.indexOf('si/pr') < 0 && v.indexOf('pr/si') < 0; },
   both: function (v) { return v.indexOf('&') >= 0; },
   tryIt: function (v) { return insWord_(v, 'try'); },
   hawaii: function (v) { return insWord_(v, 'hawaii'); },
-  accepted: function (v) { return insWord_(v, 'in-network') || insWord_(v, 'accepted') || v === 'x' || v === 'yes'; },
+  // PT2: INN and "In Network" (a space) are in-network too (operator 2026-11-10).
+  // A negated or "out-of" in-network is never a yes ("Not in network").
+  accepted: function (v) {
+    if (/(^|[^a-z])(not|non|out)[\s-]*(of[\s-]*)?in[\s-]*network/.test(v)) return false;
+    return insWord_(v, 'in-network') || /(^|[^a-z])(inn|in network)([^a-z]|$)/.test(v) || insWord_(v, 'accepted') || v === 'x' || v === 'yes';
+  },
 };
 var INS_TERMS = [
   { term: 'Not Accepted / NO', why: 'Don\u2019t accept orders for this payor.',
@@ -1600,8 +1610,10 @@ var INS_TERMS = [
     match: INS_IS.planSpecific },
   { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
     match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
-  { term: 'SI/PR', why: 'Accept only with secondary insurance covering any patient responsibility \u2014 or the patient is told PR may be collected up front by delivery.',
+  { term: 'SI/PR', why: 'Only accept if the patient has secondary insurance details that will cover any remaining patient responsibility or, if the patient is unable to provide a secondary insurance, then they were made aware that there may be some patient responsibility cost that will need to be collected up front by the delivery team. "PR/SI" is the same rule.',
     match: INS_IS.siPr },
+  { term: 'SI', why: 'Secondary insurance \u2014 only accept if the patient has secondary insurance that will cover any remaining patient responsibility.',
+    match: INS_IS.si },
   { term: 'Location-based', why: 'Only if the patient is in one of the big cities listed on the source sheet\u2019s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.',
     match: INS_IS.location },
   { term: 'A & B (combined)', why: 'Must meet BOTH criteria.',
@@ -1654,7 +1666,7 @@ function insToneCls_(value) {
   // split was deliberate and is pinned.
   if (INS_IS.oonBare(v)) return 'bad';
   if (INS_IS.oonAny(v) || INS_IS.planSpecific(v)) return 'warn';
-  if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
+  if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.si(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
   if (INS_IS.tryIt(v)) return 'info';
   if (INS_IS.hawaii(v)) return 'info';
   if (INS_IS.accepted(v)) return 'good';
@@ -2684,6 +2696,7 @@ function insRenderResults_(suffix, q, res) {
       ? '<button type="button" class="kb-ins-pill kb-term ' + esc(tone) + '" onclick="insTermClick_(this)">' + esc(ns) + '</button>'
       : '<span class="kb-ins-pill ' + esc(tone) + '">' + esc(ns || 'status not recorded') + '</span>';
     var meta = [];
+    if (m.company) meta.push('Insurer ' + esc(m.company));   // PT2: the BCBS tab's column A
     if (m.waystar) meta.push('Waystar ' + esc(m.waystar));
     if (m.qualification) meta.push('Qualification: ' + esc(m.qualification));
     if (m.reimbursement) meta.push('Reimbursement: ' + esc(m.reimbursement));
@@ -2712,7 +2725,10 @@ function insRenderResults_(suffix, q, res) {
     var excl = m.excludedState ? '<span class="kb-ins-excl" title="This plan’s name excludes ' + esc(m.excludedState) + '">' + esc(m.excludedState) + ' excluded</span>' : '';
     var tk = named ? String(m.table || '') : '';
     cards[tk] = (cards[tk] || '') + '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
-      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl + pill + '</div>' +
+      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl +
+        (m.state ? '<span class="kb-ins-state">' + esc(m.state) + '</span>' : '') + pill + '</div>' +
+      (m.catchAll ? '<div class="kb-ins-catch">' + icon('info', 11) + ' Covers any ' +
+        (m.state && !/^(multi-state|not state specific)/i.test(m.state) ? esc(m.state) + ' ' : '') + 'plan this sheet does not list by name</div>' : '') +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
       detHtml + '</div>';
   });

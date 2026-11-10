@@ -6756,6 +6756,38 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="pt2-payor-tables-by-state"></a>**Payor tables grouped by state carry each plan's State and insurer; the converter reads what the sheet's layout says and lists every reading (PT2, operator 2026-11-10)**
+  The source sheet's UHC By State and BCBS tabs differ from Medicare / MA and
+  Medicaid: plans sit under state sections (opened by a "<State> … if it's not
+  listed below" row on UHC, or a state name in column A on BCBS, where the plan
+  name is column B and column A otherwise names the insurer), the editors left
+  row-fill under no title, and some rows are reminders with nothing recorded.
+  - **Two more allowlisted payor tables** — `UhcPayors` ("UHC by state") and
+    `BcbsPayors` ("BCBS / Anthem"), through the ONE converter, searched with the
+    others as one ranking (PT1).
+  - **State is derived, never asked for.** Three or more sections make a sheet
+    sectioned, and every plan then carries its section's State; a "not listed
+    below / unlisted / unless … below" row also covers the rows just above it
+    that begin with the same state. A misspelt state ("Conneticut") is read
+    within one letter (two for a long name) and the reading is LISTED; a
+    two-letter code alone never opens a section. Rows before the first section
+    read "Multi-state / other"; a plan whose own name says a different state
+    keeps its section's state, and the preview lists it. A section with no plan
+    kept is not named.
+  - **What is dropped is said.** An untitled column with data is dropped and
+    named with its cell count (the row-fill; the operator confirmed it is
+    accidental); a name with nothing recorded is dropped as a reminder (the
+    operator: these rows help the sheet's own users remember rules — the
+    "if it's not listed below" ones are read as catch-alls instead); the note
+    loses its "Added:" wrapper and BCBS's run-in "Plan Name" title.
+  - **The search reads the plan, its State and its insurer together**, so a
+    plan whose name never says its state is found by it. A card shows its state
+    chip and insurer; a catch-all row says it covers any plan of its state the
+    sheet does not list by name.
+  - **The legend learns the operator's meanings:** SI is secondary insurance;
+    PR/SI is SI/PR, and SI/PR is the Sales team's rule word for word; INN and
+    "In Network" are in-network (and "Not in network" never is); a combined
+    value ("L ( Up To 285) & SI/PR") must meet both.
 - <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
   The operator: "a reminder notification to team members to check their
   timesheet and request edits if needed on pay weeks — on the Monday of the

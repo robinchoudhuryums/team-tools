@@ -4242,6 +4242,33 @@ test('PT1 DOM: one search across the payor tables — a group per table with mat
   assert.ok(!res.querySelector('.kb-ins-group-h') && /^For every plan:/.test(res.querySelector('.kb-ins-note').textContent.trim()), 'one table: no heading, an unnamed note');
 });
 
+test('PT2 DOM: a plan from a sheet grouped by state shows its state beside its name, its insurer in the meta, and a catch-all row says it covers any plan of its state the sheet does not list — all escaped; a plan with no state shows no chip (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'BcbsPayors', label: 'BCBS / Anthem', note: '', noteError: '', legend: {} }];
+  let answer = { total: 3, cap: 8, tables: tables, matches: [
+    { table: 'BcbsPayors', name: 'Anthem <b>HMO</b>', state: 'Ohio <i>x</i>', company: 'Anthem & <b>Co</b>', networkStatus: 'In-Network', details: [] },
+    { table: 'BcbsPayors', name: "Unlisted Texas plans if it's not listed below", state: 'Texas', catchAll: true, networkStatus: 'In-Network', details: [] },
+    { table: 'BcbsPayors', name: 'Federal Employee Program', state: 'Multi-state / other', catchAll: true, networkStatus: 'In-Network', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('anthem');
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 3);
+  const chip = cards[0].querySelector('.kb-ins-head .kb-ins-state');
+  assert.ok(chip && chip.textContent === 'Ohio <i>x</i>' && !chip.querySelector('i'), 'the state chip in the head, escaped: ' + (chip && chip.innerHTML));
+  const meta = cards[0].querySelector('.kb-ins-meta');
+  assert.ok(meta && /Insurer Anthem & <b>Co<\/b>/.test(meta.textContent) && !meta.querySelector('b'), 'the insurer in the meta, escaped: ' + (meta && meta.innerHTML));
+  assert.ok(!cards[0].querySelector('.kb-ins-catch'), 'a named plan is no catch-all');
+  assert.strictEqual(cards[1].querySelector('.kb-ins-catch').textContent.trim(), 'Covers any Texas plan this sheet does not list by name', 'a catch-all names its state');
+  assert.strictEqual(cards[2].querySelector('.kb-ins-catch').textContent.trim(), 'Covers any plan this sheet does not list by name', 'a multi-state catch-all names none');
+  assert.ok(!cards[1].querySelector('.kb-ins-meta') || !/Insurer/.test(cards[1].querySelector('.kb-ins-meta').textContent), 'no insurer, no Insurer line');
+  answer = { total: 1, cap: 8, tables: tables, matches: [{ table: 'BcbsPayors', name: 'PLAIN', networkStatus: 'In-Network', details: [] }] };
+  await search('plain');
+  assert.ok(!h.$('#kb-ins-results').querySelector('.kb-ins-state'), 'a plan with no state shows no chip');
+});
+
 test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
   const h = boot();
   let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',
@@ -4548,7 +4575,7 @@ test('T3 DOM: the item row cross-references the payors ON SCREEN, in EITHER sear
   const pop = h.window.document.querySelector('#kb-term-overlay .kb-term-modal');
   assert.ok(pop, 'and really opens the term popover');
   assert.ok(/SI\/PR/.test(pop.textContent), 'headed by the value the rep clicked');
-  assert.ok(/secondary insurance covering any patient responsibility/.test(pop.textContent),
+  assert.ok(/secondary insurance details that will cover any remaining patient responsibility/.test(pop.textContent),
     'carrying the operator DEFINITION, not just the value again');
   h.read('closeOverlay')(h.window.document.querySelector('#kb-term-overlay'));
 

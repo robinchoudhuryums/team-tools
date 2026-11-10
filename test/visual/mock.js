@@ -739,7 +739,13 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
       rows: 1035, cols: 25, present: true, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.', noteAt: '2026-11-09T15:00:00.000Z' },
       { key: 'MedicaidPayors', tab: 'MedicaidPayors', label: 'Primary Medicaid acceptance',
-        describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' }] },
+        describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' },
+      // PT2: the two tabs grouped by state.
+      { key: 'UhcPayors', tab: 'UhcPayors', label: 'UHC by state acceptance',
+        describe: 'UnitedHealthcare plans by state behind the Reference insurance lookup', rows: 562, cols: 30, present: true,
+        note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)', noteAt: '2026-11-10T15:00:00.000Z' },
+      { key: 'BcbsPayors', tab: 'BcbsPayors', label: 'BCBS / Anthem acceptance',
+        describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' }] },
     kbImportDataTable: function (key, b64, opts) {
       var dry = !opts || opts.dryRun !== false;
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
@@ -2090,14 +2096,18 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // defect from the operator's own post-deploy check.
     // PT1a: the source sheet's standing note rides every answer.
     // PT1: one search across the payor tables, each with its note and its sheet's key.
-    searchInsurancePayors: { total: 5, cap: 8,
+    searchInsurancePayors: { total: 7, cap: 8,
       tables: [
         { key: 'InsurancePayors', label: 'Medicare / MA', noteError: '',
           note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
           legend: { X: 'Yes', NO: 'No', Y: 'Yes, if Branch or Driver is located within 100 miles', Z: 'Hawaii Only' } },
         { key: 'MedicaidPayors', label: 'Primary Medicaid', noteError: '',
           note: 'Medicaid primary acceptance (test nursing home patients): no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. Can accept patients in facilities.',
-          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } }],
+          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } },
+        { key: 'UhcPayors', label: 'UHC by state', noteError: '',
+          note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)',
+          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', noteError: '', note: '', legend: { X: 'Yes', NO: 'No' } }],
       matches: [
       { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
@@ -2124,7 +2134,15 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         reimbursement: 'Testing', details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
       // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
       { table: 'InsurancePayors', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
-        reimbursement: 'Yes', details: [], excludedState: 'TX' }],
+        reimbursement: 'Yes', details: [], excludedState: 'TX' },
+      // PT2: a sheet grouped by state — the plan's state chip, its insurer, and a
+      // catch-all row that covers any plan of its state the sheet does not list.
+      { table: 'UhcPayors', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
+        networkStatus: 'In-Network', waystar: '87726', qualification: '', reimbursement: '',
+        details: [{ label: 'K0821/K0823 (Up to 285 lbs)', value: 'L ( Up To 285) & SI/PR', code: { shaped: true, certain: true, tokens: ['K0821', 'K0823'] }, item: '', itemCount: 0 }] },
+      { table: 'BcbsPayors', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
+        networkStatus: 'INN', waystar: '', qualification: '', reimbursement: '',
+        details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }] }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],

@@ -2793,6 +2793,18 @@ entry says which it is.
   Medicare / MA table alone. `INS_PAYOR_NOTE` now holds every payor table's
   note and its sheet's key (one Script Property, auto-managed); each table's
   source upload rewrites only its own entry.
+<a id="operator-pt2-payor-tables-by-state"></a>
+- **Payor tables by state — the `UhcPayors` and `BcbsPayors` tabs (PT2, operator 2026-11-10).**
+  **Nothing to set up beyond the uploads.** Manage → Admin → Config → Reference
+  data tables lists **UHC by state acceptance** and **BCBS / Anthem
+  acceptance**. Download each source tab as CSV and drop it on its row; read the
+  preview before Replace — it lists every state section, every misspelt state
+  it read and how, the plans before the first section ("Multi-state / other"),
+  plans whose name says a different state than their section, the untitled
+  columns it dropped with their cell counts, and the reminder rows it dropped.
+  If an untitled column is real data (a code whose title is missing), give it
+  its title in the source sheet and upload again. Until a tab is imported the
+  lookup leaves it out.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

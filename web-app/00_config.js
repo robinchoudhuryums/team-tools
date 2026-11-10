@@ -2640,6 +2640,27 @@ const KB_DATA_TABLES = {
     sourceFormat: 'payorAcceptance',
     payorTable: 'Primary Medicaid',
   },
+  // PT2 (operator 2026-11-10): the source sheet's UHC-by-state and BCBS / Anthem
+  // tabs — grouped by state in the sheet; the converter gives every plan its
+  // State (and BCBS its insurer as Company).
+  UhcPayors: {
+    tab: 'UhcPayors',
+    label: 'UHC by state acceptance',
+    describe: 'UnitedHealthcare plans by state behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|uhc|united/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'UHC by state',
+  },
+  BcbsPayors: {
+    tab: 'BcbsPayors',
+    label: 'BCBS / Anthem acceptance',
+    describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|bcbs|blue|anthem/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'BCBS / Anthem',
+  },
 };
 const KB_DATA_TABLE_MAX_ROWS = 5000;
 const KB_DATA_TABLE_MAX_COLS = 60;

@@ -16303,6 +16303,7 @@ console.log('\nCode.js — insurance payor lookup (operator batch 3)');
 const _insCtx = vm.createContext({});
 vm.runInContext(extractRawFunction('Code.js', 'insPayorScore_'), _insCtx, { filename: 'insPayorScore_' });
 vm.runInContext(extractRawFunction('Code.js', 'insPayorRowObj_'), _insCtx, { filename: 'insPayorRowObj_' });
+vm.runInContext(extractRawFunction('Code.js', 'insPayorCatchAll_'), _insCtx, { filename: 'insPayorCatchAll_' });   // PT2
 vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' +
   extractScript('kb/script_kb.html').match(/var INS_IS = \{[\s\S]*?\n\};/)[0], _insCtx, { filename: 'INS_IS' });   // K11
 vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), _insCtx, { filename: 'insToneCls_' });
@@ -16368,7 +16369,7 @@ test('D1–D3 (operator 2026-10-27): the payor lookup reads STATES by code or na
   const ep = extractRawFunction('Code.js', 'kbSuggestPayorSynonyms');
   assert.ok(/!emp \|\| !emp\.isAdmin\) return \{ error: 'Admin access required\.' \}/.test(ep));
   const se = stripJsComments_(extractRawFunction('Code.js', 'searchInsurancePayors'));
-  assert.ok(/insPayorMatch_\(names\[i\]\[0\], q, groups\)/.test(se) && /\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\)/.test(se), 'the search uses the matcher and sorts excluded last');
+  assert.ok(/insPayorMatch_\(names\[i\]\.join\(' '\), q, groups\)/.test(se) && /\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\)/.test(se), 'the search uses the matcher and sorts excluded last');
   assert.ok(/o\.excludedState = t\.excluded/.test(se), 'and ships the state');
 });
 
@@ -16415,7 +16416,8 @@ test('wiring: gate + bounded read + cap on the server; dual host + seq + A12 + [
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');   // INV-188
   const srv = nc(extractRawFunction('Code.js', 'searchInsurancePayors'));
   assert.ok(/getEmployeeInfo_\(\)/.test(srv) && /Not authorized/.test(srv), 'rep gate');
-  assert.ok(/getRange\(2, 1, last - 1, 1\)/.test(srv), 'NAME-column scan for scoring (the INV-46 bounded-reader family)');
+  assert.ok(/getRange\(2, 1, last - 1, scan\)/.test(srv) && /Math\.min\(t\.headers\.length, 3\)/.test(srv),
+    'NAME-column scan for scoring (the INV-46 bounded-reader family) — with PT2\'s State/Company beside it, three columns at most');
   assert.ok(!/waitLock/.test(srv), 'read-only — no lock');
   assert.ok((srv.match(/getDisplayValues\(\)/g) || []).length >= 3, 'getDisplayValues throughout (INV-64 — a foreign-authored sheet)');
   assert.ok(/INS_PAYOR_TOP/.test(srv) && /total: scored\.length/.test(srv), 'top-N cap with the TRUE total reported (INV-169)');
@@ -44329,7 +44331,10 @@ const PT1A_SRC = [
 function pt1aCtx_(extra) {
   const ctx = vm.createContext(Object.assign({ String, Array, Object, Math, Number, JSON, RegExp,
     INS_PAYOR_NOTE_MAX: Number(m5bConst_('INS_PAYOR_NOTE_MAX')) }, extra || {}));
-  ['hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorRowObj_', 'insPayorSlotOf_']
+  // PT2: the converter's helpers and the state names it reads sections by.
+  vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
+  ['hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorRowObj_', 'insPayorSlotOf_',
+    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44424,8 +44429,10 @@ function pt1aImportCtx_(sheet, props) {
     getKbSS_: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }),
     writeAuditLog_: (e, a, x, y, z, n, d) => { book.audits.push(d); } });
   ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
-    'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_']
+    'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_',
+    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
   return { ctx, book };
 }
 const pt1aCsv_ = (grid) => grid.map((r) => r.map((v) => (/[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v)).join(',')).join('\n');
@@ -44573,7 +44580,7 @@ function pt1SearchCtx_(tabs, rawNotes) {
     oopCodeIndex_: () => ({ byToken: {}, error: '' }),
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
     getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
-  ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_', 'searchInsurancePayors']
+  ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorCatchAll_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_', 'searchInsurancePayors']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44624,6 +44631,163 @@ test('PT1: the Medicaid table is allowlisted beside InsurancePayors with the sam
   assert.ok(res2.imported && /could not be read/.test(res2.noteWarning) && JSON.parse(props2.INS_PAYOR_NOTE).InsurancePayors, 'an unreadable map: this table\'s note is kept and the loss is SAID');
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.ok(/insPayorTables_\(\)\.forEach/.test(nc(extractRawFunction('Code.js', 'kbSuggestPayorSynonyms'))), 'the alias suggestion reads every payor table\'s names');
+});
+
+// ── PT2 (operator 2026-11-10): UHC by state + BCBS / Anthem — state sections, insurer, untitled columns ──
+console.log('\nOperator round 2026-11-10 — PT2 (UHC by state and BCBS / Anthem: state sections, the insurer, untitled columns)');
+const pt2Row_ = (w, cells) => { const r = Array(w).fill(''); Object.keys(cells).forEach((k) => { r[Number(k)] = cells[k]; }); return r; };
+// The UHC tab in miniature: its own header strings, the "Added:" note, state
+// sections opened by "<State> … not listed below" rows (one misspelled, one run
+// into the next word), Texas opened by "unless … below", the row-fill past the
+// last code (under no title and under the key's titles), a name-only reminder.
+const PT2_UHC = (() => {
+  const W = 12;
+  const rows = [
+    pt2Row_(W, { 0: 'Added: "United Healthcare By State -- No Power Orders In OR. (Hospice okay.) "', 1: 'Waystar Ref#', 2: 'Network Status', 4: 'Reimb. Status' }),
+    pt2Row_(W, { 3: 'Plan Inserted Under Payor In UMS System?', 5: 'K0800', 6: 'K0821/K0823 (Up to 285 lbs)', 7: 'K0825 Up to 435 lbs', 9: 'X = Yes', 11: 'Try= Create account and insurance team will verify' }),
+    pt2Row_(W, { 0: 'Nationwide Plans (Multiple States)', 5: 'NO', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 0: "Alabama UHC HMO/PPO If It's Not Listed Below (In-Network)", 1: '87726', 2: 'In-Network', 3: 'Y', 4: 'X', 5: 'NO', 6: 'L ( Up To 285) & SI/PR', 7: 'NO', 8: 'TRY', 9: 'TRY', 10: 'TRY' }),
+    pt2Row_(W, { 0: 'UHC Silver exchange family plan HMO', 2: 'INN', 5: 'NO', 6: 'SI', 7: 'PR/SI' }),
+    pt2Row_(W, { 0: "Conneticut UHC HMO If It's Not Listed Below", 2: 'Out-of-Network', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 0: 'UHC Dual Complete CT-S001', 2: 'In Network', 5: 'NO', 6: 'X', 7: 'X' }),
+    pt2Row_(W, { 0: "Vermont HMO If It's Not Listed Below" }),
+    pt2Row_(W, { 0: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', 2: 'In-Network', 5: 'NO', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 0: 'Tx UHC Bronze Virtual First exchange plan', 2: 'OON', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 0: 'Florida Blue plan listed here by mistake', 2: 'OON', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 0: "Wisonsin UHC PPO If It's Not Listed Below", 2: 'In-Network', 5: 'NO', 6: 'TRY', 7: 'TRY' }),
+  ];
+  return rows;
+})();
+// The BCBS tab in miniature: the plan name in column B, A1 a bare number, the
+// note in B1 with "----Plan Name --" run in, insurers in column A over the top
+// section, then state names in column A opening each section, "Not State
+// Specific" last, an untitled column of data, a name-only reference row.
+const PT2_BCBS = (() => {
+  const W = 9;
+  return [
+    pt2Row_(W, { 0: '2', 1: 'BCBS / Anthem HMO plans that we are OON do not try as OON w PA----Plan Name -- No Power Orders In OR.', 2: 'Payor ID', 3: 'Network Status', 4: 'Reimb Status' }),
+    pt2Row_(W, { 5: 'K0816', 6: 'K0821', 7: 'K0825 - Up to 435' }),
+    pt2Row_(W, { 0: 'Healthkeepers, Inc.', 1: 'Anthem MediBlue Plus H3447-013', 2: '00423', 4: 'Not accepting any anthem orders', 5: 'NO', 6: 'NO', 7: 'NO', 8: 'NO' }),
+    pt2Row_(W, { 0: 'BCBS Arkansas', 1: 'medicaid', 2: 'SB520', 5: 'TRY', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 1: 'BCBS of Michigan' }),
+    pt2Row_(W, { 0: 'Alabama', 1: 'Unlisted Alabama  BCBS (Blue) Plans', 2: 'SB510', 3: 'In Network', 4: 'Acceptable', 5: 'TRY', 6: 'TRY', 7: 'TRY', 8: 'TRY' }),
+    pt2Row_(W, { 1: 'BCBS of Alabama- employer based plan PPO', 5: 'X', 6: 'X', 7: 'X', 8: 'X' }),
+    pt2Row_(W, { 1: 'BCBS of AL Medicare Advantage Plan - H0104-015', 4: 'NO', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 1: 'BCBS AL Walmart National Offerings Premier Plan PPO', 5: 'X', 6: 'X', 7: 'X' }),
+    pt2Row_(W, { 0: 'Alaska', 1: 'Unlisted Alaska BCBS (Blue) Plans', 3: 'OON', 5: 'NO', 6: 'NO', 7: 'NO' }),
+    pt2Row_(W, { 0: 'Arizona', 1: 'Unlisted Arizona BCBS (AZ Blue) Plans PPO and HMO', 3: 'OON w benefits', 5: 'SI/PR', 6: 'SI/PR', 7: 'SI/PR' }),
+    pt2Row_(W, { 1: 'BCBS of Arizona commercial PPO', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' }),
+    pt2Row_(W, { 1: 'Blue Medicare Advantage Plus HMO H0302-001 (Medisun, Inc.) (AZ)', 5: 'TRY', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 1: 'Arizona Blue Advantage Plus', 5: 'TRY', 6: 'TRY', 7: 'TRY' }),
+    pt2Row_(W, { 0: 'Not State Specific', 1: 'BCBS Federal (When member ID Starts with R)', 3: 'INN', 5: 'X', 6: 'X', 7: 'X' }),
+  ];
+})();
+
+test('PT2: the UHC tab — each plan carries the state of the section it sits in (a "<State> … not listed below" row opens one, Texas\'s "unless … below" too, a misspelling or a run-in name read and listed), the rows before the first section read "Multi-state / other", the row-fill past the last code is dropped under no title and under the key\'s, a name with nothing recorded is dropped, the note loses its "Added:" wrapper (driven over its real header strings)', () => {
+  const c = pt1aCtx_();
+  const r = hJ(c.insPayorFromSource_(PT2_UHC));
+  assert.deepStrictEqual(r.grid[0], ['Insurance', 'State', 'Waystar Reference #', 'Network Status', 'Plan Inserted Under Payor In UMS System?', 'Reimbursement Status', 'K0800', 'K0821/K0823 (Up to 285 lbs)', 'K0825 (Up to 435 lbs)'],
+    'State right after the name; the untitled and key columns gone');
+  assert.deepStrictEqual(r.grid.slice(1).map((x) => x[1] + ' | ' + x[0]), [
+    'Multi-state / other | Nationwide Plans (Multiple States)',
+    "Alabama | Alabama UHC HMO/PPO If It's Not Listed Below (In-Network)",
+    'Alabama | UHC Silver exchange family plan HMO',
+    "Connecticut | Conneticut UHC HMO If It's Not Listed Below",
+    'Connecticut | UHC Dual Complete CT-S001',
+    'Texas | TEXAS-All TX UHC Plans unless the specific plan code is below TRY it',
+    'Texas | Tx UHC Bronze Virtual First exchange plan',
+    'Texas | Florida Blue plan listed here by mistake',
+    "Wisconsin | Wisonsin UHC PPO If It's Not Listed Below"], 'each plan under its section\'s state; the name-only Vermont reminder dropped');
+  assert.strictEqual(r.note, 'United Healthcare By State -- No Power Orders In OR. (Hospice okay.)', 'the note without its "Added:" wrapper and quotes');
+  const ch = r.changes.join('\n');
+  [/Column I has no title — dropped with its 1 filled cell/, /Column K has no title — dropped with its 1 filled cell/,
+    /Column "X = Yes" is the key, not data — dropped with its 1 filled cell/,
+    /grouped by state in the sheet — each now carries its State: 4 section\(s\) \(Alabama, Connecticut, Texas, Wisconsin\)/,
+    /"Conneticut" → Connecticut, "Wisonsin" → Wisconsin/, /1 plan\(s\) come before the first state section — their State reads "Multi-state \/ other"/,
+    /1 plan\(s\) name a different state than the section they sit in and keep the section's state: "Florida Blue plan listed here by mistake" \(row 11, under Texas\)/,
+    /1 row\(s\) with a plan name and nothing recorded dropped — a reminder in the sheet, not an acceptance rule \(source row 8\)/]
+    .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
+  const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[3]));
+  assert.deepStrictEqual([o.state, o.catchAll, o.networkStatus], ['Alabama', false, 'INN'], 'the reader gives the plan its state');
+  assert.strictEqual(hJ(c.insPayorRowObj_(r.grid[0], r.grid[2])).catchAll, true, 'and marks the section\'s catch-all');
+  const two = PT2_UHC.filter((row, i) => i < 2 || i === 3);
+  assert.ok(!hJ(c.insPayorFromSource_(two)).grid[0].includes('State'), 'fewer than three sections: no State column (the Medicare / MA tab)');
+});
+
+test('PT2: the BCBS tab — the plan name is column B when column A is mostly empty; column A\'s state names open sections and its insurer names become the plan\'s Company; "Not State Specific" is its own section; an untitled column of data is dropped and named; the note loses its run-in "Plan Name" title and A1\'s bare number (driven over its real header strings)', () => {
+  const c = pt1aCtx_();
+  const r = hJ(c.insPayorFromSource_(PT2_BCBS));
+  assert.deepStrictEqual(r.grid[0], ['Insurance', 'State', 'Company', 'Payor ID', 'Network Status', 'Reimbursement Status', 'K0816', 'K0821', 'K0825 (Up to 435)']);
+  assert.deepStrictEqual(r.grid.slice(1).map((x) => x[0] + ' | ' + x[1] + ' | ' + x[2]), [
+    'Anthem MediBlue Plus H3447-013 | Multi-state / other | Healthkeepers, Inc.',
+    'medicaid | Multi-state / other | BCBS Arkansas',
+    'Unlisted Alabama  BCBS (Blue) Plans | Alabama | ',
+    'BCBS of Alabama- employer based plan PPO | Alabama | ',
+    'BCBS of AL Medicare Advantage Plan - H0104-015 | Alabama | ',
+    'BCBS AL Walmart National Offerings Premier Plan PPO | Alabama | ',
+    'Unlisted Alaska BCBS (Blue) Plans | Alaska | ',
+    'Unlisted Arizona BCBS (AZ Blue) Plans PPO and HMO | Arizona | ',
+    'BCBS of Arizona commercial PPO | Arizona | ',
+    'Blue Medicare Advantage Plus HMO H0302-001 (Medisun, Inc.) (AZ) | Arizona | ',
+    'Arizona Blue Advantage Plus | Arizona | ',
+    'BCBS Federal (When member ID Starts with R) | Not state specific | '], 'a state never becomes a Company; the name-only reference row dropped');
+  assert.strictEqual(r.note, 'BCBS / Anthem HMO plans that we are OON do not try as OON w PA. No Power Orders In OR.');
+  const ch = r.changes.join('\n');
+  [/The plan name is column B; column A names the insurer or starts a state section/, /Column I has no title — dropped with its 3 filled cell/,
+    /"K0825 - Up to 435" → "K0825 \(Up to 435\)"/, /Column A's insurer names are kept as the Company of their plan/,
+    /each now carries its State: 4 section\(s\) \(Alabama, Alaska, Arizona, Not state specific\)/]
+    .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
+  const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[2]));
+  assert.deepStrictEqual([o.name, o.company, o.state], ['medicaid', 'BCBS Arkansas', 'Multi-state / other']);
+});
+
+test('PT2: insStateLead_ reads a state by its full name — run into the next word, misspelt by a letter (two for a long name), DC however it is written — and never by a two-letter code; insPayorCatchAll_ and insPayorNoteTidy_ (driven)', () => {
+  const c = pt1aCtx_();
+  const L = (t) => { const r = hJ(c.insStateLead_(t)); return r ? r.code + (r.whole ? '!' : '') + (r.read ? '~' + r.read : '') : null; };
+  [['Alabama', 'AL!'], ['Conneticut UHC HMO', 'CT~Conneticut'], ["WyomingHMO If It's Not Listed Below", 'WY'], ['Washington D.C Medicaid', 'DC'],
+    ['Washington District of Columbia Medicaid', 'DC'], ['Wshington District of Columbia Medicaid MCOs', 'DC'], ['Washington DC', 'DC!'],
+    ['Washington State', 'WA!'], ['Washington Medicaid', 'WA'], ['West Virginia Medicaid', 'WV'], ['Arkansas UHC', 'AR'], ['Kansas City plans', 'KS'],
+    ['Pensylvania', 'PA!~Pensylvania'], ['OK Plans', null], ['IN Network', null], ['New Era Life', null], ['UHC Silver', null], ['', null]]
+    .forEach(([t, want]) => assert.strictEqual(L(t), want, t));
+  ["Alabama UHC HMO If It's Not Listed Below", 'Unlisted Alaska BCBS (Blue) Plans', 'Alaska Medicaid (Traditional and Unlisted MCOs)',
+    'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', 'Arizona Medicaid MCOs not Listed Below']
+    .forEach((t) => assert.strictEqual(c.insPayorCatchAll_(t), true, t));
+  ['UHC Silver exchange family plan HMO', 'Listed plans only', 'Unless noted, accept'].forEach((t) => assert.strictEqual(c.insPayorCatchAll_(t), false, t));
+  [['Added: "Rule one. (Two.) "', 'Rule one. (Two.)'], ['2', ''], ['Insurance', ''], ['A ----Plan Name -- B', 'A. B'], ['  plain   rule ', 'plain rule']]
+    .forEach(([a, b]) => assert.strictEqual(c.insPayorNoteTidy_(a), b, a));
+});
+
+test('PT2: the search scores a sectioned table\'s State and Company with the plan name, so a plan whose name never says its state is found by it; UHC and BCBS are allowlisted payor tables through the one converter (driven + source)', () => {
+  const UHC = [['Insurance', 'State', 'Network Status'], ['UHC Silver exchange family plan HMO', 'Alabama', 'INN'], ['UHC Silver exchange family plan HMO', 'Georgia', 'OON']];
+  const BCBS = [['Insurance', 'State', 'Company', 'Network Status'], ['medicaid', 'Multi-state / other', 'BCBS Arkansas', '']];
+  const c = pt1SearchCtx_({ InsurancePayors: [['Insurance', 'Network Status'], ['Aetna', 'In-Network']], UhcPayors: UHC, BcbsPayors: BCBS }, null);
+  c.KB_DATA_TABLES.UhcPayors = { tab: 'UhcPayors', payorTable: 'UHC by state' };
+  c.KB_DATA_TABLES.BcbsPayors = { tab: 'BcbsPayors', payorTable: 'BCBS / Anthem' };
+  let r = hJ(c.searchInsurancePayors('alabama'));
+  assert.deepStrictEqual(r.matches.map((m) => m.table + ':' + m.state + ':' + m.name), ['UhcPayors:Alabama:UHC Silver exchange family plan HMO'], 'found by its section\'s state alone');
+  r = hJ(c.searchInsurancePayors('arkansas'));
+  assert.deepStrictEqual(r.matches.map((m) => m.company + ':' + m.name), ['BCBS Arkansas:medicaid'], 'and a "medicaid" row by its insurer');
+  const spec = (k) => (serverSource().match(new RegExp('  ' + k + ': \\{[\\s\\S]*?\\n  \\},')) || [''])[0];
+  [['UhcPayors', 'UHC by state'], ['BcbsPayors', 'BCBS / Anthem']].forEach(([k, label]) => {
+    const sp = spec(k);
+    assert.ok(new RegExp("tab: '" + k + "'").test(sp) && /sourceFormat: 'payorAcceptance'/.test(sp) && sp.indexOf("payorTable: '" + label + "'") >= 0, k + ': ' + sp);
+  });
+});
+
+test('PT2: the legend reads the operator\'s meanings — SI is secondary insurance, PR/SI is SI/PR, INN and "In Network" are in-network; each is coloured AND explained, and "L … & SI/PR" must meet both (driven over the client\'s one vocabulary)', () => {
+  const kb = extractScript('kb/script_kb.html');
+  const ctx = vm.createContext({});
+  vm.runInContext(kb.slice(kb.indexOf('function insWord_('), kb.indexOf('function insTermsIn_(')) + extractFunction('kb/script_kb.html', 'insTermsIn_') +
+    extractFunction('kb/script_kb.html', 'insToneCls_') + '; this.INS_TERMS = INS_TERMS;', ctx);
+  const terms = (v) => hJ(ctx.insTermsIn_(v)).map((t) => t.term);
+  assert.deepStrictEqual([ctx.insToneCls_('SI'), terms('SI')], ['warn', ['SI']], 'SI alone: secondary insurance');
+  assert.deepStrictEqual([ctx.insToneCls_('PR/SI'), terms('PR/SI')], ['warn', ['SI/PR']], 'PR/SI is the SI/PR rule, never PR alone');
+  assert.deepStrictEqual([ctx.insToneCls_('PR'), terms('PR')], ['warn', ['PR']]);
+  ['INN', 'In Network', 'in-network'].forEach((v) => assert.deepStrictEqual([ctx.insToneCls_(v), terms(v)], ['good', ['Accepted / X']], v));
+  assert.ok(terms('L ( Up To 285) & SI/PR').includes('A & B (combined)') && terms('L ( Up To 285) & SI/PR').includes('SI/PR'), 'a combined value names both rules');
+  ['Not in network', 'Out of network', 'non in-network'].forEach((v) => assert.notStrictEqual(ctx.insToneCls_(v), 'good', 'a negated in-network is never a yes: ' + v));
+  const why = ctx.INS_TERMS.filter((t) => t.term === 'SI/PR')[0].why;
+  assert.ok(/secondary insurance details that will cover any remaining patient responsibility/.test(why) && /collected up front by the delivery team/.test(why), 'the Sales explanation, in its words');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
