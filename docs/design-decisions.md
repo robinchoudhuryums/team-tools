@@ -6756,6 +6756,35 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="pt3-payor-cross-checks"></a>**A plan answered differently by two payor tables says so on its card; the upload names a row filed under another state; the network status's misspellings are corrected and listed (PT3, operator 2026-11-10)**
+  Checking the four exports against each other found the same plan with
+  different answers on two sheets (about two dozen), rows filed under another
+  state's block, and K0816 answered twice on the Medicare / MA sheet. The data
+  is the department's to correct; the app makes each case visible rather than
+  choosing.
+  - **"Also on … — answer differs."** `searchInsurancePayors` keys each name
+    (`insPayorNameKey_`: case and punctuation ignored) and, for every matched
+    plan, reads the same plan's listings in the OTHER payor tables — at most
+    `INS_PAYOR_ALSO_MAX` per search (INV-46). `insPayorCrossDiff_` compares
+    by CODE token, so differently titled columns line up; a code either side
+    leaves blank is no disagreement, and spacing and case are not differences.
+    The card shows that table, its state, the codes and both answers. Tables
+    that agree add nothing.
+  - **A misfiled row is named, never moved.** `insPlanStatesNamed_` reads
+    every state a name names — a full name anywhere (longest first, so West
+    Virginia is not Virginia), DC however written, a code in parentheses, a
+    bare code, a plan-code prefix ("AR-S001"). Codes that are also words or
+    other terms (ME, OR, IN, PA = prior auth, MA = Medicare Advantage, LA = Los
+    Angeles, PR = patient responsibility) are loose: they never accuse a row,
+    and a row whose own state is one of them is not accused. The preview lists
+    each row with its source row, its section and what its name says.
+  - **Misspellings, not variants.** `insNetworkTidy_` corrects "Out-f-Network",
+    "outof" and a word two letters from "network" or "benefits"; every other
+    status, including "OON w/ PA" and "OONB", is written as it was. Each
+    correction is listed with its count.
+  - **The legend learns two operator meanings:** OONB is out-of-network
+    benefits (amber), and "cannot service state" means we can't provide it in
+    that state (red).
 - <a id="pt2-payor-tables-by-state"></a>**Payor tables grouped by state carry each plan's State and insurer; the converter reads what the sheet's layout says and lists every reading (PT2, operator 2026-11-10)**
   The source sheet's UHC By State and BCBS tabs differ from Medicare / MA and
   Medicaid: plans sit under state sections (opened by a "<State> … if it's not

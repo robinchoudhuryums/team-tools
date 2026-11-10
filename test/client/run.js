@@ -15340,14 +15340,22 @@ test('T2: a value the panel COLOURS is a value it can EXPLAIN — the tone and t
   // network, but still a route to an order.
   [['OON W/ PA', 'OON w/ PA', /Prior Authorization/],
    ['OON with prior auth', 'OON w/ PA', /Prior Authorization/],
-   ['Out-of-Network Benefits', 'Out-of-Network Benefits', /higher co-insurance/],
-   ['OON Benefits', 'Out-of-Network Benefits', /higher co-insurance/]].forEach(([v, term, why]) => {
+   ['Out-of-Network Benefits', 'Out-of-Network Benefits', /different co-insurance/],
+   ['OON Benefits', 'Out-of-Network Benefits', /different co-insurance/],
+   // PT3 (operator 2026-11-10): OONB is out-of-network benefits; "cannot service state" is a no.
+   ['OONB', 'Out-of-Network Benefits', /OONB/]].forEach(([v, term, why]) => {
     assert.strictEqual(sb.insToneCls_(v), 'warn', JSON.stringify(v) + ' stays amber — that split was deliberate');
     assert.ok(!sb.insTermsIn_(v).some((t) => t.term === 'Out-of-network / OON'),
       JSON.stringify(v) + ' is not explained by the refusal');
     assert.strictEqual(sb.insTermsIn_(v)[0].term, term, JSON.stringify(v) + ' is explained by its own rule');
     assert.match(sb.insTermsIn_(v)[0].why, why);
   });
+  ['cannot service state', "Can't service state", 'Cannot Service State'].forEach((v) => {
+    assert.strictEqual(sb.insToneCls_(v), 'bad', JSON.stringify(v) + ' is a no — we cannot provide it in that state');
+    assert.strictEqual(sb.insTermsIn_(v)[0].term, 'Cannot service state');
+    assert.match(sb.insTermsIn_(v)[0].why, /in that state/);
+  });
+  assert.notStrictEqual(sb.insToneCls_('Customer service line'), 'bad', 'a value that merely mentions service is not a refusal');
   // "pa" must be the WORD, or "Spanish" or "Pacific" would read as prior auth.
   assert.ok(!sb.insTermsIn_('OON Pacific').some((t) => t.term === 'OON w/ PA'),
     'a word containing "pa" is not a prior-authorization request');
@@ -44334,7 +44342,8 @@ function pt1aCtx_(extra) {
   // PT2: the converter's helpers and the state names it reads sections by.
   vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
   ['hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorRowObj_', 'insPayorSlotOf_',
-    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_']
+    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_',
+    'insPlanStatesNamed_', 'insNetworkTidy_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44430,7 +44439,8 @@ function pt1aImportCtx_(sheet, props) {
     writeAuditLog_: (e, a, x, y, z, n, d) => { book.audits.push(d); } });
   ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
     'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_',
-    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_']
+    'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_',
+    'insPlanStatesNamed_', 'insNetworkTidy_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
   return { ctx, book };
@@ -44572,7 +44582,7 @@ function pt1SearchCtx_(tabs, rawNotes) {
   const sheet = (rows) => ({ getLastRow: () => rows.length, getLastColumn: () => rows[0].length,
     getRange: (r, c, n, w) => ({ getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(c - 1, c - 1 + w)) }) });
   const ctx = vm.createContext({ String, Array, Object, Math, Number, JSON, RegExp,
-    INS_PAYOR_TAB: 'InsurancePayors', INS_PAYOR_TOP: 8, INS_PAYOR_MAX_ROWS: 5000, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE',
+    INS_PAYOR_TAB: 'InsurancePayors', INS_PAYOR_TOP: 8, INS_PAYOR_ALSO_MAX: 12, INS_PAYOR_MAX_ROWS: 5000, INS_PAYOR_NOTE_PROP: 'INS_PAYOR_NOTE',
     KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', payorTable: 'Medicare / MA' }, OopPricing: { tab: 'X' },
       MedicaidPayors: { tab: 'MedicaidPayors', payorTable: 'Primary Medicaid' } },
     getEmployeeInfo_: () => ({ email: 'rep@x' }), getKbSearchSynonyms_: () => [],
@@ -44580,7 +44590,8 @@ function pt1SearchCtx_(tabs, rawNotes) {
     oopCodeIndex_: () => ({ byToken: {}, error: '' }),
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
     getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
-  ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorCatchAll_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_', 'searchInsurancePayors']
+  ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorCatchAll_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_',
+    'insPayorNameKey_', 'insPayorCrossDiff_', 'searchInsurancePayors']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44708,7 +44719,7 @@ test('PT2: the UHC tab — each plan carries the state of the section it sits in
     /Column "X = Yes" is the key, not data — dropped with its 1 filled cell/,
     /grouped by state in the sheet — each now carries its State: 4 section\(s\) \(Alabama, Connecticut, Texas, Wisconsin\)/,
     /"Conneticut" → Connecticut, "Wisonsin" → Wisconsin/, /1 plan\(s\) come before the first state section — their State reads "Multi-state \/ other"/,
-    /1 plan\(s\) name a different state than the section they sit in and keep the section's state: "Florida Blue plan listed here by mistake" \(row 12, under Texas\)/,
+    /1 plan\(s\) name a different state than the section they sit in and keep the section's state — move the row in the sheet if it is misfiled: "Florida Blue plan listed here by mistake" \(row 12, under Texas; the name says FL\)/,
     /1 row\(s\) with a plan name and nothing recorded dropped — a reminder in the sheet, not an acceptance rule \(source row 9\)/]
     .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
   const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[3]));
@@ -44794,6 +44805,96 @@ test('PT2: the legend reads the operator\'s meanings — SI is secondary insuran
   ['Not in network', 'Out of network', 'non in-network'].forEach((v) => assert.notStrictEqual(ctx.insToneCls_(v), 'good', 'a negated in-network is never a yes: ' + v));
   const why = ctx.INS_TERMS.filter((t) => t.term === 'SI/PR')[0].why;
   assert.ok(/secondary insurance details that will cover any remaining patient responsibility/.test(why) && /collected up front by the delivery team/.test(why), 'the Sales explanation, in its words');
+});
+
+// ── PT3 (operator 2026-11-10): payor cross-checks — misfiled rows, network-status misspellings, answers that differ between tables ──
+console.log('\nOperator round 2026-11-10 — PT3 (payor cross-checks: misfiled rows, misspellings, a plan answered differently in two tables)');
+test('PT3: insPlanStatesNamed_ reads every state a plan name names — a full name anywhere (West Virginia is not Virginia), DC however written, a code in parentheses, a bare code, a plan-code prefix — and keeps the codes that are also words loose; the import preview names a row filed under another state, never one that names its own (driven)', () => {
+  const c = pt1aCtx_();
+  const S = (n) => { const r = hJ(c.insPlanStatesNamed_(n)); return r.named.join(',') + '|' + r.loose.join(','); };
+  [['BCBS NC', 'NC|'], ['BCBS of NC (Essential + Rx)', 'NC|'], ['UHC Dual Complete PPO AR-S001 H0271-023', 'AR|'],
+    ['Healthkeepers- MO H3447-038-002', 'MO|'], ['Aetna Better Health of Virginia (Medicare Advantage)', 'VA|'],
+    ['Highmark West Virginia PPO', 'WV|'], ['Washington D.C MCOs', 'DC|'], ['Wshington District of Columbia Medicaid', 'DC|'],
+    ['Blue Cross of Washington MSC - Premera', 'WA|'], ['Anthem BCBS (NH) (MA) (Access Integra)', 'NH|MA'],
+    ['LA Care Health Plan', '|LA'], ['Healthy Blue (LA) (Anthem)', 'LA|'], ['Anthem BCBS (CT, ME, NH)', 'CT,NH|ME'],
+    ['OON W/ PA plan', '|PA'], ['Molina Healthcare', '|'], ['Texas Exchange Commercial', 'TX|']]
+    .forEach(([n, want]) => assert.strictEqual(S(n), want, n));
+  const W = 6;
+  const grid = [
+    pt2Row_(W, { 0: 'Plan Name', 1: 'Network Status' }), pt2Row_(W, { 2: 'K0800', 3: 'K0821', 4: 'K0825' }),
+    pt2Row_(W, { 0: 'Unlisted Maine BCBS Plans', 1: 'In-Network', 2: 'X', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'Anthem BCBS (CT, ME, NH) (Access Integra)', 1: 'INN', 2: 'X', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'Unlisted New Jersey BCBS Plans', 1: 'In-Network', 2: 'X', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'BCBS NC', 1: 'INN', 2: 'NO', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'Horizon (NJ) commercial', 1: 'INN', 2: 'X', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'Unlisted Ohio BCBS Plans', 1: 'Out-f-Network', 2: 'NO', 3: 'NO', 4: 'NO' }),
+    pt2Row_(W, { 0: 'Anthem OH-18 H5253', 1: 'OON beneifts', 2: 'NO', 3: 'TRY', 4: 'TRY' })];
+  const r = hJ(c.insPayorFromSource_(grid));
+  const ch = r.changes.join('\n');
+  assert.ok(/1 plan\(s\) name a different state than the section they sit in and keep the section's state — move the row in the sheet if it is misfiled: "BCBS NC" \(row 6, under New Jersey; the name says NC\)\./.test(ch),
+    'the NC plan in the New Jersey block is named, with its row and what the name says; the NJ, Ohio and "ME" rows are not\n' + ch);
+});
+
+test('PT3: insNetworkTidy_ corrects only the obvious misspellings of the network status — "Out-f-Network", "outof", a word two letters from "network" or "benefits" — keeping case, and the import lists each correction with its count; every other status is written as it was (driven)', () => {
+  const c = pt1aCtx_();
+  [['Out-f-Network', 'Out-of-Network'], ['out-f- network', 'out-of- network'], ['outof network benefits', 'out of network benefits'],
+    ['OON beneifts', 'OON benefits'], ['Out-of-Netwrok', 'Out-of-Network'], ['IN NETOWRK', 'IN NETWORK'],
+    ['OON W/ PA', 'OON W/ PA'], ['Out-of-Network Benefits', 'Out-of-Network Benefits'], ['OON benefit', 'OON benefit'],
+    ['OONB', 'OONB'], ['cannot service state', 'cannot service state'], ['Plan Specific', 'Plan Specific'], ['In Network', 'In Network']]
+    .forEach(([v, want]) => assert.strictEqual(c.insNetworkTidy_(v), want, v));
+  const W = 5;
+  const grid = [pt2Row_(W, { 0: 'Plan', 1: 'Network Status' }), pt2Row_(W, { 2: 'K0800', 3: 'K0821', 4: 'K0825' }),
+    pt2Row_(W, { 0: 'Plan A', 1: 'Out-f-Network', 2: 'NO', 3: 'NO', 4: 'NO' }),
+    pt2Row_(W, { 0: 'Plan B', 1: 'Out-f-Network', 2: 'NO', 3: 'NO', 4: 'NO' }),
+    pt2Row_(W, { 0: 'Plan C', 1: 'OON beneifts', 2: 'X', 3: 'X', 4: 'X' }),
+    pt2Row_(W, { 0: 'Plan D', 1: 'OON W/ PA', 2: 'X', 3: 'X', 4: 'X' })];
+  const r = hJ(c.insPayorFromSource_(grid));
+  const ns = r.grid[0].indexOf('Network Status');
+  assert.deepStrictEqual(r.grid.slice(1).map((x) => x[ns]), ['Out-of-Network', 'Out-of-Network', 'OON benefits', 'OON W/ PA'], 'the corrected value is what the tab gets');
+  const ch = r.changes.join('\n');
+  assert.ok(/Network Status "Out-f-Network" → "Out-of-Network" \(a misspelling; 2 cell\(s\)\)\./.test(ch) && /Network Status "OON beneifts" → "OON benefits" \(a misspelling; 1 cell\(s\)\)\./.test(ch), ch);
+  assert.ok(!/OON W\/ PA/.test(ch), 'a status written correctly is never listed');
+});
+
+test('PT3: insPayorCrossDiff_ compares two listings of one plan by CODE, whatever each sheet titles the column — only codes both fill, spacing and case ignored, codes with the same pair of answers grouped (driven)', () => {
+  const c = pt1aCtx_({});
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorCrossDiff_'), c);
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorNameKey_'), c);
+  const hA = ['Insurance', 'Network Status', 'K0800 ( 285-325 lb)', 'K0816', 'K0821/23/16 (Up to 285 lbs)', 'K0825 (Up to 435 lbs)', 'K0826 (450 -600)', 'Note'];
+  const hB = ['Insurance', 'State', 'Network Status', 'K0800', 'K0816', 'K0821', 'K0825 (Up to 435)', 'K0826'];
+  const a = ['BC/BS of Louisiana', 'In-Network', 'L ( 285-325 lb)', 'X', 'X', 'X', 'TRY', 'x'];
+  const b = ['BC/BS of Louisiana', 'Louisiana', 'OON', '', 'NO', 'NO', 'no', 'Try'];
+  assert.deepStrictEqual(hJ(c.insPayorCrossDiff_(hA, a, hB, b)), [
+    { codes: ['K0816', 'K0821'], here: 'X', there: 'NO' },
+    { codes: ['K0825'], here: 'X', there: 'no' }],
+    'K0800 is blank on one side (no answer, no disagreement), K0826 is TRY both ways (case), the network status is not a code; K0823 rides the shorthand column but B has no K0823');
+  assert.deepStrictEqual(hJ(c.insPayorCrossDiff_(hA, a, hA, a)), [], 'a listing agrees with itself');
+  const a2 = a.slice(); a2[3] = 'NO';   // the two K0816 columns of one sheet disagree with each other
+  assert.deepStrictEqual(hJ(c.insPayorCrossDiff_(hA, a2, hB, b)).map((d) => d.codes.join(',') + '=' + d.here + '|' + d.there),
+    ['K0816=NO / X|NO', 'K0821=X|NO', 'K0825=X|no'], 'a sheet that answers one code twice shows both of its answers');
+  assert.strictEqual(c.insPayorNameKey_('  ANTHEM MediBlue (VA) '), c.insPayorNameKey_('Anthem mediblue — (va)'), 'one plan, however its name is cased or punctuated');
+});
+
+test('PT3: searchInsurancePayors says on a matched plan where the SAME plan in another payor table answers a shared code differently — both answers, that table and its state; nothing when the tables agree; the extra reads are capped (driven)', () => {
+  const MA = [['Insurance', 'Network Status', 'K0816', 'K0821/23/16 (Up to 285 lbs)'],
+    ['BC/BS of Louisiana - Magnolia', 'In-Network', 'X', 'X'], ['Select Health Of Utah', 'In-Network', 'X', 'X'], ['Agrees Plan', 'In-Network', 'X', 'X']];
+  const MCD = [['Insurance', 'State', 'Network Status', 'K0816/K0823 (Up to 285 lbs)', 'K0821'],
+    ['bc/bs of louisiana — magnolia', 'Louisiana', 'OON', 'NO', 'NO'], ['Select Health of Utah', 'Utah', 'Out-of-Network', 'NO', ''], ['AGREES PLAN', 'Texas', 'INN', 'X', 'x']];
+  const c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, null);
+  let r = hJ(c.searchInsurancePayors('magnolia'));
+  const ma = r.matches.find((m) => m.table === 'InsurancePayors'), mcd = r.matches.find((m) => m.table === 'MedicaidPayors');
+  assert.deepStrictEqual(ma.alsoIn, [{ table: 'MedicaidPayors', label: 'Primary Medicaid', state: 'Louisiana',
+    differs: [{ codes: ['K0816', 'K0821', 'K0823'], here: 'X', there: 'NO' }] }], 'the Medicare / MA card names Medicaid\'s answer and its state');
+  assert.deepStrictEqual(mcd.alsoIn, [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
+    differs: [{ codes: ['K0816', 'K0821', 'K0823'], here: 'NO', there: 'X' }] }], 'and the other way round');
+  r = hJ(c.searchInsurancePayors('utah'));
+  assert.deepStrictEqual(r.matches.find((m) => m.table === 'InsurancePayors').alsoIn[0].differs, [{ codes: ['K0816', 'K0823'], here: 'X', there: 'NO' }],
+    'a code one table leaves blank is no disagreement');
+  r = hJ(c.searchInsurancePayors('agrees'));
+  assert.ok(r.matches.length === 2 && r.matches.every((m) => !m.alsoIn), 'tables that agree add nothing');
+  c.INS_PAYOR_ALSO_MAX = 1;
+  r = hJ(c.searchInsurancePayors('magnolia'));
+  assert.strictEqual(r.matches.filter((m) => m.alsoIn).length, 1, 'the other-table reads stop at INS_PAYOR_ALSO_MAX');
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');

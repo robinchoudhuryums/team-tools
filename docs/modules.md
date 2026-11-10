@@ -852,6 +852,13 @@ longer sent to reps.
      not name. The legend reads SI, PR/SI, INN and "In Network" as the operator
      defined them.
 
+     **PT3 (operator 2026-11-10) — cross-checks.** A plan that another payor
+     table answers differently says so on its card ("Also on Medicare / MA —
+     answer differs: K0816: X here, NO there"). The upload preview names a row
+     filed under another state's block, and corrects and lists the network
+     status's obvious misspellings. The legend reads OONB (out-of-network
+     benefits) and "cannot service state".
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

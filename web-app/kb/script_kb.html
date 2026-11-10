@@ -344,6 +344,11 @@
   .kb-ins-group-h { font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin: 4px 0 2px; }
   .kb-ins-state { font-family: var(--mono); font-size: .66rem; font-weight: 600; color: var(--muted-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
   .kb-ins-catch { font-size: .72rem; color: var(--info-deep); margin: 2px 0 2px; display: flex; gap: 4px; align-items: center; }
+  .kb-ins-also { font-size: .72rem; color: var(--warning-deep); background: var(--warn-soft); border-radius: 6px; padding: 3px 7px; margin: 3px 0; display: flex; gap: 5px; align-items: flex-start; }
+  .kb-ins-also > svg { flex: none; margin-top: 2px; }
+  .kb-ins-also span { min-width: 0; }
+  .kb-ins-also b { font-weight: 600; }
+  .kb-ins-also-d { overflow-wrap: anywhere; }
   .kb-ins-key { font-size: .72rem; color: var(--muted); margin: 6px 0 2px; line-height: 1.5; word-break: break-word; }
   .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
   .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
@@ -1569,6 +1574,10 @@ var INS_IS = {
   },
   oonBare: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); },
   oonAny: function (v) { return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v); },
+  // PT3 (operator 2026-11-10): OONB is out-of-network benefits; "cannot
+  // service state" means we can't provide it in that state.
+  oonB: function (v) { return insWord_(v, 'oonb'); },
+  cannotService: function (v) { return /(^|[^a-z])(cannot|can'?t|can\s+not)\s+service([^a-z]|$)/.test(v); },
   planSpecific: function (v) { return /(^|[^a-z])plan[\s-]*specific([^a-z]|$)/.test(v); },
   location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v); },
   // PT2 (operator 2026-11-10): SI is secondary insurance, PR patient
@@ -1602,8 +1611,10 @@ var INS_TERMS = [
     match: function (v) {
       return INS_IS.oonAny(v) && /(^|[^a-z])(pa|prior[\s-]*auth(orization)?)([^a-z]|$)/.test(v);
     } },
-  { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a higher co-insurance rate.',
-    match: function (v) { return INS_IS.oonAny(v) && v.indexOf('benefit') >= 0; } },
+  { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a different co-insurance rate. "OONB" is the same.',
+    match: function (v) { return (INS_IS.oonAny(v) && v.indexOf('benefit') >= 0) || INS_IS.oonB(v); } },
+  { term: 'Cannot service state', why: 'We can\u2019t provide it in that state.',
+    match: INS_IS.cannotService },
   // Operator, 2026-09-22. First of the amber terms because the tone cascade
   // tests it first.
   { term: 'Plan Specific', why: 'Can\u2019t be confirmed from the sheet \u2014 only by contacting the insurance or attempting submission.',
@@ -1659,13 +1670,14 @@ function insToneCls_(value) {
   var v = String(value == null ? '' : value).trim().toLowerCase();
   if (!v) return '';
   if (INS_IS.notAccepted(v)) return 'bad';
+  if (INS_IS.cannotService(v)) return 'bad';
   // BARE out-of-network, in any of its spellings, is the hard no — the operator
   // confirmed on 2026-09-22 that OON and OUT-OF-NETWORK are the same thing and
   // that it means "don't accept". A QUALIFIED value ("OON W/ PA",
   // "Out-of-Network Benefits") is NOT this rule and stays amber below — that
   // split was deliberate and is pinned.
   if (INS_IS.oonBare(v)) return 'bad';
-  if (INS_IS.oonAny(v) || INS_IS.planSpecific(v)) return 'warn';
+  if (INS_IS.oonAny(v) || INS_IS.oonB(v) || INS_IS.planSpecific(v)) return 'warn';
   if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.si(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
   if (INS_IS.tryIt(v)) return 'info';
   if (INS_IS.hawaii(v)) return 'info';
@@ -2641,6 +2653,21 @@ function insKeyHtml_(legend) {
   var parts = Object.keys(legend).map(function (k) { return '<b>' + esc(k) + '</b> = ' + esc(String(legend[k])); });
   return parts.length ? '<div class="kb-ins-key">Sheet key: ' + parts.join(' · ') + '</div>' : '';
 }
+/** PT3: the same plan in another payor table gives a different answer on a
+ *  code both fill — said on the card, with both answers, so a rep never picks
+ *  one silently. Escaped; nothing when the tables agree. */
+function insAlsoHtml_(also) {
+  if (!also || !also.length) return '';
+  return also.map(function (a) {
+    var where = esc(a.label || a.table) + (a.state && !/^(multi-state|not state specific)/i.test(a.state) ? ' (' + esc(a.state) + ')' : '');
+    var diffs = (a.differs || []).map(function (d) {
+      var codes = d.codes || [];
+      var list = codes.length > 3 ? codes.slice(0, 3).join(', ') + ' +' + (codes.length - 3) : codes.join(', ');
+      return '<span class="kb-ins-also-d" title="' + esc(codes.join(', ')) + '">' + esc(list) + ': <b>' + esc(d.here) + '</b> here, <b>' + esc(d.there) + '</b> there</span>';
+    }).join('; ');
+    return '<div class="kb-ins-also" role="note">' + icon('warning', 11) + ' <span>Also on ' + where + ' \u2014 answer differs: ' + diffs + '</span></div>';
+  }).join('');
+}
 /** PT1: the payor tables the answer covers, in the server's order. An answer
  *  from before PT1 (one table, a top-level note) reads as one unnamed table. */
 function insTablesOf_(res) {
@@ -2730,7 +2757,7 @@ function insRenderResults_(suffix, q, res) {
       (m.catchAll ? '<div class="kb-ins-catch">' + icon('info', 11) + ' Covers any ' +
         (m.state && !/^(multi-state|not state specific)/i.test(m.state) ? esc(m.state) + ' ' : '') + 'plan this sheet does not list by name</div>' : '') +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
-      detHtml + '</div>';
+      insAlsoHtml_(m.alsoIn) + detHtml + '</div>';
   });
   // PT1: a group per payor table that has matches, in the server's order —
   // its name (when there is more than one table), its standing note, its

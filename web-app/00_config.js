@@ -2558,6 +2558,10 @@ const US_STATE_NAMES = {
 };
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
+// PT3: the most listings of a matched plan in OTHER payor tables one search
+// reads to compare answers ("Also on … — answer differs") — bounded, like the
+// search's own reads (INV-46).
+const INS_PAYOR_ALSO_MAX = 12;
 // PT1a (operator 2026-11-09): the source sheet's standing note — the rule its
 // top-left cell states for every plan ("No power orders in OR, WA, ID…"). A
 // source-format import stores it here and every insurance result shows it.

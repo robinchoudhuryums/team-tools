@@ -4269,6 +4269,35 @@ test('PT2 DOM: a plan from a sheet grouped by state shows its state beside its n
   assert.ok(!h.$('#kb-ins-results').querySelector('.kb-ins-state'), 'a plan with no state shows no chip');
 });
 
+test('PT3 DOM: a plan answered differently by another payor table says so on its card — that table, its state, the codes and both answers, escaped; a multi-state listing names no state; no line when the tables agree; OONB and "cannot service state" explain themselves (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', noteError: '', legend: {} }, { key: 'BcbsPayors', label: 'BCBS <b>/</b> Anthem', note: '', noteError: '', legend: {} }];
+  let answer = { total: 2, cap: 8, tables: tables, matches: [
+    { table: 'InsurancePayors', name: 'BC/BS of Louisiana', networkStatus: 'OONB', details: [],
+      alsoIn: [{ table: 'BcbsPayors', label: 'BCBS <b>/</b> Anthem', state: 'Louisiana', differs: [
+        { codes: ['K0816', 'K0821', 'K0825', 'K0826', 'K0827'], here: 'X', there: '<i>NO</i>' }, { codes: ['K0838'], here: 'TRY', there: 'SI/PR' }] },
+        { table: 'MedicaidPayors', label: 'Primary Medicaid', state: 'Multi-state / other', differs: [{ codes: ['K0800'], here: 'L', there: 'NO' }] }] },
+    { table: 'BcbsPayors', name: 'Agrees', networkStatus: 'cannot service state', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'louisiana'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  const lines = Array.from(cards[0].querySelectorAll('.kb-ins-also'));
+  assert.strictEqual(lines.length, 2, 'one line per other table that disagrees');
+  assert.strictEqual(lines[0].textContent.replace(/\s+/g, ' ').trim(),
+    'Also on BCBS <b>/</b> Anthem (Louisiana) — answer differs: K0816, K0821, K0825 +2: X here, <i>NO</i> there; K0838: TRY here, SI/PR there',
+    'the table, its state, the codes (the rest in the title) and both answers');
+  assert.ok(!lines[0].querySelector('i') && lines[0].querySelectorAll('b').length === 4, 'labels and answers escaped; the answers in bold');
+  assert.strictEqual(lines[0].querySelector('.kb-ins-also-d').getAttribute('title'), 'K0816, K0821, K0825, K0826, K0827', 'every code in the title');
+  assert.ok(/^Also on Primary Medicaid — answer differs/.test(lines[1].textContent.trim()), 'a multi-state listing names no state');
+  assert.strictEqual(lines[0].getAttribute('role'), 'note');
+  assert.ok(!cards[1].querySelector('.kb-ins-also'), 'no line when nothing differs');
+  const pills = cards.map((c) => c.querySelector('.kb-ins-pill'));
+  assert.ok(pills[0].classList.contains('warn') && pills[0].tagName === 'BUTTON', 'OONB is amber and explains itself');
+  assert.ok(pills[1].classList.contains('bad') && pills[1].tagName === 'BUTTON', '"cannot service state" is red and explains itself');
+});
+
 test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
   const h = boot();
   let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',

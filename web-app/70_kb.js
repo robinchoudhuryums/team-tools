@@ -1298,7 +1298,7 @@ function insPayorFromSource_(grid) {
   if (companies) keep.splice(sectioned ? 2 : 1, 0, { derived: 'company', h: 'Company' });
   const letters = Object.keys(key).filter(function (k) { return k !== 'X' && k !== 'NO'; });
   const rewritten = {};
-  const rows = [], emptyRows = [], before = [], elsewhere = [], held = {};
+  const rows = [], emptyRows = [], before = [], elsewhere = [], held = {}, netFixed = {};
   let current = '';
   live.forEach(function (r, i) {
     if (starts[i] !== undefined) current = starts[i];
@@ -1309,8 +1309,14 @@ function insPayorFromSource_(grid) {
     const row = keep.map(function (k) {
       if (k.derived === 'state') return current || 'Multi-state / other';
       if (k.derived === 'company') return company;
-      const v = cells[k.c] || '';
+      let v = cells[k.c] || '';
       if (k.c !== nameCol && v) any = true;
+      // PT3: the network status's obvious misspellings ("Out-f-Network",
+      // "OON beneifts") are corrected and listed; anything else is kept as written.
+      if (k.h === 'Network Status' && v) {
+        const t = insNetworkTidy_(v);
+        if (t !== v) { netFixed[v + '\u0001' + t] = (netFixed[v + '\u0001' + t] || 0) + 1; v = t; }
+      }
       if (k.c !== nameCol && letters.indexOf(v) >= 0) { rewritten[v] = (rewritten[v] || 0) + 1; return key[v] + ' (' + v + ')'; }
       return v;
     });
@@ -1318,9 +1324,15 @@ function insPayorFromSource_(grid) {
     // operator's sheet uses such rows as guides; they carry no acceptance.
     if (!any) { emptyRows.push(r + 3); return; }
     if (sectioned && !current) before.push(r + 3);
-    if (sectioned && current && current !== 'Not state specific' && !insPayorCatchAll_(cells[nameCol])) {
-      const own = insStateLead_(cells[nameCol]);
-      if (own && !own.read && own.name !== current) elsewhere.push('"' + cells[nameCol].slice(0, 60) + '" (row ' + (r + 3) + ', under ' + current + ')');
+    // PT3: a plan whose name names ANOTHER state anywhere — "(NC)", "BCBS NC",
+    // "AR-S001", "of Virginia" — and not its own is said, never moved.
+    if (sectioned && current && current !== 'Not state specific') {
+      const said = insPlanStatesNamed_(cells[nameCol]);
+      const ownCode = US_STATE_NAMES[current.toLowerCase()];
+      const other = said.named.filter(function (c) { return c !== ownCode; });
+      if (other.length && said.named.indexOf(ownCode) < 0 && said.loose.indexOf(ownCode) < 0) {
+        elsewhere.push('"' + cells[nameCol].slice(0, 60) + '" (row ' + (r + 3) + ', under ' + current + '; the name says ' + other.join(', ') + ')');
+      }
     }
     if (current) held[current] = true;
     rows.push(row);
@@ -1333,9 +1345,13 @@ function insPayorFromSource_(grid) {
     const reads = Object.keys(fuzzy);
     if (reads.length) changes.push('State names read through a misspelling: ' + reads.map(function (k) { return '"' + k + '" → ' + fuzzy[k]; }).join(', ') + '.');
     if (before.length) changes.push(before.length + ' plan(s) come before the first state section — their State reads "Multi-state / other".');
-    if (elsewhere.length) changes.push(elsewhere.length + ' plan(s) name a different state than the section they sit in and keep the section\'s state: ' + elsewhere.slice(0, 6).join('; ') + (elsewhere.length > 6 ? '; …' : '') + '.');
+    if (elsewhere.length) changes.push(elsewhere.length + ' plan(s) name a different state than the section they sit in and keep the section\'s state — move the row in the sheet if it is misfiled: ' + elsewhere.slice(0, 12).join('; ') + (elsewhere.length > 12 ? '; …' : '') + '.');
   }
   if (companies) changes.push('Column A\'s insurer names are kept as the Company of their plan.');
+  Object.keys(netFixed).forEach(function (k) {
+    const p = k.split('\u0001');
+    changes.push('Network Status "' + p[0] + '" → "' + p[1] + '" (a misspelling; ' + netFixed[k] + ' cell(s)).');
+  });
   Object.keys(rewritten).forEach(function (l) {
     changes.push(rewritten[l] + ' cell(s) reading "' + l + '" now read "' + key[l] + ' (' + l + ')", from the key.');
   });
@@ -1348,6 +1364,96 @@ function insPayorFromSource_(grid) {
     sourceRows: body.length, unnamedRows: unnamedRows.length, blankRows: blankRows.length, emptyRows: emptyRows.length,
     states: sectioned ? sections : [],
   };
+}
+/** PURE (Node-pinned) — PT3: the states a plan's NAME names, for the import
+ *  preview's misfiled-row check. `named` are certain: a full state name
+ *  anywhere ("of Virginia", the longest first so West Virginia is not
+ *  Virginia), DC however written, a two-letter code in parentheses ("(NC)"),
+ *  a bare upper-case code ("BCBS NC") or a plan code's prefix ("AR-S001").
+ *  `loose` are the bare codes that are also words or other terms ("ME", "OR",
+ *  "IN", "PA" = prior auth, "MA" = Medicare Advantage, "LA" = Los Angeles,
+ *  "PR" = patient responsibility) — they never accuse a row, but a row whose
+ *  own state is one of them is not accused either. "(MA)" and "(PR)" stay
+ *  loose: on these sheets they mean Medicare Advantage and patient
+ *  responsibility. */
+function insPlanStatesNamed_(name) {
+  const AMBIG = { MA: 1, PA: 1, OR: 1, IN: 1, ME: 1, OK: 1, HI: 1, DE: 1, CO: 1, ID: 1, AS: 1, MD: 1, LA: 1, PR: 1 };
+  const known = {};
+  Object.keys(US_STATE_NAMES).forEach(function (n) { known[US_STATE_NAMES[n]] = true; });
+  const named = [], loose = [];
+  const add = function (list, c) { if (known[c] && list.indexOf(c) < 0) list.push(c); };
+  const s = String(name == null ? '' : name)
+    .replace(/\bw[a-z]{0,2}shington\s*(d\.?\s*c\b\.?|district\s+of\s+columbia)/ig, ' DC ');
+  const re = /(^|[\s(,\/])([A-Z]{2})(?=$|[\s\-),.\/:])/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const c = m[2];
+    const paren = m[1] === '(' && s.charAt(m.index + m[0].length) === ')';
+    if (paren ? (c === 'MA' || c === 'PR') : AMBIG[c]) add(loose, c); else add(named, c);
+  }
+  let low = ' ' + s.toLowerCase().replace(/[^a-z]+/g, ' ') + ' ';
+  Object.keys(US_STATE_NAMES).sort(function (a, b) { return b.length - a.length; }).forEach(function (n) {
+    if (low.indexOf(' ' + n + ' ') < 0) return;
+    add(named, US_STATE_NAMES[n]);
+    low = low.split(' ' + n + ' ').join(' # ');
+  });
+  const lead = insStateLead_(name);
+  if (lead && !lead.read) add(named, lead.code);
+  return { named: named, loose: loose };
+}
+/** PURE (Node-pinned) — PT3: a Network Status cell with its obvious
+ *  misspellings corrected — "Out-f-Network" → "Out-of-Network", "outof" →
+ *  "out of", and a word within two letters of "network" or "benefits"
+ *  ("beneifts", "netwrok"). Case is kept; every other word stays as written. */
+function insNetworkTidy_(raw) {
+  let s = String(raw == null ? '' : raw);
+  s = s.replace(/\b(out)([\s-]+)f([\s-]+)(?=netw)/ig, function (m, o, a, b) { return o + a + 'of' + b; });
+  s = s.replace(/\b(out)(of)(?=[\s-]*net)/ig, '$1 $2');
+  return s.replace(/[A-Za-z]{5,}/g, function (w) {
+    const l = w.toLowerCase();
+    const target = ['network', 'benefits'].filter(function (t) {
+      return l !== t && l + 's' !== t && Math.abs(l.length - t.length) <= 2 && insEditDistance_(l, t) <= 2;
+    })[0];
+    if (!target) return w;
+    if (w === w.toUpperCase()) return target.toUpperCase();
+    return w.charAt(0) === w.charAt(0).toUpperCase() ? target.charAt(0).toUpperCase() + target.slice(1) : target;
+  });
+}
+/** PURE (Node-pinned) — PT3: a plan name as a cross-table key — case and
+ *  punctuation ignored, so "Anthem MediBlue (VA)" and "ANTHEM MEDIBLUE (VA) "
+ *  are one plan. */
+function insPayorNameKey_(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+/** PURE (Node-pinned) — PT3: where two listings of one plan, in two payor
+ *  tables, give DIFFERENT answers on a code both fill. Codes are read by token
+ *  (the column titles differ between sheets); a blank on either side is no
+ *  answer, so never a disagreement; spacing and case are not differences.
+ *  Codes with the same pair of answers are grouped: [{codes, here, there}]. */
+function insPayorCrossDiff_(hA, rA, hB, rB) {
+  const vals = function (h, r) {
+    const m = {};
+    (h || []).forEach(function (x, i) {
+      const p = hcpcsParse_(x);
+      if (!p.shaped || !p.certain) return;
+      const v = String(r[i] == null ? '' : r[i]).trim();
+      if (!v) return;
+      p.tokens.forEach(function (t) { m[t] = m[t] || []; if (m[t].indexOf(v) < 0) m[t].push(v); });
+    });
+    return m;
+  };
+  const a = vals(hA, rA), b = vals(hB, rB);
+  const groups = {}, order = [];
+  const flat = function (x) { return x.toLowerCase().replace(/\s+/g, ''); };
+  Object.keys(a).sort().forEach(function (t) {
+    if (!b[t]) return;
+    const here = a[t].join(' / '), there = b[t].join(' / ');
+    if (flat(here) === flat(there)) return;
+    const k = here + '\u0001' + there;
+    if (!groups[k]) { groups[k] = { codes: [], here: here, there: there }; order.push(k); }
+    groups[k].codes.push(t);
+  });
+  return order.map(function (k) { return groups[k]; });
 }
 /** PURE (Node-pinned) — PT2: the source's top-left note, tidied: an editor's
  *  "Added:" prefix and the quotes around it, and the "----Plan Name --" column
@@ -3206,6 +3312,7 @@ function searchInsurancePayors(query) {
       let scan = 1;
       for (let c = 1; c < Math.min(t.headers.length, 3); c++) if (/^(state|company)$/i.test(String(t.headers[c]).trim())) scan = c + 1;
       const names = t.sh.getRange(2, 1, last - 1, scan).getDisplayValues();
+      t.keys = names.map(function (r) { return insPayorNameKey_(r[0]); });   // PT3: the cross-table check
       for (let i = 0; i < names.length; i++) {
         const sc = insPayorMatch_(names[i].join(' '), q, groups);
         if (sc.score > 0) scored.push({ ti: ti, i: i, score: sc.score, excluded: sc.excluded });
@@ -3214,6 +3321,7 @@ function searchInsurancePayors(query) {
     // One ranking across the tables; a tie keeps the tables' configured order.
     scored.sort(function (a, b) { return (a.excluded ? 1 : 0) - (b.excluded ? 1 : 0) || b.score - a.score || a.ti - b.ti; });
     const top = scored.slice(0, INS_PAYOR_TOP);
+    let alsoReads = 0;
     const matches = top.map(function (t) {
       const tb = tables[t.ti];
       // getDisplayValues — a foreign-authored sheet's formats are not ours to
@@ -3222,6 +3330,22 @@ function searchInsurancePayors(query) {
       const o = insPayorRowObj_(tb.headers, row);
       o.table = tb.key;
       if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
+      // PT3: the same plan in ANOTHER payor table with a different answer on a
+      // code both fill is said on the card — a rep never picks one silently.
+      // Bounded: at most INS_PAYOR_ALSO_MAX other listings read per search.
+      const key = tb.keys[t.i];
+      tables.forEach(function (ob, oi) {
+        if (oi === t.ti || !ob.keys || !key) return;
+        for (let j = 0; j < ob.keys.length && alsoReads < INS_PAYOR_ALSO_MAX; j++) {
+          if (ob.keys[j] !== key) continue;
+          alsoReads++;
+          const other = ob.sh.getRange(j + 2, 1, 1, ob.width).getDisplayValues()[0];
+          const diff = insPayorCrossDiff_(tb.headers, row, ob.headers, other);
+          if (!diff.length) continue;
+          const oo = insPayorRowObj_(ob.headers, other);
+          (o.alsoIn = o.alsoIn || []).push({ table: ob.key, label: ob.label, state: oo.state || '', differs: diff });
+        }
+      });
       return o;
     });
     // The JOIN (T3). The payor sheet says `K0802 — Not Accepted`, which is a

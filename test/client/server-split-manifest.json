@@ -4235,6 +4235,23 @@
     "insPayorFromSource_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT3: payor cross-checks — misfiled-state check, network-status tidy, cross-table answers",
+   "added": [
+    "INS_PAYOR_ALSO_MAX",
+    "insNetworkTidy_",
+    "insPayorCrossDiff_",
+    "insPayorNameKey_",
+    "insPlanStatesNamed_"
+   ],
+   "removed": [],
+   "changed": [
+    "insPayorFromSource_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5403,6 +5420,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "eb0b9cb41364fb75"
+  },
+  "INS_PAYOR_ALSO_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2c4a25585535fe43"
   },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
@@ -10834,6 +10856,11 @@
    "kind": "function",
    "sha": "f97ae732a91cf1d6"
   },
+  "insNetworkTidy_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2265f4d1a51624e2"
+  },
   "insPayorAliasSuggest_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10844,15 +10871,25 @@
    "kind": "function",
    "sha": "a79c75746f310d2b"
   },
+  "insPayorCrossDiff_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c4079f9ae336c414"
+  },
   "insPayorFromSource_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4092f4adce52b2ef"
+   "sha": "03d4637d06c054b9"
   },
   "insPayorMatch_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "d6c86f97464b0587"
+  },
+  "insPayorNameKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a5502cb2bb7bdd8a"
   },
   "insPayorNameStates_": {
    "file": "70_kb.js",
@@ -10893,6 +10930,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "7cc53031cc2e8565"
+  },
+  "insPlanStatesNamed_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "97bf485a78c78a0b"
   },
   "insStateLead_": {
    "file": "70_kb.js",
@@ -13712,7 +13754,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "27479d993ce1f34e"
+   "sha": "3340340a18eed324"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

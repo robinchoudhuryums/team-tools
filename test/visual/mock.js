@@ -2142,7 +2142,10 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         details: [{ label: 'K0821/K0823 (Up to 285 lbs)', value: 'L ( Up To 285) & SI/PR', code: { shaped: true, certain: true, tokens: ['K0821', 'K0823'] }, item: '', itemCount: 0 }] },
       { table: 'BcbsPayors', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
         networkStatus: 'INN', waystar: '', qualification: '', reimbursement: '',
-        details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }] }],
+        details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }],
+        // PT3: the same plan answered differently on the Medicare / MA sheet.
+        alsoIn: [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
+          differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],

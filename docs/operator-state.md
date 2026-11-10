@@ -1662,7 +1662,7 @@ entry says which it is.
     we don't accept orders for that plan. `OON w/ PA` is AMBER: the plan may
     approve an order through a Prior Authorization request. `Out-of-Network
     Benefits` is AMBER: members may use out-of-network suppliers, usually at a
-    higher co-insurance rate. Anything written beside `OON` other than PA or
+    different co-insurance rate ("OONB" is the same — PT3). Anything written beside `OON` other than PA or
     benefits reads as unexplained amber, never as the red refusal.
   - **Every toned value in the live sheet now explains itself** (T10,
     2026-09-23). `Hawaii only` and `MDX Hawaii` are blue: the first is a rule
@@ -2805,6 +2805,12 @@ entry says which it is.
   If an untitled column is real data (a code whose title is missing), give it
   its title in the source sheet and upload again. Until a tab is imported the
   lookup leaves it out.
+  **PT3 (2026-11-10):** the preview also names every row filed under another
+  state's block (the name says "(NC)", "AR-S001", "of Virginia"…) with its
+  source row — move it in the sheet if it is misfiled — and lists each Network
+  Status misspelling it corrected ("Out-f-Network" → "Out-of-Network"). In the
+  lookup, a plan another payor table answers differently says so on its card;
+  correct the sheet that is wrong and re-upload it.
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`
