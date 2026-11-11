@@ -44997,6 +44997,9 @@ test('PT4: insPayorBelowKey_ reads the key under the table by its arrow cells (a
   assert.strictEqual(c.insCodeHeaderClean_('K0006 w/ E1226 (22") (K0007 billed as K0006)'), 'K0006 w/ E1226 (22") (K0007 billed as K0006)', 'a second chair: left unreadable');
   assert.strictEqual(c.insCodeHeaderClean_('K0001 w/ E1226'), 'K0001 (w/ E1226)', 'an accessory: the chair, with the accessory in its note');
   assert.strictEqual(c.insCodeHeaderClean_('K0825 Up to 435 lbs'), 'K0825 (Up to 435 lbs)', 'PT1a\'s cleanup unchanged');
+  vm.runInContext(extractRawFunction('Code.js', 'insPayorCrossDiff_'), c);
+  assert.deepStrictEqual(hJ(c.insPayorCrossDiff_(['Insurance', 'Power Chair: K0816'], ['Plan', 'X'], ['Insurance', 'K0816'], ['Plan', 'NO'])),
+    [{ codes: ['K0816'], here: 'X', there: 'NO' }], 'the cross-table check reads the code under its category');
 });
 
 test('PT4: Manual Mobility items is an allowlisted payor table through the one converter; the search says which tables have a network status, so a card from one without draws no "not recorded" pill; the code fix map is the operator\'s (driven + source)', () => {
