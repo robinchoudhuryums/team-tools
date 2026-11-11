@@ -2315,6 +2315,20 @@ entry says which it is.
   ignored, and an edited `CoachingImages` header row makes every screenshot
   read as "could not be read" (restore it to the seven names above).
 <a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
+<a id="operator-ac1-activity-levels"></a>
+- **Activity levels — ActivityLog's `Counts` and `Kind` columns, ActivitySummary's `Counts` (AC1, operator 2026-11-11).**
+  **Nothing to set up:** the next nightly run names the new header cells on a
+  tab made before (blank cells only). ActivityLog rows now carry **Counts** —
+  each 10-minute block's clicks and keystrokes since the window's last send,
+  as "29123456c3k12" (the block number, then the counts) — and **Kind**:
+  blank for a ping, `counts` for the flush a window sends after a two-minute
+  pause, which is never read as a ping. ActivitySummary rows gain **Counts**
+  (the day's blocks, "48c12k40"). Counts only — never what was typed or
+  clicked. Do not edit either cell by hand; a token the app cannot read is
+  skipped. Days condensed before AC1 have no counts and draw on/off as
+  before. **Tell the team** that Day Edit and Team Punches now show how much
+  each person used the app, block by block — use of this app only, so a call
+  or work in another program looks idle.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
   to set up:** the tab is auto-provisioned on the first presence ping after

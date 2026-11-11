@@ -6756,6 +6756,36 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="ac1-activity-levels"></a>**App activity has a LEVEL: the clicks and keystrokes in each 10-minute block, counted and never read, drawn in Day Edit and beside every rep in Team Punches (AC1, operator 2026-11-11)**
+  The operator asked to see how active a rep was through the day, not only
+  whether they were. The two gestures the presence ping already listens to are
+  counted per 10-minute block: a pointerdown is a click, a keydown a keystroke
+  (a held key once). Nothing about the key or the thing clicked is read.
+  - **The counts ride the ping**, and a window whose rep has PAUSED for two
+    minutes sends the rest through `recordActivityCounts`. That flush stamps
+    no presence — it fires after the last gesture, so a stamp from it would
+    read a rep who has stopped as active — and its row (Kind `counts`) is
+    never a ping: never a first or last time, never a suggested punch. A
+    failed send puts its counts back; what a window still holds when it
+    closes is lost, and the card says so.
+  - **The server keeps only what a person could have done** (`activityCountsClean_`):
+    the client's clock is corrected by whole blocks from the `at` it sends,
+    a block older than six hours (a laptop asleep overnight) or ahead of now
+    is dropped, a block's entries are summed, a count past 5,000 is capped.
+  - **One cell, never coerced:** "48c12k40" — letters between the numbers,
+    so Sheets cannot read it as a number, a date or a time (g10, g144).
+  - **A count belongs to the day of the block it names** — a send just after
+    midnight carries the evening's last block — so the read slice runs six
+    hours past the day's end, and the nightly condense files each block by
+    its own day.
+  - **A day with no counts is drawn as it always was** (on/off), never as a
+    level of zero: everything condensed before AC1, and a day whose counts
+    never arrived.
+  - **Where it shows:** Day Edit draws bars per 10 minutes or per hour; the
+    Team Punches day table gets an App activity column — every rep's hours
+    on one shared range, from ONE read (`managerGetTeamActivity`), filled in
+    place so the calendar keeps its focus. Both say it is this app only — a
+    phone call or another program reads as idle — and context, not a score.
 - <a id="pt4-manual-mobility-items"></a>**The Manual Mobility items sheet is a fifth payor table: its categories ride with its codes, its key is read from below the table, and its own words stay as written (PT4, operator 2026-11-10)**
   A different department's sheet for non-PMD items: a row per PAYOR (not per
   plan), item categories on row 1 over 55 codes, no network status, and its key

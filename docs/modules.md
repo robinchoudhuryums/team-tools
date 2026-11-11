@@ -279,6 +279,12 @@ not restate it. Server endpoints live in the fourteen server files
      the export link and in the automated export email
      (`exportInferredLines_`).
 
+     **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
+     clicks and keystrokes in each 10-minute block (counts only; a two-minute
+     pause flushes the rest without a presence stamp). Day Edit draws bars per
+     10 minutes or per hour, and the Team Punches day table has an App
+     activity column — every rep's hours on one range, from one read.
+
 **Operator round 2026-11-02 (Batch A):** the clock reminders carry their punch.
 The still-clocked-in reminder offers Clock out, the not-clocked-in nudge offers
 Clock in, and the Lunch reminder offers Lunch out. One click records it from any
