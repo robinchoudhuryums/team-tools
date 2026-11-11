@@ -859,6 +859,13 @@ longer sent to reps.
      status's obvious misspellings. The legend reads OONB (out-of-network
      benefits) and "cannot service state".
 
+     **PT4 (operator 2026-11-10) — Manual Mobility items.** A fifth table: the
+     non-PMD sheet (wheelchairs, beds, walkers, commodes, nebulizers…), a row
+     per payor. A card groups its codes under each item; the sheet's key and
+     delivery locations, written below its table, become its key line and
+     note; its own words ("Yes – Delivery Only", "MO", "OOP Only", "Priority
+     Referral Only"…) are coloured and explained.
+
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
      "no calls"), My Stats, Team Metrics and the ambient badge do not cache a

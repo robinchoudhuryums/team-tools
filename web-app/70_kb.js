@@ -1132,7 +1132,10 @@ function insPayorRowObj_(headers, row) {
     else if (/network/i.test(h)) out.networkStatus = v;
     else if (/qualif/i.test(h)) out.qualification = v;   // the source header is misspelled "Qualifaction" — match the stem
     else if (/reimbur/i.test(h)) out.reimbursement = v;
-    else if (v) out.details.push({ label: h, value: v });
+    else if (v) {
+      const g = insCodeGroupSplit_(h);   // PT4: "Walker: E0143" → the card groups by item
+      out.details.push(g.group ? { label: g.label, value: v, group: g.group } : { label: h, value: v });
+    }
   }
   return out;
 }
@@ -1163,6 +1166,12 @@ function insCodeHeaderClean_(h) {
   const m = /^([A-Za-z]\d{4}(?:\s*\/\s*\d{1,4})*)\s*(.*)$/.exec(raw);
   if (!m) return raw;
   const rest = m[2].replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^[-–—:,\s]+/, '');
+  // PT4: "K0006 w/ E1226 (K0007 BAV K0006)" names a SECOND chair — tucking it
+  // into the note would price the column as K0006 alone. Another code of the
+  // same family (K00xx beside K0006) keeps the header unreadable; an accessory
+  // ("w/ E1226") does not.
+  const base = m[1].replace(/\s+/g, '').toUpperCase().slice(0, 5);
+  if ((rest.toUpperCase().match(/[A-Z]\d{4}/g) || []).some(function (c) { return c !== base && c.slice(0, 3) === base.slice(0, 3); })) return raw;
   const out = m[1].replace(/\s+/g, '').toUpperCase() + (rest ? ' (' + rest + ')' : '');
   return hcpcsParse_(out).certain ? out : raw;
 }
@@ -1194,15 +1203,17 @@ function insCodeHeaderClean_(h) {
  *  Nothing else is changed: values the key does not define stay verbatim. */
 function insPayorFromSource_(grid) {
   if (!grid || grid.length < 3) return null;
-  const h1 = grid[0].map(function (x) { return String(x == null ? '' : x).trim(); });
-  const h2 = grid[1].map(function (x) { return String(x == null ? '' : x).trim(); });
+  // PT4: a cell written over several lines reads as one ("E1038\n(Transport Chair)").
+  const line = function (x) { return String(x == null ? '' : x).replace(/[ \t]*[\r\n]+[ \t]*/g, ' ').trim(); };
+  const h1 = grid[0].map(line);
+  const h2 = grid[1].map(line);
   const shaped = function (row) { return row.slice(1).filter(function (x) { return hcpcsParse_(x).shaped; }).length; };
   const c2 = shaped(h2);
   if (c2 < 3 || c2 <= shaped(h1)) return null;
   const width = Math.max(h1.length, h2.length);
   const body = grid.slice(2).map(function (r) {
     const out = [];
-    for (let c = 0; c < width; c++) out.push(String(r[c] == null ? '' : r[c]).trim());
+    for (let c = 0; c < width; c++) out.push(line(r[c]));
     return out;
   });
   const changes = [], key = {}, keep = [];
@@ -1216,7 +1227,43 @@ function insPayorFromSource_(grid) {
   const nameCol = (filled(0) * 2 < body.length && filled(1) * 2 > body.length) ? 1 : 0;
   const groupCol = nameCol === 1 ? 0 : -1;
   if (nameCol === 1) changes.push('The plan name is column B; column A names the insurer or starts a state section.');
-  const note = insPayorNoteTidy_(nameCol === 1 && h1[1].length > h1[0].length ? h1[1] : h1[0]);
+  let note = insPayorNoteTidy_(nameCol === 1 && h1[1].length > h1[0].length ? h1[1] : h1[0]);
+  // PT4: a TITLE in A1 ("Payor/HCPCS PTs primary ins") is not a rule for every
+  // plan; what it says about the rows (the patient's PRIMARY insurance) is.
+  if (nameCol === 0 && /^payors?\s*\/\s*hcpcs\b/i.test(h1[0])) {
+    note = /primary\s+ins/i.test(h1[0]) ? 'Use the row for the patient\'s primary insurance.' : '';
+    changes.push('A1 "' + h1[0] + '" is the sheet\'s title, not a rule' + (note ? ' — the note says to use the patient\'s primary insurance.' : '.'));
+  }
+  // PT4: a key written BELOW the table — "MO  -->  Medicaid Only" — is the
+  // sheet's key (shown with its group, never written into the cells), and the
+  // other cells of those rows (the delivery locations) are notes for every plan.
+  const below = insPayorBelowKey_(body, nameCol);
+  if (below.rows.length) {
+    changes.push('The key below the table is the sheet\'s key: ' + Object.keys(below.key).map(function (k) { return k + ' = ' + below.key[k]; }).join('; ') + '.');
+    if (below.notes.length) {
+      const nt = insPayorValueTidy_(below.notes[0] + (below.notes.length > 1 ? ': ' + below.notes.slice(1).join('; ') : '')).text;
+      note = (note ? note + ' ' : '') + nt + (/[.)]$/.test(nt) ? '' : '.');
+      note = note.slice(0, INS_PAYOR_NOTE_MAX);
+      changes.push('The notes below the table are part of the standing note: ' + nt);
+    }
+  }
+  // PT4: row 1's item CATEGORIES over the code columns ("Walker" over E0143 …
+  // E0135) are kept with each code — but only when they cover EVERY code
+  // column: a heading that starts a column late would file codes under the
+  // wrong item, and a partial set says nothing about the rest.
+  const catOf = {};
+  let cat = '', codeCols = 0, covered = 0;
+  const cats = [];
+  for (let c = 1; c < width; c++) {
+    if (c === nameCol || c === groupCol) continue;
+    if (!hcpcsParse_(h2[c]).shaped) { cat = ''; continue; }
+    if (h1[c]) { cat = h1[c].replace(/:/g, ' -').replace(/\s+/g, ' ').trim(); if (cats.indexOf(cat) < 0) cats.push(cat); }
+    codeCols++;
+    if (cat) { covered++; catOf[c] = cat; }
+  }
+  const useCats = codeCols > 0 && covered === codeCols;
+  if (useCats) changes.push('Row 1\'s item categories are kept with their codes: ' + cats.join(', ') + '.');
+  else if (covered) changes.push('Row 1 names categories over only some code columns (' + cats.join(', ') + ') — not kept, so no code is filed under the wrong item.');
   keep.push({ c: nameCol, h: 'Insurance' });
   const derived = [];
   for (let c = 0; c < width; c++) {
@@ -1241,7 +1288,26 @@ function insPayorFromSource_(grid) {
     else if (/waystar/i.test(orig)) { h = 'Waystar Reference #'; }
     else if (/qualif/i.test(orig)) { h = 'Qualification Process'; }
     else if (/^(state|company)$/i.test(orig)) { h = orig + ' (sheet)'; why = 'the converter writes its own ' + orig.toLowerCase() + ' column'; }
-    else if (hcpcsParse_(orig).shaped) { h = insCodeHeaderClean_(orig); if (h !== orig) why = 'so it reads as one code'; }
+    else if (hcpcsParse_(orig).shaped) {
+      // PT4: a code the source sheet mistyped, corrected as the operator confirmed.
+      let fixed = orig;
+      if (/\bBAV\b/.test(fixed)) {   // PT4: the operator: BAV is "billed as"
+        fixed = fixed.replace(/\bBAV\b/g, 'billed as');
+        changes.push('Header "' + orig + '": "BAV" reads "billed as".');
+      }
+      Object.keys(INS_CODE_HEADER_FIXES).forEach(function (bad) {
+        if (new RegExp('\\b' + bad + '\\b', 'i').test(fixed)) {
+          fixed = fixed.replace(new RegExp('\\b' + bad + '\\b', 'ig'), INS_CODE_HEADER_FIXES[bad].to);
+          changes.push('Header "' + orig + '" → "' + fixed + '" (' + INS_CODE_HEADER_FIXES[bad].why + ').');
+        }
+      });
+      h = insCodeHeaderClean_(fixed);
+      if (h !== fixed) why = 'so it reads as one code';
+      if (useCats && catOf[c]) h = catOf[c] + ': ' + h;
+      if (h !== orig && why) changes.push('Header "' + orig + '" → "' + h + '" (' + why + ').');
+      keep.push({ c: c, h: h });
+      continue;
+    }
     if (h !== orig && why) changes.push('Header "' + orig + '" → "' + h + '" (' + why + ').');
     keep.push({ c: c, h: h || orig });
   }
@@ -1255,6 +1321,7 @@ function insPayorFromSource_(grid) {
   for (let r = 0; r < body.length; r++) {
     const cells = body[r];
     if (!cells.some(function (x) { return x; })) { blankRows.push(r + 3); continue; }
+    if (below.rows.indexOf(r) >= 0) continue;   // PT4: the key and notes below the table
     if (!cells[nameCol]) { unnamedRows.push(r + 3); continue; }
     live.push(r);
   }
@@ -1298,7 +1365,7 @@ function insPayorFromSource_(grid) {
   if (companies) keep.splice(sectioned ? 2 : 1, 0, { derived: 'company', h: 'Company' });
   const letters = Object.keys(key).filter(function (k) { return k !== 'X' && k !== 'NO'; });
   const rewritten = {};
-  const rows = [], emptyRows = [], before = [], elsewhere = [], held = {}, netFixed = {};
+  const rows = [], emptyRows = [], before = [], elsewhere = [], held = {}, netFixed = {}, valFixed = {};
   let current = '';
   live.forEach(function (r, i) {
     if (starts[i] !== undefined) current = starts[i];
@@ -1316,6 +1383,11 @@ function insPayorFromSource_(grid) {
       if (k.h === 'Network Status' && v) {
         const t = insNetworkTidy_(v);
         if (t !== v) { netFixed[v + '\u0001' + t] = (netFixed[v + '\u0001' + t] || 0) + 1; v = t; }
+      }
+      // PT4: a cell's obvious misspellings, and a person's exception named by role.
+      if (k.c !== nameCol && v) {
+        const vt = insPayorValueTidy_(v);
+        if (vt.text !== v) { const fk = v + '\u0001' + vt.text + '\u0001' + vt.why; valFixed[fk] = (valFixed[fk] || 0) + 1; v = vt.text; }
       }
       if (k.c !== nameCol && letters.indexOf(v) >= 0) { rewritten[v] = (rewritten[v] || 0) + 1; return key[v] + ' (' + v + ')'; }
       return v;
@@ -1352,6 +1424,10 @@ function insPayorFromSource_(grid) {
     const p = k.split('\u0001');
     changes.push('Network Status "' + p[0] + '" → "' + p[1] + '" (a misspelling; ' + netFixed[k] + ' cell(s)).');
   });
+  Object.keys(valFixed).forEach(function (k) {
+    const p = k.split('\u0001');
+    changes.push('"' + p[0] + '" → "' + p[1] + '" (' + p[2] + '; ' + valFixed[k] + ' cell(s)).');
+  });
   Object.keys(rewritten).forEach(function (l) {
     changes.push(rewritten[l] + ' cell(s) reading "' + l + '" now read "' + key[l] + ' (' + l + ')", from the key.');
   });
@@ -1360,10 +1436,65 @@ function insPayorFromSource_(grid) {
   if (emptyRows.length) changes.push(emptyRows.length + ' row(s) with a plan name and nothing recorded dropped — a reminder in the sheet, not an acceptance rule (source row ' + emptyRows.slice(0, 12).join(', ') + (emptyRows.length > 12 ? ', …' : '') + ').');
   return {
     grid: [keep.map(function (k) { return k.h; })].concat(rows),
-    note: note, changes: changes, key: key,
+    note: note, changes: changes, key: Object.assign({}, key, below.key),
     sourceRows: body.length, unnamedRows: unnamedRows.length, blankRows: blankRows.length, emptyRows: emptyRows.length,
     states: sectioned ? sections : [],
   };
+}
+/** PURE (Node-pinned) — PT4: a key written BELOW the table, one term per row:
+ *  "MO  -->  Medicaid Only". The arrow cells find the term and meaning columns
+ *  (the nearest filled cell either side); a row of the same two columns without
+ *  an arrow ("MO/OOP  …  Not a Medicare covered item …") is an entry too. Only
+ *  rows with no plan name count, and only when some row carries an arrow. The
+ *  other cells of those rows are NOTES, in reading order (the delivery
+ *  locations beside the key). Returns {key, notes, rows: body indexes}. */
+function insPayorBelowKey_(body, nameCol) {
+  const out = { key: {}, notes: [], rows: [] };
+  const isArrow = function (x) { return /^-+>$/.test(String(x).trim()); };
+  let termCol = -1, meanCol = -1;
+  body.forEach(function (cells) {
+    if (cells[nameCol] || termCol >= 0) return;
+    const a = cells.findIndex(isArrow);
+    if (a < 0) return;
+    for (let c = a - 1; c >= 0; c--) if (cells[c]) { termCol = c; break; }
+    for (let c = a + 1; c < cells.length; c++) if (cells[c]) { meanCol = c; break; }
+  });
+  if (termCol < 0 || meanCol < 0) return out;
+  body.forEach(function (cells, r) {
+    if (cells[nameCol] || !cells.some(function (x) { return x; })) return;
+    const entry = cells[termCol] && cells[meanCol];
+    const others = cells.filter(function (x, c) { return x && c !== termCol && c !== meanCol && !isArrow(x); });
+    if (!entry && !others.length) return;
+    if (!entry && !cells.some(isArrow) && !out.rows.length) return;   // nothing below the table yet
+    if (entry) out.key[cells[termCol]] = cells[meanCol];
+    others.forEach(function (x) { out.notes.push(x); });
+    out.rows.push(r);
+  });
+  return out;
+}
+/** PURE (Node-pinned) — PT4: an acceptance cell with its obvious misspellings
+ *  corrected ("Refferal", "faclity", "SanMarcos", "if patience asks") and a
+ *  person's exception named by role ("Need Nikunj's Exception" → "Needs a
+ *  supervisor exception" — the operator: the role, not the name). Returns
+ *  {text, why}; anything else is written as it was. */
+function insPayorValueTidy_(raw) {
+  const v = String(raw == null ? '' : raw);
+  let t = v.replace(/\bneeds?\s+[A-Z][a-z]+(?:'|\u2019)s\s+[Ee]xception\b/gi, 'Needs a supervisor exception');
+  if (t !== v) return { text: t, why: 'named by role' };
+  t = v.replace(/\b(re)f?ferr?al\b/gi, function (w) { return /^R/.test(w) ? 'Referral' : 'referral'; })
+    .replace(/\bfacl?it?y\b/gi, function (w) { return /^F/.test(w) ? 'Facility' : 'facility'; })
+    .replace(/\bSanMarcos\b/g, 'San Marcos')
+    .replace(/\bif patience asks\b/gi, 'if patient asks');
+  return { text: t, why: t !== v ? 'a misspelling' : '' };
+}
+/** PURE (Node-pinned) — PT4: a code column's header split into its item
+ *  CATEGORY and its code label — "Walker: E0143 & E0156" → {group: 'Walker',
+ *  label: 'E0143 & E0156'}. A header with no category is {group: '', label}. */
+function insCodeGroupSplit_(h) {
+  const t = String(h == null ? '' : h).trim();
+  const m = /^([^:]{1,60}?):\s+(.+)$/.exec(t);
+  if (m && /[A-Za-z]/.test(m[1]) && !/^[A-Za-z]\d{4}/.test(m[1]) && hcpcsParse_(m[2]).shaped) return { group: m[1].trim(), label: m[2].trim() };
+  return { group: '', label: t };
 }
 /** PURE (Node-pinned) — PT3: the states a plan's NAME names, for the import
  *  preview's misfiled-row check. `named` are certain: a full state name
@@ -1434,7 +1565,7 @@ function insPayorCrossDiff_(hA, rA, hB, rB) {
   const vals = function (h, r) {
     const m = {};
     (h || []).forEach(function (x, i) {
-      const p = hcpcsParse_(x);
+      const p = hcpcsParse_(insCodeGroupSplit_(x).label);
       if (!p.shaped || !p.certain) return;
       const v = String(r[i] == null ? '' : r[i]).trim();
       if (!v) return;
@@ -3305,6 +3436,9 @@ function searchInsurancePayors(query) {
       if (last < 2) return;
       t.width = t.sh.getLastColumn();
       t.headers = t.sh.getRange(1, 1, 1, t.width).getDisplayValues()[0];
+      // PT4: a table with no network status column (the Manual Mobility sheet)
+      // draws no "status not recorded" pill on every card.
+      t.hasStatus = t.headers.some(function (h) { return insPayorSlotOf_(h) === 'network status'; });
       // Name-column scan for scoring; full rows fetched only for the top N.
       // PT2: a sectioned table's State and Company columns (the converter puts
       // them right after the name) are scored with the name, so "silver
@@ -3366,7 +3500,7 @@ function searchInsurancePayors(query) {
     }
     return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
       tables: tables.filter(function (t) { return t.sh; }).map(function (t) {
-        return { key: t.key, label: t.label, note: t.note, legend: t.legend, noteError: t.noteError };
+        return { key: t.key, label: t.label, note: t.note, legend: t.legend, noteError: t.noteError, hasStatus: t.hasStatus !== false };
       }),
       // NAMED, not inferred from empty `item` fields. A pricing tab that is
       // missing or unreadable produces exactly the same bare codes as a payor

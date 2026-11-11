@@ -2811,6 +2811,18 @@ entry says which it is.
   Status misspelling it corrected ("Out-f-Network" → "Out-of-Network"). In the
   lookup, a plan another payor table answers differently says so on its card;
   correct the sheet that is wrong and re-upload it.
+<a id="operator-pt4-manual-mobility-items"></a>
+- **Manual Mobility items — the `ManualMobilityPayors` tab (PT4, operator 2026-11-10).**
+  **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
+  data tables lists **Manual mobility acceptance**. Download the source sheet
+  (the non-PMD "HCPC Payor acceptance" spreadsheet) as CSV and drop it there;
+  the preview lists the item categories it keeps, the key it read below the
+  table, the note (primary insurance + delivery locations), each spelling or
+  role correction, "BAV" → "billed as" and E1930 → E1390. Keep the key below
+  the table in the "MO  -->  Medicaid Only" shape: the arrow cells are how it
+  is found. Re-uploading the Medicaid and BCBS exports now also files their
+  codes under Scooter / Power Chair / Complex Rehab. **Owed to the department:**
+  what "T3 Purchase Order" means (Humana HMOs w/ IPA, Support Surfaces).
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

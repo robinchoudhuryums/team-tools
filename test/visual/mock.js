@@ -745,7 +745,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         describe: 'UnitedHealthcare plans by state behind the Reference insurance lookup', rows: 562, cols: 30, present: true,
         note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)', noteAt: '2026-11-10T15:00:00.000Z' },
       { key: 'BcbsPayors', tab: 'BcbsPayors', label: 'BCBS / Anthem acceptance',
-        describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' }] },
+        describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' },
+      // PT4: the non-PMD sheet, a row per payor.
+      { key: 'ManualMobilityPayors', tab: 'ManualMobilityPayors', label: 'Manual mobility acceptance',
+        describe: 'Manual mobility and other non-PMD items by payor behind the Reference insurance lookup', rows: 26, cols: 56, present: true,
+        note: "Use the row for the patient's primary insurance. Branch to Delivery Locations: Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI.", noteAt: '2026-11-10T18:00:00.000Z' }] },
     kbImportDataTable: function (key, b64, opts) {
       var dry = !opts || opts.dryRun !== false;
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
@@ -2096,7 +2100,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // defect from the operator's own post-deploy check.
     // PT1a: the source sheet's standing note rides every answer.
     // PT1: one search across the payor tables, each with its note and its sheet's key.
-    searchInsurancePayors: { total: 7, cap: 8,
+    searchInsurancePayors: { total: 8, cap: 8,
       tables: [
         { key: 'InsurancePayors', label: 'Medicare / MA', noteError: '',
           note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
@@ -2107,7 +2111,10 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         { key: 'UhcPayors', label: 'UHC by state', noteError: '',
           note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)',
           legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } },
-        { key: 'BcbsPayors', label: 'BCBS / Anthem', noteError: '', note: '', legend: { X: 'Yes', NO: 'No' } }],
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', noteError: '', note: '', legend: { X: 'Yes', NO: 'No' } },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', noteError: '', hasStatus: false,
+          note: "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI (Honolulu, HI).",
+          legend: { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only', 'Yes - Delivery Only': 'Based on several factors including shipping cost and profitability' } }],
       matches: [
       { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
@@ -2145,7 +2152,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }],
         // PT3: the same plan answered differently on the Medicare / MA sheet.
         alsoIn: [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
-          differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] }],
+          differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] },
+      // PT4: a row per payor, its codes under their item; no network status.
+      { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
+        details: [
+          { label: 'K0001', value: 'Yes', group: 'Wheelchair', code: { shaped: true, certain: true, tokens: ['K0001'] }, item: '', itemCount: 0 },
+          { label: 'K0006 w/ E1226 (22") (K0007 billed as K0006)', value: 'Yes - DFW, SA, Austin', group: 'Wheelchair', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
+          { label: 'E0260', value: 'Priority Referral Only', group: 'Hospital Bed', code: { shaped: true, certain: true, tokens: ['E0260'] }, item: '', itemCount: 0 },
+          { label: 'E0143 & E0156', value: 'Yes - Delivery Only', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0143', 'E0156'] }, item: '', itemCount: 0 },
+          { label: 'E0149', value: 'MO', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0149'] }, item: '', itemCount: 0 },
+          { label: 'A4670', value: 'OOP Only', group: 'BPM', code: { shaped: true, certain: true, tokens: ['A4670'] }, item: '', itemCount: 0 },
+          { label: 'Any singular supply code - i.e. A7003, A7004, A7013, A7015', value: 'Needs a supervisor exception', group: 'Nebulizer Supplies Only', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 }] }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],

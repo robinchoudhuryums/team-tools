@@ -4252,6 +4252,26 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT4: Manual Mobility payor table — categories, the key below the table, value tidy",
+   "added": [
+    "INS_CODE_HEADER_FIXES",
+    "insCodeGroupSplit_",
+    "insPayorBelowKey_",
+    "insPayorValueTidy_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_DATA_TABLES",
+    "insCodeHeaderClean_",
+    "insPayorCrossDiff_",
+    "insPayorFromSource_",
+    "insPayorRowObj_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5416,6 +5436,11 @@
    "kind": "const",
    "sha": "459ffe49b2aac1bc"
   },
+  "INS_CODE_HEADER_FIXES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4b5ae81768e56e67"
+  },
   "INS_PAYOR_ALIAS_FAMILIES": {
    "file": "00_config.js",
    "kind": "const",
@@ -5754,7 +5779,7 @@
   "KB_DATA_TABLES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "2b7061df314051db"
+   "sha": "cea6ad202ec23499"
   },
   "KB_DATA_TABLE_MAX_CELL_CHARS": {
    "file": "00_config.js",
@@ -10836,10 +10861,15 @@
    "kind": "function",
    "sha": "5823beeb234155f1"
   },
+  "insCodeGroupSplit_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "50c7f460269b0206"
+  },
   "insCodeHeaderClean_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4468b31747ff9c6e"
+   "sha": "ef05942df5bf300e"
   },
   "insColLetter_": {
    "file": "70_kb.js",
@@ -10866,6 +10896,11 @@
    "kind": "function",
    "sha": "0dec995f961d2f17"
   },
+  "insPayorBelowKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e5cf482163fbb413"
+  },
   "insPayorCatchAll_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -10874,12 +10909,12 @@
   "insPayorCrossDiff_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c4079f9ae336c414"
+   "sha": "f4205b0e0546e9b1"
   },
   "insPayorFromSource_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "03d4637d06c054b9"
+   "sha": "c0e4573a214edbef"
   },
   "insPayorMatch_": {
    "file": "70_kb.js",
@@ -10914,7 +10949,7 @@
   "insPayorRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "5664276f11e327f9"
+   "sha": "1416f4d80126ee0d"
   },
   "insPayorScore_": {
    "file": "70_kb.js",
@@ -10930,6 +10965,11 @@
    "file": "70_kb.js",
    "kind": "function",
    "sha": "7cc53031cc2e8565"
+  },
+  "insPayorValueTidy_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "37bcd12370740b18"
   },
   "insPlanStatesNamed_": {
    "file": "70_kb.js",
@@ -13754,7 +13794,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3340340a18eed324"
+   "sha": "7f7a204de55fa577"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

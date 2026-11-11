@@ -2562,6 +2562,11 @@ const INS_PAYOR_TOP = 8;
 // reads to compare answers ("Also on … — answer differs") — bounded, like the
 // search's own reads (INV-46).
 const INS_PAYOR_ALSO_MAX = 12;
+// PT4: a code the source sheet mistyped in a column header, corrected at import
+// (and listed in the preview) — only as the operator confirmed it.
+const INS_CODE_HEADER_FIXES = {
+  E1930: { to: 'E1390', why: 'E1390 is the oxygen concentrator — the operator confirmed, 2026-11-10' },
+};
 // PT1a (operator 2026-11-09): the source sheet's standing note — the rule its
 // top-left cell states for every plan ("No power orders in OR, WA, ID…"). A
 // source-format import stores it here and every insurance result shows it.
@@ -2664,6 +2669,17 @@ const KB_DATA_TABLES = {
     minCols: 2,
     sourceFormat: 'payorAcceptance',
     payorTable: 'BCBS / Anthem',
+  },
+  // PT4 (operator 2026-11-10): the non-PMD sheet — a row per PAYOR, item
+  // categories over its codes, its key written below the table.
+  ManualMobilityPayors: {
+    tab: 'ManualMobilityPayors',
+    label: 'Manual mobility acceptance',
+    describe: 'Manual mobility and other non-PMD items by payor behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'Manual Mobility items',
   },
 };
 const KB_DATA_TABLE_MAX_ROWS = 5000;

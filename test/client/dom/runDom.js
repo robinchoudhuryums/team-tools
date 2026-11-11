@@ -4298,6 +4298,35 @@ test('PT3 DOM: a plan answered differently by another payor table says so on its
   assert.ok(pills[1].classList.contains('bad') && pills[1].tagName === 'BUTTON', '"cannot service state" is red and explains itself');
 });
 
+test('PT4 DOM: a card from the Manual Mobility table groups its codes under their item (a heading each time the item changes, escaped), and draws no "status not recorded" pill — a table that has a status column still does (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', noteError: '', legend: {}, hasStatus: true },
+    { key: 'ManualMobilityPayors', label: 'Manual Mobility items', note: '', noteError: '', legend: { MO: 'Medicaid Only' }, hasStatus: false }];
+  const answer = { total: 2, cap: 8, tables: tables, matches: [
+    { table: 'InsurancePayors', name: 'Aetna Medicare', networkStatus: '', details: [] },
+    { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', details: [
+      { label: 'K0001', value: 'Yes', group: 'Wheelchair' }, { label: 'K0003', value: 'MO', group: 'Wheelchair' },
+      { label: 'E0143', value: 'OOP Only', group: 'Walker <b>&</b> rollator' }, { label: 'A4670', value: 'Yes - Delivery Only', group: 'BPM' }] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'aetna'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 2);
+  assert.ok(cards[0].querySelector('.kb-ins-pill') && /status not recorded/.test(cards[0].querySelector('.kb-ins-pill').textContent), 'a table with a status column says the status is not recorded');
+  assert.ok(!cards[1].querySelector('.kb-ins-pill'), 'the Manual Mobility card draws no status pill');
+  const grid = cards[1].querySelector('.kb-ins-grid');
+  const seq = Array.from(grid.children).map((el) => el.classList.contains('kb-ins-cat') ? '# ' + el.textContent : el.querySelector('.c').textContent.trim().split(/\s/)[0]);
+  assert.deepStrictEqual(seq, ['# Wheelchair', 'K0001', 'K0003', '# Walker <b>&</b> rollator', 'E0143', '# BPM', 'A4670'], 'a heading each time the item changes, in the sheet\'s order');
+  assert.ok(!grid.querySelector('.kb-ins-cat b'), 'the item name is escaped');
+  const tones = Array.from(grid.querySelectorAll('.v')).map((v) => v.className.replace(/\s*kb-term/, '').replace(/^v\s*/, ''));
+  assert.deepStrictEqual(tones, ['good', 'warn', 'warn', 'warn'], 'Yes, MO, OOP Only, a qualified Yes');
+  assert.ok(Array.from(grid.querySelectorAll('.v')).slice(1).every((v) => v.tagName === 'BUTTON'), 'each amber value explains itself');
+  answer.matches[1].details.forEach((d) => { delete d.group; });
+  inp.value = 'aetna2'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  assert.ok(!h.$('#kb-ins-results').querySelector('.kb-ins-cat'), 'a card with no categories is the plain list it always was');
+});
+
 test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
   const h = boot();
   let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',

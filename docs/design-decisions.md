@@ -6756,6 +6756,39 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="pt4-manual-mobility-items"></a>**The Manual Mobility items sheet is a fifth payor table: its categories ride with its codes, its key is read from below the table, and its own words stay as written (PT4, operator 2026-11-10)**
+  A different department's sheet for non-PMD items: a row per PAYOR (not per
+  plan), item categories on row 1 over 55 codes, no network status, and its key
+  written beneath the table ("MO --> Medicaid Only") beside the delivery
+  locations.
+  - **Categories are kept only when they cover every code column.**
+    "Walker: E0143 & E0156" in the tab; `insCodeGroupSplit_` hands the reader
+    the category and the code, the card groups its code grid under each item,
+    and every join and comparison still reads the code alone. A heading that
+    starts a column late (Medicare / MA's "Power Chair (K0816)") or stops at a
+    non-code column would file codes under the wrong item, so a partial set is
+    dropped and said — Medicaid and BCBS keep Scooter / Power Chair / Complex
+    Rehab, Medicare / MA and UHC keep none.
+  - **The key below the table** (`insPayorBelowKey_`) is found by its arrow
+    cells and becomes the table's sheet key; it is never written into the
+    cells — "Yes" stays "Yes", never "We can process (Yes)". The other cells of
+    those rows (the delivery locations) join the standing note, after "Use the
+    row for the patient's primary insurance" (A1's title, which is never a
+    rule).
+  - **Tidied, and listed:** multi-line cells read as one line; obvious
+    misspellings ("Refferal", "faclity", "if patience asks", "SanMarcos");
+    a person's exception by role ("Need Nikunj's Exception" → "Needs a
+    supervisor exception", the operator); "BAV" → "billed as"; the mistyped
+    E1930 → E1390 (`INS_CODE_HEADER_FIXES`, operator-confirmed only).
+  - **A column naming two chairs joins as neither.** `insCodeHeaderClean_`
+    leaves "K0006 w/ E1226 (K0007 billed as K0006)" unreadable as one code
+    (another code of the same family), while "K0001 w/ E1226" joins as K0001.
+  - **No network status, no pill:** the search ships `hasStatus` per table.
+  - **The legend reads its words** — amber for a qualified Yes, delivery only,
+    DFW / SA / Austin, OOP, MO, MO/OOP, priority referral (the referral's
+    source — some facilities get exceptions), Texas only, waiver, MA plan only,
+    on request, NPC/NRC (no previous claims; may process) and a supervisor
+    exception; red for "NO (…)". Each is explained by its own term.
 - <a id="pt3-payor-cross-checks"></a>**A plan answered differently by two payor tables says so on its card; the upload names a row filed under another state; the network status's misspellings are corrected and listed (PT3, operator 2026-11-10)**
   Checking the four exports against each other found the same plan with
   different answers on two sheets (about two dozen), rows filed under another

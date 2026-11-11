@@ -16312,6 +16312,7 @@ const _insCtx = vm.createContext({});
 vm.runInContext(extractRawFunction('Code.js', 'insPayorScore_'), _insCtx, { filename: 'insPayorScore_' });
 vm.runInContext(extractRawFunction('Code.js', 'insPayorRowObj_'), _insCtx, { filename: 'insPayorRowObj_' });
 vm.runInContext(extractRawFunction('Code.js', 'insPayorCatchAll_'), _insCtx, { filename: 'insPayorCatchAll_' });   // PT2
+vm.runInContext(extractRawFunction('Code.js', 'insCodeGroupSplit_'), _insCtx, { filename: 'insCodeGroupSplit_' });   // PT4
 vm.runInContext(extractFunction('kb/script_kb.html', 'insWord_') + '\n' +
   extractScript('kb/script_kb.html').match(/var INS_IS = \{[\s\S]*?\n\};/)[0], _insCtx, { filename: 'INS_IS' });   // K11
 vm.runInContext(extractFunction('kb/script_kb.html', 'insToneCls_'), _insCtx, { filename: 'insToneCls_' });
@@ -44341,9 +44342,10 @@ function pt1aCtx_(extra) {
     INS_PAYOR_NOTE_MAX: Number(m5bConst_('INS_PAYOR_NOTE_MAX')) }, extra || {}));
   // PT2: the converter's helpers and the state names it reads sections by.
   vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
+  vm.runInContext((serverSource().match(/const INS_CODE_HEADER_FIXES = \{[\s\S]*?\n\};/) || [''])[0].replace(/^const /, 'var '), ctx);   // PT4
   ['hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorRowObj_', 'insPayorSlotOf_',
     'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_',
-    'insPlanStatesNamed_', 'insNetworkTidy_']
+    'insPlanStatesNamed_', 'insNetworkTidy_', 'insPayorBelowKey_', 'insPayorValueTidy_', 'insCodeGroupSplit_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44440,9 +44442,10 @@ function pt1aImportCtx_(sheet, props) {
   ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
     'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_',
     'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_',
-    'insPlanStatesNamed_', 'insNetworkTidy_']
+    'insPlanStatesNamed_', 'insNetworkTidy_', 'insPayorBelowKey_', 'insPayorValueTidy_', 'insCodeGroupSplit_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   vm.runInContext((serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
+  vm.runInContext((serverSource().match(/const INS_CODE_HEADER_FIXES = \{[\s\S]*?\n\};/) || [''])[0].replace(/^const /, 'var '), ctx);   // PT4
   return { ctx, book };
 }
 const pt1aCsv_ = (grid) => grid.map((r) => r.map((v) => (/[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v)).join(',')).join('\n');
@@ -44563,11 +44566,12 @@ test('PT1: the Primary Medicaid export converts with PT1a\'s one converter — i
   const r = hJ(c.insPayorFromSource_(PT1_MCD));
   assert.deepStrictEqual(r.grid[0], ['Insurance', 'Waystar Reference #', 'Network Status',
     'If This Payor Active Secondary, Can we Accept an Order with a 30% + Co-insurance primary when we are INN with  Primary',
-    'Qualification Process', 'Reimbursement Status', 'K0800', 'K0801 (285-325 lbs)', 'K0814', 'K0816/K0823 (Up to 285 lbs)', 'K0842 (Up to 435 lbs)', 'Last Update']);
+    'Qualification Process', 'Reimbursement Status', 'Scooter: K0800', 'Scooter: K0801 (285-325 lbs)', 'Power Chair: K0814', 'Power Chair: K0816/K0823 (Up to 285 lbs)', 'Power Chair: K0842 (Up to 435 lbs)', 'Last Update'],
+    'PT4: row 1\'s categories cover every code column here, so each code carries its item');
   assert.deepStrictEqual(r.key, { X: 'Yes', NO: 'No', Z: 'Hawaii Only', Try: 'Create account and insurance team will verify' }, 'the sheet\'s own key, Try included');
   assert.ok(r.changes.some((x) => /"Out-of-Network" → "Network Status" \(its cells are the network status\)/.test(x)), r.changes.join('\n'));
   assert.ok(r.changes.some((x) => /"Try= Create account and insurance team will verify" is the key, not data — dropped with its 1 filled cell/.test(x)));
-  const row = r.grid[2], at = (h) => row[r.grid[0].indexOf(h)];
+  const row = r.grid[2], at = (h) => row[r.grid[0].findIndex((x) => x === h || x.endsWith(': ' + h))];
   assert.strictEqual(at('K0814'), 'Create account and insurance team will verify (Try)', 'a cell that IS the key\'s "Try" reads its meaning');
   assert.strictEqual(at('K0816/K0823 (Up to 285 lbs)'), 'TRY', 'the sheet\'s TRY (another spelling) is left exactly as it is');
   assert.strictEqual(at('K0842 (Up to 435 lbs)'), 'Hawaii Only (Z)');
@@ -44591,7 +44595,7 @@ function pt1SearchCtx_(tabs, rawNotes) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
     getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
   ['hcpcsParse_', 'insNameCodeDetail_', 'insPayorRowObj_', 'insPayorCatchAll_', 'insPayorTables_', 'insPayorNotesParse_', 'insPayorNotes_',
-    'insPayorNameKey_', 'insPayorCrossDiff_', 'searchInsurancePayors']
+    'insPayorNameKey_', 'insPayorCrossDiff_', 'insCodeGroupSplit_', 'insPayorSlotOf_', 'searchInsurancePayors']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return ctx;
 }
@@ -44607,8 +44611,8 @@ test('PT1: searchInsurancePayors searches every payor table as ONE ranking, tags
     'ONE ranking across the tables — an exact name in either table outranks a partial one; a tie keeps the tables\' order; the non-payor tab is never searched');
   assert.strictEqual(r.total, 4);
   assert.deepStrictEqual(r.tables, [
-    { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', legend: { X: 'Yes' }, noteError: '' },
-    { key: 'MedicaidPayors', label: 'Primary Medicaid', note: 'Medicaid rule', legend: { Try: 'Create account' }, noteError: '' }],
+    { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', legend: { X: 'Yes' }, noteError: '', hasStatus: true },
+    { key: 'MedicaidPayors', label: 'Primary Medicaid', note: 'Medicaid rule', legend: { Try: 'Create account' }, noteError: '', hasStatus: true }],
     'each payor table (never another allowlisted table) with its note and sheet key, in configured order');
   r = hJ(c.searchInsurancePayors('molina'));
   assert.deepStrictEqual(r.matches.map((m) => m.table), ['MedicaidPayors'], 'a plan only Medicaid lists is found there');
@@ -44895,6 +44899,141 @@ test('PT3: searchInsurancePayors says on a matched plan where the SAME plan in a
   c.INS_PAYOR_ALSO_MAX = 1;
   r = hJ(c.searchInsurancePayors('magnolia'));
   assert.strictEqual(r.matches.filter((m) => m.alsoIn).length, 1, 'the other-table reads stop at INS_PAYOR_ALSO_MAX');
+});
+
+// ── PT4 (operator 2026-11-10): the Manual Mobility items sheet — categories, the key below the table, value tidy ──
+console.log('\nOperator round 2026-11-10 — PT4 (Manual Mobility items: categories, the key below the table, value tidy)');
+// The Manual Mobility sheet in miniature, over its real cell strings: a title in
+// A1, categories on row 1, multi-line code headers, a "BAV" pair of chairs, the
+// mistyped E1930, a person's exception, misspellings, a multi-line value, then a
+// blank row and the key (with arrows, and one row without) beside the notes.
+const PT4_MM = (() => {
+  const W = 12;
+  const R = (cells) => pt2Row_(W, cells);
+  return [
+    R({ 0: 'Payor/HCPCS\nPTs primary ins', 1: 'Wheelchair', 4: 'Walker', 6: 'Nebulizer Supplies Only', 7: ' Home Stationary Oxygen Concentrator' }),
+    R({ 1: 'E1038 \n(Transport Chair)', 2: 'K0001 w/ E1226', 3: 'K0006 w/ E1226 (22")\n(K0007 BAV K0006)', 4: 'E0143 & E0156', 5: 'E0135', 6: 'Any singular supply code - i.e. A7003, A7004, A7013, A7015', 7: 'E1930' }),
+    R({ 0: 'Medicare', 1: 'No', 2: 'Yes', 3: 'Yes - DFW, SA, Austin', 4: 'MO', 5: 'Yes - Delivery Only', 6: "Need Nikunj's Exception", 7: 'Yes - DFW Delivery Only' }),
+    R({ 0: 'United Healthcare', 1: 'No', 2: 'Covered Under MA Plan (Only)\nDFW ONLY', 3: 'OOP Unless Priority Refferal', 4: 'Yes - Only if patience asks us or faclity', 5: 'NPC', 6: "Need Nikunj's Exception", 7: 'No' }),
+    R({ 0: 'VNS Health UMS (OON)', 1: 'No', 2: 'No' }),
+    R({}),
+    R({ 2: 'Branch to Delivery Locations (Can deliver beyond an hour for priority referrals)', 8: 'MO', 10: '-->', 11: 'Medicaid Only' }),
+    R({ 8: 'Yes', 10: '-->', 11: 'We can process' }),
+    R({ 2: 'Dallas-Fort Worth, TX (Irving, Texas)', 8: 'No', 10: '-->', 11: 'Do not process' }),
+    R({ 2: 'Austin/San Antonio (Must be a Terri Referral, 1hr from SanMarcos Radius or Sup Approved)', 8: 'OOP', 10: '-->', 11: 'OOP Only' }),
+    R({ 8: 'MO/OOP', 11: "Not a medicare covered item but covered by Medicaid Plans we're INN with. If no Medicaid then have to pay OOP" }),
+    R({ 8: 'NPC/NRC', 10: '-->', 11: 'No previous claims' }),
+  ];
+})();
+
+test('PT4: the Manual Mobility export converts — row 1\'s categories kept with each code, multi-line headers and cells read as one line, the key BELOW the table read as the sheet key and the notes beside it as the standing note, A1\'s title never a note, "BAV" spelled out and that two-chair column kept out of the pricing join, E1930 read as E1390, a person\'s exception named by role, the misspellings corrected — every step listed (driven over its real cell strings)', () => {
+  const c = pt1aCtx_();
+  const r = hJ(c.insPayorFromSource_(PT4_MM));
+  assert.deepStrictEqual(r.grid[0], ['Insurance', 'Wheelchair: E1038 (Transport Chair)', 'Wheelchair: K0001 (w/ E1226)',
+    'Wheelchair: K0006 w/ E1226 (22") (K0007 billed as K0006)', 'Walker: E0143 & E0156', 'Walker: E0135',
+    'Nebulizer Supplies Only: Any singular supply code - i.e. A7003, A7004, A7013, A7015', 'Home Stationary Oxygen Concentrator: E1390']);
+  assert.deepStrictEqual(r.grid.slice(1).map((x) => x[0]), ['Medicare', 'United Healthcare', 'VNS Health UMS (OON)'], 'the payors only — the key and its notes are not plans');
+  assert.deepStrictEqual(r.grid[1].slice(1), ['No', 'Yes', 'Yes - DFW, SA, Austin', 'MO', 'Yes - Delivery Only', 'Needs a supervisor exception', 'Yes - DFW Delivery Only'],
+    'the sheet\'s own words kept — "Yes" is never rewritten to the key\'s "We can process"');
+  assert.deepStrictEqual(r.grid[2].slice(1), ['No', 'Covered Under MA Plan (Only) DFW ONLY', 'OOP Unless Priority Referral',
+    'Yes - Only if patient asks us or facility', 'NPC', 'Needs a supervisor exception', 'No']);
+  assert.deepStrictEqual(r.key, { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only',
+    'MO/OOP': "Not a medicare covered item but covered by Medicaid Plans we're INN with. If no Medicaid then have to pay OOP", 'NPC/NRC': 'No previous claims' },
+    'the key below the table, the arrowless MO/OOP row included');
+  assert.strictEqual(r.note, "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): " +
+    'Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio (Must be a Terri Referral, 1hr from San Marcos Radius or Sup Approved)');
+  const ch = r.changes.join('\n');
+  [/A1 "Payor\/HCPCS PTs primary ins" is the sheet's title, not a rule/, /The key below the table is the sheet's key: MO = Medicaid Only; Yes = We can process/,
+    /The notes below the table are part of the standing note: Branch to Delivery Locations/,
+    /Row 1's item categories are kept with their codes: Wheelchair, Walker, Nebulizer Supplies Only, Home Stationary Oxygen Concentrator\./,
+    /Header "K0006 w\/ E1226 \(22"\) \(K0007 BAV K0006\)": "BAV" reads "billed as"\./, /Header "E1930" → "E1390" \(E1390 is the oxygen concentrator/,
+    /"Need Nikunj's Exception" → "Needs a supervisor exception" \(named by role; 2 cell\(s\)\)/, /"OOP Unless Priority Refferal" → "OOP Unless Priority Referral" \(a misspelling; 1 cell\(s\)\)/,
+    /"Yes - Only if patience asks us or faclity" → "Yes - Only if patient asks us or facility" \(a misspelling; 1 cell\(s\)\)/, /1 blank row\(s\) dropped/]
+    .forEach((re) => assert.ok(re.test(ch), re + '\n' + ch));
+  assert.ok(!/no plan name dropped/.test(ch), 'the rows of the key are not reported as nameless plans');
+  const o = hJ(c.insPayorRowObj_(r.grid[0], r.grid[1]));
+  assert.deepStrictEqual(o.details.map((d) => d.group + ' | ' + d.label), ['Wheelchair | E1038 (Transport Chair)', 'Wheelchair | K0001 (w/ E1226)',
+    'Wheelchair | K0006 w/ E1226 (22") (K0007 billed as K0006)', 'Walker | E0143 & E0156', 'Walker | E0135',
+    'Nebulizer Supplies Only | Any singular supply code - i.e. A7003, A7004, A7013, A7015', 'Home Stationary Oxygen Concentrator | E1390'], 'the reader gives each detail its category and its code');
+  assert.deepStrictEqual(hJ(c.hcpcsParse_(o.details[1].label)).tokens, ['K0001'], 'a chair with an accessory joins as the chair');
+  assert.ok(!hJ(c.hcpcsParse_(o.details[2].label)).certain, 'a column naming two chairs joins as neither');
+  assert.ok(!o.networkStatus, 'the sheet has no network status');
+});
+
+test('PT4: row 1\'s categories are kept only when they cover EVERY code column — a heading starting a column late, or a code after a non-code column, keeps none and says so; the PMD sheets\' Scooter / Power Chair / Complex Rehab ride the same rule (driven)', () => {
+  const c = pt1aCtx_();
+  const W = 7;
+  const head2 = pt2Row_(W, { 2: 'K0800', 3: 'K0801', 4: 'K0814', 5: 'K0816', 6: 'K0821' });
+  const rows = [pt2Row_(W, { 0: 'Plan A', 1: 'In-Network', 2: 'X', 3: 'X', 4: 'X', 5: 'X', 6: 'X' }), pt2Row_(W, { 0: 'Plan B', 1: 'OON', 2: 'NO', 3: 'NO', 4: 'NO', 5: 'NO', 6: 'NO' })];
+  const full = hJ(c.insPayorFromSource_([pt2Row_(W, { 0: 'rule', 1: 'Network Status', 2: 'Scooter', 4: 'Power Chair' }), head2].concat(rows)));
+  assert.deepStrictEqual(full.grid[0].slice(2), ['Scooter: K0800', 'Scooter: K0801', 'Power Chair: K0814', 'Power Chair: K0816', 'Power Chair: K0821'], 'full cover: each code carries its item');
+  const late = hJ(c.insPayorFromSource_([pt2Row_(W, { 0: 'rule', 1: 'Network Status', 4: 'Power Chair (K0816)' }), head2].concat(rows)));
+  assert.deepStrictEqual(late.grid[0].slice(2), ['K0800', 'K0801', 'K0814', 'K0816', 'K0821'], 'a heading that starts late (Medicare / MA\'s) files nothing');
+  assert.ok(late.changes.some((x) => /Row 1 names categories over only some code columns \(Power Chair \(K0816\)\) — not kept, so no code is filed under the wrong item\./.test(x)), late.changes.join('\n'));
+  const head2b = pt2Row_(W, { 2: 'K0800', 3: 'K0801', 4: 'Notes', 5: 'K0816', 6: 'K0821' });
+  const broken = hJ(c.insPayorFromSource_([pt2Row_(W, { 0: 'rule', 1: 'Network Status', 2: 'Scooter' }), head2b].concat(rows)));
+  assert.ok(broken.grid[0].every((h) => !/^Scooter: K0816/.test(h)), 'a non-code column ends the category; the codes after it would have none, so none is kept');
+});
+
+test('PT4: insPayorBelowKey_ reads the key under the table by its arrow cells (a same-column row without one too) and keeps the other cells as notes; insPayorValueTidy_ corrects the obvious misspellings and names an exception by role; insCodeGroupSplit_ splits "Category: code"; insCodeHeaderClean_ keeps a header naming a second chair unreadable (driven)', () => {
+  const c = pt1aCtx_();
+  const W = 6;
+  const body = [pt2Row_(W, { 0: 'Payor A', 1: 'Yes' }), pt2Row_(W, {}),
+    pt2Row_(W, { 1: 'Locations:', 3: 'MO', 4: '-->', 5: 'Medicaid Only' }), pt2Row_(W, { 1: 'DFW', 3: 'Z', 4: '--->', 5: 'Hawaii Only' }),
+    pt2Row_(W, { 3: 'MO/OOP', 5: 'Covered by Medicaid, else OOP' })];
+  const k = hJ(c.insPayorBelowKey_(body, 0));
+  assert.deepStrictEqual(k.key, { MO: 'Medicaid Only', Z: 'Hawaii Only', 'MO/OOP': 'Covered by Medicaid, else OOP' });
+  assert.deepStrictEqual(k.notes, ['Locations:', 'DFW']);
+  assert.deepStrictEqual(k.rows, [2, 3, 4], 'the rows the key took — the payor and the blank row are not among them');
+  assert.deepStrictEqual(hJ(c.insPayorBelowKey_([pt2Row_(W, { 0: 'Payor A', 1: 'Yes' }), pt2Row_(W, { 3: 'MO', 5: 'Medicaid Only' })], 0)).rows, [], 'no arrow anywhere: no key below the table (a PMD sheet\'s stray cells stay what they were)');
+  [["Need Nikunj's Exception", 'Needs a supervisor exception', 'named by role'], ['needs Terri’s exception', 'Needs a supervisor exception', 'named by role'],
+    ['DFW Only , OOP Unless Priority Refferal', 'DFW Only , OOP Unless Priority Referral', 'a misspelling'], ['referal', 'referral', 'a misspelling'],
+    ['Yes - Only if patience asks us or faclity', 'Yes - Only if patient asks us or facility', 'a misspelling'], ['1hr from SanMarcos', '1hr from San Marcos', 'a misspelling'],
+    ['Yes - Delivery Only', 'Yes - Delivery Only', ''], ['Patience is needed', 'Patience is needed', '']]
+    .forEach(([v, text, why]) => assert.deepStrictEqual(hJ(c.insPayorValueTidy_(v)), { text, why }, v));
+  [['Walker: E0143 & E0156', 'Walker', 'E0143 & E0156'], ['Power Chair (K0816): K0821', 'Power Chair (K0816)', 'K0821'], ['K0821 (Up to 285)', '', 'K0821 (Up to 285)'],
+    ['Network Status', '', 'Network Status'], ['Note: see the key', '', 'Note: see the key'], ['K0800: scooter', '', 'K0800: scooter']]
+    .forEach(([h, group, label]) => assert.deepStrictEqual(hJ(c.insCodeGroupSplit_(h)), { group, label }, h));
+  assert.strictEqual(c.insCodeHeaderClean_('K0006 w/ E1226 (22") (K0007 billed as K0006)'), 'K0006 w/ E1226 (22") (K0007 billed as K0006)', 'a second chair: left unreadable');
+  assert.strictEqual(c.insCodeHeaderClean_('K0001 w/ E1226'), 'K0001 (w/ E1226)', 'an accessory: the chair, with the accessory in its note');
+  assert.strictEqual(c.insCodeHeaderClean_('K0825 Up to 435 lbs'), 'K0825 (Up to 435 lbs)', 'PT1a\'s cleanup unchanged');
+});
+
+test('PT4: Manual Mobility items is an allowlisted payor table through the one converter; the search says which tables have a network status, so a card from one without draws no "not recorded" pill; the code fix map is the operator\'s (driven + source)', () => {
+  const spec = (serverSource().match(/  ManualMobilityPayors: \{[\s\S]*?\n  \},/) || [''])[0];
+  assert.ok(/tab: 'ManualMobilityPayors'/.test(spec) && /sourceFormat: 'payorAcceptance'/.test(spec) && /payorTable: 'Manual Mobility items'/.test(spec), spec);
+  assert.ok(/E1930: \{ to: 'E1390'/.test(serverSource()), 'E1930 → E1390, as confirmed');
+  const MA = [['Insurance', 'Network Status', 'K0816'], ['Aetna Medicare', 'In-Network', 'X']];
+  const MM = [['Insurance', 'Walker: E0143', 'BPM: A4670'], ['Aetna', 'Yes', 'OOP Only']];
+  const c = pt1SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MM }, null);
+  const r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual(r.tables.map((t) => t.key + ':' + t.hasStatus), ['InsurancePayors:true', 'MedicaidPayors:false'], 'a table with no network status column says so');
+  const mm = r.matches.find((m) => m.table === 'MedicaidPayors');
+  assert.deepStrictEqual(mm.details.map((d) => d.group + ':' + d.label + '=' + d.value), ['Walker:E0143=Yes', 'BPM:A4670=OOP Only'], 'the card carries each code\'s item');
+});
+
+test('PT4: the legend reads the Manual Mobility sheet\'s words — a qualified Yes, delivery only, DFW / SA / Austin, OOP, MO, MO/OOP, priority referral, Texas only, waiver, MA plan, on request, NPC/NRC and a supervisor exception amber, "NO (…)" red — each coloured AND explained by its own rule (driven over the client\'s one vocabulary)', () => {
+  const kb = extractScript('kb/script_kb.html');
+  const sb = vm.createContext({});
+  vm.runInContext(kb.slice(kb.indexOf('function insWord_('), kb.indexOf('function insTermsIn_(')) + extractFunction('kb/script_kb.html', 'insTermsIn_') +
+    extractFunction('kb/script_kb.html', 'insToneCls_'), sb);
+  [['Yes - Delivery Only', 'warn', 'Delivery only', /shipping cost and profitability/], ['Yes - DFW, SA, Austin', 'warn', 'DFW / SA / Austin', /Dallas-Fort Worth/],
+    ['DFW ONLY', 'warn', 'DFW / SA / Austin', /Austin\/San Antonio/], ['OOP Only', 'warn', 'OOP / OOP Only', /patient pays/], ['OOP', 'warn', 'OOP / OOP Only', /Out of pocket/],
+    ['MO', 'warn', 'MO', /Medicaid only/], ['MO/OOP', 'warn', 'MO/OOP', /Medicaid plans we.re in network with/],
+    ['Priority Referral Only', 'warn', 'Priority referral', /some facilities get exceptions/], ['OOP Unless Priority Referral', 'warn', 'Priority referral', /priority source/],
+    ['Yes - Texas Only', 'warn', 'Texas only', /in Texas/], ['Yes- Only w/ Waiver plan (Texas Only)', 'warn', 'Texas only', /Texas/],
+    ['Covered Under MA Plan (Only)', 'warn', 'Covered under an MA plan', /Medicare Advantage/], ['Yes - Only if patient asks us or facility', 'warn', 'On request', /asks us/],
+    ['NPC', 'warn', 'NPC / NRC', /may process/], ['NRC', 'warn', 'NPC / NRC', /No previous claims/], ['Needs a supervisor exception', 'warn', 'Needs a supervisor exception', /supervisor/],
+    ['Yes, if Branch or Driver is located within 100 miles (Y)', 'warn', 'Yes, with a condition', /condition written after Yes/],
+    ['NO ( Process E0144)', 'bad', 'Not Accepted / NO', /Don.t accept/], ['NO - K0837', 'bad', 'Not Accepted / NO', /Don.t accept/],
+    ['Yes', 'good', 'Accepted / X', /accept orders/], ['No', 'bad', 'Not Accepted / NO', /Don.t accept/]]
+    .forEach(([v, tone, term, why]) => {
+      assert.strictEqual(sb.insToneCls_(v), tone, v + ' tone');
+      const t = sb.insTermsIn_(v);
+      assert.ok(t.length && t[0].term === term, v + ' is explained by ' + term + ', got ' + (t[0] && t[0].term));
+      assert.match(t[0].why, why);
+    });
+  ['Motor scooter', 'Momentum', 'Hoop', 'Yesterday plan', 'Waivers pending review'].forEach((v) => assert.ok(!['MO', 'OOP / OOP Only', 'Yes, with a condition'].includes((sb.insTermsIn_(v)[0] || {}).term), v + ' — a word that merely contains the letters is not the term'));
 });
 
 console.log('\nOperator round 2026-11-05 — P1 (the pay-week timesheet reminder)');
