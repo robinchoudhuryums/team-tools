@@ -2233,6 +2233,121 @@ test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, off
   assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');
 });
 
+test('AC1 DOM (operator 2026-11-11): the shell counts clicks and keystrokes (a held key once) and sends them with the ping; a pause flushes the rest through recordActivityCounts; a failed send puts them back for the next', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  h.run.drain();
+  const sum = (p) => (p && p.b || []).reduce((a, e) => [a[0] + e[1], a[1] + e[2]], [0, 0]);
+  const key = (repeat) => h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { bubbles: true, repeat: !!repeat }));
+  const click = () => h.document.body.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  click();
+  const ping = h.run.pending('recordPresence');
+  assert.strictEqual(ping.length, 1, 'the first gesture pings');
+  assert.deepStrictEqual(sum(ping[0].args[0]), [1, 0], 'and carries its own click');
+  assert.ok(ping[0].args[0].at > 0, 'with the computer\'s clock, so the server can correct it');
+  key(); key(); key(true); click();
+  assert.strictEqual(h.run.pending('recordPresence').length, 1, 'inside the gap: no second ping');
+  assert.deepStrictEqual(sum(h.read('actTake_()') || {}), [1, 2], 'but every gesture is counted — two presses (the repeat is not one), one click');
+  key(); key();
+  h.read('actFlush_')();   // what the pause timer runs
+  const fl = h.run.pending('recordActivityCounts');
+  assert.strictEqual(fl.length, 1, 'a pause sends what is held');
+  assert.deepStrictEqual(sum(fl[0].args[0]), [0, 2]);
+  assert.strictEqual(h.read('actTake_()'), null, 'and holds nothing after');
+  h.run.flushFailure(new Error('offline'), 'recordActivityCounts');
+  assert.deepStrictEqual(sum(h.read('ACT_COUNTS.b') && { b: Object.keys(h.read('ACT_COUNTS.b')).map((k) => [k].concat(h.read('ACT_COUNTS.b')[k])) }), [0, 2], 'a failed send puts its counts back');
+  h.read('PRESENCE').sentAt = Date.now() - h.read('PRESENCE_MIN_GAP_MS') - 1;
+  click();
+  assert.deepStrictEqual(sum(h.run.pending('recordPresence')[1].args[0]), [1, 2], 'the next ping carries them, with its own click');
+  h.read('actFlush_')();
+  assert.strictEqual(h.run.pending('recordActivityCounts').length, 0, 'nothing held, nothing sent');
+});
+
+test('AC1 DOM: Day Edit draws the day\'s clicks and keystrokes as bars, switches between 10 minutes and the hour with the focus kept, and a day recorded before levels is the on/off strip it was', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const today = h.read('_deDate'), tz = h.read('empTz')();
+  const level = new Array(144).fill(0); level[48] = 40; level[49] = 20; level[54] = 80;
+  const blocks = level.map((x) => (x ? 1 : 0));
+  h.run.flushSuccess({ days: [{ date: today, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess({ date: today, timezone: tz, blockMin: 10, gapMin: 10, pings: 3, first: '08:00', last: '09:40', blocks,
+    hasCounts: true, level, clicks: 35, keys: 105, activeMin: 30 }, 'managerGetDayActivity');
+  const panel = h.document.getElementById('de-act');
+  const fills = () => Array.from(panel.querySelectorAll('.de-act-strip.lvl .de-act-b > i')).map((i) => i.style.height);
+  assert.deepStrictEqual(fills(), ['50%', '25%', '100%'], 'three bars, each against the busiest');
+  assert.match(panel.textContent, /35 clicks, 105 keystrokes/);
+  assert.match(panel.textContent, /never what was typed/);
+  const hourBtn = panel.querySelector('[data-de-act-scale="hour"]');
+  hourBtn.focus();
+  hourBtn.click();
+  assert.deepStrictEqual(fills(), ['75%', '100%'], 'per hour: 8:00 holds 60, 9:00 holds 80');
+  assert.strictEqual(h.document.activeElement && h.document.activeElement.getAttribute('data-de-act-scale'), 'hour', 'the rebuilt panel keeps the keyboard where it was (g141)');
+  assert.strictEqual(panel.querySelector('[data-de-act-scale="hour"]').getAttribute('aria-pressed'), 'true');
+  panel.querySelector('[data-de-act-scale="block"]').click();
+  assert.strictEqual(fills().length, 3, 'and back');
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  h2.run.flushSuccess({ days: [{ date: h2.read('_deDate'), breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h2.run.flushSuccess({ date: h2.read('_deDate'), timezone: tz, blockMin: 10, gapMin: 10, pings: 3, first: '08:00', last: '09:40', blocks,
+    hasCounts: false, level: new Array(144).fill(0), clicks: 0, keys: 0, activeMin: 30 }, 'managerGetDayActivity');
+  const p2 = h2.document.getElementById('de-act');
+  assert.ok(!p2.querySelector('.lvl, [data-de-act-scale]') && p2.querySelectorAll('.de-act-b.on').length === 3, 'no counts: on/off, no switch');
+});
+
+test('AC1 DOM: the Team Punches day table fills its App activity column IN PLACE when the read answers (the calendar is not rebuilt, so a focused day keeps focus); a past day is read once; a failed read is said under the table and never cached', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getTeamCalendar', () => ({ month: '2026-09', rosterCount: 2, adjustWindowDays: 30, holidays: {},
+    days: { '2026-09-16': { reps: [{ id: 'E1', name: 'Ana Reyes', clockIn: '08:00:00', clockOut: '17:00:00', hours: 8, punchCount: 2 },
+      { id: 'E2', name: '<img src=x>', clockIn: '08:30:00', clockOut: '16:00:00', hours: 7, punchCount: 2 }], off: [] },
+      '2026-09-17': { reps: [{ id: 'E1', name: 'Ana Reyes', clockIn: '08:00:00', clockOut: '17:00:00', hours: 8, punchCount: 2 }], off: [] } } }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick();
+  // Manage Time's own enter read today's activity; answer it before moving to September.
+  h.run.pending('managerGetTeamActivity').forEach(() => h.run.flushSuccess({ date: 'today', blockMin: 10, keptFrom: '', reps: {} }, 'managerGetTeamActivity'));
+  h.read('TEAMCAL').month = '2026-09';
+  h.read('TEAMCAL').selDate = '2026-09-16';
+  h.read('tcalFetch_')('2026-09');
+  h.flushTimers();
+  const cellOf = (id) => h.document.querySelector('[data-tcal-act="' + id + '"]');
+  assert.ok(cellOf('E1') && /…/.test(cellOf('E1').textContent), 'a cell per rep, "…" while the read is out');
+  const calls = h.run.pending('managerGetTeamActivity');
+  assert.strictEqual(calls.length, 1, 'ONE read for the day');
+  assert.strictEqual(calls[0].args[0], '2026-09-16');
+  const day16 = h.document.querySelector('.cal-cell[data-date="2026-09-16"]');
+  day16.focus();
+  const hrs = new Array(24).fill(0); hrs[8] = 50; hrs[9] = 100; hrs[10] = 25;
+  h.run.flushSuccess({ date: '2026-09-16', blockMin: 10, keptFrom: '2026-09-01', reps: {
+    E1: { hours: hrs, hasCounts: true, clicks: 60, keys: 115, activeMin: 150, pings: 15, first: '08:00', last: '10:50' },
+    E2: { hours: new Array(24).fill(0), hasCounts: false, clicks: 0, keys: 0, activeMin: 0, pings: 0, first: '', last: '' } } }, 'managerGetTeamActivity');
+  assert.strictEqual(h.document.activeElement, day16, 'the calendar was not rebuilt — the focused day keeps focus');
+  assert.match(cellOf('E1').textContent, /175 clicks \+ keys/);
+  assert.strictEqual(cellOf('E1').querySelectorAll('.tcal-act-b').length, 8, 'an 8-hour shared range');
+  assert.match(cellOf('E1').querySelector('.tcal-act').getAttribute('aria-label'), /60 clicks, 115 keystrokes/);
+  assert.strictEqual(cellOf('E2').textContent.trim(), '—', 'a rep with nothing is a dash');
+  assert.strictEqual(h.document.querySelectorAll('[data-tcal-act] img').length, 0, 'nothing a name carries is live');
+  assert.match(h.document.getElementById('tcal-act-note').textContent, /this app only.*Context, not a score\..*Bars run 8 AM–4 PM/);
+  // A past day is final: selecting it again reads nothing.
+  h.read('tcalSelect_')('2026-09-17');
+  h.read('tcalSelect_')('2026-09-16');
+  assert.strictEqual(h.run.pending('managerGetTeamActivity').filter((c) => c.args[0] === '2026-09-16').length, 0, 'the 16th is served from the session');
+  assert.match(cellOf('E1').textContent, /175 clicks/);
+  // The 17th's read fails: said, and not cached.
+  h.read('tcalSelect_')('2026-09-17');
+  h.run.pending('managerGetTeamActivity').forEach(() => h.run.flushFailure(new Error('quota'), 'managerGetTeamActivity'));   // the earlier 17th read too
+  assert.match(h.document.getElementById('tcal-act-note').textContent, /could not be read for this day/);
+  assert.strictEqual(cellOf('E1').textContent.trim(), '—');
+  h.read('tcalSelect_')('2026-09-16');
+  h.read('tcalSelect_')('2026-09-17');
+  assert.strictEqual(h.run.pending('managerGetTeamActivity').filter((c) => c.args[0] === '2026-09-17').length, 1, 'a failure is never cached — the next select reads again');
+});
+
 test('E2 DOM: an inferred punch is marked on the pay statement and in the team calendar', () => {
   const h = boot();
   const html = h.read('payStmtHtml_')({ period: { start: '2026-10-01', end: '2026-10-31', cycle: 'Monthly', offset: 0 }, days: [

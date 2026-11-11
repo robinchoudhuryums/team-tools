@@ -633,6 +633,9 @@ const SCENARIOS = [
   // the Inferred tag is on camera beside the Out suggestion still offered).
   ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
   ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
+  // AC1 (operator 2026-11-11): the same day's clicks and keystrokes per HOUR.
+  ['dayedit-activity-hourly-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '',
+    DAYEDIT_ACTIVITY + "; setTimeout(function(){ var b=document.querySelector('#de-act [data-de-act-scale=\"hour\"]'); if (b) b.click(); }, 900)"],
   // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
   // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
   // camera; the phone width is where the radio labels wrap.

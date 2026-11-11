@@ -997,7 +997,17 @@ const IDLE_ALERT_MIN = 30;
 // Clock In / Clock Out. Ids and times only — no page, no content. Rows past
 // ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
 const ACTIVITY_LOG_TAB = 'ActivityLog';
-const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
+// AC1 (operator 2026-11-11): a row also carries how many clicks and
+// keystrokes fell in each 10-minute block since the window's last send —
+// COUNTS ONLY, never what was typed or clicked ("29123456c3k12", the block
+// number since the epoch). Kind is '' for a ping (a gesture: presence and a
+// first/last time) and 'counts' for the flush a window sends after a pause,
+// which stamps no presence and is never read as a ping.
+const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms', 'Counts', 'Kind'];
+const ACTIVITY_COUNTS_KIND = 'counts';
+const ACTIVITY_COUNTS_MAX_ENTRIES = 48;     // one send's blocks — 8 hours, far past any real gap
+const ACTIVITY_COUNTS_MAX_PER_BLOCK = 5000; // a block's clicks (or keys) past this are not a person
+const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this when it arrives is dropped (a laptop asleep overnight)
 // Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
 // each night every FINISHED day's pings become ONE ActivitySummary row per rep
 // (the day's 10-minute map included, so Day Edit draws it unchanged), kept
@@ -1008,8 +1018,10 @@ const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
 const ACTIVITY_LOG_DAYS = 14;
 const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
 const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';
-const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt'];
-const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8];   // g144: a date, an "08:05" and the block string read back as written
+// AC1: Counts is the day's clicks and keystrokes per block ("48c12k40", the
+// block of the rep's day); a row condensed before AC1 has none, and draws on/off.
+const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt', 'Counts'];
+const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8, 9];   // g144: a date, an "08:05" and the block string read back as written
 const ACTIVITY_BLOCK_MIN = 10;
 // 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
 // radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,

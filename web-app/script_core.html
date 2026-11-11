@@ -2464,16 +2464,66 @@ function tzMismatchCheck_() {
 // admin IS the one interacting, under their own id.
 var PRESENCE_MIN_GAP_MS = 10 * 60 * 1000;
 var PRESENCE = { sentAt: 0, bound: false };
-function presenceOnGesture_() {
+// AC1 (operator 2026-11-11) — activity LEVEL. The same two gestures are also
+// COUNTED, per 10-minute block: a pointerdown is a click, a keydown a
+// keystroke (a held key's repeats are one). Only the count — the key pressed
+// and the thing clicked are never read. The counts ride the next presence
+// ping; a window whose rep has PAUSED for ACT_FLUSH_IDLE_MS sends what it has
+// through recordActivityCounts, which stamps no presence, so the minutes
+// before a break or the end of the day are kept. A send that fails puts its
+// counts back for the next one; counts still held when the window closes are
+// lost (said on the Day Edit card).
+var ACT_BLOCK_MS = 10 * 60 * 1000;            // = the server's ACTIVITY_BLOCK_MIN (pinned)
+var ACT_FLUSH_IDLE_MS = 2 * 60 * 1000;
+var ACT_COUNTS = { b: {}, t: null };
+function actCount_(e) {
+  if (!e || (e.type === 'keydown' && e.repeat)) return;
+  var blk = Math.floor(Date.now() / ACT_BLOCK_MS);
+  var cur = ACT_COUNTS.b[blk] || (ACT_COUNTS.b[blk] = [0, 0]);
+  if (e.type === 'keydown') cur[1]++; else cur[0]++;
+  if (ACT_COUNTS.t) clearTimeout(ACT_COUNTS.t);
+  ACT_COUNTS.t = setTimeout(actFlush_, ACT_FLUSH_IDLE_MS);
+}
+/** The counts held, as the server reads them ({at, b: [[block, clicks, keys]]}),
+ *  emptied — or null when there are none. `at` lets the server correct a
+ *  computer clock that is off. */
+function actTake_() {
+  var ks = Object.keys(ACT_COUNTS.b);
+  if (!ks.length) return null;
+  var out = { at: Date.now(), b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
+  ACT_COUNTS.b = {};
+  return out;
+}
+function actRestore_(p) {
+  if (!p || !p.b) return;
+  p.b.forEach(function (e) {
+    var cur = ACT_COUNTS.b[e[0]] || (ACT_COUNTS.b[e[0]] = [0, 0]);
+    cur[0] += e[1]; cur[1] += e[2];
+  });
+}
+function actFlush_() {
+  ACT_COUNTS.t = null;
   try {
+    var p = actTake_();
+    if (!p) return;
+    google.script.run
+      .withSuccessHandler(function () {})
+      .withFailureHandler(function () { actRestore_(p); })
+      .recordActivityCounts(p);
+  } catch (e) { /* never break input handling */ }
+}
+function presenceOnGesture_(e) {
+  try {
+    actCount_(e);
     var now = Date.now();
     if (now - PRESENCE.sentAt < PRESENCE_MIN_GAP_MS) return;
     PRESENCE.sentAt = now;                         // stamp BEFORE the send — a slow/failed RPC never double-fires
+    var p = actTake_();
     google.script.run
       .withSuccessHandler(function () {})
-      .withFailureHandler(function () {})
-      .recordPresence();
-  } catch (e) { /* never break input handling */ }
+      .withFailureHandler(function () { actRestore_(p); })   // the stamp stays; only the counts wait for the next send
+      .recordPresence(p);
+  } catch (err) { /* never break input handling */ }
 }
 function presenceBind_() {
   if (PRESENCE.bound) return;                     // idempotent (the shell may re-render)

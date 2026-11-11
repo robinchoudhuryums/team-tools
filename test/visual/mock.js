@@ -2020,10 +2020,31 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // E2 (operator 2026-10-28): Day Edit's app-activity read — a FUNCTION of
     // the date (F14). Keys mirror managerGetDayActivity's return (INV-185):
     // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
+    // AC1 (operator 2026-11-11): with each block's clicks + keystrokes — a
+    // busier morning, the lunch gap empty, a quiet stretch mid-afternoon.
     managerGetDayActivity: function (empId, date) {
-      var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
+      var blocks = [], level = [], clicks = 0, keys = 0;
+      for (var b = 0; b < 144; b++) {
+        var on = (b >= 47 && b <= 102 && (b < 72 || b > 75));
+        blocks.push(on ? 1 : 0);
+        var c = on && (b < 88 || b > 92) ? 6 + (b * 7) % 23 : 0, k = on && (b < 88 || b > 92) ? (b < 72 ? 40 + (b * 13) % 60 : 15 + (b * 11) % 35) : 0;
+        level.push(c + k); clicks += c; keys += k;
+      }
       return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
-        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
+        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks,
+        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10 };
+    },
+    // AC1: the team day table's read — keys mirror activityHourly_'s return
+    // (INV-185). Three reps active (one only on/off, a day before levels),
+    // Leo Kim with nothing.
+    managerGetTeamActivity: function (date) {
+      var hrs = function (from, to, base) { var h = []; for (var i = 0; i < 24; i++) h.push(i >= from && i < to && i !== 12 ? base + (i * 37) % 90 : 0); return h; };
+      return { date: date, blockMin: 10, keptFrom: '2026-09-01', reps: {
+        'E-1042': { hours: hrs(8, 17, 120), hasCounts: true, clicks: 640, keys: 2210, activeMin: 470, pings: 48, first: '08:01', last: '16:58' },
+        'E-1077': { hours: hrs(8, 17, 60), hasCounts: true, clicks: 410, keys: 980, activeMin: 430, pings: 44, first: '07:57', last: '16:55' },
+        'E-1088': { hours: [0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 6, 5, 0, 4, 6, 6, 2, 0, 0, 0, 0, 0, 0, 0], hasCounts: false, clicks: 0, keys: 0, activeMin: 440, pings: 40, first: '08:31', last: '16:20' },
+        'E-1090': { hours: new Array(24).fill(0), hasCounts: false, clicks: 0, keys: 0, activeMin: 0, pings: 0, first: '', last: '' },
+      } };
     },
     managerGetPendingAdjustments: { requests: [
       { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
@@ -2241,6 +2262,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     recordClientError: { success: true },
     recordViewEnter: { success: true },
     recordPresence: { success: true },   // note 10 — the shell's gesture beacon
+    recordActivityCounts: { success: true },   // AC1 — the pause flush
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },

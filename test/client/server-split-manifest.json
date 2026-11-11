@@ -4272,6 +4272,39 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "AC1: activity counts, team activity",
+   "added": [
+    "ACTIVITY_COUNTS_KIND",
+    "ACTIVITY_COUNTS_MAX_AGE_MS",
+    "ACTIVITY_COUNTS_MAX_ENTRIES",
+    "ACTIVITY_COUNTS_MAX_PER_BLOCK",
+    "activityCountsClean_",
+    "activityCountsDecode_",
+    "activityCountsEncode_",
+    "activityDayCountsDecode_",
+    "activityDayCountsEncode_",
+    "activityDaysFor_",
+    "activityHealHeader_",
+    "activityHourly_",
+    "managerGetTeamActivity",
+    "recordActivityCounts"
+   ],
+   "removed": [],
+   "changed": [
+    "ACTIVITY_LOG_HEADERS",
+    "ACTIVITY_SUMMARY_HEADERS",
+    "ACTIVITY_SUMMARY_TEXT_IDX",
+    "activityCondense_",
+    "activityDayView_",
+    "activityLogAppend_",
+    "activityLogCondenseAndPurge_",
+    "managerGetDayActivity",
+    "recordPresence"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4301,6 +4334,26 @@
    "kind": "const",
    "sha": "9c7cc886b0ad0d18"
   },
+  "ACTIVITY_COUNTS_KIND": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4e7b0eea74f31872"
+  },
+  "ACTIVITY_COUNTS_MAX_AGE_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5e69bc022ca4e8c7"
+  },
+  "ACTIVITY_COUNTS_MAX_ENTRIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "afd68c0a7f921a89"
+  },
+  "ACTIVITY_COUNTS_MAX_PER_BLOCK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e6755a685f081ca9"
+  },
   "ACTIVITY_LOG_DAYS": {
    "file": "00_config.js",
    "kind": "const",
@@ -4309,7 +4362,7 @@
   "ACTIVITY_LOG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e505c21fd4c7cd11"
+   "sha": "45efd2d405ba4fdf"
   },
   "ACTIVITY_LOG_PURGE_MAX_PER_RUN": {
    "file": "00_config.js",
@@ -4329,7 +4382,7 @@
   "ACTIVITY_SUMMARY_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a99621b3feebffc5"
+   "sha": "01f9bc8dcdcaeec1"
   },
   "ACTIVITY_SUMMARY_TAB": {
    "file": "00_config.js",
@@ -4339,7 +4392,7 @@
   "ACTIVITY_SUMMARY_TEXT_IDX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "f129a7ba9fe51ba0"
+   "sha": "e0f1aad4647d6a01"
   },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
@@ -7664,22 +7717,62 @@
   "activityCondense_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "20d6f5af281ea09a"
+   "sha": "e0dd8c784568076d"
+  },
+  "activityCountsClean_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "f6ba26b51f5ab0c0"
+  },
+  "activityCountsDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "955df3545171cbe3"
+  },
+  "activityCountsEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bd087e623fa5213c"
+  },
+  "activityDayCountsDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2d1be14fcd60c671"
+  },
+  "activityDayCountsEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9e24ed5af29487e3"
   },
   "activityDayView_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "03292fac00a86c3a"
+   "sha": "009df7b6fea94ee8"
+  },
+  "activityDaysFor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4951951cc1bca537"
+  },
+  "activityHealHeader_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4c60390b619412a0"
+  },
+  "activityHourly_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9ec41a2d3f566525"
   },
   "activityLogAppend_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ddb5653e1d3ad4cd"
+   "sha": "9e3f53e33a848503"
   },
   "activityLogCondenseAndPurge_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c81c48ab995f5462"
+   "sha": "9449b892e525a3a2"
   },
   "activityLowerBound_": {
    "file": "20_timeclock.js",
@@ -12239,7 +12332,7 @@
   "managerGetDayActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f9fa108ab87b77c8"
+   "sha": "74ed23dc1b6944da"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -12260,6 +12353,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "16cf5302bbba3e66"
+  },
+  "managerGetTeamActivity": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ea56954174b9ff21"
   },
   "managerGetTrainingQueue": {
    "file": "80_training.js",
@@ -13361,6 +13459,11 @@
    "kind": "function",
    "sha": "65b0865ac55ba271"
   },
+  "recordActivityCounts": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a44c19c6817f964d"
+  },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
    "kind": "function",
@@ -13374,7 +13477,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d62347fbaf382f9e"
+   "sha": "c256c31d7699739c"
   },
   "recordPunch": {
    "file": "20_timeclock.js",

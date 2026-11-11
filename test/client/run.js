@@ -24812,8 +24812,8 @@ test('D-N10: presence — teammateActiveNotIn_ driven (self never, working state
   assert.ok(/var PRESENCE_MIN_GAP_MS = 10 \* 60 \* 1000;/.test(core), 'one send per 10 min per window');
   const og = nc(extractFunction('script_core.html', 'presenceOnGesture_'));
   assert.ok(/if \(now - PRESENCE\.sentAt < PRESENCE_MIN_GAP_MS\) return;/.test(og), 'throttled on the gap');
-  assert.ok(og.indexOf('PRESENCE.sentAt = now') > 0 && og.indexOf('PRESENCE.sentAt = now') < og.indexOf('.recordPresence()'), 'the stamp lands BEFORE the send — a slow or failed RPC never double-fires');
-  assert.ok(/\.withFailureHandler\(function \(\) \{\}\)/.test(og), 'fire-and-forget — a failed send is ignored');
+  assert.ok(og.indexOf('PRESENCE.sentAt = now') > 0 && og.indexOf('PRESENCE.sentAt = now') < og.indexOf('.recordPresence(p)'), 'the stamp lands BEFORE the send — a slow or failed RPC never double-fires');
+  assert.ok(/\.withFailureHandler\(function \(\) \{ actRestore_\(p\); \}\)/.test(og), 'fire-and-forget — a failed send only puts its counts back (AC1); the stamp stays');
   const bind = nc(extractFunction('script_core.html', 'presenceBind_'));
   assert.ok(/if \(PRESENCE\.bound\) return;/.test(bind), 'idempotent bind');
   assert.ok(/addEventListener\('pointerdown', presenceOnGesture_, \{ capture: true, passive: true \}\)/.test(bind), 'pointerdown, capture + passive');
@@ -40609,9 +40609,10 @@ const e2aCtx_ = (extra) => {
     console: { warn() {} } }, extra || {}));
   ['const ADP = \\{[\\s\\S]*?\\};', "const ADP_INFERRED_MARK = '[^']*';", 'const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
     'const ACTIVITY_LOG_DAYS = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;',
-    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];']
+    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];', "const ACTIVITY_COUNTS_KIND = '[^']*';", 'const ACTIVITY_COUNTS_MAX_AGE_MS = [^;]*;']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['activityDayView_', 'activityLowerBound_', 'activityBlocksDecode_', 'activitySummaryKeys_', 'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
+  ['activityDayView_', 'activityLowerBound_', 'activityBlocksDecode_', 'activitySummaryKeys_', 'activityCountsDecode_', 'activityDayCountsDecode_', 'activityDaysFor_',
+    'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'E2a#' + f }));
   return ctx;
 };
@@ -40622,7 +40623,8 @@ test('E2a: a day of app activity — pings in 10-minute blocks, first and last, 
   assert.deepStrictEqual([v.first, v.last], ['07:56', '17:06']);
   assert.strictEqual(v.blocks.length, 144);
   assert.deepStrictEqual([v.blocks[47], v.blocks[48], v.blocks[102]], [1, 2, 1], '7:56 in 7:50–8:00; 8:06 and 8:07 share a block');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.activityDayView_([], 10))), { pings: 0, first: '', last: '', blocks: new Array(144).fill(0) });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.activityDayView_([], 10))), { pings: 0, first: '', last: '', blocks: new Array(144).fill(0),
+    hasCounts: false, level: new Array(144).fill(0), clicks: 0, keys: 0, activeMin: 0 });
   assert.deepStrictEqual([c.activityLowerBound_([1, 3, 3, 9], 3), c.activityLowerBound_([1, 3, 3, 9], 10), c.activityLowerBound_([], 5)], [1, 4, 0]);
   const gap = /var PRESENCE_MIN_GAP_MS = (\d+) \* 60 \* 1000;/.exec(fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8'));
   assert.ok(gap && Number(gap[1]) === vm.runInContext('ACTIVITY_PING_GAP_MIN', c), 'the gap the card states is the client throttle');
@@ -40631,8 +40633,8 @@ test('E2a: managerGetDayActivity — manager-gated; reads ONLY that rep\'s pings
   const H = 3600000, day0 = Date.UTC(2026, 9, 27);
   const rows = [[day0 - 2 * H, 'E1'], [day0 + 8 * H, 'E1'], [day0 + 8 * H + 6e5, 'E2'], [day0 + 9 * H, 'E1'], [day0 + 17 * H, 'E1'], [day0 + 25 * H, 'E1']];
   const reads = [];
-  const sheet = { getLastRow: () => rows.length + 1, getRange: (r, col, n) => { reads.push([r, col, n]);
-    return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => [col === 3 ? x[0] : x[1]]) }; } };
+  const sheet = { getLastRow: () => rows.length + 1, getRange: (r, col, n, w) => { reads.push([r, col, n, w]);
+    return { getValues: () => rows.slice(r - 2, r - 2 + n).map((x) => (col === 3 ? [x[0]] : [x[1], x[0], '', ''])) }; } };
   let tab = sheet, caller = { isManager: true };
   const c = e2aCtx_({ getEmployeeInfo_: () => caller, lookupEmployeeById_: (id) => (id === 'E1' ? { id: 'E1' } : null), empTz_: () => 'UTC',
     getAdpSS_: () => ({ getSheetByName: (t) => (t === 'ActivityLog' ? tab : null) }),
@@ -40641,8 +40643,8 @@ test('E2a: managerGetDayActivity — manager-gated; reads ONLY that rep\'s pings
       formatDate: (d, tz, f) => d.toISOString().substring(11, 16) } });
   const r = JSON.parse(JSON.stringify(c.managerGetDayActivity('E1', '2026-10-27')));
   assert.deepStrictEqual([r.pings, r.first, r.last], [3, '08:00', '17:00'], 'the day before and after, and E2, are not counted: ' + JSON.stringify([r.pings, r.first, r.last]));
-  assert.deepStrictEqual(reads.map((x) => x[1]), [3, 2], 'the time column, then only the ids of the day\'s slice');
-  assert.deepStrictEqual(reads[1], [3, 2, 4], 'rows 3..6 — the slice, not the tab');
+  assert.deepStrictEqual(reads.map((x) => x[1]), [3, 2], 'the time column, then only the day\'s slice (id, ms, counts, kind)');
+  assert.deepStrictEqual(reads[1], [3, 2, 5, 4], 'rows 3..7 — the day and the hours after it a late count can arrive in, not the tab');
   assert.strictEqual(r.gapMin, 10);
   tab = null;
   const none = JSON.parse(JSON.stringify(c.managerGetDayActivity('E1', '2026-10-27')));
@@ -40655,16 +40657,16 @@ test('E2a: managerGetDayActivity — manager-gated; reads ONLY that rep\'s pings
 });
 test('E2a: every presence ping is also recorded — best-effort, unlocked, ids and times only; the record is purged after ACTIVITY_LOG_DAYS', () => {
   const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPresence'));
-  assert.ok(/activityLogAppend_\(emp\.id, Date\.now\(\)\)/.test(rp), 'the gesture ping writes the record');
+  assert.ok(/activityLogAppend_\(emp\.id, Date\.now\(\), activityCountsClean_\(counts, Date\.now\(\)\), ''\)/.test(rp), 'the gesture ping writes the record — with its counts, as a ping (AC1)');
   const ap = stripJsComments_(extractRawFunction('Code.js', 'activityLogAppend_'));
-  assert.ok(/try \{[\s\S]*appendRow\(sheetSafeRow_\(\[fmtDate_\(d\) \+ ' ' \+ fmtTime_\(d\), String\(empId\), ms\]\)\)[\s\S]*\} catch/.test(ap), 'one row: time, id, ms — inside a try');
+  assert.ok(/try \{[\s\S]*appendRow\(sheetSafeRow_\(\[fmtDate_\(d\) \+ ' ' \+ fmtTime_\(d\), String\(empId\), ms,\s*activityCountsEncode_\(counts\), kind === ACTIVITY_COUNTS_KIND \? ACTIVITY_COUNTS_KIND : ''\]\)\)[\s\S]*\} catch/.test(ap), 'one row: time, id, ms, counts, kind — inside a try');
   assert.ok(!/LockService/.test(ap), 'no lock — every rep\'s gesture would queue on it');
   const appended = [];
-  const c = vm.createContext({ String, Date, console: { warn() {} }, ACTIVITY_LOG_TAB: 'ActivityLog', fmtDate_: () => '2026-10-27', fmtTime_: () => '08:00:00',
-    sheetSafeRow_: (r) => r, getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => appended.push(r) }) });
+  const c = vm.createContext({ String, Date, console: { warn() {} }, ACTIVITY_LOG_TAB: 'ActivityLog', ACTIVITY_COUNTS_KIND: 'counts', fmtDate_: () => '2026-10-27', fmtTime_: () => '08:00:00',
+    sheetSafeRow_: (r) => r, activityCountsEncode_: () => '', getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => appended.push(r) }) });
   vm.runInContext(extractRawFunction('Code.js', 'activityLogAppend_'), c);
   assert.strictEqual(c.activityLogAppend_('E1', 1761555600000), true);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(appended[0])), ['2026-10-27 08:00:00', 'E1', 1761555600000]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(appended[0])), ['2026-10-27 08:00:00', 'E1', 1761555600000, '', '']);
   c.getOrCreateActivityLogSheet_ = () => { throw new Error('quota'); };
   assert.strictEqual(c.activityLogAppend_('E1', 1), false, 'a failure is swallowed — the presence stamp never depends on it');
   const pg = stripJsComments_(extractRawFunction('Code.js', 'purgeOldDiagnostics'));
@@ -42684,10 +42686,13 @@ console.log('\nOperator round 2026-11-02 — Batch G (the activity log condenses
 const gCtx_ = (extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, console: { warn() {} } }, extra || {}));
   ['const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_LOG_DAYS = \\d+;', 'const ACTIVITY_LOG_PURGE_MAX_PER_RUN = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';",
-    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];', 'const ACTIVITY_SUMMARY_TEXT_IDX = \\[[^\\]]*\\];', 'const ACTIVITY_PING_GAP_MIN = \\d+;']
+    "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];', 'const ACTIVITY_SUMMARY_TEXT_IDX = \\[[^\\]]*\\];', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
+    'const ACTIVITY_LOG_HEADERS = \\[[^\\]]*\\];', "const ACTIVITY_COUNTS_KIND = '[^']*';", 'const ACTIVITY_COUNTS_MAX_ENTRIES = \\d+;', 'const ACTIVITY_COUNTS_MAX_PER_BLOCK = \\d+;',
+    'const ACTIVITY_COUNTS_MAX_AGE_MS = [^;]*;']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
   ['activityDayView_', 'activityLowerBound_', 'activityBlocksEncode_', 'activityBlocksDecode_', 'activityCondense_', 'activityPurgeIndexes_',
-    'activitySummaryKeys_', 'activityLogCondenseAndPurge_', 'managerGetDayActivity'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    'activitySummaryKeys_', 'activityLogCondenseAndPurge_', 'managerGetDayActivity', 'activityCountsClean_', 'activityCountsEncode_', 'activityCountsDecode_',
+    'activityDayCountsEncode_', 'activityDayCountsDecode_', 'activityDaysFor_', 'activityHealHeader_', 'activityHourly_', 'managerGetTeamActivity'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
 const gJ = (x) => JSON.parse(JSON.stringify(x));
@@ -42745,7 +42750,8 @@ test('Batch G: the nightly step over a real-shaped tab — condenses the finishe
   };
   const a = run({});
   assert.deepStrictEqual(a.appended[0].rows.map((r) => r[0] + '|' + r[1]), ['2026-10-01|E1', '2026-10-01|E2', '2026-11-02|E1'], 'every finished day, once; today\'s ping waits');
-  assert.deepStrictEqual(a.appended[0].idx, [0, 1, 2, 4, 5, 7, 8], 'date, id, tz, first, last, the block map and the stamp are plain text (g144)');
+  assert.deepStrictEqual(a.appended[0].idx, [0, 1, 2, 4, 5, 7, 8, 9], 'date, id, tz, first, last, the block map, the stamp and the counts are plain text (g144)');
+  assert.ok(a.appended[0].rows.every((r) => r.length === vm.runInContext('ACTIVITY_SUMMARY_HEADERS', gCtx_()).length), 'AC1: every summary row carries the Counts column');
   assert.deepStrictEqual(a.deleted.map((d) => d[0]).sort(), [2, 3, 4], 'only October\'s pings (older than the window) are deleted — Nov 2 is inside it, today is not summarised');
   assert.deepStrictEqual([a.res.condensed, a.res.removed], [3, 3]);
   const again = run({ existing: [['2026-10-01', 'E1'], ['2026-10-01', 'E2'], ['2026-11-02', 'E1']] });
@@ -42781,6 +42787,204 @@ test('Batch G: Day Edit reads a day\'s SUMMARY first (complete by construction),
   assert.strictEqual(r.keptFrom, '2026-10-26', 'kept from the oldest summary or raw day');
   sumRows = [];
   assert.strictEqual(gJ(c.managerGetDayActivity('E1', '2026-10-27')).keptFrom, '2026-10-27', 'no summaries: the raw tab\'s first day');
+});
+
+console.log('\nOperator round 2026-11-11 — AC1 (activity levels: clicks and keystrokes, counts only)');
+
+test('AC1: a window\'s counts as the server keeps them — the client clock corrected by whole blocks, the last six hours only, one block summed, a count no person makes capped, the newest 48 kept; anything else is dropped, never guessed (driven)', () => {
+  const c = gCtx_();
+  const B = 600000, now = 2900000 * B + 5 * 60000;   // 5 minutes into block 2,900,000
+  const ok = gJ(c.activityCountsClean_({ at: now, b: [[2900000, 3, 12], [2899999, 1, 0], [2900000, 2, 1]] }, now));
+  assert.deepStrictEqual(ok, [[2899999, 1, 0], [2900000, 5, 13]], 'ascending, one block\'s two entries summed');
+  const skew = gJ(c.activityCountsClean_({ at: now - 3 * 3600000, b: [[2900000 - 18, 4, 4]] }, now));
+  assert.deepStrictEqual(skew, [[2900000, 4, 4]], 'a computer clock three hours slow: its block is moved by 18 blocks onto the server\'s');
+  assert.deepStrictEqual(gJ(c.activityCountsClean_({ at: now, b: [[2900000 - 37, 1, 1], [2900001, 1, 1], [2900000 - 36, 2, 2]] }, now)), [[2900000 - 36, 2, 2]],
+    'older than six hours, or ahead of now: dropped');
+  assert.deepStrictEqual(gJ(c.activityCountsClean_({ at: now, b: [[2900000, 99999, -4], [2900000.5, 1, 1], ['x', 1, 1], 'junk', [2900000, 0, 0]] }, now)), [[2900000, 5000, 0]],
+    'a block\'s count is capped at what a person can do; a negative, a fraction of a block, a non-number and an empty entry are nothing');
+  const many = []; for (let i = 0; i < 60; i++) many.push([2900000 - i * 0, 0, 0]);
+  const spread = []; for (let i = 0; i < 36; i++) spread.push([2900000 - i, 1, 0]);
+  const kept = gJ(c.activityCountsClean_({ at: now, b: spread }, now));
+  assert.strictEqual(kept.length, 36);
+  ['', null, 5, { b: 'x' }, { at: now }].forEach((raw) => assert.deepStrictEqual(gJ(c.activityCountsClean_(raw, now)), [], 'not a send: ' + JSON.stringify(raw)));
+  assert.strictEqual(vm.runInContext('ACTIVITY_COUNTS_MAX_ENTRIES', c), 48);
+  const wide = []; for (let i = 0; i < 36; i++) wide.push([2900000 - i, 1, 1]);
+  vm.runInContext('ACTIVITY_COUNTS_MAX_ENTRIES = 5', c);
+  assert.deepStrictEqual(gJ(c.activityCountsClean_({ at: now, b: wide }, now)).map((e) => e[0]), [2899996, 2899997, 2899998, 2899999, 2900000], 'the newest blocks are the ones kept');
+  vm.runInContext('ACTIVITY_COUNTS_MAX_ENTRIES = 48', c);
+});
+
+test('AC1: the counts cell — "48c12k40 49c0k7", letters between the numbers so Sheets never reads it as a number, a date or a time; a token that is not NcNkN is skipped; a day\'s counts round-trip by block of the day (driven)', () => {
+  const c = gCtx_();
+  assert.strictEqual(c.activityCountsEncode_([[2900000, 3, 12], [2900001, 0, 7], [2900002, 0, 0]]), '2900000c3k12 2900001c0k7', 'an empty block is not written');
+  assert.strictEqual(c.activityCountsEncode_(null), '');
+  assert.deepStrictEqual(gJ(c.activityCountsDecode_('2900000c3k12  x 12:30 2900001c0k7 =1+1 9c1')), [[2900000, 3, 12], [2900001, 0, 7]]);
+  assert.ok(/^(\d+c\d+k\d+)( \d+c\d+k\d+)*$/.test(c.activityCountsEncode_([[1, 2, 3], [4, 5, 6]])) && !/[:\/=+\-@]/.test(c.activityCountsEncode_([[1, 2, 3]])),
+    'no colon, slash or sign — never a time, a date or a formula (g10 / g144)');
+  const day = c.activityDayCountsEncode_([[480, 2, 10], [485, 1, 5], [490, 0, 3], [1500, 9, 9]], 10);
+  assert.strictEqual(day, '48c3k15 49c0k3', 'minutes in one block summed by block of the day; an out-of-day minute dropped');
+  assert.deepStrictEqual(gJ(c.activityDayCountsDecode_(day, 10)), [[480, 3, 15], [490, 0, 3]], 'back as each block\'s start minute');
+  const v1 = gJ(c.activityDayView_([480], 10, [[480, 2, 10], [485, 1, 5], [490, 0, 3]]));
+  const v2 = gJ(c.activityDayView_([480], 10, c.activityDayCountsDecode_(day, 10)));
+  assert.deepStrictEqual(v2.level, v1.level, 'THE RULE: the summary\'s counts draw the same levels as the raw counts did');
+});
+
+test('AC1: a day view with counts — each block\'s level is its clicks + keystrokes, the totals are kept apart, a block with counts but no ping is active; a day with none is hasCounts false (drawn on/off, never a level of zero) (driven)', () => {
+  const c = gCtx_();
+  const v = gJ(c.activityDayView_([480, 495], 10, [[480, 4, 20], [485, 1, 0], [500, 0, 6], [-1, 9, 9], [1440, 9, 9], [520, 0, 0], ['x', 1, 1]]));
+  assert.ok(v.hasCounts);
+  assert.deepStrictEqual([v.level[48], v.level[49], v.level[50], v.level[52]], [25, 0, 6, 0]);
+  assert.deepStrictEqual([v.clicks, v.keys], [5, 26], 'clicks and keystrokes are totalled apart; out-of-day and empty entries are nothing');
+  assert.strictEqual(v.activeMin, 30, 'blocks 48 and 49 have pings, block 50 only counts — three active blocks');
+  const none = gJ(c.activityDayView_([480], 10));
+  assert.ok(!none.hasCounts && none.level.every((x) => x === 0) && none.activeMin === 10, 'no counts: hasCounts false, and the ping alone is active');
+});
+
+test('AC1: the nightly condense — a counts-only row is NEVER a ping (no first, last or suggested punch from it), a count belongs to the day of the BLOCK it names (a send after midnight carries the evening), and the summary keeps the counts (driven)', () => {
+  const c = gCtx_();
+  const H = 3600000, B = 600000, d1 = Date.UTC(2026, 10, 9), now = Date.UTC(2026, 10, 10, 15);
+  const blk = (ms) => Math.floor(ms / B);
+  const rows = [
+    ['E1', d1 + 8 * H, blk(d1 + 8 * H) + 'c3k10', ''],
+    ['E1', d1 + 17 * H, blk(d1 + 16 * H + 50 * 60000) + 'c1k2', ''],
+    ['E1', d1 + 17 * H + 15 * 60000, blk(d1 + 17 * H + 5 * 60000) + 'c2k9', 'counts'],   // the pause flush — not a ping
+    ['E1', d1 + 24 * H + 2 * 60000, blk(d1 + 23 * H + 55 * 60000) + 'c1k1', 'counts'],   // just after midnight, the evening's last block
+  ];
+  const r = gJ(c.activityCondense_(rows, () => 'UTC', gLocal_, (tz) => gLocal_(now, tz).date, {}, 10));
+  const s = r.summaries.filter((x) => x.date === '2026-11-09')[0];
+  assert.ok(s, 'the day is condensed: ' + JSON.stringify(r.summaries.map((x) => x.date)));
+  assert.deepStrictEqual([s.pings, s.first, s.last], [2, '08:00', '17:00'], 'the two pings only — the 17:15 flush is not a last time');
+  const lv = c.activityDayView_([], 10, c.activityDayCountsDecode_(s.counts, 10));
+  assert.deepStrictEqual([lv.level[48], lv.level[101], lv.level[102], lv.level[143]], [13, 3, 11, 2], 'every block\'s counts, the one sent after midnight included');
+  assert.strictEqual(s.activeMin, 40, 'four blocks active — 8:00 and 17:00 (pings and counts), 16:50 and 23:50 (counts only)');
+  assert.ok(!r.summaries.some((x) => x.date === '2026-11-10'), 'the after-midnight flush made no day of its own (it carried no block of Nov 10)');
+});
+
+test('AC1: Day Edit and the team table read the SAME day for every rep — the summary\'s Counts cell, or ONE raw slice that runs past the day\'s end for counts sent late; a counts-only row is never a ping; managerGetTeamActivity is manager-gated, rostered reps only, each on their own clock, hourly (driven)', () => {
+  const H = 3600000, B = 600000, day0 = Date.UTC(2026, 10, 10);
+  const blk = (ms) => Math.floor(ms / B);
+  const raw = [
+    [day0 - H, 'E1', blk(day0 - H) + 'c9k9', ''],
+    [day0 + 8 * H, 'E1', blk(day0 + 8 * H) + 'c2k8', ''],
+    [day0 + 9 * H, 'E2', blk(day0 + 9 * H) + 'c1k1', ''],
+    [day0 + 17 * H + 20 * 60000, 'E1', blk(day0 + 17 * H + 5 * 60000) + 'c1k4', 'counts'],
+    [day0 + 24 * H + 3 * 60000, 'E1', blk(day0 + 23 * H + 52 * 60000) + 'c2k2', 'counts'],
+  ];
+  const reads = [];
+  const rawSheet = { getLastRow: () => raw.length + 1, getRange: (r, col, n, w) => { reads.push([r, col, n, w]);
+    return { getValues: () => raw.slice(r - 2, r - 2 + n).map((x) => (col === 3 ? [x[0]] : [x[1], x[0], x[2], x[3]])) }; } };
+  const sumRows = [['2026-11-10', 'E3', 'UTC', 2, '09:00', '10:00', 20, '0'.repeat(54) + '11' + '0'.repeat(88), 'stamp', '54c5k20 60c1k0']];
+  const sum = { getLastRow: () => sumRows.length + 1, getRange: (r, col, n, w) => ({ getValues: () => sumRows.slice(r - 2, r - 2 + (n || 1)).map((x) => x.slice(col - 1, col - 1 + (w || 2))) }) };
+  let caller = { isManager: true, timezone: 'UTC' };
+  const roster = [['Id', 'Tz', 'Email'], ['E1', 'UTC', 'a@x'], ['E2', 'UTC', 'b@x'], ['E3', 'UTC', 'c@x'], ['E4', 'UTC', '']];
+  const c = gCtx_({ getEmployeeInfo_: () => caller, lookupEmployeeById_: (id) => ({ id }), empTz_: (e) => (e && e.timezone) || 'UTC', CONFIG: { TIMEZONE: 'UTC' },
+    EMP: { ID: 0, TIMEZONE: 1, EMAIL: 2 }, getEmployeeRosterRows_: () => roster, empRosterEmail_: (r) => String(r[2] || ''), safeTimezone_: (t) => t || 'UTC',
+    getAdpSS_: () => ({ getSheetByName: (t) => (t === 'ActivityLog' ? rawSheet : t === 'ActivitySummary' ? sum : null) }),
+    isoFromUtc_: (d) => d.toISOString().substring(0, 10),
+    Utilities: { parseDate: (s) => new Date(s.replace(' ', 'T') + 'Z'),
+      formatDate: (d, tz, f) => (f === 'yyyy-MM-dd' ? d.toISOString().substring(0, 10) : d.toISOString().substring(11, 16)) } });
+  const one = gJ(c.managerGetDayActivity('E1', '2026-11-10'));
+  assert.deepStrictEqual([one.pings, one.first, one.last], [1, '08:00', '08:00'], 'the flush rows are never pings, the day before is not this day');
+  assert.ok(one.hasCounts && one.level[48] === 10 && one.level[102] === 5 && one.level[143] === 4, 'the counts, the one sent after midnight included: ' + JSON.stringify([one.level[48], one.level[102], one.level[143]]));
+  assert.deepStrictEqual([one.clicks, one.keys], [5, 14]);
+  assert.deepStrictEqual(reads.filter((x) => x[1] === 2).map((x) => [x[0], x[2], x[3]]), [[3, 4, 4]], 'one slice: the day and the hours after it, id + ms + counts + kind');
+  reads.length = 0;
+  const team = gJ(c.managerGetTeamActivity('2026-11-10'));
+  assert.deepStrictEqual(Object.keys(team.reps).sort(), ['E1', 'E2', 'E3'], 'rostered reps only — an offboarded row (no email) is not a person');
+  assert.strictEqual(reads.filter((x) => x[1] === 2).length, 1, 'ONE raw read for the whole team');
+  assert.deepStrictEqual([team.reps.E1.hours[8], team.reps.E1.hours[17], team.reps.E1.hours[23]], [10, 5, 4], 'hourly levels');
+  assert.ok(team.reps.E3.hasCounts && team.reps.E3.hours[9] === 25 && team.reps.E3.hours[10] === 1 && team.reps.E3.activeMin === 20, 'E3\'s day is from its summary row\'s Counts cell');
+  assert.deepStrictEqual([team.reps.E2.hours[9], team.reps.E2.clicks], [2, 1]);
+  const old = gJ(c.activityHourly_({ blockMin: 10, hasCounts: false, blocks: [0, 0, 0, 0, 0, 0, 1, 1, 0, 1].concat(new Array(134).fill(0)), level: new Array(144).fill(0) }));
+  assert.deepStrictEqual([old.hours[0], old.hours[1], old.hasCounts], [0, 3, false], 'a day before AC1: the active blocks in each hour (0–6)');
+  caller = { isManager: false };
+  assert.strictEqual(c.managerGetTeamActivity('2026-11-10').error, 'Manager access required.');
+  caller = { isManager: true };
+  assert.ok(/Invalid date/.test(c.managerGetTeamActivity('10/11/2026').error));
+});
+
+test('AC1: the pause flush is rep-gated, writes a counts row and stamps NO presence (it fires minutes after the last gesture); the ping carries its counts as a ping; the nightly step gives an old tab its new headers (driven + source)', () => {
+  const appended = [], puts = [];
+  let emp = { id: 'E1' };
+  const c = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, isFinite, console: { warn() {} } });
+  ['const ACTIVITY_BLOCK_MIN = \\d+;', "const ACTIVITY_COUNTS_KIND = '[^']*';", 'const ACTIVITY_COUNTS_MAX_ENTRIES = \\d+;', 'const ACTIVITY_COUNTS_MAX_PER_BLOCK = \\d+;',
+    'const ACTIVITY_COUNTS_MAX_AGE_MS = [^;]*;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const ACTIVITY_LOG_HEADERS = \\[[^\\]]*\\];']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), c));
+  ['recordActivityCounts', 'activityCountsClean_', 'activityCountsEncode_', 'activityLogAppend_', 'activityHealHeader_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  Object.assign(c, { getEmployeeInfo_: () => emp, fmtDate_: () => '2026-11-10', fmtTime_: () => '17:20:00', sheetSafeRow_: (r) => r, sheetSafeRows_: (r) => r,
+    CacheService: { getScriptCache: () => ({ put: (k) => puts.push(k) }) },
+    getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => appended.push(r) }) });
+  const now = Date.now(), b = Math.floor(now / 600000);
+  assert.strictEqual(c.recordActivityCounts({ at: now, b: [[b, 2, 9]] }).success, true);
+  assert.deepStrictEqual(gJ(appended[0]).slice(1), ['E1', appended[0][2], b + 'c2k9', 'counts'], 'one row, Kind counts');
+  assert.strictEqual(puts.length, 0, 'THE RULE: no presence stamp — a flush is not a gesture');
+  assert.strictEqual(gJ(c.recordActivityCounts({ at: now, b: [] })).empty, true, 'nothing to send writes nothing');
+  assert.strictEqual(appended.length, 1);
+  emp = null;
+  assert.strictEqual(c.recordActivityCounts({ at: now, b: [[b, 1, 1]] }).success, false, 'not on the roster: refused');
+  const fl = stripJsComments_(extractRawFunction('Code.js', 'recordActivityCounts'));
+  assert.ok(!/PRESENCE_|CacheService|LockService/.test(fl), 'no presence key, no cache, no lock — in the source too');
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPresence'));
+  assert.ok(/function recordPresence\(counts\)/.test(rp) && /activityCountsClean_\(counts, Date\.now\(\)\), ''\)/.test(rp), 'the ping\'s counts ride its row as a ping');
+  // The header heal: blank cells only, never a rename.
+  const hdr = [['Timestamp (CST)', 'EmpId', 'Ms', '', '']]; const written = [];
+  c.activityHealHeader_({ getRange: () => ({ getValues: () => hdr, setValues: (v) => written.push(v) }) }, vm.runInContext('ACTIVITY_LOG_HEADERS', c));
+  assert.deepStrictEqual(gJ(written[0]), [['Timestamp (CST)', 'EmpId', 'Ms', 'Counts', 'Kind']], 'the old tab gains Counts and Kind; its own first header stays');
+  written.length = 0;
+  c.activityHealHeader_({ getRange: () => ({ getValues: () => [['A', 'EmpId', 'Ms', 'Counts', 'Kind']], setValues: (v) => written.push(v) }) }, vm.runInContext('ACTIVITY_LOG_HEADERS', c));
+  assert.strictEqual(written.length, 0, 'a complete header is not rewritten');
+  const cp = stripJsComments_(extractRawFunction('Code.js', 'activityLogCondenseAndPurge_'));
+  assert.ok(/activityHealHeader_\(raw, ACTIVITY_LOG_HEADERS\)/.test(cp) && /activityHealHeader_\(sumSheet, ACTIVITY_SUMMARY_HEADERS\)/.test(cp), 'the nightly step heals both tabs');
+});
+
+test('AC1: the shell counts, never reads — a pointerdown is a click and a keydown a keystroke (a held key once), the key and the target are never read, the counts ride the ping and a pause flush, a failed send puts them back; the block size is the server\'s (source)', () => {
+  const core = stripJsComments_(fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8'));
+  const cnt = extractFunction('script_core.html', 'actCount_');
+  assert.ok(/\(e\.type === 'keydown' && e\.repeat\)\) return;/.test(cnt), 'a held key\'s repeats are one press');
+  assert.ok(!/\be\.(key|code|target|which|keyCode|charCode|clientX|clientY|path|composedPath)\b/.test(cnt) && !/\be\.(key|code|target)\b/.test(extractFunction('script_core.html', 'presenceOnGesture_')),
+    'THE RULE: nothing about the key or the thing clicked is read — the count only');
+  assert.ok(/ACT_COUNTS\.t = setTimeout\(actFlush_, ACT_FLUSH_IDLE_MS\)/.test(cnt), 'every gesture re-arms the pause flush');
+  const blockMs = /var ACT_BLOCK_MS = (\d+) \* 60 \* 1000;/.exec(core);
+  const cfg = fs.readFileSync(path.join(PA_WEB, '00_config.js'), 'utf8');
+  assert.ok(blockMs && Number(blockMs[1]) === Number(/const ACTIVITY_BLOCK_MIN = (\d+);/.exec(cfg)[1]), 'the client\'s block is the server\'s ACTIVITY_BLOCK_MIN');
+  const og = extractFunction('script_core.html', 'presenceOnGesture_');
+  assert.ok(og.indexOf('actCount_(e)') < og.indexOf('PRESENCE_MIN_GAP_MS'), 'a gesture is counted before the throttle — the ones inside the gap count too');
+  assert.ok(/\.recordActivityCounts\(p\)/.test(extractFunction('script_core.html', 'actFlush_')) && /actRestore_\(p\)/.test(extractFunction('script_core.html', 'actFlush_')));
+  assert.ok(/var ACT_FLUSH_IDLE_MS = 2 \* 60 \* 1000;/.test(core), 'two minutes of pause');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/recordActivityCounts: \{ success: true \}/.test(mock) && /managerGetTeamActivity: function \(date\)/.test(mock), 'both new RPCs have fixtures (X1)');
+});
+
+test('AC1: the bars — a height against the busiest bar shown, never under 8% for a non-zero, empty for zero; Day Edit draws levels when the day has counts (per 10 minutes or per hour) and on/off when it has none; the team range is shared and at least 8 hours (driven)', () => {
+  const s = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, parseInt,
+    esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), dispTime: (t) => t, TEAMACT: { cache: {}, failed: {} }, isoDateTz: () => '2026-11-10', empTz: () => 'UTC' });
+  ['actNum_', 'actBarsHtml_', 'deHourLabel_', 'deActivityHtml_', 'tcalActRange_', 'tcalActCellHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), c));
+  const bars = c.actBarsHtml_([0, 10, 1, 5], 'x');
+  assert.deepStrictEqual((bars.match(/height:(\d+)%/g) || []).map((x) => Number(/\d+/.exec(x)[0])), [100, 10, 50], 'zero is empty; 1 of 10 is 10%; 5 of 10 is 50%');
+  assert.deepStrictEqual((c.actBarsHtml_([1, 1000], 'x').match(/height:(\d+)%/g) || []), ['height:8%', 'height:100%'], 'one click is never invisible');
+  assert.strictEqual(c.actNum_(1234567), '1,234,567');
+  const level = new Array(144).fill(0); level[48] = 30; level[49] = 10; level[54] = 60;
+  const d = { pings: 3, first: '08:00', last: '09:40', blocks: level.map((x) => (x ? 1 : 0)), blockMin: 10, hasCounts: true, level, clicks: 25, keys: 75 };
+  const per10 = c.deActivityHtml_(d, {});
+  assert.ok(/25 clicks, 75 keystrokes/.test(per10) && /class="de-act-strip lvl"/.test(per10), 'levels, and the totals in the head');
+  assert.ok(/aria-label="App activity from 08:00 to 09:40 — 25 clicks and 75 keystrokes; 3 of 48 10-minute blocks active"/.test(per10), 'the strip says it in words');
+  assert.ok(/data-de-act-scale="block" aria-pressed="true"/.test(per10) && /never what was typed/.test(per10) && /context, not a score/.test(per10));
+  const hourly = c.deActivityHtml_(d, { hourly: true });
+  assert.ok(/2 of 8 hours active/.test(hourly) && /data-de-act-scale="hour" aria-pressed="true"/.test(hourly), 'per hour: 8:00 and 9:00');
+  assert.deepStrictEqual((hourly.match(/height:(\d+)%/g) || []), ['height:67%', 'height:100%'], '8:00 holds 40, 9:00 holds 60');
+  const onoff = c.deActivityHtml_(Object.assign({}, d, { hasCounts: false }), {});
+  assert.ok(!/lvl|data-de-act-scale|keystrokes/.test(onoff) && /de-act-b on/.test(onoff), 'a day with no counts is the on/off strip it always was');
+  c.TEAMACT.cache['2026-11-10'] = { reps: { A: { hours: [0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 10].concat(new Array(13).fill(0)), hasCounts: true, clicks: 20, keys: 30, activeMin: 70, first: '09:05', last: '10:40' },
+    Z: { hours: new Array(24).fill(0), hasCounts: false, activeMin: 0 } } };
+  assert.deepStrictEqual(gJ(c.tcalActRange_(c.TEAMACT.cache['2026-11-10'].reps)), { h0: 9, h1: 17 }, 'the busiest span, widened to 8 hours');
+  const cell = c.tcalActCellHtml_('A', '2026-11-10');
+  assert.ok(/50 clicks \+ keys/.test(cell) && (cell.match(/class="tcal-act-b lv"/g) || []).length === 8, 'eight hourly bars and the total');
+  assert.ok(/—/.test(c.tcalActCellHtml_('Z', '2026-11-10')) && /…/.test(c.tcalActCellHtml_('A', '2026-11-09')), 'nothing is a dash; a read still out is "…"');
+  c.TEAMACT.failed['2026-11-08'] = true;
+  assert.ok(/—/.test(c.tcalActCellHtml_('A', '2026-11-08')), 'a failed read is a dash in the cell (the note under the table names it)');
+  assert.ok(/'App activity could not be read for this day — reload to try again\.'/.test(s), 'and the note says so');
+  assert.ok(/if \(res && !res\.error && res\.reps\) TEAMACT\.cache\[dateIso\] = res;\s*else TEAMACT\.failed\[dateIso\] = true;/.test(s), 'a failure is never cached as data (INV-129)');
 });
 
 console.log('\nOperator round 2026-11-02 — Batch F (coaching 1-on-1s, cadence, screenshot)');

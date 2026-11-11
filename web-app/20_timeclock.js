@@ -4254,7 +4254,7 @@ function selfDeletePunch(date, time, punchType) {
 /** Rep-callable, fire-and-forget: stamp the caller as active. No lock (a
  *  CacheService put is atomic), no sheet write, no audit row — it is a
  *  volatile signal, not a record. Never throws. */
-function recordPresence() {
+function recordPresence(counts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
@@ -4264,7 +4264,9 @@ function recordPresence() {
     CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
     // 25post B8: the gesture time again, kept six hours, for the idle alert.
     CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
-    activityLogAppend_(emp.id, Date.now());   // round 12 E2 — the durable record (best-effort)
+    // round 12 E2 — the durable record (best-effort); AC1 — with the clicks
+    // and keystrokes the window counted since its last send (counts only).
+    activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
     return { success: true };
   } catch (e) {
     return { success: false };
@@ -4286,16 +4288,86 @@ function getOrCreateActivityLogSheet_() {
 /** Best-effort and NEVER throws — the presence stamp must not depend on its
  *  record. No lock: appendRow is atomic, and every rep's gesture would
  *  otherwise queue on the one project lock (the DigestDeliveries posture). */
-function activityLogAppend_(empId, ms) {
+function activityLogAppend_(empId, ms, counts, kind) {
   try {
     if (!empId || !(ms > 0)) return false;
     const d = new Date(ms);
-    getOrCreateActivityLogSheet_().appendRow(sheetSafeRow_([fmtDate_(d) + ' ' + fmtTime_(d), String(empId), ms]));
+    getOrCreateActivityLogSheet_().appendRow(sheetSafeRow_([fmtDate_(d) + ' ' + fmtTime_(d), String(empId), ms,
+      activityCountsEncode_(counts), kind === ACTIVITY_COUNTS_KIND ? ACTIVITY_COUNTS_KIND : '']));
     return true;
   } catch (e) {
     console.warn('activityLogAppend_ failed: ' + e.message);
     return false;
   }
+}
+/** Rep-callable, fire-and-forget (AC1, operator 2026-11-11): the clicks and
+ *  keystrokes a window counted since its last send, sent once its rep has
+ *  PAUSED — so the last minutes before a break or the end of the day are not
+ *  lost. Counts only. It stamps NO presence: it fires minutes after the last
+ *  gesture, so a presence stamp from it would read a rep who has stopped as
+ *  active, and its row (Kind 'counts') is never read as a ping — never a
+ *  first or last time, never a suggested punch. Never throws. */
+function recordActivityCounts(counts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    const now = Date.now();
+    const clean = activityCountsClean_(counts, now);
+    if (!clean.length) return { success: true, empty: true };
+    return { success: activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND) };
+  } catch (e) {
+    return { success: false };
+  }
+}
+/** PURE (Node-pinned) — a window's counts as the server keeps them, or [].
+ *  `raw` is the client's `{at, b: [[block, clicks, keys]]}` — `block` the
+ *  10-minute block number since the epoch on the CLIENT's clock, `at` that
+ *  clock's time at sending, so a clock that is minutes or hours off is
+ *  corrected by whole blocks. Anything else, a block outside the last
+ *  ACTIVITY_COUNTS_MAX_AGE_MS (or ahead of now), a non-integer, or a count
+ *  that is no person's is dropped or capped; one block's entries are summed;
+ *  at most ACTIVITY_COUNTS_MAX_ENTRIES blocks, the newest kept. Returns
+ *  [[block, clicks, keys]] ascending, every entry non-zero. */
+function activityCountsClean_(raw, nowMs) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.b) || !(nowMs > 0)) return [];
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
+  const at = Number(raw.at);
+  const skew = isFinite(at) && at > 0 ? Math.round((nowMs - at) / bms) : 0;
+  const lo = Math.floor((nowMs - ACTIVITY_COUNTS_MAX_AGE_MS) / bms), hi = Math.floor(nowMs / bms);
+  const cap = function (n) { n = Number(n); return isFinite(n) && n > 0 ? Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, Math.floor(n)) : 0; };
+  const by = {};
+  raw.b.slice(0, ACTIVITY_COUNTS_MAX_ENTRIES * 2).forEach(function (e) {
+    if (!Array.isArray(e)) return;
+    const b0 = Number(e[0]);
+    if (!isFinite(b0) || Math.floor(b0) !== b0) return;
+    const b = b0 + skew;
+    if (b < lo || b > hi) return;
+    const c = cap(e[1]), k = cap(e[2]);
+    if (!c && !k) return;
+    const cur = by[b] || [b, 0, 0];
+    cur[1] = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cur[1] + c);
+    cur[2] = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cur[2] + k);
+    by[b] = cur;
+  });
+  return Object.keys(by).map(function (b) { return by[b]; })
+    .sort(function (x, y) { return x[0] - y[0]; }).slice(-ACTIVITY_COUNTS_MAX_ENTRIES);
+}
+/** PURE (Node-pinned) — counts as one plain-text cell: "48c12k40 49c0k7"
+ *  (block, clicks, keys). Letters between the numbers, so Sheets can never
+ *  read the cell as a number, a date or a time (g144 / g10). */
+function activityCountsEncode_(entries) {
+  return (entries || []).filter(function (e) { return Array.isArray(e) && (e[1] > 0 || e[2] > 0); })
+    .map(function (e) { return Math.floor(e[0]) + 'c' + Math.floor(e[1] || 0) + 'k' + Math.floor(e[2] || 0); }).join(' ');
+}
+/** PURE (Node-pinned) — the inverse: [[block, clicks, keys]]; a token that is
+ *  not "NcNkN" is skipped, never guessed. */
+function activityCountsDecode_(str) {
+  const out = [];
+  String(str || '').split(/\s+/).forEach(function (t) {
+    const m = /^(\d+)c(\d+)k(\d+)$/.exec(t);
+    if (m) out.push([Number(m[1]), Number(m[2]), Number(m[3])]);
+  });
+  return out;
 }
 /** PURE (Node-pinned) — first index in an ASCENDING number list at or past
  *  `x` (the list's length when none is). */
@@ -4308,14 +4380,32 @@ function activityLowerBound_(list, x) {
  *  `mins` are minutes of the day in the REP's timezone (any order, 0..1439).
  *  Returns { pings, first, last, blocks } — `blocks` one count per
  *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings. */
-function activityDayView_(mins, blockMin) {
+function activityDayView_(mins, blockMin, counts) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
-  const blocks = new Array(Math.ceil(1440 / size)).fill(0);
+  const n = Math.ceil(1440 / size);
+  const blocks = new Array(n).fill(0);
   const ok = (mins || []).filter(function (m) { return typeof m === 'number' && m >= 0 && m < 1440; })
     .map(function (m) { return Math.floor(m); }).sort(function (a, b) { return a - b; });
   ok.forEach(function (m) { blocks[Math.floor(m / size)]++; });
   const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
-  return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks };
+  // AC1: `counts` are [[minute of the rep's day, clicks, keys]] — each block's
+  // level is its clicks + keystrokes. A day with none (before AC1, or a
+  // window whose counts never arrived) has hasCounts false and is drawn
+  // on/off from the pings, as it always was — never as a level of zero.
+  const level = new Array(n).fill(0);
+  let clicks = 0, keys = 0, hasCounts = false;
+  (counts || []).forEach(function (e) {
+    const m = Array.isArray(e) ? Number(e[0]) : NaN;
+    if (!(m >= 0 && m < 1440)) return;
+    const c = Math.max(0, Math.floor(Number(e[1]) || 0)), k = Math.max(0, Math.floor(Number(e[2]) || 0));
+    if (!c && !k) return;
+    hasCounts = true;
+    level[Math.floor(m / size)] += c + k;
+    clicks += c; keys += k;
+  });
+  const active = blocks.filter(function (b, i) { return b > 0 || level[i] > 0; }).length;
+  return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks,
+    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size };
 }
 // ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
 // delete"): the ActivityLog's raw pings are condensed, each night, into ONE
@@ -4350,28 +4440,63 @@ function activityBlocksDecode_(str, n) {
  *  finished: {'date|empId': true}} — every finished day seen. */
 function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
   const days = {}, today = {};
+  const dayOf = function (id, ms) {
+    const tz = tzOf(id);
+    if (today[tz] == null) today[tz] = todayOf(tz);
+    const l = localOf(ms, tz);
+    if (!l || !l.date || !(l.date < today[tz])) return null;
+    const k = l.date + '|' + id;
+    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [], counts: [] }), min: l.min };
+  };
   (rows || []).forEach(function (r) {
     const id = String((r && r[0]) || '').trim();
     const ms = Number(r && r[1]);
     if (!id || !(ms > 0)) return;
-    const tz = tzOf(id);
-    if (today[tz] == null) today[tz] = todayOf(tz);
-    const l = localOf(ms, tz);
-    if (!l || !l.date || !(l.date < today[tz])) return;
-    const k = l.date + '|' + id;
-    (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [] }).mins.push(l.min);
+    // AC1: a row's counts belong to the day of each BLOCK they name — a send
+    // just after midnight can carry the evening's last block — and a
+    // counts-only row ('counts') is never a ping.
+    activityCountsDecode_(r[2]).forEach(function (e) {
+      const at = dayOf(id, e[0] * bms);
+      if (at) at.d.counts.push([at.min, e[1], e[2]]);
+    });
+    if (String(r[3] || '') === ACTIVITY_COUNTS_KIND) return;
+    const at = dayOf(id, ms);
+    if (at) at.d.mins.push(at.min);
   });
   const summaries = [], finished = {};
   Object.keys(days).sort().forEach(function (k) {
     finished[k] = true;
     if ((existing || {})[k]) return;
     const d = days[k];
-    const v = activityDayView_(d.mins, size);
+    const v = activityDayView_(d.mins, size, d.counts);
     summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
-      activeMin: v.blocks.filter(function (n) { return n > 0; }).length * size, blocks: activityBlocksEncode_(v.blocks) });
+      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(d.counts, size) });
   });
   return { summaries: summaries, finished: finished };
+}
+/** PURE (Node-pinned) — a day's counts by BLOCK OF THE DAY ("48c12k40"),
+ *  the ActivitySummary Counts cell; minutes in one block are summed. */
+function activityDayCountsEncode_(counts, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const by = {};
+  (counts || []).forEach(function (e) {
+    const m = Number(e && e[0]);
+    if (!(m >= 0 && m < 1440)) return;
+    const b = Math.floor(m / size);
+    const cur = by[b] || [b, 0, 0];
+    cur[1] += Math.max(0, Math.floor(Number(e[1]) || 0)); cur[2] += Math.max(0, Math.floor(Number(e[2]) || 0));
+    by[b] = cur;
+  });
+  return activityCountsEncode_(Object.keys(by).map(function (b) { return by[b]; }).sort(function (x, y) { return x[0] - y[0]; }));
+}
+/** PURE (Node-pinned) — the inverse, as activityDayView_'s `counts`: each
+ *  block's start minute. */
+function activityDayCountsDecode_(str, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  return activityCountsDecode_(str).filter(function (e) { return e[0] * size < 1440; })
+    .map(function (e) { return [e[0] * size, e[1], e[2]]; });
 }
 /** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
  *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
@@ -4397,6 +4522,19 @@ function getOrCreateActivitySummarySheet_() {
   }
   return sheet;
 }
+/** AC1: a tab written before a column was added gains its header — blank
+ *  cells only, never a rename; best-effort (a header is cosmetic). */
+function activityHealHeader_(sheet, headers) {
+  try {
+    if (!sheet || typeof sheet.getRange !== 'function') return;
+    const have = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    const missing = headers.some(function (h, i) { return i > 0 && !String(have[i] || '').trim(); });
+    if (!missing) return;
+    sheet.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers.map(function (h, i) {
+      return String(have[i] || '').trim() || h;
+    })]));
+  } catch (e) { console.warn('activityHealHeader_ failed: ' + e.message); }
+}
 /** The summary keys on file: {'date|empId': row number}. Plain-text cells, so
  *  a date reads back as the string it was written as (g144). */
 function activitySummaryKeys_(sheet) {
@@ -4418,7 +4556,8 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   const raw = ss.getSheetByName(ACTIVITY_LOG_TAB);
   const last = raw ? raw.getLastRow() : 0;
   if (last < 2) return out;
-  const rows = raw.getRange(2, 2, last - 1, 2).getValues();
+  activityHealHeader_(raw, ACTIVITY_LOG_HEADERS);   // AC1: a tab made before it gains Counts / Kind
+  const rows = raw.getRange(2, 2, last - 1, 4).getValues();   // id, ms, counts, kind
   const roster = getEmployeeRosterRows_();
   const tzById = {};
   for (let i = 1; i < roster.length; i++) {
@@ -4432,12 +4571,13 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   };
   const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
   const sumSheet = getOrCreateActivitySummarySheet_();
+  activityHealHeader_(sumSheet, ACTIVITY_SUMMARY_HEADERS);
   const existing = activitySummaryKeys_(sumSheet);
   const c = activityCondense_(rows, tzOf, localOf, todayOf, existing, ACTIVITY_BLOCK_MIN);
   if (c.summaries.length) {
     const stamp = fmtDate_(new Date(nowMs)) + ' ' + fmtTime_(new Date(nowMs));
     const newRows = c.summaries.map(function (s) {
-      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp];
+      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp, s.counts || ''];
     });
     appendRowsTextSafe_(sumSheet, newRows, ACTIVITY_SUMMARY_TEXT_IDX);
     out.condensed = c.summaries.length;
@@ -4453,11 +4593,78 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   out.hitCap = idx.length >= ACTIVITY_LOG_PURGE_MAX_PER_RUN;
   return out;
 }
+/** One DAY of app activity for each of `targets` ([{id, tz}]) — each on the
+ *  day of THEIR timezone — read once for all of them: the day's SUMMARY rows
+ *  (one span read; a finished day is complete by construction, Batch G), and
+ *  for the rest ONE slice of the raw log, found by a binary search on the
+ *  time column. The slice runs ACTIVITY_COUNTS_MAX_AGE_MS past the last day's
+ *  end, because a block's counts are sent after it (AC1); pings are read only
+ *  inside each rep's day. Returns {views: {id: view}, keptFrom}. */
+function activityDaysFor_(ss, targets, date, keptTz) {
+  const views = {}, base = { keptFrom: '' };
+  const days = (targets || []).map(function (t) {
+    return { id: t.id, tz: t.tz,
+      startMs: Utilities.parseDate(date + ' 00:00:00', t.tz, 'yyyy-MM-dd HH:mm:ss').getTime(),
+      endMs: Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', t.tz, 'yyyy-MM-dd HH:mm:ss').getTime() };
+  });
+  const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+  const sumKeys = activitySummaryKeys_(sum);
+  Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
+  const fromSum = days.filter(function (d) { return sumKeys[String(date) + '|' + d.id]; });
+  if (fromSum.length) {
+    const nums = fromSum.map(function (d) { return sumKeys[String(date) + '|' + d.id]; });
+    const r0 = Math.min.apply(null, nums), r1 = Math.max.apply(null, nums);
+    const span = sum.getRange(r0, 1, r1 - r0 + 1, ACTIVITY_SUMMARY_HEADERS.length).getValues();
+    fromSum.forEach(function (d, i) {
+      const r = span[nums[i] - r0];
+      const v = activityDayView_([], ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN));
+      views[d.id] = Object.assign(v, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
+        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+      if (Number(r[6]) > v.activeMin) views[d.id].activeMin = Number(r[6]);
+    });
+  }
+  const rest = days.filter(function (d) { return !views[d.id]; });
+  if (!rest.length) return { views: views, keptFrom: base.keptFrom };
+  const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
+  const last = sheet ? sheet.getLastRow() : 0;
+  const empty = function (noLog) { rest.forEach(function (d) { views[d.id] = Object.assign(activityDayView_([], ACTIVITY_BLOCK_MIN), noLog ? { noLog: true } : {}); }); };
+  if (last < 2) { empty(!base.keptFrom); return { views: views, keptFrom: base.keptFrom }; }
+  const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
+  if (msCol[0] > 0) {
+    const rawFrom = Utilities.formatDate(new Date(msCol[0]), keptTz || rest[0].tz, 'yyyy-MM-dd');
+    if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
+  }
+  const minStart = Math.min.apply(null, rest.map(function (d) { return d.startMs; }));
+  const maxEnd = Math.max.apply(null, rest.map(function (d) { return d.endMs; }));
+  const lo = activityLowerBound_(msCol, minStart), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
+  const want = {};
+  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [] }; });
+  const minOf = function (ms, tz) {
+    const t = Utilities.formatDate(new Date(ms), tz, 'HH:mm').split(':');
+    return parseInt(t[0], 10) * 60 + parseInt(t[1], 10);
+  };
+  if (hi > lo) {
+    const cells = sheet.getRange(2 + lo, 2, hi - lo, 4).getValues();   // id, ms, counts, kind
+    const bms = ACTIVITY_BLOCK_MIN * 60000;
+    for (let i = 0; i < cells.length; i++) {
+      const w = want[String(cells[i][0]).trim()];
+      if (!w) continue;
+      const ms = msCol[lo + i];
+      activityCountsDecode_(cells[i][2]).forEach(function (e) {
+        const bm = e[0] * bms;
+        if (bm >= w.d.startMs && bm < w.d.endMs) w.counts.push([minOf(bm, w.d.tz), e[1], e[2]]);
+      });
+      if (String(cells[i][3] || '') === ACTIVITY_COUNTS_KIND) continue;
+      if (ms >= w.d.startMs && ms < w.d.endMs) w.mins.push(minOf(ms, w.d.tz));
+    }
+  }
+  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts); });
+  return { views: views, keptFrom: base.keptFrom };
+}
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
  *  timezone, for Day Edit. `{date, timezone, pings, first, last, blocks,
- *  blockMin, gapMin}` or `{error}`; a day with no tab yet is zero pings, said
- *  as such (`noLog`). Rows are append-ordered by time, so the day is found by
- *  a binary search on the Ms column and only its slice of ids is read. */
+ *  level, hasCounts, clicks, keys, activeMin, blockMin, gapMin}` or `{error}`;
+ *  a day with no tab yet is zero pings, said as such (`noLog`). */
 function managerGetDayActivity(empId, date) {
   try {
     const caller = getEmployeeInfo_();
@@ -4466,41 +4673,45 @@ function managerGetDayActivity(empId, date) {
     const target = lookupEmployeeById_(String(empId || '').trim());
     if (!target) return { error: 'Employee not found.' };
     const tz = empTz_(target);
-    const startMs = Utilities.parseDate(date + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const endMs = Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS, keptFrom: '' };
-    const ss = getAdpSS_();
-    // Batch G: a finished day's SUMMARY row is the whole day (it was written
-    // before any of its pings could be purged), so it is read first; the raw
-    // pings answer only for a day not yet condensed (today, last night's run).
-    const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
-    const sumKeys = activitySummaryKeys_(sum);
-    Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
-    const sumRow = sumKeys[String(date) + '|' + target.id];
-    if (sumRow) {
-      const r = sum.getRange(sumRow, 1, 1, ACTIVITY_SUMMARY_HEADERS.length).getValues()[0];
-      return Object.assign(base, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
-        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
+    const r = activityDaysFor_(getAdpSS_(), [{ id: target.id, tz: tz }], String(date), tz);
+    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom });
+  } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
+}
+/** PURE (Node-pinned) — a day view as the team table draws it: 24 hourly
+ *  levels (clicks + keystrokes, or — on a day with no counts — the active
+ *  10-minute blocks in each hour), with the totals. */
+function activityHourly_(v) {
+  const size = (v && v.blockMin) || ACTIVITY_BLOCK_MIN, per = Math.max(1, Math.round(60 / size));
+  const src = v && v.hasCounts ? (v.level || []) : (v && v.blocks || []).map(function (b, i) { return b > 0 || ((v.level || [])[i] > 0) ? 1 : 0; });
+  const hours = new Array(24).fill(0);
+  src.forEach(function (n, i) { const h = Math.floor(i / per); if (h < 24) hours[h] += Number(n) || 0; });
+  return { hours: hours, hasCounts: !!(v && v.hasCounts), clicks: (v && v.clicks) || 0, keys: (v && v.keys) || 0,
+    activeMin: (v && v.activeMin) || 0, pings: (v && v.pings) || 0, first: (v && v.first) || '', last: (v && v.last) || '' };
+}
+/** Manager-gated, read-only (AC1, operator 2026-11-11) — every rostered rep's
+ *  app activity on one day, each on the day of their own timezone, hourly,
+ *  for the Team Punches day table. `{date, blockMin, keptFrom, reps: {id:
+ *  {hours[24], hasCounts, clicks, keys, activeMin, pings, first, last}}}` or
+ *  `{error}`. Use of THIS app only — a call or another tool reads as idle. */
+function managerGetTeamActivity(date) {
+  try {
+    const caller = getEmployeeInfo_();
+    if (!caller || !caller.isManager) return { error: 'Manager access required.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return { error: 'Invalid date format.' };
+    const roster = getEmployeeRosterRows_();
+    const targets = [];
+    for (let i = 1; i < roster.length; i++) {
+      if (!empRosterEmail_(roster[i])) continue;   // INV-183: the one inclusion predicate
+      const id = String(roster[i][EMP.ID] || '').trim();
+      if (id) targets.push({ id: id, tz: safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim()) });
     }
-    const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
-    const last = sheet ? sheet.getLastRow() : 0;
-    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: !base.keptFrom });
-    const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
-    if (msCol[0] > 0) {
-      const rawFrom = Utilities.formatDate(new Date(msCol[0]), tz, 'yyyy-MM-dd');
-      if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
-    }
-    const lo = activityLowerBound_(msCol, startMs), hi = activityLowerBound_(msCol, endMs);
-    const mins = [];
-    if (hi > lo) {
-      const ids = sheet.getRange(2 + lo, 2, hi - lo, 1).getValues();
-      for (let i = 0; i < ids.length; i++) {
-        if (String(ids[i][0]).trim() !== target.id) continue;
-        const t = Utilities.formatDate(new Date(msCol[lo + i]), tz, 'HH:mm').split(':');
-        mins.push(parseInt(t[0], 10) * 60 + parseInt(t[1], 10));
-      }
-    }
-    return Object.assign(base, activityDayView_(mins, ACTIVITY_BLOCK_MIN));
+    const out = { date: String(date), blockMin: ACTIVITY_BLOCK_MIN, keptFrom: '', reps: {} };
+    if (!targets.length) return out;
+    const r = activityDaysFor_(getAdpSS_(), targets, String(date), empTz_(caller));
+    out.keptFrom = r.keptFrom;
+    targets.forEach(function (t) { out.reps[t.id] = activityHourly_(r.views[t.id]); });
+    return out;
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
 }
 /** Best-effort: { empId: true } for every id with a live presence stamp. ONE
