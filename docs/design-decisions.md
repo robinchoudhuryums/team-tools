@@ -4453,6 +4453,38 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
+  **Since T1 (2026-11-11) see the entry below — `managerOnly` is gone (the
+  gate is the step's tab) and replay moved to Settings.**
+- <a id="t1-tour-by-role-and-whats-new"></a>**The tour visits every tool, each step gated by its TAB; someone who saw an older version gets only the newer steps; replay is in Settings (T1, operator 2026-11-11)**
+  - **The gate is the tab, not a flag on the step.** `tourStepVisible_` asks
+    `tabVisibleForUser_(TOOLS[tool].tabs[view])` — the tab bar's own rule
+    (adminOnly, managerOnly, the `also` flags) — so a manager, Spanish, QA or
+    admin step follows its tab, View-as included, and a new gate needs no tour
+    edit. A step naming no registered tab is never shown.
+  - **Versioned steps, not a versioned tour.** Each step carries `since` (the
+    tour version it arrived in); `TOUR_VERSION` is 2. A first load gets the
+    full tour (the `welcome` card first); a stored version below 2 gets the
+    what's-new run — the `whatsnew` card, then only the visible steps with
+    `since` above it — with its own kicker ("What's new · 1 of N"); a stored
+    version at or above the current one gets nothing. Finishing OR skipping
+    stamps the current version, so neither is offered again.
+  - **Replay is Settings → Replay the tour** (not in the compact pop-out, which
+    holds one tool); the Call Notes ? link stays. The button hands focus to the
+    gear before the tour starts, because the tour returns focus to whatever had
+    it when it began and the pressed button is in the panel that closes.
+  - **A tall target gets the card BESIDE it.** When neither below nor above
+    fits, the card sits to the side; before, it was centred on the target —
+    over the very thing the step described. Steps anchor on a part of a view
+    (its controls, its headline), not the whole page.
+  - **Every step's target is checked in a real browser.** `test/visual/tour-check.mjs`
+    (in CI) walks the full tour as the fixture admin, then as View-as Manager,
+    Spanish CSR and CSR, and on a phone, and loads the page as someone who saw
+    version 1; it fails on a step whose target never appears (the engine skips
+    those silently), a card off screen, or a step a role's tabs do not allow,
+    and photographs every step. Its first run found the v1 Tags step aimed at
+    the suggestion strip, which is empty until you type — skipped for everyone
+    since it shipped. A Node pin checks every selector's classes and ids appear
+    in the markup.
   **AMENDED (cycle 23 SH-04, 2026-10-02):** the popover is a modal dialog in
   everything but name, so it now says so — `role="dialog"`, `aria-modal`,
   named by the step title and described by its body. Each step focuses its

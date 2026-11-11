@@ -211,6 +211,13 @@ not restate it. Server endpoints live in the fourteen server files
      (SH-05). Every close button returns focus to whatever opened the dialog, and
      Tab cannot leave the keyboard-shortcuts dialog (SH-02, SH-03 — g100).
 
+     **T1 (operator 2026-11-11) — the onboarding tour.** The tour now visits every
+     tool — Dashboard, Stats, Spanish Inbox, Time / PTO, Call Notes, Dept
+     Requests, Reference, Intake, Training, QA, Manage, Admin — and shows each
+     step only to someone who can see its tab. People who took the first tour get
+     a short "what's new" run on their next load instead of the whole thing. It is
+     replayed from Settings → Replay the tour.
+
      **Cycle 23 Batch 10 (2026-10-02) — shell and automation.** The outsider page
      reads the org's two domains exactly (`CONFIG.ORG_EMAIL_DOMAINS` —
      universalmedsupply.com and umsupply.com); it had tested `@umsupply.com` alone

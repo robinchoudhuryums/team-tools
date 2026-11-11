@@ -21,6 +21,15 @@ the shots as an artifact when it fails. A finding owned elsewhere goes in
 whose finding stops firing fails the run, so remove it with the fix. A subset
 name the matrix lacks is refused before the browser starts.
 
+**The onboarding tour, walked (T1).** `node tour-check.mjs` presses Next
+through the full tour as the fixture admin, then View-as Manager, Spanish CSR
+and CSR, and on a phone, and loads the page as someone who saw tour version 1.
+It fails when a step's target never appears (the tour would skip it without a
+word), a card lands off screen, or a role is shown a step its tabs do not
+allow; it photographs every step (`shots/tour-<run>-<nn>-<step>.png`) and
+writes `tour-report.json`. CI runs it after the layout gate. The matrix seeds
+`umsTour` at version 9999 so no scenario starts the tour.
+
 **axe on every handbook screen (HB2.4).** `node shoot.mjs --axe` runs
 axe-core (pinned in `package.json`) over every scenario whose page is the
 handbook app, against WCAG 2.1 A and AA, after each scenario's post hook — no
@@ -58,6 +67,7 @@ node shoot.mjs cn-log compact   # substring filter: only matching scenarios
 node a13-measure.mjs   # spot-measure: is a tag swap really pixel-identical?
 node map-check.mjs     # spot-measure: the ```map block + article-image fallback
 node settings-check.mjs # spot-measure: the Settings flyout + View-as preview
+node tour-check.mjs     # the onboarding tour per role + the what's-new run (CI)
 node manual-fixtures.mjs <manual.json>  # refresh the procedures-manual fixtures
 ```
 
