@@ -158,11 +158,15 @@ status, then export and import. The first two, Chapter 0 (CSR Core) and Chapter
 1 (Call Handling), ten questions each at 80%, were drafted, reviewed and
 published on 2026-10-30.
 
-**Taking one (HB3.2).** **Quizzes** in the contents lists them by chapter, and a
-section that has one shows a quiz bar. The questions and their options are
-shuffled for each sitting; every question must be answered. The result gives
-the score and, for each wrong answer, its explanation and a link to its section
-— never the right option. Three failed attempts lock the quiz for 24 hours from
+**Taking one (HB3.2; refreshed in HBR3).** **Quizzes** in the contents shows a
+card for each quiz, in the contents' order — its chapter's colour, a score ring,
+where the reader stands and one action — with an All / To do / Passed filter, and
+a section that has one shows a quiz bar. The questions and their options are
+shuffled for each sitting and shown one at a time (Back, Next, a progress strip;
+Leave quiz asks first when answers would be lost); every question must be
+answered. The result gives the score and every answer — what the reader chose,
+right or missed — and for each miss its explanation and a link to its section —
+never the right option. Three failed attempts lock the quiz for 24 hours from
 the last (a pass starts the count over). A reader's confirmed manager, or the
 admin, can reset them from **Profile → Quiz lock-outs**. Attempts and resets go
 to the Handbook spreadsheet's `QuizAttempts` and `QuizResets` tabs (created by
@@ -349,10 +353,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b, HBR3-a…c — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2/HBR3"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate, and every one

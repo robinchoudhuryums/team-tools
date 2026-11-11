@@ -108,7 +108,9 @@ const HB_PAGE = { page: 'handbook' };
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
 const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
-const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ document.querySelectorAll('.hb-qz-q').forEach(function(f){ var i=f.querySelector('input'); if(i) i.checked=true; }); hbSubmitQuiz_(); }, 400)";
+// HBR3: a sitting is one question per screen — answer each (the first option shown) and step on, then submit.
+const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ var t=HB_QZ.taking; for (var k=0;k<t.order.length;k++){ var i=document.querySelector('#hb-qz-card input'); i.checked=true; hbQuizPick_(i); if(k<t.order.length-1) hbQuizStep_(1); } hbSubmitQuiz_(); }, 400)";
+const HB_QUIZ_STEP2 = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ var i=document.querySelectorAll('#hb-qz-card input')[1]; i.checked=true; hbQuizPick_(i); hbQuizStep_(1); var j=document.querySelectorAll('#hb-qz-card input')[0]; j.checked=true; hbQuizPick_(j); }, 400)";
 const HB_PROGRESS = "hbGoTraining_(); setTimeout(function(){ var e=document.getElementById('hb-tr-progress'); if(e) e.scrollIntoView(); var d=e && e.querySelector('details'); if(d) d.open=true; }, 500)";
 const HB_NOTES = "try { localStorage.setItem('umsHbNotes', JSON.stringify({ 'man-0-11': { t: 'Read the Ticket State before the note.\\nA split shipment has two tracking numbers — give both.', ms: Date.now() - 3600000 }, 'man-0-10': { t: 'Pat. Resp. is what they owe BEFORE delivery.', ms: Date.now() - 86400000 }, 'man-0-2': { t: '', ms: 5 } })); } catch (e) {} ";
 const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
@@ -154,6 +156,12 @@ const SCENARIOS = [
   ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
   ['handbook-quiz-take-light-mobile', {}, MOBILE, 'light', '', "hbTakeQuiz_('q-core-calls', true)", HB_PAGE],
   ['handbook-quiz-result-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_RESULT, HB_PAGE],
+  // HBR3 — the quiz cards on a phone in dark, the To do filter, a sitting on its second question, the result on a phone.
+  ['handbook-quizzes-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoQuizzes_()', HB_PAGE],
+  ['handbook-quizzes-todo-light-wide', {}, WIDE, 'light', '', "hbGoQuizzes_(); setTimeout(function(){ hbQuizFilterSet_('todo'); }, 400)", HB_PAGE],
+  ['handbook-quiz-take-light-wide', {}, WIDE, 'light', '', HB_QUIZ_STEP2, HB_PAGE],
+  ['handbook-quiz-take-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_STEP2, HB_PAGE],
+  ['handbook-quiz-result-light-mobile', {}, MOBILE, 'light', '', HB_QUIZ_RESULT, HB_PAGE],
   ['handbook-quizbar-light-mobile', {}, MOBILE, 'light', '?s=0.11', '', HB_PAGE],
   // HB3.3 — training: My training and Team training; the two editors.
   ['handbook-training-light-wide', {}, WIDE,   'light', '', 'hbGoTraining_()', HB_PAGE],

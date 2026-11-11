@@ -11788,14 +11788,26 @@ const hb32Me_ = (o) => Object.assign({ locked: false, retryAtMs: null, attemptsL
 const HB32_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
   { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
   { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ locked: true, retryAtMs: Date.now() + 3600000, attemptsLeft: 0, attempts: 3 }) }] });
-/** Tick the options whose TEXT is given, for question `text` — the page shuffles, so a test picks by words. */
+/** HBR3: a sitting shows ONE question. Answer the question showing — it must be
+ *  `qText` — by ticking the options whose words are given (the page shuffles). */
 function hb32Pick_(h, qText, optTexts) {
-  const fs_ = [...h.d.querySelectorAll('.hb-qz-q')].filter((f) => f.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0)[0];
-  assert.ok(fs_, 'question shown: ' + qText);
-  [...fs_.querySelectorAll('.hb-qz-opt')].forEach((l) => { if (optTexts.indexOf(l.textContent.trim()) >= 0) l.querySelector('input').checked = true; });
+  const card = h.d.getElementById('hb-qz-card');
+  assert.ok(card && card.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0, 'question showing: ' + qText + ' (got ' + (card && card.querySelector('.hb-qz-qt').textContent) + ')');
+  [...card.querySelectorAll('.hb-qz-opt')].forEach((l) => {
+    if (optTexts.indexOf(l.querySelector('.hb-qz-ot').textContent.trim()) < 0) return;
+    const i = l.querySelector('input'); i.checked = true; i.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  });
+}
+/** The question showing now. */
+const hb32Showing_ = (h) => h.d.querySelector('#hb-qz-card .hb-qz-qt').textContent;
+/** Answer whatever question is showing from a map of question → option words, then Next (or not, on the last). */
+function hb32Answer_(h, map, next) {
+  const q = hb32Showing_(h);
+  hb32Pick_(h, q, map[q]);
+  if (next) h.d.getElementById('hb-qz-next').click();
 }
 
-test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list groups by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
+test('HB3.2 DOM (HBR3: cards): a section with a quiz shows the quiz bar; the Quizzes list orders the cards by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
   const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST() } });
   assert.strictEqual(h.d.getElementById('hb-quizbar').textContent.trim(), '', 'no bar on the home page');
   h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
@@ -11805,37 +11817,44 @@ test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list grou
   assert.ok(!/Quiz/.test(bar.textContent), 'and only on its section (HB2.2: the note button rides every section)');
   h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { quizzes: true }, {}]);
-  const groups = [...h.d.querySelectorAll('.hb-qz-grp')].map((g) => [g.querySelector('h2').textContent, [...g.querySelectorAll('.hb-pp-row-n')].map((n) => n.textContent)]);
-  assert.deepStrictEqual(groups, [['3 · Respiratory & Resupply', ['Nebulizers']], ['5 · Power Mobility', ['Chairs']]], 'in the contents\' order');
-  const rows = [...h.d.querySelectorAll('.hb-qz-grp .hb-pp-row')];
-  assert.ok(/Not taken/.test(rows[0].textContent) && /pass mark 67%/.test(rows[0].textContent) && /section 3\.2/.test(rows[0].textContent));
-  assert.ok(/Locked until/.test(rows[1].textContent) && rows[1].querySelector('button').disabled, 'a locked quiz cannot be started');
+  // HBR3: cards, in the contents' order, each named by its chapter.
+  const cards = [...h.d.querySelectorAll('.hb-qc')];
+  assert.deepStrictEqual(cards.map((c) => [c.querySelector('.hb-qc-t').textContent, c.querySelector('.hb-qc-k').textContent]),
+    [['Nebulizers', 'Chapter 3 · Respiratory & Resupply'], ['Chairs', 'Chapter 5 · Power Mobility']], 'in the contents\' order');
+  assert.ok(/Not taken yet/.test(cards[0].textContent) && /pass 67%/.test(cards[0].textContent) && /Covers 3\.2/.test(cards[0].textContent));
+  assert.ok(/Locked until/.test(cards[1].textContent) && cards[1].querySelector('button').disabled, 'a locked quiz cannot be started');
 });
 
-test('HB3.2 DOM: a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
+test('HB3.2 DOM (HBR3: one question per screen): a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
   const sent = [];
   const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
     hbSubmitQuiz: (id, a) => { sent.push(JSON.parse(JSON.stringify(a))); return { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true],
       review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) }; } } });
   h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { quiz: 'q-neb' }, {}]);
-  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 3);
-  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
-  // Unanswered: said, and nothing sent.
-  hb32Pick_(h, 'How often?', ['Monthly']);
+  // HBR3: one question per screen.
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 1, 'one question showing');
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Masks', 'Kits'], 'Nebs are respiratory.': ['True'] };
+  const seen = [];
+  for (let k = 0; k < 3; k++) {
+    seen.push(hb32Showing_(h));
+    if (seen[k] === 'Which ship?') assert.strictEqual(h.d.querySelectorAll('#hb-qz-card input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
+    if (k < 2) hb32Answer_(h, words, true);
+  }
+  assert.deepStrictEqual(seen.slice().sort(), Object.keys(words).sort(), 'every question, once');
+  // The last one left blank: Submit says which, and nothing is sent.
   h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
-  assert.ok(/Answer every question first/.test(h.d.getElementById('hb-qz-need').textContent));
+  assert.ok(/Answer every question first — question 3 is unanswered/.test(h.d.getElementById('hb-qz-need').textContent));
   assert.strictEqual(sent.length, 0);
-  hb32Pick_(h, 'Which ship?', ['Masks', 'Kits']);
-  hb32Pick_(h, 'Nebs are respiratory.', ['True']);
+  hb32Answer_(h, words, false);
   h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
   assert.deepStrictEqual(sent, [[1, [0, 2], 0]], 'original question order, original option numbers');
   const page = h.main().textContent;
   assert.ok(/67%/.test(page) && /Passed/.test(page));
   assert.ok(/Kits and masks ship monthly\./.test(page), 'the explanation');
-  const link = h.d.querySelector('.hb-qz-rev .hb-qz-sec');
+  const link = h.d.querySelector('.hb-qz-rev.miss .hb-qz-sec');
   assert.strictEqual(link.textContent, 'Read 3.1.1');
-  assert.ok(!/Tubing/.test(h.d.querySelector('.hb-qz-rev').textContent), 'no option text in the review');
+  assert.ok(!/Tubing/.test(h.d.getElementById('hb-qz-take').textContent), 'an option not chosen is never named — the right option never shows');
   link.click(); await h.settleAll();
   assert.ok(h.d.querySelector('#kb-man-sec-man-3-1') || /Tanks/.test(h.main().textContent), 'the link opens the section');
 });
@@ -11902,6 +11921,128 @@ test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar i
   await new Promise((r) => setTimeout(r, 80)); await two.settleAll();
   assert.strictEqual(two.d.querySelector('#hb-qz-take h1').textContent, 'Nebulizers', 'the later quiz stays — the earlier answer is dropped');
 });
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR3 — the quizzes refreshed (handoff Batch 3): the cards and their filter,
+// a sitting one question per screen, Leave, and the result.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR3 — the quizzes refreshed');
+const HBR3_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
+  { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
+  { id: 'tq-00000000000a', title: 'Resupply refresher', section: 'man-3-1', anchor: '', passPct: 80, count: 6, team: true, authorName: 'Boss', me: hb32Me_({ attempts: 1, attemptsLeft: 2, best: 50, lastMs: Date.now() - 3600000 }) },
+  { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ attempts: 2, passed: true, best: 100, lastMs: Date.parse('2026-10-27T12:00:00') }) }] });
+
+test('HBR3 DOM: the quiz cards — a chapter or team kicker, a pill and ring for where the reader stands, one action, Last taken or the section to review; the filter keeps To do or Passed and says when none is left; "More quizzes" names the chapters with no official quiz', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HBR3_LIST() } });
+  h.w.hbGoQuizzes_(); await h.settleAll();
+  const card = (id) => h.d.querySelector('.hb-qc[data-quiz="' + id + '"]');
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-neb', 'tq-00000000000a', 'q-chairs'], 'chapter 3, then 5');
+  const neb = card('q-neb'), team = card('tq-00000000000a'), chairs = card('q-chairs');
+  assert.ok(!neb.querySelector('.hb-qc-pill') && neb.querySelector('.hb-ring').getAttribute('aria-label') === 'Not taken yet' && neb.querySelector('button.hb-btn-pri').textContent === 'Start quiz');
+  assert.strictEqual(team.querySelector('.hb-qc-k').textContent, 'Team quiz · Boss');
+  assert.ok(/Try again/.test(team.querySelector('.hb-qc-pill').textContent) && team.querySelector('.hb-ring').classList.contains('bad') && /1 of 3 tries used/.test(team.textContent));
+  assert.strictEqual(team.querySelector('.hb-qc-ft .hb-qz-sec').textContent, 'Review 3.1', 'a failed try points back at its section');
+  assert.ok(/Passed/.test(chairs.querySelector('.hb-qc-pill').textContent) && /Best of 2 attempts/.test(chairs.textContent) && /Last taken Oct 27/.test(chairs.textContent));
+  assert.strictEqual(chairs.querySelector('.hb-ring').getAttribute('aria-label'), 'Best score 100%');
+  assert.strictEqual(chairs.querySelector('.hb-qc-big').textContent, '5', 'the chapter\'s big faint number');
+  assert.strictEqual(chairs.querySelector('.hb-qc-big').getAttribute('aria-hidden'), 'true');
+  assert.ok(chairs.classList.contains('kb-man-p5'), 'its chapter\'s colour');
+  assert.strictEqual(chairs.querySelector('button').getAttribute('aria-label'), 'Retake: Chairs', 'each action names its quiz');
+  // Every chapter has an official quiz here except none — so no "More quizzes".
+  assert.ok(!h.d.querySelector('.hb-qz-empty'), 'nothing to say when every chapter has one');
+  // The filter.
+  h.d.querySelector('#hb-qz-filter [data-f="todo"]').click(); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-neb', 'tq-00000000000a']);
+  assert.strictEqual(h.d.querySelector('#hb-qz-filter [data-f="todo"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.d.querySelector('#hb-qz-filter [data-f="all"]').getAttribute('aria-pressed'), 'false');
+  h.d.querySelector('#hb-qz-filter [data-f="passed"]').click(); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-chairs']);
+  // A list with nothing passed: said, never an empty grid.
+  const none = await hbBoot_({ answers: { hbListQuizzes: { setUp: true, unreadable: 0, quizzes: [HBR3_LIST().quizzes[0]] } } });
+  none.w.hbQuizFilterSet_('passed'); none.w.hbGoQuizzes_(); await none.settleAll();
+  assert.ok(/No quiz passed yet/.test(none.main().textContent) && !none.d.querySelector('.hb-qc'));
+  none.w.hbQuizFilterSet_('all'); await none.settleAll();
+  assert.ok(/One chapter has no quiz yet/.test(none.d.querySelector('.hb-qz-empty').textContent) && /Power Mobility/.test(none.d.querySelector('.hb-qz-empty').textContent),
+    'chapter 5 has no official quiz');
+});
+
+test('HBR3 DOM: a sitting one question at a time — Next asks for an answer, the strip marks answered and current, Back keeps the choice, Submit only on the last, focus moves to each question; Leave goes straight back with nothing chosen and asks first when answers would be lost', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Masks', 'Kits'], 'Nebs are respiratory.': ['True'] };
+  const strip = () => [...h.d.querySelectorAll('#hb-qz-strip i')].map((i) => i.className);
+  assert.deepStrictEqual(strip(), ['cur', '', '']);
+  assert.ok(h.d.getElementById('hb-qz-back').disabled && h.d.getElementById('hb-qz-submit').hidden && !h.d.getElementById('hb-qz-next').hidden);
+  assert.ok(/Question 1 of 3 · pass 67%/.test(h.d.getElementById('hb-qz-hs').textContent));
+  const first = hb32Showing_(h);
+  h.d.getElementById('hb-qz-next').click();
+  assert.strictEqual(h.d.getElementById('hb-qz-need').textContent, 'Choose an answer first.');
+  assert.strictEqual(hb32Showing_(h), first, 'it stays on the question');
+  hb32Pick_(h, first, words[first]);
+  assert.deepStrictEqual(strip(), ['cur', '', ''].map((c, i) => (i === 0 ? 'cur' : c)));
+  assert.ok(h.d.querySelector('#hb-qz-card .hb-qz-opt.on'), 'the chosen option is drawn chosen');
+  h.d.getElementById('hb-qz-next').click();
+  assert.deepStrictEqual(strip(), ['done', 'cur', '']);
+  assert.strictEqual(h.d.activeElement && h.d.activeElement.id, 'hb-qz-qh', 'focus moves to the question');
+  h.d.getElementById('hb-qz-back').click();
+  assert.strictEqual(hb32Showing_(h), first, 'Back');
+  const chosen = [...h.d.querySelectorAll('#hb-qz-card .hb-qz-opt')].filter((l) => l.querySelector('input').checked).map((l) => l.querySelector('.hb-qz-ot').textContent);
+  assert.deepStrictEqual(chosen.sort(), words[first].slice().sort(), 'the choice is kept');
+  h.d.getElementById('hb-qz-next').click(); hb32Answer_(h, words, true);
+  assert.ok(!h.d.getElementById('hb-qz-submit').hidden && h.d.getElementById('hb-qz-next').hidden, 'Submit on the last question');
+  // Leave with answers: asked; Cancel keeps the sitting.
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  const dlg = h.d.querySelector('.ui-dialog');
+  assert.ok(dlg && /Leave this quiz\?/.test(dlg.textContent) && /does not use a try/.test(dlg.textContent));
+  h.d.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-card') && h.w.HB_QZ.taking, 'Cancel keeps the sitting');
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-body') && !h.d.getElementById('hb-qz-card'), 'Leave → the list');
+  assert.strictEqual(h.calls.indexOf('hbSubmitQuiz'), -1, 'leaving records nothing');
+  // Nothing chosen: straight back, no question.
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  assert.ok(!h.d.querySelector('.ui-dialog') && h.d.getElementById('hb-qz-body'), 'no answers → no question asked');
+});
+
+test('HBR3 DOM: the result — the score ring and what happens next, every answer in the order seen with what was chosen, Review opens the first miss\'s section, Try again only when a try is left; a pass says so and offers no retry', async () => {
+  const fail = { success: true, scorePct: 33, right: 1, total: 3, passed: false, passPct: 67, perQuestion: [true, false, false],
+    review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }, { i: 2, explain: '', section: 'man-3-2', anchor: '' }], me: hb32Me_({ attempts: 1, attemptsLeft: 2, best: 33 }) };
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: fail } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Kits'], 'Nebs are respiratory.': ['False'] };
+  const order = [];
+  for (let k = 0; k < 3; k++) { order.push(hb32Showing_(h)); hb32Answer_(h, words, k < 2); }
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  const take = h.d.getElementById('hb-qz-take');
+  assert.strictEqual(take.querySelector('.hb-qr-h').textContent, 'Not passed yet');
+  assert.strictEqual(take.querySelector('.hb-ring.big').getAttribute('aria-label'), 'Score 33%, 1 of 3 right');
+  assert.ok(/2 of 3 attempts left/.test(take.textContent));
+  const rows = [...take.querySelectorAll('.hb-qz-rev')];
+  assert.deepStrictEqual(rows.map((r) => r.querySelector('.hb-qz-qt').textContent), order, 'in the order the reader saw them');
+  rows.forEach((r) => {
+    const q = r.querySelector('.hb-qz-qt').textContent;
+    assert.strictEqual(r.querySelector('.hb-qr-chose').textContent, 'You chose ' + words[q].join(', '));
+    assert.strictEqual(r.classList.contains('ok'), q === 'How often?');
+    assert.strictEqual(r.querySelector('.hb-qr-m').getAttribute('aria-label'), q === 'How often?' ? 'Right' : 'Missed');
+  });
+  assert.ok(!take.querySelector('.hb-qz-rev.ok .hb-qz-sec'), 'a right answer links nowhere');
+  assert.ok([...take.querySelectorAll('.hb-qz-actions button')].some((b) => b.textContent === 'Try again'));
+  const review = [...take.querySelectorAll('.hb-qz-actions button')].filter((b) => /^Review /.test(b.textContent))[0];
+  const firstMiss = order.filter((q) => q !== 'How often?')[0];
+  assert.strictEqual(review.getAttribute('data-kb-id'), firstMiss === 'Which ship?' ? 'man-3-1' : 'man-3-2', 'Review opens the first miss the reader saw');
+  assert.strictEqual(h.d.activeElement, take.querySelector('.hb-qr-h'), 'focus on the result');
+  // A pass: said, and no retry offered.
+  const p = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
+    hbSubmitQuiz: Object.assign({}, fail, { scorePct: 100, right: 3, passed: true, perQuestion: [true, true, true], review: [], me: hb32Me_({ attempts: 1, passed: true, best: 100 }) }) } });
+  p.w.hbTakeQuiz_('q-neb', true); await p.settleAll();
+  for (let k = 0; k < 3; k++) hb32Answer_(p, words, k < 2);
+  p.d.getElementById('hb-qz-submit').click(); await p.settleAll();
+  assert.strictEqual(p.d.querySelector('.hb-qr-h').textContent, 'Passed — nice work.');
+  assert.ok(![...p.d.querySelectorAll('.hb-qz-actions button')].some((b) => /Try again|Review/.test(b.textContent)), 'no retry, nothing to review');
+  assert.ok(/All right/.test(p.main().textContent));
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // HB3.3 — training: My training (progress, Mark as read), Team training for a
 // manager, and the quiz and plan editors.

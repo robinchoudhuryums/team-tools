@@ -1549,8 +1549,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
       return { setUp: true, unreadable: 0, quizzes: [
         { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, me: me() },
-        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 1, passed: true, best: 100 }) },
-        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3 }) }] };
+        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 2, passed: true, best: 100, lastMs: Date.now() - 4 * 86400000 }) },
+        { id: 'tq-00000000000b', title: 'Resupply refresher', section: 'man-3-8', anchor: '', passPct: 80, count: 6, team: true, authorName: 'Dana Reyes', me: me({ attempts: 1, attemptsLeft: 2, best: 67, lastMs: Date.now() - 3600000 }) },
+        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3, best: 60, lastMs: Date.now() - 7200000 }) }] };
     },
     hbGetQuiz: function () {
       return { quiz: { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, questions: [

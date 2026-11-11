@@ -70,7 +70,7 @@
   /* HBR1: a heading (or the reading area) that took focus from script (HB2.4) is
      not a control — no ring. The ring is styles.html's :focus-visible box-shadow,
      so both are cleared (Team Tools' own #view-area rule). Controls keep theirs. */
-  .kb-main:focus-visible, .kb-main h1[tabindex="-1"]:focus, .kb-man-sec-h[tabindex="-1"]:focus { outline: none; box-shadow: none; }
+  .kb-main:focus-visible, .kb-main h1[tabindex="-1"]:focus, .kb-man-sec-h[tabindex="-1"]:focus, .kb-main .hb-qz-qt[tabindex="-1"]:focus, .kb-main .hb-qr-h[tabindex="-1"]:focus { outline: none; box-shadow: none; }
   .kb-btn { font: inherit; font-size: .76rem; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
   .kb-btn:hover { background: var(--paper-2); }
   .kb-btn:disabled { opacity: .55; cursor: default; background: var(--paper-card); }
@@ -164,25 +164,107 @@
   .hb-toc-quizzes { font: inherit; font-size: .86rem; font-weight: 600; text-align: left; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }
   .hb-toc-quizzes:hover { background: var(--accent-soft); color: var(--success-deep); }
   .hb-qz { display: flex; flex-direction: column; gap: 14px; max-width: 820px; }
-  .hb-qz-grp { display: flex; flex-direction: column; }
   .hb-qz-chip { align-self: flex-start; font-size: .72rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--paper-2); color: var(--muted); margin-top: 2px; }
   .hb-qz-chip.pass { background: var(--accent-soft); color: var(--success-deep); }
   .hb-qz-chip.lock { background: var(--warn-soft); color: var(--warning-deep); }
   .hb-qz-sec { color: var(--info-deep); }
+  /* HBR3 — the quiz list as cards: a light head in the chapter's colour (decision 4), the big faint chapter number, a status pill; a score ring, the standing, one action. */
+  .hb-qz-wide { max-width: 1180px; }
+  .hb-qz-ph { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
+  .hb-qz-ph .hb-pp-h { margin-bottom: 2px; }
+  .hb-qc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
+  .hb-qc { --man-c: var(--muted); display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper-card); box-shadow: var(--shadow-sm); }
+  .hb-qc-top { position: relative; overflow: hidden; min-height: 104px; padding: 18px 20px 16px; border-bottom: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line));
+    background: linear-gradient(140deg, color-mix(in oklab, var(--man-c) 16%, var(--paper-card)), color-mix(in oklab, var(--man-c) 5%, var(--paper-card))); }
+  .hb-qc-big { position: absolute; right: 14px; bottom: -24px; font-family: var(--display); font-size: 104px; font-weight: 800; line-height: 1; letter-spacing: -.06em; color: var(--man-c); opacity: .12; pointer-events: none; }
+  .hb-qc-pill { position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 6px; }
+  .hb-qc-pill.ok { background: var(--accent-soft); color: var(--success-deep); }
+  .hb-qc-pill.warn { background: var(--warn-soft); color: var(--warning-deep); }
+  .hb-qc-pill.bad { background: var(--danger-soft); color: var(--danger-deep); }
+  .hb-qc-k { position: relative; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: color-mix(in oklab, var(--man-c) 70%, var(--ink)); padding-right: 84px; overflow-wrap: anywhere; }
+  .hb-qc-t { position: relative; margin: 6px 0 0; font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.25; max-width: 85%; overflow-wrap: anywhere; }
+  .hb-qc-b { display: flex; flex-direction: column; gap: 14px; flex: 1; padding: 18px 20px 18px; }
+  .hb-qc-s { display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .hb-qc-m { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: .82rem; color: var(--muted); }
+  .hb-qc-m b { color: var(--ink); font-size: .9rem; }
+  .hb-qc-f { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding-top: 14px; border-top: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--muted); }
+  .hb-qc-ft { flex: 1 1 8em; min-width: 0; overflow-wrap: anywhere; }
+  .hb-qc-f .kb-btn { flex: none; }
+  .hb-ring { --p: 0; --ring-c: var(--accent); flex: none; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(var(--ring-c) calc(var(--p) * 1%), var(--paper-3) 0); }
+  .hb-ring b { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: var(--paper-card); color: var(--ink); font-size: .95rem; font-weight: 800; line-height: 1.05; text-align: center; }
+  .hb-ring.bad { --ring-c: var(--danger); }
+  .hb-ring.big { width: 128px; height: 128px; }
+  .hb-ring.big b { width: 104px; height: 104px; font-size: 1.9rem; letter-spacing: -.03em; }
+  .hb-ring b small { display: block; font-size: .72rem; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+  .hb-qz-more { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 14px 0 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -.01em; }
+  .hb-qz-more .hb-quiet { font-size: .82rem; font-weight: 500; letter-spacing: 0; }
+  .hb-qz-empty { display: flex; align-items: center; gap: 16px; padding: 20px 22px; border: 1.5px dashed var(--line-2); border-radius: 16px; color: var(--muted); font-size: .86rem; }
+  .hb-qz-empty b { display: block; color: var(--ink); font-size: .95rem; }
+  .hb-qz-ei { flex: none; display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; border: 1px solid var(--line); background: var(--paper-card); }
+  /* A sitting — one question per screen: the light header, the progress strip, the question card, Back / Next. */
+  .hb-qz-take { margin: 0 auto; width: 100%; }
+  .hb-qz-head { --man-c: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 18px; border-radius: 16px; border: 1px solid color-mix(in oklab, var(--man-c) 24%, var(--line));
+    background: linear-gradient(120deg, color-mix(in oklab, var(--man-c) 14%, var(--paper-card)), color-mix(in oklab, var(--man-c) 4%, var(--paper-card)) 70%); }
+  .hb-qz-hic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--man-c); background: var(--paper-card); border: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line)); }
+  .hb-qz-hicon { display: inline-flex; color: var(--man-c); }
+  .hb-qz-hb { flex: 1 1 12em; min-width: 0; }
+  .hb-qz-ht { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: -.01em; overflow-wrap: anywhere; }
+  .hb-qz-hs { font-size: .8rem; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
+  .hb-qz-leave { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+  .hb-qz-strip { display: flex; gap: 6px; }
+  .hb-qz-strip i { flex: 1; height: 8px; border-radius: 4px; background: var(--paper-3); }
+  .hb-qz-strip i.done { background: var(--accent); }
+  .hb-qz-strip i.cur { background: color-mix(in oklab, var(--accent) 35%, var(--paper-3)); box-shadow: inset 0 0 0 2px var(--accent); }
   .hb-qz-form { display: flex; flex-direction: column; gap: 14px; }
-  .hb-qz-q { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); min-width: 0; }
-  .hb-qz-qt { font-weight: 600; font-size: .92rem; padding: 0; overflow-wrap: anywhere; }
-  .hb-qz-n { font-family: var(--mono); color: var(--muted); }
-  .hb-qz-opt { display: flex; align-items: flex-start; gap: 8px; font-size: .88rem; padding: 6px 4px; cursor: pointer; overflow-wrap: anywhere; }
-  .hb-qz-opt input { flex: none; margin-top: 3px; }
+  .hb-qz-card { padding: 26px 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper-card); box-shadow: var(--shadow-sm); }
+  .hb-qz-q { min-width: 0; }
+  .hb-qz-n { font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--success-deep); }
+  .hb-qz-qt { margin: 6px 0 16px; font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.3; overflow-wrap: anywhere; }
+  .hb-qz-opts { display: flex; flex-direction: column; gap: 10px; }
+  /* The input is the real control (keyboard, screen reader); the label is what is drawn. Visually hidden INSIDE a positioned label (g171). */
+  .hb-qz-opt { position: relative; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--paper-card); font-size: .95rem; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+  .hb-qz-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+  .hb-qz-opt:hover { border-color: var(--border-strong); }
+  .hb-qz-opt:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hb-qz-opt.on { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 7%, var(--paper-card)); box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 15%, transparent); }
+  .hb-qz-l { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--paper-2); color: var(--muted); font-weight: 800; }
+  .hb-qz-opt.on .hb-qz-l { background: var(--accent); color: var(--paper-card); }
+  .hb-qz-ot { min-width: 0; }
   .hb-qz-need { color: var(--danger); font-size: .86rem; margin: 0; }
   .hb-qz-need:empty { display: none; }
+  .hb-qz-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .hb-qz-navr { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; font-size: .8rem; }
+  .hb-qz-nav .kb-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .hb-qz-nav .kb-btn[hidden] { display: none; }
   .hb-qz-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  .hb-qz-score { font-size: .95rem; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); }
-  .hb-qz-score.pass { background: var(--accent-soft); color: var(--success-deep); border-color: var(--accent); }
-  .hb-qz-score.fail { background: var(--warn-soft); color: var(--warning-deep); border-color: var(--warn); }
-  .hb-qz-rev { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin-bottom: 6px; }
-  .hb-qz-why { font-size: .86rem; color: var(--ink); overflow-wrap: anywhere; }
+  /* The result: a light card in the chapter's colour (decision 4), the score ring, and every answer. */
+  .hb-qr-hero { --man-c: var(--accent); display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; padding: 26px 30px; border-radius: 20px; border: 1px solid color-mix(in oklab, var(--man-c) 24%, var(--line));
+    background: radial-gradient(520px 200px at 100% 0%, color-mix(in oklab, var(--man-c) 16%, transparent), transparent 70%), var(--paper-card); }
+  .hb-qr-hb { flex: 1 1 16em; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .hb-qr-h { margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+  .hb-qr-sub { margin: 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
+  .hb-qr-hb .hb-quiet { margin: 0; }
+  .hb-qr-hb .hb-qz-actions { margin-top: 8px; }
+  .hb-qr-list { list-style: none; margin: 0; padding: 4px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper-card); }
+  .hb-qz-rev { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: start; gap: 4px 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .hb-qz-rev:first-child { border-top: none; }
+  .hb-qr-m { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; }
+  .hb-qz-rev.ok .hb-qr-m { background: var(--accent-soft); color: var(--success-deep); }
+  .hb-qz-rev.miss .hb-qr-m { background: var(--danger-soft); color: var(--danger-deep); }
+  .hb-qr-b { min-width: 0; }
+  .hb-qr-b .hb-qz-qt { margin: 0 0 3px; font-size: .95rem; font-weight: 700; letter-spacing: 0; }
+  .hb-qr-chose { font-size: .86rem; color: var(--muted); overflow-wrap: anywhere; }
+  .hb-qr-chose i { color: var(--ink); }
+  .hb-qz-why { margin-top: 4px; font-size: .86rem; color: var(--ink); overflow-wrap: anywhere; }
+  .hb-qr-lk { font-size: .8rem; font-weight: 700; white-space: nowrap; }
+  @media (max-width: 760px) {
+    .hb-qz-card { padding: 18px 16px; }
+    .hb-qz-qt { font-size: 1.15rem; }
+    .hb-qr-hero { padding: 20px; }
+    .hb-qr-h { font-size: 1.5rem; }
+    .hb-qz-rev { grid-template-columns: 32px minmax(0, 1fr); }
+    .hb-qr-lk { grid-column: 2; white-space: normal; }
+  }
 
   /* Forms (HB4.1) */
   .hb-toc-forms { margin-top: 0; }

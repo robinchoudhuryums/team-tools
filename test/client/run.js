@@ -42542,6 +42542,64 @@ test('HBR2-b: the request row is Team Tools\' — the tab, the headers and the t
   assert.ok(/\.hbRequestTopic\(String\(topic\)\.trim\(\)\)/.test(page) && !/hbRequestTopic\([^)]*HB_SEARCH/.test(page), 'the page sends the topic the reader wrote, never the search');
 });
 
+// HBR3 — the quizzes, refreshed: the cards, a sitting one question at a time,
+// and the result with every answer (handoff Batch 3).
+test('HBR3-a: a quiz card says where the reader stands — not taken → Start quiz (primary, no pill, no ring); passed → Retake, Passed, best of N; tried → Try again, the tries used, a red ring under the pass mark; locked → disabled; no Handbook spreadsheet → no action (driven)', () => {
+  const c = hbPageCtx_();
+  ['hbQuizCard_', 'hbQuizFilter_', 'hbQuizStrip_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), c));
+  const me = (o) => Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false, lastMs: null }, o || {});
+  const q = (o) => ({ id: 'q-a', passPct: 80, count: 4, me: me(o) });
+  const fresh = hbJ_(c.hbQuizCard_(q(), true));
+  assert.deepStrictEqual([fresh.state, fresh.pill, fresh.ring, fresh.line, fresh.action, fresh.primary, fresh.disabled], ['todo', '', null, 'Not taken yet', 'Start quiz', true, false]);
+  const pass = hbJ_(c.hbQuizCard_(q({ attempts: 2, attemptsLeft: 3, passed: true, best: 90 }), true));
+  assert.deepStrictEqual([pass.state, pass.pill, pass.tone, pass.ring, pass.ringBad, pass.line, pass.action, pass.primary], ['passed', 'Passed', 'ok', 90, false, 'Best of 2 attempts', 'Retake', false]);
+  assert.strictEqual(hbJ_(c.hbQuizCard_(q({ attempts: 1, passed: true, best: 100 }), true)).line, 'Best of 1 attempt');
+  const tried = hbJ_(c.hbQuizCard_(q({ attempts: 1, attemptsLeft: 2, best: 67 }), true));
+  assert.deepStrictEqual([tried.state, tried.pill, tried.tone, tried.ringBad, tried.line, tried.action], ['retry', 'Try again', 'bad', true, '1 of 3 tries used', 'Try again']);
+  const lock = hbJ_(c.hbQuizCard_(q({ locked: true, attempts: 3, attemptsLeft: 0, best: 60, retryAtMs: 5 }), true));
+  assert.deepStrictEqual([lock.state, lock.pill, lock.line, lock.action, lock.disabled], ['locked', 'Locked', 'All 3 tries used', 'Locked', true]);
+  assert.strictEqual(hbJ_(c.hbQuizCard_(q(), false)).action, '', 'nothing can be recorded → no action');
+  // The filter: To do keeps every quiz not passed (a locked one too), Passed the passed.
+  const qs = [q(), q({ attempts: 1, passed: true, best: 90 }), q({ locked: true, attempts: 3, attemptsLeft: 0 })].map((x, i) => Object.assign(x, { id: 'q' + i }));
+  assert.deepStrictEqual(hbJ_(c.hbQuizFilter_(qs, 'todo')).map((x) => x.id), ['q0', 'q2']);
+  assert.deepStrictEqual(hbJ_(c.hbQuizFilter_(qs, 'passed')).map((x) => x.id), ['q1']);
+  assert.deepStrictEqual(hbJ_(c.hbQuizFilter_(qs, 'all')).map((x) => x.id), ['q0', 'q1', 'q2']);
+  // The strip: the question showing, the ones answered, the rest.
+  assert.deepStrictEqual(hbJ_(c.hbQuizStrip_([[1], [], [0, 2], []], 1)), ['done', 'cur', 'done', '']);
+});
+test('HBR3-b: the result lists every answer in the order the reader saw it — what they chose, in words, right or missed — and a miss alone carries its explanation and section; the right option is never shown (driven)', () => {
+  const c = hbPageCtx_();
+  vm.runInContext(extractFnFrom(HB_PAGE_SRC(), 'hbResultRows_'), c);
+  const quiz = { questions: [{ q: 'How often?', options: ['Daily', 'Monthly', 'Yearly'] }, { q: 'Which ship?', options: ['Kits', 'Tubing', 'Masks'], type: 'multi' }, { q: 'Respiratory?', options: ['True', 'False'], type: 'truefalse' }] };
+  // Shown: question 2 first (options reversed), then 0, then 1.
+  const sitting = { order: [{ q: 2, opts: [0, 1] }, { q: 0, opts: [2, 1, 0] }, { q: 1, opts: [2, 0, 1] }], picked: [[0], [1], [0, 1]] };
+  const res = { perQuestion: [true, false, true], review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }] };
+  const rows = hbJ_(c.hbResultRows_(quiz, res, sitting));
+  assert.deepStrictEqual(rows.map((r) => [r.q, r.chose, r.right]), [['Respiratory?', ['True'], true], ['How often?', ['Monthly'], true], ['Which ship?', ['Masks', 'Kits'], false]],
+    'the shown order, each choice mapped back through the shuffle');
+  assert.deepStrictEqual([rows[2].explain, rows[2].section, rows[2].anchor], ['Kits and masks ship monthly.', 'man-3-1', '3.1.1']);
+  assert.ok(rows.slice(0, 2).every((r) => !r.explain && !r.section), 'a right answer carries no review');
+  assert.ok(JSON.stringify(rows).indexOf('Tubing') < 0, 'an option the reader did not choose is never named — so never the right one');
+  // A review row for a question the reader got RIGHT (a stale review) is not shown.
+  const odd = hbJ_(c.hbResultRows_(quiz, { perQuestion: [true, true, true], review: [{ i: 0, explain: 'x', section: 's' }] }, sitting));
+  assert.ok(odd.every((r) => r.right && !r.explain));
+});
+test('HBR3-c: the quiz screens keep the refresh\'s rules — every header card is light (decision 4: a chapter wash, never a dark gradient), the hidden option inputs sit inside a positioned label (g171), a question or result heading that took focus from script shows no ring, and the server tells the card when the quiz was last taken', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../handbook-app/styles_handbook.html'), 'utf8');
+  ['.hb-qc-top', '.hb-qz-head', '.hb-qr-hero'].forEach((sel) => {
+    const rule = (css.match(new RegExp(sel.replace('.', '\\.') + ' \\{[^}]*\\}')) || [''])[0];
+    assert.ok(/var\(--man-c\)/.test(rule) && /var\(--paper-card\)/.test(rule), sel + ' is a wash of the chapter colour on the card');
+    assert.ok(!/#[0-9a-f]{3,6}|rgba?\(|, *black|#000/i.test(rule), sel + ' carries no fixed dark colour: ' + rule);
+  });
+  assert.ok(/\.hb-qz-opt \{ position: relative;/.test(css) && /\.hb-qz-opt input \{ position: absolute; opacity: 0;/.test(css), 'the input is hidden inside its label, which is positioned');
+  assert.ok(/\.kb-main \.hb-qz-qt\[tabindex="-1"\]:focus, \.kb-main \.hb-qr-h\[tabindex="-1"\]:focus \{ outline: none; box-shadow: none; \}/.test(css));
+  const sb = hb32Sb_();
+  const H = 3600000, F = (ms) => ({ ms, email: 'a@x.org', quizId: 'q-1', scorePct: 0, passed: false });
+  assert.strictEqual(sb.hbQuizStanding_([F(1 * H), F(3 * H), F(2 * H)], [], 'a@x.org', 'q-1', 4 * H).lastMs, 3 * H, 'the latest attempt, whatever the row order');
+  assert.strictEqual(sb.hbQuizStanding_([], [], 'a@x.org', 'q-1', 4 * H).lastMs, null, 'never taken');
+  assert.strictEqual(sb.hbQuizStanding_([Object.assign(F(9 * H), { email: 'b@x.org' })], [], 'a@x.org', 'q-1', 10 * H).lastMs, null, 'another reader\'s attempt is not theirs');
+});
+
 test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {
   const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
   const base = /var HB_PDFJS_BASE = '(https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/pdf\.js\/(\d+\.\d+\.\d+)\/)';/.exec(page);

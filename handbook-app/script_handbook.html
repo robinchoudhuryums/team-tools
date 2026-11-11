@@ -592,7 +592,7 @@ function hbWhen_(ms) {
   catch (e) { return new Date(ms).toString(); }
 }
 
-var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null };   // seq: the open view's; lseq: the list load's
+var HB_QZ = { list: undefined, seq: 0, lseq: 0, showing: false, taking: null, filter: 'all' };   // filter: the list's (HBR3)   // seq: the open view's; lseq: the list load's
 function hbLeaveQuiz_() { HB_FM.showing = false; HB_QZ.showing = false; HB_QZ.taking = null; HB_QZ.seq++; hbLeaveTraining_(); hbStopReading_(); }   // and read aloud (HB2.3)   // every other view leaves Training too (HB3.3)
 
 function hbLoadQuizzes_(then) {
@@ -708,37 +708,116 @@ function hbQuizList_(push) {
   hbMarkCurrent_(null); hbMarkNav_('quizzes');
   HB_QZ.showing = 'list';
   var main = hbMain_(); if (!main) return;
-  main.innerHTML = '<div class="hb-qz"><h1 class="hb-pp-h">Quizzes</h1><div id="hb-qz-body">' + loSweep() + '</div></div>';
+  main.innerHTML = '<div class="hb-qz hb-qz-wide"><div class="hb-qz-ph"><div><h1 class="hb-pp-h">Quizzes</h1><p class="hb-quiet" id="hb-qz-sub"></p></div>' +
+    '<div class="hb-seg" role="group" aria-label="Show" id="hb-qz-filter">' + [['all', 'All'], ['todo', 'To do'], ['passed', 'Passed']].map(function (f) {
+      return '<button type="button" data-f="' + f[0] + '" aria-pressed="' + (HB_QZ.filter === f[0]) + '" onclick="hbQuizFilterSet_(this.getAttribute(\'data-f\'))">' + f[1] + '</button>';
+    }).join('') + '</div></div><div id="hb-qz-body">' + loSweep() + '</div></div>';
   main.scrollTop = 0;
   if (push) { hbHistory_('push', { quizzes: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
   var seq = HB_QZ.seq;
   hbLoadQuizzes_(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'list') hbPaintQuizList_(res); });
 }
+/** HBR3 — the list's filter (All / To do / Passed), kept for the visit. */
+function hbQuizFilterSet_(f) {
+  HB_QZ.filter = f === 'todo' || f === 'passed' ? f : 'all';
+  document.querySelectorAll('#hb-qz-filter button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-f') === HB_QZ.filter ? 'true' : 'false'); });
+  if (HB_QZ.showing === 'list' && HB_QZ.list) hbPaintQuizList_(HB_QZ.list);
+}
+/** PURE (Node-pinned) — the quizzes a filter keeps: 'todo' is every quiz not
+ *  yet passed (a locked one included — it is still to do), 'passed' the passed
+ *  ones, anything else all of them. */
+function hbQuizFilter_(qs, f) {
+  return (qs || []).filter(function (q) {
+    var passed = !!(q.me && q.me.passed);
+    return f === 'todo' ? !passed : f === 'passed' ? passed : true;
+  });
+}
+/** PURE (Node-pinned) — what a quiz card says, from where the reader stands:
+ *  the pill (passed / locked / try again; none before a first try), the ring
+ *  (the best score, or none), the bold line, the action and its look.
+ *  `setUp === false` → no action (nothing can be recorded). */
+function hbQuizCard_(q, setUp) {
+  var me = q.me || {}, max = me.maxAttempts || 0, used = Math.max(0, max - (me.attemptsLeft == null ? max : me.attemptsLeft));
+  var c = { pill: '', tone: '', ring: me.best == null ? null : me.best, ringBad: me.best != null && !me.passed && me.best < q.passPct,
+    line: '', action: '', primary: false, disabled: false, state: 'todo' };
+  if (me.passed) { c.state = 'passed'; c.pill = 'Passed'; c.tone = 'ok'; c.line = 'Best of ' + me.attempts + ' attempt' + (me.attempts === 1 ? '' : 's'); c.action = 'Retake'; }
+  if (me.locked) { c.state = 'locked'; c.pill = 'Locked'; c.tone = 'warn'; c.line = 'All ' + max + ' tries used'; c.action = 'Locked'; c.disabled = true; }
+  else if (!me.passed && me.attempts) { c.state = 'retry'; c.pill = 'Try again'; c.tone = 'bad'; c.line = used + ' of ' + max + ' tries used'; c.action = 'Try again'; }
+  else if (!me.attempts) { c.line = 'Not taken yet'; c.action = 'Start quiz'; c.primary = true; }
+  if (setUp === false) c.action = '';
+  return c;
+}
+/** HBR3 — a score ring: the share drawn round the edge, the words in the
+ *  middle; named as a whole for a screen reader (`label`). */
+function hbRing_(pct, inner, cls, label) {
+  var p = pct == null ? 0 : Math.max(0, Math.min(100, Math.round(pct)));
+  return '<span class="hb-ring ' + (cls || '') + '" style="--p:' + p + '" role="img" aria-label="' + esc(label) + '"><b aria-hidden="true">' + inner + '</b></span>';
+}
+/** The chapter key a section id belongs to ("man-3-2" → "3"), for its colour. */
+function hbSecKey_(id) { var m = /^man-([a-z0-9]+)-/.exec(String(id || '')); return m ? m[1] : ''; }
+/** A quiz's chapter, from its section: { key, num, name, appendix } (empty when none). */
+function hbQuizChapter_(q) {
+  var it = HB.tree.filter(function (x) { return x.id === q.section; })[0];
+  if (!it) return { key: '', num: '', name: '', appendix: false };
+  var p = kbManualChapterParts_(it.department);
+  return { key: hbSecKey_(q.section), num: p.num ? (p.appendix ? p.num : String(Number(p.num))) : '', name: p.name, appendix: !!p.appendix, dept: it.department };
+}
+function hbQuizCardHtml_(q, setUp) {
+  var c = hbQuizCard_(q, setUp), ch = hbQuizChapter_(q), me = q.me || {};
+  var kick = q.team ? 'Team quiz' + (q.authorName ? ' · ' + q.authorName : '') : (ch.name ? (ch.appendix ? 'Appendix ' : 'Chapter ') + ch.num + ' · ' + ch.name : 'Official');
+  var foot = me.locked ? 'Locked until ' + esc(hbWhen_(me.retryAtMs))
+    : c.state === 'retry' ? (hbQuizSecLink_(q.section, q.anchor, '', 'Review ') || 'Read the section again first')
+    : me.lastMs ? 'Last taken ' + esc(hbShortDate_(me.lastMs))
+    : (hbQuizSecLink_(q.section, q.anchor, 'Covers ', '') || '');
+  var ringLabel = c.ring == null ? 'Not taken yet' : 'Best score ' + c.ring + '%';
+  return '<article class="hb-qc' + (ch.key ? ' kb-man-p' + esc(ch.key) : '') + '" data-quiz="' + esc(q.id) + '" data-state="' + c.state + '">' +
+    '<div class="hb-qc-top">' + (ch.num ? '<span class="hb-qc-big" aria-hidden="true">' + esc(ch.num) + '</span>' : '') +
+      (c.pill ? '<span class="hb-qc-pill ' + c.tone + '">' + (c.tone === 'ok' ? icon('check', 11) + ' ' : '') + c.pill + '</span>' : '') +
+      '<div class="hb-qc-k">' + esc(kick) + '</div><h2 class="hb-qc-t">' + esc(q.title) + '</h2></div>' +
+    '<div class="hb-qc-b"><div class="hb-qc-s">' + hbRing_(c.ring, c.ring == null ? '—' : c.ring + '%', c.ringBad ? 'bad' : '', ringLabel) +
+      '<div class="hb-qc-m"><b>' + esc(c.line) + '</b><span>' + q.count + ' question' + (q.count === 1 ? '' : 's') + ' · pass ' + q.passPct + '%</span></div></div>' +
+      '<div class="hb-qc-f"><span class="hb-qc-ft">' + foot + '</span>' + (c.action ? '<button type="button" class="kb-btn' + (c.primary ? ' hb-btn-pri' : '') + '" data-quiz="' + esc(q.id) + '"' +
+        (c.disabled ? ' disabled' : '') + ' aria-label="' + esc(c.action + ': ' + q.title) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + esc(c.action) + '</button>' : '') + '</div></div></article>';
+}
+/** PURE — "Oct 27" (the year too when it is not this one). */
+function hbShortDate_(ms) {
+  try {
+    var d = new Date(ms), o = { month: 'short', day: 'numeric' };
+    if (d.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
+    return d.toLocaleDateString([], o);
+  } catch (e) { return new Date(ms).toDateString(); }
+}
 function hbPaintQuizList_(res) {
   var host = document.getElementById('hb-qz-body'); if (!host) return;
+  var sub = document.getElementById('hb-qz-sub');
   if (!res || res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The quizzes could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
   var qs = res.quizzes || [];
+  var max = qs.length && qs[0].me ? qs[0].me.maxAttempts : 0;
+  if (sub) sub.textContent = 'Each quiz shows its pass mark.' + (max ? ' ' + max + ' tries, then a wait or a reset from your manager.' : '');
   var html = '';
   if (res.setUp === false) html += '<p class="hb-quiet">Quizzes can be taken once the handbook\'s admin sets up the Handbook spreadsheet.</p>';
   if (res.unreadable) html += '<p class="hb-quiet">' + res.unreadable + ' quiz' + (res.unreadable === 1 ? '' : 'zes') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>';
   if (!qs.length) { host.innerHTML = html + '<p class="hb-quiet">No quizzes have been published yet.</p>'; return; }
-  // Grouped by the chapter of the section each belongs to, in the contents' order.
+  // In the contents' order — a quiz's chapter, then the order they came in; a quiz with no chapter last.
+  var depts = kbManualDepts_().list, rank = {};
+  depts.forEach(function (d, i) { rank[d] = i; });
   var deptOf = {};
   HB.tree.forEach(function (it) { deptOf[it.id] = it.department; });
-  var groups = {};
-  qs.forEach(function (q) { var d = deptOf[q.section] || ''; (groups[d] = groups[d] || []).push(q); });
-  var order = kbManualDepts_().list.filter(function (d) { return groups[d]; });
-  if (groups['']) order.push('');
-  host.innerHTML = html + order.map(function (d) {
-    return '<section class="hb-qz-grp"><h2 class="hb-pp-h2">' + esc(d ? hbChapterLabel_(d) : 'Other') + '</h2>' + groups[d].map(function (q) {
-      var locked = q.me && q.me.locked;
-      return '<div class="hb-pp-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(q.title) + '</span>' +
-        '<span class="hb-quiet">' + q.count + ' question' + (q.count === 1 ? '' : 's') + ' · pass mark ' + q.passPct + '%' + hbQuizSecLink_(q.section, q.anchor, ' · ', 'section ') + '</span>' +
-        hbQuizChip_(q.me) + '</div>' +
-        '<div class="hb-pp-row-a">' + (res.setUp === false ? '' : '<button type="button" class="kb-btn hb-pp-yes" data-quiz="' + esc(q.id) + '"' + (locked ? ' disabled' : '') +
-          ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (locked ? 'Locked' : (q.me && q.me.attempts ? 'Take again' : 'Take the quiz')) + '</button>') + '</div></div>';
-    }).join('') + '</section>';
-  }).join('');
+  var sorted = qs.map(function (q, i) { return { q: q, i: i, r: deptOf[q.section] in rank ? rank[deptOf[q.section]] : 1e9 }; })
+    .sort(function (a, b) { return a.r - b.r || a.i - b.i; }).map(function (x) { return x.q; });
+  var shown = hbQuizFilter_(sorted, HB_QZ.filter);
+  html += shown.length ? '<div class="hb-qc-grid">' + shown.map(function (q) { return hbQuizCardHtml_(q, res.setUp); }).join('') + '</div>'
+    : '<p class="hb-quiet">' + (HB_QZ.filter === 'passed' ? 'No quiz passed yet.' : 'Nothing to do — every quiz is passed.') + '</p>';
+  // The chapters with no official quiz yet (all view only).
+  if (HB_QZ.filter === 'all') {
+    var has = {};
+    qs.forEach(function (q) { if (!q.team && deptOf[q.section]) has[deptOf[q.section]] = true; });
+    var none = depts.filter(function (d) { return !has[d] && !kbManualChapterParts_(d).appendix; });
+    if (none.length) html += '<h2 class="hb-qz-more">More quizzes <span class="hb-quiet">Each chapter gets one as it is reviewed</span></h2>' +
+      '<div class="hb-qz-empty"><span class="hb-qz-ei" aria-hidden="true">' + icon('check', 20) + '</span><div><b>' + (none.length === 1 ? 'One chapter has' : none.length + ' chapters have') + ' no quiz yet</b>' +
+      '<span>' + none.map(function (d) { return esc(kbManualChapterParts_(d).name); }).join(', ') + '. A manager can write a team quiz from Training.</span></div></div>';
+  }
+  host.innerHTML = html;
 }
 
 // ── Forms (HB4.1) ─────────────────────────────────────────────────────────
@@ -935,7 +1014,8 @@ function hbDownloadForm_(key) {
   });
 }
 
-/** Open a quiz to take: its questions shuffled for this sitting. */
+/** Open a quiz to take: its questions shuffled for this sitting, shown one
+ *  per screen (HBR3). */
 function hbTakeQuiz_(id, push) {
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
@@ -944,7 +1024,7 @@ function hbTakeQuiz_(id, push) {
   HB_QZ.showing = 'take';
   var seq = HB_QZ.seq;
   var main = hbMain_(); if (!main) return;
-  main.innerHTML = '<div class="hb-qz" id="hb-qz-take">' + loSweep() + '</div>';
+  main.innerHTML = '<div class="hb-qz hb-qz-take" id="hb-qz-take">' + loSweep() + '</div>';
   main.scrollTop = 0;
   if (push) hbHistory_('push', { quiz: id }, {});
   google.script.run
@@ -952,39 +1032,118 @@ function hbTakeQuiz_(id, push) {
     .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbPaintTake_({ error: (err && err.message) || 'The server did not answer.' }); })
     .hbGetQuiz(id);
 }
+/** HBR3 — a sitting's header: the chapter's colour wash (light, decision 4 —
+ *  never a dark bar), its icon, the quiz, where the reader is, and Leave. */
+function hbTakeHeadHtml_(quiz, line) {
+  var ch = hbQuizChapter_(quiz);
+  return '<div class="hb-qz-head' + (ch.key ? ' kb-man-p' + esc(ch.key) : '') + '">' +
+    '<span class="hb-qz-hic" aria-hidden="true">' + (ch.dept ? kbManualChapterIcon_(ch.dept, 20, 'hb-qz-hicon') : icon('check', 20)) + '</span>' +
+    '<div class="hb-qz-hb"><h1 class="hb-qz-ht">' + esc(quiz.title) + '</h1><div class="hb-qz-hs" id="hb-qz-hs">' + line + '</div></div>' +
+    '<button type="button" class="kb-btn hb-qz-leave" onclick="hbLeaveSitting_()">' + icon('x', 14) + ' Leave quiz</button></div>';
+}
 function hbPaintTake_(res) {
   var host = document.getElementById('hb-qz-take'); if (!host) return;
   if (res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The quiz could not be opened: ' + esc(String(res.error).replace(/\.$/, '')) + '.</p>'; return; }
   var quiz = res.quiz, me = res.me || {};
-  var head = '<h1 class="hb-pp-h">' + esc(quiz.title) + '</h1><p class="hb-quiet">' + quiz.questions.length + ' question' + (quiz.questions.length === 1 ? '' : 's') +
-    ' · pass mark ' + quiz.passPct + '% · ' + (me.locked ? '' : me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left') + '</p>';
+  var ch = hbQuizChapter_(quiz);
+  var where = ch.name ? esc((ch.appendix ? 'Appendix ' : 'Chapter ') + ch.num + ' · ' + ch.name) + ' · ' : '';
   if (me.locked) {
-    host.innerHTML = head + '<p class="hb-msg bad" role="alert">You have used your ' + me.maxAttempts + ' attempts. You can try again after ' + esc(hbWhen_(me.retryAtMs)) +
-      ', or ask your manager to reset them.</p><button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Back to quizzes</button>';
+    host.innerHTML = hbTakeHeadHtml_(quiz, where + 'pass ' + quiz.passPct + '%') +
+      '<p class="hb-msg bad" role="alert">You have used your ' + me.maxAttempts + ' attempts. You can try again after ' + esc(hbWhen_(me.retryAtMs)) +
+      ', or ask your manager to reset them.</p><div class="hb-qz-nav"><button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Back to quizzes</button></div>';
+    HB_QZ.taking = null;
     return;
   }
   var order = hbQuizOrder_(quiz.questions, Math.random);
-  HB_QZ.taking = { quiz: quiz, order: order };
-  host.innerHTML = head + '<form class="hb-qz-form" onsubmit="hbSubmitQuiz_(event)">' + order.map(function (o, k) {
-    var q = quiz.questions[o.q], multi = q.type === 'multi';
-    return '<fieldset class="hb-qz-q" data-k="' + k + '"><legend class="hb-qz-qt"><span class="hb-qz-n">' + (k + 1) + '.</span> ' + esc(q.q) +
-      (multi ? ' <span class="hb-quiet">(choose all that apply)</span>' : '') + '</legend>' +
-      o.opts.map(function (oi, s) {
-        return '<label class="hb-qz-opt"><input type="' + (multi ? 'checkbox' : 'radio') + '" name="hb-qz-' + k + '" value="' + s + '"> <span>' + esc(q.options[oi]) + '</span></label>';
-      }).join('') + '</fieldset>';
-  }).join('') + '<p class="hb-qz-need" id="hb-qz-need" role="alert"></p>' +
-    '<div class="hb-qz-actions"><button type="submit" class="kb-btn hb-pp-yes" id="hb-qz-submit">Submit answers</button>' +
-    '<button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Cancel</button></div></form>';
+  HB_QZ.taking = { quiz: quiz, order: order, picked: order.map(function () { return []; }), k: 0, where: where, me: me };
+  host.innerHTML = hbTakeHeadHtml_(quiz, '') +
+    '<div class="hb-qz-strip" id="hb-qz-strip" aria-hidden="true">' + order.map(function () { return '<i></i>'; }).join('') + '</div>' +
+    '<form class="hb-qz-form" onsubmit="hbSubmitQuiz_(event)"><div class="hb-qz-card" id="hb-qz-card"></div>' +
+    '<p class="hb-qz-need" id="hb-qz-need" role="alert"></p>' +
+    '<div class="hb-qz-nav"><button type="button" class="kb-btn" id="hb-qz-back" onclick="hbQuizStep_(-1)">' + icon('chevronLeft', 14) + ' Back</button>' +
+      '<span class="hb-qz-navr"><span class="hb-quiet">Answers are checked at the end</span>' +
+      '<button type="button" class="kb-btn hb-btn-pri" id="hb-qz-next" onclick="hbQuizStep_(1)">Next question ' + icon('chevronRight', 14) + '</button>' +
+      '<button type="submit" class="kb-btn hb-btn-pri" id="hb-qz-submit">Submit answers</button></span></div></form>';
+  hbPaintQuestion_(false);
+}
+/** PURE (Node-pinned) — the progress strip's segments for a sitting: 'cur' the
+ *  question showing, 'done' one answered, '' one still to answer. */
+function hbQuizStrip_(picked, k) {
+  return (picked || []).map(function (p, i) { return i === k ? 'cur' : (p && p.length ? 'done' : ''); });
+}
+/** Draw the question the sitting is on: its options lettered, the reader's
+ *  choices kept as they move back and forth; Back off on the first, Submit in
+ *  place of Next on the last. `focus`: move focus to the question (a step). */
+function hbPaintQuestion_(focus) {
+  var t = HB_QZ.taking, card = document.getElementById('hb-qz-card'); if (!t || !card) return;
+  var k = t.k, n = t.order.length, o = t.order[k], q = t.quiz.questions[o.q], multi = q.type === 'multi';
+  var hs = document.getElementById('hb-qz-hs');
+  if (hs) hs.innerHTML = t.where + 'Question ' + (k + 1) + ' of ' + n + ' · pass ' + t.quiz.passPct + '%';
+  var strip = document.getElementById('hb-qz-strip');
+  if (strip) hbQuizStrip_(t.picked, k).forEach(function (c, i) { if (strip.children[i]) strip.children[i].className = c; });
+  var mine = t.picked[k] || [];
+  card.innerHTML = '<div class="hb-qz-q" data-k="' + k + '"><div class="hb-qz-n">Question ' + (k + 1) + (multi ? ' · choose all that apply' : '') + '</div>' +
+    '<h2 class="hb-qz-qt" id="hb-qz-qh">' + esc(q.q) + '</h2>' +
+    '<div class="hb-qz-opts" role="' + (multi ? 'group' : 'radiogroup') + '" aria-labelledby="hb-qz-qh">' + o.opts.map(function (oi, s) {
+      var on = mine.indexOf(s) >= 0;
+      return '<label class="hb-qz-opt' + (on ? ' on' : '') + '"><input type="' + (multi ? 'checkbox' : 'radio') + '" name="hb-qz-' + k + '" value="' + s + '"' + (on ? ' checked' : '') +
+        ' onchange="hbQuizPick_(this)"><span class="hb-qz-l" aria-hidden="true">' + String.fromCharCode(65 + s) + '</span><span class="hb-qz-ot">' + esc(q.options[oi]) + '</span></label>';
+    }).join('') + '</div></div>';
+  var back = document.getElementById('hb-qz-back'), next = document.getElementById('hb-qz-next'), sub = document.getElementById('hb-qz-submit');
+  if (back) back.disabled = k === 0;
+  if (next) next.hidden = k === n - 1;
+  if (sub) sub.hidden = k !== n - 1;
+  var need = document.getElementById('hb-qz-need'); if (need) need.textContent = '';
+  if (focus) hbFocusEl_(document.getElementById('hb-qz-qh'));
+}
+/** Keep what the reader chose on this question (and mark it on the strip). */
+function hbQuizPick_(input) {
+  var t = HB_QZ.taking; if (!t) return;
+  var k = t.k;
+  t.picked[k] = Array.prototype.slice.call(document.querySelectorAll('input[name="hb-qz-' + k + '"]:checked')).map(function (i) { return Number(i.value); });
+  document.querySelectorAll('#hb-qz-card .hb-qz-opt').forEach(function (l) { var i = l.querySelector('input'); l.classList.toggle('on', !!(i && i.checked)); });
+  var strip = document.getElementById('hb-qz-strip');
+  if (strip) hbQuizStrip_(t.picked, k).forEach(function (c, i) { if (strip.children[i]) strip.children[i].className = c; });
+  var need = document.getElementById('hb-qz-need'); if (need && t.picked[k].length) need.textContent = '';
+}
+/** Back (-1) or Next (+1). Next asks for an answer first; Back never does. */
+function hbQuizStep_(d) {
+  var t = HB_QZ.taking; if (!t) return;
+  if (d > 0 && !(t.picked[t.k] || []).length) {
+    var need = document.getElementById('hb-qz-need');
+    if (need) need.textContent = 'Choose an answer first.';
+    return;
+  }
+  var k = t.k + d;
+  if (k < 0 || k >= t.order.length) return;
+  t.k = k;
+  hbPaintQuestion_(true);
+}
+/** Leave a sitting: straight back to the list with nothing chosen, or after
+ *  asking when answers would be lost (a sitting is not recorded until it is
+ *  submitted, so leaving uses no try). */
+function hbLeaveSitting_() {
+  var t = HB_QZ.taking;
+  var any = t && t.picked.some(function (p) { return p && p.length; });
+  if (!any) { hbGoQuizzes_(); return; }
+  var seq = HB_QZ.seq;
+  uiConfirm({ title: 'Leave this quiz?', message: 'Your answers so far are not kept. Leaving does not use a try.', confirmLabel: 'Leave quiz', tone: 'danger' }).then(function (ok) {
+    if (ok && seq === HB_QZ.seq && HB_QZ.taking === t) hbGoQuizzes_();
+  });
 }
 function hbSubmitQuiz_(e) {
   if (e) e.preventDefault();
   var t = HB_QZ.taking; if (!t) return;
-  var picked = t.order.map(function (o, k) {
-    return Array.prototype.slice.call(document.querySelectorAll('input[name="hb-qz-' + k + '"]:checked')).map(function (i) { return Number(i.value); });
-  });
+  var picked = t.picked.map(function (p) { return (p || []).slice(); });
   var missing = picked.map(function (p, k) { return p.length ? 0 : k + 1; }).filter(Boolean);
   var need = document.getElementById('hb-qz-need');
-  if (missing.length) { if (need) need.textContent = 'Answer every question first — ' + (missing.length === 1 ? 'question ' + missing[0] + ' is' : 'questions ' + missing.join(', ') + ' are') + ' unanswered.'; return; }
+  if (missing.length) {
+    // Take the reader to the first question left blank, and say which.
+    t.k = missing[0] - 1; hbPaintQuestion_(true);
+    need = document.getElementById('hb-qz-need');
+    if (need) need.textContent = 'Answer every question first — ' + (missing.length === 1 ? 'question ' + missing[0] + ' is' : 'questions ' + missing.join(', ') + ' are') + ' unanswered.';
+    return;
+  }
   if (need) need.textContent = '';
   var btn = document.getElementById('hb-qz-submit'); if (btn) btn.disabled = true;
   var answers = hbQuizAnswers_(t.quiz.questions, t.order, picked);
@@ -997,34 +1156,61 @@ function hbSubmitQuiz_(e) {
       showToast('Not submitted: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error');
       return;
     }
-    hbPaintResult_(t.quiz, res);
+    hbPaintResult_(t.quiz, res, { order: t.order, picked: picked });
     hbLoadQuizzes_();   // the list and the quiz bar learn the new standing
   };
   google.script.run.withSuccessHandler(done).withFailureHandler(function (err) { done({ error: err && err.message }); })
     .hbSubmitQuiz(t.quiz.id, answers);
 }
-/** The result: the score, and for each wrong answer its explanation and the
- *  section to read — never which option was right. */
-function hbPaintResult_(quiz, res) {
+/** PURE (Node-pinned) — the result's rows, in the order the reader saw the
+ *  questions: each question, what they chose (its words), right or missed;
+ *  a miss carries its explanation and section from the server's review. Never
+ *  the right option — only what the reader chose (TRN-1). */
+function hbResultRows_(quiz, res, sitting) {
+  var review = {};
+  (res.review || []).forEach(function (r) { review[r.i] = r; });
+  return ((sitting && sitting.order) || quiz.questions.map(function (q, i) { return { q: i, opts: q.options.map(function (_, j) { return j; }) }; })).map(function (o, k) {
+    var q = quiz.questions[o.q] || { q: '', options: [] };
+    var chose = ((sitting && sitting.picked && sitting.picked[k]) || []).map(function (s) { return q.options[o.opts[s]]; }).filter(function (x) { return x != null; });
+    var right = !!(res.perQuestion && res.perQuestion[o.q]);
+    var r = review[o.q] || null;
+    return { q: q.q, chose: chose, right: right, explain: !right && r ? r.explain : '', section: !right && r ? r.section : '', anchor: !right && r ? r.anchor : '' };
+  });
+}
+/** HBR3 — the result: the score as a ring in a light card in the quiz's
+ *  chapter colour, what happens next, and every answer — what the reader chose,
+ *  right or missed; each miss its explanation and a link to its section. */
+function hbPaintResult_(quiz, res, sitting) {
   var host = document.getElementById('hb-qz-take'); if (!host) return;
   HB_QZ.taking = null;
-  var me = res.me || {};
-  var html = '<h1 class="hb-pp-h">' + esc(quiz.title) + '</h1>' +
-    '<div class="hb-qz-score ' + (res.passed ? 'pass' : 'fail') + '" role="status"><b>' + res.scorePct + '%</b> — ' + res.right + ' of ' + res.total + ' right. ' +
-    (res.passed ? 'Passed (the pass mark is ' + res.passPct + '%).' : 'Not passed yet (the pass mark is ' + res.passPct + '%).') + '</div>';
-  if ((res.review || []).length) {
-    html += '<h2 class="hb-pp-h2">To go over</h2>' + res.review.map(function (r) {
-      var q = quiz.questions[r.i] || {};
-      return '<div class="hb-qz-rev"><div class="hb-qz-qt">' + esc(q.q || '') + '</div>' +
-        (r.explain ? '<div class="hb-qz-why">' + esc(r.explain) + '</div>' : '') + hbQuizSecLink_(r.section, r.anchor, '', 'Read ') + '</div>';
-    }).join('');
-  }
-  html += '<p class="hb-quiet">' + (me.locked ? 'You have used your ' + me.maxAttempts + ' attempts — you can try again after ' + esc(hbWhen_(me.retryAtMs)) + ', or ask your manager to reset them.'
-    : (res.passed ? '' : me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left.')) + '</p>' +
-    '<div class="hb-qz-actions">' + (me.locked || res.passed ? '' : '<button type="button" class="kb-btn hb-pp-yes" data-quiz="' + esc(quiz.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), false)">Try again</button>') +
-    '<button type="button" class="kb-btn" onclick="hbGoQuizzes_()">Back to quizzes</button></div>';
+  var me = res.me || {}, ch = hbQuizChapter_(quiz);
+  var rows = hbResultRows_(quiz, res, sitting);
+  var firstMiss = rows.filter(function (r) { return !r.right && r.section && HB.tree.some(function (it) { return it.id === r.section; }); })[0];
+  var next = me.locked ? 'You have used your ' + me.maxAttempts + ' attempts — you can try again after ' + esc(hbWhen_(me.retryAtMs)) + ', or ask your manager to reset them.'
+    : (res.passed ? '' : me.attemptsLeft + ' of ' + me.maxAttempts + ' attempts left.');
+  var html = '<div class="hb-qr-hero ' + (res.passed ? 'pass' : 'fail') + (ch.key ? ' kb-man-p' + esc(ch.key) : '') + '">' +
+    hbRing_(res.scorePct, res.scorePct + '%<small>' + res.right + ' of ' + res.total + '</small>', 'big' + (res.passed ? '' : ' bad'), 'Score ' + res.scorePct + '%, ' + res.right + ' of ' + res.total + ' right') +
+    '<div class="hb-qr-hb"><h1 class="hb-qr-h">' + (res.passed ? 'Passed — nice work.' : 'Not passed yet') + '</h1>' +
+      '<p class="hb-qr-sub" role="status">' + esc(quiz.title) + (ch.name ? ' · ' + esc((ch.appendix ? 'Appendix ' : 'Chapter ') + ch.num + ' — ' + ch.name) : '') + ' · ' + res.right + ' of ' + res.total + ' right, ' +
+        (res.passed ? 'the pass mark is ' + res.passPct + '%.' : 'you need ' + res.passPct + '%.') + '</p>' +
+      (next ? '<p class="hb-quiet">' + next + '</p>' : '') +
+      '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-btn-pri" onclick="hbGoQuizzes_()">Back to quizzes</button>' +
+        (me.locked || res.passed ? '' : '<button type="button" class="kb-btn" data-quiz="' + esc(quiz.id) + '" onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), false)">Try again</button>') +
+        (firstMiss ? '<button type="button" class="kb-btn" data-kb-id="' + esc(firstMiss.section) + '" data-kb-anchor="' + esc(firstMiss.anchor || '') +
+          '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' + esc('Review ' + hbLinkOf_(firstMiss.section, firstMiss.anchor, HB.tree)) + '</button>' : '') +
+      '</div></div></div>';
+  var misses = rows.filter(function (r) { return !r.right; }).length;
+  html += '<h2 class="hb-qz-more">Your answers <span class="hb-quiet">' + (misses ? (misses === 1 ? 'The one you missed links' : 'Each one you missed links') + ' to its section' : 'All right') + '</span></h2>' +
+    '<ol class="hb-qr-list">' + rows.map(function (r) {
+      return '<li class="hb-qz-rev ' + (r.right ? 'ok' : 'miss') + '"><span class="hb-qr-m" role="img" aria-label="' + (r.right ? 'Right' : 'Missed') + '">' + icon(r.right ? 'check' : 'x', 15) + '</span>' +
+        '<div class="hb-qr-b"><div class="hb-qz-qt">' + esc(r.q) + '</div>' +
+        '<div class="hb-qr-chose">You chose ' + (r.chose.length ? r.chose.map(function (c) { return '<i>' + esc(c) + '</i>'; }).join(', ') : 'nothing') + '</div>' +
+        (r.explain ? '<div class="hb-qz-why">' + esc(r.explain) + '</div>' : '') + '</div>' +
+        (r.right ? '' : '<span class="hb-qr-lk">' + hbQuizSecLink_(r.section, r.anchor, '', 'Read ') + '</span>') + '</li>';
+    }).join('') + '</ol>';
   host.innerHTML = html;
   hbMain_().scrollTop = 0;
+  hbFocusEl_(host.querySelector('.hb-qr-h'));
 }
 
 /** People view: the manager's (or admin's) people locked out of a quiz. */

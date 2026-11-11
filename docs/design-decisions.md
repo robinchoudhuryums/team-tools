@@ -6374,6 +6374,39 @@ pick them up without re-deriving the context.
     exclude each other). The reader is named by address (there is no roster),
     the topic rides an apostrophe (g144), and the search typed is never sent or
     stored (F9, g146): the dialog starts empty.
+- <a id="the-handbook-app-quizzes-are-cards-and-a-sitting-is-one-question-a-screen"></a>**The handbook app's quizzes are cards, a sitting is one question a screen, and the result lists every answer — never the right option (handbook refresh HBR3, operator plan 2026-11-02)**
+  Batch 3 of the handoff (`docs/design_handoff_handbook_refresh/`), all in the
+  handbook app's own page; Team Tools is untouched.
+  - **The list is cards**, in the contents' order: a light head washed in the
+    quiz's chapter colour (its `kb-man-pN` class) with the chapter's big faint
+    number, a kicker (the chapter, or "Team quiz · author"), a pill for where
+    the reader stands (Passed / Try again / Locked; none before a first try), a
+    score ring (the best score; "—" never taken, red under the pass mark), one
+    action, and Last taken / the section to review / Locked until. One pure rule
+    decides the card (`hbQuizCard_`), one the filter (`hbQuizFilter_` — All, To
+    do (anything not passed, a locked quiz included), Passed). "More quizzes"
+    names the chapters that have no official quiz. The server adds one field,
+    `lastMs`, to a reader's standing.
+  - **A sitting is one question a screen** with a progress strip (answered,
+    current, to come), Back / Next — Next asks for an answer, Back keeps every
+    choice — and Submit on the last. The inputs stay real radios and
+    checkboxes, visually hidden INSIDE their positioned label (g171); focus
+    moves to each question, and a heading that took focus from script shows no
+    ring (HBR1's rule). **Leave quiz** goes straight back with nothing chosen and
+    asks first when answers would be lost (g166's spirit — leaving uses no try,
+    nothing is recorded until Submit).
+  - **The result** is a light card in the chapter colour with the score ring and
+    what happens next (tries left, the lock, Try again only when one is left),
+    then every answer in the order the reader saw it: the question, what they
+    chose in words, right or missed, and for a miss its explanation and a link
+    to its section; Review opens the first miss's section. **Never the right
+    option** (TRN-1, unchanged): only what the reader chose is named, and a
+    right answer carries no review even if the server sent one.
+  - **Decision 4 over shot 09.** The mockup's sitting header is a dark gradient
+    bar; the handoff's decision 4 says every header card is light with a chapter
+    wash, never a dark gradient — the decision wins, and the sitting header, the
+    quiz card heads and the result card are all washes on the card. "Your manager
+    has been told" (shot 10) is not said: nothing tells a manager.
 - <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
   The operator asked for a "Last 1-on-1" date, reminders for managers, an
   adjustable cadence, and an optional screenshot on a logged issue.
