@@ -4305,6 +4305,16 @@
     "recordPresence"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "AC1: one cap, at the block's sum",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "activityCountsClean_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7722,7 +7732,7 @@
   "activityCountsClean_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f6ba26b51f5ab0c0"
+   "sha": "a23fb739d30897d7"
   },
   "activityCountsDecode_": {
    "file": "20_timeclock.js",

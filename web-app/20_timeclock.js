@@ -4334,7 +4334,7 @@ function activityCountsClean_(raw, nowMs) {
   const at = Number(raw.at);
   const skew = isFinite(at) && at > 0 ? Math.round((nowMs - at) / bms) : 0;
   const lo = Math.floor((nowMs - ACTIVITY_COUNTS_MAX_AGE_MS) / bms), hi = Math.floor(nowMs / bms);
-  const cap = function (n) { n = Number(n); return isFinite(n) && n > 0 ? Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, Math.floor(n)) : 0; };
+  const num = function (n) { n = Number(n); return isFinite(n) && n > 0 ? Math.floor(n) : 0; };   // the cap is applied once, below, to the block's sum
   const by = {};
   raw.b.slice(0, ACTIVITY_COUNTS_MAX_ENTRIES * 2).forEach(function (e) {
     if (!Array.isArray(e)) return;
@@ -4342,7 +4342,7 @@ function activityCountsClean_(raw, nowMs) {
     if (!isFinite(b0) || Math.floor(b0) !== b0) return;
     const b = b0 + skew;
     if (b < lo || b > hi) return;
-    const c = cap(e[1]), k = cap(e[2]);
+    const c = num(e[1]), k = num(e[2]);
     if (!c && !k) return;
     const cur = by[b] || [b, 0, 0];
     cur[1] = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cur[1] + c);
