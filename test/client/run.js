@@ -42584,6 +42584,17 @@ test('HBR3-b: the result lists every answer in the order the reader saw it — w
   const odd = hbJ_(c.hbResultRows_(quiz, { perQuestion: [true, true, true], review: [{ i: 0, explain: 'x', section: 's' }] }, sitting));
   assert.ok(odd.every((r) => r.right && !r.explain));
 });
+test('Handbook flat (operator 2026-11-11): the handbook app paints no gradient look — a chapter colour is a flat tint or a rule, and the only gradients left are the score ring (a conic fill) and the shelf spines (a hard-stop fill level, no fade)', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../handbook-app/styles_handbook.html'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const uses = css.split('\n').filter((l) => /gradient\(/.test(l));
+  const allowed = uses.filter((l) => /\.hb-ring \{.*conic-gradient\(var\(--ring-c\) calc\(var\(--p\) \* 1%\), var\(--paper-3\) 0\)/.test(l) || /linear-gradient\(to top, var\(--man-c\) var\(--p\), color-mix\([^;]*\) var\(--p\)\)/.test(l));
+  assert.strictEqual(uses.length, allowed.length, 'a gradient look came back: ' + uses.filter((l) => allowed.indexOf(l) < 0).join(' | '));
+  assert.strictEqual(allowed.length, 2, 'the ring and the spines, nothing else');
+  ['.kb-main .kb-man-mast', '.hb-qc-top', '.hb-qz-head', '.hb-qr-hero', '.hb-cont-cover', '.hb-card'].forEach((sel) => {
+    const rule = (css.match(new RegExp(sel.replace(/\./g, '\\.').replace(/ /g, ' ') + ' \\{[^}]*\\}')) || [''])[0];
+    assert.ok(rule && /var\(--man-c\)/.test(rule) && !/gradient/.test(rule), sel + ' carries its chapter colour flat: ' + rule.slice(0, 120));
+  });
+});
 test('HBR3-c: the quiz screens keep the refresh\'s rules — every header card is light (decision 4: a chapter wash, never a dark gradient), the hidden option inputs sit inside a positioned label (g171), a question or result heading that took focus from script shows no ring, and the server tells the card when the quiz was last taken', () => {
   const css = fs.readFileSync(path.join(__dirname, '../../handbook-app/styles_handbook.html'), 'utf8');
   ['.hb-qc-top', '.hb-qz-head', '.hb-qr-hero'].forEach((sel) => {

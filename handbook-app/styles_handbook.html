@@ -52,10 +52,10 @@
   .hb-as-refs button { align-items: center; border-left: none; padding-left: 0; color: var(--accent-ink); }
   .hb-as-toc button:hover, .hb-as-refs button:hover { color: var(--ink); }
   .hb-as-hn { flex: none; font-family: var(--mono); font-size: .72rem; }
-  /* HBR2: the chapter's masthead as a banner — its colour washed across the card, its number faint behind (screen only; print keeps its own rules) */
+  /* HBR2: the chapter's masthead as a banner — a flat tint of its colour (no gradient — operator 2026-11-11), its number faint behind (screen only; print keeps its own rules) */
   @media screen {
     .kb-main .kb-man-mast { position: relative; overflow: hidden; padding: 22px 26px 20px; margin: 4px 0 18px; border: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line)); border-radius: 16px;
-      background: radial-gradient(600px 220px at 100% 0%, color-mix(in oklab, var(--man-c) 14%, transparent), transparent 70%), linear-gradient(120deg, color-mix(in oklab, var(--man-c) 7%, var(--paper-card)), var(--paper-card) 65%); }
+      background: color-mix(in oklab, var(--man-c) 6%, var(--paper-card)); }
     .kb-main .kb-man-mast > * { position: relative; z-index: 1; }
     .kb-main .kb-man-mast { container-type: inline-size; flex-shrink: 0; }   /* overflow: hidden drops a flex item's automatic minimum height — it shrank to 44px in the column */   /* its index's one-column query (@container ≤620px) needs a container on this page */
     .kb-main .kb-man-mast::after { position: absolute; right: 18px; top: -18px; z-index: 0; font-family: var(--display); font-size: 150px; font-weight: 800; letter-spacing: -.06em; line-height: 1; color: var(--man-c); opacity: .09; pointer-events: none; }
@@ -168,14 +168,14 @@
   .hb-qz-chip.pass { background: var(--accent-soft); color: var(--success-deep); }
   .hb-qz-chip.lock { background: var(--warn-soft); color: var(--warning-deep); }
   .hb-qz-sec { color: var(--info-deep); }
-  /* HBR3 — the quiz list as cards: a light head in the chapter's colour (decision 4), the big faint chapter number, a status pill; a score ring, the standing, one action. */
+  /* HBR3 — the quiz list as cards: a flat light head in the chapter's colour (decision 4; no gradient — operator 2026-11-11), the big faint chapter number, a status pill; a score ring, the standing, one action. */
   .hb-qz-wide { max-width: 1180px; }
   .hb-qz-ph { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
   .hb-qz-ph .hb-pp-h { margin-bottom: 2px; }
   .hb-qc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px; }
   .hb-qc { --man-c: var(--muted); display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper-card); box-shadow: var(--shadow-sm); }
   .hb-qc-top { position: relative; overflow: hidden; min-height: 104px; padding: 18px 20px 16px; border-bottom: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line));
-    background: linear-gradient(140deg, color-mix(in oklab, var(--man-c) 16%, var(--paper-card)), color-mix(in oklab, var(--man-c) 5%, var(--paper-card))); }
+    background: color-mix(in oklab, var(--man-c) 8%, var(--paper-card)); }
   .hb-qc-big { position: absolute; right: 14px; bottom: -24px; font-family: var(--display); font-size: 104px; font-weight: 800; line-height: 1; letter-spacing: -.06em; color: var(--man-c); opacity: .12; pointer-events: none; }
   .hb-qc-pill { position: absolute; top: 14px; right: 14px; display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 6px; }
   .hb-qc-pill.ok { background: var(--accent-soft); color: var(--success-deep); }
@@ -204,7 +204,7 @@
   /* A sitting — one question per screen: the light header, the progress strip, the question card, Back / Next. */
   .hb-qz-take { margin: 0 auto; width: 100%; }
   .hb-qz-head { --man-c: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 18px; border-radius: 16px; border: 1px solid color-mix(in oklab, var(--man-c) 24%, var(--line));
-    background: linear-gradient(120deg, color-mix(in oklab, var(--man-c) 14%, var(--paper-card)), color-mix(in oklab, var(--man-c) 4%, var(--paper-card)) 70%); }
+    background: color-mix(in oklab, var(--man-c) 6%, var(--paper-card)); }
   .hb-qz-hic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--man-c); background: var(--paper-card); border: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line)); }
   .hb-qz-hicon { display: inline-flex; color: var(--man-c); }
   .hb-qz-hb { flex: 1 1 12em; min-width: 0; }
@@ -237,9 +237,9 @@
   .hb-qz-nav .kb-btn { display: inline-flex; align-items: center; gap: 6px; }
   .hb-qz-nav .kb-btn[hidden] { display: none; }
   .hb-qz-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  /* The result: a light card in the chapter's colour (decision 4), the score ring, and every answer. */
+  /* The result: a white card with the chapter's colour as a rule along its top (no gradient — operator 2026-11-11), the score ring, and every answer. */
   .hb-qr-hero { --man-c: var(--accent); display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; padding: 26px 30px; border-radius: 20px; border: 1px solid color-mix(in oklab, var(--man-c) 24%, var(--line));
-    background: radial-gradient(520px 200px at 100% 0%, color-mix(in oklab, var(--man-c) 16%, transparent), transparent 70%), var(--paper-card); }
+    background: var(--paper-card); box-shadow: inset 0 4px 0 var(--man-c); }
   .hb-qr-hb { flex: 1 1 16em; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .hb-qr-h { margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
   .hb-qr-sub { margin: 0; color: var(--muted); font-size: .9rem; overflow-wrap: anywhere; }
@@ -473,7 +473,7 @@
   .hb-hc-h { margin-bottom: 12px; }
   .hb-cont { --man-c: var(--muted); display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 16px; align-items: center; }
   .hb-cont-cover { display: grid; place-items: center; height: 88px; border-radius: 12px; color: var(--man-c); border: 1px solid color-mix(in oklab, var(--man-c) 22%, var(--line));
-    background: linear-gradient(150deg, color-mix(in oklab, var(--man-c) 18%, var(--paper-card)), color-mix(in oklab, var(--man-c) 5%, var(--paper-card))); }
+    background: color-mix(in oklab, var(--man-c) 10%, var(--paper-card)); }
   .hb-cont-ic { display: inline-flex; color: var(--man-c); }
   .hb-cont-k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--man-c); }
   .hb-cont-t { margin: 4px 0 10px; font-size: 1.12rem; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
@@ -502,8 +502,8 @@
   /* The chapters: B's ombre tiles — the chapter's colour fading down the card */
   .hb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
   .hb-card { --man-c: var(--muted); position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-height: 150px; padding: 16px; font: inherit; text-align: left; cursor: pointer; color: var(--ink);
-    border: 1px solid color-mix(in oklab, var(--man-c) 18%, var(--line)); border-radius: 16px;
-    background: linear-gradient(160deg, color-mix(in oklab, var(--man-c) 13%, var(--paper-card)), color-mix(in oklab, var(--man-c) 4%, var(--paper-card))); }
+    border: 1px solid var(--line); border-radius: 16px;
+    background: var(--paper-card); box-shadow: inset 0 3px 0 var(--man-c), var(--shadow-sm); }
   .hb-card::after { content: attr(data-n); position: absolute; right: 10px; bottom: -24px; font-family: var(--display); font-size: 104px; font-weight: 800; letter-spacing: -.06em; line-height: 1; color: var(--man-c); opacity: .09; pointer-events: none; }
   .hb-card:hover { border-color: color-mix(in oklab, var(--man-c) 40%, var(--line)); }
   .hb-card.mine { grid-column: span 2; }

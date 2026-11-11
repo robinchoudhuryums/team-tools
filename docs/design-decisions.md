@@ -6404,8 +6404,13 @@ pick them up without re-deriving the context.
     right answer carries no review even if the server sent one.
   - **Decision 4 over shot 09.** The mockup's sitting header is a dark gradient
     bar; the handoff's decision 4 says every header card is light with a chapter
-    wash, never a dark gradient — the decision wins, and the sitting header, the
-    quiz card heads and the result card are all washes on the card. "Your manager
+    wash, never a dark gradient — the decision wins. **Since 2026-11-11 there is
+    no gradient at all** (the operator: the gradient look read as cheap — the
+    handoff's decision 13): the quiz card heads, the sitting header and the
+    reader's chapter banner are a flat light tint, the result card and the home
+    chapter tiles a white card with a chapter-colour rule along the top. The
+    score ring and the shelf spines keep their fills (a ring, a level — no fade);
+    the `Handbook flat` pin holds it. "Your manager
     has been told" (shot 10) is not said: nothing tells a manager.
 - <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
   The operator asked for a "Last 1-on-1" date, reminders for managers, an

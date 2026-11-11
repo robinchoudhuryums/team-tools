@@ -963,7 +963,7 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1631 | `node test/client/run.js` |
+| Pure harness tests | 1632 | `node test/client/run.js` |
 | DOM harness tests | 414 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 268 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 351 | `Tests.js`; a run prints its own `Expected:` line |
