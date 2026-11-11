@@ -52,67 +52,124 @@
 <script>
 // ════════════════════════════════════════════════════════════════════════════
 //  ONBOARDING TOUR — interactive coach-marks (operator feedback 2026-06-12).
-//  Auto-starts on a rep's first load; replayable from the Call Notes "?" menu.
-//  Steps are a declarative registry; the engine navigates to each step's tool/
-//  tab via enterTool, then spotlights its selector. A step whose target isn't
-//  in the DOM is SKIPPED (never strands the tour). managerOnly steps are
-//  filtered out for non-managers (the tab-gating pattern). Pinned by a Node
-//  tripwire that asserts every step's `view` is a registered TOOLS tab key.
+//  Auto-starts on a rep's first load; replayable from Settings (and the Call
+//  Notes "?" menu). Steps are a declarative registry; the engine navigates to
+//  each step's tool/tab via enterTool, then spotlights its selector. A step
+//  whose target isn't in the DOM is SKIPPED (never strands the tour).
+//  T1 (operator 2026-11-11): every tool has steps, and a step is shown only
+//  where its TAB is visible to this user — the same `tabVisibleForUser_` the
+//  tab bar uses, so a manager, Spanish, QA or admin step follows its tab's
+//  gate (and View-as) with no second list. A step carries `since` (the tour
+//  version it arrived in): someone who saw an older version gets only the
+//  newer steps, introduced by a "what's new" card, not the whole tour again.
+//  Pinned by Node pins (every view a TOOLS tab key, every selector in the
+//  source, the gate and the what's-new filter driven) and by
+//  test/visual/tour-check.mjs, which walks every step in a real browser per
+//  role and fails on a target that never appears.
 // ════════════════════════════════════════════════════════════════════════════
 const TOUR_LS_KEY = 'umsTour';
-// Bump to RE-OFFER the tour to everyone after a material UI change (the
-// localStorage `seen` is version-stamped, like FORM_CONSENT_VERSION).
-const TOUR_VERSION = 1;
+// Bump to offer the NEW steps (those with `since` above a person's stored
+// version) after a material UI change; the stored `seenVersion` is the last
+// version they finished or skipped.
+const TOUR_VERSION = 2;
 
-// Each step: { tool, view, selector|null, title, body, placement?, managerOnly? }.
+// Each step: { id, tool, view, selector|null, title, body, since?, intro?, placement? }.
 // selector null = a centered card with a full dim (intro / abstract concepts).
+// since = the tour version the step arrived in (default 1).
+// intro = 'full' (only the full tour's opening) or 'new' (only the what's-new opening).
+// The gate is the step's TAB (TOOLS[tool].tabs[view]) — never a flag here.
 const TOUR_STEPS = [
-  { tool: 'timeClock', view: 'clock', selector: null,
+  { id: 'welcome', tool: 'timeClock', view: 'clock', selector: null, intro: 'full',
     title: 'Welcome to Team Tools',
-    body: 'A 90-second tour of the essentials. You can skip any time, and replay it later from the <strong>?</strong> button on the Call Notes page.' },
-  { tool: 'timeClock', view: 'clock', selector: '.sidebar',
+    body: 'A short tour of every tool you can use. Skip any time, and replay it later from <strong>Settings</strong> (the gear).' },
+  { id: 'whatsnew', tool: 'timeClock', view: 'clock', selector: null, intro: 'new', since: 2,
+    title: 'What’s new since your last tour',
+    body: 'A few quick stops on what has changed — new tools, new tabs, and where things moved. Skip any time; the full tour is in <strong>Settings</strong>.' },
+  { id: 'sidebar', tool: 'timeClock', view: 'clock', selector: '.sidebar',
     title: 'Your tools',
-    body: 'Each icon here is a tool — Dashboard, Call Notes, Reference, and more. Drag the right edge to resize, or double-click it to collapse to icons.' },
-  { tool: 'timeClock', view: 'clock', selector: '#tool-tab-bar',
+    body: 'Each item here is a tool — Dashboard, Call Notes, Reference, Intake, Training and the rest you have access to. Drag the right edge to resize, or double-click it to collapse to icons.' },
+  { id: 'tabs', tool: 'timeClock', view: 'clock', selector: '#tool-tab-bar',
     title: 'Tabs within a tool',
-    body: 'Every tool has its own tabs along this bar. Managers see extra tabs (Team Notes, Manage, etc.) that reps don’t.' },
-  { tool: 'timeClock', view: 'clock', selector: '.sb-popout-btn',
+    body: 'Every tool has its own tabs along this bar. You only see the tabs your role uses — managers, QA reviewers and the Spanish team each have extra ones.' },
+  { id: 'settings', tool: 'timeClock', view: 'clock', selector: '[data-settings-toggle]', since: 2,
+    title: 'Settings',
+    body: 'The gear holds the theme, colour palette, break and clock-out alerts, <strong>Customize widgets</strong> for your Dashboard, and <strong>Replay the tour</strong>.' },
+  { id: 'popout', tool: 'timeClock', view: 'clock', selector: '.sb-popout-btn',
     title: 'Pop-out panel',
     body: 'Pops the current view into a small always-handy window. Tip: pin it above other windows with PowerToys <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>T</kbd> so you can log notes over the CRM.' },
-  { tool: 'timeClock', view: 'clock', selector: '.actions',
+  { id: 'clock', tool: 'timeClock', view: 'clock', selector: '.actions',
     title: 'Clock in & out',
     body: 'Punch in, go to lunch, and clock out from here. The big button always shows your next action; your times convert to your manager’s timezone automatically.' },
-  { tool: 'timeClock', view: 'clock', selector: '.ribbon-wrap',
+  { id: 'ribbon', tool: 'timeClock', view: 'clock', selector: '.ribbon-wrap',
     title: 'Your shift at a glance',
     body: 'This ribbon shows your scheduled shift, your punches, and a live cursor through the day — a quick read on where you are in your shift.' },
-  { tool: 'timeClock', view: 'timeoff', selector: null,
+  { id: 'widgets', tool: 'timeClock', view: 'clock', selector: '#dash-widgets .dash-w', since: 2,
+    title: 'Your Dashboard',
+    body: 'Widgets for the day — your calls, notes, reminders and what needs you. Choose and arrange them with <strong>Customize widgets</strong> in Settings.' },
+  { id: 'stats', tool: 'timeClock', view: 'metricsMyStats', selector: '#m-my-content .m-hero', since: 2,
+    title: 'Stats',
+    body: 'Your calls, answer rate and talk time for any day or range, with <strong>Adjusted</strong> figures that count your outbound calls and long intake calls. <strong>Team</strong> shows the team’s totals.' },
+  { id: 'spanish', tool: 'timeClock', view: 'metricsSpanish', selector: '#spanish-head', since: 2,
+    title: 'Spanish Inbox',
+    body: 'Spanish voicemails and emails waiting for a call-back — the counts here, the list below. Claim one, call back, then <strong>Resolve</strong> with an outcome — select several to resolve them together.' },
+  { id: 'timeoff', tool: 'timeClock', view: 'timeoff', selector: '.to-actions',
     title: 'Time off & timesheet',
-    body: 'Request PTO and review your timesheet on the <strong>Time / PTO</strong> tab. The calendar shows worked hours and any approved days off; the rail beside it has quick request buttons, your leave balance, and your pay-period hours.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '#cn-frame',
+    body: 'Request PTO and review your timesheet on the <strong>Time / PTO</strong> tab. The calendar shows worked hours and approved days off; request time off here; your leave balance and pay-period hours sit just below.' },
+  { id: 'cn-frame', tool: 'callNotes', view: 'callNotes', selector: '#cn-frame',
     title: 'The note template',
     body: 'Log a call by filling these fields. <kbd>Tab</kbd> or <kbd>Enter</kbd> moves to the next field; a fresh click selects the field so you can type right over it; arrow keys hop fields at the edges.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '.rail-flags',
+  { id: 'cn-flags', tool: 'callNotes', view: 'callNotes', selector: '.rail-flags',
     title: 'Flags',
-    body: 'Flag a note <strong>Action</strong> (follow-up), <strong>Training</strong> (ask a manager), <strong>Review</strong> (great call), or <strong>Urgent</strong>. Each has its own color so your flagged notes read at a glance.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '#cn-tag-suggest',
+    body: 'Flag a note <strong>Action</strong> (follow-up), <strong>Training</strong> (ask a manager), <strong>Review</strong> (great call), or <strong>Urgent</strong>. Each has its own colour so your flagged notes read at a glance.' },
+  { id: 'cn-tags', tool: 'callNotes', view: 'callNotes', selector: '#cn-tag-input',
     title: 'Tags',
-    body: 'Add freeform tags (press <kbd>Enter</kbd> to add). As you type the Issue and Resolution, tags you’ve used before are suggested here — one click to apply.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '.rail-actions',
+    body: 'Add freeform tags here (press <kbd>Enter</kbd> to add). As you type the Issue and Resolution, tags you’ve used before are suggested just below — one click to apply.' },
+  { id: 'cn-save', tool: 'callNotes', view: 'callNotes', selector: '.rail-actions',
     title: 'Saving a note',
     body: '<strong>Save &amp; Copy</strong> (<kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>) saves and copies a CRM-ready version to your clipboard. <strong>Save &amp; Compose</strong> also opens the email composer. Drag-select anywhere in the template and copy — you always get the full note.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '.cn-filter-bar',
+  { id: 'cn-filter', tool: 'callNotes', view: 'callNotes', selector: '.cn-filter-bar',
     title: 'Find past notes',
-    body: 'Filter today’s notes by flag here, or jump into History and Search (the tabs above) to find any past call by caller, patient/TRX, or text.' },
-  { tool: 'callNotes', view: 'callNotes', selector: '#cn-help-btn',
-    title: 'Reference & shortcuts',
-    body: 'Press <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> anytime to open the Reference drawer for mid-call lookups — it stays open while you work. This <strong>?</strong> button lists every shortcut, and lets you replay this tour.' },
-  { tool: 'callNotes', view: 'callNotesManage', selector: '#tool-tab-bar', managerOnly: true,
-    title: 'Managers: your team',
-    body: 'Team Notes, Stats, the compliance audit log, and enrollment live under your manager-only tabs. Training & Employee Docs (in the sidebar) is where you assign training, build quizzes, and issue signable documents.' },
+    body: 'Filter today’s notes by flag here, or jump into History and Search (the tabs above) to find any past call by caller, patient/TRX, or text. Sent Forms lists the forms you have sent.' },
+  { id: 'cn-scratch', tool: 'callNotes', view: 'callNotes', selector: '#cn-scratch-btn', since: 2,
+    title: 'Scratchpad',
+    body: 'Personal notes that follow you across devices — pages, checklists, highlights. Open it from any page with <kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>; the bell beside it holds your scheduled call reminders.' },
+  { id: 'cn-help', tool: 'callNotes', view: 'callNotes', selector: '#cn-help-btn',
+    title: 'Shortcuts',
+    body: 'This <strong>?</strong> button lists every keyboard shortcut. <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> opens the Reference drawer from anywhere, for mid-call lookups.' },
+  { id: 'dept-requests', tool: 'callNotes', view: 'metricsDeptReq', selector: '#dr-body .view-title-row', since: 2,
+    title: 'Dept Requests',
+    body: 'The requests you have sent to other departments, with how long each has waited. A department’s reply resolves it; you can also mark one resolved yourself.' },
+  { id: 'team-notes', tool: 'callNotes', view: 'callNotesManage', selector: '#tool-tab-bar',
+    title: 'Managers: Team Notes',
+    body: 'Team Notes shows every rep’s notes, flags and training questions, with a cross-rep search — answer a training question from the note itself.' },
+  { id: 'reference', tool: 'reference', view: 'reference', selector: '#kb-search', since: 2,
+    title: 'Reference',
+    body: 'Search the handbook, articles, payor tables and prices. <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> opens the same search in a drawer over whatever you are doing, so you never leave the call.' },
+  { id: 'intake', tool: 'intake', view: 'intakePpd', selector: '.intk-rail-sticky', since: 2,
+    title: 'Intake',
+    body: 'PPD, PMD and PAP intake forms. Fields warn rather than block, drafts are kept in this browser, an insurance card can be read from a photo, and sending logs the intake call note for you.' },
+  { id: 'training', tool: 'develop', view: 'trainingHome', selector: '#tr-home-content', since: 2,
+    title: 'Training & Employee Docs',
+    body: 'Your assigned training and quizzes. <strong>Coaching</strong> holds your coaching items and 1-on-1s, and <strong>My Docs</strong> the documents waiting for your signature.' },
+  { id: 'team-training', tool: 'develop', view: 'trainingManage', selector: '#tr-mgr-content', since: 2,
+    title: 'Managers: Team Training',
+    body: 'Assign training and quizzes to your team and see who is behind. <strong>Issue Docs</strong> sends signable documents.' },
+  { id: 'qa', tool: 'qa', view: 'qaQueue', selector: '.qa-section', since: 2,
+    title: 'QA',
+    body: 'Call recordings to review: claim one, score it on the scorecard, and leave timestamped comments. <strong>Stats</strong> and <strong>Log</strong> follow each period’s audit.' },
+  { id: 'manage', tool: 'manage', view: 'manage', selector: '.mgr-needs-pair', since: 2,
+    title: 'Managers: Manage',
+    body: '<strong>Needs you</strong> — time-off and punch requests waiting for you — then your team’s live status. <strong>Coverage</strong> and <strong>Punctuality</strong> are the tabs beside it.' },
+  { id: 'admin', tool: 'manage', view: 'callNotesAdmin', selector: '.cn-admin-tabs', since: 2,
+    title: 'Admin',
+    body: 'Deploy readiness, automation and storage health, the team roster, and the app’s settings. A red dot on System means something needs a look.' },
 ];
 
 let TOUR_I = -1;
 let TOUR_ACTIVE = false;
+// 'full' (every step this user can see) or 'new' (only the steps added since
+// their stored version) — set by tourStart, read by the kicker.
+let TOUR_MODE = 'full';
 
 function tourPrefs_() {
   try { return JSON.parse(localStorage.getItem(TOUR_LS_KEY) || '{}') || {}; }
@@ -121,9 +178,20 @@ function tourPrefs_() {
 function tourSave_(p) {
   try { localStorage.setItem(TOUR_LS_KEY, JSON.stringify(p)); } catch (_) {}
 }
-function tourShouldAutoStart_() {
-  const p = tourPrefs_();
-  return p.seenVersion !== TOUR_VERSION;   // never seen, or seen an older version
+/** The stored version, or 0 when the tour was never finished or skipped. */
+function tourSeenVersion_() {
+  const v = Number(tourPrefs_().seenVersion);
+  return isFinite(v) && v > 0 ? Math.floor(v) : 0;
+}
+/** T1: which tour a first load owes this person — 'full' when they never saw
+ *  one, 'new' when they saw an older version AND some newer step is visible
+ *  to them, else '' (nothing). A stored version at or above TOUR_VERSION (a
+ *  newer deployment seen first) owes nothing. */
+function tourAutoMode_() {
+  const seen = tourSeenVersion_();
+  if (!seen) return 'full';
+  if (seen >= TOUR_VERSION) return '';
+  return tourVisibleSteps_('new', seen).some(function (s) { return !s.intro; }) ? 'new' : '';
 }
 /** Called from the boot sequence after enterTool. Best-effort, typeof-guarded
  *  there. Doesn't run in the compact pop-out or on a deep-link landing. */
@@ -131,19 +199,37 @@ function tourMaybeAutoStart_() {
   if (COMPACT_MODE) return;
   // Don't hijack a deep-link landing (?tool=<tabKey>): a recipient/bookmark
   // arriving on a specific tab shouldn't be yanked to step 0. Same predicate
-  // the boot caller uses to honor the deep-link (script_core). Replay from the
-  // ? menu is unaffected (it calls tourStart directly).
+  // the boot caller uses to honor the deep-link (script_core). Replay from
+  // Settings or the ? menu is unaffected (they call tourStart directly).
   if (typeof INITIAL_VIEW_FROM_URL !== 'undefined' && INITIAL_VIEW_FROM_URL &&
       typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[INITIAL_VIEW_FROM_URL]) return;
-  if (!tourShouldAutoStart_()) return;
+  const mode = tourAutoMode_();
+  if (!mode) return;
   // Let the first view settle a beat before spotlighting it.
-  setTimeout(function () { tourStart(); }, 600);
+  setTimeout(function () { tourStart(mode); }, 600);
 }
 
-/** The steps this user actually sees (managerOnly filtered like tabs). */
-function tourVisibleSteps_() {
-  const isMgr = !!(empState && empState.isManager);
-  return TOUR_STEPS.filter(function (s) { return !s.managerOnly || isMgr; });
+/** T1: a step is shown iff its TAB is visible to this user — the tab bar's
+ *  own gate (`tabVisibleForUser_`: adminOnly, managerOnly, the `also` flags),
+ *  so a role's steps follow its tabs, View-as included. A step naming no
+ *  registered tab is never shown. */
+function tourStepVisible_(s) {
+  if (!s || typeof TOOLS === 'undefined') return false;
+  const tool = TOOLS[s.tool];
+  const tab = tool && tool.tabs ? tool.tabs[s.view] : null;
+  return !!tab && tabVisibleForUser_(tab);
+}
+/** The steps this run shows. 'full': every visible step except the what's-new
+ *  opening. 'new': the visible steps that arrived after `seen`, opened by the
+ *  what's-new card (never the full tour's welcome). */
+function tourVisibleSteps_(mode, seen) {
+  const isNew = mode === 'new';
+  const after = isNew ? (Number(seen) || 0) : 0;
+  return TOUR_STEPS.filter(function (s) {
+    if (!tourStepVisible_(s)) return false;
+    if (s.intro) return s.intro === (isNew ? 'new' : 'full');
+    return !isNew || (s.since || 1) > after;
+  });
 }
 
 let _tourReturnView = '';
@@ -152,8 +238,11 @@ let _tourReturnView = '';
 // is not an overlay).
 let _tourRestoreFocus = null;
 
-function tourStart() {
+function tourStart(mode) {
   if (TOUR_ACTIVE) return;
+  TOUR_MODE = mode === 'new' ? 'new' : 'full';
+  const steps = tourVisibleSteps_(TOUR_MODE, tourSeenVersion_());
+  if (!steps.length) return;
   TOUR_ACTIVE = true;
   // Remember where the rep was so tourEnd_ can return them (the tour navigates
   // through several tabs; without this it strands the rep on the last step's
@@ -161,7 +250,7 @@ function tourStart() {
   _tourReturnView = (typeof currentView !== 'undefined') ? currentView : '';
   const ae = document.activeElement;
   _tourRestoreFocus = (ae && ae !== document.body) ? ae : null;
-  TOUR_VISIBLE = tourVisibleSteps_();
+  TOUR_VISIBLE = steps;
   TOUR_I = -1;
   tourEnsureNodes_();
   window.addEventListener('resize', tourReposition_);
@@ -289,13 +378,24 @@ function tourPaint_(step) {
 }
 
 /** Place the tooltip near the target — below if there's room, else above,
- *  else to the side; always clamped on-screen. */
+ *  else beside it (T1: a tall target used to get the card centred ON it, over
+ *  the very thing the step describes); always clamped on-screen. */
 function tourPlacePop_(pop, r, placement) {
   pop.classList.add('show');
   const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 12, vw = window.innerWidth, vh = window.innerHeight;
   let top, left;
   const below = r.bottom + gap + ph <= vh;
   const above = r.top - gap - ph >= 0;
+  if (!below && !above) {
+    const right = r.right + gap + pw <= vw - 8, leftSide = r.left - gap - pw >= 8;
+    if (right || leftSide) {
+      left = right ? r.right + gap : r.left - gap - pw;
+      top = Math.min(Math.max(8, Math.max(r.top, 0) + 8), vh - ph - 8);
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+      return;
+    }
+  }
   if (placement === 'above' ? above : (below || !above)) {
     top = below ? r.bottom + gap : Math.max(8, (vh - ph) / 2);
   } else {
@@ -317,7 +417,7 @@ function tourPopHtml_(step) {
   const first = TOUR_I <= 0;
   return '' +
     '<button class="tour-btn ghost tour-skip" data-tour="skip">Skip</button>' +
-    '<div class="tour-kicker">Step ' + (TOUR_I + 1) + ' of ' + total + '</div>' +
+    '<div class="tour-kicker">' + (TOUR_MODE === 'new' ? 'What’s new · ' : 'Step ') + (TOUR_I + 1) + ' of ' + total + '</div>' +
     '<div class="tour-title" id="tour-pop-title">' + step.title + '</div>' +
     '<div class="tour-body" id="tour-pop-body">' + step.body + '</div>' +
     '<div class="tour-foot">' +
@@ -396,6 +496,6 @@ function tourEnd_(completed) {
   const restore = _tourRestoreFocus;
   _tourRestoreFocus = null;
   if (restore && restore.isConnected) { try { restore.focus(); } catch (_) {} }
-  if (completed) showToast('Tour complete — replay it anytime from the ? button', 'toast-success');
+  if (completed) showToast('Tour complete — replay it anytime from Settings', 'toast-success');
 }
 </script>

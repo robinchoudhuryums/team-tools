@@ -746,8 +746,10 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   // umsTzWarnedDay: the fixture roster tz (Asia/Kolkata) never matches the
   // sandbox browser (UTC), so the once-a-day sticky tz-mismatch toast
   // (9c5df81) would cover the top of EVERY screenshot. Seed "already warned
-  // today" — the steady state, same posture as the tour-seen flag.
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  // today" — the steady state, same posture as the tour-seen flag (seenVersion
+  // 9999: above any TOUR_VERSION, so neither the full tour nor the what's-new
+  // run starts — T1; tour-check.mjs walks the tour itself).
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   const fake = new Date();
   if (opts && opts.utc) fake.setUTCHours(opts.utc[0], opts.utc[1] || 0, 0, 0);
   else fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift

@@ -1141,6 +1141,64 @@ test('T-2 contrast: no deep-link + unseen → auto-start IS scheduled', () => {
   assert.strictEqual(scheduled, 1, 'no deep-link → auto-start scheduled');
 });
 
+test('T1 DOM (operator 2026-11-11): Settings → Replay the tour starts the FULL tour (the welcome first, "Step 1 of N"), and ending it hands focus back to the gear — not to the hidden button that was pressed — and stamps TOUR_VERSION', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  h.run.drain();
+  assert.strictEqual(h.read('TOUR_ACTIVE'), false, 'nothing owed — no auto-start');
+  const gear = h.$('.sidebar [data-settings-toggle]');
+  gear.getBoundingClientRect = () => ({ width: 90, height: 28, top: 800, left: 20, bottom: 828, right: 110 });
+  h.window.settingsToggle_(gear);   // jsdom runs no inline onclick — call what the markup names
+  const btn = h.$('#settings-panel [data-tour-replay]');
+  assert.ok(btn && /Replay the tour/.test(btn.textContent) && btn.getAttribute('onclick') === 'settingsReplayTour_()', 'the Settings panel carries the replay button');
+  btn.focus();
+  h.window.settingsReplayTour_();
+  assert.ok(h.$('#settings-panel').hasAttribute('hidden'), 'the panel closes');
+  assert.strictEqual(h.read('TOUR_ACTIVE'), true, 'the tour runs');
+  assert.strictEqual(h.read('TOUR_MODE'), 'full');
+  const ids = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE').map((s) => s.id)));
+  assert.strictEqual(ids[0], 'welcome');
+  ['manage', 'admin', 'team-notes', 'qa', 'spanish'].forEach((id) => assert.ok(ids.indexOf(id) < 0, 'a rep is not shown ' + id));
+  h.flushTimers();
+  assert.ok(/^Step 1 of \d+$/.test(h.$('#tour-pop .tour-kicker').textContent.trim()), h.$('#tour-pop .tour-kicker').textContent);
+  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.read('TOUR_ACTIVE'), false, 'Escape ends it');
+  assert.strictEqual(h.document.activeElement, gear, 'focus returns to the gear');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'));
+});
+
+test('T1 DOM: someone who finished version 1 gets the what\'s-new run on load — the what\'s-new card first, "What’s new · 1 of N", only newer steps; a fresh browser gets the full tour; a manager\'s run carries the manager steps and View-as CSR drops them', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  h.bootShell({ isManager: true });
+  h.flushTimers();   // the shell boot + tourMaybeAutoStart_'s 600ms beat
+  h.flushTimers();   // the opening card's paint
+  assert.strictEqual(h.read('TOUR_ACTIVE'), true, 'the what\'s-new run auto-started');
+  assert.strictEqual(h.read('TOUR_MODE'), 'new');
+  const steps = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE')));
+  assert.strictEqual(steps[0].id, 'whatsnew');
+  assert.ok(steps.slice(1).every((s) => s.since > 1), 'only steps newer than version 1');
+  assert.ok(steps.some((s) => s.id === 'manage'), 'a manager\'s run has the Manage step');
+  assert.ok(/^What’s new · 1 of \d+$/.test(h.$('#tour-pop .tour-kicker').textContent.trim()), h.$('#tour-pop .tour-kicker').textContent);
+  h.$('#tour-pop [data-tour="skip"]').click();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'), 'skipping still stamps — it is not offered again');
+  // View-as CSR: the same gate the tab bar uses.
+  h.read('empState').isAdmin = true;
+  h.window.viewAsSet_('csr');
+  h.window.tourStart('full');
+  const csr = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE').map((s) => s.id)));
+  assert.ok(csr.indexOf('manage') < 0 && csr.indexOf('team-notes') < 0, 'previewing as a CSR drops the manager steps');
+  h.window.tourEnd_(false);
+  const h2 = boot();
+  h2.window.localStorage.removeItem('umsTour');
+  h2.bootShell({ isManager: false });
+  h2.flushTimers();
+  assert.strictEqual(h2.read('TOUR_MODE'), 'full', 'a fresh browser gets the full tour');
+  assert.strictEqual(h2.read('TOUR_VISIBLE')[0].id, 'welcome');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // CYCLE 7 · Turn 1+2 fixes — punch failure feedback, intake draft lifecycle,
 // search stale-guard trim parity.

@@ -4480,6 +4480,105 @@ test('TOUR_STEPS view keys all resolve in the TOOLS registry', () => {
   });
 });
 
+// T1 (operator 2026-11-11) — the tour rewrite. The registry is DATA a later
+// edit can quietly break (a renamed class skips a step for everyone — the v1
+// Tags step had pointed at a container that is empty until you type, so it
+// was skipped on every run), so the pins read it, and drive the gate and the
+// what's-new filter over the real TOOLS registry and the real tabVisibleForUser_.
+function t1TourSandbox_(empState, stored) {
+  const coreSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  const tourSrc = fs.readFileSync(path.join(__dirname, '../../web-app/script_tour.html'), 'utf8');
+  const tools = coreSrc.match(/const TOOLS = \{[\s\S]*?\n\};/)[0];
+  const steps = tourSrc.match(/const TOUR_STEPS = \[[\s\S]*?\n\];/)[0];
+  const ver = tourSrc.match(/const TOUR_VERSION = \d+;/)[0];
+  const store = { umsTour: stored === undefined ? null : JSON.stringify(stored) };
+  const box = { empState, localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } } };
+  vm.createContext(box);
+  vm.runInContext(tools.replace('const TOOLS', 'var TOOLS') + '\n' + steps.replace('const TOUR_STEPS', 'var TOUR_STEPS') + '\n' +
+    ver.replace('const', 'var') + "\nvar TOUR_LS_KEY = 'umsTour';\n" +
+    ['tabVisibleForUser_'].map((f) => extractFunction('script_core.html', f)).join('\n') + '\n' +
+    ['tourPrefs_', 'tourSeenVersion_', 'tourAutoMode_', 'tourStepVisible_', 'tourVisibleSteps_'].map((f) => extractFunction('script_tour.html', f)).join('\n'), box);
+  return box;
+}
+test('T1 tour: every step has a unique id, a registered tab, a target that exists in the markup, a since no newer than TOUR_VERSION, and one opening card per run', () => {
+  const box = t1TourSandbox_({});
+  const steps = JSON.parse(JSON.stringify(box.TOUR_STEPS));
+  const ids = steps.map((s) => s.id);
+  assert.strictEqual(new Set(ids).size, ids.length, 'ids are unique: ' + ids.join(','));
+  assert.ok(box.TOUR_VERSION >= 2, 'the rewrite bumped TOUR_VERSION');
+  // Every class / id / attribute a selector names appears in some web-app partial.
+  const web = [];
+  (function walk(d) { fs.readdirSync(d).forEach((f) => { const p = path.join(d, f); if (fs.statSync(p).isDirectory()) walk(p); else if (/\.html$/.test(f) && !/script_tour\.html$/.test(p)) web.push(fs.readFileSync(p, 'utf8')); }); })(path.join(__dirname, '../../web-app'));
+  const all = web.join('\n');
+  steps.forEach((s) => {
+    assert.ok(box.TOOLS[s.tool] && box.TOOLS[s.tool].tabs[s.view], s.id + ': ' + s.tool + '/' + s.view + ' is a TOOLS tab');
+    assert.ok((s.since || 1) <= box.TOUR_VERSION, s.id + ': since ' + s.since + ' is not newer than TOUR_VERSION');
+    assert.ok(!s.intro || s.selector === null, s.id + ': an opening card spotlights nothing');
+    assert.ok(!('managerOnly' in s), s.id + ': no role flag on a step — the gate is the tab');
+    if (!s.selector) return;
+    (s.selector.match(/#[\w-]+|\.[\w-]+|\[[\w-]+\]/g) || []).forEach((tok) => {
+      const name = tok.replace(/^[#.[]|\]$/g, '');
+      const re = tok[0] === '#' ? new RegExp('id="' + name + '"|\\.id = \'' + name + '\'|id=\\\\?"' + name)
+        : tok[0] === '.' ? new RegExp('class(Name)?=[\'"][^\'"]*\\b' + name + '\\b|class="[^"]*\\$\\{[^}]*\\}[^"]*\\b' + name + '\\b|className = \'[^\']*\\b' + name + '\\b')
+          : new RegExp('\\s' + name + '[\\s>=]');
+      assert.ok(re.test(all), s.id + ': "' + tok + '" (from ' + s.selector + ') appears in no web-app markup');
+    });
+  });
+  assert.strictEqual(steps.filter((s) => s.intro === 'full').length, 1, 'one welcome');
+  assert.strictEqual(steps.filter((s) => s.intro === 'new').length, 1, 'one what\'s-new opening');
+  assert.ok(steps.some((s) => s.selector === '#cn-tag-input'), 'the Tags step points at the input, not the suggestion strip that is empty until typing');
+  // Every tool the registry has is visited by at least one step.
+  Object.keys(box.TOOLS).forEach((t) => assert.ok(steps.some((s) => s.tool === t), 'tool ' + t + ' has a step'));
+});
+test('T1 tour: a step shows only where its TAB is visible — CSR, Spanish, QA, manager and admin each get their tabs\' steps and no others (driven over the real TOOLS + tabVisibleForUser_)', () => {
+  const idsFor = (st) => JSON.parse(JSON.stringify(t1TourSandbox_(st).tourVisibleSteps_('full', 0).map((s) => s.id)));
+  const csr = idsFor({});
+  ['team-notes', 'team-training', 'manage', 'admin', 'qa', 'spanish', 'whatsnew'].forEach((id) => assert.ok(csr.indexOf(id) < 0, 'a CSR is not shown ' + id));
+  ['welcome', 'clock', 'stats', 'cn-frame', 'reference', 'intake', 'training', 'dept-requests'].forEach((id) => assert.ok(csr.indexOf(id) >= 0, 'a CSR is shown ' + id));
+  assert.strictEqual(csr[0], 'welcome');
+  const sp = idsFor({ canSeeSpanish: true });
+  assert.ok(sp.indexOf('spanish') >= 0 && sp.indexOf('manage') < 0 && sp.indexOf('qa') < 0, 'Spanish: the inbox step only');
+  const qa = idsFor({ canSeeQa: true });
+  assert.ok(qa.indexOf('qa') >= 0 && qa.indexOf('manage') < 0 && qa.indexOf('spanish') < 0, 'QA member: the QA step only');
+  const mgr = idsFor({ isManager: true });
+  ['team-notes', 'team-training', 'manage', 'spanish', 'qa'].forEach((id) => assert.ok(mgr.indexOf(id) >= 0, 'a manager is shown ' + id));
+  assert.ok(mgr.indexOf('admin') < 0, 'a manager is not shown the admin step');
+  const adm = idsFor({ isManager: true, isAdmin: true });
+  assert.ok(adm.indexOf('admin') >= 0, 'an admin is shown the admin step');
+  assert.strictEqual(t1TourSandbox_({}).tourStepVisible_({ id: 'x', tool: 'nope', view: 'clock' }), false, 'a step naming no registered tab is never shown');
+});
+test('T1 tour: someone who saw version 1 gets only the newer steps, opened by the what\'s-new card; a first load gets the full tour; a current or newer version gets nothing (driven)', () => {
+  const box = t1TourSandbox_({ isManager: true, isAdmin: true });
+  const fresh = JSON.parse(JSON.stringify(box.tourVisibleSteps_('new', 1)));
+  assert.strictEqual(fresh[0].id, 'whatsnew', 'opens with the what\'s-new card');
+  assert.ok(fresh.slice(1).every((s) => (s.since || 1) > 1), 'only steps newer than version 1');
+  assert.ok(fresh.every((s) => s.id !== 'welcome'), 'never the full tour\'s welcome');
+  assert.ok(fresh.some((s) => s.id === 'settings') && !fresh.some((s) => s.id === 'cn-frame'), 'Settings is new; the note template is not');
+  const csrNew = JSON.parse(JSON.stringify(t1TourSandbox_({}).tourVisibleSteps_('new', 1).map((s) => s.id)));
+  assert.ok(csrNew.indexOf('manage') < 0 && csrNew.indexOf('admin') < 0, 'the what\'s-new run is gated by role too');
+  const mode = (stored) => t1TourSandbox_({}, stored).tourAutoMode_();
+  assert.strictEqual(mode(undefined), 'full', 'never seen → the full tour');
+  assert.strictEqual(mode({ seenVersion: 1 }), 'new', 'saw version 1 → what\'s new');
+  assert.strictEqual(mode({ seenVersion: t1TourSandbox_({}).TOUR_VERSION }), '', 'current → nothing');
+  assert.strictEqual(mode({ seenVersion: 9999 }), '', 'a newer deployment seen first → nothing');
+  assert.strictEqual(mode({ seenVersion: 'x' }), 'full', 'an unreadable stored version is treated as never seen');
+});
+test('T1 tour: replay lives in Settings (not in the pop-out), the engine starts each mode with its own steps and kicker, and every run stamps TOUR_VERSION at its end (source)', () => {
+  const core = fs.readFileSync(path.join(__dirname, '../../web-app/script_core.html'), 'utf8');
+  assert.ok(/const tourRow = COMPACT_MODE \? '' : `/.test(core) && /\$\{tourRow\}/.test(core), 'the Settings panel carries the Tour row, outside the pop-out');
+  assert.ok(/data-tour-replay onclick="settingsReplayTour_\(\)">Replay the tour</.test(core), 'the row\'s button');
+  const replay = extractFunction('script_core.html', 'settingsReplayTour_');
+  assert.ok(replay.indexOf('settingsClose_()') < replay.indexOf('.focus()') && replay.indexOf('.focus()') < replay.indexOf("tourStart('full')"),
+    'it closes the panel and focuses the gear BEFORE the tour starts — the tour hands focus back to what had it');
+  const start = extractFunction('script_tour.html', 'tourStart');
+  assert.ok(/tourVisibleSteps_\(TOUR_MODE, tourSeenVersion_\(\)\)/.test(start) && /if \(!steps\.length\) return;/.test(start), 'the run is the mode\'s own list, and an empty one starts nothing');
+  assert.ok(/TOUR_MODE === 'new' \? 'What’s new · ' : 'Step '/.test(extractFunction('script_tour.html', 'tourPopHtml_')), 'the kicker says which run it is');
+  assert.ok(/p\.seenVersion = TOUR_VERSION;/.test(extractFunction('script_tour.html', 'tourEnd_')), 'a finished or skipped run stamps the current version');
+  assert.ok(/tourStart\(mode\)/.test(extractFunction('script_tour.html', 'tourMaybeAutoStart_')), 'auto-start passes the owed mode');
+  const place = extractFunction('script_tour.html', 'tourPlacePop_');
+  assert.ok(/if \(!below && !above\) \{/.test(place) && /r\.right \+ gap \+ pw <= vw - 8/.test(place), 'a tall target gets the card beside it, never centred over it');
+});
+
 // Tag-trend bucketing (#5) — the pure week-bucketing math behind the manager
 // Admin "Tag Trends" panel. Factored out of getCallNotesTagTrends so the
 // boundary + bucketing + sort logic is pinnable without a spreadsheet.

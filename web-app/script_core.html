@@ -383,7 +383,8 @@ window.addEventListener('load', () => {
       // rep's manual resize/reposition sticks across launches.
       popoutPersistGeometryInit_();
       // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
-      // in the compact pop-out). Replayable from the Call Notes ? menu.
+      // in the compact pop-out); someone who saw an older version gets only the
+      // what's-new steps (T1). Replayable from Settings and the Call Notes ? menu.
       if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
       // "What's new" (#4, INV-152) — best-effort fetch. F1 (cycle 10): the
       // panel does NOT auto-open (the 2026-07-09 operator decision — updates
@@ -810,6 +811,18 @@ function settingsClose_() {
   p.setAttribute('hidden', '');
   settingsReflectExpanded_(false);
 }
+/** T1 — Settings → Replay the tour. Focus goes back to the visible gear
+ *  BEFORE the tour starts, because the tour hands focus back to whatever had
+ *  it when it began, and the button pressed is inside the panel this hides. */
+function settingsReplayTour_() {
+  settingsClose_();
+  var gears = document.querySelectorAll('[data-settings-toggle]');
+  for (var i = 0; i < gears.length; i++) {
+    var r = gears[i].getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) { try { gears[i].focus(); } catch (_) {} break; }
+  }
+  if (typeof tourStart === 'function') tourStart('full');
+}
 function settingsToggle_(btn) {
   var p = settingsPanelEl_();
   if (!p) return;
@@ -1016,6 +1029,12 @@ function renderShell(state) {
       </div>
       <div class="stg-note">Previews that role&rsquo;s tabs and controls — data still loads with your real access.</div>
     </div>` : '';
+  // T1 (operator 2026-11-11): the tour is replayed from here — the one place
+  // every page reaches (the Call Notes ? menu keeps its link). Not in the
+  // compact pop-out, which holds one tool and never auto-starts the tour.
+  const tourRow = COMPACT_MODE ? '' : `
+    <div class="stg-row"><span class="sb-theme-label">Tour</span>
+      <div class="stg-viewas-btns"><button type="button" class="stg-va-btn" data-tour-replay onclick="settingsReplayTour_()">Replay the tour</button></div></div>`;
   const settingsPanel = `
     <div class="settings-panel" id="settings-panel" hidden role="group" aria-label="Settings">
       <div class="stg-row"><span class="sb-theme-label">Theme</span>${themeToggle}</div>
@@ -1023,6 +1042,7 @@ function renderShell(state) {
       <div class="stg-row"><span class="sb-theme-label">Alerts</span>${reminderToggle}</div>
       <div class="stg-row"><span class="sb-theme-label">Dashboard</span>
         <div class="stg-viewas-btns"><button type="button" class="stg-va-btn" onclick="settingsClose_();if(typeof clkDashOpenCustomize_==='function')clkDashOpenCustomize_()">Customize widgets…</button></div></div>
+      ${tourRow}
       ${viewAsRow}
     </div>`;
   const viewAsBanner = VIEW_AS.active ? `
