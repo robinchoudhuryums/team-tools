@@ -202,6 +202,10 @@ const CONFIG = {
   // (written by call-data-reporting's inboundCallsExport.js — Op State #49
   // there; one row per inbound call, Call Start stored RAW PST 'HH:MM:SS').
   CDR_INBOUND_TAB:   'Inbound Calls',
+  // M1 (operator 2026-11-11): every OUTBOUND call, one row per call, the same
+  // export family (call-data-reporting's outboundCallsExport.js; read here BY
+  // HEADER — Call Date / Agent Name / Connected / Talk Sec).
+  CDR_OUTBOUND_TAB:  'Outbound Calls',
   // PST(stored) → CST(anchor). A HAND-MIRROR of call-data-reporting's
   // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
   // fixed 2h holds year-round). Change both or the two dashboards disagree.
@@ -1037,6 +1041,11 @@ const ROUTE_LOOKUP_CAP = 8000;
 const ROUTE_LOOKUP_PROP = 'ROUTE_LOOKUPS_24H';
 const OOP_DRIVE_MAX_LOOKUPS = 3;
 const EXPORT_INFERRED_LIST_MAX = 50;   // the inferred punches an export names beside its link / in its email
+// M1 (operator 2026-11-11): an intake form's time (first input to send) rides
+// its call note as completionSeconds; a time outside these bounds is not a
+// call (a form left open overnight, a resend) and is not counted as timed.
+const METRICS_INTAKE_TIMED_MIN_SEC = 30;
+const METRICS_INTAKE_TIMED_MAX_SEC = 7200;
 const ACTIVITY_PING_GAP_MIN = 10;   // = the client's PRESENCE_MIN_GAP_MS (pinned): a ping is a sample, at most one per window per gap
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────

@@ -68,7 +68,7 @@ function cnCountIntakeNotesResult_(emp, from, to) {
     if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
     const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
     const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
-    let n = 0;
+    let n = 0, timed = 0, seconds = 0;
     for (let i = 0; i < dateCol.length; i++) {
       const d = cnDateLocalString_(dateCol[i][0]);
       if (d < from || d > to) continue;
@@ -76,10 +76,16 @@ function cnCountIntakeNotesResult_(emp, from, to) {
       if (raw.indexOf('"intakeType"') < 0) continue;
       try {
         const sd = JSON.parse(raw);
-        if (sd && sd.intakeType) n++;
+        if (sd && sd.intakeType) {
+          n++;
+          // M1: the intake form's time, when the send recorded it — a time no
+          // call takes is not counted (METRICS_INTAKE_TIMED_*).
+          const cs = Number(sd.completionSeconds);
+          if (cs >= METRICS_INTAKE_TIMED_MIN_SEC && cs <= METRICS_INTAKE_TIMED_MAX_SEC) { timed++; seconds += Math.round(cs); }
+        }
       } catch (e) { /* corrupt blob never breaks a count (callNoteRowToObject_ posture) */ }
     }
-    return { count: n, unavailable: false, unenrolled: false };
+    return { count: n, timed: timed, seconds: seconds, unavailable: false, unenrolled: false };
   } catch (e) {
     console.warn('cnCountIntakeNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
     return { count: 0, unavailable: true, unenrolled: false };

@@ -10962,10 +10962,10 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
     'BOTH return paths (cache hit + fresh compute) strip for a non-manager');
   // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
   // a transfer-read error must not pin a degraded aggregate for the TTL.
-  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed\) \{/.test(f),   // MET-4: a failed trend read is degraded too
+  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\)\) \{/.test(f),   // MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v3:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v4:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -10985,7 +10985,7 @@ test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card cl
   };
   const rep = ctx.teamMetricsRepView_(full);
   assert.deepStrictEqual(Object.keys(rep).sort().join('|'),
-    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),
+    ['repView', 'from', 'to', 'date', 'teamTotals', 'trend', 'transferMeta', 'outboundMeta', 'queueRows', 'groupRows', 'alertThreshold', 'alertBand', 'standardSource'].sort().join('|'),   // M1: the outbound tab's state, no names
     'the rep payload is EXACTLY the aggregate whitelist — reps[]/diagnostics/meta/unknown fields never ride');
   assert.strictEqual(rep.repView, true);
   // Registry: the tab is visible to everyone now (the server shape is the
@@ -22238,7 +22238,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v3:/.test(my) && /metrics_range_v3:/.test(rng) && /team_metrics_v3:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2)');
+  assert.ok(/metrics_my_v4:/.test(my) && /metrics_range_v4:/.test(rng) && /team_metrics_v4:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -33686,8 +33686,10 @@ test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoi
       getCdrDashboardStandard_: () => ({}), cdrStandardShip_: () => ({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }),
       getCdrAgentMetrics_: () => agg, getCdrDailyBreakdown_: () => bd, metricsWorkdayIsos_: () => ['2026-05-04'],
       getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }),
-      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: c.cdrAgentsOrThrow_ };
+      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: c.cdrAgentsOrThrow_,
+      getCdrOutboundPerRep_: () => ({ agents: {}, through: null }) };   // M1: the outbound tab, read clean and empty
     vm.createContext(ctx);
+    ['metricsOutboundOf_', 'metricsAdjusted_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     vm.runInContext(extractRawFunction('Code.js', 'getMyMetricsRange'), ctx);
     return { out: JSON.parse(JSON.stringify(ctx.getMyMetricsRange('2026-05-04', '2026-05-06'))), puts };
   };
@@ -33704,9 +33706,9 @@ test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoi
 
 test('MET-2/MET-3/MET-4 (cycle 23): a degraded CDR round is never cached — My Stats while cdrUnavailable, the ambient badge (which now SAYS unavailable), and a Team Metrics range whose trend failed (driven ambient + the cache guards)', () => {
   const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
-  assert.ok(/if \(useMetricsCache && !noteRes\.unavailable && !cdrUnavailable\) \{/.test(my), 'MET-2: My Stats does not pin an unavailable CDR read for the TTL');
+  assert.ok(/if \(useMetricsCache && !noteRes\.unavailable && !cdrUnavailable && !\(obRes\.error && !obRes\.steady\)\) \{/.test(my), 'MET-2: My Stats does not pin an unavailable CDR read for the TTL (M1: nor a failed outbound read)');
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
-  assert.ok(/catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(team) && /&& !transferMeta\.error && !trendFailed\)/.test(team), 'MET-4: a failed range trend is not cached');
+  assert.ok(/catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(team) && /&& !transferMeta\.error && !trendFailed && /.test(team), 'MET-4: a failed range trend is not cached');
   assert.ok(/if \(rangeBreakdown && rangeBreakdown\.error\) throw new Error\(rangeBreakdown\.error\);/.test(team), 'MET-4: a missing tab is a failed range trend, not an empty one');
   assert.ok(/if \(trendBreakdown && trendBreakdown\.error\) throw new Error\('Call data unavailable: ' \+ trendBreakdown\.error\);/.test(team), 'the single-day trend refuses it too');
   // MET-3 driven.
@@ -42985,6 +42987,180 @@ test('AC1: the bars — a height against the busiest bar shown, never under 8% f
   assert.ok(/—/.test(c.tcalActCellHtml_('A', '2026-11-08')), 'a failed read is a dash in the cell (the note under the table names it)');
   assert.ok(/'App activity could not be read for this day — reload to try again\.'/.test(s), 'and the note says so');
   assert.ok(/if \(res && !res\.error && res\.reps\) TEAMACT\.cache\[dateIso\] = res;\s*else TEAMACT\.failed\[dateIso\] = true;/.test(s), 'a failure is never cached as data (INV-129)');
+});
+
+console.log('\nOperator round 2026-11-11 — M1 (adjusted metrics: outbound calls + the intake form timer)');
+
+const m1Ctx_ = (extra) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, console: { warn() {}, log() {} } }, extra || {}));
+  ['const METRICS_INTAKE_TIMED_MIN_SEC = \\d+;', 'const METRICS_INTAKE_TIMED_MAX_SEC = \\d+;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  vm.runInContext('var _cdrDateColMemo = {};', ctx);
+  ['cdrParseHms_', 'cdrFmtHms_', 'cdrRowDateIso_', 'cdrDateColIsos_', 'cdrDqeWindowSpan_', 'cdrOutboundColumns_', 'cdrOutboundAggregate_',
+    'getCdrOutboundPerRep_', 'metricsAdjusted_', 'metricsOutboundOf_', 'cnCountIntakeNotesResult_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'M1#' + f }));
+  return ctx;
+};
+const m1J = (x) => JSON.parse(JSON.stringify(x));
+
+test('M1: the Outbound Calls tab is read BY HEADER — a reordered tab reads the same, a missing column is named (driven)', () => {
+  const c = m1Ctx_();
+  const col = m1J(c.cdrOutboundColumns_(['Call Date', 'Call ID', 'Callee Hash', 'Agent Name', 'Agent Ext', 'Department', 'Connected', 'Talk Sec', 'Ring Sec']));
+  assert.deepStrictEqual([col.date, col.agent, col.connected, col.talk, col.missing], [0, 3, 6, 7, []], 'the call-data-reporting export\'s own order');
+  const moved = m1J(c.cdrOutboundColumns_([' talk sec ', 'AGENT NAME', 'Connected', 'Call Date']));
+  assert.deepStrictEqual([moved.date, moved.agent, moved.connected, moved.talk], [3, 1, 2, 0], 'a reorder, a case change and padding read the same');
+  assert.deepStrictEqual(m1J(c.cdrOutboundColumns_(['Call Date', 'Agent', 'Connected'])).missing, ['agent name', 'talk sec'], 'what is missing is named');
+});
+
+test('M1: one window of outbound rows per roster rep — inside the dates, through the alias overrides, off-roster dropped; Connected is TRUE however Sheets returns it (g09); talk is seconds (driven)', () => {
+  const c = m1Ctx_();
+  const col = { date: 0, agent: 1, connected: 2, talk: 3 };
+  const rows = [
+    ['2026-11-09', 'Ana Lopez', true, 120], ['2026-11-09', 'A. Lopez', 'TRUE', '0:01:30'], ['2026-11-09', 'Ana Lopez', false, 0],
+    ['2026-11-10', 'Ana Lopez', 'FALSE', 5], ['2026-11-08', 'Ana Lopez', true, 999], ['2026-11-09', 'Someone Else', true, 60],
+    ['2026-11-09', '', true, 60], ['', 'Ana Lopez', true, 60], ['2026-11-09', 'Ben Ray', 'true', 'x'],
+  ];
+  const r = m1J(c.cdrOutboundAggregate_(rows, col, { from: '2026-11-09', to: '2026-11-10', aliasMap: { 'A. Lopez': 'Ana Lopez' },
+    rosterNames: ['Ana Lopez', 'Ben Ray'], dateOf: (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '') }));
+  assert.deepStrictEqual(r.agents['Ana Lopez'], { placed: 4, connected: 2, talkSec: 215 }, 'four calls in the window (the alias counted), two connected, 120 + 90 + 5 seconds');
+  assert.deepStrictEqual(r.agents['Ben Ray'], { placed: 1, connected: 1, talkSec: 0 }, 'lower-case text TRUE connects; an unreadable talk cell adds nothing');
+  assert.ok(!r.agents['Someone Else'], 'another department\'s agent is not on the roster');
+  assert.strictEqual(r.latestDate, '2026-11-10');
+});
+
+test('M1: getCdrOutboundPerRep_ over a real-shaped tab — a missing tab or column is NAMED as a steady state (never an empty map), a failed read is not steady; the date column bounds the read; `through` is the tab\'s newest day; a clean round is cached, a round without the aliases is not (driven)', () => {
+  const head = ['Call Date', 'Call ID', 'Callee Hash', 'Agent Name', 'Agent Ext', 'Department', 'Connected', 'Talk Sec'];
+  const data = [['2026-11-07', 'c1', 'h', 'Ana Lopez', '101', 'CSR', true, 40], ['2026-11-09', 'c2', 'h', 'Ana Lopez', '101', 'CSR', true, 60],
+    ['2026-11-09', 'c3', 'h', 'Ana Lopez', '101', 'CSR', false, 0], ['2026-11-10', 'c4', 'h', 'Ana Lopez', '101', 'CSR', true, 30]];
+  const mk = (opts) => {
+    const reads = [], puts = [];
+    const sheet = { getLastRow: () => data.length + 1, getLastColumn: () => (opts.head || head).length,
+      getRange: (r, col, n, w) => { reads.push([r, col, n, w]); if (opts.throwRead) throw new Error('quota');
+        return { getDisplayValues: () => [opts.head || head], getValues: () => data.slice(r - 2, r - 2 + n).map((x) => x.slice(col - 1, col - 1 + (w || 1))) }; } };
+    const c = m1Ctx_({ CONFIG: { CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_CACHE_TTL: 300 },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
+      cdrRosterHash_: () => 'h', getCdrNameMap_: () => ({}), cdrNameMapDegraded_: () => !!opts.degraded,
+      getCdrSS_: () => ({ getSheetByName: (t) => (opts.noTab ? null : t === 'Outbound Calls' ? sheet : null), getSpreadsheetTimeZone: () => 'UTC' }) });
+    return { res: m1J(c.getCdrOutboundPerRep_('2026-11-09', '2026-11-09', ['Ana Lopez'])), reads, puts };
+  };
+  const a = mk({});
+  assert.deepStrictEqual(a.res.agents, { 'Ana Lopez': { placed: 2, connected: 1, talkSec: 60 } }, 'the day\'s two calls');
+  assert.strictEqual(a.res.through, '2026-11-10', 'the newest day the tab holds');
+  assert.deepStrictEqual(a.reads.filter((x) => x[1] !== 1 || x[3] !== undefined).map((x) => [x[0], x[2]]).pop(), [3, 2], 'the span read: rows 3–4, the window only');
+  assert.strictEqual(a.puts.length, 1, 'a clean round is cached');
+  const none = mk({ noTab: true });
+  assert.ok(/"Outbound Calls" tab is not in the CDR Report/.test(none.res.error) && none.res.steady === true && !none.res.agents, 'THE RULE: a missing tab is named, never an empty map that reads as no outbound calls');
+  const col = mk({ head: ['Call Date', 'Agent Name', 'Connected'] });
+  assert.ok(/missing column\(s\): talk sec/.test(col.res.error) && col.res.steady === true);
+  const bad = mk({ throwRead: true });
+  assert.ok(/could not be read: quota/.test(bad.res.error) && bad.res.steady === false && bad.puts.length === 0, 'a failed read is not steady — the endpoints never cache it');
+  assert.strictEqual(mk({ degraded: true }).puts.length, 0, 'a round read without the aliases is not kept (F16)');
+});
+
+test('M1: the ADJUSTED figures sit beside the actual ones — handled = answered + connected outbound, talk incl. outbound, average talk without the TIMED intake calls only while a call is left; null with nothing to adjust; % Answered is never in it (driven)', () => {
+  const c = m1Ctx_();
+  const cdr = { totalAnswered: 40, tttSeconds: 12000 };
+  assert.strictEqual(c.metricsAdjusted_(cdr, { placed: 0, connected: 0, talkSec: 0 }, { timed: 0, seconds: 0 }), null, 'no outbound call and no timed intake: no Adjusted line repeating the actual one');
+  assert.strictEqual(c.metricsAdjusted_(cdr, null, null), null);
+  const a = m1J(c.metricsAdjusted_(cdr, { placed: 6, connected: 4, talkSec: 900 }, { timed: 3, seconds: 3000 }));
+  assert.deepStrictEqual([a.handled, a.talkSec, a.talkFormatted], [44, 12900, '3:35:00'], 'answered + connected; talk + outbound talk');
+  assert.deepStrictEqual([a.outbound.placed, a.outbound.connected, a.outbound.talkFormatted], [6, 4, '0:15:00']);
+  assert.deepStrictEqual([a.intakeTimed, a.intakeAvgSec, a.attExIntakeSec, a.attExIntakeFormatted], [3, 1000, 243, '0:04:03'], '(12000 − 3000) ÷ (40 − 3)');
+  assert.ok(!('pctAnswered' in a), 'the inbound standard is never adjusted');
+  const unread = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 600 }));
+  assert.deepStrictEqual([unread.outbound, unread.handled, unread.attExIntakeSec], [null, 40, 300], 'an unread outbound tab adds nothing — the intake part still stands');
+  assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 2, tttSeconds: 900 }, null, { timed: 2, seconds: 600 })).attExIntakeSec, null, 'every call an intake: nothing left to average');
+  assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 9, tttSeconds: 500 }, null, { timed: 2, seconds: 600 })).attExIntakeSec, null, 'form time past the talk time is no average');
+  assert.deepStrictEqual(m1J(c.metricsAdjusted_(null, { placed: 2, connected: 2, talkSec: 100 }, null)).handled, 2, 'an outbound-only day: the connected calls are the handled ones');
+  assert.deepStrictEqual(m1J(c.metricsOutboundOf_({ agents: {} }, 'Ana')), { placed: 0, connected: 0, talkSec: 0 }, 'read with no call of theirs: a real zero');
+  assert.strictEqual(c.metricsOutboundOf_({ error: 'x' }, 'Ana'), null, 'not read: null, never zero');
+});
+
+test('M1: an intake call\'s form time is read off its note — counted as timed only between METRICS_INTAKE_TIMED_MIN_SEC and _MAX_SEC; untimed and corrupt notes still count as intake calls (driven)', () => {
+  const sub = [JSON.stringify({ intakeType: 'ppd', completionSeconds: 600 }), JSON.stringify({ intakeType: 'pmd', completionSeconds: 12 }),
+    JSON.stringify({ intakeType: 'pap', completionSeconds: 99999 }), JSON.stringify({ intakeType: 'ppd' }), '{"intakeType": broken', JSON.stringify({ tags: ['x'] }),
+    JSON.stringify({ intakeType: 'pmd', completionSeconds: 1200 })];
+  const dates = ['2026-11-09', '2026-11-09', '2026-11-09', '2026-11-09', '2026-11-09', '2026-11-09', '2026-11-08'];
+  const sheet = { getLastRow: () => sub.length + 1, getRange: (r, col, n) => ({ getValues: () => (col === 2 ? dates : sub).slice(0, n).map((v) => [v]) }) };
+  const c = m1Ctx_({ CN: { DATE_LOCAL: 1, SUBFORM_DATA: 15 }, getCallNotesSheet_: () => sheet, cnDateLocalString_: (v) => v });
+  const r = m1J(c.cnCountIntakeNotesResult_({ id: 'E1', callNotesSheetId: 's' }, '2026-11-09', '2026-11-09'));
+  assert.deepStrictEqual([r.count, r.timed, r.seconds], [4, 1, 600], 'four intake calls that day; only the 10-minute form is timed (12 s and 27 h are not calls)');
+  const v = /const METRICS_INTAKE_TIMED_MIN_SEC = (\d+);[\s\S]*?const METRICS_INTAKE_TIMED_MAX_SEC = (\d+);/.exec(serverSource());
+  assert.deepStrictEqual([Number(v[1]), Number(v[2])], [30, 7200]);
+});
+
+test('M1: the three Stats endpoints carry outbound + adjusted beside the actual figures — never cache a failed outbound read, keys bumped (INV-85); the team view lists an outbound-only rep, sums the outbound, and its rep view carries the tab\'s state but no names (source + driven range)', () => {
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
+  assert.ok(/var obRes = getCdrOutboundPerRep_\(date, date, \[emp\.name\]\);/.test(my) && /outboundUnavailable: obRes\.error \|\| null,/.test(my), 'My Stats reads the own day');
+  assert.ok(/adjusted: cdrUnavailable \? null : metricsAdjusted_\(todayCdr, ob,/.test(my), 'an unread inbound day has nothing to adjust');
+  const rng = stripJsComments_(extractRawFunction('Code.js', 'getMyMetricsRange'));
+  assert.ok(/getCdrOutboundPerRep_\(from, to, \[emp\.name\]\)/.test(rng) && /&& !\(obRes\.error && !obRes\.steady\)\) \{/.test(rng), 'the range reads it, and a failed read is never cached');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/var obRes = getCdrOutboundPerRep_\(from, toDate, rosterNames\);/.test(team) && /outboundMeta: outboundMeta,/.test(team), 'one read for the team, its state shipped');
+  assert.ok(/\|\| \(rep\.outbound && rep\.outbound\.placed > 0\)\) \{/.test(team), 'a rep with outbound calls and no inbound ones is still listed');
+  assert.ok(/teamTotals\.intakeNotesPartial \? null : teamIntake/.test(team), 'a team total built from an unreadable rep Sheet has no intake adjustment');
+  assert.ok(/outboundMeta: full\.outboundMeta,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')), 'the rep view carries the tab\'s state (no names in it)');
+  // Driven range: outbound read clean → shipped and adjusted; read failed → named, null, not cached.
+  const run = (ob) => {
+    const puts = [];
+    const ctx = { String, Number, Math, Date, JSON, Object, Error, isFinite, console: { warn() {} },
+      getEmployeeInfo_: () => ({ id: 'e1', name: 'Ann' }), CONFIG: { CDR_CACHE_TTL: 60 },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
+      getCdrDashboardStandard_: () => ({}), cdrStandardShip_: () => ({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }),
+      getCdrAgentMetrics_: () => ({ agents: { Ann: { totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83.3, tttSeconds: 3000 } }, meta: {} }),
+      getCdrDailyBreakdown_: () => ({ perRepDaily: {} }), metricsWorkdayIsos_: () => [],
+      getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 2, timed: 2, seconds: 1200 }),
+      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents, getCdrOutboundPerRep_: () => ob };
+    vm.createContext(ctx);
+    ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { out: m1J(ctx.getMyMetricsRange('2026-11-03', '2026-11-07')), puts };
+  };
+  let r = run({ agents: { Ann: { placed: 5, connected: 3, talkSec: 600 } }, through: '2026-11-06' });
+  assert.deepStrictEqual([r.out.outbound.placed, r.out.outboundThrough, r.out.adjusted.handled, r.out.adjusted.attExIntakeSec], [5, '2026-11-06', 13, 225], 'shipped beside the actual figures: 10 + 3 handled, (3000 − 1200) ÷ 8');
+  assert.strictEqual(r.out.cdr.totalAnswered, 10, 'the actual figure is unchanged');
+  assert.strictEqual(r.puts.length, 1);
+  r = run({ error: 'The "Outbound Calls" tab could not be read: quota', steady: false });
+  assert.ok(r.out.outbound === null && /could not be read/.test(r.out.outboundUnavailable) && r.puts.length === 0, 'a failed read: named, null, never cached');
+  assert.strictEqual(r.out.adjusted.handled, 10, 'the intake adjustment still stands without the outbound part');
+  r = run({ error: 'The "Outbound Calls" tab is not in the CDR Report spreadsheet', steady: true });
+  assert.strictEqual(r.puts.length, 1, 'a deployment without the tab still caches (a steady state, not a failure)');
+});
+
+test('M1: the client — the intake form timer starts on the first input, is taken before the clear restarts it and rides the intake note as completionSeconds; My Stats and Team Metrics draw the Adjusted figures beside the actual ones, an unread figure as "—", exported blank (source + driven)', () => {
+  const ik = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.ok(/form\.addEventListener\('input', function \(\) \{ intakeTimerStart_\('ppd'\); \}\);/.test(ik) && /intakeTimerStart_\(form\); \}\);   \/\/ M1/.test(ik), 'both forms start the timer on input');
+  ['ppd', 'form'].forEach((f) => {
+    const take = ik.indexOf("var formSec = intakeTimerTake_(" + (f === 'ppd' ? "'ppd'" : 'form') + ')');
+    const clear = ik.indexOf('intakeClearDraft_(' + (f === 'ppd' ? "'ppd'" : 'form') + ');   // drop the persisted draft', take);
+    assert.ok(take > 0 && clear > take, 'the time is taken before the form is cleared (' + f + ')');
+  });
+  assert.ok(/if \(formSec > 0\) notePayload\.subformData\.completionSeconds = formSec;/.test(ik), 'the time rides the intake note (the whitelisted completionSeconds)');
+  assert.ok(/function intakeClearForm_\(form\) \{\s*INTAKE_TIMER\[form\] = 0;/.test(ik), 'a cleared form is a new call');
+  const cn = stripJsComments_(extractRawFunction('Code.js', 'sanitizeCallNotePayload_'));
+  assert.ok(/subformData\.completionSeconds = Math\.round\(cs\)/.test(cn), 'the server keeps completionSeconds (the whitelist)');
+  const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  vm.runInContext('var M_ADJ_SEQ = 0;', c);
+  assert.strictEqual(c.mAdjustedHtml_(null, 'my'), '', 'nothing to adjust, no panel');
+  const adj = { handled: 44, talkSec: 12900, talkFormatted: '3:35:00', outbound: { placed: 6, connected: 4, talkSec: 900, talkFormatted: '0:15:00' }, intakeTimed: 3, intakeAvgSec: 1000, attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
+  const html = c.mAdjustedHtml_(adj, 'my');
+  assert.ok(/m-row-label">Handled calls/.test(html) && /40 answered \+ 4 outbound connected/.test(html) && /\+0:15:00 outbound/.test(html) && /3 timed intake calls, ≈17 min each/.test(html), 'each adjusted line names what it adds');
+  assert.ok(/aria-expanded="false" aria-controls="m-adj-why-my-1"/.test(html) && /id="m-adj-why-my-1" hidden/.test(html) && /% Answered is never adjusted/.test(html), 'the ⓘ is a disclosure, and says what is never adjusted');
+  assert.ok(!/m-row-label">Handled calls/.test(c.mAdjustedHtml_(Object.assign({}, adj, { outbound: null }), 'my')) && /Avg talk excl\. intake/.test(c.mAdjustedHtml_(Object.assign({}, adj, { outbound: null }), 'my')), 'an unread outbound tab draws only the intake line');
+  assert.ok(/not read — The tab/.test(c.mOutboundRowHtml_(null, 'The tab could not be read', null, '2026-11-09')), 'an unread tab is named on the row');
+  assert.strictEqual(c.mOutboundRowHtml_({ placed: 0, connected: 0, talkSec: 0 }, null, '2026-11-08', '2026-11-09'), '', 'no outbound call: no row (most reps place none)');
+  assert.ok(/data through 11-08/.test(c.mOutboundRowHtml_({ placed: 2, connected: 1, talkSec: 75 }, null, '2026-11-08', '2026-11-09')), 'a window past the export\'s newest day says so');
+  const data = { outboundMeta: { available: true }, reps: [{ repName: 'A', totalAnswered: 10, outbound: { placed: 3, connected: 2, talkSec: 60 }, adjusted: { handled: 12, outbound: { placed: 3 }, attExIntakeSec: 200, attExIntakeFormatted: '0:03:20' } },
+    { repName: 'B', totalAnswered: 8, outbound: null, adjusted: null }] };
+  const cols = c.mTeamAdjColumns_(data);
+  assert.deepStrictEqual(m1J(cols.map((x) => x.key)), ['outboundPlaced', 'adjHandled', 'attExIntake']);
+  assert.ok(/—/.test(cols[0].cell(data.reps[1])) && /—/.test(cols[2].cell(data.reps[1])) && cols[1].cell(data.reps[1]) === '8', 'an unread figure is a dash; a rep with nothing adjusted shows their answered calls');
+  assert.deepStrictEqual(m1J(c.mTeamAdjColumns_({ outboundMeta: { available: false }, reps: [{ adjusted: null }] }).map((x) => x.key)), [], 'no column with nothing to say');
+  assert.deepStrictEqual(m1J(c.mSortReps_(data.reps, { key: 'outboundPlaced', dir: 'asc' }).map((r) => r.repName)), ['B', 'A'], 'an unread outbound sorts lowest');
+  const mtx = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/row\.push\(r\.outbound \? r\.outbound\.placed : '', r\.outbound \? r\.outbound\.connected : '', r\.outbound \? mFmtTalk_\(r\.outbound\.talkSec\) : '',/.test(mtx), 'an unread outbound figure exports BLANK, never 0');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/outboundMeta: \{ available: true, error: null, through: daysAgo\(1\) \}/.test(mock) && /adjusted: adjOf\(kpis, myOb, myIt\)/.test(mock), 'the fixtures carry the new fields (INV-185)');
 });
 
 console.log('\nOperator round 2026-11-02 — Batch F (coaching 1-on-1s, cadence, screenshot)');

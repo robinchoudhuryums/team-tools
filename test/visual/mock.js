@@ -342,6 +342,22 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     }, over || {});
   }
 
+  // M1 (operator 2026-11-11): metricsAdjusted_'s rule, for the fixtures below
+  // (keys mirror its return — INV-185): handled = answered + connected
+  // outbound, talk incl. outbound, ATT without the timed intake calls.
+  var mFmt = function (sec) { return Math.floor(sec / 3600) + ':' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'); };
+  var adjOf = function (cdr, ob, it) {
+    if (!(ob && ob.placed > 0) && !(it && it.timed > 0)) return null;
+    var ans = cdr.totalAnswered, ttt = cdr.tttSeconds;
+    var o = { handled: ans + (ob ? ob.connected : 0), talkSec: ttt + (ob ? ob.talkSec : 0),
+      outbound: ob ? Object.assign({}, ob, { talkFormatted: mFmt(ob.talkSec) }) : null,
+      intakeTimed: it ? it.timed : 0, intakeAvgSec: it && it.timed ? Math.round(it.seconds / it.timed) : null, attExIntakeSec: null };
+    o.talkFormatted = mFmt(o.talkSec);
+    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
+    o.attExIntakeFormatted = o.attExIntakeSec == null ? null : mFmt(o.attExIntakeSec);
+    return o;
+  };
+  var myOb = { placed: 6, connected: 4, talkSec: 1325 }, myIt = { timed: 3, seconds: 3240 };   // M1 — My Stats' own day
   var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
   // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
   // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
@@ -815,6 +831,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
+        outbound: myOb, outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myOb, myIt),   // M1
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
@@ -841,6 +858,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
+      outbound: { placed: 21, connected: 16, talkSec: 5100 }, outboundThrough: daysAgo(1), outboundUnavailable: null,   // M1
+      intakeTimed: { timed: 15, seconds: 15300 },
+      adjusted: adjOf({ totalAnswered: 254, tttSeconds: 71660 }, { placed: 21, connected: 16, talkSec: 5100 }, { timed: 15, seconds: 15300 }),
       transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85, standardSource: 'sheet' },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
@@ -870,14 +890,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         return Object.assign({}, r, { totalRung: 0, totalAnswered: 0, totalMissed: 0, pctAnswered: null,
           tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
           noteCoverage: null, hasCdrData: false, transferred: 0, transferPct: null,
-          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
+          outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });   // M1: today's outbound is not exported yet
       };
       var reps = populated.reps.map(noCdr);
       return Object.assign({}, populated, {
         from: todayIso, to: todayIso, date: todayIso, reps: reps,
         teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
           transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
-          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null },
+          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null,
+          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null },
+        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
         unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
         queueRows: [], groupRows: [],
         transferMeta: { available: true, error: null, queueColumns: [] },
@@ -885,9 +908,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     },
     // (the populated payload the function above serves for a past range)
     _teamMetricsPopulated: (function () {
-      var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
+      var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues, ob, it) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
-        return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
+        ob = ob || { placed: 0, connected: 0, talkSec: 0 }; it = it || { timed: 0, seconds: 0 };   // M1
+        return { outbound: ob, intakeTimed: it, adjusted: adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it),
+          repId: id, repName: name, totalRung: rung, totalAnswered: ans,
           totalMissed: missed, pctAnswered: Math.round((ans / (ans + missed)) * 100),
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
@@ -896,9 +921,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
           hasTransferData: true };
       };
       var reps = [
-        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }),
+        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }, { placed: 6, connected: 4, talkSec: 1325 }, { timed: 3, seconds: 3240 }),
         mk('E-1077', 'Sam Ortiz', 38, 36, 2, '0:05:02', 30, 83, 9, { A_Q_PowerChairs: 5, A_Q_FieldOps: 2, A_Q_Spanish: 1 }),
-        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
+        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }, { placed: 11, connected: 9, talkSec: 2410 }, { timed: 2, seconds: 1980 }),
         mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
       ];
       // X3 / M1: a roster rep with notes and NO call-data row in the range —
@@ -907,7 +932,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       reps.push({ repId: 'E-1120', repName: 'Jo Tran', totalRung: 0, totalAnswered: 0, totalMissed: 0,
         pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
-        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
+        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -924,6 +950,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // approximates it with answered, which is what the mk() pct used).
         totals.transferCalls += r.totalAnswered;
       });
+      totals.outboundPlaced = 0; totals.outboundConnected = 0; totals.outboundTalkSec = 0;   // M1
+      var tIt = { timed: 0, seconds: 0 };
+      reps.forEach(function (r) { totals.outboundPlaced += r.outbound.placed; totals.outboundConnected += r.outbound.connected; totals.outboundTalkSec += r.outbound.talkSec;
+        tIt.timed += r.intakeTimed.timed; tIt.seconds += r.intakeTimed.seconds; });
+      totals.adjusted = adjOf({ totalAnswered: totals.answered, tttSeconds: totals.tttSeconds },
+        { placed: totals.outboundPlaced, connected: totals.outboundConnected, talkSec: totals.outboundTalkSec }, tIt);
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
@@ -948,6 +980,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
+        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it

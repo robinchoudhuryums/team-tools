@@ -403,6 +403,23 @@
 //  (PPD) / index (account) and the preview→send bodyHash flow is intact.
 // ════════════════════════════════════════════════════════════════════════════
 
+// M1 (operator 2026-11-11) — the intake form TIMER: from the first input on a
+// form (a keystroke, a pick, a toggle) to its send. The seconds ride the
+// intake call note as completionSeconds, so Stats can average talk time
+// without the intake calls (their form time stands in for their length). A
+// cleared form or a send restarts it; a reload loses it (the note then
+// carries no time, and is simply not counted as timed).
+var INTAKE_TIMER = { ppd: 0, pmd: 0, pap: 0 };
+function intakeTimerStart_(form) {
+  if (INTAKE_TIMER[form] === undefined || INTAKE_TIMER[form]) return;
+  INTAKE_TIMER[form] = Date.now();
+}
+/** The form's seconds so far (0 when it never started), and the timer reset. */
+function intakeTimerTake_(form) {
+  var t0 = INTAKE_TIMER[form];
+  INTAKE_TIMER[form] = 0;
+  return t0 ? Math.max(0, Math.round((Date.now() - t0) / 1000)) : 0;
+}
 var INTAKE_STATE = {
   ppd: { lang: 'EN', agents: null, team: null },   // team: the Sales/PAP roster (25post B6), set only by a read that succeeded
   pmd: { lang: 'EN', images: [] },
@@ -1019,6 +1036,8 @@ function enterIntakePpdView(area) {
   var form = document.getElementById('intk-ppd-form');
   if (form) {
     form.addEventListener('input', intakePpdAfterChange_);
+    form.addEventListener('input', function () { intakeTimerStart_('ppd'); });   // M1
+    form.addEventListener('click', function (e) { if (e.target.closest('button')) intakeTimerStart_('ppd'); });
     // Yes/No + severity controls are <button>s (no 'input' event) — intakePick_
     // already updates progress, but a delegated click listener guarantees the
     // bar fills on every toggle even if a control path is ever added that
@@ -1030,6 +1049,7 @@ function enterIntakePpdView(area) {
   }
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
+  if (pat) pat.addEventListener('input', function () { intakeTimerStart_('ppd'); });   // M1
   // I1 (cycle 22): an amendment REPLACES the form, so a pending one skips the
   // draft restore — the draft is another call's work, and any answer the
   // original left blank would otherwise keep that call's value.
@@ -2656,6 +2676,7 @@ function intakePpdSend_(confirmedExternal) {
       if (intakeExternalConfirm_(res, btn, intakePpdSend_)) return;   // INT-3: nothing was sent; ask, then resend
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      var formSec = intakeTimerTake_('ppd');   // M1: taken before the clear restarts it
       intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
       intakeSavedRemove_(INTAKE_STATE.ppd.savedId); INTAKE_STATE.ppd.savedId = null;   // I2: and the saved draft it came from
       // Re-render the (now-cleared) form only if the rep is still on this
@@ -2667,7 +2688,7 @@ function intakePpdSend_(confirmedExternal) {
       // persist — surface it loudly instead of a silent server-side warn.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast('PPD emailed to ' + res.recipient, 'toast-success');
-      intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
+      intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView, formSec);
     })
     .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     .intakeSendPPD(st.payload, spec, st.bodyHash);
@@ -2704,7 +2725,8 @@ function intakeEnterAcct_(form, title, area) {
     '</div>';
   var f = document.getElementById('intk-' + form + '-form');
   if (f) {
-    f.addEventListener('input', function () { intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); });
+    f.addEventListener('input', function () { intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); intakeTimerStart_(form); });   // M1: the timer
+    f.addEventListener('click', function (e) { if (e.target.closest('button')) intakeTimerStart_(form); });
     // Yes/No toggles are <button>s (no 'input' event) — refresh progress on click too.
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
@@ -2970,6 +2992,7 @@ function intakeAcctSend_(form, confirmedExternal) {
       if (intakeExternalConfirm_(res, btn, function (dom) { intakeAcctSend_(form, dom); })) return;   // INT-3
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      var formSec = intakeTimerTake_(form);   // M1
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
       intakeSavedRemove_(INTAKE_STATE[form].savedId); INTAKE_STATE[form].savedId = null;   // I2: and the saved draft it came from
       if (currentView === requestedView) intakeClearForm_(form);
@@ -2977,7 +3000,7 @@ function intakeAcctSend_(form, confirmedExternal) {
       // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
-      intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
+      intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView, formSec);
     })
     .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     [fn](st.payload, spec, images, st.bodyHash);
@@ -4551,6 +4574,7 @@ function intakeConfirmClear_(form) {
     .then(function (ok) { if (ok) intakeClearForm_(form); });
 }
 function intakeClearForm_(form) {
+  INTAKE_TIMER[form] = 0;   // M1: a cleared form is a new call
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
   INTAKE_STATE[form].savedId = null;   // I2: a cleared form is no longer that saved draft (the draft itself stays in the list)
@@ -4662,7 +4686,7 @@ function intakeNoteFields_(formType, payload, recipient, recs) {
   };
 }
 
-function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
+function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec) {
   var f = intakeNoteFields_(formType, payload, recipient, recs);
   var label = f.label, ft = f.ft;
   // The copied text is the standard note template, through the ONE formatter
@@ -4692,6 +4716,9 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
     tags: ['intake-' + ft],
     subformData: { intakeType: ft }
   };
+  // M1: the form's time (first input to send) — the whitelisted
+  // completionSeconds the Call Notes form timer already writes.
+  if (formSec > 0) notePayload.subformData.completionSeconds = formSec;
   google.script.run
     .withSuccessHandler(function (res) {
       var ok = res && res.success;

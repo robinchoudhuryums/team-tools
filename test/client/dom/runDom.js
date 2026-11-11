@@ -12798,3 +12798,77 @@ test('HBR2 DOM: Suggest a topic sends what the reader wrote — never the search
   dlg = ask(); dlg.querySelector('.ui-dialog-input').value = 'chairs'; dlg.querySelector('.ui-dialog-ok').click(); await h.settleAll();
   assert.ok(/Not sent: The handbook is not set up yet/.test(h.d.getElementById('toast-stack').textContent), 'a refusal is said');
 });
+test('M1 DOM (operator 2026-11-11): the intake form timer starts on the first input and only then, is taken once, and rides the intake note as completionSeconds; a form never touched sends no time', () => {
+  const h = boot(); mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.enterIntakePpdView();
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, 0, 'opening the form starts nothing');
+  const pat = h.document.getElementById('intk-ppd-patient');
+  pat.value = 'P'; pat.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  const t0 = h.read('INTAKE_TIMER').ppd;
+  assert.ok(t0 > 0, 'the first input starts it');
+  h.read('INTAKE_TIMER').ppd = t0 - 600000;   // ten minutes ago
+  pat.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, t0 - 600000, 'a later input does not restart it');
+  const sec = h.read('intakeTimerTake_')('ppd');
+  assert.ok(sec >= 599 && sec <= 601, 'ten minutes: ' + sec);
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, 0, 'taken once — a second send would not reuse it');
+  h.run.drain();
+  h.read('intakeAutoLogNote_')('ppd', { patientInfo: 'P', answers: {} }, 'Power', null, false, sec);
+  const p = h.run.pending('submitCallNote')[0].args[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.subformData)), { intakeType: 'ppd', completionSeconds: sec }, 'the time rides the intake note');
+  h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {} }, 'Sales', null, false, 0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[1].args[0].subformData)), { intakeType: 'pmd' }, 'no time, no field — never a zero-second call');
+});
+
+test('M1 DOM: My Stats draws the Adjusted panel beside the actual figures — the info button opens and closes its explanation; an unread outbound tab is named on the rail; an outbound-only day keeps its outbound work below the "No call data" card', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  const cdr = { totalRung: 46, totalAnswered: 40, totalMissed: 6, pctAnswered: 87, tttFormatted: '3:20:00', attFormatted: '0:05:00', tttSeconds: 12000, attSeconds: 300 };
+  const adj = { handled: 44, talkSec: 12900, talkFormatted: '3:35:00', outbound: { placed: 6, connected: 4, talkSec: 900, talkFormatted: '0:15:00' }, intakeTimed: 3, intakeAvgSec: 1000, attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: { placed: 6, connected: 4, talkSec: 900 }, outboundThrough: '2026-10-13', adjusted: adj }));
+  const root = h.$('#m-my-content');
+  assert.ok(/87/.test(root.querySelector('.m-hero-value').textContent) && /0:05:00/.test(root.textContent), 'the actual figures are unchanged');
+  const panel = root.querySelector('.m-adj');
+  assert.ok(panel && /Handled calls\s*44/.test(panel.textContent) && /0:04:03/.test(panel.textContent), 'the Adjusted panel');
+  assert.ok(/Outbound calls\s*6/.test(root.querySelector('.m-rail').textContent), 'the outbound row on the rail');
+  const i = panel.querySelector('.m-adj-i'), why = panel.querySelector('.m-adj-why');
+  assert.ok(why.hidden && i.getAttribute('aria-expanded') === 'false' && i.getAttribute('aria-label'));
+  assert.strictEqual(i.getAttribute('onclick'), 'mAdjInfo_(this)');
+  h.window.mAdjInfo_(i);   // jsdom does not run inline handlers — call what the attribute names
+  assert.ok(!why.hidden && i.getAttribute('aria-expanded') === 'true' && /never adjusted/.test(why.textContent), 'the info button opens');
+  h.window.mAdjInfo_(i);
+  assert.ok(why.hidden, 'and closes');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: null, outboundUnavailable: 'The "Outbound Calls" tab could not be read: quota', adjusted: null }));
+  assert.ok(/not read — The "Outbound Calls" tab could not be read/.test(root.textContent) && !root.querySelector('.m-adj'), 'an unread tab is said, and nothing is adjusted');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr: null, outbound: { placed: 2, connected: 2, talkSec: 300 }, outboundThrough: '2026-10-13',
+    adjusted: { handled: 2, talkSec: 300, talkFormatted: '0:05:00', outbound: { placed: 2, connected: 2, talkSec: 300, talkFormatted: '0:05:00' }, intakeTimed: 0, intakeAvgSec: null, attExIntakeSec: null, attExIntakeFormatted: null } }));
+  assert.ok(root.querySelector('.m-empty') && /Outbound calls\s*2/.test(root.textContent) && root.querySelector('.m-adj'), 'an outbound-only day: the card, then the outbound work');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr: null, cdrUnavailable: true, outbound: { placed: 2, connected: 2, talkSec: 300 } }));
+  assert.ok(!/Outbound calls/.test(root.textContent), 'never beside a FAILED inbound read');
+});
+
+test('M1 DOM: Team Metrics — the Outbound, Handled (adj.) and ATT excl. intake columns, a rep\'s unread outbound a dash, a failed tab named on the rail; Copy table exports an unread figure blank', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const rep = (id, name, ob, adj) => ({ repId: id, repName: name, totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83, tttFormatted: '1:00:00', attFormatted: '0:06:00', tttSeconds: 3600, attSeconds: 360,
+    noteCount: 8, noteCoverage: 80, intakeNotes: 1, hasCdrData: true, transferred: 0, queues: {}, queueTotal: 0, queueUnattributed: 0, outbound: ob, adjusted: adj });
+  const data = fullTeamData_({ teamTotals: { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, outboundPlaced: 5, outboundConnected: 3, outboundTalkSec: 400,
+      adjusted: { handled: 23, talkSec: 7600, talkFormatted: '2:06:40', outbound: { placed: 5, connected: 3, talkSec: 400, talkFormatted: '0:06:40' }, intakeTimed: 0, intakeAvgSec: null, attExIntakeSec: null, attExIntakeFormatted: null } },
+    outboundMeta: { available: true, error: null, through: '2026-06-15' },
+    reps: [rep('E1', 'Ana', { placed: 5, connected: 3, talkSec: 400 }, { handled: 13, outbound: { placed: 5 }, attExIntakeSec: 280, attExIntakeFormatted: '0:04:40' }), rep('E2', 'Ben', null, null)] });
+  h.window.mRenderTeamMetrics_(data);
+  const ths = Array.from(h.$$('#m-team-content th')).map((t) => t.textContent.trim());
+  ['Outbound', 'Handled (adj.)', 'ATT excl. intake'].forEach((c) => assert.ok(ths.some((t) => t.indexOf(c) === 0), 'column ' + c + ': ' + ths.join('|')));
+  const rowOf = (n) => Array.from(h.$$('#m-team-content tbody tr')).filter((tr) => tr.textContent.indexOf(n) >= 0)[0];
+  assert.ok(/—/.test(rowOf('Ben').textContent), 'an unread outbound figure is a dash, never a 0');
+  assert.ok(h.$('#m-team-content .m-adj') && /Handled calls\s*23/.test(h.$('#m-team-content .m-adj').textContent), 'the team Adjusted panel');
+  const tsv = h.read('mTeamTableTsv_')(data, 'combined', { key: 'repName', dir: 'asc' }).split('\n');
+  assert.ok(/Outbound placed\tOutbound connected\tOutbound talk\tHandled \(adj\.\)\tATT excl\. intake/.test(tsv[0]), tsv[0]);
+  assert.ok(/^Ben(\t[^\t]*){8}\t\t\t\t10\t$/.test(tsv[2]), 'Ben unread outbound exports blank, his handled is his answered: ' + JSON.stringify(tsv[2]));
+  h.window.mRenderTeamMetrics_(Object.assign({}, data, { outboundMeta: { available: false, error: 'The "Outbound Calls" tab is not in the CDR Report spreadsheet', through: null },
+    reps: data.reps.map((r) => Object.assign({}, r, { outbound: null, adjusted: null })), teamTotals: Object.assign({}, data.teamTotals, { adjusted: null }) }));
+  assert.ok(/Outbound calls\s*—\s*not read — The "Outbound Calls" tab is not in the CDR Report/.test(h.$('#m-team-content .m-rail').textContent), 'a missing tab is named on the rail');
+  assert.ok(!Array.from(h.$$('#m-team-content th')).some((t) => /Outbound|Handled/.test(t.textContent)), 'and no column says nothing');
+});
+

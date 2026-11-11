@@ -640,6 +640,126 @@ function cdrAgentsOrThrow_(res) {
   if (res && res.meta && res.meta.error) throw new Error('Call data unavailable: ' + res.meta.error);
   return (res && res.agents) || {};
 }
+// ── M1 (operator 2026-11-11): outbound calls and the adjusted figures ──────
+/** PURE (Node-pinned) — the Outbound Calls tab's columns BY HEADER (the
+ *  Inbound / Transfer tab discipline: a column the owner adds cannot shift
+ *  ours). {date, agent, connected, talk} 0-based, and `missing` names any
+ *  header not found. */
+function cdrOutboundColumns_(headers) {
+  var need = { date: 'call date', agent: 'agent name', connected: 'connected', talk: 'talk sec' };
+  var col = {};
+  (headers || []).forEach(function (h, i) {
+    var k = String(h == null ? '' : h).trim().toLowerCase();
+    Object.keys(need).forEach(function (key) { if (k === need[key] && col[key] === undefined) col[key] = i; });
+  });
+  col.missing = Object.keys(need).filter(function (k) { return col[k] === undefined; }).map(function (k) { return need[k]; });
+  return col;
+}
+/** PURE (Node-pinned) — one window's outbound rows per roster rep. `rows` are
+ *  the tab's cells (getValues), `col` from cdrOutboundColumns_; `opts` =
+ *  {from, to, dateOf(cell) → 'YYYY-MM-DD', aliasMap, rosterNames}. A row counts
+ *  for a rep when its date is inside [from, to] and its agent — through the
+ *  alias overrides, as the DQE reader resolves it — is on the roster. Connected
+ *  is TRUE however Sheets returns it (a boolean or the text, g09); talk is the
+ *  seconds cell. {agents: {name: {placed, connected, talkSec}}, latestDate}. */
+function cdrOutboundAggregate_(rows, col, opts) {
+  var o = opts || {};
+  var aliasMap = o.aliasMap || {};
+  var nameSet = {};
+  (o.rosterNames || []).forEach(function (n) { nameSet[n] = true; });
+  var agents = {}, latestDate = null;
+  (rows || []).forEach(function (r) {
+    var raw = String(r[col.agent] == null ? '' : r[col.agent]).trim();
+    if (!raw) return;
+    var iso = o.dateOf(r[col.date]);
+    if (!iso || iso < o.from || iso > o.to) return;
+    var agent = (aliasMap[raw] && nameSet[aliasMap[raw]]) ? aliasMap[raw] : raw;
+    if (!nameSet[agent]) return;
+    var a = agents[agent] || (agents[agent] = { placed: 0, connected: 0, talkSec: 0 });
+    a.placed++;
+    var c = r[col.connected];
+    if (c === true || String(c).trim().toUpperCase() === 'TRUE') a.connected++;
+    var t = r[col.talk];
+    var sec = typeof t === 'number' ? t : (String(t || '').indexOf(':') >= 0 ? cdrParseHms_(t) : Number(t));
+    if (isFinite(sec) && sec > 0) a.talkSec += Math.round(sec);
+    if (!latestDate || iso > latestDate) latestDate = iso;
+  });
+  return { agents: agents, latestDate: latestDate };
+}
+/** M1 — each roster rep's OUTBOUND calls over [from, to] from the CDR
+ *  Report's `Outbound Calls` tab. The date column bounds the read
+ *  (cdrDqeWindowSpan_ — the tab is date-sorted, a backfill only widens the
+ *  span) and the per-row filter decides what counts; `through` is the newest
+ *  day the whole tab holds (the export runs each morning, so today is never
+ *  there yet). {agents, through} or {error, steady} — a missing tab or column
+ *  is NAMED, never an empty map that reads as "no outbound calls" (g128);
+ *  `steady` marks a configuration state (cacheable) apart from a failed read.
+ *  Cached CDR_CACHE_TTL on a clean round read with the aliases (F16, g129);
+ *  bypassed under the CDR test override like every sibling reader. */
+function getCdrOutboundPerRep_(from, to, rosterNames) {
+  var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
+  var key = 'cdr_outbound_v1:' + cdrRosterHash_(rosterNames) + ':' + from + ':' + to;
+  var cache = CacheService.getScriptCache();
+  if (useCache) { try { var hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {} }
+  var tab = CONFIG.CDR_OUTBOUND_TAB;
+  try {
+    var ss = getCdrSS_();
+    var sheet = ss.getSheetByName(tab);
+    if (!sheet) return { error: 'The "' + tab + '" tab is not in the CDR Report spreadsheet (call-data-reporting exports it each morning — its outbound export must be set up).', steady: true };
+    var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+    var col = cdrOutboundColumns_(lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0] : []);
+    if (col.missing.length) return { error: 'The "' + tab + '" tab is missing column(s): ' + col.missing.join(', ') + '.', steady: true };
+    var out = { agents: {}, through: null };
+    if (lastRow >= 2) {
+      var tz = ss.getSpreadsheetTimeZone();
+      cdrDateColIsos_(sheet, lastRow, tz, col.date + 1).forEach(function (iso) { if (iso && (!out.through || iso > out.through)) out.through = iso; });
+      var span = cdrDqeWindowSpan_(sheet, lastRow, from, to, tz, col.date + 1);
+      if (span) {
+        var c0 = Math.min(col.date, col.agent, col.connected, col.talk), c1 = Math.max(col.date, col.agent, col.connected, col.talk);
+        var rows = sheet.getRange(span.startRow, c0 + 1, span.numRows, c1 - c0 + 1).getValues();
+        var shifted = { date: col.date - c0, agent: col.agent - c0, connected: col.connected - c0, talk: col.talk - c0 };
+        var agg = cdrOutboundAggregate_(rows, shifted, { from: from, to: to, aliasMap: getCdrNameMap_(), rosterNames: rosterNames || [],
+          dateOf: function (v) { return cdrRowDateIso_(v, tz); } });
+        out.agents = agg.agents;
+      }
+    }
+    if (useCache && !cdrNameMapDegraded_()) { try { cache.put(key, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (e) {} }
+    return out;
+  } catch (err) {
+    return { error: 'The "' + tab + '" tab could not be read: ' + (err && err.message ? err.message : String(err)), steady: false };
+  }
+}
+/** PURE (Node-pinned) — the ADJUSTED figures beside the actual ones, never in
+ *  place of them. `cdr` = {totalAnswered, tttSeconds} or null; `outbound` =
+ *  {placed, connected, talkSec} or null (unread); `intake` = {timed, seconds}
+ *  or null. handled = answered + connected outbound; talk = inbound talk +
+ *  outbound talk; the average talk excluding the TIMED intake calls (their
+ *  form time stands in for their length — an estimate, said so on screen),
+ *  only while a call is left to average. Null when there is nothing to adjust
+ *  — no outbound call and no timed intake — so no Adjusted line repeats the
+ *  actual one. Answer % is never adjusted: it is the inbound standard. */
+function metricsAdjusted_(cdr, outbound, intake) {
+  var ans = (cdr && Number(cdr.totalAnswered)) || 0;
+  var ttt = (cdr && Number(cdr.tttSeconds)) || 0;
+  var ob = outbound ? { placed: Number(outbound.placed) || 0, connected: Number(outbound.connected) || 0, talkSec: Number(outbound.talkSec) || 0 } : null;
+  var timed = (intake && Number(intake.timed)) || 0;
+  var isec = (intake && Number(intake.seconds)) || 0;
+  if (!(ob && ob.placed > 0) && !(timed > 0)) return null;
+  var out = { handled: ans + (ob ? ob.connected : 0), talkSec: ttt + (ob ? ob.talkSec : 0), outbound: ob,
+    intakeTimed: timed, intakeAvgSec: timed > 0 ? Math.round(isec / timed) : null, attExIntakeSec: null };
+  out.talkFormatted = cdrFmtHms_(out.talkSec);
+  if (ob) ob.talkFormatted = cdrFmtHms_(ob.talkSec);
+  if (timed > 0 && ans > timed && ttt > isec) out.attExIntakeSec = Math.round((ttt - isec) / (ans - timed));
+  out.attExIntakeFormatted = out.attExIntakeSec == null ? null : cdrFmtHms_(out.attExIntakeSec);
+  return out;
+}
+/** M1 — one rep's outbound totals out of a reader result: zeros when the tab
+ *  was read and holds no call of theirs, null when it was not read. */
+function metricsOutboundOf_(res, name) {
+  if (!res || res.error) return null;
+  var a = (res.agents || {})[name];
+  return { placed: a ? a.placed : 0, connected: a ? a.connected : 0, talkSec: a ? a.talkSec : 0 };
+}
 /**
  * Core CDR data reader. Fetches per-agent DQE metrics for a date range,
  * filtered to the `rosterNames` passed in (pass null/[] for an unfiltered
@@ -1806,7 +1926,7 @@ function getMyMetrics(date) {
     // coverage strip — a just-filed note surfaces within the TTL. Keyed by
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
-    var myCacheKey = 'metrics_my_v3:' + emp.id + ':' + date;   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
+    var myCacheKey = 'metrics_my_v4:' + emp.id + ':' + date;   // v4 (M1): outbound + adjusted   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
     // Bypass the endpoint cache whenever a test points the CDR reader at a
     // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
     // entry from a prior fixture read would mask a later test's CDR state
@@ -1883,11 +2003,19 @@ function getMyMetrics(date) {
     // Operator 2026-08-25 (batch 6): intake-flagged note count — additive,
     // null on a failed read (absence ≠ 0, INV-180/187).
     var intakeRes = cnCountIntakeNotesResult_(emp, date, date);
+    var obRes = getCdrOutboundPerRep_(date, date, [emp.name]);   // M1
+    var ob = metricsOutboundOf_(obRes, emp.name);
 
     var result = {
       date: date,
       repName: emp.name,
       intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
+      // M1 — outbound calls and the adjusted figures, beside the actual ones.
+      outbound: ob,
+      outboundThrough: obRes.error ? null : obRes.through,
+      outboundUnavailable: obRes.error || null,
+      intakeTimed: intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 },
+      adjusted: cdrUnavailable ? null : metricsAdjusted_(todayCdr, ob, intakeRes.unavailable ? null : intakeRes),   // an unread inbound day has nothing to adjust
       cdr: todayCdr ? {
         totalRung:    todayCdr.totalRung,
         totalAnswered: todayCdr.totalAnswered,
@@ -1927,7 +2055,7 @@ function getMyMetrics(date) {
     // outlive the transient failure that caused it (the L-3 rule).
     // MET-2 (cycle 23): and neither is a CDR read flagged unavailable (F-47) —
     // the flag was honest, but pinning it for CDR_CACHE_TTL outlived the blip (g129).
-    if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable) {
+    if (useMetricsCache && !noteRes.unavailable && !cdrUnavailable && !(obRes.error && !obRes.steady)) {   // M1: a failed outbound read is never kept
       try { metricsCache.put(myCacheKey, JSON.stringify(result), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     console.log('getMyMetrics: read, ' + (Date.now() - t0) + ' ms');   // PF1
@@ -1960,7 +2088,7 @@ function getMyMetricsRange(from, to) {
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v3:' + emp.id + ':' + from + ':' + to;   // v3 (H2): rate formula + published standard (INV-85)
+    var rangeKey = 'metrics_range_v4:' + emp.id + ':' + from + ':' + to;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -2018,9 +2146,16 @@ function getMyMetricsRange(from, to) {
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
     var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
+    var obRes = getCdrOutboundPerRep_(from, to, [emp.name]);   // M1
+    var ob = metricsOutboundOf_(obRes, emp.name);
     var rangeResult = {
       from: from, to: to, repName: emp.name,
       intakeNotes: intakeRes.unavailable ? null : intakeRes.count,
+      outbound: ob,                                            // M1 — see getMyMetrics
+      outboundThrough: obRes.error ? null : obRes.through,
+      outboundUnavailable: obRes.error || null,
+      intakeTimed: intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 },
+      adjusted: metricsAdjusted_(c, ob, intakeRes.unavailable ? null : intakeRes),
       cdr: c ? {
         totalRung:    c.totalRung,
         totalAnswered: c.totalAnswered,
@@ -2044,7 +2179,7 @@ function getMyMetricsRange(from, to) {
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
     // F5: a failed note read is the same class of partial as a failed trend
     // read (L-3) — never stamp it into the cache as a fresh, confident 0.
-    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable) {
+    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable && !(obRes.error && !obRes.steady)) {
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -2073,6 +2208,7 @@ function teamMetricsRepView_(full) {
     teamTotals: full.teamTotals,
     trend: full.trend,
     transferMeta: full.transferMeta,
+    outboundMeta: full.outboundMeta,       // M1 — the tab's state, no names
     queueRows: full.queueRows,
     groupRows: full.groupRows,
     alertThreshold: full.alertThreshold,
@@ -2122,7 +2258,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v3:' + from + ':' + toDate;   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v4:' + from + ':' + toDate;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2232,9 +2368,16 @@ function getTeamMetrics(dateOrFrom, to) {
     } catch (trErr) {
       transferMeta.error = trErr.message;
     }
+    // M1 — outbound calls per rep. Best-effort like the transfers: a missing
+    // or unreadable tab is NAMED (outboundMeta.error) and the reps' outbound
+    // cells are null, never zero; the rest of the table stands.
+    var obRes = getCdrOutboundPerRep_(from, toDate, rosterNames);
+    var outboundMeta = { available: !obRes.error, error: obRes.error || null, through: obRes.error ? null : obRes.through };
     var reps = [];
     var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
       transferred: 0, queueTotal: 0, transferCalls: 0 };
+    if (outboundMeta.available) { teamTotals.outboundPlaced = 0; teamTotals.outboundConnected = 0; teamTotals.outboundTalkSec = 0; }
+    var teamIntake = { timed: 0, seconds: 0 };
     var teamQueues = {};        // queue -> {transferred, reps:{}}
     var unmatchedAgents = [];
 
@@ -2275,6 +2418,9 @@ function getTeamMetrics(dateOrFrom, to) {
         noteCountUnavailable: !!noteRes.unavailable,   // F5
         hasCdrData: !!cdr,
       };
+      rep.outbound = metricsOutboundOf_(obRes, name);   // M1 — null when the tab was not read
+      rep.intakeTimed = intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 };
+      rep.adjusted = metricsAdjusted_(cdr, rep.outbound, intakeRes.unavailable ? null : intakeRes);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
       // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
       // total is never derived by summing queues.
@@ -2287,8 +2433,14 @@ function getTeamMetrics(dateOrFrom, to) {
       rep.hasTransferData = !!tr;
       // F5: a rep whose Sheet failed to read is still listed (their CDR row is
       // real) — the row just says "—" for notes instead of "0".
-      if (cdr || noteCount > 0 || noteRes.unavailable) {
+      if (cdr || noteCount > 0 || noteRes.unavailable || (rep.outbound && rep.outbound.placed > 0)) {   // M1: an outbound-only day is a day of work
         reps.push(rep);
+        if (rep.outbound && outboundMeta.available) {
+          teamTotals.outboundPlaced += rep.outbound.placed;
+          teamTotals.outboundConnected += rep.outbound.connected;
+          teamTotals.outboundTalkSec += rep.outbound.talkSec;
+        }
+        if (rep.intakeTimed) { teamIntake.timed += rep.intakeTimed.timed; teamIntake.seconds += rep.intakeTimed.seconds; }
         teamTotals.rung += rep.totalRung;
         teamTotals.answered += rep.totalAnswered;
         teamTotals.missed += rep.totalMissed;
@@ -2329,6 +2481,10 @@ function getTeamMetrics(dateOrFrom, to) {
     });
 
     teamTotals.pctAnswered = cdrAnswerPct_(teamTotals.answered, teamTotals.missed);   // H2
+    // M1 — the team's adjusted figures, by the same rule as each rep's.
+    teamTotals.adjusted = metricsAdjusted_({ totalAnswered: teamTotals.answered, tttSeconds: teamTotals.tttSeconds },
+      outboundMeta.available ? { placed: teamTotals.outboundPlaced, connected: teamTotals.outboundConnected, talkSec: teamTotals.outboundTalkSec } : null,
+      teamTotals.intakeNotesPartial ? null : teamIntake);
     teamTotals.tttFormatted = cdrFmtHms_(teamTotals.tttSeconds);
     // F5 (cycle 16): the PER-REP coverage is already nulled when that rep's
     // Sheet failed (see the rep block above), but the TEAM total was computed
@@ -2370,6 +2526,7 @@ function getTeamMetrics(dateOrFrom, to) {
       // the client needs to tell "no transfer data" apart from "the read
       // failed" (INV-175).
       transferMeta: transferMeta,
+      outboundMeta: outboundMeta,   // M1
       queueRows: qRows,
       alertThreshold: ship.alertThreshold,   // #4 / H2 — see getMyMetrics
       alertBand: ship.alertBand,
@@ -2385,7 +2542,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // (noteCountPartial) or ANY transfer-read error would pin a degraded
     // aggregate as authoritative for the TTL. On a deployment with no Transfer
     // tab this endpoint simply stays uncached — the pre-cache behaviour.
-    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed) {
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed && !(obRes.error && !obRes.steady)) {
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }

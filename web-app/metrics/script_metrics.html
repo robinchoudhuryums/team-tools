@@ -441,6 +441,12 @@
 .m-row-value.warn  { color: var(--warning-deep); }
 .m-row-value.good  { color: var(--success-deep); }
 .m-row-value.crit  { color: var(--danger-deep); }
+/* M1 — the Adjusted panel: beside the actual figures, never in place of them. */
+.m-adj { margin-top: var(--space-md); padding: 10px 14px; border: 1px dashed var(--line-2); border-radius: var(--radius); background: var(--paper-2); }
+.m-adj-h { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.m-adj-i { display: inline-flex; align-items: center; padding: 2px; border: 0; background: transparent; color: var(--muted); cursor: pointer; border-radius: var(--radius-sm); }
+.m-adj-i:hover, .m-adj-i[aria-expanded="true"] { color: var(--ink); background: var(--paper-3); }
+.m-adj-why { font-family: var(--ui); font-size: 12px; color: var(--ink); line-height: 1.45; margin: 4px 0 8px; }
 .m-row-sub {
   grid-column: 1 / -1;
   font-family: var(--ui); font-size: 11px; color: var(--muted);
@@ -796,6 +802,10 @@ function mRenderMyStats_(data) {
       (data.noteCountUnavailable
         ? '<span class="m-row-value" style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>'
         : '<span class="m-row-value">' + esc(data.noteCount) + '</span>') + '</div>';
+    // M1: a day with outbound calls and no inbound ones is still a day of
+    // calls — the outbound row and the Adjusted panel stand below the card
+    // (never when the inbound read FAILED: there is nothing to add them to).
+    if (!data.cdrUnavailable) html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date) + mAdjustedHtml_(data.adjusted, 'my');
     el.innerHTML = html;
     return;
   }
@@ -884,8 +894,10 @@ function mRenderMyStats_(data) {
       isRange ? null : { values: seriesOwn('transferPct') });
   }
   html += mRailRow_('Total talk', c.tttFormatted);
+  html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date);   // M1
   html += '</div>';
   html += '</div>';
+  html += mAdjustedHtml_(data.adjusted, 'my');   // M1 — beside the actual figures, never in place of them
 
   if (data.noteCoverage != null && data.noteCoverage < 80) {
     // #6 — the hint was a dead end; the Clock strip's "File N missing" CTA
@@ -1155,6 +1167,55 @@ function mMiniSparkSvg_(values) {
 /** Single rail row. Value is rendered with the optional tone class
  *  (warn/good/crit); a sub-line below is optional. `spark` (§6) is an optional
  *  { values:[…], tone:'warn'? } trend sparkline rendered full-width below. */
+/** M1 — the Outbound calls rail row: drawn when the rep placed a call, or
+ *  when the tab could not be read (named, never a zero — INV-175); the
+ *  export runs each morning, so a window past its newest day says so. */
+function mOutboundRowHtml_(ob, unavailable, through, to) {
+  if (unavailable) return mRailRow_('Outbound calls', '—', 'warn', 'not read — ' + unavailable);
+  if (!ob || !(ob.placed > 0)) return '';
+  var lag = through && to && through < to ? ' · data through ' + String(through).substring(5) : '';
+  return mRailRow_('Outbound calls', ob.placed, ob.connected + ' connected · ' + mFmtTalk_(ob.talkSec) + ' talk' + lag);
+}
+function mFmtTalk_(sec) {
+  sec = Math.max(0, Math.round(Number(sec) || 0));
+  return Math.floor(sec / 3600) + ':' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+}
+var M_ADJ_SEQ = 0;
+/** PURE (DOM-free; Node + DOM pinned) — the Adjusted panel: handled calls
+ *  (answered + connected outbound), talk including outbound, and the average
+ *  talk without the timed intake calls — each line only when it adds
+ *  something. The ⓘ is a real disclosure (keyboard, screen reader) that says
+ *  what was adjusted and what never is. '' with nothing to adjust. */
+function mAdjustedHtml_(adj, scope) {
+  if (!adj) return '';
+  var ob = adj.outbound, rows = '';
+  if (ob && ob.placed > 0) {
+    rows += mRailRow_('Handled calls', adj.handled, (adj.handled - ob.connected) + ' answered + ' + ob.connected + ' outbound connected');
+    rows += mRailRow_('Talk incl. outbound', adj.talkFormatted, '+' + (ob.talkFormatted || mFmtTalk_(ob.talkSec)) + ' outbound');
+  }
+  if (adj.attExIntakeFormatted) {
+    var mins = adj.intakeAvgSec != null ? Math.round(adj.intakeAvgSec / 60) : null;
+    rows += mRailRow_('Avg talk excl. intake', adj.attExIntakeFormatted,
+      adj.intakeTimed + ' timed intake call' + (adj.intakeTimed === 1 ? '' : 's') + (mins != null ? ', ≈' + mins + ' min each' : ''));
+  }
+  if (!rows) return '';
+  var id = 'm-adj-why-' + (scope || 'x') + '-' + (++M_ADJ_SEQ);
+  return '<div class="m-adj" role="group" aria-label="Adjusted figures">' +
+    '<div class="m-adj-h"><span>Adjusted</span>' +
+      '<button type="button" class="m-adj-i" aria-expanded="false" aria-controls="' + id + '" onclick="mAdjInfo_(this)" aria-label="What is adjusted" title="What is adjusted">' +
+        icon('info', 14) + '</button></div>' +
+    '<div class="m-adj-why" id="' + id + '" hidden>The actual figures above are unchanged. <b>Handled calls</b> and <b>talk</b> add the connected outbound calls ' +
+      '(from the CDR Report\u2019s Outbound Calls tab) and their talk time. <b>Avg talk excl. intake</b> takes the intake calls out, using each intake form\u2019s ' +
+      'time from first input to send as its length \u2014 an estimate, and only for forms the app timed. % Answered is never adjusted: it is the inbound standard.</div>' +
+    rows + '</div>';
+}
+function mAdjInfo_(btn) {
+  var box = document.getElementById(btn.getAttribute('aria-controls'));
+  if (!box) return;
+  var open = btn.getAttribute('aria-expanded') !== 'true';
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  box.hidden = !open;
+}
 function mRailRow_(label, value, toneOrSub, sub, spark) {
   var tone = '';
   var subLine = '';
@@ -1219,6 +1280,30 @@ function mPctClass_(p, thr, band) {
 // §6 — sortable team table. Sort keys map to rep fields; ATT sorts by the
 // numeric attSeconds (not the formatted string), coverage and % answered treat
 // null (no calls in the range) as lowest.
+/** M1 — the Team Metrics table's outbound / adjusted columns, each only when
+ *  it has something to say: Outbound when the tab was read, Handled when a rep
+ *  placed an outbound call, ATT excl. intake when a rep's was computed. A rep
+ *  whose figure could not be read shows "—", never 0. */
+function mTeamAdjColumns_(data) {
+  var reps = (data && data.reps) || [];
+  var cols = [];
+  var dash = '<span style="color:var(--muted)">—</span>';
+  if (data && data.outboundMeta && data.outboundMeta.available) {
+    cols.push({ key: 'outboundPlaced', label: 'Outbound', numeric: true, sortable: true, cell: function (r) {
+      if (!r.outbound) return dash;
+      if (!r.outbound.placed) return '<span style="color:var(--muted)">0</span>';
+      return '<span title="' + esc(r.outbound.connected + ' connected · ' + mFmtTalk_(r.outbound.talkSec) + ' talk') + '">' + esc(r.outbound.placed) + '</span>'; } });
+  }
+  if (reps.some(function (r) { return r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0; })) {
+    cols.push({ key: 'adjHandled', label: 'Handled (adj.)', numeric: true, sortable: true, cell: function (r) {
+      return r.adjusted ? esc(r.adjusted.handled) : esc(r.totalAnswered); } });
+  }
+  if (reps.some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; })) {
+    cols.push({ key: 'attExIntake', label: 'ATT excl. intake', numeric: true, sortable: true, cell: function (r) {
+      return r.adjusted && r.adjusted.attExIntakeFormatted ? esc(r.adjusted.attExIntakeFormatted) : dash; } });
+  }
+  return cols;
+}
 function mSortReps_(reps, sort) {
   var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
   var get = function (r) {
@@ -1232,6 +1317,9 @@ function mSortReps_(reps, sort) {
       case 'noteCount': return r.noteCount || 0;
       case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
       case 'transferred': return r.transferred || 0;   // Phase 2
+      case 'outboundPlaced': return r.outbound ? r.outbound.placed : -1;   // M1: unread sorts lowest
+      case 'adjHandled': return r.adjusted ? r.adjusted.handled : (r.totalAnswered || 0);
+      case 'attExIntake': return r.adjusted && r.adjusted.attExIntakeSec != null ? r.adjusted.attExIntakeSec : -1;
       default: return 0;
     }
   };
@@ -1604,8 +1692,13 @@ function mRenderTeamMetrics_(data) {
     html += mRailRow_('Transfers', t.transferred,
       t.transferPct != null ? t.transferPct + '% of calls' : null);
   }
+  // M1 — the team's outbound calls (named when the tab could not be read).
+  var om = data.outboundMeta || null;
+  if (om) html += mOutboundRowHtml_(om.available ? { placed: t.outboundPlaced, connected: t.outboundConnected, talkSec: t.outboundTalkSec } : null,
+    om.available ? null : om.error, om.through, data.to || data.date);
   html += '</div>';
   html += '</div>';
+  html += mAdjustedHtml_(t.adjusted, 'team');   // M1
 
   if (t.noteCoverage != null && t.noteCoverage < 80) {
     html += '<div class="m-hint">' + mCoverageBadge_(t.noteCoverage) +
@@ -1744,7 +1837,7 @@ function mRenderTeamMetrics_(data) {
         // CDR attribution does not exist in this data). Null read → em dash.
         { key: 'intakeNotes', label: 'Intake', numeric: true, sortable: true, cell: function (r) { return r.intakeNotes == null ? '<span style="color:var(--muted)" title="count unavailable">—</span>' : (r.intakeNotes > 0 ? esc(r.intakeNotes) : '<span style="color:var(--muted)">0</span>'); } },
         { key: 'noteCoverage', label: 'Coverage', numeric: true, sortable: true, cell: function (r) { return r.noteCoverage != null ? mCoverageBadge_(r.noteCoverage) : '<span style="color:var(--muted)">—</span>'; } },
-      ].concat(hasQueues ? [
+      ].concat(mTeamAdjColumns_(data)).concat(hasQueues ? [
         // Phase 2 — the TRANSFERS column is the only one that can carry a
         // per-queue split (Phase 0). Total + segmented bar + a real disclosure
         // button (INV-173/174) whose aria-controls points at the detail row
@@ -1912,6 +2005,10 @@ function mTeamTableTsv_(data, scope, sort) {
   } else {
     var hasTr = !!(data.queueRows && data.queueRows.length);
     var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage'];
+    var hasOb = !!(data.outboundMeta && data.outboundMeta.available);   // M1
+    if (hasOb) head.push('Outbound placed', 'Outbound connected', 'Outbound talk', 'Handled (adj.)');
+    var hasAdjAtt = (data.reps || []).some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; });
+    if (hasAdjAtt) head.push('ATT excl. intake');
     if (hasTr) head.push('Transfers');
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
@@ -1922,6 +2019,10 @@ function mTeamTableTsv_(data, scope, sort) {
         (r.noteCountUnavailable ? '' : r.noteCount),
         (r.intakeNotes == null ? '' : r.intakeNotes),   // batch 6 — an unavailable count exports BLANK, never 0
         (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
+      // M1: an outbound figure that was not read exports BLANK, never 0.
+      if (hasOb) row.push(r.outbound ? r.outbound.placed : '', r.outbound ? r.outbound.connected : '', r.outbound ? mFmtTalk_(r.outbound.talkSec) : '',
+        r.adjusted ? r.adjusted.handled : r.totalAnswered);
+      if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
       out.push(tsvRow_(row));
     });

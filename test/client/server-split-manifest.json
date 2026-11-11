@@ -4315,6 +4315,39 @@
     "activityCountsClean_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "M1: outbound + adjusted",
+   "added": [
+    "METRICS_INTAKE_TIMED_MAX_SEC",
+    "METRICS_INTAKE_TIMED_MIN_SEC",
+    "cdrOutboundAggregate_",
+    "cdrOutboundColumns_",
+    "getCdrOutboundPerRep_",
+    "metricsAdjusted_",
+    "metricsOutboundOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "cnCountIntakeNotesResult_",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "M1: outbound + adjusted",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4962,7 +4995,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5e8cc8f32dc0118a"
+   "sha": "cc31b56bc02e2e95"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -6513,6 +6546,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "af54be9a7d09c7f0"
+  },
+  "METRICS_INTAKE_TIMED_MAX_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "78063741410b0a79"
+  },
+  "METRICS_INTAKE_TIMED_MIN_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc4640ccad5cd098"
   },
   "MONTH_NAMES": {
    "file": "00_config.js",
@@ -8414,6 +8457,16 @@
    "kind": "function",
    "sha": "600d2574fda9dafa"
   },
+  "cdrOutboundAggregate_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e89dae6cfb239b50"
+  },
+  "cdrOutboundColumns_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "7c51f38099ac5d99"
+  },
   "cdrParseDateRanges_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -8552,7 +8605,7 @@
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "820cde9db9ae7cf9"
+   "sha": "8e76d58edd30c789"
   },
   "cnCountNotesResult_": {
    "file": "30_callnotes.js",
@@ -10014,6 +10067,11 @@
    "kind": "function",
    "sha": "554cf5e0d152c3d8"
   },
+  "getCdrOutboundPerRep_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4c6153b39c73ec5e"
+  },
   "getCdrQueueGroups_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -10412,12 +10470,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "7658e60f9958bff5"
+   "sha": "5f3f107d03387f55"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b495b94c1cf01bad"
+   "sha": "c18de6e6a4ff72aa"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -10847,7 +10905,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "3495eb859042681f"
+   "sha": "5023ef5edce03dcf"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -12439,10 +12497,20 @@
    "kind": "function",
    "sha": "0e8c12808f65a364"
   },
+  "metricsAdjusted_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "be6557fd31180209"
+  },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "71402de002bf7cef"
+  },
+  "metricsOutboundOf_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "af917c46be77e00e"
   },
   "metricsParsePercent_": {
    "file": "40_metrics.js",
@@ -14527,7 +14595,7 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "13cdff15fc8e3ff8"
+   "sha": "ae3df307839451f9"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",
