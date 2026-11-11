@@ -6756,6 +6756,35 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="m1-adjusted-metrics"></a>**Adjusted figures sit BESIDE the actual ones: outbound calls from the CDR Report, intake calls by their timed forms, and % Answered never adjusted (M1, operator 2026-11-11)**
+  The operator asked for "adjusted" numbers that credit the work the actual
+  figures miss — outbound calls (mostly the bilingual reps' Spanish
+  call-backs) and the long intake / order-creation calls — clearly marked.
+  - **Outbound calls are read, not estimated.** call-data-reporting exports
+    every outbound call into the CDR Report's `Outbound Calls` tab (one row
+    per call). Team Tools reads it BY HEADER (Call Date / Agent Name /
+    Connected / Talk Sec), bounded by the date column, agent names through
+    the same Agent Alias Overrides as the DQE reader, so the outbound figure
+    and the inbound one count the same person. A missing tab or column is
+    named, a failed read is never cached, and a window past the export's
+    newest day says "data through …".
+  - **An intake call is measured by its form.** The DQE data has one row per
+    rep per day, so no single call's length is known. The intake form times
+    itself from the first input to the send and the seconds ride the intake
+    call note as `completionSeconds` (the field the Call Notes timer already
+    writes). Only 30 s to 2 h counts as a call; an untimed note still counts
+    as an intake call.
+  - **One rule, `metricsAdjusted_`:** handled calls = answered + connected
+    outbound; talk = inbound talk + outbound talk; average talk excluding the
+    timed intake calls, only while a call is left to average. Null when there
+    is nothing to adjust, so an Adjusted line never repeats the actual one.
+  - **% Answered is never adjusted** — it is the Department Dashboard's
+    inbound standard, and the ⓘ says so.
+  - **Where it shows:** My Stats (day and range) gets an Outbound calls row
+    and an Adjusted panel with an ⓘ disclosure; Team Metrics gets the team
+    panel and Outbound / Handled (adj.) / ATT excl. intake columns, each only
+    when it has something to say, an unread figure as a dash and exported
+    blank. Exact per-call intake matching (M2) is call-data-reporting's work.
 - <a id="ac1-activity-levels"></a>**App activity has a LEVEL: the clicks and keystrokes in each 10-minute block, counted and never read, drawn in Day Edit and beside every rep in Team Punches (AC1, operator 2026-11-11)**
   The operator asked to see how active a rep was through the day, not only
   whether they were. The two gestures the presence ping already listens to are

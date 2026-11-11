@@ -444,6 +444,13 @@ lighter `--warn-fill`.
      the overdue-flag count shows on the phone's bottom nav too (CNUI-09).
 
 <a id="metrics"></a>
+     **M1 (operator 2026-11-11) — adjusted metrics.** My Stats and Team
+     Metrics show each rep's outbound calls (from the CDR Report's Outbound
+     Calls tab) and an Adjusted panel beside the actual figures: handled calls
+     (answered + connected outbound), talk including outbound, and average talk
+     without the timed intake calls (the intake form times itself, first input
+     to send). % Answered is never adjusted.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a

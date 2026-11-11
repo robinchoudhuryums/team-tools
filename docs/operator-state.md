@@ -278,6 +278,18 @@ entry says which it is.
   Apps Script editor → Project Settings → Script Properties. Without
   it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
   placeholder in CONFIG and fails on first sheet open.
+<a id="operator-m1-outbound-calls-tab"></a>
+- **The CDR Report's `Outbound Calls` tab feeds the adjusted metrics (M1, operator 2026-11-11).**
+  **Nothing to set up in Team Tools.** call-data-reporting writes the tab
+  each morning (its `exportOutboundCalls` export — set up in that project);
+  Team Tools reads its Call Date, Agent Name, Connected and Talk Sec columns
+  by header. Until the tab exists, My Stats and Team Metrics say "Outbound
+  calls — not read" and show no outbound column; nothing is drawn as zero.
+  An agent whose phone name differs from the roster needs a row in the CDR
+  Report's Agent Alias Overrides tab, exactly as for the inbound figures. The
+  intake form timer needs nothing either: intake notes logged after the
+  deploy carry their form time; older ones count as intake calls, untimed.
+  **Tell the team** what Adjusted means (the ⓘ on the panel says it too).
 <a id="operator-set-script-property-cdr-ss-id"></a>
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`
