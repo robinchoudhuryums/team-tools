@@ -11031,7 +11031,10 @@ test('B3 DOM: a pasted image joins the on-screen form — never text pasted into
 section('Pay statement — the manager edits a day, and an ADJ day explains itself (25post B4)');
 
 function payStmtFixture(over) {
-  const today = new Date().toISOString().slice(0, 10);
+  // The REP's today in the timezone the fixture gives them — the statement
+  // judges the edit window there. A UTC date is a day ahead of Chicago from
+  // midnight UTC to 6 am, and the day then reads as future (no Edit day).
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   const old = '2020-01-06';
   return Object.assign({
     period: { start: old, end: today, cycle: 'Monthly', offset: 0 },
