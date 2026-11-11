@@ -184,13 +184,13 @@ function tourSeenVersion_() {
   return isFinite(v) && v > 0 ? Math.floor(v) : 0;
 }
 /** T1: which tour a first load owes this person — 'full' when they never saw
- *  one, 'new' when they saw an older version AND some newer step is visible
- *  to them, else '' (nothing). A stored version at or above TOUR_VERSION (a
- *  newer deployment seen first) owes nothing. */
+ *  one, 'new' when some step newer than the version they saw is visible to
+ *  them, else '' (nothing). A stored version at or above TOUR_VERSION (a newer
+ *  deployment seen first) owes nothing because no step is newer than it — the
+ *  filter is the one rule, so there is no second version compare to drift. */
 function tourAutoMode_() {
   const seen = tourSeenVersion_();
   if (!seen) return 'full';
-  if (seen >= TOUR_VERSION) return '';
   return tourVisibleSteps_('new', seen).some(function (s) { return !s.intro; }) ? 'new' : '';
 }
 /** Called from the boot sequence after enterTool. Best-effort, typeof-guarded

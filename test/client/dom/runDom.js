@@ -1148,6 +1148,8 @@ test('T1 DOM (operator 2026-11-11): Settings → Replay the tour starts the FULL
   h.flushTimers();
   h.run.drain();
   assert.strictEqual(h.read('TOUR_ACTIVE'), false, 'nothing owed — no auto-start');
+  // An older stored version from here on, so the end's stamp is observable.
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
   const gear = h.$('.sidebar [data-settings-toggle]');
   gear.getBoundingClientRect = () => ({ width: 90, height: 28, top: 800, left: 20, bottom: 828, right: 110 });
   h.window.settingsToggle_(gear);   // jsdom runs no inline onclick — call what the markup names
