@@ -2904,7 +2904,8 @@ entry says which it is.
      standalone --title "UMS Handbook"`. Copy the `scriptId` from
      `/tmp/hb/.clasp.json` into `handbook-app/.clasp.json` (replacing
      `SET-ME-…`) and commit it.
-  2. `npm run handbook:push` — it re-syncs, checks and pushes.
+  2. `npm run handbook:push` — it checks that the copies match `web-app/` (run
+     `npm run handbook:sync` first if they do not), then pushes.
   3. In the new project's editor: Project Settings → Script Properties → add
      `HANDBOOK_KB_SS_ID` = the KB spreadsheet's id (the same id as Team Tools'
      `KB_SS_ID`). Unset, every page says so by name.
