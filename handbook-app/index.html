@@ -18,6 +18,12 @@
     // Dark mode follows the device, before first paint (the tokens partial
     // keys its dark palette on data-mode).
     try { if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.setAttribute('data-mode', 'dark'); } catch (e) {}
+    // HBR4: unless the reader chose light or dark in Display (this browser).
+    try {
+      var hbTh = ((JSON.parse(localStorage.getItem('umsHbDisplay') || 'null') || {}).prefs || {}).theme;
+      if (hbTh === 'dark') document.documentElement.setAttribute('data-mode', 'dark');
+      else if (hbTh === 'light') document.documentElement.removeAttribute('data-mode');
+    } catch (e) {}
     // HB2.3: the reader's display settings (this browser), before first paint —
     // exactly the attributes the page stored (hbDisplayAttrs_ decides them),
     // and the easier-reading font's stylesheet when it is on.

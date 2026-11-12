@@ -75,6 +75,22 @@ function calArchiveNoteHtml_(data) {
     : '';
 }
 
+/** P1 (operator 2026-11-05) — the pay-week banner over the calendar: from
+ *  the reminder day to the period's end, what to check and by when. The
+ *  server decides the window (payWeekReminder_); null outside it. */
+function calPayWeekNoteHtml_(data) {
+  var pw = data && data.payWeek;
+  if (!pw || !pw.active || !pw.start || !pw.end) return '';
+  var fmt = function (iso, withDay) {
+    var d = new Date(String(iso) + 'T12:00:00Z');
+    if (isNaN(d.getTime())) return String(iso);
+    return (withDay ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()] + ' ' : '') +
+      ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()] + ' ' + d.getUTCDate();
+  };
+  return '<div class="cal-payweek" role="status">' + icon('timesheet', 14) + '<span><b>Pay week.</b> The pay period ' + esc(fmt(pw.start)) + ' \u2013 ' + esc(fmt(pw.end)) +
+    ' ends ' + esc(fmt(pw.end, true)) + '. Check your days below and request any edits before then.</span></div>';
+}
+
 function renderTimeOffView(area, data) {
   const tz = empTz();
   const todayIso = data.today || isoDateTz(tz);
@@ -353,7 +369,7 @@ function renderTimeOffView(area, data) {
     </div>
     <div class="timeoff-layout">
       <div class="timeoff-main">
-        <div class="card cal-card">${calHtml}${legendHtml}${calArchiveNoteHtml_(data)}</div>
+        <div class="card cal-card">${calPayWeekNoteHtml_(data)}${calHtml}${legendHtml}${calArchiveNoteHtml_(data)}</div>
       </div>
       <div class="timeoff-side">
         ${sideRailHtml}

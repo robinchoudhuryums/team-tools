@@ -164,6 +164,14 @@ jobs:
           node build.mjs
           node shoot.mjs --ci
 
+      # T1: the onboarding tour walked per role (admin, manager, Spanish, CSR,
+      # phone) and as someone who saw version 1 — fails on a step whose
+      # target never appears (the engine would silently skip it).
+      - name: Walk the onboarding tour (every step's target, per role)
+        if: ${{ !cancelled() }}
+        working-directory: test/visual
+        run: node tour-check.mjs
+
       # HB2.4: axe-core (pinned in test/visual/package.json) over every handbook
       # scenario, WCAG 2.1 A + AA; any violation fails the job. `!cancelled()`
       # so a layout failure above never hides an accessibility one.
@@ -180,5 +188,6 @@ jobs:
           path: |
             test/visual/report.json
             test/visual/axe-report.json
+            test/visual/tour-report.json
             test/visual/shots/
           retention-days: 7

@@ -22,7 +22,7 @@ const browser = await chromium.launch({ executablePath: chromiumPath() });
 const results = [];
 for (const mode of ['light', 'dark']) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   await page.goto(PAGE);
   await page.waitForTimeout(900);
   await page.evaluate(() => window.enterTool('timeClock', 'timeoff'));
@@ -59,7 +59,7 @@ for (const mode of ['light', 'dark']) {
 // at full width, and its own controls do not.
 for (const mode of ['light', 'dark']) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   await page.goto(PAGE);
   await page.waitForTimeout(900);
   await page.evaluate(() => window.enterTool('reference'));
@@ -97,7 +97,7 @@ const lum = (rgb) => {
 };
 for (const pal of ['console', 'sand', 'sage', 'plum', 'teal']) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.addInitScript((p) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', 'dark'); if (p !== 'console') localStorage.setItem('umsTheme', p); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, pal);
+  await page.addInitScript((p) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', 'dark'); if (p !== 'console') localStorage.setItem('umsTheme', p); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, pal);
   await page.goto(PAGE);
   await page.waitForTimeout(900);
   await page.evaluate(() => window.enterTool('reference'));
@@ -124,7 +124,7 @@ for (const pal of ['console', 'sand', 'sage', 'plum', 'teal']) {
 // the text with a page break before it, and the light chapter colour in either mode.
 for (const mode of ['light', 'dark']) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   await page.goto(PAGE);
   await page.waitForTimeout(900);
   await page.evaluate(() => window.enterTool('reference'));

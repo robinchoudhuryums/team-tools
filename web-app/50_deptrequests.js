@@ -318,7 +318,11 @@ function markDeptRequestResolved_(token, byEmail, via, clickCtx) {
     pendingTasksBust_(row[DR.BY_ID]);   // F4 — and neither must the SENDER's Needs-you list
     try { writeAuditLog_({ id: row[DR.BY_ID], name: row[DR.BY_NAME] }, 'DeptRequestResolved',
       '', '', false, 0, 'reqId=' + token + '; by=' + (byEmail || 'unknown') + (viaClean ? '; via=' + viaClean : ''), byEmail || ''); } catch (e) {}
-    return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self', copy: viaClean === 'copy' };
+    // DR1: what the system reply needs, read from the row it just resolved —
+    // the caller sends it AFTER this lock is released (g34).
+    return { found: true, already: false, dept: row[DR.TO_DEPT], self: viaClean === 'self', copy: viaClean === 'copy',
+             reqId: String(row[DR.REQ_ID]), via: viaClean, threadIds: String(row[DR.THREAD_ID] || ''),
+             label: String(row[DR.LABEL] || ''), byId: String(row[DR.BY_ID] || ''), byName: String(row[DR.BY_NAME] || '') };
   } finally { lock.releaseLock(); }
 }
 /** In-app resolve (the manual path that complements the email link): the
@@ -429,6 +433,8 @@ function resolveDeptRequest(requestId) {
       return { success: false, error: 'Only the sender, a member of the receiving department, or a manager can resolve this request.' };
     const res = markDeptRequestResolved_(requestId, emp.email || getActiveUserEmail_() || '', 'app');
     if (!res.found) return { success: false, error: 'Request not found.' };
+    // DR1: the system reply on the request's thread, outside the lock.
+    const reply = drSendResolvedReply_(res, drResolverLabel_(emp.name, emp.email || getActiveUserEmail_() || ''));
     // F4 — the writer already cleared the SENDER's cached list; a dept member
     // resolving someone else's request is the one case where the acting rep is
     // not the owner, so clear theirs too (a no-op when they are the same rep).
@@ -438,7 +444,7 @@ function resolveDeptRequest(requestId) {
     // trade for a 2-minute cache on the app's busiest surface, and the stale
     // window here is bounded rather than permanent.
     pendingTasksBust_(emp.id);
-    return { success: true, already: !!res.already };
+    return { success: true, already: !!res.already, reply: reply, replyNote: drResolvedReplyNote_(reply) };
   } catch (err) { return { success: false, error: err.message }; }
 }
 // ── 22post D — a department's reply resolves its request (operator 2026-09-27)
@@ -937,15 +943,17 @@ function answerDeptReplyLook(requestId, answer) {
       appendRowsSafe_(getOrCreateDeptReplyReviewsSheet_(), sheetSafeRows_([[drNowTs_(), id, reason, ans, emp.email || '']]));
       drBumpCacheGen_();
     } finally { lock.releaseLock(); }
+    let reply = null;
     if (ans === 'resolved') {
       // The shared resolve writer (its own lock): Status, ResolvedAt/By, via 'app'.
       const res = markDeptRequestResolved_(id, emp.email || getActiveUserEmail_() || '', 'app');
       if (!res.found) return { success: false, error: 'Request not found.' };
+      reply = drSendResolvedReply_(res, drResolverLabel_(emp.name, emp.email || getActiveUserEmail_() || ''));   // DR1
     }
     pendingTasksBust_(String(first.row[DR.BY_ID] || ''));
     pendingTasksBust_(emp.id);
     try { writeAuditLog_(emp, 'DeptReplyLookAnswered', '', '', false, 0, 'reqId=' + id + '; reason=' + (reason || 'unrecorded') + '; answer=' + ans); } catch (e) {}
-    return { success: true, answer: ans, reason: reason };
+    return { success: true, answer: ans, reason: reason, reply: reply, replyNote: drResolvedReplyNote_(reply) };
   } catch (err) { return { success: false, error: err.message }; }
 }
 /** PURE (Node-pinned) — the review report from the answer rows and the open
@@ -1421,4 +1429,275 @@ function sendDeptRequestReminderDigest() {
     Logger.log('sendDeptRequestReminderDigest: ' + overdue.length + ' overdue emailed to ' + mgrEmails.length + ' manager(s).');
     return { outcome: automationOutcome_('ok') };
   });
+}
+
+// ── DR1 (operator 2026-11-09) — the audit list, "Checked in CRM", and the
+// system reply on Mark Resolved. The operator checks a department's requests
+// (a list of Close Orders, say) against the CRM: a manager-only list filtered
+// by type, department and date, copied as a table or a CSV, with a per-row
+// mark recorded in DR_CRM_TAB. And when a person marks a request resolved —
+// the email's link or in the app — the app replies on the request's email
+// thread so the department and the sender both see it. A request sent before
+// thread tracking (22post D) has no thread, so it gets no reply, and the
+// person resolving it is told so.
+
+/** PURE (Node-pinned) — the thread a resolved reply goes on: the NEWEST id in
+ *  the ThreadId cell (a re-send's thread is the one the department last saw),
+ *  or '' for a request sent before thread tracking. */
+function drReplyThreadId_(cell) {
+  const ids = String(cell == null ? '' : cell).split(/\s+/).filter(Boolean);
+  return ids.length ? ids[ids.length - 1] : '';
+}
+/** PURE (Node-pinned) — who resolved it, as the reply names them: "Name
+ *  (address)", the address alone, the name alone, or "someone". */
+function drResolverLabel_(name, email) {
+  const n = String(name == null ? '' : name).trim(), e = String(email == null ? '' : email).trim();
+  if (n && e) return n + ' (' + e + ')';
+  return n || e || 'someone';
+}
+/** PURE (Node-pinned) — the system reply's text and HTML. `info` =
+ *  { by, at, via, label }. `via` 'app' reads "in UMS Team Tools"; the email
+ *  link's values ('email', 'self', 'copy') read "from the link in the email".
+ *  Every value is esc_'d (INV-105); nothing of the note rides along — the
+ *  thread already carries it. */
+function drResolvedReplyParts_(info) {
+  const o = info || {};
+  const P = CN_EMAIL_PALETTE;
+  const what = String(o.label || '').trim() ? 'This ' + String(o.label).trim() + ' request' : 'This request';
+  const how = o.via === 'app' ? 'in UMS Team Tools' : 'from the link in the email';
+  const by = String(o.by || 'someone'), at = String(o.at || '');
+  const line = what + ' was marked resolved by ' + by + (at ? ' on ' + at : '') + ' (' + how + '). No further action is needed.';
+  const foot = 'This is an automatic message from UMS Team Tools.';
+  const html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:' + P.ink + ';line-height:1.5;">' +
+      '<p style="margin:0 0 10px;"><span style="color:' + P.accent + ';font-weight:700;">&#10003;</span> ' + esc_(line) + '</p>' +
+      '<p style="margin:0;font-size:11px;color:' + P.muted + ';">' + esc_(foot) + '</p>' +
+    '</div>';
+  return { text: line + '\n\n' + foot, html: html };
+}
+/** PURE (Node-pinned) — what the person who resolved it is told about the
+ *  reply: '' when nothing was attempted (already resolved, or the toggle is
+ *  off — saying nothing is the honest answer to a reply never tried). */
+function drResolvedReplyNote_(reply) {
+  if (!reply) return '';
+  if (reply.sent) return 'A reply saying so was sent on the email thread.';
+  if (reply.reason === 'untracked') return 'No reply was sent on the email thread: this request was sent before thread tracking began, so it has no thread to reply on.';
+  if (reply.reason === 'missing') return 'No reply was sent: the request\'s email thread is no longer in the mailbox the app runs as.';
+  if (reply.reason === 'failed') return 'The reply on the email thread could not be sent — the request is still resolved.';
+  return '';
+}
+/** DR1 — reply on a freshly resolved request's email thread. Called AFTER
+ *  markDeptRequestResolved_ has released its lock (g34: no mail inside a
+ *  lock), and never throws — the resolve already happened. Replies-all to
+ *  the thread's FIRST message, the request email itself: its Reply-To is the
+ *  sender and the deployer's mailbox, its To the department and its CC the
+ *  deployer (sendRepEmail_'s tracked send), so the reply reaches exactly the
+ *  people on the request — never whoever wrote last. Returns null (nothing
+ *  attempted: already resolved, or not found) or { sent: true } or
+ *  { sent: false, reason } — 'off' (the deptResolvedReply toggle),
+ *  'untracked', 'missing' or 'failed'. Audited by id, PHI-free. */
+function drSendResolvedReply_(res, byLabel) {
+  if (!res || !res.found || res.already) return null;
+  let outcome;
+  try {
+    if (!getFlag_('deptResolvedReply')) return { sent: false, reason: 'off' };
+    const tid = drReplyThreadId_(res.threadIds);
+    if (!tid) outcome = { sent: false, reason: 'untracked' };
+    else {
+      let msgs = [];
+      try { const th = GmailApp.getThreadById(tid); msgs = th ? th.getMessages() : []; } catch (e) { msgs = []; }
+      if (!msgs.length) outcome = { sent: false, reason: 'missing' };
+      else {
+        const parts = drResolvedReplyParts_({ by: byLabel, label: res.label, via: res.via,
+          at: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a z') });
+        const opts = { htmlBody: parts.html, name: 'UMS Team Tools' };
+        const from = repSenderFrom_();
+        if (from) opts.from = from;
+        msgs[0].replyAll(parts.text, opts);
+        outcome = { sent: true };
+      }
+    }
+  } catch (e) {
+    console.warn('drSendResolvedReply_ failed (reqId=' + (res && res.reqId) + '): ' + e.message);
+    outcome = { sent: false, reason: 'failed' };
+  }
+  try { writeAuditLog_({ id: res.byId, name: res.byName }, 'DeptRequestResolvedReply', '', '', false, 0,
+    'reqId=' + res.reqId + '; ' + (outcome.sent ? 'sent' : 'notSent=' + outcome.reason), ''); } catch (e) {}
+  return outcome;
+}
+
+/** PURE (Node-pinned) — the latest Checked-in-CRM mark per request from the
+ *  DR_CRM_TAB rows ([Timestamp, RequestId, Checked, By, AtMs], append order —
+ *  the last row for an id wins). Checked is stored 'yes'/'no'; a TRUE that
+ *  Sheets coerced (g09) reads as checked too. */
+function drCrmFold_(rows) {
+  const out = {};
+  (rows || []).forEach(function (r) {
+    if (!r) return;
+    const id = String(r[1] == null ? '' : r[1]).trim();
+    if (!id) return;
+    const c = r[2];
+    const checked = c === true || /^(yes|true|1)$/i.test(String(c == null ? '' : c).trim());
+    const at = Number(r[4]);
+    out[id] = { checked: checked, by: String(r[3] == null ? '' : r[3]).trim(), atMs: (isFinite(at) && at > 0) ? at : null };
+  });
+  return out;
+}
+function getOrCreateDeptCrmChecksSheet_() {
+  const ss = getDeptRequestsSS_();
+  let sh = ss.getSheetByName(DR_CRM_TAB);
+  if (!sh) { sh = ss.insertSheet(DR_CRM_TAB); sh.appendRow(sheetSafeRow_(DR_CRM_HEADERS)); }
+  return sh;
+}
+/** The marks, read-only: no tab yet is no marks. `truncated` says the tab has
+ *  outgrown DR_CRM_SCAN_MAX, so a mark older than the window reads unchecked
+ *  — stated, never silent (g152). */
+function drCrmMarks_() {
+  const sh = getDeptRequestsSS_().getSheetByName(DR_CRM_TAB);
+  if (!sh) return { marks: {}, truncated: false };
+  const last = sh.getLastRow();
+  if (last < 2) return { marks: {}, truncated: false };
+  const first = Math.max(2, last - DR_CRM_SCAN_MAX + 1);
+  return { marks: drCrmFold_(sh.getRange(first, 1, last - first + 1, DR_CRM_HEADERS.length).getValues()),
+           truncated: first > 2 };
+}
+/** A CreatedAt / ResolvedAt cell as epoch ms (the ISO-T string the writers
+ *  store, or a legacy cell Sheets coerced to a Date); null when unreadable. */
+function drCellMs_(v) {
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v.getTime();
+  return parseTimestampMs_(String(v == null ? '' : v).trim(), CONFIG.TIMEZONE) || null;
+}
+/** PURE (Node-pinned) — the audit list's range. `from` / `to` are
+ *  'yyyy-MM-dd' calendar days in CONFIG.TIMEZONE, both inclusive; absent, the
+ *  last DR_AUDIT_DEFAULT_DAYS days to today. `dayStartMs(iso)` converts a day
+ *  to its midnight (the caller's tz-aware Utilities.parseDate). Refuses a
+ *  malformed day, a start after the end, or a span over DR_AUDIT_MAX_DAYS. */
+function drAuditRange_(from, to, todayIso, dayStartMs) {
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  const f = String(from == null ? '' : from).trim(), t = String(to == null ? '' : to).trim();
+  if ((f && !re.test(f)) || (t && !re.test(t))) return { error: 'Choose dates as year-month-day.' };
+  const toIso = t || todayIso;
+  let fromIso = f;
+  if (!fromIso) fromIso = drShiftIsoDay_(toIso, -(DR_AUDIT_DEFAULT_DAYS - 1));
+  if (fromIso > toIso) return { error: 'The start date is after the end date.' };
+  const fromMs = dayStartMs(fromIso), toEnd = dayStartMs(drShiftIsoDay_(toIso, 1)) - 1;
+  if (fromMs == null || toEnd == null || !isFinite(fromMs) || !isFinite(toEnd)) return { error: 'Choose dates as year-month-day.' };
+  if ((toEnd - fromMs) / 86400000 > DR_AUDIT_MAX_DAYS) return { error: 'Choose a range of at most ' + DR_AUDIT_MAX_DAYS + ' days.' };
+  return { from: fromIso, to: toIso, fromMs: fromMs, toMs: toEnd };
+}
+/** PURE — an ISO day moved by `n` calendar days (UTC arithmetic on the date
+ *  alone, so no timezone or DST hour moves it). */
+function drShiftIsoDay_(iso, n) {
+  const p = String(iso).split('-').map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] + n)).toISOString().slice(0, 10);
+}
+/** PURE (Node-pinned) — the data rows to read for a range, from the CreatedAt
+ *  column's times (`msList`, 0-based data-row order; null = unreadable). The
+ *  span runs from the first to the last row inside [fromMs, toMs] (rows append
+ *  in time order, so one contiguous read; the caller filters it again). Past
+ *  `max` rows the NEWEST `max` are kept and `truncated` says so. null when no
+ *  row is inside. */
+function drAuditSpan_(msList, fromMs, toMs, max) {
+  let lo = -1, hi = -1;
+  (msList || []).forEach(function (ms, i) {
+    if (ms == null || ms < fromMs || ms > toMs) return;
+    if (lo < 0) lo = i;
+    hi = i;
+  });
+  if (lo < 0) return null;
+  const truncated = hi - lo + 1 > max;
+  return { lo: truncated ? hi - max + 1 : lo, hi: hi, truncated: truncated };
+}
+/** PURE (Node-pinned) — one audit-list row from a DeptRequests row and the
+ *  CRM marks. `fmt(ms)` is the display time; `iso(ms)` the sortable one. */
+function drAuditRowOf_(r, marks, fmt, iso) {
+  const id = String(r[DR.REQ_ID] == null ? '' : r[DR.REQ_ID]).trim();
+  const createdMs = drCellMs_(r[DR.CREATED_AT]);
+  const status = drStatus_(r);
+  const resolvedMs = status === 'resolved' ? drCellMs_(r[DR.RESOLVED_AT]) : null;
+  const m = (marks && marks[id]) || null;
+  return {
+    requestId: id, createdMs: createdMs, createdAt: createdMs ? fmt(createdMs) : '', createdIso: createdMs ? iso(createdMs) : '',
+    type: String(r[DR.LABEL] == null ? '' : r[DR.LABEL]).trim(), toDept: String(r[DR.TO_DEPT] || '').trim(),
+    byName: String(r[DR.BY_NAME] || '').trim(), patientTrx: String(r[DR.PATIENT_TRX] || '').slice(0, DR_PATIENT_TRX_MAX),
+    status: status, resolvedMs: resolvedMs, resolvedAt: resolvedMs ? fmt(resolvedMs) : '', resolvedIso: resolvedMs ? iso(resolvedMs) : '',
+    resolvedBy: status === 'resolved' ? String(r[DR.RESOLVED_BY] || '').trim() : '',
+    resolvedVia: status === 'resolved' ? drResolvedVia_(r) : '',
+    threadTracked: !!String(r[DR.THREAD_ID] || '').trim(),
+    crmChecked: !!(m && m.checked), crmBy: m ? m.by : '', crmAtMs: m ? m.atMs : null,
+  };
+}
+/** PURE (Node-pinned) — the filter menus' choices: each distinct type (first
+ *  spelling of a case-insensitive key) and each department component (a
+ *  multi-department send counts for each — drSplitDepts_), sorted. */
+function drAuditFacets_(rows) {
+  const types = {}, depts = {};
+  (rows || []).forEach(function (it) {
+    const t = String(it.type || '').trim();
+    if (t && !types[t.toLowerCase()]) types[t.toLowerCase()] = t;
+    drSplitDepts_(it.toDept).forEach(function (d) { if (d && !depts[d.toLowerCase()]) depts[d.toLowerCase()] = d; });
+  });
+  const vals = function (o) { return Object.keys(o).map(function (k) { return o[k]; }).sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : 1; }); };
+  return { types: vals(types), departments: vals(depts) };
+}
+/** Manager-gated — the audit list: every request sent inside the range,
+ *  newest first, each with its Checked-in-CRM mark; the type and department
+ *  menus come with it (the client filters on them without a round trip). The
+ *  rows name patients (PatientTrx), so it is managers only, like the
+ *  team-wide list. Read-only; no lock. Bare `{error}` read shape. */
+function getDeptRequestAudit(opts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const o = opts || {};
+    const tz = CONFIG.TIMEZONE;
+    const range = drAuditRange_(o.from, o.to, Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'),
+      function (iso) { try { return Utilities.parseDate(iso + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (e) { return null; } });
+    if (range.error) return { error: range.error };
+    const out = { from: range.from, to: range.to, rows: [], types: [], departments: [], truncated: false,
+                  max: DR_AUDIT_MAX_ROWS, crmTruncated: false };
+    const sh = getOrCreateDeptRequestsSheet_();
+    const last = sh.getLastRow();
+    if (last < 2) return out;
+    const msList = sh.getRange(2, DR.CREATED_AT + 1, last - 1, 1).getValues().map(function (x) { return drCellMs_(x[0]); });
+    const span = drAuditSpan_(msList, range.fromMs, range.toMs, DR_AUDIT_MAX_ROWS);
+    if (!span) return out;
+    const crm = drCrmMarks_();
+    const fmt = function (ms) { return Utilities.formatDate(new Date(ms), tz, 'MMM d, yyyy h:mm a'); };
+    const iso = function (ms) { return Utilities.formatDate(new Date(ms), tz, 'yyyy-MM-dd HH:mm'); };
+    const rows = sh.getRange(2 + span.lo, 1, span.hi - span.lo + 1, DR_HEADERS.length).getValues();
+    rows.forEach(function (r) {
+      if (!String(r[DR.REQ_ID] || '').trim()) return;
+      const it = drAuditRowOf_(r, crm.marks, fmt, iso);
+      if (it.createdMs == null || it.createdMs < range.fromMs || it.createdMs > range.toMs) return;
+      out.rows.push(it);
+    });
+    out.rows.sort(function (a, b) { return (b.createdMs || 0) - (a.createdMs || 0); });
+    const f = drAuditFacets_(out.rows);
+    out.types = f.types; out.departments = f.departments;
+    out.truncated = span.truncated;
+    out.crmTruncated = crm.truncated;
+    return out;
+  } catch (err) { return { error: err.message }; }
+}
+/** Manager-gated — mark a request Checked in CRM (or clear the mark). An
+ *  appended row in DR_CRM_TAB, under the lock (a positional append — g17);
+ *  the caller is checked before it (F58). The tab is the record of who
+ *  checked what and when, so no AuditLog row. */
+function setDeptRequestCrmCheck(requestId, checked) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { success: false, error: 'Manager access required.' };
+    const id = String(requestId == null ? '' : requestId).trim();
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) return { success: false, error: 'Request not found.' };
+    if (!drFindRowByReqId_(getOrCreateDeptRequestsSheet_(), id)) return { success: false, error: 'Request not found.' };
+    const on = checked === true;
+    const by = emp.email || getActiveUserEmail_() || '';
+    const atMs = Date.now();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      appendRowsSafe_(getOrCreateDeptCrmChecksSheet_(), [[drNowTs_(), id, on ? 'yes' : 'no', by, atMs]]);
+    } finally { lock.releaseLock(); }
+    return { success: true, requestId: id, checked: on, by: by, atMs: atMs };
+  } catch (err) { return { success: false, error: err.message }; }
 }

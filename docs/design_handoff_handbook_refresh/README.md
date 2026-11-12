@@ -26,9 +26,16 @@ The people, scores, dates and the search hits for §8.6/§9.2 are made up.
 | 9 | **The chapter's short name runs up each spine** on a small label plate (CSR Core, Call Handling, Mobility & DME, Respiratory, Sales, Power, Field Ops, Service, Oxygen, After Hours, Billing) | Operator request 2026-11-02 |
 | 10 | Spine hover/focus card: the chapter, its lookups and share, the change on the 30 days before, its most-opened section | |
 | 11 | **No notification bell** — the count stays a badge on the profile button | The bell was never confirmed; a badge is what exists |
+| 13 | **No gradients (operator 2026-11-11 — supersedes the "wash" of 4 and the ombre of 5).** A chapter's colour is a flat light tint (a header band) or a rule (a 3–4px line along a card's top); the tiles are white cards with that rule; no radial glow, no fade. The score ring and the shelf spines keep their fills — a ring and a level, not a fade | The gradients read as cheap rather than polished. A pin (`Handbook flat`) fails if a gradient look returns |
 | 12 | Phones: a one-row header (menu, brand, search, profile) and a bottom tab bar (Home, Search, Quizzes, Training, Saved); the shelf is hidden on narrow screens for now | |
 
 ## The batches
+
+**Status (2026-11-12): all four batches have shipped** — HBR1 to HBR4, each
+with its implement block in `.cycle/blocks/25post-HBR<n>-broad-implement.md`,
+and decision 13 (no gradients) applied across all of them. What each batch
+built is in `docs/handbook-app.md` and the design-decisions entries indexed in
+CLAUDE.md; this section is the plan as it was agreed.
 
 Each batch updates the visual matrix (and its `--axe` pass), the DOM harness and
 the pure harness as it goes, and is bite-checked like every other batch.

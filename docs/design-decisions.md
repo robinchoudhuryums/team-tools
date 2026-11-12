@@ -4453,6 +4453,38 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   a managers-only closing step. Interactive gating ("now type here…") was
   deliberately deferred — the passive spotlight teaches the same things
   without fighting the optimistic re-renders.
+  **Since T1 (2026-11-11) see the entry below — `managerOnly` is gone (the
+  gate is the step's tab) and replay moved to Settings.**
+- <a id="t1-tour-by-role-and-whats-new"></a>**The tour visits every tool, each step gated by its TAB; someone who saw an older version gets only the newer steps; replay is in Settings (T1, operator 2026-11-11)**
+  - **The gate is the tab, not a flag on the step.** `tourStepVisible_` asks
+    `tabVisibleForUser_(TOOLS[tool].tabs[view])` — the tab bar's own rule
+    (adminOnly, managerOnly, the `also` flags) — so a manager, Spanish, QA or
+    admin step follows its tab, View-as included, and a new gate needs no tour
+    edit. A step naming no registered tab is never shown.
+  - **Versioned steps, not a versioned tour.** Each step carries `since` (the
+    tour version it arrived in); `TOUR_VERSION` is 2. A first load gets the
+    full tour (the `welcome` card first); a stored version below 2 gets the
+    what's-new run — the `whatsnew` card, then only the visible steps with
+    `since` above it — with its own kicker ("What's new · 1 of N"); a stored
+    version at or above the current one gets nothing. Finishing OR skipping
+    stamps the current version, so neither is offered again.
+  - **Replay is Settings → Replay the tour** (not in the compact pop-out, which
+    holds one tool); the Call Notes ? link stays. The button hands focus to the
+    gear before the tour starts, because the tour returns focus to whatever had
+    it when it began and the pressed button is in the panel that closes.
+  - **A tall target gets the card BESIDE it.** When neither below nor above
+    fits, the card sits to the side; before, it was centred on the target —
+    over the very thing the step described. Steps anchor on a part of a view
+    (its controls, its headline), not the whole page.
+  - **Every step's target is checked in a real browser.** `test/visual/tour-check.mjs`
+    (in CI) walks the full tour as the fixture admin, then as View-as Manager,
+    Spanish CSR and CSR, and on a phone, and loads the page as someone who saw
+    version 1; it fails on a step whose target never appears (the engine skips
+    those silently), a card off screen, or a step a role's tabs do not allow,
+    and photographs every step. Its first run found the v1 Tags step aimed at
+    the suggestion strip, which is empty until you type — skipped for everyone
+    since it shipped. A Node pin checks every selector's classes and ids appear
+    in the markup.
   **AMENDED (cycle 23 SH-04, 2026-10-02):** the popover is a modal dialog in
   everything but name, so it now says so — `role="dialog"`, `aria-modal`,
   named by the step title and described by its body. Each step focuses its
@@ -6342,6 +6374,79 @@ pick them up without re-deriving the context.
     exclude each other). The reader is named by address (there is no roster),
     the topic rides an apostrophe (g144), and the search typed is never sent or
     stored (F9, g146): the dialog starts empty.
+- <a id="the-handbook-app-quizzes-are-cards-and-a-sitting-is-one-question-a-screen"></a>**The handbook app's quizzes are cards, a sitting is one question a screen, and the result lists every answer — never the right option (handbook refresh HBR3, operator plan 2026-11-02)**
+  Batch 3 of the handoff (`docs/design_handoff_handbook_refresh/`), all in the
+  handbook app's own page; Team Tools is untouched.
+  - **The list is cards**, in the contents' order: a light head washed in the
+    quiz's chapter colour (its `kb-man-pN` class) with the chapter's big faint
+    number, a kicker (the chapter, or "Team quiz · author"), a pill for where
+    the reader stands (Passed / Try again / Locked; none before a first try), a
+    score ring (the best score; "—" never taken, red under the pass mark), one
+    action, and Last taken / the section to review / Locked until. One pure rule
+    decides the card (`hbQuizCard_`), one the filter (`hbQuizFilter_` — All, To
+    do (anything not passed, a locked quiz included), Passed). "More quizzes"
+    names the chapters that have no official quiz. The server adds one field,
+    `lastMs`, to a reader's standing.
+  - **A sitting is one question a screen** with a progress strip (answered,
+    current, to come), Back / Next — Next asks for an answer, Back keeps every
+    choice — and Submit on the last. The inputs stay real radios and
+    checkboxes, visually hidden INSIDE their positioned label (g171); focus
+    moves to each question, and a heading that took focus from script shows no
+    ring (HBR1's rule). **Leave quiz** goes straight back with nothing chosen and
+    asks first when answers would be lost (g166's spirit — leaving uses no try,
+    nothing is recorded until Submit).
+  - **The result** is a light card in the chapter colour with the score ring and
+    what happens next (tries left, the lock, Try again only when one is left),
+    then every answer in the order the reader saw it: the question, what they
+    chose in words, right or missed, and for a miss its explanation and a link
+    to its section; Review opens the first miss's section. **Never the right
+    option** (TRN-1, unchanged): only what the reader chose is named, and a
+    right answer carries no review even if the server sent one.
+  - **Decision 4 over shot 09.** The mockup's sitting header is a dark gradient
+    bar; the handoff's decision 4 says every header card is light with a chapter
+    wash, never a dark gradient — the decision wins. **Since 2026-11-11 there is
+    no gradient at all** (the operator: the gradient look read as cheap — the
+    handoff's decision 13): the quiz card heads, the sitting header and the
+    reader's chapter banner are a flat light tint, the result card and the home
+    chapter tiles a white card with a chapter-colour rule along the top. The
+    score ring and the shelf spines keep their fills (a ring, a level — no fade);
+    the `Handbook flat` pin holds it. "Your manager
+    has been told" (shot 10) is not said: nothing tells a manager.
+- <a id="the-handbook-app-training-profile-saved-forms-and-display-are-cards"></a>**The handbook app's Training, Profile & team, Saved, Forms and Display pages are flat cards, and the panel gains a theme (handbook refresh HBR4, operator plan 2026-11-02)**
+  Batch 4 of the handoff, the last of its screens, all in the handbook app's
+  own page and flat throughout (decision 13). Nothing it stores changed but one
+  display setting.
+  - **Training** opens on My training for a reader and on **My team** for a
+    manager or the admin, with a switch between them (`hbTrTabs_`). My team
+    leads with four tiles counted by ONE pure function from the progress
+    payload (`hbTeamTiles_`: on track = no overdue plan and nothing to re-read;
+    the pass rate is passed over assigned quizzes, `null` with none). The
+    table keeps every column and the Copy / CSV and reminders, now with an
+    avatar, a bar, and chips. An overdue row is marked by an inset red rule,
+    not a tint — a tint under the red and amber chips failed axe's contrast in
+    dark mode.
+  - **Profile & team** is a profile card (avatar, tags, the Department and
+    Manager rows) with a Display row that says the current settings; a join
+    request is a card with Not my team / Confirm (`hbPersonCardHtml_`), the
+    confirmed team a grid.
+  - **Saved** is Bookmarks and My notes side by side; a note is drawn as a
+    sticky note in a FIXED yellow with a fixed ink (g58 — the colour does not
+    flip, so neither does its text). The star that removes a bookmark says what
+    it removes to a screen reader.
+  - **Forms** are cards with a drawn page in the chapter colour (CSS, not a
+    thumbnail of the PDF — drawing one would load pdf.js for the list, which
+    HB4.1 loads only when a form is opened). The viewer names its pages and
+    steps through them; which page is in view is one pure rule
+    (`hbFormPageIndex_`, the last page whose top is within 8px of the scroll),
+    and the scrolling body is a focusable labelled region (axe).
+  - **Display** gains a **theme** — System, Light, Dark — the one new stored
+    field (`theme`, '' = follow the device), applied by `hbApplyTheme_` and by
+    the page's head script before paint, so a dark choice never flashes light.
+    Size is a slider whose `aria-valuetext` is the size's name; the three
+    toggles are switches (`role="switch"`). The System swatch is split by a
+    pseudo-element, not a hard-stop gradient (decision 13).
+  - **Visually hidden headings** use `.hb-vh`, which is NOT absolutely
+    positioned (g171).
 - <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
   The operator asked for a "Last 1-on-1" date, reminders for managers, an
   adjustable cadence, and an optional screenshot on a logged issue.
@@ -6408,3 +6513,656 @@ pick them up without re-deriving the context.
     converting the PDF to markdown (loses the layout the boxes point at);
     hashing the base64 text (not checkable against the file with a standard
     tool); PDF templates (not asked for — templates stay written documents).
+- <a id="ed1-signature-boxes-and-page-sized-box-text"></a>**A signature or initials box is filled by the sign panel, and a box's text is sized in points of its page (ED1, operator 2026-11-05)**
+  The operator's notes after the first real use of Batch H: "box type
+  'signature' … that allows for mouse-drawn signature", "color-code by box
+  type", "sizing those boxes is a bit hard to gauge and may appear awkwardly",
+  and "a 'paragraph' box … overfills the allotted box size; what happens?"
+  (answer before this: the read-only view cut it off).
+  - **Signature and Initials are box types, not typed fields.** They exist only
+    as boxes on a PDF that requires a signature (`empDocValidateFields_`,
+    `empDocValidateIssue_`), store no response, and are filled by what the
+    employee draws in the sign panel — the signature once, the initials once on
+    a second, smaller pad shown only when the document has an initials box —
+    painted live into every such box. The initials are kept in DocSignatures'
+    trailing `InitialsDataUrl` column and appended to the signature hash behind
+    their own tag ONLY when present, so every signature made before them still
+    recomputes to its stored hash. A pad's export is trimmed to the ink, so a
+    signature fills its box.
+  - **Colour says the type.** Fixed colours (the page is paper in every theme,
+    g58) with a legend in the issue form and above the reader's pages; an
+    optional box is dashed, a required one solid.
+  - **A box's text is sized against its PAGE.** Each drawn page is a size
+    container carrying its width in points, and box text is `100cqw × size ÷
+    page width`, so 10pt is 10pt of that page on any screen — what the manager
+    sees when placing a box is what the employee types into. The text shrinks
+    to a 7pt floor before it overflows; a fill box is capped at what fits at
+    the floor (a counter appears near the limit); a read-only answer that still
+    overflows is marked on the page and listed in full beneath the pages.
+  - **Boxes are made in points.** A tap places its type's standard size in
+    points (the same box on Letter and A4) and a drag shorter than one line is
+    raised to it; each box field states its size in inches and roughly how many
+    characters it holds.
+  - **Deferred to ED2/ED3:** moving and resizing a box, zoom, detecting a PDF's
+    own form fields, and a filled PDF with the answers stamped in.
+- <a id="ed2-box-editor-and-zoom"></a>**A placed box moves and resizes on a 1/8-inch grid of its page, the pages zoom, a chosen PDF is warned about, and a fillable PDF's own fields are offered as boxes (ED2, operator 2026-11-06)**
+  The plan's ED2: "move and resize handles, snap to 1/8 inch, arrow-key nudge,
+  duplicate; zoom (fit width / 100% / in / out) in the issue form and the
+  reader; warnings on upload (non-Letter/A4 pages, rotated pages, tiny text),
+  boxes off the page refused; a fillable PDF's own form fields offered as boxes".
+  - **The grid is the page's, in points.** A box is still a page and fractions
+    of it (Batch H), so the grid is 9 points of THAT page (`ED_BOX_GRID_PTS`):
+    dragging a box moves its corner onto the grid, dragging its corner handle
+    moves the bottom-right edge onto it, and Alt places it freely. The pure
+    `edBoxMoved_` / `edBoxResized_` clamp the whole box onto its page and never
+    make it smaller than one line of its type or 1/4 inch wide. Creating a box
+    by a drag is unchanged (ED1's point sizes), so a box is snapped the first
+    time it is moved. A box stays on its page; moving it to another page is
+    remove-and-place.
+  - **The keyboard is the precise path.** A placed box is focusable; the arrow
+    keys move it one grid step and Shift with them resizes it (`edBoxNudge_`).
+    Each change repaints the layer and puts focus back on the box (g141).
+  - **Duplicate copies under.** The copy goes one grid step under the original
+    (the next row of a form), else above, else beside it (`edBoxDuplicate_`), is
+    named the next in its series (`edBoxDupLabel_`), listed after it and
+    selected. It and the form-field offer stop at the server's field cap
+    (`ED_FIELD_CAP`, pinned to `EMPDOC_FIELD_CAP`).
+  - **Zoom redraws canvases only.** The pages are kept on the host
+    (`host._edPdf`); a zoom sets each page's width (100% = 96 px an inch, + and
+    − step 50%–300%, Fit width = the column) and redraws only the canvases, so
+    the box layers — and in the reader what the employee has typed — stay the
+    same nodes. Box text was already sized in container units of the page
+    (ED1), so it scales with it. A zoomed document scrolls sideways inside its
+    column.
+  - **Warnings advise, never block.** After a PDF is drawn, pdf.js's own
+    reading of each page gives `edPdfWarnings_` its size (neither Letter nor
+    A4, either way up), its stored rotation, and its text sizes (a median under
+    7 pt). Each warning says what may go wrong and what to do; pages with the
+    same warning are named together. A scan has no text and is not judged.
+  - **A fillable PDF's fields are offered, not applied.** `edPdfFormBoxes_`
+    reads pdf.js's widgets: a text or choice field becomes a text box (a
+    paragraph when multi-line, a date or initials when its name says so), a
+    signature field a signature box; checkboxes, radios and buttons have no box
+    type and are counted in the offer; a field shown twice is one box. Each is
+    named by its tooltip, or its name made readable, and sized up to one line.
+    The manager presses "Use them as boxes" and checks each.
+  - **Off the page is refused twice.** The client refuses an Issue whose box is
+    past the PDF's last page or edge (`edBoxesOffPage_`) and sends the page
+    count pdf.js read; the server bounds every box by the bytes' own page count
+    where the page tree is written in the clear (`empDocPdfPageCount_`), else
+    the browser's count, else only `EMPDOC_PDF_MAX_PAGES`
+    (`empDocPdfPagesOf_`) — a PDF that keeps its page tree in a compressed
+    object stream cannot be counted on the server, and that is said rather than
+    guessed. A box on a page the PDF does not have would never show, and a
+    required one could never be completed.
+- <a id="ed3-finished-documents"></a>**A finished document's copy is built in the browser from the verified original, printed or emailed from a preview, and labelled a copy — the certificate stays the record (ED3, operator 2026-11-06)**
+  The plan's ED3: "Filled copy built in the browser (answers and signature
+  drawn in, an overflow page, the certificate appended, labelled a copy);
+  Print with preview; Email with preview (the employee, optionally managers,
+  an outside address only after a confirm, audit row, attachment size limit)".
+  - **Made in the browser, never stored.** A signed or completed document's
+    reader offers Print… and Email…; both open a preview of a copy made then
+    by pdf-lib (`edBuildCopy_`): for a PDF document, the original re-fetched
+    (the server re-hashes it) and hashed again in the browser against the
+    SHA-256 the document names — a mismatch makes no copy — with every answer
+    and the signature and initials drawn into their boxes; for a written
+    document, its text set on Letter pages (`edMdBlocks_`: headings, list
+    items, paragraphs), its answers and drawings after it. The certificate
+    (`getEmpDocCertificate`) is appended. Nothing about the copy is kept on
+    the server; the HR record and the certificate are unchanged.
+  - **The same box rules as the screen.** `edFillLayout_` sets an answer at
+    10 pt shrinking to 7 (ED1's sizes) against the real font's widths; what
+    still does not fit is cut with "…" and set in full on an answers page,
+    which also carries any field with no box. A date is written MM/DD/YYYY.
+    A character the standard font cannot write becomes "?" (`edWinAnsi_`),
+    never a failed build.
+  - **A page stored turned is followed.** A box was placed on the page as
+    pdf.js shows it; `edFillPoint_` maps that point into the PDF's own space
+    for a stored rotation of 0/90/180/270 and an offset crop box (pinned
+    against pdf.js's own conversion), and text and drawings are turned the
+    same, so they read upright where they were placed. ED2's upload warning
+    for rotated pages stays — it still helps the issuer check.
+  - **Every page says it is a copy.** `edCopyLabel_`: "COPY · made <date>
+    from the signed original (PDF SHA-256 …) · the certificate is the record",
+    at the foot of every page, the certificate's included; the file's title
+    and name say copy.
+  - **pdf-lib is pinned like the intake reader.** Fetched only when a copy is
+    first made, from `cdn.jsdelivr.net/npm/pdf-lib@1.17.1` (the npm file, so
+    the bytes are the package's), its SHA-256 checked before it runs and run
+    from those bytes; a failed load is not kept (g129). The test harnesses
+    install the same version, and a pin hashes the installed file.
+  - **Print through the one print block.** The pages are drawn as images
+    into a print-only container that becomes the one print subject
+    (`kbPrintEls_`, print rule 8) — measured in Chromium: one page a sheet,
+    the preview and its buttons left out. Download gives the PDF itself.
+  - **Email: one builder for the preview and the send.** `emailEmpDocCopy`
+    with `preview` returns exactly what would be sent (To: the employee; Cc:
+    the issuer and the roster manager when chosen, and up to five other
+    addresses); an address off the org's domains is shown and needs a
+    confirm, and the server refuses it without `outsideOk`. The send attaches
+    the copy's bytes (a PDF within `EMPDOC_COPY_MAX_BYTES`, 10 MB — larger is
+    refused with "download it and attach it yourself", and the client
+    disables Email), through `sendRepEmail_` (the sender's identity and their
+    own copy), and writes an `EmpDocCopyEmailed` audit row with the document,
+    the copy's SHA-256 and size, the org addresses and only the domain of an
+    outside one (g36) — never contents. Who may email it is who may read it:
+    the owner, or a manager `empDocCanManagerSee_` admits.
+- <a id="ed4-letterheads-and-formatting"></a>**A letterhead dresses an employee document — the admin keeps them, the roster's Company picks one, the issuer may change it, and it is not hashed; a written document carries alignment, page breaks and a signature block as plain markers (ED4, operator 2026-11-09)**
+  The plan's ED4: "Two letterheads in Admin (UniversalMed Supply, Infimed
+  Solutions: name, logo upload, address, footer); roster Company column;
+  per-document picker; Write / Preview switch; alignment, signature block,
+  page breaks; letterhead on the certificate and printouts" — Infimed
+  Solutions for the India-based employees.
+  - **Kept by the admin, in one place each.** The letterheads are ONE Script
+    Property (`EMPDOC_LETTERHEADS`, through `propSetBounded_`, at most six) of
+    {id, name, address, footer, logoKey}; until the first save the two
+    companies are offered by name (`EMPDOC_LETTERHEAD_SEED` — real names, no
+    invented address, g122). Logos are rows of the HR store's
+    `LetterheadLogos` tab in the KbImages row shape, keyed by content, PNG or
+    JPEG only (what both the certificate and pdf-lib draw) and checked to start
+    like one; the browser shrinks a chosen logo first. Editing is admin-gated;
+    the list is readable by any manager (the issue form's picker).
+  - **The roster says the company, the issuer decides.** Column S (`Company`,
+    cache key v12) names a letterhead by id or name, case and spacing ignored
+    (`empDocLetterheadFor_`); blank or unknown gets the first. The issue form's
+    picker follows the employee until the manager picks, and offers "No
+    letterhead". A failed read is said under the picker and the document goes
+    out with none — never a guessed one. The issue refuses an id that no longer
+    exists (`empDocLetterheadPick_`).
+  - **Presentation, not content.** The chosen id rides EmpDocs' trailing
+    `LetterheadId` column and is NOT in the content hash: a letterhead is how a
+    document is dressed, and changing an address must not make every signed
+    document "altered". The cost, stated: an edited letterhead shows on older
+    documents, and a deleted one leaves them without one.
+  - **Formatting as plain markers.** A written body may hold `:::center` /
+    `:::right` … `:::`, `[page break]` and `[signature]`, each on a line of its
+    own (`edDocSegments_`). They are text in the frozen body, so the hash covers
+    them, and they mean the same on the screen (`edDocBodyHtml_`: aligned
+    blocks, a marked break, a signature block with the drawing, the employee's
+    name and the date once signed — `getMyDoc` carries the drawing for a
+    document with a `[signature]` line), in Preview and in ED3's printed copy
+    (`edCopyWritten_`: aligned lines, a new page, the block where it stands).
+    Insert buttons write them; kbMd_ is untouched, so the handbook is not.
+  - **Write / Preview.** The issue form's body switches to a preview of the
+    document on the picked letterhead with the employee's name in the
+    signature block — what the employee will read.
+  - **Where the letterhead shows.** A written document's reader (its paper:
+    the logo, name and address above, the footer below), the certificate of
+    every document (a table head, escaped, a PNG/JPEG data-URL logo only) and
+    a written document's printed copy (the head on the first page, the footer
+    on every page of the document). A PDF document is its own paper, so the
+    letterhead shows on its certificate only.
+- <a id="pf1-cdr-reads-cached-against-a-stamp"></a>**Call data is read through the columns used and cached until the data changes, and an hourly job reads the Dashboard's windows ahead (PF1, operator 2026-11-09)**
+  The operator: "the 'Your Numbers' and 'Department' metrics cards on the
+  dashboard take a very long time to load, as does the 'Stats' page … optimize
+  without compromising function or accuracy."
+  - **Where the time went.** Every DQE window (each period, its comparison,
+    the Stats trend and day) re-read the whole Date column, then read its span
+    34 columns wide twice — values and display text — where eight columns are
+    used and only the two durations need display text. The shared window cache
+    lived five minutes, the per-rep dashboard cache is skipped all morning
+    until the daily import lands (MET-5), and the 30-day breakdown behind Stats
+    had no cache at all — so the year-to-date window was re-scanned per person.
+  - **Narrower reads, the same numbers.** `cdrDqeReadSpan_` reads column 1
+    through TOTAL_ANSWERED as values (so `values[i][CDR.X - 1]` is unchanged)
+    and TTT..ATT as display text only (g00 / INV-64); the transfer read takes
+    its first seven columns unless the per-queue block is asked for. The date
+    column is read once per execution per tab (`cdrDateColIsos_`), keyed by the
+    spreadsheet, the sheet, the row count and tz — a sheet that cannot be named
+    is never memoized. Pinned value for value against the 34-column read.
+  - **Cached until the data changes, not for five minutes.** Each window
+    aggregate (DQE, transfer, the 30-day breakdown) is keyed by a STAMP of the
+    CDR data and kept six hours: each tab's row count and a digest of its
+    newest 300 rows (where the import writes — a re-import of yesterday
+    changes it), and the alias tab whole (an alias edit changes who a row
+    counts for). The stamp is re-probed at most every two minutes across all
+    users, so new data reaches every reader sooner than the old five-minute
+    tier did. No stamp (the probe failed) is the old key family and TTL; a
+    named failure, a round read without the aliases (F16) and every test-override
+    read are never kept. An edit deep in history — older than the newest 300
+    rows, with the row count unchanged — is the one change the stamp cannot
+    see; it shows within six hours, the same bound the dashboard's per-person
+    cache already had.
+  - **Read ahead.** `warmCdrMetricsCache` rides the hourly dispatcher: when
+    the stamp differs from the one it last warmed, it reads the Dashboard's
+    three windows and the Stats default 30-day trend for the one cohort list
+    (`cdrCohortNames_`, now shared by the cards and Stats so the keys match)
+    and remembers the stamp only when every read worked; otherwise idle.
+  - **Measured where it runs.** Both endpoints log "cached" or "read" with
+    their milliseconds to the execution log, so the before and after can be
+    read on the real sheets.
+- <a id="dr1-audit-list-and-resolved-reply"></a>**A manager checks Dept Requests against the CRM from an audit list with a per-request mark kept in its own tab; a person's Mark resolved replies on the request's email thread (DR1, operator 2026-11-09)**
+  The operator: "make a list of 'Close Order' requests, so I can use that list
+  and check the status in the CRM", and "can the 'Mark Resolved' button … then
+  send a 'system' reply email that says it's been marked as resolved?" — with no
+  inbox pull, outside emails being rare.
+  - **The list reads a span, not the tail.** `getDeptRequestAudit` (managers —
+    the rows name patients) reads the CreatedAt column once, finds the first and
+    last rows inside the chosen days (`drAuditSpan_`, the H3 span rule) and reads
+    only that run, so a range reaches past the tracker's `DR_MAX_SCAN` tail. Past
+    `DR_AUDIT_MAX_ROWS` the newest are kept and the page says so; a range is at
+    most `DR_AUDIT_MAX_DAYS`, the default the last 30 days. Type, department,
+    status and CRM mark filter in the browser over the one answer.
+  - **A mark is a row in its own tab, never a DeptRequests column.** The live tab
+    may carry an operator note column past `DR_HEADERS`, and a column added there
+    would write over it; so `DeptRequestCrmChecks` is append-only (Timestamp,
+    RequestId, yes/no, who, when) in the Dept Requests store and the latest row
+    per request wins (`drCrmFold_`) — the QaExemptions shape, and its own record
+    of who checked what. A box is disabled while it saves, put back if the save
+    fails, and patched in place (g141).
+  - **Copy table and CSV are one column list.** `drAuditColumns_` serves the
+    table, the TSV (through `tsvRow_`) and the CSV, whose cells keep the
+    `tsvCell_` formula guard before RFC 4180 quoting — a spreadsheet opening the
+    file parses a cell as a paste does.
+  - **The reply is the request email's reply-all, after the lock, never thrown.**
+    `drSendResolvedReply_` runs once `markDeptRequestResolved_` has released the
+    lock (g34), for a fresh resolve only, from the email link's confirm page, the
+    in-app button and a Replies-to-check "Resolved". It replies-all to the
+    thread's FIRST message — Reply-To the sender and the deployer, To the
+    department, CC the deployer — so it reaches the people on the request,
+    never whoever wrote last; the newest thread of a re-sent request. A request
+    sent before thread tracking has none: the person is told it got no reply,
+    and its Mark resolved button says so beforehand. A missing thread or a
+    failed send is said, and the resolve stands. Off with the
+    `deptResolvedReply` toggle. The reply carries the label, who and when — the
+    thread already holds the note.
+- <a id="sp1-spanish-resolve-with-reply"></a>**A Spanish request is resolved with an outcome and an optional note, and the resolve replies on its email thread; auto-assign hands requests only to members who are clocked in (SP1, operator 2026-11-09)**
+  The operator: a resolve should record how the request ended — reached the
+  patient, left a voicemail, no answer, wrong number — with a short note, and
+  send a "resolved by" reply on the thread; a voicemail-only request from the
+  phone system has no email to answer; and auto-assign should not hand work to
+  someone who is not working.
+  - **The outcomes are the server's.** `SPANISH_RESOLVE_OUTCOMES` (00_config)
+    is the one list; it rides `getSpanishInboxPending` as `resolveOutcomes`
+    with `resolveNoteMax`, and the dialog draws exactly those, in that order.
+    The server refuses an unknown key before any Gmail read; no key at all (an
+    older page) still resolves, with no outcome named. The outcome is the
+    resolve row's fifth cell (an `Outcome` column the tab gains by itself);
+    the NOTE is never stored or audited — it is free text that may name a
+    patient, and it goes only into the reply on the thread it is about.
+  - **One dialog for one request and for many.** Mark resolved and Resolve
+    selected both open `spanishResolveAsk_`: Resolve stays off until an
+    outcome is picked, and a typed note asks "Discard changes?" before Escape
+    or the backdrop throws it away (g166). Resolve selected asks once; every
+    request gets the same outcome and note, and ITS OWN reply.
+  - **The reply.** After the lock is released (g34), `spanishSendResolveReply_`
+    replies-all on the thread's latest request message (a requester's
+    follow-up is the request being resolved), as "UMS Team Tools", saying who
+    resolved it, when, the outcome and the note, escaped. A voicemail thread is
+    resolved with no reply; a failed send is said in the toast and the audit
+    row, and the request stays resolved. The `spanishResolveReply` toggle turns
+    the reply off.
+  - **The app's own reply never reopens the request.** The reply carries a
+    marker line (`SPANISH_APP_REPLY_MARKER`); a message carrying it is neither a
+    requester's follow-up (`spanishThreadRoles_`) nor new activity on the
+    thread (`spanishThreadLatestMs_`, from the app's own addresses), so the
+    SP-2 rule — a requester who writes again after a resolve is a new request —
+    still holds for every message a person writes.
+  - **Auto-assign reads who is working.** `spanishWorkingMembers_` counts a
+    member as working when their LAST punch today, in their own timezone, is a
+    Clock In or a Lunch In (the latest time, never the last row — g14). The
+    button and the scheduled run hand requests only to them; nobody clocked in
+    assigns nothing (the button says so, the scheduled run is idle), and a
+    Timesheet that cannot be read refuses by name rather than guessing (g128).
+- <a id="pt1a-source-format-payor-import"></a>**The payor upload takes the source sheet's own export and converts it in the one import parse; the source's top-left rule rides every insurance answer (PT1a, operator 2026-11-09)**
+  The operator updates `InsurancePayors` from another department's "Payor/HCPCS
+  Order Acceptance" sheet, whose export is not the tab's shape: two header rows
+  (the codes on the second), a rule for every plan in its top-left cell, and a
+  key ("X = Yes", "Z = Hawaii Only") as trailing column headers. Every refresh
+  needed a hand conversion, and an unconverted file was quietly wrong rather
+  than refused: "Network Last Update" would have filled the network-status slot
+  (blank or "Done" for every plan), "OON reimbursement (% …)" the reimbursement
+  slot, and three code headers could not be read as codes.
+  - **Converted where the import already parses**, before every limit and the
+    preview, so the preview reports what is written (`insPayorFromSource_` in
+    `kbImportDataTable`). Recognised by its codes — three or more code headers
+    on row 2 and more than on row 1 — so a file already in the tab's shape
+    imports untouched.
+  - **Every step is listed in the preview**: the merged header row, each
+    rename and why, each dropped column (the key, and any column with no data —
+    the key columns' cells are a side list, not a plan's data), each dropped row
+    by source row number, and each cell rewritten from the key.
+  - **The key is read, not guessed.** A cell that is exactly a key letter
+    other than X and NO (the sheet's yes and no, which every reader reads)
+    becomes "<meaning> (<letter>)" — "Hawaii Only (Z)". "Y" had been left as
+    stray shorthand when the file carried no key; the source's key now defines
+    it. Values the key does not define stay verbatim (g41/g156).
+  - **A slot taken twice is warned for every upload**: `insPayorSlotOf_` is the
+    reader's own if-chain, and two columns in one slot mean the later replaces
+    the earlier on every row.
+  - **The note**: a source upload stores its top-left text (`INS_PAYOR_NOTE`,
+    through `propSetBounded_`, capped) after the table write; an empty cell
+    clears it; a tab-shaped file leaves it. `searchInsurancePayors` returns it
+    and a note that cannot be read by name, and the lookup draws it above a
+    match and above "not in the payor sheet" alike — it applies to every plan,
+    listed or not. No seed (g122): until the first source upload there is none.
+- <a id="pt1-payor-tables"></a>**Payor tables are allowlisted tabs searched as one, each with its own note and its sheet's own key (PT1, operator 2026-11-09)**
+  The source sheet has a tab per payor family; the second to arrive is Primary
+  Medicaid — the same layout as Medicare / MA, its own rule in A1 (it names
+  nursing-home patients and facilities) and its own key, which defines TRY
+  differently ("Try = Create account and insurance team will verify").
+  - **A payor table is an allowlisted `KB_DATA_TABLES` entry with a
+    `payorTable` label** — `MedicaidPayors` beside `InsurancePayors`. The
+    allowlist stays the security boundary; adding a table is a code change.
+    Each takes its source export through PT1a's converter, which now also names
+    an "Out-of-Network" title as Network Status (its cells are the status).
+  - **One search, one ranking.** `searchInsurancePayors` scans every payor
+    table's name column and ranks the matches together (a tie keeps the
+    configured order); each plan carries its table. A table not imported yet is
+    skipped; none imported is "not set up". A rep does not choose a table — a
+    plan's name says what it is, and "Molina" can be in either.
+  - **A group per table.** The lookup draws, per table with matches and in
+    configured order: its name, its standing note ("For every plan in Primary
+    Medicaid: …"), its plans, and the key from its own sheet. The app's
+    acceptance legend is unchanged; the sheet's key sits beside it because two
+    tables can mean different things by one value. "Not listed" shows every
+    table's note.
+  - **One note map** (`INS_PAYOR_NOTE`): `{tableKey: {text, key, at, by}}`,
+    written by a source import for its own table only; PT1a's single-table
+    value reads as InsurancePayors'. An unreadable map is said on every result
+    group and, on import, the loss of the other tables' notes is said too.
+- <a id="m1-adjusted-metrics"></a>**Adjusted figures sit BESIDE the actual ones: outbound calls from the CDR Report, intake calls by their timed forms, and % Answered never adjusted (M1, operator 2026-11-11)**
+  The operator asked for "adjusted" numbers that credit the work the actual
+  figures miss — outbound calls (mostly the bilingual reps' Spanish
+  call-backs) and the long intake / order-creation calls — clearly marked.
+  - **Outbound calls are read, not estimated.** call-data-reporting exports
+    every outbound call into the CDR Report's `Outbound Calls` tab (one row
+    per call). Team Tools reads it BY HEADER (Call Date / Agent Name /
+    Connected / Talk Sec), bounded by the date column, agent names through
+    the same Agent Alias Overrides as the DQE reader, so the outbound figure
+    and the inbound one count the same person. A missing tab or column is
+    named, a failed read is never cached, and a window past the export's
+    newest day says "data through …".
+  - **An intake call is measured by its form.** The DQE data has one row per
+    rep per day, so no single call's length is known. The intake form times
+    itself from the first input to the send and the seconds ride the intake
+    call note as `completionSeconds` (the field the Call Notes timer already
+    writes). Only 30 s to 2 h counts as a call; an untimed note still counts
+    as an intake call.
+  - **One rule, `metricsAdjusted_`:** handled calls = answered + connected
+    outbound; talk = inbound talk + outbound talk; average talk excluding the
+    timed intake calls, only while a call is left to average. Null when there
+    is nothing to adjust, so an Adjusted line never repeats the actual one.
+  - **% Answered is never adjusted** — it is the Department Dashboard's
+    inbound standard, and the ⓘ says so.
+  - **Where it shows:** My Stats (day and range) gets an Outbound calls row
+    and an Adjusted panel with an ⓘ disclosure; Team Metrics gets the team
+    panel and Outbound / Handled (adj.) / ATT excl. intake columns, each only
+    when it has something to say, an unread figure as a dash and exported
+    blank. Exact per-call intake matching (M2) is call-data-reporting's work.
+- <a id="ac1-activity-levels"></a>**App activity has a LEVEL: the clicks and keystrokes in each 10-minute block, counted and never read, drawn in Day Edit and beside every rep in Team Punches (AC1, operator 2026-11-11)**
+  The operator asked to see how active a rep was through the day, not only
+  whether they were. The two gestures the presence ping already listens to are
+  counted per 10-minute block: a pointerdown is a click, a keydown a keystroke
+  (a held key once). Nothing about the key or the thing clicked is read.
+  - **The counts ride the ping**, and a window whose rep has PAUSED for two
+    minutes sends the rest through `recordActivityCounts`. That flush stamps
+    no presence — it fires after the last gesture, so a stamp from it would
+    read a rep who has stopped as active — and its row (Kind `counts`) is
+    never a ping: never a first or last time, never a suggested punch. A
+    failed send puts its counts back; what a window still holds when it
+    closes is lost, and the card says so.
+  - **The server keeps only what a person could have done** (`activityCountsClean_`):
+    the client's clock is corrected by whole blocks from the `at` it sends,
+    a block older than six hours (a laptop asleep overnight) or ahead of now
+    is dropped, a block's entries are summed, a count past 5,000 is capped.
+  - **One cell, never coerced:** "48c12k40" — letters between the numbers,
+    so Sheets cannot read it as a number, a date or a time (g10, g144).
+  - **A count belongs to the day of the block it names** — a send just after
+    midnight carries the evening's last block — so the read slice runs six
+    hours past the day's end, and the nightly condense files each block by
+    its own day.
+  - **A day with no counts is drawn as it always was** (on/off), never as a
+    level of zero: everything condensed before AC1, and a day whose counts
+    never arrived.
+  - **Where it shows:** Day Edit draws bars per 10 minutes or per hour; the
+    Team Punches day table gets an App activity column — every rep's hours
+    on one shared range, from ONE read (`managerGetTeamActivity`), filled in
+    place so the calendar keeps its focus. Both say it is this app only — a
+    phone call or another program reads as idle — and context, not a score.
+- <a id="pt4-manual-mobility-items"></a>**The Manual Mobility items sheet is a fifth payor table: its categories ride with its codes, its key is read from below the table, and its own words stay as written (PT4, operator 2026-11-10)**
+  A different department's sheet for non-PMD items: a row per PAYOR (not per
+  plan), item categories on row 1 over 55 codes, no network status, and its key
+  written beneath the table ("MO --> Medicaid Only") beside the delivery
+  locations.
+  - **Categories are kept only when they cover every code column.**
+    "Walker: E0143 & E0156" in the tab; `insCodeGroupSplit_` hands the reader
+    the category and the code, the card groups its code grid under each item,
+    and every join and comparison still reads the code alone. A heading that
+    starts a column late (Medicare / MA's "Power Chair (K0816)") or stops at a
+    non-code column would file codes under the wrong item, so a partial set is
+    dropped and said — Medicaid and BCBS keep Scooter / Power Chair / Complex
+    Rehab, Medicare / MA and UHC keep none.
+  - **The key below the table** (`insPayorBelowKey_`) is found by its arrow
+    cells and becomes the table's sheet key; it is never written into the
+    cells — "Yes" stays "Yes", never "We can process (Yes)". The other cells of
+    those rows (the delivery locations) join the standing note, after "Use the
+    row for the patient's primary insurance" (A1's title, which is never a
+    rule).
+  - **Tidied, and listed:** multi-line cells read as one line; obvious
+    misspellings ("Refferal", "faclity", "if patience asks", "SanMarcos");
+    a person's exception by role ("Need Nikunj's Exception" → "Needs a
+    supervisor exception", the operator); "BAV" → "billed as"; the mistyped
+    E1930 → E1390 (`INS_CODE_HEADER_FIXES`, operator-confirmed only).
+  - **A column naming two chairs joins as neither.** `insCodeHeaderClean_`
+    leaves "K0006 w/ E1226 (K0007 billed as K0006)" unreadable as one code
+    (another code of the same family), while "K0001 w/ E1226" joins as K0001.
+  - **No network status, no pill:** the search ships `hasStatus` per table.
+  - **The legend reads its words** — amber for a qualified Yes, delivery only,
+    DFW / SA / Austin, OOP, MO, MO/OOP, priority referral (the referral's
+    source — some facilities get exceptions), Texas only, waiver, MA plan only,
+    on request, NPC/NRC (no previous claims; may process) and a supervisor
+    exception; red for "NO (…)". Each is explained by its own term.
+- <a id="pt3-payor-cross-checks"></a>**A plan answered differently by two payor tables says so on its card; the upload names a row filed under another state; the network status's misspellings are corrected and listed (PT3, operator 2026-11-10)**
+  Checking the four exports against each other found the same plan with
+  different answers on two sheets (about two dozen), rows filed under another
+  state's block, and K0816 answered twice on the Medicare / MA sheet. The data
+  is the department's to correct; the app makes each case visible rather than
+  choosing.
+  - **"Also on … — answer differs."** `searchInsurancePayors` keys each name
+    (`insPayorNameKey_`: case and punctuation ignored) and, for every matched
+    plan, reads the same plan's listings in the OTHER payor tables — at most
+    `INS_PAYOR_ALSO_MAX` per search (INV-46). `insPayorCrossDiff_` compares
+    by CODE token, so differently titled columns line up; a code either side
+    leaves blank is no disagreement, and spacing and case are not differences.
+    The card shows that table, its state, the codes and both answers. Tables
+    that agree add nothing.
+  - **A misfiled row is named, never moved.** `insPlanStatesNamed_` reads
+    every state a name names — a full name anywhere (longest first, so West
+    Virginia is not Virginia), DC however written, a code in parentheses, a
+    bare code, a plan-code prefix ("AR-S001"). Codes that are also words or
+    other terms (ME, OR, IN, PA = prior auth, MA = Medicare Advantage, LA = Los
+    Angeles, PR = patient responsibility) are loose: they never accuse a row,
+    and a row whose own state is one of them is not accused. The preview lists
+    each row with its source row, its section and what its name says.
+  - **Misspellings, not variants.** `insNetworkTidy_` corrects "Out-f-Network",
+    "outof" and a word two letters from "network" or "benefits"; every other
+    status, including "OON w/ PA" and "OONB", is written as it was. Each
+    correction is listed with its count.
+  - **The legend learns two operator meanings:** OONB is out-of-network
+    benefits (amber), and "cannot service state" means we can't provide it in
+    that state (red).
+- <a id="pt2-payor-tables-by-state"></a>**Payor tables grouped by state carry each plan's State and insurer; the converter reads what the sheet's layout says and lists every reading (PT2, operator 2026-11-10)**
+  The source sheet's UHC By State and BCBS tabs differ from Medicare / MA and
+  Medicaid: plans sit under state sections (opened by a "<State> … if it's not
+  listed below" row on UHC, or a state name in column A on BCBS, where the plan
+  name is column B and column A otherwise names the insurer), the editors left
+  row-fill under no title, and some rows are reminders with nothing recorded.
+  - **Two more allowlisted payor tables** — `UhcPayors` ("UHC by state") and
+    `BcbsPayors` ("BCBS / Anthem"), through the ONE converter, searched with the
+    others as one ranking (PT1).
+  - **State is derived, never asked for.** Three or more sections make a sheet
+    sectioned, and every plan then carries its section's State; a "not listed
+    below / unlisted / unless … below" row also covers the rows just above it
+    that begin with the same state. A misspelt state ("Conneticut") is read
+    within one letter (two for a long name) and the reading is LISTED; a
+    two-letter code alone never opens a section. Rows before the first section
+    read "Multi-state / other"; a plan whose own name says a different state
+    keeps its section's state, and the preview lists it. A section with no plan
+    kept is not named.
+  - **What is dropped is said.** An untitled column with data is dropped and
+    named with its cell count (the row-fill; the operator confirmed it is
+    accidental); a name with nothing recorded is dropped as a reminder (the
+    operator: these rows help the sheet's own users remember rules — the
+    "if it's not listed below" ones are read as catch-alls instead); the note
+    loses its "Added:" wrapper and BCBS's run-in "Plan Name" title.
+  - **The search reads the plan, its State and its insurer together**, so a
+    plan whose name never says its state is found by it. A card shows its state
+    chip and insurer; a catch-all row says it covers any plan of its state the
+    sheet does not list by name.
+  - **The legend learns the operator's meanings:** SI is secondary insurance;
+    PR/SI is SI/PR, and SI/PR is the Sales team's rule word for word; INN and
+    "In Network" are in-network (and "Not in network" never is); a combined
+    value ("L ( Up To 285) & SI/PR") must meet both.
+- <a id="p1-the-pay-week-reminder"></a>**The pay-week reminder is one rule on the export's own periods, shown in the app all window and emailed once on the day (P1, operator 2026-11-05)**
+  The operator: "a reminder notification to team members to check their
+  timesheet and request edits if needed on pay weeks — on the Monday of the
+  pay week; Indian employees are paid monthly and their payroll is finalized
+  on the last day of the month."
+  - **One rule, the export's periods.** `payWeekReminder_` takes the rep's pay
+    cycle (`empPayCycle_`) and the org biweekly anchor — the same
+    `biweeklyRangeFor_` period the ADP export and the close checklist use —
+    so a reminder can never name a different period from the one payroll
+    closes. Biweekly: the Monday of the period's final week. Monthly: the last
+    Monday with at least four days left (that Monday and the last day
+    counted) — the operator approved the worked examples Nov 23 and Dec 28.
+    A weekend or company holiday moves it to the next workday, never past the
+    period's end.
+  - **In the app for the whole window, by email once.** A Needs-you item and
+    a Time / PTO banner from the day to the end of the period; Done hides the
+    item for that period in the browser (a convenience, so `umsPayWeekDone`,
+    not a server record). The email goes at 9am Central on the day — one time
+    for everyone, inside working hours (operator 2026-11-06, replacing the first
+    build's 9am in each rep's own timezone) — from the hourly dispatcher, with
+    no new trigger against the quota, behind a server toggle that is on by default because the operator asked
+    for it, with a heartbeat, a delivery row per send and the outcome contract.
+  - **Not done:** naming what to check (an open day, a pending request) — the
+    close checklist already finds those for the manager, and repeating them
+    to every rep is a second reader of the same data.
+- <a id="i1-intake-safeguards-and-address-check"></a>**Intake safeguards warn and never block; the address check asks Google Maps only when an admin turns it on (I1, operator 2026-11-05)**
+  The operator: "intake safeguards, e.g. phone formatting 4691113333 →
+  469-111-3333, with +1 handled … proceed with warnings, flexible formats, e.g.
+  a Medicare ID with or without dashes or trailing spaces … validate the
+  address with Google Maps."
+  - **Read loosely, tidy on leaving, never refuse.** Each PMD and PAP field the
+    map `INTAKE_FMT_FIELDS` names is read by a pure reader on `change` (phone,
+    date, email, insurance, address, height, SSN); a value it can read is
+    rewritten in one shape and saved to the draft, a value it cannot is left
+    exactly as typed with an amber note under the field saying what looks off.
+    A height is asked IN INCHES (operator 2026-11-06): the label is "Height
+    (inches)" in both banks, so the email names the unit whatever was typed,
+    and 5'4", 64 in or 64" become 64.
+    A two-digit year is ACCEPTED (operator 2026-11-06, replacing the first
+    build's ask) and written out so the rep sees the century: a date of birth
+    takes 20yy only when that is not past this year, else 19yy; a discharge
+    date 20yy. The insurance line is tidied ONLY when it is cleanly "Medicare"
+    and a valid MBI; anything else is kept as typed and never warned — a line
+    that says Medicare may carry an Advantage plan's own member ID, which is not
+    wrong for failing the MBI shape. The map is checked against the
+    English banks by a pin, so a renumbered question cannot silently move a
+    reader onto the wrong field.
+  - **One question before Preview.** The blank-recommended ask and the format
+    list are ONE `uiConfirm` (Go back / Continue anyway): a second dialog in a
+    row is the one a rep learns to click through. Continue anyway always
+    previews — a warning is advice, and a rep with the patient on the phone
+    knows things the reader does not.
+  - **The address check is opt-in and fails closed.** The `intakeAddressCheck`
+    toggle starts OFF and the client sends nothing unless it reads `true` from
+    the loaded flags (the generic flag reader defaults to ON when no flags are
+    loaded, which is the wrong default for sending patient data out). On, only
+    the address line goes to Google's geocoder — no name, no audit row, no
+    log — cached for six hours by a hash of the text, under a 24-hour cap.
+    "Found", "partly matched" (an area, not a street), "not found" and "could
+    not check" are four different answers; only a full match is offered, as a
+    suggestion the rep takes with Use suggestion, and an answer that arrives after the rep changed the field is
+    dropped. Whether Google Maps may see a patient's address under the BAA is
+    the operator's call before turning it on.
+  - **The SSN is shown** (operator 2026-11-06): the first build masked it on
+    screen, but the rep reads it back to the caller, and it stays inside the
+    Google Workspace environment it is sent within.
+  - **Not done:** the PPD form (its controls are engine values, not free
+    text).
+- <a id="i2-intake-saved-drafts"></a>**Intake drafts are saved in the browser, several per form, for 24 hours — the autosave stays as crash protection (I2, operator 2026-11-05)**
+  The operator: save-draft for intake forms, "drafts per browser only".
+  - **Two kinds of draft, kept apart.** The existing autosave (`umsIntakeDrafts`)
+    is one silent copy per form, there so a closed tab or a crash loses
+    nothing. A saved draft (`umsIntakeSaved`) is the rep PARKING a form to take
+    the next call: **Save draft** stores it under the patient line or name and
+    clears the form; the **Drafts** list (every form's, newest first) opens one
+    back into its own form. Folding the two together would have made every
+    keystroke a "draft" in the list.
+  - **The autosave's PHI rules apply unchanged.** A saved draft carries patient
+    answers, so it is the signed-in rep's only (INT2-3 — the boot sweep drops
+    another rep's and an expired one), it lives 24 hours from its last save,
+    and a send removes the draft it came from. At most 20 per rep, and a 21st
+    is refused rather than an old one dropped silently. Insurance card images
+    are not kept — localStorage is small and the images are the largest PHI on
+    the form — and Save draft says so before it clears them.
+  - **Opening rides the amend prefill.** An opened draft is parked on
+    `INTAKE_AMEND_PREFILL` with its `savedId`, so the form is entered blank in
+    the draft's language (the autosave restore is skipped — it is another
+    call's work) and then filled; the autosave then mirrors it. Opening over a
+    form with unsaved answers asks first. Re-saving an opened draft updates it;
+    Clear only detaches the form from it.
+  - **Not done:** drafts that follow the rep to another computer — the operator
+    asked for the browser only, and a server copy would be PHI at rest in a
+    new place.
+- <a id="i3-insurance-cards-read-in-the-browser"></a>**Insurance cards are read in the browser by PaddleOCR — every file checksum-pinned — and what is read is offered, never filled (I3, operator 2026-11-06)**
+  The operator: "pull insurance details automatically from uploaded photos …
+  save those details in a draft rather than the images"; then, choosing the
+  in-browser route ("B or C are most likely out due to BAA questions") and
+  "the most accurate option available for this particular task".
+  - **Nothing leaves the browser to be read.** Google Cloud Vision and a Claude
+    vision call would each send a card — PHI — to a vendor; both were ruled out
+    on BAA grounds. The reader runs on the rep's computer, and the module makes
+    no server call at all (pinned).
+  - **The reader was chosen by measurement.** A spike rendered four specimen
+    cards (original Medicare, a commercial PPO, a Medicare Advantage HMO, a
+    commercial table layout — fake data) in four conditions (clean; a phone
+    shot with glare; rotated 5° with glare, shadow and blur; small and
+    compressed) and read them with both candidates in Chromium: PaddleOCR
+    (PP-OCRv4 on ONNX Runtime Web) recovered 88 of 88 text fields, Tesseract.js
+    with its best English model 67. PaddleOCR first failed every rotated photo —
+    it boxed text level — until each box was cut along its line's own angle;
+    the parser then read 72 of 72 card fields end to end, and the reader's
+    real output is a committed fixture the pins parse.
+  - **On the page's thread, from checked bytes.** The Apps Script sandbox
+    cannot start a worker from another origin (the HB4.1 pdf.js posture), so
+    ONNX Runtime runs single-threaded on the page. Its script, its WebAssembly
+    and loader, the two models and the dictionary (~30 MB, first press only —
+    the browser keeps them) come from jsDelivr at pinned versions, and each is
+    checked against a SHA-256 in the code before it is used: the runtime is
+    injected from the checked bytes, the WebAssembly is handed over as checked
+    bytes, and a file that does not match is refused. A failed load is not
+    kept (g129) — the next press tries again — and the rep is told to type
+    the details instead.
+  - **Offered, corrected, then used.** The parser finds labels glued to their
+    values ("RxPCNMEDDPRIME"), values printed under their labels, and a card
+    photographed at an angle (rows are levelled by the lines' typical tilt); a
+    value must look like its field or it is left blank — never a guess. An
+    Advantage card's number is its plan's member ID, never an MBI. Each value
+    sits in a box the rep can correct, beside the line it will make; Use as
+    primary/secondary writes that line into the field (asking before
+    replacing), where I1 tidies and checks it and the I2 draft keeps it — the
+    image itself is never kept in a draft.
+  - **"Check this one", never a percentage (I3a, operator 2026-11-06).** The
+    recognizer's per-character probabilities are not odds — a digit can come
+    back at 97% and be wrong — and a number on screen invites the trust that
+    stops a rep comparing it with the card. So a value is MARKED when one of
+    its OWN characters (never its label, a colon or a space; the payer on its
+    letters and digits) is below `INTAKE_CARD_SURE`, 0.8. Measured on the
+    spike's reads: every true misread sat under 0.35, and 2 of 80 correctly
+    read values are marked. Editing the box clears the mark; the mark travels
+    with its value through the front/back merge.
+  - **"Not found" and "could not read" are different answers (g128, g142).**
+    An empty box says "Not found on the card — type it"; each image is read on
+    its own, so a broken one is named ("Could not read image 2 — what is shown
+    comes from the others") and a lone broken one says to try a clearer photo;
+    "could not be read in this browser" is kept for a reader that will not
+    start; a read that finds nothing says so, with only Dismiss.
+  - **No Rx numbers (operator 2026-11-06: "we do not use those").** The Rx
+    BIN, PCN and group are not offered; their labels are still RECOGNISED (a
+    `skip` label), because a label the parser did not know would let its value
+    run into the group or member ID beside it.
+  - **Not done:** names and dates on the card (not asked for), and the PPD
+    form (no card images).

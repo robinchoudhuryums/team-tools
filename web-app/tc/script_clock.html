@@ -229,6 +229,11 @@
   .ny-detail .ny-late { color: var(--danger-deep); font-weight: 600; }
   .ny-go { flex: none; font-family: var(--mono); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--info-deep);
     display: inline-flex; align-items: center; gap: 2px; }
+  /* P1: the pay-week row carries a Done button beside its link. */
+  .ny-item.has-done { display: flex; align-items: center; gap: 8px; }
+  .ny-item.has-done .ny-link { flex: 1; min-width: 0; }
+  .ny-done { flex: none; font: inherit; font-size: 11px; padding: 4px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--muted); cursor: pointer; }
+  .ny-done:hover { color: var(--ink); border-color: var(--border-strong); }
   .ny-unavail { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--warning-deep); margin-top: 10px; }
   .ny-unavail svg { width: 13px; height: 13px; flex: none; }
   .ny-skel-row { display: flex; align-items: center; gap: 12px; min-height: 44px; }
@@ -1412,8 +1417,17 @@ function clkRenderDashboardExtras_() {
 // zero (INV-187). SWR like CLK_DASH: paint the cache instantly, refetch only
 // when stale, and never stamp a degraded or failed round fresh (INV-129/156).
 var CLK_NEEDS = { data: undefined, day: '', at: 0, busy: false };
-var CLK_NEEDS_ICON = { training: 'check', coaching: 'thumbsUp', notes: 'fileText', requests: 'outbox', sched: 'phone', docs: 'paperclip', spanish: 'mail', oneOnOne: 'user' };
-var CLK_NEEDS_LABEL = { training: 'training', coaching: 'coaching', notes: 'call notes', requests: 'department requests', sched: 'scheduled calls', docs: 'employee docs', spanish: 'Spanish Inbox', oneOnOne: '1-on-1s' };
+var CLK_NEEDS_ICON = { training: 'check', coaching: 'thumbsUp', notes: 'fileText', requests: 'outbox', sched: 'phone', docs: 'paperclip', spanish: 'mail', oneOnOne: 'user', payWeek: 'timesheet' };
+var CLK_NEEDS_LABEL = { training: 'training', coaching: 'coaching', notes: 'call notes', requests: 'department requests', sched: 'scheduled calls', docs: 'employee docs', spanish: 'Spanish Inbox', oneOnOne: '1-on-1s', payWeek: 'the pay-week check' };
+// P1 (operator 2026-11-05): the pay period whose "Check your timesheet" item
+// the rep marked Done — kept per browser, so the item stays away for that
+// period and comes back for the next one. A failed storage read shows it.
+var CLK_PAYWEEK_DONE_KEY = 'umsPayWeekDone';
+function clkPayWeekDoneKey_() { try { return String(localStorage.getItem(CLK_PAYWEEK_DONE_KEY) || ''); } catch (e) { return ''; } }
+function clkPayWeekDone_(periodKey) {
+  try { localStorage.setItem(CLK_PAYWEEK_DONE_KEY, String(periodKey || '')); } catch (e) {}
+  clkRenderNeedsYou_();
+}
 
 function clkNeedsYouSkel_() {
   var row = '<div class="ny-skel-row" aria-hidden="true"><span class="skel" style="width:28px;height:28px;border-radius:6px"></span>' +
@@ -1426,26 +1440,35 @@ function clkNeedsYouSkel_() {
 function clkNeedsYouHtml_(res) {
   if (res === undefined) return clkNeedsYouSkel_();
   if (res === null || res.error) return '<div class="dash-card">' + errorStateHtml_((res && res.error) || 'Could not load your pending tasks') + '</div>';
-  var items = Array.isArray(res.items) ? res.items : [];
+  var all = Array.isArray(res.items) ? res.items : [];
+  // P1: a pay-week item the rep marked Done for its period is not shown; the
+  // rest keep their index into the payload (clkNeedsYouGo_ reads by it).
+  var doneKey = clkPayWeekDoneKey_();
+  var shown = [];
+  all.forEach(function (it, idx) { if (!(it && it.kind === 'payWeek' && doneKey && it.periodKey === doneKey)) shown.push({ it: it, idx: idx }); });
+  var items = shown.map(function (x) { return x.it; });
   var unavailable = Array.isArray(res.unavailable) ? res.unavailable : [];
   if (!items.length && !unavailable.length) return '';   // clean and empty — nothing to say
   var overdue = items.filter(function (i) { return i.overdue; }).length;
-  var count = Number(res.total) || items.length;
+  var count = Math.max(items.length, (Number(res.total) || all.length) - (all.length - items.length));
   var head = '<div class="dash-card-head"><h2 class="dash-seclabel">Needs you<span class="ny-count">(' + count + ')</span></h2>' +
     '<span class="ny-head-right' + (overdue ? ' ny-overdue' : '') + '">' +
     (overdue ? overdue + ' overdue' : (items.length ? 'nothing overdue' : '')) + '</span></div>';
   var todayIso = String(res.todayIso || '');
   var list = items.length
     ? '<ul class="ny-list" aria-label="Needs you, ' + count + ' item' + (count === 1 ? '' : 's') + '">' +
-      items.map(function (it, idx) {
+      shown.map(function (x) {
+        var it = x.it, idx = x.idx;
         var past = !!(it.overdue && it.dueIso && todayIso && String(it.dueIso) < todayIso);
         var late = it.overdue ? '<span class="ny-late">Overdue</span> · ' : '';
-        return '<li class="ny-item' + (it.overdue ? ' is-overdue' : '') + (past ? ' is-past' : '') + '" data-kind="' + esc(String(it.kind || '')) + '">' +
+        var done = it.kind === 'payWeek' && it.periodKey
+          ? '<button type="button" class="ny-done" data-ny-done="' + esc(String(it.periodKey)) + '" onclick="clkPayWeekDone_(this.getAttribute(\'data-ny-done\'))" aria-label="Done \u2014 hide until the next pay period">Done</button>' : '';
+        return '<li class="ny-item' + (it.overdue ? ' is-overdue' : '') + (past ? ' is-past' : '') + (done ? ' has-done' : '') + '" data-kind="' + esc(String(it.kind || '')) + '">' +
           '<a class="ny-link" href="#" onclick="event.preventDefault();clkNeedsYouGo_(' + idx + ')">' +
           '<span class="ny-ico" aria-hidden="true">' + icon(CLK_NEEDS_ICON[it.kind] || 'info', 15) + '</span>' +
           '<span class="ny-body"><span class="ny-title">' + esc(String(it.title || '')) + '</span>' +
           '<span class="ny-detail">' + late + esc(String(it.detail || '')) + '</span></span>' +
-          '<span class="ny-go">' + esc(String(it.action || 'Open')) + ' ' + icon('chevronRight', 10) + '</span></a></li>';
+          '<span class="ny-go">' + esc(String(it.action || 'Open')) + ' ' + icon('chevronRight', 10) + '</span></a>' + done + '</li>';
       }).join('') + '</ul>'
     : '';
   var more = (count > items.length)

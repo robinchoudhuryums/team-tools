@@ -278,6 +278,18 @@ entry says which it is.
   Apps Script editor → Project Settings → Script Properties. Without
   it, `getAdpSS_()` falls back to the inert `'YOUR_ADP_SPREADSHEET_ID'`
   placeholder in CONFIG and fails on first sheet open.
+<a id="operator-m1-outbound-calls-tab"></a>
+- **The CDR Report's `Outbound Calls` tab feeds the adjusted metrics (M1, operator 2026-11-11).**
+  **Nothing to set up in Team Tools.** call-data-reporting writes the tab
+  each morning (its `exportOutboundCalls` export — set up in that project);
+  Team Tools reads its Call Date, Agent Name, Connected and Talk Sec columns
+  by header. Until the tab exists, My Stats and Team Metrics say "Outbound
+  calls — not read" and show no outbound column; nothing is drawn as zero.
+  An agent whose phone name differs from the roster needs a row in the CDR
+  Report's Agent Alias Overrides tab, exactly as for the inbound figures. The
+  intake form timer needs nothing either: intake notes logged after the
+  deploy carry their form time; older ones count as intake calls, untimed.
+  **Tell the team** what Adjusted means (the ⓘ on the panel says it too).
 <a id="operator-set-script-property-cdr-ss-id"></a>
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`
@@ -1662,7 +1674,7 @@ entry says which it is.
     we don't accept orders for that plan. `OON w/ PA` is AMBER: the plan may
     approve an order through a Prior Authorization request. `Out-of-Network
     Benefits` is AMBER: members may use out-of-network suppliers, usually at a
-    higher co-insurance rate. Anything written beside `OON` other than PA or
+    different co-insurance rate ("OONB" is the same — PT3). Anything written beside `OON` other than PA or
     benefits reads as unexplained amber, never as the red refusal.
   - **Every toned value in the live sheet now explains itself** (T10,
     2026-09-23). `Hawaii only` and `MDX Hawaii` are blue: the first is a rule
@@ -2086,13 +2098,14 @@ entry says which it is.
   reduce a balance: a month that now reads fewer hours than were credited is
   reported on Admin → Automation Health as a shortfall and left alone.
 <a id="operator-roster-cache-key-employee-roster-v11"></a>
-- **`ROSTER_CACHE_KEY` = `'employee_roster_v11'`** — bumped for the
+- **`ROSTER_CACHE_KEY` = `'employee_roster_v12'`** — bumped for the
+  `Company` column (S, ED4 letterheads, 2026-11-09); v11 for the
   `AccruedThrough` column (R, automated accrual credits, 2026-08-18);
   previously v10 for `PtoAccrual` (Q, same day), v9 for
   `PayRate` (P, pay statement, 2026-08-17), v8 for the `Schedule`
   column (O, Turn D per-rep shift override), v7 for Departments/DeptRequests
   v2, v6 for `ManagerEmail`/T3, v5 for CallNotesSheetId. After deploying,
-  stale v10 cache entries expire naturally within 5 min (or run
+  stale v11 cache entries expire naturally within 5 min (or run
   `clearCaches_()` from the editor).
 <a id="operator-call-notes-department-list-state-tax-rates"></a>
 - **Call-notes department list + state tax rates** are read by
@@ -2162,7 +2175,18 @@ entry says which it is.
   read). No manual setup needed — documented here so it's recognizable
   when inspecting Script Properties. Only registry keys are honored; flips
   take effect server-side on the next request and client-side on the next
-  config fetch.
+  config fetch. **P1 (2026-11-05):** `payWeekReminderEmail` (default ON) —
+  the pay-week timesheet reminder email at 9am Central (one time for everyone) on their
+  pay-week Monday; it rides the hourly dispatcher, so no trigger to install.
+  Turning it off keeps the Needs-you item and the Time / PTO banner. A
+  biweekly employee gets no reminder while no roster row carries a biweekly
+  `PayAnchor` (the export needs one too). **I1 (2026-11-06):**
+  `intakeAddressCheck` (default OFF) — leaving an intake address asks Google
+  Maps whether it exists. It sends the address line only (no name, nothing
+  logged), but that line is a patient's address: confirm Google Maps may see
+  it under the BAA before turning it on. Its auto-managed counter
+  `INTAKE_ADDR_CHECKS_24H` (24 hourly counts, the route-lookup counter's shape) caps the checks at 1,000 a day;
+  delete it to reset.
 <a id="operator-script-property-automation-digest-last-runs"></a>
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
   object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign|missedPunch|exportCheck|automationHealth:
@@ -2257,6 +2281,30 @@ entry says which it is.
   is made by Apps Script's own HTML→PDF conversion (no Drive); if the domain
   blocks it, the app says "could not be made into a PDF here". Downloading a
   certificate may be blocked by the page's sandbox, as with the handbook's forms.
+  **ED1 (2026-11-05):** DocSignatures gains a trailing `InitialsDataUrl`
+  column (self-healing — nothing to set up), filled only for a document with
+  an initials box; like the signature cell beside it, never edit it — it is
+  inside the signature hash.
+<a id="operator-letterheads-and-roster-company-ed4"></a>
+- **Letterheads (ED4, operator 2026-11-09) — `Employees` column S =
+  `Company`, the `EMPDOC_LETTERHEADS` Script Property and the
+  `LetterheadLogos` tab (HR store).** **To set up:** Manage → Admin → Config →
+  *Letterheads*: give each company its address (up to four lines), a footer
+  and a logo (PNG or JPEG; the browser shrinks a large one to 600 × 240 px and
+  300 KB), and Save. Until the first Save the two companies, *UniversalMed
+  Supply* and *Infimed Solutions*, are offered by name alone. Then write each
+  India-based employee's company — `Infimed Solutions` (or its id,
+  `infimed`) — in roster **column S**; a blank or unknown company gets the
+  first letterhead. The issuer can pick another (or none) per document. The
+  letterheads are ONE Script Property (`EMPDOC_LETTERHEADS`, written through
+  the bounded writer — at most six, never edit it by hand); the logos are
+  rows of the `LetterheadLogos` tab, created by the first logo, append-only and
+  keyed by content (never edit or delete a row — a letterhead pointing at a
+  missing logo shows its name and address alone). A document's letterhead id
+  rides EmpDocs' trailing `LetterheadId` column (self-healing); a letterhead
+  is how a document is dressed, not what it says — it is not in the content
+  hash, so an edited address shows on old documents too, and a deleted
+  letterhead leaves them without one.
 <a id="operator-the-coaching-one-on-one-tabs-batch-f"></a>
 - **The `OneOnOnes`, `CoachingSettings` and `CoachingImages` tabs (HR store,
   `HR_DOCS_SS_ID`) — Batch F, operator 2026-11-02.** **Nothing to set up:** each
@@ -2279,6 +2327,20 @@ entry says which it is.
   ignored, and an edited `CoachingImages` header row makes every screenshot
   read as "could not be read" (restore it to the seven names above).
 <a id="operator-the-activitylog-tab-and-timesheet-column-j"></a>
+<a id="operator-ac1-activity-levels"></a>
+- **Activity levels — ActivityLog's `Counts` and `Kind` columns, ActivitySummary's `Counts` (AC1, operator 2026-11-11).**
+  **Nothing to set up:** the next nightly run names the new header cells on a
+  tab made before (blank cells only). ActivityLog rows now carry **Counts** —
+  each 10-minute block's clicks and keystrokes since the window's last send,
+  as "29123456c3k12" (the block number, then the counts) — and **Kind**:
+  blank for a ping, `counts` for the flush a window sends after a two-minute
+  pause, which is never read as a ping. ActivitySummary rows gain **Counts**
+  (the day's blocks, "48c12k40"). Counts only — never what was typed or
+  clicked. Do not edit either cell by hand; a token the app cannot read is
+  skipped. Days condensed before AC1 have no counts and draw on/off as
+  before. **Tell the team** that Day Edit and Team Punches now show how much
+  each person used the app, block by block — use of this app only, so a call
+  or work in another program looks idle.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
   to set up:** the tab is auto-provisioned on the first presence ping after
@@ -2683,6 +2745,110 @@ entry says which it is.
   them by hand. **One-time check after deploy:** the record starts empty, so
   review both lists for anyone offboarded BEFORE this deploy.
 
+<a id="operator-cdr-read-ahead-pf1"></a>
+- **The Dashboard call-data read-ahead (PF1, operator 2026-11-09) — nothing to
+  set up.** `warmCdrMetricsCache` rides the existing hourly dispatcher
+  (`runHourlyJobs`), so no trigger is added and none needs reinstalling: after
+  the deploy the next hourly run picks it up. It reads the Dashboard's three
+  call-data periods and the Stats default 30-day trend ahead whenever the CDR
+  data has changed, and is idle otherwise. Admin → System lists it as
+  "Dashboard call-data read-ahead" (heartbeat `cdrWarm`, stale past 2 h; error
+  key `CdrCacheWarm`). Everything it and the readers keep is in the script
+  cache (`cdr_stamp_v1`, the window entries, `cdr_warm_stamp_v1`) — no Script
+  Property, no tab; it all expires by itself. **To see the speed-up:** Apps
+  Script → Executions — `getDashboardMetrics` and `getMyMetrics` log "cached"
+  or "read" with their milliseconds.
+<a id="operator-dept-request-audit-and-resolved-reply-dr1"></a>
+- **Dept Request audit list and the resolved reply (DR1, operator 2026-11-09) —
+  the `DeptRequestCrmChecks` tab and the `deptResolvedReply` toggle.** **Nothing
+  to set up.** Call Notes → Dept Requests → **Audit list** (managers): choose
+  the days, filter by type (e.g. Close Order), department, status and CRM mark,
+  then Copy table or Download CSV, and tick **Checked in CRM** on each request
+  as you check it. The marks are rows of the `DeptRequestCrmChecks` tab in the
+  Dept Requests store (created by the first tick, append-only — RequestId,
+  yes/no, who, when; never edit or delete a row: the latest row per request is
+  the mark, and the tab is the record of who checked what). **The reply:** when
+  a person marks a request resolved — the email's link, the in-app button or a
+  "Resolved" answer under Replies to check — the app replies on the request's
+  email thread from the mailbox it runs as, to the sender and the department,
+  saying who marked it and when. A request sent before thread tracking (before
+  the 22post D deploy) has no thread and gets no reply; the person is told so.
+  **Toggle:** `deptResolvedReply` (Admin → Config → feature toggles), ON by
+  default; off = no reply, the resolve unchanged. Each reply (or why there was
+  none) is an AuditLog `DeptRequestResolvedReply` row, by id. **Tell the
+  departments** that a resolved request now gets an automatic reply on its
+  thread.
+<a id="operator-spanish-resolve-with-reply-sp1"></a>
+- **Spanish resolve with a reply (SP1, operator 2026-11-09) — the
+  `spanishResolveReply` toggle and the resolve tab's `Outcome` column.**
+  **Nothing to set up.** Mark resolved now asks for an outcome (reached the
+  patient / left a voicemail / no answer / wrong number) and an optional note,
+  and replies on the request's thread from the deploying mailbox (or the
+  `REP_SENDER_FROM` alias when set) as "UMS Team Tools" — the requester and
+  everyone on the thread receive it. Turn the reply off with Admin → Config →
+  feature toggles → `spanishResolveReply`; the resolve itself is unchanged.
+  `SpanishManualResolved` gains a fifth header, `Outcome`, written by itself on
+  the first resolve after the deploy (older rows stay blank); the note is never
+  stored. **Auto-assign** (the button and the scheduled run) now gives requests
+  only to members clocked in and not on lunch, read from today's Timesheet in
+  each member's own timezone — a member who works without clocking in gets
+  none, and with nobody clocked in nothing is assigned.
+<a id="operator-pt1a-payor-source-import"></a>
+- **The payor upload takes the source export, and the standing note (PT1a,
+  operator 2026-11-09) — `INS_PAYOR_NOTE`.** **Nothing to set up.** To refresh
+  the insurance lookup, download the source "Payor/HCPCS Order Acceptance" tab
+  as CSV and drop it on Manage → Admin → Config → Reference data tables →
+  Insurance payor acceptance. The preview says it was converted and lists every
+  change (renamed headers, dropped key/empty columns, dropped rows by source row
+  number, key letters written out); read it, then Replace. A file already in the
+  tab's shape imports as before. **The note** in the source's top-left cell
+  ("No power orders in OR, WA…") is stored as the Script Property
+  `INS_PAYOR_NOTE` (`{text, at, by}` — auto-managed; do not edit by hand) and
+  shown above every insurance answer and on the Admin table row; a source upload
+  with an empty top-left cell removes it. Until the first source upload after
+  the deploy there is no note. If the preview warns that two columns would both
+  be read as one field, rename one in the source before importing.
+<a id="operator-pt1-payor-tables"></a>
+- **Payor tables — the `MedicaidPayors` tab (PT1, operator 2026-11-09).**
+  **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
+  data tables now lists **Primary Medicaid acceptance** under Insurance payor
+  acceptance. Download the source sheet's Primary Medicaid tab as CSV and drop
+  it there; the preview lists the conversion as for the Medicare / MA tab; the
+  app creates the `MedicaidPayors` tab in the KB spreadsheet on Replace and
+  never writes to it otherwise. Until it is imported the lookup searches the
+  Medicare / MA table alone. `INS_PAYOR_NOTE` now holds every payor table's
+  note and its sheet's key (one Script Property, auto-managed); each table's
+  source upload rewrites only its own entry.
+<a id="operator-pt2-payor-tables-by-state"></a>
+- **Payor tables by state — the `UhcPayors` and `BcbsPayors` tabs (PT2, operator 2026-11-10).**
+  **Nothing to set up beyond the uploads.** Manage → Admin → Config → Reference
+  data tables lists **UHC by state acceptance** and **BCBS / Anthem
+  acceptance**. Download each source tab as CSV and drop it on its row; read the
+  preview before Replace — it lists every state section, every misspelt state
+  it read and how, the plans before the first section ("Multi-state / other"),
+  plans whose name says a different state than their section, the untitled
+  columns it dropped with their cell counts, and the reminder rows it dropped.
+  If an untitled column is real data (a code whose title is missing), give it
+  its title in the source sheet and upload again. Until a tab is imported the
+  lookup leaves it out.
+  **PT3 (2026-11-10):** the preview also names every row filed under another
+  state's block (the name says "(NC)", "AR-S001", "of Virginia"…) with its
+  source row — move it in the sheet if it is misfiled — and lists each Network
+  Status misspelling it corrected ("Out-f-Network" → "Out-of-Network"). In the
+  lookup, a plan another payor table answers differently says so on its card;
+  correct the sheet that is wrong and re-upload it.
+<a id="operator-pt4-manual-mobility-items"></a>
+- **Manual Mobility items — the `ManualMobilityPayors` tab (PT4, operator 2026-11-10).**
+  **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
+  data tables lists **Manual mobility acceptance**. Download the source sheet
+  (the non-PMD "HCPC Payor acceptance" spreadsheet) as CSV and drop it there;
+  the preview lists the item categories it keeps, the key it read below the
+  table, the note (primary insurance + delivery locations), each spelling or
+  role correction, "BAV" → "billed as" and E1930 → E1390. Keep the key below
+  the table in the "MO  -->  Medicaid Only" shape: the arrow cells are how it
+  is found. Re-uploading the Medicaid and BCBS exports now also files their
+  codes under Scooter / Power Chair / Complex Rehab. **Owed to the department:**
+  what "T3 Purchase Order" means (Humana HMOs w/ IPA, Support Surfaces).
 <a id="operator-dept-request-reply-resolution-22post-d"></a>
 - **Dept Request reply resolution (22post D, 2026-09-28).** The tracked
   department email now carries the deployer's mailbox (`CONFIG.CALL_NOTES.CC_EMAIL`

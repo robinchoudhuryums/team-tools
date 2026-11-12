@@ -3817,6 +3817,537 @@
     "verifyDocSignature"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "ED1: signature/initials box types (EMPDOC_SIGN_FIELD_TYPES, EMPDOC_INITIALS_MAX_CHARS), the initials check and the shared latest-signature-row reader",
+   "added": [
+    "EMPDOC_INITIALS_MAX_CHARS",
+    "EMPDOC_SIGN_FIELD_TYPES",
+    "empDocInitialsCheck_",
+    "empDocLatestSigRow_"
+   ],
+   "removed": [],
+   "changed": [
+    "EDS",
+    "EMPDOC_FIELD_TYPES",
+    "EMPDOC_SIG_HEADERS",
+    "acknowledgeDoc",
+    "empDocCertificateHtml_",
+    "empDocSignatureHash_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "empDocValidateResponses_",
+    "getEmpDocCertificate",
+    "getMyDoc",
+    "verifyDocSignature"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "P1: the pay-week reminder — its pure rule, the Needs-you task, the email and the hourly job",
+   "added": [
+    "PAY_WEEK_MONTHLY_MIN_DAYS",
+    "PAY_WEEK_REMINDER_HOUR",
+    "payWeekDateText_",
+    "payWeekEmail_",
+    "payWeekForEmp_",
+    "payWeekReminder_",
+    "payWeekTask_",
+    "sendPayWeekReminders"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_DELIVERY_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "FEATURE_FLAGS",
+    "PENDING_TASKS_KINDS",
+    "TRIGGER_GROUPS",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "buildCalendarForEmployee_",
+    "computeAutomationHealth_",
+    "getMyPendingTasks"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-05",
+   "why": "P1: drop the dead clamp in payWeekReminder_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "payWeekReminder_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "P1: the pay-week email at 9am Central for everyone (operator 2026-11-06)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "sendPayWeekReminders"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "I1: the intake address check (endpoint, verdict, counter, toggle)",
+   "added": [
+    "INTAKE_ADDR_CACHE_SECONDS",
+    "INTAKE_ADDR_CHECK_CAP",
+    "INTAKE_ADDR_CHECK_PROP",
+    "checkIntakeAddress",
+    "intakeAddrCheckReserve_",
+    "intakeAddrVerdict_"
+   ],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "kbGeocodeOne_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "I1 follow-up (operator 2026-11-06): the PMD/PAP Height label says inches",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "INTAKE_PAP_Q_EN",
+    "INTAKE_PMD_Q_EN"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "ED2: empDocPdfPageCount_ + empDocPdfPagesOf_ (box page bound at issue)",
+   "added": [
+    "empDocPdfPageCount_",
+    "empDocPdfPagesOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "empDocPdfItem_",
+    "empDocValidateFields_",
+    "empDocValidateIssue_",
+    "issueDoc"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-06",
+   "why": "ED3: EMPDOC_COPY_* constants, emailEmpDocCopy and its pure helpers",
+   "added": [
+    "EMPDOC_COPY_EXTRA_MAX",
+    "EMPDOC_COPY_MAX_BYTES",
+    "emailEmpDocCopy",
+    "empDocCopyAuditNote_",
+    "empDocCopyEmailParts_",
+    "empDocCopyFileName_",
+    "empDocCopyRecipients_"
+   ],
+   "removed": [],
+   "changed": [],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: letterheads (constants, list/pick/upsert helpers, admin endpoints), EMP.COMPANY, ED.LETTERHEAD",
+   "added": [
+    "EMPDOC_LETTERHEADS_PROP",
+    "EMPDOC_LETTERHEAD_MAX",
+    "EMPDOC_LETTERHEAD_SEED",
+    "EMPDOC_LOGO_KEY_RE",
+    "EMPDOC_LOGO_MAX_BYTES",
+    "EMPDOC_LOGO_TAB",
+    "EMPDOC_LOGO_TYPES",
+    "deleteEmpDocLetterhead",
+    "empDocHasSigBlock_",
+    "empDocLetterheadFor_",
+    "empDocLetterheadList_",
+    "empDocLetterheadPick_",
+    "empDocLetterheadUpsert_",
+    "empDocLetterheadView_",
+    "empDocLetterheads_",
+    "empDocLogoUrls_",
+    "getEmpDocLetterheads",
+    "saveEmpDocLetterhead",
+    "setEmpDocLetterheadLogo"
+   ],
+   "removed": [],
+   "changed": [
+    "ED",
+    "EMP",
+    "EMPDOC_HEADERS",
+    "ROSTER_CACHE_KEY",
+    "empDocCertificateHtml_",
+    "empDocRowToObj_",
+    "getEmpDocCertificate",
+    "getMyDoc",
+    "issueDoc",
+    "lookupEmployeeById_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: letterheads write through propSetBounded_; the certificate carries the letterhead",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "deleteEmpDocLetterhead",
+    "empDocCertificateHtml_",
+    "saveEmpDocLetterhead",
+    "setEmpDocLetterheadLogo"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "ED4: a logo's bytes must start like a PNG or JPEG",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "setEmpDocLetterheadLogo"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "DR1: Dept Request audit list, CRM marks and the resolved reply",
+   "added": [
+    "DR_AUDIT_DEFAULT_DAYS",
+    "DR_AUDIT_MAX_DAYS",
+    "DR_AUDIT_MAX_ROWS",
+    "DR_CRM_HEADERS",
+    "DR_CRM_SCAN_MAX",
+    "DR_CRM_TAB",
+    "drAuditFacets_",
+    "drAuditRange_",
+    "drAuditRowOf_",
+    "drAuditSpan_",
+    "drCellMs_",
+    "drCrmFold_",
+    "drCrmMarks_",
+    "drReplyThreadId_",
+    "drResolvedReplyNote_",
+    "drResolvedReplyParts_",
+    "drResolverLabel_",
+    "drSendResolvedReply_",
+    "drShiftIsoDay_",
+    "getDeptRequestAudit",
+    "getOrCreateDeptCrmChecksSheet_",
+    "setDeptRequestCrmCheck"
+   ],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "answerDeptReplyLook",
+    "confirmDeptRequestResolve",
+    "markDeptRequestResolved_",
+    "resolveDeptRequest"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: narrowed CDR reads, stamp-keyed caches, the call-data read-ahead job",
+   "added": [
+    "CDR_STAMP_CACHE_KEY",
+    "CDR_STAMP_TAIL_ROWS",
+    "CDR_STAMP_TTL",
+    "CDR_WARM_CACHE_KEY",
+    "CDR_WINDOW_CACHE_TTL",
+    "_cdrDateColMemo",
+    "_cdrStampMemo",
+    "cdrCohortNames_",
+    "cdrDailyBreakdownUncached_",
+    "cdrDataStamp_",
+    "cdrDateColIsos_",
+    "cdrDigestHex_",
+    "cdrDqeReadSpan_",
+    "cdrStampFromProbes_",
+    "cdrWindowCacheSpec_",
+    "warmCdrMetricsCache"
+   ],
+   "removed": [],
+   "changed": [
+    "AUTOMATION_ERROR_LABELS",
+    "DIGEST_ERROR_KEYS",
+    "TRIGGER_GROUPS",
+    "TRIGGER_HANDLER_JOB_KEYS",
+    "cdrDqeWindowSpan_",
+    "computeAutomationHealth_",
+    "csrTransferReadUncached_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getCsrTransferPerRepDaily_",
+    "getDashboardMetrics",
+    "getMyMetrics"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: the read-ahead job ahead of the auto-assign in the hourly group",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "TRIGGER_GROUPS"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PF1: the read-ahead warms the Stats default trend too",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "warmCdrMetricsCache"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "SP1: Spanish resolve with an outcome and a reply; auto-assign to clocked-in members",
+   "added": [
+    "SPANISH_APP_REPLY_MARKER",
+    "SPANISH_RESOLVE_NOTE_MAX",
+    "SPANISH_RESOLVE_OUTCOMES",
+    "spanishIsAppReply_",
+    "spanishMembersOnShift_",
+    "spanishReplyTargetIdx_",
+    "spanishResolveInput_",
+    "spanishResolveReplyNote_",
+    "spanishResolveReplyParts_",
+    "spanishSelfAddrs_",
+    "spanishSendResolveReply_",
+    "spanishThreadKind_",
+    "spanishWorkingMembers_"
+   ],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS",
+    "autoAssignSpanishThreadsScheduled",
+    "getOrCreateSpanishResolvedSheet_",
+    "resolveSpanishThread",
+    "resolveSpanishThreads",
+    "spanishAutoAssignCore_",
+    "spanishPendingCore_",
+    "spanishThreadLatestMs_",
+    "spanishThreadRoles_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "SP1: the note's line breaks through cnNlBr_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "spanishResolveReplyParts_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1a: source-format payor import (insPayorFromSource_) and the insurance lookup's standing note",
+   "added": [
+    "INS_PAYOR_NOTE_MAX",
+    "INS_PAYOR_NOTE_PROP",
+    "insCodeHeaderClean_",
+    "insPayorFromSource_",
+    "insPayorNote_",
+    "insPayorSlotOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_DATA_TABLES",
+    "getKbDataTables",
+    "kbDataTableSummary_",
+    "kbImportDataTable",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1a: the note write goes through propSetBounded_",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportDataTable"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-09",
+   "why": "PT1: payor tables — MedicaidPayors, per-table notes and keys, one search across payor tables",
+   "added": [
+    "insPayorNotesParse_",
+    "insPayorNotes_",
+    "insPayorTables_"
+   ],
+   "removed": [
+    "insPayorNote_"
+   ],
+   "changed": [
+    "KB_DATA_TABLES",
+    "getKbDataTables",
+    "insPayorFromSource_",
+    "kbImportDataTable",
+    "kbSuggestPayorSynonyms",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT2: UHC by state + BCBS payor tables; state sections, company, untitled columns in the converter; state-aware search",
+   "added": [
+    "insColLetter_",
+    "insEditDistance_",
+    "insPayorCatchAll_",
+    "insPayorNoteTidy_",
+    "insStateLead_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_DATA_TABLES",
+    "insCodeHeaderClean_",
+    "insPayorFromSource_",
+    "insPayorRowObj_",
+    "insPayorSlotOf_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT2: payor tables by state — the converter reads state sections, the insurer column and untitled columns",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insPayorFromSource_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT3: payor cross-checks — misfiled-state check, network-status tidy, cross-table answers",
+   "added": [
+    "INS_PAYOR_ALSO_MAX",
+    "insNetworkTidy_",
+    "insPayorCrossDiff_",
+    "insPayorNameKey_",
+    "insPlanStatesNamed_"
+   ],
+   "removed": [],
+   "changed": [
+    "insPayorFromSource_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-10",
+   "why": "PT4: Manual Mobility payor table — categories, the key below the table, value tidy",
+   "added": [
+    "INS_CODE_HEADER_FIXES",
+    "insCodeGroupSplit_",
+    "insPayorBelowKey_",
+    "insPayorValueTidy_"
+   ],
+   "removed": [],
+   "changed": [
+    "KB_DATA_TABLES",
+    "insCodeHeaderClean_",
+    "insPayorCrossDiff_",
+    "insPayorFromSource_",
+    "insPayorRowObj_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "AC1: activity counts, team activity",
+   "added": [
+    "ACTIVITY_COUNTS_KIND",
+    "ACTIVITY_COUNTS_MAX_AGE_MS",
+    "ACTIVITY_COUNTS_MAX_ENTRIES",
+    "ACTIVITY_COUNTS_MAX_PER_BLOCK",
+    "activityCountsClean_",
+    "activityCountsDecode_",
+    "activityCountsEncode_",
+    "activityDayCountsDecode_",
+    "activityDayCountsEncode_",
+    "activityDaysFor_",
+    "activityHealHeader_",
+    "activityHourly_",
+    "managerGetTeamActivity",
+    "recordActivityCounts"
+   ],
+   "removed": [],
+   "changed": [
+    "ACTIVITY_LOG_HEADERS",
+    "ACTIVITY_SUMMARY_HEADERS",
+    "ACTIVITY_SUMMARY_TEXT_IDX",
+    "activityCondense_",
+    "activityDayView_",
+    "activityLogAppend_",
+    "activityLogCondenseAndPurge_",
+    "managerGetDayActivity",
+    "recordPresence"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "AC1: one cap, at the block's sum",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "activityCountsClean_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "M1: outbound + adjusted",
+   "added": [
+    "METRICS_INTAKE_TIMED_MAX_SEC",
+    "METRICS_INTAKE_TIMED_MIN_SEC",
+    "cdrOutboundAggregate_",
+    "cdrOutboundColumns_",
+    "getCdrOutboundPerRep_",
+    "metricsAdjusted_",
+    "metricsOutboundOf_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "cnCountIntakeNotesResult_",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-11",
+   "why": "M1: outbound + adjusted",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getMyMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -3846,6 +4377,26 @@
    "kind": "const",
    "sha": "9c7cc886b0ad0d18"
   },
+  "ACTIVITY_COUNTS_KIND": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4e7b0eea74f31872"
+  },
+  "ACTIVITY_COUNTS_MAX_AGE_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5e69bc022ca4e8c7"
+  },
+  "ACTIVITY_COUNTS_MAX_ENTRIES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "afd68c0a7f921a89"
+  },
+  "ACTIVITY_COUNTS_MAX_PER_BLOCK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e6755a685f081ca9"
+  },
   "ACTIVITY_LOG_DAYS": {
    "file": "00_config.js",
    "kind": "const",
@@ -3854,7 +4405,7 @@
   "ACTIVITY_LOG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e505c21fd4c7cd11"
+   "sha": "45efd2d405ba4fdf"
   },
   "ACTIVITY_LOG_PURGE_MAX_PER_RUN": {
    "file": "00_config.js",
@@ -3874,7 +4425,7 @@
   "ACTIVITY_SUMMARY_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a99621b3feebffc5"
+   "sha": "01f9bc8dcdcaeec1"
   },
   "ACTIVITY_SUMMARY_TAB": {
    "file": "00_config.js",
@@ -3884,7 +4435,7 @@
   "ACTIVITY_SUMMARY_TEXT_IDX": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "f129a7ba9fe51ba0"
+   "sha": "e0f1aad4647d6a01"
   },
   "ADJUST_MAX_SHIFT_HOURS": {
    "file": "00_config.js",
@@ -3924,7 +4475,7 @@
   "AUTOMATION_ERROR_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "d1a43a7bc1326b8a"
+   "sha": "7582710ead0e7fba"
   },
   "AUTOMATION_ERROR_PROP": {
    "file": "00_config.js",
@@ -4041,6 +4592,21 @@
    "kind": "const",
    "sha": "c0fb04450cddb2d8"
   },
+  "CDR_STAMP_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "3582afdc9eabdc1b"
+  },
+  "CDR_STAMP_TAIL_ROWS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "1f3f441557d74991"
+  },
+  "CDR_STAMP_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "3eb1a5591d4f11ef"
+  },
   "CDR_STANDARDS_CACHE_KEY_": {
    "file": "40_metrics.js",
    "kind": "var",
@@ -4050,6 +4616,16 @@
    "file": "40_metrics.js",
    "kind": "var",
    "sha": "7cec94a50b2228c2"
+  },
+  "CDR_WARM_CACHE_KEY": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "c37f0dd1fe199360"
+  },
+  "CDR_WINDOW_CACHE_TTL": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "ecdf1ba5e33d85d1"
   },
   "CLIENT_ERRORS_TAB": {
    "file": "00_config.js",
@@ -4419,7 +4995,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5e8cc8f32dc0118a"
+   "sha": "cc31b56bc02e2e95"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -4509,7 +5085,7 @@
   "DIGEST_DELIVERY_LABELS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "aba6b56d0c5dc866"
+   "sha": "ff6536d2023eb212"
   },
   "DIGEST_DELIVERY_REASON_MAX": {
    "file": "00_config.js",
@@ -4539,7 +5115,7 @@
   "DIGEST_ERROR_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "29bca763bf685464"
+   "sha": "c1cee1774ae3829c"
   },
   "DIGEST_LAST_RUN_PROP": {
    "file": "00_config.js",
@@ -4575,6 +5151,36 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "72e0ebdcd5e1fb58"
+  },
+  "DR_AUDIT_DEFAULT_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aae9ce2f4acbf78"
+  },
+  "DR_AUDIT_MAX_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "725340e4927dde12"
+  },
+  "DR_AUDIT_MAX_ROWS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4f335355eecfe5f3"
+  },
+  "DR_CRM_HEADERS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3dabfecc5e5a5a5f"
+  },
+  "DR_CRM_SCAN_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "faa4aa2aeb6b3422"
+  },
+  "DR_CRM_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4c86827942ed7ef8"
   },
   "DR_HEADERS": {
    "file": "00_config.js",
@@ -4679,12 +5285,12 @@
   "ED": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "76193755be033096"
+   "sha": "b1d44cc670ab5464"
   },
   "EDS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "f378680227e3a122"
+   "sha": "02fb3fe2b9bdddfa"
   },
   "EDT": {
    "file": "00_config.js",
@@ -4694,7 +5300,7 @@
   "EMP": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "5faf10242c45115b"
+   "sha": "fc70627f6d27dbec"
   },
   "EMPDOC_ACK_TEXT": {
    "file": "00_config.js",
@@ -4711,6 +5317,16 @@
    "kind": "const",
    "sha": "0e9567ddd1ce886b"
   },
+  "EMPDOC_COPY_EXTRA_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e2d5f85d5d0afb7b"
+  },
+  "EMPDOC_COPY_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "830acdece0549369"
+  },
   "EMPDOC_FIELD_CAP": {
    "file": "00_config.js",
    "kind": "const",
@@ -4724,7 +5340,7 @@
   "EMPDOC_FIELD_TYPES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "e0f01189d8b6b629"
+   "sha": "6590e2c7c0c06785"
   },
   "EMPDOC_FILES_TAB": {
    "file": "00_config.js",
@@ -4739,7 +5355,47 @@
   "EMPDOC_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "20a1f378f149417f"
+   "sha": "41ca5550bfc9cd10"
+  },
+  "EMPDOC_INITIALS_MAX_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ee272c1d87e7e4fb"
+  },
+  "EMPDOC_LETTERHEADS_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "abbb8b5c65ef906c"
+  },
+  "EMPDOC_LETTERHEAD_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "5b8e652ea6b8ceee"
+  },
+  "EMPDOC_LETTERHEAD_SEED": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "e4f8918a1328e054"
+  },
+  "EMPDOC_LOGO_KEY_RE": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "91e8062bf105b085"
+  },
+  "EMPDOC_LOGO_MAX_BYTES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a1acdb2c0019f3cc"
+  },
+  "EMPDOC_LOGO_TAB": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54b716f360abe541"
+  },
+  "EMPDOC_LOGO_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "99e3f38aa41a385b"
   },
   "EMPDOC_PDF_KEY_RE": {
    "file": "00_config.js",
@@ -4766,10 +5422,15 @@
    "kind": "const",
    "sha": "9ab5765a17a19207"
   },
+  "EMPDOC_SIGN_FIELD_TYPES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "eb78fb35a19596cd"
+  },
   "EMPDOC_SIG_HEADERS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "24f1ba1ff32bb27f"
+   "sha": "8d243352913d7be2"
   },
   "EMPDOC_SIG_MAX_CHARS": {
    "file": "00_config.js",
@@ -4824,7 +5485,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "c50415b97f5fad3c"
+   "sha": "de05bf4358d4c808"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -4871,15 +5532,35 @@
    "kind": "const",
    "sha": "459ffe49b2aac1bc"
   },
+  "INS_CODE_HEADER_FIXES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4b5ae81768e56e67"
+  },
   "INS_PAYOR_ALIAS_FAMILIES": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "eb0b9cb41364fb75"
   },
+  "INS_PAYOR_ALSO_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2c4a25585535fe43"
+  },
   "INS_PAYOR_MAX_ROWS": {
    "file": "00_config.js",
    "kind": "const",
    "sha": "cf86da545f2aca2d"
+  },
+  "INS_PAYOR_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1dd4e9fc58869c2a"
+  },
+  "INS_PAYOR_NOTE_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "72e7db785e9d3ad4"
   },
   "INS_PAYOR_TAB": {
    "file": "00_config.js",
@@ -4900,6 +5581,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "7a6bc47407650baa"
+  },
+  "INTAKE_ADDR_CACHE_SECONDS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "1781d5d7a813ba0d"
+  },
+  "INTAKE_ADDR_CHECK_CAP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f112f305fbdd2b15"
+  },
+  "INTAKE_ADDR_CHECK_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "f1b643ae25876b13"
   },
   "INTAKE_EMAIL_IMG_WIDTH": {
    "file": "60_intake.js",
@@ -4944,7 +5640,7 @@
   "INTAKE_PAP_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "9d4e1f8b721cf386"
+   "sha": "c572ca6f29e230cb"
   },
   "INTAKE_PMD_LAYOUT": {
    "file": "00_config.js",
@@ -4954,7 +5650,7 @@
   "INTAKE_PMD_Q_EN": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "fd5277eb8ea0fd4b"
+   "sha": "d49e1d36a42816ef"
   },
   "INTAKE_PPD_EMAIL_COMBOS": {
    "file": "00_config.js",
@@ -5179,7 +5875,7 @@
   "KB_DATA_TABLES": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "b180d3d2fba911f6"
+   "sha": "cea6ad202ec23499"
   },
   "KB_DATA_TABLE_MAX_CELL_CHARS": {
    "file": "00_config.js",
@@ -5851,6 +6547,16 @@
    "kind": "const",
    "sha": "af54be9a7d09c7f0"
   },
+  "METRICS_INTAKE_TIMED_MAX_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "78063741410b0a79"
+  },
+  "METRICS_INTAKE_TIMED_MIN_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dc4640ccad5cd098"
+  },
   "MONTH_NAMES": {
    "file": "00_config.js",
    "kind": "const",
@@ -5941,6 +6647,16 @@
    "kind": "const",
    "sha": "34002a38529dc907"
   },
+  "PAY_WEEK_MONTHLY_MIN_DAYS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "54da5dec9afe17d3"
+  },
+  "PAY_WEEK_REMINDER_HOUR": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "baa4ada82c9d768b"
+  },
   "PENDING_TASKS_CACHE_PREFIX": {
    "file": "00_config.js",
    "kind": "var",
@@ -5959,7 +6675,7 @@
   "PENDING_TASKS_KINDS": {
    "file": "00_config.js",
    "kind": "var",
-   "sha": "69524cc92453c118"
+   "sha": "447ee4d043a5da01"
   },
   "PRESENCE_CACHE_PREFIX": {
    "file": "00_config.js",
@@ -6329,7 +7045,7 @@
   "ROSTER_CACHE_KEY": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "143b765761ddc7b8"
+   "sha": "21570351fa0e9c2d"
   },
   "ROSTER_CACHE_TTL": {
    "file": "00_config.js",
@@ -6431,6 +7147,11 @@
    "kind": "const",
    "sha": "1a64e9138d22e365"
   },
+  "SPANISH_APP_REPLY_MARKER": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "87a99c0929a3ff7f"
+  },
   "SPANISH_BULK_RESOLVE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -6475,6 +7196,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "aeb6a044c3d3910e"
+  },
+  "SPANISH_RESOLVE_NOTE_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8aef44258fd986d9"
+  },
+  "SPANISH_RESOLVE_OUTCOMES": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "d75f1a266537fd70"
   },
   "SPANISH_STATE_SPAN_DAYS": {
    "file": "00_config.js",
@@ -6674,12 +7405,12 @@
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "7c698612c32d8487"
+   "sha": "3ee0a13c1791e26e"
   },
   "TRIGGER_HANDLER_JOB_KEYS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "976df472abb4acab"
+   "sha": "5dfe51fc4007ef2d"
   },
   "TS_ARCHIVE_REACH_CACHE_KEY": {
    "file": "00_config.js",
@@ -6791,6 +7522,11 @@
    "kind": "var",
    "sha": "6b236581a4684097"
   },
+  "_cdrDateColMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "760adfc01aa77ea9"
+  },
   "_cdrHolidaysMemo": {
    "file": "00_config.js",
    "kind": "var",
@@ -6810,6 +7546,11 @@
    "file": "40_metrics.js",
    "kind": "var",
    "sha": "361f01ee3f6c0616"
+  },
+  "_cdrStampMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "5ce0ad68ac9cf42a"
   },
   "_cdrStandardsMemo": {
    "file": "00_config.js",
@@ -7014,7 +7755,7 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "54466f7566f0f697"
+   "sha": "c9ac50676df01edd"
   },
   "activityBlocksDecode_": {
    "file": "20_timeclock.js",
@@ -7029,22 +7770,62 @@
   "activityCondense_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "20d6f5af281ea09a"
+   "sha": "e0dd8c784568076d"
+  },
+  "activityCountsClean_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a23fb739d30897d7"
+  },
+  "activityCountsDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "955df3545171cbe3"
+  },
+  "activityCountsEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bd087e623fa5213c"
+  },
+  "activityDayCountsDecode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "2d1be14fcd60c671"
+  },
+  "activityDayCountsEncode_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9e24ed5af29487e3"
   },
   "activityDayView_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "03292fac00a86c3a"
+   "sha": "009df7b6fea94ee8"
+  },
+  "activityDaysFor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4951951cc1bca537"
+  },
+  "activityHealHeader_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "4c60390b619412a0"
+  },
+  "activityHourly_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9ec41a2d3f566525"
   },
   "activityLogAppend_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ddb5653e1d3ad4cd"
+   "sha": "9e3f53e33a848503"
   },
   "activityLogCondenseAndPurge_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c81c48ab995f5462"
+   "sha": "9449b892e525a3a2"
   },
   "activityLowerBound_": {
    "file": "20_timeclock.js",
@@ -7164,7 +7945,7 @@
   "answerDeptReplyLook": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "ce09a7204b31e2be"
+   "sha": "8edc27ea36e21ad2"
   },
   "appSendMail_": {
    "file": "10_core.js",
@@ -7264,7 +8045,7 @@
   "autoAssignSpanishThreadsScheduled": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "f4c4d69a159fb8b1"
+   "sha": "4993b427bc6a2ee2"
   },
   "autoTagRulesNormalize_": {
    "file": "10_core.js",
@@ -7459,7 +8240,7 @@
   "buildCalendarForEmployee_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "0b6ac7a3c6cb3aff"
+   "sha": "e28174e7e8ca623e"
   },
   "buildCallNoteEmailHtml_": {
    "file": "30_callnotes.js",
@@ -7606,15 +8387,45 @@
    "kind": "function",
    "sha": "73be1c0b23555f9f"
   },
+  "cdrCohortNames_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4758faafc976b589"
+  },
+  "cdrDailyBreakdownUncached_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "0b7e063b1d88ec94"
+  },
   "cdrDashboardDept_": {
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "cb4c6f541e38c6e1"
   },
+  "cdrDataStamp_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "11283761e9f4d929"
+  },
+  "cdrDateColIsos_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "af774be34786b8f9"
+  },
+  "cdrDigestHex_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "6fe68b9eaacef9bb"
+  },
+  "cdrDqeReadSpan_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "01ed64b75f2e5a4c"
+  },
   "cdrDqeWindowSpan_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e156543b35bc3378"
+   "sha": "19d6ae1b337012f6"
   },
   "cdrExcludeSet_": {
    "file": "40_metrics.js",
@@ -7646,6 +8457,16 @@
    "kind": "function",
    "sha": "600d2574fda9dafa"
   },
+  "cdrOutboundAggregate_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e89dae6cfb239b50"
+  },
+  "cdrOutboundColumns_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "7c51f38099ac5d99"
+  },
   "cdrParseDateRanges_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -7671,6 +8492,11 @@
    "kind": "function",
    "sha": "c6d9f05b3cfd5420"
   },
+  "cdrStampFromProbes_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "3c5ce536d8876e0b"
+  },
   "cdrStandardProbe_": {
    "file": "10_core.js",
    "kind": "function",
@@ -7680,6 +8506,16 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "82f001cfb516c7f2"
+  },
+  "cdrWindowCacheSpec_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e0873bd6bce962c6"
+  },
+  "checkIntakeAddress": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "45f650d632dd70a7"
   },
   "checkOopEligibility": {
    "file": "70_kb.js",
@@ -7769,7 +8605,7 @@
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "820cde9db9ae7cf9"
+   "sha": "8e76d58edd30c789"
   },
   "cnCountNotesResult_": {
    "file": "30_callnotes.js",
@@ -8084,7 +8920,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "5efe2ba4b8eb11e8"
+   "sha": "00c08b23f545a438"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -8104,7 +8940,7 @@
   "confirmDeptRequestResolve": {
    "file": "61_forms.js",
    "kind": "function",
-   "sha": "bd5a26f2cd4f3f41"
+   "sha": "8aadff52d2b869f0"
   },
   "contiguousRowRunsDesc_": {
    "file": "10_core.js",
@@ -8169,7 +9005,7 @@
   "csrTransferReadUncached_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b786d7e17afd4d0e"
+   "sha": "ee5d18cffba22de6"
   },
   "dashLayoutCompact_": {
    "file": "20_timeclock.js",
@@ -8235,6 +9071,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "18f87cb855a75b34"
+  },
+  "deleteEmpDocLetterhead": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "b64d900048c9d0e3"
   },
   "deleteEmpDocTemplate": {
    "file": "81_empdocs.js",
@@ -8321,6 +9162,26 @@
    "kind": "function",
    "sha": "3415a7b9d04f9555"
   },
+  "drAuditFacets_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "52c62180f0a0e915"
+  },
+  "drAuditRange_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "a53a20893c007431"
+  },
+  "drAuditRowOf_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ce656874ed4fb49a"
+  },
+  "drAuditSpan_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "3a30207c63d090f1"
+  },
   "drBumpCacheGen_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -8340,6 +9201,21 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "589e7815f209dd04"
+  },
+  "drCellMs_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "4c8d85e71f5a9fb8"
+  },
+  "drCrmFold_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "0c896e923690c57e"
+  },
+  "drCrmMarks_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "d9943a3979dff2a6"
   },
   "drDeptStats_": {
    "file": "50_deptrequests.js",
@@ -8436,6 +9312,11 @@
    "kind": "function",
    "sha": "8767aafcfccb2cfa"
   },
+  "drReplyThreadId_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "6fd835f25c9813de"
+  },
   "drReplyVerdictFull_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -8456,15 +9337,40 @@
    "kind": "function",
    "sha": "ae76c94ddde876a3"
   },
+  "drResolvedReplyNote_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "4f6fadae80360503"
+  },
+  "drResolvedReplyParts_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "56e0afc61bc68cfb"
+  },
   "drResolvedVia_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "eb9c7ae4eb1943d5"
   },
+  "drResolverLabel_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "679c9dde5dda0fd9"
+  },
+  "drSendResolvedReply_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "80e9455911506746"
+  },
   "drSharedRequestIds_": {
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "bba9b4dbad18812f"
+  },
+  "drShiftIsoDay_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "9fcff499ed663713"
   },
   "drSlaAdminView_": {
    "file": "50_deptrequests.js",
@@ -8541,6 +9447,11 @@
    "kind": "function",
    "sha": "fac7039c5ea3dec6"
   },
+  "emailEmpDocCopy": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6e4e61db9b7208de"
+  },
   "emailFromCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -8559,7 +9470,7 @@
   "empDocCertificateHtml_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "2294574dde720e58"
+   "sha": "815c4f76ce760eb5"
   },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
@@ -8570,6 +9481,76 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "38b8379999a27a42"
+  },
+  "empDocCopyAuditNote_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "604459e5505cddd4"
+  },
+  "empDocCopyEmailParts_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "fde574ee0d7ea613"
+  },
+  "empDocCopyFileName_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "65bcf69b6d00d214"
+  },
+  "empDocCopyRecipients_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "5b3229bd854eecdb"
+  },
+  "empDocHasSigBlock_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "11a579835170fd04"
+  },
+  "empDocInitialsCheck_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "c02fadb7ee48c3bd"
+  },
+  "empDocLatestSigRow_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "d5bcbd50cb94c73c"
+  },
+  "empDocLetterheadFor_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6cb4de16569bc383"
+  },
+  "empDocLetterheadList_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "cb0237532845c2cd"
+  },
+  "empDocLetterheadPick_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "edafdb3041aa56f4"
+  },
+  "empDocLetterheadUpsert_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "92511dbcb4422fcb"
+  },
+  "empDocLetterheadView_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "e1eb8b6edaa61d6d"
+  },
+  "empDocLetterheads_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "c0f25ba83b42f3ec"
+  },
+  "empDocLogoUrls_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "4128f68e9ba8e9a9"
   },
   "empDocNeedsAction_": {
    "file": "20_timeclock.js",
@@ -8599,12 +9580,22 @@
   "empDocPdfItem_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "56bba6d5f4376fc6"
+   "sha": "891083727fa44b78"
   },
   "empDocPdfLine_": {
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "db686ebce1fee0dd"
+  },
+  "empDocPdfPageCount_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1ab9103883950a54"
+  },
+  "empDocPdfPagesOf_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "9d7e3e772c610f66"
   },
   "empDocPdfStoreCallerLocked_": {
    "file": "81_empdocs.js",
@@ -8619,7 +9610,7 @@
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7f3ed0939932435d"
+   "sha": "e77c36a1c3b2f4e3"
   },
   "empDocSha256Hex_": {
    "file": "20_timeclock.js",
@@ -8629,7 +9620,7 @@
   "empDocSignatureHash_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "d1a76f04e5a9277d"
+   "sha": "65ede354d74b559b"
   },
   "empDocTemplateRowToObj_": {
    "file": "20_timeclock.js",
@@ -8644,17 +9635,17 @@
   "empDocValidateFields_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "2e964e2717c3d59d"
+   "sha": "66adbbbf5dc22c6d"
   },
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "8492509e4234866c"
+   "sha": "c0d015a63f25a591"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "93365bb830d6aa3f"
+   "sha": "7ca0a4efdfc1bf23"
   },
   "empDocsOverdueAll_": {
    "file": "20_timeclock.js",
@@ -9049,7 +10040,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "43ba56ce1f8088ea"
+   "sha": "275171ac1544bbdd"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -9059,7 +10050,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "96cc380dd76e688f"
+   "sha": "7ad88d18f86f5d2d"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -9075,6 +10066,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "554cf5e0d152c3d8"
+  },
+  "getCdrOutboundPerRep_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4c6153b39c73ec5e"
   },
   "getCdrQueueGroups_": {
    "file": "40_metrics.js",
@@ -9114,7 +10110,7 @@
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "74d4f959133ad330"
+   "sha": "862be30580429762"
   },
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
@@ -9124,7 +10120,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "9e2312012b701b22"
+   "sha": "5a377c403edb7863"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -9145,6 +10141,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "190f82f783a5ba7d"
+  },
+  "getDeptRequestAudit": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "49a31d47a9085eb9"
   },
   "getDeptRequestDetail": {
    "file": "50_deptrequests.js",
@@ -9204,7 +10205,12 @@
   "getEmpDocCertificate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "d5c24b86b84b804f"
+   "sha": "0d37a0c750eebc13"
+  },
+  "getEmpDocLetterheads": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "4cd6877bd63d3d6e"
   },
   "getEmpDocPdf": {
    "file": "81_empdocs.js",
@@ -9364,7 +10370,7 @@
   "getKbDataTables": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6b3c262dbf877637"
+   "sha": "232d41be7172529a"
   },
   "getKbImages": {
    "file": "70_kb.js",
@@ -9454,7 +10460,7 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "a8e4a823e38f8f83"
+   "sha": "f4ca212d3ec8d52b"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
@@ -9464,12 +10470,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e77c728c92341337"
+   "sha": "5f3f107d03387f55"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b495b94c1cf01bad"
+   "sha": "c18de6e6a4ff72aa"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -9484,7 +10490,7 @@
   "getMyPendingTasks": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "fa575567132d4fcc"
+   "sha": "023830d7f9b4f4ed"
   },
   "getMyPinnedCallNotes": {
    "file": "30_callnotes.js",
@@ -9585,6 +10591,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "c55ec5b69434238d"
+  },
+  "getOrCreateDeptCrmChecksSheet_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "395a68ed9caa82ba"
   },
   "getOrCreateDeptReplyReviewsSheet_": {
    "file": "50_deptrequests.js",
@@ -9724,7 +10735,7 @@
   "getOrCreateSpanishResolvedSheet_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "e4cc4b95e61f58a3"
+   "sha": "8878913755f0ec8b"
   },
   "getOrCreateTimeOffSheet_": {
    "file": "20_timeclock.js",
@@ -9894,7 +10905,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "3495eb859042681f"
+   "sha": "5023ef5edce03dcf"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -10011,35 +11022,125 @@
    "kind": "function",
    "sha": "5823beeb234155f1"
   },
+  "insCodeGroupSplit_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "50c7f460269b0206"
+  },
+  "insCodeHeaderClean_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ef05942df5bf300e"
+  },
+  "insColLetter_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7fee6eb42489ab4e"
+  },
+  "insEditDistance_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "177959f9200f704a"
+  },
   "insNameCodeDetail_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "f97ae732a91cf1d6"
+  },
+  "insNetworkTidy_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "2265f4d1a51624e2"
   },
   "insPayorAliasSuggest_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "0dec995f961d2f17"
   },
+  "insPayorBelowKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "e5cf482163fbb413"
+  },
+  "insPayorCatchAll_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a79c75746f310d2b"
+  },
+  "insPayorCrossDiff_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "f4205b0e0546e9b1"
+  },
+  "insPayorFromSource_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "c0e4573a214edbef"
+  },
   "insPayorMatch_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "d6c86f97464b0587"
+  },
+  "insPayorNameKey_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a5502cb2bb7bdd8a"
   },
   "insPayorNameStates_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "c4e6063149f42dcc"
   },
+  "insPayorNoteTidy_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "baf922b79a311933"
+  },
+  "insPayorNotesParse_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "cc79624ecca34f4d"
+  },
+  "insPayorNotes_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "ba154ed8949fc881"
+  },
   "insPayorRowObj_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "4f06af0bedc89ad6"
+   "sha": "1416f4d80126ee0d"
   },
   "insPayorScore_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "290eae6fc7f1aa39"
+  },
+  "insPayorSlotOf_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "35f3e7c78f894e87"
+  },
+  "insPayorTables_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "7cc53031cc2e8565"
+  },
+  "insPayorValueTidy_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "37bcd12370740b18"
+  },
+  "insPlanStatesNamed_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "97bf485a78c78a0b"
+  },
+  "insStateLead_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "9a349941dcf46d7a"
   },
   "insStatesIn_": {
    "file": "70_kb.js",
@@ -10060,6 +11161,16 @@
    "file": "60_intake.js",
    "kind": "function",
    "sha": "63c60babe95c2d87"
+  },
+  "intakeAddrCheckReserve_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "f1748a5507fdbd3c"
+  },
+  "intakeAddrVerdict_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "7ae4f703d79126b5"
   },
   "intakeAmendBannerHtml_": {
    "file": "60_intake.js",
@@ -10409,7 +11520,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "13aea12eeaa679ba"
+   "sha": "ec024abbdb31bd26"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -10529,7 +11640,7 @@
   "kbDataTableSummary_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "aef3e84efd4d5a0d"
+   "sha": "1cd92393dfe59ace"
   },
   "kbDeleteComment": {
    "file": "70_kb.js",
@@ -10634,7 +11745,7 @@
   "kbGeocodeOne_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "81fe7aac06a1f2e1"
+   "sha": "a93d280d19c09b09"
   },
   "kbGeocodePartialMsg_": {
    "file": "70_kb.js",
@@ -10744,7 +11855,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "97153e10edcd13b7"
+   "sha": "111caeb335a7fdb8"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -11149,7 +12260,7 @@
   "kbSuggestPayorSynonyms": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "f1bd49548a747ec7"
+   "sha": "0a3b8c959280a058"
   },
   "kbSynonymGroups_": {
    "file": "70_kb.js",
@@ -11229,7 +12340,7 @@
   "lookupEmployeeById_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "23252f4eaaa34c97"
+   "sha": "68179a933701fe65"
   },
   "mailBccAll_": {
    "file": "10_core.js",
@@ -11289,7 +12400,7 @@
   "managerGetDayActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "f9fa108ab87b77c8"
+   "sha": "74ed23dc1b6944da"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -11310,6 +12421,11 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "16cf5302bbba3e66"
+  },
+  "managerGetTeamActivity": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "ea56954174b9ff21"
   },
   "managerGetTrainingQueue": {
    "file": "80_training.js",
@@ -11359,7 +12475,7 @@
   "markDeptRequestResolved_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "f87476f1687696dc"
+   "sha": "e0ebb43f1c0d7a8f"
   },
   "markTrainingComplete": {
    "file": "80_training.js",
@@ -11381,10 +12497,20 @@
    "kind": "function",
    "sha": "0e8c12808f65a364"
   },
+  "metricsAdjusted_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "be6557fd31180209"
+  },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "71402de002bf7cef"
+  },
+  "metricsOutboundOf_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "af917c46be77e00e"
   },
   "metricsParsePercent_": {
    "file": "40_metrics.js",
@@ -11735,6 +12861,31 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "decaf510e241fbda"
+  },
+  "payWeekDateText_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "0f598521479883cc"
+  },
+  "payWeekEmail_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "65146aad0421489c"
+  },
+  "payWeekForEmp_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "bb66451ce8700ae5"
+  },
+  "payWeekReminder_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "eb252522b95c204e"
+  },
+  "payWeekTask_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "25fc670d8c70f8ab"
   },
   "payrollSubjectId_": {
    "file": "20_timeclock.js",
@@ -12386,6 +13537,11 @@
    "kind": "function",
    "sha": "65b0865ac55ba271"
   },
+  "recordActivityCounts": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a44c19c6817f964d"
+  },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
    "kind": "function",
@@ -12399,7 +13555,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "d62347fbaf382f9e"
+   "sha": "c256c31d7699739c"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -12504,7 +13660,7 @@
   "resolveDeptRequest": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "8b23c87c7dd69527"
+   "sha": "a813264facea1949"
   },
   "resolveEmailRecipients_": {
    "file": "30_callnotes.js",
@@ -12519,12 +13675,12 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "db059a4f31330a17"
+   "sha": "5e5a1c9f84789cf8"
   },
   "resolveSpanishThreads": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "38cb3fca9f152970"
+   "sha": "1cec8fd3534d8ffd"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -12671,6 +13827,11 @@
    "kind": "function",
    "sha": "d67e37af1a0fa42b"
   },
+  "saveEmpDocLetterhead": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "184e809e02c2406f"
+  },
   "saveEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
@@ -12814,7 +13975,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8e200514995276f4"
+   "sha": "7f7a204de55fa577"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",
@@ -12916,6 +14077,11 @@
    "kind": "function",
    "sha": "4357d276cbf865ee"
   },
+  "sendPayWeekReminders": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b0cf6e77f042e1a7"
+  },
   "sendRepEmail_": {
    "file": "10_core.js",
    "kind": "function",
@@ -12986,6 +14152,16 @@
    "kind": "function",
    "sha": "7581016b92e0bf0e"
   },
+  "setDeptRequestCrmCheck": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "ce634f25ce153782"
+  },
+  "setEmpDocLetterheadLogo": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "589fb908b85de98a"
+  },
   "setOneOnOneCadence": {
    "file": "82_coaching.js",
    "kind": "function",
@@ -13054,7 +14230,7 @@
   "spanishAutoAssignCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "fdceb4c15073a47d"
+   "sha": "3d24efe9d1471df3"
   },
   "spanishAutoAssignPick_": {
    "file": "51_spanish.js",
@@ -13111,6 +14287,11 @@
    "kind": "function",
    "sha": "37329c00643864ce"
   },
+  "spanishIsAppReply_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "11e7475e99e8002f"
+  },
   "spanishIsCourtesyOnly_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -13130,6 +14311,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "63e937f7b25f7eef"
+  },
+  "spanishMembersOnShift_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4aecb446c7b5938e"
   },
   "spanishMyOpenClaims_": {
    "file": "51_spanish.js",
@@ -13154,7 +14340,7 @@
   "spanishPendingCore_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "ea5417eeb8dfd38d"
+   "sha": "687c1ee25e72cba9"
   },
   "spanishPendingEscalatedGet_": {
    "file": "51_spanish.js",
@@ -13181,15 +14367,45 @@
    "kind": "function",
    "sha": "76c72f71fda5da24"
   },
+  "spanishReplyTargetIdx_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4ca96868325cfd27"
+  },
   "spanishResolveCovered_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "65ddcee73afc1efa"
   },
+  "spanishResolveInput_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "bdc5faedba822174"
+  },
+  "spanishResolveReplyNote_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "8939e7028d0797b3"
+  },
+  "spanishResolveReplyParts_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f865743127d81759"
+  },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "7f80063af231a396"
+  },
+  "spanishSelfAddrs_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "ebcece1a4cd7c08d"
+  },
+  "spanishSendResolveReply_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "4f26f2e03e0782ac"
   },
   "spanishSenderDeptIndexFrom_": {
    "file": "51_spanish.js",
@@ -13231,15 +14447,20 @@
    "kind": "function",
    "sha": "86903343ba36728f"
   },
+  "spanishThreadKind_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "c4ba6ad9d11c2a98"
+  },
   "spanishThreadLatestMs_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "0759a57f0df1cb76"
+   "sha": "8cdcf43dc889ce9f"
   },
   "spanishThreadRoles_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "b2bee0f2cca166a3"
+   "sha": "d38687f90a118361"
   },
   "spanishVmCaller_": {
    "file": "51_spanish.js",
@@ -13280,6 +14501,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "5de83c5b4a6b5abe"
+  },
+  "spanishWorkingMembers_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "218fe8e4e4e22f04"
   },
   "splitDayRepairPlan_": {
    "file": "20_timeclock.js",
@@ -13369,7 +14595,7 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "13cdff15fc8e3ff8"
+   "sha": "ae3df307839451f9"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",
@@ -13654,7 +14880,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "3abfdc88d411a9ca"
+   "sha": "5c72be2813a94c9c"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",
@@ -13695,6 +14921,11 @@
    "file": "82_coaching.js",
    "kind": "function",
    "sha": "3785814272ebec0b"
+  },
+  "warmCdrMetricsCache": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "e4719b5ba25e9eae"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

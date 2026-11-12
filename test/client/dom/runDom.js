@@ -1141,6 +1141,66 @@ test('T-2 contrast: no deep-link + unseen → auto-start IS scheduled', () => {
   assert.strictEqual(scheduled, 1, 'no deep-link → auto-start scheduled');
 });
 
+test('T1 DOM (operator 2026-11-11): Settings → Replay the tour starts the FULL tour (the welcome first, "Step 1 of N"), and ending it hands focus back to the gear — not to the hidden button that was pressed — and stamps TOUR_VERSION', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  h.run.drain();
+  assert.strictEqual(h.read('TOUR_ACTIVE'), false, 'nothing owed — no auto-start');
+  // An older stored version from here on, so the end's stamp is observable.
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  const gear = h.$('.sidebar [data-settings-toggle]');
+  gear.getBoundingClientRect = () => ({ width: 90, height: 28, top: 800, left: 20, bottom: 828, right: 110 });
+  h.window.settingsToggle_(gear);   // jsdom runs no inline onclick — call what the markup names
+  const btn = h.$('#settings-panel [data-tour-replay]');
+  assert.ok(btn && /Replay the tour/.test(btn.textContent) && btn.getAttribute('onclick') === 'settingsReplayTour_()', 'the Settings panel carries the replay button');
+  btn.focus();
+  h.window.settingsReplayTour_();
+  assert.ok(h.$('#settings-panel').hasAttribute('hidden'), 'the panel closes');
+  assert.strictEqual(h.read('TOUR_ACTIVE'), true, 'the tour runs');
+  assert.strictEqual(h.read('TOUR_MODE'), 'full');
+  const ids = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE').map((s) => s.id)));
+  assert.strictEqual(ids[0], 'welcome');
+  ['manage', 'admin', 'team-notes', 'qa', 'spanish'].forEach((id) => assert.ok(ids.indexOf(id) < 0, 'a rep is not shown ' + id));
+  h.flushTimers();
+  assert.ok(/^Step 1 of \d+$/.test(h.$('#tour-pop .tour-kicker').textContent.trim()), h.$('#tour-pop .tour-kicker').textContent);
+  h.document.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.strictEqual(h.read('TOUR_ACTIVE'), false, 'Escape ends it');
+  assert.strictEqual(h.document.activeElement, gear, 'focus returns to the gear');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'));
+});
+
+test('T1 DOM: someone who finished version 1 gets the what\'s-new run on load — the what\'s-new card first, "What’s new · 1 of N", only newer steps; a fresh browser gets the full tour; a manager\'s run carries the manager steps and View-as CSR drops them', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  h.bootShell({ isManager: true });
+  h.flushTimers();   // the shell boot + tourMaybeAutoStart_'s 600ms beat
+  h.flushTimers();   // the opening card's paint
+  assert.strictEqual(h.read('TOUR_ACTIVE'), true, 'the what\'s-new run auto-started');
+  assert.strictEqual(h.read('TOUR_MODE'), 'new');
+  const steps = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE')));
+  assert.strictEqual(steps[0].id, 'whatsnew');
+  assert.ok(steps.slice(1).every((s) => s.since > 1), 'only steps newer than version 1');
+  assert.ok(steps.some((s) => s.id === 'manage'), 'a manager\'s run has the Manage step');
+  assert.ok(/^What’s new · 1 of \d+$/.test(h.$('#tour-pop .tour-kicker').textContent.trim()), h.$('#tour-pop .tour-kicker').textContent);
+  h.$('#tour-pop [data-tour="skip"]').click();
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'), 'skipping still stamps — it is not offered again');
+  // View-as CSR: the same gate the tab bar uses.
+  h.read('empState').isAdmin = true;
+  h.window.viewAsSet_('csr');
+  h.window.tourStart('full');
+  const csr = JSON.parse(JSON.stringify(h.read('TOUR_VISIBLE').map((s) => s.id)));
+  assert.ok(csr.indexOf('manage') < 0 && csr.indexOf('team-notes') < 0, 'previewing as a CSR drops the manager steps');
+  h.window.tourEnd_(false);
+  const h2 = boot();
+  h2.window.localStorage.removeItem('umsTour');
+  h2.bootShell({ isManager: false });
+  h2.flushTimers();
+  assert.strictEqual(h2.read('TOUR_MODE'), 'full', 'a fresh browser gets the full tour');
+  assert.strictEqual(h2.read('TOUR_VISIBLE')[0].id, 'welcome');
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // CYCLE 7 · Turn 1+2 fixes — punch failure feedback, intake draft lifecycle,
 // search stale-guard trim parity.
@@ -1666,7 +1726,7 @@ test('recommended check: marks only listed blanks, confirm gates, filling clears
   assert.ok(confirmOpts && /strongly-recommended/.test(confirmOpts.message), 'one confirm, naming the count');
   assert.strictEqual(proceeded, false, 'Go back resolves false — the preview does not fire');
   // fill the field → the mark clears itself on input
-  row2.querySelector('input').value = '555-0100';
+  row2.querySelector('input').value = '469-555-0100';   // I1: a whole number — a short one is a format warning now
   row2.dispatchEvent(new h.window.Event('input', { bubbles: true }));
   assert.ok(!row2.classList.contains('intk-recwarn'), 'mark clears when the field gains a value');
   assert.ok(!row2.querySelector('.intk-recwarn-note'), 'note removed with it');
@@ -2231,6 +2291,121 @@ test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, off
   // The text comes from the payload only through the HH:mm check.
   const bad = h3.read('deActivityHtml_')({ pings: 3, first: '<b>x', last: '17:00', blocks: [] }, { clockInEmpty: true });
   assert.ok(!/<b>x/.test(bad), 'a malformed time is not rendered');
+});
+
+test('AC1 DOM (operator 2026-11-11): the shell counts clicks and keystrokes (a held key once) and sends them with the ping; a pause flushes the rest through recordActivityCounts; a failed send puts them back for the next', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  h.run.drain();
+  const sum = (p) => (p && p.b || []).reduce((a, e) => [a[0] + e[1], a[1] + e[2]], [0, 0]);
+  const key = (repeat) => h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { bubbles: true, repeat: !!repeat }));
+  const click = () => h.document.body.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  click();
+  const ping = h.run.pending('recordPresence');
+  assert.strictEqual(ping.length, 1, 'the first gesture pings');
+  assert.deepStrictEqual(sum(ping[0].args[0]), [1, 0], 'and carries its own click');
+  assert.ok(ping[0].args[0].at > 0, 'with the computer\'s clock, so the server can correct it');
+  key(); key(); key(true); click();
+  assert.strictEqual(h.run.pending('recordPresence').length, 1, 'inside the gap: no second ping');
+  assert.deepStrictEqual(sum(h.read('actTake_()') || {}), [1, 2], 'but every gesture is counted — two presses (the repeat is not one), one click');
+  key(); key();
+  h.read('actFlush_')();   // what the pause timer runs
+  const fl = h.run.pending('recordActivityCounts');
+  assert.strictEqual(fl.length, 1, 'a pause sends what is held');
+  assert.deepStrictEqual(sum(fl[0].args[0]), [0, 2]);
+  assert.strictEqual(h.read('actTake_()'), null, 'and holds nothing after');
+  h.run.flushFailure(new Error('offline'), 'recordActivityCounts');
+  assert.deepStrictEqual(sum(h.read('ACT_COUNTS.b') && { b: Object.keys(h.read('ACT_COUNTS.b')).map((k) => [k].concat(h.read('ACT_COUNTS.b')[k])) }), [0, 2], 'a failed send puts its counts back');
+  h.read('PRESENCE').sentAt = Date.now() - h.read('PRESENCE_MIN_GAP_MS') - 1;
+  click();
+  assert.deepStrictEqual(sum(h.run.pending('recordPresence')[1].args[0]), [1, 2], 'the next ping carries them, with its own click');
+  h.read('actFlush_')();
+  assert.strictEqual(h.run.pending('recordActivityCounts').length, 0, 'nothing held, nothing sent');
+});
+
+test('AC1 DOM: Day Edit draws the day\'s clicks and keystrokes as bars, switches between 10 minutes and the hour with the focus kept, and a day recorded before levels is the on/off strip it was', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const today = h.read('_deDate'), tz = h.read('empTz')();
+  const level = new Array(144).fill(0); level[48] = 40; level[49] = 20; level[54] = 80;
+  const blocks = level.map((x) => (x ? 1 : 0));
+  h.run.flushSuccess({ days: [{ date: today, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess({ date: today, timezone: tz, blockMin: 10, gapMin: 10, pings: 3, first: '08:00', last: '09:40', blocks,
+    hasCounts: true, level, clicks: 35, keys: 105, activeMin: 30 }, 'managerGetDayActivity');
+  const panel = h.document.getElementById('de-act');
+  const fills = () => Array.from(panel.querySelectorAll('.de-act-strip.lvl .de-act-b > i')).map((i) => i.style.height);
+  assert.deepStrictEqual(fills(), ['50%', '25%', '100%'], 'three bars, each against the busiest');
+  assert.match(panel.textContent, /35 clicks, 105 keystrokes/);
+  assert.match(panel.textContent, /never what was typed/);
+  const hourBtn = panel.querySelector('[data-de-act-scale="hour"]');
+  hourBtn.focus();
+  hourBtn.click();
+  assert.deepStrictEqual(fills(), ['75%', '100%'], 'per hour: 8:00 holds 60, 9:00 holds 80');
+  assert.strictEqual(h.document.activeElement && h.document.activeElement.getAttribute('data-de-act-scale'), 'hour', 'the rebuilt panel keeps the keyboard where it was (g141)');
+  assert.strictEqual(panel.querySelector('[data-de-act-scale="hour"]').getAttribute('aria-pressed'), 'true');
+  panel.querySelector('[data-de-act-scale="block"]').click();
+  assert.strictEqual(fills().length, 3, 'and back');
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  h2.run.flushSuccess({ days: [{ date: h2.read('_deDate'), breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h2.run.flushSuccess({ date: h2.read('_deDate'), timezone: tz, blockMin: 10, gapMin: 10, pings: 3, first: '08:00', last: '09:40', blocks,
+    hasCounts: false, level: new Array(144).fill(0), clicks: 0, keys: 0, activeMin: 30 }, 'managerGetDayActivity');
+  const p2 = h2.document.getElementById('de-act');
+  assert.ok(!p2.querySelector('.lvl, [data-de-act-scale]') && p2.querySelectorAll('.de-act-b.on').length === 3, 'no counts: on/off, no switch');
+});
+
+test('AC1 DOM: the Team Punches day table fills its App activity column IN PLACE when the read answers (the calendar is not rebuilt, so a focused day keeps focus); a past day is read once; a failed read is said under the table and never cached', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getTeamCalendar', () => ({ month: '2026-09', rosterCount: 2, adjustWindowDays: 30, holidays: {},
+    days: { '2026-09-16': { reps: [{ id: 'E1', name: 'Ana Reyes', clockIn: '08:00:00', clockOut: '17:00:00', hours: 8, punchCount: 2 },
+      { id: 'E2', name: '<img src=x>', clockIn: '08:30:00', clockOut: '16:00:00', hours: 7, punchCount: 2 }], off: [] },
+      '2026-09-17': { reps: [{ id: 'E1', name: 'Ana Reyes', clockIn: '08:00:00', clockOut: '17:00:00', hours: 8, punchCount: 2 }], off: [] } } }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick();
+  // Manage Time's own enter read today's activity; answer it before moving to September.
+  h.run.pending('managerGetTeamActivity').forEach(() => h.run.flushSuccess({ date: 'today', blockMin: 10, keptFrom: '', reps: {} }, 'managerGetTeamActivity'));
+  h.read('TEAMCAL').month = '2026-09';
+  h.read('TEAMCAL').selDate = '2026-09-16';
+  h.read('tcalFetch_')('2026-09');
+  h.flushTimers();
+  const cellOf = (id) => h.document.querySelector('[data-tcal-act="' + id + '"]');
+  assert.ok(cellOf('E1') && /…/.test(cellOf('E1').textContent), 'a cell per rep, "…" while the read is out');
+  const calls = h.run.pending('managerGetTeamActivity');
+  assert.strictEqual(calls.length, 1, 'ONE read for the day');
+  assert.strictEqual(calls[0].args[0], '2026-09-16');
+  const day16 = h.document.querySelector('.cal-cell[data-date="2026-09-16"]');
+  day16.focus();
+  const hrs = new Array(24).fill(0); hrs[8] = 50; hrs[9] = 100; hrs[10] = 25;
+  h.run.flushSuccess({ date: '2026-09-16', blockMin: 10, keptFrom: '2026-09-01', reps: {
+    E1: { hours: hrs, hasCounts: true, clicks: 60, keys: 115, activeMin: 150, pings: 15, first: '08:00', last: '10:50' },
+    E2: { hours: new Array(24).fill(0), hasCounts: false, clicks: 0, keys: 0, activeMin: 0, pings: 0, first: '', last: '' } } }, 'managerGetTeamActivity');
+  assert.strictEqual(h.document.activeElement, day16, 'the calendar was not rebuilt — the focused day keeps focus');
+  assert.match(cellOf('E1').textContent, /175 clicks \+ keys/);
+  assert.strictEqual(cellOf('E1').querySelectorAll('.tcal-act-b').length, 8, 'an 8-hour shared range');
+  assert.match(cellOf('E1').querySelector('.tcal-act').getAttribute('aria-label'), /60 clicks, 115 keystrokes/);
+  assert.strictEqual(cellOf('E2').textContent.trim(), '—', 'a rep with nothing is a dash');
+  assert.strictEqual(h.document.querySelectorAll('[data-tcal-act] img').length, 0, 'nothing a name carries is live');
+  assert.match(h.document.getElementById('tcal-act-note').textContent, /this app only.*Context, not a score\..*Bars run 8 AM–4 PM/);
+  // A past day is final: selecting it again reads nothing.
+  h.read('tcalSelect_')('2026-09-17');
+  h.read('tcalSelect_')('2026-09-16');
+  assert.strictEqual(h.run.pending('managerGetTeamActivity').filter((c) => c.args[0] === '2026-09-16').length, 0, 'the 16th is served from the session');
+  assert.match(cellOf('E1').textContent, /175 clicks/);
+  // The 17th's read fails: said, and not cached.
+  h.read('tcalSelect_')('2026-09-17');
+  h.run.pending('managerGetTeamActivity').forEach(() => h.run.flushFailure(new Error('quota'), 'managerGetTeamActivity'));   // the earlier 17th read too
+  assert.match(h.document.getElementById('tcal-act-note').textContent, /could not be read for this day/);
+  assert.strictEqual(cellOf('E1').textContent.trim(), '—');
+  h.read('tcalSelect_')('2026-09-16');
+  h.read('tcalSelect_')('2026-09-17');
+  assert.strictEqual(h.run.pending('managerGetTeamActivity').filter((c) => c.args[0] === '2026-09-17').length, 1, 'a failure is never cached — the next select reads again');
 });
 
 test('E2 DOM: an inferred punch is marked on the pay statement and in the team calendar', () => {
@@ -2939,6 +3114,8 @@ test('SP1/SP2 DOM: Mark resolved removes the request from STATE (count, header a
   h.flushTimers();
   h.window.__stubConfirm = () => Promise.resolve(true);
   h.read('uiConfirm = window.__stubConfirm');
+  // SP1: the resolve dialog answers "reached the patient", no note.
+  h.read('spanishResolveAsk_ = function () { return Promise.resolve({ outcome: "reached", note: "" }); }');
 
   const cards = () => h.$$('.sp-task');
   const assignBtn = () => h.$('#sp-autoassign');
@@ -3013,12 +3190,12 @@ test('SP-2 DOM: a reopened request renders with a follow-up pill and no claim, c
   assert.strictEqual(card('f1').querySelector('.sp-claim-pill'), null, 'and carries no claim — it came back unclaimed');
   assert.strictEqual(card('f2').querySelector('.sp-followup-pill'), null, 'a first request has no pill');
   assert.ok(/Auto-assign 1 unclaimed/.test(h.$('#sp-autoassign').textContent), 'the reopened request is in the unclaimed count');
-  let seen = null;
-  h.window.__stubConfirm = (o) => { seen = o; return Promise.resolve(false); };
-  h.read('uiConfirm = window.__stubConfirm');
+  // SP1: the resolve dialog says so (it replaced the plain confirm).
   h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="f2"]'));
   await tick();
-  assert.ok(seen && /If the requester writes again, it comes back as a new request, unclaimed\./.test(seen.message), 'the confirm no longer reads as permanent');
+  const dlg = h.$('#sp-resolve-overlay');
+  assert.ok(dlg && /if the requester writes again, it comes back as a new request, unclaimed\./.test(dlg.textContent), 'the dialog no longer reads as permanent');
+  h.window.closeOverlay(dlg);
 });
 
 // SP4 (operator 2026-09-16) — a suppressed voicemail card is invisible BY
@@ -4202,6 +4379,158 @@ test('R DOM: both fields are named by a visible label bound to their own input �
   assert.ok(/optional/.test(addrLabel.textContent), 'the address label says it is optional');
 });
 
+test('PT1 DOM: one search across the payor tables — a group per table with matches, in the server\'s order, each named, with its own note and its sheet\'s key (escaped); a table with no match draws nothing; not listed shows every table\'s note (driven)', async () => {
+  const h = boot();
+  const tables = [
+    { key: 'InsurancePayors', label: 'Medicare / MA', note: 'MA rule', noteError: '', legend: { X: 'Yes', Z: 'Hawaii Only' } },
+    { key: 'MedicaidPayors', label: 'Primary <i>Medicaid</i>', note: 'Medicaid rule', noteError: '', legend: { Try: 'Create account & <b>verify</b>' } }];
+  let answer = { total: 3, cap: 8, tables: tables, matches: [
+    { table: 'MedicaidPayors', name: 'AETNA BETTER HEALTH TX', networkStatus: 'In-Network', details: [] },
+    { table: 'InsurancePayors', name: 'AETNA MEDICARE', networkStatus: 'In-Network', details: [] },
+    { table: 'MedicaidPayors', name: 'AETNA MCO', networkStatus: 'OON W/ PA', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('aetna');
+  const res = h.$('#kb-ins-results');
+  const groups = Array.from(res.querySelectorAll('.kb-ins-group'));
+  assert.deepStrictEqual(groups.map((g) => g.querySelector('.kb-ins-group-h').textContent), ['Medicare / MA', 'Primary <i>Medicaid</i>'],
+    'a group per table, in the server\'s table order (not the ranking\'s), the label escaped');
+  assert.deepStrictEqual(groups.map((g) => Array.from(g.querySelectorAll('.kb-ins-name')).map((n) => n.textContent)),
+    [['AETNA MEDICARE'], ['AETNA BETTER HEALTH TX', 'AETNA MCO']], 'each plan under its own table, ranked order kept inside');
+  assert.ok(/For every plan in Medicare \/ MA:\s*MA rule/.test(groups[0].querySelector('.kb-ins-note').textContent), 'the note names its table');
+  assert.ok(/For every plan in Primary <i>Medicaid<\/i>:\s*Medicaid rule/.test(groups[1].querySelector('.kb-ins-note').textContent));
+  const key = groups[1].querySelector('.kb-ins-key');
+  assert.ok(key && /Sheet key:\s*Try = Create account & <b>verify<\/b>/.test(key.textContent) && !key.querySelector('b b'), 'the table\'s own key, escaped: ' + (key && key.innerHTML));
+  assert.ok(/X = Yes · Z = Hawaii Only/.test(groups[0].querySelector('.kb-ins-key').textContent));
+  answer = { total: 1, cap: 8, tables: tables, matches: [{ table: 'InsurancePayors', name: 'ONLY MA', networkStatus: 'In-Network', details: [] }] };
+  await search('only');
+  assert.strictEqual(res.querySelectorAll('.kb-ins-group').length, 1, 'a table with no match draws no group');
+  answer = { total: 0, cap: 8, notFound: true, matches: [], tables: tables };
+  await search('zzplan');
+  assert.deepStrictEqual(Array.from(res.querySelectorAll('.kb-ins-note')).map((n) => n.textContent.replace(/\s+/g, ' ').trim()),
+    ['For every plan in Medicare / MA: MA rule', 'For every plan in Primary <i>Medicaid</i>: Medicaid rule'], 'not listed: every table\'s note, then the TRY guide');
+  assert.ok(res.querySelector('.kb-ins-guide'));
+  answer = { total: 1, cap: 8, tables: [tables[0]], matches: [{ table: 'InsurancePayors', name: 'SOLO', networkStatus: 'In-Network', details: [] }] };
+  await search('solo');
+  assert.ok(!res.querySelector('.kb-ins-group-h') && /^For every plan:/.test(res.querySelector('.kb-ins-note').textContent.trim()), 'one table: no heading, an unnamed note');
+});
+
+test('PT2 DOM: a plan from a sheet grouped by state shows its state beside its name, its insurer in the meta, and a catch-all row says it covers any plan of its state the sheet does not list — all escaped; a plan with no state shows no chip (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'BcbsPayors', label: 'BCBS / Anthem', note: '', noteError: '', legend: {} }];
+  let answer = { total: 3, cap: 8, tables: tables, matches: [
+    { table: 'BcbsPayors', name: 'Anthem <b>HMO</b>', state: 'Ohio <i>x</i>', company: 'Anthem & <b>Co</b>', networkStatus: 'In-Network', details: [] },
+    { table: 'BcbsPayors', name: "Unlisted Texas plans if it's not listed below", state: 'Texas', catchAll: true, networkStatus: 'In-Network', details: [] },
+    { table: 'BcbsPayors', name: 'Federal Employee Program', state: 'Multi-state / other', catchAll: true, networkStatus: 'In-Network', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('anthem');
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 3);
+  const chip = cards[0].querySelector('.kb-ins-head .kb-ins-state');
+  assert.ok(chip && chip.textContent === 'Ohio <i>x</i>' && !chip.querySelector('i'), 'the state chip in the head, escaped: ' + (chip && chip.innerHTML));
+  const meta = cards[0].querySelector('.kb-ins-meta');
+  assert.ok(meta && /Insurer Anthem & <b>Co<\/b>/.test(meta.textContent) && !meta.querySelector('b'), 'the insurer in the meta, escaped: ' + (meta && meta.innerHTML));
+  assert.ok(!cards[0].querySelector('.kb-ins-catch'), 'a named plan is no catch-all');
+  assert.strictEqual(cards[1].querySelector('.kb-ins-catch').textContent.trim(), 'Covers any Texas plan this sheet does not list by name', 'a catch-all names its state');
+  assert.strictEqual(cards[2].querySelector('.kb-ins-catch').textContent.trim(), 'Covers any plan this sheet does not list by name', 'a multi-state catch-all names none');
+  assert.ok(!cards[1].querySelector('.kb-ins-meta') || !/Insurer/.test(cards[1].querySelector('.kb-ins-meta').textContent), 'no insurer, no Insurer line');
+  answer = { total: 1, cap: 8, tables: tables, matches: [{ table: 'BcbsPayors', name: 'PLAIN', networkStatus: 'In-Network', details: [] }] };
+  await search('plain');
+  assert.ok(!h.$('#kb-ins-results').querySelector('.kb-ins-state'), 'a plan with no state shows no chip');
+});
+
+test('PT3 DOM: a plan answered differently by another payor table says so on its card — that table, its state, the codes and both answers, escaped; a multi-state listing names no state; no line when the tables agree; OONB and "cannot service state" explain themselves (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', noteError: '', legend: {} }, { key: 'BcbsPayors', label: 'BCBS <b>/</b> Anthem', note: '', noteError: '', legend: {} }];
+  let answer = { total: 2, cap: 8, tables: tables, matches: [
+    { table: 'InsurancePayors', name: 'BC/BS of Louisiana', networkStatus: 'OONB', details: [],
+      alsoIn: [{ table: 'BcbsPayors', label: 'BCBS <b>/</b> Anthem', state: 'Louisiana', differs: [
+        { codes: ['K0816', 'K0821', 'K0825', 'K0826', 'K0827'], here: 'X', there: '<i>NO</i>' }, { codes: ['K0838'], here: 'TRY', there: 'SI/PR' }] },
+        { table: 'MedicaidPayors', label: 'Primary Medicaid', state: 'Multi-state / other', differs: [{ codes: ['K0800'], here: 'L', there: 'NO' }] }] },
+    { table: 'BcbsPayors', name: 'Agrees', networkStatus: 'cannot service state', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'louisiana'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  const lines = Array.from(cards[0].querySelectorAll('.kb-ins-also'));
+  assert.strictEqual(lines.length, 2, 'one line per other table that disagrees');
+  assert.strictEqual(lines[0].textContent.replace(/\s+/g, ' ').trim(),
+    'Also on BCBS <b>/</b> Anthem (Louisiana) — answer differs: K0816, K0821, K0825 +2: X here, <i>NO</i> there; K0838: TRY here, SI/PR there',
+    'the table, its state, the codes (the rest in the title) and both answers');
+  assert.ok(!lines[0].querySelector('i') && lines[0].querySelectorAll('b').length === 4, 'labels and answers escaped; the answers in bold');
+  assert.strictEqual(lines[0].querySelector('.kb-ins-also-d').getAttribute('title'), 'K0816, K0821, K0825, K0826, K0827', 'every code in the title');
+  assert.ok(/^Also on Primary Medicaid — answer differs/.test(lines[1].textContent.trim()), 'a multi-state listing names no state');
+  assert.strictEqual(lines[0].getAttribute('role'), 'note');
+  assert.ok(!cards[1].querySelector('.kb-ins-also'), 'no line when nothing differs');
+  const pills = cards.map((c) => c.querySelector('.kb-ins-pill'));
+  assert.ok(pills[0].classList.contains('warn') && pills[0].tagName === 'BUTTON', 'OONB is amber and explains itself');
+  assert.ok(pills[1].classList.contains('bad') && pills[1].tagName === 'BUTTON', '"cannot service state" is red and explains itself');
+});
+
+test('PT4 DOM: a card from the Manual Mobility table groups its codes under their item (a heading each time the item changes, escaped), and draws no "status not recorded" pill — a table that has a status column still does (driven)', async () => {
+  const h = boot();
+  const tables = [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', noteError: '', legend: {}, hasStatus: true },
+    { key: 'ManualMobilityPayors', label: 'Manual Mobility items', note: '', noteError: '', legend: { MO: 'Medicaid Only' }, hasStatus: false }];
+  const answer = { total: 2, cap: 8, tables: tables, matches: [
+    { table: 'InsurancePayors', name: 'Aetna Medicare', networkStatus: '', details: [] },
+    { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', details: [
+      { label: 'K0001', value: 'Yes', group: 'Wheelchair' }, { label: 'K0003', value: 'MO', group: 'Wheelchair' },
+      { label: 'E0143', value: 'OOP Only', group: 'Walker <b>&</b> rollator' }, { label: 'A4670', value: 'Yes - Delivery Only', group: 'BPM' }] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  inp.value = 'aetna'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  const cards = Array.from(h.$('#kb-ins-results').querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 2);
+  assert.ok(cards[0].querySelector('.kb-ins-pill') && /status not recorded/.test(cards[0].querySelector('.kb-ins-pill').textContent), 'a table with a status column says the status is not recorded');
+  assert.ok(!cards[1].querySelector('.kb-ins-pill'), 'the Manual Mobility card draws no status pill');
+  const grid = cards[1].querySelector('.kb-ins-grid');
+  const seq = Array.from(grid.children).map((el) => el.classList.contains('kb-ins-cat') ? '# ' + el.textContent : el.querySelector('.c').textContent.trim().split(/\s/)[0]);
+  assert.deepStrictEqual(seq, ['# Wheelchair', 'K0001', 'K0003', '# Walker <b>&</b> rollator', 'E0143', '# BPM', 'A4670'], 'a heading each time the item changes, in the sheet\'s order');
+  assert.ok(!grid.querySelector('.kb-ins-cat b'), 'the item name is escaped');
+  const tones = Array.from(grid.querySelectorAll('.v')).map((v) => v.className.replace(/\s*kb-term/, '').replace(/^v\s*/, ''));
+  assert.deepStrictEqual(tones, ['good', 'warn', 'warn', 'warn'], 'Yes, MO, OOP Only, a qualified Yes');
+  assert.ok(Array.from(grid.querySelectorAll('.v')).slice(1).every((v) => v.tagName === 'BUTTON'), 'each amber value explains itself');
+  answer.matches[1].details.forEach((d) => { delete d.group; });
+  inp.value = 'aetna2'; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick();
+  assert.ok(!h.$('#kb-ins-results').querySelector('.kb-ins-cat'), 'a card with no categories is the plain list it always was');
+});
+
+test('PT1a DOM: the payor sheet\'s standing note sits above every insurance answer — a match and a plan not listed — escaped; a note that could not be read is said; no note, no box (driven)', async () => {
+  const h = boot();
+  let answer = { total: 1, cap: 8, note: 'No power orders in OR, WA <b>MT</b>.', noteError: '',
+    matches: [{ name: 'AETNA GOLD', networkStatus: 'In-Network', details: [] }] };
+  h.run.respond('searchInsurancePayors', () => answer);
+  bootLookups(h);
+  const inp = h.$('#kb-ins-input');
+  const search = async (q) => { inp.value = q; h.read('insLookupInput_')(inp); h.flushTimers(); await tick(); await tick(); };
+  await search('aetna');
+  const res = h.$('#kb-ins-results');
+  const note = res.querySelector('.kb-ins-note');
+  assert.ok(note && note.getAttribute('role') === 'note', 'a note box above the results');
+  assert.ok(/For every plan:\s*No power orders in OR, WA <b>MT<\/b>\./.test(note.textContent) && !Array.from(note.querySelectorAll('b')).some((b) => b.textContent === 'MT'),
+    'the note text, escaped: ' + note.innerHTML);
+  assert.ok(note.compareDocumentPosition(res.querySelector('.kb-ins-card')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING, 'ABOVE the first result');
+  answer = { total: 0, cap: 8, notFound: true, matches: [], note: 'Rule A.', noteError: '' };
+  await search('zzplan');
+  assert.ok(/Rule A\./.test((res.querySelector('.kb-ins-note') || {}).textContent || '') && res.querySelector('.kb-ins-guide'), 'and above the not-listed answer too');
+  answer = { total: 1, cap: 8, note: '', noteError: 'Unexpected token', matches: [{ name: 'AETNA', networkStatus: 'In-Network', details: [] }] };
+  await search('aetna2');
+  assert.ok(/standing note could not be read/.test((res.querySelector('.kb-ins-note') || {}).textContent || ''), 'an unreadable note is SAID');
+  answer = { total: 1, cap: 8, note: '', noteError: '', matches: [{ name: 'AETNA', networkStatus: 'In-Network', details: [] }] };
+  await search('aetna3');
+  assert.ok(!res.querySelector('.kb-ins-note') && res.querySelector('.kb-ins-card'), 'no note stored: no box');
+  answer = { error: 'Insurance lookup failed: boom' };
+  await search('aetna4');
+  assert.ok(!res.querySelector('.kb-ins-note'), 'an error answer carries no note box');
+});
+
 test('T1 DOM: one meaning, one look — an unclassifiable payor status renders like a blank one, and the meta is chips', async () => {
   const h = boot();
   h.run.respond('searchInsurancePayors', () => ({ total: 2, cap: 8, matches: [
@@ -4479,7 +4808,7 @@ test('T3 DOM: the item row cross-references the payors ON SCREEN, in EITHER sear
   const pop = h.window.document.querySelector('#kb-term-overlay .kb-term-modal');
   assert.ok(pop, 'and really opens the term popover');
   assert.ok(/SI\/PR/.test(pop.textContent), 'headed by the value the rep clicked');
-  assert.ok(/secondary insurance covering any patient responsibility/.test(pop.textContent),
+  assert.ok(/secondary insurance details that will cover any remaining patient responsibility/.test(pop.textContent),
     'carrying the operator DEFINITION, not just the value again');
   h.read('closeOverlay')(h.window.document.querySelector('#kb-term-overlay'));
 
@@ -5639,7 +5968,7 @@ test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar coun
   assert.ok(/2 selected/.test(h.$('#sp-bulk-n').textContent) && !h.$('#sp-bulk-go').disabled);
   assert.ok(h.$('#sp-sel-all').indeterminate, 'Select all shown reads partial');
   h.window.spanishResolveSelected_();
-  h.click(h.$('.ui-dialog-ok'));
+  h.window.spanishResolveConfirm_();   // SP1: the resolve dialog (no outcome list in this fixture: confirm only)
   await tick();
   const call = h.run.pending('resolveSpanishThreads')[0];
   assert.ok(call, 'ONE call');
@@ -5655,10 +5984,80 @@ test('Batch C DOM: multi-select resolve — a box per PENDING card, the bar coun
   // Select all shown, then a refused call keeps everything.
   h.window.spanishSelAll_(true);
   assert.ok(box('b').checked && box('c').checked && /2 selected/.test(h.$('#sp-bulk-n').textContent));
-  h.window.spanishResolveSelected_(); h.click(h.$('.ui-dialog-ok')); await tick();
+  h.window.spanishResolveSelected_(); h.window.spanishResolveConfirm_(); await tick();
   h.run.flushSuccess({ error: 'Spanish Inbox access required.' }, 'resolveSpanishThreads');
   h.flushTimers();
   assert.ok(box('b').checked && box('c').checked && !h.$('#sp-bulk-go').disabled, 'a refused call removes nothing and the bar is usable again');
+});
+
+test('SP1 DOM: Mark resolved asks how it ended (the server\'s choices) and for a note — Resolve stays off until an outcome is picked; a typed note asks before Escape throws it away; the call carries the outcome and the note and the toast says what became of the reply; Resolve selected asks once for all and reports the replies; auto-assign with nobody clocked in says so (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  const outs = { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' };
+  const pend = [spItem_('a', 30), spItem_('b', 20), spItem_('v', 10, { kind: 'voicemail' })];
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: 3, resolved: 0, avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null,
+    businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 3, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pend)), members: ['me@x.com', 'sam@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '',
+    resolveOutcomes: outs, resolveNoteMax: 500 }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  const toasts = () => h.$$('#toast-stack .toast-msg').map((t) => t.textContent).join(' | ');
+  h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="a"]'));
+  await tick();
+  const dlg = h.$('#sp-resolve-overlay');
+  assert.ok(dlg && dlg.classList.contains('open') && dlg.getAttribute('aria-labelledby') === 'sp-res-h', 'a named dialog');
+  assert.deepStrictEqual(h.$$('input[name="sp-res-outcome"]').map((r) => r.value + ':' + r.parentNode.textContent.trim()),
+    ['reached:Reached the patient', 'voicemail:Left a voicemail', 'noanswer:No answer', 'wrong:Wrong number'], 'the server\'s choices, in its order');
+  assert.ok(h.$('#sp-res-go').disabled, 'Resolve is off until an outcome is picked');
+  const no = h.$('input[name="sp-res-outcome"][value="noanswer"]');
+  no.checked = true; h.window.spanishResolveSync_();   // the harness runs no inline handlers: drive the one the fieldset names
+  assert.ok(!h.$('#sp-res-go').disabled, 'picked: Resolve is on');
+  const note = h.$('#sp-res-note');
+  note.value = 'Tried twice <b>today</b>';
+  note.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.window.closeOverlay(dlg);   // Escape / the backdrop take this path
+  await tick();
+  assert.ok(h.$('.ui-dialog') && /Discard changes\?/.test(h.$('.ui-dialog').textContent), 'THE RULE: a typed note asks before it is thrown away (g166)');
+  assert.ok(dlg.classList.contains('open'), 'and the dialog stays until answered');
+  h.click(h.$('.ui-dialog-cancel'));
+  await tick();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  const call = h.run.pending('resolveSpanishThread')[0];
+  assert.deepStrictEqual(Array.from(call.args), ['a', 'noanswer', 'Tried twice <b>today</b>'], 'the outcome and the note ride the call');
+  assert.ok(!h.$('#sp-resolve-overlay'), 'the dialog closed');
+  h.run.flushSuccess({ success: true, reply: { sent: true }, replyNote: 'A reply saying so was sent on the email thread.' }, 'resolveSpanishThread');
+  assert.ok(/Marked resolved\. A reply saying so was sent on the email thread\./.test(toasts()), toasts());
+  h.flushTimers();
+  // Resolve selected: one question for all, the replies reported.
+  ['b', 'v'].forEach((t) => { const bx = h.$('input.sp-sel[data-thread="' + t + '"]'); bx.checked = true; h.window.spanishSelToggle_(bx); });
+  h.window.spanishResolveSelected_();
+  await tick();
+  assert.ok(/Mark 2 requests resolved/.test(h.$('#sp-res-h').textContent) && /Each request gets its own reply/.test(h.$('#sp-resolve-overlay').textContent));
+  h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  const bulk = h.run.pending('resolveSpanishThreads')[0];
+  assert.deepStrictEqual([Array.from(bulk.args[0]), bulk.args[1], bulk.args[2]], [['b', 'v'], 'reached', ''], 'ONE call: the ids, the outcome, no note');
+  h.run.flushSuccess({ success: true, resolved: ['b', 'v'], already: [], failed: [], replies: { sent: 1, voicemail: 1, failed: [], off: false } }, 'resolveSpanishThreads');
+  assert.ok(/Marked 2 resolved · 1 reply sent · 1 voicemail \(no email to reply to\)/.test(toasts()), toasts());
+  h.flushTimers();
+  // Auto-assign with nobody clocked in.
+  h.read('uiConfirm = function () { return Promise.resolve(true); }');
+  pend.push(spItem_('c', 5));
+  h.window.spanishLoadList_();
+  h.flushTimers();
+  const btn = h.$('#sp-autoassign');
+  if (btn) {
+    h.window.spanishAutoAssign_(btn);
+    await tick();
+    h.run.flushSuccess({ success: true, unclaimed: 0, assigned: [], noneOnShift: true, offShift: 2 }, 'autoAssignSpanishThreads');
+    assert.ok(/No Spanish member is clocked in right now — nothing was assigned/.test(toasts()), 'said, not "every request is already claimed": ' + toasts());
+  } else {
+    assert.fail('the auto-assign button is on a manager\'s list');
+  }
 });
 
 test('Batch C DOM: past SPANISH_GROUP_MIN the list groups — by received day, or by sending department (largest first, Other and Voicemail last), remembered in this browser; a closed group\'s cards are not "shown" to Select all; at the threshold the list stays flat; every card shows its received date', () => {
@@ -6035,6 +6434,760 @@ test('Batch H DOM: issuing a PDF — the Content toggle shows the PDF picker (th
   assert.strictEqual(h.read('ED_STATE.issuePdf'), null, 'an issue resets the PDF with the form');
 });
 
+// ED1 (operator 2026-11-05) — signature + initials boxes, page-relative text,
+// capacity and overfill, the issue form's picker and readout.
+const ed1Canvas_ = (h) => {
+  const ctx = { scale() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, clearRect() {}, fillText() {}, measureText: () => ({ width: 60 }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ctx;
+  h.window.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,QUJD';
+};
+const ed1Doc_ = (over) => hPdfDoc_(Object.assign({
+  fields: [{ id: 'name', label: 'Printed name', type: 'text', required: true, box: { page: 1, x: 0.1, y: 0.1, w: 180 / 612, h: 16 / 792 } },
+    { id: 'sign-here', label: 'Sign here', type: 'signature', required: true, box: { page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 } },
+    { id: 'initial', label: 'Initial', type: 'initials', required: true, box: { page: 2, x: 0.8, y: 0.9, w: 0.09, h: 0.035 } }] }, over || {}));
+
+test('ED1 DOM: signing a PDF with a signature box and an initials box — the legend names the types on the page; the initials pad appears; what is drawn (or typed) paints every such box live; Sign waits for the initials; the sign call carries them; a text box is capped at what fits and counts down near its limit', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  ed1Canvas_(h);
+  const acks = [];
+  h.run.respond('getMyDoc', () => ed1Doc_());
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.run.respond('acknowledgeDoc', (id, sig, resp, ini) => { acks.push([id, sig, resp, ini]); return { success: true, signedAt: '2026-11-05 10:00:00' }; });
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const ov = h.$('#ed-reader-overlay');
+  const legend = Array.from(ov.querySelectorAll('.ed-box-legend .ed-box-key')).map((e) => e.textContent);
+  assert.deepStrictEqual(legend, ['Short text', 'Signature', 'Initials'], 'only the types on this document, in order');
+  const sigBox = ov.querySelector('.ed-pdf-box[data-ed-sign="signature"]');
+  assert.ok(sigBox && sigBox.classList.contains('t-signature') && /filled when you sign/.test(sigBox.textContent) && !sigBox.querySelector('input,textarea'), 'a signature box is never typed into');
+  assert.ok(h.$('#ed-ini-canvas'), 'the initials pad');
+  const name = ov.querySelector('input[data-fid="name"]');
+  assert.strictEqual(name.getAttribute('maxlength'), '49', 'capped at what fits at the floor size');
+  const count = name.parentNode.querySelector('.ed-pdf-count');
+  assert.ok(count.hidden, 'no counter while far from the limit');
+  name.value = 'x'.repeat(44); name.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!count.hidden && count.textContent === '5 left', 'counts down near the limit');
+  name.value = 'Nina Patel'; name.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  h.click('#ed-ack-check');
+  const typed = h.$('#ed-sig-typed-input');
+  typed.value = 'Nina Patel'; typed.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(ov.querySelector('.ed-pdf-box[data-ed-sign="signature"] img.ed-pdf-sig'), 'the drawing paints the signature box');
+  assert.ok(!ov.querySelector('.ed-pdf-box[data-ed-sign="initials"] img'), 'the initials box waits for the initials');
+  h.click('#ed-sign-btn');
+  await tick();
+  assert.strictEqual(acks.length, 0, 'Sign waits for the initials');
+  assert.ok(/Draw your initials too/.test(h.document.body.textContent));
+  const ti = h.$('#ed-ini-typed-input');
+  ti.value = 'NP'; ti.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(ov.querySelector('.ed-pdf-box[data-ed-sign="initials"] img.ed-pdf-sig'), 'and the initials paint theirs');
+  h.click('#ed-sign-btn');
+  await hSettle_();
+  assert.strictEqual(acks.length, 1);
+  assert.deepStrictEqual([acks[0][0], acks[0][1], acks[0][3]], ['dp', 'data:image/png;base64,QUJD', 'data:image/png;base64,QUJD'], 'the signature and the initials ride the sign call');
+  assert.deepStrictEqual(Object.assign({}, acks[0][2]), { name: 'Nina Patel' }, 'no typed answer for a drawing box');
+});
+
+test('ED1 DOM: Clear empties both pads, and every signature and initials box goes back to its placeholder', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  ed1Canvas_(h);
+  h.run.respond('getMyDoc', () => ed1Doc_());
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.click('#ed-ack-check');
+  const typed = h.$('#ed-sig-typed-input'), ti = h.$('#ed-ini-typed-input');
+  typed.value = 'Nina'; typed.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  ti.value = 'NP'; ti.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.$$('#ed-pdf-pages .ed-pdf-box[data-ed-sign] img').length, 2);
+  h.click('#ed-sig-clear');
+  assert.strictEqual(h.$$('#ed-pdf-pages .ed-pdf-box[data-ed-sign] img').length, 0, 'both boxes are empty again');
+  assert.ok(h.read('ED_STATE.sigPad').isEmpty() && h.read('ED_STATE.iniPad').isEmpty());
+});
+
+test('ED1 DOM: a signed PDF document — its signature and initials boxes show what was drawn; an answer longer than its box is marked on the page and listed IN FULL under the pages, never cut off unseen', async () => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  h.run.respond('getMyDoc', () => ed1Doc_({ status: 'signed', canComplete: false, ackText: undefined, signedAt: '2026-11-05 10:00:00',
+    responses: { name: 'Nina Bartholomew-Patel of the Northern Regional Office, Building C' },
+    signatureImage: 'data:image/png;base64,U0lH', initialsImage: 'data:image/png;base64,SU5J' }));
+  h.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const pages = h.$('#ed-pdf-pages');
+  assert.strictEqual(pages.querySelector('[data-ed-sign="signature"] img').getAttribute('src'), 'data:image/png;base64,U0lH');
+  assert.strictEqual(pages.querySelector('[data-ed-sign="initials"] img').getAttribute('src'), 'data:image/png;base64,SU5J');
+  const nameBox = pages.querySelector('.ed-pdf-box.t-text');
+  assert.ok(nameBox.classList.contains('is-over') && /in full below/.test(nameBox.textContent), 'marked on the page');
+  const list = h.$('#ed-pdf-over');
+  assert.ok(/answers longer than their box/.test(list.textContent) && /Printed name \(page 1\)/.test(list.textContent) && /Building C/.test(list.textContent), 'and listed in full');
+  assert.ok(!pages.querySelector('input, textarea'), 'read-only');
+});
+
+test('ED1 DOM: issuing — a styled Choose PDF button opens the hidden file control and names the file; the legend sits under the box picker; a signature box turns "Require signature" on and says so; each box field shows its page, size and what it holds; the box is coloured by its type and the issue sends it', async () => {
+  const h = boot(); mount_(h, 'view-area');
+  hFakePdf_(h, 2);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.click('[data-ed-mode="pdf"]');
+  let clicked = 0;
+  h.$('#ed-is-pdf').click = () => { clicked++; };
+  h.click('#ed-is-pdf-btn');
+  assert.strictEqual(clicked, 1, 'the button opens the file control');
+  assert.ok(h.$('#ed-is-pdf').hidden && h.$('#ed-is-pdf-wrap .ed-box-legend'), 'the raw control is hidden; the legend is shown');
+  assert.strictEqual(h.$$('#ed-is-pdf-wrap .ed-box-legend .ed-box-key').length, 5);
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'PIP - Nina.pdf', { type: 'application/pdf' }));
+  await hSettle_(20);
+  assert.strictEqual(h.$('#ed-is-pdf-name').textContent, 'PIP - Nina.pdf', 'the chosen file is named');
+  h.$('#ed-is-sig').checked = false;
+  h.$('#ed-box-type').value = 'signature';
+  h.window.edAddBox_(1, h.read('edBoxFromDrag_')(0.1, 0.8, 0.1, 0.8, 'signature', { w: 612, h: 792 }));
+  assert.ok(h.$('#ed-is-sig').checked && /needs a signature/.test(h.document.body.textContent), 'turned on, and said');
+  const box = h.$('#ed-is-pdf-pages .ed-pdf-box.is-edit');
+  assert.ok(box.classList.contains('t-signature') && box.getAttribute('title') === '2.5 × 0.56 in', box.outerHTML);
+  assert.ok(/Box · page 1 · 2\.5 × 0\.56 in/.test(h.$('#ed-fields-list').textContent), 'the field list names its size');
+  h.$('#ed-box-type').value = 'text';
+  h.window.edAddBox_(2, h.read('edBoxFromDrag_')(0.2, 0.2, 0.2, 0.2, 'text', { w: 612, h: 792 }));
+  assert.ok(/about 34–49 characters/.test(h.$('#ed-fields-list').textContent), 'a text box says what it holds');
+  const typeSel = h.$$('#ed-fields-list .ed-field-type')[0];
+  assert.ok(Array.from(typeSel.options).some((o) => o.value === 'initials'), 'a box field may become initials');
+  h.$('#ed-is-emp').value = 'e1'; h.$('#ed-is-title').value = 'PIP';
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  assert.ok(sent[0].requiresSignature === true && sent[0].fields[0].type === 'signature' && sent[0].fields[0].box.page === 1, JSON.stringify(sent[0].fields));
+});
+
+// ED2 (operator 2026-11-06) — the box editor, zoom, the upload's warnings and
+// a fillable PDF's own fields. A stand-in pdf.js whose pages can carry a size,
+// a rotation, text items and form-field widgets; it counts canvas draws.
+const ed2FakePdf_ = (h, pages) => {
+  const log = { renders: 0 };
+  h.window.pdfjsWorker = {};
+  h.window.pdfjsLib = { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve({ numPages: pages.length,
+    getPage: (n) => {
+      const p = pages[n - 1];
+      return Promise.resolve({ rotate: p.rotate || 0,
+        getViewport: ({ scale }) => ({ width: p.w * scale, height: p.h * scale,
+          convertToViewportRectangle: (r) => [r[0] * scale, (p.h - r[1]) * scale, r[2] * scale, (p.h - r[3]) * scale] }),
+        render: () => { log.renders++; return { promise: Promise.resolve(), cancel() {} }; },
+        getTextContent: () => Promise.resolve({ items: (p.text || []).map((sz) => ({ str: 'words', transform: [sz, 0, 0, sz, 50, 50] })) }),
+        getAnnotations: () => Promise.resolve(p.widgets || []) });
+    } }) }) };
+  h.window.HTMLCanvasElement.prototype.getContext = () => ({});
+  return log;
+};
+const ed2Mgr_ = async (pages) => {
+  const h = boot(); mount_(h, 'view-area');
+  const log = ed2FakePdf_(h, pages);
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Nina Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('issueDoc', (p) => { sent.push(p); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.click('[data-ed-mode="pdf"]');
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Agreement.pdf', { type: 'application/pdf' }));
+  await hSettle_(30);
+  return { h, log, sent };
+};
+const ed2Letter_ = (extra) => Object.assign({ w: 612, h: 792, text: Array(8).fill(11) }, extra || {});
+const ed2Ev_ = (h, el, type, x, y, extra) => el.dispatchEvent(new h.window.MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: x, clientY: y }, extra || {})));
+
+test('ED2 DOM: a chosen PDF is warned about (a Legal page, a rotated page, small text) and its own form fields are offered; Use them as boxes adds each as a named, typed field on its page — a checkbox counted, never added — and turns "Require signature" on only if it was off (driven)', async () => {
+  const W = (o) => Object.assign({ subtype: 'Widget', fieldType: 'Tx', rect: [100, 680, 300, 698] }, o);
+  const { h } = await ed2Mgr_([
+    ed2Letter_({ widgets: [W({ fieldName: 'employee_name', alternativeText: 'employee_name' }), W({ fieldName: 'start_date', rect: [100, 640, 200, 658] }),
+      W({ fieldName: 'agree', fieldType: 'Btn', rect: [100, 600, 114, 614] }), W({ fieldName: 'Sig1', fieldType: 'Sig', alternativeText: 'Employee signature', rect: [100, 500, 300, 540] }),
+      { subtype: 'Link', rect: [0, 0, 10, 10] }] }),
+    { w: 612, h: 1008, rotate: 90, text: Array(8).fill(5) }]);
+  const warn = [...h.$$('#ed-is-pdf-warn li')].map((l) => l.textContent);
+  assert.deepStrictEqual(warn, ['Page 2 is 8.5 × 14 in, not Letter or A4 — it may be scaled to fit when printed.',
+    'Page 2 is stored rotated (90°). It shows upright here, but if a box lands wrong on it, save the PDF upright and choose it again.',
+    'Page 2 has small text (about 5 pt) — zoom in to place boxes, and check it can be read at Fit width.']);
+  assert.ok(!h.$('#ed-is-pdf-warn').hidden);
+  const offer = h.$('#ed-is-pdf-offer');
+  assert.ok(!offer.hidden && /This PDF has 3 fill-in fields of its own\. \(1 checkbox or button left out/.test(offer.textContent), offer.textContent);
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-box').length, 0, 'offered, not added');
+  h.$('#ed-is-sig').checked = false;
+  h.click('[data-ed-form-use]');
+  const fields = h.read('ED_STATE.issueFields').map((f) => [f.label, f.type, f.box.page]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(fields)), [['Employee name', 'text', 1], ['Start date', 'date', 1], ['Employee signature', 'signature', 1]]);
+  const b0 = h.read('ED_STATE.issueFields[0].box');
+  assert.ok(Math.abs(b0.x - 100 / 612) < 0.0002 && Math.abs(b0.y - (792 - 698) / 792) < 0.0002, 'placed where the PDF put it: ' + JSON.stringify(b0));
+  assert.strictEqual(h.$$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-box.is-edit').length, 3, 'drawn on the page');
+  assert.ok(offer.hidden && h.$('#ed-is-sig').checked && /3 boxes added from the PDF’s own fields/.test(h.document.body.textContent) && /"Require signature" is now on/.test(h.document.body.textContent));
+  // A PDF with no warnings and no fields says nothing.
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Plain.pdf', { type: 'application/pdf' }));
+  ed2FakePdf_(h, [ed2Letter_()]);
+  h.window.edIssuePdfFile_(new h.window.File([Buffer.from('%PDF-1.4\n%%EOF\n')], 'Plain.pdf', { type: 'application/pdf' }));
+  await hSettle_(30);
+  assert.ok(h.$('#ed-is-pdf-warn').hidden && h.$('#ed-is-pdf-offer').hidden, 'nothing to say, nothing shown');
+  assert.strictEqual(h.read('ED_STATE.issueFields').length, 0, 'a new file starts clean');
+});
+
+test('ED2 DOM: a placed box moves when dragged and resizes from its corner — on the 1/8-inch grid, Alt freely, a press that does not travel only selects it; arrow keys nudge the selected box and Shift resizes it; Duplicate adds the next in its series under it, selected (driven)', async () => {
+  const { h } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  const pg = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"]');
+  pg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 612, height: 792 });
+  h.$('#ed-box-type').value = 'date';
+  h.window.edAddBox_(1, { x: 90 / 612, y: 90 / 792, w: 0.25, h: 0.03 });
+  const box = () => h.$('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="0"]');
+  const fb = () => JSON.parse(JSON.stringify(h.read('ED_STATE.issueFields[0].box')));
+  assert.ok(box().getAttribute('tabindex') === '0' && /Arrow keys move it; Shift with an arrow key resizes it/.test(box().getAttribute('aria-label')), 'focusable, and says how');
+  assert.ok(box().querySelector('[data-ed-box-dup]') && box().querySelector('[data-ed-box-rs]'), 'Duplicate and the resize corner');
+  // A press that does not travel: selected, not moved.
+  const placed = fb();
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 101, 102); ed2Ev_(h, box(), 'pointerup', 101, 102);
+  assert.deepStrictEqual(fb(), placed, 'unchanged');
+  assert.strictEqual(h.document.activeElement, box(), 'but selected');
+  // Drag the body 23px right, 11px down: snapped to the 9pt grid.
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 123, 111); ed2Ev_(h, box(), 'pointerup', 123, 111);
+  let b = fb();
+  assert.ok(Math.abs(b.x * 612 - 117) < 0.1 && Math.abs(b.y * 792 - 99) < 0.1 && b.w === 0.25, 'moved onto the grid: ' + JSON.stringify(b));
+  assert.strictEqual(h.document.activeElement, box(), 'the moved box stays selected');
+  assert.ok(/Box · page 1 · 2\.13 × 0\.33 in/.test(h.$('#ed-fields-list').textContent), 'its chip follows');
+  // Alt: exactly where it was let go.
+  ed2Ev_(h, box(), 'pointerdown', 100, 100); ed2Ev_(h, box(), 'pointermove', 105, 104, { altKey: true }); ed2Ev_(h, box(), 'pointerup', 105, 104);
+  b = fb();
+  assert.ok(Math.abs(b.x * 612 - 122) < 0.1 && Math.abs(b.y * 792 - 103) < 0.1, 'Alt: freely');
+  // The corner resizes; the top-left stays.
+  const before = fb();
+  const rs = box().querySelector('[data-ed-box-rs]');
+  ed2Ev_(h, rs, 'pointerdown', 300, 130); ed2Ev_(h, rs, 'pointermove', 340, 150); ed2Ev_(h, rs, 'pointerup', 340, 150);
+  b = fb();
+  assert.ok(b.x === before.x && b.y === before.y && b.w > before.w && b.h > before.h, 'resized from its corner');
+  assert.ok(Math.abs(Math.round((b.x + b.w) * 612 / 9) - (b.x + b.w) * 612 / 9) < 0.02, 'its right edge on the grid');
+  // Arrow keys.
+  const kb = (key, shift) => box().dispatchEvent(new h.window.KeyboardEvent('keydown', { key, shiftKey: !!shift, bubbles: true, cancelable: true }));
+  const x0 = fb().x, h0 = fb().h;
+  kb('ArrowLeft');
+  assert.ok(fb().x < x0 && h.document.activeElement === box(), 'nudged left, still selected');
+  kb('ArrowDown', true);
+  const bot = (fb().y + fb().h) * 792;
+  assert.ok(fb().h > h0 && (fb().h - h0) * 792 <= 13.6 && Math.abs(Math.round(bot / 9) - bot / 9) < 0.02, 'Shift + Down: taller, its bottom edge on the next grid line');
+  kb('a');
+  // Duplicate.
+  box().querySelector('[data-ed-box-dup]').click();
+  const fs2 = h.read('ED_STATE.issueFields');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(fs2.map((f) => f.label))), ['Date 1', 'Date 2']);
+  assert.ok(fs2[1].box.y > fs2[0].box.y + fs2[0].box.h && fs2[1].box.x === fs2[0].box.x && fs2[1].type === 'date', 'under the original, the same type');
+  assert.strictEqual(h.document.activeElement, h.$('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="1"]'), 'the copy is selected');
+});
+
+test('ED2 DOM: zoom — the bar appears with the pages; + and 100% size each page by its points and redraw only the canvases (the box layer and its node stay), Fit width returns; the reader zooms the same way and keeps what the employee typed (driven)', async () => {
+  const { h, log } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  const bar = h.$('.ed-zoom[data-ed-zoom-for="ed-is-pdf-pages"]');
+  assert.ok(bar && !bar.hidden, 'shown once the pages are drawn');
+  h.window.edAddBox_(1, { x: 0.1, y: 0.1, w: 0.25, h: 0.03 });
+  const layer = h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-layer');
+  const drawn = log.renders;
+  bar.querySelector('[data-ed-zoom="1"]').click();
+  const wraps = h.$$('#ed-is-pdf-pages .ed-pdf-page');
+  assert.ok(wraps.every((w) => w.style.width === '816px') && h.$('#ed-is-pdf-pages').classList.contains('is-zoomed'), '100%: 8.5 in at 96 px an inch');
+  assert.strictEqual(log.renders, drawn + 2, 'each canvas redrawn once');
+  assert.strictEqual(h.$('#ed-is-pdf-pages .ed-pdf-page[data-page="1"] .ed-pdf-layer'), layer, 'the box layer is the same node');
+  assert.ok(bar.querySelector('[data-ed-zoom="1"]').getAttribute('aria-pressed') === 'true' && bar.querySelector('.ed-zoom-val').textContent === '100%');
+  bar.querySelector('[data-ed-zoom="in"]').click();
+  assert.strictEqual(wraps[0].style.width, '1020px', '125%');
+  bar.querySelector('[data-ed-zoom="fit"]').click();
+  assert.ok(wraps.every((w) => !w.style.width) && !h.$('#ed-is-pdf-pages').classList.contains('is-zoomed') && /^Fit/.test(bar.querySelector('.ed-zoom-val').textContent), 'Fit width');
+  // The reader.
+  const r = boot();
+  ed2FakePdf_(r, [ed2Letter_(), ed2Letter_()]);
+  r.run.respond('getMyDoc', () => hPdfDoc_());
+  r.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: hPdfUri_ }));
+  r.read('edOpenDoc_')('dp');
+  await hSettle_(20);
+  const rbar = r.$('.ed-zoom[data-ed-zoom-for="ed-pdf-pages"]');
+  assert.ok(rbar && !rbar.hidden, 'the reader has the bar');
+  const input = r.$('#ed-pdf-pages .ed-resp[data-fid="review-date"]');
+  input.value = '2026-11-20';
+  rbar.querySelector('[data-ed-zoom="in"]').click(); rbar.querySelector('[data-ed-zoom="in"]').click();
+  assert.ok(/px$/.test(r.$('#ed-pdf-pages .ed-pdf-page').style.width), 'zoomed');
+  assert.ok(r.$('#ed-pdf-pages .ed-resp[data-fid="review-date"]') === input && input.value === '2026-11-20', 'what was typed is still there, in the same box');
+});
+
+test('ED2 DOM: a box on a page the PDF does not have, or past its edge, is refused at Issue with its name — nothing is sent; a PDF on the page sends its page count for the server\'s own check (driven)', async () => {
+  const { h, sent } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  h.$('#ed-is-emp').value = 'e1'; h.$('#ed-is-title').value = 'PIP';
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  h.window.edAddBox_(2, { x: 0.1, y: 0.1, w: 0.25, h: 0.03 });
+  h.read('ED_STATE.issueFields[0].box.page = 3');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 0, 'nothing is sent');
+  assert.ok(/The box "Text 1" \(page 3\) is not on the PDF — it has 2 pages\. Move or remove it\./.test(h.document.body.textContent));
+  h.read('ED_STATE.issueFields[0].box.page = 2');
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].pdfPages, 2, 'the count the browser read rides the issue');
+});
+
+// ED3 (operator 2026-11-06) — the finished copy, built by the REAL pdf-lib
+// inside the page and read back by the real pdf.js in Node: what is on which
+// page, where, and that every page says it is a copy.
+const ed3Fs = require('fs'), ed3Path = require('path');
+const ed3Lib = require(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdf-lib'));
+const ed3PdfJs = require(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.js'));
+const ed3Src = ed3Fs.readFileSync(ed3Path.join(__dirname, '..', '..', '..', 'node_modules', 'pdf-lib', 'dist', 'pdf-lib.min.js'), 'utf8');
+const ED3_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+/** A two-page original (the second stored turned 90°) and a one-page certificate, made in Node. */
+const ed3Fixtures_ = async () => {
+  const mk = async (pages, line) => {
+    const d = await ed3Lib.PDFDocument.create(); const f = await d.embedFont(ed3Lib.StandardFonts.Helvetica);
+    pages.forEach((rot, i) => { const p = d.addPage([612, 792]); if (rot) p.setRotation(ed3Lib.degrees(rot)); p.drawText(line + ' ' + (i + 1), { x: 60, y: 740, size: 12, font: f }); });
+    return Buffer.from(await d.save());
+  };
+  const orig = await mk([0, 90], 'Original page');
+  const cert = await mk([0], 'Certificate of signature');
+  return { orig, cert, sha: require('crypto').createHash('sha256').update(orig).digest('hex'),
+    origUri: 'data:application/pdf;base64,' + orig.toString('base64'), certUri: 'data:application/pdf;base64,' + cert.toString('base64') };
+};
+const ed3Doc_ = (fx, over) => Object.assign({ docId: 'dp', title: 'PIP', status: 'signed', isOwner: true, requiresSignature: true,
+  bodyMd: 'Read and sign.\n\nPDF document "PIP.pdf" · SHA-256 ' + fx.sha, pdf: { name: 'PIP.pdf', sha: fx.sha }, signedAt: '2026-11-03 10:00:00',
+  fields: [{ id: 'name', label: 'Printed name', type: 'text', required: true, box: { page: 1, x: 0.2, y: 0.2, w: 0.4, h: 0.03 } },
+    { id: 'when', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.2, y: 0.26, w: 0.2, h: 0.03 } },
+    { id: 'long', label: 'Comments', type: 'textarea', required: false, box: { page: 1, x: 0.1, y: 0.4, w: 0.3, h: 0.03 } },
+    { id: 'sig', label: 'Sign here', type: 'signature', required: true, box: { page: 1, x: 0.1, y: 0.8, w: 0.3, h: 0.05 } },
+    { id: 'turned', label: 'On the turned page', type: 'text', required: true, box: { page: 2, x: 0.1, y: 0.1, w: 0.4, h: 0.05 } },
+    { id: 'else', label: 'Anything else', type: 'text', required: false }],
+  responses: { name: 'Sam Ortiz', when: '2026-11-20', long: 'word '.repeat(80) + 'END', turned: 'Upright answer', else: 'No box here' },
+  signatureImage: ED3_PNG }, over || {});
+/** Boot with the page's pdf.js stood in (the preview), the real pdf-lib in the page, and a WebCrypto. */
+const ed3Boot_ = (fx, doc) => {
+  const h = boot();
+  hFakePdf_(h, 2);
+  if (!(h.window.crypto && h.window.crypto.subtle)) Object.defineProperty(h.window, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+  h.read(ed3Src);
+  const asked = [];
+  h.run.respond('getMyDoc', () => doc);
+  h.run.respond('getEmpDocPdf', (id) => { asked.push(['pdf', id]); return { success: true, dataUri: fx.origUri, sha: fx.sha, name: 'PIP.pdf' }; });
+  h.run.respond('getEmpDocCertificate', (id) => { asked.push(['cert', id]); return { success: true, dataUri: fx.certUri, fileName: 'PIP - certificate.pdf' }; });
+  return { h, asked };
+};
+const ed3Until_ = async (h, fn, ms) => {
+  const t0 = Date.now();
+  while (!fn()) { if (Date.now() - t0 > (ms || 10000)) throw new Error('timed out waiting'); h.flushTimers(); await new Promise((r) => setTimeout(r, 15)); }
+};
+/** Each page of a copy as {text, items: [{s, x, y}] (viewport points from top-left), images}. */
+const ed3Read_ = async (bytes) => {
+  const doc = await ed3PdfJs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, verbosity: 0 }).promise;
+  const out = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p); const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent(); const ops = await page.getOperatorList();
+    out.push({ w: vp.width, h: vp.height, text: tc.items.map((i) => i.str).join(' | '),
+      items: tc.items.map((i) => { const [x, y] = vp.convertToViewportPoint(i.transform[4], i.transform[5]); return { s: i.str, x, y }; }),
+      images: ops.fnArray.filter((f) => f === ed3PdfJs.OPS.paintImageXObject).length });
+  }
+  return out;
+};
+
+test('ED3 DOM: Print… makes the finished copy from the VERIFIED original — every answer in its box (a date as MM/DD/YYYY, a long one cut with "…"), the signature drawn, the answer on a page stored turned upright in its box, the answers in full and the box-less answers on an answers page, the certificate appended, every page labelled a copy; Download saves it as "(copy).pdf" (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h, asked } = ed3Boot_(fx, ed3Doc_(fx));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  const foot = h.$('#ed-reader-overlay .foot');
+  assert.deepStrictEqual([...foot.querySelectorAll('button')].map((b) => b.textContent.trim()), ['Certificate', 'Print…', 'Email…', 'Close']);
+  const before = asked.length;
+  foot.querySelector('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy') && !h.$('#ed-copy-overlay [data-ed-copy-act="print"]').disabled);
+  assert.deepStrictEqual(asked.slice(before), [['pdf', 'dp'], ['cert', 'dp']], 'the original (fetched again, and hashed here) and the certificate, by the document\'s id');
+  const bytes = Buffer.from(h.read('ED_STATE.copy.bytes'));
+  assert.strictEqual(h.read('ED_STATE.copy.name'), 'PIP (copy).pdf');
+  assert.ok(/^0\.\d MB$/.test(h.$('#ed-copy-msg').textContent), h.$('#ed-copy-msg').textContent);
+  const pages = await ed3Read_(bytes);
+  assert.strictEqual(pages.length, 4, 'two original pages, the answers page, the certificate');
+  const at = (pg, s) => pages[pg].items.find((i) => i.s.indexOf(s) === 0);
+  const name = at(0, 'Sam Ortiz');
+  assert.ok(name && Math.abs(name.x - (0.2 * 612 + 3)) < 1 && name.y > 0.2 * 792 && name.y < 0.23 * 792, 'in its box: ' + JSON.stringify(name));
+  assert.ok(at(0, '11/20/2026'), 'the date as written on paper');
+  assert.ok(pages[0].items.some((i) => /…$/.test(i.s)) && !/END/.test(pages[0].text), 'the long answer is cut in its box');
+  assert.ok(pages[0].images >= 1, 'the signature is drawn');
+  assert.ok(pages[1].w === 792 && pages[1].h === 612, 'the second page shows turned');
+  const up = at(1, 'Upright answer');
+  assert.ok(up && Math.abs(up.x - (0.1 * 792 + 3)) < 1 && up.y > 0.1 * 612 && up.y < 0.15 * 612, 'placed in its box as the page is shown: ' + JSON.stringify(up));
+  assert.ok(/Answers in full — longer than their box/.test(pages[2].text) && /Comments \(page 1\)/.test(pages[2].text) && /END/.test(pages[2].text), 'the long answer in full');
+  assert.ok(/Other answers/.test(pages[2].text) && /Anything else/.test(pages[2].text) && /No box here/.test(pages[2].text), 'the answer with no box');
+  assert.ok(/Certificate of signature 1/.test(pages[3].text), 'the certificate appended');
+  assert.ok(pages.every((p) => /COPY · made \d{4}-\d{2}-\d{2} from the signed original \(PDF SHA-256 [a-f0-9]{12}… ?\) · the certificate is the record/.test(p.text.replace(/ \| /g, ' '))), 'every page labelled');
+  const dl = [];
+  h.window.URL.createObjectURL = (b) => { dl.push(['blob', b.size]); return 'blob:x'; };
+  h.window.URL.revokeObjectURL = () => {};
+  h.window.HTMLAnchorElement.prototype.click = function () { dl.push(['click', this.getAttribute('download')]); };
+  h.$('#ed-copy-overlay [data-ed-copy-act="download"]').click();
+  assert.deepStrictEqual(dl, [['blob', bytes.length], ['click', 'PIP (copy).pdf']]);
+});
+
+test('ED3 DOM: a written document\'s copy is its text set on pages — title, body, the answers, the signature — then the certificate; no PDF is asked for (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const doc = ed3Doc_(fx, { pdf: null, status: 'completed', bodyMd: '# Phone policy\n\nAnswer within **three** rings.\n\n- Name the company', fields: [{ id: 'ok', label: 'Questions?', type: 'text', required: false }], responses: { ok: 'None' } });
+  const { h, asked } = ed3Boot_(fx, doc);
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy'));
+  assert.deepStrictEqual(asked, [['cert', 'dp']], 'only the certificate');
+  const pages = await ed3Read_(Buffer.from(h.read('ED_STATE.copy.bytes')));
+  assert.strictEqual(pages.length, 2);
+  const t = pages[0].text;
+  assert.ok(/PIP/.test(t) && /Phone policy/.test(t) && /Answer within three rings\./.test(t) && /• Name the company/.test(t) && /Responses/.test(t) && /Questions\?/.test(t) && /None/.test(t), t);
+  assert.ok(pages[0].images >= 1 && /Signature/.test(t), 'the signature');
+  assert.ok(/from the completed original · the certificate is the record/.test(t.replace(/ \| /g, ' ')) && /Certificate of signature/.test(pages[1].text));
+});
+
+test('ED3 DOM: no copy is made from a PDF that is not the one issued, nor without the PDF tools — each is said, nothing is offered; a failed load is not kept, and a file that fails its checksum never runs (driven)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed3Doc_(fx, { pdf: { name: 'PIP.pdf', sha: 'e'.repeat(64) } }));
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => /not the one that was issued/.test(h.$('#ed-copy-pages').textContent));
+  assert.ok(!h.read('ED_STATE.copy') && [...h.$$('#ed-copy-overlay [data-ed-copy-act]')].filter((b) => b.disabled).length === 3, 'nothing to print, download or email');
+  // Without pdf-lib: the load fails, is said, and the next press tries again.
+  const r = boot();
+  hFakePdf_(r, 2);
+  if (!(r.window.crypto && r.window.crypto.subtle)) Object.defineProperty(r.window, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+  r.run.respond('getMyDoc', () => ed3Doc_(fx));
+  r.run.respond('getEmpDocPdf', () => ({ success: true, dataUri: fx.origUri }));
+  r.run.respond('getEmpDocCertificate', () => ({ success: true, dataUri: fx.certUri }));
+  const fetched = [];
+  let answer = () => Promise.reject(new Error('blocked'));
+  r.window.fetch = (u) => { fetched.push(u); return answer(); };
+  r.read('fetch = window.fetch');
+  r.read('edOpenDoc_')('dp');
+  await hSettle_();
+  r.$('[data-ed-copy="print"]').click();
+  await ed3Until_(r, () => /PDF tools could not load in this browser/.test(r.$('#ed-copy-pages').textContent));
+  assert.deepStrictEqual(fetched, ['https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js']);
+  answer = () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode('window.PDFLib = { PDFDocument: {} };').buffer) });
+  r.$('[data-ed-copy-act="close"]').click();
+  r.$('[data-ed-copy="print"]').click();
+  await ed3Until_(r, () => fetched.length === 2 && /PDF tools could not load/.test(r.$('#ed-copy-pages').textContent));
+  assert.ok(![...r.document.querySelectorAll('script')].some((s) => /window\.PDFLib = /.test(s.textContent)), 'a file that fails its checksum is never put on the page');
+  assert.strictEqual(r.read('ED_PDFLIB.state'), '', 'and is not kept');
+});
+
+test('ED3 DOM: Email… opens the panel once the copy is made; its preview is the server\'s (one builder) and follows the choices; an outside address is confirmed before sending — declined sends nothing; the send carries the copy\'s own bytes; success closes the panel, a refusal stays with Send back; a copy over the limit cannot be emailed (driven)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed3Doc_(fx));
+  const calls = [];
+  let sendAnswer = { error: 'Service invoked too many times for one day: email.' };
+  h.run.respond('emailEmpDocCopy', (id, o) => {
+    calls.push([id, JSON.parse(JSON.stringify(o))]);
+    if (o.preview) {
+      const out = (o.extra || []).filter((a) => !/@ums\.com$/.test(a));
+      return { success: true, preview: true, to: ['ann@ums.com'], cc: (o.managers ? ['boss@ums.com'] : []).concat(o.extra || []), outside: out, subject: 'Copy: PIP (signed 2026-11-03)', html: '<p>Boss sent you a copy of <b>PIP</b>.</p>', fileName: 'PIP (copy).pdf' };
+    }
+    return sendAnswer;
+  });
+  const confirms = [];
+  let confirmAnswer = false;
+  h.window.__stubConfirm = (o) => { confirms.push(o.title); return Promise.resolve(confirmAnswer); };
+  h.read('uiConfirm = window.__stubConfirm');
+  h.read('edOpenDoc_')('dp');
+  await hSettle_();
+  h.$('[data-ed-copy="email"]').click();
+  await ed3Until_(h, () => h.$('#ed-copy-mail') && !h.$('#ed-copy-mail').hidden && h.$('#ed-mail-preview .ed-mail-kv'));
+  assert.deepStrictEqual(calls[0], ['dp', { managers: false, extra: [], note: '', preview: true }], 'the first preview: the employee only');
+  assert.ok(/To ann@ums\.com/.test(h.$('#ed-mail-preview').textContent) && /Boss sent you a copy of PIP/.test(h.$('#ed-mail-preview').textContent) && /PIP \(copy\)\.pdf \(0\.\d MB\)/.test(h.$('#ed-mail-preview').textContent));
+  h.$('#ed-mail-mgr').checked = true; h.$('#ed-mail-mgr').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  h.$('#ed-mail-extra').value = 'me@gmail.com, hr@ums.com'; h.$('#ed-mail-extra').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await hSettle_();
+  assert.deepStrictEqual(calls[calls.length - 1][1], { managers: true, extra: ['me@gmail.com', 'hr@ums.com'], note: '', preview: true });
+  assert.ok(/Outside the company: me@gmail\.com/.test(h.$('#ed-mail-preview').textContent));
+  const n = calls.length;
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  assert.deepStrictEqual(confirms, ['Send outside the company?']);
+  assert.strictEqual(calls.length, n, 'declined: nothing sent');
+  confirmAnswer = true;
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  const sent = calls[calls.length - 1][1];
+  assert.ok(sent.outsideOk === true && !sent.preview && sent.managers === true, JSON.stringify(Object.assign({}, sent, { pdf: '…' })));
+  assert.ok(Buffer.from(sent.pdf.split(',')[1], 'base64').equals(Buffer.from(h.read('ED_STATE.copy.bytes'))), 'the copy\'s own bytes');
+  assert.ok(/Service invoked too many times/.test(h.$('#ed-mail-msg').textContent) && !h.$('#ed-mail-send').disabled && !h.$('#ed-copy-mail').hidden, 'a refusal is said; Send is back');
+  sendAnswer = { success: true, sent: 4 };
+  h.$('#ed-mail-send').click();
+  await hSettle_();
+  assert.ok(h.$('#ed-copy-mail').hidden && /Copy sent to 4 people/.test(h.document.body.textContent), 'sent: said, the panel closes');
+  // Over the limit: no email.
+  h.read('ED_COPY_MAX_BYTES = 10');
+  h.$('[data-ed-copy-act="close"]').click();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy') && !h.$('#ed-copy-overlay [data-ed-copy-act="print"]').disabled);
+  assert.ok(h.$('#ed-copy-overlay [data-ed-copy-act="email"]').disabled && /over the 0\.0+\d* MB email limit|over the .* MB email limit; download it and attach it yourself/.test(h.$('#ed-copy-msg').textContent), h.$('#ed-copy-msg').textContent);
+});
+
+// ED4 (operator 2026-11-09) — letterheads and written-document formatting.
+const ED4_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const ed4Lhs_ = () => ({ letterheads: [
+  { id: 'ums', name: 'UniversalMed Supply', address: '1 Main St\nPlano, TX', footer: 'UMS · Confidential', logoKey: 'lhlogo-' + 'a'.repeat(24), logo: ED4_PNG },
+  { id: 'infimed', name: 'Infimed Solutions', address: 'Pune, India', footer: '', logoKey: '', logo: '' }],
+  forEmp: { e1: 'ums', e2: 'infimed' }, canEdit: true, stored: true });
+const ED4_BODY = ':::center\n**Customer Service**\n:::\n\nAnswer within three rings.\n\n[page break]\n\nI agree.\n\n[signature]';
+const ed4WrittenDoc_ = (over) => Object.assign({ docId: 'dw', title: 'Phone policy', docType: 'policy', status: 'signed', isOwner: true, requiresSignature: true,
+  bodyMd: ED4_BODY, signedAt: '2026-11-03 10:00:00', empName: 'Ann Lee', fields: [], responses: {}, integrity: 'ok', pdf: null,
+  letterhead: { id: 'ums', name: 'UniversalMed Supply', address: '1 Main St\nPlano, TX', footer: 'UMS · Confidential', logo: ED4_PNG },
+  signatureImage: ED4_PNG }, over || {});
+
+test('ED4 DOM: a written document is read on its letterhead — the logo, name and address above, the footer below — with its centred lines, a marked page break and the signature block (the drawing, the name and the date once signed; lines to sign on before); a document with no letterhead has none (driven)', async () => {
+  const h = boot();
+  let doc = ed4WrittenDoc_();
+  h.run.respond('getMyDoc', () => doc);
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  const paper = h.$('#ed-reader-overlay .ed-paper');
+  assert.ok(paper && paper.querySelector('.ed-lh .ed-lh-name').textContent === 'UniversalMed Supply' && /1 Main St\s*Plano, TX/.test(paper.querySelector('.ed-lh-addr').textContent));
+  assert.strictEqual(paper.querySelector('.ed-lh-logo').getAttribute('src'), ED4_PNG);
+  assert.strictEqual(paper.querySelector('.ed-lh-foot').textContent, 'UMS · Confidential');
+  assert.ok(paper.firstElementChild.classList.contains('ed-lh') && paper.lastElementChild.classList.contains('ed-lh-foot'), 'the letterhead above, its footer below');
+  assert.strictEqual(paper.querySelector('.ed-al-center strong').textContent, 'Customer Service');
+  assert.ok(paper.querySelector('.ed-pagebreak[role="separator"]'), 'the page break is marked');
+  const sig = paper.querySelector('.ed-sigblock');
+  assert.ok(sig.querySelector('.ed-sigblock-img').getAttribute('src') === ED4_PNG && /Name: Ann Lee/.test(sig.textContent) && /Date: 2026-11-03/.test(sig.textContent));
+  assert.ok(!/\[signature\]|\[page break\]|:::/.test(paper.textContent), 'no marker shows as text');
+  h.read('edCloseDoc_')();
+  doc = ed4WrittenDoc_({ status: 'issued', canComplete: true, ackText: 'I have read it.', signatureImage: '', letterhead: null });
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  const p2 = h.$('#ed-reader-overlay .ed-paper');
+  assert.ok(!p2.querySelector('.ed-lh') && !p2.querySelector('.ed-lh-foot'), 'no letterhead');
+  assert.ok(!p2.querySelector('.ed-sigblock-img') && /Date:$/.test(p2.querySelector('.ed-sigblock-row').textContent.trim()), 'not signed: lines to sign on, no date');
+});
+
+const ed4Mgr_ = (lhAnswer) => {
+  const h = boot(); mount_(h, 'view-area');
+  const sent = [];
+  h.run.respond('getDocsDashboard', () => ({ docs: [] }));
+  h.run.respond('getEmployeesList', () => ({ employees: [{ id: 'e1', name: 'Ann Lee' }, { id: 'e2', name: 'Raj Patel' }] }));
+  h.run.respond('getEmpDocTemplates', () => ({ templates: [] }));
+  h.run.respond('getEmpDocLetterheads', () => (typeof lhAnswer === 'function' ? lhAnswer() : lhAnswer));
+  h.run.respond('issueDoc', (p) => { sent.push(JSON.parse(JSON.stringify(p))); return { success: true, status: 'issued', docId: 'd9' }; });
+  h.read("currentView = 'docsManage'");
+  h.window.enterDocsManageView();
+  h.window.__stubConfirm = () => Promise.resolve(true);
+  h.read('uiConfirm = window.__stubConfirm');
+  return { h, sent };
+};
+const ed4Pick_ = (h, id, v) => { const el = h.$('#' + id); el.value = v; el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+
+test('ED4 DOM: the issue form\'s letterhead follows the employee\'s company until the manager picks one, and the issue carries it; Preview shows the body on that letterhead with its formatting; the insert buttons write the markers; a letterhead read that fails is said, the picker off, and the document goes out with none (driven)', async () => {
+  const { h, sent } = ed4Mgr_(ed4Lhs_());
+  await hSettle_();
+  const sel = h.$('#ed-is-lh');
+  assert.deepStrictEqual([...sel.options].map((o) => o.textContent), ['UniversalMed Supply', 'Infimed Solutions', 'No letterhead']);
+  ed4Pick_(h, 'ed-is-emp', 'e2');
+  assert.strictEqual(sel.value, 'infimed', 'the India employee: Infimed');
+  ed4Pick_(h, 'ed-is-emp', 'e1');
+  assert.strictEqual(sel.value, 'ums');
+  ed4Pick_(h, 'ed-is-lh', '');
+  ed4Pick_(h, 'ed-is-emp', 'e2');
+  assert.strictEqual(sel.value, '', 'a manager\'s pick stays when the employee changes');
+  ed4Pick_(h, 'ed-is-lh', 'ums');
+  const ta = h.$('#ed-is-body');
+  ta.value = 'Intro'; ta.setSelectionRange(5, 5);
+  h.click('[data-ed-ins="signature"]');
+  assert.strictEqual(ta.value, 'Intro\n[signature]\n');
+  ta.setSelectionRange(0, 5);
+  h.click('[data-ed-ins="center"]');
+  assert.ok(/^:::center\nIntro\n:::\n\[signature\]/.test(ta.value), ta.value);
+  h.$('#ed-is-title').value = 'Remote work';
+  h.click('[data-ed-wp="preview"]');
+  const pv = h.$('#ed-is-preview');
+  assert.ok(!pv.hidden && ta.hidden && h.$('#ed-is-insert').hidden, 'Preview shows; the body and the inserts hide');
+  assert.ok(/UniversalMed Supply/.test(pv.querySelector('.ed-lh').textContent) && pv.querySelector('.ed-al-center') && /Name: Raj Patel/.test(pv.querySelector('.ed-sigblock').textContent) && pv.querySelector('h1').textContent === 'Remote work');
+  ed4Pick_(h, 'ed-is-lh', 'infimed');
+  assert.ok(/Infimed Solutions/.test(h.$('#ed-is-preview .ed-lh').textContent), 'it follows the picker');
+  h.click('[data-ed-wp="write"]');
+  assert.ok(h.$('#ed-is-preview').hidden && !ta.hidden);
+  h.click('[data-ed-mode="pdf"]');
+  assert.ok(h.$('#ed-is-wp').hidden, 'a PDF document has no Write / Preview');
+  h.click('[data-ed-mode="text"]');
+  h.$('#ed-is-emp').value = 'e2';
+  h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(sent[0].letterheadId, 'infimed', 'the issue carries it');
+  // A failed read.
+  const f = ed4Mgr_({ error: 'The HR store could not be opened.' });
+  await hSettle_();
+  assert.ok(f.h.$('#ed-is-lh').disabled && /could not be opened\. The document will go out without one\./.test(f.h.$('#ed-is-lh-note').textContent));
+  f.h.$('#ed-is-emp').value = 'e1'; f.h.$('#ed-is-title').value = 'T'; f.h.$('#ed-is-body').value = 'B';
+  f.h.window.edSubmitIssue_(true);
+  await hSettle_();
+  assert.strictEqual(f.sent[0].letterheadId, '', 'none, never a guess');
+});
+
+test('ED4 DOM: the admin\'s letterhead cards — each with its preview; Save sends the edited fields, a refusal stays on the card; Delete asks first; a new card adds one; Remove logo clears it (driven)', async () => {
+  const h = boot();
+  mount_(h, 'view-area');
+  const calls = [];
+  let saveAnswer = { error: 'The company name is too long (max 80 characters).' };
+  h.run.respond('getEmpDocLetterheads', () => ed4Lhs_());
+  h.run.respond('saveEmpDocLetterhead', (lh) => { calls.push(['save', JSON.parse(JSON.stringify(lh))]); return saveAnswer; });
+  h.run.respond('deleteEmpDocLetterhead', (id) => { calls.push(['delete', id]); return { success: true }; });
+  h.run.respond('setEmpDocLetterheadLogo', (id, d) => { calls.push(['logo', id, d]); return { success: true, logoKey: '' }; });
+  const confirms = [];
+  h.window.__stubConfirm = (o) => { confirms.push(o.title); return Promise.resolve(true); };
+  h.read('uiConfirm = window.__stubConfirm');
+  const host = h.document.createElement('div'); host.id = 'ed-admin-lh'; h.$('#view-area').appendChild(host);
+  h.window.edLetterheadsMount_(host);
+  await hSettle_();
+  const cards = h.$$('#ed-admin-lh .ed-lh-card');
+  assert.strictEqual(cards.length, 3, 'two letterheads and a new card');
+  assert.ok(cards[0].querySelector('.ed-lh-preview .ed-lh-logo') && /UniversalMed Supply/.test(cards[0].querySelector('.ed-lh-preview').textContent));
+  cards[0].querySelector('.ed-lh-in-addr').value = '2 Main St';
+  cards[0].querySelector('[data-ed-lh-act="save"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[0], ['save', { id: 'ums', name: 'UniversalMed Supply', address: '2 Main St', footer: 'UMS · Confidential' }]);
+  assert.ok(/too long/.test(cards[0].querySelector('.ed-lh-msg').textContent) && !cards[0].querySelector('[data-ed-lh-act="save"]').disabled, 'a refusal stays on the card');
+  saveAnswer = { success: true, id: 'acme' };
+  const fresh = h.$$('#ed-admin-lh .ed-lh-card')[2];
+  fresh.querySelector('.ed-lh-in-name').value = 'Acme';
+  fresh.querySelector('[data-ed-lh-act="save"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[1], ['save', { id: '', name: 'Acme', address: '', footer: '' }], 'a new one has no id yet');
+  h.$$('#ed-admin-lh .ed-lh-card')[1].querySelector('[data-ed-lh-act="delete"]').click();
+  await hSettle_();
+  assert.deepStrictEqual([confirms, calls[2]], [['Delete this letterhead?'], ['delete', 'infimed']]);
+  h.$$('#ed-admin-lh .ed-lh-card')[0].querySelector('[data-ed-lh-act="nologo"]').click();
+  await hSettle_();
+  assert.deepStrictEqual(calls[3], ['logo', 'ums', '']);
+});
+
+test('ED4 DOM: a written document\'s printed copy is on its letterhead — the name and address on the first page, the footer on every page of the document — its centred line centred, a page break a new page, the signature block with the name and date, the signature drawn there and not again (driven over the real pdf-lib and pdf.js)', async () => {
+  const fx = await ed3Fixtures_();
+  const { h } = ed3Boot_(fx, ed4WrittenDoc_());
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await ed3Until_(h, () => h.read('ED_STATE.copy'));
+  const pages = await ed3Read_(Buffer.from(h.read('ED_STATE.copy.bytes')));
+  assert.strictEqual(pages.length, 3, 'two written pages, then the certificate');
+  const t1 = pages[0].text, t2 = pages[1].text;
+  assert.ok(/UniversalMed Supply/.test(t1) && /1 Main St/.test(t1) && /Plano, TX/.test(t1) && !/UniversalMed Supply \|/.test(t2), 'the letterhead on the first page only');
+  assert.ok(/UMS · Confidential/.test(t1) && /UMS · Confidential/.test(t2), 'the footer on every page');
+  const cs = pages[0].items.find((i) => i.s === 'Customer Service');
+  const body = pages[0].items.find((i) => /^Answer within/.test(i.s));
+  assert.ok(cs && body && Math.abs(body.x - 54) < 1 && cs.x > 220 && cs.x < 290, 'centred, where the body starts at the margin: ' + JSON.stringify([cs, body]));
+  assert.ok(/Answer within three rings\./.test(t1) && !/I agree/.test(t1) && /I agree\./.test(t2), 'the page break starts a new page');
+  assert.ok(/Employee signature/.test(t2) && /Name: Ann Lee/.test(t2) && /Date: 2026-11-03/.test(t2) && pages[1].images >= 1, 'the signature block, drawn');
+  assert.ok(!/(^| \| )Signature( \| |$)/.test(t2), 'not drawn again after the answers');
+  assert.ok(pages[0].images >= 1, 'the logo');
+});
+
+
+test('DR1 DOM: a manager\'s Audit list — every request in the range with its CRM box first; the type, department, status and CRM menus filter in place; Copy table hands over the filtered rows; a CRM box is disabled while saving, put back when the save fails, and on success says who checked it and updates the count with the row left where it is; a late answer to an earlier range is dropped (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const base = { isManager: true, myDepts: [], departments: ['Billing'], mine: [], incoming: [], allOpen: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7,
+    truncated: false, listCap: 100, mineTotal: 0, incomingTotal: 0, allOpenTotal: 0, deptStats: [], teamKpis: { open: 0, overdue: 0, resolved: 0, total: 0, medianMin: null, manualCount: 0 } };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(base)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  const modes = h.$$('.dr-mode .toolbar-tab');
+  assert.deepStrictEqual(modes.map((b) => b.textContent.trim()), ['Tracker', 'Audit list'], 'the switch, under the title');
+  const row = (id, extra) => Object.assign({ requestId: id, createdMs: 1, createdAt: 'Nov 9, 2026 9:12 AM', createdIso: '2026-11-09 09:12', type: 'Close Order', toDept: 'Eligibility',
+    byName: 'Nina', patientTrx: 'Pat ' + id + ' · TRX 1', status: 'open', resolvedAt: '', resolvedIso: '', resolvedBy: '', resolvedVia: '', threadTracked: true, crmChecked: false, crmBy: '', crmAtMs: null }, extra || {});
+  const audit = { from: '2026-10-11', to: '2026-11-09', truncated: false, max: 2000, crmTruncated: false, types: ['Close Order', 'OOP Order'], departments: ['Billing', 'Eligibility'],
+    rows: [row('a'), row('b', { type: 'OOP Order', toDept: 'Billing', status: 'resolved', resolvedVia: 'email', resolvedBy: 'bo@x' }), row('c', { crmChecked: true, crmBy: 'ana@x', threadTracked: false })] };
+  h.window.drSetAuditMode_(true);
+  const first = h.run.pending('getDeptRequestAudit');
+  assert.strictEqual(first.length, 1, 'switching to it reads the list');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(first[0].args[0])), { from: '', to: '' }, 'the server\'s default range on the first read');
+  h.window.drAuditLoad_();   // a second read before the first answers
+  h.run.flushSuccess({ from: '2026-10-11', to: '2026-11-09', rows: [row('stale')], types: [], departments: [], truncated: false, max: 2000 }, 'getDeptRequestAudit');
+  assert.ok(!h.$('.dr-crm-box[data-req="stale"]'), 'THE RULE: an earlier read answering late is dropped (g81)');
+  h.run.flushSuccess(JSON.parse(JSON.stringify(audit)), 'getDeptRequestAudit');
+  const ids = () => h.$$('.dr-audit-table .dr-crm-box').map((b) => b.getAttribute('data-req')).join('');
+  assert.strictEqual(ids(), 'abc');
+  assert.strictEqual(h.$('#dr-audit-from').value, '2026-10-11', 'the range the server read is shown');
+  assert.ok(h.$$('.dr-audit-table tbody tr').every((tr) => tr.querySelector('td:first-child .dr-crm-box')), 'the CRM box leads each row');
+  assert.ok(/Pat a · TRX 1/.test(h.$('.dr-crm-box[data-req="a"]').getAttribute('aria-label')), 'each box is named for its request');
+  assert.ok(/Before thread tracking/.test(h.$('#dr-audit-results').textContent));
+  assert.ok(/3 requests · 1 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')));
+  const pick = (label, value) => {
+    const sel = h.$$('#dr-audit select').filter((s) => s.getAttribute('aria-label') === label)[0];
+    // jsdom here does not run inline handlers: check the wiring, then call it.
+    assert.ok(new RegExp("drAuditSetFilter_\\('" + { Type: 'type', CRM: 'crm' }[label] + "', this\\.value\\)").test(sel.getAttribute('onchange')), label + ' is wired');
+    sel.value = value; h.window.drAuditSetFilter_({ Type: 'type', CRM: 'crm' }[label], sel.value);
+    return sel;
+  };
+  const typeSel = pick('Type', 'Close Order');
+  assert.strictEqual(ids(), 'ac', 'filtered by type');
+  assert.ok(h.document.body.contains(typeSel), 'the menu is not re-rendered under the manager');
+  pick('CRM', 'unchecked');
+  assert.strictEqual(ids(), 'a', 'the Close Orders still to check');
+  assert.ok(/1 of 3 requests · 0 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')));
+  let copied = null;
+  h.window.copyWithFeedback_ = (t) => { copied = t; };
+  h.window.drAuditCopy_(h.$('#dr-audit .refresh-btn'));
+  assert.ok(copied && copied.split('\n').length === 2 && /^Sent\tType/.test(copied) && /Pat a/.test(copied), 'Copy table: the header and the one filtered row');
+  // The CRM mark.
+  const box = h.$('.dr-crm-box[data-req="a"]');
+  assert.strictEqual(box.getAttribute('onchange'), 'drCrmToggle_(this)');
+  const change = () => h.window.drCrmToggle_(box);   // jsdom here does not run inline handlers
+  box.checked = true; change();
+  assert.ok(box.disabled, 'disabled while it saves');
+  assert.deepStrictEqual(Array.from(h.run.pending('setDeptRequestCrmCheck')[0].args), ['a', true]);
+  h.run.flushSuccess({ success: false, error: 'Request not found.' }, 'setDeptRequestCrmCheck');
+  assert.ok(!box.checked && !box.disabled, 'THE RULE: a refused save puts the box back');
+  box.checked = true; change();
+  h.run.flushFailure(new Error('offline'), 'setDeptRequestCrmCheck');
+  assert.ok(!box.checked && !box.disabled, 'and a failed one');
+  box.checked = true; change();
+  h.run.flushSuccess({ success: true, requestId: 'a', checked: true, by: 'mgr@x', atMs: Date.UTC(2026, 10, 9, 15) }, 'setDeptRequestCrmCheck');
+  assert.ok(box.checked && !box.disabled && h.document.body.contains(box), 'saved, and the same box (patched in place — g141)');
+  assert.ok(/mgr@x/.test(box.closest('.dr-crm').querySelector('.dr-crm-who').textContent), 'who checked it');
+  assert.ok(/1 of 3 requests · 1 checked in CRM/.test(h.$('#dr-audit-sum').textContent.replace(/\s+/g, ' ')), 'the count follows');
+  assert.strictEqual(ids(), 'a', 'the row stays in view until the filters are changed');
+  h.window.drSetAuditMode_(false);
+  assert.ok(!h.$('#dr-audit') && h.$('.dr-mode'), 'back to the tracker, the switch still there');
+});
+
+test('DR1 DOM: Mark resolved says what became of the reply on the email thread — sent, or none for a request sent before thread tracking — and that request\'s button says so before the click; a rep (not a manager) has no Audit list (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const it = (id, extra) => Object.assign({ requestId: id, toDept: 'Billing', label: 'Close Order', patientTrx: 'P ' + id + ' · TRX 5' + id, createdAt: 'd', createdMs: 1000,
+    byName: 'Me', status: 'open', elapsedMin: 30, slaBusiness: true, slaStatus: 'ontime', slaDays: 2, threadTracked: true }, extra || {});
+  const data = { isManager: false, myDepts: [], departments: ['Billing'], incoming: [], recentResolved: [], recentResolvedTotal: 0, reopenDays: 7, truncated: false, listCap: 100,
+    mine: [it('1'), it('2', { threadTracked: false })], mineTotal: 2, incomingTotal: 0 };
+  h.run.respond('getDeptRequests', () => JSON.parse(JSON.stringify(data)));
+  h.window.enterTool('callNotes', 'metricsDeptReq');
+  h.flushTimers();
+  assert.ok(!h.$('.dr-mode'), 'a rep has no Audit list');
+  const btn = (id) => h.$('.sp-resolve[data-req="' + id + '"]');
+  assert.ok(/before thread tracking/.test(btn('2').getAttribute('title') || ''), 'said before the click');
+  assert.ok(!btn('1').getAttribute('title'), 'a tracked request needs no warning');
+  const toasts = () => h.$$('#toast-stack .toast').map((t) => t.textContent).join(' | ');
+  h.window.drResolveClick_(btn('1'));
+  const ok = h.$('.ui-dialog-ok'); if (ok) h.click(ok);
+  await tick();
+  h.run.flushSuccess({ success: true, already: false, reply: { sent: true }, replyNote: 'A reply saying so was sent on the email thread.' }, 'resolveDeptRequest');
+  assert.ok(/Marked resolved\. A reply saying so was sent on the email thread\./.test(toasts()), toasts());
+  h.window.drResolveClick_(btn('2'));
+  const ok2 = h.$('.ui-dialog-ok'); if (ok2) h.click(ok2);
+  await tick();
+  h.run.flushSuccess({ success: true, already: false, reply: { sent: false, reason: 'untracked' },
+    replyNote: 'No reply was sent on the email thread: this request was sent before thread tracking began, so it has no thread to reply on.' }, 'resolveDeptRequest');
+  assert.ok(/sent before thread tracking began/.test(toasts()), 'THE ASK: the request sent before thread tracking says it got no reply');
+});
 test('22post D DOM: a reply-resolved card says so and credits the replier, a needs-a-look card stays open with Mark resolved, Recently resolved lists what the caller may reopen, and Mark unresolved reopens through the server and refreshes (a failure restores the button)', () => {
   const h = boot();
   h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
@@ -9037,6 +10190,59 @@ test('Seams F8 (cycle 24): the Time / PTO calendar SAYS when the timesheet archi
   assert.ok(!/timesheet archive could not be read/.test(area.innerHTML), 'a clean read shows no note');
 });
 
+test('P1 DOM: the pay-week item — "Check your timesheet" with Review and a Done button; Done hides it for THAT period (kept in the browser) while the other items keep their own links; the next period\'s item shows again', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  const host = h.$('#dash-needsyou');
+  const NEEDS = h.read('CLK_NEEDS');
+  NEEDS.busy = false;
+  const render = h.read('clkRenderNeedsYou_');
+  const pay = (key) => ({ kind: 'payWeek', title: 'Check your timesheet', detail: 'Pay period Nov 1 – Nov 30 · request any edits by Mon Nov 30',
+    dueIso: '2026-11-30', overdue: false, action: 'Review', periodKey: key, route: { tool: 'timeClock', tab: 'timeoff' } });
+  const coach = { kind: 'coaching', title: 'Coaching note to acknowledge', detail: 'Minor', dueIso: '', overdue: false, action: 'Open', route: { tool: 'develop', tab: 'coaching' } };
+  NEEDS.data = { items: [pay('Monthly:2026-11-01'), coach], total: 2, unavailable: [], todayIso: '2026-11-24' };
+  render();
+  const row = host.querySelector('li[data-kind="payWeek"]');
+  assert.ok(row && /Check your timesheet/.test(row.textContent) && /Review/.test(row.querySelector('.ny-go').textContent), 'the item');
+  const done = row.querySelector('button.ny-done');
+  assert.ok(done && done.getAttribute('data-ny-done') === 'Monthly:2026-11-01' && /hide until the next pay period/.test(done.getAttribute('aria-label')), 'a named Done button');
+  h.read('clkPayWeekDone_')(done.getAttribute('data-ny-done'));
+  assert.strictEqual(h.window.localStorage.getItem('umsPayWeekDone'), 'Monthly:2026-11-01', 'kept per browser, for that period');
+  assert.ok(!host.querySelector('li[data-kind="payWeek"]'), 'hidden');
+  assert.ok(/Needs you\(1\)/.test(host.querySelector('.dash-card-head').textContent), 'and the count follows');
+  const went = [];
+  h.window.enterTool = (tool, tab) => went.push(tool + '/' + tab);
+  // The link's OWN index (the inline handler is not run by the harness — read it).
+  const link = host.querySelector('li[data-kind="coaching"] a.ny-link');
+  const linkIdx = +/clkNeedsYouGo_\((\d+)\)/.exec(link.getAttribute('onclick'))[1];
+  h.read('clkNeedsYouGo_')(linkIdx);
+  assert.deepStrictEqual(went, ['develop/coaching'], 'the remaining item keeps its own link (its index into the payload)');
+  NEEDS.data = { items: [pay('Monthly:2026-12-01'), coach], total: 2, unavailable: [], todayIso: '2026-12-28' };
+  render();
+  assert.ok(host.querySelector('li[data-kind="payWeek"]'), 'the next period\'s item shows again');
+  h.read('clkNeedsYouGo_')(0);
+  assert.deepStrictEqual(went[1], 'timeClock/timeoff', 'Review opens Time / PTO');
+});
+
+test('P1 DOM: the Time / PTO calendar carries the pay-week banner while the reminder is active — the period and its last day — and none otherwise', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.run.drain();
+  const cal = (payWeek) => ({ year: 2026, month: 11, monthName: 'November 2026', lastDay: 30, firstDayOfWeek: 0,
+    workedDates: [], workedHoursByDate: {}, archiveError: '', timeOffRequests: [], teammates: [], holidays: [], allRequests: [],
+    today: '2026-11-24', timezone: 'Asia/Kolkata', ptoEnabled: false, annualLeave: 0, sickLeave: 0, payWeek: payWeek });
+  const area = h.document.createElement('div'); h.document.body.appendChild(area);
+  h.read('renderTimeOffView')(area, cal({ cycle: 'Monthly', start: '2026-11-01', end: '2026-11-30', remindOn: '2026-11-23', active: true, periodKey: 'Monthly:2026-11-01' }));
+  const b = area.querySelector('.cal-card .cal-payweek');
+  assert.ok(b && b.getAttribute('role') === 'status' && /Pay week\./.test(b.textContent) && /Nov 1 – Nov 30 ends Mon Nov 30/.test(b.textContent), b && b.textContent);
+  h.read('renderTimeOffView')(area, cal(null));
+  assert.ok(!area.querySelector('.cal-payweek'), 'outside the window: nothing');
+  h.read('renderTimeOffView')(area, cal({ cycle: 'Monthly', start: '2026-11-01', end: '2026-11-30', remindOn: '2026-11-23', active: false, periodKey: 'Monthly:2026-11-01' }));
+  assert.ok(!area.querySelector('.cal-payweek'), 'a reminder that is not active says nothing either');
+});
+
 test('Seams F7 (cycle 24, operator-approved): both email composers ASK before a close discards typed work — Keep editing leaves the email and the saved note as they were; Discard runs the rollback unchanged; an untouched composer closes at once', async () => {
   const arm = (toExternal) => {
     const h = bootLog();
@@ -9579,6 +10785,267 @@ function bootAcct(form, lang) {
   return { h, root, field, type, count };
 }
 
+section('Intake — I2 saved drafts (operator 2026-11-05)');
+
+test('I2 DOM: Save draft parks the form as a saved draft and clears it for the next call; the Drafts list shows every form\'s drafts newest first; Open restores one into its own form (another form included), re-saving updates it, opening over unsaved answers asks first, and Delete asks then removes (driven)', async () => {
+  const h = boot();
+  h.bootShell();   // empState.email = rep@umsupply.com
+  h.run.drain();
+  mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeSaved');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.enterTool('intake', 'intakePmdAccount');
+  h.run.drain();
+  const f = (i) => h.$('#intk-pmd-form [data-intk-idx="' + i + '"]');
+  const saved = () => JSON.parse(h.window.localStorage.getItem('umsIntakeSaved') || '[]');
+  h.read('intakeSaveNamedDraft_')('pmd');
+  assert.ok(!saved().length && b10Toasts(h).some((t) => /Nothing to save yet/.test(t)), 'an empty form saves nothing');
+  f(1).value = 'Ana Ruiz'; f(2).value = '469-111-3333';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  let list = saved();
+  assert.ok(list.length === 1 && list[0].label === 'Ana Ruiz' && list[0].form === 'pmd' && list[0].owner === 'rep@umsupply.com' && list[0].answers['2'] === '469-111-3333', JSON.stringify(list));
+  assert.strictEqual(f(1).value, '', 'the form is cleared for the next call');
+  assert.ok(/Drafts\s*1/.test(h.$('.intk-drafts-btn').textContent), 'the rail counts the drafts');
+  // A second draft, and a PPD one saved earlier.
+  f(1).value = 'Bo Lee';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  list = saved();
+  list[0].at -= 60000;   // Ana's is the older one
+  list.push({ id: 'ppd1', form: 'ppd', owner: 'rep@umsupply.com', at: Date.now() - 120000, label: 'Cy Doe — TRX 9', patientInfo: 'Cy Doe — TRX 9', answers: { 38: '210' }, lang: 'EN' });
+  h.window.localStorage.setItem('umsIntakeSaved', JSON.stringify(list));
+  h.read('intakeOpenDraftsList_')();
+  const labels = () => h.$$('#intk-drafts-overlay .intk-draft-label').map((x) => x.textContent);
+  assert.deepStrictEqual(labels(), ['Bo Lee', 'Ana Ruiz', 'Cy Doe — TRX 9'], 'every form, newest first');
+  // Open Ana's — the PMD form is empty, so no question.
+  const ana = list.find((d) => d.label === 'Ana Ruiz');
+  h.$('[data-draft-open="' + ana.id + '"]').click();
+  h.run.drain();
+  assert.ok(!h.$('#intk-drafts-overlay.open'), 'the list closes');
+  assert.ok(f(1).value === 'Ana Ruiz' && f(2).value === '469-111-3333', 'restored into the form');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.savedId'), ana.id);
+  assert.ok(b10Toasts(h).some((t) => /Draft opened — Ana Ruiz/.test(t)));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts')).pmd.answers['1'], 'Ana Ruiz', 'the autosave mirrors it at once');
+  // Re-saving updates the same draft.
+  f(3).value = '214-555-0101';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  assert.strictEqual(saved().length, 3, 'still three — updated, not duplicated');
+  assert.strictEqual(saved().find((d) => d.id === ana.id).answers['3'], '214-555-0101');
+  // Opening another draft over unsaved typing asks first.
+  f(1).value = 'Typed, unsaved';
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.read('intakeOpenSavedDraft_')(saved().find((d) => d.label === 'Bo Lee').id);
+  await tick();
+  assert.ok(asked.length === 1 && /Replace what is on the PMD Account form\?/.test(asked[0].title) && f(1).value === 'Typed, unsaved', 'asked, and Keep the form keeps it');
+  // A PPD draft opens into the PPD form.
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(true); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.read('intakeOpenSavedDraft_')('ppd1');
+  h.run.drain();
+  assert.strictEqual(h.$('#intk-ppd-patient').value, 'Cy Doe — TRX 9', 'the PPD form, filled');
+  assert.strictEqual(h.read('INTAKE_STATE.ppd.savedId'), 'ppd1');
+  // Delete asks, then removes.
+  h.read('intakeOpenDraftsList_')();
+  h.$('[data-draft-del="ppd1"]').click();
+  await tick(); await tick();
+  assert.ok(/Delete this draft\?/.test(asked[asked.length - 1].title));
+  assert.ok(!saved().some((d) => d.id === 'ppd1') && h.read('INTAKE_STATE.ppd.savedId') === null, 'removed, and the form no longer points at it');
+  assert.deepStrictEqual(labels(), ['Ana Ruiz', 'Bo Lee'], 'the list repaints — Ana\'s re-save made it the newest');
+});
+
+section('Intake — I3 reading an insurance card in the browser (operator 2026-11-06)');
+
+test('I3 DOM: with a card image attached, Read the insurance details offers what the reader found in boxes the rep can correct; Use as primary writes the line (I1 tidies it), Use as secondary asks before replacing; a reader that fails says so with Try again; Clear drops what was read (driven, reader stood in)', async () => {
+  const { h, field } = bootAcct('pmd');
+  const lines = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'i3-card-lines.json'), 'utf8'));
+  let calls = 0, fail = false;
+  h.window.INTAKE_OCR_ENGINE = { read: () => { calls++; return fail ? Promise.reject(new Error('no wasm')) : Promise.resolve(lines['c-bcbs/phone']); } };
+  h.read('intakeCardImage_ = function () { return Promise.resolve({}); }');
+  const host = () => h.$('#intk-card-read');
+  assert.strictEqual(host().textContent.trim(), '', 'no images, no button');
+  h.read('INTAKE_STATE.pmd.images.push("data:image/png;base64,AAAA")');
+  h.read('intakeRenderGallery_')('pmd');
+  const btn = host().querySelector('[data-card-read]');
+  assert.ok(btn && /Read the insurance details from the card/.test(btn.textContent));
+  btn.click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.strictEqual(calls, 1, 'one image, one read');
+  const val = (k) => host().querySelector('[data-card-key="' + k + '"]').value;
+  assert.deepStrictEqual([val('memberId'), val('group')], ['XOF923456781', '028914']);
+  assert.ok(!host().querySelector('[data-card-key^="rx"]') && !/Rx/.test(host().textContent), 'no Rx numbers are offered (not used)');
+  assert.ok(/check each value against the card/.test(host().textContent) && /not sent anywhere to be read/.test(host().textContent));
+  // The rep corrects the payer; the line follows.
+  const payer = host().querySelector('[data-card-key="payer"]');
+  payer.value = 'BCBS of Texas';
+  payer.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(host().querySelector('[data-card-line]').textContent, 'BCBS of Texas · ID XOF923456781 · Group 028914');
+  host().querySelector('[data-card-use="8"]').click();
+  await tick();
+  assert.strictEqual(field(8).value, 'BCBS of Texas · ID XOF923456781 · Group 028914', 'written into the primary insurance');
+  assert.ok(host().querySelector('[data-card-read]') && !host().querySelector('.intk-card-panel'), 'the panel closes and the button returns');
+  // Again, into a secondary that already holds something: asked first.
+  field(9).value = 'Medicaid 123';
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 6; i++) await tick();
+  host().querySelector('[data-card-use="9"]').click();
+  await tick();
+  assert.ok(asked.length === 1 && /Replace the secondary insurance\?/.test(asked[0].title) && field(9).value === 'Medicaid 123', 'asked, and Keep it keeps it');
+  // A reader that cannot START says so (the browser), offers Try again, and names no value.
+  host().querySelector('[data-card-close]').click();
+  h.read('window.__eng = intakeOcrEngine_; intakeOcrEngine_ = function () { return Promise.reject(new Error("no wasm")); }');
+  host().querySelector('[data-card-read]').click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.ok(/could not be read in this browser — type the insurance details instead/.test(host().textContent) && host().querySelector('.intk-card-retry'));
+  h.read('intakeOcrEngine_ = window.__eng');
+  host().querySelector('.intk-card-retry').click();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.ok(host().querySelector('.intk-card-panel'), 'Try again reads');
+  // Clear drops what was read with the form.
+  h.read('intakeClearForm_')('pmd');
+  assert.strictEqual(h.read('INTAKE_CARD.pmd'), undefined, 'what was read goes with the form');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
+test('I3a DOM: each image is read on its own — a broken one is NAMED and the others still count, and a lone broken image says to try a clearer photo (never "in this browser"); nothing found says so with only Dismiss; a value the reader was unsure of is marked "Check this one" until the rep touches it; an empty box says it was not found (driven, reader stood in)', async () => {
+  const { h } = bootAcct('pmd');
+  const host = () => h.$('#intk-card-read');
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const sure = (t) => t.split('').map(() => 0.99);
+  let reads = {};
+  h.window.INTAKE_OCR_ENGINE = { read: (img) => Promise.resolve(reads[img.src] || []) };
+  h.read('intakeCardImage_ = function (src) { return /BROKEN/.test(src) ? Promise.reject(new Error("image")) : Promise.resolve({ src: src }); }');
+  const L = (text, y, probs) => ({ text, x: 0, y, w: 300, h: 20, probs: probs || sure(text) });
+  // Image 1 reads; image 2 is broken.
+  const shaky = 'Member ID: H71938642';
+  const sp = sure(shaky); sp[14] = 0.41;   // the reader was unsure of one of the ID's own characters
+  reads['data:image/png;base64,GOOD'] = [L('Humana Gold Plus (HMO)', 0), L(shaky, 40, sp)];
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,GOOD", "data:image/png;base64,BROKEN"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/Could not read image 2 — what is shown comes from the others/.test(host().textContent), 'the broken one named');
+  const box = (k) => host().querySelector('[data-card-key="' + k + '"]');
+  assert.strictEqual(box('memberId').value, 'H71938642', 'the good image still counts');
+  const lab = box('memberId').closest('.intk-card-f');
+  assert.ok(lab.classList.contains('intk-card-unsure') && /Check this one/.test(lab.textContent) && box('memberId').getAttribute('aria-describedby'), 'unsure: marked, with no percentage');
+  assert.ok(!/%/.test(host().textContent), 'never a percentage');
+  assert.ok(!box('payer').closest('.intk-card-f').classList.contains('intk-card-unsure'), 'a sure value is not marked');
+  assert.ok(box('group').value === '' && box('group').getAttribute('placeholder') === 'Not found on the card — type it', 'an empty box says it was not found');
+  box('memberId').value = 'H71938642';
+  box('memberId').dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.ok(!lab.classList.contains('intk-card-unsure') && !/Check this one/.test(lab.textContent), 'touched: the flag goes');
+  // A lone broken image: try a clearer photo — not the browser.
+  host().querySelector('[data-card-close]').click();
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,BROKEN"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/The image could not be read — try a clearer photo, or type the details/.test(host().textContent) && !/in this browser/.test(host().textContent) && host().querySelector('.intk-card-retry'));
+  // Read, but nothing usable: said, with only Dismiss.
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,BLANK"]');
+  h.read('intakeRenderGallery_')('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/No insurance details were found in the images — type them on the form/.test(host().textContent));
+  assert.ok(!host().querySelector('[data-card-use]') && host().querySelector('[data-card-close]'), 'nothing to use — only Dismiss');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
+section('Intake — I1 format safeguards and the address check (operator 2026-11-05/06)');
+
+const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };
+
+test('I1 DOM: leaving a PMD field tidies what it can read and says what looks off, under the field, in amber — a phone, the secondary equal to the primary, a future date of birth; a two-digit year written out; a clean Medicare ID tidied, anything else kept as typed; the SSN shown as typed (operator 2026-11-06) and the phone fields offer the number pad; the tidy value is what the draft keeps', () => {
+  const { h, field } = bootAcct('pmd');
+  const rowOf = (i) => field(i).closest('.intk-row');
+  i1Leave_(h, field(2), '+1 (469) 111 3333');
+  assert.strictEqual(field(2).value, '469-111-3333', 'tidied');
+  assert.ok(!rowOf(2).classList.contains('intk-fmtwarn') && !rowOf(2).querySelector('.intk-fmt-note'), 'and nothing to say');
+  i1Leave_(h, field(3), '4691113333');
+  assert.ok(rowOf(3).classList.contains('intk-fmtwarn') && /Same as the primary number/.test(rowOf(3).querySelector('.intk-fmt-note').textContent), 'the same number twice');
+  i1Leave_(h, field(5), '12/01/2030');
+  const note5 = rowOf(5).querySelector('.intk-fmt-note');
+  assert.ok(note5 && note5.getAttribute('role') === 'status' && /in the future/.test(note5.textContent), 'said, under the field');
+  i1Leave_(h, field(5), '1/2/50');
+  assert.ok(field(5).value === '01/02/1950' && !rowOf(5).querySelector('.intk-fmt-note'), 'a two-digit year is written out and the note goes');
+  i1Leave_(h, field(8), 'medicare 1eg4 te5 mk72');
+  assert.strictEqual(field(8).value, 'Medicare · 1EG4-TE5-MK72');
+  i1Leave_(h, field(9), 'Medicare Advantage via Humana H1234');
+  assert.ok(field(9).value === 'Medicare Advantage via Humana H1234' && !rowOf(9).querySelector('.intk-fmt-note'), 'not a clean Medicare ID: kept as typed, nothing said');
+  i1Leave_(h, field(15), '5\'4"');
+  assert.ok(field(15).value === '64' && /Height \(inches\)/.test(rowOf(15).textContent) && !rowOf(15).querySelector('.intk-fmt-note'), 'a height is asked in inches and feet-and-inches become inches');
+  i1Leave_(h, field(10), '123456789');
+  assert.ok(field(10).value === '123-45-6789' && !field(10).classList.contains('intk-ssn') && field(10).getAttribute('inputmode') === 'numeric', 'the SSN is tidied, shown and numeric');
+  assert.strictEqual(field(2).getAttribute('inputmode'), 'tel');
+  h.read('intakeFlushDraftNow_')();
+  const draft = JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  assert.ok(!draft.pmd || draft.pmd.answers[2] === '469-111-3333', 'the draft keeps the tidy value');
+});
+
+test('I1 DOM: Preview asks ONCE about what looks off, beside any blank recommended fields — Go back stays on the form with the rows marked; Continue anyway previews; a clean form previews with no question', async () => {
+  const { h, field } = bootAcct('pmd');
+  const asked = [];
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(false); };
+  h.read('uiConfirm = window.uiConfirm');
+  const previewed = [];
+  h.window.intakeAcctPreviewGo_ = (form) => previewed.push(form);
+  h.read('intakeAcctPreviewGo_ = window.intakeAcctPreviewGo_');
+  field(1).value = 'Ana Ruiz';
+  field(4).value = 'ana@gmial.com';
+  field(2).value = '469 111 33';
+  h.window.intakeAcctPreview_('pmd');
+  await tick(); await tick();
+  assert.strictEqual(asked.length, 1, 'one question');
+  assert.ok(/look off/.test(asked[0].message) && /Did you mean ana@gmail\.com\?/.test(asked[0].message) && /10-digit US phone number/.test(asked[0].message), asked[0].message);
+  assert.strictEqual(asked[0].confirmLabel, 'Continue anyway');
+  assert.strictEqual(previewed.length, 0, 'Go back: no preview');
+  assert.ok(field(4).closest('.intk-row').classList.contains('intk-fmtwarn'), 'the rows are marked');
+  h.window.uiConfirm = (o) => { asked.push(o); return Promise.resolve(true); };
+  h.read('uiConfirm = window.uiConfirm');
+  h.window.intakeAcctPreview_('pmd');
+  await tick(); await tick();
+  assert.deepStrictEqual(previewed, ['pmd'], 'Continue anyway previews — a warning never blocks');
+});
+
+test('I1 DOM: the address check — nothing is sent while the toggle is off (or not loaded); on, leaving the address asks Google Maps once, a found address Google spells differently offers Use this, a not-found one is listed before Preview, and an answer that arrives after the field changed is dropped', async () => {
+  const { h, field } = bootAcct('pmd');
+  const asked = [];
+  h.run.respond('checkIntakeAddress', (a) => { asked.push(a); return /nowhere/i.test(a) ? { status: 'notFound' } : { status: 'found', formatted: '123 Elm St, Dallas, TX 75201' }; });
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick();
+  assert.strictEqual(asked.length, 0, 'flags not loaded: off (fails closed)');
+  h.read('empState = { flags: { intakeAddressCheck: false } }');
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick();
+  assert.strictEqual(asked.length, 0, 'toggle off: nothing sent');
+  h.read('empState = { flags: { intakeAddressCheck: true } }');
+  i1Leave_(h, field(6), '123 elm street dallas tx 75201');
+  await tick(); await tick();
+  assert.deepStrictEqual(asked, ['123 elm street dallas tx 75201'], 'the address only');
+  const row = field(6).closest('.intk-row');
+  const note = row.querySelector('.intk-addr-note');
+  assert.ok(note && /suggests writing it as: 123 Elm St, Dallas, TX 75201/.test(note.textContent) && note.querySelector('.intk-addr-use').textContent === 'Use suggestion');
+  note.querySelector('.intk-addr-use').click();
+  await tick(); await tick();
+  assert.strictEqual(field(6).value, '123 Elm St, Dallas, TX 75201', 'the suggestion is taken only when the rep chooses it');
+  i1Leave_(h, field(6), '1 Nowhere Lane, Dallas, TX 75201');
+  await tick(); await tick();
+  assert.ok(/could not find this address/.test(row.querySelector('.intk-addr-note').textContent) && /could not find/.test(row.getAttribute('data-addr-warn')));
+  const issues = h.read('intakeFmtIssues_')('pmd');
+  assert.ok(issues.some((x) => x.key === 6 && /could not find/.test(x.warn)), 'listed before Preview');
+  // A late answer for an address the rep has since changed is dropped.
+  h.run.clearResponder('checkIntakeAddress');   // hold the answer
+  i1Leave_(h, field(6), '9 Old Rd, Nowhere, TX 75201');
+  field(6).value = '10 New Rd, Dallas, TX 75201';   // typed over before the answer arrives
+  h.run.flushSuccess({ status: 'notFound' }, 'checkIntakeAddress');
+  await tick();
+  assert.ok(!/could not find/.test(row.querySelector('.intk-addr-note').textContent), 'the stale answer is not painted');
+});
+
 test('B1 DOM: the PMD form draws the PRIMARY phone as required and the secondary phone as optional, and optional rows never count toward the ring', () => {
   const { h, root, field, type, count } = bootAcct('pmd');
   const rowOf = (i) => field(i).closest('.intk-row');
@@ -9739,7 +11206,10 @@ test('B3 DOM: a pasted image joins the on-screen form — never text pasted into
 section('Pay statement — the manager edits a day, and an ADJ day explains itself (25post B4)');
 
 function payStmtFixture(over) {
-  const today = new Date().toISOString().slice(0, 10);
+  // The REP's today in the timezone the fixture gives them — the statement
+  // judges the edit window there. A UTC date is a day ahead of Chicago from
+  // midnight UTC to 6 am, and the day then reads as future (no Edit day).
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   const old = '2020-01-06';
   return Object.assign({
     period: { start: old, end: today, cycle: 'Monthly', offset: 0 },
@@ -10318,14 +11788,26 @@ const hb32Me_ = (o) => Object.assign({ locked: false, retryAtMs: null, attemptsL
 const HB32_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
   { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
   { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ locked: true, retryAtMs: Date.now() + 3600000, attemptsLeft: 0, attempts: 3 }) }] });
-/** Tick the options whose TEXT is given, for question `text` — the page shuffles, so a test picks by words. */
+/** HBR3: a sitting shows ONE question. Answer the question showing — it must be
+ *  `qText` — by ticking the options whose words are given (the page shuffles). */
 function hb32Pick_(h, qText, optTexts) {
-  const fs_ = [...h.d.querySelectorAll('.hb-qz-q')].filter((f) => f.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0)[0];
-  assert.ok(fs_, 'question shown: ' + qText);
-  [...fs_.querySelectorAll('.hb-qz-opt')].forEach((l) => { if (optTexts.indexOf(l.textContent.trim()) >= 0) l.querySelector('input').checked = true; });
+  const card = h.d.getElementById('hb-qz-card');
+  assert.ok(card && card.querySelector('.hb-qz-qt').textContent.indexOf(qText) >= 0, 'question showing: ' + qText + ' (got ' + (card && card.querySelector('.hb-qz-qt').textContent) + ')');
+  [...card.querySelectorAll('.hb-qz-opt')].forEach((l) => {
+    if (optTexts.indexOf(l.querySelector('.hb-qz-ot').textContent.trim()) < 0) return;
+    const i = l.querySelector('input'); i.checked = true; i.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  });
+}
+/** The question showing now. */
+const hb32Showing_ = (h) => h.d.querySelector('#hb-qz-card .hb-qz-qt').textContent;
+/** Answer whatever question is showing from a map of question → option words, then Next (or not, on the last). */
+function hb32Answer_(h, map, next) {
+  const q = hb32Showing_(h);
+  hb32Pick_(h, q, map[q]);
+  if (next) h.d.getElementById('hb-qz-next').click();
 }
 
-test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list groups by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
+test('HB3.2 DOM (HBR3: cards): a section with a quiz shows the quiz bar; the Quizzes list orders the cards by chapter and says where the reader stands (a locked quiz cannot be started)', async () => {
   const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST() } });
   assert.strictEqual(h.d.getElementById('hb-quizbar').textContent.trim(), '', 'no bar on the home page');
   h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
@@ -10335,37 +11817,44 @@ test('HB3.2 DOM: a section with a quiz shows the quiz bar; the Quizzes list grou
   assert.ok(!/Quiz/.test(bar.textContent), 'and only on its section (HB2.2: the note button rides every section)');
   h.d.querySelector('#hb-toc .hb-toc-quizzes').click(); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { quizzes: true }, {}]);
-  const groups = [...h.d.querySelectorAll('.hb-qz-grp')].map((g) => [g.querySelector('h2').textContent, [...g.querySelectorAll('.hb-pp-row-n')].map((n) => n.textContent)]);
-  assert.deepStrictEqual(groups, [['3 · Respiratory & Resupply', ['Nebulizers']], ['5 · Power Mobility', ['Chairs']]], 'in the contents\' order');
-  const rows = [...h.d.querySelectorAll('.hb-qz-grp .hb-pp-row')];
-  assert.ok(/Not taken/.test(rows[0].textContent) && /pass mark 67%/.test(rows[0].textContent) && /section 3\.2/.test(rows[0].textContent));
-  assert.ok(/Locked until/.test(rows[1].textContent) && rows[1].querySelector('button').disabled, 'a locked quiz cannot be started');
+  // HBR3: cards, in the contents' order, each named by its chapter.
+  const cards = [...h.d.querySelectorAll('.hb-qc')];
+  assert.deepStrictEqual(cards.map((c) => [c.querySelector('.hb-qc-t').textContent, c.querySelector('.hb-qc-k').textContent]),
+    [['Nebulizers', 'Chapter 3 · Respiratory & Resupply'], ['Chairs', 'Chapter 5 · Power Mobility']], 'in the contents\' order');
+  assert.ok(/Not taken yet/.test(cards[0].textContent) && /pass 67%/.test(cards[0].textContent) && /Covers 3\.2/.test(cards[0].textContent));
+  assert.ok(/Locked until/.test(cards[1].textContent) && cards[1].querySelector('button').disabled, 'a locked quiz cannot be started');
 });
 
-test('HB3.2 DOM: a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
+test('HB3.2 DOM (HBR3: one question per screen): a sitting — every question must be answered; the answers go back in the ORIGINAL order whatever the shuffle; a wrong one shows its explanation and section, never the right option (driven)', async () => {
   const sent = [];
   const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
     hbSubmitQuiz: (id, a) => { sent.push(JSON.parse(JSON.stringify(a))); return { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true],
       review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) }; } } });
   h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
   assert.deepStrictEqual(h.hist.pop(), ['push', { quiz: 'q-neb' }, {}]);
-  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 3);
-  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
-  // Unanswered: said, and nothing sent.
-  hb32Pick_(h, 'How often?', ['Monthly']);
+  // HBR3: one question per screen.
+  assert.strictEqual(h.d.querySelectorAll('.hb-qz-q').length, 1, 'one question showing');
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Masks', 'Kits'], 'Nebs are respiratory.': ['True'] };
+  const seen = [];
+  for (let k = 0; k < 3; k++) {
+    seen.push(hb32Showing_(h));
+    if (seen[k] === 'Which ship?') assert.strictEqual(h.d.querySelectorAll('#hb-qz-card input[type="checkbox"]').length, 3, 'the multi-select question takes checkboxes');
+    if (k < 2) hb32Answer_(h, words, true);
+  }
+  assert.deepStrictEqual(seen.slice().sort(), Object.keys(words).sort(), 'every question, once');
+  // The last one left blank: Submit says which, and nothing is sent.
   h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
-  assert.ok(/Answer every question first/.test(h.d.getElementById('hb-qz-need').textContent));
+  assert.ok(/Answer every question first — question 3 is unanswered/.test(h.d.getElementById('hb-qz-need').textContent));
   assert.strictEqual(sent.length, 0);
-  hb32Pick_(h, 'Which ship?', ['Masks', 'Kits']);
-  hb32Pick_(h, 'Nebs are respiratory.', ['True']);
+  hb32Answer_(h, words, false);
   h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
   assert.deepStrictEqual(sent, [[1, [0, 2], 0]], 'original question order, original option numbers');
   const page = h.main().textContent;
   assert.ok(/67%/.test(page) && /Passed/.test(page));
   assert.ok(/Kits and masks ship monthly\./.test(page), 'the explanation');
-  const link = h.d.querySelector('.hb-qz-rev .hb-qz-sec');
+  const link = h.d.querySelector('.hb-qz-rev.miss .hb-qz-sec');
   assert.strictEqual(link.textContent, 'Read 3.1.1');
-  assert.ok(!/Tubing/.test(h.d.querySelector('.hb-qz-rev').textContent), 'no option text in the review');
+  assert.ok(!/Tubing/.test(h.d.getElementById('hb-qz-take').textContent), 'an option not chosen is never named — the right option never shows');
   link.click(); await h.settleAll();
   assert.ok(h.d.querySelector('#kb-man-sec-man-3-1') || /Tanks/.test(h.main().textContent), 'the link opens the section');
 });
@@ -10432,6 +11921,128 @@ test('HB3.2 DOM: a failed list load says so in the view and keeps the quiz bar i
   await new Promise((r) => setTimeout(r, 80)); await two.settleAll();
   assert.strictEqual(two.d.querySelector('#hb-qz-take h1').textContent, 'Nebulizers', 'the later quiz stays — the earlier answer is dropped');
 });
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR3 — the quizzes refreshed (handoff Batch 3): the cards and their filter,
+// a sitting one question per screen, Leave, and the result.
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR3 — the quizzes refreshed');
+const HBR3_LIST = () => ({ setUp: true, unreadable: 0, quizzes: [
+  { id: 'q-neb', title: 'Nebulizers', section: 'man-3-2', anchor: '', passPct: 67, count: 3, me: hb32Me_() },
+  { id: 'tq-00000000000a', title: 'Resupply refresher', section: 'man-3-1', anchor: '', passPct: 80, count: 6, team: true, authorName: 'Boss', me: hb32Me_({ attempts: 1, attemptsLeft: 2, best: 50, lastMs: Date.now() - 3600000 }) },
+  { id: 'q-chairs', title: 'Chairs', section: 'man-5-1', anchor: '', passPct: 80, count: 5, me: hb32Me_({ attempts: 2, passed: true, best: 100, lastMs: Date.parse('2026-10-27T12:00:00') }) }] });
+
+test('HBR3 DOM: the quiz cards — a chapter or team kicker, a pill and ring for where the reader stands, one action, Last taken or the section to review; the filter keeps To do or Passed and says when none is left; "More quizzes" names the chapters with no official quiz', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HBR3_LIST() } });
+  h.w.hbGoQuizzes_(); await h.settleAll();
+  const card = (id) => h.d.querySelector('.hb-qc[data-quiz="' + id + '"]');
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-neb', 'tq-00000000000a', 'q-chairs'], 'chapter 3, then 5');
+  const neb = card('q-neb'), team = card('tq-00000000000a'), chairs = card('q-chairs');
+  assert.ok(!neb.querySelector('.hb-qc-pill') && neb.querySelector('.hb-ring').getAttribute('aria-label') === 'Not taken yet' && neb.querySelector('button.hb-btn-pri').textContent === 'Start quiz');
+  assert.strictEqual(team.querySelector('.hb-qc-k').textContent, 'Team quiz · Boss');
+  assert.ok(/Try again/.test(team.querySelector('.hb-qc-pill').textContent) && team.querySelector('.hb-ring').classList.contains('bad') && /1 of 3 tries used/.test(team.textContent));
+  assert.strictEqual(team.querySelector('.hb-qc-ft .hb-qz-sec').textContent, 'Review 3.1', 'a failed try points back at its section');
+  assert.ok(/Passed/.test(chairs.querySelector('.hb-qc-pill').textContent) && /Best of 2 attempts/.test(chairs.textContent) && /Last taken Oct 27/.test(chairs.textContent));
+  assert.strictEqual(chairs.querySelector('.hb-ring').getAttribute('aria-label'), 'Best score 100%');
+  assert.strictEqual(chairs.querySelector('.hb-qc-big').textContent, '5', 'the chapter\'s big faint number');
+  assert.strictEqual(chairs.querySelector('.hb-qc-big').getAttribute('aria-hidden'), 'true');
+  assert.ok(chairs.classList.contains('kb-man-p5'), 'its chapter\'s colour');
+  assert.strictEqual(chairs.querySelector('button').getAttribute('aria-label'), 'Retake: Chairs', 'each action names its quiz');
+  // Every chapter has an official quiz here except none — so no "More quizzes".
+  assert.ok(!h.d.querySelector('.hb-qz-empty'), 'nothing to say when every chapter has one');
+  // The filter.
+  h.d.querySelector('#hb-qz-filter [data-f="todo"]').click(); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-neb', 'tq-00000000000a']);
+  assert.strictEqual(h.d.querySelector('#hb-qz-filter [data-f="todo"]').getAttribute('aria-pressed'), 'true');
+  assert.strictEqual(h.d.querySelector('#hb-qz-filter [data-f="all"]').getAttribute('aria-pressed'), 'false');
+  h.d.querySelector('#hb-qz-filter [data-f="passed"]').click(); await h.settleAll();
+  assert.deepStrictEqual([...h.d.querySelectorAll('.hb-qc')].map((c) => c.getAttribute('data-quiz')), ['q-chairs']);
+  // A list with nothing passed: said, never an empty grid.
+  const none = await hbBoot_({ answers: { hbListQuizzes: { setUp: true, unreadable: 0, quizzes: [HBR3_LIST().quizzes[0]] } } });
+  none.w.hbQuizFilterSet_('passed'); none.w.hbGoQuizzes_(); await none.settleAll();
+  assert.ok(/No quiz passed yet/.test(none.main().textContent) && !none.d.querySelector('.hb-qc'));
+  none.w.hbQuizFilterSet_('all'); await none.settleAll();
+  assert.ok(/One chapter has no quiz yet/.test(none.d.querySelector('.hb-qz-empty').textContent) && /Power Mobility/.test(none.d.querySelector('.hb-qz-empty').textContent),
+    'chapter 5 has no official quiz');
+});
+
+test('HBR3 DOM: a sitting one question at a time — Next asks for an answer, the strip marks answered and current, Back keeps the choice, Submit only on the last, focus moves to each question; Leave goes straight back with nothing chosen and asks first when answers would be lost', async () => {
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() } } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Masks', 'Kits'], 'Nebs are respiratory.': ['True'] };
+  const strip = () => [...h.d.querySelectorAll('#hb-qz-strip i')].map((i) => i.className);
+  assert.deepStrictEqual(strip(), ['cur', '', '']);
+  assert.ok(h.d.getElementById('hb-qz-back').disabled && h.d.getElementById('hb-qz-submit').hidden && !h.d.getElementById('hb-qz-next').hidden);
+  assert.ok(/Question 1 of 3 · pass 67%/.test(h.d.getElementById('hb-qz-hs').textContent));
+  const first = hb32Showing_(h);
+  h.d.getElementById('hb-qz-next').click();
+  assert.strictEqual(h.d.getElementById('hb-qz-need').textContent, 'Choose an answer first.');
+  assert.strictEqual(hb32Showing_(h), first, 'it stays on the question');
+  hb32Pick_(h, first, words[first]);
+  assert.deepStrictEqual(strip(), ['cur', '', ''].map((c, i) => (i === 0 ? 'cur' : c)));
+  assert.ok(h.d.querySelector('#hb-qz-card .hb-qz-opt.on'), 'the chosen option is drawn chosen');
+  h.d.getElementById('hb-qz-next').click();
+  assert.deepStrictEqual(strip(), ['done', 'cur', '']);
+  assert.strictEqual(h.d.activeElement && h.d.activeElement.id, 'hb-qz-qh', 'focus moves to the question');
+  h.d.getElementById('hb-qz-back').click();
+  assert.strictEqual(hb32Showing_(h), first, 'Back');
+  const chosen = [...h.d.querySelectorAll('#hb-qz-card .hb-qz-opt')].filter((l) => l.querySelector('input').checked).map((l) => l.querySelector('.hb-qz-ot').textContent);
+  assert.deepStrictEqual(chosen.sort(), words[first].slice().sort(), 'the choice is kept');
+  h.d.getElementById('hb-qz-next').click(); hb32Answer_(h, words, true);
+  assert.ok(!h.d.getElementById('hb-qz-submit').hidden && h.d.getElementById('hb-qz-next').hidden, 'Submit on the last question');
+  // Leave with answers: asked; Cancel keeps the sitting.
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  const dlg = h.d.querySelector('.ui-dialog');
+  assert.ok(dlg && /Leave this quiz\?/.test(dlg.textContent) && /does not use a try/.test(dlg.textContent));
+  h.d.querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-card') && h.w.HB_QZ.taking, 'Cancel keeps the sitting');
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  h.d.querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-body') && !h.d.getElementById('hb-qz-card'), 'Leave → the list');
+  assert.strictEqual(h.calls.indexOf('hbSubmitQuiz'), -1, 'leaving records nothing');
+  // Nothing chosen: straight back, no question.
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  assert.ok(!h.d.querySelector('.ui-dialog') && h.d.getElementById('hb-qz-body'), 'no answers → no question asked');
+});
+
+test('HBR3 DOM: the result — the score ring and what happens next, every answer in the order seen with what was chosen, Review opens the first miss\'s section, Try again only when a try is left; a pass says so and offers no retry', async () => {
+  const fail = { success: true, scorePct: 33, right: 1, total: 3, passed: false, passPct: 67, perQuestion: [true, false, false],
+    review: [{ i: 1, explain: 'Kits and masks ship monthly.', section: 'man-3-1', anchor: '3.1.1' }, { i: 2, explain: '', section: 'man-3-2', anchor: '' }], me: hb32Me_({ attempts: 1, attemptsLeft: 2, best: 33 }) };
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: fail } });
+  h.w.hbTakeQuiz_('q-neb', true); await h.settleAll();
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Kits'], 'Nebs are respiratory.': ['False'] };
+  const order = [];
+  for (let k = 0; k < 3; k++) { order.push(hb32Showing_(h)); hb32Answer_(h, words, k < 2); }
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  const take = h.d.getElementById('hb-qz-take');
+  assert.strictEqual(take.querySelector('.hb-qr-h').textContent, 'Not passed yet');
+  assert.strictEqual(take.querySelector('.hb-ring.big').getAttribute('aria-label'), 'Score 33%, 1 of 3 right');
+  assert.ok(/2 of 3 attempts left/.test(take.textContent));
+  const rows = [...take.querySelectorAll('.hb-qz-rev')];
+  assert.deepStrictEqual(rows.map((r) => r.querySelector('.hb-qz-qt').textContent), order, 'in the order the reader saw them');
+  rows.forEach((r) => {
+    const q = r.querySelector('.hb-qz-qt').textContent;
+    assert.strictEqual(r.querySelector('.hb-qr-chose').textContent, 'You chose ' + words[q].join(', '));
+    assert.strictEqual(r.classList.contains('ok'), q === 'How often?');
+    assert.strictEqual(r.querySelector('.hb-qr-m').getAttribute('aria-label'), q === 'How often?' ? 'Right' : 'Missed');
+  });
+  assert.ok(!take.querySelector('.hb-qz-rev.ok .hb-qz-sec'), 'a right answer links nowhere');
+  assert.ok([...take.querySelectorAll('.hb-qz-actions button')].some((b) => b.textContent === 'Try again'));
+  const review = [...take.querySelectorAll('.hb-qz-actions button')].filter((b) => /^Review /.test(b.textContent))[0];
+  const firstMiss = order.filter((q) => q !== 'How often?')[0];
+  assert.strictEqual(review.getAttribute('data-kb-id'), firstMiss === 'Which ship?' ? 'man-3-1' : 'man-3-2', 'Review opens the first miss the reader saw');
+  assert.strictEqual(h.d.activeElement, take.querySelector('.hb-qr-h'), 'focus on the result');
+  // A pass: said, and no retry offered.
+  const p = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() },
+    hbSubmitQuiz: Object.assign({}, fail, { scorePct: 100, right: 3, passed: true, perQuestion: [true, true, true], review: [], me: hb32Me_({ attempts: 1, passed: true, best: 100 }) }) } });
+  p.w.hbTakeQuiz_('q-neb', true); await p.settleAll();
+  for (let k = 0; k < 3; k++) hb32Answer_(p, words, k < 2);
+  p.d.getElementById('hb-qz-submit').click(); await p.settleAll();
+  assert.strictEqual(p.d.querySelector('.hb-qr-h').textContent, 'Passed — nice work.');
+  assert.ok(![...p.d.querySelectorAll('.hb-qz-actions button')].some((b) => /Try again|Review/.test(b.textContent)), 'no retry, nothing to review');
+  assert.ok(/All right/.test(p.main().textContent));
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // HB3.3 — training: My training (progress, Mark as read), Team training for a
 // manager, and the quiz and plan editors.
@@ -10522,7 +12133,7 @@ test('HB3.3 DOM: the plan editor — items added by kind (each once) and removed
   const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: team,
     hbSavePlan: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return { success: true, id: 'pl-00000000000a', reaches: 4 }; } } });
   h.w.hbGoTraining_(); await h.settleAll();
-  assert.ok(/reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
+  assert.ok(/Reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
   h.w.hbEditPlan_('pl-000000000009'); await h.settleAll();
   assert.deepStrictEqual([...h.d.querySelectorAll('#hb-pl-items .hb-ed-item span')].map((s) => s.textContent), ['Pass the quiz Nebulizers (official)'], 'prefilled');
   assert.strictEqual(h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked, true);
@@ -10612,7 +12223,9 @@ test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked,
   const rows = [...host.querySelectorAll('tbody tr')];
   assert.strictEqual(rows.length, 2);
   assert.ok(rows[0].classList.contains('late') && !rows[1].classList.contains('late'), 'an overdue person is marked');
-  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent), ['3 · Respiratory & Resupply', '0 of 1', '1', '0 of 1', '1', '2', '1']);
+  // HBR4: Plans (a bar, done of total, overdue), Quizzes (passed, locked), Sign-offs (to read again, signed).
+  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent.replace(/\s+/g, ' ').trim()), ['0 of 1 done1 overdue', '0 of 1 passed 1 locked', '1 to read again 2 signed']);
+  assert.ok(/3 · Respiratory & Resupply/.test(rows[0].querySelector('th').textContent), 'the department under the name');
   const det = rows[0].querySelector('details').textContent;
   assert.ok(/First week — 1 of 3/.test(det) && /Nebulizers — best 60%, 3 attempts · locked/.test(det), det);
   assert.ok(/Reminder emails are off/.test(host.textContent));
@@ -10818,7 +12431,10 @@ test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and
   const ov = h.d.getElementById('hb-disp-ov');
   assert.ok(ov && ov.classList.contains('open'));
   const pick = (name, v) => { const r = ov.querySelector('input[name="hb-disp-' + name + '"][value="' + v + '"]'); r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
-  pick('size', 2); pick('spacing', 1);
+  // HBR4: the size is a slider.
+  const size = ov.querySelector('#hb-disp-size'); size.value = '2'; size.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  assert.strictEqual(size.getAttribute('aria-valuetext'), 'Larger', 'the slider says the size in words');
+  pick('spacing', 1);
   assert.strictEqual(root.getAttribute('data-hb-size'), '2');
   assert.strictEqual(root.getAttribute('data-hb-spacing'), '1');
   const box = (label) => [...ov.querySelectorAll('.hb-disp-check')].filter((l) => l.textContent.indexOf(label) === 0)[0].querySelector('input');
@@ -10831,13 +12447,21 @@ test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and
   const kept = JSON.parse(h.w.localStorage.getItem('umsHbDisplay'));
   assert.deepStrictEqual(kept.attrs, { 'data-hb-size': '2', 'data-hb-spacing': '1', 'data-hb-contrast': 'high', 'data-hb-motion': 'reduce', 'data-hb-font': 'easy' });
   assert.strictEqual(kept.prefs.size, 2);
+  // HBR4: the theme — dark and light are kept and applied to <html data-mode>; the device's choice is the default.
+  pick('theme', 'dark');
+  assert.strictEqual(root.getAttribute('data-mode'), 'dark');
+  assert.strictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).prefs.theme, 'dark');
+  assert.ok(!('data-mode' in JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs), 'the theme is not one of the data-hb attributes');
+  pick('theme', 'light');
+  assert.ok(!root.hasAttribute('data-mode'), 'light');
   // Off again, one at a time.
   const c = box('High contrast'); c.checked = false; c.dispatchEvent(new h.w.Event('change', { bubbles: true }));
   assert.strictEqual(root.hasAttribute('data-hb-contrast'), false);
   [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Reset')[0].click(); await h.settleAll();
   ['data-hb-size', 'data-hb-spacing', 'data-hb-contrast', 'data-hb-motion', 'data-hb-font'].forEach((a) => assert.strictEqual(root.hasAttribute(a), false, a + ' cleared'));
   assert.deepStrictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs, {});
-  assert.ok(h.d.getElementById('hb-disp-ov').querySelector('input[name="hb-disp-size"][value="0"]').checked, 'the panel repaints at the defaults');
+  assert.strictEqual(h.d.getElementById('hb-disp-ov').querySelector('#hb-disp-size').value, '0', 'the panel repaints at the defaults');
+  assert.ok(!root.hasAttribute('data-mode') && h.d.querySelector('#hb-disp-ov input[name="hb-disp-theme"][value=""]').checked, 'Reset: the theme follows the device again');
   [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Done')[0].click(); await h.settleAll();
   assert.ok(!h.d.getElementById('hb-disp-ov'), 'Done closes it');
 });
@@ -11025,8 +12649,8 @@ test('HB2.4 DOM: a table wider than the reader is a named Tab stop, and only whi
   Object.defineProperty(tw, 'clientWidth', { configurable: true, get: () => 400 });
   // The text size grows: the page re-measures.
   h.d.getElementById('hb-disp').click(); await h.settleAll();
-  const r = h.d.querySelector('#hb-disp-ov input[name="hb-disp-size"][value="3"]');
-  r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  const r = h.d.querySelector('#hb-disp-ov #hb-disp-size');   // HBR4: a slider
+  r.value = '3'; r.dispatchEvent(new h.w.Event('input', { bubbles: true }));
   assert.strictEqual(tw.getAttribute('tabindex'), '0', 'it overflows: a Tab stop, so a keyboard can scroll it');
   assert.strictEqual(tw.getAttribute('role'), 'region');
   assert.strictEqual(tw.getAttribute('aria-label'), 'Table: Item (scrolls sideways)', 'named by its first cell');
@@ -11387,4 +13011,166 @@ test('HBR2 DOM: Suggest a topic sends what the reader wrote — never the search
   assert.ok(/the handbook team will see it/.test(h.d.getElementById('toast-stack').textContent));
   dlg = ask(); dlg.querySelector('.ui-dialog-input').value = 'chairs'; dlg.querySelector('.ui-dialog-ok').click(); await h.settleAll();
   assert.ok(/Not sent: The handbook is not set up yet/.test(h.d.getElementById('toast-stack').textContent), 'a refusal is said');
+});
+test('M1 DOM (operator 2026-11-11): the intake form timer starts on the first input and only then, is taken once, and rides the intake note as completionSeconds; a form never touched sends no time', () => {
+  const h = boot(); mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.enterIntakePpdView();
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, 0, 'opening the form starts nothing');
+  const pat = h.document.getElementById('intk-ppd-patient');
+  pat.value = 'P'; pat.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  const t0 = h.read('INTAKE_TIMER').ppd;
+  assert.ok(t0 > 0, 'the first input starts it');
+  h.read('INTAKE_TIMER').ppd = t0 - 600000;   // ten minutes ago
+  pat.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, t0 - 600000, 'a later input does not restart it');
+  const sec = h.read('intakeTimerTake_')('ppd');
+  assert.ok(sec >= 599 && sec <= 601, 'ten minutes: ' + sec);
+  assert.strictEqual(h.read('INTAKE_TIMER').ppd, 0, 'taken once — a second send would not reuse it');
+  h.run.drain();
+  h.read('intakeAutoLogNote_')('ppd', { patientInfo: 'P', answers: {} }, 'Power', null, false, sec);
+  const p = h.run.pending('submitCallNote')[0].args[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.subformData)), { intakeType: 'ppd', completionSeconds: sec }, 'the time rides the intake note');
+  h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {} }, 'Sales', null, false, 0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[1].args[0].subformData)), { intakeType: 'pmd' }, 'no time, no field — never a zero-second call');
+});
+
+test('M1 DOM: My Stats draws the Adjusted panel beside the actual figures — the info button opens and closes its explanation; an unread outbound tab is named on the rail; an outbound-only day keeps its outbound work below the "No call data" card', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  const cdr = { totalRung: 46, totalAnswered: 40, totalMissed: 6, pctAnswered: 87, tttFormatted: '3:20:00', attFormatted: '0:05:00', tttSeconds: 12000, attSeconds: 300 };
+  const adj = { handled: 44, talkSec: 12900, talkFormatted: '3:35:00', outbound: { placed: 6, connected: 4, talkSec: 900, talkFormatted: '0:15:00' }, intakeTimed: 3, intakeAvgSec: 1000, attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: { placed: 6, connected: 4, talkSec: 900 }, outboundThrough: '2026-10-13', adjusted: adj }));
+  const root = h.$('#m-my-content');
+  assert.ok(/87/.test(root.querySelector('.m-hero-value').textContent) && /0:05:00/.test(root.textContent), 'the actual figures are unchanged');
+  const panel = root.querySelector('.m-adj');
+  assert.ok(panel && /Handled calls\s*44/.test(panel.textContent) && /0:04:03/.test(panel.textContent), 'the Adjusted panel');
+  assert.ok(/Outbound calls\s*6/.test(root.querySelector('.m-rail').textContent), 'the outbound row on the rail');
+  const i = panel.querySelector('.m-adj-i'), why = panel.querySelector('.m-adj-why');
+  assert.ok(why.hidden && i.getAttribute('aria-expanded') === 'false' && i.getAttribute('aria-label'));
+  assert.strictEqual(i.getAttribute('onclick'), 'mAdjInfo_(this)');
+  h.window.mAdjInfo_(i);   // jsdom does not run inline handlers — call what the attribute names
+  assert.ok(!why.hidden && i.getAttribute('aria-expanded') === 'true' && /never adjusted/.test(why.textContent), 'the info button opens');
+  h.window.mAdjInfo_(i);
+  assert.ok(why.hidden, 'and closes');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: null, outboundUnavailable: 'The "Outbound Calls" tab could not be read: quota', adjusted: null }));
+  assert.ok(/not read — The "Outbound Calls" tab could not be read/.test(root.textContent) && !root.querySelector('.m-adj'), 'an unread tab is said, and nothing is adjusted');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr: null, outbound: { placed: 2, connected: 2, talkSec: 300 }, outboundThrough: '2026-10-13',
+    adjusted: { handled: 2, talkSec: 300, talkFormatted: '0:05:00', outbound: { placed: 2, connected: 2, talkSec: 300, talkFormatted: '0:05:00' }, intakeTimed: 0, intakeAvgSec: null, attExIntakeSec: null, attExIntakeFormatted: null } }));
+  assert.ok(root.querySelector('.m-empty') && /Outbound calls\s*2/.test(root.textContent) && root.querySelector('.m-adj'), 'an outbound-only day: the card, then the outbound work');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr: null, cdrUnavailable: true, outbound: { placed: 2, connected: 2, talkSec: 300 } }));
+  assert.ok(!/Outbound calls/.test(root.textContent), 'never beside a FAILED inbound read');
+});
+
+test('M1 DOM: Team Metrics — the Outbound, Handled (adj.) and ATT excl. intake columns, a rep\'s unread outbound a dash, a failed tab named on the rail; Copy table exports an unread figure blank', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const rep = (id, name, ob, adj) => ({ repId: id, repName: name, totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83, tttFormatted: '1:00:00', attFormatted: '0:06:00', tttSeconds: 3600, attSeconds: 360,
+    noteCount: 8, noteCoverage: 80, intakeNotes: 1, hasCdrData: true, transferred: 0, queues: {}, queueTotal: 0, queueUnattributed: 0, outbound: ob, adjusted: adj });
+  const data = fullTeamData_({ teamTotals: { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, outboundPlaced: 5, outboundConnected: 3, outboundTalkSec: 400,
+      adjusted: { handled: 23, talkSec: 7600, talkFormatted: '2:06:40', outbound: { placed: 5, connected: 3, talkSec: 400, talkFormatted: '0:06:40' }, intakeTimed: 0, intakeAvgSec: null, attExIntakeSec: null, attExIntakeFormatted: null } },
+    outboundMeta: { available: true, error: null, through: '2026-06-15' },
+    reps: [rep('E1', 'Ana', { placed: 5, connected: 3, talkSec: 400 }, { handled: 13, outbound: { placed: 5 }, attExIntakeSec: 280, attExIntakeFormatted: '0:04:40' }), rep('E2', 'Ben', null, null)] });
+  h.window.mRenderTeamMetrics_(data);
+  const ths = Array.from(h.$$('#m-team-content th')).map((t) => t.textContent.trim());
+  ['Outbound', 'Handled (adj.)', 'ATT excl. intake'].forEach((c) => assert.ok(ths.some((t) => t.indexOf(c) === 0), 'column ' + c + ': ' + ths.join('|')));
+  const rowOf = (n) => Array.from(h.$$('#m-team-content tbody tr')).filter((tr) => tr.textContent.indexOf(n) >= 0)[0];
+  assert.ok(/—/.test(rowOf('Ben').textContent), 'an unread outbound figure is a dash, never a 0');
+  assert.ok(h.$('#m-team-content .m-adj') && /Handled calls\s*23/.test(h.$('#m-team-content .m-adj').textContent), 'the team Adjusted panel');
+  const tsv = h.read('mTeamTableTsv_')(data, 'combined', { key: 'repName', dir: 'asc' }).split('\n');
+  assert.ok(/Outbound placed\tOutbound connected\tOutbound talk\tHandled \(adj\.\)\tATT excl\. intake/.test(tsv[0]), tsv[0]);
+  assert.ok(/^Ben(\t[^\t]*){8}\t\t\t\t10\t$/.test(tsv[2]), 'Ben unread outbound exports blank, his handled is his answered: ' + JSON.stringify(tsv[2]));
+  h.window.mRenderTeamMetrics_(Object.assign({}, data, { outboundMeta: { available: false, error: 'The "Outbound Calls" tab is not in the CDR Report spreadsheet', through: null },
+    reps: data.reps.map((r) => Object.assign({}, r, { outbound: null, adjusted: null })), teamTotals: Object.assign({}, data.teamTotals, { adjusted: null }) }));
+  assert.ok(/Outbound calls\s*—\s*not read — The "Outbound Calls" tab is not in the CDR Report/.test(h.$('#m-team-content .m-rail').textContent), 'a missing tab is named on the rail');
+  assert.ok(!Array.from(h.$$('#m-team-content th')).some((t) => /Outbound|Handled/.test(t.textContent)), 'and no column says nothing');
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR4 — the handbook refresh's last batch: Training, Profile & team, Saved,
+// Forms and Display, flat (decision 13).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR4 — Training, Profile & team, Saved, Forms, Display');
+
+test('HBR4 DOM: Training — a manager gets Mine / My team and opens on My team (both built, one shown); the tiles add the team up; each person is a row with a plan bar and the sign-offs in words; plans are cards; a reader sees no toggle', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: HB33_MINE(), hbTeamTraining: Object.assign(HB33_TEAM(), { plans: [{ id: 'pl-000000000003', live: true, reaches: 2, authorName: 'Boss', plan: { title: 'Oxygen pick-ups', due: '', items: [{ kind: 'section', id: 'man-3-1' }] } }] }), hbTeamProgress: HB34_PROGRESS() } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const tabs = h.d.getElementById('hb-tr-tabs');
+  assert.ok(!tabs.hidden && /Mine/.test(tabs.textContent) && /My team/.test(tabs.textContent));
+  assert.ok(h.d.getElementById('hb-tr-mine').hidden && !h.d.getElementById('hb-tr-team').hidden, 'a manager opens on My team');
+  assert.ok(h.d.querySelector('#hb-tr-mine .hb-tr-plan'), 'Mine is built, only hidden');
+  assert.strictEqual(tabs.querySelector('[data-tab="team"]').getAttribute('aria-pressed'), 'true');
+  tabs.querySelector('[data-tab="mine"]').click();
+  assert.ok(!h.d.getElementById('hb-tr-mine').hidden && h.d.getElementById('hb-tr-team').hidden && tabs.querySelector('[data-tab="mine"]').getAttribute('aria-pressed') === 'true');
+  tabs.querySelector('[data-tab="team"]').click();
+  // The tiles: Rep has an overdue plan and a re-read, Ann nothing — 1 of 2 on track; 0 of 1 quizzes passed.
+  const tiles = [...h.d.querySelectorAll('#hb-tr-progress .hb-tile')].map((t) => [t.querySelector('.hb-tile-l').textContent, t.querySelector('.hb-tile-v').textContent]);
+  assert.deepStrictEqual(tiles, [['On track', '1/2'], ['Overdue', '1'], ['Re-reads needed', '1'], ['Quiz pass rate', '0%']]);
+  assert.ok(/2 people/.test(h.d.getElementById('hb-tr-sub').textContent), 'the header counts the team');
+  const rep = h.d.querySelector('#hb-tr-progress tbody tr');
+  assert.strictEqual(rep.querySelector('.hb-av').textContent, 'R');
+  assert.ok(rep.querySelector('.hb-bar.bad i') && /width:33%/.test(rep.querySelector('.hb-bar i').getAttribute('style')), 'the plan bar: 1 of 3 items, red while overdue');
+  const card = h.d.querySelector('#hb-tr-team .hb-tr-card');
+  assert.strictEqual(card.querySelector('.hb-tr-pk').textContent, '1 item · ongoing');
+  assert.ok(/Oxygen pick-ups/.test(card.textContent) && /Reaches 2 people/.test(card.textContent) && card.querySelector('[onclick^="hbEditPlan_"]'));
+  // A reader: one view.
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: HB33_MINE() } });
+  r.w.hbGoTraining_(); await r.settleAll();
+  assert.ok(r.d.getElementById('hb-tr-tabs').hidden && !r.d.getElementById('hb-tr-mine').hidden);
+});
+
+test('HBR4 DOM: Profile & team — the reader\'s card with initials, a join request as its own card above the team grid, Confirm answers it; the Display row sums the browser\'s settings and follows a change', async () => {
+  const boss = hbMeView_({ email: 'boss@ex.org', name: 'Boss Lady', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }),
+    team: [hbPerson_('ana@ex.org', { name: 'Ana Lopez', department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss Lady', standing: 'pending' }),
+      hbPerson_('ben@ex.org', { name: 'Ben Kim', department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss Lady', standing: 'confirmed' })] });
+  const h = await hbBoot_({ answers: { hbGetMe: boss, hbConfirmPerson: { success: true, view: boss } } });
+  h.w.hbGoPeople_(); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Profile & team');
+  assert.strictEqual(h.d.querySelector('#hb-pp-me .hb-av.big').textContent, 'BL');
+  const ask = h.d.querySelector('#hb-pp-team .hb-pp-pc.ask');
+  assert.ok(ask && /Ana Lopez asked to join your team/.test(ask.textContent));
+  assert.deepStrictEqual([...ask.querySelectorAll('button')].map((b) => b.textContent), ['Not my team', 'Confirm']);
+  const grid = [...h.d.querySelectorAll('#hb-pp-team .hb-pp-grid .hb-pp-pc')];
+  assert.deepStrictEqual(grid.map((c) => c.querySelector('.hb-pp-row-n').textContent), ['Ben Kim'], 'the confirmed, as a grid');
+  assert.ok(/1 person/.test(h.d.querySelector('#hb-pp-team .hb-pp-h2:not(.hb-vh)').textContent));
+  ask.querySelector('.hb-pp-yes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbConfirmPerson').pop(), ['hbConfirmPerson', 'ana@ex.org', true]);
+  const now = () => h.d.getElementById('hb-pp-disp-now').textContent;
+  assert.strictEqual(now(), 'Standard size · theme follows the device');
+  h.w.hbSetDisplay_('size', 2); h.w.hbSetDisplay_('theme', 'dark'); h.w.hbSetDisplay_('contrast', true);
+  assert.strictEqual(now(), 'Larger text · dark · high contrast', 'the row follows the panel');
+});
+
+test('HBR4 DOM: Saved — Bookmarks and My notes side by side; a bookmark carries its chapter and a star that removes it, named for a screen reader; a note is a sticky note under its section; Forms are cards with a chip per section; the viewer says how many pages', async () => {
+  const h = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-3-1', title: '3.1 Oxygen basics', ms: 1 }] }, hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0=' } },
+    ls: { umsHbNotes: JSON.stringify({ 'man-3-2': { t: 'Kits ship monthly.', ms: 5 } }) } });
+  h.w.hbGoSaved_(); await h.settleAll();
+  const cards = [...h.d.querySelectorAll('#hb-sv .hb-sv-card')];
+  assert.deepStrictEqual(cards.map((c) => c.querySelector('.hb-sv-h').textContent.replace(/\s+/g, ' ').trim()), ['Bookmarks 1', 'My notes In this browser']);
+  const bm = cards[0].querySelector('.hb-sv-row');
+  assert.ok(/Respiratory & Resupply/.test(bm.textContent) && bm.classList.contains('kb-man-p3'), 'its chapter, in its colour');
+  const star = bm.querySelector('.hb-sv-star');
+  assert.strictEqual(star.getAttribute('aria-label'), 'Remove the bookmark: 3.1 Oxygen basics');
+  const note = cards[1].querySelector('.hb-sv-note');
+  assert.ok(/3\.2 Nebulizers/.test(note.querySelector('.hb-sv-nh').textContent) && note.querySelector('.hb-sv-snip').textContent === 'Kits ship monthly.');
+  // Forms.
+  h.w.hbGoForms_(); await h.settleAll();
+  const f = h.d.querySelector('.hb-fm-card');
+  assert.deepStrictEqual([...f.querySelectorAll('.hb-fm-chip')].map((c) => c.textContent), ['3.1']);
+  assert.ok(f.querySelector('.hb-fm-pg.kb-man-p3') && f.querySelector('.hb-fm-pg').getAttribute('aria-hidden') === 'true', 'the drawn page wears its first chapter, and is decoration');
+  assert.strictEqual(f.querySelector('h2').textContent, 'Economic Assistance Application (EAA)');
+  hb41PdfJs_(h.w, 3);
+  h.w.hbOpenForm_('form-eaa'); await new Promise((r) => setTimeout(r, 40)); await h.settleAll();
+  assert.ok(/^3 pages · 3\.1$/.test(h.d.getElementById('hb-fv-sub').textContent), h.d.getElementById('hb-fv-sub').textContent);
+  assert.ok(!h.d.getElementById('hb-fv-nav').hidden && /^Page \d of 3$/.test(h.d.getElementById('hb-fv-at').textContent), 'page steps for a form of more than one page (jsdom lays every page at 0 — which page is the pure pin\'s)');
+});
+
+test('HBR4 DOM: the head applies a chosen theme before the page script — dark sets <html data-mode>, light clears it even when the device is dark', async () => {
+  const dark = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { theme: 'dark' }, attrs: {} }) } });
+  assert.strictEqual(dark.d.documentElement.getAttribute('data-mode'), 'dark');
+  const light = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { theme: 'light' }, attrs: {} }) } });
+  light.d.documentElement.setAttribute('data-mode', 'dark');   // as if the device were dark
+  light.w.hbApplyDisplay_(light.w.hbDisplay_(), false);
+  assert.ok(!light.d.documentElement.hasAttribute('data-mode'), 'light wins over the device');
 });

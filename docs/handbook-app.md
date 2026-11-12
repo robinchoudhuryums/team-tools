@@ -51,7 +51,11 @@ under the "handbook app" entries.
 - **Profile** in the bar (HB2.1) — the reader's department and manager. A
   first visit is asked for both on the home page; the manager confirms. A
   manager sees *Your team* there; the admin also sees the managers and
-  everyone. See [People](#people).
+  everyone. Since HBR4 it is a profile card with a **Display** row, a join
+  request is a card and the team a grid. See [People](#people).
+- **Training**, **Saved**, **Forms** and **Display** — the pages below; since
+  HBR4 each is flat cards (no gradient — the handoff's decision 13), and Display
+  carries a **theme** (System, Light, Dark).
 - The chapters are **kept in the browser** and re-read only when the handbook
   changed; if the server cannot be reached, the kept copy is shown with a note
   that it may be out of date.
@@ -140,6 +144,14 @@ one row per person: `Email`, `Department` (a chapter of the handbook),
 
 Unset, nobody is asked anything and the handbook reads as before.
 
+**Profile & team (HBR4).** **People** in the contents opens *Profile & team*:
+on the left the reader's own card — their avatar, name, tags, address and the
+Department and Manager rows with **Save** — and below it a **Display** row that
+says the current text size, theme and choices and opens the Display panel. On
+the right, for a manager or the admin, each request to join waits as a card
+("X asked to join your team", **Not my team** / **Confirm**), then the confirmed
+team as a grid of cards with **Remove**. Nothing about what is stored changed.
+
 ## Quizzes (HB3.1 — the engine and the bank; HB3.2 — taking them)
 
 The official quizzes are written in the repo, in `manual/data/quizzes.json`,
@@ -158,11 +170,15 @@ status, then export and import. The first two, Chapter 0 (CSR Core) and Chapter
 1 (Call Handling), ten questions each at 80%, were drafted, reviewed and
 published on 2026-10-30.
 
-**Taking one (HB3.2).** **Quizzes** in the contents lists them by chapter, and a
-section that has one shows a quiz bar. The questions and their options are
-shuffled for each sitting; every question must be answered. The result gives
-the score and, for each wrong answer, its explanation and a link to its section
-— never the right option. Three failed attempts lock the quiz for 24 hours from
+**Taking one (HB3.2; refreshed in HBR3).** **Quizzes** in the contents shows a
+card for each quiz, in the contents' order — its chapter's colour, a score ring,
+where the reader stands and one action — with an All / To do / Passed filter, and
+a section that has one shows a quiz bar. The questions and their options are
+shuffled for each sitting and shown one at a time (Back, Next, a progress strip;
+Leave quiz asks first when answers would be lost); every question must be
+answered. The result gives the score and every answer — what the reader chose,
+right or missed — and for each miss its explanation and a link to its section —
+never the right option. Three failed attempts lock the quiz for 24 hours from
 the last (a pass starts the count over). A reader's confirmed manager, or the
 admin, can reset them from **Profile → Quiz lock-outs**. Attempts and resets go
 to the Handbook spreadsheet's `QuizAttempts` and `QuizResets` tabs (created by
@@ -195,6 +211,16 @@ Plans, team quizzes and read marks live in the Handbook spreadsheet's `Plans`,
 `TeamQuizzes` and `ReadMarks` tabs (created on first use; never edit their
 headers — a row that will not read is counted and skipped).
 
+**HBR4.** Training opens on **My training** for a reader; a manager or the
+admin gets a **My training / My team** switch and opens on My team. My team
+leads with four tiles — people on track, overdue, sections to read again and
+the quiz pass rate (`hbTeamTiles_`, counted from the progress payload) — then
+the team table: each person with an avatar and their department, a progress
+bar with "x of y done" and an overdue chip, quizzes passed with a locked chip,
+sign-offs current or "N to read again". An overdue row carries a red rule down
+its left edge (not a tint: the chips must keep their contrast). The author's
+plans and quizzes are cards ("Reaches N people", or nobody while archived).
+
 ## Display and read aloud (HB2.3)
 
 - **Display** in the bar opens the reader's display settings: text size
@@ -211,6 +237,12 @@ headers — a row that will not read is counted and skipped).
   Any voice the browser offers may be used; some (Chrome's "Google" voices)
   speak through Google's servers — the handbook is PHI-free, so that is
   allowed. A browser with no speech shows no Listen button.
+- **HBR4.** The panel leads with a **Theme** choice — System (follows the
+  device), Light or Dark — kept with the other settings and applied in the
+  page's head before it paints. Text size is a slider whose value is spoken by
+  name (Default … Largest); line spacing stays a choice of three; high
+  contrast, the reading font and reduce motion are switches. The Profile page's
+  Display row says what is set.
 
 ## Forms (HB4.1)
 
@@ -236,6 +268,12 @@ headers — a row that will not read is counted and skipped).
   message says to open the form in the viewer if nothing arrives — **test it
   once after deploying**. A failed list, form or viewer load is said, never
   read as "no forms". Filling a form in the browser is HB4.2.
+- **HBR4.** The list is a grid of cards — a drawn page in the form's chapter
+  colour, the title, summary, the sections as chips, **Open** and
+  **Download**. The viewer's header names the form, its sections and, once
+  drawn, how many pages; a form of two pages or more gets **Page k of n** with
+  previous and next, following the reader's scroll (`hbFormPageIndex_`). The
+  pages are a focusable, labelled region, so a keyboard can scroll them.
 
 ## Keyboard and screen readers (HB2.4)
 
@@ -288,6 +326,12 @@ headers — a row that will not read is counted and skipped).
 
 Bookmarks and synced notes live in the Handbook spreadsheet's `Bookmarks` and
 `Notes` tabs (created on first use; never edit their headers).
+
+**HBR4.** Saved is two cards side by side (stacked on a phone): Bookmarks,
+each a row with its chapter's icon, the section and chapter, **Open** and a
+filled star that removes it ("Remove the bookmark: …" to a screen reader); and
+My notes, each note a yellow sticky note under its section's name, with the
+sync switch and Export / Copy / Import below.
 
 ## Sign-offs, team progress and reminders (HB3.4)
 
@@ -349,10 +393,10 @@ handbook.
 
 ## Tests
 
-- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b — the copies,
+- Pure (`test/client/run.js`): HB1.2-a…e, HB1.3-a…e, HB1.4-a…f, HB2.1-a…e, HB3.2-a…d, HB3.3-a…d, HB2.4-a…c, HB4.1-a…f, HBR1-a…d, HBR2-a…b, HBR3-a…c, HBR4-a…c — the copies,
   the refusals, the server driven in a sandbox over fake services, the page's
   pure helpers and contracts, no-undef over the assembled page.
-- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2"): the whole page booted in
+- DOM (`test/client/dom/runDom.js`, "HB1.3/HB1.4/HB2.1/HB3.2/HB3.3/HB2.4/HB4.1/HBR1/HBR2/HBR3/HBR4"): the whole page booted in
   jsdom over a fake server, IndexedDB and history.
 - Visual matrix: the `handbook-*` scenarios shoot `page-handbook.html`
   (`test/visual/build.mjs` writes it); three ride the CI gate, and every one

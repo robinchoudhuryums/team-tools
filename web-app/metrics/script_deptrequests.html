@@ -450,6 +450,12 @@ function drRender_(area, data, errorMsg) {
   // the page, each with the reason it held back and an answer.
   const looks = drLooksHtml_(data);
   let body;
+  if (data && data.isManager && DR_AUDIT.open) {
+    // DR1: the audit list replaces the tracker while it is chosen.
+    area.innerHTML = '<div id="dr-body">' + head + drModeTabsHtml_() + drAuditHtml_() + '</div>';
+    if (!DR_AUDIT.data && !DR_AUDIT.loading && !DR_AUDIT.error) drAuditLoad_();
+    return;
+  }
   if (data && data.isManager) {
     body = '<div class="dr-top-row"><div class="dr-top-kpi">' + strip + '</div>' +
         '<div class="dr-top-stats">' + drMgrStatsHtml_(data) + '</div></div>' +
@@ -458,7 +464,8 @@ function drRender_(area, data, errorMsg) {
   } else {
     body = strip + deptBar + controls + incomingSection + drRecentHtml_(data) + mineSection;
   }
-  area.innerHTML = '<div id="dr-body">' + head + intro + trunc + looks + body + '</div>';
+  // DR1: a manager's Tracker / Audit list switch sits under the title in both modes, so it never moves.
+  area.innerHTML = '<div id="dr-body">' + head + (data && data.isManager ? drModeTabsHtml_() : '') + intro + trunc + looks + body + '</div>';
   if (typeof observeReveals === 'function') observeReveals(area);
 }
 
@@ -620,8 +627,10 @@ function drRequestCardHtml_(item) {
   // 22post D: a resolved card offers "Mark unresolved" (the server allows the
   // sender, a manager or a member of the receiving department — drCanAct_).
   const resolveBtn = !resolved
-    ? '<button type="button" class="sp-more sp-resolve" data-req="' + esc(item.requestId) +
-        '" onclick="drResolveClick_(this)">' + icon('check', 12) + ' Mark resolved</button>'
+    ? '<button type="button" class="sp-more sp-resolve" data-req="' + esc(item.requestId) + '"' +
+        // DR1: a request sent before thread tracking gets no reply on resolve — said before the click too.
+        (item.threadTracked === false ? ' title="Sent before thread tracking: marking it resolved sends no reply on its email"' : '') +
+        ' onclick="drResolveClick_(this)">' + icon('check', 12) + ' Mark resolved</button>'
     : '<button type="button" class="sp-more dr-reopen" data-req="' + esc(item.requestId) +
         '" onclick="drReopenClick_(this)">' + icon('refresh', 12) + ' Mark unresolved</button>';
   const body = esc(item.createdAt || '') + (item.byName ? ' · ' + esc(item.byName) : '') +
@@ -1062,7 +1071,9 @@ function drResolveClick_(btn) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (res && res.success) {
-        showToast(res.already ? 'Already resolved.' : 'Marked resolved.', 'toast-success');
+        // DR1: what became of the reply on the email thread rides the toast.
+        showToast(res.already ? 'Already resolved.' : 'Marked resolved.' + (res.replyNote ? ' ' + res.replyNote : ''),
+          res.reply && !res.reply.sent && res.reply.reason !== 'off' && res.reply.reason !== 'untracked' ? 'toast-warn' : 'toast-success');
         if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();   // T9: the Dashboard's Needs-you list refetches
         drApplyResolved_(id);          // cache first — the DOM is rendered FROM it
         // The stamp is busted even on success: the patch is an approximation
@@ -1148,7 +1159,7 @@ function drLookAnswerClick_(btn) {
   google.script.run
     .withSuccessHandler(function (res) {
       if (res && res.success) {
-        showToast(ans === 'resolved' ? 'Marked resolved.' : 'Kept open — the next reply will be checked.', 'toast-success');
+        showToast(ans === 'resolved' ? 'Marked resolved.' + (res.replyNote ? ' ' + res.replyNote : '') : 'Kept open — the next reply will be checked.', 'toast-success');   // DR1
         if (typeof clkNeedsYouInvalidate_ === 'function') clkNeedsYouInvalidate_();
         if (ans === 'resolved') drApplyResolved_(id);
         else ['mine', 'incoming', 'allOpen'].forEach(function (k) {
@@ -1226,6 +1237,281 @@ function drReopenClick_(btn) {
       restore();
     })
     .reopenDeptRequest(id);
+}
+
+// ── DR1 (operator 2026-11-09): the audit list ───────────────────────────────
+// A manager checks a department's requests against the CRM — "a list of the
+// Close Orders, so I can check each one's status". The Audit list tab reads
+// every request sent in a date range (getDeptRequestAudit — managers only, the
+// rows name patients), filters it here by type, department, status and CRM
+// mark without a round trip, copies it as a table or downloads it as a CSV,
+// and records a "Checked in CRM" mark per row (setDeptRequestCrmCheck). A
+// mark is patched into its row in place: re-rendering the table under a
+// checkbox the manager is working down would lose their place (g141).
+var DR_AUDIT = { open: false, data: null, loading: false, error: '', seq: 0,
+  from: '', to: '', type: '', dept: '', status: '', crm: '' };
+var DR_AUDIT_VIA = { email: 'email link', reply: 'department reply', app: 'in the app',
+  self: 'sender’s own link', copy: 'from a copy' };
+/** PURE (Node-pinned) — the columns every form of the list shares: the
+ *  table, the copied TSV and the CSV. `v(r)` is the plain value. */
+function drAuditColumns_() {
+  return [
+    { key: 'sent', label: 'Sent', v: function (r) { return r.createdIso || ''; } },
+    { key: 'type', label: 'Type', v: function (r) { return r.type || ''; } },
+    { key: 'dept', label: 'Department', v: function (r) { return r.toDept || ''; } },
+    { key: 'trx', label: 'Patient & TRX', v: function (r) { return r.patientTrx || ''; } },
+    { key: 'by', label: 'Sent by', v: function (r) { return r.byName || ''; } },
+    { key: 'status', label: 'Status', v: function (r) { return r.status === 'resolved' ? 'Resolved' : 'Open'; } },
+    { key: 'resolved', label: 'Resolved', v: function (r) { return r.resolvedIso || ''; } },
+    { key: 'resolvedBy', label: 'Resolved by', v: function (r) { return r.resolvedBy || ''; } },
+    { key: 'how', label: 'How', v: function (r) { return r.status === 'resolved' ? (DR_AUDIT_VIA[r.resolvedVia] || 'not recorded') : ''; } },
+    { key: 'thread', label: 'Email thread', v: function (r) { return r.threadTracked ? 'Tracked' : 'Before thread tracking'; } },
+    { key: 'crm', label: 'Checked in CRM', v: function (r) { return r.crmChecked ? 'Yes' : 'No'; } },
+    { key: 'crmBy', label: 'Checked by', v: function (r) { return r.crmChecked ? (r.crmBy || '') : ''; } },
+  ];
+}
+/** PURE (Node-pinned) — the rows the filters keep. Type matches whole and
+ *  case-blind; a department matches any component of a multi-department
+ *  send (drDeptsOf_); status 'open' / 'resolved'; CRM 'checked' /
+ *  'unchecked'. An empty filter keeps everything. */
+function drAuditFilter_(rows, f) {
+  var o = f || {};
+  var type = String(o.type || '').trim().toLowerCase();
+  var dept = String(o.dept || '').trim().toLowerCase();
+  return (rows || []).filter(function (r) {
+    if (type && String(r.type || '').trim().toLowerCase() !== type) return false;
+    if (dept && !drDeptsOf_(r).some(function (d) { return d.toLowerCase() === dept; })) return false;
+    if (o.status === 'open' && r.status === 'resolved') return false;
+    if (o.status === 'resolved' && r.status !== 'resolved') return false;
+    if (o.crm === 'checked' && !r.crmChecked) return false;
+    if (o.crm === 'unchecked' && r.crmChecked) return false;
+    return true;
+  });
+}
+/** PURE (Node-pinned) — the list as TSV for "Copy table": every line through
+ *  tsvRow_, so a cell that starts like a formula pastes as text. */
+function drAuditTsv_(rows) {
+  var cols = drAuditColumns_();
+  return [tsvRow_(cols.map(function (c) { return c.label; }))].concat((rows || []).map(function (r) {
+    return tsvRow_(cols.map(function (c) { return c.v(r); }));
+  })).join('\n');
+}
+/** PURE (Node-pinned) — one CSV cell: the tsvCell_ formula guard first (a
+ *  spreadsheet opening the file parses a cell as a paste does), then quoted
+ *  when it holds a comma, a quote or a line break, quotes doubled. */
+function drCsvCell_(v) {
+  var s = tsvCell_(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+/** PURE (Node-pinned) — the list as CSV, CRLF line ends (RFC 4180). */
+function drAuditCsv_(rows) {
+  var cols = drAuditColumns_();
+  var line = function (cells) { return cells.map(drCsvCell_).join(','); };
+  return [line(cols.map(function (c) { return c.label; }))].concat((rows || []).map(function (r) {
+    return line(cols.map(function (c) { return c.v(r); }));
+  })).join('\r\n') + '\r\n';
+}
+/** The Tracker / Audit list switch at the top of a manager's page. */
+function drModeTabsHtml_() {
+  var tab = function (open, label) {
+    return '<button type="button" class="toolbar-tab" aria-pressed="' + (DR_AUDIT.open === open) +
+      '" onclick="drSetAuditMode_(' + open + ')">' + label + '</button>';
+  };
+  return '<div class="toolbar-tabs dr-mode" role="group" aria-label="Dept Requests view">' +
+    tab(false, 'Tracker') + tab(true, icon('list', 12) + ' Audit list') + '</div>';
+}
+function drSetAuditMode_(open) {
+  DR_AUDIT.open = !!open;
+  drRerender_();
+  // Re-read on every switch to it: a resolve or a mark made since is in the
+  // store, and the last answer stays on screen (dimmed) until the new one lands.
+  if (DR_AUDIT.open && !DR_AUDIT.loading) drAuditLoad_();
+}
+/** Read the range (the date inputs, or the server's default on the first
+ *  load). A late answer for an earlier request is dropped (g81). */
+function drAuditLoad_() {
+  var f = document.getElementById('dr-audit-from'), t = document.getElementById('dr-audit-to');
+  if (f) DR_AUDIT.from = f.value;
+  if (t) DR_AUDIT.to = t.value;
+  if (DR_AUDIT.from && DR_AUDIT.to && DR_AUDIT.from > DR_AUDIT.to) { showToast('The start date is after the end date', 'toast-warn'); return; }
+  var seq = ++DR_AUDIT.seq;
+  DR_AUDIT.loading = true; DR_AUDIT.error = '';
+  drAuditPaint_();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (seq !== DR_AUDIT.seq) return;
+      DR_AUDIT.loading = false;
+      if (!res || res.error) { DR_AUDIT.error = (res && res.error) || 'The audit list could not be read.'; drAuditPaint_(); return; }
+      DR_AUDIT.data = res;
+      DR_AUDIT.from = res.from || DR_AUDIT.from; DR_AUDIT.to = res.to || DR_AUDIT.to;
+      drAuditPaint_();
+    })
+    .withFailureHandler(function (err) {
+      if (seq !== DR_AUDIT.seq) return;
+      DR_AUDIT.loading = false;
+      DR_AUDIT.error = (err && err.message) || 'The audit list could not be read.';
+      drAuditPaint_();
+    })
+    .getDeptRequestAudit({ from: DR_AUDIT.from, to: DR_AUDIT.to });
+}
+/** Repaint the audit panel, if it is mounted. */
+function drAuditPaint_() {
+  var host = document.getElementById('dr-audit');
+  if (host) host.outerHTML = drAuditHtml_();
+}
+/** Repaint only the table and its count, keeping the controls (and the
+ *  focused menu) in place. */
+function drAuditPaintTable_() {
+  var host = document.getElementById('dr-audit-results');
+  if (host) host.innerHTML = drAuditResultsHtml_();
+}
+function drAuditSetFilter_(key, value) {
+  if (['type', 'dept', 'status', 'crm'].indexOf(key) < 0) return;
+  DR_AUDIT[key] = String(value || '');
+  drAuditPaintTable_();
+}
+function drAuditRows_() {
+  return drAuditFilter_((DR_AUDIT.data && DR_AUDIT.data.rows) || [], DR_AUDIT);
+}
+function drAuditCopy_(btn) {
+  var rows = drAuditRows_();
+  if (!rows.length) { showToast('Nothing to copy', 'toast-warn'); return; }
+  copyWithFeedback_(drAuditTsv_(rows), { ok: 'Table copied — paste into a spreadsheet', label: 'Dept Requests (TSV)', el: btn });
+}
+/** Download the filtered list as a CSV — a blob link clicked (the ED3 shape);
+ *  the page's sandbox may block it without a word, so the note says so. */
+function drAuditCsvDownload_() {
+  var rows = drAuditRows_();
+  var say = function (t) { var m = document.getElementById('dr-audit-msg'); if (m) m.textContent = t; };
+  if (!rows.length) { showToast('Nothing to download', 'toast-warn'); return; }
+  var name = 'dept-requests-' + (DR_AUDIT.from || 'from') + '-to-' + (DR_AUDIT.to || 'today') + '.csv';
+  var url;
+  try {
+    url = URL.createObjectURL(new Blob(['﻿' + drAuditCsv_(rows)], { type: 'text/csv;charset=utf-8' }));
+    var a = document.createElement('a');
+    a.href = url; a.download = name; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { say('This browser blocked the download — use Copy table instead.'); return; }
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+  say('Downloading ' + name + '. If nothing arrives, this browser blocked it — use Copy table instead.');
+}
+/** The CRM cell: the checkbox and who checked it. */
+function drAuditCrmCellHtml_(r) {
+  var what = (r.type || 'Request') + (r.patientTrx ? ' · ' + r.patientTrx : '') + (r.createdAt ? ', sent ' + r.createdAt : '');
+  var who = r.crmChecked && (r.crmBy || r.crmAtMs)
+    ? (r.crmBy ? r.crmBy : '') + (r.crmAtMs ? (r.crmBy ? ' · ' : '') + new Date(r.crmAtMs).toLocaleDateString() : '') : '';
+  return '<label class="dr-crm"><input type="checkbox" class="dr-crm-box" data-req="' + esc(r.requestId) + '"' +
+    (r.crmChecked ? ' checked' : '') + ' aria-label="' + esc('Checked in CRM: ' + what) + '" onchange="drCrmToggle_(this)">' +
+    '<span class="dr-crm-who">' + esc(who) + '</span></label>';
+}
+/** Mark or clear a row. The box is disabled while the server records it, and
+ *  goes back if it could not — a box that shows a mark the store does not
+ *  have is the one thing this list must never do. */
+function drCrmToggle_(box) {
+  var id = box.getAttribute('data-req');
+  if (!id) return;
+  var want = !!box.checked;
+  box.disabled = true;
+  var cell = box.closest('.dr-crm');
+  if (cell) cell.classList.add('is-busy');
+  var done = function () { box.disabled = false; if (cell) cell.classList.remove('is-busy'); };
+  google.script.run
+    .withSuccessHandler(function (res) {
+      done();
+      if (!res || !res.success) {
+        box.checked = !want;
+        showToast((res && res.error) || 'Could not save the CRM mark.', 'toast-error');
+        return;
+      }
+      var rows = (DR_AUDIT.data && DR_AUDIT.data.rows) || [];
+      var row = null;
+      rows.forEach(function (r) { if (String(r.requestId) === String(id)) row = r; });
+      if (row) { row.crmChecked = !!res.checked; row.crmBy = res.by || ''; row.crmAtMs = res.atMs || null; }
+      box.checked = !!res.checked;
+      var who = cell ? cell.querySelector('.dr-crm-who') : null;
+      if (who && row) who.textContent = row.crmChecked ? (row.crmBy || '') + (row.crmAtMs ? (row.crmBy ? ' · ' : '') + new Date(row.crmAtMs).toLocaleDateString() : '') : '';
+      var sum = document.getElementById('dr-audit-sum');
+      // Count what is ON SCREEN: the row stays in view (above) even when the
+      // filters would now leave it out, so the count must not disagree with it.
+      var shown = {};
+      Array.prototype.forEach.call(document.querySelectorAll('#dr-audit-results .dr-crm-box'), function (b) { shown[b.getAttribute('data-req')] = 1; });
+      if (sum) sum.innerHTML = drAuditSummaryHtml_(rows.filter(function (r) { return shown[r.requestId]; }));
+    })
+    .withFailureHandler(function (err) {
+      done();
+      box.checked = !want;
+      showToast((err && err.message) || 'Could not save the CRM mark.', 'toast-error');
+    })
+    .setDeptRequestCrmCheck(id, want);
+}
+function drAuditSummaryHtml_(rows) {
+  var all = (DR_AUDIT.data && DR_AUDIT.data.rows) || [];
+  var checked = rows.filter(function (r) { return r.crmChecked; }).length;
+  return '<b>' + rows.length + '</b>' + (rows.length !== all.length ? ' of ' + all.length : '') +
+    ' request' + ((rows.length !== all.length ? all.length : rows.length) === 1 ? '' : 's') +   // "1 of 3 requests", "1 request"
+    ' · <b>' + checked + '</b> checked in CRM';
+}
+function drAuditResultsHtml_() {
+  var d = DR_AUDIT.data;
+  if (!d) return '';
+  var rows = drAuditRows_();
+  var notes = '';
+  if (d.truncated) notes += '<div class="dr-note" style="color:var(--warning-deep)">' + icon('warning', 13) +
+    ' This range holds more than ' + esc(String(d.max)) + ' requests — only the newest ' + esc(String(d.max)) + ' are listed. Choose a shorter range to see the rest.</div>';
+  if (d.crmTruncated) notes += '<div class="dr-note" style="color:var(--warning-deep)">' + icon('warning', 13) +
+    ' The CRM marks have outgrown what one read holds, so a very old mark may show as not checked.</div>';
+  var cols = drAuditColumns_();
+  var table = (typeof mtRenderTable_ === 'function') ? mtRenderTable_({
+    tableClass: 'dr-audit-table', dataLabels: true,
+    empty: '<div class="dr-empty">' + ((d.rows || []).length ? 'No requests match these filters.' : 'No requests were sent in this range.') + '</div>',
+    rowClass: function (r) { return r.crmChecked ? 'dr-audit-checked' : ''; },
+    // On screen the CRM box leads each row (it is a checklist worked down the
+    // page); the copied and downloaded forms keep drAuditColumns_'s order.
+    columns: cols.filter(function (c) { return c.key === 'crm'; }).concat(cols.filter(function (c) {
+      return c.key !== 'crm' && c.key !== 'crmBy' && c.key !== 'resolvedBy'; })).map(function (c) {
+      if (c.key === 'crm') return { key: 'crm', label: 'Checked in CRM', cell: drAuditCrmCellHtml_ };
+      if (c.key === 'sent') return { key: 'sent', label: 'Sent', cell: function (r) { return esc(r.createdAt || ''); } };
+      if (c.key === 'resolved') return { key: 'resolved', label: 'Resolved', cell: function (r) {
+        return r.status === 'resolved' ? esc(r.resolvedAt || '') + (r.resolvedBy ? '<div class="dr-audit-sub">' + esc(r.resolvedBy) + '</div>' : '') : ''; } };
+      if (c.key === 'thread') return { key: 'thread', label: 'Email thread', cell: function (r) {
+        return r.threadTracked ? esc('Tracked') : '<span class="dr-audit-sub" title="Sent before thread tracking began: a department reply cannot resolve it, and marking it resolved sends no reply on its email">' + esc('Before thread tracking') + '</span>'; } };
+      return { key: c.key, label: c.label, cell: function (r) { return esc(c.v(r)); } };
+    }),
+    rows: rows,
+  }) : '';
+  return '<div class="dr-audit-sum" id="dr-audit-sum">' + drAuditSummaryHtml_(rows) + '</div>' + notes + table;
+}
+/** The audit panel: range, filters, Copy table / Download CSV, the table. */
+function drAuditHtml_() {
+  var d = DR_AUDIT.data;
+  var sel = function (key, label, options) {
+    return '<label class="dr-sort">' + esc(label) + ' <select aria-label="' + esc(label) + '" onchange="drAuditSetFilter_(\'' + key + '\', this.value)">' +
+      options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (DR_AUDIT[key] === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') +
+      '</select></label>';
+  };
+  var types = [['', 'All types']].concat(((d && d.types) || []).map(function (t) { return [t, t]; }));
+  var depts = [['', 'All departments']].concat(((d && d.departments) || []).map(function (t) { return [t, t]; }));
+  if (DR_AUDIT.type && !types.some(function (o) { return o[0] === DR_AUDIT.type; })) DR_AUDIT.type = '';
+  if (DR_AUDIT.dept && !depts.some(function (o) { return o[0] === DR_AUDIT.dept; })) DR_AUDIT.dept = '';
+  var range = '<div class="dr-audit-range">' +
+    '<div class="field"><label for="dr-audit-from">Sent from</label><input type="date" id="dr-audit-from" value="' + esc(DR_AUDIT.from) + '"></div>' +
+    '<div class="field"><label for="dr-audit-to">to</label><input type="date" id="dr-audit-to" value="' + esc(DR_AUDIT.to) + '"></div>' +
+    '<button type="button" class="refresh-btn" onclick="drAuditLoad_()"' + (DR_AUDIT.loading ? ' disabled' : '') + '>' +
+      (DR_AUDIT.loading ? 'Loading…' : 'Load') + '</button></div>';
+  var filters = '<div class="dr-controls">' +
+    sel('type', 'Type', types) + sel('dept', 'Department', depts) +
+    sel('status', 'Status', [['', 'Any'], ['open', 'Open'], ['resolved', 'Resolved']]) +
+    sel('crm', 'CRM', [['', 'Any'], ['unchecked', 'Not checked'], ['checked', 'Checked']]) +
+    '<span class="dr-audit-actions">' +
+      '<button type="button" class="refresh-btn" onclick="drAuditCopy_(this)"' + (d ? '' : ' disabled') + '>' + icon('copy', 12) + ' Copy table</button>' +
+      '<button type="button" class="refresh-btn" onclick="drAuditCsvDownload_()"' + (d ? '' : ' disabled') + '>' + icon('download', 12) + ' Download CSV</button>' +
+    '</span></div>';
+  var body = DR_AUDIT.error ? errorStateHtml_(DR_AUDIT.error)
+    : (!d ? '<div class="dr-empty">' + (DR_AUDIT.loading ? 'Loading requests…' : 'Choose a range and press Load.') + '</div>'
+      : '<div id="dr-audit-results"' + (DR_AUDIT.loading ? ' class="is-busy"' : '') + '>' + drAuditResultsHtml_() + '</div>');
+  return '<div id="dr-audit" class="dr-section">' +
+    '<p class="dr-kpi-scope">Every request sent in the range, newest first. Filter it, copy it or download it, and tick each one as you check it in the CRM — the mark is saved for every manager.</p>' +
+    range + filters + '<p class="dr-audit-msg" id="dr-audit-msg" role="status"></p>' + body + '</div>';
 }
 
 function getDeptRequestsArea_() {
@@ -1325,7 +1611,47 @@ function drFmtMin_(min) {
   .dr-reply-from { font-weight: 600; color: var(--ink); }
   .dr-reply-at { font-size: 11px; }
   .dr-reply-btn { display: inline-flex; align-items: center; gap: 4px; }
+  /* DR1 — the manager's Tracker / Audit list switch and the audit list. */
+  .dr-mode { margin: 0 0 14px; }
+  .dr-audit-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0 0 12px; }
+  .dr-audit-range .field { margin: 0; }
+  .dr-audit-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .dr-audit-msg { font-size: 12px; color: var(--muted); margin: 0 0 8px; min-height: 0; }
+  .dr-audit-msg:empty { display: none; }
+  .dr-audit-sum { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .dr-audit-sum b { color: var(--ink); }
+  .dr-audit-sub { font-size: 11px; color: var(--muted); }
+  .dr-audit-table td { vertical-align: top; }
+  .dr-audit-table tr.dr-audit-checked td { background: var(--paper-2); }
+  .dr-crm { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 3px; cursor: pointer; min-width: 0; }
+  .dr-crm.is-busy { opacity: .6; }
+  .dr-crm-box { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+  .dr-crm-who { display: block; max-width: 150px; font-size: 11px; line-height: 1.3; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+  .dr-crm-who:empty { display: none; }
+  /* On a phone each request is a card (label · value), never a table that
+     scrolls sideways inside its wrapper — the E1 delivery-table shape. */
+  @media (max-width: 540px) {
+    .m-table.dr-audit-table thead { display: none; }
+    .m-table.dr-audit-table, .m-table.dr-audit-table tbody, .m-table.dr-audit-table tr { display: block; width: 100%; }
+    .m-table.dr-audit-table tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .m-table.dr-audit-table td { display: flex; gap: 8px; padding: 2px 0; border-bottom: 0; white-space: normal; text-align: left; }
+    .m-table.dr-audit-table td::before { content: attr(data-label); flex: 0 0 96px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+    .m-table.dr-audit-table td:empty { display: none; }
+    .dr-crm { flex-direction: row; align-items: center; gap: 8px; }
+    .dr-crm-who { max-width: none; }
+  }
+  :root[data-compact] .m-table.dr-audit-table thead { display: none; }
+  :root[data-compact] .m-table.dr-audit-table, :root[data-compact] .m-table.dr-audit-table tbody,
+  :root[data-compact] .m-table.dr-audit-table tr { display: block; width: 100%; }
+  :root[data-compact] .m-table.dr-audit-table tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  :root[data-compact] .m-table.dr-audit-table td { display: flex; gap: 8px; padding: 2px 0; border-bottom: 0; white-space: normal; text-align: left; }
+  :root[data-compact] .m-table.dr-audit-table td::before { content: attr(data-label); flex: 0 0 96px; font-family: var(--mono); font-size: 10px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+  :root[data-compact] .m-table.dr-audit-table td:empty { display: none; }
+  #dr-audit-results.is-busy { opacity: .6; }
   @media (max-width: 480px) {
     .dr-detail-row { grid-template-columns: 1fr; }
+    .dr-audit-actions { margin-left: 0; }
   }
 </style>

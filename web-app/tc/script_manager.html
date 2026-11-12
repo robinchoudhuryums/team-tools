@@ -1694,6 +1694,7 @@ function tcalRender_() {
       openDayEditModal(btn.getAttribute('data-tcal-edit'), btn.getAttribute('data-tcal-name') || '', TEAMCAL.selDate);
     });
   });
+  tcalActLoad_(TEAMCAL.selDate);   // AC1 — fills the App activity column in place
 }
 
 function tcalDayTableHtml_(data) {
@@ -1742,6 +1743,12 @@ function tcalDayTableHtml_(data) {
             ? ' <span style="font-size:10px;color:var(--muted)" title="This day has punch rows beyond the four columns shown — a second break, or duplicates. The Hours figure already counts every break pair, and Day Edit now lists every pair, so opening it here is safe.">+' + (r.punchCount - ['clockIn','lunchOut','lunchIn','clockOut'].filter(function (k) { return r[k]; }).length) + '</span>' : '';
           return tCell(r.clockOut, r.adjClockOut, r.infClockOut) + extra;
         } },
+      // AC1: the rep's app activity that day, hourly — filled in place by
+      // tcalActFill_ when managerGetTeamActivity answers (a targeted patch:
+      // the calendar above is not rebuilt, so its focus stays).
+      { key: 'act', label: 'App activity', cell: function (r) {
+          return dateIso > todayIso ? '' : '<span class="tcal-act-cell" data-tcal-act="' + esc(r.id) + '">' + tcalActCellHtml_(r.id, dateIso) + '</span>';
+        } },
       { key: 'hours', label: 'Hours', numeric: true, cell: function (r) {
           if (typeof r.hours === 'number') return '<b>' + esc(fmtHrs(r.hours)) + '</b>';
           if (r.inProgress) return '<span style="color:var(--muted)">in progress</span>';
@@ -1780,7 +1787,87 @@ function tcalDayTableHtml_(data) {
     ? '<div class="tcal-note">Older than the ' + adjWin + '-day adjust window — edits need the sheet directly.</div>' : '';
 
   return '<div class="tcal-day-title">' + esc(title) + (hol ? ' · ' + esc(hol) + ' (Company holiday)' : '') + '</div>' +
-    table + offHtml + editNote;
+    table + '<div class="tcal-note" id="tcal-act-note">' + tcalActNoteHtml_(dateIso) + '</div>' + offHtml + editNote;
+}
+
+/* ── AC1 (operator 2026-11-11) — the team's app activity on the selected day.
+ * ONE read per day (managerGetTeamActivity), cached for the session — a past
+ * day is final, so it is reused; today's is re-read on every select. A
+ * failed read is never cached (INV-129) and is said under the table, never
+ * drawn as "no activity". Every rep's bars share one hour range, so two rows
+ * can be compared by eye. */
+var TEAMACT = { cache: {}, failed: {}, seq: 0 };
+function tcalActLoad_(dateIso) {
+  var todayIso = isoDateTz(empTz());
+  if (!dateIso || dateIso > todayIso) return;
+  if (TEAMACT.cache[dateIso] && dateIso !== todayIso) { tcalActFill_(dateIso); return; }
+  var seq = ++TEAMACT.seq;
+  delete TEAMACT.failed[dateIso];
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res && !res.error && res.reps) TEAMACT.cache[dateIso] = res;
+      else TEAMACT.failed[dateIso] = true;
+      if (seq !== TEAMACT.seq || TEAMCAL.selDate !== dateIso || currentView !== 'manage') return;
+      tcalActFill_(dateIso);
+    })
+    .withFailureHandler(function () {
+      TEAMACT.failed[dateIso] = true;
+      if (seq !== TEAMACT.seq || TEAMCAL.selDate !== dateIso || currentView !== 'manage') return;
+      tcalActFill_(dateIso);
+    })
+    .managerGetTeamActivity(dateIso);
+}
+/** PURE — the hour range every row is drawn over: from the earliest hour
+ *  any rep was active to the latest, at least 8 hours; null with none. */
+function tcalActRange_(reps) {
+  var h0 = 24, h1 = 0;
+  Object.keys(reps || {}).forEach(function (id) {
+    (reps[id].hours || []).forEach(function (v, h) { if (v > 0) { if (h < h0) h0 = h; if (h + 1 > h1) h1 = h + 1; } });
+  });
+  if (h1 <= h0) return null;
+  if (h1 - h0 < 8) { h0 = Math.max(0, Math.min(h0, 16)); h1 = Math.min(24, h0 + 8); }
+  return { h0: h0, h1: h1 };
+}
+/** PURE (DOM-free; Node + DOM pinned) — one rep's cell: hourly bars over the
+ *  shared range and a short count, or a dash; "…" while the read is out. */
+function tcalActCellHtml_(id, dateIso) {
+  var data = TEAMACT.cache[dateIso];
+  if (!data) return TEAMACT.failed[dateIso] ? '<span style="color:var(--muted-3)">—</span>' : '<span class="tcal-act-n">…</span>';
+  var v = data.reps && data.reps[id];
+  var range = tcalActRange_(data.reps);
+  if (!v || !range || !(v.hours || []).some(function (x) { return x > 0; })) return '<span style="color:var(--muted-3)" title="No app activity recorded">—</span>';
+  var vals = v.hours.slice(range.h0, range.h1);
+  var total = (Number(v.clicks) || 0) + (Number(v.keys) || 0);
+  var mins = Number(v.activeMin) || 0;
+  var dur = (mins >= 60 ? Math.floor(mins / 60) + 'h ' : '') + (mins % 60) + 'm';
+  var summary = v.hasCounts ? actNum_(total) + ' clicks + keys' : dur + ' active';
+  var tip = 'App activity ' + deHourLabel_(range.h0) + '–' + deHourLabel_(range.h1) +
+    (v.first ? ' · first ' + dispTime(v.first) + ' · last ' + dispTime(v.last) : '') +
+    (v.hasCounts ? ' · ' + actNum_(v.clicks) + ' clicks, ' + actNum_(v.keys) + ' keystrokes' : ' · on/off only (recorded before activity levels)') +
+    ' · ' + dur + ' active';
+  return '<span class="tcal-act" role="img" aria-label="' + esc(tip) + '" title="' + esc(tip) + '">' +
+    (v.hasCounts ? actBarsHtml_(vals, 'tcal-act-b')
+      : vals.map(function (x) { return '<span class="tcal-act-b lv">' + (x > 0 ? '<i style="height:' + Math.max(8, Math.round(x / 6 * 100)) + '%"></i>' : '') + '</span>'; }).join('')) +
+    '</span><span class="tcal-act-n">' + esc(summary) + '</span>';
+}
+function tcalActNoteHtml_(dateIso) {
+  var todayIso = isoDateTz(empTz());
+  if (!dateIso || dateIso > todayIso) return '';
+  if (TEAMACT.failed[dateIso] && !TEAMACT.cache[dateIso]) return 'App activity could not be read for this day — reload to try again.';
+  var data = TEAMACT.cache[dateIso];
+  var r = data && tcalActRange_(data.reps);
+  var span = r ? ' Bars run ' + deHourLabel_(r.h0) + '–' + deHourLabel_(r.h1) + ' for every rep.' : '';
+  var kept = data && data.keptFrom && dateIso < data.keptFrom ? ' Activity before ' + esc(String(data.keptFrom)) + ' was not kept.' : '';
+  return 'App activity is clicks and keystrokes in this app only, each rep on their own clock — a call or another program reads as idle. Context, not a score.' + span + kept;
+}
+function tcalActFill_(dateIso) {
+  var slot = document.getElementById('mgr-team-cal');
+  if (!slot) return;
+  slot.querySelectorAll('[data-tcal-act]').forEach(function (cell) {
+    cell.innerHTML = tcalActCellHtml_(cell.getAttribute('data-tcal-act'), dateIso);
+  });
+  var note = document.getElementById('tcal-act-note');
+  if (note) note.innerHTML = tcalActNoteHtml_(dateIso);
 }
 
 /* ─── DAY EDIT · BREAK PAIRS (A4) ─────────────────────────────────────
@@ -1941,7 +2028,7 @@ function deMarkTouched_(key) { _deTouched[key] = true; }
  * counts as inferred only while it still holds the value it was applied or
  * loaded with; typing another time makes it the manager's own entry. The read
  * is per open (its own sequence), never blocks Save, and a failure is said. */
-var DE_ACT = { seq: 0, data: null, failed: false };
+var DE_ACT = { seq: 0, data: null, failed: false, hourly: false };
 var _deInfVal = { ClockIn: '', ClockOut: '' };
 var DE_SLOT_INPUT = { ClockIn: 'de-clockin', ClockOut: 'de-clockout' };
 function deSlotInferred_(type) {
@@ -1968,24 +2055,44 @@ function deActivityHtml_(d, o) {
     return head + '</div><div class="de-act-note">No app activity recorded on this day' +
       (d && d.keptFrom && d.date && d.date < d.keptFrom ? ' (activity before ' + esc(String(d.keptFrom)) + ' was not kept)' : '') + '.</div>';
   }
-  head += '<span>first ' + esc(dispTime(first)) + ' · last ' + esc(dispTime(last)) + '</span></div>';
+  var lvl = !!d.hasCounts && Array.isArray(d.level);
+  var cnt = Math.max(0, Number(d.clicks) || 0), kst = Math.max(0, Number(d.keys) || 0);
+  head += '<span>first ' + esc(dispTime(first)) + ' · last ' + esc(dispTime(last)) +
+    (lvl ? ' · ' + esc(actNum_(cnt)) + ' click' + (cnt === 1 ? '' : 's') + ', ' + esc(actNum_(kst)) + ' keystroke' + (kst === 1 ? '' : 's') : '') + '</span></div>';
   var size = d.blockMin > 0 ? d.blockMin : 10, per = Math.round(60 / size);
   var fm = parseInt(first.slice(0, 2), 10) * 60 + parseInt(first.slice(3), 10);
   var lm = parseInt(last.slice(0, 2), 10) * 60 + parseInt(last.slice(3), 10);
   var h0 = Math.max(0, Math.floor(fm / 60) - 1), h1 = Math.min(24, Math.floor(lm / 60) + 2);
   if (h1 - h0 < 8) { h0 = Math.max(0, Math.min(h0, 24 - 8)); h1 = Math.min(24, h0 + 8); }
   var blocks = Array.isArray(d.blocks) ? d.blocks : [];
-  var cells = '', on = 0, n = 0;
-  for (var b = h0 * per; b < h1 * per; b++) {
-    var hit = blocks[b] > 0;
-    if (hit) on++;
-    n++;
-    cells += '<span class="de-act-b' + (hit ? ' on' : '') + '"></span>';
+  var cells = '', on = 0, n = 0, label;
+  if (lvl) {
+    // AC1: a bar per block (or per hour), its height the clicks + keystrokes
+    // against the busiest bar shown; an empty bar is a level of zero.
+    var hourly = !!o.hourly, vals = [];
+    if (hourly) for (var hh = h0; hh < h1; hh++) { var t = 0; for (var q = 0; q < per; q++) t += Number(d.level[hh * per + q]) || 0; vals.push(t); }
+    else for (var bb = h0 * per; bb < h1 * per; bb++) vals.push(Number(d.level[bb]) || 0);
+    cells = actBarsHtml_(vals, 'de-act-b');
+    vals.forEach(function (v) { n++; if (v > 0) on++; });
+    label = 'App activity from ' + dispTime(first) + ' to ' + dispTime(last) + ' — ' + actNum_(cnt) + ' clicks and ' + actNum_(kst) +
+      ' keystrokes; ' + on + ' of ' + n + (hourly ? ' hours' : ' ' + size + '-minute blocks') + ' active';
+  } else {
+    for (var b = h0 * per; b < h1 * per; b++) {
+      var hit = blocks[b] > 0;
+      if (hit) on++;
+      n++;
+      cells += '<span class="de-act-b' + (hit ? ' on' : '') + '"></span>';
+    }
+    label = 'App activity from ' + dispTime(first) + ' to ' + dispTime(last) + ' — ' + on + ' of ' + n + ' ' + size + '-minute blocks active';
   }
   var mid = Math.round((h0 + h1) / 2);
-  var html = head +
-    '<div class="de-act-strip" role="img" aria-label="App activity from ' + esc(dispTime(first)) + ' to ' + esc(dispTime(last)) +
-      ' — ' + on + ' of ' + n + ' ' + size + '-minute blocks active">' + cells + '</div>' +
+  var scale = lvl
+    ? '<div class="de-act-scale" role="group" aria-label="Bar size">' +
+        '<button type="button" class="de-act-sc" data-de-act-scale="block" aria-pressed="' + (o.hourly ? 'false' : 'true') + '">' + esc(String(size)) + ' min</button>' +
+        '<button type="button" class="de-act-sc" data-de-act-scale="hour" aria-pressed="' + (o.hourly ? 'true' : 'false') + '">Hour</button></div>'
+    : '';
+  var html = head + scale +
+    '<div class="de-act-strip' + (lvl ? ' lvl' : '') + '" role="img" aria-label="' + esc(label) + '">' + cells + '</div>' +
     '<div class="de-act-ticks" aria-hidden="true"><span>' + deHourLabel_(h0) + '</span><span>' + deHourLabel_(mid) + '</span><span>' + deHourLabel_(h1) + '</span></div>';
   if (o.range) return html + '<div class="de-act-note">Suggestions are for a single day — clear <b>To</b> to use them.</div>';
   var sug = [];
@@ -1993,7 +2100,21 @@ function deActivityHtml_(d, o) {
   if (o.clockOutEmpty && !o.isRepToday && last !== first) sug.push('Out ' + esc(dispTime(last)) + ' <button type="button" class="de-act-apply" data-de-apply="ClockOut" aria-label="Apply ' + esc(dispTime(last)) + ' as Clock Out">Apply</button>');
   if (sug.length) html += '<div class="de-act-sug"><span>Suggested from app activity:</span> ' + sug.join(' ') + '</div>';
   return html + '<div class="de-act-note">Activity is sampled at most every ' + esc(String(d.gapMin || size)) +
-    ' minutes while the app is in use, so the last activity can be a few minutes later than shown. A time you apply stays editable, and saves marked <b>Inferred (app activity)</b>.</div>';
+    ' minutes while the app is in use, so the last activity can be a few minutes later than shown. A time you apply stays editable, and saves marked <b>Inferred (app activity)</b>.</div>' +
+    (lvl ? '<div class="de-act-note">Bars count clicks and keystrokes in this app only — never what was typed. A phone call or another program reads as idle, and the last minutes before a window closes may be missing: context, not a score.</div>' : '');
+}
+/** AC1 — 1,234 (a count the server capped is still a whole number). */
+function actNum_(n) { return String(Math.max(0, Math.floor(Number(n) || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+/** PURE (DOM-free; Node + DOM pinned) — level bars for `vals`, each a track
+ *  span of class `cls` holding a fill whose height is its value against the
+ *  largest (a non-zero value never under 8%, so one click is visible). */
+function actBarsHtml_(vals, cls) {
+  var max = 0;
+  (vals || []).forEach(function (v) { if (v > max) max = v; });
+  return (vals || []).map(function (v) {
+    var pct = v > 0 && max > 0 ? Math.max(8, Math.round(v / max * 100)) : 0;
+    return '<span class="' + cls + ' lv">' + (pct ? '<i style="height:' + pct + '%"></i>' : '') + '</span>';
+  }).join('');
 }
 function deRenderActivity_() {
   var host = document.getElementById('de-act');
@@ -2012,6 +2133,7 @@ function deRenderActivity_() {
     clockOutEmpty: !document.getElementById('de-clockout').value,
     isRepToday: !!(d.timezone && d.date === isoDateTz(d.timezone)),
     range: deRangeModeOn_(),
+    hourly: DE_ACT.hourly,
   });
 }
 function deLoadActivity_(empId, date) {
@@ -2239,6 +2361,13 @@ document.getElementById('de-clockout').addEventListener('input', function () { d
 document.getElementById('de-act').addEventListener('click', function (e) {
   var b = e.target.closest ? e.target.closest('[data-de-apply]') : null;
   if (b) deApplySuggestion_(b.getAttribute('data-de-apply'));
+  var sc = e.target.closest ? e.target.closest('[data-de-act-scale]') : null;   // AC1: 10 min / Hour
+  if (sc) {
+    DE_ACT.hourly = sc.getAttribute('data-de-act-scale') === 'hour';
+    deRenderActivity_();
+    var again = document.querySelector('#de-act [data-de-act-scale="' + sc.getAttribute('data-de-act-scale') + '"]');
+    if (again) again.focus();   // the panel was rebuilt — keep the keyboard where it was (g141)
+  }
 });
 document.getElementById('de-breaks').addEventListener('input', function () { deMarkTouched_('breaks'); });
 document.getElementById('de-break-add').addEventListener('click', function () {

@@ -68,7 +68,7 @@ function cnCountIntakeNotesResult_(emp, from, to) {
     if (lastRow < 2) return { count: 0, unavailable: false, unenrolled: false };
     const dateCol = sheet.getRange(2, CN.DATE_LOCAL + 1, lastRow - 1, 1).getValues();
     const subCol = sheet.getRange(2, CN.SUBFORM_DATA + 1, lastRow - 1, 1).getValues();
-    let n = 0;
+    let n = 0, timed = 0, seconds = 0;
     for (let i = 0; i < dateCol.length; i++) {
       const d = cnDateLocalString_(dateCol[i][0]);
       if (d < from || d > to) continue;
@@ -76,10 +76,16 @@ function cnCountIntakeNotesResult_(emp, from, to) {
       if (raw.indexOf('"intakeType"') < 0) continue;
       try {
         const sd = JSON.parse(raw);
-        if (sd && sd.intakeType) n++;
+        if (sd && sd.intakeType) {
+          n++;
+          // M1: the intake form's time, when the send recorded it — a time no
+          // call takes is not counted (METRICS_INTAKE_TIMED_*).
+          const cs = Number(sd.completionSeconds);
+          if (cs >= METRICS_INTAKE_TIMED_MIN_SEC && cs <= METRICS_INTAKE_TIMED_MAX_SEC) { timed++; seconds += Math.round(cs); }
+        }
       } catch (e) { /* corrupt blob never breaks a count (callNoteRowToObject_ posture) */ }
     }
-    return { count: n, unavailable: false, unenrolled: false };
+    return { count: n, timed: timed, seconds: seconds, unavailable: false, unenrolled: false };
   } catch (e) {
     console.warn('cnCountIntakeNotesResult_ failed for ' + ((emp && emp.id) || '?') + ': ' + e.message);
     return { count: 0, unavailable: true, unenrolled: false };
@@ -2102,4 +2108,59 @@ function intakeListOfferings() {
     if (out.length > INTAKE_OFFERINGS_LIST_CAP_) out.length = INTAKE_OFFERINGS_LIST_CAP_;
     return { offerings: out, total: total, cap: INTAKE_OFFERINGS_LIST_CAP_ };
   } catch (err) { return { error: err.message }; }
+}
+
+// ── I1 (operator 2026-11-05/06): the intake address check ──────────────────
+/** PURE (Node-pinned) — one geocode of a typed address as the rep's answer:
+ *  found (a street address), area (Google placed the area, not the street),
+ *  partial (it guessed — K5), notFound, outside (not the US — KB2-3), or
+ *  unavailable (the SERVICE failed — never "not found", g128). The formatted
+ *  address drops a trailing ", USA". */
+function intakeAddrVerdict_(g) {
+  if (!g) return { status: 'notFound' };
+  if (g.unavailable) return { status: 'unavailable' };
+  const f = String(g.formatted || '').replace(/,\s*(USA|United States)$/i, '');
+  if (g.partial) return { status: 'partial', formatted: f };
+  if (kbGeoOutsideUs_(g)) return { status: 'outside', formatted: f };
+  const t = Array.isArray(g.types) ? g.types : [];
+  const street = ['street_address', 'premise', 'subpremise'].some(function (x) { return t.indexOf(x) >= 0; });
+  return { status: street ? 'found' : 'area', formatted: f };
+}
+/** Employee-callable, read-only — I1: check one typed address with Google
+ *  Maps, only while the `intakeAddressCheck` toggle is on. The address alone
+ *  is sent (nothing else from the form); an answer is cached for 6 hours under
+ *  a hash of the address (never the address itself as a key); the check counts
+ *  against its own daily cap, and a capped, failed or unreadable count is
+ *  "could not check", never "not found". No message ever quotes the address
+ *  (g146), and nothing is written to the AuditLog (it is a patient's home). */
+function checkIntakeAddress(address) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    if (!getFlag_('intakeAddressCheck')) return { status: 'off' };
+    const a = String(address == null ? '' : address).replace(/\s+/g, ' ').trim();
+    if (a.length < 6 || a.length > 300) return { status: 'skipped' };
+    const key = 'iac:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, a.toLowerCase()));
+    const cache = CacheService.getScriptCache();
+    try { const hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {}
+    const room = intakeAddrCheckReserve_();
+    if (!room.ok) return { status: 'unavailable', capped: !room.error };
+    const v = intakeAddrVerdict_(kbGeocodeOne_(a));
+    if (v.status !== 'unavailable') { try { cache.put(key, JSON.stringify(v), INTAKE_ADDR_CACHE_SECONDS); } catch (e) {} }
+    return v;
+  } catch (err) { return { status: 'unavailable' }; }
+}
+/** I1 — reserve one check against INTAKE_ADDR_CHECK_CAP (the route-lookup
+ *  counter's shape, its own property). { ok } — an unreadable count is
+ *  refused (an unknown count is not room). */
+function intakeAddrCheckReserve_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const nowHour = Math.floor(Date.now() / 3600000);
+    const w = routeLookupWindow_(props.getProperty(INTAKE_ADDR_CHECK_PROP), nowHour);
+    if (w.used + 1 > INTAKE_ADDR_CHECK_CAP) return { ok: false, used: w.used };
+    w.buckets[nowHour] = (w.buckets[nowHour] || 0) + 1;
+    propSetBounded_(INTAKE_ADDR_CHECK_PROP, JSON.stringify(w.buckets), { hint: 'the intake address-check counter keeps 24 hourly counts' });
+    return { ok: true, used: w.used + 1 };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }

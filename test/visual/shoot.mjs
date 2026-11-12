@@ -9,6 +9,10 @@ import { fileURLToPath } from 'node:url';
 import gate from './ci-gate.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// I3: the reader's real output for a specimen card (fake data), shared with the Node pins.
+const I3_CARD_LINES = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'))['c-bcbs/phone']);
+// I3a: a read with one value the reader was unsure of (the group), and a broken second image beside it.
+const I3_CARD_LINES_UNSURE = JSON.stringify(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'client', 'i3-card-lines.json'), 'utf8'))['c-uhc/small']);
 const PAGE = 'file://' + path.join(HERE, 'page.html');
 const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: the handbook app (opts.page: 'handbook')
 const OUT = path.join(HERE, 'shots');
@@ -104,7 +108,9 @@ const HB_PAGE = { page: 'handbook' };
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
 const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
-const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ document.querySelectorAll('.hb-qz-q').forEach(function(f){ var i=f.querySelector('input'); if(i) i.checked=true; }); hbSubmitQuiz_(); }, 400)";
+// HBR3: a sitting is one question per screen — answer each (the first option shown) and step on, then submit.
+const HB_QUIZ_RESULT = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ var t=HB_QZ.taking; for (var k=0;k<t.order.length;k++){ var i=document.querySelector('#hb-qz-card input'); i.checked=true; hbQuizPick_(i); if(k<t.order.length-1) hbQuizStep_(1); } hbSubmitQuiz_(); }, 400)";
+const HB_QUIZ_STEP2 = "hbTakeQuiz_('q-core-calls', true); setTimeout(function(){ var i=document.querySelectorAll('#hb-qz-card input')[1]; i.checked=true; hbQuizPick_(i); hbQuizStep_(1); var j=document.querySelectorAll('#hb-qz-card input')[0]; j.checked=true; hbQuizPick_(j); }, 400)";
 const HB_PROGRESS = "hbGoTraining_(); setTimeout(function(){ var e=document.getElementById('hb-tr-progress'); if(e) e.scrollIntoView(); var d=e && e.querySelector('details'); if(d) d.open=true; }, 500)";
 const HB_NOTES = "try { localStorage.setItem('umsHbNotes', JSON.stringify({ 'man-0-11': { t: 'Read the Ticket State before the note.\\nA split shipment has two tracking numbers — give both.', ms: Date.now() - 3600000 }, 'man-0-10': { t: 'Pat. Resp. is what they owe BEFORE delivery.', ms: Date.now() - 86400000 }, 'man-0-2': { t: '', ms: 5 } })); } catch (e) {} ";
 const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
@@ -150,10 +156,20 @@ const SCENARIOS = [
   ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
   ['handbook-quiz-take-light-mobile', {}, MOBILE, 'light', '', "hbTakeQuiz_('q-core-calls', true)", HB_PAGE],
   ['handbook-quiz-result-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_RESULT, HB_PAGE],
+  // HBR3 — the quiz cards on a phone in dark, the To do filter, a sitting on its second question, the result on a phone.
+  ['handbook-quizzes-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoQuizzes_()', HB_PAGE],
+  ['handbook-quizzes-todo-light-wide', {}, WIDE, 'light', '', "hbGoQuizzes_(); setTimeout(function(){ hbQuizFilterSet_('todo'); }, 400)", HB_PAGE],
+  ['handbook-quiz-take-light-wide', {}, WIDE, 'light', '', HB_QUIZ_STEP2, HB_PAGE],
+  ['handbook-quiz-take-dark-wide', {}, WIDE, 'dark', '', HB_QUIZ_STEP2, HB_PAGE],
+  ['handbook-quiz-result-light-mobile', {}, MOBILE, 'light', '', HB_QUIZ_RESULT, HB_PAGE],
   ['handbook-quizbar-light-mobile', {}, MOBILE, 'light', '?s=0.11', '', HB_PAGE],
   // HB3.3 — training: My training and Team training; the two editors.
   ['handbook-training-light-wide', {}, WIDE,   'light', '', 'hbGoTraining_()', HB_PAGE],
   ['handbook-training-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoTraining_()', HB_PAGE],
+  // HBR4 — a manager's Mine view, the Display panel in dark, the form viewer's frame on a wide screen.
+  ['handbook-training-mine-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbTrTab_('mine'); }, 400)", HB_PAGE],
+  ['handbook-display-dark-mobile', {}, MOBILE, 'dark', '', "setTimeout(function(){ hbOpenDisplay_(); }, 300)", HB_PAGE],
+  ['handbook-form-view-light-wide', {}, WIDE, 'light', '', "hbOpenForm_('form-eaa')", HB_PAGE, { wait: 1500 }],
   ['handbook-quiz-editor-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditTeamQuiz_('tq-00000000000a'); }, 400)", HB_PAGE],
   ['handbook-plan-editor-light-mobile', {}, MOBILE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditPlan_('pl-000000000001'); }, 400)", HB_PAGE],
   // HB2.3 — the Display panel; the largest text with wide spacing, high
@@ -232,6 +248,20 @@ const SCENARIOS = [
   // against, and Team Notes is the manager surface for the whole Call Notes
   // module (training queue, review candidates, per-rep, stats).
   ['intake-pmd-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', ''],
+  // I1 (operator 2026-11-05/06): the PMD form after leaving each field — tidied
+  // values (a two-digit year written out, a clean Medicare ID, the SSN shown),
+  // amber notes (the same number twice, an email typo), and the Maps check
+  // suggesting Google's spelling (toggle on).
+  ['intake-pmd-checks-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', "(function(){ if (empState) { empState.flags = empState.flags || {}; empState.flags.intakeAddressCheck = true; } var f = function (i, v) { var el = document.querySelector('#intk-pmd-form [data-intk-idx=\"' + i + '\"]'); if (!el) return; el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }; f(1, 'Ana Ruiz'); f(2, '+1 (469) 111 3333'); f(3, '4691113333'); f(4, 'ana@gmial.com'); f(5, '1/2/50'); f(6, '123 elm street dallas tx 75201'); f(8, 'medicare 1eg4 te5 mk72'); f(10, '123456789'); var a = document.querySelector('#intk-pmd-form [data-intk-idx=\"1\"]'); if (a) a.scrollIntoView(); if (document.activeElement) document.activeElement.blur(); })()", { wait: 600 }],
+  ['intake-pmd-checks-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', "(function(){ if (empState) { empState.flags = empState.flags || {}; empState.flags.intakeAddressCheck = true; } var f = function (i, v) { var el = document.querySelector('#intk-pmd-form [data-intk-idx=\"' + i + '\"]'); if (!el) return; el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }; f(1, 'Ana Ruiz'); f(2, '+1 (469) 111 3333'); f(3, '4691113333'); f(4, 'ana@gmial.com'); f(5, '1/2/50'); f(6, '123 elm street dallas tx 75201'); f(8, 'medicare 1eg4 te5 mk72'); f(10, '123456789'); var a = document.querySelector('#intk-pmd-form [data-intk-idx=\"1\"]'); if (a) a.scrollIntoView(); if (document.activeElement) document.activeElement.blur(); })()", { wait: 600 }],
+  // I2 (operator 2026-11-05): the Drafts list — three forms' saved drafts,
+  // a long name, and the rail's count behind it.
+  ['intake-drafts-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', "(function(){ var o = intakeDraftOwner_(); var n = Date.now(); localStorage.setItem('umsIntakeSaved', JSON.stringify([{ id: 'v1', form: 'pmd', owner: o, at: n - 600000, label: 'Ana Ruiz', answers: { 1: 'Ana Ruiz' }, lang: 'EN' }, { id: 'v2', form: 'ppd', owner: o, at: n - 7200000, label: 'Jane Doe \u2014 TRX 12345', patientInfo: 'Jane Doe \u2014 TRX 12345', answers: {}, lang: 'EN' }, { id: 'v3', form: 'pap', owner: o, at: n - 79200000, label: 'Bartholomew Featherstonehaugh-Montgomery III', answers: {}, lang: 'EN' }])); intakeEnterAcct_('pmd', 'PMD Account'); intakeOpenDraftsList_(); })()", { wait: 400 }],
+  ['intake-drafts-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', "(function(){ var o = intakeDraftOwner_(); var n = Date.now(); localStorage.setItem('umsIntakeSaved', JSON.stringify([{ id: 'v1', form: 'pmd', owner: o, at: n - 600000, label: 'Ana Ruiz', answers: { 1: 'Ana Ruiz' }, lang: 'EN' }, { id: 'v2', form: 'ppd', owner: o, at: n - 7200000, label: 'Jane Doe \u2014 TRX 12345', patientInfo: 'Jane Doe \u2014 TRX 12345', answers: {}, lang: 'EN' }, { id: 'v3', form: 'pap', owner: o, at: n - 79200000, label: 'Bartholomew Featherstonehaugh-Montgomery III', answers: {}, lang: 'EN' }])); intakeEnterAcct_('pmd', 'PMD Account'); intakeOpenDraftsList_(); })()", { wait: 400 }],
+  // I3 (operator 2026-11-06): what the card reader offers — the reader stood in
+  // with what the real one returned for a specimen card photo.
+  ['intake-card-read-light-wide', { tool: 'intake', tab: 'intakePmdAccount' }, WIDE, 'light', '', "(function(){ var L = " + I3_CARD_LINES + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png')]; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
+  ['intake-card-read-dark-mobile', { tool: 'intake', tab: 'intakePmdAccount' }, MOBILE, 'dark', '', "(function(){ var L = " + I3_CARD_LINES_UNSURE + "; window.INTAKE_OCR_ENGINE = { read: function () { return Promise.resolve(L); } }; var c = document.createElement('canvas'); c.width = 320; c.height = 200; var x = c.getContext('2d'); x.fillStyle = '#2b7cc9'; x.fillRect(0, 0, 320, 200); x.fillStyle = '#fff'; x.font = '18px sans-serif'; x.fillText('Specimen card', 20, 40); INTAKE_STATE.pmd.images = [c.toDataURL('image/png'), 'data:image/png;base64,AAAA']; intakeRenderGallery_('pmd'); var b = document.querySelector('[data-card-read]'); if (b) b.click(); setTimeout(function () { var p = document.getElementById('intk-card-read'); if (p) p.scrollIntoView({ block: 'center' }); }, 300); })()", { wait: 700 }],
   ['intake-pap-light-wide', { tool: 'intake', tab: 'intakePapAccount' }, WIDE, 'light', ''],
   // 25post A1: a Sent PPD's detail — each recommendation with its reason.
   ['intake-sent-detail-light-wide', { tool: 'intake', tab: 'intakeSent' }, WIDE, 'light', '', "intakeOpenSent_(document.querySelector('[data-sent-idx]')); setTimeout(function () { var g = document.querySelector('.intk-sent-grp'); if (g) g.scrollIntoView({ block: 'start' }); }, 250)"],
@@ -299,9 +329,46 @@ const SCENARIOS = [
   // certificate, and the manager drawing a box on a chosen PDF (the post hook feeds the fixture PDF in).
   ['empdocs-pdf-sign-light-wide',  { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
   ['empdocs-pdf-sign-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf')", { wait: 1500 }],
+  // ED1: signing with a typed signature and initials — both kinds of box paint
+  // live; the same PIP signed, its drawings in place and the over-long comment
+  // marked on the page and listed in full beneath it.
+  ['empdocs-pdf-signing-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf'); setTimeout(function () { var c = document.getElementById('ed-ack-check'); if (c) { c.checked = true; c.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-sig-typed-toggle'); if (t) t.click(); var a = document.getElementById('ed-sig-typed-input'); if (a) { a.value = 'Sam Ortiz'; a.dispatchEvent(new Event('input')); } var b = document.getElementById('ed-ini-typed-input'); if (b) { b.value = 'SO'; b.dispatchEvent(new Event('input')); } var n = document.querySelector('[data-fid=\"employee-comments\"]'); if (n) { n.value = 'I understand the goals and will check in after the first week.'; n.dispatchEvent(new Event('input')); } if (document.activeElement) document.activeElement.blur(); var bd = document.querySelector('#ed-reader-overlay .body'); if (bd) bd.scrollTop = 0; }, 1300);", { wait: 2200 }],
+  ['empdocs-pdf-signed-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-pdf-signed')", { wait: 1500 }],
+  ['empdocs-pdf-signed-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var o = document.getElementById('ed-pdf-over'); if (o) o.scrollIntoView(); }, 1300)", { wait: 2000 }],
   ['empdocs-cert-light-wide',      { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenCertificate_('d-signed')", { wait: 1500 }],
   ['empdocs-issue-pdf-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
-    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); if (t) t.value = 'signature'; edAddBox_(1, edBoxFromDrag_(0.098, 0.335, 0.098, 0.335, 'signature', { w: 612, h: 792 })); }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2500 }],
+  // ED2 (operator 2026-11-06): the box editor — a box duplicated and the copy selected (its ring,
+  // Duplicate, Remove and the resize corner), the page zoomed to 125%; a FILLABLE PDF chosen — its
+  // warnings and the offer of its own fields; on a phone, the offer taken; the reader zoomed in.
+  ['empdocs-issue-edit-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); google.script.run.withSuccessHandler(function (r) { edIssuePdfFile_(new File([edDataUriBytes_(r.dataUri)], 'PIP - Sam Ortiz.pdf', { type: 'application/pdf' })); setTimeout(function () { var t = document.getElementById('ed-box-type'); if (t) t.value = 'date'; edAddBox_(1, { x: 0.215, y: 0.163, w: 0.25, h: 0.03 }); edDuplicateBox_(0); edPdfSetZoom_(document.getElementById('ed-is-pdf-pages'), 1.25); var b = document.querySelector('#ed-is-pdf-pages [data-ed-box=\"1\"]'); if (b) { b.focus(); b.scrollIntoView({ block: 'center' }); } }, 1200); }).getEmpDocPdf('d-pdf');", { wait: 2600 }],
+  ['empdocs-issue-form-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "edIssueMode_('pdf'); edIssuePdfFile_(new File([edDataUriBytes_(ED2_FORM_PDF_URI)], 'Remote Work Agreement.pdf', { type: 'application/pdf' })); setTimeout(function () { var w = document.getElementById('ed-is-pdf-wrap'); if (w) w.scrollIntoView(); }, 1600);", { wait: 2400 }],
+  ['empdocs-issue-form-dark-mobile', { tool: 'develop', tab: 'docsManage' }, MOBILE, 'dark', '',
+    "edIssueMode_('pdf'); edIssuePdfFile_(new File([edDataUriBytes_(ED2_FORM_PDF_URI)], 'Remote Work Agreement.pdf', { type: 'application/pdf' })); setTimeout(function () { var u = document.querySelector('[data-ed-form-use]'); if (u) u.click(); var p = document.getElementById('ed-is-pdf-pages'); if (p) p.scrollIntoView(); }, 1600);", { wait: 2600 }],
+  ['empdocs-pdf-zoom-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf'); setTimeout(function () { var i = document.querySelector('[data-ed-zoom-for=\"ed-pdf-pages\"] [data-ed-zoom=\"in\"]'); if (i) { i.click(); i.click(); } }, 1300);", { wait: 2200 }],
+  // ED3 (operator 2026-11-06): a signed PDF's finished copy (answers, drawings, the certificate,
+  // the copy line); its email panel on a phone with an outside address; a written document's copy.
+  ['empdocs-copy-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"print\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
+  ['empdocs-copy-email-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '',
+    "edOpenDoc_('d-pdf-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"email\"]'); if (b) b.click(); setTimeout(function () { var m = document.getElementById('ed-mail-mgr'); if (m) { m.checked = true; } var x = document.getElementById('ed-mail-extra'); if (x) { x.value = 'sam.ortiz.home@gmail.com'; x.dispatchEvent(new Event('change')); } var n = document.getElementById('ed-mail-note'); if (n) n.value = 'For your records.'; if (document.activeElement) document.activeElement.blur(); var p = document.getElementById('ed-copy-mail'); if (p) p.scrollIntoView(); }, 1800); }, 1300);", { wait: 4000 }],
+  ['empdocs-copy-written-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\"print\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
+  // ED4 (operator 2026-11-09): a written document on its letterhead (centred heading, page break,
+  // the signature block signed); the issue form's Preview on the employee's letterhead; the
+  // admin's letterhead cards; the written document's printed copy.
+  ['empdocs-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  ['empdocs-letterhead-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  ['empdocs-issue-preview-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
+    "setTimeout(function () { var e = document.getElementById('ed-is-emp'); if (e) { e.value = e.options[1] ? e.options[1].value : ''; e.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-is-title'); if (t) t.value = 'Remote work policy'; var b = document.getElementById('ed-is-body'); if (b) b.value = ':::center\\n**Remote work policy**\\n:::\\n\\nYou may work from home on Fridays with your manager\u2019s approval.\\n\\n[signature]'; var p = document.querySelector('[data-ed-wp=\\\"preview\\\"]'); if (p) p.click(); var w = document.getElementById('ed-is-wp'); if (w) w.scrollIntoView(); }, 800);", { wait: 1800 }],
+  ['empdocs-letterheads-admin-light-wide', { tool: 'manage', tab: 'callNotesAdmin' }, WIDE, 'light', '',
+    "cnAdminTab_('config'); setTimeout(function () { var h = document.getElementById('ed-admin-lh'); if (h) h.scrollIntoView(); }, 1000);", { wait: 2000 }],
+  ['empdocs-copy-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '',
+    "edOpenDoc_('d-signed'); setTimeout(function () { var b = document.querySelector('[data-ed-copy=\\\"print\\\"]'); if (b) b.click(); }, 1300);", { wait: 3200 }],
   ['admin-light-wide',        { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'light', ''],
   ['admin-dark-wide',         { tool: 'manage',    tab: 'callNotesAdmin' },  WIDE, 'dark',  ''],
   ['metrics-error-light-wide',    { tool: 'timeClock', tab: 'metricsMyStats' },          WIDE,   'light', '?failrpc=getMyMetrics'],
@@ -331,6 +398,13 @@ const SCENARIOS = [
   ['deptreq-fold-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "(function(){var m=DR_LAST_DATA.mine;var b=m.filter(function(r){return r.requestId==='r2';})[0];var a=Object.assign({},b,{requestId:'r2b',createdMs:b.createdMs+86400000,createdAt:'next day 11:05',elapsedMin:610});var c=Object.assign({},b,{requestId:'r2c',createdMs:b.createdMs+2*86400000,createdAt:'today 08:20',elapsedMin:95,slaStatus:''});m.push(a,c);drRerender_();})()"],
   // Cycle 25 E4 (ST1): "Replies to check" leads the tab — at phone width too.
   ['deptreq-looks-light-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'light', ''],
+  // DR1 (operator 2026-11-09): the manager's Audit list — the range, the filters, Copy table / Download CSV and the
+  // Checked in CRM boxes (one checked, one row sent before thread tracking); wide, phone (the table's labelled
+  // stacked cells) and the pop-out, and one with a type filter applied.
+  ['deptreq-audit-light-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'light', '', "drSetAuditMode_(true)"],
+  ['deptreq-audit-dark-mobile', { tool: 'callNotes', tab: 'metricsDeptReq' }, MOBILE, 'dark', '', "drSetAuditMode_(true)"],
+  ['deptreq-audit-light-compact', { tool: 'callNotes', tab: 'metricsDeptReq' }, COMPACT, 'light', '?compact=1', "drSetAuditMode_(true)"],
+  ['deptreq-audit-filtered-dark-wide', { tool: 'callNotes', tab: 'metricsDeptReq' }, WIDE, 'dark', '', "drSetAuditMode_(true);drAuditSetFilter_('type','Close Order');drAuditSetFilter_('crm','unchecked')"],
   // 22post A-2a — the Scratchpad with the standard modal buttons.
   ['cn-scratchpad-dark-wide', { tool: 'callNotes', tab: 'callNotes' }, WIDE, 'dark', '', "cnOpenScratchpadModal_()"],
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
@@ -339,6 +413,9 @@ const SCENARIOS = [
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],
+  // SP1 (operator 2026-11-09): the resolve dialog — how it ended and a note — for one request and for three selected.
+  ['spanish-resolve-dialog-light-wide', { tool: 'timeClock', tab: 'metricsSpanish' }, WIDE, 'light', '', "spanishResolve_(document.querySelector('.sp-resolve[data-thread]'));setTimeout(function(){var r=document.querySelector('input[name=sp-res-outcome]');if(r){r.click();}var n=document.getElementById('sp-res-note');if(n)n.value='Called back, left the pick-up time with the daughter.';},50)"],
+  ['spanish-resolve-dialog-dark-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'dark', '', "spanishResolveAsk_(3)"],
   // Batch C (operator 2026-11-02) — past SPANISH_GROUP_MIN the list folds into
   // collapsible groups: by received day, and by sending department with two
   // requests selected (the bar's count and Resolve selected on camera).
@@ -568,6 +645,9 @@ const SCENARIOS = [
   // the Inferred tag is on camera beside the Out suggestion still offered).
   ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
   ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
+  // AC1 (operator 2026-11-11): the same day's clicks and keystrokes per HOUR.
+  ['dayedit-activity-hourly-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '',
+    DAYEDIT_ACTIVITY + "; setTimeout(function(){ var b=document.querySelector('#de-act [data-de-act-scale=\"hour\"]'); if (b) b.click(); }, 900)"],
   // TC-02 (cycle 23): the Adjust modal's "which break" choice. The fixture day
   // already has a Lunch Out (getMyDayBreaks), so the add / correct radios are on
   // camera; the phone width is where the radio labels wrap.
@@ -667,6 +747,10 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
     return route.fulfill({ path: file, contentType: 'text/javascript' });
   });
+  // ED3: the finished copy fetches pdf-lib from jsDelivr (SHA-256 pinned);
+  // the harness serves the same pinned file from node_modules.
+  await ctx.route('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', (route) =>
+    route.fulfill({ path: path.join(HERE, 'node_modules/pdf-lib/dist/pdf-lib.min.js'), contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } }));
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -674,8 +758,10 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   // umsTzWarnedDay: the fixture roster tz (Asia/Kolkata) never matches the
   // sandbox browser (UTC), so the once-a-day sticky tz-mismatch toast
   // (9c5df81) would cover the top of EVERY screenshot. Seed "already warned
-  // today" — the steady state, same posture as the tour-seen flag.
-  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
+  // today" — the steady state, same posture as the tour-seen flag (seenVersion
+  // 9999: above any TOUR_VERSION, so neither the full tour nor the what's-new
+  // run starts — T1; tour-check.mjs walks the tour itself).
+  await page.addInitScript((m) => { try { localStorage.clear(); localStorage.setItem('umsTimeClockMode', m); localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 9999 })); localStorage.setItem('umsTzWarnedDay', new Date().toLocaleDateString('sv-SE')); } catch (e) {} }, mode);
   const fake = new Date();
   if (opts && opts.utc) fake.setUTCHours(opts.utc[0], opts.utc[1] || 0, 0, 0);
   else fake.setUTCHours(9, 0, 0, 0);   // 14:30 IST mid-shift

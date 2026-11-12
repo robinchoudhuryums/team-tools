@@ -61,10 +61,14 @@ function getOrCreateEmpDocSheet_(tabName, headers) {
  *  version. Deliberately NOT the timestamp (Sheets coerces datetime cells to
  *  Dates on read, which would break recompute — INV-113); the EmpDocSigned
  *  audit row is the independent timestamp witness. */
-function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim) {
+function empDocSignatureHash_(contentHash, empId, docId, signatureDataUrl, ackVersion, responsesJson, delim, initialsDataUrl) {
   const d = (delim === undefined) ? '\u0000' : delim;
   let base = String(contentHash || '') + d + String(empId || '') + d + String(docId || '') + d + String(signatureDataUrl || '') + d + String(ackVersion || '');
   if (responsesJson) base += d + String(responsesJson);   // v2 — the signed responses are attested too (back-compat: appended only when present)
+  // ED1 — drawn initials are attested too: appended only when present, behind
+  // their own tag (so they can never read as a responses segment), which keeps
+  // every hash signed before them unchanged.
+  if (initialsDataUrl) base += d + 'initials' + d + String(initialsDataUrl);
   return empDocSha256Hex_(base);
 }
 /** Bounded id-column lookup → { rowIdx, doc } or null. */
@@ -116,6 +120,21 @@ function empDocReadIntegrity_(d) {
 }
 /** Owner-or-AUTHORIZED-manager scoped (§3b) — the full doc incl. the frozen
  *  body. Includes the ack text/version when a signature is still needed. */
+/** A document's newest DocSignatures row (a bottom-up id-column scan), or
+ *  null. No lock: rows are append-only and the scan reads only the id column. */
+function empDocLatestSigRow_(docId) {
+  const sigSheet = getHrDocsSS_().getSheetByName(EMPDOC_SIG_TAB);
+  const last = sigSheet ? sigSheet.getLastRow() : 0;
+  if (last < 2) return null;
+  const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, last - 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]).trim() === docId) {
+      const row = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0];
+      return String(row[EDS.DOC_ID]).trim() === docId ? row : null;   // g164: the fetched row still carries its key
+    }
+  }
+  return null;
+}
 function getMyDoc(docId) {
   try {
     const emp = getEmployeeInfo_();
@@ -143,6 +162,10 @@ function getMyDoc(docId) {
       // Batch H: a PDF document names its file; the bytes come from
       // getEmpDocPdf, which re-hashes them on every read.
       pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null,
+      // ED4: the letterhead it is dressed in (null for none, or one since
+      // removed), and the employee's name for a written document's signature block.
+      letterhead: empDocLetterheadView_(d.letterheadId),
+      empName: (lookupEmployeeById_(d.empId) || {}).name || '',
     };
     // The owner gets the completion affordance while the doc is still issued
     // (signature ack text when it requires a signature, regardless for fields).
@@ -150,8 +173,25 @@ function getMyDoc(docId) {
       out.canComplete = true;
       if (d.requiresSignature) { out.ackText = EMPDOC_ACK_TEXT; out.ackVersion = EMPDOC_ACK_VERSION; }
     }
+    // ED1: a signed document's signature and initials boxes show what was
+    // drawn — read from its signature row, for exactly who may read the doc.
+    if (d.status === 'signed' && ((d.fields || []).some(function (f) { return EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0; }) || empDocHasSigBlock_(d.bodyMd))) {
+      const sr = empDocLatestSigRow_(d.docId);
+      if (sr) { out.signatureImage = String(sr[EDS.SIGNATURE] || ''); out.initialsImage = String(sr[EDS.INITIALS] || ''); }
+    }
     return out;
   } catch (err) { return { error: err.message }; }
+}
+/** PURE (Node-pinned) — ED1: the initials a signature carries. A document
+ *  with an initials box needs a drawn PNG (the pad's export, capped); one
+ *  without stores none, whatever the browser sent. → {initials} or {error}. */
+function empDocInitialsCheck_(fields, initialsDataUrl) {
+  const wants = (Array.isArray(fields) ? fields : []).some(function (f) { return f && f.type === 'initials'; });
+  if (!wants) return { initials: '' };
+  const v = String(initialsDataUrl || '');
+  if (!/^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(v)) return { error: 'Draw your initials before signing.' };
+  if (v.length > EMPDOC_INITIALS_MAX_CHARS) return { error: 'The initials image is too large — clear it and draw them again.' };
+  return { initials: v };
 }
 /** Rep-callable, locked (INV-01), OWNER-only — managers cannot sign on an
  *  employee's behalf (the signature's value is that the employee made it).
@@ -159,7 +199,7 @@ function getMyDoc(docId) {
  *  to sign), bounds the signature payload (INV-96), writes the append-only
  *  DocSignatures row + flips the EmpDocs status in the same lock. Audit:
  *  EmpDocSigned (docId + hash + signedAt — the independent witness). */
-function acknowledgeDoc(docId, signatureDataUrl, responses) {
+function acknowledgeDoc(docId, signatureDataUrl, responses, initialsDataUrl) {
   const emp = getEmployeeInfo_();
   if (!emp) return { success: false, error: 'Not authorized.' };
   const lock = LockService.getScriptLock();
@@ -184,6 +224,10 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
       if (sig.indexOf('data:image/png;base64,') !== 0) return { success: false, error: 'Draw your signature before submitting.' };
       if (sig.length > EMPDOC_SIG_MAX_CHARS) return { success: false, error: 'Signature image is too large — clear the pad and sign again.' };
     }
+    // ED1: a document with an initials box takes the employee's drawn initials
+    // (once — they fill every initials box). Any other document stores none.
+    const ini = empDocInitialsCheck_(d.fields, initialsDataUrl);
+    if (ini.error) return { success: false, error: ini.error };
     // Integrity gate: the row must still hash to what was issued (incl.
     // fields). C13 dual-verify — a doc issued before the NUL-delimiter change
     // carries a legacy space-form hash and must still sign.
@@ -211,13 +255,13 @@ function acknowledgeDoc(docId, signatureDataUrl, responses) {
     // Persist responses first (so a signed doc's responses are what was attested).
     if (hasFields) sheet.getRange(found.rowIdx, ED.RESPONSES + 1).setValue(sheetSafe_(responsesRaw));
     if (d.requiresSignature) {
-      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw);
+      const sigHash = empDocSignatureHash_(d.contentHash || expect, d.empId, d.docId, sig, EMPDOC_ACK_VERSION, responsesRaw, undefined, ini.initials);
       const cert = JSON.stringify({
         docId: d.docId, empId: d.empId, ackVersion: EMPDOC_ACK_VERSION,
-        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : ''),
+        alg: 'SHA-256', covers: 'contentHash|empId|docId|signature|ackVersion' + (responsesRaw ? '|responses' : '') + (ini.initials ? '|initials' : ''),
       });
       getOrCreateEmpDocSheet_(EMPDOC_SIG_TAB, EMPDOC_SIG_HEADERS)
-        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert]));
+        .appendRow(sheetSafeRow_([d.docId, d.empId, ts, sig, EMPDOC_ACK_VERSION, sigHash, cert, ini.initials]));
       sheet.getRange(found.rowIdx, ED.STATUS + 1).setValue(sheetSafe_('signed'));
       sheet.getRange(found.rowIdx, ED.SIGNED_AT + 1).setValue(sheetSafe_(ts));
       writeWitnessAuditLog_(emp, 'EmpDocSigned', fmtDate_(now), '', false, 0,
@@ -277,7 +321,9 @@ function issueDoc(payload) {
       pdf = empDocPdfItem_(payload.pdf, payload.pdfName);
       if (pdf.error) return { success: false, error: pdf.error };
     }
-    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name } : null);
+    const v = empDocValidateIssue_(payload, pdf ? { sha: pdf.sha, name: pdf.name, pages: pdf.pages } : null);
+    const lhPick = empDocLetterheadPick_(payload && payload.letterheadId, empDocLetterheads_());   // ED4
+    if (lhPick.error) return { success: false, error: lhPick.error };
     if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.doc.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
@@ -292,7 +338,7 @@ function issueDoc(payload) {
     appendRowsTextSafe_(getOrCreateEmpDocSheet_(EMPDOC_TAB, EMPDOC_HEADERS), [[
       docId, v.doc.empId, v.doc.docType, v.doc.title, v.doc.bodyMd, contentHash,
       v.doc.requiresSignature ? 'TRUE' : 'FALSE', v.doc.status,
-      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '', pdf ? pdf.key : '',
+      String(callerEmp.email).toLowerCase().trim(), ts, v.doc.dueAt, '', '', fieldsRaw, '', pdf ? pdf.key : '', lhPick.id,
     ]], EMPDOC_TEXT_IDX);
     writeAuditLog_(callerEmp, 'EmpDocIssue', fmtDate_(now), '', false, 0,
       'docId=' + docId + '; empId=' + v.doc.empId + '; type=' + v.doc.docType + '; status=' + v.doc.status + (pdf ? '; pdf=yes' : ''), callerEmp.email);
@@ -450,8 +496,9 @@ function verifyDocSignature(docId) {
     // content-hash recompute (a pre-change sign hashed a space-form expect;
     // a post-change sign hashes the NUL form).
     const ackVer = String(sigRow[EDS.ACK_VERSION] || '');
+    const rowInitials = String(sigRow[EDS.INITIALS] || '');   // ED1 — blank on every row signed before initials existed
     const recomputed = empDocSignatureHash_(
-      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw);
+      d.contentHash || expectContent, d.empId, d.docId, rowSig, ackVer, d.responsesRaw, undefined, rowInitials);
     const expectContentLegacy = empDocContentHash_(
       d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw, EMPDOC_HASH_DELIM_LEGACY);
     const recomputedLegacy = empDocSignatureHash_(
@@ -489,9 +536,14 @@ function empDocPdfItem_(dataUrl, name) {
   if (b64.indexOf('JVBERi0') !== 0) return { error: 'That file is not a PDF (it does not start like one).' };
   const bytes = Math.floor(b64.length * 3 / 4);
   if (bytes > EMPDOC_PDF_MAX_BYTES) return { error: 'The PDF is ' + (Math.round(bytes / 104857.6) / 10) + ' MB — over the ' + (EMPDOC_PDF_MAX_BYTES / 1048576) + ' MB limit.' };
-  const sha = empDocSha256Hex_(Utilities.base64Decode(b64));
+  const raw = Utilities.base64Decode(b64);
+  const sha = empDocSha256Hex_(raw);
+  // ED2: its page count, where the bytes say it in the clear (boxes are
+  // checked against it at issue).
+  let pages = null;
+  try { pages = empDocPdfPageCount_(Utilities.newBlob(raw).getDataAsString('ISO-8859-1')); } catch (e) { pages = null; }
   return { key: 'empdocpdf-' + sha.substring(0, 24), sha: sha, contentType: 'application/pdf', kind: 'empdoc',
-    base64: b64, bytes: bytes, name: String(name || '') };
+    base64: b64, bytes: bytes, name: String(name || ''), pages: pages };
 }
 /** Under the CALLER's lock (issueDoc): store one PDF, append-only and keyed by
  *  content (the same file twice is one row set). A tab whose header someone
@@ -557,14 +609,31 @@ function getEmpDocPdf(docId) {
  *  signature is the stored PNG data URL, and only that shape is drawn. */
 function empDocCertificateHtml_(c) {
   const row = function (k, v) { return '<tr><th style="text-align:left;padding:4px 10px 4px 0;color:#555;font-weight:600;vertical-align:top;white-space:nowrap">' + esc_(k) + '</th><td style="padding:4px 0;vertical-align:top;word-break:break-all">' + esc_(v) + '</td></tr>'; };
+  const png = function (v) { return /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(v || '')); };
   const fields = (c.fields || []).map(function (f) {
+    const where = f.box ? ' (page ' + f.box.page + ')' : '';
+    // ED1: a signature or initials box holds the drawing shown below, never text.
+    if (f.type === 'signature') return row(f.label + where, 'The signature below');
+    if (f.type === 'initials') return row(f.label + where, png(c.initials) ? 'The initials below' : '—');
     const v = (c.responses || {})[f.id];
-    return row(f.label + (f.box ? ' (page ' + f.box.page + ')' : ''), v == null || v === '' ? '—' : String(v));
+    return row(f.label + where, v == null || v === '' ? '—' : String(v));
   }).join('');
-  const sig = /^data:image\/png;base64,[A-Za-z0-9+\/=]+$/.test(String(c.signature || ''))
+  const sig = (png(c.signature)
     ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Signature</p><img alt="Signature" style="max-width:320px;max-height:120px;border:1px solid #ccc" src="' + c.signature + '">'
-    : '';
-  return '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:28px">' +
+    : '') + (png(c.initials)
+    ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Initials</p><img alt="Initials" style="max-width:160px;max-height:70px;border:1px solid #ccc" src="' + c.initials + '">'
+    : '');
+  // ED4: the document's letterhead heads the certificate and its footer ends
+  // it — a logo only as a PNG or JPEG data URL, every word escaped.
+  const lh = c.letterhead;
+  const logoOk = lh && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(String(lh.logo || ''));
+  // A table, not flex: Apps Script's HTML→PDF conversion lays out tables.
+  const head = lh ? '<table style="border-collapse:collapse;width:100%;border-bottom:2px solid #1b3a5c;margin-bottom:16px"><tr>' +
+    (logoOk ? '<td style="padding:0 14px 10px 0;width:1%;vertical-align:middle"><img alt="" style="max-height:56px;max-width:180px" src="' + lh.logo + '"></td>' : '') +
+    '<td style="padding:0 0 10px;vertical-align:middle"><div style="font-size:16px;font-weight:700;color:#1b3a5c">' + esc_(lh.name) + '</div>' +
+    (lh.address ? '<div style="color:#555;font-size:11px">' + String(lh.address).split('\n').map(esc_).join('<br>') + '</div>' : '') + '</td></tr></table>' : '';
+  const foot = lh && lh.footer ? '<p style="margin:22px 0 0;padding-top:8px;border-top:1px solid #ccc;color:#777;font-size:10px;text-align:center">' + esc_(lh.footer) + '</p>' : '';
+  return '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:28px">' + head +
     '<h1 style="font-size:18px;margin:0 0 4px">Certificate of ' + (c.signed ? 'signature' : 'completion') + '</h1>' +
     '<p style="margin:0 0 14px;color:#555">UMS Team Tools · Employee documents</p>' +
     '<table style="border-collapse:collapse">' +
@@ -577,8 +646,8 @@ function empDocCertificateHtml_(c) {
     '</table>' +
     (fields ? '<p style="margin:14px 0 4px;color:#555;font-weight:600">Responses</p><table style="border-collapse:collapse">' + fields + '</table>' : '') +
     sig +
-    '<p style="margin:18px 0 0;color:#777;font-size:10px">The SHA-256 of the PDF is computed over the file’s bytes. The signature hash covers the content hash, the employee, the document, the signature and the responses; recompute both from the HR record to verify.</p>' +
-    '</body></html>';
+    '<p style="margin:18px 0 0;color:#777;font-size:10px">The SHA-256 of the PDF is computed over the file’s bytes. The signature hash covers the content hash, the employee, the document, the signature, the responses and any initials; recompute both from the HR record to verify.</p>' +
+    foot + '</body></html>';
 }
 /** Employee-callable, read-only — the signed (or completed) document's
  *  certificate as a PDF, for the owner or a manager who can see the document.
@@ -594,15 +663,7 @@ function getEmpDocCertificate(docId) {
     const isOwner = d.empId === emp.id;
     if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
     if (d.status !== 'signed' && d.status !== 'completed') return { error: 'A certificate exists once the document is signed or completed.' };
-    const sigSheet = getHrDocsSS_().getSheetByName(EMPDOC_SIG_TAB);
-    const last = sigSheet ? sigSheet.getLastRow() : 0;
-    let sigRow = null;
-    if (last >= 2) {
-      const ids = sigSheet.getRange(2, EDS.DOC_ID + 1, last - 1, 1).getValues();
-      for (let i = ids.length - 1; i >= 0; i--) {
-        if (String(ids[i][0]).trim() === d.docId) { sigRow = sigSheet.getRange(i + 2, 1, 1, EMPDOC_SIG_HEADERS.length).getValues()[0]; break; }
-      }
-    }
+    const sigRow = empDocLatestSigRow_(d.docId);
     if (!sigRow) return { error: 'No signature record was found for this document.' };
     const target = lookupEmployeeById_(d.empId);
     const html = empDocCertificateHtml_({
@@ -611,13 +672,322 @@ function getEmpDocCertificate(docId) {
       signedAt: trainCellTs_(sigRow[EDS.SIGNED_AT], getHrDocsSS_().getSpreadsheetTimeZone()) || d.signedAt,
       pdf: d.pdfKey ? empDocPdfFromBody_(d.bodyMd) : null, contentHash: d.contentHash,
       sigHash: String(sigRow[EDS.SIG_HASH] || ''), ackText: EMPDOC_ACK_TEXT,
-      fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || '') });
+      fields: d.fields || [], responses: d.responses || {}, signature: String(sigRow[EDS.SIGNATURE] || ''),
+      initials: String(sigRow[EDS.INITIALS] || ''), letterhead: empDocLetterheadView_(d.letterheadId) });
     let pdf;
     try { pdf = Utilities.newBlob(html, 'text/html', 'certificate.html').getAs('application/pdf'); }
     catch (e) { return { error: 'The certificate could not be made into a PDF here: ' + ((e && e.message) || e) }; }
     const name = (String(d.title || 'document').replace(/[\\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' - certificate.pdf';
     return { success: true, dataUri: 'data:application/pdf;base64,' + Utilities.base64Encode(pdf.getBytes()), fileName: name };
   } catch (err) { return { error: err.message }; }
+}
+// ── ED4 (operator 2026-11-09): letterheads ───────────────────────────────────
+/** PURE (Node-pinned) — ED4: the letterheads, from the stored property (JSON)
+ *  or, while none is stored, the two companies by name. Each is {id, name,
+ *  address, footer, logoKey}: an id is a slug, a name is required, the address
+ *  keeps its lines; anything else is dropped, and at most
+ *  EMPDOC_LETTERHEAD_MAX are kept. A stored list that cannot be read, or reads
+ *  as empty, gives the seed — never no letterheads. */
+function empDocLetterheadList_(raw) {
+  let list = null;
+  if (raw) { try { list = JSON.parse(raw); } catch (e) { list = null; } }
+  if (!Array.isArray(list)) list = EMPDOC_LETTERHEAD_SEED;
+  const seen = {}, out = [];
+  list.forEach(function (x) {
+    if (!x || out.length >= EMPDOC_LETTERHEAD_MAX) return;
+    const id = String(x.id || '').trim().toLowerCase();
+    const name = String(x.name || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || !name || seen[id]) return;
+    seen[id] = true;
+    out.push({ id: id, name: name,
+      address: String(x.address || '').replace(/\r\n?/g, '\n').split('\n').map(function (l) { return l.trim(); }).filter(Boolean).slice(0, 4).join('\n').slice(0, 300),
+      footer: String(x.footer || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+      logoKey: EMPDOC_LOGO_KEY_RE.test(String(x.logoKey || '')) ? String(x.logoKey) : '' });
+  });
+  return out.length ? out : empDocLetterheadList_(JSON.stringify(EMPDOC_LETTERHEAD_SEED));
+}
+/** PURE (Node-pinned) — ED4: the letterhead an employee's document starts
+ *  with: the one whose id or name is the roster Company (case and spacing
+ *  ignored), else the first. */
+function empDocLetterheadFor_(company, list) {
+  const norm = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); };
+  const c = norm(company);
+  const hit = c ? (list || []).filter(function (l) { return norm(l.id) === c || norm(l.name) === c; })[0] : null;
+  return hit ? hit.id : ((list && list[0] && list[0].id) || '');
+}
+/** PURE (Node-pinned) — ED4: an admin's edit to one letterhead, checked
+ *  against the list: an existing id is replaced, a new one gets an id made
+ *  from its name (made unique), within the cap. → {list} or {error}. */
+function empDocLetterheadUpsert_(list, lh) {
+  lh = lh || {};
+  const name = String(lh.name || '').replace(/\s+/g, ' ').trim();
+  if (!name) return { error: 'A letterhead needs a company name.' };
+  if (name.length > 80) return { error: 'The company name is too long (max 80 characters).' };
+  if (String(lh.address || '').length > 300) return { error: 'The address is too long (max 300 characters).' };
+  if (String(lh.footer || '').length > 200) return { error: 'The footer is too long (max 200 characters).' };
+  const out = (list || []).map(function (l) { return Object.assign({}, l); });
+  let id = String(lh.id || '').trim().toLowerCase();
+  const at = id ? out.map(function (l) { return l.id; }).indexOf(id) : -1;
+  if (id && at < 0) return { error: 'That letterhead no longer exists.' };
+  if (at < 0) {
+    if (out.length >= EMPDOC_LETTERHEAD_MAX) return { error: 'At most ' + EMPDOC_LETTERHEAD_MAX + ' letterheads.' };
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'letterhead';
+    id = base;
+    for (let n = 2; out.some(function (l) { return l.id === id; }); n++) id = base + '-' + n;
+  }
+  const item = { id: id, name: name, address: String(lh.address || ''), footer: String(lh.footer || ''),
+    logoKey: at >= 0 ? out[at].logoKey : '' };
+  if (at >= 0) out[at] = item; else out.push(item);
+  return { list: empDocLetterheadList_(JSON.stringify(out)), id: id };
+}
+/** The letterheads as stored now. */
+function empDocLetterheads_() {
+  return empDocLetterheadList_(PropertiesService.getScriptProperties().getProperty(EMPDOC_LETTERHEADS_PROP));
+}
+/** ED4 — the logos for some letterheads, as data URLs by key ({} when the tab
+ *  is missing). A logo that cannot be read is left out — its letterhead shows
+ *  its name and address, never a broken image. */
+function empDocLogoUrls_(keys) {
+  keys = (keys || []).filter(Boolean);
+  if (!keys.length) return {};
+  const sheet = getHrDocsSS_().getSheetByName(EMPDOC_LOGO_TAB);
+  if (!sheet) return {};
+  const r = kbImageTabServe_(sheet, keys, { headers: KB_MANUAL_IMAGES_HEADERS, keyRe: EMPDOC_LOGO_KEY_RE, batch: keys.length,
+    types: EMPDOC_LOGO_TYPES, maxBytes: EMPDOC_LOGO_MAX_BYTES, cachePrefix: 'lhlogo:', headerChangedFails: true });
+  return r.images || {};
+}
+/** ED4 — one letterhead as a document carries it ({id, name, address, footer,
+ *  logo}), or null for none / one since removed. */
+function empDocLetterheadView_(id) {
+  if (!id) return null;
+  const lh = empDocLetterheads_().filter(function (l) { return l.id === id; })[0];
+  if (!lh) return null;
+  const logos = empDocLogoUrls_([lh.logoKey]);
+  return { id: lh.id, name: lh.name, address: lh.address, footer: lh.footer, logo: logos[lh.logoKey] || '' };
+}
+/** Manager-gated, read-only — ED4: the letterheads (with their logos) for the
+ *  issue form's picker and the admin's editor, and the one each employee's
+ *  document starts with (from the roster Company). */
+function getEmpDocLetterheads() {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isManager) return { error: 'Manager access required.' };
+    const list = empDocLetterheads_();
+    const logos = empDocLogoUrls_(list.map(function (l) { return l.logoKey; }));
+    const rows = getEmployeeRosterRows_();
+    const forEmp = {};
+    for (let i = 1; i < rows.length; i++) {
+      if (!empRosterEmail_(rows[i])) continue;
+      forEmp[String(rows[i][EMP.ID]).trim()] = empDocLetterheadFor_(rows[i][EMP.COMPANY], list);
+    }
+    return { letterheads: list.map(function (l) { return Object.assign({ logo: logos[l.logoKey] || '' }, l); }), forEmp: forEmp,
+      canEdit: !!emp.isAdmin, stored: !!PropertiesService.getScriptProperties().getProperty(EMPDOC_LETTERHEADS_PROP) };
+  } catch (err) { return { error: err.message }; }
+}
+/** Admin-gated, locked — ED4: add or change one letterhead (name, address,
+ *  footer; the logo has its own call). */
+function saveEmpDocLetterhead(lh) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const r = empDocLetterheadUpsert_(empDocLetterheads_(), lh);
+      if (r.error) return { error: r.error };
+      propSetBounded_(EMPDOC_LETTERHEADS_PROP, JSON.stringify(r.list), { hint: 'shorten an address or footer' });
+      writeAuditLog_(emp, 'EmpDocLetterheadSave', fmtDate_(new Date()), '', false, 0, 'id=' + r.id, emp.email);
+      return { success: true, id: r.id, letterheads: r.list };
+    } finally { lock.releaseLock(); }
+  } catch (err) { return { error: err.message }; }
+}
+/** Admin-gated, locked — ED4: remove a letterhead (never the last one). A
+ *  document that named it is shown without one. */
+function deleteEmpDocLetterhead(id) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const list = empDocLetterheads_();
+      const rest = list.filter(function (l) { return l.id !== String(id || ''); });
+      if (rest.length === list.length) return { error: 'That letterhead no longer exists.' };
+      if (!rest.length) return { error: 'Keep at least one letterhead.' };
+      propSetBounded_(EMPDOC_LETTERHEADS_PROP, JSON.stringify(rest));
+      writeAuditLog_(emp, 'EmpDocLetterheadDelete', fmtDate_(new Date()), '', false, 0, 'id=' + id, emp.email);
+      return { success: true, letterheads: rest };
+    } finally { lock.releaseLock(); }
+  } catch (err) { return { error: err.message }; }
+}
+/** Admin-gated, locked — ED4: set (a PNG or JPEG data URL, the browser fits it
+ *  under EMPDOC_LOGO_MAX_BYTES) or clear ('') a letterhead's logo. The bytes go
+ *  to the LetterheadLogos tab, keyed by content and append-only; a tab whose
+ *  header was changed is refused by name (g142). */
+function setEmpDocLetterheadLogo(id, dataUrl) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
+    let it = null;
+    if (dataUrl) {
+      const parsed = kbParseImageDataUrl_(String(dataUrl));
+      if (!parsed || EMPDOC_LOGO_TYPES.indexOf(parsed.contentType) < 0) return { error: 'The logo must be a PNG or JPEG image.' };
+      // Its bytes must start like one (the browser re-encodes a chosen logo,
+      // so only a hand-made call could differ — and a PDF builder may never
+      // return from a broken image).
+      if (parsed.base64.indexOf(parsed.contentType === 'image/png' ? 'iVBORw0KGgo' : '/9j/') !== 0) return { error: 'The logo is not a readable PNG or JPEG image.' };
+      it = kbImageItem_(parsed.contentType, parsed.base64, 'letterhead', kbSha256Hex_);
+      if (it.error) return { error: 'The logo is ' + it.error + '.' };
+      if (it.bytes > EMPDOC_LOGO_MAX_BYTES) return { error: 'The logo is too large (max ' + Math.round(EMPDOC_LOGO_MAX_BYTES / 1024) + ' KB).' };
+      it.key = 'lhlogo-' + it.sha.substring(0, 24);
+    }
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const list = empDocLetterheads_();
+      const lh = list.filter(function (l) { return l.id === String(id || ''); })[0];
+      if (!lh) return { error: 'That letterhead no longer exists.' };
+      if (it) {
+        const ss = getHrDocsSS_();
+        let sheet = ss.getSheetByName(EMPDOC_LOGO_TAB);
+        if (!sheet) {
+          sheet = ss.insertSheet(EMPDOC_LOGO_TAB);
+          sheet.appendRow(sheetSafeRow_(KB_MANUAL_IMAGES_HEADERS));
+          sheet.setFrozenRows(1);
+        }
+        if (!kbImageTabHeaderOk_(sheet, KB_MANUAL_IMAGES_HEADERS)) {
+          return { error: 'The ' + EMPDOC_LOGO_TAB + ' tab’s header row was changed — restore it to ' + KB_MANUAL_IMAGES_HEADERS.join(', ') + ' (the logo was not saved).' };
+        }
+        if (!kbImageTabLedger_(sheet, KB_MANUAL_IMAGES_HEADERS, EMPDOC_LOGO_KEY_RE)[it.key]) {
+          appendRowsSafe_(sheet, kbManualImagesRows_([it], fmtDate_(new Date()) + ' ' + fmtTime_(new Date())));
+        }
+      }
+      lh.logoKey = it ? it.key : '';
+      propSetBounded_(EMPDOC_LETTERHEADS_PROP, JSON.stringify(list));
+      writeAuditLog_(emp, 'EmpDocLetterheadLogo', fmtDate_(new Date()), '', false, 0, 'id=' + lh.id + '; logo=' + (it ? it.key : 'cleared'), emp.email);
+      return { success: true, logoKey: lh.logoKey };
+    } finally { lock.releaseLock(); }
+  } catch (err) { return { error: err.message }; }
+}
+/** PURE (Node-pinned) — ED4: the letterhead a new document is dressed in: ''
+ *  (none) or one that exists. → {id} or {error}. */
+function empDocLetterheadPick_(id, list) {
+  const v = String(id == null ? '' : id).trim();
+  if (!v) return { id: '' };
+  return (list || []).some(function (l) { return l.id === v; }) ? { id: v } : { error: 'That letterhead no longer exists — pick another.' };
+}
+/** PURE (Node-pinned) — ED4: does a written document's body carry a
+ *  signature block (a `[signature]` line)? */
+function empDocHasSigBlock_(bodyMd) {
+  return /(^|\n)[ \t]*\[signature\][ \t]*(\n|$)/i.test(String(bodyMd || ''));
+}
+// ── ED3 (operator 2026-11-06): a finished document's copy, emailed ──────────
+/** PURE (Node-pinned) — ED3: who a finished document's copy goes to. The
+ *  employee is To; the managers (when chosen) and any other addresses are Cc;
+ *  each address once, lower-cased. An address that is not one is listed in
+ *  `bad`; one off the org's domains in `outside` (it needs a confirm). With no
+ *  employee address (an offboarded employee) the first Cc becomes To. */
+function empDocCopyRecipients_(empEmail, managerEmails, extra, isOrg) {
+  const out = { to: [], cc: [], outside: [], bad: [] };
+  const seen = {};
+  const add = function (list, a) { if (!a || seen[a]) return; seen[a] = true; list.push(a); };
+  const norm = function (a) { return String(a || '').trim().toLowerCase(); };
+  if (norm(empEmail)) add(out.to, norm(empEmail));
+  (managerEmails || []).forEach(function (m) { add(out.cc, norm(m)); });
+  (extra || []).forEach(function (x) {
+    const a = norm(x);
+    if (!a) return;
+    if (!/^[^\s@,;<>"']+@[^\s@,;<>"']+\.[a-z]{2,}$/.test(a)) { out.bad.push(String(x).trim()); return; }
+    if (seen[a]) return;
+    add(out.cc, a);
+    if (!isOrg(a)) out.outside.push(a);
+  });
+  if (!out.to.length && out.cc.length) out.to.push(out.cc.shift());
+  return out;
+}
+/** PURE (Node-pinned) — ED3: the copy's file name, from the document's title
+ *  (never the browser's): safe on every system, and saying it is a copy. */
+function empDocCopyFileName_(title) {
+  return (String(title || 'document').replace(/[\\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document') + ' (copy).pdf';
+}
+/** PURE (Node-pinned) — ED3: the email's subject, plain text and inner HTML
+ *  (the branded chrome wraps it). Every stored or typed string is escaped; the
+ *  note is the sender's own words, capped. The message says what the file is:
+ *  a copy made from the signed original, the certificate at its end the record. */
+function empDocCopyEmailParts_(c) {
+  const what = c.signed ? 'signed' : 'completed';
+  const note = String(c.note || '').trim().slice(0, 1000);
+  const when = String(c.signedAt || '').slice(0, 10);
+  const subject = 'Copy: ' + String(c.title || 'Document') + ' (' + what + (when ? ' ' + when : '') + ')';
+  const lines = [
+    c.senderName + ' sent you a copy of "' + c.title + '", ' + what + ' by ' + c.empName + (when ? ' on ' + when : '') + '.',
+    note ? '\n' + c.senderName + ' wrote: ' + note : '',
+    '\nThe attached PDF (' + c.fileName + ') is a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.',
+  ];
+  const inner = '<p style="margin:0 0 12px;">' + esc_(c.senderName) + ' sent you a copy of <b>' + esc_(c.title) + '</b>, ' + what + ' by ' + esc_(c.empName) + (when ? ' on ' + esc_(when) : '') + '.</p>' +
+    (note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>' + esc_(c.senderName) + ' wrote:</i> ' + esc_(note) + '</p>' : '') +
+    '<p style="margin:0 0 4px;">Attached: <b>' + esc_(c.fileName) + '</b> — a copy made from the ' + what + ' original. The certificate on its last pages is the record; the HR record holds the original.</p>';
+  return { subject: subject, body: lines.join('\n'), inner: inner };
+}
+/** PURE (Node-pinned) — ED3: the audit row's note: the document, the copy's
+ *  SHA-256 and size (so any copy can be matched to the send), the org
+ *  addresses, and only the DOMAIN of an outside one (g36). Never contents. */
+function empDocCopyAuditNote_(docId, sha, bytes, r, isOrg) {
+  const all = r.to.concat(r.cc);
+  const org = all.filter(function (a) { return isOrg(a); });
+  const out = all.filter(function (a) { return !isOrg(a); }).map(function (a) { return a.split('@')[1]; });
+  return 'docId=' + docId + '; sha256=' + sha + '; bytes=' + bytes + '; to=' + org.join(',') + (out.length ? '; outside=' + out.join(',') : '');
+}
+/** Employee-callable — ED3: email a finished document's filled copy (built in
+ *  the browser) to the employee, the managers if chosen (its issuer and the
+ *  roster manager), and up to EMPDOC_COPY_EXTRA_MAX other addresses — an
+ *  outside one only with `outsideOk`. Who may: whoever may read the document
+ *  (the owner, or a manager empDocCanManagerSee_ admits), once it is signed
+ *  or completed. `preview: true` returns exactly what would be sent (one
+ *  builder) and needs no file. The file must be a PDF within
+ *  EMPDOC_COPY_MAX_BYTES; its SHA-256 rides the audit row. A failed send is
+ *  said, never a success. */
+function emailEmpDocCopy(docId, opts) {
+  try {
+    opts = opts || {};
+    const emp = getEmployeeInfo_();
+    if (!emp) return { error: 'Not authorized.' };
+    const found = findEmpDocRow_(docId);
+    if (!found) return { error: 'Document not found.' };
+    const d = found.doc;
+    const isOwner = d.empId === emp.id;
+    if (!isOwner && !empDocCanManagerSee_(emp, d)) return { error: 'Document not found.' };
+    if (d.status !== 'signed' && d.status !== 'completed') return { error: 'A copy can be emailed once the document is signed or completed.' };
+    const extra = Array.isArray(opts.extra) ? opts.extra : [];
+    if (extra.length > EMPDOC_COPY_EXTRA_MAX) return { error: 'At most ' + EMPDOC_COPY_EXTRA_MAX + ' other addresses.' };
+    const target = lookupEmployeeById_(d.empId);
+    const managers = opts.managers ? [d.issuedBy, target && target.managerEmail] : [];
+    const r = empDocCopyRecipients_(target && target.email, managers, extra, isOrgEmail_);
+    if (r.bad.length) return { error: 'Not an email address: ' + r.bad.join(', ') + '.' };
+    if (!r.to.length) return { error: 'There is no one to send it to — the employee has no email on the roster.' };
+    const fileName = empDocCopyFileName_(d.title);
+    const parts = empDocCopyEmailParts_({ title: d.title, empName: target ? target.name : 'a former employee', signed: d.status === 'signed',
+      signedAt: d.signedAt, senderName: emp.name, note: opts.note, fileName: fileName });
+    if (opts.preview) {
+      return { success: true, preview: true, to: r.to, cc: r.cc, outside: r.outside, subject: parts.subject, html: parts.inner, fileName: fileName,
+        maxBytes: EMPDOC_COPY_MAX_BYTES };
+    }
+    if (r.outside.length && opts.outsideOk !== true) {
+      return { error: 'Sending outside the company (' + r.outside.join(', ') + ') needs a confirm.', needsConfirm: true, outside: r.outside };
+    }
+    const m = /^data:application\/pdf;base64,([A-Za-z0-9+\/=]+)$/.exec(String(opts.pdf || ''));
+    if (!m || m[1].indexOf('JVBERi0') !== 0) return { error: 'The copy did not arrive as a PDF.' };
+    const raw = Utilities.base64Decode(m[1]);
+    if (raw.length > EMPDOC_COPY_MAX_BYTES) {
+      return { error: 'The copy is ' + (Math.round(raw.length / 104857.6) / 10) + ' MB — over the ' + (EMPDOC_COPY_MAX_BYTES / 1048576) + ' MB email limit. Download it and attach it yourself.' };
+    }
+    const sha = empDocSha256Hex_(raw);
+    sendRepEmail_(emp, { to: r.to.join(','), cc: r.cc.join(','), subject: parts.subject, body: parts.body,
+      htmlBody: buildBrandedEmailHtml_('A copy of ' + d.title, parts.inner, { subLabel: 'Employee documents', statusLabel: 'Copy' }),
+      attachments: [Utilities.newBlob(raw, 'application/pdf', fileName)] });
+    writeAuditLog_(emp, 'EmpDocCopyEmailed', fmtDate_(new Date()), '', false, 0, empDocCopyAuditNote_(d.docId, sha, raw.length, r, isOrgEmail_));
+    return { success: true, sent: r.to.length + r.cc.length, to: r.to, cc: r.cc };
+  } catch (err) { return { error: 'The copy was not sent: ' + ((err && err.message) || err) }; }
 }
 function findEmpDocTemplateRow_(templateId) {
   templateId = String(templateId || '').trim();

@@ -329,6 +329,8 @@
      beats two squeezed ones — the T1/T2 lesson, applied before it bit. */
   .kb-ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 5px 10px; margin-top: 7px; }
   .kb-ins-grid[hidden] { display: none; }   /* the [hidden] gotcha — the class display wins otherwise */
+  .kb-ins-cat { grid-column: 1 / -1; font-size: .66rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .kb-ins-cat:first-child { margin-top: 0; }
   .kb-ins-cell { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; font-size: .74rem; border-bottom: 1px dashed var(--line); padding: 2px 0; }
   .kb-ins-cell .c { display: flex; flex-direction: column; font-family: var(--mono); color: var(--muted-2); min-width: 0; }
   .kb-ins-code-item { font-family: var(--ui); font-size: .92em; color: var(--ink); overflow-wrap: anywhere; }
@@ -338,6 +340,18 @@
   .kb-ins-cell .v.bad { color: var(--danger-deep); }
   .kb-ins-cell .v.warn { color: var(--warning-deep); }
   .kb-ins-cell .v.info { color: var(--info-deep); }
+  .kb-ins-note { display: flex; gap: 6px; align-items: flex-start; font-size: .78rem; color: var(--ink); background: var(--warn-soft); border-left: 3px solid var(--warning-deep); border-radius: var(--radius-sm); padding: 7px 10px; margin: 6px 0 8px; line-height: 1.45; }
+  .kb-ins-note svg { flex: 0 0 auto; margin-top: 2px; color: var(--warning-deep); }
+  .kb-ins-group + .kb-ins-group { margin-top: 12px; }
+  .kb-ins-group-h { font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-2); margin: 4px 0 2px; }
+  .kb-ins-state { font-family: var(--mono); font-size: .66rem; font-weight: 600; color: var(--muted-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+  .kb-ins-catch { font-size: .72rem; color: var(--info-deep); margin: 2px 0 2px; display: flex; gap: 4px; align-items: center; }
+  .kb-ins-also { font-size: .72rem; color: var(--warning-deep); background: var(--warn-soft); border-radius: 6px; padding: 3px 7px; margin: 3px 0; display: flex; gap: 5px; align-items: flex-start; }
+  .kb-ins-also > svg { flex: none; margin-top: 2px; }
+  .kb-ins-also span { min-width: 0; }
+  .kb-ins-also b { font-weight: 600; }
+  .kb-ins-also-d { overflow-wrap: anywhere; }
+  .kb-ins-key { font-size: .72rem; color: var(--muted); margin: 6px 0 2px; line-height: 1.5; word-break: break-word; }
   .kb-ins-guide { font-size: .8rem; color: var(--muted); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 8px; }
   .kb-ins-legend { font-size: .74rem; color: var(--muted); margin-top: 8px; }
   .kb-ins-legend dt { font-family: var(--mono); font-weight: 600; color: var(--muted-2); }
@@ -1557,19 +1571,45 @@ var INS_IS = {
   // A NEGATED acceptance is a refusal whatever follows: "not accepted",
   // "no longer accepted", "never accepted", "non-accepted", "unaccepted".
   notAccepted: function (v) {
-    return v === 'no' || /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't)[\s-]*(currently\s+|yet\s+)?accept(ed|ing)?([^a-z]|$)/.test(v) ||
+    // PT4: "NO ( Process E0144)" — a No with an instruction is still a no.
+    return v === 'no' || /^no([^a-z]|$)/.test(v) || /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't)[\s-]*(currently\s+|yet\s+)?accept(ed|ing)?([^a-z]|$)/.test(v) ||
       insWord_(v, 'unaccepted');
   },
   oonBare: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); },
   oonAny: function (v) { return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v); },
+  // PT3 (operator 2026-11-10): OONB is out-of-network benefits; "cannot
+  // service state" means we can't provide it in that state.
+  oonB: function (v) { return insWord_(v, 'oonb'); },
+  // PT4 (operator 2026-11-10): the Manual Mobility sheet's own words.
+  qualYes: function (v) { return /^yes(?=[\s\-,:(\u2013]).*[a-z0-9]/.test(v); },
+  oop: function (v) { return insWord_(v, 'oop'); },
+  medicaidOnly: function (v) { return insWord_(v, 'mo'); },
+  priorityRef: function (v) { return /(^|[^a-z])priority\s+referr?al/.test(v); },
+  branchArea: function (v) { return /(^|[^a-z])(dfw|austin|san antonio)([^a-z]|$)/.test(v); },
+  deliveryOnly: function (v) { return /(^|[^a-z])delivery\s+only([^a-z]|$)/.test(v); },
+  texasOnly: function (v) { return /(^|[^a-z])texas\s+only([^a-z]|$)/.test(v); },
+  waiver: function (v) { return insWord_(v, 'waiver'); },
+  maPlanOnly: function (v) { return /covered\s+under\s+ma\s+plan/.test(v); },
+  onRequest: function (v) { return /(^|[^a-z])patient\s+asks/.test(v); },
+  npc: function (v) { return /(^|[^a-z])(npc|nrc)([^a-z]|$)/.test(v); },
+  supervisorEx: function (v) { return /supervisor\s+exception/.test(v); },
+  cannotService: function (v) { return /(^|[^a-z])(cannot|can'?t|can\s+not)\s+service([^a-z]|$)/.test(v); },
   planSpecific: function (v) { return /(^|[^a-z])plan[\s-]*specific([^a-z]|$)/.test(v); },
   location: function (v) { return /(^|[^a-z])locations?([^a-z]|$)/.test(v); },
-  siPr: function (v) { return v.indexOf('si/pr') >= 0; },
-  pr: function (v) { return insWord_(v, 'pr') && v.indexOf('si/pr') < 0; },
+  // PT2 (operator 2026-11-10): SI is secondary insurance, PR patient
+  // responsibility; "PR/SI" is the same rule as "SI/PR".
+  siPr: function (v) { return v.indexOf('si/pr') >= 0 || v.indexOf('pr/si') >= 0; },
+  si: function (v) { return insWord_(v, 'si') && v.indexOf('si/pr') < 0 && v.indexOf('pr/si') < 0; },
+  pr: function (v) { return insWord_(v, 'pr') && v.indexOf('si/pr') < 0 && v.indexOf('pr/si') < 0; },
   both: function (v) { return v.indexOf('&') >= 0; },
   tryIt: function (v) { return insWord_(v, 'try'); },
   hawaii: function (v) { return insWord_(v, 'hawaii'); },
-  accepted: function (v) { return insWord_(v, 'in-network') || insWord_(v, 'accepted') || v === 'x' || v === 'yes'; },
+  // PT2: INN and "In Network" (a space) are in-network too (operator 2026-11-10).
+  // A negated or "out-of" in-network is never a yes ("Not in network").
+  accepted: function (v) {
+    if (/(^|[^a-z])(not|non|out)[\s-]*(of[\s-]*)?in[\s-]*network/.test(v)) return false;
+    return insWord_(v, 'in-network') || /(^|[^a-z])(inn|in network)([^a-z]|$)/.test(v) || insWord_(v, 'accepted') || v === 'x' || v === 'yes';
+  },
 };
 var INS_TERMS = [
   { term: 'Not Accepted / NO', why: 'Don\u2019t accept orders for this payor.',
@@ -1587,16 +1627,49 @@ var INS_TERMS = [
     match: function (v) {
       return INS_IS.oonAny(v) && /(^|[^a-z])(pa|prior[\s-]*auth(orization)?)([^a-z]|$)/.test(v);
     } },
-  { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a higher co-insurance rate.',
-    match: function (v) { return INS_IS.oonAny(v) && v.indexOf('benefit') >= 0; } },
+  { term: 'Out-of-Network Benefits', why: 'Out of network, but the plan lets members use out-of-network suppliers \u2014 usually at a different co-insurance rate. "OONB" is the same.',
+    match: function (v) { return (INS_IS.oonAny(v) && v.indexOf('benefit') >= 0) || INS_IS.oonB(v); } },
+  { term: 'Cannot service state', why: 'We can\u2019t provide it in that state.',
+    match: INS_IS.cannotService },
+  // PT4 (operator 2026-11-10): the Manual Mobility sheet's terms, from its own
+  // key and the operator's answers. Specific before general: the first term a
+  // value matches is the one that explains it.
+  { term: 'Needs a supervisor exception', why: 'Process only with a supervisor\u2019s exception.',
+    match: INS_IS.supervisorEx },
+  { term: 'MO/OOP', why: 'Not a Medicare-covered item, but covered by the Medicaid plans we\u2019re in network with. Without Medicaid, the patient pays out of pocket.',
+    match: function (v) { return v.indexOf('mo/oop') >= 0; } },
+  { term: 'MO', why: 'Medicaid only \u2014 only when the patient has Medicaid.',
+    match: INS_IS.medicaidOnly },
+  { term: 'DFW / SA / Austin', why: 'Only within reach of the branch it names \u2014 Dallas-Fort Worth (Irving, TX), or Austin/San Antonio; the table\u2019s note gives the delivery rules.',
+    match: INS_IS.branchArea },
+  { term: 'Delivery only', why: 'Delivery only \u2014 decided on several factors, including shipping cost and profitability.',
+    match: INS_IS.deliveryOnly },
+  { term: 'Priority referral', why: 'Only for a referral from a priority source \u2014 some facilities get exceptions or special treatment.',
+    match: INS_IS.priorityRef },
+  { term: 'OOP / OOP Only', why: 'Out of pocket only \u2014 the patient pays; the insurance does not cover it.',
+    match: INS_IS.oop },
+  { term: 'Texas only', why: 'Only for a patient in Texas.',
+    match: INS_IS.texasOnly },
+  { term: 'Waiver plan', why: 'Only with a Medicaid waiver plan.',
+    match: INS_IS.waiver },
+  { term: 'Covered under an MA plan', why: 'Covered only when the patient\u2019s plan is Medicare Advantage.',
+    match: INS_IS.maPlanOnly },
+  { term: 'On request', why: 'Only when the patient or their facility asks us for it.',
+    match: INS_IS.onRequest },
+  { term: 'NPC / NRC', why: 'No previous claims \u2014 we may process it.',
+    match: INS_IS.npc },
+  { term: 'Yes, with a condition', why: 'We can process it when the condition written after Yes is met.',
+    match: INS_IS.qualYes },
   // Operator, 2026-09-22. First of the amber terms because the tone cascade
   // tests it first.
   { term: 'Plan Specific', why: 'Can\u2019t be confirmed from the sheet \u2014 only by contacting the insurance or attempting submission.',
     match: INS_IS.planSpecific },
   { term: 'Location-based (285\u2013325 lb)', why: 'The location rules below, and the patient must be 285\u2013325 lb.',
     match: function (v) { return /285\s*[-\u2013]\s*325/.test(v); } },
-  { term: 'SI/PR', why: 'Accept only with secondary insurance covering any patient responsibility \u2014 or the patient is told PR may be collected up front by delivery.',
+  { term: 'SI/PR', why: 'Only accept if the patient has secondary insurance details that will cover any remaining patient responsibility or, if the patient is unable to provide a secondary insurance, then they were made aware that there may be some patient responsibility cost that will need to be collected up front by the delivery team. "PR/SI" is the same rule.',
     match: INS_IS.siPr },
+  { term: 'SI', why: 'Secondary insurance \u2014 only accept if the patient has secondary insurance that will cover any remaining patient responsibility.',
+    match: INS_IS.si },
   { term: 'Location-based', why: 'Only if the patient is in one of the big cities listed on the source sheet\u2019s "Location Based Acceptance Options" tab, or within 100 miles of a listed branch.',
     match: INS_IS.location },
   { term: 'A & B (combined)', why: 'Must meet BOTH criteria.',
@@ -1642,14 +1715,19 @@ function insToneCls_(value) {
   var v = String(value == null ? '' : value).trim().toLowerCase();
   if (!v) return '';
   if (INS_IS.notAccepted(v)) return 'bad';
+  if (INS_IS.cannotService(v)) return 'bad';
   // BARE out-of-network, in any of its spellings, is the hard no — the operator
   // confirmed on 2026-09-22 that OON and OUT-OF-NETWORK are the same thing and
   // that it means "don't accept". A QUALIFIED value ("OON W/ PA",
   // "Out-of-Network Benefits") is NOT this rule and stays amber below — that
   // split was deliberate and is pinned.
   if (INS_IS.oonBare(v)) return 'bad';
-  if (INS_IS.oonAny(v) || INS_IS.planSpecific(v)) return 'warn';
-  if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
+  if (INS_IS.oonAny(v) || INS_IS.oonB(v) || INS_IS.planSpecific(v)) return 'warn';
+  // PT4: every Manual Mobility condition is amber — a yes only when it is met.
+  if (INS_IS.supervisorEx(v) || INS_IS.medicaidOnly(v) || INS_IS.oop(v) || INS_IS.priorityRef(v) || INS_IS.branchArea(v) ||
+      INS_IS.deliveryOnly(v) || INS_IS.texasOnly(v) || INS_IS.waiver(v) || INS_IS.maPlanOnly(v) || INS_IS.onRequest(v) ||
+      INS_IS.npc(v) || INS_IS.qualYes(v)) return 'warn';
+  if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.si(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
   if (INS_IS.tryIt(v)) return 'info';
   if (INS_IS.hawaii(v)) return 'info';
   if (INS_IS.accepted(v)) return 'good';
@@ -2600,6 +2678,67 @@ function insLookupInput_(inp) {
   }, 350);
 }
 
+/** PT1a: the payor sheet's standing note — the rule its source states for
+ *  every plan — above every answer (a match or none). A note the server could
+ *  not read is said, never dropped: it is a rule reps act on (g53). */
+function insNoteHtml_(t, named) {
+  // PT1: one note per payor table; with more than one table on screen it
+  // names its table ("For every plan in Primary Medicaid:").
+  var who = named && t && t.label ? ' in ' + esc(t.label) : '';
+  if (t && t.note) {
+    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span><b>For every plan' + who + ':</b> ' + esc(t.note) + '</span></div>';
+  }
+  if (t && t.noteError) {
+    return '<div class="kb-ins-note" role="note">' + icon('warning', 13) + '<span>The payor sheet’s standing note could not be read — check the source sheet’s top note before quoting.</span></div>';
+  }
+  return '';
+}
+/** PT1: the key the table's own source export carries ("Try = Create account
+ *  and insurance team will verify") — the sheet's words, escaped. A table can
+ *  mean something different by a value than another does, so each group shows
+ *  its own. */
+function insKeyHtml_(legend) {
+  if (!legend || typeof legend !== 'object') return '';
+  var parts = Object.keys(legend).map(function (k) { return '<b>' + esc(k) + '</b> = ' + esc(String(legend[k])); });
+  return parts.length ? '<div class="kb-ins-key">Sheet key: ' + parts.join(' · ') + '</div>' : '';
+}
+/** PT3: the same plan in another payor table gives a different answer on a
+ *  code both fill — said on the card, with both answers, so a rep never picks
+ *  one silently. Escaped; nothing when the tables agree. */
+function insAlsoHtml_(also) {
+  if (!also || !also.length) return '';
+  return also.map(function (a) {
+    var where = esc(a.label || a.table) + (a.state && !/^(multi-state|not state specific)/i.test(a.state) ? ' (' + esc(a.state) + ')' : '');
+    var diffs = (a.differs || []).map(function (d) {
+      var codes = d.codes || [];
+      var list = codes.length > 3 ? codes.slice(0, 3).join(', ') + ' +' + (codes.length - 3) : codes.join(', ');
+      return '<span class="kb-ins-also-d" title="' + esc(codes.join(', ')) + '">' + esc(list) + ': <b>' + esc(d.here) + '</b> here, <b>' + esc(d.there) + '</b> there</span>';
+    }).join('; ');
+    return '<div class="kb-ins-also" role="note">' + icon('warning', 11) + ' <span>Also on ' + where + ' \u2014 answer differs: ' + diffs + '</span></div>';
+  }).join('');
+}
+/** PT4: the code cells of a card, under their item CATEGORY ("Walker",
+ *  "Hospital Bed") when the sheet names one — a heading row each time the
+ *  category changes, in the sheet's order. A card with no categories is the
+ *  plain list it always was. */
+function insGroupedCells_(det, cellFn) {
+  var grouped = det.some(function (d) { return d.group; });
+  var last = null;
+  return det.map(function (d) {
+    var head = '';
+    if (grouped && (d.group || '') !== last) {
+      last = d.group || '';
+      if (last) head = '<div class="kb-ins-cat">' + esc(last) + '</div>';
+    }
+    return head + cellFn(d);
+  }).join('');
+}
+/** PT1: the payor tables the answer covers, in the server's order. An answer
+ *  from before PT1 (one table, a top-level note) reads as one unnamed table. */
+function insTablesOf_(res) {
+  if (res && res.tables && res.tables.length) return res.tables;
+  return [{ key: '', label: '', note: (res && res.note) || '', noteError: (res && res.noteError) || '', legend: null }];
+}
 function insRenderResults_(suffix, q, res) {
   var host = document.getElementById('kb-ins-results' + suffix);
   if (!host) return;
@@ -2613,14 +2752,18 @@ function insRenderResults_(suffix, q, res) {
     oopRepaintXref_(suffix);
     return;
   }
+  var tables = insTablesOf_(res);
+  var named = tables.length > 1;
   if (res.notFound || !(res.matches || []).length) {
     // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
-    host.innerHTML = '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
+    // Every table's note shows — each applies to plans it does not list.
+    host.innerHTML = tables.map(function (t) { return insNoteHtml_(t, named); }).join('') + '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
       'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
     oopRepaintXref_(suffix);
     return;
   }
   var html = '';
+  var cards = {};
   // The join is BEST-EFFORT and its absence is reassuring, so it announces
   // itself when it fails: bare codes with no names look exactly like a payor
   // sheet whose columns were never codes (g53). `attempted` is the server's
@@ -2644,7 +2787,11 @@ function insRenderResults_(suffix, q, res) {
     var pill = pillKnown
       ? '<button type="button" class="kb-ins-pill kb-term ' + esc(tone) + '" onclick="insTermClick_(this)">' + esc(ns) + '</button>'
       : '<span class="kb-ins-pill ' + esc(tone) + '">' + esc(ns || 'status not recorded') + '</span>';
+    // PT4: a table with no network status column (Manual Mobility items) says
+    // nothing about status — a "not recorded" pill on every card would be noise.
+    if (!ns && tables.some(function (t) { return (named ? t.key === m.table : true) && t.hasStatus === false; })) pill = '';
     var meta = [];
+    if (m.company) meta.push('Insurer ' + esc(m.company));   // PT2: the BCBS tab's column A
     if (m.waystar) meta.push('Waystar ' + esc(m.waystar));
     if (m.qualification) meta.push('Qualification: ' + esc(m.qualification));
     if (m.reimbursement) meta.push('Reimbursement: ' + esc(m.reimbursement));
@@ -2654,7 +2801,7 @@ function insRenderResults_(suffix, q, res) {
       ? '<button type="button" class="kb-ins-det-btn" data-kb-primary aria-expanded="false" aria-controls="' + detId + '" onclick="insToggleLegend_(this)">' +
           icon('chevronDown', 11) + ' Acceptance by code (' + det.length + ')</button>' +
         '<div class="kb-ins-grid" id="' + detId + '" hidden>' +
-          det.map(function (d) {
+          insGroupedCells_(det, function (d) {
             // The value is the thing a rep is stuck on — `SI/PR` next to a
             // HCPCS code, not the glossary as a whole. It explains itself when
             // the vocabulary knows it, and stays inert text when it does not,
@@ -2666,15 +2813,29 @@ function insRenderResults_(suffix, q, res) {
               (known
                 ? '<button type="button" ' + vAttrs + ' onclick="insTermClick_(this)">' + esc(d.value) + '</button>'
                 : '<span ' + vAttrs + '>' + esc(d.value) + '</span>') + '</div>';
-          }).join('') + '</div>'
+          }) + '</div>'
       : '';
     // D3: the server ranks a plan that excludes the searched state LAST and
     // names the state; the card says so beside the name.
     var excl = m.excludedState ? '<span class="kb-ins-excl" title="This plan’s name excludes ' + esc(m.excludedState) + '">' + esc(m.excludedState) + ' excluded</span>' : '';
-    html += '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
-      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl + pill + '</div>' +
+    var tk = named ? String(m.table || '') : '';
+    cards[tk] = (cards[tk] || '') + '<div class="kb-ins-card' + (excl ? ' is-excl' : '') + '" data-kb-nav tabindex="-1">' +
+      '<div class="kb-ins-head"><span class="kb-ins-name">' + esc(m.name) + '</span>' + excl +
+        (m.state ? '<span class="kb-ins-state">' + esc(m.state) + '</span>' : '') + pill + '</div>' +
+      (m.catchAll ? '<div class="kb-ins-catch">' + icon('info', 11) + ' Covers any ' +
+        (m.state && !/^(multi-state|not state specific)/i.test(m.state) ? esc(m.state) + ' ' : '') + 'plan this sheet does not list by name</div>' : '') +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
-      detHtml + '</div>';
+      insAlsoHtml_(m.alsoIn) + detHtml + '</div>';
+  });
+  // PT1: a group per payor table that has matches, in the server's order —
+  // its name (when there is more than one table), its standing note, its
+  // cards, and the key from its own sheet.
+  tables.forEach(function (t) {
+    var tk = named ? String(t.key || '') : '';
+    if (!cards[tk]) return;
+    html += '<div class="kb-ins-group">' +
+      (named ? '<div class="kb-ins-group-h">' + esc(t.label) + '</div>' : '') +
+      insNoteHtml_(t, named) + cards[tk] + insKeyHtml_(t.legend) + '</div>';
   });
   if (res.total > res.matches.length) {
     html += '<div class="kb-ins-more">Showing ' + res.matches.length + ' of ' + res.total + ' matches — type more of the name to narrow.</div>';

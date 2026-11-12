@@ -99,6 +99,10 @@ function punctWeeklyBuckets_(dayDetail, fromIso, toIso, addDays) {
 // PR 5 (Q4): the QA fixture's audit periods + coverage rows come from the
 // SERVER's own period arithmetic and coverage join, not a paraphrase
 // (INV-185) — the fixture CALLS these over its recordings + cards.
+// ED2 (operator 2026-11-06): a small FILLABLE PDF for the issue form's
+// scenarios — a Letter page with four text fields and a checkbox, a Legal page
+// of 5 pt text and a page stored rotated 90° (made with reportlab + pypdf).
+const ED2_FORM_PDF_URI = 'data:application/pdf;base64,JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKL0Fjcm9Gb3JtIDMyIDAgUgo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDMKL0tpZHMgWyAzIDAgUiAyOCAwIFIgMzAgMCBSIF0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL0Fubm90cyBbIDQgMCBSIDggMCBSIDExIDAgUiAxNCAwIFIgMjEgMCBSIF0KL0NvbnRlbnRzIDI0IDAgUgovTWVkaWFCb3ggWyAwIDAgNjEyIDc5MiBdCi9SZXNvdXJjZXMgPDwKL0ZvbnQgMjUgMCBSCi9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+Ci9Sb3RhdGUgMAovVHJhbnMgPDwKPj4KL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovQVAgPDwKL04gNSAwIFIKPj4KL0JTIDw8Ci9TIC9TCi9XIDEKPj4KL0RBIChcMDU3SGVsdiAxMiBUZiBcMDU2MSBcMDU2MSBcMDU2MSByZykKL0RWICgpCi9GIDQKL0ZUIC9UeAovRmYgMAovTUsgPDwKL0JDIFsgMC4xIDAuMSAwLjEgXQovQkcgWyAwLjggMC44NDMgMSBdCj4+Ci9NYXhMZW4gMTAwCi9QIDMgMCBSCi9SZWN0IFsgMTYwIDY5NCAzODAgNzEyIF0KL1N1YnR5cGUgL1dpZGdldAovVCAoZW1wbG95ZWVcMTM3bmFtZSkKL1RVIChlbXBsb3llZVwxMzduYW1lKQovVHlwZSAvQW5ub3QKL1YgKCkKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0JCb3ggWyAwIDAgMjIwIDE4IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgL1RleHQgXQovRm9udCA8PAovSGVsdiA2IDAgUgo+Pgo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDEwOAo+PgpzdHJlYW0KLjggLjg0MyAxIHJnCjAgMCAyMjAgMTggcmUKZgouMSAuMSAuMSBSRwoxIHcKMC41IDAuNSAyMTkgMTcgcmUKcwovVHggQk1DIApxCjIgMiAyMTYgMTQgcmUKVwpuCjAgZwowIEcKUQpFTUMKCmVuZHN0cmVhbQplbmRvYmoKNiAwIG9iago8PAovQmFzZUZvbnQgL0hlbHZldGljYQovU3VidHlwZSAvVHlwZTEKL05hbWUgL0hlbHYKL1R5cGUgL0ZvbnQKL0VuY29kaW5nIDcgMCBSCj4+CmVuZG9iago3IDAgb2JqCjw8Ci9UeXBlIC9FbmNvZGluZwovRGlmZmVyZW5jZXMgWyAyNCAvYnJldmUgL2Nhcm9uIC9jaXJjdW1mbGV4IC9kb3RhY2NlbnQgL2h1bmdhcnVtbGF1dCAvb2dvbmVrIC9yaW5nIC90aWxkZSAzOSAvcXVvdGVzaW5nbGUgOTYgL2dyYXZlIDEyOCAvYnVsbGV0IC9kYWdnZXIgL2RhZ2dlcmRibCAvZWxsaXBzaXMgL2VtZGFzaCAvZW5kYXNoIC9mbG9yaW4gL2ZyYWN0aW9uIC9ndWlsc2luZ2xsZWZ0IC9ndWlsc2luZ2xyaWdodCAvbWludXMgL3BlcnRob3VzYW5kIC9xdW90ZWRibGJhc2UgL3F1b3RlZGJsbGVmdCAvcXVvdGVkYmxyaWdodCAvcXVvdGVsZWZ0IC9xdW90ZXJpZ2h0IC9xdW90ZXNpbmdsYmFzZSAvdHJhZGVtYXJrIC9maSAvZmwgL0xzbGFzaCAvT0UgL1NjYXJvbiAvWWRpZXJlc2lzIC9aY2Fyb24gL2RvdGxlc3NpIC9sc2xhc2ggL29lIC9zY2Fyb24gL3pjYXJvbiAxNjAgL0V1cm8gMTY0IC9jdXJyZW5jeSAxNjYgL2Jyb2tlbmJhciAxNjggL2RpZXJlc2lzIC9jb3B5cmlnaHQgL29yZGZlbWluaW5lIDE3MiAvbG9naWNhbG5vdCAvLm5vdGRlZiAvcmVnaXN0ZXJlZCAvbWFjcm9uIC9kZWdyZWUgL3BsdXNtaW51cyAvdHdvc3VwZXJpb3IgL3RocmVlc3VwZXJpb3IgL2FjdXRlIC9tdSAxODMgL3BlcmlvZGNlbnRlcmVkIC9jZWRpbGxhIC9vbmVzdXBlcmlvciAvb3JkbWFzY3VsaW5lIDE4OCAvb25lcXVhcnRlciAvb25laGFsZiAvdGhyZWVxdWFydGVycyAxOTIgL0FncmF2ZSAvQWFjdXRlIC9BY2lyY3VtZmxleCAvQXRpbGRlIC9BZGllcmVzaXMgL0FyaW5nIC9BRSAvQ2NlZGlsbGEgL0VncmF2ZSAvRWFjdXRlIC9FY2lyY3VtZmxleCAvRWRpZXJlc2lzIC9JZ3JhdmUgL0lhY3V0ZSAvSWNpcmN1bWZsZXggL0lkaWVyZXNpcyAvRXRoIC9OdGlsZGUgL09ncmF2ZSAvT2FjdXRlIC9PY2lyY3VtZmxleCAvT3RpbGRlIC9PZGllcmVzaXMgL211bHRpcGx5IC9Pc2xhc2ggL1VncmF2ZSAvVWFjdXRlIC9VY2lyY3VtZmxleCAvVWRpZXJlc2lzIC9ZYWN1dGUgL1Rob3JuIC9nZXJtYW5kYmxzIC9hZ3JhdmUgL2FhY3V0ZSAvYWNpcmN1bWZsZXggL2F0aWxkZSAvYWRpZXJlc2lzIC9hcmluZyAvYWUgL2NjZWRpbGxhIC9lZ3JhdmUgL2VhY3V0ZSAvZWNpcmN1bWZsZXggL2VkaWVyZXNpcyAvaWdyYXZlIC9pYWN1dGUgL2ljaXJjdW1mbGV4IC9pZGllcmVzaXMgL2V0aCAvbnRpbGRlIC9vZ3JhdmUgL29hY3V0ZSAvb2NpcmN1bWZsZXggL290aWxkZSAvb2RpZXJlc2lzIC9kaXZpZGUgL29zbGFzaCAvdWdyYXZlIC91YWN1dGUgL3VjaXJjdW1mbGV4IC91ZGllcmVzaXMgL3lhY3V0ZSAvdGhvcm4gL3lkaWVyZXNpcyBdCj4+CmVuZG9iago4IDAgb2JqCjw8Ci9BUCA8PAovTiA5IDAgUgo+PgovQlMgPDwKL1MgL1MKL1cgMQo+PgovREEgKFwwNTdIZWx2IDEyIFRmIFwwNTYxIFwwNTYxIFwwNTYxIHJnKQovRFYgKCkKL0YgNAovRlQgL1R4Ci9GZiAwCi9NSyA8PAovQkMgWyAwLjEgMC4xIDAuMSBdCi9CRyBbIDAuOCAwLjg0MyAxIF0KPj4KL01heExlbiAxMDAKL1AgMyAwIFIKL1JlY3QgWyAxNjAgNjY0IDI3MCA2ODIgXQovU3VidHlwZSAvV2lkZ2V0Ci9UIChzdGFydFwxMzdkYXRlKQovVHlwZSAvQW5ub3QKL1YgKCkKPj4KZW5kb2JqCjkgMCBvYmoKPDwKL0JCb3ggWyAwIDAgMTEwIDE4IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgL1RleHQgXQovRm9udCA8PAovSGVsdiA2IDAgUgo+Pgo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDEwOAo+PgpzdHJlYW0KLjggLjg0MyAxIHJnCjAgMCAxMTAgMTggcmUKZgouMSAuMSAuMSBSRwoxIHcKMC41IDAuNSAxMDkgMTcgcmUKcwovVHggQk1DIApxCjIgMiAxMDYgMTQgcmUKVwpuCjAgZwowIEcKUQpFTUMKCmVuZHN0cmVhbQplbmRvYmoKMTEgMCBvYmoKPDwKL0FQIDw8Ci9OIDEyIDAgUgo+PgovQlMgPDwKL1MgL1MKL1cgMQo+PgovREEgKFwwNTdIZWx2IDEyIFRmIFwwNTYxIFwwNTYxIFwwNTYxIHJnKQovRFYgKCkKL0YgNAovRlQgL1R4Ci9GZiA0MDk2Ci9NSyA8PAovQkMgWyAwLjEgMC4xIDAuMSBdCi9CRyBbIDAuOCAwLjg0MyAxIF0KPj4KL01heExlbiAxMDAKL1AgMyAwIFIKL1JlY3QgWyA2MCA1NjAgNTQwIDYzMCBdCi9TdWJ0eXBlIC9XaWRnZXQKL1QgKHdvcmtMb2NhdGlvbikKL1RVIChXb3JrIGxvY2F0aW9uIGFuZCBob3VycykKL1R5cGUgL0Fubm90Ci9WICgpCj4+CmVuZG9iagoxMiAwIG9iago8PAovQkJveCBbIDAgMCA0ODAgNzAgXQovRm9ybVR5cGUgMQovTWF0cml4IFsgMSAwIDAgMSAwIDAgXQovUmVzb3VyY2VzIDw8Ci9Qcm9jU2V0IFsgL1BERiAvVGV4dCBdCi9Gb250IDw8Ci9IZWx2IDYgMCBSCj4+Cj4+Ci9TdWJ0eXBlIC9Gb3JtCi9UeXBlIC9YT2JqZWN0Ci9MZW5ndGggMTA4Cj4+CnN0cmVhbQouOCAuODQzIDEgcmcKMCAwIDQ4MCA3MCByZQpmCi4xIC4xIC4xIFJHCjEgdwowLjUgMC41IDQ3OSA2OSByZQpzCi9UeCBCTUMgCnEKMiAyIDQ3NiA2NiByZQpXCm4KMCBnCjAgRwpRCkVNQwoKZW5kc3RyZWFtCmVuZG9iagoxNCAwIG9iago8PAovQVAgPDwKL0QgPDwKL09mZiAxNSAwIFIKL1llcyAxNiAwIFIKPj4KL04gPDwKL09mZiAxNyAwIFIKL1llcyAxOCAwIFIKPj4KL1IgPDwKL09mZiAxOSAwIFIKL1llcyAyMCAwIFIKPj4KPj4KL0FTIC9PZmYKL0JTIDw8Ci9TIC9TCi9XIDEKPj4KL0YgNAovRlQgL0J0bgovRmYgMgovSCAvTgovTUsgPDwKL0JDIFsgMC4xIDAuMSAwLjEgXQovQkcgWyAwLjggMC44NDMgMSBdCi9DQSAoNCkKPj4KL1AgMyAwIFIKL1JlY3QgWyAyMDAgNTI2IDIxNCA1NDAgXQovU3VidHlwZSAvV2lkZ2V0Ci9UIChhZ3JlZSkKL1R5cGUgL0Fubm90Ci9WIC9PZmYKPj4KZW5kb2JqCjE1IDAgb2JqCjw8Ci9CQm94IFsgMCAwIDE0IDE0IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgXQo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDgwCj4+CnN0cmVhbQpxCjEgZyAxIEcgLjcyIC43NTg3IC45IHJnIDAgMCAxNCAxNCByZSBmCi4wOSAuMDkgLjA5IFJHIDEgdyAwLjUgMC41IDEzIDEzIHJlIHMKUQplbmRzdHJlYW0KZW5kb2JqCjE2IDAgb2JqCjw8Ci9CQm94IFsgMCAwIDE0IDE0IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgXQo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDkwMQo+PgpzdHJlYW0KcQoxIGcgMSBHIC43MiAuNzU4NyAuOSByZyAwIDAgMTQgMTQgcmUgZgouMDkgLjA5IC4wOSBSRyAxIHcgMC41IDAuNSAxMyAxMyByZSBzClEKcSAuMDkgLjA5IC4wOSByZyAuMDkgLjA5IC4wOSBSRwo4LjI3MTAzMSA5Ljk5MzMxNSBtIDkuNDg5NDE1IDExLjQ4MjQ1IGwgMTAuMDMwOTIgMTIuMDg0MTIgMTEuMjQ5MyAxMi4zODQ5NiAxMi4wNjE1NiAxMi4zODQ5NiBjIDEyLjE2Njg1IDEyLjE0NDI5IGwgMTAuNzY3OTcgMTAuNDg5NjkgbCA3LjYzOTI3NiA2LjM1MzIwMyBsIDUuNDczMjU5IDIuOTk4ODg2IGwgNC45NDY3OTcgMi4wOTYzNzkgbCA0Ljg3MTU4OCAxLjk0NTk2MSA0Ljc4MTMzNyAxLjc2NTQ2IDQuNjMwOTE5IDEuNjc1MjA5IGMgNC40MzUzNzYgMS41ODQ5NTggMy45ODQxMjMgMS41ODQ5NTggMy43NzM1MzggMS41ODQ5NTggYyAzLjI5MjIwMSAxLjU4NDk1OCAzLjE4NjkwOCAxLjU4NDk1OCAzLjA4MTYxNiAxLjY2MDE2NyBjIDIuOTMxMTk4IDEuNzY1NDYgMi44NTU5ODkgMS45NzYwNDUgMi43NTA2OTYgMi4xODY2MyBjIDIuNDE5Nzc3IDIuODc4NTUyIDEuODMzMTQ4IDQuMzgyNzMgMS44MzMxNDggNS4xMzQ4MTkgYyAxLjgzMzE0OCA1LjM5MDUyOSAxLjk4MzU2NSA1LjUxMDg2NCAyLjE3OTEwOSA1LjY0NjI0IGMgMi40OTQ5ODYgNS44NzE4NjYgMi45NDYyNCA2LjEyNzU3NyAzLjMzNzMyNiA2LjEyNzU3NyBjIDMuNjM4MTYyIDYuMTI3NTc3IDMuNjY4MjQ1IDUuODcxODY2IDMuNzU4NDk2IDUuNjMxMTk4IGMgNC4wNTkzMzEgNC45MjQyMzQgbCA0LjEwNDQ1NyA0LjgwMzkgNC4yMzk4MzMgNC4zODI3MyA0LjQwNTI5MiA0LjM4MjczIGMgNC41NTU3MSA0LjM4MjczIDQuNzM2MjEyIDQuNzI4NjkxIDQuNzk2Mzc5IDQuODMzOTgzIGMgOC4yNzEwMzEgOS45OTMzMTUgbCBoIGYKUQplbmRzdHJlYW0KZW5kb2JqCjE3IDAgb2JqCjw8Ci9CQm94IFsgMCAwIDE0IDE0IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgXQo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDc0Cj4+CnN0cmVhbQpxCjEgZyAxIEcgLjggLjg0MyAxIHJnIDAgMCAxNCAxNCByZSBmCi4xIC4xIC4xIFJHIDEgdyAwLjUgMC41IDEzIDEzIHJlIHMKUQplbmRzdHJlYW0KZW5kb2JqCjE4IDAgb2JqCjw8Ci9CQm94IFsgMCAwIDE0IDE0IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgXQo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDg4OQo+PgpzdHJlYW0KcQoxIGcgMSBHIC44IC44NDMgMSByZyAwIDAgMTQgMTQgcmUgZgouMSAuMSAuMSBSRyAxIHcgMC41IDAuNSAxMyAxMyByZSBzClEKcSAuMSAuMSAuMSByZyAuMSAuMSAuMSBSRwo4LjI3MTAzMSA5Ljk5MzMxNSBtIDkuNDg5NDE1IDExLjQ4MjQ1IGwgMTAuMDMwOTIgMTIuMDg0MTIgMTEuMjQ5MyAxMi4zODQ5NiAxMi4wNjE1NiAxMi4zODQ5NiBjIDEyLjE2Njg1IDEyLjE0NDI5IGwgMTAuNzY3OTcgMTAuNDg5NjkgbCA3LjYzOTI3NiA2LjM1MzIwMyBsIDUuNDczMjU5IDIuOTk4ODg2IGwgNC45NDY3OTcgMi4wOTYzNzkgbCA0Ljg3MTU4OCAxLjk0NTk2MSA0Ljc4MTMzNyAxLjc2NTQ2IDQuNjMwOTE5IDEuNjc1MjA5IGMgNC40MzUzNzYgMS41ODQ5NTggMy45ODQxMjMgMS41ODQ5NTggMy43NzM1MzggMS41ODQ5NTggYyAzLjI5MjIwMSAxLjU4NDk1OCAzLjE4NjkwOCAxLjU4NDk1OCAzLjA4MTYxNiAxLjY2MDE2NyBjIDIuOTMxMTk4IDEuNzY1NDYgMi44NTU5ODkgMS45NzYwNDUgMi43NTA2OTYgMi4xODY2MyBjIDIuNDE5Nzc3IDIuODc4NTUyIDEuODMzMTQ4IDQuMzgyNzMgMS44MzMxNDggNS4xMzQ4MTkgYyAxLjgzMzE0OCA1LjM5MDUyOSAxLjk4MzU2NSA1LjUxMDg2NCAyLjE3OTEwOSA1LjY0NjI0IGMgMi40OTQ5ODYgNS44NzE4NjYgMi45NDYyNCA2LjEyNzU3NyAzLjMzNzMyNiA2LjEyNzU3NyBjIDMuNjM4MTYyIDYuMTI3NTc3IDMuNjY4MjQ1IDUuODcxODY2IDMuNzU4NDk2IDUuNjMxMTk4IGMgNC4wNTkzMzEgNC45MjQyMzQgbCA0LjEwNDQ1NyA0LjgwMzkgNC4yMzk4MzMgNC4zODI3MyA0LjQwNTI5MiA0LjM4MjczIGMgNC41NTU3MSA0LjM4MjczIDQuNzM2MjEyIDQuNzI4NjkxIDQuNzk2Mzc5IDQuODMzOTgzIGMgOC4yNzEwMzEgOS45OTMzMTUgbCBoIGYKUQplbmRzdHJlYW0KZW5kb2JqCjE5IDAgb2JqCjw8Ci9CQm94IFsgMCAwIDE0IDE0IF0KL0Zvcm1UeXBlIDEKL01hdHJpeCBbIDEgMCAwIDEgMCAwIF0KL1Jlc291cmNlcyA8PAovUHJvY1NldCBbIC9QREYgXQo+PgovU3VidHlwZSAvRm9ybQovVHlwZSAvWE9iamVjdAovTGVuZ3RoIDc5Cj4+CnN0cmVhbQpxCjEgZyAxIEcgLjgyIC44NTg3IDEgcmcgMCAwIDE0IDE0IHJlIGYKLjE5IC4xOSAuMTkgUkcgMSB3IDAuNSAwLjUgMTMgMTMgcmUgcwpRCmVuZHN0cmVhbQplbmRvYmoKMjAgMCBvYmoKPDwKL0JCb3ggWyAwIDAgMTQgMTQgXQovRm9ybVR5cGUgMQovTWF0cml4IFsgMSAwIDAgMSAwIDAgXQovUmVzb3VyY2VzIDw8Ci9Qcm9jU2V0IFsgL1BERiBdCj4+Ci9TdWJ0eXBlIC9Gb3JtCi9UeXBlIC9YT2JqZWN0Ci9MZW5ndGggOTAwCj4+CnN0cmVhbQpxCjEgZyAxIEcgLjgyIC44NTg3IDEgcmcgMCAwIDE0IDE0IHJlIGYKLjE5IC4xOSAuMTkgUkcgMSB3IDAuNSAwLjUgMTMgMTMgcmUgcwpRCnEgLjE5IC4xOSAuMTkgcmcgLjE5IC4xOSAuMTkgUkcKOC4yNzEwMzEgOS45OTMzMTUgbSA5LjQ4OTQxNSAxMS40ODI0NSBsIDEwLjAzMDkyIDEyLjA4NDEyIDExLjI0OTMgMTIuMzg0OTYgMTIuMDYxNTYgMTIuMzg0OTYgYyAxMi4xNjY4NSAxMi4xNDQyOSBsIDEwLjc2Nzk3IDEwLjQ4OTY5IGwgNy42MzkyNzYgNi4zNTMyMDMgbCA1LjQ3MzI1OSAyLjk5ODg4NiBsIDQuOTQ2Nzk3IDIuMDk2Mzc5IGwgNC44NzE1ODggMS45NDU5NjEgNC43ODEzMzcgMS43NjU0NiA0LjYzMDkxOSAxLjY3NTIwOSBjIDQuNDM1Mzc2IDEuNTg0OTU4IDMuOTg0MTIzIDEuNTg0OTU4IDMuNzczNTM4IDEuNTg0OTU4IGMgMy4yOTIyMDEgMS41ODQ5NTggMy4xODY5MDggMS41ODQ5NTggMy4wODE2MTYgMS42NjAxNjcgYyAyLjkzMTE5OCAxLjc2NTQ2IDIuODU1OTg5IDEuOTc2MDQ1IDIuNzUwNjk2IDIuMTg2NjMgYyAyLjQxOTc3NyAyLjg3ODU1MiAxLjgzMzE0OCA0LjM4MjczIDEuODMzMTQ4IDUuMTM0ODE5IGMgMS44MzMxNDggNS4zOTA1MjkgMS45ODM1NjUgNS41MTA4NjQgMi4xNzkxMDkgNS42NDYyNCBjIDIuNDk0OTg2IDUuODcxODY2IDIuOTQ2MjQgNi4xMjc1NzcgMy4zMzczMjYgNi4xMjc1NzcgYyAzLjYzODE2MiA2LjEyNzU3NyAzLjY2ODI0NSA1Ljg3MTg2NiAzLjc1ODQ5NiA1LjYzMTE5OCBjIDQuMDU5MzMxIDQuOTI0MjM0IGwgNC4xMDQ0NTcgNC44MDM5IDQuMjM5ODMzIDQuMzgyNzMgNC40MDUyOTIgNC4zODI3MyBjIDQuNTU1NzEgNC4zODI3MyA0LjczNjIxMiA0LjcyODY5MSA0Ljc5NjM3OSA0LjgzMzk4MyBjIDguMjcxMDMxIDkuOTkzMzE1IGwgaCBmClEKZW5kc3RyZWFtCmVuZG9iagoyMSAwIG9iago8PAovQVAgPDwKL04gMjIgMCBSCj4+Ci9CUyA8PAovUyAvUwovVyAxCj4+Ci9EQSAoXDA1N0hlbHYgMTIgVGYgXDA1NjEgXDA1NjEgXDA1NjEgcmcpCi9EViAoKQovRiA0Ci9GVCAvVHgKL0ZmIDAKL01LIDw8Ci9CQyBbIDAuMSAwLjEgMC4xIF0KL0JHIFsgMC44IDAuODQzIDEgXQo+PgovTWF4TGVuIDEwMAovUCAzIDAgUgovUmVjdCBbIDEyMCA0OTQgMTcwIDUxNCBdCi9TdWJ0eXBlIC9XaWRnZXQKL1QgKGVtcFwxMzdpbml0aWFscykKL1R5cGUgL0Fubm90Ci9WICgpCj4+CmVuZG9iagoyMiAwIG9iago8PAovQkJveCBbIDAgMCA1MCAyMCBdCi9Gb3JtVHlwZSAxCi9NYXRyaXggWyAxIDAgMCAxIDAgMCBdCi9SZXNvdXJjZXMgPDwKL1Byb2NTZXQgWyAvUERGIC9UZXh0IF0KL0ZvbnQgPDwKL0hlbHYgNiAwIFIKPj4KPj4KL1N1YnR5cGUgL0Zvcm0KL1R5cGUgL1hPYmplY3QKL0xlbmd0aCAxMDUKPj4Kc3RyZWFtCi44IC44NDMgMSByZwowIDAgNTAgMjAgcmUKZgouMSAuMSAuMSBSRwoxIHcKMC41IDAuNSA0OSAxOSByZQpzCi9UeCBCTUMgCnEKMiAyIDQ2IDE2IHJlClcKbgowIGcKMCBHClEKRU1DCgplbmRzdHJlYW0KZW5kb2JqCjI0IDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9MZW5ndGggMTk0Cj4+CnN0cmVhbQp4nH2PzQrCMBCE732KOaqH2tT+iDeFCoInDXgO7WqrTSIxCr69JS1qwcrCHoaZb2cZgmaY27kEVhzTNQMLwY9gkR+Bb5Fxz+khWOz0+UdlHSAJkEYBuMRoR1JbwkGbC5YnQyRJ2TH4GXzyZjU3mGPN/PA3LWhpmbzW+kkEJSQt+pgve5K29r0VxqIQ9p+3K+oa1joXttIKQhUo9d3choPxrA1uUIoHwZAoYEvCVddV/hyOda9sVGUrUfcOwHsBNK5fiwplbmRzdHJlYW0KZW5kb2JqCjI1IDAgb2JqCjw8Ci9GMSAyNiAwIFIKL0YyIDI3IDAgUgo+PgplbmRvYmoKMjYgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKL05hbWUgL0YxCi9TdWJ0eXBlIC9UeXBlMQovVHlwZSAvRm9udAo+PgplbmRvYmoKMjcgMCBvYmoKPDwKL0Jhc2VGb250IC9IZWx2ZXRpY2EtQm9sZAovRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZwovTmFtZSAvRjIKL1N1YnR5cGUgL1R5cGUxCi9UeXBlIC9Gb250Cj4+CmVuZG9iagoyOCAwIG9iago8PAovQ29udGVudHMgMjkgMCBSCi9NZWRpYUJveCBbIDAgMCA2MTIgMTAwOCBdCi9SZXNvdXJjZXMgPDwKL0ZvbnQgMjUgMCBSCi9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+Ci9Sb3RhdGUgMAovVHJhbnMgPDwKPj4KL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgo+PgplbmRvYmoKMjkgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCA0MDQKPj4Kc3RyZWFtCnicxdi9TsMwFIbhnas4IzCUHNs5dlYkmNjIDZTU0EDzQ5MK9e5JUSX0Vcx8suzhyJbe6VEUlWJZ+nM2nch9LXePKuqkfhUNqyD1kzzUV+d5eRrb70zPz62Qatl1J9fPuZnboRddSb3NkrtxNxxzlvXbPudJ5kE+ch6lGbpx3R8lfx7ascv9LFNuDvvlXr85XdrncdjPshumSb7aedv2MvRZXg5T2+dltlkfVzdSv0t9+0dLqdDimC3BQYtntngPLYHZ4gK0lMwWLaHFmC2FQUsktqQqQktitqQELRWzJVZoXUGNuYCXKW8ylFeZ9KYS6VWmvSmgvcrEN3nEV5n6Jof6KpPfpMivUv0t0F9lAhwrBFiZAseEAjumwDGhwI4pcIwX375MgaOhwI4pcCxRYMcUOAYU2DEFjh4FdkyBo0OBHVPgqCiwowpcoMCOKbBVKLBnCmwVCuyZAltCgT1TYIsXvx+YApuhwJ4psJUosGcKbAEF9kyBzaPAnimwORTYMwU2RYE9VeACBQ7/K7BcfQNSEEKfCmVuZHN0cmVhbQplbmRvYmoKMzAgMCBvYmoKPDwKL0NvbnRlbnRzIDMxIDAgUgovTWVkaWFCb3ggWyAwIDAgNjEyIDc5MiBdCi9SZXNvdXJjZXMgPDwKL0ZvbnQgMjUgMCBSCi9Qcm9jU2V0IFsgL1BERiAvVGV4dCAvSW1hZ2VCIC9JbWFnZUMgL0ltYWdlSSBdCj4+Ci9Sb3RhdGUgOTAKL1RyYW5zIDw8Cj4+Ci9UeXBlIC9QYWdlCi9QYXJlbnQgMiAwIFIKPj4KZW5kb2JqCjMxIDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9MZW5ndGggMTE4Cj4+CnN0cmVhbQp4nEWMsQ6CQBAFe75iSrDAW7xob4KV5ZY0RE7FeILc+v8i0ZiXzEumGMHNk4WnCHtlfRCkQs+ILz16pNbs52Xxm7L6e/kmto6dd2gkr5+vfozhYdz7ZDS5XfvE2F4C8ycbptAxDdZa6JqiQG/o6pMjewN9iST7CmVuZHN0cmVhbQplbmRvYmoKMzIgMCBvYmoKbnVsbAplbmRvYmoKMzMgMCBvYmoKPDwKL1Byb2R1Y2VyIChweXBkZikKPj4KZW5kb2JqCnhyZWYKMCAzNAowMDAwMDAwMDEwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA4MSAwMDAwMCBuIAowMDAwMDAwMTU0IDAwMDAwIG4gCjAwMDAwMDAzOTAgMDAwMDAgbiAKMDAwMDAwMDY5NyAwMDAwMCBuIAowMDAwMDAxMDA4IDAwMDAwIG4gCjAwMDAwMDExMDYgMDAwMDAgbiAKMDAwMDAwMjQzMiAwMDAwMCBuIAowMDAwMDAyNzEzIDAwMDAwIG4gCjAwMDAwMDAwMTMgMDAwMDEgZiAKMDAwMDAwMzAyNCAwMDAwMCBuIAowMDAwMDAzMzM4IDAwMDAwIG4gCjAwMDAwMDAwMjMgMDAwMDEgZiAKMDAwMDAwMzY1MCAwMDAwMCBuIAowMDAwMDAzOTc5IDAwMDAwIG4gCjAwMDAwMDQyMzEgMDAwMDAgbiAKMDAwMDAwNTMwNSAwMDAwMCBuIAowMDAwMDA1NTUxIDAwMDAwIG4gCjAwMDAwMDY2MTMgMDAwMDAgbiAKMDAwMDAwNjg2NCAwMDAwMCBuIAowMDAwMDA3OTM3IDAwMDAwIG4gCjAwMDAwMDgyMjIgMDAwMDAgbiAKMDAwMDAwMDAwMCAwMDAwMSBmIAowMDAwMDA4NTMwIDAwMDAwIG4gCjAwMDAwMDg3OTcgMDAwMDAgbiAKMDAwMDAwODg0MSAwMDAwMCBuIAowMDAwMDA4OTQ5IDAwMDAwIG4gCjAwMDAwMDkwNjIgMDAwMDAgbiAKMDAwMDAwOTI1NSAwMDAwMCBuIAowMDAwMDA5NzMyIDAwMDAwIG4gCjAwMDAwMDk5MjUgMDAwMDAgbiAKMDAwMDAxMDExNiAwMDAwMCBuIAowMDAwMDEwMTM3IDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgMzQKL1Jvb3QgMSAwIFIKL0luZm8gMzMgMCBSCj4+CnN0YXJ0eHJlZgoxMDE3NwolJUVPRgo=';
 const QA_EXEMPT_AVG_MIN = 4.5;
 const QA_EXEMPT_CRIT_MIN = 4;
 function qaPeriodValid_(key) {
@@ -338,6 +342,22 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     }, over || {});
   }
 
+  // M1 (operator 2026-11-11): metricsAdjusted_'s rule, for the fixtures below
+  // (keys mirror its return — INV-185): handled = answered + connected
+  // outbound, talk incl. outbound, ATT without the timed intake calls.
+  var mFmt = function (sec) { return Math.floor(sec / 3600) + ':' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'); };
+  var adjOf = function (cdr, ob, it) {
+    if (!(ob && ob.placed > 0) && !(it && it.timed > 0)) return null;
+    var ans = cdr.totalAnswered, ttt = cdr.tttSeconds;
+    var o = { handled: ans + (ob ? ob.connected : 0), talkSec: ttt + (ob ? ob.talkSec : 0),
+      outbound: ob ? Object.assign({}, ob, { talkFormatted: mFmt(ob.talkSec) }) : null,
+      intakeTimed: it ? it.timed : 0, intakeAvgSec: it && it.timed ? Math.round(it.seconds / it.timed) : null, attExIntakeSec: null };
+    o.talkFormatted = mFmt(o.talkSec);
+    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
+    o.attExIntakeFormatted = o.attExIntakeSec == null ? null : mFmt(o.attExIntakeSec);
+    return o;
+  };
+  var myOb = { placed: 6, connected: 4, talkSec: 1325 }, myIt = { timed: 3, seconds: 3240 };   // M1 — My Stats' own day
   var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
   // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
   // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
@@ -683,9 +703,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // E1 (operator 2026-10-27): the ONE manager item — departments with ≥25% of their open requests past SLA and more than three.
         { kind: 'requests', title: 'Department replies running late', detail: 'Billing 5 of 12 past SLA \u00b7 Power 4 of 14 past SLA', dueIso: '', overdue: true, action: 'Open', route: { tool: 'callNotes', tab: 'metricsDeptReq' } },
         // 22post C-8 — the Spanish Inbox requests the rep owns (getMyPendingTasks' spanish producer shape).
+        // P1 (operator 2026-11-05): the pay-week timesheet check, with its Done button.
+        { kind: 'payWeek', title: 'Check your timesheet', detail: 'Pay period Nov 1 \u2013 Nov 30 \u00b7 request any edits by Mon Nov 30', dueIso: daysAgo(-6), overdue: false, action: 'Review', periodKey: 'Monthly:2026-11-01', route: { tool: 'timeClock', tab: 'timeoff' } },
         { kind: 'spanish', title: '2 Spanish Inbox requests to work', detail: '1 assigned to you · oldest since Sep 27, 9:40 AM', dueIso: '', overdue: false, action: 'Open', route: { tool: 'timeClock', tab: 'metricsSpanish' } },
       ],
-      total: 7, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
+      total: 8, cap: 30, overdue: 4, unavailable: ['sched'], notConfigured: ['docs'], todayIso: todayIso, prevWorkday: daysAgo(1),
     },
     getCallNotesAmbient: { enrolled: true, unresolvedActionCount: 1, staleActionCount: 1, todayTotal: 7, weekTotal: 32, flagCounts: { all: 7, action: 1, training: 1, review: 0, unresolved: 1, qa: 1 }, staleFlagHours: 6, flagsVersion: 'v1' },
     getMetricsAmbient: { badge: null },
@@ -731,13 +753,32 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // mirror getKbDataTables / kbImportDataTable's dryRun summary exactly.
     getKbDataTables: { tables: [{ key: 'InsurancePayors', tab: 'InsurancePayors',
       label: 'Insurance payor acceptance', describe: 'Payor / plan rows behind the Reference insurance lookup',
-      rows: 1035, cols: 25, present: true }] },
+      rows: 1035, cols: 25, present: true, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.', noteAt: '2026-11-09T15:00:00.000Z' },
+      { key: 'MedicaidPayors', tab: 'MedicaidPayors', label: 'Primary Medicaid acceptance',
+        describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' },
+      // PT2: the two tabs grouped by state.
+      { key: 'UhcPayors', tab: 'UhcPayors', label: 'UHC by state acceptance',
+        describe: 'UnitedHealthcare plans by state behind the Reference insurance lookup', rows: 562, cols: 30, present: true,
+        note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)', noteAt: '2026-11-10T15:00:00.000Z' },
+      { key: 'BcbsPayors', tab: 'BcbsPayors', label: 'BCBS / Anthem acceptance',
+        describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup', rows: 0, cols: 0, present: false, note: '' },
+      // PT4: the non-PMD sheet, a row per payor.
+      { key: 'ManualMobilityPayors', tab: 'ManualMobilityPayors', label: 'Manual mobility acceptance',
+        describe: 'Manual mobility and other non-PMD items by payor behind the Reference insurance lookup', rows: 26, cols: 56, present: true,
+        note: "Use the row for the patient's primary insurance. Branch to Delivery Locations: Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI.", noteAt: '2026-11-10T18:00:00.000Z' }] },
     kbImportDataTable: function (key, b64, opts) {
       var dry = !opts || opts.dryRun !== false;
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
         headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
         sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
-        warnings: [], replacingRows: 1035 };
+        warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+        // PT1a: a source-sheet export is converted, each step listed.
+        converted: { from: 'source', sourceRows: 1147, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+          changes: ['Header "Network Last Update" → "Last Update" (it would have been read as the network status).',
+            'Header "K0825 Up to 435 lbs" → "K0825 (Up to 435 lbs)" (so it reads as one code).',
+            'Column "Z = Hawaii Only" is the key, not data — dropped.',
+            '18 cell(s) reading "Z" now read "Hawaii Only (Z)", from the key.',
+            '3 row(s) with no plan name dropped — no search could find them (source row 324, 645, 648).'] } };
       return dry ? Object.assign(base, { dryRun: true }) : Object.assign(base, { imported: true });
     },
     // Operator 2026-08-25 — the composer's editable Note Reference + the
@@ -790,6 +831,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
+        outbound: myOb, outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myOb, myIt),   // M1
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
@@ -816,6 +858,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
       noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
+      outbound: { placed: 21, connected: 16, talkSec: 5100 }, outboundThrough: daysAgo(1), outboundUnavailable: null,   // M1
+      intakeTimed: { timed: 15, seconds: 15300 },
+      adjusted: adjOf({ totalAnswered: 254, tttSeconds: 71660 }, { placed: 21, connected: 16, talkSec: 5100 }, { timed: 15, seconds: 15300 }),
       transfer: { transferred: 23, transferPct: 9.1 }, alertThreshold: 85, standardSource: 'sheet' },
     // Cycle-14 Phase 2 — Team Metrics with the per-queue transfer split. The
     // shape mirrors getTeamMetrics exactly, INCLUDING the INV-180 contract:
@@ -845,14 +890,17 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         return Object.assign({}, r, { totalRung: 0, totalAnswered: 0, totalMissed: 0, pctAnswered: null,
           tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
           noteCoverage: null, hasCdrData: false, transferred: 0, transferPct: null,
-          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+          queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
+          outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });   // M1: today's outbound is not exported yet
       };
       var reps = populated.reps.map(noCdr);
       return Object.assign({}, populated, {
         from: todayIso, to: todayIso, date: todayIso, reps: reps,
         teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
           transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
-          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null },
+          tttFormatted: '0:00:00', noteCoverage: null, transferPct: null,
+          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null },
+        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
         unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
         queueRows: [], groupRows: [],
         transferMeta: { available: true, error: null, queueColumns: [] },
@@ -860,9 +908,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     },
     // (the populated payload the function above serves for a past range)
     _teamMetricsPopulated: (function () {
-      var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues) {
+      var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues, ob, it) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
-        return { repId: id, repName: name, totalRung: rung, totalAnswered: ans,
+        ob = ob || { placed: 0, connected: 0, talkSec: 0 }; it = it || { timed: 0, seconds: 0 };   // M1
+        return { outbound: ob, intakeTimed: it, adjusted: adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it),
+          repId: id, repName: name, totalRung: rung, totalAnswered: ans,
           totalMissed: missed, pctAnswered: Math.round((ans / (ans + missed)) * 100),
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
@@ -871,9 +921,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
           hasTransferData: true };
       };
       var reps = [
-        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }),
+        mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }, { placed: 6, connected: 4, talkSec: 1325 }, { timed: 3, seconds: 3240 }),
         mk('E-1077', 'Sam Ortiz', 38, 36, 2, '0:05:02', 30, 83, 9, { A_Q_PowerChairs: 5, A_Q_FieldOps: 2, A_Q_Spanish: 1 }),
-        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }),
+        mk('E-1091', 'Nina Patel', 52, 44, 8, '0:03:58', 41, 93, 21, { A_Q_CSR: 12, A_Q_Legacy_Unmapped: 4 }, { placed: 11, connected: 9, talkSec: 2410 }, { timed: 2, seconds: 1980 }),
         mk('E-1104', 'Leo Kim', 29, 27, 2, '0:04:20', 18, 67, 3, {}),
       ];
       // X3 / M1: a roster rep with notes and NO call-data row in the range —
@@ -882,7 +932,8 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       reps.push({ repId: 'E-1120', repName: 'Jo Tran', totalRung: 0, totalAnswered: 0, totalMissed: 0,
         pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
-        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false });
+        transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
+        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -899,6 +950,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // approximates it with answered, which is what the mk() pct used).
         totals.transferCalls += r.totalAnswered;
       });
+      totals.outboundPlaced = 0; totals.outboundConnected = 0; totals.outboundTalkSec = 0;   // M1
+      var tIt = { timed: 0, seconds: 0 };
+      reps.forEach(function (r) { totals.outboundPlaced += r.outbound.placed; totals.outboundConnected += r.outbound.connected; totals.outboundTalkSec += r.outbound.talkSec;
+        tIt.timed += r.intakeTimed.timed; tIt.seconds += r.intakeTimed.seconds; });
+      totals.adjusted = adjOf({ totalAnswered: totals.answered, tttSeconds: totals.tttSeconds },
+        { placed: totals.outboundPlaced, connected: totals.outboundConnected, talkSec: totals.outboundTalkSec }, tIt);
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
@@ -923,6 +980,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
+        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
@@ -1059,6 +1117,43 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         transferredTo: '', resolution: 'Asked ' + r.toDept + ' to confirm the carrier scan and **re-ship if not located by Friday**.',
         dateLocal: daysAgo(1) };
       return base;
+    },
+    // DR1 (operator 2026-11-09): the manager's audit list — a function of the
+    // range (the server's default when it is blank), every request in it with
+    // its CRM mark; and the CRM mark's write, which the next read reflects
+    // (INV-185 — a fixture mirrors the server). Fictional patients.
+    getDeptRequestAudit: function (opts) {
+      const o = opts || {};
+      const to = o.to || daysAgo(0), from = o.from || daysAgo(29);
+      if (!FIXTURES._drAuditRows) {
+        const mk = function (id, d, hm, type, dept, trx, by, status, extra) {
+          const iso = daysAgo(d) + ' ' + hm;
+          return Object.assign({ requestId: id, createdMs: new Date(daysAgo(d) + 'T' + hm + ':00').getTime(), createdIso: iso,
+            createdAt: iso, type: type, toDept: dept, byName: by, patientTrx: trx, status: status, resolvedMs: null, resolvedAt: '', resolvedIso: '',
+            resolvedBy: '', resolvedVia: '', threadTracked: true, crmChecked: false, crmBy: '', crmAtMs: null }, extra || {});
+        };
+        FIXTURES._drAuditRows = [
+          mk('a1', 0, '09:12', 'Close Order', 'Eligibility MM&R', 'Maria Delgado · TRX 48211', 'Avery Blake', 'open'),
+          mk('a2', 1, '15:40', 'Close Order', 'Eligibility MM&R', 'J. Rivera · TRX 47790', 'Nina Patel', 'resolved',
+            { resolvedAt: daysAgo(1) + ' 16:05', resolvedIso: daysAgo(1) + ' 16:05', resolvedBy: 'priya@umsupply.com', resolvedVia: 'email', crmChecked: true, crmBy: 'avery@umsupply.com', crmAtMs: Date.now() - 3600000 }),
+          mk('a3', 2, '10:02', 'Verified Shipping', 'Shipping', 'K. Osei · TRX 48044', 'Sam Ortiz', 'resolved',
+            { resolvedAt: daysAgo(2) + ' 13:30', resolvedIso: daysAgo(2) + ' 13:30', resolvedBy: 'Shipping desk', resolvedVia: 'reply' }),
+          mk('a4', 4, '11:20', 'OOP Order', 'Billing, Shipping', 'L. Chen · TRX 47502', 'Avery Blake', 'open'),
+          mk('a5', 6, '14:45', 'Close Order', 'Eligibility MM&R', 'R. Haddad · TRX 46610', 'Leo Kim', 'resolved',
+            { resolvedAt: daysAgo(5) + ' 09:10', resolvedIso: daysAgo(5) + ' 09:10', resolvedBy: 'nina@umsupply.com', resolvedVia: 'app', threadTracked: false }),
+        ];
+      }
+      const rows = FIXTURES._drAuditRows.filter(function (r) { return r.createdIso.slice(0, 10) >= from && r.createdIso.slice(0, 10) <= to; });
+      const types = {}, depts = {};
+      rows.forEach(function (r) { types[r.type] = 1; String(r.toDept).split(',').forEach(function (d) { depts[d.trim()] = 1; }); });
+      return { from: from, to: to, rows: rows, types: Object.keys(types).sort(), departments: Object.keys(depts).sort(),
+        truncated: false, max: 2000, crmTruncated: false };
+    },
+    setDeptRequestCrmCheck: function (id, checked) {
+      const r = (FIXTURES._drAuditRows || []).filter(function (x) { return x.requestId === id; })[0];
+      if (!r) return { success: false, error: 'Request not found.' };
+      r.crmChecked = checked === true; r.crmBy = 'avery@umsupply.com'; r.crmAtMs = Date.now();
+      return { success: true, requestId: id, checked: r.crmChecked, by: r.crmBy, atMs: r.crmAtMs };
     },
     getDeptRequests: { isManager: true, myDepts: ['Billing'],
       mine: [
@@ -1325,7 +1420,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { threadId: 't7', kind: 'voicemail', requester: 'David Dhruv Mishra', receivedMs: Date.now() - 0.6 * 3600000, ageHours: 0.6, subject: 'New voicemail from David Dhruv Mishra via A_Q_Spanish', snippet: 'You have a new voicemail. Duration: 1:42…', hasMore: true, permalink: 'https://mail.google.com/mail/u/0/#inbox/t7', claim: null, vmPending: 2 }],   // M5 follow-up — a repeat caller's two waiting voicemails
       medianMinutes: 45, truncated: false, escalateDays: 7,
       members: ['avery@umsupply.com', 'sam@umsupply.com', 'ines@umsupply.com'],
-      deptUnavailable: '', self: 'avery@umsupply.com' },
+      deptUnavailable: '', resolveOutcomes: { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' }, resolveNoteMax: 500, self: 'avery@umsupply.com' },   // SP1: the dialog's outcomes ride the pending read
     // Pilot round 2 — scheduled-call reminders. One upcoming item + one 2h
     // overdue (PAST the 30-min schedTick_ fire window, so the sched-modal
     // scenario shows the overdue tone WITHOUT a sticky toast covering the
@@ -1454,8 +1549,9 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
       return { setUp: true, unreadable: 0, quizzes: [
         { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, me: me() },
-        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 1, passed: true, best: 100 }) },
-        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3 }) }] };
+        { id: 'q-core-status', title: 'Order statuses', section: 'man-0-10', anchor: '', passPct: 80, count: 6, me: me({ attempts: 2, passed: true, best: 100, lastMs: Date.now() - 4 * 86400000 }) },
+        { id: 'tq-00000000000b', title: 'Resupply refresher', section: 'man-3-8', anchor: '', passPct: 80, count: 6, team: true, authorName: 'Dana Reyes', me: me({ attempts: 1, attemptsLeft: 2, best: 67, lastMs: Date.now() - 3600000 }) },
+        { id: 'q-field-pickup', title: 'Pick-up procedures', section: 'man-5-9', anchor: '', passPct: 75, count: 5, me: me({ locked: true, retryAtMs: Date.now() + 5 * 3600000, attemptsLeft: 0, attempts: 3, best: 60, lastMs: Date.now() - 7200000 }) }] };
     },
     hbGetQuiz: function () {
       return { quiz: { id: 'q-core-calls', title: 'Taking a call', section: 'man-0-11', anchor: '', passPct: 80, count: 4, questions: [
@@ -1603,9 +1699,12 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       const pd = FIXTURES.getSpanishInboxPending;
       const want = {};
       (ids || []).forEach(function (t) { want[t] = true; });
-      const resolved = (pd.pending || []).filter(function (p) { return want[p.threadId]; }).map(function (p) { return p.threadId; });
+      const picked = (pd.pending || []).filter(function (p) { return want[p.threadId]; });
+      const resolved = picked.map(function (p) { return p.threadId; });
       pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
-      return { success: true, resolved: resolved, already: [], failed: [] };
+      // SP1: one reply per resolved email thread; a voicemail gets none.
+      const vm = picked.filter(function (p) { return p.kind === 'voicemail'; }).length;
+      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, failed: [], off: false } };
     },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },
@@ -1658,7 +1757,11 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         // mirror the server payload exactly (INV-185); the legacy
         // fixed-allotment tile is source-pinned (blank Q = byte-identical).
         ptoAccrualPer80: 3.08, ptoAccrualBasisHours: 80, ptoHoursPerDay: 8,
-        ptoAccrualMtd: { hours: 96, days: 0.46 } };
+        ptoAccrualMtd: { hours: 96, days: 0.46 },
+        // P1 (operator 2026-11-05): the pay-week banner — the fixture's "today"
+        // is the 24th, inside the month's final week.
+        payWeek: { cycle: 'Monthly', start: year + '-' + m2 + '-01', end: year + '-' + m2 + '-' + String(lastDay).padStart(2, '0'),
+          remindOn: year + '-' + m2 + '-23', active: true, periodKey: 'Monthly:' + year + '-' + m2 + '-01' } };
     },
     // Pay-period side-rail block (always-on since the 2026-08-18 Time/PTO
     // consolidation). Shape mirrors buildTimesheetForEmployee_'s return:
@@ -1951,10 +2054,31 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // E2 (operator 2026-10-28): Day Edit's app-activity read — a FUNCTION of
     // the date (F14). Keys mirror managerGetDayActivity's return (INV-185):
     // pings every ten minutes from 7:56 to 17:06 with a lunch gap.
+    // AC1 (operator 2026-11-11): with each block's clicks + keystrokes — a
+    // busier morning, the lunch gap empty, a quiet stretch mid-afternoon.
     managerGetDayActivity: function (empId, date) {
-      var blocks = []; for (var b = 0; b < 144; b++) blocks.push((b >= 47 && b <= 102 && (b < 72 || b > 75)) ? 1 : 0);
+      var blocks = [], level = [], clicks = 0, keys = 0;
+      for (var b = 0; b < 144; b++) {
+        var on = (b >= 47 && b <= 102 && (b < 72 || b > 75));
+        blocks.push(on ? 1 : 0);
+        var c = on && (b < 88 || b > 92) ? 6 + (b * 7) % 23 : 0, k = on && (b < 88 || b > 92) ? (b < 72 ? 40 + (b * 13) % 60 : 15 + (b * 11) % 35) : 0;
+        level.push(c + k); clicks += c; keys += k;
+      }
       return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
-        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks };
+        pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks,
+        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10 };
+    },
+    // AC1: the team day table's read — keys mirror activityHourly_'s return
+    // (INV-185). Three reps active (one only on/off, a day before levels),
+    // Leo Kim with nothing.
+    managerGetTeamActivity: function (date) {
+      var hrs = function (from, to, base) { var h = []; for (var i = 0; i < 24; i++) h.push(i >= from && i < to && i !== 12 ? base + (i * 37) % 90 : 0); return h; };
+      return { date: date, blockMin: 10, keptFrom: '2026-09-01', reps: {
+        'E-1042': { hours: hrs(8, 17, 120), hasCounts: true, clicks: 640, keys: 2210, activeMin: 470, pings: 48, first: '08:01', last: '16:58' },
+        'E-1077': { hours: hrs(8, 17, 60), hasCounts: true, clicks: 410, keys: 980, activeMin: 430, pings: 44, first: '07:57', last: '16:55' },
+        'E-1088': { hours: [0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 6, 5, 0, 4, 6, 6, 2, 0, 0, 0, 0, 0, 0, 0], hasCounts: false, clicks: 0, keys: 0, activeMin: 440, pings: 40, first: '08:31', last: '16:20' },
+        'E-1090': { hours: new Array(24).fill(0), hasCounts: false, clicks: 0, keys: 0, activeMin: 0, pings: 0, first: '', last: '' },
+      } };
     },
     managerGetPendingAdjustments: { requests: [
       { reqId: 'req-1', empId: 'E-1090', empName: 'Leo Kim', date: daysAgo(2), punchType: 'ClockOut', time: '17:02', reason: 'Forgot to clock out', action: 'set', endTime: '', breakIntent: { mode: '', target: '' }, submittedAt: daysAgo(1) + ' 08:10:00' },
@@ -2029,8 +2153,25 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     // return sites (INV-185); the OOP rows carry MULTIPLE priced columns,
     // because a single-price item is exactly the shape that hid the prices[0]
     // defect from the operator's own post-deploy check.
-    searchInsurancePayors: { total: 4, cap: 8, matches: [
-      { name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+    // PT1a: the source sheet's standing note rides every answer.
+    // PT1: one search across the payor tables, each with its note and its sheet's key.
+    searchInsurancePayors: { total: 8, cap: 8,
+      tables: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', noteError: '',
+          note: 'Traditional Medicare or MA: no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. (If Medicare or a commercial plan, no rehab, nursing or other skilled nursing facility.) (Hospice okay if the mobility diagnosis differs from the hospice diagnosis — get documentation from the facility.)',
+          legend: { X: 'Yes', NO: 'No', Y: 'Yes, if Branch or Driver is located within 100 miles', Z: 'Hawaii Only' } },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', noteError: '',
+          note: 'Medicaid primary acceptance (test nursing home patients): no power orders regardless of insurance in OR, WA, ID, ND, SD, WY or MT. Can accept patients in facilities.',
+          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } },
+        { key: 'UhcPayors', label: 'UHC by state', noteError: '',
+          note: 'United Healthcare by state — no power orders in OR. (Hospice okay.)',
+          legend: { X: 'Yes', NO: 'No', Try: 'Create account and insurance team will verify' } },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', noteError: '', note: '', legend: { X: 'Yes', NO: 'No' } },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', noteError: '', hasStatus: false,
+          note: "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI (Honolulu, HI).",
+          legend: { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only', 'Yes - Delivery Only': 'Based on several factors including shipping cost and profitability' } }],
+      matches: [
+      { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
           // T3: the server names each code column from the pricing tab. K0800
@@ -2048,12 +2189,35 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
             code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
           { label: 'Category', value: 'POV/Scooter',
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
-      { name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+      { table: 'InsurancePayors', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'InsurancePayors', name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'MedicaidPayors', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
+        reimbursement: 'Testing', details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
       // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
-      { name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
-        reimbursement: 'Yes', details: [], excludedState: 'TX' }],
+      { table: 'InsurancePayors', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+        reimbursement: 'Yes', details: [], excludedState: 'TX' },
+      // PT2: a sheet grouped by state — the plan's state chip, its insurer, and a
+      // catch-all row that covers any plan of its state the sheet does not list.
+      { table: 'UhcPayors', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
+        networkStatus: 'In-Network', waystar: '87726', qualification: '', reimbursement: '',
+        details: [{ label: 'K0821/K0823 (Up to 285 lbs)', value: 'L ( Up To 285) & SI/PR', code: { shaped: true, certain: true, tokens: ['K0821', 'K0823'] }, item: '', itemCount: 0 }] },
+      { table: 'BcbsPayors', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
+        networkStatus: 'INN', waystar: '', qualification: '', reimbursement: '',
+        details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }],
+        // PT3: the same plan answered differently on the Medicare / MA sheet.
+        alsoIn: [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
+          differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] },
+      // PT4: a row per payor, its codes under their item; no network status.
+      { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
+        details: [
+          { label: 'K0001', value: 'Yes', group: 'Wheelchair', code: { shaped: true, certain: true, tokens: ['K0001'] }, item: '', itemCount: 0 },
+          { label: 'K0006 w/ E1226 (22") (K0007 billed as K0006)', value: 'Yes - DFW, SA, Austin', group: 'Wheelchair', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
+          { label: 'E0260', value: 'Priority Referral Only', group: 'Hospital Bed', code: { shaped: true, certain: true, tokens: ['E0260'] }, item: '', itemCount: 0 },
+          { label: 'E0143 & E0156', value: 'Yes - Delivery Only', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0143', 'E0156'] }, item: '', itemCount: 0 },
+          { label: 'E0149', value: 'MO', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0149'] }, item: '', itemCount: 0 },
+          { label: 'A4670', value: 'OOP Only', group: 'BPM', code: { shaped: true, certain: true, tokens: ['A4670'] }, item: '', itemCount: 0 },
+          { label: 'Any singular supply code - i.e. A7003, A7004, A7013, A7015', value: 'Needs a supervisor exception', group: 'Nebulizer Supplies Only', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 }] }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
@@ -2132,6 +2296,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     recordClientError: { success: true },
     recordViewEnter: { success: true },
     recordPresence: { success: true },   // note 10 — the shell's gesture beacon
+    recordActivityCounts: { success: true },   // AC1 — the pause flush
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },
@@ -2690,11 +2855,29 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       { docId: 'd-signed', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
         issuedAt: daysAgo(20) + ' 09:00:00', dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', fieldCount: 0, needsAction: false, hasPdf: false }] },
     getMyDoc: function (id) {
-      var sha = '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8';
+      var sha = 'bd9eb7e92d79bf00a6aaa5c3bc7ea6d191a3cd0ad476b6cbb99aa4e55a165b66';
+      // ED1: the same PIP once signed — the drawings in their boxes, and a
+      // comment longer than its box (marked, and listed in full below).
+      if (id === 'd-pdf-signed') {
+        var signed = FIXTURES.getMyDoc('d-pdf');
+        signed.docId = 'd-pdf-signed'; signed.status = 'signed'; signed.signedAt = daysAgo(0) + ' 10:12:00';
+        delete signed.canComplete; delete signed.ackText; delete signed.ackVersion;
+        signed.responses = { 'review-date': daysAgo(-14), 'anything-else': 'No.',
+          'employee-comments': 'I understand the goals. I will answer within three rings and write a note on every call, and I would like a check-in after the first week to make sure I am on track with both. I also want to note that the queue was short-staffed during two of the weeks this plan covers, which affected my numbers on those days. Two of the calls listed in the review were transfers from the Spanish queue that reached me after a long hold, and I do not think they reflect how I answer my own queue. I have already started keeping a short note template open during calls so that every call gets a note before the next one rings, and I have asked Robin for a few minutes in our next one-on-one to go through the transfers together. I would also like the plan to name who I should go to when the queue is short-staffed again, and to say how the review date can move if that happens.' };
+        signed.signatureImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABACAYAAACgPErgAAACBklEQVR42u3bTU7EMAwG0DkCCxbc/6IgdiMEZfLX2M57UjWIBYya5ovjto8HAAAAAAAAAAAAAAAAAAAAAAAAAAAAANm8vX98Pn/+/BkgRDh9f14dwgvYFlKjh7MJLA2r2YeqC9gSVL9tE1urMme7v+q9Ou9Xv4PyQdV78au6YlW8V4EHZcJqVlUgvNacNz3GONWuBSFxUI1uOY3LvYdJ9no4WQwCTYgo1YNqas6Wr/dvq2zdJT+yqhqZrJVX/R0TorVSOKXqWrn9ljpFgirz94yy5dNj3DsWIXtY2QcpWwhUDK3ZK3iECXzKWIQJotYBFFS2iSsCoHXyRJrU0cdi5JWydHM+86pSaVXMGrxV+iDZHgY++iZD1uqk2oBkuthmVVMRxyzaFmr0cYOSTfHs/Z9K4xC14nr1u1VZ7XdUMTMeNygbUtlC67RbqlEuyqw9qp1b37/6RDOfIUvfj6ocCic//7EjBFobuKf0T+58lcizT0m3XQZsbV+l90HL0yfWSG/Jy9zFguK/W/4nj8lIX2XWqywqgPkV2PHbu9WhteqkmgRr+iqzGriCqj28XulhcdPEyPZ/rOr9WznjQ4ngWtU3sQKt7av09EgEFSVX895JZCKsDbEZi4DxQQ9FUAGZQssZBUL1TXr7XgC3hJhwAgAAAAAAAAAAAAAAAAAAAAAAAACACb4AeenYjKoA5AMAAAAASUVORK5CYII=';
+        signed.initialsImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAG4AAAAwCAYAAADw3098AAABDUlEQVR42u2ZOQ7DMAwE/YQUKfz/jyZVWis81ga1M4A7g4BndVDycQAAAAAAAAAAAAAY8Hqfn9+DjYGhEd7g0KaGZzPgrkKbJMFqtViFNkXCLqtFeZROEmAf2lVwGRFqeTvty617QjU0pURCW3xwRohapm1o/+5hFTEKmbt0v+l9JfLRGTl3h7bVLOp6NypKIdYmtMgsUg6Iqtitl8ao4KwAZW3rBiTTJWZC657NdI3Bc1m1xVeEZrM0ZoLJiljVroq2PputZka33K6mxD606P1jV+2OhoefuIf2V01XXQITylXNEkJ7aBmq1CW0guC7b2rUV2KWZzv1TY3qkA4PDigsAAAAAAAAAAAAjOULTnojrgUB7rkAAAAASUVORK5CYII=';
+        return signed;
+      }
       if (id === 'd-signed') {
+        // ED4: on its letterhead, with a centred heading, a page break and a
+        // signature block filled by the drawing.
+        var lh = FIXTURES.getEmpDocLetterheads().letterheads[0];
         return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
-          bodyMd: 'Answer within three rings, name the company, and confirm the caller\'s identity before discussing an order.', issuedAt: daysAgo(20) + ' 09:00:00',
-          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null };
+          bodyMd: ':::center\n**Customer Service Department**\n:::\n\nAnswer within three rings, name the company, and confirm the caller\'s identity before discussing an order.\n\n- Smile while you speak\n- Never place a caller on hold for more than two minutes\n\n[page break]\n\nI have read and will follow this policy.\n\n[signature]',
+          issuedAt: daysAgo(20) + ' 09:00:00', empName: 'Avery Blake',
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null,
+          letterhead: { id: lh.id, name: lh.name, address: lh.address, footer: lh.footer, logo: lh.logo },
+          signatureImage: FIXTURES.getMyDoc('d-pdf-signed').signatureImage };
       }
       return { docId: 'd-pdf', empId: 'E-1042', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
         bodyMd: 'Please read the plan, fill in the highlighted boxes, and sign below.\n\nPDF document "PIP - Sam Ortiz.pdf" \u00b7 SHA-256 ' + sha,
@@ -2703,16 +2886,57 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
         fields: [
           { id: 'review-date', label: 'Review date', type: 'date', required: true, box: { page: 1, x: 0.215, y: 0.163, w: 0.25, h: 0.03 } },
           { id: 'employee-comments', label: 'Employee comments', type: 'textarea', required: false, box: { page: 1, x: 0.098, y: 0.226, w: 0.8, h: 0.075 } },
-          { id: 'anything-else', label: 'Anything else you want on record?', type: 'text', required: false }],
+          { id: 'anything-else', label: 'Anything else you want on record?', type: 'text', required: false },
+          // ED1: a signature box beside the manager's line, and an initials box.
+          { id: 'employee-signature', label: 'Employee signature', type: 'signature', required: true, box: { page: 1, x: 0.098, y: 0.335, w: 0.294, h: 0.05 } },
+          { id: 'initials', label: 'Initials', type: 'initials', required: true, box: { page: 1, x: 0.8, y: 0.335, w: 0.09, h: 0.035 } }],
         responses: {}, canComplete: true, ackText: 'I acknowledge that I have read and understood this document. I understand this electronic acknowledgment has the same effect as a handwritten signature.', ackVersion: 1 };
     },
-    getEmpDocPdf: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFBJUCAtIFNhbSBPcnRpeikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDcwMCBUZCAoUGVyZm9ybWFuY2UgSW1wcm92ZW1lbnQgUGxhbikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDY3NCBUZCAoR29hbHM6IGFuc3dlciB3aXRoaW4gMyByaW5nczsgbm90ZXMgb24gZXZlcnkgY2FsbC4pIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NDggVGQgKFJldmlldyBkYXRlOiBfX19fX19fX19fX19fXykgVGogRVQKQlQgL0YxIDExIFRmIDYwIDYyMiBUZCAoRW1wbG95ZWUgY29tbWVudHM6KSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTk2IFRkICgpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1NzAgVGQgKCkgVGogRVQKQlQgL0YxIDExIFRmIDYwIDU0NCBUZCAoTWFuYWdlcjogUm9iaW4gQ2hvdWRodXJ5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDcwOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3OQolJUVPRgo=', sha: '3f2a9c0d6b1e44a7f0c2d9e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8', name: 'PIP - Sam Ortiz.pdf' },
+    getEmpDocPdf: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA0MTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFBJUCAtIFNhbSBPcnRpeikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDcwMCBUZCAoUGVyZm9ybWFuY2UgSW1wcm92ZW1lbnQgUGxhbikgVGogRVQKQlQgL0YxIDExIFRmIDYwIDY3NCBUZCAoR29hbHM6IGFuc3dlciB3aXRoaW4gMyByaW5nczsgbm90ZXMgb24gZXZlcnkgY2FsbC4pIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NDggVGQgKFJldmlldyBkYXRlOiBfX19fX19fX19fX19fXykgVGogRVQKQlQgL0YxIDExIFRmIDYwIDYyMiBUZCAoRW1wbG95ZWUgY29tbWVudHM6KSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTk2IFRkICgpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1NzAgVGQgKCkgVGogRVQKQlQgL0YxIDExIFRmIDYwIDU0NCBUZCAoTWFuYWdlcjogUm9iaW4gQ2hvdWRodXJ5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDcwOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjc3OQolJUVPRgo=', sha: 'bd9eb7e92d79bf00a6aaa5c3bc7ea6d191a3cd0ad476b6cbb99aa4e55a165b66', name: 'PIP - Sam Ortiz.pdf' },
+    // ED4 (operator 2026-11-09): the letterheads — the two companies, one
+    // with a small logo and an address; the roster's Company picks Infimed
+    // for the India rep.
+    getEmpDocLetterheads: function () {
+      var logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAA/UlEQVR42u3a0Q3CMAwE0NuDTZil+69RkJD4aCG48TmyzUX9bO17f40T7MUXBBBAANq63bfnw3ptHeAV6P3Q3w8EHKLMAZwMEKN7ANMMcNM7ARMGEKNTAFcZ4KZnAewGcNMTAUYDuOm5AEs1cPvRAT8LgtssAjCu2Row0SkIMCgLbps4wLfKTQHTPUIBH4t3BHgaRAPO9QXIBnBWXwA4tGgH0FxIAAEEEEAAAQRwAPQzl+BnThsaAZwAjVUSADRaTAAoP53WAUcOQPkzsg6nlFe7riy1/9FJvb33miKuHVnh2yqWEKHfkvfEhW9sDQLR3183lah6a1FzIQFKrwfN2p5OeNE+GAAAAABJRU5ErkJggg==';   // a real 64 × 64 PNG (a pdf-lib embed of a made-up one never returns)
+      return { letterheads: [
+        { id: 'ums', name: 'UniversalMed Supply', address: '1200 Commerce Dr, Suite 400\nPlano, TX 75093\n(800) 555-0142', footer: 'UniversalMed Supply · Confidential employee record', logoKey: 'lhlogo-' + 'a'.repeat(24), logo: logo },
+        { id: 'infimed', name: 'Infimed Solutions', address: 'Unit 7, Tech Park\nPune 411057, India', footer: '', logoKey: '', logo: '' }],
+        forEmp: { 'E-1088': 'ums', 'E-1042': 'ums', 'E-2001': 'infimed' }, canEdit: true, stored: true };
+    },
+    saveEmpDocLetterhead: { success: true, id: 'ums', letterheads: [] },
+    deleteEmpDocLetterhead: { success: true, letterheads: [] },
+    setEmpDocLetterheadLogo: { success: true, logoKey: '' },
+    // ED3 (operator 2026-11-06): a finished copy emailed — the preview the
+    // server builds (empDocCopyRecipients_ / empDocCopyEmailParts_'s shape),
+    // then a send.
+    emailEmpDocCopy: function (docId, opts) {
+      opts = opts || {};
+      var to = ['sam.ortiz@universalmedsupply.com'], cc = opts.managers ? ['avery.blake@universalmedsupply.com', 'dana.reyes@universalmedsupply.com'] : [], outside = [];
+      (opts.extra || []).forEach(function (a) { a = String(a).toLowerCase(); cc.push(a); if (!/@(universalmedsupply|umsupply)\.com$/.test(a)) outside.push(a); });
+      if (opts.preview) {
+        return { success: true, preview: true, to: to, cc: cc, outside: outside, subject: 'Copy: Performance Improvement Plan (signed ' + daysAgo(0) + ')',
+          html: '<p style="margin:0 0 12px;">Avery Blake sent you a copy of <b>Performance Improvement Plan</b>, signed by Sam Ortiz on ' + daysAgo(0) + '.</p>' +
+            (opts.note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>Avery Blake wrote:</i> ' + String(opts.note).replace(/[&<>"]/g, '') + '</p>' : '') +
+            '<p style="margin:0 0 4px;">Attached: <b>Performance Improvement Plan (copy).pdf</b> — a copy made from the signed original. The certificate on its last pages is the record; the HR record holds the original.</p>',
+          fileName: 'Performance Improvement Plan (copy).pdf', maxBytes: 10485760 };
+      }
+      return { success: true, sent: to.length + cc.length, to: to, cc: cc };
+    },
     getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' },
     getDocsDashboard: { docs: [
       { docId: 'd-pdf', empId: 'E-1088', empName: 'Sam Ortiz', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
         issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],
       ackVersion: 1 },
     getEmpDocTemplates: { templates: [] },
+    // I1 (operator 2026-11-05/06): the intake address check — an address with
+    // "Elm" in it is found (Google's spelling differs, so Use this shows), one
+    // with "Nowhere" is not found, and anything else is found only as an area.
+    checkIntakeAddress: function (addr) {
+      var a = String(addr || '');
+      if (/nowhere/i.test(a)) return { status: 'notFound' };
+      if (/elm/i.test(a)) return { status: 'found', formatted: '123 Elm St, Dallas, TX 75201' };
+      return { status: 'area', formatted: 'Dallas, TX' };
+    },
     // Batch F: the screenshot reader and the three 1-on-1 writes.
     getCoachingImage: { success: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' },
     logOneOnOne: { success: true, id: 'oo-new', date: todayIso },

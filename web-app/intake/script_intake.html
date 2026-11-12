@@ -206,6 +206,37 @@
   .intk-amend-chip.superseded { color: var(--warning-deep); background: var(--warn-soft); }
   .intk-amend-banner { display: flex; align-items: center; gap: 7px; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px; }
   .intk-amend-banner.superseded { color: var(--warning-deep); background: var(--warn-soft); }
+  /* I3 — reading an insurance card: the button, the status line and the suggestion. */
+  .intk-card-read { margin-top: 10px; }
+  .intk-card-status { margin: 0; display: flex; align-items: flex-start; gap: 6px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); }
+  .intk-card-status svg { flex: 0 0 auto; margin-top: 2px; }
+  .intk-card-status > span { flex: 1 1 180px; min-width: 0; }
+  .intk-card-fail { color: var(--warn); }
+  .intk-card-panel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .intk-card-head { display: flex; align-items: flex-start; gap: 6px; font-weight: 600; font-size: .88rem; }
+  .intk-card-head svg { flex: 0 0 auto; margin-top: 2px; }
+  .intk-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 10px; }
+  .intk-card-f { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; color: var(--muted); min-width: 0; }
+  .intk-card-f input { padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; font-size: .88rem; background: var(--paper); color: var(--ink); width: 100%; box-sizing: border-box; min-width: 0; }
+  .intk-card-unsure input { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
+  .intk-card-chk { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; color: var(--warn); }
+  .intk-card-line { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
+  .intk-card-line span { color: var(--muted); }
+  .intk-card-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .intk-card-note { margin: 0; font-size: .75rem; color: var(--muted); }
+  /* I2 — saved drafts: the count on the rail button and the Drafts list. */
+  .intk-drafts-n { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--paper-card); font-family: var(--mono); font-size: 11px; line-height: 18px; text-align: center; }
+  .intk-modal.intk-drafts-modal { width: min(560px, calc(100vw - 32px)); }
+  .intk-drafts-modal .body { overflow-y: auto; }
+  .intk-drafts-note { margin: 0 0 10px; font-size: .8rem; color: var(--muted); }
+  .intk-drafts-empty { margin: 8px 0; color: var(--muted); font-size: .9rem; }
+  .intk-drafts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .intk-draft-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); }
+  .intk-draft-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .intk-draft-form { font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .intk-draft-label { font-weight: 600; overflow-wrap: anywhere; }
+  .intk-draft-meta { font-size: .78rem; color: var(--muted); }
+  .intk-draft-acts { display: flex; gap: 6px; flex: 0 0 auto; }
   .intk-amend-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: .8rem; color: var(--info-deep); background: var(--info-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; }
   .intk-amend-x { appearance: none; background: none; border: none; font: inherit; font-size: .76rem; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
   .intk-amend-x:hover { color: var(--ink); }
@@ -215,6 +246,20 @@
      a recommendation, so Preview stays open. */
   .intk-row.intk-recwarn { background: var(--destructive-soft); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
   .intk-recwarn-note { grid-column: 1 / -1; font-size: .74rem; color: var(--danger-deep); }
+  /* I1: what looks off is amber (a warning, never a block); the Maps check's
+     answer sits under the address. */
+  .intk-row.intk-fmtwarn { background: var(--warn-soft); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
+  .intk-fmt-note, .intk-addr-note { grid-column: 1 / -1; font-size: .76rem; display: flex; gap: 4px 8px; }
+  /* The warning's icon stays beside its text however long it wraps. */
+  .intk-fmt-note { color: var(--warning-deep); align-items: flex-start; }
+  .intk-addr-note { align-items: center; flex-wrap: wrap; }
+  .intk-fmt-note svg, .intk-addr-note svg { flex: none; }
+  .intk-fmt-note svg { margin-top: 2px; }
+  .intk-addr-ok { color: var(--success-deep); }
+  .intk-addr-warn { color: var(--warning-deep); }
+  .intk-addr-info, .intk-addr-busy { color: var(--muted); }
+  .intk-addr-use { font: inherit; font-size: .74rem; padding: 2px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-card); color: var(--ink); cursor: pointer; }
+  .intk-addr-use:hover { border-color: var(--border-strong); }
   .intk-row .ck { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; color: var(--muted); }
   .intk-actions { display: flex; gap: 10px; margin-top: 16px; }
 
@@ -358,6 +403,23 @@
 //  (PPD) / index (account) and the preview→send bodyHash flow is intact.
 // ════════════════════════════════════════════════════════════════════════════
 
+// M1 (operator 2026-11-11) — the intake form TIMER: from the first input on a
+// form (a keystroke, a pick, a toggle) to its send. The seconds ride the
+// intake call note as completionSeconds, so Stats can average talk time
+// without the intake calls (their form time stands in for their length). A
+// cleared form or a send restarts it; a reload loses it (the note then
+// carries no time, and is simply not counted as timed).
+var INTAKE_TIMER = { ppd: 0, pmd: 0, pap: 0 };
+function intakeTimerStart_(form) {
+  if (INTAKE_TIMER[form] === undefined || INTAKE_TIMER[form]) return;
+  INTAKE_TIMER[form] = Date.now();
+}
+/** The form's seconds so far (0 when it never started), and the timer reset. */
+function intakeTimerTake_(form) {
+  var t0 = INTAKE_TIMER[form];
+  INTAKE_TIMER[form] = 0;
+  return t0 ? Math.max(0, Math.round((Date.now() - t0) / 1000)) : 0;
+}
 var INTAKE_STATE = {
   ppd: { lang: 'EN', agents: null, team: null },   // team: the Sales/PAP roster (25post B6), set only by a read that succeeded
   pmd: { lang: 'EN', images: [] },
@@ -589,7 +651,7 @@ var INTAKE_PMD_Q = {
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
     "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height (inches)", "Weight (lbs)",
     "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
     "If in facility what is the approximate discharge date?",
     "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
@@ -602,7 +664,7 @@ var INTAKE_PMD_Q = {
     "Número de Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento (DOB)", "Dirección de Casa",
     "Información del Seguro", "Seguro Primario y Número de ID de Miembro", "Seguro Secundario y Número de ID de Miembro",
     "Número de Seguro Social (SSN) (si no hay detalles de seguro)",
-    "Información de Clínica", "Nombre del Doctor Primario (PCP)", "Teléfono de clínica", "Fax de clínica", "Estatura", "Peso (libras)",
+    "Información de Clínica", "Nombre del Doctor Primario (PCP)", "Teléfono de clínica", "Fax de clínica", "Estatura (pulgadas)", "Peso (libras)",
     "Dispositivos de movilidad que utilizas", "Diagnósticos", "¿Está en casa o en un centro médico?",
     "Si está en un centro, ¿cuál es la fecha aproximada de salida?",
     "Evaluación de Movilidad y Programación", "¿Ya tuvo una Evaluación de Movilidad en los últimos 6 meses?",
@@ -616,7 +678,7 @@ var INTAKE_PAP_Q = {
   EN: [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height (inches)", "Weight (lbs)",
     "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
     "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
     "If so please provide Sleep Study details (approx. date & provider details)",
@@ -625,7 +687,7 @@ var INTAKE_PAP_Q = {
   ES: [
     "Datos Demográficos", "Nombre Completo del Paciente", "Teléfono de Contacto Primario", "Teléfono de Contacto Secundario", "Correo Electrónico del Paciente", "Fecha de Nacimiento", "Dirección de Casa",
     "Seguro", "Seguro Primario y ID de Miembro", "Seguro Secundario y ID de Miembro", "SSN (si no hay detalles de seguro)",
-    "Información Clínica", "Nombre del doctor primario", "Teléfono de la oficina del doctor", "Numero de Fax del doctor", "Dirección del oficina", "Estatura", "Peso (libras)",
+    "Información Clínica", "Nombre del doctor primario", "Teléfono de la oficina del doctor", "Numero de Fax del doctor", "Dirección del oficina", "Estatura (pulgadas)", "Peso (libras)",
     "Detalles de PAP/máquina", "¿Ya tienes una CPAP/máquina?", "¿Marca y Modelo del CPAP (si aplica)?", "¿Cuánto tiempo ha tenido el CPAP (si aplica)?",
     "¿Qué tipo de mascarilla usa (marca/modelo/tamaño)?", "¿Busca Máquina, Suministros de PAP, o Ambos?", "¿Ha tenido un Estudio del Sueño en el pasado?",
     "Si es así, proporcione detalles (fecha y doctor)",
@@ -686,20 +748,20 @@ var INTAKE_ACCT_PLACEHOLDERS = (function () {
   function extend(base, more) { var o = {}; Object.keys(base).forEach(function (k) { o[k] = base[k]; }); Object.keys(more).forEach(function (k) { o[k] = more[k]; }); return o; }
   return {
     pmd: {
-      EN: extend(shared.EN, { 15: 'e.g. 5\'4"', 16: 'e.g. 182', 17: 'e.g. walker, cane, none', 18: 'e.g. COPD, osteoarthritis',
+      EN: extend(shared.EN, { 15: 'e.g. 64', 16: 'e.g. 182', 17: 'e.g. walker, cane, none', 18: 'e.g. COPD, osteoarthritis',
         19: 'Home, or the facility\'s name', 20: 'MM/DD/YYYY', 23: 'Date, provider and location',
         26: 'Special notes — e.g. unavailable 10/18', 27: 'Special notes — e.g. family present',
         28: 'Anything about the patient or this order as a whole' }),
-      ES: extend(shared.ES, { 15: 'p. ej. 5\'4"', 16: 'p. ej. 182', 17: 'p. ej. andador, bastón, ninguno', 18: 'p. ej. EPOC, osteoartritis',
+      ES: extend(shared.ES, { 15: 'p. ej. 64', 16: 'p. ej. 182', 17: 'p. ej. andador, bastón, ninguno', 18: 'p. ej. EPOC, osteoartritis',
         19: 'Casa, o el nombre del centro', 20: 'MM/DD/AAAA', 23: 'Fecha, proveedor y lugar',
         26: 'Notas especiales — p. ej. no disponible 10/18', 27: 'Notas especiales — p. ej. con un familiar',
         28: 'Cualquier dato sobre el paciente o la orden en general' }),
     },
     pap: {
-      EN: extend(shared.EN, { 15: 'Street, city, state, ZIP', 16: 'e.g. 5\'4"', 17: 'e.g. 182', 20: 'e.g. ResMed AirSense 10',
+      EN: extend(shared.EN, { 15: 'Street, city, state, ZIP', 16: 'e.g. 64', 17: 'e.g. 182', 20: 'e.g. ResMed AirSense 10',
         22: 'e.g. ResMed AirFit F20, medium', 25: 'Approximate date and provider',
         27: 'Anything about the patient or this order as a whole' }),
-      ES: extend(shared.ES, { 15: 'Calle, ciudad, estado, código postal', 16: 'p. ej. 5\'4"', 17: 'p. ej. 182', 20: 'p. ej. ResMed AirSense 10',
+      ES: extend(shared.ES, { 15: 'Calle, ciudad, estado, código postal', 16: 'p. ej. 64', 17: 'p. ej. 182', 20: 'p. ej. ResMed AirSense 10',
         22: 'p. ej. ResMed AirFit F20, mediana', 25: 'Fecha aproximada y proveedor',
         27: 'Cualquier dato sobre el paciente o la orden en general' }),
     },
@@ -965,6 +1027,8 @@ function enterIntakePpdView(area) {
 
         intakePpdStepperHtml_(lang) +
         '<button class="intk-btn primary" onclick="intakePpdPreview_()">' + icon('send', 14) + ' Preview &amp; Recommend</button>' +
+        '<button class="intk-btn" onclick="intakeSaveNamedDraft_(\'ppd\')">' + icon('bookmark', 14) + ' Save draft</button>' +
+        '<button class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_()">' + icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_() + '</button>' +
         '<button class="intk-btn" onclick="intakeConfirmClear_(\'ppd\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
@@ -972,6 +1036,8 @@ function enterIntakePpdView(area) {
   var form = document.getElementById('intk-ppd-form');
   if (form) {
     form.addEventListener('input', intakePpdAfterChange_);
+    form.addEventListener('input', function () { intakeTimerStart_('ppd'); });   // M1
+    form.addEventListener('click', function (e) { if (e.target.closest('button')) intakeTimerStart_('ppd'); });
     // Yes/No + severity controls are <button>s (no 'input' event) — intakePick_
     // already updates progress, but a delegated click listener guarantees the
     // bar fills on every toggle even if a control path is ever added that
@@ -983,6 +1049,7 @@ function enterIntakePpdView(area) {
   }
   var pat = document.getElementById('intk-ppd-patient');
   if (pat) pat.addEventListener('input', intakePpdAfterChange_);
+  if (pat) pat.addEventListener('input', function () { intakeTimerStart_('ppd'); });   // M1
   // I1 (cycle 22): an amendment REPLACES the form, so a pending one skips the
   // draft restore — the draft is another call's work, and any answer the
   // original left blank would otherwise keep that call's value.
@@ -2007,16 +2074,294 @@ function intakeWarnRecommended_(form) {
     }
     marked.push(b);
   });
-  if (!marked.length) return Promise.resolve(true);
-  var first = intakeRecwarnLocate_(form, marked[0].key);
+  // I1: on the account forms, what looks off is asked about in the SAME
+  // question — one ask before Preview, never a block.
+  var fmt = form === 'ppd' ? [] : intakeFmtIssues_(form);
+  if (!marked.length && !fmt.length) return Promise.resolve(true);
+  var first = marked.length ? intakeRecwarnLocate_(form, marked[0].key) : intakeRecwarnLocate_(form, fmt[0].key);
   if (first && first.scrollIntoView) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  var names = marked.slice(0, 5).map(function (m) {
-    return intakeRecwarnLabel_(form, m.key) + (m.hoursOnly ? ' (hours)' : '');
+  var parts = [];
+  if (marked.length) {
+    var names = marked.slice(0, 5).map(function (m) {
+      return intakeRecwarnLabel_(form, m.key) + (m.hoursOnly ? ' (hours)' : '');
+    });
+    parts.push(marked.length + ' strongly-recommended field(s) are blank:\n\u2022 ' + names.join('\n\u2022 ') +
+      (marked.length > 5 ? '\n\u2026and ' + (marked.length - 5) + ' more' : ''));
+  }
+  if (fmt.length) {
+    parts.push(fmt.length + ' answer(s) look off:\n\u2022 ' + fmt.slice(0, 6).map(function (x) { return x.label + ' \u2014 ' + x.warn; }).join('\n\u2022 ') +
+      (fmt.length > 6 ? '\n\u2026and ' + (fmt.length - 6) + ' more' : ''));
+  }
+  var msg = parts.join('\n\n') + '\n\nThey are highlighted on the form. Continue to preview anyway?';
+  var title = marked.length && fmt.length ? 'Check before preview' : (marked.length ? 'Recommended fields are blank' : 'Some answers look off');
+  return uiConfirm({ title: title, message: msg, confirmLabel: 'Continue anyway', cancelLabel: 'Go back' });
+}
+
+// ── I1 (operator 2026-11-05): format safeguards on the account forms ──────
+// "For most of these safeguards, I want the user to be able to proceed, but
+// have it at least warn if format looks incorrect. It should also be somewhat
+// flexible on format." Every check here WARNS and never blocks; what can be
+// read is tidied when the rep leaves the field (a phone to 469-111-3333, a date
+// to MM/DD/YYYY, a Medicare ID to 1EG4-TE5-MK72), and what cannot is left as
+// typed with a note under it. The list of what still looks off is asked about
+// once, beside the blank recommended fields, before Preview.
+// Field kinds by bank index — the PMD and PAP layouts (INTAKE_PMD_Q / _PAP_Q).
+var INTAKE_FMT_FIELDS = {
+  pmd: { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'height', 20: 'future' },
+  pap: { 2: 'phone', 3: 'phone2', 4: 'email', 5: 'dob', 6: 'address', 8: 'insurance', 9: 'insurance', 10: 'ssn', 13: 'phone', 14: 'phone', 15: 'address', 16: 'height' },
+};
+var INTAKE_US_STATE_CODES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+var INTAKE_US_STATE_NAMES = ['alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'district of columbia', 'florida', 'georgia', 'hawaii', 'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana', 'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota', 'mississippi', 'missouri', 'montana', 'nebraska', 'nevada', 'new hampshire', 'new jersey', 'new mexico', 'new york', 'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon', 'pennsylvania', 'puerto rico', 'rhode island', 'south carolina', 'south dakota', 'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington', 'west virginia', 'wisconsin', 'wyoming'];
+var INTAKE_EMAIL_TYPOS = { 'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmal.com': 'gmail.com', 'gnail.com': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com',
+  'hotmial.com': 'hotmail.com', 'hotmal.com': 'hotmail.com', 'hotmail.co': 'hotmail.com', 'yaho.com': 'yahoo.com', 'yahooo.com': 'yahoo.com', 'yahoo.co': 'yahoo.com', 'yahoo.con': 'yahoo.com',
+  'outlok.com': 'outlook.com', 'outloo.com': 'outlook.com', 'iclod.com': 'icloud.com', 'icloud.co': 'icloud.com', 'aol.co': 'aol.com' };
+// The Medicare Beneficiary Identifier: 11 characters, never S L O I B Z.
+var INTAKE_MBI_RE = /^[1-9][AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9][0-9][AC-HJKMNP-RT-Y][AC-HJKMNP-RT-Y0-9][0-9][AC-HJKMNP-RT-Y]{2}[0-9]{2}$/;
+
+/** PURE (Node-pinned) — a phone number read loosely: digits only, a leading
+ *  US 1 (+1) dropped, an "x123" / "ext 123" kept; ten digits become
+ *  469-111-3333. → {value, warn}; an empty field is fine. */
+function intakeFmtPhone_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var ext = '';
+  var m = /^(.*?)\s*(?:x|ext\.?|extension)\s*(\d{1,6})\s*$/i.exec(s);
+  if (m && /\d/.test(m[1])) { s = m[1]; ext = ' x' + m[2]; }
+  var d = s.replace(/\D/g, '');
+  if (d.length === 11 && d.charAt(0) === '1') d = d.slice(1);
+  if (d.length !== 10) return { value: String(raw).trim(), warn: 'Expected a 10-digit US phone number (this has ' + d.length + ' digit' + (d.length === 1 ? '' : 's') + ').' };
+  var value = d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6) + ext;
+  if (d.charAt(0) === '0' || d.charAt(0) === '1') return { value: value, warn: 'A US area code never starts with 0 or 1 — check the number.' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — a date read loosely: 1/2/1950, 01-02-1950, 01021950,
+ *  1950-01-02 → 01/02/1950. A two-digit year is ACCEPTED (operator
+ *  2026-11-06) and written out in full so the rep sees the century chosen: a
+ *  date of birth takes 20yy only when that is not past this year, else 19yy
+ *  (1/2/50 → 01/02/1950, 3/4/21 → 03/04/2021); a discharge date takes 20yy.
+ *  mode 'dob': not in the future, not over 120 years; mode 'future' (a
+ *  discharge date): warned when already past, and free words ("unknown") are
+ *  left alone. → {value, warn, iso}. */
+function intakeFmtDate_(raw, todayIso, mode) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '', iso: '' };
+  var y, mo, da, m;
+  if ((m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(s))) { y = +m[1]; mo = +m[2]; da = +m[3]; }
+  else if ((m = /^(\d{1,2})[-\/.\s](\d{1,2})[-\/.\s](\d{2}|\d{4})$/.exec(s)) || (m = /^(\d{2})(\d{2})(\d{4}|\d{2})$/.exec(s))) {
+    mo = +m[1]; da = +m[2]; y = +m[3];
+    if (m[3].length === 2) {
+      var nowYear = /^\d{4}/.test(String(todayIso || '')) ? +String(todayIso).slice(0, 4) : new Date().getFullYear();
+      y = (mode === 'dob' && 2000 + y > nowYear) ? 1900 + y : 2000 + y;
+    }
+  }
+  else {
+    if (mode === 'future' && !/\d/.test(s)) return { value: s, warn: '', iso: '' };
+    return { value: s, warn: 'Write the date as MM/DD/YYYY.', iso: '' };
+  }
+  var dt = new Date(Date.UTC(y, mo - 1, da));
+  if (mo < 1 || mo > 12 || da < 1 || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== da) return { value: s, warn: 'That is not a real date — check the month and day.', iso: '' };
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var iso = y + '-' + pad(mo) + '-' + pad(da);
+  var value = pad(mo) + '/' + pad(da) + '/' + y;
+  var today = String(todayIso || '');
+  if (mode === 'dob' && today) {
+    if (iso > today) return { value: value, warn: 'The date of birth is in the future — check the year.', iso: iso };
+    if (+today.slice(0, 4) - y > 120) return { value: value, warn: 'That makes the patient over 120 — check the year.', iso: iso };
+  }
+  if (mode === 'future' && today && iso < today) return { value: value, warn: 'This date has already passed.', iso: iso };
+  return { value: value, warn: '', iso: iso };
+}
+/** PURE (Node-pinned) — an email: trimmed, the domain lower-cased; the shape
+ *  checked, and a common domain typo named with the likely fix (never changed
+ *  for the rep — the patient said what they said). */
+function intakeFmtEmail_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var at = s.lastIndexOf('@');
+  if (at < 1 || /\s/.test(s) || !/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(s)) return { value: s, warn: 'That does not look like an email address (name@example.com).' };
+  var local = s.slice(0, at), domain = s.slice(at + 1).toLowerCase();
+  var value = local + '@' + domain;
+  if (INTAKE_EMAIL_TYPOS[domain]) return { value: value, warn: 'Did you mean ' + local + '@' + INTAKE_EMAIL_TYPOS[domain] + '?' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — the insurance line, tidied ONLY when it is cleanly
+ *  "Medicare" and a valid Medicare ID (MBI) — with or without dashes, spaces,
+ *  lower case or a label like MBI/ID/# (operator 2026-11-06): "medicare
+ *  1eg4 te5 mk72" → "Medicare · 1EG4-TE5-MK72". Anything else is kept exactly
+ *  as typed and never warned about — a line that says Medicare may carry an
+ *  Advantage plan's own member ID, which is not an MBI and is not wrong. */
+function intakeFmtInsurance_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  var m = /^medicare\s*(?:(?:mbi|member\s*id|id|number|no\.?|#)\s*)*[:#\-–·]?\s*([A-Za-z0-9](?:[\s-]*[A-Za-z0-9]){10})$/i.exec(s);
+  if (!m) return { value: s, warn: '' };
+  var compact = m[1].replace(/[\s-]/g, '').toUpperCase();
+  if (!INTAKE_MBI_RE.test(compact)) return { value: s, warn: '' };
+  return { value: 'Medicare · ' + compact.slice(0, 4) + '-' + compact.slice(4, 7) + '-' + compact.slice(7), warn: '' };
+}
+/** PURE (Node-pinned) — an address: spaces tidied; warned when it carries no
+ *  5-digit ZIP or no state (a two-letter code, or the name). */
+function intakeFmtAddress_(raw) {
+  var s = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+  if (!s) return { value: '', warn: '' };
+  var zip = /\b\d{5}(?:-\d{4})?\b/.test(s);
+  var codes = INTAKE_US_STATE_CODES.join('|');
+  var state = new RegExp('\\b(' + codes + ')\\b').test(s) ||
+    new RegExp('\\b(' + codes + ')\\s*,?\\s*\\d{5}\\b', 'i').test(s) ||
+    INTAKE_US_STATE_NAMES.some(function (n) { return new RegExp('\\b' + n + '\\b', 'i').test(s); });
+  var miss = [];
+  if (!state) miss.push('state');
+  if (!zip) miss.push('5-digit ZIP');
+  return { value: s, warn: miss.length ? 'No ' + miss.join(' or ') + ' in this address.' : '' };
+}
+/** PURE (Node-pinned) — a height, which the form asks for IN INCHES
+ *  (operator 2026-11-06): a bare number (64, 64.5), inches with a unit
+ *  (64 in, 64", 64 inches) or feet and inches (5'4", 5 4, 5ft 4in, 5-4) all
+ *  become the number of inches, "64" — the label carries the unit, so the
+ *  email reads "Height (inches): 64". Warned outside 36–90 inches or when
+ *  unreadable (left as typed). */
+function intakeFmtHeight_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var t = s.toLowerCase().replace(/[’′]/g, "'").replace(/[”″]/g, '"').replace(/''/g, '"');
+  var total = null, m;
+  if ((m = /^(\d{2,3}(?:\.\d)?)\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t))) total = +m[1];
+  else if ((m = /^(\d)\s*(?:'|ft\.?|feet|foot|-|\s)\s*(\d{1,2}(?:\.\d)?)?\s*(?:"|in\.?|inch(?:es)?)?$/.exec(t)) && !(m[2] && +m[2] >= 12)) total = +m[1] * 12 + (m[2] ? +m[2] : 0);
+  if (total == null) return { value: s, warn: 'Write the height in inches, like 64.' };
+  var value = String(Math.round(total * 10) / 10);
+  if (total < 36 || total > 90) return { value: value, warn: 'That height is outside 36–90 inches — check it.' };
+  return { value: value, warn: '' };
+}
+/** PURE (Node-pinned) — an SSN: nine digits become 123-45-6789; anything else
+ *  is warned about. It is shown as typed (operator 2026-11-06). */
+function intakeFmtSsn_(raw) {
+  var s = String(raw == null ? '' : raw).trim();
+  if (!s) return { value: '', warn: '' };
+  var d = s.replace(/\D/g, '');
+  if (d.length !== 9) return { value: s, warn: 'A Social Security number has 9 digits.' };
+  return { value: d.slice(0, 3) + '-' + d.slice(3, 5) + '-' + d.slice(5), warn: '' };
+}
+/** PURE (Node-pinned) — one field's check by kind. ctx: {todayIso, primary}
+ *  (the primary phone, for the secondary's "same number" warning). */
+function intakeFmtCheck_(kind, raw, ctx) {
+  ctx = ctx || {};
+  if (kind === 'phone') return intakeFmtPhone_(raw);
+  if (kind === 'phone2') {
+    var r = intakeFmtPhone_(raw);
+    var p = intakeFmtPhone_(ctx.primary);
+    if (!r.warn && r.value && p.value && r.value.replace(/\D/g, '') === p.value.replace(/\D/g, '')) return { value: r.value, warn: 'Same as the primary number.' };
+    return r;
+  }
+  if (kind === 'email') return intakeFmtEmail_(raw);
+  if (kind === 'dob') return intakeFmtDate_(raw, ctx.todayIso, 'dob');
+  if (kind === 'future') return intakeFmtDate_(raw, ctx.todayIso, 'future');
+  if (kind === 'insurance') return intakeFmtInsurance_(raw);
+  if (kind === 'address') return intakeFmtAddress_(raw);
+  if (kind === 'height') return intakeFmtHeight_(raw);
+  if (kind === 'ssn') return intakeFmtSsn_(raw);
+  return { value: String(raw == null ? '' : raw), warn: '' };
+}
+/** I1 — the note under a field (amber, a status for a screen reader), or none. */
+function intakeFmtNote_(row, cls, html) {
+  if (!row) return;
+  var n = row.querySelector('.' + cls);
+  if (!html) { if (n) n.remove(); return; }
+  if (!n) { n = document.createElement('div'); n.className = cls; n.setAttribute('role', 'status'); row.appendChild(n); }
+  n.innerHTML = html;
+}
+function intakeFmtCtx_(form) {
+  var root = intakeFormRoot_(form);
+  return { todayIso: (typeof isoDateTz === 'function' && typeof empTz === 'function') ? isoDateTz(empTz()) : '',
+    primary: root ? intakeAcctGetVal_(root, 2) : '' };
+}
+/** I1 — a field the rep just left: tidy what can be read, say what looks off.
+ *  A tidy-up is a change like any other (the draft saves it). */
+function intakeFmtOnChange_(form, el) {
+  if (!el || !el.getAttribute) return;
+  var idx = el.getAttribute('data-intk-idx');
+  var kind = (INTAKE_FMT_FIELDS[form] || {})[idx];
+  if (!kind) return;
+  var r = intakeFmtCheck_(kind, el.value, intakeFmtCtx_(form));
+  if (r.value !== el.value) { el.value = r.value; intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); }
+  var row = el.closest('.intk-row');
+  if (row) row.classList.toggle('intk-fmtwarn', !!r.warn);
+  intakeFmtNote_(row, 'intk-fmt-note', r.warn ? icon('warning', 12) + ' ' + esc(r.warn) : '');
+  if (kind === 'phone' && idx === '2') {   // the secondary's "same number" follows the primary
+    var sec = intakeFormRoot_(form) && intakeFormRoot_(form).querySelector('[data-intk-idx="3"]');
+    if (sec && sec.value) intakeFmtOnChange_(form, sec);
+  }
+  if (kind === 'address') intakeAddrCheck_(form, el);
+}
+/** I1 — every field's check now (before Preview): [{key, label, warn}], each
+ *  row marked; an address the Maps check could not confirm is listed too. */
+function intakeFmtIssues_(form) {
+  var root = intakeFormRoot_(form);
+  var map = INTAKE_FMT_FIELDS[form];
+  if (!root || !map) return [];
+  var ctx = intakeFmtCtx_(form), out = [];
+  Object.keys(map).forEach(function (k) {
+    var el = root.querySelector('[data-intk-idx="' + k + '"]');
+    if (!el) return;
+    var r = intakeFmtCheck_(map[k], el.value, ctx);
+    var row = el.closest('.intk-row');
+    var warn = r.warn || (row && row.getAttribute('data-addr-warn')) || '';
+    if (row) row.classList.toggle('intk-fmtwarn', !!r.warn);
+    if (r.warn) intakeFmtNote_(row, 'intk-fmt-note', icon('warning', 12) + ' ' + esc(r.warn));
+    if (warn) out.push({ key: +k, label: intakeRecwarnLabel_(form, +k), warn: warn });
   });
-  var msg = marked.length + ' strongly-recommended field(s) are blank:\n\u2022 ' + names.join('\n\u2022 ') +
-    (marked.length > 5 ? '\n\u2026and ' + (marked.length - 5) + ' more' : '') +
-    '\n\nThey are highlighted on the form. Continue to preview anyway?';
-  return uiConfirm({ title: 'Recommended fields are blank', message: msg, confirmLabel: 'Continue anyway', cancelLabel: 'Go back' });
+  return out;
+}
+// ── I1: the Google Maps address check (Admin → Feature Toggles, off by default) ──
+/** PURE (Node-pinned) — what the rep is told for one check: {html-free text,
+ *  warn (true when it should be listed before Preview), offer (the formatted
+ *  address to offer as a suggestion, or '')}. */
+function intakeAddrMessage_(r, typed) {
+  var st = r && r.status;
+  var f = String((r && r.formatted) || '');
+  var same = function (a, b) { return String(a).toLowerCase().replace(/[^a-z0-9]/g, '') === String(b).toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  // Google's spelling is a SUGGESTION (operator 2026-11-06) — the rep's text
+  // stays until they choose it.
+  if (st === 'found') return f && !same(f, typed)
+    ? { text: 'Google Maps found this address and suggests writing it as: ' + f, warn: false, offer: f }
+    : { text: 'Google Maps found this address.', warn: false, offer: '' };
+  if (st === 'area') return { text: 'Google Maps found the area but not this street address' + (f ? ' (' + f + ')' : '') + ' — check the street and number.', warn: true, offer: '' };
+  // A partial match is the geocoder guessing (K5) — named, never offered.
+  if (st === 'partial') return { text: 'Google Maps matched only part of this address' + (f ? ' (closest: ' + f + ')' : '') + ' — check the street, number and ZIP.', warn: true, offer: '' };
+  if (st === 'notFound') return { text: 'Google Maps could not find this address — check it.', warn: true, offer: '' };
+  if (st === 'outside') return { text: 'Google Maps places this address outside the US' + (f ? ' (' + f + ')' : '') + '.', warn: true, offer: '' };
+  if (st === 'skipped' || st === 'off') return { text: '', warn: false, offer: '' };
+  return { text: 'The address could not be checked just now.', warn: false, offer: '' };
+}
+/** I1 — check one address field (only while the toggle is on). The answer is
+ *  dropped if the field changed while it was out (g147); no address ever
+ *  rides an error message (g146). */
+function intakeAddrCheck_(form, el) {
+  // Fails CLOSED: flagOn_ reads "no flags loaded yet" as on, which is the
+  // wrong default for a check that sends a patient's address to Google — only
+  // a loaded flag that is exactly true turns it on (the server refuses too).
+  if (!(typeof empState !== 'undefined' && empState && empState.flags && empState.flags.intakeAddressCheck === true)) return;
+  var row = el && el.closest('.intk-row');
+  if (!row) return;
+  var addr = String(el.value || '').trim();
+  row.removeAttribute('data-addr-warn');
+  var seq = el._intkAddrSeq = (el._intkAddrSeq || 0) + 1;
+  if (!addr) { intakeFmtNote_(row, 'intk-addr-note', ''); return; }
+  intakeFmtNote_(row, 'intk-addr-note', '<span class="intk-addr-busy">Checking the address with Google Maps…</span>');
+  var done = function (r) {
+    if (el._intkAddrSeq !== seq || String(el.value || '').trim() !== addr) return;
+    var msg = intakeAddrMessage_(r, addr);
+    if (msg.warn) row.setAttribute('data-addr-warn', msg.text); else row.removeAttribute('data-addr-warn');
+    if (!msg.text) { intakeFmtNote_(row, 'intk-addr-note', ''); return; }
+    intakeFmtNote_(row, 'intk-addr-note', '<span class="intk-addr-' + (msg.warn ? 'warn' : (r && r.status === 'found' ? 'ok' : 'info')) + '">' +
+      icon(msg.warn ? 'warning' : (r && r.status === 'found' ? 'check' : 'info'), 12) + ' ' + esc(msg.text) + '</span>' +
+      (msg.offer ? ' <button type="button" class="intk-addr-use">Use suggestion</button>' : ''));
+    var use = row.querySelector('.intk-addr-use');
+    if (use) use.addEventListener('click', function () {
+      el.value = msg.offer;
+      intakeSaveDraft_(form);
+      intakeFmtOnChange_(form, el);
+    });
+  };
+  google.script.run.withSuccessHandler(done).withFailureHandler(function () { done({ status: 'unavailable' }); }).checkIntakeAddress(addr);
 }
 
 function intakePpdPreview_() {
@@ -2331,7 +2676,9 @@ function intakePpdSend_(confirmedExternal) {
       if (intakeExternalConfirm_(res, btn, intakePpdSend_)) return;   // INT-3: nothing was sent; ask, then resend
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      var formSec = intakeTimerTake_('ppd');   // M1: taken before the clear restarts it
       intakeClearDraft_('ppd');   // drop the persisted draft (PHI) on a successful send
+      intakeSavedRemove_(INTAKE_STATE.ppd.savedId); INTAKE_STATE.ppd.savedId = null;   // I2: and the saved draft it came from
       // Re-render the (now-cleared) form only if the rep is still on this
       // view — a late success after nav-away must not clobber #view-area.
       // State still resets so stale images can't ride into the next send.
@@ -2341,7 +2688,7 @@ function intakePpdSend_(confirmedExternal) {
       // persist — surface it loudly instead of a silent server-side warn.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast('PPD emailed to ' + res.recipient, 'toast-success');
-      intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView);
+      intakeAutoLogNote_('ppd', st.payload, res.recipient, st.recommendations, currentView === requestedView, formSec);
     })
     .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     .intakeSendPPD(st.payload, spec, st.bodyHash);
@@ -2371,15 +2718,20 @@ function intakeEnterAcct_(form, title, area) {
         intakeRingHtml_(form) +
         '<span class="intk-rail-count" id="intk-' + form + '-count">0 / 0</span>' +
         '<button class="intk-btn primary" onclick="intakeAcctPreview_(\'' + form + '\')">' + icon('send', 14) + ' Preview &amp; Send</button>' +
+        '<button class="intk-btn" onclick="intakeSaveNamedDraft_(\'' + form + '\')">' + icon('bookmark', 14) + ' Save draft</button>' +
+        '<button class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_()">' + icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_() + '</button>' +
         '<button class="intk-btn" onclick="intakeConfirmClear_(\'' + form + '\')">Clear</button>' +
       '</div></aside>' +
     '</div>';
   var f = document.getElementById('intk-' + form + '-form');
   if (f) {
-    f.addEventListener('input', function () { intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); });
+    f.addEventListener('input', function () { intakeSaveDraft_(form); intakeAcctUpdateProgress_(form); intakeTimerStart_(form); });   // M1: the timer
+    f.addEventListener('click', function (e) { if (e.target.closest('button')) intakeTimerStart_(form); });
     // Yes/No toggles are <button>s (no 'input' event) — refresh progress on click too.
     f.addEventListener('click', function (e) { if (e.target.closest('.intk-yn-btn')) intakeAcctUpdateProgress_(form); });
     f.addEventListener('keydown', intakeArrowNav_);   // pilot round 3 #7
+    // I1: leaving a field tidies it and says what looks off.
+    f.addEventListener('change', function (e) { intakeFmtOnChange_(form, e.target); });
   }
   intakeAvailWire_(f);
   intakeSetupImageUpload_(form);
@@ -2471,7 +2823,11 @@ function intakeRenderAcctSections_(form, lang) {
       control = '<select id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '">' +
         L.selects[i].map(function (o) { return '<option value="' + esc(o) + '">' + esc(o || '— select —') + '</option>'; }).join('') + '</select>';
     } else {
-      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + phAttr + '>';
+      // I1: a phone or SSN field offers the number pad on a phone. The SSN is
+      // shown as typed so the rep can read it back (operator 2026-11-06).
+      var fk = (INTAKE_FMT_FIELDS[form] || {})[i];
+      var fAttr = (fk === 'phone' || fk === 'phone2') ? ' inputmode="tel"' : (fk === 'ssn' ? ' inputmode="numeric"' : (fk === 'email' ? ' inputmode="email"' : ''));
+      control = '<input type="text" autocomplete="off" id="intk-' + form + '-q' + i + '" name="intk-' + form + '-q' + i + '" data-intk-idx="' + i + '"' + fAttr + phAttr + '>';
     }
     var isYnSel = L.selects[i] && L.selects[i].length === 3 && L.selects[i][1] === 'Yes' && L.selects[i][2] === 'No';
     var labelFor = (L.checkboxes.indexOf(i) >= 0 || isYnSel) ? '' : ' for="intk-' + form + '-q' + i + '"';
@@ -2636,13 +2992,15 @@ function intakeAcctSend_(form, confirmedExternal) {
       if (intakeExternalConfirm_(res, btn, function (dom) { intakeAcctSend_(form, dom); })) return;   // INT-3
       if (!res || !res.success) { if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast((res && res.error) || 'Send failed.', 'toast-error'); return; }
       intakeCloseModal_();
+      var formSec = intakeTimerTake_(form);   // M1
       intakeClearDraft_(form);   // drop the persisted draft (PHI) on a successful send
+      intakeSavedRemove_(INTAKE_STATE[form].savedId); INTAKE_STATE[form].savedId = null;   // I2: and the saved draft it came from
       if (currentView === requestedView) intakeClearForm_(form);
-      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; }   // drop PHI payload after send (F3)
+      else { INTAKE_STATE[form].images = []; INTAKE_STATE.preview = null; delete INTAKE_CARD[form]; }   // drop PHI payload after send (F3)
       // M-5 (cycle 10): loud toast when the PHI submission record didn't persist.
       if (res.storeWarning) showToast(res.storeWarning, 'toast-warn');
       else showToast(form.toUpperCase() + ' emailed to ' + res.recipient, 'toast-success');
-      intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView);
+      intakeAutoLogNote_(form, st.payload, res.recipient, null, currentView === requestedView, formSec);
     })
     .withFailureHandler(function (err) { INTAKE_STATE.sending = false; if (btn) { btn.disabled = false; btn.innerHTML = icon('send', 14) + ' Send Email'; } showToast('Send failed: ' + (err.message || err), 'toast-error'); })
     [fn](st.payload, spec, images, st.bodyHash);
@@ -2664,6 +3022,7 @@ function intakeImagesSectionHtml_(form, lang) {
       ? 'También puede pegar una captura de pantalla (Ctrl+V). Frente y reverso de cada tarjeta, hasta 12 imágenes. Las fotos grandes se reducen antes de enviarse.'
       : 'You can also paste a screenshot (Ctrl+V). Front and back of each card, up to 12 images. Large photos are shrunk before they are sent.') + '</p>' +
     '<div class="intk-gallery" id="intk-gallery"></div>' +
+    '<div class="intk-card-read" id="intk-card-read" aria-live="polite"></div>' +   // I3: read the card's details
   '</div></div>';
 }
 
@@ -2757,11 +3116,523 @@ function intakeRenderGallery_(form) {
       '<button type="button" class="rm" aria-label="Remove image ' + (idx + 1) + '"' +   // A1
       ' onclick="intakeRemoveImage_(\'' + form + '\',' + idx + ')">&#10005;</button></div>';
   }).join('');
+  // I3: the card reader's button under the images (or its open suggestion).
+  var host = document.getElementById('intk-card-read');
+  if (!host) return;
+  if (INTAKE_CARD[form]) { intakeCardPanel_(form); return; }
+  host._seq = (host._seq || 0) + 1;   // a read in flight for the old set of images is dropped
+  var n = (INTAKE_STATE[form].images || []).length;
+  host.innerHTML = n ? '<button type="button" class="intk-btn" data-card-read="1">' + icon('fileText', 14) + ' ' +
+    esc(INTAKE_STATE[form].lang === 'ES' ? 'Leer los datos del seguro de la tarjeta' : 'Read the insurance details from the card') + '</button>' : '';
+  var rb = host.querySelector('[data-card-read]');
+  if (rb) rb.addEventListener('click', function () { intakeCardRead_(form); });
 }
 
 function intakeRemoveImage_(form, idx) {
   INTAKE_STATE[form].images.splice(idx, 1);
   intakeRenderGallery_(form);
+}
+
+// ── I3 (operator 2026-11-06): reading an insurance card IN THE BROWSER ─────
+// The card's payer, member ID and group (or Medicare ID) are read from the photo
+// on the rep's own computer and OFFERED — nothing is filled until the rep
+// presses Use. No image leaves the browser to be read: Google Cloud Vision and
+// a Claude vision call were ruled out on BAA grounds. The reader is PaddleOCR
+// (PP-OCRv4 detection + recognition) on ONNX Runtime Web, run on this page's
+// thread — the Apps Script sandbox cannot start a worker from another origin
+// (the HB4.1 pdf.js posture) — chosen over Tesseract.js by a spike on card
+// photos (rotated, glare, small: 88 of 88 fields against 67). The code and the
+// models (~30 MB, first use only; the browser keeps them) come from jsDelivr
+// at pinned versions, and EVERY file is checked against its SHA-256 below
+// before it runs — a file that does not match is refused, never used.
+var INTAKE_OCR_CDN = 'https://cdn.jsdelivr.net/npm/';
+var INTAKE_OCR_FILES = {
+  ort:  { path: 'onnxruntime-web@1.30.0/dist/ort.wasm.min.js', sha256: 'faece07e84faa9001f5104bbe4e5c70861d06cb2376a0dea1fa0ad33a67adc81' },
+  mjs:  { path: 'onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.mjs', sha256: 'e13f7f94fc51b4ca72b12faeb1ee95f4ace6dfbc8939bc718aabdc0a27c4299b' },
+  wasm: { path: 'onnxruntime-web@1.30.0/dist/ort-wasm-simd-threaded.wasm', sha256: '3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2' },
+  det:  { path: '@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_det_infer.onnx', sha256: '30a86f5731181461d08021402766601e4302a9b9b9666be8aff402696339cdff' },
+  rec:  { path: '@gutenye/ocr-models@1.4.2/assets/ch_PP-OCRv4_rec_infer.onnx', sha256: '06b3e6af6c59a1ba5d53790ed8c2e4b2de389870b6cf5a97f349f3412cb269c0' },
+  keys: { path: '@gutenye/ocr-models@1.4.2/assets/ppocr_keys_v1.txt', sha256: '28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7' },
+};
+var INTAKE_OCR = { state: '', waiting: [], det: null, rec: null, dict: null };   // state '' | 'loading' | 'ready'
+var INTAKE_CARD = {};   // per form: { fields, read, of } — the open suggestion
+
+function intakeOcrHex_(buf) {
+  return Array.prototype.map.call(new Uint8Array(buf), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+}
+/** One pinned file, checked: resolves to its bytes, or rejects naming the file. */
+function intakeOcrFetch_(key) {
+  var f = INTAKE_OCR_FILES[key];
+  return fetch(INTAKE_OCR_CDN + f.path, { credentials: 'omit' })
+    .then(function (r) { if (!r.ok) throw new Error('could not download ' + key); return r.arrayBuffer(); })
+    .then(function (buf) {
+      return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+        if (intakeOcrHex_(d) !== f.sha256) throw new Error(key + ' did not match its checksum');
+        return buf;
+      });
+    });
+}
+/** The reader, loaded once. A failed load is NOT kept (g129) — the next
+ *  press tries again. Resolves to the engine; a test or the visual matrix may
+ *  stand one in as window.INTAKE_OCR_ENGINE. */
+function intakeOcrEngine_() {
+  if (window.INTAKE_OCR_ENGINE) return Promise.resolve(window.INTAKE_OCR_ENGINE);
+  if (INTAKE_OCR.state === 'ready') return Promise.resolve(INTAKE_OCR_PIPE);
+  return new Promise(function (ok, no) {
+    INTAKE_OCR.waiting.push({ ok: ok, no: no });
+    if (INTAKE_OCR.state === 'loading') return;
+    INTAKE_OCR.state = 'loading';
+    var settle = function (err) {
+      var w = INTAKE_OCR.waiting; INTAKE_OCR.waiting = [];
+      INTAKE_OCR.state = err ? '' : 'ready';
+      w.forEach(function (x) { if (err) x.no(err); else x.ok(INTAKE_OCR_PIPE); });
+    };
+    var got = {};
+    var keys = Object.keys(INTAKE_OCR_FILES);
+    Promise.all(keys.map(function (k) { return intakeOcrFetch_(k).then(function (b) { got[k] = b; }); }))
+      .then(function () {
+        if (!window.ort) {
+          var s = document.createElement('script');
+          s.textContent = new TextDecoder().decode(got.ort);   // the checked bytes, never a second download
+          document.head.appendChild(s);
+        }
+        if (!window.ort) throw new Error('the reader did not start');
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
+        ort.env.wasm.wasmBinary = got.wasm;
+        ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([got.mjs], { type: 'text/javascript' })) };
+        INTAKE_OCR.dict = new TextDecoder().decode(got.keys).split('\n').concat([' ']);
+        return ort.InferenceSession.create(new Uint8Array(got.det), { executionProviders: ['wasm'] });
+      })
+      .then(function (det) { INTAKE_OCR.det = det; return ort.InferenceSession.create(new Uint8Array(got.rec), { executionProviders: ['wasm'] }); })
+      .then(function (rec) { INTAKE_OCR.rec = rec; settle(null); })
+      .catch(function (e) { settle(e || new Error('the reader did not start')); });
+  });
+}
+
+/** The PP-OCR pipeline over ONNX Runtime, without OpenCV: the detection map's
+ *  connected regions become text boxes along their OWN angle (a tilted card
+ *  reads level — the spike's rotated photos read nothing until this), each is
+ *  cut out, read, and decoded (CTC, greedy). → [{text, x, y, w, h}]. */
+var INTAKE_OCR_PIPE = {
+  read: function (img) {
+    return intakeOcrDetect_(img).then(function (boxes) {
+      var lines = [];
+      var next = function (i) {
+        if (i >= boxes.length) return Promise.resolve(lines);
+        return intakeOcrRecognize_(img, boxes[i]).then(function (r) {
+          if (r.text && r.conf >= 0.5) lines.push({ text: r.text, x: boxes[i].cx - boxes[i].w / 2, y: boxes[i].cy - boxes[i].h / 2, w: boxes[i].w, h: boxes[i].h, ang: boxes[i].ang, probs: r.probs });
+          return next(i + 1);
+        });
+      };
+      return next(0);
+    });
+  },
+};
+function intakeOcrTensor_(ctx, w, h, mean, std) {
+  var d = ctx.getImageData(0, 0, w, h).data, n = w * h, f = new Float32Array(3 * n);
+  for (var i = 0; i < n; i++) {   // the models take BGR planes
+    f[i] = (d[i * 4 + 2] / 255 - mean[0]) / std[0];
+    f[n + i] = (d[i * 4 + 1] / 255 - mean[1]) / std[1];
+    f[2 * n + i] = (d[i * 4] / 255 - mean[2]) / std[2];
+  }
+  return new ort.Tensor('float32', f, [1, 3, h, w]);
+}
+function intakeOcrDetect_(img) {
+  var W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+  var r = Math.min(1, 960 / Math.max(W, H));
+  var w = Math.max(32, Math.round(W * r / 32) * 32), h = Math.max(32, Math.round(H * r / 32) * 32);
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+  var feeds = {}; feeds[INTAKE_OCR.det.inputNames[0]] = intakeOcrTensor_(ctx, w, h, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]);
+  return INTAKE_OCR.det.run(feeds).then(function (out) {
+    var prob = out[INTAKE_OCR.det.outputNames[0]].data, thr = 0.3, seen = new Uint8Array(w * h), stack = new Int32Array(w * h), boxes = [];
+    for (var p = 0; p < w * h; p++) {
+      if (seen[p] || prob[p] <= thr) continue;
+      var top = 0; stack[top++] = p; seen[p] = 1;
+      var pts = [], sum = 0, mx = 0, my = 0;
+      while (top) {
+        var q = stack[--top], qx = q % w, qy = (q / w) | 0;
+        sum += prob[q]; pts.push(qx, qy); mx += qx; my += qy;
+        if (qx > 0 && !seen[q - 1] && prob[q - 1] > thr) { seen[q - 1] = 1; stack[top++] = q - 1; }
+        if (qx < w - 1 && !seen[q + 1] && prob[q + 1] > thr) { seen[q + 1] = 1; stack[top++] = q + 1; }
+        if (qy > 0 && !seen[q - w] && prob[q - w] > thr) { seen[q - w] = 1; stack[top++] = q - w; }
+        if (qy < h - 1 && !seen[q + w] && prob[q + w] > thr) { seen[q + w] = 1; stack[top++] = q + w; }
+      }
+      var cnt = pts.length / 2;
+      if (cnt < 9 || sum / cnt < 0.6) continue;
+      mx /= cnt; my /= cnt;
+      var sxx = 0, syy = 0, sxy = 0;
+      for (var m = 0; m < pts.length; m += 2) { var dx = pts[m] - mx, dy = pts[m + 1] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+      var ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+      if (Math.abs(ang) > Math.PI / 4 || sxx < syy * 2) ang = 0;   // a near-square blob reads level
+      var ca = Math.cos(ang), sa = Math.sin(ang), u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+      for (var k = 0; k < pts.length; k += 2) {
+        var ex = pts[k] - mx, ey = pts[k + 1] - my, u = ex * ca + ey * sa, v = -ex * sa + ey * ca;
+        if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v;
+      }
+      var bw = u1 - u0 + 1, bh = v1 - v0 + 1;
+      if (Math.min(bw, bh) < 3) continue;
+      var dist = (bw * bh * 1.6) / (2 * (bw + bh));   // the box grown past the map's tight core (PP-OCR's "unclip")
+      var cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+      boxes.push({ cx: (mx + cu * ca - cv * sa) * W / w, cy: (my + cu * sa + cv * ca) * H / h, w: (bw + 2 * dist) * W / w, h: (bh + 2 * dist) * H / h, ang: ang });
+    }
+    return boxes;
+  });
+}
+function intakeOcrRecognize_(img, box) {
+  var hh = 48, ww = Math.max(16, Math.min(1600, Math.round(box.w * hh / box.h)));
+  var c = document.createElement('canvas'); c.width = ww; c.height = hh;
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ww, hh);
+  ctx.setTransform(ww / box.w, 0, 0, hh / box.h, ww / 2, hh / 2);
+  ctx.rotate(-box.ang);
+  ctx.drawImage(img, -box.cx, -box.cy);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  var feeds = {}; feeds[INTAKE_OCR.rec.inputNames[0]] = intakeOcrTensor_(ctx, ww, hh, [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]);
+  return INTAKE_OCR.rec.run(feeds).then(function (out) {
+    var o = out[INTAKE_OCR.rec.outputNames[0]], T = o.dims[1], C = o.dims[2], d = o.data;
+    var text = '', last = -1, sum = 0, n = 0, probs = [];
+    for (var t = 0; t < T; t++) {
+      var best = 0, bv = -1;
+      for (var k = 0; k < C; k++) { var v = d[t * C + k]; if (v > bv) { bv = v; best = k; } }
+      if (best !== 0 && best !== last) { var ch = INTAKE_OCR.dict[best - 1] || ''; if (ch) { text += ch; probs.push(bv); } sum += bv; n++; }
+      last = best;
+    }
+    // conf: the line's average (it decides whether the line is kept at all);
+    // probs: each character's own (I3a — a VALUE's least-sure character decides
+    // "check this one"; the line's labels and colons are not the value).
+    return { text: text, conf: n ? sum / n : 0, probs: probs };
+  });
+}
+
+/** PURE (Node-pinned) — the read lines as ROWS in reading order: the card is
+ *  first levelled by its lines' typical tilt (a photo taken at an angle), then
+ *  a line joins the row whose middle it shares (within half the shorter
+ *  height), and a row reads left to right. → [{y, h, items: [{text, x, w}]}]. */
+function intakeCardRows_(lines) {
+  var rows = [];
+  var angs = (lines || []).filter(function (l) { return l.ang && l.w > l.h * 3; }).map(function (l) { return l.ang; }).sort(function (a, b) { return a - b; });
+  var tilt = angs.length ? angs[angs.length >> 1] : 0, ct = Math.cos(-tilt), st = Math.sin(-tilt);
+  var level = (lines || []).map(function (l) {
+    var cx = l.x + l.w / 2, cy = l.y + l.h / 2, nx = cx * ct - cy * st, ny = cx * st + cy * ct;
+    return { text: l.text, x: nx - l.w / 2, y: ny - l.h / 2, w: l.w, h: l.h, probs: l.probs };
+  });
+  level.sort(function (a, b) { return (a.y + a.h / 2) - (b.y + b.h / 2); }).forEach(function (l) {
+    var cy = l.y + l.h / 2, row = rows[rows.length - 1];
+    if (row && Math.abs(cy - row.cy) < Math.min(l.h, row.h) * 0.5) row.items.push(l);
+    else rows.push({ cy: cy, h: l.h, items: [l] });
+  });
+  return rows.map(function (r) {
+    return { y: r.cy, h: r.h, items: r.items.sort(function (a, b) { return a.x - b.x; }).map(function (i) {
+      var raw = String(i.text), lead = raw.length - raw.replace(/^\s+/, '').length, text = raw.trim();
+      var probs = Array.isArray(i.probs) && i.probs.length === raw.length ? i.probs.slice(lead, lead + text.length) : null;
+      return { text: text, x: i.x, w: i.w, probs: probs };
+    }) };
+  });
+}
+
+// The labels a card prints, in the order they are tried — Rx group before
+// group (so "Rx Grp" is claimed first, and a later overlapping hit is
+// dropped; "RxGRP" is never "GRP" either, as no label starts after a
+// letter), payer ID only so it is never taken for the member ID. The Rx and
+// payer-ID labels are RECOGNISED but never offered (`skip`) — the team does
+// not use the Rx numbers (operator 2026-11-06); recognising them still keeps
+// their values out of the group and member ID. The reader
+// often drops the space between a label and its value ("RxPCNMEDDPRIME",
+// "Group Number0701234"), so a label is found without a word boundary after
+// it where its own letters make it unmistakable. A value must look like its
+// field, or it is not taken — the rep types it instead.
+var INTAKE_CARD_LABELS = [
+  { key: 'rxBin', skip: true, re: /(?<![a-z])(?:rx?\s*bin|bin(?![a-z]))(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
+  { key: 'rxPcn', skip: true, re: /(?<![a-z])(?:rx?\s*pcn|pcn(?![a-z]))(?:\s*(?:#|no\.?)(?![a-z]))?/i },
+  { key: 'rxGrp', skip: true, re: /(?<![a-z])rx\s*(?:grp|group)(?:\s*(?:#|no\.?|number)(?![a-z]))?/i },
+  { key: 'payerId', skip: true, re: /(?<![a-z])payer\s*(?:id|#)(?![a-z])/i },
+  { key: 'mbi', re: /(?<![a-z])(?:medicare\s*(?:number|no\.?|#|id|claim\s*number)|mbi)(?![a-z])/i, ok: null },
+  { key: 'memberId', re: /(?<![a-z])(?:member\s*(?:identification|id|#|no\.?|number)|subscriber\s*(?:id|#|no\.?|number)|identification\s*(?:no\.?|number|#)|id\s*(?:no\.?|number|#))(?![a-z]{2})/i, ok: /^(?=.*\d)[A-Z0-9-]{5,20}$/ },
+  { key: 'group', re: /(?<![a-z])(?:group|grp)(?:\s*(?:number|no\.?|#|id)(?![a-z]))?/i, ok: /^(?=.*\d)[A-Z0-9-]{3,15}$/ },
+];
+// Words a value can run into when the reader drops a space ("X1234005CMS").
+var INTAKE_CARD_TAIL_WORDS = ['CMS', 'RXBIN', 'RXPCN', 'RXGRP', 'BIN', 'PCN', 'RX', 'PLAN', 'ISSUER', 'PAYER', 'PCP', 'EFF'];
+// Payers a rep will see on a card, matched with the spaces taken out; the
+// card's own words on that line are what is offered.
+var INTAKE_CARD_PAYERS = ['bluecrossblueshield', 'bluecross', 'blueshield', 'aetna', 'cigna', 'unitedhealthcare', 'uhc', 'humana', 'wellcare', 'molina', 'ambetter', 'anthem', 'kaiser', 'tricare', 'oscar', 'superiorhealthplan', 'amerigroup', 'wellpoint', 'devoted', 'clover', 'scott&white', 'baylorscott', 'communityhealthchoice', 'cookchildren', 'texaschildren', 'parkland', 'driscoll', 'elpasohealth', 'firstcare', 'allwell', 'caresource', 'highmark', 'floridablue', 'horizon', 'medicaid', 'aarp', 'mutualofomaha'];
+
+/** PURE (Node-pinned) — the first Medicare ID (MBI) in a piece of text, read
+ *  with its separators taken out; a token that starts one is preferred. */
+function intakeCardMbiIn_(s) { return intakeCardMbiAt_(s).v; }
+/** PURE — the same, with WHERE in the text it was read ({v, start, end}), so
+ *  its characters' confidence can be looked up. */
+function intakeCardMbiAt_(s) {
+  var up = String(s || '').toUpperCase(), toks = [], m, re = /[A-Z0-9-]+/g;
+  while ((m = re.exec(up))) toks.push({ t: m[0], s: m.index, e: m.index + m[0].length });
+  for (var i = 0; i < toks.length; i++) {   // a token on its own, or the next one or two joined (spaces inside the ID)
+    var c = '';
+    for (var n = 0; n < 3 && i + n < toks.length; n++) {
+      c += toks[i + n].t.replace(/-/g, '');
+      if (c.length === 11 && INTAKE_MBI_RE.test(c)) return { v: c, start: toks[i].s, end: toks[i + n].e };
+      if (c.length > 11) break;
+    }
+  }
+  var at = [], compact = '';   // glued to a label: "MEDICARENUMBER1EG4TE5MK72"
+  for (var j = 0; j < up.length; j++) if (/[A-Z0-9]/.test(up.charAt(j))) { compact += up.charAt(j); at.push(j); }
+  for (var k = 0; k + 11 <= compact.length; k++) if (INTAKE_MBI_RE.test(compact.slice(k, k + 11))) return { v: compact.slice(k, k + 11), start: at[k], end: at[k + 10] + 1 };
+  return { v: '', start: -1, end: -1 };
+}
+
+// I3a — below this, a value's least-sure character marks it "check this one".
+// Measured on the spike's card photos (the decision entry): every true misread
+// sat under 0.35 and no correctly read value under 0.8.
+var INTAKE_CARD_SURE = 0.8;
+/** PURE (Node-pinned) — what a card's rows say: {payer, memberId, group,
+ *  mbi, advantage, unsure} — no Rx numbers (not used). A label's value is the text
+ *  after it on its row, else the piece of the NEXT row under it (cards print
+ *  the label above the number). A Medicare ID is taken only in the MBI shape,
+ *  and an Advantage card's number is its plan's member ID, never an MBI.
+ *  unsure[key] is true when the reader was not sure of one of that value's
+ *  own characters (I3a). */
+function intakeCardParse_(rows) {
+  var out = { payer: '', memberId: '', group: '', mbi: '', advantage: false, unsure: {} };
+  rows = rows || [];
+  var rowText = function (r) { return r.items.map(function (i) { return i.text; }).join('  '); };
+  var probsOf = function (it) { return it.probs || it.text.split('').map(function () { return 1; }); };
+  var rowProbs = function (r) { var p = []; r.items.forEach(function (it, n) { if (n) p.push(1, 1); p = p.concat(probsOf(it)); }); return p; };
+  var least = function (p, a, b) { var m = 1; for (var x = Math.max(0, a); x < b && x < p.length; x++) if (p[x] < m) m = p[x]; return m; };
+  var all = rows.map(rowText).join('\n');
+  var allP = []; rows.forEach(function (r, n) { if (n) allP.push(1); allP = allP.concat(rowProbs(r)); });
+  // A value read from the start of some text: {v, off, len} — off/len are where it sits there.
+  var valueOf = function (zone, ok) {
+    zone = String(zone || '');
+    var lead = (zone.match(/^[\s:#.\-–]+/) || [''])[0].length;
+    var run = (zone.slice(lead).match(/^[A-Za-z0-9][A-Za-z0-9-]*/) || [''])[0].toUpperCase();
+    if (!run) return null;
+    for (var t = 0; t < INTAKE_CARD_TAIL_WORDS.length; t++) {   // a word the value ran into, when what is left is still the field's shape
+      var w = INTAKE_CARD_TAIL_WORDS[t];
+      if (ok && run.length > w.length && run.slice(-w.length) === w && ok.test(run.slice(0, -w.length))) return { v: run.slice(0, -w.length), off: lead, len: run.length - w.length };
+    }
+    return !ok || ok.test(run) ? { v: run, off: lead, len: run.length } : null;
+  };
+  var set = function (key, v, sure) { out[key] = v; if (sure < INTAKE_CARD_SURE) out.unsure[key] = true; };
+  rows.forEach(function (row, ri) {
+    var text = rowText(row), probs = rowProbs(row);
+    var hits = [];
+    INTAKE_CARD_LABELS.forEach(function (L) {
+      var re = new RegExp(L.re.source, 'gi'), m;
+      while ((m = re.exec(text))) {
+        if (!m[0]) { re.lastIndex++; continue; }
+        if (hits.some(function (h) { return m.index < h.end && m.index + m[0].length > h.start; })) continue;
+        hits.push({ key: L.key, ok: L.ok, skip: !!L.skip, start: m.index, end: m.index + m[0].length });
+      }
+    });
+    hits.sort(function (a, b) { return a.start - b.start; });
+    hits.forEach(function (h, k) {
+      if (h.skip || out[h.key]) return;   // a skipped label only bounds its neighbours' values
+      var zone = text.slice(h.end, k + 1 < hits.length ? hits[k + 1].start : text.length);
+      if (h.key === 'mbi') {
+        var mb = intakeCardMbiAt_(zone);
+        if (mb.v) { set('mbi', mb.v, least(probs, h.end + mb.start, h.end + mb.end)); return; }
+      } else {
+        var got = valueOf(zone, h.ok);
+        if (got) { set(h.key, got.v, least(probs, h.end + got.off, h.end + got.off + got.len)); return; }
+      }
+      if (!rows[ri + 1]) return;
+      // Nothing after the label: the piece of the next row under the label's own piece.
+      var at = 0, item = null;
+      for (var n = 0; n < row.items.length; n++) {
+        var end = at + row.items[n].text.length;
+        if (h.start >= at && h.start < end) { item = row.items[n]; break; }
+        at = end + 2;
+      }
+      if (!item) return;
+      var cx = item.x + item.w / 2;
+      var near = rows[ri + 1].items.filter(function (b) { return b.x - 4 <= item.x + item.w && b.x + b.w + 4 >= item.x; })
+        .sort(function (a, b) { return Math.abs(a.x + a.w / 2 - cx) - Math.abs(b.x + b.w / 2 - cx); })[0];
+      if (!near) return;
+      var np = probsOf(near);
+      if (h.key === 'mbi') {
+        var nb = intakeCardMbiAt_(near.text);
+        if (nb.v) set('mbi', nb.v, least(np, nb.start, nb.end));
+      } else {
+        var g2 = valueOf(near.text, h.ok);
+        if (g2) set(h.key, g2.v, least(np, g2.off, g2.off + g2.len));
+      }
+    });
+  });
+  out.advantage = /medicare\s*advantage|(?<![a-z])(?:hmo|ppo|pffs|d-?snp)(?![a-z])|part\s*c(?![a-z])|gold\s*plus/i.test(all);
+  var flat = function (s) { return s.toLowerCase().replace(/[^a-z&]/g, ''); };
+  for (var r = 0; r < rows.length && !out.payer; r++) {
+    for (var i = 0; i < rows[r].items.length && !out.payer; i++) {
+      var it = rows[r].items[i], f = flat(it.text);
+      if (INTAKE_CARD_PAYERS.some(function (p) { return f.indexOf(p) >= 0; })) {
+        // Its letters and digits only — the reader is never sure of a space or a bracket.
+        var pp = probsOf(it), pm = 1;
+        for (var c = 0; c < it.text.length; c++) if (/[A-Za-z0-9]/.test(it.text.charAt(c)) && pp[c] < pm) pm = pp[c];
+        set('payer', it.text.replace(/\s+/g, ' ').trim().slice(0, 60), pm);
+      }
+    }
+  }
+  // Original Medicare: the card names Medicare and carries an MBI, with no plan of its own.
+  if (!out.advantage && /medicare/i.test(all)) {
+    if (!out.mbi) { var ma = intakeCardMbiAt_(all); if (ma.v) set('mbi', ma.v, least(allP, ma.start, ma.end)); }
+    if (out.mbi && (!out.payer || /^medicare$/i.test(out.payer))) { out.payer = 'Medicare'; delete out.unsure.payer; }
+  }
+  if (out.advantage) { out.mbi = ''; delete out.unsure.mbi; }
+  return out;
+}
+/** PURE (Node-pinned) — two reads (front and back) merged: the first value
+ *  found for each field wins. */
+function intakeCardMerge_(a, b) {
+  var out = { unsure: {} };
+  ['payer', 'memberId', 'group', 'mbi'].forEach(function (k) {
+    var from = (a && a[k]) ? a : ((b && b[k]) ? b : null);   // the value and its "check this" come from the same read
+    out[k] = from ? from[k] : '';
+    if (from && from.unsure && from.unsure[k]) out.unsure[k] = true;
+  });
+  out.advantage = !!((a && a.advantage) || (b && b.advantage));
+  if (out.advantage) { out.mbi = ''; delete out.unsure.mbi; }
+  return out;
+}
+/** PURE (Node-pinned) — the one insurance line the form's field holds:
+ *  "Medicare 1EG4TE5MK72" (I1 tidies it to "Medicare · 1EG4-TE5-MK72"), or
+ *  "Payer · ID … · Group …". */
+function intakeCardLine_(f) {
+  f = f || {};
+  if (f.mbi && /^medicare$/i.test(f.payer || 'Medicare')) return 'Medicare ' + f.mbi;
+  return [f.payer, f.memberId ? 'ID ' + f.memberId : '', f.group ? 'Group ' + f.group : ''].filter(Boolean).join(' · ');
+}
+
+var INTAKE_CARD_FIELDS = [['payer', 'Payer'], ['memberId', 'Member ID'], ['mbi', 'Medicare ID (MBI)'], ['group', 'Group']];
+
+/** Read every attached image and offer what was found. Each image is read on
+ *  its own (I3a): one that will not open or read is NAMED and the others still
+ *  count; "could not be read in this browser" is kept for a reader that will
+ *  not start — a broken photo is not the browser's fault (g142). */
+function intakeCardRead_(form) {
+  var imgs = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
+  var host = document.getElementById('intk-card-read');
+  if (!imgs.length || !host) return;
+  var es = INTAKE_STATE[form].lang === 'ES';
+  var status = function (msg) { host.innerHTML = '<p class="intk-card-status" role="status">' + icon('refresh', 13) + '<span>' + esc(msg) + '</span></p>'; };
+  var fail = function (msg) {
+    // No image or typed text rides this message (g146) — and it says what failed.
+    host.innerHTML = '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc(msg) + '</span>' +
+      '<button type="button" class="intk-btn intk-card-retry">' + esc(es ? 'Intentar de nuevo' : 'Try again') + '</button></p>';
+    var b = host.querySelector('.intk-card-retry');
+    if (b) b.addEventListener('click', function () { intakeCardRead_(form); });
+  };
+  status(INTAKE_OCR.state === 'ready' || window.INTAKE_OCR_ENGINE ? (es ? 'Leyendo la tarjeta…' : 'Reading the card…')
+    : (es ? 'Cargando el lector (unos 30 MB la primera vez)…' : 'Loading the card reader (about 30 MB the first time)…'));
+  var seq = host._seq = (host._seq || 0) + 1;
+  var images = imgs.slice();
+  intakeOcrEngine_().then(function (engine) {
+    var merged = null, failed = [], i = 0;
+    var next = function () {
+      if (host._seq !== seq) return null;
+      if (i >= images.length) return { fields: merged, failed: failed, total: images.length };
+      status((es ? 'Leyendo la imagen ' : 'Reading image ') + (i + 1) + (es ? ' de ' : ' of ') + images.length + '…');
+      var n = i + 1;
+      return intakeCardImage_(images[i]).then(function (img) { return engine.read(img); }).then(function (lines) {
+        var f = intakeCardParse_(intakeCardRows_(lines));
+        merged = merged ? intakeCardMerge_(merged, f) : f;
+      }, function () { failed.push(n); }).then(function () { i++; return next(); });
+    };
+    return next();
+  }, function () { return { engineFailed: true }; }).then(function (res) {
+    if (host._seq !== seq || !res) return;
+    if (res.engineFailed) { fail(es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.'); return; }
+    if (!res.fields) {
+      fail(res.total === 1 ? (es ? 'La imagen no se pudo leer — pruebe con una foto más clara, o escriba los datos.' : 'The image could not be read — try a clearer photo, or type the details.')
+        : (es ? 'Ninguna de las imágenes se pudo leer — pruebe con fotos más claras, o escriba los datos.' : 'None of the images could be read — try clearer photos, or type the details.'));
+      return;
+    }
+    INTAKE_CARD[form] = { fields: res.fields, failed: res.failed };
+    intakeCardPanel_(form);
+  }).catch(function () {
+    if (host._seq === seq) fail(es ? 'No se pudo leer la tarjeta en este navegador — escriba los datos del seguro.' : 'The card could not be read in this browser — type the insurance details instead.');
+  });
+}
+function intakeCardImage_(src) {
+  return new Promise(function (ok, no) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { no(new Error('image')); }; i.src = src; });
+}
+/** The suggestion: each value in a box the rep can correct, the line it makes,
+ *  and Use as primary / secondary. Nothing reaches the form until then. */
+function intakeCardPanel_(form) {
+  var host = document.getElementById('intk-card-read');
+  var st = INTAKE_CARD[form];
+  if (!host || !st) return;
+  var es = INTAKE_STATE[form].lang === 'ES';
+  var f = st.fields;
+  var shown = INTAKE_CARD_FIELDS.filter(function (p) { return p[0] !== 'mbi' || f.mbi || !f.memberId; });
+  var any = INTAKE_CARD_FIELDS.some(function (p) { return f[p[0]]; });
+  var unsure = f.unsure || (f.unsure = {});
+  var failedNote = (st.failed || []).length ? '<p class="intk-card-status intk-card-fail" role="status">' + icon('warning', 13) + '<span>' + esc((es ? 'No se pudo leer: imagen ' : 'Could not read image ') + st.failed.join(', ') +
+    (es ? ' — los datos vienen de las demás.' : ' — what is shown comes from the others.')) + '</span></p>' : '';
+  host.innerHTML = '<div class="intk-card-panel" role="group" aria-label="' + esc(es ? 'Datos leídos de la tarjeta' : 'Details read from the card') + '">' +
+    '<div class="intk-card-head">' + icon('fileText', 14) + ' ' + esc(any ? (es ? 'Leído de la tarjeta — compare cada dato con la tarjeta' : 'Read from the card — check each value against the card')
+      : (es ? 'No se encontraron datos del seguro en las imágenes — escríbalos en el formulario.' : 'No insurance details were found in the images — type them on the form.')) + '</div>' +
+    failedNote +
+    (any ? '<div class="intk-card-grid">' + shown.map(function (p) {
+      var k = p[0], check = !!(f[k] && unsure[k]);
+      // I3a: an empty box says it was not found; a value the reader was not
+      // sure of says to check it — a flag, never a percentage (the reader's
+      // scores are not odds, and a number invites trust).
+      return '<label class="intk-card-f' + (check ? ' intk-card-unsure' : '') + '"><span>' + esc(p[1]) + '</span>' +
+        '<input type="text" autocomplete="off" aria-label="' + esc(p[1]) + '" data-card-key="' + k + '" value="' + esc(f[k] || '') + '"' +
+          ' placeholder="' + esc(es ? 'No está en la tarjeta — escríbalo' : 'Not found on the card — type it') + '"' + (check ? ' aria-describedby="intk-card-chk-' + k + '"' : '') + '>' +
+        (check ? '<span class="intk-card-chk" id="intk-card-chk-' + k + '">' + icon('warning', 11) + ' ' + esc(es ? 'Revise este' : 'Check this one') + '</span>' : '') + '</label>';
+    }).join('') + '</div>' +
+    '<p class="intk-card-line"><span>' + esc(es ? 'Se escribirá:' : 'Will be written as:') + '</span> <b data-card-line>' + esc(intakeCardLine_(f)) + '</b></p>' +
+    '<div class="intk-card-acts"><button type="button" class="intk-btn primary" data-card-use="8">' + esc(es ? 'Usar como seguro primario' : 'Use as primary insurance') + '</button>' +
+      '<button type="button" class="intk-btn" data-card-use="9">' + esc(es ? 'Usar como seguro secundario' : 'Use as secondary insurance') + '</button>' : '<div class="intk-card-acts">') +
+      '<button type="button" class="intk-btn" data-card-close="1">' + esc(es ? 'Cerrar' : 'Dismiss') + '</button></div>' +
+    '<p class="intk-card-note">' + esc(es ? 'Leído en este navegador — las imágenes no se envían a ningún lugar para leerlas.' : 'Read in this browser — the images are not sent anywhere to be read.') + '</p>' +
+  '</div>';
+  host.oninput = function (e) {
+    var k = e.target && e.target.getAttribute('data-card-key');
+    if (!k) return;
+    f[k] = String(e.target.value || '').trim();
+    if (unsure[k]) {   // the rep has looked at it: the flag goes
+      delete unsure[k];
+      var lab = e.target.closest('.intk-card-f'), chk = lab && lab.querySelector('.intk-card-chk');
+      if (lab) lab.classList.remove('intk-card-unsure');
+      if (chk) chk.remove();
+      e.target.removeAttribute('aria-describedby');
+    }
+    var line = host.querySelector('[data-card-line]');
+    if (line) line.textContent = intakeCardLine_(f);
+  };
+  host.onclick = function (e) {
+    var t = e.target.closest ? e.target.closest('button') : null;
+    if (!t) return;
+    if (t.hasAttribute('data-card-close')) { delete INTAKE_CARD[form]; host.innerHTML = ''; intakeRenderGallery_(form); return; }
+    var idx = t.getAttribute('data-card-use');
+    if (idx) intakeCardUse_(form, parseInt(idx, 10));
+  };
+}
+/** Write the line into the primary (8) or secondary (9) insurance field —
+ *  asking first when that field already holds something — then let I1 tidy
+ *  and check it and the draft save it. */
+function intakeCardUse_(form, idx) {
+  var st = INTAKE_CARD[form];
+  var el = document.querySelector('#intk-' + form + '-form [data-intk-idx="' + idx + '"]');
+  if (!st || !el) return;
+  var line = intakeCardLine_(st.fields);
+  if (!line) return;
+  var go = function () {
+    el.value = line;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    delete INTAKE_CARD[form];
+    var host = document.getElementById('intk-card-read');
+    if (host) host.innerHTML = '';
+    intakeRenderGallery_(form);
+    showToast((idx === 8 ? 'Primary' : 'Secondary') + ' insurance filled from the card — check it.', 'toast-success');
+  };
+  var cur = String(el.value || '').trim();
+  if (!cur || cur === line) { go(); return; }
+  uiConfirm({ title: 'Replace the ' + (idx === 8 ? 'primary' : 'secondary') + ' insurance?', confirmLabel: 'Replace', cancelLabel: 'Keep it',
+    message: 'That field already says: ' + cur })
+    .then(function (ok) { if (ok) go(); });
 }
 
 // ── Draft autosave (parity with Call Notes) ───────────────────────────────
@@ -2801,6 +3672,7 @@ function intakeDraftsKept_(all, owner, now) {
 function intakeSweepDrafts_() {
   var owner = intakeDraftOwner_();
   if (!owner) return;
+  try { intakeSavedMine_(); } catch (e) {}   // I2: the saved drafts follow the same owner + 24h rule
   var r = intakeDraftsKept_(intakeReadDrafts_(), owner, Date.now());
   if (!r.dropped) return;
   if (Object.keys(r.kept).length) intakeWriteDrafts_(r.kept);
@@ -2895,6 +3767,193 @@ function intakeClearDraft_(form) {
   }
   var all = intakeReadDrafts_();
   if (all[form]) { delete all[form]; intakeWriteDrafts_(all); }
+}
+
+// ── I2 (operator 2026-11-05): saved drafts — Save draft + the Drafts list ──
+// The autosave above is ONE crash-protection copy per form. A saved draft is
+// the rep PARKING a form to take the next call: several per form, in THIS
+// browser only (umsIntakeSaved), the signed-in rep's own, 24 hours from its
+// last save, at most INTAKE_SAVED_MAX. Patient answers are PHI, so the same
+// owner + expiry rules as the autosave apply (INT2-3), and a send removes the
+// draft it came from. Insurance card images are not kept (localStorage is
+// small, and images are the largest PHI on the form).
+var INTAKE_SAVED_KEY = 'umsIntakeSaved';
+var INTAKE_SAVED_MAX = 20;
+var INTAKE_FORM_NAMES = { ppd: 'PPD', pmd: 'PMD Account', pap: 'PAP Account' };
+
+/** PURE (Node-pinned) — the saved drafts to KEEP: the owner's own, saved
+ *  within INTAKE_DRAFT_MAX_AGE_MS. Anything else (another rep's, expired, no
+ *  owner, malformed) is dropped. */
+function intakeSavedKept_(list, owner, now) {
+  var kept = [], dropped = 0;
+  (Array.isArray(list) ? list : []).forEach(function (d) {
+    var ok = d && d.id && INTAKE_FORM_NAMES[d.form] && owner && d.owner === owner && d.at && (now - d.at) <= INTAKE_DRAFT_MAX_AGE_MS;
+    if (ok) kept.push(d); else dropped++;
+  });
+  return { kept: kept, dropped: dropped };
+}
+/** PURE (Node-pinned) — what a saved draft is called in the list: the PPD's
+ *  patient line, an account form's patient name (question 1), else
+ *  "Unnamed patient". */
+function intakeSavedLabel_(form, snap) {
+  var t = form === 'ppd' ? (snap && snap.patientInfo) : (snap && snap.answers && snap.answers[1]);
+  t = String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+  return t ? t.slice(0, 80) : 'Unnamed patient';
+}
+/** PURE (Node-pinned) — save one draft into the list: the entry with the same
+ *  id is REPLACED (re-saving an opened draft updates it); a new one is added
+ *  unless the owner already has `max`. → {list, error}. */
+function intakeSavedUpsert_(list, entry, max) {
+  var out = (list || []).filter(function (d) { return d.id !== entry.id; });
+  if (out.length === (list || []).length && out.length >= max) {
+    return { list: list || [], error: 'You already have ' + max + ' saved drafts — open or delete one first.' };
+  }
+  out.push(entry);
+  return { list: out, error: '' };
+}
+/** PURE (Node-pinned) — "expires in 13 h" / "expires in 40 min". */
+function intakeSavedExpiresIn_(at, now) {
+  var left = (at + INTAKE_DRAFT_MAX_AGE_MS) - now;
+  if (left <= 0) return 'expired';
+  var mins = Math.ceil(left / 60000);
+  return mins < 60 ? 'expires in ' + mins + ' min' : 'expires in ' + Math.floor(mins / 60) + ' h';
+}
+
+function intakeSavedRead_() {
+  var raw;
+  try { raw = JSON.parse(localStorage.getItem(INTAKE_SAVED_KEY) || '[]'); } catch (e) { raw = []; }
+  return Array.isArray(raw) ? raw : [];
+}
+function intakeSavedWrite_(list) {
+  try {
+    if (list && list.length) localStorage.setItem(INTAKE_SAVED_KEY, JSON.stringify(list));
+    else localStorage.removeItem(INTAKE_SAVED_KEY);
+    return true;
+  } catch (e) { return false; }
+}
+/** The signed-in rep's live drafts, newest first (expired and other users'
+ *  are swept from storage as a side effect). */
+function intakeSavedMine_() {
+  var all = intakeSavedRead_();
+  var r = intakeSavedKept_(all, intakeDraftOwner_(), Date.now());
+  if (r.dropped) intakeSavedWrite_(r.kept);
+  return r.kept.slice().sort(function (a, b) { return b.at - a.at; });
+}
+function intakeSavedRemove_(id) {
+  if (!id) return;
+  var all = intakeSavedRead_();
+  var out = all.filter(function (d) { return d && d.id !== id; });
+  if (out.length !== all.length) intakeSavedWrite_(out);
+}
+function intakeSavedCountHtml_() {
+  var n = intakeSavedMine_().length;
+  return n ? ' <span class="intk-drafts-n">' + n + '</span>' : '';
+}
+function intakeSavedRefreshButtons_() {
+  var html = icon('clipboardList', 14) + ' Drafts' + intakeSavedCountHtml_();
+  document.querySelectorAll('.intk-drafts-btn').forEach(function (b) { b.innerHTML = html; });
+}
+
+/** Save draft: park this form as a saved draft and clear it for the next call. */
+function intakeSaveNamedDraft_(form) {
+  var snap = null;
+  try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; }
+  if (!snap || !intakeFilledCount_(snap, null)) { showToast('Nothing to save yet — the form is empty.', 'toast-warn'); return; }
+  var owner = intakeDraftOwner_();
+  if (!owner) { showToast('Could not save — sign-in not confirmed yet.', 'toast-warn'); return; }
+  var images = (INTAKE_STATE[form] && INTAKE_STATE[form].images) || [];
+  var go = function () {
+    var id = INTAKE_STATE[form].savedId || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    var entry = { id: id, form: form, owner: owner, at: Date.now(), label: intakeSavedLabel_(form, snap),
+      answers: snap.answers || {}, patientInfo: form === 'ppd' ? (snap.patientInfo || '') : '',
+      lang: INTAKE_STATE[form].lang || 'EN', amendOf: INTAKE_STATE[form].amendOf || null };
+    var r = intakeSavedUpsert_(intakeSavedMine_(), entry, INTAKE_SAVED_MAX);
+    if (r.error) { showToast(r.error, 'toast-warn'); return; }
+    if (!intakeSavedWrite_(r.list)) { showToast('Could not save the draft — this browser is not keeping data (private window?).', 'toast-error'); return; }
+    INTAKE_STATE[form].savedId = null;
+    intakeClearForm_(form);
+    showToast('Draft saved for ' + entry.label + ' — open it from Drafts (kept 24 hours, in this browser).', 'toast-success');
+  };
+  if (!images.length) { go(); return; }
+  uiConfirm({ title: 'Save draft without the card images?', confirmLabel: 'Save draft', cancelLabel: 'Keep working',
+    message: 'The ' + images.length + ' insurance card image' + (images.length === 1 ? ' is' : 's are') + ' not kept in a draft — attach ' + (images.length === 1 ? 'it' : 'them') + ' again when you open it.' })
+    .then(function (ok) { if (ok) go(); });
+}
+
+/** The Drafts list — every form's saved drafts for this rep, newest first. */
+function intakeOpenDraftsList_() {
+  var ov = ensureOverlay('intk-drafts-overlay', { labelledBy: 'intk-drafts-title' });
+  var paint = function () {
+    var list = intakeSavedMine_();
+    var now = Date.now();
+    var rows = list.map(function (d) {
+      return '<li class="intk-draft-row">' +
+        '<div class="intk-draft-main"><span class="intk-draft-form">' + esc(INTAKE_FORM_NAMES[d.form]) + '</span>' +
+          '<span class="intk-draft-label">' + esc(d.label || 'Unnamed patient') + '</span>' +
+          '<span class="intk-draft-meta">Saved ' + esc(new Date(d.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + ' · ' + esc(intakeSavedExpiresIn_(d.at, now)) + '</span></div>' +
+        '<div class="intk-draft-acts"><button type="button" class="intk-btn primary" data-draft-open="' + esc(d.id) + '">Open</button>' +
+          '<button type="button" class="intk-btn" data-draft-del="' + esc(d.id) + '" aria-label="Delete the draft for ' + esc(d.label || 'Unnamed patient') + '">Delete</button></div></li>';
+    }).join('');
+    ov.innerHTML = '<div class="modal intk-modal intk-drafts-modal">' +
+      '<div class="head"><h3 id="intk-drafts-title">Saved drafts</h3><button class="xclose" data-drafts-close="1" aria-label="Close">' + icon('x', 16) + '</button></div>' +
+      '<div class="body"><p class="intk-drafts-note">Kept in this browser for you only, 24 hours from the last save. Insurance card images are not kept.</p>' +
+      (rows ? '<ul class="intk-drafts-list">' + rows + '</ul>' : '<p class="intk-drafts-empty">No saved drafts. <b>Save draft</b> on a form parks it here while you take the next call.</p>') +
+      '</div></div>';
+  };
+  paint();
+  if (!ov._intkDraftsWired) {
+    ov._intkDraftsWired = true;
+    ov.addEventListener('click', function (e) {
+      var t = e.target.closest ? e.target : null;
+      if (!t) return;
+      if (t.closest('[data-drafts-close]')) { closeOverlay(ov); return; }
+      var open = t.closest('[data-draft-open]');
+      if (open) { intakeOpenSavedDraft_(open.getAttribute('data-draft-open')); return; }
+      var del = t.closest('[data-draft-del]');
+      if (del) {
+        var id = del.getAttribute('data-draft-del');
+        uiConfirm({ title: 'Delete this draft?', tone: 'danger', confirmLabel: 'Delete draft', cancelLabel: 'Keep it',
+          message: 'The saved answers will be erased from this browser. This cannot be undone.' })
+          .then(function (ok) {
+            if (!ok) return;
+            intakeSavedRemove_(id);
+            Object.keys(INTAKE_FORM_NAMES).forEach(function (f) { if (INTAKE_STATE[f].savedId === id) INTAKE_STATE[f].savedId = null; });
+            if (ov.classList.contains('open')) ov._intkDraftsPaint();
+            intakeSavedRefreshButtons_();
+          });
+      }
+    });
+  }
+  ov._intkDraftsPaint = paint;
+}
+
+/** Open a saved draft into its form — through the amend prefill's path, so
+ *  the form is entered blank (no autosave restore) in the draft's language,
+ *  then filled. Asks first when that form holds unsaved answers. */
+function intakeOpenSavedDraft_(id) {
+  var d = intakeSavedMine_().filter(function (x) { return x.id === id; })[0];
+  if (!d) { showToast('That draft has expired or was deleted.', 'toast-warn'); var o = document.getElementById('intk-drafts-overlay'); if (o && o._intkDraftsPaint) o._intkDraftsPaint(); return; }
+  var form = d.form;
+  var go = function () {
+    var ov = document.getElementById('intk-drafts-overlay');
+    if (ov) closeOverlay(ov);
+    intakeClearDraft_(form);   // the working copy is being replaced; its autosave goes with it
+    INTAKE_STATE[form].images = [];
+    delete INTAKE_CARD[form];
+    INTAKE_STATE[form].lang = d.lang === 'ES' ? 'ES' : 'EN';
+    window.INTAKE_AMEND_PREFILL = { form: form, savedId: d.id, savedLabel: d.label, amendOf: d.amendOf || null,
+      patientInfo: d.patientInfo || '', answers: d.answers || {}, language: d.lang || 'EN' };
+    enterTool('intake', form === 'ppd' ? 'intakePpd' : (form === 'pmd' ? 'intakePmdAccount' : 'intakePapAccount'));
+  };
+  // What is on that form now, if it is the one on screen; otherwise its autosave.
+  var snap = null;
+  if (intakeFormRoot_(form)) { try { snap = (form === 'ppd') ? intakeCollectPpd_() : intakeCollectAcct_(form); } catch (e) { snap = null; } }
+  else { var a = intakeReadDrafts_()[form]; snap = (a && a.owner === intakeDraftOwner_()) ? a : null; }
+  var n = intakeFilledCount_(snap, INTAKE_STATE[form].images);
+  if (!n || INTAKE_STATE[form].savedId === d.id) { go(); return; }
+  uiConfirm({ title: 'Replace what is on the ' + INTAKE_FORM_NAMES[form] + ' form?', tone: 'danger', confirmLabel: 'Open draft', cancelLabel: 'Keep the form',
+    message: n + ' answer' + (n === 1 ? '' : 's') + ' on the form now will be replaced — Save draft first to keep them.' })
+    .then(function (ok) { if (ok) go(); });
 }
 
 // ── Sent tab (P15) — in-app viewer for past intake submissions ─────────────
@@ -3383,9 +4442,19 @@ function intakeConsumeAmendPrefill_(form) {
       intakeReenterForm_(form);
       return;
     }
-    INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
-    intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
-    showToast('Amending the submission sent ' + p.timestamp + ' — the new send will be marked AMENDED.', 'toast-info');
+    if (p.savedId) {
+      // I2: a saved draft opened from the Drafts list (an amendment it was
+      // parked from rides along). The autosave then mirrors it at once.
+      INTAKE_STATE[form].amendOf = p.amendOf || null;
+      INTAKE_STATE[form].savedId = p.savedId;
+      intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers });
+      try { intakeDraftSaveNow_(form); } catch (e) {}
+      showToast('Draft opened — ' + (p.savedLabel || 'Unnamed patient') + '.', 'toast-info');
+    } else {
+      INTAKE_STATE[form].amendOf = { submissionId: p.submissionId, timestamp: p.timestamp };
+      intakeRestoreAnswers_(form, { patientInfo: p.patientInfo, answers: p.answers, dob: p.dob });
+      showToast('Amending the submission sent ' + p.timestamp + ' — the new send will be marked AMENDED.', 'toast-info');
+    }
   }
   intakeRenderAmendBar_(form);
 }
@@ -3505,8 +4574,11 @@ function intakeConfirmClear_(form) {
     .then(function (ok) { if (ok) intakeClearForm_(form); });
 }
 function intakeClearForm_(form) {
+  INTAKE_TIMER[form] = 0;   // M1: a cleared form is a new call
   INTAKE_STATE[form].images = [];
   INTAKE_STATE[form].amendOf = null;   // an amend never survives a clear/send
+  INTAKE_STATE[form].savedId = null;   // I2: a cleared form is no longer that saved draft (the draft itself stays in the list)
+  delete INTAKE_CARD[form];   // I3: a card's details read for this patient go with the form
   // Drop the cached preview too — it holds the full patient-answer payload
   // (PHI). Clearing the form must not leave it resident in memory (F3).
   INTAKE_STATE.preview = null;
@@ -3614,7 +4686,7 @@ function intakeNoteFields_(formType, payload, recipient, recs) {
   };
 }
 
-function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
+function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec) {
   var f = intakeNoteFields_(formType, payload, recipient, recs);
   var label = f.label, ft = f.ft;
   // The copied text is the standard note template, through the ONE formatter
@@ -3644,6 +4716,9 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView) {
     tags: ['intake-' + ft],
     subformData: { intakeType: ft }
   };
+  // M1: the form's time (first input to send) — the whitelisted
+  // completionSeconds the Call Notes form timer already writes.
+  if (formSec > 0) notePayload.subformData.completionSeconds = formSec;
   google.script.run
     .withSuccessHandler(function (res) {
       var ok = res && res.success;

@@ -304,6 +304,8 @@ function _resetCdrCaches_() {
   try {
     _cdrNameMapCache = null;
     _cdrNameMapExpiry = 0;
+    _cdrStampMemo = null;   // PF1
+    _cdrDateColMemo = {};   // PF1
     _cdrColumnsValidated = false;
     _cdrColumnWarning = null;
     // F6 (cycle 12): the CSR Transfer tab's header check is once-per-session
@@ -327,9 +329,11 @@ function _resetCdrCaches_() {
 function _clearCdrCacheForDate_(date) {
   try {
     const cache = CacheService.getScriptCache();
-    const keys = [
-      CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_([_TEST_INDIA_NAME]) + ':' + date + ':' + date,
-    ];
+    // PF1: the keys are built by the production spec — with the current stamp
+    // and with none (the five-minute family used when the stamp cannot be read).
+    const stamp = cdrDataStamp_();
+    const keyFor = function (h) { return [cdrWindowCacheSpec_('dqe', stamp, h, date, date).key, cdrWindowCacheSpec_('dqe', '', h, date, date).key]; };
+    let keys = keyFor(cdrRosterHash_([_TEST_INDIA_NAME]));
     const roster = getEmployeeRosterRows_();
     const names = [];
     for (let r = 1; r < roster.length; r++) {
@@ -342,7 +346,7 @@ function _clearCdrCacheForDate_(date) {
       const n = String(roster[r][EMP.NAME]).trim();
       if (n) names.push(n);
     }
-    keys.push(CONFIG.CDR_CACHE_KEY + ':' + cdrRosterHash_(names) + ':' + date + ':' + date);
+    keys = keys.concat(keyFor(cdrRosterHash_(names)));
     cache.removeAll(keys);
   } catch (e) {}
 }
@@ -6732,6 +6736,7 @@ function test_managerGates_rejectNonManager() {
     ['getEmployeesList',               function () { return getEmployeesList(); }],
     ['getEmployeeTimesheetForManager', function () { return getEmployeeTimesheetForManager(_TEST_INDIA_ID, D, D); }],
     ['managerGetDayActivity',          function () { return managerGetDayActivity(_TEST_INDIA_ID, D); }],   // 25post round 12 E2
+    ['managerGetTeamActivity',         function () { return managerGetTeamActivity(D); }],                   // AC1
     // Pay statement (2026-08-17): rep-callable for SELF; the repEmpId branch —
     // viewing ANOTHER rep's hours + rate — is the manager-gated surface. The
     // omnibus runs as the INDIA employee, so the target must be a DIFFERENT id
@@ -6796,6 +6801,13 @@ function test_managerGates_rejectNonManager() {
     ['getEmpDocTemplates',             function () { return getEmpDocTemplates(); }],
     ['saveEmpDocTemplate',             function () { return saveEmpDocTemplate({ name: 'gate', bodyMd: 'x' }); }],
     ['deleteEmpDocTemplate',           function () { return deleteEmpDocTemplate('no-such-tpl'); }],
+    // ED4 — the letterheads (the read is manager-gated, the three writes admin-gated).
+    ['getEmpDocLetterheads',           function () { return getEmpDocLetterheads(); }],
+    ['getDeptRequestAudit',            function () { return getDeptRequestAudit({}); }],
+    ['setDeptRequestCrmCheck',         function () { return setDeptRequestCrmCheck('no-such-req', true); }],
+    ['saveEmpDocLetterhead',           function () { return saveEmpDocLetterhead({ name: 'gate' }); }],
+    ['deleteEmpDocLetterhead',         function () { return deleteEmpDocLetterhead('no-such-lh'); }],
+    ['setEmpDocLetterheadLogo',        function () { return setEmpDocLetterheadLogo('no-such-lh', ''); }],
     // Underscore-suffixed (not google.script.run-reachable) but editor-runnable;
     // pin the gate anyway.
     ['verifyFormSubmissionIntegrity_', function () { return verifyFormSubmissionIntegrity_('no-such-token'); }],
@@ -6843,6 +6855,7 @@ function test_managerGates_rejectNonManager() {
     getCallNotesAuditLog: 1, getCallNoteAuditHistory: 1, saveEmailTemplates: 1,
     saveExternalLinks: 1, saveAutoTagRules: 1, getFeatureFlags: 1, saveFeatureFlags: 1,
     getCallNotesEnrollment: 1, saveKbAiSettings: 1,
+    saveEmpDocLetterhead: 1, deleteEmpDocLetterhead: 1, setEmpDocLetterheadLogo: 1,   // ED4
     // Team-member onboarding (2026-08-07) — roster management, admin tier.
     addEmployee: 1, offboardEmployee: 1, getOnboardingPanel: 1,
     getOnboardingCdrReadiness: 1,

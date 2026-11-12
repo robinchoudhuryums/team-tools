@@ -61,18 +61,19 @@ function hbQuizResetsParse_(values) {
   }).filter(function (x) { return x.email && x.quizId && isFinite(x.ms) && x.ms > 0; });
 }
 /** PURE — where one person stands with one quiz: the retry limit over their
- *  attempts since the latest reset, how many they have made, their best score
- *  and whether they have ever passed. */
+ *  attempts since the latest reset, how many they have made, their best score,
+ *  whether they have ever passed, and when they last took it (HBR3: the quiz
+ *  card's "Last taken"; null when never). */
 function hbQuizStanding_(attempts, resets, email, quizId, nowMs) {
   let resetMs = 0;
   (resets || []).forEach(function (x) { if (x.email === email && x.quizId === quizId && x.ms > resetMs) resetMs = x.ms; });
   const mine = (attempts || []).filter(function (a) { return a.email === email && a.quizId === quizId; });
   const since = mine.filter(function (a) { return a.ms > resetMs; }).map(function (a) { return { ms: a.ms, passed: a.passed }; });
   const lk = trainQuizLockout_(since, nowMs, TRAIN_QUIZ_MAX_ATTEMPTS, TRAIN_QUIZ_LOCK_HOURS * 3600000);
-  let best = null, passed = false;
-  mine.forEach(function (a) { if (best === null || a.scorePct > best) best = a.scorePct; if (a.passed) passed = true; });
+  let best = null, passed = false, lastMs = null;
+  mine.forEach(function (a) { if (best === null || a.scorePct > best) best = a.scorePct; if (a.passed) passed = true; if (lastMs === null || a.ms > lastMs) lastMs = a.ms; });
   return { locked: lk.locked, retryAtMs: lk.retryAtMs, attemptsLeft: lk.attemptsLeft, maxAttempts: TRAIN_QUIZ_MAX_ATTEMPTS,
-    attempts: mine.length, best: best, passed: passed };
+    attempts: mine.length, best: best, passed: passed, lastMs: lastMs };
 }
 /** PURE — a quiz as a list row: no questions, just what the list shows. */
 function hbQuizSummary_(q) {

@@ -383,7 +383,8 @@ window.addEventListener('load', () => {
       // rep's manual resize/reposition sticks across launches.
       popoutPersistGeometryInit_();
       // First-load onboarding tour (auto-starts once per TOUR_VERSION; never
-      // in the compact pop-out). Replayable from the Call Notes ? menu.
+      // in the compact pop-out); someone who saw an older version gets only the
+      // what's-new steps (T1). Replayable from Settings and the Call Notes ? menu.
       if (typeof tourMaybeAutoStart_ === 'function') tourMaybeAutoStart_();
       // "What's new" (#4, INV-152) — best-effort fetch. F1 (cycle 10): the
       // panel does NOT auto-open (the 2026-07-09 operator decision — updates
@@ -810,6 +811,18 @@ function settingsClose_() {
   p.setAttribute('hidden', '');
   settingsReflectExpanded_(false);
 }
+/** T1 — Settings → Replay the tour. Focus goes back to the visible gear
+ *  BEFORE the tour starts, because the tour hands focus back to whatever had
+ *  it when it began, and the button pressed is inside the panel this hides. */
+function settingsReplayTour_() {
+  settingsClose_();
+  var gears = document.querySelectorAll('[data-settings-toggle]');
+  for (var i = 0; i < gears.length; i++) {
+    var r = gears[i].getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) { try { gears[i].focus(); } catch (_) {} break; }
+  }
+  if (typeof tourStart === 'function') tourStart('full');
+}
 function settingsToggle_(btn) {
   var p = settingsPanelEl_();
   if (!p) return;
@@ -1016,6 +1029,12 @@ function renderShell(state) {
       </div>
       <div class="stg-note">Previews that role&rsquo;s tabs and controls — data still loads with your real access.</div>
     </div>` : '';
+  // T1 (operator 2026-11-11): the tour is replayed from here — the one place
+  // every page reaches (the Call Notes ? menu keeps its link). Not in the
+  // compact pop-out, which holds one tool and never auto-starts the tour.
+  const tourRow = COMPACT_MODE ? '' : `
+    <div class="stg-row"><span class="sb-theme-label">Tour</span>
+      <div class="stg-viewas-btns"><button type="button" class="stg-va-btn" data-tour-replay onclick="settingsReplayTour_()">Replay the tour</button></div></div>`;
   const settingsPanel = `
     <div class="settings-panel" id="settings-panel" hidden role="group" aria-label="Settings">
       <div class="stg-row"><span class="sb-theme-label">Theme</span>${themeToggle}</div>
@@ -1023,6 +1042,7 @@ function renderShell(state) {
       <div class="stg-row"><span class="sb-theme-label">Alerts</span>${reminderToggle}</div>
       <div class="stg-row"><span class="sb-theme-label">Dashboard</span>
         <div class="stg-viewas-btns"><button type="button" class="stg-va-btn" onclick="settingsClose_();if(typeof clkDashOpenCustomize_==='function')clkDashOpenCustomize_()">Customize widgets…</button></div></div>
+      ${tourRow}
       ${viewAsRow}
     </div>`;
   const viewAsBanner = VIEW_AS.active ? `
@@ -2464,16 +2484,66 @@ function tzMismatchCheck_() {
 // admin IS the one interacting, under their own id.
 var PRESENCE_MIN_GAP_MS = 10 * 60 * 1000;
 var PRESENCE = { sentAt: 0, bound: false };
-function presenceOnGesture_() {
+// AC1 (operator 2026-11-11) — activity LEVEL. The same two gestures are also
+// COUNTED, per 10-minute block: a pointerdown is a click, a keydown a
+// keystroke (a held key's repeats are one). Only the count — the key pressed
+// and the thing clicked are never read. The counts ride the next presence
+// ping; a window whose rep has PAUSED for ACT_FLUSH_IDLE_MS sends what it has
+// through recordActivityCounts, which stamps no presence, so the minutes
+// before a break or the end of the day are kept. A send that fails puts its
+// counts back for the next one; counts still held when the window closes are
+// lost (said on the Day Edit card).
+var ACT_BLOCK_MS = 10 * 60 * 1000;            // = the server's ACTIVITY_BLOCK_MIN (pinned)
+var ACT_FLUSH_IDLE_MS = 2 * 60 * 1000;
+var ACT_COUNTS = { b: {}, t: null };
+function actCount_(e) {
+  if (!e || (e.type === 'keydown' && e.repeat)) return;
+  var blk = Math.floor(Date.now() / ACT_BLOCK_MS);
+  var cur = ACT_COUNTS.b[blk] || (ACT_COUNTS.b[blk] = [0, 0]);
+  if (e.type === 'keydown') cur[1]++; else cur[0]++;
+  if (ACT_COUNTS.t) clearTimeout(ACT_COUNTS.t);
+  ACT_COUNTS.t = setTimeout(actFlush_, ACT_FLUSH_IDLE_MS);
+}
+/** The counts held, as the server reads them ({at, b: [[block, clicks, keys]]}),
+ *  emptied — or null when there are none. `at` lets the server correct a
+ *  computer clock that is off. */
+function actTake_() {
+  var ks = Object.keys(ACT_COUNTS.b);
+  if (!ks.length) return null;
+  var out = { at: Date.now(), b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
+  ACT_COUNTS.b = {};
+  return out;
+}
+function actRestore_(p) {
+  if (!p || !p.b) return;
+  p.b.forEach(function (e) {
+    var cur = ACT_COUNTS.b[e[0]] || (ACT_COUNTS.b[e[0]] = [0, 0]);
+    cur[0] += e[1]; cur[1] += e[2];
+  });
+}
+function actFlush_() {
+  ACT_COUNTS.t = null;
   try {
+    var p = actTake_();
+    if (!p) return;
+    google.script.run
+      .withSuccessHandler(function () {})
+      .withFailureHandler(function () { actRestore_(p); })
+      .recordActivityCounts(p);
+  } catch (e) { /* never break input handling */ }
+}
+function presenceOnGesture_(e) {
+  try {
+    actCount_(e);
     var now = Date.now();
     if (now - PRESENCE.sentAt < PRESENCE_MIN_GAP_MS) return;
     PRESENCE.sentAt = now;                         // stamp BEFORE the send — a slow/failed RPC never double-fires
+    var p = actTake_();
     google.script.run
       .withSuccessHandler(function () {})
-      .withFailureHandler(function () {})
-      .recordPresence();
-  } catch (e) { /* never break input handling */ }
+      .withFailureHandler(function () { actRestore_(p); })   // the stamp stays; only the counts wait for the next send
+      .recordPresence(p);
+  } catch (err) { /* never break input handling */ }
 }
 function presenceBind_() {
   if (PRESENCE.bound) return;                     // idempotent (the shell may re-render)

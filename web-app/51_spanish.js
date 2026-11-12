@@ -214,7 +214,13 @@ function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilte
     else if (kind === 'vm') role = spanishVmMatch_(m.getFrom(), m.getSubject(), vmSender, vmFilter) ? 'request'
       : ((haveMembers ? !!members[from] : !!from) ? 'resolver' : 'other');
     else if (haveMembers && members[from]) role = 'resolver';   // a member's message answers, as before — even on a thread a member opened
-    else if (from && from === requester) role = spanishIsCourtesyOnly_(m.getPlainBody()) ? 'other' : 'request';   // a thank-you is not a request (operator 2026-10-05)
+    else if (from && from === requester) {
+      // A thank-you is not a request (operator 2026-10-05), and neither is the
+      // app's own resolved reply (SP1) — on a thread the deployer's mailbox
+      // opened, that reply comes from the requester's own address.
+      const body = m.getPlainBody();
+      role = (spanishIsCourtesyOnly_(body) || spanishIsAppReply_(body)) ? 'other' : 'request';
+    }
     else role = (!haveMembers && from) ? 'resolver' : 'other';
     return { ms: m.getDate().getTime(), role: role, from: from };
   });
@@ -675,6 +681,7 @@ function spanishPendingCore_(days, emp) {
     // gate) and `self` (the caller's lowercased email, so the client can tell
     // "claimed by me" apart without a second identity source).
     return { address: addr, days: d, pending: out, escalateDays: SPANISH_ESCALATE_DAYS,   // E4 (G5): the client names the rule from here
+      resolveOutcomes: SPANISH_RESOLVE_OUTCOMES, resolveNoteMax: SPANISH_RESOLVE_NOTE_MAX,   // SP1: the resolve dialog's choices come from here, never a client copy
       truncated: threads.length >= SPANISH_THREAD_SCAN_MAX || vmTruncated,
       // SP4 — what the gate HID, and the threshold it hid it at. A filter
       // nobody can see is a filter that can fail silently forever.
@@ -834,8 +841,12 @@ function getOrCreateSpanishResolvedSheet_() {
   let sh = ss.getSheetByName(SPANISH_RESOLVED_TAB);
   if (!sh) {
     sh = ss.insertSheet(SPANISH_RESOLVED_TAB);
-    sh.appendRow(sheetSafeRow_([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'ResolvedBy', 'ResolvedAtMs']));
+    sh.appendRow(sheetSafeRow_([`Timestamp (${tzAbbr_(CONFIG.TIMEZONE)})`, 'ThreadId', 'ResolvedBy', 'ResolvedAtMs', 'Outcome']));
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < 5) {
+    // SP1: the trailing Outcome column — the header self-heals once; older
+    // rows read it blank ("not recorded"). The readers take four columns.
+    sh.getRange(1, 5).setValue(sheetSafe_('Outcome'));
   }
   return sh;
 }
@@ -901,10 +912,103 @@ function spanishManualResolvedMap_() {
 }
 /** SP-1 — the newest message's time in a thread (a repeat voicemail, or any
  *  later mail), against which an existing manual resolve is judged. */
-function spanishThreadLatestMs_(msgs) {
+function spanishThreadLatestMs_(msgs, selfAddrs) {
   let m = 0;
-  (msgs || []).forEach(function (x) { const t = x.getDate().getTime(); if (t > m) m = t; });
+  (msgs || []).forEach(function (x) {
+    // SP1: the app's own resolved reply is not new work — counting it made a
+    // second click after the reply resolve (and reply) again.
+    if (selfAddrs && selfAddrs[emailAddrOnly_(x.getFrom())] && spanishIsAppReply_(x.getPlainBody())) return;
+    const t = x.getDate().getTime(); if (t > m) m = t;
+  });
   return m;
+}
+// ── SP1 (operator 2026-11-09): resolve with an outcome, and a reply ────────
+/** PURE (Node-pinned) — the resolve's outcome and note: a known outcome key or
+ *  none (an older page sends none — the resolve still works, the reply simply
+ *  names no outcome); a note trimmed, its line breaks kept, capped at
+ *  SPANISH_RESOLVE_NOTE_MAX. An unknown key is refused. */
+function spanishResolveInput_(outcome, note) {
+  const k = String(outcome == null ? '' : outcome).trim();
+  if (k && !Object.prototype.hasOwnProperty.call(SPANISH_RESOLVE_OUTCOMES, k)) return { error: 'Choose how the request ended.' };
+  const n = String(note == null ? '' : note).replace(/\r\n?/g, '\n').trim().slice(0, SPANISH_RESOLVE_NOTE_MAX);
+  return { outcome: k, outcomeLabel: k ? SPANISH_RESOLVE_OUTCOMES[k] : '', note: n };
+}
+/** PURE (Node-pinned) — is this message body the app's own resolved reply? */
+function spanishIsAppReply_(body) {
+  return String(body == null ? '' : body).indexOf(SPANISH_APP_REPLY_MARKER) >= 0;
+}
+/** PURE (Node-pinned) — the message a reply answers: the LATEST request in the
+ *  thread (a requester's follow-up is the request being resolved), else the
+ *  first message. `roles` is spanishThreadRoles_'s list. */
+function spanishReplyTargetIdx_(roles) {
+  for (let i = (roles || []).length - 1; i >= 0; i--) if (roles[i] && roles[i].role === 'request') return i;
+  return 0;
+}
+/** PURE (Node-pinned) — the reply's text and HTML: who resolved it, the
+ *  outcome, the note (escaped, its lines kept), and the marker line that keeps
+ *  it from ever reading as a follow-up. */
+function spanishResolveReplyParts_(info) {
+  const o = info || {};
+  const P = CN_EMAIL_PALETTE;
+  const by = String(o.by || 'someone');
+  const head = 'This request was marked resolved by ' + by + (o.at ? ' on ' + o.at : '') + '.';
+  const lines = [head];
+  if (o.outcomeLabel) lines.push('Outcome: ' + o.outcomeLabel + '.');
+  if (o.note) lines.push('Note: ' + o.note);
+  const text = lines.join('\n') + '\n\n' + SPANISH_APP_REPLY_MARKER;
+  const html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:' + P.ink + ';line-height:1.5;">' +
+      '<p style="margin:0 0 8px;"><span style="color:' + P.accent + ';font-weight:700;">&#10003;</span> ' + esc_(head) + '</p>' +
+      (o.outcomeLabel ? '<p style="margin:0 0 8px;"><b>Outcome:</b> ' + esc_(o.outcomeLabel) + '</p>' : '') +
+      (o.note ? '<p style="margin:0 0 8px;"><b>Note:</b> ' + cnNlBr_(esc_(o.note)) + '</p>' : '') +
+      '<p style="margin:10px 0 0;font-size:11px;color:' + P.muted + ';">' + esc_(SPANISH_APP_REPLY_MARKER) + '</p>' +
+    '</div>';
+  return { text: text, html: html };
+}
+/** PURE (Node-pinned) — what the person who resolved is told about the reply;
+ *  '' when none was tried (already resolved, or the toggle is off). */
+function spanishResolveReplyNote_(reply) {
+  if (!reply) return '';
+  if (reply.sent) return 'A reply saying so was sent on the email thread.';
+  if (reply.reason === 'voicemail') return 'A voicemail request has no email to reply to, so no reply was sent.';
+  if (reply.reason === 'failed') return 'The reply on the email thread could not be sent — the request is still resolved.';
+  return '';
+}
+/** The mailbox addresses the app sends as (the deployer, and the Send-mail-as
+ *  alias when one is set) — the only senders of its own replies. */
+function spanishSelfAddrs_() {
+  const out = {};
+  try { const e = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); if (e) out[e] = true; } catch (_) {}
+  try { const a = String(repSenderFrom_() || '').trim().toLowerCase(); if (a) out[a] = true; } catch (_) {}
+  return out;
+}
+/** 'vm' when the thread is the phone system's voicemail mail, else 'email'. */
+function spanishThreadKind_(msgs) {
+  const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
+  return (msgs && msgs.length && vmSender && vmFilter && spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), vmSender, vmFilter)) ? 'vm' : 'email';
+}
+/** SP1 — reply on a freshly resolved request's thread. Called AFTER the
+ *  resolve's lock is released (g34) and never throws — the resolve stands.
+ *  Replies-all to the latest request message, as "UMS Team Tools". Returns
+ *  { sent: true } or { sent: false, reason } — 'off', 'voicemail', 'failed'. */
+function spanishSendResolveReply_(msgs, kind, emp, input) {
+  try {
+    if (!getFlag_('spanishResolveReply')) return { sent: false, reason: 'off' };
+    if (kind === 'vm') return { sent: false, reason: 'voicemail' };
+    const members = getSpanishInboxMembers_();
+    const roles = spanishThreadRoles_(msgs, 'email', members, Object.keys(members).length > 0);
+    const target = msgs[spanishReplyTargetIdx_(roles)] || msgs[0];
+    const parts = spanishResolveReplyParts_({ by: drResolverLabel_(emp && emp.name, emp && emp.email),
+      at: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a z'),
+      outcomeLabel: input && input.outcomeLabel, note: input && input.note });
+    const opts = { htmlBody: parts.html, name: 'UMS Team Tools' };
+    const from = repSenderFrom_();
+    if (from) opts.from = from;
+    target.replyAll(parts.text, opts);
+    return { sent: true };
+  } catch (e) {
+    console.warn('spanishSendResolveReply_ failed: ' + e.message);
+    return { sent: false, reason: 'failed' };
+  }
 }
 /** Manual resolve — gated on canSeeSpanishInbox_ (the members who action the
  *  inbox + managers), SCOPE-GUARDED like getSpanishInboxThreadBody (the thread
@@ -913,10 +1017,12 @@ function spanishThreadLatestMs_(msgs) {
  *  list drops the thread immediately (live-read); the cached stats aggregate
  *  reflects it within its 5-min TTL (the INV-43 posture). PHI-free audit row
  *  (threadId only). */
-function resolveSpanishThread(threadId) {
+function resolveSpanishThread(threadId, outcome, note) {
   try {
     const emp = getEmployeeInfo_();
     if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    const input = spanishResolveInput_(outcome, note);   // SP1
+    if (input.error) return { error: input.error };
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured.' };
@@ -934,16 +1040,19 @@ function resolveSpanishThread(threadId) {
       // SP-1 (cycle 23): "already" only when the existing resolve covers the
       // thread's NEWEST message — a voicemail that arrived after it is new
       // work, and resolving it appends a later row (the fold keeps the latest).
-      if (spanishResolveCovered_(spanishManualResolvedMap_()[tid], spanishThreadLatestMs_(msgs))) return { success: true, already: true };
+      if (spanishResolveCovered_(spanishManualResolvedMap_()[tid], spanishThreadLatestMs_(msgs, spanishSelfAddrs_()))) return { success: true, already: true };
       getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
-        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(),
+        fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(), input.outcome,
       ]));
     } finally { lock.releaseLock(); }
-    writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid);
+    // SP1: the reply on the thread, outside the lock; a voicemail gets none.
+    const reply = spanishSendResolveReply_(msgs, spanishThreadKind_(msgs), emp, input);
+    writeAuditLog_(emp, 'SpanishInboxResolve', '', '', false, 0, 'threadId=' + tid +
+      (input.outcome ? '; outcome=' + input.outcome : '') + '; reply=' + (reply.sent ? 'sent' : reply.reason));
     spanishPendingIdsDrop_(tid);   // SP-1
     // 22post C-8: a resolved request leaves its owner's Needs-you list.
     try { const c = spanishClaimsMap_()[tid]; if (c) spanishBustClaimants_([c.by]); } catch (_) {}
-    return { success: true };
+    return { success: true, reply: reply, replyNote: spanishResolveReplyNote_(reply) };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
 }
 /** PURE (Node-pinned) — SP-1: an existing manual resolve covers the thread
@@ -976,10 +1085,12 @@ function spanishBulkIds_(ids, max) {
  *  and ONE write of the rows not already covered (g145 — appendRowsSafe_).
  *  A thread that cannot be resolved is NAMED in `failed`, never dropped;
  *  `already` is the idempotent half. PHI-free audit row (counts + ids). */
-function resolveSpanishThreads(threadIds) {
+function resolveSpanishThreads(threadIds, outcome, note) {
   try {
     const emp = getEmployeeInfo_();
     if (!canSeeSpanishInbox_(emp)) return { error: 'Spanish Inbox access required.' };
+    const input = spanishResolveInput_(outcome, note);   // SP1 — one outcome and note for every selected request
+    if (input.error) return { error: input.error };
     if (typeof GmailApp === 'undefined') return { error: 'Gmail is not available.' };
     const addr = getSpanishInboxAddress_();
     if (!addr) return { error: 'Spanish inbox not configured.' };
@@ -987,6 +1098,7 @@ function resolveSpanishThreads(threadIds) {
     if (ids === null) return { error: 'Select at most ' + SPANISH_BULK_RESOLVE_MAX + ' requests at a time.' };
     if (!ids.length) return { error: 'No requests selected.' };
     const failed = [], ok = [];
+    const self = spanishSelfAddrs_();
     ids.forEach(function (tid) {
       try {
         const th = GmailApp.getThreadById(tid);
@@ -994,7 +1106,7 @@ function resolveSpanishThreads(threadIds) {
         const msgs = th.getMessages();
         if (!msgs.length) { failed.push({ threadId: tid, error: 'Empty thread.' }); return; }
         if (!spanishThreadInScope_(msgs[0], addr)) { failed.push({ threadId: tid, error: 'Not a Spanish-inbox thread.' }); return; }
-        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs) });
+        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs, self), msgs: msgs });
       } catch (eT) { failed.push({ threadId: tid, error: String((eT && eT.message) || eT) }); }
     });
     const resolved = [], already = [];
@@ -1008,22 +1120,35 @@ function resolveSpanishThreads(threadIds) {
         const rows = [];
         ok.forEach(function (o) {
           if (spanishResolveCovered_(manual[o.threadId], o.latestMs)) { already.push(o.threadId); return; }
-          rows.push([stamp, o.threadId, emp.email, now.getTime()]);
+          rows.push([stamp, o.threadId, emp.email, now.getTime(), input.outcome]);
           resolved.push(o.threadId);
         });
         if (rows.length) appendRowsSafe_(getOrCreateSpanishResolvedSheet_(), rows);
       } finally { lock.releaseLock(); }
     }
+    // SP1: ONE reply per resolved thread, after the lock; a voicemail gets none.
+    const replies = { sent: 0, voicemail: 0, failed: [], off: false };
+    const byId = {};
+    ok.forEach(function (o) { byId[o.threadId] = o; });
+    resolved.forEach(function (tid) {
+      const msgs = byId[tid].msgs;
+      const r = spanishSendResolveReply_(msgs, spanishThreadKind_(msgs), emp, input);
+      if (r.sent) replies.sent++;
+      else if (r.reason === 'voicemail') replies.voicemail++;
+      else if (r.reason === 'off') replies.off = true;
+      else replies.failed.push(tid);
+    });
     if (resolved.length) {
       writeAuditLog_(emp, 'SpanishInboxResolveBulk', '', '', false, 0,
-        'resolved=' + resolved.length + ' already=' + already.length + ' failed=' + failed.length + ' threadIds=' + resolved.join(','));
+        'resolved=' + resolved.length + ' already=' + already.length + ' failed=' + failed.length +
+        (input.outcome ? ' outcome=' + input.outcome : '') + ' replies=' + replies.sent + ' threadIds=' + resolved.join(','));
     }
     resolved.forEach(spanishPendingIdsDrop_);
     try {
       const cm = spanishClaimsMap_();
       spanishBustClaimants_(resolved.map(function (t) { return cm[t] && cm[t].by; }).filter(Boolean));
     } catch (_) {}
-    return { success: true, resolved: resolved, already: already, failed: failed };
+    return { success: true, resolved: resolved, already: already, failed: failed, replies: replies };
   } catch (err) { return { error: 'Resolve failed: ' + err.message }; }
 }
 /** PURE (Node-pinned) — Batch C: which department a request came from, as an
@@ -1442,12 +1567,58 @@ function spanishOpenLoad_(liveMap, pendingIds, floors) {
   });
   return load;
 }
+/** PURE (Node-pinned; SP1) — the members working now: those whose LAST punch
+ *  today (in their own roster timezone — `todayFor(tz)`) is a Clock In or a
+ *  Lunch In. Not on the roster, no punch today, on lunch or clocked out → not
+ *  working. `roster` and `tsRows` are the Employees and Timesheet values (the
+ *  Timesheet's data starts at its third row, as getTeammateStatus reads it);
+ *  rows are in append order, so the latest TIME wins, never the last row. */
+function spanishWorkingMembers_(members, roster, tsRows, todayFor) {
+  const byEmail = {};
+  for (let i = 1; i < (roster || []).length; i++) {
+    const em = empRosterEmail_(roster[i]).toLowerCase();
+    if (!em) continue;
+    const tz = String(roster[i][EMP.TIMEZONE] == null ? '' : roster[i][EMP.TIMEZONE]).trim() || CONFIG.TIMEZONE;
+    byEmail[em] = { id: String(roster[i][EMP.ID]).trim(), tz: tz };
+  }
+  const slots = {};
+  (members || []).forEach(function (m) {
+    const r = byEmail[String(m).toLowerCase()];
+    if (r && r.id) slots[r.id] = { today: todayFor(r.tz), last: null };
+  });
+  for (let i = 2; i < (tsRows || []).length; i++) {
+    const slot = slots[String(tsRows[i][ADP.EMP_ID]).trim()];
+    if (!slot || normalizeDate_(tsRows[i][ADP.DATE]) !== slot.today) continue;
+    const time = normalizeTime_(tsRows[i][ADP.TIME]);
+    if (!slot.last || time > slot.last.time) slot.last = { time: time, type: normalizeType_(String(tsRows[i][ADP.COMMENTS])) };
+  }
+  return (members || []).filter(function (m) {
+    const r = byEmail[String(m).toLowerCase()];
+    const slot = r && slots[r.id];
+    return !!(slot && slot.last && (slot.last.type === 'ClockIn' || slot.last.type === 'LunchIn'));
+  });
+}
+/** SP1 — the Spanish members clocked in now (one roster read, one Timesheet
+ *  read). Throws when either cannot be read — the caller refuses by name. */
+function spanishMembersOnShift_(members) {
+  const roster = getEmployeeRosterRows_();
+  const ts = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+  return spanishWorkingMembers_(members, roster, ts, function (tz) { return fmtDateTz_(new Date(), tz); });
+}
 /** The reusable body — takes the ALREADY-GATED caller so a scheduled trigger
  *  (INV-44 gate) and the button (manager gate) share one implementation.
  *  Returns { success, unclaimed, assigned: [{threadId, claim}] }. */
 function spanishAutoAssignCore_(emp, days) {
-  const members = Object.keys(getSpanishInboxMembers_());
-  if (!members.length) return { success: false, error: 'No Spanish Inbox members are configured (Manage → Admin → Config → Spanish bilingual members).' };
+  const allMembers = Object.keys(getSpanishInboxMembers_());
+  if (!allMembers.length) return { success: false, error: 'No Spanish Inbox members are configured (Manage → Admin → Config → Spanish bilingual members).' };
+  // SP1 (operator 2026-11-09): only members who are clocked in now (their last
+  // punch today a Clock In or Lunch In — not on lunch, not out) are given
+  // requests. A Timesheet that cannot be read assigns nothing, by name: a
+  // request handed to someone who is not working waits unseen.
+  let members;
+  try { members = spanishMembersOnShift_(allMembers); }
+  catch (e) { return { success: false, error: 'Could not tell who is clocked in (' + e.message + ') — nothing was assigned.' }; }
+  if (!members.length) return { success: true, unclaimed: 0, assigned: [], noneOnShift: true, offShift: allMembers.length };
   const pendingRes = spanishPendingCore_(days, emp);   // SP-4 — the caller is already gated
   if (!pendingRes || pendingRes.error) return { success: false, error: (pendingRes && pendingRes.error) || 'Pending read failed.' };
   // SP-3: with the claims unreadable every request would look unclaimed and be
@@ -1483,7 +1654,7 @@ function spanishAutoAssignCore_(emp, days) {
     }
   } finally { lock.releaseLock(); }
   writeAuditLog_(emp, 'SpanishInboxAutoAssign', '', '', false, 0,
-    'assigned=' + picks.length + '; members=' + members.length);
+    'assigned=' + picks.length + '; members=' + members.length + '; offShift=' + (allMembers.length - members.length));
   // 22post C-8: ONE summary email per assignee per run, never one per request;
   // their Needs-you lists refresh. After the lock, best-effort (g34).
   let notified = 0;
@@ -1494,6 +1665,7 @@ function spanishAutoAssignCore_(emp, days) {
   return {
     success: true,
     notified: notified,
+    onShift: members.length, offShift: allMembers.length - members.length,   // SP1
     unclaimed: unclaimed.length,
     assigned: picks.map(function (pk) { return { threadId: pk.threadId, claim: { by: pk.by, assignedBy: self, atMs: nowMs } }; }),
   };
@@ -1605,7 +1777,8 @@ function autoAssignSpanishThreadsScheduled() {
       Logger.log('spanishAutoAssign: ' + why);
       return { outcome: automationOutcome_('failed', why) };
     }
-    Logger.log('spanishAutoAssign: ' + (r.assigned || []).length + ' assigned of ' + (r.unclaimed || 0) + ' unclaimed.');
+    if (r.noneOnShift) { Logger.log('spanishAutoAssign: no Spanish member is clocked in — nothing assigned.'); return { outcome: automationOutcome_('idle') }; }   // SP1
+    Logger.log('spanishAutoAssign: ' + (r.assigned || []).length + ' assigned of ' + (r.unclaimed || 0) + ' unclaimed (' + (r.onShift || 0) + ' clocked in, ' + (r.offShift || 0) + ' not).');
     return { outcome: automationOutcome_('ok') };
   });
 }

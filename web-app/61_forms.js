@@ -1350,15 +1350,19 @@ function confirmDeptRequestResolve(token) {
     // F55: who the clicker is, read OUTSIDE the resolve's lock. A roster read
     // that fails leaves the clicker unplaced (the 'email' default) rather than
     // refusing the resolve — the click is real either way.
-    let clickerDepts = null;
-    try { const ce = getEmployeeInfo_(); if (ce) clickerDepts = empDepartments_(ce); } catch (e) {}
+    let clickerDepts = null, clickerName = '';
+    try { const ce = getEmployeeInfo_(); if (ce) { clickerDepts = empDepartments_(ce); clickerName = ce.name || ''; } } catch (e) {}
     const copyAddrs = [].concat(String(CONFIG.CALL_NOTES.CC_EMAIL || '').split(','), mailBccAll_());
     const res = markDeptRequestResolved_(tok, by, 'email', { copyAddrs: copyAddrs, clickerDepts: clickerDepts });
     if (!res.found) return { heading: 'Request not found', message: 'This link is invalid or the request was removed.' };
     if (res.already) return { heading: 'Already resolved', message: 'This was already marked resolved' + (res.resolvedBy ? ' by ' + res.resolvedBy : '') + (res.resolvedAt ? ' on ' + res.resolvedAt : '') + '.' };
+    // DR1: the system reply on the request's thread — markDeptRequestResolved_
+    // has released its lock, and a failed reply never undoes the resolve.
+    const replyNote = drResolvedReplyNote_(drSendResolvedReply_(res, drResolverLabel_(clickerName, by)));
     return { heading: 'Marked resolved — thank you!',
       message: 'The ' + (res.dept || 'department') + ' request is now recorded as resolved (' + by + ')' +
         (res.self ? ' — as your own clear, since you sent it: it is not counted as a department response time.'
-          : res.copy ? ' — as a clear from a copy of the email, not the department: it is not counted as a department response time.' : '.') };
+          : res.copy ? ' — as a clear from a copy of the email, not the department: it is not counted as a department response time.' : '.') +
+        (replyNote ? ' ' + replyNote : '') };
   } catch (e) { return { heading: 'Something went wrong', message: 'Could not record the resolution. Please try again.' }; }
 }

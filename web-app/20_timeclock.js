@@ -4254,7 +4254,7 @@ function selfDeletePunch(date, time, punchType) {
 /** Rep-callable, fire-and-forget: stamp the caller as active. No lock (a
  *  CacheService put is atomic), no sheet write, no audit row — it is a
  *  volatile signal, not a record. Never throws. */
-function recordPresence() {
+function recordPresence(counts) {
   try {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
@@ -4264,7 +4264,9 @@ function recordPresence() {
     CacheService.getScriptCache().put(PRESENCE_CACHE_PREFIX + emp.id, String(Date.now()), PRESENCE_TTL_SEC);
     // 25post B8: the gesture time again, kept six hours, for the idle alert.
     CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
-    activityLogAppend_(emp.id, Date.now());   // round 12 E2 — the durable record (best-effort)
+    // round 12 E2 — the durable record (best-effort); AC1 — with the clicks
+    // and keystrokes the window counted since its last send (counts only).
+    activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
     return { success: true };
   } catch (e) {
     return { success: false };
@@ -4286,16 +4288,86 @@ function getOrCreateActivityLogSheet_() {
 /** Best-effort and NEVER throws — the presence stamp must not depend on its
  *  record. No lock: appendRow is atomic, and every rep's gesture would
  *  otherwise queue on the one project lock (the DigestDeliveries posture). */
-function activityLogAppend_(empId, ms) {
+function activityLogAppend_(empId, ms, counts, kind) {
   try {
     if (!empId || !(ms > 0)) return false;
     const d = new Date(ms);
-    getOrCreateActivityLogSheet_().appendRow(sheetSafeRow_([fmtDate_(d) + ' ' + fmtTime_(d), String(empId), ms]));
+    getOrCreateActivityLogSheet_().appendRow(sheetSafeRow_([fmtDate_(d) + ' ' + fmtTime_(d), String(empId), ms,
+      activityCountsEncode_(counts), kind === ACTIVITY_COUNTS_KIND ? ACTIVITY_COUNTS_KIND : '']));
     return true;
   } catch (e) {
     console.warn('activityLogAppend_ failed: ' + e.message);
     return false;
   }
+}
+/** Rep-callable, fire-and-forget (AC1, operator 2026-11-11): the clicks and
+ *  keystrokes a window counted since its last send, sent once its rep has
+ *  PAUSED — so the last minutes before a break or the end of the day are not
+ *  lost. Counts only. It stamps NO presence: it fires minutes after the last
+ *  gesture, so a presence stamp from it would read a rep who has stopped as
+ *  active, and its row (Kind 'counts') is never read as a ping — never a
+ *  first or last time, never a suggested punch. Never throws. */
+function recordActivityCounts(counts) {
+  try {
+    const emp = getEmployeeInfo_();
+    if (!emp) return { success: false };
+    const now = Date.now();
+    const clean = activityCountsClean_(counts, now);
+    if (!clean.length) return { success: true, empty: true };
+    return { success: activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND) };
+  } catch (e) {
+    return { success: false };
+  }
+}
+/** PURE (Node-pinned) — a window's counts as the server keeps them, or [].
+ *  `raw` is the client's `{at, b: [[block, clicks, keys]]}` — `block` the
+ *  10-minute block number since the epoch on the CLIENT's clock, `at` that
+ *  clock's time at sending, so a clock that is minutes or hours off is
+ *  corrected by whole blocks. Anything else, a block outside the last
+ *  ACTIVITY_COUNTS_MAX_AGE_MS (or ahead of now), a non-integer, or a count
+ *  that is no person's is dropped or capped; one block's entries are summed;
+ *  at most ACTIVITY_COUNTS_MAX_ENTRIES blocks, the newest kept. Returns
+ *  [[block, clicks, keys]] ascending, every entry non-zero. */
+function activityCountsClean_(raw, nowMs) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.b) || !(nowMs > 0)) return [];
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
+  const at = Number(raw.at);
+  const skew = isFinite(at) && at > 0 ? Math.round((nowMs - at) / bms) : 0;
+  const lo = Math.floor((nowMs - ACTIVITY_COUNTS_MAX_AGE_MS) / bms), hi = Math.floor(nowMs / bms);
+  const num = function (n) { n = Number(n); return isFinite(n) && n > 0 ? Math.floor(n) : 0; };   // the cap is applied once, below, to the block's sum
+  const by = {};
+  raw.b.slice(0, ACTIVITY_COUNTS_MAX_ENTRIES * 2).forEach(function (e) {
+    if (!Array.isArray(e)) return;
+    const b0 = Number(e[0]);
+    if (!isFinite(b0) || Math.floor(b0) !== b0) return;
+    const b = b0 + skew;
+    if (b < lo || b > hi) return;
+    const c = num(e[1]), k = num(e[2]);
+    if (!c && !k) return;
+    const cur = by[b] || [b, 0, 0];
+    cur[1] = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cur[1] + c);
+    cur[2] = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cur[2] + k);
+    by[b] = cur;
+  });
+  return Object.keys(by).map(function (b) { return by[b]; })
+    .sort(function (x, y) { return x[0] - y[0]; }).slice(-ACTIVITY_COUNTS_MAX_ENTRIES);
+}
+/** PURE (Node-pinned) — counts as one plain-text cell: "48c12k40 49c0k7"
+ *  (block, clicks, keys). Letters between the numbers, so Sheets can never
+ *  read the cell as a number, a date or a time (g144 / g10). */
+function activityCountsEncode_(entries) {
+  return (entries || []).filter(function (e) { return Array.isArray(e) && (e[1] > 0 || e[2] > 0); })
+    .map(function (e) { return Math.floor(e[0]) + 'c' + Math.floor(e[1] || 0) + 'k' + Math.floor(e[2] || 0); }).join(' ');
+}
+/** PURE (Node-pinned) — the inverse: [[block, clicks, keys]]; a token that is
+ *  not "NcNkN" is skipped, never guessed. */
+function activityCountsDecode_(str) {
+  const out = [];
+  String(str || '').split(/\s+/).forEach(function (t) {
+    const m = /^(\d+)c(\d+)k(\d+)$/.exec(t);
+    if (m) out.push([Number(m[1]), Number(m[2]), Number(m[3])]);
+  });
+  return out;
 }
 /** PURE (Node-pinned) — first index in an ASCENDING number list at or past
  *  `x` (the list's length when none is). */
@@ -4308,14 +4380,32 @@ function activityLowerBound_(list, x) {
  *  `mins` are minutes of the day in the REP's timezone (any order, 0..1439).
  *  Returns { pings, first, last, blocks } — `blocks` one count per
  *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings. */
-function activityDayView_(mins, blockMin) {
+function activityDayView_(mins, blockMin, counts) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
-  const blocks = new Array(Math.ceil(1440 / size)).fill(0);
+  const n = Math.ceil(1440 / size);
+  const blocks = new Array(n).fill(0);
   const ok = (mins || []).filter(function (m) { return typeof m === 'number' && m >= 0 && m < 1440; })
     .map(function (m) { return Math.floor(m); }).sort(function (a, b) { return a - b; });
   ok.forEach(function (m) { blocks[Math.floor(m / size)]++; });
   const hhmm = function (m) { return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
-  return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks };
+  // AC1: `counts` are [[minute of the rep's day, clicks, keys]] — each block's
+  // level is its clicks + keystrokes. A day with none (before AC1, or a
+  // window whose counts never arrived) has hasCounts false and is drawn
+  // on/off from the pings, as it always was — never as a level of zero.
+  const level = new Array(n).fill(0);
+  let clicks = 0, keys = 0, hasCounts = false;
+  (counts || []).forEach(function (e) {
+    const m = Array.isArray(e) ? Number(e[0]) : NaN;
+    if (!(m >= 0 && m < 1440)) return;
+    const c = Math.max(0, Math.floor(Number(e[1]) || 0)), k = Math.max(0, Math.floor(Number(e[2]) || 0));
+    if (!c && !k) return;
+    hasCounts = true;
+    level[Math.floor(m / size)] += c + k;
+    clicks += c; keys += k;
+  });
+  const active = blocks.filter(function (b, i) { return b > 0 || level[i] > 0; }).length;
+  return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks,
+    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size };
 }
 // ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
 // delete"): the ActivityLog's raw pings are condensed, each night, into ONE
@@ -4350,28 +4440,63 @@ function activityBlocksDecode_(str, n) {
  *  finished: {'date|empId': true}} — every finished day seen. */
 function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
   const days = {}, today = {};
+  const dayOf = function (id, ms) {
+    const tz = tzOf(id);
+    if (today[tz] == null) today[tz] = todayOf(tz);
+    const l = localOf(ms, tz);
+    if (!l || !l.date || !(l.date < today[tz])) return null;
+    const k = l.date + '|' + id;
+    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [], counts: [] }), min: l.min };
+  };
   (rows || []).forEach(function (r) {
     const id = String((r && r[0]) || '').trim();
     const ms = Number(r && r[1]);
     if (!id || !(ms > 0)) return;
-    const tz = tzOf(id);
-    if (today[tz] == null) today[tz] = todayOf(tz);
-    const l = localOf(ms, tz);
-    if (!l || !l.date || !(l.date < today[tz])) return;
-    const k = l.date + '|' + id;
-    (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [] }).mins.push(l.min);
+    // AC1: a row's counts belong to the day of each BLOCK they name — a send
+    // just after midnight can carry the evening's last block — and a
+    // counts-only row ('counts') is never a ping.
+    activityCountsDecode_(r[2]).forEach(function (e) {
+      const at = dayOf(id, e[0] * bms);
+      if (at) at.d.counts.push([at.min, e[1], e[2]]);
+    });
+    if (String(r[3] || '') === ACTIVITY_COUNTS_KIND) return;
+    const at = dayOf(id, ms);
+    if (at) at.d.mins.push(at.min);
   });
   const summaries = [], finished = {};
   Object.keys(days).sort().forEach(function (k) {
     finished[k] = true;
     if ((existing || {})[k]) return;
     const d = days[k];
-    const v = activityDayView_(d.mins, size);
+    const v = activityDayView_(d.mins, size, d.counts);
     summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
-      activeMin: v.blocks.filter(function (n) { return n > 0; }).length * size, blocks: activityBlocksEncode_(v.blocks) });
+      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(d.counts, size) });
   });
   return { summaries: summaries, finished: finished };
+}
+/** PURE (Node-pinned) — a day's counts by BLOCK OF THE DAY ("48c12k40"),
+ *  the ActivitySummary Counts cell; minutes in one block are summed. */
+function activityDayCountsEncode_(counts, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  const by = {};
+  (counts || []).forEach(function (e) {
+    const m = Number(e && e[0]);
+    if (!(m >= 0 && m < 1440)) return;
+    const b = Math.floor(m / size);
+    const cur = by[b] || [b, 0, 0];
+    cur[1] += Math.max(0, Math.floor(Number(e[1]) || 0)); cur[2] += Math.max(0, Math.floor(Number(e[2]) || 0));
+    by[b] = cur;
+  });
+  return activityCountsEncode_(Object.keys(by).map(function (b) { return by[b]; }).sort(function (x, y) { return x[0] - y[0]; }));
+}
+/** PURE (Node-pinned) — the inverse, as activityDayView_'s `counts`: each
+ *  block's start minute. */
+function activityDayCountsDecode_(str, blockMin) {
+  const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
+  return activityCountsDecode_(str).filter(function (e) { return e[0] * size < 1440; })
+    .map(function (e) { return [e[0] * size, e[1], e[2]]; });
 }
 /** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
  *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
@@ -4397,6 +4522,19 @@ function getOrCreateActivitySummarySheet_() {
   }
   return sheet;
 }
+/** AC1: a tab written before a column was added gains its header — blank
+ *  cells only, never a rename; best-effort (a header is cosmetic). */
+function activityHealHeader_(sheet, headers) {
+  try {
+    if (!sheet || typeof sheet.getRange !== 'function') return;
+    const have = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    const missing = headers.some(function (h, i) { return i > 0 && !String(have[i] || '').trim(); });
+    if (!missing) return;
+    sheet.getRange(1, 1, 1, headers.length).setValues(sheetSafeRows_([headers.map(function (h, i) {
+      return String(have[i] || '').trim() || h;
+    })]));
+  } catch (e) { console.warn('activityHealHeader_ failed: ' + e.message); }
+}
 /** The summary keys on file: {'date|empId': row number}. Plain-text cells, so
  *  a date reads back as the string it was written as (g144). */
 function activitySummaryKeys_(sheet) {
@@ -4418,7 +4556,8 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   const raw = ss.getSheetByName(ACTIVITY_LOG_TAB);
   const last = raw ? raw.getLastRow() : 0;
   if (last < 2) return out;
-  const rows = raw.getRange(2, 2, last - 1, 2).getValues();
+  activityHealHeader_(raw, ACTIVITY_LOG_HEADERS);   // AC1: a tab made before it gains Counts / Kind
+  const rows = raw.getRange(2, 2, last - 1, 4).getValues();   // id, ms, counts, kind
   const roster = getEmployeeRosterRows_();
   const tzById = {};
   for (let i = 1; i < roster.length; i++) {
@@ -4432,12 +4571,13 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   };
   const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
   const sumSheet = getOrCreateActivitySummarySheet_();
+  activityHealHeader_(sumSheet, ACTIVITY_SUMMARY_HEADERS);
   const existing = activitySummaryKeys_(sumSheet);
   const c = activityCondense_(rows, tzOf, localOf, todayOf, existing, ACTIVITY_BLOCK_MIN);
   if (c.summaries.length) {
     const stamp = fmtDate_(new Date(nowMs)) + ' ' + fmtTime_(new Date(nowMs));
     const newRows = c.summaries.map(function (s) {
-      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp];
+      return [s.date, s.empId, s.tz, s.pings, s.first, s.last, s.activeMin, s.blocks, stamp, s.counts || ''];
     });
     appendRowsTextSafe_(sumSheet, newRows, ACTIVITY_SUMMARY_TEXT_IDX);
     out.condensed = c.summaries.length;
@@ -4453,11 +4593,78 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
   out.hitCap = idx.length >= ACTIVITY_LOG_PURGE_MAX_PER_RUN;
   return out;
 }
+/** One DAY of app activity for each of `targets` ([{id, tz}]) — each on the
+ *  day of THEIR timezone — read once for all of them: the day's SUMMARY rows
+ *  (one span read; a finished day is complete by construction, Batch G), and
+ *  for the rest ONE slice of the raw log, found by a binary search on the
+ *  time column. The slice runs ACTIVITY_COUNTS_MAX_AGE_MS past the last day's
+ *  end, because a block's counts are sent after it (AC1); pings are read only
+ *  inside each rep's day. Returns {views: {id: view}, keptFrom}. */
+function activityDaysFor_(ss, targets, date, keptTz) {
+  const views = {}, base = { keptFrom: '' };
+  const days = (targets || []).map(function (t) {
+    return { id: t.id, tz: t.tz,
+      startMs: Utilities.parseDate(date + ' 00:00:00', t.tz, 'yyyy-MM-dd HH:mm:ss').getTime(),
+      endMs: Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', t.tz, 'yyyy-MM-dd HH:mm:ss').getTime() };
+  });
+  const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
+  const sumKeys = activitySummaryKeys_(sum);
+  Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
+  const fromSum = days.filter(function (d) { return sumKeys[String(date) + '|' + d.id]; });
+  if (fromSum.length) {
+    const nums = fromSum.map(function (d) { return sumKeys[String(date) + '|' + d.id]; });
+    const r0 = Math.min.apply(null, nums), r1 = Math.max.apply(null, nums);
+    const span = sum.getRange(r0, 1, r1 - r0 + 1, ACTIVITY_SUMMARY_HEADERS.length).getValues();
+    fromSum.forEach(function (d, i) {
+      const r = span[nums[i] - r0];
+      const v = activityDayView_([], ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN));
+      views[d.id] = Object.assign(v, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
+        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+      if (Number(r[6]) > v.activeMin) views[d.id].activeMin = Number(r[6]);
+    });
+  }
+  const rest = days.filter(function (d) { return !views[d.id]; });
+  if (!rest.length) return { views: views, keptFrom: base.keptFrom };
+  const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
+  const last = sheet ? sheet.getLastRow() : 0;
+  const empty = function (noLog) { rest.forEach(function (d) { views[d.id] = Object.assign(activityDayView_([], ACTIVITY_BLOCK_MIN), noLog ? { noLog: true } : {}); }); };
+  if (last < 2) { empty(!base.keptFrom); return { views: views, keptFrom: base.keptFrom }; }
+  const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
+  if (msCol[0] > 0) {
+    const rawFrom = Utilities.formatDate(new Date(msCol[0]), keptTz || rest[0].tz, 'yyyy-MM-dd');
+    if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
+  }
+  const minStart = Math.min.apply(null, rest.map(function (d) { return d.startMs; }));
+  const maxEnd = Math.max.apply(null, rest.map(function (d) { return d.endMs; }));
+  const lo = activityLowerBound_(msCol, minStart), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
+  const want = {};
+  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [] }; });
+  const minOf = function (ms, tz) {
+    const t = Utilities.formatDate(new Date(ms), tz, 'HH:mm').split(':');
+    return parseInt(t[0], 10) * 60 + parseInt(t[1], 10);
+  };
+  if (hi > lo) {
+    const cells = sheet.getRange(2 + lo, 2, hi - lo, 4).getValues();   // id, ms, counts, kind
+    const bms = ACTIVITY_BLOCK_MIN * 60000;
+    for (let i = 0; i < cells.length; i++) {
+      const w = want[String(cells[i][0]).trim()];
+      if (!w) continue;
+      const ms = msCol[lo + i];
+      activityCountsDecode_(cells[i][2]).forEach(function (e) {
+        const bm = e[0] * bms;
+        if (bm >= w.d.startMs && bm < w.d.endMs) w.counts.push([minOf(bm, w.d.tz), e[1], e[2]]);
+      });
+      if (String(cells[i][3] || '') === ACTIVITY_COUNTS_KIND) continue;
+      if (ms >= w.d.startMs && ms < w.d.endMs) w.mins.push(minOf(ms, w.d.tz));
+    }
+  }
+  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts); });
+  return { views: views, keptFrom: base.keptFrom };
+}
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
  *  timezone, for Day Edit. `{date, timezone, pings, first, last, blocks,
- *  blockMin, gapMin}` or `{error}`; a day with no tab yet is zero pings, said
- *  as such (`noLog`). Rows are append-ordered by time, so the day is found by
- *  a binary search on the Ms column and only its slice of ids is read. */
+ *  level, hasCounts, clicks, keys, activeMin, blockMin, gapMin}` or `{error}`;
+ *  a day with no tab yet is zero pings, said as such (`noLog`). */
 function managerGetDayActivity(empId, date) {
   try {
     const caller = getEmployeeInfo_();
@@ -4466,41 +4673,45 @@ function managerGetDayActivity(empId, date) {
     const target = lookupEmployeeById_(String(empId || '').trim());
     if (!target) return { error: 'Employee not found.' };
     const tz = empTz_(target);
-    const startMs = Utilities.parseDate(date + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const endMs = Utilities.parseDate(isoFromUtc_(new Date(Date.parse(date + 'T12:00:00Z') + 86400000)) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
-    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS, keptFrom: '' };
-    const ss = getAdpSS_();
-    // Batch G: a finished day's SUMMARY row is the whole day (it was written
-    // before any of its pings could be purged), so it is read first; the raw
-    // pings answer only for a day not yet condensed (today, last night's run).
-    const sum = ss.getSheetByName(ACTIVITY_SUMMARY_TAB);
-    const sumKeys = activitySummaryKeys_(sum);
-    Object.keys(sumKeys).forEach(function (k) { const d = k.slice(0, 10); if (!base.keptFrom || d < base.keptFrom) base.keptFrom = d; });
-    const sumRow = sumKeys[String(date) + '|' + target.id];
-    if (sumRow) {
-      const r = sum.getRange(sumRow, 1, 1, ACTIVITY_SUMMARY_HEADERS.length).getValues()[0];
-      return Object.assign(base, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
-        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+    const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
+    const r = activityDaysFor_(getAdpSS_(), [{ id: target.id, tz: tz }], String(date), tz);
+    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom });
+  } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
+}
+/** PURE (Node-pinned) — a day view as the team table draws it: 24 hourly
+ *  levels (clicks + keystrokes, or — on a day with no counts — the active
+ *  10-minute blocks in each hour), with the totals. */
+function activityHourly_(v) {
+  const size = (v && v.blockMin) || ACTIVITY_BLOCK_MIN, per = Math.max(1, Math.round(60 / size));
+  const src = v && v.hasCounts ? (v.level || []) : (v && v.blocks || []).map(function (b, i) { return b > 0 || ((v.level || [])[i] > 0) ? 1 : 0; });
+  const hours = new Array(24).fill(0);
+  src.forEach(function (n, i) { const h = Math.floor(i / per); if (h < 24) hours[h] += Number(n) || 0; });
+  return { hours: hours, hasCounts: !!(v && v.hasCounts), clicks: (v && v.clicks) || 0, keys: (v && v.keys) || 0,
+    activeMin: (v && v.activeMin) || 0, pings: (v && v.pings) || 0, first: (v && v.first) || '', last: (v && v.last) || '' };
+}
+/** Manager-gated, read-only (AC1, operator 2026-11-11) — every rostered rep's
+ *  app activity on one day, each on the day of their own timezone, hourly,
+ *  for the Team Punches day table. `{date, blockMin, keptFrom, reps: {id:
+ *  {hours[24], hasCounts, clicks, keys, activeMin, pings, first, last}}}` or
+ *  `{error}`. Use of THIS app only — a call or another tool reads as idle. */
+function managerGetTeamActivity(date) {
+  try {
+    const caller = getEmployeeInfo_();
+    if (!caller || !caller.isManager) return { error: 'Manager access required.' };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) return { error: 'Invalid date format.' };
+    const roster = getEmployeeRosterRows_();
+    const targets = [];
+    for (let i = 1; i < roster.length; i++) {
+      if (!empRosterEmail_(roster[i])) continue;   // INV-183: the one inclusion predicate
+      const id = String(roster[i][EMP.ID] || '').trim();
+      if (id) targets.push({ id: id, tz: safeTimezone_(String(roster[i][EMP.TIMEZONE] || '').trim()) });
     }
-    const sheet = ss.getSheetByName(ACTIVITY_LOG_TAB);
-    const last = sheet ? sheet.getLastRow() : 0;
-    if (last < 2) return Object.assign(base, activityDayView_([], ACTIVITY_BLOCK_MIN), { noLog: !base.keptFrom });
-    const msCol = sheet.getRange(2, 3, last - 1, 1).getValues().map(function (r) { return Number(r[0]) || 0; });
-    if (msCol[0] > 0) {
-      const rawFrom = Utilities.formatDate(new Date(msCol[0]), tz, 'yyyy-MM-dd');
-      if (!base.keptFrom || rawFrom < base.keptFrom) base.keptFrom = rawFrom;
-    }
-    const lo = activityLowerBound_(msCol, startMs), hi = activityLowerBound_(msCol, endMs);
-    const mins = [];
-    if (hi > lo) {
-      const ids = sheet.getRange(2 + lo, 2, hi - lo, 1).getValues();
-      for (let i = 0; i < ids.length; i++) {
-        if (String(ids[i][0]).trim() !== target.id) continue;
-        const t = Utilities.formatDate(new Date(msCol[lo + i]), tz, 'HH:mm').split(':');
-        mins.push(parseInt(t[0], 10) * 60 + parseInt(t[1], 10));
-      }
-    }
-    return Object.assign(base, activityDayView_(mins, ACTIVITY_BLOCK_MIN));
+    const out = { date: String(date), blockMin: ACTIVITY_BLOCK_MIN, keptFrom: '', reps: {} };
+    if (!targets.length) return out;
+    const r = activityDaysFor_(getAdpSS_(), targets, String(date), empTz_(caller));
+    out.keptFrom = r.keptFrom;
+    targets.forEach(function (t) { out.reps[t.id] = activityHourly_(r.views[t.id]); });
+    return out;
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
 }
 /** Best-effort: { empId: true } for every id with a live presence stamp. ONE
@@ -5966,6 +6177,134 @@ function payPeriodsForClose_(todayIso, cycles, biweeklyAnchor) {
   }
   return out;
 }
+/** PURE (Node-pinned) — P1 (operator 2026-11-05): the pay-week timesheet
+ *  reminder for one rep's pay cycle on `todayIso`. cycle 'Biweekly' (the
+ *  org-anchor 14-day period, biweeklyRangeFor_ — the export's own period) or
+ *  'Monthly' (the calendar month); anchor: a biweekly period END; holidays:
+ *  {iso: true}. The day: biweekly, the Monday of the period's final week;
+ *  monthly, the last Monday with at least PAY_WEEK_MONTHLY_MIN_DAYS days left
+ *  counting that Monday and the last day; then past a weekend or a company
+ *  holiday to the next workday, never past the period's end. → null (a
+ *  biweekly rep with no anchor — no period can be placed) or {cycle, start,
+ *  end, remindOn, active (remindOn ≤ today ≤ end), periodKey}. */
+function payWeekReminder_(cycle, todayIso, anchor, holidays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(todayIso || ''))) return null;
+  const dow = function (iso) { return new Date(iso + 'T12:00:00Z').getUTCDay(); };
+  const mondayOnOrBefore = function (iso) { return addDaysIso_(iso, -((dow(iso) + 6) % 7)); };
+  let start, end, base;
+  if (String(cycle) === 'Biweekly') {
+    if (!anchor) return null;
+    const r = biweeklyRangeFor_(anchor, todayIso);
+    start = r.start; end = r.end;
+    base = mondayOnOrBefore(end);
+  } else {
+    const y = +todayIso.slice(0, 4), m = +todayIso.slice(5, 7);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    start = todayIso.slice(0, 7) + '-01';
+    end = todayIso.slice(0, 7) + '-' + (last < 10 ? '0' : '') + last;
+    base = mondayOnOrBefore(addDaysIso_(end, -(PAY_WEEK_MONTHLY_MIN_DAYS - 1)));
+  }
+  let remindOn = base;
+  for (let n = 0; n < 14 && remindOn < end; n++) {
+    const d = dow(remindOn);
+    if (d !== 0 && d !== 6 && !(holidays && holidays[remindOn])) break;
+    remindOn = addDaysIso_(remindOn, 1);
+  }
+  // The loop stops AT the end (base is never after it), so the day can never
+  // pass the period — a bite-check showed a separate clamp here was dead code.
+  return { cycle: String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly', start: start, end: end, remindOn: remindOn,
+    active: todayIso >= remindOn && todayIso <= end, periodKey: (String(cycle) === 'Biweekly' ? 'Biweekly' : 'Monthly') + ':' + start };
+}
+/** P1 — one rep's pay-week reminder for their own today: their cycle and
+ *  anchor (getEmployeeInfo_'s empPayCycle_, the org anchor for biweekly) and
+ *  the company calendar around today. A calendar that cannot be read is no
+ *  holidays — the day is then a Monday, which is the safe direction. */
+function payWeekForEmp_(emp, todayIso) {
+  let hol = {};
+  try { hol = companyHolidayMap_(addDaysIso_(todayIso, -40), addDaysIso_(todayIso, 40)) || {}; } catch (e) { hol = {}; }
+  return payWeekReminder_(emp && emp.payCycle, todayIso, emp && emp.payAnchor, hol);
+}
+/** PURE (Node-pinned) — P1: the human dates for the reminder ("Mon Nov 23",
+ *  and a period as "Nov 1 – Nov 30"). */
+function payWeekDateText_(iso, withDay) {
+  const d = new Date(String(iso) + 'T12:00:00Z');
+  if (isNaN(d.getTime())) return String(iso || '');
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()];
+  return (withDay ? day + ' ' : '') + mon + ' ' + d.getUTCDate();
+}
+/** PURE (Node-pinned) — P1: the Needs-you item for an active reminder, or
+ *  null. Review opens Time / PTO; the client hides it for the period on Done. */
+function payWeekTask_(pw) {
+  if (!pw || !pw.active) return null;
+  return { kind: 'payWeek', title: 'Check your timesheet',
+    detail: 'Pay period ' + payWeekDateText_(pw.start) + ' \u2013 ' + payWeekDateText_(pw.end) + ' \u00b7 request any edits by ' + payWeekDateText_(pw.end, true),
+    dueIso: pw.end, overdue: false, action: 'Review', periodKey: pw.periodKey,
+    route: { tool: 'timeClock', tab: 'timeoff' } };
+}
+/** Trigger handler (hourly, via runHourlyJobs) — P1: on the reminder day, at
+ *  PAY_WEEK_REMINDER_HOUR CENTRAL (CONFIG.MANAGER_TIMEZONE) — one time for
+ *  everyone, inside working hours (operator 2026-11-06: "9am CST for all users
+ *  to keep it uniform, and so they are able to make changes during work
+ *  hours") — email every employee whose reminder day it is, by the Central
+ *  date. Manager-gated like every handler (INV-44). Heartbeat first, so a dead
+ *  trigger stays visible while the toggle is off; every send is a delivery
+ *  row; the run ends through the outcome contract (ST2). */
+function sendPayWeekReminders() {
+  assertManagerCaller_('sendPayWeekReminders');
+  return runAutomationJob_('PayWeekReminders', function () {
+    stampDigestLastRun_('payWeek');
+    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('idle') };
+    const tz = CONFIG.MANAGER_TIMEZONE;
+    const now = new Date();
+    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
+    const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+    const rows = getEmployeeRosterRows_();
+    const orgAnchor = orgBiweeklyAnchor_(rows);
+    let attempted = 0, sent = 0, failed = 0, lastError = '';
+    const failedNames = [];
+    for (let r = 1; r < rows.length; r++) {
+      const email = empRosterEmail_(rows[r]);
+      if (!email) continue;
+      const pc = empPayCycle_(rows[r], orgAnchor);
+      const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
+      if (!pw || pw.remindOn !== today) continue;
+      attempted++;
+      const name = String(rows[r][EMP.NAME] || '').trim();
+      try {
+        appSendMail_(payWeekEmail_(email, name, pw));
+        sent++;
+        logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
+      } catch (e) {
+        failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
+        logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+      }
+    }
+    if (failed) {
+      return { sent: sent, outcome: automationOutcome_(sent ? 'partial' : 'failed',
+        failed + ' pay-week reminder email(s) failed to send (' + lastError + ')', failedNames) };
+    }
+    return { sent: sent, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
+  });
+}
+/** P1 — the reminder email (the shared branded chrome, a link to Time / PTO).
+ *  It names the period and the last day only — no hours, no punches. */
+function payWeekEmail_(email, name, pw) {
+  const first = String(name || '').split(' ')[0] || 'there';
+  const period = payWeekDateText_(pw.start) + ' \u2013 ' + payWeekDateText_(pw.end);
+  const by = payWeekDateText_(pw.end, true);
+  return {
+    to: email,
+    subject: 'Check your timesheet \u2014 pay period ends ' + by,
+    body: 'Hi ' + first + ',\n\nThe pay period ' + period + ' ends ' + by + '. Please check your days in Time / PTO and request any edits before then.\n\n\u2014 UMS Team Tools (automated)\n',
+    htmlBody: buildBrandedEmailHtml_('Check your timesheet',
+      '<p style="margin:0 0 10px;">Hi ' + esc_(first) + ',</p>' +
+      '<p style="margin:0 0 12px;">The pay period <b>' + esc_(period) + '</b> ends <b>' + esc_(by) + '</b>. Please check your days in Time / PTO and request any edits before then, so payroll is right the first time.</p>' +
+      '<p style="margin:14px 0 0;color:' + CN_EMAIL_PALETTE.muted + ';">Everything looks right? Then there is nothing to do.</p>',
+      { accent: CN_EMAIL_PALETTE.accent, subLabel: 'Time Clock', statusLabel: 'Pay week',
+        ctaUrl: safeWebAppUrl_('timeoff'), ctaLabel: 'Open Time / PTO' }),
+  };
+}
 /** PURE (Node-pinned): what stands between each period and a clean export.
  *  roster: [{id, name, payCycle, offboarded, timezone}] — every payroll subject.
  *  perDayByEmp: workedHoursByEmpForRange_'s per-day map. toRows / parRows: the
@@ -6562,6 +6901,9 @@ function buildCalendarForEmployee_(emp, year, month) {
     // through would be a different month's number beside today's balance).
     // Not a credit: the trigger credits in arrears on the 1st.
     ptoAccrualMtd: ptoAccrualMtd,
+    // P1: the pay-week reminder for the rep's own today (the calendar's banner
+    // in the same window as the Needs-you item); null outside it.
+    payWeek: (function () { try { const pw = payWeekForEmp_(emp, todayStr); return pw && pw.active ? pw : null; } catch (e) { return null; } })(),
   };
 }
 
@@ -7901,6 +8243,7 @@ function lookupEmployeeById_(empId) {
       departmentsRaw: String(rows[i][EMP.DEPARTMENTS] || '').trim(),
       scheduleRaw: String(rows[i][EMP.SCHEDULE] || '').trim(),
       ptoAccrualPerBasis: empPtoAccrual_(rows[i][EMP.PTO_ACCRUAL]),
+      company: String(rows[i][EMP.COMPANY] == null ? '' : rows[i][EMP.COMPANY]).trim(),   // ED4: column S
     };
   }
   return null;
@@ -9343,6 +9686,14 @@ function getMyPendingTasks() {
       } catch (e) { (hrOk ? unavailable : notConfigured).push('oneOnOne'); }
     }
 
+    // payWeek — P1 (operator 2026-11-05): from the reminder day to the end of
+    // the rep's pay period, one item to check the timesheet (Review opens Time
+    // / PTO). Pure date arithmetic plus the company calendar; nothing to fail.
+    try {
+      var pwTask = payWeekTask_(payWeekForEmp_(emp, todayIso));
+      if (pwTask) items.push(pwTask);
+    } catch (e) { unavailable.push('payWeek'); }
+
     // notes — answered minus logged for the PREVIOUS workday, off getMyMetrics'
     // 5-min result cache (L-1). A failed notes read (noteCountUnavailable) is
     // "couldn't check", never "0 missing" (F5 / INV-187).
@@ -9511,8 +9862,13 @@ function empDocValidateIssue_(payload, pdf) {
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
-  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf });
+  const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf, pages: pdf ? empDocPdfPagesOf_(pdf.pages, payload.pdfPages) : 0 });
   if (!fv.ok) return { ok: false, error: fv.error };
+  // ED1: a signature or initials box is filled by the sign panel, so a
+  // document that carries one must ask for the signature.
+  if (payload.requiresSignature === false && fv.fields.some(function (f) { return EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0; })) {
+    return { ok: false, error: 'A document with a signature or initials box must require a signature.' };
+  }
   return { ok: true, doc: {
     empId: empId, docType: docType, title: title, bodyMd: bodyMd, dueAt: dueAt,
     requiresSignature: payload.requiresSignature !== false,
@@ -9538,6 +9894,8 @@ function empDocValidateFields_(fields, opts) {
     if (label.length > EMPDOC_FIELD_LABEL_MAX) return { ok: false, error: 'A field label is too long.' };
     const type = String(f.type || 'text').trim().toLowerCase();
     if (EMPDOC_FIELD_TYPES.indexOf(type) < 0) return { ok: false, error: 'Invalid field type "' + type + '".' };
+    // ED1: signature and initials exist only as a box on the PDF's page.
+    if (EMPDOC_SIGN_FIELD_TYPES.indexOf(type) >= 0 && f.box == null) return { ok: false, error: '"' + label + '" is a ' + type + ' field — it must be a box on a PDF page.' };
     let id = String(f.id || f.label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (!id) id = 'f' + (i + 1);
     let base = id, n = 2;
@@ -9550,6 +9908,9 @@ function empDocValidateFields_(fields, opts) {
       if (!(opts && opts.allowBoxes)) return { ok: false, error: 'Field boxes belong on a PDF document.' };
       const b = empDocNormBox_(f.box);
       if (!b) return { ok: false, error: 'The box for "' + label + '" is not on a page.' };
+      // ED2: nor on a page the PDF does not have — the employee could never
+      // see it, and a required one could never be completed.
+      if (opts.pages > 0 && b.page > opts.pages) return { ok: false, error: 'The box for "' + label + '" is on page ' + b.page + ', but the PDF has ' + opts.pages + ' page' + (opts.pages === 1 ? '' : 's') + '.' };
       field.box = b;
     }
     out.push(field);
@@ -9569,6 +9930,45 @@ function empDocNormBox_(box) {
   if (![x, y, w, h].every(function (v) { return isFinite(v); })) return null;
   if (x < 0 || y < 0 || w < 0.01 || h < 0.005 || x + w > 1.0001 || y + h > 1.0001) return null;
   return { page: page, x: x, y: y, w: w, h: h };
+}
+/** PURE (Node-pinned) — ED2: how many pages a PDF says it has, read from its
+ *  bytes (a latin-1 string): the largest /Count of a /Type /Pages dictionary
+ *  written in the clear. null when none is — a PDF that keeps its page tree
+ *  in a compressed object stream cannot be counted here. */
+function empDocPdfPageCount_(raw) {
+  const s = String(raw || '');
+  const re = /\/Type\s*\/Pages(?![A-Za-z])/g;
+  let best = 0, m;
+  while ((m = re.exec(s))) {
+    // The dictionary the name sits in: back to its "<<", then forward over it,
+    // keeping only its own keys (a nested dictionary, e.g. inherited
+    // /Resources, is skipped).
+    let start = -1, depth = 0;
+    for (let p = m.index - 1; p >= 0 && p >= m.index - 4000; p--) {
+      const two = s.substr(p, 2);
+      if (two === '>>') { depth++; p--; } else if (two === '<<') { if (depth === 0) { start = p; break; } depth--; p--; }
+    }
+    if (start < 0) continue;
+    let own = '';
+    depth = 0;
+    for (let q = start + 2; q < s.length && q < start + 20000; q++) {
+      const two = s.substr(q, 2);
+      if (two === '<<') { depth++; q++; continue; }
+      if (two === '>>') { if (depth === 0) break; depth--; q++; continue; }
+      if (depth === 0) own += s.charAt(q);
+    }
+    const c = /\/Count\s+(\d+)/.exec(own);
+    if (c) best = Math.max(best, Number(c[1]));
+  }
+  return best > 0 ? best : null;
+}
+/** PURE (Node-pinned) — ED2: the page count boxes are checked against: the
+ *  bytes' own count when it can be read, else the count the browser's pdf.js
+ *  read (a whole number in range), else 0 (unknown — only the page cap holds). */
+function empDocPdfPagesOf_(counted, claimed) {
+  if (counted > 0) return Math.min(counted, EMPDOC_PDF_MAX_PAGES);
+  const n = Number(claimed);
+  return n >= 1 && n <= EMPDOC_PDF_MAX_PAGES && n === Math.floor(n) ? n : 0;
 }
 /** PURE (Node-pinned) — the line a PDF document's frozen body ends with. The
  *  name is the file's, made plain (no quotes, no line breaks, capped). */
@@ -9593,6 +9993,7 @@ function empDocValidateResponses_(fields, responses) {
   const out = {};
   for (let i = 0; i < fields.length; i++) {
     const f = fields[i];
+    if (EMPDOC_SIGN_FIELD_TYPES.indexOf(f.type) >= 0) continue;   // ED1: filled by the sign panel's pads, never typed
     const raw = responses[f.id];
     const val = raw == null ? '' : String(raw).trim();
     if (f.required && !val) return { ok: false, error: 'Please complete: ' + f.label };
@@ -9649,6 +10050,7 @@ function empDocRowToObj_(row, ssTz) {
     responsesRaw: String(row[ED.RESPONSES] || ''),
     responses: empDocParseJson_(row[ED.RESPONSES], {}),
     pdfKey: EMPDOC_PDF_KEY_RE.test(String(row[ED.PDF_KEY] || '').trim()) ? String(row[ED.PDF_KEY]).trim() : '',
+    letterheadId: /^[a-z0-9-]{1,40}$/.test(String(row[ED.LETTERHEAD] || '').trim()) ? String(row[ED.LETTERHEAD]).trim() : '',   // ED4
   };
 }
 /** Defensive JSON parse — corrupt blob never throws (returns the fallback). */

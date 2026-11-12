@@ -202,6 +202,10 @@ const CONFIG = {
   // (written by call-data-reporting's inboundCallsExport.js — Op State #49
   // there; one row per inbound call, Call Start stored RAW PST 'HH:MM:SS').
   CDR_INBOUND_TAB:   'Inbound Calls',
+  // M1 (operator 2026-11-11): every OUTBOUND call, one row per call, the same
+  // export family (call-data-reporting's outboundCallsExport.js; read here BY
+  // HEADER — Call Date / Agent Name / Connected / Talk Sec).
+  CDR_OUTBOUND_TAB:  'Outbound Calls',
   // PST(stored) → CST(anchor). A HAND-MIRROR of call-data-reporting's
   // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
   // fixed 2h holds year-round). Change both or the two dashboards disagree.
@@ -488,6 +492,7 @@ const EMP = {
   SCHEDULE:14,        // column O — optional per-rep shift override 'H:mm-H:mm' in the REP's tz (Turn D; blank = per-tz CONFIG.SHIFT_SCHEDULE)
   PAY_RATE:15,        // column P — optional hourly pay rate (operator 2026-08-17; blank = pay statement shows hours only). Read ONLY via empPayRateById_ inside getMyPayStatement — never spread onto emp objects (leak surface).
   PTO_ACCRUAL:16,     // column Q — optional PTO accrual rate: PTO HOURS EARNED PER `CONFIG.PTO_ACCRUAL_BASIS_HOURS` HOURS WORKED (operator 2026-08-19; PH team = 3.08 per 80). HOURS-DRIVEN, not calendar-driven: creditMonthlyPtoAccruals (daily trigger) credits `hoursWorked(month) × rate / basis / PTO_HOURS_PER_DAY` days into the col-I balance, in arrears. IDEMPOTENT ON HOURS PAID FOR, not on "this month was processed" (INV-205, 2026-09-15): col R still decides which months are OWED, but it no longer closes a month against correction — every run re-values the last PTO_ACCRUAL_RECONCILE_MONTHS completed months against the PtoAccrualCredit audit rows and credits the difference, so a punch approved after the month closed is picked up instead of lost. A month with no worked hours accrues NOTHING *at the time* — that is the rule, not a failure — and it accrues later if hours appear. Blank/garbage = no accrual at all (fixed-allotment tile, no credits). Col I REMAINS the balance of record — manual edits still compose (the credit is a delta, not a recompute).
+  COMPANY:18,         // column S — ED4 (operator 2026-11-09): the company the employee works for, by letterhead name or id (e.g. "Infimed Solutions" for the India team); it picks the default letterhead on an issued document. Blank or unknown = the first letterhead.
   ACCRUED_THROUGH:17, // column R — AUTO-MANAGED 'yyyy-MM' stamp: the last month whose accrual has been credited (in arrears — month M lands on/after the 1st of M+1). Written only by creditMonthlyPtoAccruals; blank (or unreadable) = the run first asks the credit history (25post): with a PtoAccrualCredit on record it plans from the newest month paid for, so a cleared cell loses nothing; with none it SEEDS (stamps last month, credits nothing — the operator's balance is presumed current through the end of last month at enable time). Either way a PtoAccrualStamp audit row says which. Hand-edit only to deliberately re-credit / skip months. Sheets may coerce it to a Date — read via accrualStampYm_.
 };
 /** Pure month arithmetic for the accrual credit (Node-pinned). IN ARREARS:
@@ -610,6 +615,20 @@ const DR_MAX_SCAN = 4000;
 // have >100 open requests to show. Reported alongside the lists as listCap +
 // *Total so the client can render "showing N of M" instead of implying N is all.
 const DR_LIST_CAP = 100;
+// DR1 (operator 2026-11-09) — the audit list and its "Checked in CRM" marks.
+// A mark is an APPEND-ONLY row in its own tab of the Dept Requests store (the
+// QaExemptions shape: the latest row per request wins), never a new
+// DeptRequests column: the live tab may carry an operator note column past
+// DR_HEADERS, and a column added there would write over it. Ids, a yes/no and
+// who — no patient data. The audit list reads a date SPAN found from the
+// CreatedAt column (the H3 span rule), so a range reaches past the list
+// read's DR_MAX_SCAN tail; DR_AUDIT_MAX_ROWS caps one answer, newest kept.
+const DR_CRM_TAB = 'DeptRequestCrmChecks';
+const DR_CRM_HEADERS = ['Timestamp', 'RequestId', 'Checked', 'By', 'AtMs'];
+const DR_CRM_SCAN_MAX = 20000;
+const DR_AUDIT_MAX_ROWS = 2000;
+const DR_AUDIT_MAX_DAYS = 366;
+const DR_AUDIT_DEFAULT_DAYS = 30;
 // Notes tab schema in each rep's per-rep Sheet — see CONFIG.CALL_NOTES.NOTES_TAB.
 const CN = {
   NOTE_ID:0, TIMESTAMP:1, DATE_LOCAL:2,
@@ -777,7 +796,7 @@ const CSR_TRANSFER_EXPECTED_HEADERS = {
 const MONTH_NAMES = ['January','February','March','April','May','June',
   'July','August','September','October','November','December'];
 const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const ROSTER_CACHE_KEY = 'employee_roster_v11';   // bumped: AccruedThrough column R (automated accrual credits, operator 2026-08-18)
+const ROSTER_CACHE_KEY = 'employee_roster_v12';   // bumped: Company column S (ED4 letterheads, operator 2026-11-09); v11 was AccruedThrough column R
 const ROSTER_CACHE_TTL = 300;
 // Per-rep call-notes ambient cache: caches the {unresolvedActionCount,
 // staleActionCount, todayTotal} aggregate so the 60s sidebar polling doesn't
@@ -982,7 +1001,17 @@ const IDLE_ALERT_MIN = 30;
 // Clock In / Clock Out. Ids and times only — no page, no content. Rows past
 // ACTIVITY_LOG_DAYS go in the nightly diagnostics purge.
 const ACTIVITY_LOG_TAB = 'ActivityLog';
-const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
+// AC1 (operator 2026-11-11): a row also carries how many clicks and
+// keystrokes fell in each 10-minute block since the window's last send —
+// COUNTS ONLY, never what was typed or clicked ("29123456c3k12", the block
+// number since the epoch). Kind is '' for a ping (a gesture: presence and a
+// first/last time) and 'counts' for the flush a window sends after a pause,
+// which stamps no presence and is never read as a ping.
+const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms', 'Counts', 'Kind'];
+const ACTIVITY_COUNTS_KIND = 'counts';
+const ACTIVITY_COUNTS_MAX_ENTRIES = 48;     // one send's blocks — 8 hours, far past any real gap
+const ACTIVITY_COUNTS_MAX_PER_BLOCK = 5000; // a block's clicks (or keys) past this are not a person
+const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this when it arrives is dropped (a laptop asleep overnight)
 // Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
 // each night every FINISHED day's pings become ONE ActivitySummary row per rep
 // (the day's 10-minute map included, so Day Edit draws it unchanged), kept
@@ -993,8 +1022,10 @@ const ACTIVITY_LOG_HEADERS = ['Timestamp', 'EmpId', 'Ms'];
 const ACTIVITY_LOG_DAYS = 14;
 const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
 const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';
-const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt'];
-const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8];   // g144: a date, an "08:05" and the block string read back as written
+// AC1: Counts is the day's clicks and keystrokes per block ("48c12k40", the
+// block of the rep's day); a row condensed before AC1 has none, and draws on/off.
+const ACTIVITY_SUMMARY_HEADERS = ['Date', 'EmpId', 'Timezone', 'Pings', 'First', 'Last', 'ActiveMin', 'Blocks', 'CondensedAt', 'Counts'];
+const ACTIVITY_SUMMARY_TEXT_IDX = [0, 1, 2, 4, 5, 7, 8, 9];   // g144: a date, an "08:05" and the block string read back as written
 const ACTIVITY_BLOCK_MIN = 10;
 // 25post round 12 E2 (b) (operator 2026-10-28) — DRIVING distance for a
 // radius rule. Apps Script's built-in route lookup (Maps.newDirectionFinder,
@@ -1010,6 +1041,11 @@ const ROUTE_LOOKUP_CAP = 8000;
 const ROUTE_LOOKUP_PROP = 'ROUTE_LOOKUPS_24H';
 const OOP_DRIVE_MAX_LOOKUPS = 3;
 const EXPORT_INFERRED_LIST_MAX = 50;   // the inferred punches an export names beside its link / in its email
+// M1 (operator 2026-11-11): an intake form's time (first input to send) rides
+// its call note as completionSeconds; a time outside these bounds is not a
+// call (a form left open overnight, a resend) and is not counted as timed.
+const METRICS_INTAKE_TIMED_MIN_SEC = 30;
+const METRICS_INTAKE_TIMED_MAX_SEC = 7200;
 const ACTIVITY_PING_GAP_MIN = 10;   // = the client's PRESENCE_MIN_GAP_MS (pinned): a ping is a sample, at most one per window per gap
 const CN_PIN_LIMIT = 3;  // max personal pins per rep — keeps the pinned tray a focus tool, not a second inbox
 // ── Tag-trend analytics (#5 — manager Admin "Tag Trends" panel) ─────────────
@@ -1235,6 +1271,8 @@ const DIGEST_ERROR_KEYS = {
   spanishAutoAssign: 'SpanishAutoAssign', deptReplyScan: 'DeptReplyScan', missedPunch: 'MissedPunchAlerts',
   exportCheck: 'DailyExportCheck', automationHealth: 'AutomationHealthDigest',
   spanishEscalation: 'SpanishEscalationDigest',   // E4 (cycle 25, G5)
+  payWeek: 'PayWeekReminders',   // P1 (operator 2026-11-05)
+  cdrWarm: 'CdrCacheWarm',   // PF1 (operator 2026-11-09)
 };
 // The human label for a stamped key that has no AUTOMATION_JOB_CHECKS row (a
 // tabled key takes the table's label). ONE map, shipped on each stamp by
@@ -1251,6 +1289,8 @@ const AUTOMATION_ERROR_LABELS = {
   OpenPunchCheck: 'Daily open-punch check',
   NightlySelfTest: 'Nightly self-test',   // ST2 (cycle 25 E1): every job records an outcome now
   SpanishEscalationDigest: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
+  PayWeekReminders: 'Pay-week timesheet reminders',   // P1
+  CdrCacheWarm: 'Dashboard call-data read-ahead',   // PF1
 };
 // ── ST2 (cycle 25 E1): ONE run-outcome contract for every automation job ──
 // Every installable-trigger job — the standalone TARGETS and every handler a
@@ -1299,6 +1339,7 @@ const DIGEST_DELIVERY_LABELS = {
   missedPunchRep: 'Missed clock-out reminder (to the rep)', trainingOverdueRep: 'Overdue-documents reminder (to the employee)',
   selfTest: 'Nightly self-test failure alert', clientErrSpike: 'Client-error spike alert',
   spanishEscalation: 'Spanish Inbox escalation digest',   // E4 (cycle 25, G5)
+  payWeek: 'Pay-week timesheet reminder (to the rep)',   // P1
 };
 // A delivery row that could not be WRITTEN is counted here — {count, firstMs,
 // lastMs, lastError} — and the Admin panel says so for a failure inside its
@@ -1524,7 +1565,7 @@ const PTO_ACCRUAL_LEDGER_KEEP_MONTHS = 12;
 // unchanged. Order inside a group: the cheapest / bounded jobs first, the
 // cross-rep walk last, so a job that runs long cannot starve the others.
 const TRIGGER_GROUPS = {
-  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral)
+  runHourlyJobs:    ['sendCallNotesEodDigest', 'scanDeptRequestReplies', 'sendPayWeekReminders', 'warmCdrMetricsCache', 'autoAssignSpanishThreadsScheduled'],   // 22post D: the reply scan rides hourly (count-neutral); P1: the pay-week reminder too; PF1: the call-data read-ahead
   runWeeklyDigests: ['sendCallNotesWeeklyDigests', 'sendCoachingRecapDigest'],
   runNightlyPurges: ['purgeOldDiagnostics', 'purgeOldQaReviews', 'purgeExpiredFormData', 'purgeArchivedCallNotes'],
   // 8am manager-tz. checkOpenPunches STAMPS and sendAutomationHealthDigest
@@ -1557,6 +1598,8 @@ const TRIGGER_HANDLER_JOB_KEYS = {
   checkOpenPunches:                  'OpenPunchCheck',
   sendCallNotesUrgentDigest:         'CallNotesUrgentDigest',
   sendSpanishEscalationDigest:       'SpanishEscalationDigest',
+  sendPayWeekReminders:              'PayWeekReminders',
+  warmCdrMetricsCache:               'CdrCacheWarm',   // PF1
 };
 // Handlers that USED to own a trigger of their own. Both delete loops consult
 // this list so a re-install removes the standalone triggers a previous install
@@ -1644,11 +1687,24 @@ const FEATURE_FLAGS = [
   { key: 'managerDailyBrief', label: 'Consolidated manager daily brief',
     description: 'One branded morning email (manager-tz 8am) consolidating the daily manager streams — urgent notes, missed clock-outs, overdue training / unsigned docs / un-acknowledged coaching, and dept requests past SLA. While ON, the separate manager emails for those streams are suppressed (employee-facing reminders, the weekly training/review digests, and the automation-failure watchdog still send independently). Run installAutomationTriggers() once after first enabling so the 8am trigger exists. Silent on an all-clear morning.',
     default: false, scope: 'server' },
+  { key: 'spanishResolveReply', label: 'Spanish Inbox resolved reply',
+    description: 'When someone marks a Spanish request resolved, reply on its email thread (from the mailbox the app runs as, to the requester and the inbox) with who resolved it, the outcome they chose and their note. A voicemail-only request gets no reply. Off = no reply is sent; the resolve itself is unchanged.',
+    default: true, scope: 'server' },
   { key: 'spanishAutoAssign', label: 'Scheduled Spanish Inbox auto-assign',
     description: 'Every hour during business hours (weekdays inside the Coverage business window, US holidays excluded), hand every UNCLAIMED pending Spanish Inbox request — voicemails included — to the least-loaded configured bilingual member, exactly as the manager "Auto-assign N unclaimed" button does. Needs the Spanish bilingual members list; existing claims are never reassigned. Run installAutomationTriggers() once after first enabling so the hourly trigger exists; it heartbeats even while off.',
     default: false, scope: 'server' },
+  { key: 'intakeAddressCheck', label: 'Intake address check (Google Maps)',
+    description: 'On the PMD and PAP account forms, check the patient\'s home address (and the PAP form\'s doctor address) with Google Maps when the rep leaves the field: found, found only the area, matched only part, or not found — with "Use this" for Google\'s spelling. A warning only; nothing is blocked. Address only, cached for 6 hours, at most 1,000 checks a day.',
+    default: false, scope: 'both',
+    danger: 'The typed address (and nothing else from the form) is sent to Google Maps, which may not be covered by the organization\'s Google Workspace business associate agreement. Confirm before turning it on.' },
+  { key: 'payWeekReminderEmail', label: 'Pay-week timesheet reminder email',
+    description: 'On the Monday of each pay period\'s final week (biweekly), or the last Monday with at least 4 days left in the month (monthly), email each employee at 9am Central (the same time for everyone, inside working hours) asking them to check their timesheet and request any edits before the period ends. The Needs-you item and the Time / PTO banner show either way. Rides the hourly dispatcher — no new trigger.',
+    default: true, scope: 'server' },
   { key: 'deptReplyResolve', label: 'Dept Request reply resolves',
     description: 'Every hour, read each open department request\'s email thread (in the mailbox the app runs as). A reply from the department that arrived after the send (or the last reopen), is not automatic, and neither asks a question nor puts the request on hold RESOLVES it, credited to the replier; a reply that asks or holds marks it "Responded — needs a look". Only requests sent after this feature shipped carry a thread to read. Off = replies are never read; the resolve link and Mark resolved still work.',
+    default: true, scope: 'server' },
+  { key: 'deptResolvedReply', label: 'Dept Request resolved reply',
+    description: 'When someone marks a department request resolved \u2014 from the email\'s link or in the app \u2014 reply on the request\'s email thread (from the mailbox the app runs as, to the sender and the department) saying it was marked resolved, by whom and when. A request sent before thread tracking has no thread, so it gets no reply, and the person resolving it is told so. Off = no reply is sent; the resolve itself is unchanged.',
     default: true, scope: 'server' },
   { key: 'kbAiGuidance', label: 'AI guidance (Reference drawer)',
     description: 'Show an AI-generated guidance card in the Reference drawer, built from whitelisted call facets (department / update type / tags / flag) + excerpts from your own KB articles. Configure the cap + model in the "AI Guidance" section below; set Script Property KB_AI_API_KEY first.',
@@ -1750,6 +1806,17 @@ const SPANISH_PENDING_IDS_TTL = 900;   // 15 min — a reply-resolved request le
 // requests one Resolve-selected call may act on. A bigger selection is refused
 // whole (never a silent prefix); every thread is a Gmail read before the lock.
 const SPANISH_BULK_RESOLVE_MAX = 50;
+// SP1 (operator 2026-11-09) — resolving a Spanish request names its OUTCOME
+// (one of these, PHI-free, kept in the SpanishManualResolved tab's trailing
+// Outcome column) and may carry a short note; the app then replies on the
+// request's email thread so the requester sees it was handled. The note rides
+// only that reply (the thread already holds the request) and is never stored —
+// the tab lives on the ADP sheet, which is PHI-free. A voicemail-only request
+// (the phone system's mail) gets no reply. The marker line identifies the
+// app's own reply, so it never reads as a requester's follow-up.
+const SPANISH_RESOLVE_OUTCOMES = { reached: 'Reached the patient', voicemail: 'Left a voicemail', noanswer: 'No answer', wrong: 'Wrong number' };
+const SPANISH_RESOLVE_NOTE_MAX = 500;
+const SPANISH_APP_REPLY_MARKER = 'Sent automatically by UMS Team Tools when this request was marked resolved.';
 // ── Scheduled-call reminders (pilot round 2, 2026-08-24) ────────────────────
 // Pilot ask #3: "sometimes a translated call is scheduled for a certain time"
 // — a rep schedules a reminder for a specific call and the SHELL reminder
@@ -1898,6 +1965,13 @@ var _cdrColumnsValidated = false;
 var _cdrColumnWarning = null;
 var _cdrNameMapCache = null;
 var _cdrNameMapExpiry = 0;
+// PF1 (operator 2026-11-09): the CDR "has the data changed" stamp, memoized
+// per execution (its CacheService tier is cdrDataStamp_'s), and each tab's
+// date column as ISO days, per execution — one window read after another
+// (the dashboard's period and its comparison, the Stats trend and the day)
+// read the whole column once, not once per window. _resetCdrCaches_ clears both.
+var _cdrStampMemo = null;
+var _cdrDateColMemo = {};
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;
@@ -1943,6 +2017,20 @@ var DASHBOARD_PERIOD_KEYS = ['yesterday', 'mtd', 'ytd'];
 // stays the documented trade: a load BEFORE the import pins the pre-import
 // aggregate for up to 6h (the Metrics tabs keep their 5-min caches).
 var DASHBOARD_CACHE_TTL = 21600;
+// PF1 (operator 2026-11-09 — "Your numbers", "Department" and Stats load
+// slowly). Every aggregate read from the CDR Report (a DQE window, a transfer
+// window, the 30-day breakdown) is cached against a STAMP of the data rather
+// than for five minutes: each tab's row count and a digest of its newest
+// CDR_STAMP_TAIL_ROWS rows (where the daily import writes), and the alias tab
+// whole. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
+// corrected data reaches every reader within that — sooner than the old
+// five-minute tier — and an unchanged tab is never re-scanned for the window
+// TTL. A stamp that cannot be read caches nothing longer than before.
+var CDR_STAMP_CACHE_KEY = 'cdr_stamp_v1';
+var CDR_STAMP_TTL = 120;
+var CDR_STAMP_TAIL_ROWS = 300;
+var CDR_WINDOW_CACHE_TTL = 21600;
+var CDR_WARM_CACHE_KEY = 'cdr_warm_stamp_v1';
 var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 // ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
 // (design handoff PR 6, T1). The dashboard already pays ~3 RPCs for the
@@ -1962,7 +2050,24 @@ var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oc
 var PENDING_TASKS_CACHE_TTL = 120;         // seconds, per rep
 var PENDING_TASKS_CACHE_PREFIX = 'pending_tasks_v1:';
 var PENDING_TASKS_CAP = 30;                // items returned; `total` carries the pre-slice count (INV-169)
-var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due
+var PENDING_TASKS_KINDS = ['training', 'coaching', 'notes', 'requests', 'sched', 'docs', 'spanish', 'oneOnOne', 'payWeek'];   // 22post C-8: Spanish Inbox requests claimed by / assigned to the rep; Batch F: a manager's 1-on-1s due; P1: the pay-week timesheet check
+// P1 (operator 2026-11-05 — "a reminder to team members to check their
+// timesheet and request edits if needed on pay weeks"): ONE rule for the day
+// (payWeekReminder_). Biweekly: the Monday of the period's final week. Monthly
+// (the India team, finalized on the month's last day): the last Monday with at
+// least PAY_WEEK_MONTHLY_MIN_DAYS days left in the month, counting that Monday
+// and the last day. A Monday that is a company holiday moves to the next
+// workday. The email goes at PAY_WEEK_REMINDER_HOUR CENTRAL (CONFIG.MANAGER_TIMEZONE)
+// on that day for everyone (operator 2026-11-06), from the hourly dispatcher,
+// while the `payWeekReminderEmail` toggle is on.
+// I1 (operator 2026-11-05/06): the intake address check's own daily counter
+// (one Script Property, 24 hourly buckets — the route-lookup shape) and cap,
+// kept apart from the route lookups so neither starves the other.
+const INTAKE_ADDR_CHECK_PROP = 'INTAKE_ADDR_CHECKS_24H';
+const INTAKE_ADDR_CHECK_CAP = 1000;
+const INTAKE_ADDR_CACHE_SECONDS = 21600;
+const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
+const PAY_WEEK_REMINDER_HOUR = 9;
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —
@@ -2026,7 +2131,7 @@ const INTAKE_PMD_Q_EN = [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#",
     "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "Height (inches)", "Weight (lbs)",
     "Currently used mobility devices", "Diagnoses", "Currently staying at Home or Facility?",
     "If in facility what is the approximate discharge date?",
     "Mobility Evaluation & Scheduling", "Already had a Power Mobility Evaluation in last 6 months?",
@@ -2037,7 +2142,7 @@ const INTAKE_PMD_Q_EN = [
 const INTAKE_PAP_Q_EN = [
     "Demographics", "Patient Full Name", "Patient Primary Contact Phone #", "Secondary Contact Ph#", "Patient Email Address", "DOB", "Home Address",
     "Insurance", "Primary Insurance & Member ID#", "Secondary Insurance & Member ID#", "SSN # (if insurance details N/A)",
-    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height", "Weight (lbs)",
+    "Clinical Information", "PCP Name", "MDO Ph#", "MDO Fax#", "MDO Address", "Height (inches)", "Weight (lbs)",
     "PAP Details", "Already have a CPAP?", "Make & Model of current CPAP (if applicable)?", "How long have you had the current CPAP (if applicable)?",
     "What kind of mask are you using (make/model/size)?", "Looking for Machine, PAP Supplies, or Both?", "Have you done a Sleep Study in the past?",
     "If so please provide Sleep Study details (approx. date & provider details)",
@@ -2474,6 +2579,24 @@ const US_STATE_NAMES = {
 };
 const INS_PAYOR_TAB = 'InsurancePayors';
 const INS_PAYOR_TOP = 8;
+// PT3: the most listings of a matched plan in OTHER payor tables one search
+// reads to compare answers ("Also on … — answer differs") — bounded, like the
+// search's own reads (INV-46).
+const INS_PAYOR_ALSO_MAX = 12;
+// PT4: a code the source sheet mistyped in a column header, corrected at import
+// (and listed in the preview) — only as the operator confirmed it.
+const INS_CODE_HEADER_FIXES = {
+  E1930: { to: 'E1390', why: 'E1390 is the oxygen concentrator — the operator confirmed, 2026-11-10' },
+};
+// PT1a (operator 2026-11-09): the source sheet's standing note — the rule its
+// top-left cell states for every plan ("No power orders in OR, WA, ID…"). A
+// source-format import stores it here and every insurance result shows it.
+// PT1: ONE key for every payor table, a map {dataTableKey: {text, key, at, by}}
+// — `key` is the source export's own key ("Try = Create account…"). A value
+// in PT1a's single-table shape ({text, at, by}) reads as InsurancePayors'.
+// A few hundred characters per table (g07); there is no seed.
+const INS_PAYOR_NOTE_PROP = 'INS_PAYOR_NOTE';
+const INS_PAYOR_NOTE_MAX = 2000;
 // D2 (operator 2026-10-27): payor alias FAMILIES the Synonyms editor offers
 // when one of their terms appears in the InsurancePayors sheet. A suggestion,
 // never a write: the admin reviews the lines and saves them into
@@ -2529,6 +2652,55 @@ const KB_DATA_TABLES = {
     // (INV-186 applied to a one-off validator).
     nameHeader: /payor|plan|name|insur/i,
     minCols: 2,
+    // PT1a: the upload also takes the SOURCE sheet's own export (two header
+    // rows, a note in A1, a key in the trailing columns) and converts it —
+    // insPayorFromSource_. A file already in this tab's shape imports as before.
+    sourceFormat: 'payorAcceptance',
+    // PT1: the label the insurance lookup groups this table's plans under.
+    payorTable: 'Medicare / MA',
+  },
+  // PT1 (operator 2026-11-09): the source sheet's Primary Medicaid tab — the
+  // same layout, its own rule and key; searched with every payor table.
+  MedicaidPayors: {
+    tab: 'MedicaidPayors',
+    label: 'Primary Medicaid acceptance',
+    describe: 'Primary Medicaid payor / plan rows behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|medicaid/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'Primary Medicaid',
+  },
+  // PT2 (operator 2026-11-10): the source sheet's UHC-by-state and BCBS / Anthem
+  // tabs — grouped by state in the sheet; the converter gives every plan its
+  // State (and BCBS its insurer as Company).
+  UhcPayors: {
+    tab: 'UhcPayors',
+    label: 'UHC by state acceptance',
+    describe: 'UnitedHealthcare plans by state behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|uhc|united/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'UHC by state',
+  },
+  BcbsPayors: {
+    tab: 'BcbsPayors',
+    label: 'BCBS / Anthem acceptance',
+    describe: 'Blue Cross Blue Shield and Anthem plans by state behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur|bcbs|blue|anthem/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'BCBS / Anthem',
+  },
+  // PT4 (operator 2026-11-10): the non-PMD sheet — a row per PAYOR, item
+  // categories over its codes, its key written below the table.
+  ManualMobilityPayors: {
+    tab: 'ManualMobilityPayors',
+    label: 'Manual mobility acceptance',
+    describe: 'Manual mobility and other non-PMD items by payor behind the Reference insurance lookup',
+    nameHeader: /payor|plan|name|insur/i,
+    minCols: 2,
+    sourceFormat: 'payorAcceptance',
+    payorTable: 'Manual Mobility items',
   },
 };
 const KB_DATA_TABLE_MAX_ROWS = 5000;
@@ -2812,15 +2984,18 @@ const EMPDOC_SIG_TAB = 'DocSignatures';
 // Batch H (operator 2026-11-02): ONE more trailing column, PdfKey — the issued
 // PDF's key in the EmpDocFiles tab (blank for a written document and every
 // older row; getOrCreateEmpDocSheet_ self-heals the header).
-const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey'];
-const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate'];
-const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15 };
+// ED4 (operator 2026-11-09): ONE more trailing column, LetterheadId — the
+// letterhead the issuer picked (blank = none, and every older row). It is how
+// the document is DRESSED, not what it says, so it is not in the content hash.
+const EMPDOC_HEADERS = ['DocId','EmpId','DocType','Title','BodyMd','ContentHash','RequiresSignature','Status','IssuedBy','IssuedAt','DueAt','SignedAt','VoidReason','FieldsJson','ResponsesJson','PdfKey','LetterheadId'];
+const EMPDOC_SIG_HEADERS = ['DocId','EmpId','SignedAt','SignatureDataUrl','AckVersion','SignatureHash','Certificate','InitialsDataUrl'];
+const ED = { DOC_ID:0, EMP_ID:1, DOC_TYPE:2, TITLE:3, BODY_MD:4, CONTENT_HASH:5, REQUIRES_SIG:6, STATUS:7, ISSUED_BY:8, ISSUED_AT:9, DUE_AT:10, SIGNED_AT:11, VOID_REASON:12, FIELDS:13, RESPONSES:14, PDF_KEY:15, LETTERHEAD:16 };
 // HR-1 (cycle 23) — the doc's text columns are written into '@' cells: a title
 // that read as a date or number was coerced on write, so the content hash
 // recomputed from the cell never matched — the doc could not be signed and
 // verified as TAMPERED.
 const EMPDOC_TEXT_IDX = [ED.TITLE, ED.BODY_MD, ED.VOID_REASON];
-const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6 };
+const EDS = { DOC_ID:0, EMP_ID:1, SIGNED_AT:2, SIGNATURE:3, ACK_VERSION:4, SIG_HASH:5, CERTIFICATE:6, INITIALS:7 };
 const EMPDOC_TYPES = ['review','pip','policy','other'];
 // v2 — manager-curated reusable templates (e.g. "Annual Performance Review").
 // Org-wide + PHI-free (form shells, not employee data) → not team-scoped.
@@ -2828,7 +3003,16 @@ const EMPDOC_TPL_TAB = 'EmpDocTemplates';
 const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
 const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
 // v2 — employee-completable fields on a doc (in addition to the signature).
-const EMPDOC_FIELD_TYPES = ['text','textarea','date'];
+const EMPDOC_FIELD_TYPES = ['text','textarea','date','signature','initials'];
+// ED1 (operator 2026-11-05 — "a 'signature' box type that allows for a
+// mouse-drawn signature"): a SIGNATURE or INITIALS field is a box on a PDF the
+// employee does not type into — the sign panel's pads fill every such box. It
+// stores no response (empDocValidateResponses_ skips it); it is only valid as a
+// box, on a document that requires a signature (empDocValidateIssue_). The
+// initials are drawn once, kept in the DocSignatures row's trailing
+// InitialsDataUrl column, and covered by the signature hash when present.
+const EMPDOC_SIGN_FIELD_TYPES = ['signature','initials'];
+const EMPDOC_INITIALS_MAX_CHARS = 20000;   // the pad exports at <= 300px wide
 const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
 const EMPDOC_FIELD_LABEL_MAX = 200;
 const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response
@@ -2850,6 +3034,23 @@ const EMPDOC_PDF_KEY_RE = /^empdocpdf-[a-f0-9]{24}$/;
 const EMPDOC_PDF_MAX_BYTES = 4194304;          // 4 MB — a Google Doc exported as PDF is ~100 KB
 const EMPDOC_PDF_NAME_MAX = 120;
 const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box may name
+// ED3 (operator 2026-11-06): a finished document's filled copy is built in the
+// browser and may be emailed — up to this size (the PDF and its certificate),
+// to the employee, the managers if chosen, and at most this many other addresses.
+const EMPDOC_COPY_MAX_BYTES = 10485760;        // 10 MB
+const EMPDOC_COPY_EXTRA_MAX = 5;
+// ED4 (operator 2026-11-09): the company letterheads an employee document is
+// dressed in — each a name, an address (lines), a footer and a logo. The admin
+// keeps them (Manage → Admin → Config → Letterheads) in ONE Script Property;
+// until then the two companies are offered by name alone. Logos live in the HR
+// store's LetterheadLogos tab (the KbImages row shape, keyed by content).
+const EMPDOC_LETTERHEADS_PROP = 'EMPDOC_LETTERHEADS';
+const EMPDOC_LETTERHEAD_SEED = [{ id: 'ums', name: 'UniversalMed Supply' }, { id: 'infimed', name: 'Infimed Solutions' }];
+const EMPDOC_LETTERHEAD_MAX = 6;
+const EMPDOC_LOGO_TAB = 'LetterheadLogos';
+const EMPDOC_LOGO_KEY_RE = /^lhlogo-[a-f0-9]{24}$/;
+const EMPDOC_LOGO_MAX_BYTES = 307200;          // 300 KB — the browser fits a logo under it
+const EMPDOC_LOGO_TYPES = ['image/png', 'image/jpeg'];   // what the certificate and pdf-lib both draw
 // Bump when the acknowledgment copy below changes, so stored signatures
 // prove which language the signer saw (the FORM_CONSENT_VERSION pattern).
 const EMPDOC_ACK_VERSION = 1;

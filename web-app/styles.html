@@ -1714,6 +1714,9 @@
 
   /* Cap calendar size so it doesn't sprawl at fullscreen */
   .cal-card { max-width: 720px; margin: 0 auto; }
+  /* P1: the pay-week banner atop the Time / PTO calendar. */
+  .cal-payweek { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--info-soft); color: var(--ink); font-size: 13px; line-height: 1.45; border-left: 3px solid var(--info); }
+  .cal-payweek svg { flex: none; margin-top: 2px; color: var(--info-deep); }
 
   /* ─── TIME OFF: 2-col layout (calendar left, PTO ring right) ───────────── */
   .timeoff-layout {
@@ -2190,6 +2193,17 @@
   .de-act-strip { display: flex; gap: 1px; height: 22px; margin: 8px 0 2px; }
   .de-act-b { flex: 1 1 0; min-width: 0; background: var(--paper-3); border-radius: 1px; }
   .de-act-b.on { background: var(--accent); }
+  /* AC1: level bars — a track per block (or hour) whose fill's height is its clicks + keystrokes. */
+  .de-act-strip.lvl { height: 40px; align-items: stretch; }
+  .de-act-b.lv, .tcal-act-b.lv { display: flex; align-items: flex-end; }
+  .de-act-b.lv > i, .tcal-act-b.lv > i { display: block; width: 100%; background: var(--accent); border-radius: 1px 1px 0 0; }
+  .de-act-scale { display: inline-flex; gap: 2px; margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 1px; }
+  .de-act-sc { font: inherit; font-size: 11px; color: var(--muted); background: transparent; border: 0; border-radius: calc(var(--radius) - 2px); padding: 1px 8px; cursor: pointer; }
+  .de-act-sc[aria-pressed="true"] { background: var(--paper-3); color: var(--ink); font-weight: 600; }
+  .tcal-act-cell { display: block; min-width: 96px; }
+  .tcal-act { display: flex; gap: 1px; height: 18px; min-width: 96px; width: 100%; }
+  .tcal-act-b { flex: 1 1 0; min-width: 0; background: var(--paper-3); border-radius: 1px; }
+  .tcal-act-n { display: block; font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
   .de-act-ticks { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
   .de-act-sug { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; color: var(--ink); }
   .de-act-apply { font: inherit; font-size: 12px; font-weight: 600; color: var(--accent); background: transparent;
@@ -3031,5 +3045,13 @@
     /* A slide's details (operator 2026-10-28) print in full; the toggle does not. */
     .kb-gal-notes.kb-gal-notes-off { display: block !important; }
     .kb-gal-more { display: none !important; }
+
+    /* (8) — an employee document's finished copy (ED3, operator 2026-11-06)
+       prints from its preview: edPrintCopy_ draws each page as an image into
+       .ed-print-pages and makes it the one subject (rule 4), so it shows on
+       paper only — one page a sheet, the preview and its buttons left out. */
+    :root[data-print-one] .ed-print-pages.print-one { display: block !important; }
+    .ed-print-pages img { display: block; width: 100%; height: auto; break-after: page; }
+    .ed-print-pages img:last-child { break-after: auto; }
   }
 </style>

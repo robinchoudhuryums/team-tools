@@ -211,6 +211,13 @@ not restate it. Server endpoints live in the fourteen server files
      (SH-05). Every close button returns focus to whatever opened the dialog, and
      Tab cannot leave the keyboard-shortcuts dialog (SH-02, SH-03 — g100).
 
+     **T1 (operator 2026-11-11) — the onboarding tour.** The tour now visits every
+     tool — Dashboard, Stats, Spanish Inbox, Time / PTO, Call Notes, Dept
+     Requests, Reference, Intake, Training, QA, Manage, Admin — and shows each
+     step only to someone who can see its tab. People who took the first tour get
+     a short "what's new" run on their next load instead of the whole thing. It is
+     replayed from Settings → Replay the tour.
+
      **Cycle 23 Batch 10 (2026-10-02) — shell and automation.** The outsider page
      reads the org's two domains exactly (`CONFIG.ORG_EMAIL_DOMAINS` —
      universalmedsupply.com and umsupply.com); it had tested `@umsupply.com` alone
@@ -278,6 +285,12 @@ not restate it. Server endpoints live in the fourteen server files
      it. The export file is untouched: the inferred punches are listed beside
      the export link and in the automated export email
      (`exportInferredLines_`).
+
+     **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
+     clicks and keystrokes in each 10-minute block (counts only; a two-minute
+     pause flushes the rest without a presence stamp). Day Edit draws bars per
+     10 minutes or per hour, and the Team Punches day table has an App
+     activity column — every rep's hours on one range, from one read.
 
 **Operator round 2026-11-02 (Batch A):** the clock reminders carry their punch.
 The still-clocked-in reminder offers Clock out, the not-clocked-in nudge offers
@@ -438,6 +451,13 @@ lighter `--warn-fill`.
      the overdue-flag count shows on the phone's bottom nav too (CNUI-09).
 
 <a id="metrics"></a>
+     **M1 (operator 2026-11-11) — adjusted metrics.** My Stats and Team
+     Metrics show each rep's outbound calls (from the CDR Report's Outbound
+     Calls tab) and an Adjusted panel beside the actual figures: handled calls
+     (answered + connected outbound), talk including outbound, and average talk
+     without the timed intake calls (the intake form times itself, first input
+     to send). % Answered is never adjusted.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a
@@ -521,6 +541,90 @@ part of what is signed, and the app re-checks the file on every read and before
 every signature. A signed or completed document has a **Certificate** (a PDF of
 the document, the employee, the times, the hashes, the signature and every
 answer).
+
+**I1 (operator 2026-11-05):** on the PMD and PAP account forms, leaving a
+field tidies what it can read — a phone to 469-111-3333 (a leading +1 or 1
+dropped), a date to MM/DD/YYYY (a two-digit year written out — 1/2/50 →
+01/02/1950), an insurance line that is cleanly Medicare and its ID to
+Medicare · 1EG4-TE5-MK72 (anything else kept as typed), a height to inches (5'4" or 64 in → 64; the label
+reads "Height (inches)", so the email names the unit — operator 2026-11-06) — and says what looks off under the
+field in amber (a short phone, the secondary the same as the primary, a
+future date of birth, a likely email typo, an address with
+no ZIP or state). Nothing is refused: Preview asks once about everything that
+looks off beside any blank recommended field, and Continue anyway previews.
+The SSN is shown as typed. With the `intakeAddressCheck` toggle on (off by
+default), leaving the address asks Google Maps whether it exists and suggests
+Google's spelling, taken only with **Use suggestion**. (Operator 2026-11-06
+settled the two-digit year, the clean-only Medicare tidy, the visible SSN and
+the suggestion wording.)
+
+**I3 (operator 2026-11-06):** under the PMD/PAP card images, **Read the
+insurance details from the card** reads each image on the rep's computer
+(nothing is sent anywhere to be read) and offers the payer, member ID and
+group, or the Medicare ID, in boxes the rep can correct, with **Use as
+primary insurance** / **Use as secondary insurance**. A value the reader was
+unsure of is marked **Check this one** (I3a), an empty box says it was not
+found, and an image that will not read is named while the others still count.
+The reader (~30 MB) is
+downloaded the first time it is pressed and kept by the browser; if it cannot
+load, the rep is told to type the details.
+
+**I2 (operator 2026-11-05):** each intake form's rail has **Save draft** and
+**Drafts**. Save draft parks the form — named by the patient line or name — in
+this browser for the signed-in rep, for 24 hours, and clears the form for the
+next call (insurance card images are not kept). Drafts lists every form's
+saved drafts, newest first, with Open and Delete; a send removes the draft it
+came from. The silent autosave is unchanged.
+
+**P1 (operator 2026-11-05):** on each employee's pay week a **Check your
+timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
+until the next period) and a banner sits atop the Time / PTO calendar, from
+the reminder day to the period's last day. The day is the Monday of a
+biweekly period's final week, or for a monthly rep the last Monday with at
+least four days left in the month; a holiday Monday moves to the next
+workday. An email goes at 9am Central that day — the same time for everyone, in
+working hours (operator 2026-11-06) — while
+the `payWeekReminderEmail` toggle is on (Manage → Admin → Feature Toggles; on
+by default).
+
+**ED1 (operator 2026-11-05):** a PDF document's boxes are coloured by type
+(short text, date, paragraph, **signature**, **initials**) with a legend. A
+signature or initials box is filled by what the employee draws when signing —
+the initials once, on a second small pad — and shows the drawing afterwards.
+Box text is sized in points of the page, so a box holds the same text on any
+screen; it shrinks to fit, a box stops accepting text when full (with a
+counter near the limit), and an answer too long for its box is listed in full
+under the pages. The manager sees each box's size and roughly how many
+characters it holds. The PDF picker and the issued documents' titles are
+styled buttons.
+
+**ED2 (operator 2026-11-06):** in the issue form a placed box can be dragged to
+move it or resized from its corner, both snapping to 1/8 inch (Alt places it
+freely); a selected box moves with the arrow keys and resizes with Shift; a
+Duplicate button copies it just under itself. The issue form and the reader
+zoom (Fit width, 100%, + and −) without losing what was typed. A chosen PDF is
+warned about pages that are not Letter or A4, pages stored rotated and small
+text, and a fillable PDF's own fields are offered as boxes in one press. A box
+on a page the PDF does not have is refused, by the form and by the server.
+
+**ED3 (operator 2026-11-06):** a signed or completed document's reader has
+Print… and Email…. Both show a preview of a copy made in the browser from the
+verified original: the answers and the signature drawn into their boxes (or a
+written document's text set on pages), answers too long for a box in full on
+an answers page, the certificate at the end, and every page labelled a copy.
+Print prints those pages; Download saves the PDF; Email sends it to the
+employee, and to the managers or other addresses if chosen (an address outside
+the company is confirmed first), with a preview of the message, a 10 MB limit
+and an audit row. The certificate stays the record.
+
+**ED4 (operator 2026-11-09):** the admin keeps the company letterheads
+(UniversalMed Supply, Infimed Solutions: logo, address, footer) under Manage →
+Admin → Config. An employee document starts on the letterhead of the
+employee's company (roster column S) and the issuer can pick another or none.
+A written document is read on its letterhead, and can centre or right-align
+lines, break pages and place a signature block, with Insert buttons and a
+Preview of exactly what the employee will see. The letterhead also heads the
+certificate and the printed copy.
 
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
@@ -711,6 +815,76 @@ longer sent to reps.
      **Cycle 23 Batch 4a (2026-10-01) — Dept Requests:** the SLA reminder
      stamps a reminder it could not send, and a failed read, as
      `DeptRequestReminderDigest` on Admin → System; it clears after a clean run.
+
+     **PF1 (operator 2026-11-09) — the Dashboard's numbers and Stats load
+     faster, with the same numbers.** Call data is read through the columns
+     each figure uses, the date column once per request, and every window's
+     totals are kept until the call data actually changes (checked every two
+     minutes) instead of for five minutes. An hourly job reads the Dashboard's
+     three periods and the Stats page's default 30-day trend ahead once new
+     data lands, so the first person of the day does not wait. Admin → System
+     lists it as "Dashboard call-data read-ahead".
+
+     **DR1 (operator 2026-11-09) — the audit list and the resolved reply.** A
+     manager's Dept Requests tab has a **Tracker / Audit list** switch. The
+     audit list is every request sent in the chosen days (the last 30 by
+     default), newest first, filtered by type, department, status and CRM mark,
+     with **Copy table** and **Download CSV**, and a **Checked in CRM** box per
+     request — saved for every manager in the `DeptRequestCrmChecks` tab. When a
+     person marks a request resolved (the email's link, the in-app button or a
+     "Resolved" under Replies to check), the app replies on the request's email
+     thread saying who marked it and when; a request sent before thread
+     tracking has no thread, so it gets none, and its button and the
+     confirmation say so. The `deptResolvedReply` toggle turns the reply off.
+
+     **SP1 (operator 2026-11-09) — Spanish Inbox resolve with a reply.** Mark
+     resolved (and Resolve selected) asks how the request ended — reached the
+     patient, left a voicemail, no answer or wrong number — and for an optional
+     short note, then replies on the request's email thread saying who resolved
+     it, the outcome and the note. A voicemail from the phone system has no
+     email, so it is resolved without one. The app's own reply never brings the
+     request back; a requester who writes again still does. Auto-assign (the
+     button and the scheduled run) gives requests only to members who are
+     clocked in and not on lunch. The `spanishResolveReply` toggle turns the
+     reply off.
+
+     **PT1a (operator 2026-11-09) — the payor upload takes the source export.**
+     Admin → Config → Reference data tables accepts the "Payor/HCPCS Order
+     Acceptance" sheet's own CSV and converts it (one header row, the column
+     names the lookup reads, readable code headers, the key and empty columns
+     and unnamed rows dropped, "Z" written as "Hawaii Only (Z)"), listing every
+     step in the preview before anything is replaced. The rule in the source's
+     top-left cell is shown above every insurance lookup answer.
+
+     **PT1 (operator 2026-11-09) — payor tables.** The insurance lookup
+     searches Primary Medicaid as well as Medicare / MA, as one search: the
+     answer is grouped by table, each group with its own standing note and the
+     key from its own sheet (Medicaid's TRY means "create account and the
+     insurance team will verify"). Its data is the `MedicaidPayors` tab,
+     uploaded from the source sheet's Primary Medicaid export on the same Admin
+     panel.
+
+     **PT2 (operator 2026-11-10) — UHC by state and BCBS / Anthem.** Two more
+     payor tables in the same search. Their source tabs group plans by state,
+     so the upload gives every plan its State (and, on BCBS, its insurer) and
+     the search finds a plan by either; each card shows its state, and a
+     "not listed below" row says it covers any plan of its state the sheet does
+     not name. The legend reads SI, PR/SI, INN and "In Network" as the operator
+     defined them.
+
+     **PT3 (operator 2026-11-10) — cross-checks.** A plan that another payor
+     table answers differently says so on its card ("Also on Medicare / MA —
+     answer differs: K0816: X here, NO there"). The upload preview names a row
+     filed under another state's block, and corrects and lists the network
+     status's obvious misspellings. The legend reads OONB (out-of-network
+     benefits) and "cannot service state".
+
+     **PT4 (operator 2026-11-10) — Manual Mobility items.** A fifth table: the
+     non-PMD sheet (wheelchairs, beds, walkers, commodes, nebulizers…), a row
+     per payor. A card groups its codes under each item; the sheet's key and
+     delivery locations, written below its table, become its key line and
+     note; its own words ("Yes – Delivery Only", "MO", "OOP Only", "Priority
+     Referral Only"…) are coloured and explained.
 
      **Cycle 23 Batch 4b (2026-10-01) — Metrics never caches what it could not
      read.** A call-data read that failed is an error on the date-range view (it was
