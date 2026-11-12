@@ -402,13 +402,18 @@ function hbPeople_(push) {
   hbMarkCurrent_(null); hbMarkNav_('');
   HB_PP.showing = true; HB_PP.dirty = false;
   var main = hbMain_(); if (!main) return;
-  main.innerHTML = '<div class="hb-people"><section class="hb-pp" id="hb-pp-me"></section>' +
+  // HBR4: "Profile & team" — the reader's card on the left (department, manager,
+  // the chapter home shows first, display), their team and the admin's lists beside it.
+  main.innerHTML = '<div class="hb-people"><div class="hb-qz-ph"><div><h1 class="hb-pp-h">Profile &amp; team</h1>' +
+    '<p class="hb-quiet">Your department decides which chapter comes first; your manager sees your training.</p></div></div>' +
+    '<div class="hb-pp-cols"><div class="hb-pp-left"><section class="hb-pp hb-pp-card" id="hb-pp-me"></section>' +
     // HBR1: the chapter home shows first — this browser's choice — moved here from the bar.
-    '<section class="hb-pp" id="hb-pp-read"><h2 class="hb-pp-h2">Reading</h2><label class="hb-pp-l hb-dept">Chapter shown first on the home page' +
-    '<select id="hb-dept-sel" class="hb-pp-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select></label></section>' +
-    '<section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-locks"></section><section class="hb-pp" id="hb-pp-admin"></section></div>';
+    '<section class="hb-pp hb-pp-card" id="hb-pp-read"><h2 class="hb-pp-h2">Reading</h2><label class="hb-pp-l hb-dept">Chapter shown first on the home page' +
+    '<select id="hb-dept-sel" class="hb-pp-sel" onchange="hbSetDept_(this.value)"><option value="">Not chosen</option></select></label>' +
+    '<div class="hb-pp-disp"><span><b>Display</b><span class="hb-quiet" id="hb-pp-disp-now"></span></span><button type="button" class="kb-btn" onclick="hbOpenDisplay_()">Edit</button></div></section></div>' +
+    '<div class="hb-pp-right"><section class="hb-pp" id="hb-pp-team"></section><section class="hb-pp" id="hb-pp-locks"></section><section class="hb-pp" id="hb-pp-admin"></section></div></div></div>';
   main.scrollTop = 0;
-  hbPaintPeopleMe_(); hbPaintDeptPicker_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_();
+  hbPaintPeopleMe_(); hbPaintDeptPicker_(); hbPaintPeopleTeam_(); hbPaintPeopleAdmin_(); hbLoadLocks_(); hbPaintDispNow_();
   if (push) { hbHistory_('push', { people: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
 }
 /** "Your profile" — the reader's department and manager. Not repainted while
@@ -417,11 +422,11 @@ function hbPaintPeopleMe_() {
   var host = document.getElementById('hb-pp-me'); if (!host) return;
   if (HB_PP.dirty) return;
   var me = HB_ME;
-  var head = '<h1 class="hb-pp-h">Your profile</h1>';
+  var head = '<h2 class="hb-pp-h2 hb-vh">Your profile</h2>';
   if (me === undefined) { host.innerHTML = head + loSweep(); return; }
   if (me.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Could not load your profile: ' + esc(String(me.error).replace(/\.$/, '')) + '. Reload the page to try again.</p>'; return; }
-  var who = '<div class="hb-pp-who">' + esc(me.name) + ' <span class="hb-quiet">' + esc(me.email) + '</span>' +
-    (me.isAdmin ? ' <span class="hb-pp-tag">Admin</span>' : '') + (me.isManager ? ' <span class="hb-pp-tag">Manager</span>' : '') + '</div>';
+  var who = '<div class="hb-pp-cover">' + hbAvatar_(me.name || me.email, (me.me || {}).department, 'big') + '<div class="hb-pp-who"><div class="hb-pp-nm">' + esc(me.name) +
+    (me.isAdmin ? ' <span class="hb-pp-tag">Admin</span>' : '') + (me.isManager ? ' <span class="hb-pp-tag">Manager</span>' : '') + '</div><div class="hb-quiet">' + esc(me.email) + '</div></div></div>';
   if (me.setUp === false) {
     host.innerHTML = head + who + '<p class="hb-quiet">Profiles are not set up yet' +
       (me.isAdmin ? ': set the HANDBOOK_SS_ID Script Property to the Handbook spreadsheet (see docs/handbook-app.md).' : '. The handbook\'s admin will turn them on.') + '</p>';
@@ -441,10 +446,25 @@ function hbPaintPeopleMe_() {
     }).join('') + '</select>';
   host.innerHTML = head + who +
     (me.me ? '<p class="hb-pp-standing hb-st-' + esc(mine.standing) + '">' + esc(hbStandingLabel_(mine)) + '</p>' : '<p class="hb-quiet">Choose your department and your manager. Your manager confirms you are on their team.</p>') +
-    '<div class="hb-pp-form"><label class="hb-pp-l">Department ' + deptSel + '</label>' +
-    '<label class="hb-pp-l">Manager ' + mgrSel + '</label>' +
-    '<button type="button" class="kb-btn hb-pp-save" onclick="hbPpSave_(this)">Save</button></div>' +
+    '<div class="hb-pp-form hb-pp-rows"><label class="hb-pp-l hb-pp-rowf"><span class="hb-pp-rl">' + icon('grid', 15) + ' Department</span>' + deptSel + '</label>' +
+    '<label class="hb-pp-l hb-pp-rowf"><span class="hb-pp-rl">' + icon('user', 15) + ' Manager</span>' + mgrSel + '</label>' +
+    '<button type="button" class="kb-btn hb-btn-pri hb-pp-save" onclick="hbPpSave_(this)">Save</button></div>' +
     '<p class="hb-quiet hb-pp-note">Changing either asks your manager to confirm again.</p>';
+}
+/** HBR4 — a person as a card in the team grid: initials, name, department,
+ *  where they stand, the actions. */
+function hbPersonCardHtml_(p, actions, ask) {
+  return '<div class="hb-pp-pc' + (ask ? ' ask' : '') + '">' + hbAvatar_(p.name || p.email, p.department) + '<div class="hb-pp-pcb"><div class="hb-pp-row-n">' + (ask ? esc(p.name) + ' asked to join your team' : esc(p.name)) + '</div>' +
+    '<div class="hb-quiet">' + (p.department ? esc(hbChapterLabel_(p.department)) : esc(p.email)) + '</div>' +
+    '<div class="hb-pp-row-s hb-st-' + esc(p.standing) + '">' + esc(hbStandingLabel_(p)) + '</div></div><div class="hb-pp-row-a">' + actions + '</div></div>';
+}
+/** HBR4 — the Display row's summary of the browser's settings. */
+function hbPaintDispNow_() {
+  var el = document.getElementById('hb-pp-disp-now'); if (!el) return;
+  var d = hbDisplay_();
+  var bits = [d.size ? (HB_DISPLAY_SIZES[d.size] || 'Larger') + ' text' : 'Standard size', d.theme === 'dark' ? 'dark' : d.theme === 'light' ? 'light' : 'theme follows the device'];
+  if (d.font) bits.push('easier-reading font'); if (d.spacing) bits.push('more line spacing'); if (d.contrast) bits.push('high contrast'); if (d.motion) bits.push('less motion');
+  el.textContent = bits.join(' · ');
 }
 function hbPersonRowHtml_(p, actions) {
   return '<div class="hb-pp-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(p.name) + '</span>' +
@@ -463,14 +483,17 @@ function hbPaintPeopleTeam_() {
   var team = me.team || [];
   var pending = team.filter(function (p) { return p.standing === 'pending'; });
   var conf = team.filter(function (p) { return p.standing === 'confirmed'; });
-  var html = '<h2 class="hb-pp-h2">Your team</h2>';
+  var html = '';
+  // HBR4: a join request is a card above the team; the confirmed are a grid.
+  if (pending.length) html += '<h2 class="hb-pp-h2 hb-vh">Waiting for you</h2><div class="hb-pp-asks">' + pending.map(function (p) {
+    return hbPersonCardHtml_(p, hbPpBtn_('Not my team', 'hbPpAnswer_(this, false)', p.email) + hbPpBtn_('Confirm', 'hbPpAnswer_(this, true)', p.email, 'hb-pp-yes hb-btn-pri'), true);
+  }).join('') + '</div>';
+  html += '<h2 class="hb-pp-h2">Your team <span class="hb-quiet">' + conf.length + (conf.length === 1 ? ' person' : ' people') + '</span></h2>';
   if (!team.length) html += '<p class="hb-quiet">Nobody has chosen you as their manager yet.</p>';
-  if (pending.length) html += '<h3 class="hb-pp-h3">Waiting for you</h3>' + pending.map(function (p) {
-    return hbPersonRowHtml_(p, hbPpBtn_('Confirm', 'hbPpAnswer_(this, true)', p.email, 'hb-pp-yes') + hbPpBtn_('Not my team', 'hbPpAnswer_(this, false)', p.email));
-  }).join('');
-  if (conf.length) html += '<h3 class="hb-pp-h3">Confirmed</h3>' + conf.map(function (p) {
-    return hbPersonRowHtml_(p, hbPpBtn_('Remove from my team', 'hbPpAnswer_(this, false)', p.email));
-  }).join('');
+  else if (!conf.length) html += '<p class="hb-quiet">Nobody confirmed yet.</p>';
+  if (conf.length) html += '<div class="hb-pp-grid">' + conf.map(function (p) {
+    return hbPersonCardHtml_(p, hbPpBtn_('Remove', 'hbPpAnswer_(this, false)', p.email, 'hb-pp-rm'));
+  }).join('') + '</div>';
   host.innerHTML = html;
 }
 /** Admin: the managers, and everyone. */
@@ -862,7 +885,7 @@ function hbFormList_(push) {
   HB_FM.showing = true;
   var seq = ++HB_FM.seq;
   var main = hbMain_(); if (!main) return;
-  main.innerHTML = '<div class="hb-qz hb-fm"><h1 class="hb-pp-h">Forms</h1><div id="hb-fm-body">' + loSweep() + '</div></div>';
+  main.innerHTML = '<div class="hb-qz hb-qz-wide hb-fm"><div class="hb-qz-ph"><div><h1 class="hb-pp-h">Forms</h1><p class="hb-quiet">Blank forms the handbook refers to. Open one to read it here, or download it to fill in and send.</p></div></div><div id="hb-fm-body">' + loSweep() + '</div></div>';
   main.scrollTop = 0;
   if (push) { hbHistory_('push', { forms: true }, {}); hbFocusView_(); }
   hbLoadForms_(function (res) { if (seq === HB_FM.seq && HB_FM.showing) hbPaintFormList_(res); });
@@ -872,15 +895,20 @@ function hbPaintFormList_(res) {
   if (!res || res.error) { host.innerHTML = '<p class="hb-msg bad" role="alert">The forms could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
   var forms = res.forms || [];
   if (!forms.length) { host.innerHTML = '<p class="hb-quiet">No forms have been published yet.</p>'; return; }
-  host.innerHTML = '<p class="hb-quiet">Blank forms the handbook refers to. Open one to read it here, or download it to fill in and print.</p>' +
-    forms.map(function (f) {
-      var where = (f.sections || []).map(function (sc) { return hbQuizSecLink_(sc.id, sc.anchor, '', ''); }).filter(Boolean);
-      return '<div class="hb-pp-row hb-fm-row"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + icon('fileText', 14) + ' ' + esc(f.title) + '</span>' +
-        (f.summary ? '<span class="hb-fm-sum">' + esc(f.summary) + '</span>' : '') +
-        (where.length ? '<span class="hb-quiet">In the handbook: ' + where.join(', ') + '</span>' : '') + '</div>' +
-        '<div class="hb-pp-row-a"><button type="button" class="kb-btn hb-pp-yes" data-form="' + esc(f.key) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open</button>' +
-        '<button type="button" class="kb-btn" data-form="' + esc(f.key) + '" onclick="hbDownloadForm_(this.getAttribute(\'data-form\'))">' + icon('download', 13) + ' Download</button></div></div>';
-    }).join('');
+  // HBR4: a card per form — a drawn page in the colour of the first chapter that
+  // names it (not a render of the PDF: drawing a real page would fetch every form
+  // and pdf.js on each visit to the list), the summary, a chip per section, Open / Download.
+  host.innerHTML = '<div class="hb-fm-grid">' + forms.map(function (f) {
+      var where = (f.sections || []).map(function (sc) { var l = hbQuizSecLink_(sc.id, sc.anchor, '', ''); return l ? '<span class="hb-fm-chip' + (hbSecKey_(sc.id) ? ' kb-man-p' + esc(hbSecKey_(sc.id)) : '') + '">' + l + '</span>' : ''; }).filter(Boolean);
+      var first = (f.sections || []).filter(function (sc) { return HB.tree.some(function (it) { return it.id === sc.id; }); })[0];
+      var key = first ? hbSecKey_(first.id) : '';
+      return '<div class="hb-fm-card hb-fm-row"><div class="hb-fm-pg' + (key ? ' kb-man-p' + esc(key) : '') + '" aria-hidden="true"><span class="hb-fm-sheet"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="hb-fm-pdf">PDF</span></div>' +
+        '<div class="hb-fm-b"><h2 class="hb-pp-row-n hb-fm-t">' + esc(f.title) + '</h2>' +
+        (f.summary ? '<p class="hb-fm-sum">' + esc(f.summary) + '</p>' : '') +
+        (where.length ? '<div class="hb-fm-chips" aria-label="In the handbook">' + where.join('') + '</div>' : '') +
+        '<div class="hb-fm-act"><button type="button" class="kb-btn hb-btn-pri" data-form="' + esc(f.key) + '" aria-label="' + esc('Open ' + f.title) + '" onclick="hbOpenForm_(this.getAttribute(\'data-form\'))">Open</button>' +
+        '<button type="button" class="kb-btn" data-form="' + esc(f.key) + '" aria-label="' + esc('Download ' + f.title) + '" onclick="hbDownloadForm_(this.getAttribute(\'data-form\'))">' + icon('download', 13) + ' Download</button></div></div></div>';
+    }).join('') + '</div>';
 }
 /** PURE — a data URL's base64 as bytes. */
 function hbDataUriBytes_(uri) {
@@ -935,8 +963,15 @@ function hbOpenForm_(key) {
   var f = hbFormByKey_(key); if (!f) { showToast('That form is not in the library.', 'toast-warn'); return; }
   var vseq = ++HB_FM.vseq;
   var ov = ensureOverlay('hb-form-ov', { labelledBy: 'hb-form-h', onClose: function () { HB_FM.vseq++; var o = document.getElementById('hb-form-ov'); if (o) o.remove(); } });
-  ov.innerHTML = '<div class="modal hb-fv" role="document"><div class="modal-title" id="hb-form-h">' + icon('fileText', 16) + ' ' + esc(f.title) + '</div>' +
-    '<div class="hb-fv-body" id="hb-fv-body" aria-busy="true">' + loSweep() + '</div>' +
+  // HBR4: the frame — the form's name with how many pages and where the handbook
+  // names it, Page k of n with previous / next, then the pages.
+  var where = (f.sections || []).filter(function (sc) { return HB.tree.some(function (it) { return it.id === sc.id; }); }).map(function (sc) { return hbLinkOf_(sc.id, sc.anchor, HB.tree); });
+  ov.innerHTML = '<div class="modal hb-fv" role="document"><div class="hb-fv-head"><span class="hb-fv-ic" aria-hidden="true">' + icon('fileText', 18) + '</span>' +
+    '<div class="hb-fv-hb"><div class="modal-title" id="hb-form-h">' + esc(f.title) + '</div><div class="hb-quiet" id="hb-fv-sub">' + esc(where.length ? where.join(' · ') : '') + '</div></div>' +
+    '<div class="hb-fv-nav" id="hb-fv-nav" hidden><span class="hb-fv-at" id="hb-fv-at" aria-live="polite"></span>' +
+    '<button type="button" class="kb-btn" aria-label="Previous page" onclick="hbFormPage_(-1)">' + icon('chevronLeft', 14) + '</button>' +
+    '<button type="button" class="kb-btn" aria-label="Next page" onclick="hbFormPage_(1)">' + icon('chevronRight', 14) + '</button></div></div>' +
+    '<div class="hb-fv-body" id="hb-fv-body" aria-busy="true" tabindex="0" role="region" aria-label="' + esc(f.title + ' — pages') + '" onscroll="hbFormPageSeen_()">' + loSweep() + '</div>' +   // a keyboard can scroll it (axe)
     '<div class="modal-footer"><span class="hb-fv-msg" id="hb-fv-msg" role="status"></span>' +
     '<button type="button" class="btn-modal-cancel" data-form="' + esc(key) + '" onclick="hbDownloadForm_(this.getAttribute(\'data-form\'))">' + icon('download', 13) + ' Download</button>' +
     '<button type="button" class="btn-modal-ok" onclick="closeOverlay(document.getElementById(\'hb-form-ov\'))">Close</button></div></div>';
@@ -979,10 +1014,41 @@ function hbOpenForm_(key) {
             });
           })(i);
         }
-        return chain.then(function () { var h = body(); if (h) h.removeAttribute('aria-busy'); });
+        return chain.then(function () {
+          var h = body(); if (!h) return;
+          h.removeAttribute('aria-busy');
+          var sub = document.getElementById('hb-fv-sub');
+          if (sub) sub.textContent = n + (n === 1 ? ' page' : ' pages') + (sub.textContent ? ' · ' + sub.textContent : '');
+          var nav = document.getElementById('hb-fv-nav');
+          if (nav) nav.hidden = n < 2;
+          hbFormPageSeen_();
+        });
       }).catch(function () { fail('The form could not be shown. Use Download to open it on your computer.'); });
     });
   });
+}
+/** HBR4 — the page the viewer shows: the last page whose top has scrolled
+ *  into view (the first when none has). */
+function hbFormPageIndex_(tops, scrollTop) {
+  var k = 0;
+  for (var i = 0; i < tops.length; i++) if (tops[i] <= scrollTop + 8) k = i;
+  return k;
+}
+function hbFormPages_() { var b = document.getElementById('hb-fv-body'); return b ? Array.prototype.slice.call(b.querySelectorAll('canvas.hb-fv-page')) : []; }
+function hbFormPageSeen_() {
+  var b = document.getElementById('hb-fv-body'), at = document.getElementById('hb-fv-at'), pages = hbFormPages_();
+  if (!b || !at || !pages.length) return;
+  var k = hbFormPageIndex_(pages.map(function (c) { return c.offsetTop - b.offsetTop; }), b.scrollTop);
+  at.textContent = 'Page ' + (k + 1) + ' of ' + pages.length;
+}
+/** Previous (-1) or next (+1) page: scroll it to the top of the viewer. */
+function hbFormPage_(d) {
+  var b = document.getElementById('hb-fv-body'), pages = hbFormPages_();
+  if (!b || !pages.length) return;
+  var k = hbFormPageIndex_(pages.map(function (c) { return c.offsetTop - b.offsetTop; }), b.scrollTop);
+  var to = Math.max(0, Math.min(pages.length - 1, k + d));
+  b.scrollTop = pages[to].offsetTop - b.offsetTop;
+  var at = document.getElementById('hb-fv-at'); if (at) at.textContent = 'Page ' + (to + 1) + ' of ' + pages.length;
 }
 /** PURE — the file name a form downloads as: its title, safe for any OS. */
 function hbFormFileName_(title) {
@@ -1278,7 +1344,7 @@ function hbDueLabel_(due) {
   try { return new Date(due + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return due; }
 }
 
-var HB_TR = { seq: 0, showing: false, mine: undefined, team: undefined };
+var HB_TR = { seq: 0, showing: false, mine: undefined, team: undefined, tab: '' };   // tab: HBR4's Mine / My team ('' = the default for the role)
 function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; hbLeaveSaved_(); }   // and the Saved page (HB2.2)
 function hbGoTraining_() { hbTraining_(true); }
 function hbTraining_(push) {
@@ -1288,13 +1354,35 @@ function hbTraining_(push) {
   hbMarkCurrent_(null); hbMarkNav_('training');
   HB_TR.showing = true;
   var main = hbMain_(); if (!main) return;
-  main.innerHTML = '<div class="hb-tr"><section id="hb-tr-mine"><h1 class="hb-pp-h">My training</h1>' + loSweep() + '</section>' +
+  // HBR4: one page — a header with Mine / My team for a manager or the admin
+  // (both sections are built; the toggle shows one), the reader's own plans, and
+  // the team's progress, plans and quizzes.
+  main.innerHTML = '<div class="hb-tr"><div class="hb-qz-ph"><div><h1 class="hb-pp-h">Training</h1><p class="hb-quiet" id="hb-tr-sub">Your plans and quizzes</p></div>' +
+    '<div class="hb-seg" role="group" aria-label="Show" id="hb-tr-tabs" hidden></div></div>' +
+    '<section id="hb-tr-mine"><h2 class="hb-pp-h2">My training</h2>' + loSweep() + '</section>' +
     '<section id="hb-tr-team"></section></div>';
   main.scrollTop = 0;
+  hbTrTabs_();
   if (push) { hbHistory_('push', { training: true }, {}); hbFocusView_(); }   // HB2.4: focus follows the reader
   hbLoadMine_();
   hbLoadTeamTraining_();
 }
+/** HBR4 — the Mine / My team toggle, for a manager or the admin only (a
+ *  reader has one view). A manager opens on My team. */
+function hbTrIsLead_() { var me = HB_ME; return !!(me && !me.error && me.setUp !== false && (me.isManager || me.isAdmin)); }
+function hbTrTabs_() {
+  var bar = document.getElementById('hb-tr-tabs'), mine = document.getElementById('hb-tr-mine'), team = document.getElementById('hb-tr-team');
+  if (!bar || !mine || !team) return;
+  if (!hbTrIsLead_()) { bar.hidden = true; mine.hidden = false; team.hidden = false; return; }
+  var tab = HB_TR.tab === 'mine' ? 'mine' : 'team';
+  bar.hidden = false;
+  bar.innerHTML = [['mine', 'Mine'], ['team', 'My team']].map(function (t) {
+    return '<button type="button" data-tab="' + t[0] + '" aria-pressed="' + (tab === t[0]) + '" onclick="hbTrTab_(this.getAttribute(\'data-tab\'))">' + t[1] + '</button>';
+  }).join('');
+  mine.hidden = tab !== 'mine';
+  team.hidden = tab !== 'team';
+}
+function hbTrTab_(t) { HB_TR.tab = t === 'mine' ? 'mine' : 'team'; hbTrTabs_(); }
 function hbLoadMine_() {
   var seq = HB_TR.seq;
   var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.mine = res; hbPaintMine_(); };
@@ -1323,15 +1411,15 @@ function hbItemLabel_(it) {
 }
 function hbPaintMine_() {
   var host = document.getElementById('hb-tr-mine'); if (!host) return;
-  var res = HB_TR.mine, head = '<h1 class="hb-pp-h">My training</h1>';
+  var res = HB_TR.mine, head = '<h2 class="hb-pp-h2">My training</h2>';
   if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Your training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '. Try again.</p>'; return; }
   if (res.setUp === false) { host.innerHTML = head + '<p class="hb-quiet">Training plans start once the handbook\'s admin sets up the Handbook spreadsheet.</p>'; return; }
   if (!res.plans.length) { host.innerHTML = head + '<p class="hb-quiet">Nothing is assigned to you right now.</p>'; return; }
   host.innerHTML = head + res.plans.map(function (p) {
     var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
-    return '<div class="hb-tr-plan' + (p.overdue ? ' overdue' : '') + '"><div class="hb-tr-ph"><span class="hb-pp-row-n">' + esc(p.title) + '</span>' +
-      '<span class="hb-quiet">from ' + esc(p.authorName) + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>' +
-      (p.overdue ? '<span class="hb-qz-chip lock">Overdue</span>' : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : '')) + '</div>' +
+    return '<div class="hb-tr-plan' + (p.overdue ? ' overdue' : '') + '"><div class="hb-tr-ph"><span class="hb-tr-pk">' + p.total + ' item' + (p.total === 1 ? '' : 's') + ' · from ' + esc(p.authorName) + '</span>' +
+      '<span class="hb-pp-row-n">' + esc(p.title) + '</span>' +
+      (p.overdue ? '<span class="hb-qz-chip lock">Overdue' + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>' : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : (p.due ? '<span class="hb-qz-chip">Due ' + esc(hbDueLabel_(p.due)) + '</span>' : ''))) + '</div>' +
       '<div class="hb-tr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '" aria-label="' + esc(p.title) + ' progress"><span style="width:' + pct + '%"></span></div>' +
       '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done</div>' +
       '<ul class="hb-tr-items">' + p.items.map(function (it) {
@@ -1358,24 +1446,25 @@ function hbPaintTeamTraining_() {
   var host = document.getElementById('hb-tr-team'); if (!host) return;
   var res = HB_TR.team, head = '<h2 class="hb-pp-h2">Team training</h2>';
   if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
-  var row = function (title, sub, kind, id, live) {
-    return '<div class="hb-pp-row' + (live ? '' : ' hb-tr-arch') + '"><div class="hb-pp-row-b"><span class="hb-pp-row-n">' + esc(title) + (live ? '' : ' <span class="hb-qz-chip">Archived</span>') + '</span>' +
+  // HBR4: plans and quizzes as cards — the kicker says what it holds, the title, who it reaches.
+  var row = function (title, sub, kind, id, live, kick) {
+    return '<div class="hb-tr-card' + (live ? '' : ' hb-tr-arch') + '"><div class="hb-pp-row-b"><span class="hb-tr-pk">' + esc(kick) + '</span><span class="hb-pp-row-n">' + esc(title) + (live ? '' : ' <span class="hb-qz-chip">Archived</span>') + '</span>' +
       '<span class="hb-quiet">' + esc(sub) + '</span></div><div class="hb-pp-row-a">' +
       (live ? '<button type="button" class="kb-btn" data-id="' + esc(id) + '" onclick="hbEdit' + (kind === 'quiz' ? 'TeamQuiz' : 'Plan') + '_(this.getAttribute(\'data-id\'))">Edit</button>' : '') +
       '<button type="button" class="kb-btn" data-kind="' + kind + '" data-id="' + esc(id) + '" data-live="' + (live ? '1' : '') + '" onclick="hbArchive_(this)">' + (live ? 'Archive' : 'Restore') + '</button></div></div>';
   };
   var qs = res.quizzes || [], ps = res.plans || [];
   host.innerHTML = head + '<section id="hb-tr-progress"></section>' + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
-    '<h3 class="hb-pp-h3">Plans</h3>' + (ps.length ? ps.map(function (p) {
-      var b = p.plan || {};
-      return row(b.title, (b.items || []).length + ' item' + ((b.items || []).length === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : '') +
-        (p.live ? ' · reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : '') + (res.isAdmin ? ' · by ' + p.authorName : ''), 'plan', p.id, p.live);
-    }).join('') : '<p class="hb-quiet">No plans yet.</p>') +
+    '<h3 class="hb-pp-h3">Plans <span class="hb-quiet">Assigned to your team</span></h3>' + (ps.length ? '<div class="hb-tr-cards">' + ps.map(function (p) {
+      var b = p.plan || {}, n = (b.items || []).length;
+      return row(b.title, (p.live ? 'Reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : 'Reaches nobody while archived') + (res.isAdmin ? ' · by ' + p.authorName : ''), 'plan', p.id, p.live,
+        n + ' item' + (n === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : ' · ongoing'));
+    }).join('') + '</div>' : '<p class="hb-quiet">No plans yet.</p>') +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditPlan_(\'\')">' + icon('plus', 12) + ' New plan</button></div>' +
-    '<h3 class="hb-pp-h3">Your quizzes</h3>' + (qs.length ? qs.map(function (q) {
-      var b = q.quiz || {};
-      return row(b.title, (b.questions || []).length + ' question' + ((b.questions || []).length === 1 ? '' : 's') + ' · pass mark ' + b.passPct + '%' + (res.isAdmin ? ' · by ' + q.authorName : ''), 'quiz', q.id, q.live);
-    }).join('') : '<p class="hb-quiet">No quizzes of your own yet. Plans can also use the handbook\'s official quizzes.</p>') +
+    '<h3 class="hb-pp-h3">Your quizzes</h3>' + (qs.length ? '<div class="hb-tr-cards">' + qs.map(function (q) {
+      var b = q.quiz || {}, n = (b.questions || []).length;
+      return row(b.title, 'Pass mark ' + b.passPct + '%' + (res.isAdmin ? ' · by ' + q.authorName : ''), 'quiz', q.id, q.live, 'Team quiz · ' + n + ' question' + (n === 1 ? '' : 's'));
+    }).join('') + '</div>' : '<p class="hb-quiet">No quizzes of your own yet. Plans can also use the handbook\'s official quizzes.</p>') +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditTeamQuiz_(\'\')">' + icon('plus', 12) + ' New quiz</button></div>';
   hbLoadProgress_();   // HB3.4: each person's progress, above the plans
 }
@@ -1638,6 +1727,28 @@ function hbProgressRows_(people) {
       p.quizzes.filter(function (q) { return q.passed; }).length + ' of ' + p.quizzes.length, p.quizzes.filter(function (q) { return q.locked; }).length, p.signed, p.resign];
   }));
 }
+/** PURE (Node-pinned) — HBR4's summary tiles over the team's progress: people
+ *  on track (nothing overdue, nothing to re-read), plans past their due date,
+ *  sections to read again, and the quiz pass rate (null with no quiz in any
+ *  plan — never a 0%). */
+function hbTeamTiles_(people) {
+  var t = { n: 0, onTrack: 0, overdue: 0, reReads: 0, passed: 0, total: 0, rate: null };
+  (people || []).forEach(function (p) {
+    t.n++;
+    if (!p.overdue && !p.resign) t.onTrack++;
+    t.overdue += p.overdue || 0;
+    t.reReads += p.resign || 0;
+    (p.quizzes || []).forEach(function (q) { t.total++; if (q.passed) t.passed++; });
+  });
+  if (t.total) t.rate = Math.round(100 * t.passed / t.total);
+  return t;
+}
+/** The chapter key of a department (its first section's), for a person's colour. */
+function hbDeptKey_(dept) { var it = HB.tree.filter(function (x) { return x.department === dept; })[0]; return it ? hbSecKey_(it.id) : ''; }
+function hbAvatar_(name, dept, cls) {
+  var k = dept ? hbDeptKey_(dept) : '';
+  return '<span class="hb-av ' + (cls || '') + (k ? ' kb-man-p' + esc(k) : '') + '" aria-hidden="true">' + esc(hbInitials_(name) || '?') + '</span>';
+}
 /** PURE — one CSV field: quoted when it must be, and never read as a formula
  *  when the file is opened in a spreadsheet (the tsvCell_ rule). */
 function hbCsvCell_(v) {
@@ -1650,15 +1761,37 @@ function hbPaintProgress_() {
   if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Progress could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
   var rows = hbProgressRows_(res.people);
   var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' : '<b>off</b>.') + '</p>';
+  var sub = document.getElementById('hb-tr-sub'), me = HB_ME || {};
+  var people = res.people || [];
+  if (sub && hbTrIsLead_()) sub.textContent = (me.me && me.me.department ? hbChapterLabel_(me.me.department) + ' · ' : '') + people.length + (people.length === 1 ? ' person' : ' people');
   if (rows.length < 2) { host.innerHTML = head + '<p class="hb-quiet">Nobody on your team yet.</p>' + reminders; return; }
-  host.innerHTML = head + '<p class="hb-quiet hb-tr-hint">Scroll the table sideways for every column.</p><div class="hb-tr-tablewrap"><table class="hb-tr-table"><thead><tr>' + rows[0].filter(function (h, i) { return i !== 1; }).map(function (h) { return '<th scope="col">' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-    res.people.map(function (p, i) {
+  // HBR4: the summary tiles, then one row per person — a plan bar, the quizzes, the sign-offs as words.
+  var t = hbTeamTiles_(people);
+  var tile = function (tone, ic, label, value, small, foot) {
+    return '<div class="hb-tile ' + tone + '"><div class="hb-tile-b"><div class="hb-tile-l">' + label + '</div><div class="hb-tile-v">' + value + (small ? '<small>' + small + '</small>' : '') + '</div><div class="hb-tile-f">' + foot + '</div></div>' +
+      '<span class="hb-tile-ic" aria-hidden="true">' + icon(ic, 18) + '</span></div>';
+  };
+  var tiles = '<div class="hb-tiles">' + tile('ok', 'checkCircle', 'On track', t.onTrack, '/' + t.n, 'nothing overdue or to read again') +
+    tile(t.overdue ? 'bad' : '', 'clock', 'Overdue', t.overdue, '', 'plan' + (t.overdue === 1 ? '' : 's') + ' past the due date') +
+    tile(t.reReads ? 'warn' : '', 'warning', 'Re-reads needed', t.reReads, '', 'section' + (t.reReads === 1 ? '' : 's') + ' changed since read') +
+    tile('info', 'check', 'Quiz pass rate', t.rate == null ? '—' : t.rate, t.rate == null ? '' : '%', t.total ? t.passed + ' of ' + t.total + ' passed' : 'no quiz in a plan yet') + '</div>';
+  host.innerHTML = head + tiles + '<div class="hb-tr-tablewrap"><table class="hb-tr-table"><thead><tr><th scope="col">Person</th><th scope="col">Plans</th><th scope="col">Quizzes</th><th scope="col">Sign-offs</th></tr></thead><tbody>' +
+    people.map(function (p, i) {
       var r = rows[i + 1];
+      var plansDone = p.plans.filter(function (pl) { return pl.done === pl.total; }).length;
+      var items = 0, itemsDone = 0;
+      p.plans.forEach(function (pl) { items += pl.total; itemsDone += pl.done; });
+      var pct = items ? Math.round(100 * itemsDone / items) : 0;
+      var passed = p.quizzes.filter(function (q) { return q.passed; }).length, locked = p.quizzes.filter(function (q) { return q.locked; }).length;
       var detail = p.plans.map(function (pl) { return esc(pl.title) + ' — ' + pl.done + ' of ' + pl.total + (pl.overdue ? ' <span class="hb-qz-chip lock">Overdue</span>' : ''); })
         .concat(p.quizzes.map(function (q) { return esc(q.title) + ' — best ' + (q.best == null ? '—' : q.best + '%') + ', ' + q.attempts + ' attempt' + (q.attempts === 1 ? '' : 's') + (q.passed ? ' · passed' : '') + (q.locked ? ' · locked' : ''); }));
-      return '<tr class="' + (p.overdue ? 'late' : '') + '"><th scope="row">' + esc(r[0]) + '<div class="hb-quiet hb-tr-sub">' + esc(p.email) + '</div>' +
+      return '<tr class="' + (p.overdue ? 'late' : '') + '"><th scope="row"><div class="hb-tr-who">' + hbAvatar_(p.name, p.department) + '<div><div class="hb-tr-nm">' + esc(r[0]) + '</div>' +
+        '<div class="hb-quiet hb-tr-sub">' + esc(r[2] || p.email) + '</div></div></div>' +
         (detail.length ? '<details class="hb-tr-det"><summary>Details</summary><ul>' + detail.map(function (d) { return '<li>' + d + '</li>'; }).join('') + '</ul></details>' : '') + '</th>' +
-        r.slice(2).map(function (c) { return '<td>' + esc(String(c)) + '</td>'; }).join('') + '</tr>';
+        '<td><div class="hb-tr-pl">' + (p.plans.length ? '<span class="hb-bar' + (p.overdue ? ' bad' : '') + '" aria-hidden="true"><i style="width:' + pct + '%"></i></span>' : '') +
+          '<span>' + plansDone + ' of ' + p.plans.length + ' done</span>' + (p.overdue ? '<span class="hb-qz-chip lock">' + p.overdue + ' overdue</span>' : '') + '</div></td>' +
+        '<td>' + passed + ' of ' + p.quizzes.length + ' passed' + (locked ? ' <span class="hb-qz-chip lock">' + locked + ' locked</span>' : '') + '</td>' +
+        '<td>' + (p.resign ? '<span class="hb-qz-chip lock">' + p.resign + ' to read again</span>' : '<span class="hb-qz-chip pass">Current</span>') + ' <span class="hb-quiet">' + p.signed + ' signed</span></td></tr>';
     }).join('') + '</tbody></table></div>' +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn" onclick="hbCopyProgress_(this)">' + icon('copy', 12) + ' Copy table</button>' +
     '<button type="button" class="kb-btn" onclick="hbDownloadProgress_()">' + icon('download', 12) + ' Download CSV</button></div>' + reminders;
@@ -1876,19 +2009,23 @@ function hbSaved_(push) {
 function hbPaintSaved_() {
   var host = document.getElementById('hb-sv'); if (!host) return;
   var where = HB_SV.setUp === false ? 'Kept in this browser — saving to your account is not set up yet.' : 'Kept in your account, on every computer you sign in on.';
+  // HBR4: each bookmark with its chapter's icon tile and name; the star removes it.
+  var chapOf = function (id) { var it = HB.tree.filter(function (x) { return x.id === id; })[0]; return it ? it.department : ''; };
   var bms = HB_SV.bookmarks.map(function (b) {
-    var live = hbSectionTitle_(b.id);
-    return '<li class="hb-tr-it hb-sv-row"><span class="hb-tr-ic">' + icon('star', 14) + '</span><span class="hb-tr-it-t">' + esc(live || b.title || b.id) + (live ? '' : ' <span class="hb-quiet">— no longer in the handbook</span>') + '</span>' +
+    var live = hbSectionTitle_(b.id), dept = chapOf(b.id), key = hbSecKey_(b.id);
+    return '<li class="hb-tr-it hb-sv-row' + (key ? ' kb-man-p' + esc(key) : '') + '"><span class="hb-sv-tile" aria-hidden="true">' + (dept ? kbManualChapterIcon_(dept, 17, 'hb-sv-ic') : icon('star', 15)) + '</span>' +
+      '<span class="hb-sv-b"><span class="hb-tr-it-t">' + esc(live || b.title || b.id) + '</span><span class="hb-quiet">' + (live ? esc(dept ? kbManualChapterParts_(dept).name : '') : 'No longer in the handbook') + '</span></span>' +
       '<span class="hb-tr-act">' + (live ? '<button type="button" class="kb-btn" data-kb-id="' + esc(b.id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">Open</button>' : '') +
-      '<button type="button" class="kb-btn" data-kb-id="' + esc(b.id) + '" data-kb-title="' + esc(b.title || '') + '" onclick="hbToggleBookmark_(this)">Remove</button></span></li>';
+      '<button type="button" class="kb-btn hb-sv-star" data-kb-id="' + esc(b.id) + '" data-kb-title="' + esc(b.title || '') + '" aria-label="' + esc('Remove the bookmark: ' + (live || b.title || b.id)) + '" title="Remove the bookmark" onclick="hbToggleBookmark_(this)">' + icon('star', 16) + '<span class="hb-vh">Remove</span></button></span></li>';
   }).join('');
   var notes = hbNotes_();
   var ids = Object.keys(notes).filter(function (id) { return notes[id] && notes[id].t; })
     .sort(function (a, b) { return notes[b].ms - notes[a].ms; });
   var nrows = ids.map(function (id) {
-    var live = hbSectionTitle_(id), t = notes[id].t;
-    return '<li class="hb-tr-it hb-sv-row hb-sv-note"><span class="hb-tr-ic">' + icon('fileText', 14) + '</span><span class="hb-tr-it-t"><b>' + esc(live || id) + '</b>' +
-      (live ? '' : ' <span class="hb-quiet">— no longer in the handbook</span>') + '<span class="hb-sv-snip">' + esc(t.length > 160 ? t.slice(0, 157) + '…' : t) + '</span></span>' +
+    var live = hbSectionTitle_(id), t = notes[id].t, dept = chapOf(id), key = hbSecKey_(id);
+    // HBR4: a note as a sticky note under its section's name.
+    return '<li class="hb-tr-it hb-sv-row hb-sv-note' + (key ? ' kb-man-p' + esc(key) : '') + '"><span class="hb-tr-it-t"><span class="hb-sv-nh">' + (dept ? kbManualChapterIcon_(dept, 13, 'hb-sv-ic') : icon('fileText', 13)) + '<b>' + esc(live || id) + '</b>' +
+      (live ? '' : ' <span class="hb-quiet">— no longer in the handbook</span>') + '</span><span class="hb-sv-snip">' + esc(t.length > 220 ? t.slice(0, 217) + '…' : t) + '</span></span>' +
       '<span class="hb-tr-act">' + (live ? '<button type="button" class="kb-btn" data-kb-id="' + esc(id) + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'))">Open</button>' : '') +
       '<button type="button" class="kb-btn" data-id="' + esc(id) + '" onclick="hbEditNote_(this.getAttribute(\'data-id\'))">Edit</button></span></li>';
   }).join('');
@@ -1897,15 +2034,16 @@ function hbPaintSaved_() {
     : '<label class="hb-sv-sync"><input type="checkbox" id="hb-sv-sync"' + (syncOn ? ' checked' : '') + ' onchange="hbSetNotesSync_(this)"> Keep my notes in my account</label>' +
       '<p class="hb-quiet hb-sv-syncnote">' + (syncOn ? 'On: your notes are kept in your account as well as this browser. Never write patient information in a note.'
         : 'Off: your notes stay in this browser only — clearing the browser, or another computer, will not have them. Export them to keep a copy.') + '</p>';
-  host.innerHTML = '<h1 class="hb-pp-h">Saved</h1>' +
-    '<section><h2 class="hb-pp-h2">Bookmarks</h2><p class="hb-quiet">' + where + '</p>' +
-    (bms ? '<ul class="hb-tr-items hb-sv-list">' + bms + '</ul>' : '<p class="hb-quiet">Nothing bookmarked yet — press the ' + icon('star', 12) + ' on a section to keep it here.</p>') + '</section>' +
-    '<section><h2 class="hb-pp-h2">Notes</h2>' + sync +
-    (nrows ? '<ul class="hb-tr-items hb-sv-list">' + nrows + '</ul>' : '<p class="hb-quiet">No notes yet — use "Add a note" above a section.</p>') +
-    '<div class="hb-qz-actions">' + (ids.length ? '<button type="button" class="kb-btn" onclick="hbExportNotes_(this)">' + icon('download', 12) + ' Export notes</button>' +
+  // HBR4: Bookmarks and My notes side by side, each a card with its header.
+  host.innerHTML = '<div class="hb-qz-ph"><div><h1 class="hb-pp-h">Saved</h1><p class="hb-quiet">Bookmarks follow your account. Notes stay in this browser unless you keep them in your account.</p></div></div>' +
+    '<div class="hb-sv-cols"><section class="hb-sv-card"><h2 class="hb-sv-h">' + icon('star', 16) + ' Bookmarks <span class="hb-quiet">' + HB_SV.bookmarks.length + '</span></h2><p class="hb-quiet hb-sv-where">' + where + '</p>' +
+    (bms ? '<ul class="hb-tr-items hb-sv-list">' + bms + '</ul>' : '<p class="hb-quiet hb-sv-none">Nothing bookmarked yet — press the ' + icon('star', 12) + ' on a section to keep it here.</p>') + '</section>' +
+    '<section class="hb-sv-card"><h2 class="hb-sv-h">' + icon('fileText', 16) + ' My notes <span class="hb-quiet">' + (syncOn ? 'In your account' : 'In this browser') + '</span></h2><div class="hb-sv-where">' + sync + '</div>' +
+    (nrows ? '<ul class="hb-tr-items hb-sv-list hb-sv-notes">' + nrows + '</ul>' : '<p class="hb-quiet hb-sv-none">No notes yet — use "Add a note" above a section.</p>') +
+    '<div class="hb-qz-actions hb-sv-foot">' + (ids.length ? '<button type="button" class="kb-btn" onclick="hbExportNotes_(this)">' + icon('download', 12) + ' Export notes</button>' +
       '<button type="button" class="kb-btn" onclick="hbCopyNotes_(this)">' + icon('copy', 12) + ' Copy notes</button>' : '') +
     '<button type="button" class="kb-btn" onclick="this.nextElementSibling.click()">' + icon('upload', 12) + ' Import notes</button>' +
-    '<input type="file" accept=".json,application/json" class="hb-sv-file" hidden aria-label="Choose a notes export" onchange="hbImportNotes_(this)"></div></section>';
+    '<input type="file" accept=".json,application/json" class="hb-sv-file" hidden aria-label="Choose a notes export" onchange="hbImportNotes_(this)"></div></section></div>';
 }
 /** PURE — the export: every note with its section's title, as a file the
  *  import reads back. Tombstones are left out. */
@@ -2005,7 +2143,7 @@ function hbBootNotes_() {
 // voice the browser offers — operator 2026-10-29), a paragraph at a time, the
 // one being read marked; navigating anywhere stops it.
 var HB_LS_DISPLAY = 'umsHbDisplay';   // { prefs: {...}, attrs: { 'data-hb-…': value } }
-var HB_DISPLAY_DEFAULTS = { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1 };
+var HB_DISPLAY_DEFAULTS = { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1, theme: '' };
 var HB_DISPLAY_SIZES = ['Default', 'Large', 'Larger', 'Largest'];
 var HB_DISPLAY_SPACINGS = ['Default', 'Relaxed', 'Wide'];
 var HB_READ_RATES = [0.8, 1, 1.2, 1.5];
@@ -2018,7 +2156,8 @@ function hbDisplayClean_(p) {
   var int = function (v, max) { v = Number(v); return v >= 0 && v <= max && Math.floor(v) === v ? v : 0; };
   return { size: int(p.size, HB_DISPLAY_SIZES.length - 1), spacing: int(p.spacing, HB_DISPLAY_SPACINGS.length - 1),
     contrast: p.contrast === true, motion: p.motion === true, font: p.font === true,
-    voice: typeof p.voice === 'string' ? p.voice.slice(0, 200) : '', rate: HB_READ_RATES.indexOf(Number(p.rate)) >= 0 ? Number(p.rate) : 1 };
+    voice: typeof p.voice === 'string' ? p.voice.slice(0, 200) : '', rate: HB_READ_RATES.indexOf(Number(p.rate)) >= 0 ? Number(p.rate) : 1,
+    theme: p.theme === 'light' || p.theme === 'dark' ? p.theme : '' };   // HBR4: '' follows the device
 }
 /** PURE — the attributes the prefs put on <html> (an absent one is the
  *  default). The head script applies exactly these. */
@@ -2040,9 +2179,17 @@ function hbApplyDisplay_(p, keep) {
     if (attrs[k]) root.setAttribute(k, attrs[k]); else root.removeAttribute(k);
   });
   if (p.font) hbEnsureEasyFont_();
+  hbApplyTheme_(p.theme);
   try { kbManualScrollTables_(document); } catch (e) {}   // HB2.4: a new text size can make a table scroll
   if (keep) hbLsSet_(HB_LS_DISPLAY, JSON.stringify({ prefs: p, attrs: attrs }));
   return p;
+}
+/** HBR4 — light, dark, or the device's choice ('') — the tokens' dark palette
+ *  keys on <html data-mode>. The head script applies the same before first paint. */
+function hbApplyTheme_(theme) {
+  var dark = theme === 'dark';
+  if (!theme) { try { dark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) { dark = false; } }
+  if (dark) document.documentElement.setAttribute('data-mode', 'dark'); else document.documentElement.removeAttribute('data-mode');
 }
 function hbEnsureEasyFont_() {
   if (document.getElementById('hb-easy-font')) return;
@@ -2058,14 +2205,23 @@ function hbOpenDisplay_() {
 }
 function hbPaintDisplay_(ov) {
   var p = hbDisplay_();
+  // HBR4: theme tiles, a size slider, line spacing, switches for the rest, read aloud.
+  var themes = [['', 'Match my device'], ['light', 'Light'], ['dark', 'Dark']];
+  var theme = '<div class="hb-disp-themes" role="radiogroup" aria-label="Theme">' + themes.map(function (t) {
+    return '<label class="hb-disp-theme t-' + (t[0] || 'auto') + '"><input type="radio" name="hb-disp-theme" value="' + t[0] + '"' + (p.theme === t[0] ? ' checked' : '') +
+      ' onchange="hbSetDisplay_(\'theme\', this.value)"><span class="hb-disp-sw" aria-hidden="true"></span><span>' + esc(t[1]) + '</span></label>';
+  }).join('') + '</div>';
+  var size = '<div class="hb-disp-size"><span class="hb-disp-a" aria-hidden="true">A</span><input type="range" min="0" max="' + (HB_DISPLAY_SIZES.length - 1) + '" step="1" value="' + p.size + '" id="hb-disp-size"' +
+    ' aria-label="Text size" aria-valuetext="' + esc(HB_DISPLAY_SIZES[p.size]) + '" oninput="this.setAttribute(\'aria-valuetext\', HB_DISPLAY_SIZES[Number(this.value)] || \'\'); hbSetDisplay_(\'size\', Number(this.value))">' +
+    '<span class="hb-disp-a big" aria-hidden="true">A</span></div>';
   var radios = function (name, labels, cur) {
     return '<div class="hb-disp-seg" role="radiogroup" aria-label="' + esc(name === 'size' ? 'Text size' : 'Line spacing') + '">' + labels.map(function (l, i) {
       return '<label class="hb-disp-opt"><input type="radio" name="hb-disp-' + name + '" value="' + i + '"' + (i === cur ? ' checked' : '') + ' onchange="hbSetDisplay_(\'' + name + '\', Number(this.value))"><span>' + esc(l) + '</span></label>';
     }).join('') + '</div>';
   };
   var check = function (key, label, help) {
-    return '<label class="hb-disp-check"><input type="checkbox"' + (p[key] ? ' checked' : '') + ' onchange="hbSetDisplay_(\'' + key + '\', this.checked)"><span><b>' + esc(label) + '</b>' +
-      (help ? '<span class="hb-quiet">' + esc(help) + '</span>' : '') + '</span></label>';
+    return '<label class="hb-disp-check"><span><b>' + esc(label) + '</b>' + (help ? '<span class="hb-quiet">' + esc(help) + '</span>' : '') + '</span>' +
+      '<input type="checkbox" role="switch" class="hb-switch"' + (p[key] ? ' checked' : '') + ' onchange="hbSetDisplay_(\'' + key + '\', this.checked)"></label>';
   };
   var speech = hbSpeech_();
   var voices = speech ? speech.getVoices() : [];
@@ -2076,11 +2232,13 @@ function hbPaintDisplay_(ov) {
       HB_READ_RATES.map(function (r) { return '<option value="' + r + '"' + (r === p.rate ? ' selected' : '') + '>' + (r === 1 ? 'Normal' : r + '×') + '</option>'; }).join('') + '</select></label>';
   ov.innerHTML = '<div class="modal hb-disp" role="document"><div class="modal-title" id="hb-disp-h">Display</div>' +
     '<div class="hb-ed-body">' +
-    '<fieldset class="hb-disp-f"><legend>Text size</legend>' + radios('size', HB_DISPLAY_SIZES, p.size) + '</fieldset>' +
+    '<fieldset class="hb-disp-f"><legend>Theme</legend>' + theme + '</fieldset>' +
+    '<fieldset class="hb-disp-f"><legend>Text size</legend>' + size + '</fieldset>' +
     '<fieldset class="hb-disp-f"><legend>Line spacing</legend>' + radios('spacing', HB_DISPLAY_SPACINGS, p.spacing) + '</fieldset>' +
-    check('contrast', 'High contrast', 'Darker text and lines') +
+    '<fieldset class="hb-disp-f hb-disp-switches"><legend>Reading</legend>' +
     check('font', 'Easier-reading font', 'Atkinson Hyperlegible, made for low-vision readers') +
-    check('motion', 'Reduce motion', 'No animation; always on when your device asks for it') +
+    check('contrast', 'High contrast', 'Darker text and lines') +
+    check('motion', 'Reduce motion', 'No animation; always on when your device asks for it') + '</fieldset>' +
     '<fieldset class="hb-disp-f"><legend>Read aloud</legend>' + voiceSel + '</fieldset>' +
     '<p class="hb-quiet hb-disp-note">Kept in this browser.</p></div>' +
     '<div class="modal-footer"><button type="button" class="btn-modal-cancel" onclick="hbResetDisplay_()">Reset</button>' +
@@ -2090,6 +2248,7 @@ function hbSetDisplay_(key, value) {
   var p = hbDisplay_();
   p[key] = value;
   hbApplyDisplay_(p, true);
+  hbPaintDispNow_();   // HBR4: Profile's Display row follows
 }
 /** Voices arrive after the page loads in some browsers: refresh the open
  *  panel's list in place (the select keeps its node and focus — g141). */

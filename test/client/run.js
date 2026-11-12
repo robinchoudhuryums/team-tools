@@ -42189,9 +42189,10 @@ test('HB2.3-a: display prefs are cleaned to their ranges, and the head script ap
   const ctx = vm.createContext({ JSON, Number, String, Object, Array, Math, HB_DISPLAY_SIZES: ['a', 'b', 'c', 'd'], HB_DISPLAY_SPACINGS: ['a', 'b', 'c'], HB_READ_RATES: [0.8, 1, 1.2, 1.5] });
   ['hbDisplayClean_', 'hbDisplayAttrs_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));
   const C = (p) => hbPlain_(ctx.hbDisplayClean_(p));
-  assert.deepStrictEqual(C(null), { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1 });
-  assert.deepStrictEqual(C({ size: 9, spacing: -1, contrast: 'yes', motion: true, font: 1, voice: 7, rate: 3 }),
-    { size: 0, spacing: 0, contrast: false, motion: true, font: false, voice: '', rate: 1 }, 'out of range is the default; only true is on');
+  assert.deepStrictEqual(C(null), { size: 0, spacing: 0, contrast: false, motion: false, font: false, voice: '', rate: 1, theme: '' });
+  assert.deepStrictEqual(C({ size: 9, spacing: -1, contrast: 'yes', motion: true, font: 1, voice: 7, rate: 3, theme: 'purple' }),
+    { size: 0, spacing: 0, contrast: false, motion: true, font: false, voice: '', rate: 1, theme: '' }, 'out of range is the default; only true is on; an unknown theme follows the device');
+  assert.deepStrictEqual([C({ theme: 'light' }).theme, C({ theme: 'dark' }).theme], ['light', 'dark'], 'HBR4: light or dark is kept');
   assert.deepStrictEqual(C({ size: 3, spacing: 2, rate: 1.5, voice: 'Moira' }).size, 3);
   assert.deepStrictEqual(hbPlain_(ctx.hbDisplayAttrs_(C({}))), {}, 'the defaults put nothing on <html>');
   const all = hbPlain_(ctx.hbDisplayAttrs_(C({ size: 3, spacing: 2, contrast: true, motion: true, font: true })));
@@ -42583,6 +42584,31 @@ test('HBR3-b: the result lists every answer in the order the reader saw it — w
   // A review row for a question the reader got RIGHT (a stale review) is not shown.
   const odd = hbJ_(c.hbResultRows_(quiz, { perQuestion: [true, true, true], review: [{ i: 0, explain: 'x', section: 's' }] }, sitting));
   assert.ok(odd.every((r) => r.right && !r.explain));
+});
+test('HBR4-a: the Training tiles add the team up — on track means nothing overdue and nothing to read again; overdue and re-reads are counted, not people; the pass rate is null with no quiz in any plan, never 0% (driven)', () => {
+  const c = hbPageCtx_();
+  vm.runInContext(extractFnFrom(HB_PAGE_SRC(), 'hbTeamTiles_'), c);
+  const P = (o) => Object.assign({ overdue: 0, resign: 0, quizzes: [] }, o);
+  assert.deepStrictEqual(hbJ_(c.hbTeamTiles_([P({ overdue: 2, resign: 1, quizzes: [{ passed: true }, { passed: false }] }), P({}), P({ resign: 3, quizzes: [{ passed: true }] })])),
+    { n: 3, onTrack: 1, overdue: 2, reReads: 4, passed: 2, total: 3, rate: 67 });
+  assert.deepStrictEqual(hbJ_(c.hbTeamTiles_([P({}), P({})])).rate, null, 'no quiz in any plan: no rate');
+  assert.deepStrictEqual(hbJ_(c.hbTeamTiles_([])), { n: 0, onTrack: 0, overdue: 0, reReads: 0, passed: 0, total: 0, rate: null });
+});
+test('HBR4-b: the form viewer\'s page is the last whose top has scrolled into view — the first before any scrolling (driven)', () => {
+  const c = hbPageCtx_();
+  vm.runInContext(extractFnFrom(HB_PAGE_SRC(), 'hbFormPageIndex_'), c);
+  const tops = [0, 1000, 2000];
+  assert.deepStrictEqual([0, 500, 995, 1000, 1990, 1995, 2500].map((y) => c.hbFormPageIndex_(tops, y)), [0, 0, 1, 1, 1, 2, 2], 'within 8px of a page top counts as that page');
+});
+test('HBR4-c: the refresh\'s last screens keep its rules — a visually hidden label stays in the flow (g171: never absolutely positioned), a late row is marked by a rule and not a tint (the amber chips keep their contrast in dark mode), the Display theme is the browser\'s own (kept beside the data-hb attributes, applied by the head before first paint), and nothing paints a gradient (decision 13)', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../../handbook-app/styles_handbook.html'), 'utf8');
+  const vh = (css.match(/\.hb-vh \{[^}]*\}/) || [''])[0];
+  assert.ok(vh && !/position\s*:\s*absolute/.test(vh) && /clip-path: inset\(50%\)/.test(vh), vh);
+  assert.ok(/\.hb-tr-table tr\.late > th \{ box-shadow: inset 4px 0 0 var\(--danger\); \}/.test(css) && !/tr\.late \{ background/.test(css));
+  const head = fs.readFileSync(path.join(__dirname, '../../handbook-app/index.html'), 'utf8');
+  assert.ok(/\.prefs \|\| \{\}\)\.theme;[\s\S]{0,200}hbTh === 'dark'[\s\S]{0,120}hbTh === 'light'/.test(head), 'the head reads the kept theme');
+  assert.ok(/hbApplyTheme_\(p\.theme\)/.test(extractFnFrom(HB_PAGE_SRC(), 'hbApplyDisplay_')), 'every change applies it');
+  assert.ok(/\.t-auto \.hb-disp-sw::after \{[^}]*left: 50%/.test(css), 'the device swatch is a split, not a gradient');
 });
 test('Handbook flat (operator 2026-11-11): the handbook app paints no gradient look — a chapter colour is a flat tint or a rule, and the only gradients left are the score ring (a conic fill) and the shelf spines (a hard-stop fill level, no fade)', () => {
   const css = fs.readFileSync(path.join(__dirname, '../../handbook-app/styles_handbook.html'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');

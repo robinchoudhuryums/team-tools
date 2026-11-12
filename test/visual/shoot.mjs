@@ -166,6 +166,10 @@ const SCENARIOS = [
   // HB3.3 — training: My training and Team training; the two editors.
   ['handbook-training-light-wide', {}, WIDE,   'light', '', 'hbGoTraining_()', HB_PAGE],
   ['handbook-training-dark-mobile', {}, MOBILE, 'dark', '', 'hbGoTraining_()', HB_PAGE],
+  // HBR4 — a manager's Mine view, the Display panel in dark, the form viewer's frame on a wide screen.
+  ['handbook-training-mine-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbTrTab_('mine'); }, 400)", HB_PAGE],
+  ['handbook-display-dark-mobile', {}, MOBILE, 'dark', '', "setTimeout(function(){ hbOpenDisplay_(); }, 300)", HB_PAGE],
+  ['handbook-form-view-light-wide', {}, WIDE, 'light', '', "hbOpenForm_('form-eaa')", HB_PAGE, { wait: 1500 }],
   ['handbook-quiz-editor-light-wide', {}, WIDE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditTeamQuiz_('tq-00000000000a'); }, 400)", HB_PAGE],
   ['handbook-plan-editor-light-mobile', {}, MOBILE, 'light', '', "hbGoTraining_(); setTimeout(function(){ hbEditPlan_('pl-000000000001'); }, 400)", HB_PAGE],
   // HB2.3 — the Display panel; the largest text with wide spacing, high

@@ -12133,7 +12133,7 @@ test('HB3.3 DOM: the plan editor — items added by kind (each once) and removed
   const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: team,
     hbSavePlan: (def) => { sent.push(JSON.parse(JSON.stringify(def))); return { success: true, id: 'pl-00000000000a', reaches: 4 }; } } });
   h.w.hbGoTraining_(); await h.settleAll();
-  assert.ok(/reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
+  assert.ok(/Reaches 1 person/.test(h.d.getElementById('hb-tr-team').textContent));
   h.w.hbEditPlan_('pl-000000000009'); await h.settleAll();
   assert.deepStrictEqual([...h.d.querySelectorAll('#hb-pl-items .hb-ed-item span')].map((s) => s.textContent), ['Pass the quiz Nebulizers (official)'], 'prefilled');
   assert.strictEqual(h.d.querySelector('#hb-pl-people input[value="rep@ex.org"]').checked, true);
@@ -12223,7 +12223,9 @@ test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked,
   const rows = [...host.querySelectorAll('tbody tr')];
   assert.strictEqual(rows.length, 2);
   assert.ok(rows[0].classList.contains('late') && !rows[1].classList.contains('late'), 'an overdue person is marked');
-  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent), ['3 · Respiratory & Resupply', '0 of 1', '1', '0 of 1', '1', '2', '1']);
+  // HBR4: Plans (a bar, done of total, overdue), Quizzes (passed, locked), Sign-offs (to read again, signed).
+  assert.deepStrictEqual([...rows[0].querySelectorAll('td')].map((t) => t.textContent.replace(/\s+/g, ' ').trim()), ['0 of 1 done1 overdue', '0 of 1 passed 1 locked', '1 to read again 2 signed']);
+  assert.ok(/3 · Respiratory & Resupply/.test(rows[0].querySelector('th').textContent), 'the department under the name');
   const det = rows[0].querySelector('details').textContent;
   assert.ok(/First week — 1 of 3/.test(det) && /Nebulizers — best 60%, 3 attempts · locked/.test(det), det);
   assert.ok(/Reminder emails are off/.test(host.textContent));
@@ -12429,7 +12431,10 @@ test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and
   const ov = h.d.getElementById('hb-disp-ov');
   assert.ok(ov && ov.classList.contains('open'));
   const pick = (name, v) => { const r = ov.querySelector('input[name="hb-disp-' + name + '"][value="' + v + '"]'); r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
-  pick('size', 2); pick('spacing', 1);
+  // HBR4: the size is a slider.
+  const size = ov.querySelector('#hb-disp-size'); size.value = '2'; size.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  assert.strictEqual(size.getAttribute('aria-valuetext'), 'Larger', 'the slider says the size in words');
+  pick('spacing', 1);
   assert.strictEqual(root.getAttribute('data-hb-size'), '2');
   assert.strictEqual(root.getAttribute('data-hb-spacing'), '1');
   const box = (label) => [...ov.querySelectorAll('.hb-disp-check')].filter((l) => l.textContent.indexOf(label) === 0)[0].querySelector('input');
@@ -12442,13 +12447,21 @@ test('HB2.3 DOM: the Display panel — each choice applies at once to <html> and
   const kept = JSON.parse(h.w.localStorage.getItem('umsHbDisplay'));
   assert.deepStrictEqual(kept.attrs, { 'data-hb-size': '2', 'data-hb-spacing': '1', 'data-hb-contrast': 'high', 'data-hb-motion': 'reduce', 'data-hb-font': 'easy' });
   assert.strictEqual(kept.prefs.size, 2);
+  // HBR4: the theme — dark and light are kept and applied to <html data-mode>; the device's choice is the default.
+  pick('theme', 'dark');
+  assert.strictEqual(root.getAttribute('data-mode'), 'dark');
+  assert.strictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).prefs.theme, 'dark');
+  assert.ok(!('data-mode' in JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs), 'the theme is not one of the data-hb attributes');
+  pick('theme', 'light');
+  assert.ok(!root.hasAttribute('data-mode'), 'light');
   // Off again, one at a time.
   const c = box('High contrast'); c.checked = false; c.dispatchEvent(new h.w.Event('change', { bubbles: true }));
   assert.strictEqual(root.hasAttribute('data-hb-contrast'), false);
   [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Reset')[0].click(); await h.settleAll();
   ['data-hb-size', 'data-hb-spacing', 'data-hb-contrast', 'data-hb-motion', 'data-hb-font'].forEach((a) => assert.strictEqual(root.hasAttribute(a), false, a + ' cleared'));
   assert.deepStrictEqual(JSON.parse(h.w.localStorage.getItem('umsHbDisplay')).attrs, {});
-  assert.ok(h.d.getElementById('hb-disp-ov').querySelector('input[name="hb-disp-size"][value="0"]').checked, 'the panel repaints at the defaults');
+  assert.strictEqual(h.d.getElementById('hb-disp-ov').querySelector('#hb-disp-size').value, '0', 'the panel repaints at the defaults');
+  assert.ok(!root.hasAttribute('data-mode') && h.d.querySelector('#hb-disp-ov input[name="hb-disp-theme"][value=""]').checked, 'Reset: the theme follows the device again');
   [...h.d.querySelectorAll('#hb-disp-ov button')].filter((b) => b.textContent === 'Done')[0].click(); await h.settleAll();
   assert.ok(!h.d.getElementById('hb-disp-ov'), 'Done closes it');
 });
@@ -12636,8 +12649,8 @@ test('HB2.4 DOM: a table wider than the reader is a named Tab stop, and only whi
   Object.defineProperty(tw, 'clientWidth', { configurable: true, get: () => 400 });
   // The text size grows: the page re-measures.
   h.d.getElementById('hb-disp').click(); await h.settleAll();
-  const r = h.d.querySelector('#hb-disp-ov input[name="hb-disp-size"][value="3"]');
-  r.checked = true; r.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  const r = h.d.querySelector('#hb-disp-ov #hb-disp-size');   // HBR4: a slider
+  r.value = '3'; r.dispatchEvent(new h.w.Event('input', { bubbles: true }));
   assert.strictEqual(tw.getAttribute('tabindex'), '0', 'it overflows: a Tab stop, so a keyboard can scroll it');
   assert.strictEqual(tw.getAttribute('role'), 'region');
   assert.strictEqual(tw.getAttribute('aria-label'), 'Table: Item (scrolls sideways)', 'named by its first cell');
@@ -13073,3 +13086,91 @@ test('M1 DOM: Team Metrics — the Outbound, Handled (adj.) and ATT excl. intake
   assert.ok(!Array.from(h.$$('#m-team-content th')).some((t) => /Outbound|Handled/.test(t.textContent)), 'and no column says nothing');
 });
 
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HBR4 — the handbook refresh's last batch: Training, Profile & team, Saved,
+// Forms and Display, flat (decision 13).
+// ═════════════════════════════════════════════════════════════════════════════
+section('HBR4 — Training, Profile & team, Saved, Forms, Display');
+
+test('HBR4 DOM: Training — a manager gets Mine / My team and opens on My team (both built, one shown); the tiles add the team up; each person is a row with a plan bar and the sign-offs in words; plans are cards; a reader sees no toggle', async () => {
+  const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: HB33_MINE(), hbTeamTraining: Object.assign(HB33_TEAM(), { plans: [{ id: 'pl-000000000003', live: true, reaches: 2, authorName: 'Boss', plan: { title: 'Oxygen pick-ups', due: '', items: [{ kind: 'section', id: 'man-3-1' }] } }] }), hbTeamProgress: HB34_PROGRESS() } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const tabs = h.d.getElementById('hb-tr-tabs');
+  assert.ok(!tabs.hidden && /Mine/.test(tabs.textContent) && /My team/.test(tabs.textContent));
+  assert.ok(h.d.getElementById('hb-tr-mine').hidden && !h.d.getElementById('hb-tr-team').hidden, 'a manager opens on My team');
+  assert.ok(h.d.querySelector('#hb-tr-mine .hb-tr-plan'), 'Mine is built, only hidden');
+  assert.strictEqual(tabs.querySelector('[data-tab="team"]').getAttribute('aria-pressed'), 'true');
+  tabs.querySelector('[data-tab="mine"]').click();
+  assert.ok(!h.d.getElementById('hb-tr-mine').hidden && h.d.getElementById('hb-tr-team').hidden && tabs.querySelector('[data-tab="mine"]').getAttribute('aria-pressed') === 'true');
+  tabs.querySelector('[data-tab="team"]').click();
+  // The tiles: Rep has an overdue plan and a re-read, Ann nothing — 1 of 2 on track; 0 of 1 quizzes passed.
+  const tiles = [...h.d.querySelectorAll('#hb-tr-progress .hb-tile')].map((t) => [t.querySelector('.hb-tile-l').textContent, t.querySelector('.hb-tile-v').textContent]);
+  assert.deepStrictEqual(tiles, [['On track', '1/2'], ['Overdue', '1'], ['Re-reads needed', '1'], ['Quiz pass rate', '0%']]);
+  assert.ok(/2 people/.test(h.d.getElementById('hb-tr-sub').textContent), 'the header counts the team');
+  const rep = h.d.querySelector('#hb-tr-progress tbody tr');
+  assert.strictEqual(rep.querySelector('.hb-av').textContent, 'R');
+  assert.ok(rep.querySelector('.hb-bar.bad i') && /width:33%/.test(rep.querySelector('.hb-bar i').getAttribute('style')), 'the plan bar: 1 of 3 items, red while overdue');
+  const card = h.d.querySelector('#hb-tr-team .hb-tr-card');
+  assert.strictEqual(card.querySelector('.hb-tr-pk').textContent, '1 item · ongoing');
+  assert.ok(/Oxygen pick-ups/.test(card.textContent) && /Reaches 2 people/.test(card.textContent) && card.querySelector('[onclick^="hbEditPlan_"]'));
+  // A reader: one view.
+  const r = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: HB33_MINE() } });
+  r.w.hbGoTraining_(); await r.settleAll();
+  assert.ok(r.d.getElementById('hb-tr-tabs').hidden && !r.d.getElementById('hb-tr-mine').hidden);
+});
+
+test('HBR4 DOM: Profile & team — the reader\'s card with initials, a join request as its own card above the team grid, Confirm answers it; the Display row sums the browser\'s settings and follows a change', async () => {
+  const boss = hbMeView_({ email: 'boss@ex.org', name: 'Boss Lady', isManager: true, managers: [], me: hbPerson_('boss@ex.org', { isManager: true, department: HB_DEPT }),
+    team: [hbPerson_('ana@ex.org', { name: 'Ana Lopez', department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss Lady', standing: 'pending' }),
+      hbPerson_('ben@ex.org', { name: 'Ben Kim', department: HB_DEPT, manager: 'boss@ex.org', managerName: 'Boss Lady', standing: 'confirmed' })] });
+  const h = await hbBoot_({ answers: { hbGetMe: boss, hbConfirmPerson: { success: true, view: boss } } });
+  h.w.hbGoPeople_(); await h.settleAll();
+  assert.strictEqual(h.main().querySelector('h1').textContent, 'Profile & team');
+  assert.strictEqual(h.d.querySelector('#hb-pp-me .hb-av.big').textContent, 'BL');
+  const ask = h.d.querySelector('#hb-pp-team .hb-pp-pc.ask');
+  assert.ok(ask && /Ana Lopez asked to join your team/.test(ask.textContent));
+  assert.deepStrictEqual([...ask.querySelectorAll('button')].map((b) => b.textContent), ['Not my team', 'Confirm']);
+  const grid = [...h.d.querySelectorAll('#hb-pp-team .hb-pp-grid .hb-pp-pc')];
+  assert.deepStrictEqual(grid.map((c) => c.querySelector('.hb-pp-row-n').textContent), ['Ben Kim'], 'the confirmed, as a grid');
+  assert.ok(/1 person/.test(h.d.querySelector('#hb-pp-team .hb-pp-h2:not(.hb-vh)').textContent));
+  ask.querySelector('.hb-pp-yes').click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbConfirmPerson').pop(), ['hbConfirmPerson', 'ana@ex.org', true]);
+  const now = () => h.d.getElementById('hb-pp-disp-now').textContent;
+  assert.strictEqual(now(), 'Standard size · theme follows the device');
+  h.w.hbSetDisplay_('size', 2); h.w.hbSetDisplay_('theme', 'dark'); h.w.hbSetDisplay_('contrast', true);
+  assert.strictEqual(now(), 'Larger text · dark · high contrast', 'the row follows the panel');
+});
+
+test('HBR4 DOM: Saved — Bookmarks and My notes side by side; a bookmark carries its chapter and a star that removes it, named for a screen reader; a note is a sticky note under its section; Forms are cards with a chip per section; the viewer says how many pages', async () => {
+  const h = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-3-1', title: '3.1 Oxygen basics', ms: 1 }] }, hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0=' } },
+    ls: { umsHbNotes: JSON.stringify({ 'man-3-2': { t: 'Kits ship monthly.', ms: 5 } }) } });
+  h.w.hbGoSaved_(); await h.settleAll();
+  const cards = [...h.d.querySelectorAll('#hb-sv .hb-sv-card')];
+  assert.deepStrictEqual(cards.map((c) => c.querySelector('.hb-sv-h').textContent.replace(/\s+/g, ' ').trim()), ['Bookmarks 1', 'My notes In this browser']);
+  const bm = cards[0].querySelector('.hb-sv-row');
+  assert.ok(/Respiratory & Resupply/.test(bm.textContent) && bm.classList.contains('kb-man-p3'), 'its chapter, in its colour');
+  const star = bm.querySelector('.hb-sv-star');
+  assert.strictEqual(star.getAttribute('aria-label'), 'Remove the bookmark: 3.1 Oxygen basics');
+  const note = cards[1].querySelector('.hb-sv-note');
+  assert.ok(/3\.2 Nebulizers/.test(note.querySelector('.hb-sv-nh').textContent) && note.querySelector('.hb-sv-snip').textContent === 'Kits ship monthly.');
+  // Forms.
+  h.w.hbGoForms_(); await h.settleAll();
+  const f = h.d.querySelector('.hb-fm-card');
+  assert.deepStrictEqual([...f.querySelectorAll('.hb-fm-chip')].map((c) => c.textContent), ['3.1']);
+  assert.ok(f.querySelector('.hb-fm-pg.kb-man-p3') && f.querySelector('.hb-fm-pg').getAttribute('aria-hidden') === 'true', 'the drawn page wears its first chapter, and is decoration');
+  assert.strictEqual(f.querySelector('h2').textContent, 'Economic Assistance Application (EAA)');
+  hb41PdfJs_(h.w, 3);
+  h.w.hbOpenForm_('form-eaa'); await new Promise((r) => setTimeout(r, 40)); await h.settleAll();
+  assert.ok(/^3 pages · 3\.1$/.test(h.d.getElementById('hb-fv-sub').textContent), h.d.getElementById('hb-fv-sub').textContent);
+  assert.ok(!h.d.getElementById('hb-fv-nav').hidden && /^Page \d of 3$/.test(h.d.getElementById('hb-fv-at').textContent), 'page steps for a form of more than one page (jsdom lays every page at 0 — which page is the pure pin\'s)');
+});
+
+test('HBR4 DOM: the head applies a chosen theme before the page script — dark sets <html data-mode>, light clears it even when the device is dark', async () => {
+  const dark = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { theme: 'dark' }, attrs: {} }) } });
+  assert.strictEqual(dark.d.documentElement.getAttribute('data-mode'), 'dark');
+  const light = await hbBoot_({ ls: { umsHbDisplay: JSON.stringify({ prefs: { theme: 'light' }, attrs: {} }) } });
+  light.d.documentElement.setAttribute('data-mode', 'dark');   // as if the device were dark
+  light.w.hbApplyDisplay_(light.w.hbDisplay_(), false);
+  assert.ok(!light.d.documentElement.hasAttribute('data-mode'), 'light wins over the device');
+});

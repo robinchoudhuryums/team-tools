@@ -6412,6 +6412,41 @@ pick them up without re-deriving the context.
     score ring and the shelf spines keep their fills (a ring, a level — no fade);
     the `Handbook flat` pin holds it. "Your manager
     has been told" (shot 10) is not said: nothing tells a manager.
+- <a id="the-handbook-app-training-profile-saved-forms-and-display-are-cards"></a>**The handbook app's Training, Profile & team, Saved, Forms and Display pages are flat cards, and the panel gains a theme (handbook refresh HBR4, operator plan 2026-11-02)**
+  Batch 4 of the handoff, the last of its screens, all in the handbook app's
+  own page and flat throughout (decision 13). Nothing it stores changed but one
+  display setting.
+  - **Training** opens on My training for a reader and on **My team** for a
+    manager or the admin, with a switch between them (`hbTrTabs_`). My team
+    leads with four tiles counted by ONE pure function from the progress
+    payload (`hbTeamTiles_`: on track = no overdue plan and nothing to re-read;
+    the pass rate is passed over assigned quizzes, `null` with none). The
+    table keeps every column and the Copy / CSV and reminders, now with an
+    avatar, a bar, and chips. An overdue row is marked by an inset red rule,
+    not a tint — a tint under the red and amber chips failed axe's contrast in
+    dark mode.
+  - **Profile & team** is a profile card (avatar, tags, the Department and
+    Manager rows) with a Display row that says the current settings; a join
+    request is a card with Not my team / Confirm (`hbPersonCardHtml_`), the
+    confirmed team a grid.
+  - **Saved** is Bookmarks and My notes side by side; a note is drawn as a
+    sticky note in a FIXED yellow with a fixed ink (g58 — the colour does not
+    flip, so neither does its text). The star that removes a bookmark says what
+    it removes to a screen reader.
+  - **Forms** are cards with a drawn page in the chapter colour (CSS, not a
+    thumbnail of the PDF — drawing one would load pdf.js for the list, which
+    HB4.1 loads only when a form is opened). The viewer names its pages and
+    steps through them; which page is in view is one pure rule
+    (`hbFormPageIndex_`, the last page whose top is within 8px of the scroll),
+    and the scrolling body is a focusable labelled region (axe).
+  - **Display** gains a **theme** — System, Light, Dark — the one new stored
+    field (`theme`, '' = follow the device), applied by `hbApplyTheme_` and by
+    the page's head script before paint, so a dark choice never flashes light.
+    Size is a slider whose `aria-valuetext` is the size's name; the three
+    toggles are switches (`role="switch"`). The System swatch is split by a
+    pseudo-element, not a hard-stop gradient (decision 13).
+  - **Visually hidden headings** use `.hb-vh`, which is NOT absolutely
+    positioned (g171).
 - <a id="coaching-keeps-a-one-on-one-log-and-a-cadence"></a>**Coaching keeps a 1-on-1 log with a per-manager cadence, and a coaching item may carry one screenshot in the HR store (Batch F, operator 2026-11-02)**
   The operator asked for a "Last 1-on-1" date, reminders for managers, an
   adjustable cadence, and an optional screenshot on a logged issue.
