@@ -364,7 +364,8 @@ The one-time setup (create the project, set `HANDBOOK_KB_SS_ID`, deploy for the
 domain, and since HB2.1 the Handbook spreadsheet) is in
 [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
 
-To ship a change: `npm run handbook:push` (it syncs, checks and pushes), then
+To ship a change: `npm run handbook:push` (it checks that the copies match
+`web-app/` — run `npm run handbook:sync` first if they do not — then pushes), then
 Deploy → Manage deployments → Edit → New version. A change to the handbook
 reader or its server readers ships in **both** projects — Team Tools with
 `clasp push -f` and a New version as usual.
