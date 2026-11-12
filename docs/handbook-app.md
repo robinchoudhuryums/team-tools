@@ -51,7 +51,11 @@ under the "handbook app" entries.
 - **Profile** in the bar (HB2.1) — the reader's department and manager. A
   first visit is asked for both on the home page; the manager confirms. A
   manager sees *Your team* there; the admin also sees the managers and
-  everyone. See [People](#people).
+  everyone. Since HBR4 it is a profile card with a **Display** row, a join
+  request is a card and the team a grid. See [People](#people).
+- **Training**, **Saved**, **Forms** and **Display** — the pages below; since
+  HBR4 each is flat cards (no gradient — the handoff's decision 13), and Display
+  carries a **theme** (System, Light, Dark).
 - The chapters are **kept in the browser** and re-read only when the handbook
   changed; if the server cannot be reached, the kept copy is shown with a note
   that it may be out of date.

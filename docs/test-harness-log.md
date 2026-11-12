@@ -3333,6 +3333,57 @@ per-change detail. By delta:
   60 ms answer and a 300 ms debounce — the likeliest race a loaded runner loses.
   Both of its bites were re-run and bite.
 
+## Handbook refresh HBR3 — quizzes as cards, one question a screen (2026-11-11)
+
+- **Pure (run.js, "HBR3")** — a: the card rule (`hbQuizCard_`: pill, ring, red
+  ring under the pass mark, line, action, no action without the Handbook
+  spreadsheet), the filter (`hbQuizFilter_`: To do keeps a locked quiz) and the
+  progress strip; b: `hbResultRows_` — every question in the order seen with
+  what the reader chose, a miss alone carrying its explanation and section,
+  never an option not chosen (TRN-1); c: the CSS rules (the hidden inputs inside
+  a positioned label — g171) and `lastMs` on the standing.
+- **DOM ("HBR3")** — the cards, the filter and More quizzes; the stepper (Next
+  refuses without an answer, Back keeps the choice, Submit on the last) and
+  Leave (straight back with nothing chosen, asks otherwise, records nothing);
+  the result. The two HB3.2 drives were rewritten for one question per screen.
+- **Visual** — five scenarios (the cards dark on a phone, the To do filter, a
+  sitting on its second question light and dark, the result on a phone); the
+  result hook answers one question at a time. A phone wrapped the result rows'
+  ✓/✗ onto their own line — found by looking, now a grid.
+
+## Handbook refresh — no gradients (2026-11-11)
+
+- **Pure ("Handbook flat")** — the handbook app's own styles carry no
+  `linear-gradient` / `radial-gradient`; the only fills allowed are the score
+  ring's conic fill and the shelf spines' hard-stop level, each matched by
+  shape. Written after the six fades were flattened; an apostrophe in its first
+  name broke the test file's string and the spine pattern was first too strict.
+
+## Handbook refresh HBR4 — Training, Profile & team, Saved, Forms, Display (2026-11-12)
+
+- **Pure (run.js, "HBR4")** — a: `hbTeamTiles_` driven (on track needs no
+  overdue plan AND nothing to read again; overdue and re-reads are counts, not
+  people; the pass rate is null with no quiz, never 0%); b: `hbFormPageIndex_`
+  (the last page whose top is within 8px of the scroll — pinned purely because
+  jsdom gives every page offsetTop 0); c: `.hb-vh` is not absolute (g171), a late
+  row is a rule and not a tint, the head script applies the theme, the System
+  swatch is split without a gradient. HB2.3-a's cleaned prefs gained `theme`.
+- **DOM ("HBR4")** — Training (a manager opens on My team, a reader sees no
+  switch, the tiles, the table cells in words, plans as cards); Profile & team
+  (the card's initials, a join request as a card answered by Confirm, the grid,
+  the Display row following a change); Saved and Forms (the chapter on a
+  bookmark, the star named for a screen reader, the sticky note, chips per
+  section, the viewer's page count); the head theme before the page script.
+  The HB2.3, HB2.4, HB3.3 and HB3.4 drives were updated for the new markup (the
+  size slider, "Reaches", the table cells).
+- **Visual + axe** — three scenarios (training wide, Display dark on a phone,
+  the form viewer). Axe failed twice and both were fixed: the red and amber
+  chips over a late row's tint in dark mode (now an inset rule), and the form
+  viewer's scrolling body (now a focusable, labelled region). Looking found plan
+  cards stretched tall by a flex-basis that became a height in a column.
+- **Bites** — 12 of 12; five were first refused by `bite.sh` for a double quote
+  inside the mutation and re-run with `\x27` escapes.
+
 ## Script Property consolidation — the PTO accrual ledger tab and one run ledger (2026-11-02)
 
 - **Pure** — F17's record half now drives the real reader, writer and move over

@@ -31,6 +31,12 @@ The people, scores, dates and the search hits for §8.6/§9.2 are made up.
 
 ## The batches
 
+**Status (2026-11-12): all four batches have shipped** — HBR1 to HBR4, each
+with its implement block in `.cycle/blocks/25post-HBR<n>-broad-implement.md`,
+and decision 13 (no gradients) applied across all of them. What each batch
+built is in `docs/handbook-app.md` and the design-decisions entries indexed in
+CLAUDE.md; this section is the plan as it was agreed.
+
 Each batch updates the visual matrix (and its `--axe` pass), the DOM harness and
 the pure harness as it goes, and is bite-checked like every other batch.
 
