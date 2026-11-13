@@ -10893,6 +10893,16 @@ function cnRetentionDiagChanges_(prev, payload) {
   });
   return out;
 }
+/** PURE (Node-pinned; cycle 26 F18) — what the retention panel LOADED, for the
+ *  windows this save sends: {key: days}. The server writes only a window that
+ *  differs from it, and refuses when someone else has moved that window since. */
+function cnRetentionBaseline_(prev, payload) {
+  var out = {};
+  Object.keys(payload || {}).forEach(function (k) {
+    out[k] = parseInt(prev && prev[k] && prev[k].value, 10) || 0;
+  });
+  return out;
+}
 function cnSaveRetention_() {
   var rd = function (id) { var el = document.getElementById('cn-ret-' + id); return el ? el.value : ''; };
   var payload = { archiveDays: rd('archive'), retentionDays: rd('purge'), archiveRetentionDays: rd('archpurge') };
@@ -10914,12 +10924,20 @@ function cnSaveRetention_() {
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     google.script.run
       .withSuccessHandler(function (res) {
-        if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } return; }
-        showToast('Retention windows saved', 'toast-success');
+        if (!res || !res.success) {
+          // F18 (cycle 26): a refused save names the window someone else changed and
+          // stays on screen; the panel then reloads so the current values are what is shown.
+          var refused = !!(res && (res.conflict || res.stale));
+          showToast((res && res.error) || 'Save failed', 'toast-error', refused ? { sticky: true } : undefined);
+          if (refused) { cnLoadRetentionPanel_(); return; }
+          if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; }
+          return;
+        }
+        showToast((res.changed && !res.changed.length) ? 'No retention window was changed' : 'Retention windows saved', 'toast-success');
         cnLoadRetentionPanel_();   // re-render with fresh values + warnings
       })
       .withFailureHandler(function (err) { showToast((err && err.message) || 'Save failed', 'toast-error'); if (btn) { btn.disabled = false; btn.textContent = 'Save retention'; } })
-      .saveRetentionConfig(payload);
+      .saveRetentionConfig(payload, cnRetentionBaseline_(prev, payload));
   };
   // ADM-13 (cycle 23): the two DIAGNOSTICS windows (ViewUsage, ClientErrors)
   // are labelled irreversible too, but saved with no question. They hold no
@@ -14459,27 +14477,34 @@ function cnRenderAdminBody_(cfg) {
     var btn = this;
     var boxes = document.querySelectorAll('.cn-admin-flag');
     var map = {};
+    // F18 (cycle 26): what this page LOADED rides the save. The server writes
+    // only the toggles that differ from it, and refuses when someone else has
+    // flipped one of those meanwhile — a page left open no longer puts back a
+    // flag another admin turned off.
+    var base = {};
     var warnings = [];
     for (var i = 0; i < boxes.length; i++) {
       var k = boxes[i].getAttribute('data-flag-key');
       map[k] = boxes[i].checked;
+      base[k] = (ffValues[k] === true);
       // Warn only on a CHANGED danger flag (either direction).
-      if (map[k] !== (ffValues[k] === true) && ffDanger[k]) warnings.push(ffDanger[k]);
+      if (map[k] !== base[k] && ffDanger[k]) warnings.push(ffDanger[k]);
     }
     function doSave() {
       btn.disabled = true; btn.textContent = 'Saving…';
       google.script.run
         .withSuccessHandler(function (res) {
           btn.disabled = false; btn.textContent = 'Save Toggles';
-          if (!res.success) { showToast(res.error || 'Save failed', 'toast-error'); return; }
+          // A refused save (a conflict, a stale page) stays on screen: it says what to do next.
+          if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'toast-error', (res && (res.conflict || res.stale)) ? { sticky: true } : undefined); return; }
           ffValues = res.values || map;   // refresh the baseline so re-saves don't re-warn
-          showToast('Toggles saved — reps see changes on next load', 'toast-success');
+          showToast((res.changed && !res.changed.length) ? 'No toggle was changed' : 'Toggles saved — reps see changes on next load', 'toast-success');
         })
         .withFailureHandler(function (err) {
           btn.disabled = false; btn.textContent = 'Save Toggles';
           showToast(err.message || 'Save failed', 'toast-error');
         })
-        .saveFeatureFlags(map);
+        .saveFeatureFlags(map, base);
     }
     if (warnings.length) {
       uiConfirm({ title: 'Confirm toggle change', message: warnings.join('\n\n'),

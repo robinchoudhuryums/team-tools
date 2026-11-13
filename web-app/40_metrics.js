@@ -877,9 +877,10 @@ function getCdrAgentMetrics_(from, to, rosterNames) {
     // DQE window twice per open). Skip the doomed put explicitly with a
     // headroom margin so the behavior is deliberate + logged, not an
     // exception path; a large-team YTD aggregate is the realistic trigger.
-    if (payload.length > 95000) {
-      console.warn('CDR cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' +
-        cacheKey + ' — every read of this range re-scans the DQE tab until the range narrows.');
+    if (payload.length > CDR_CACHE_VALUE_MAX) {
+      // F25 (cycle 26): said to the read-ahead too — every read of this range
+      // re-scans the DQE tab until the range narrows.
+      cdrCacheOversizeNote_('the call totals ' + from + '..' + to, payload.length);
     } else {
       if (payload.length > 90000) {
         console.warn('CDR cache payload near 100KB limit: ' + payload.length + ' bytes for ' + cacheKey);
@@ -910,8 +911,8 @@ function getCdrDailyBreakdown_(from, to, rosterNames) {
   if (spec && out && !out.error && !cdrNameMapDegraded_()) {
     try {
       var payload = JSON.stringify(out);
-      if (payload.length <= 95000) CacheService.getScriptCache().put(spec.key, payload, spec.ttl);
-      else console.warn('CDR daily cache SKIPPED (payload ' + payload.length + ' bytes > 95KB headroom) for ' + from + '..' + to);
+      if (payload.length <= CDR_CACHE_VALUE_MAX) CacheService.getScriptCache().put(spec.key, payload, spec.ttl);
+      else cdrCacheOversizeNote_('the daily breakdown ' + from + '..' + to, payload.length);   // F25: said to the read-ahead too
     } catch (_) {}
   }
   return out;
@@ -1154,27 +1155,55 @@ function csrTransferQueueColumns_(headers) {
  *  INV-85 bump needed). */
 function getCsrTransferPerRepDaily_(from, to, rosterNames, opts) {
   const withQueues = !!(opts && opts.withQueues);
+  // F25 (cycle 26): `aggregatesOnly` returns (and caches) the per-agent totals
+  // WITHOUT the per-day map. The Dashboard reads only `.agents`, and its
+  // year-to-date window's per-day map — every rep, every workday — was far
+  // over CacheService's 100 KB value cap: the put threw into a bare catch, so
+  // that window was never cached and the hourly read-ahead reported ok having
+  // kept nothing. A caller that asks for the totals gets no `perRepDaily` key
+  // at all — never an empty one that could read as "no transfers".
+  const aggregatesOnly = !!(opts && opts.aggregatesOnly);
   // M10 (cycle 22): RESULT-CACHED like the DQE reader it sits beside (the same
   // key family, TTL and fixture bypass — F-31), because a cold Dashboard load
   // called it up to four times and each call read the whole tab.
   const useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
   // PF1: keyed by the data's stamp and kept until the data changes.
-  const spec = cdrWindowCacheSpec_('csrt', useCache ? cdrDataStamp_() : '', cdrRosterHash_(rosterNames), from, to, withQueues ? 'q' : '-');
+  const spec = cdrWindowCacheSpec_('csrt', useCache ? cdrDataStamp_() : '', cdrRosterHash_(rosterNames), from, to, (withQueues ? 'q' : '-') + (aggregatesOnly ? 'a' : ''));
   if (useCache) {
     try { const hit = CacheService.getScriptCache().get(spec.key); if (hit) return JSON.parse(hit); } catch (_) {}
   }
-  const out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
+  let out = csrTransferReadUncached_(from, to, rosterNames, withQueues);
+  if (aggregatesOnly && out) out = { agents: out.agents, meta: out.meta };
   // Only a CLEAN read is cached — an error must not be served for five minutes (g129),
   // nor a round read without the aliases (F16).
   if (useCache && out && out.meta && !out.meta.error && !cdrNameMapDegraded_()) {
-    try { CacheService.getScriptCache().put(spec.key, JSON.stringify(out), spec.ttl); } catch (_) { /* over the 100KB value cap — uncached */ }
+    cdrCachePutSized_(spec.key, JSON.stringify(out), spec.ttl, 'transfers ' + from + '..' + to);
   }
   return out;
+}
+/** F25 (cycle 26) — a CDR window that was READ but could NOT be kept, this
+ *  execution: [{what, bytes}]. CacheService caps a value at 100 KB and an
+ *  oversize put throws; each window reader skips it on purpose and says so
+ *  here, so the read-ahead job can report what it did not manage to keep
+ *  instead of "ok". */
+var _cdrCacheOversize = [];
+function cdrCacheOversizeNote_(what, bytes) {
+  _cdrCacheOversize.push({ what: String(what), bytes: Number(bytes) || 0 });
+  console.warn('CDR cache SKIPPED: ' + what + ' is ' + bytes + ' bytes, over the ' + CDR_CACHE_VALUE_MAX + '-byte headroom under the 100 KB cap');
+}
+/** F25 — put a CDR window payload, or skip it and say so (never a throw into
+ *  a bare catch). Returns whether it was kept. */
+function cdrCachePutSized_(key, payload, ttl, what) {
+  if (String(payload).length > CDR_CACHE_VALUE_MAX) { cdrCacheOversizeNote_(what, String(payload).length); return false; }
+  try { CacheService.getScriptCache().put(key, payload, ttl); return true; }
+  catch (e) { console.warn('CDR cache put failed for ' + what + ': ' + ((e && e.message) || e)); return false; }
 }
 function csrTransferReadUncached_(from, to, rosterNames, withQueues) {
   const ss = getCdrSS_();
   const sheet = ss.getSheetByName(CSR_TRANSFER_TAB);
-  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found' } };
+  // F25: the tab is OPTIONAL (no tab = no Transfer KPI) — `missingTab` tells
+  // that apart from a read that failed, for a caller that must not call it one.
+  if (!sheet) return { perRepDaily: {}, agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found', missingTab: true } };
   const colWarning = validateCsrTransferColumns_(sheet);   // L-2: advisory, never blocks
   const tz = ss.getSpreadsheetTimeZone();
   const lastRow = sheet.getLastRow();
@@ -1802,7 +1831,7 @@ function getDashboardMetrics(periodKey) {
       // their roster row has an email and survives the F3/F4 skip above.
       var dqRes = getCdrAgentMetrics_(wFrom, wTo, allNames);
       var dqMap = cdrAgentsOrThrow_(dqRes);   // M7: never cached as no calls
-      var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames).agents || {};
+      var trMap = getCsrTransferPerRepDaily_(wFrom, wTo, allNames, { aggregatesOnly: true }).agents || {};   // F25: the totals only — a year of days does not fit the cache
       var dq = dqMap[emp.name] || null;
       var tr = trMap[emp.name] || null;
       var agg = dashboardTeamAggregate_(dqMap, MIN_COHORT, std.teamAvgExcludes);   // H2
@@ -2656,6 +2685,12 @@ function warmCdrMetricsCache() {
   return runAutomationJob_('CdrCacheWarm', function () {
     stampDigestLastRun_('cdrWarm');
     if (typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID) return { outcome: automationOutcome_('idle') };
+    // F25 (cycle 26): a deployment with NO CDR store has nothing to read
+    // ahead — that is not a failure. It failed every hour (the stamp read
+    // throws on the placeholder id), a red dot nobody could clear. `ok`, not
+    // `idle`: it also clears a failure stamped before the store was removed.
+    if (!storeConfigured_('CDR_SS_ID', CONFIG.CDR_SS_ID, false)) return { outcome: automationOutcome_('ok') };
+    _cdrCacheOversize = [];
     var stamp = cdrDataStamp_();
     if (!stamp) return { outcome: automationOutcome_('failed', 'The CDR Report could not be read to check for new data.') };
     var cache = CacheService.getScriptCache();
@@ -2670,8 +2705,11 @@ function warmCdrMetricsCache() {
       if (!range) return;
       try {
         cdrAgentsOrThrow_(getCdrAgentMetrics_(range.from, range.to, names));
-        var tr = getCsrTransferPerRepDaily_(range.from, range.to, names);
-        if (tr && tr.meta && tr.meta.error) throw new Error(tr.meta.error);
+        // F25: the read getDashboardMetrics makes (the totals only), and a
+        // MISSING Transfer tab is not a failed read — the tab is optional, and
+        // treating it as one left the job "partial" every hour for ever.
+        var tr = getCsrTransferPerRepDaily_(range.from, range.to, names, { aggregatesOnly: true });
+        if (cdrWarmReadFailed_(tr && tr.meta)) throw new Error(tr.meta.error);
       } catch (e) { failed.push(pk + ': ' + e.message); }
     });
     // The Stats page's default view: the previous workday and its 30-day
@@ -2683,12 +2721,24 @@ function warmCdrMetricsCache() {
         var bd = getCdrDailyBreakdown_(sFrom, statsDay, names);
         if (bd && bd.error) throw new Error(bd.error);
         var str = getCsrTransferPerRepDaily_(sFrom, statsDay, names);
-        if (str && str.meta && str.meta.error) throw new Error(str.meta.error);
+        if (cdrWarmReadFailed_(str && str.meta)) throw new Error(str.meta.error);
       } catch (e) { failed.push('stats: ' + e.message); }
     }
     console.log('warmCdrMetricsCache: ' + DASHBOARD_PERIOD_KEYS.length + ' dashboard windows + the Stats trend, ' + (Date.now() - t0) + ' ms' + (failed.length ? ', failed ' + failed.join('; ') : ''));
     if (failed.length) return { outcome: automationOutcome_('partial', 'Some call-data windows could not be read ahead: ' + failed.join('; '), failed) };
+    // F25: a window that was read but is too large to KEEP was not read ahead —
+    // the next person still waits for it. Said, never "ok".
+    if (_cdrCacheOversize.length) {
+      var big = _cdrCacheOversize.map(function (o) { return o.what + ' (' + o.bytes + ' bytes)'; });
+      return { outcome: automationOutcome_('partial', 'Some call-data windows were read but are too large to keep in the cache (100 KB each): ' + big.join('; '), big) };
+    }
     try { cache.put(CDR_WARM_CACHE_KEY, stamp, CDR_WINDOW_CACHE_TTL); } catch (e) {}
     return { outcome: automationOutcome_('ok') };
   });
+}
+/** PURE (Node-pinned; cycle 26 F25) — did a Transfer read FAIL, for the
+ *  read-ahead's purposes? An error, unless it is only the optional tab that
+ *  is not there. */
+function cdrWarmReadFailed_(meta) {
+  return !!(meta && meta.error && !meta.missingTab);
 }

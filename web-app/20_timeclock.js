@@ -6254,38 +6254,78 @@ function sendPayWeekReminders() {
   assertManagerCaller_('sendPayWeekReminders');
   return runAutomationJob_('PayWeekReminders', function () {
     stampDigestLastRun_('payWeek');
-    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('idle') };
+    // F28 (cycle 26): `ok`, not `idle`, while the toggle is off. `idle` leaves
+    // a stamped failure as it is — so a send that failed the day before the
+    // toggle was turned off stayed on the health dot with nothing left to
+    // clear it. A job that is switched off has nothing wrong with it.
+    if (!getFlag_('payWeekReminderEmail')) return { outcome: automationOutcome_('ok') };
     const tz = CONFIG.MANAGER_TIMEZONE;
     const now = new Date();
-    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) !== PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
+    // F28: AT OR AFTER the hour, with a record of who was sent to today. It
+    // was an exact hour match with no record: one missed 9 am run (a lock
+    // wait, a trigger hiccup, a failed send) and that pay period's reminder
+    // was gone, silently — every later run that day was the wrong hour.
+    if (parseInt(Utilities.formatDate(now, tz, 'H'), 10) < PAY_WEEK_REMINDER_HOUR) return { outcome: automationOutcome_('idle') };
     const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+    const already = payWeekSentToday_(readPayWeekSent_(), today);
     const rows = getEmployeeRosterRows_();
     const orgAnchor = orgBiweeklyAnchor_(rows);
     let attempted = 0, sent = 0, failed = 0, lastError = '';
-    const failedNames = [];
-    for (let r = 1; r < rows.length; r++) {
-      const email = empRosterEmail_(rows[r]);
-      if (!email) continue;
-      const pc = empPayCycle_(rows[r], orgAnchor);
-      const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
-      if (!pw || pw.remindOn !== today) continue;
-      attempted++;
-      const name = String(rows[r][EMP.NAME] || '').trim();
-      try {
-        appSendMail_(payWeekEmail_(email, name, pw));
-        sent++;
-        logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
-      } catch (e) {
-        failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
-        logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+    const failedNames = [], sentNow = [];
+    try {
+      for (let r = 1; r < rows.length; r++) {
+        const email = empRosterEmail_(rows[r]);
+        if (!email) continue;
+        const pc = empPayCycle_(rows[r], orgAnchor);
+        const pw = payWeekForEmp_({ payCycle: pc.payCycle, payAnchor: pc.payAnchor }, today);
+        if (!pw || pw.remindOn !== today) continue;
+        if (already[String(email).toLowerCase()]) continue;   // sent by an earlier run today
+        attempted++;
+        const name = String(rows[r][EMP.NAME] || '').trim();
+        try {
+          appSendMail_(payWeekEmail_(email, name, pw));
+          sent++; sentNow.push(String(email).toLowerCase());
+          logDigestDelivery_('payWeek', email, 'sent', 1, pw.periodKey);
+        } catch (e) {
+          failed++; lastError = String((e && e.message) || e); failedNames.push(name || email);
+          logDigestDelivery_('payWeek', email, 'failed', 1, lastError);
+        }
       }
+    } finally {
+      // Written even when the walk throws part-way: whoever was sent to is
+      // not sent to again by the next hour's run.
+      if (sentNow.length) writePayWeekSent_(today, Object.keys(already).concat(sentNow));
     }
     if (failed) {
+      // A failed send is tried again by the next hourly run today — it is not in the record.
       return { sent: sent, outcome: automationOutcome_(sent ? 'partial' : 'failed',
-        failed + ' pay-week reminder email(s) failed to send (' + lastError + ')', failedNames) };
+        failed + ' pay-week reminder email(s) failed to send (' + lastError + ') — they are tried again each hour today', failedNames) };
     }
     return { sent: sent, outcome: automationOutcome_(attempted ? 'ok' : 'idle') };
   });
+}
+/** PURE (Node-pinned; cycle 26 F28) — who has already been sent TODAY's
+ *  pay-week reminder, from the stored record ({day, to: [emails]}) — a set
+ *  keyed by lowercased address; empty for another day's record or none. */
+function payWeekSentToday_(rec, todayIso) {
+  const out = {};
+  if (!rec || typeof rec !== 'object' || rec.day !== todayIso || !Array.isArray(rec.to)) return out;
+  rec.to.forEach(function (e) { const k = String(e || '').trim().toLowerCase(); if (k) out[k] = true; });
+  return out;
+}
+function readPayWeekSent_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(PAY_WEEK_SENT_PROP) || 'null'); }
+  catch (e) { return null; }
+}
+/** Best-effort, never throws: a record that cannot be written costs a
+ *  duplicate reminder at worst, never a lost one. One day only — the next
+ *  remind day's write replaces it. */
+function writePayWeekSent_(todayIso, emails) {
+  try {
+    const seen = {}, to = [];
+    (emails || []).forEach(function (e) { const k = String(e || '').trim().toLowerCase(); if (k && !seen[k]) { seen[k] = 1; to.push(k); } });
+    propSetBounded_(PAY_WEEK_SENT_PROP, JSON.stringify({ day: todayIso, to: to }), { mode: 'degrade', shrink: propShrinkStripFields_(['to']) });
+  } catch (e) { try { console.warn('writePayWeekSent_ failed: ' + e.message); } catch (_) {} }
 }
 /** P1 — the reminder email (the shared branded chrome, a link to Time / PTO).
  *  It names the period and the last day only — no hours, no punches. */

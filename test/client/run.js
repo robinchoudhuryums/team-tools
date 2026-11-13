@@ -1837,6 +1837,11 @@ function pf1CdrHelpers_(ctx) {
   if (typeof ctx.CDR_WINDOW_CACHE_TTL === 'undefined') vm.runInContext('var CDR_WINDOW_CACHE_TTL = 21600;', ctx);
   if (typeof ctx.cdrDataStamp_ !== 'function') ctx.cdrDataStamp_ = () => '';
   if (typeof ctx.cdrNameMapDegraded_ !== 'function') ctx.cdrNameMapDegraded_ = () => false;
+  // Cycle 26 F25: the sized put and the oversize note every window reader shares.
+  if (typeof ctx.CDR_CACHE_VALUE_MAX === 'undefined') vm.runInContext(/var CDR_CACHE_VALUE_MAX = \d+;/.exec(serverSource())[0], ctx);
+  if (typeof ctx.console === 'undefined') ctx.console = { warn() {}, log() {} };
+  vm.runInContext('var _cdrCacheOversize = [];', ctx);
+  ['cdrCacheOversizeNote_', 'cdrCachePutSized_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 }
 function m3CdrCtx_(rows, noSheet) {
@@ -12624,6 +12629,63 @@ test('previewPtoAccruals is a READ-ONLY dry run that shares the ONE accrual reso
 });
 
 
+// ── Cycle 26 F2: last-run fixtures are BUILT, not typed ──────────────────────
+// A job's last-run record used to be typed into every pin by hand, with
+// `timestampMgr: '2026-08-01 06:00:00'` — a format production never emits (it
+// is a display string, "Aug 1, 6:00 AM"). The monthly check tested that string
+// for a '2026-08' prefix, so the pins passed against code that could never be
+// true in production. A fixture now goes through the real automationRunRecord_
+// over a timezone-aware stand-in for the two Utilities calls it makes.
+function gasUtilities_() {
+  const parts = (d, tz) => {
+    const o = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(d).forEach((x) => { o[x.type] = x.value; });
+    return o;
+  };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const formatDate = (d, tz, fmt) => {
+    const q = parts(d, tz), h = +q.hour;
+    switch (fmt) {
+      case 'yyyy-MM': return q.year + '-' + q.month;
+      case 'yyyy-MM-dd': return q.year + '-' + q.month + '-' + q.day;
+      case 'yyyy-MM-dd HH:mm': return q.year + '-' + q.month + '-' + q.day + ' ' + q.hour + ':' + q.minute;
+      case 'yyyy-MM-dd HH:mm:ss': return q.year + '-' + q.month + '-' + q.day + ' ' + q.hour + ':' + q.minute + ':' + q.second;
+      case 'd': return String(+q.day);
+      case 'H': return String(h);
+      case 'MMM d, h:mm a': return MON[+q.month - 1] + ' ' + (+q.day) + ', ' + (h % 12 || 12) + ':' + q.minute + ' ' + (h < 12 ? 'AM' : 'PM');
+      default: throw new Error('gasUtilities_: no stand-in for the format ' + fmt);
+    }
+  };
+  const parseDate = (str, tz, fmt) => {
+    if (fmt !== 'yyyy-MM-dd HH:mm:ss') throw new Error('gasUtilities_: no stand-in for parsing ' + fmt);
+    const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(str));
+    if (!m) throw new Error('Unparseable date: ' + str);
+    const wall = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    let ms = wall;
+    for (let i = 0; i < 2; i++) {   // the zone's offset at that instant
+      const q = parts(new Date(ms), tz);
+      ms -= Date.UTC(+q.year, +q.month - 1, +q.day, +q.hour, +q.minute, +q.second) - wall;
+    }
+    return new Date(ms);
+  };
+  return { formatDate, parseDate };
+}
+const AUTO_TZ = { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago' };   // the two zones 00_config.js sets
+function autoRunCtx_() {
+  const ctx = vm.createContext({ String, Number, Date, isFinite, Utilities: gasUtilities_(), CONFIG: AUTO_TZ });
+  ['convertAuditTs_', 'automationRunRecord_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+}
+/** A last-run record as PRODUCTION builds it, from a stored stamp ('yyyy-MM-dd HH:mm:ss' in CONFIG.TIMEZONE). */
+function autoRunRec_(stamp, notes) {
+  return JSON.parse(JSON.stringify(autoRunCtx_().automationRunRecord_(stamp, AUTO_TZ.MANAGER_TIMEZONE, notes == null ? '' : notes)));
+}
+/** …for a run at an instant: the stamp writeAuditLog_ would have written then. */
+function autoRunRecAt_(ms, notes) {
+  return autoRunRec_(gasUtilities_().formatDate(new Date(ms), AUTO_TZ.TIMEZONE, 'yyyy-MM-dd HH:mm:ss'), notes);
+}
+
 // ── Gap4 / F4 — per-job automation liveness, derived not accumulated ─────────
 console.log('\nCode.js — automation job liveness (Gap4 / F4)');
 {
@@ -12643,13 +12705,13 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
   const set = (k, v) => vm.runInContext(k + '=' + v + ';', jobCtx);
 
   test('a MONTHLY job that has not run this month is flagged — after its grace day', () => {
-    const stale = runs({ PtoAccrualCredit: { ms: Date.parse('2026-07-01T06:00:00Z'), timestampMgr: '2026-07-01 06:00:00' } });
+    const stale = runs({ PtoAccrualCredit: autoRunRecAt_(Date.parse('2026-07-01T12:00:00Z')) });
     assert.ok(f(stale, {}, NOW, 20, '2026-08').some((m) => /accrual credit has not run this month/.test(m)),
       'flagged on the 20th');
     // Before the grace day its absence is NORMAL (the credit lands on the 1st,
     // in arrears) — a check that fires on the 1st would nag every month.
     assert.strictEqual(f(stale, {}, NOW, 2, '2026-08').length, 0, 'silent on the 2nd');
-    const ranThisMonth = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    const ranThisMonth = runs({ PtoAccrualCredit: autoRunRecAt_(Date.parse('2026-08-01T12:00:00Z')) });
     assert.strictEqual(f(ranThisMonth, {}, NOW, 20, '2026-08').length, 0, 'silent once it has run');
   });
 
@@ -12668,16 +12730,16 @@ console.log('\nCode.js — automation job liveness (Gap4 / F4)');
   });
 
   test('a stamped job error surfaces, and the reconcile check is unchanged', () => {
-    const ok = runs({ PtoAccrualCredit: { ms: NOW - 3600000, timestampMgr: '2026-08-01 06:00:00' } });
+    const ok = runs({ PtoAccrualCredit: autoRunRecAt_(Date.parse('2026-08-01T12:00:00Z')) });
     assert.ok(f(ok, { PtoAccrualCredit: { at: '2026-08-20 06:00:01', message: 'Timesheet unreadable' } }, NOW, 20, '2026-08')
       .some((m) => /FAILED on 2026-08-20 06:00:01: Timesheet unreadable/.test(m)),
       'a caught failure is no longer invisible (F4)');
     // The pre-existing signal must read EXACTLY as before.
-    const recon = runs({ CallNotesReconcile: { ms: NOW - 40 * 3600000, timestampMgr: '2026-08-18 17:00:00' },
-                         PtoAccrualCredit: { ms: NOW, timestampMgr: '2026-08-01 06:00:00' } });
+    const recon = runs({ CallNotesReconcile: autoRunRecAt_(NOW - 40 * 3600000),
+                         PtoAccrualCredit: autoRunRecAt_(Date.parse('2026-08-01T12:00:00Z')) });
     assert.ok(f(recon, {}, NOW, 20, '2026-08')
-      .some((m) => /nightly Sheets reconcile last ran 2026-08-18 17:00:00 \(over 30h ago\)/.test(m)),
-      'the F1 stale-reconcile message is preserved verbatim');
+      .some((m) => /nightly Sheets reconcile last ran Aug 18, 12:00 PM \(over 30h ago\)/.test(m)),
+      'the F1 stale-reconcile message is preserved — in the format the record really carries (cycle 26 F2)');
   });
 
   test('the real table covers every audit-row job, or says why not', () => {
@@ -25069,9 +25131,12 @@ test('RT-1: windows, run grouping, purge contract, liveness row, panel + fixture
   assert.ok(/viewUsageDays:\s+\{ value: vu, source: srcOf\(VIEW_USAGE_RETENTION_PROP/.test(get) &&
             /clientErrDays:\s+\{ value: ce, source: srcOf\(CLIENT_ERR_RETENTION_PROP/.test(get), 'both windows ride the read');
   const save = nc(extractRawFunction('Code.js', 'saveRetentionConfig'));
-  assert.ok(/hasOwnProperty\.call\(settings, 'viewUsageDays'\)/.test(save) && /if \(hasVu\) props\.setProperty\(VIEW_USAGE_RETENTION_PROP/.test(save) &&
-            /if \(hasCe\) props\.setProperty\(CLIENT_ERR_RETENTION_PROP/.test(save), 'a window is written only when the payload carries it');
-  assert.ok(/props\.setProperty\('CN_NOTE_ARCHIVE_DAYS', String\(a\)\)/.test(save), 'the three call-note windows still write unconditionally');
+  assert.ok(/hasOwnProperty\.call\(settings, 'viewUsageDays'\)/.test(save) && /if \(hasVu\) next\.viewUsageDays = vu;/.test(save) &&
+            /if \(hasCe\) next\.clientErrDays = ce;/.test(save), 'a diagnostics window is considered only when the payload carries it');
+  // Cycle 26 F18: NO window is written unconditionally any more — each only when this caller changed it (the F18 pin drives it).
+  assert.ok(/if \(has\('archiveDays'\)\) props\.setProperty\('CN_NOTE_ARCHIVE_DAYS', String\(ch\.archiveDays\)\)/.test(save) &&
+            /if \(has\('viewUsageDays'\)\) props\.setProperty\(VIEW_USAGE_RETENTION_PROP/.test(save) &&
+            /if \(has\('clientErrDays'\)\) props\.setProperty\(CLIENT_ERR_RETENTION_PROP/.test(save), 'each window is written only when it is among the caller’s changes');
   assert.ok(/res\.viewUsageDays \|\| res\.clientErrDays\s*\?/.test(cn) && /cnRetentionRowHtml_\('viewusage'/.test(cn) && /cnRetentionRowHtml_\('clienterr'/.test(cn),
     'the panel renders the two rows only when the server shipped the fields');
   assert.ok(/if \(prevCfg\.viewUsageDays && document\.getElementById\('cn-ret-viewusage'\)\) payload\.viewUsageDays = rd\('viewusage'\)/.test(cn),
@@ -28494,10 +28559,10 @@ test('A1: a monthly job with NO run on record is "not run" only when the AuditLo
     'no window reported (a pre-A1 report) keeps the old reading');
   // A run ON RECORD from an earlier month (the ledger keeps it for ever) is
   // evidence whatever the window — that is what makes the ledger a fix.
-  const lastMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-08-01 06:00:03', ms: NOW - 20 * 86400000 } }];
+  const lastMonth = [{ action: 'PtoAccrualCredit', last: autoRunRecAt_(Date.parse('2026-08-01T12:00:03Z')) }];
   assert.ok(f(lastMonth, {}, NOW, 20, '2026-09', midMonth).some((m) => NOT_RUN.test(m)),
     'a recorded run last month means this month\'s is missing');
-  const thisMonth = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 06:00:03', ms: NOW - 19 * 86400000 } }];
+  const thisMonth = [{ action: 'PtoAccrualCredit', last: autoRunRecAt_(Date.parse('2026-09-01T12:00:03Z')) }];
   assert.strictEqual(f(thisMonth, {}, NOW, 20, '2026-09', midMonth).length, 0, 'the ledger\'s run on the 1st is seen from the 20th');
   assert.strictEqual(ctx.auditWindowCoversMonth_({ complete: false, startMgr: '' }, '2026-09'), false,
     'a truncated window with no readable start covers nothing');
@@ -28559,16 +28624,20 @@ test('A1: the run ledger — writeAuditLog_ stamps the ONE AUTOMATION_RUNS ledge
   ctx.writeAuditLog_ = undefined;
   led = { PtoAccrualCredit: { ts: '2026-09-20 06:00:03', notes: 'credited=2' } };
   // Merge: the newer run wins in either direction; an unparseable stamp never displaces a real row.
-  const parse = (ts) => Date.parse(ts.replace(' ', 'T') + 'Z');
-  const id = (ts) => ts;
-  const m1 = ctx.automationLastRunMerge_({}, led, parse, id);
+  // Cycle 26 F2: the merge takes the ONE record builder (automationRunRecord_), so a ledger run carries its month too.
+  const build = (ts, notes) => autoRunRec_(ts, notes);
+  const m1 = ctx.automationLastRunMerge_({}, led, build);
   assert.strictEqual(m1.PtoAccrualCredit.source, 'ledger', 'the tail had nothing — the ledger supplies the run');
-  const newerTail = { PtoAccrualCredit: { timestampMgr: '2026-09-21 06:00:00', ms: parse('2026-09-21 06:00:00'), notes: 't' } };
-  assert.strictEqual(ctx.automationLastRunMerge_(newerTail, led, parse, id).PtoAccrualCredit.notes, 't', 'a later tail row is not hidden by an older stamp');
-  const olderTail = () => ({ PtoAccrualCredit: { timestampMgr: '2026-09-01 06:00:00', ms: parse('2026-09-01 06:00:00'), notes: 't' } });
-  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), led, parse, id).PtoAccrualCredit.source, 'ledger', 'a later stamp replaces an older row');
+  assert.deepStrictEqual([m1.PtoAccrualCredit.ym, m1.PtoAccrualCredit.timestampMgr, m1.PtoAccrualCredit.notes], ['2026-09', 'Sep 19, 7:30 PM', 'credited=2'],
+    'F2: built by the real builder — the month (manager timezone) beside the display string');
+  const newerTail = { PtoAccrualCredit: autoRunRec_('2026-09-21 06:00:00', 't') };
+  assert.strictEqual(ctx.automationLastRunMerge_(newerTail, led, build).PtoAccrualCredit.notes, 't', 'a later tail row is not hidden by an older stamp');
+  const olderTail = () => ({ PtoAccrualCredit: autoRunRec_('2026-09-01 06:00:00', 't') });
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), led, build).PtoAccrualCredit.source, 'ledger', 'a later stamp replaces an older row');
   const bad = { PtoAccrualCredit: { ts: 'garbage', notes: '' } };
-  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), bad, () => NaN, id).PtoAccrualCredit.notes, 't', 'an unparseable stamp never displaces a parsed row');
+  assert.strictEqual(ctx.automationLastRunMerge_(olderTail(), bad, build).PtoAccrualCredit.notes, 't', 'an unparseable stamp never displaces a parsed row');
+  const onlyBad = ctx.automationLastRunMerge_({}, bad, build).PtoAccrualCredit;
+  assert.deepStrictEqual([onlyBad.ms, onlyBad.ym, onlyBad.source], [null, '', 'ledger'], 'F2: with nothing else on record an unreadable stamp is kept as UNKNOWN — no time, no month');
   // And the report path reads it, and reports the window it measured against.
   const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
   assert.ok(/automationLastRunMerge_\(lastRunByAction,\s*readAutomationRunLedger_\(\)/.test(comp), 'computeAutomationHealth_ folds the ledger in');
@@ -40164,8 +40233,8 @@ test('25post: a DAILY job with no run on record is not "missing" inside its stal
     'THE REGRESSION: enabled by this morning\'s deploy, the nightly purge has not had its 2am slot yet');
   assert.ok(f(none, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 31 * 3600000, ym: '2026-10' } } }).some((t) => MISSING.test(t)),
     'watched past its 30h window with still no run: the trigger really may be missing');
-  const stale = [{ action: 'DiagnosticsPurge', last: { timestampMgr: '2026-10-13 02:00:00', ms: P25_NOW - 3 * 86400000 } }];
-  assert.ok(f(stale, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 3600000, ym: '2026-10' } } }).some((t) => /last ran 2026-10-13 02:00:00/.test(t)),
+  const stale = [{ action: 'DiagnosticsPurge', last: autoRunRecAt_(P25_NOW - 3 * 86400000) }];
+  assert.ok(f(stale, {}, P25_NOW, 16, '2026-10', win, { watchSince: { DiagnosticsPurge: { ms: P25_NOW - 3600000, ym: '2026-10' } } }).some((t) => /last ran Oct 13, 9:00 AM/.test(t)),
     'a run ON RECORD that has gone stale is evidence whatever the watch says');
 });
 
@@ -40173,7 +40242,7 @@ test('25post: the MONTHLY accrual line — a job that RAN this month without a r
   const hint = (ym) => 'see ' + ym;
   const ctx = p25JobCtx_([{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true, noRowHint: hint }]);
   const f = ctx.automationJobProblems_;
-  const septRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-09-01 18:00:04', ms: P25_NOW - 45 * 86400000 } }];
+  const septRow = [{ action: 'PtoAccrualCredit', last: autoRunRecAt_(P25_NOW - 45 * 86400000) }];
   const win = { complete: true };
   const ranOct = { PtoAccrualCredit: { ms: P25_NOW - 86400000, ym: '2026-10', mgr: '2026-10-15 18:00' } };
   const lines = f(septRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct });
@@ -40186,7 +40255,7 @@ test('25post: the MONTHLY accrual line — a job that RAN this month without a r
     'first watched on the 15th (a setting turned it on): the 1st was never observed, so no claim this month');
   assert.ok(f([{ action: 'PtoAccrualCredit', last: null }], {}, P25_NOW, 16, '2026-10', win, { watchSince: { PtoAccrualCredit: { ms: P25_NOW - 40 * 86400000, ym: '2026-09' } } })
     .some((t) => /has not run this month/.test(t)), 'watched since last month: absence this month is evidence');
-  const octRow = [{ action: 'PtoAccrualCredit', last: { timestampMgr: '2026-10-01 18:00:04', ms: P25_NOW - 15 * 86400000 } }];
+  const octRow = [{ action: 'PtoAccrualCredit', last: autoRunRecAt_(P25_NOW - 15 * 86400000) }];
   assert.strictEqual(f(octRow, {}, P25_NOW, 16, '2026-10', win, { ranAt: ranOct }).length, 0, 'a credit row this month is the normal case — nothing to say');
 });
 
@@ -44700,8 +44769,9 @@ test('PF1: the stamp — the same data is the same stamp; a new row, a changed c
 
 test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle under the test override and while the stamp is the one it last warmed; on new data it reads the dashboard\u2019s three windows and the Stats default trend for the cohort, and remembers the stamp only when every read worked; no stamp is a failed run (driven + registries)', () => {
   const asked = [], store = {};
-  let stamp = 'S1', fail = '';
-  const ctx = vm.createContext({ JSON, String, Date, Math, console: { log() {} }, CONFIG: { TIMEZONE: 'America/Chicago' },
+  let stamp = 'S1', fail = '', cdrStore = true, noTransferTab = false;
+  const ctx = vm.createContext({ JSON, String, Date, Math, Number, console: { log() {}, warn() {} }, CONFIG: { TIMEZONE: 'America/Chicago', CDR_SS_ID: 'YOUR_CDR_SPREADSHEET_ID' },
+    storeConfigured_: (prop, fallback, over) => { asked.push('store:' + prop + ':' + fallback + ':' + over); return cdrStore; },
     DASHBOARD_PERIOD_KEYS: ['yesterday', 'mtd', 'ytd'], CDR_WARM_CACHE_KEY: 'cdr_warm_stamp_v1', CDR_WINDOW_CACHE_TTL: 21600, heartbeats: [],
     assertManagerCaller_: (l) => asked.push('gate:' + l), runAutomationJob_: (k, fn) => ({ key: k, outcome: fn().outcome }),
     automationOutcome_: (st, msg, sk) => ({ status: st, message: msg || '', skipped: sk || [] }),
@@ -44713,9 +44783,11 @@ test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle und
     prevWorkdayIso_: () => '2026-11-06', isoFromUtc_: (d) => d.toISOString().slice(0, 10),
     getCdrAgentMetrics_: (f, t, n) => { asked.push('dqe ' + f + '..' + t + ' ' + n.join(',')); return fail === 'dqe' ? { agents: {}, meta: { error: 'gone' } } : { agents: {}, meta: {} }; },
     cdrAgentsOrThrow_: (r) => { if (r.meta.error) throw new Error(r.meta.error); return r.agents; },
-    getCsrTransferPerRepDaily_: (f, t) => { asked.push('csrt ' + f + '..' + t); return { meta: {} }; },
+    getCsrTransferPerRepDaily_: (f, t, n, o) => { asked.push('csrt ' + f + '..' + t + (o && o.aggregatesOnly ? ' totals' : ' daily'));
+      return noTransferTab ? { agents: {}, meta: { error: 'CSR Transfer Historical Data sheet not found', missingTab: true } } : (fail === 'csrt' ? { meta: { error: 'unreadable' } } : { meta: {} }); },
     getCdrDailyBreakdown_: (f, t) => { asked.push('daily ' + f + '..' + t); return {}; } });
-  ['cdrCohortNames_', 'warmCdrMetricsCache'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  vm.runInContext('var _cdrCacheOversize = [];', ctx);
+  ['cdrCohortNames_', 'cdrWarmReadFailed_', 'warmCdrMetricsCache'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   let r = ctx.warmCdrMetricsCache();
   assert.strictEqual(r.key, 'CdrCacheWarm');
   assert.strictEqual(r.outcome.status, 'ok');
@@ -44723,6 +44795,9 @@ test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle und
   assert.deepStrictEqual(asked.filter((x) => /^(dqe|daily)/.test(x)), ['dqe 2026-11-06..2026-11-06 Ann,Bo', 'dqe 2026-11-01..2026-11-06 Ann,Bo', 'dqe 2026-01-01..2026-11-06 Ann,Bo', 'daily 2026-10-08..2026-11-06'],
     'the three dashboard windows for the cohort (no-email rows skipped — the cards\u2019 own list), then the Stats default 30-day trend');
   assert.strictEqual(store.cdr_warm_stamp_v1, 'S1', 'the warmed stamp is remembered');
+  // Cycle 26 F25: the dashboard windows ask for the TOTALS (the read getDashboardMetrics makes — a year of days does not fit the cache); the Stats trend needs the days.
+  assert.deepStrictEqual(asked.filter((x) => /^csrt/.test(x)), ['csrt 2026-11-06..2026-11-06 totals', 'csrt 2026-11-01..2026-11-06 totals', 'csrt 2026-01-01..2026-11-06 totals', 'csrt 2026-10-08..2026-11-06 daily']);
+  assert.ok(asked.includes('store:CDR_SS_ID:YOUR_CDR_SPREADSHEET_ID:false'), 'the store question is the shared one (storeConfigured_), asked of the real property and fallback');
   asked.length = 0;
   assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'idle', 'nothing changed: idle');
   assert.ok(!asked.some((x) => /^dqe/.test(x)), 'and reads nothing');
@@ -44733,6 +44808,32 @@ test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle und
   assert.strictEqual(store.cdr_warm_stamp_v1, 'S1', 'a run that could not read is not remembered — the next hour tries again');
   stamp = '';
   assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'failed', 'no stamp: the CDR Report could not be read');
+  // ── Cycle 26 F25: three outcomes that were wrong ──
+  // (1) NO CDR store on this deployment: nothing to read ahead. It "failed" every hour.
+  cdrStore = false; stamp = ''; asked.length = 0;
+  r = ctx.warmCdrMetricsCache();
+  assert.strictEqual(r.outcome.status, 'ok', 'THE REGRESSION: a deployment with no CDR store failed hourly, a red dot nobody could clear — ok also clears an old stamp');
+  assert.ok(!asked.some((x) => /^(dqe|csrt|daily)/.test(x)), 'and it reads nothing');
+  cdrStore = true;
+  // (2) The Transfer tab is OPTIONAL: its absence is not a failed read.
+  stamp = 'S4'; fail = ''; noTransferTab = true;
+  r = ctx.warmCdrMetricsCache();
+  assert.strictEqual(r.outcome.status, 'ok', 'THE REGRESSION: without the optional Transfer tab the job was "partial" every hour, for ever');
+  assert.strictEqual(store.cdr_warm_stamp_v1, 'S4', 'and the warmed stamp is remembered, so the next hour is idle');
+  noTransferTab = false; stamp = 'S5'; fail = 'csrt';
+  r = ctx.warmCdrMetricsCache();
+  assert.ok(r.outcome.status === 'partial' && /unreadable/.test(r.outcome.message), 'a Transfer read that really failed is still a partial run');
+  assert.deepStrictEqual([ctx.cdrWarmReadFailed_({ error: 'x' }), ctx.cdrWarmReadFailed_({ error: 'x', missingTab: true }), ctx.cdrWarmReadFailed_({}), ctx.cdrWarmReadFailed_(null)], [true, false, false, false]);
+  // (3) A window that was read but is too large to KEEP was not read ahead.
+  fail = ''; stamp = 'S6';
+  ctx.getCdrAgentMetrics_ = (f, t) => { if (f === '2026-01-01') ctx._cdrCacheOversize.push({ what: 'the call totals ' + f + '..' + t, bytes: 140000 }); return { agents: {}, meta: {} }; };
+  r = ctx.warmCdrMetricsCache();
+  assert.strictEqual(r.outcome.status, 'partial', 'THE REGRESSION: the job said ok having kept nothing for that window');
+  assert.ok(/too large to keep in the cache/.test(r.outcome.message) && /the call totals 2026-01-01\.\.2026-11-06 \(140000 bytes\)/.test(r.outcome.message) && r.outcome.skipped.length === 1, r.outcome.message);
+  assert.strictEqual(store.cdr_warm_stamp_v1, 'S4', 'and the stamp is not remembered');
+  ctx.getCdrAgentMetrics_ = () => ({ agents: {}, meta: {} });
+  stamp = 'S7';
+  assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'ok', 'an earlier run\u2019s oversize note does not leak into the next run (the note is reset per run)');
   ctx._TEST_OVERRIDE_CDR_SS_ID = 'fixture'; stamp = 'S3'; asked.length = 0;
   assert.strictEqual(ctx.warmCdrMetricsCache().outcome.status, 'idle');
   assert.ok(!asked.some((x) => /^dqe/.test(x)), 'never under the test override');
@@ -45733,7 +45834,7 @@ test('P1: the Needs-you item — only while active; "Check your timesheet" namin
 
 test('P1: the email job — manager-gated, heartbeat before the toggle; off it sends nothing; on, it acts only in the hour that is 9am CENTRAL and emails every employee whose reminder day it is by the Central date, wherever they are, with a delivery row per send; a failed send is a partial run naming the employee; it rides the hourly dispatcher with every health registry (driven + source)', () => {
   const sent = [], log = [], stamps = [], tzAsked = [];
-  let flag = true, centralHour = 9, failFor = '';
+  let flag = true, centralHour = 9, failFor = '', propStore = {};
   const rows = [['hdr'],
     { id: 'E1', name: 'Asha Rao', email: 'asha@x', cycle: 'Monthly' },
     { id: 'E2', name: 'Bo Ray', email: 'bo@x', cycle: 'Biweekly' },
@@ -45753,10 +45854,14 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
     appSendMail_: (m) => { if (m.to === failFor) throw new Error('quota'); sent.push(m); },
     logDigestDelivery_: (kind, to, status, n, note) => log.push([kind, to, status, note]),
     buildBrandedEmailHtml_: (t, inner, o) => '<h>' + t + '</h>' + inner + '|' + o.ctaUrl, esc_: (x) => String(x), safeWebAppUrl_: (k) => 'https://app/?tool=' + k,
-    CN_EMAIL_PALETTE: { muted: '#777', accent: '#0a0' } });
+    CN_EMAIL_PALETTE: { muted: '#777', accent: '#0a0' },
+    // Cycle 26 F28: the sent record — the real reader, writer and fold over a stood-in property store.
+    PAY_WEEK_SENT_PROP: 'PAY_WEEK_REMINDER_SENT', PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in propStore ? propStore[k] : null) }) },
+    propSetBounded_: (k, v) => { propStore[k] = v; }, propShrinkStripFields_: () => null });
+  ['payWeekSentToday_', 'readPayWeekSent_', 'writePayWeekSent_'].forEach((fn) => vm.runInContext(extractRawFunction('Code.js', fn), c));
   c.EMP = { NAME: 'name' };
   flag = false;
-  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle');
+  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'ok', 'F28: switched off is OK — it clears a failure stamped before the toggle was turned off (idle would keep it for ever)');
   assert.deepStrictEqual([sent.length, stamps], [0, ['payWeek']], 'off: a heartbeat, no mail');
   flag = true;
   const r = c.sendPayWeekReminders();
@@ -45768,13 +45873,39 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   const m = sent[0];
   assert.ok(/Check your timesheet — pay period ends Mon Nov 30/.test(m.subject) && /Nov 1 – Nov 30/.test(m.htmlBody) && /\?tool=timeoff/.test(m.htmlBody) && /Hi Asha,/.test(m.body), m.subject);
   assert.ok(!/hour|punch/i.test(m.body), 'it names the period and the day, nothing from the timesheet');
-  sent.length = 0; log.length = 0; failFor = 'bo@x';
+  // F28: the run recorded who it sent to, so the next hour sends to nobody twice.
+  assert.deepStrictEqual(p1J(JSON.parse(propStore.PAY_WEEK_REMINDER_SENT)), { day: '2026-11-23', to: ['asha@x', 'bo@x', 'cy@x'] }, 'the day and the addresses, nothing else');
+  sent.length = 0; centralHour = 10;
+  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle', 'a later hour the same day: everyone has been sent to');
+  assert.strictEqual(sent.length, 0, 'no duplicate');
+  // A failed send is a partial run — and the next hourly run makes it up.
+  propStore = {}; centralHour = 9; sent.length = 0; log.length = 0; failFor = 'bo@x';
   const f = c.sendPayWeekReminders();
   assert.ok(f.outcome.status === 'partial' && /1 pay-week reminder email\(s\) failed to send \(quota\)/.test(f.outcome.message) && f.outcome.names[0] === 'Bo Ray', JSON.stringify(f.outcome));
   assert.deepStrictEqual(log.map((x) => x[2]), ['sent', 'failed', 'sent'], 'the failed send is a delivery row too');
-  sent.length = 0; centralHour = 10;
-  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle', 'any other Central hour does nothing');
+  assert.deepStrictEqual(JSON.parse(propStore.PAY_WEEK_REMINDER_SENT).to, ['asha@x', 'cy@x'], 'the failed address is NOT in the record');
+  sent.length = 0; centralHour = 10; failFor = '';
+  const made = c.sendPayWeekReminders();
+  assert.deepStrictEqual([made.outcome.status, sent.map((m2) => m2.to)], ['ok', ['bo@x']], 'F28: the next hour sends to the one that failed — and only that one; ok clears the stamp');
+  // THE REGRESSION: the 9 am run never happened (a lock wait, a trigger hiccup). Every later run that day was "the wrong hour".
+  propStore = {}; sent.length = 0; centralHour = 13;
+  const late = c.sendPayWeekReminders();
+  assert.deepStrictEqual([late.outcome.status, sent.map((m2) => m2.to)], ['ok', ['asha@x', 'bo@x', 'cy@x']], 'THE REGRESSION: a missed 9 am run lost that pay period\u2019s reminder, silently');
+  propStore = {}; sent.length = 0; centralHour = 8;
+  assert.strictEqual(c.sendPayWeekReminders().outcome.status, 'idle', 'before the hour it does nothing');
   assert.strictEqual(sent.length, 0);
+  // Another day's record is not today's.
+  propStore = { PAY_WEEK_REMINDER_SENT: JSON.stringify({ day: '2026-11-16', to: ['asha@x', 'bo@x', 'cy@x'] }) }; centralHour = 9;
+  c.sendPayWeekReminders();
+  assert.deepStrictEqual(sent.map((m2) => m2.to), ['asha@x', 'bo@x', 'cy@x'], 'last week\u2019s record does not silence this week');
+  assert.deepStrictEqual(p1J(c.payWeekSentToday_({ day: 'd', to: [' A@x ', '', null, 'b@x'] }, 'd')), { 'a@x': true, 'b@x': true });
+  assert.deepStrictEqual([p1J(c.payWeekSentToday_(null, 'd')), p1J(c.payWeekSentToday_({ day: 'd' }, 'd')), p1J(c.payWeekSentToday_('junk', 'd'))], [{}, {}, {}], 'no record, a record with no list, junk: nobody');
+  // The record is written even when the walk throws part-way.
+  propStore = {}; sent.length = 0;
+  let n = 0;
+  c.empPayCycle_ = (row, a) => { if (++n === 3) throw new Error('roster read died'); return { payCycle: row.cycle, payAnchor: row.cycle === 'Biweekly' ? (row.anchor || a) : null }; };
+  assert.throws(() => c.sendPayWeekReminders(), /roster read died/);
+  assert.deepStrictEqual(JSON.parse(propStore.PAY_WEEK_REMINDER_SENT).to, ['asha@x', 'bo@x'], 'whoever was sent to before the throw is recorded — not sent to again next hour');
   const src = extractRawFunction('Code.js', 'sendPayWeekReminders');
   assert.ok(src.indexOf("assertManagerCaller_('sendPayWeekReminders')") < src.indexOf('runAutomationJob_') && src.indexOf("stampDigestLastRun_('payWeek')") < src.indexOf("getFlag_('payWeekReminderEmail')"), 'gate first; heartbeat before the toggle');
   const cfg = serverSource();
@@ -46623,6 +46754,269 @@ test('F9 (cycle 26): the message a Dept Request’s resolved reply answers is th
   // The request email really does carry its id on a line of its plain body — the thing the rule reads.
   const send = extractRawFunction('Code.js', 'emailFromCallNote');
   assert.ok(/'\?resolve=' \+ encodeURIComponent\(drId\)/.test(send) && (send.match(/Mark this request resolved: ' \+ drResolveUrl/g) || []).length === 2, 'both tracked sends put the resolve link in the plain body');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 26 Batch 4 — automation health honesty (F2, F17, F18, F25, F28, F32).
+// The health dot is only worth looking at while a red one means something.
+// Six ways it lied or let a setting slip: the monthly accrual line could never
+// read clean (F2); a failure the monthly job stamped was hidden on the 1st and
+// 2nd (F17); an admin save from a stale page put back what another admin had
+// changed (F18); the hourly read-ahead said ok having kept nothing, and was
+// permanently partial or failed where a tab or the store is absent (F25); a
+// missed 9 am run lost a pay period's reminder, and a stamp could never clear
+// with the toggle off (F28 — driven in the P1 pin); a re-onboarded admin was
+// named as offboarded for ever (F32).
+console.log('\nCycle 26 Batch 4 — automation health honesty (F2, F17, F18, F25, F28, F32)');
+
+const c26JobCtx_ = (checks) => {
+  const ctx = vm.createContext({ console, isFinite, String, Object, JSON, Number, AUTOMATION_RUN_LEDGER_PROP: 'AUTOMATION_RUNS' });
+  ['auditWindowCoversMonth_', 'auditWindowProvesAbsence_', 'automationJobProblems_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ctx.AUTOMATION_JOB_CHECKS = checks || [{ action: 'PtoAccrualCredit', label: 'monthly PTO accrual credit', cadence: 'monthly', graceDays: 3, enabled: () => true }];
+  return ctx;
+};
+
+test('F2 (cycle 26): the monthly accrual line reads CLEAN once the credit has run — decided on the run’s month (manager timezone), never on its display string; a record is built by ONE builder from the stored stamp; an unreadable stamp is "unknown", not "the trigger may be missing" (driven through the real builder)', () => {
+  const f = c26JobCtx_().automationJobProblems_;
+  // The credit ran on Nov 1 at 6:02 PM Central — writeAuditLog_ stamped it in CONFIG.TIMEZONE (IST): Nov 2, 5:32 AM.
+  const rec = autoRunRec_('2026-11-02 05:32:10', 'credited=2');
+  assert.deepStrictEqual(rec, { timestampMgr: 'Nov 1, 6:02 PM', ms: Date.parse('2026-11-02T00:02:10Z'), ym: '2026-11', notes: 'credited=2' },
+    'the record as production builds it: the display string, the instant, and the MONTH in the manager’s timezone');
+  assert.ok(String(rec.timestampMgr).indexOf('2026-11') !== 0, 'non-vacuous: the display string can never start with the month — the old test was always false');
+  const NOW = Date.parse('2026-11-13T15:00:00Z');
+  const runs = [{ action: 'PtoAccrualCredit', last: rec }];
+  [3, 13, 30].forEach((dom) => assert.deepStrictEqual(hJ(f(runs, {}, NOW, dom, '2026-11', { complete: true })), [],
+    'THE REGRESSION (day ' + dom + '): "has not run this month" beside a credit that had been paid — a red dot and a daily failure email to month end'));
+  // The month is the MANAGER's: a credit at 11:30 PM Central on Oct 31 is October's, though its stamp (IST) says Nov 1.
+  const octLate = autoRunRec_('2026-11-01 10:00:00');
+  assert.strictEqual(octLate.ym, '2026-10', 'the stamp’s own text says November; the manager’s month is October');
+  assert.ok(hJ(f([{ action: 'PtoAccrualCredit', last: octLate }], {}, NOW, 13, '2026-11', { complete: true })).some((t) => /has not run this month/.test(t)),
+    'a run last month is still "not run this month" — the alarm still works');
+  // An unreadable stamp: which month is UNKNOWN.
+  const bad = autoRunRec_('garbage');
+  assert.deepStrictEqual([bad.ms, bad.ym, bad.timestampMgr], [null, '', 'garbage']);
+  const lines = hJ(f([{ action: 'PtoAccrualCredit', last: bad }], {}, NOW, 13, '2026-11', { complete: true }));
+  assert.strictEqual(lines.length, 1);
+  assert.ok(/has a run on record \(garbage\) whose time could not be read, so whether it ran this month is unknown — check the AUTOMATION_RUNS Script Property/.test(lines[0]) &&
+            !/may be missing|installAutomationTriggers/.test(lines[0]), 'unknown is said as unknown (g142): ' + lines[0]);
+  // The decision never touches the display string again, and both production sites build through the one builder.
+  const body = stripJsComments_(extractRawFunction('Code.js', 'automationJobProblems_'));
+  assert.ok(!/timestampMgr\)?\.indexOf|indexOf\(thisMonthPrefix\)/.test(body) && /last\.ym === thisMonthPrefix/.test(body), 'the month is compared, not searched for in a display string');
+  const comp = stripJsComments_(extractRawFunction('Code.js', 'computeAutomationHealth_'));
+  assert.ok(/lastRunByAction\[action\] = automationRunRecord_\(tsRaw, mgrTz,/.test(comp) && /automationRunRecord_\(ts, mgrTz, notes\)/.test(comp), 'the tail scan and the ledger merge both build through automationRunRecord_');
+  assert.ok(!/lastRunByAction\[action\] = \{/.test(comp), 'no hand-built last-run record survives');
+  // The visual fixture carries the real shape too (a display string and a month), so the panel is photographed as production draws it.
+  const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
+  assert.ok(!/action: '[A-Za-z]+', last: \{ timestampMgr: daysAgo\(/.test(mock), 'no last-run fixture carries an ISO-shaped "display" string');
+});
+
+test('F17 (cycle 26): a FAILURE the monthly job stamped is reported on the 1st and 2nd too — the grace days hold back only the "has not run" line (driven)', () => {
+  const f = c26JobCtx_().automationJobProblems_;
+  const NOW = Date.parse('2026-11-02T15:00:00Z');
+  const err = { PtoAccrualCredit: { at: '2026-11-02 05:32:10', message: 'Timesheet unreadable' } };
+  [1, 2].forEach((dom) => {
+    const lines = hJ(f([{ action: 'PtoAccrualCredit', last: autoRunRec_('2026-10-02 05:32:10') }], err, NOW, dom, '2026-11', { complete: true }, { items: true }));
+    assert.deepStrictEqual(lines.map((l) => l.kind), ['jobError'], 'THE REGRESSION (day ' + dom + '): the failure was hidden on the two days it is most likely — and no liveness line yet');
+    assert.ok(/monthly PTO accrual credit FAILED on 2026-11-02 05:32:10: Timesheet unreadable/.test(lines[0].text), lines[0].text);
+  });
+  assert.deepStrictEqual(hJ(f([{ action: 'PtoAccrualCredit', last: autoRunRec_('2026-10-02 05:32:10') }], {}, NOW, 2, '2026-11', { complete: true })), [],
+    'with no failure stamped, the 2nd is still silent — the credit lands in arrears');
+  const both = hJ(f([{ action: 'PtoAccrualCredit', last: autoRunRec_('2026-10-02 05:32:10') }], err, NOW, 3, '2026-11', { complete: true }, { items: true }));
+  assert.deepStrictEqual(both.map((l) => l.kind), ['job', 'jobError'], 'from the grace day on: the liveness line and the failure');
+  // A partial run says so.
+  const part = hJ(f([{ action: 'PtoAccrualCredit', last: null }], { PtoAccrualCredit: { at: 'x', message: 'two reps skipped', status: 'partial' } }, NOW, 1, '2026-11', { complete: true }));
+  assert.ok(part.length === 1 && /ran only in part on x: two reps skipped/.test(part[0]));
+});
+
+// ── F18 ──
+const c26AdminCtx_ = (extra, fns) => {
+  const ctx = vm.createContext(Object.assign({ String, Number, Object, Array, JSON, parseInt, isNaN, Error, console: { warn() {} } }, extra || {}));
+  ['ADMIN_SAVE_STALE_PAGE', 'RETENTION_WINDOWS'].forEach((k) => vm.runInContext(extractConstDecl_(k).replace(/^const /, 'var '), ctx));
+  ['adminSettingsMerge_', 'adminSaveConflictText_'].concat(fns || []).forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  return ctx;
+};
+
+test('F18 (cycle 26): an admin save is a MERGE of what the caller changed — a key the page did not change is never written, a key someone else moved meanwhile is a conflict, and the same change made twice is neither (pure grid)', () => {
+  const M = (next, base, cur) => hJ(c26AdminCtx_().adminSettingsMerge_(next, base, cur));
+  assert.deepStrictEqual(M({ a: true, b: false }, { a: true, b: true }, { a: true, b: true }), { changes: { b: false }, conflicts: [] }, 'only the flipped key');
+  assert.deepStrictEqual(M({ a: true, b: false }, { a: true, b: true }, { a: false, b: true }), { changes: { b: false }, conflicts: [] },
+    'THE RULE: `a` was turned off by someone else and this page did not touch it — it is NOT written back on');
+  assert.deepStrictEqual(M({ a: false }, { a: true }, { a: true }), { changes: { a: false }, conflicts: [] });
+  assert.deepStrictEqual(M({ b: false }, { b: true }, { b: false }), { changes: {}, conflicts: [] }, 'someone already made this very change: nothing to write, nothing to refuse');
+  assert.deepStrictEqual(M({ n: 30 }, { n: 0 }, { n: 90 }), { changes: {}, conflicts: ['n'] }, 'both moved it, to different values: a conflict');
+  assert.deepStrictEqual(M({ n: 30, m: 5 }, { n: 30, m: 5 }, { n: 0, m: 9 }), { changes: {}, conflicts: [] }, 'an untouched page writes nothing, whatever is stored now');
+  assert.ok(/Changed by someone else since you opened this page: A; B\. Nothing was saved — reload/.test(c26AdminCtx_().adminSaveConflictText_(['A', 'B'])));
+});
+
+test('F18 (cycle 26): saveFeatureFlags — a page left open no longer puts back a flag another admin turned off; a change someone else already made writes nothing; a call with no baseline (an old page) is refused; the write keeps what is stored and adds only the change, under the lock, the caller checked first; the audit row names only what changed (driven)', () => {
+  const mk = (storedRaw, admin) => {
+    const log = [], props = { CN_FEATURE_FLAGS: JSON.stringify(storedRaw) };
+    const ctx = c26AdminCtx_({
+      FEATURE_FLAGS: [{ key: 'alpha', label: 'Alpha thing', default: true }, { key: 'beta', label: 'Beta thing', default: false }, { key: 'gamma', label: 'Gamma thing', default: true }],
+      getEmployeeInfo_: () => { log.push('who'); return { isAdmin: admin !== false, email: 'ad@x' }; },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null) }) },
+      LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+      propSetBounded_: (k, v) => { log.push('write'); props[k] = v; },
+      writeAuditLog_: (e, a, x, y, z, n, note) => log.push('audit:' + note),
+    }, ['featureFlagDef_', 'getFlagOverrides_', 'getFeatureFlagsResolved_', 'saveFeatureFlags']);
+    return { ctx, log, props, stored: () => JSON.parse(props.CN_FEATURE_FLAGS) };
+  };
+  // Admin B turned `alpha` OFF at noon. Admin A's page, open since morning, still shows alpha ON; A flips `beta` on and saves.
+  let x = mk({ alpha: false });
+  let r = hJ(x.ctx.saveFeatureFlags({ alpha: true, beta: true, gamma: true }, { alpha: true, beta: false, gamma: true }));
+  assert.ok(r.success, JSON.stringify(r));
+  assert.deepStrictEqual(x.stored(), { alpha: false, beta: true }, 'THE REGRESSION: alpha came back ON — the whole stored map was replaced from the stale page');
+  assert.deepStrictEqual([r.changed, r.values], [['beta'], { alpha: false, beta: true, gamma: true }], 'the answer carries what changed and the values as they now are');
+  assert.deepStrictEqual(x.log.filter((e) => /^audit/.test(e)), ['audit:Updated feature toggles: beta=on'], 'the audit row names the one toggle this admin changed');
+  const order = x.log.filter((e) => !/^audit/.test(e));
+  assert.deepStrictEqual(order.slice(0, 2), ['who', 'lock'], 'the caller is checked before the lock (g17)');
+  assert.ok(order.indexOf('write') > order.indexOf('lock') && order.indexOf('write') < order.indexOf('unlock'), 'read, merge and write are inside ONE lock');
+  // A's page shows alpha ON and A leaves it; beta and gamma are A's changes. B's alpha=off survives.
+  x = mk({ alpha: false });
+  r = hJ(x.ctx.saveFeatureFlags({ alpha: true, beta: true, gamma: false }, { alpha: true, beta: false, gamma: true }));
+  assert.ok(r.success);
+  assert.deepStrictEqual(x.stored(), { alpha: false, beta: true, gamma: false }, 'two changes written, the untouched (stale) toggle left as stored');
+  // A page that loaded AFTER B's change, flipping alpha back on: a real, fresh change still saves.
+  x = mk({ alpha: false });
+  r = hJ(x.ctx.saveFeatureFlags({ alpha: true, beta: true }, { alpha: false, beta: true }));
+  assert.ok(r.success && x.stored().alpha === true, 'a fresh change still saves');
+  // B turned beta ON; A's stale page shows it off and A leaves it, changing gamma.
+  x = mk({ beta: true });
+  hJ(x.ctx.saveFeatureFlags({ alpha: true, beta: false, gamma: false }, { alpha: true, beta: false, gamma: true }));
+  assert.deepStrictEqual(x.stored(), { beta: true, gamma: false }, 'in the other direction too: B’s beta=on survives A’s save');
+  // A turns alpha off — and B already had. A toggle has two values, so that is the same change: nothing to write, nothing to refuse.
+  x = mk({ alpha: false });
+  r = hJ(x.ctx.saveFeatureFlags({ alpha: false, beta: false, gamma: true }, { alpha: true, beta: false, gamma: true }));
+  assert.ok(r.success && r.changed.length === 0 && !x.log.includes('write'), 'the same change made twice writes nothing');
+  assert.ok(!x.log.some((e) => /^audit/.test(e)), 'and no audit row for a save that changed nothing');
+  // An old page: no baseline.
+  x = mk({});
+  r = hJ(x.ctx.saveFeatureFlags({ alpha: false }));
+  assert.ok(!r.success && r.stale && /out of date — reload/.test(r.error) && !x.log.includes('lock') && !x.log.includes('write'), 'no baseline: refused before the lock, nothing written');
+  r = hJ(x.ctx.saveFeatureFlags({ alpha: false }, { beta: true }));
+  assert.ok(!r.success && r.stale, 'a baseline that does not cover the key sent is no baseline');
+  // The older refusals stand, before any lock.
+  assert.ok(/Unknown flag/.test(x.ctx.saveFeatureFlags({ nope: true }, { nope: true }).error));
+  assert.ok(/must be true or false/.test(x.ctx.saveFeatureFlags({ alpha: 'yes' }, { alpha: true }).error));
+  x = mk({}, false);
+  assert.ok(/Admin access required/.test(x.ctx.saveFeatureFlags({ alpha: false }, { alpha: true }).error) && !x.log.includes('lock'));
+  // A stored override that is junk or a string is normalised on the way through, never dropped silently.
+  x = mk({ alpha: 'true', zzz: 1 });
+  x.ctx.saveFeatureFlags({ beta: true }, { beta: false });
+  assert.deepStrictEqual(x.stored(), { alpha: true, beta: true }, 'registry keys kept as booleans; a key the registry no longer has is not carried');
+});
+
+test('F18 (cycle 26): saveRetentionConfig — a purge window another admin set to 0 stays 0 when a stale page saves a different window; a window both moved is refused by name with its current value; no baseline is refused; each window is written only when it changed (driven)', () => {
+  const mk = (stored) => {
+    const log = [], props = Object.assign({}, stored);
+    const days = (k) => () => parseInt(props[k] || '0', 10) || 0;
+    const ctx = c26AdminCtx_({
+      VIEW_USAGE_RETENTION_PROP: 'VIEW_USAGE_RETENTION_DAYS', CLIENT_ERR_RETENTION_PROP: 'CLIENT_ERR_RETENTION_DAYS',
+      getEmployeeInfo_: () => ({ isAdmin: true, email: 'ad@x' }),
+      PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { log.push('set:' + k + '=' + v); props[k] = v; } }) },
+      LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+      getNoteArchiveDays_: days('CN_NOTE_ARCHIVE_DAYS'), getNoteRetentionDays_: days('CN_NOTE_RETENTION_DAYS'), getArchiveRetentionDays_: days('CN_ARCHIVE_RETENTION_DAYS'),
+      viewUsageRetentionDays_: days('VIEW_USAGE_RETENTION_DAYS'), clientErrRetentionDays_: days('CLIENT_ERR_RETENTION_DAYS'),
+      retentionWarnings_: (a, r, ar) => ['w:' + a + '/' + r + '/' + ar],
+      writeAuditLog_: (e, a, x, y, z, n, note) => log.push('audit:' + note),
+    }, ['retentionWindowsNow_', 'saveRetentionConfig']);
+    return { ctx, log, props };
+  };
+  // B disabled the live purge (365 → 0). A's page still shows 365; A changes only the archive window, 30 → 60.
+  let x = mk({ CN_NOTE_ARCHIVE_DAYS: '30', CN_NOTE_RETENTION_DAYS: '0', CN_ARCHIVE_RETENTION_DAYS: '0' });
+  let r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '60', retentionDays: '365', archiveRetentionDays: '' }, { archiveDays: 30, retentionDays: 365, archiveRetentionDays: 0 }));
+  assert.ok(r.success, JSON.stringify(r));
+  assert.deepStrictEqual(x.log.filter((e) => /^set/.test(e)), ['set:CN_NOTE_ARCHIVE_DAYS=60'], 'THE REGRESSION: the purge window came back as 365 — an irreversible delete re-armed by someone who never touched it');
+  assert.strictEqual(x.props.CN_NOTE_RETENTION_DAYS, '0');
+  assert.deepStrictEqual([r.changed, r.warnings], [['archiveDays'], ['w:60/0/0']], 'the warnings are judged on what is stored NOW, not on the page’s copy');
+  assert.deepStrictEqual(x.log.filter((e) => /^audit/.test(e)), ['audit:Updated retention windows: archive=60d']);
+  // Both changed the SAME window: refused, by name, with the value it has now.
+  x = mk({ CN_NOTE_ARCHIVE_DAYS: '30', CN_NOTE_RETENTION_DAYS: '90', CN_ARCHIVE_RETENTION_DAYS: '0' });
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '30', retentionDays: '180', archiveRetentionDays: '0' }, { archiveDays: 30, retentionDays: 365, archiveRetentionDays: 0 }));
+  assert.ok(!r.success && r.conflict[0] === 'retentionDays' && /Purge live after \(now 90 days\)/.test(r.error) && /Nothing was saved/.test(r.error), JSON.stringify(r));
+  assert.ok(!x.log.some((e) => /^set|^audit/.test(e)), 'a refused save writes nothing — not even the windows that did not conflict');
+  x = mk({ CN_NOTE_RETENTION_DAYS: '0' });
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '0', retentionDays: '180', archiveRetentionDays: '0' }, { archiveDays: 0, retentionDays: 365, archiveRetentionDays: 0 }));
+  assert.ok(!r.success && /Purge live after \(now disabled\)/.test(r.error), 'a window someone DISABLED is named as disabled');
+  // No baseline (an old page): refused before the lock.
+  x = mk({});
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '30', retentionDays: '0', archiveRetentionDays: '0' }));
+  assert.ok(!r.success && r.stale && !x.log.includes('lock'), JSON.stringify(r));
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '30', retentionDays: '0', archiveRetentionDays: '0' }, { archiveDays: 0, retentionDays: 0 }));
+  assert.ok(!r.success && r.stale, 'a baseline missing one of the windows sent is no baseline');
+  // Nothing changed: no write, no audit row. The diagnostics windows ride only when sent.
+  x = mk({ CN_NOTE_ARCHIVE_DAYS: '30', VIEW_USAGE_RETENTION_DAYS: '90' });
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '30', retentionDays: '', archiveRetentionDays: '' }, { archiveDays: 30, retentionDays: 0, archiveRetentionDays: 0 }));
+  assert.ok(r.success && r.changed.length === 0 && !x.log.some((e) => /^set|^audit/.test(e)));
+  r = hJ(x.ctx.saveRetentionConfig({ archiveDays: '30', retentionDays: '', archiveRetentionDays: '', viewUsageDays: '30' }, { archiveDays: 30, retentionDays: 0, archiveRetentionDays: 0, viewUsageDays: 90 }));
+  assert.deepStrictEqual(x.log.filter((e) => /^set/.test(e)), ['set:VIEW_USAGE_RETENTION_DAYS=30']);
+  assert.ok(/Each window must be a whole number/.test(x.ctx.saveRetentionConfig({ archiveDays: '1.5', retentionDays: '', archiveRetentionDays: '' }, {}).error), 'the older validation stands');
+});
+
+test('F18 (cycle 26): the Admin page sends what it LOADED with both saves, and a refused save stays on screen (client source + pure)', () => {
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const c = vm.createContext({ Object, parseInt });
+  vm.runInContext(extractFnFrom(cn, 'cnRetentionBaseline_'), c);
+  assert.deepStrictEqual(hJ(c.cnRetentionBaseline_({ archiveDays: { value: 30 }, retentionDays: { value: 0 }, viewUsageDays: { value: 90 } }, { archiveDays: '60', retentionDays: '', archiveRetentionDays: '5' })),
+    { archiveDays: 30, retentionDays: 0, archiveRetentionDays: 0 }, 'the loaded value of every window the save sends — and only those');
+  assert.ok(/\.saveRetentionConfig\(payload, cnRetentionBaseline_\(prev, payload\)\)/.test(cn), 'the retention save sends its baseline');
+  assert.ok(/base\[k\] = \(ffValues\[k\] === true\);/.test(cn) && /\.saveFeatureFlags\(map, base\)/.test(cn), 'the toggle save sends what the page loaded');
+  assert.ok(!/\.saveFeatureFlags\(map\)|\.saveRetentionConfig\(payload\)/.test(cn), 'no one-argument save survives');
+});
+
+// ── F25 ──
+test('F25 (cycle 26): the transfer reader keeps the TOTALS under their own key when the caller wants only those — no per-day map in the answer or the cache; an oversize payload is skipped ON PURPOSE and noted, never thrown into a bare catch; a missing tab is told apart from a failed read (driven)', () => {
+  const store = {}, puts = [];
+  const big = {};
+  for (let d = 0; d < 220; d++) { big['2026-' + String(d).padStart(3, '0')] = {}; for (let r2 = 0; r2 < 24; r2++) big['2026-' + String(d).padStart(3, '0')]['Rep Number ' + r2] = { totalCalls: 41, transferred: 7, transferPct: 17.1 }; }
+  const ctx = vm.createContext({ JSON, String, Number, CONFIG: { CDR_CACHE_KEY: 'cdr', CDR_CACHE_TTL: 300 }, cdrRosterHash_: () => 'h', cdrDataStamp_: () => 'S',
+    csrTransferReadUncached_: () => ({ perRepDaily: big, agents: { Ann: { transferred: 3 } }, meta: {} }),
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v, ttl) => { if (String(v).length > 100000) throw new Error('Argument too large'); store[k] = v; puts.push(k); } }) } });
+  vm.runInContext(extractRawFunction('Code.js', 'getCsrTransferPerRepDaily_'), ctx);
+  pf1CdrHelpers_(ctx);
+  assert.ok(JSON.stringify({ perRepDaily: big, agents: {}, meta: {} }).length > 100000, 'non-vacuous: a year of days for a team is over the 100 KB cap');
+  // The full shape: too large — skipped and NOTED.
+  const full = ctx.getCsrTransferPerRepDaily_('2026-01-01', '2026-11-06', ['Ann']);
+  assert.ok(full.perRepDaily && Object.keys(full.perRepDaily).length === 220, 'the caller still gets its answer');
+  assert.deepStrictEqual(puts, [], 'nothing was put');
+  assert.deepStrictEqual(hJ(ctx._cdrCacheOversize).map((o) => o.what), ['transfers 2026-01-01..2026-11-06'], 'THE REGRESSION: the put threw into a bare catch — nothing knew the window was never kept');
+  assert.ok(hJ(ctx._cdrCacheOversize)[0].bytes > 100000);
+  // The totals: small, kept, under their own key, and with NO per-day map.
+  const tot = ctx.getCsrTransferPerRepDaily_('2026-01-01', '2026-11-06', ['Ann'], { aggregatesOnly: true });
+  assert.deepStrictEqual(hJ(tot), { agents: { Ann: { transferred: 3 } }, meta: {} }, 'no perRepDaily key at all — never an empty one that could read as "no transfers"');
+  assert.deepStrictEqual(puts, ['cdr:csrt:S:h:2026-01-01:2026-11-06:-a'], 'kept under its own key (never served to a caller that needs the days)');
+  assert.deepStrictEqual(hJ(JSON.parse(store[puts[0]])), { agents: { Ann: { transferred: 3 } }, meta: {} });
+  ctx.getCsrTransferPerRepDaily_('2026-01-01', '2026-11-06', ['Ann'], { aggregatesOnly: true, withQueues: true });
+  assert.strictEqual(puts[1], 'cdr:csrt:S:h:2026-01-01:2026-11-06:qa', 'the per-queue totals have their own key too');
+  // The sized put itself.
+  assert.strictEqual(ctx.cdrCachePutSized_('k1', 'x'.repeat(10), 60, 'small'), true);
+  assert.strictEqual(ctx.cdrCachePutSized_('k2', 'x'.repeat(95001), 60, 'big one'), false, 'over the headroom: not attempted');
+  assert.strictEqual(hJ(ctx._cdrCacheOversize).pop().what, 'big one');
+  // The Dashboard asks for the totals; the DQE and daily readers note their own skips; a missing tab is flagged.
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
+  assert.ok(/getCsrTransferPerRepDaily_\(wFrom, wTo, allNames, \{ aggregatesOnly: true \}\)\.agents/.test(dash), 'the Dashboard windows read the totals only');
+  assert.ok(/cdrCacheOversizeNote_\('the call totals ' \+ from/.test(extractRawFunction('Code.js', 'getCdrAgentMetrics_')) &&
+            /cdrCacheOversizeNote_\('the daily breakdown ' \+ from/.test(extractRawFunction('Code.js', 'getCdrDailyBreakdown_')), 'every window reader says when it could not keep a window');
+  assert.ok(/meta: \{ error: 'CSR Transfer Historical Data sheet not found', missingTab: true \}/.test(extractRawFunction('Code.js', 'csrTransferReadUncached_')), 'a missing (optional) tab is told apart from a failed read');
+  const src = stripJsComments_(serverSource());
+  assert.ok(!/payload\.length (?:>|<=) 95000/.test(src), 'one headroom constant, no second literal');
+});
+
+// ── F32 ──
+test('F32 (cycle 26): the ADMIN_EMAILS drift check sees the roster — a re-onboarded admin is no longer named as offboarded for ever; one who is still gone is; an admin without the manager bit is not this check’s business (driven + source)', () => {
+  const c = vm.createContext({ String });
+  ['managerSourceDrift_', 'adminDriftRoster_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
+  const offboarded = ['pat@ums.com', 'gone@ums.com'];
+  const roster = [{ email: 'Pat@ums.com', isManager: false }, { email: 'lee@ums.com', isManager: false }];   // Pat is back — as a rep
+  const admins = ['pat@ums.com', 'gone@ums.com', 'lee@ums.com', 'svc@ums.com'];
+  assert.deepStrictEqual(hJ(c.managerSourceDrift_(admins, [], offboarded)), ['pat@ums.com', 'gone@ums.com'], 'non-vacuous: with an EMPTY roster (what the check passed) Pat is flagged');
+  assert.deepStrictEqual(hJ(c.managerSourceDrift_(admins, c.adminDriftRoster_(roster), offboarded)), ['gone@ums.com'],
+    'THE REGRESSION: Pat was offboarded once and re-onboarded — and named in the health digest every day since. Gone is still named; Lee (listed, not a manager) and the service account are not');
+  assert.deepStrictEqual(hJ(c.adminDriftRoster_(roster)), [{ email: 'Pat@ums.com', isManager: true }, { email: 'lee@ums.com', isManager: true }], 'everyone on the roster, nobody "demoted"');
+  assert.deepStrictEqual(hJ(c.adminDriftRoster_(null)), []);
+  const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
+  assert.ok(/managerSourceDrift_\(adminRaw\.split\(','\), adminDriftRoster_\(pairs\), offboarded\)/.test(det) && !/managerSourceDrift_\(adminRaw\.split\(','\), \[\], offboarded\)/.test(det),
+    'the detector passes the roster it already read');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

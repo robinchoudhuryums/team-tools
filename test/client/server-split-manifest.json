@@ -4404,6 +4404,55 @@
     "resolveSpanishThreads"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-13",
+   "why": "Cycle 26 Batch 4 (automation health honesty): automationRunRecord_ (F2); adminSettingsMerge_ / adminSaveConflictText_ / retentionWindowsNow_ / RETENTION_WINDOWS / ADMIN_SAVE_STALE_PAGE (F18); adminDriftRoster_ (F32); cdrCachePutSized_ / cdrCacheOversizeNote_ / cdrWarmReadFailed_ / CDR_CACHE_VALUE_MAX (F25); payWeekSentToday_ / readPayWeekSent_ / writePayWeekSent_ / PAY_WEEK_SENT_PROP (F28)",
+   "added": [
+    "ADMIN_SAVE_STALE_PAGE",
+    "CDR_CACHE_VALUE_MAX",
+    "PAY_WEEK_SENT_PROP",
+    "RETENTION_WINDOWS",
+    "_cdrCacheOversize",
+    "adminDriftRoster_",
+    "adminSaveConflictText_",
+    "adminSettingsMerge_",
+    "automationRunRecord_",
+    "cdrCacheOversizeNote_",
+    "cdrCachePutSized_",
+    "cdrWarmReadFailed_",
+    "payWeekSentToday_",
+    "readPayWeekSent_",
+    "retentionWindowsNow_",
+    "writePayWeekSent_"
+   ],
+   "removed": [],
+   "changed": [
+    "automationDetectorChecks_",
+    "automationJobProblems_",
+    "automationLastRunMerge_",
+    "computeAutomationHealth_",
+    "csrTransferReadUncached_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getCsrTransferPerRepDaily_",
+    "getDashboardMetrics",
+    "saveFeatureFlags",
+    "saveRetentionConfig",
+    "sendPayWeekReminders",
+    "warmCdrMetricsCache"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-13",
+   "why": "Cycle 26 Batch 4 (F18): saveFeatureFlags has no conflict branch — a toggle has two values",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "saveFeatureFlags"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4502,6 +4551,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "086e9a08ffe3f17e"
+  },
+  "ADMIN_SAVE_STALE_PAGE": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "c29808b6f05846b7"
   },
   "ADMIN_VIEW_MAX_ROWS": {
    "file": "00_config.js",
@@ -4612,6 +4666,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "daf5c72300d71dbe"
+  },
+  "CDR_CACHE_VALUE_MAX": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "32eb3342fee61b79"
   },
   "CDR_EXPECTED_HEADERS": {
    "file": "00_config.js",
@@ -6713,6 +6772,11 @@
    "kind": "const",
    "sha": "baa4ada82c9d768b"
   },
+  "PAY_WEEK_SENT_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "2edfe25297b1f107"
+  },
   "PENDING_TASKS_CACHE_PREFIX": {
    "file": "00_config.js",
    "kind": "var",
@@ -7092,6 +7156,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "739a5497a86031b1"
+  },
+  "RETENTION_WINDOWS": {
+   "file": "10_core.js",
+   "kind": "const",
+   "sha": "073d187e99b8bb9b"
   },
   "RETIRED_TRIGGER_HANDLERS": {
    "file": "00_config.js",
@@ -7573,6 +7642,11 @@
    "kind": "let",
    "sha": "9bf7e58b2278b1c2"
   },
+  "_cdrCacheOversize": {
+   "file": "40_metrics.js",
+   "kind": "var",
+   "sha": "88dd77cdcea1be72"
+  },
   "_cdrColumnWarning": {
    "file": "00_config.js",
    "kind": "var",
@@ -7948,15 +8022,30 @@
    "kind": "function",
    "sha": "5e5283ef996d7872"
   },
+  "adminDriftRoster_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "8c34785bf5da50dd"
+  },
   "adminKbReviewTone_": {
    "file": "70_kb.js",
    "kind": "function",
    "sha": "394f966c61de3ee4"
   },
+  "adminSaveConflictText_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "60243ebe99e91cf2"
+  },
   "adminScanStoredFormulas": {
    "file": "10_core.js",
    "kind": "function",
    "sha": "10e3edb71794234e"
+  },
+  "adminSettingsMerge_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "904a03755bc4b87e"
   },
   "adminSheetViewBuild_": {
    "file": "10_core.js",
@@ -8121,7 +8210,7 @@
   "automationDetectorChecks_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "e8c246da4e67250d"
+   "sha": "ade5e1d8a8cb4c23"
   },
   "automationErrorsLabelled_": {
    "file": "10_core.js",
@@ -8136,12 +8225,12 @@
   "automationJobProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "f273341db3a6c024"
+   "sha": "e0fe053a28ef059e"
   },
   "automationLastRunMerge_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "ccdc354f044ad4a0"
+   "sha": "93f33fe99e6061c6"
   },
   "automationOutcomeValid_": {
    "file": "10_core.js",
@@ -8177,6 +8266,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "a39a7994ff1f65fe"
+  },
+  "automationRunRecord_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "c5ec415a8814e35b"
   },
   "automationWatchMerge_": {
    "file": "10_core.js",
@@ -8453,6 +8547,16 @@
    "kind": "function",
    "sha": "73be1c0b23555f9f"
   },
+  "cdrCacheOversizeNote_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "3fab9af6a9ba6d4a"
+  },
+  "cdrCachePutSized_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "835cb47a1697c6a0"
+  },
   "cdrCohortNames_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -8572,6 +8676,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "82f001cfb516c7f2"
+  },
+  "cdrWarmReadFailed_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "7fda6a18b9953a22"
   },
   "cdrWindowCacheSpec_": {
    "file": "40_metrics.js",
@@ -8986,7 +9095,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "00c08b23f545a438"
+   "sha": "387a89c937c09b24"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -9071,7 +9180,7 @@
   "csrTransferReadUncached_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "ee5d18cffba22de6"
+   "sha": "f96196e50241b180"
   },
   "dashLayoutCompact_": {
    "file": "20_timeclock.js",
@@ -10111,7 +10220,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "275171ac1544bbdd"
+   "sha": "17bb52acf365a335"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -10121,7 +10230,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "7ad88d18f86f5d2d"
+   "sha": "c8f3f5727c220549"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -10181,7 +10290,7 @@
   "getCsrTransferPerRepDaily_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "862be30580429762"
+   "sha": "bf41ebe71f070be1"
   },
   "getCurrentBiweeklyRange_": {
    "file": "20_timeclock.js",
@@ -10191,7 +10300,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "5a377c403edb7863"
+   "sha": "a79fe81fedacf67a"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -12963,6 +13072,11 @@
    "kind": "function",
    "sha": "eb252522b95c204e"
   },
+  "payWeekSentToday_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "83af96c8a07ae4b0"
+  },
   "payWeekTask_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -13598,6 +13712,11 @@
    "kind": "function",
    "sha": "710ea67df7d3e6a9"
   },
+  "readPayWeekSent_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b583fee58dfb2801"
+  },
   "reconcileCallNotes": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -13783,6 +13902,11 @@
    "kind": "function",
    "sha": "b7e66edd8d5a89f1"
   },
+  "retentionWindowsNow_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "2fe4b1362cf9fa5c"
+  },
   "revokeTrainingAssignment": {
    "file": "80_training.js",
    "kind": "function",
@@ -13926,7 +14050,7 @@
   "saveFeatureFlags": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6f8be9a2da7cd967"
+   "sha": "59bb30d2d26e601c"
   },
   "saveKbAiSettings": {
    "file": "70_kb.js",
@@ -13956,7 +14080,7 @@
   "saveRetentionConfig": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "6e6a925514a2e29f"
+   "sha": "8685bd0e2ecf27d7"
   },
   "saveSpanishInboxMembers": {
    "file": "51_spanish.js",
@@ -14161,7 +14285,7 @@
   "sendPayWeekReminders": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b0cf6e77f042e1a7"
+   "sha": "122bfab16addcdaa"
   },
   "sendRepEmail_": {
    "file": "10_core.js",
@@ -15041,7 +15165,7 @@
   "warmCdrMetricsCache": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e4719b5ba25e9eae"
+   "sha": "35d18ba46cc8050a"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",
@@ -15072,6 +15196,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "97fcd00283f917eb"
+  },
+  "writePayWeekSent_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "027245f189b19c7a"
   },
   "writeToEmployeeSheet_": {
    "file": "20_timeclock.js",

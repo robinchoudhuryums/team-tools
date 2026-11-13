@@ -415,7 +415,7 @@ function getRetentionConfig() {
  *  trigger handlers read the windows fresh per run. The two PURGE windows are
  *  irreversible PHI deletes; the client gates raising them behind a danger
  *  confirm. Returns the post-save safety warnings so the UI can surface them. */
-function saveRetentionConfig(settings) {
+function saveRetentionConfig(settings, baseline) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
@@ -439,18 +439,89 @@ function saveRetentionConfig(settings) {
     if (vu === null || ce === null) {
       return { success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' };
     }
-    const props = PropertiesService.getScriptProperties();
-    props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(a));
-    props.setProperty('CN_NOTE_RETENTION_DAYS', String(r));
-    props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ar));
-    if (hasVu) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(vu));
-    if (hasCe) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ce));
-    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated call-note retention windows (archive=' + a + 'd, purge=' + r + 'd, archivePurge=' + ar + 'd)' +
-      (hasVu || hasCe ? '; diagnostics (viewUsage=' + (hasVu ? vu + 'd' : 'unchanged') + ', clientErrors=' + (hasCe ? ce + 'd' : 'unchanged') + ')' : ''),
-      callerEmp.email);
-    return { success: true, warnings: retentionWarnings_(a, r, ar) };
+    // F18 (cycle 26): the page sends EVERY window it shows, and this wrote
+    // them all — so a page left open since morning put back the purge window
+    // another admin had set to 0 (an irreversible PHI delete, re-armed by
+    // someone who never touched it). Only the windows this caller CHANGED are
+    // written, and a window somebody else moved meanwhile refuses the save.
+    const next = { archiveDays: a, retentionDays: r, archiveRetentionDays: ar };
+    if (hasVu) next.viewUsageDays = vu;
+    if (hasCe) next.clientErrDays = ce;
+    const base = {};
+    const keys = Object.keys(next);
+    for (let i = 0; i < keys.length; i++) {
+      const b = (baseline && typeof baseline === 'object') ? parse(baseline[keys[i]]) : null;
+      if (b === null || !Object.prototype.hasOwnProperty.call(baseline, keys[i])) return { success: false, stale: true, error: ADMIN_SAVE_STALE_PAGE };
+      base[keys[i]] = b;
+    }
+    let changed = [];
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const current = retentionWindowsNow_();
+      const m = adminSettingsMerge_(next, base, current);
+      if (m.conflicts.length) {
+        return { success: false, conflict: m.conflicts, error: adminSaveConflictText_(m.conflicts.map(function (k) {
+          return RETENTION_WINDOWS[k].label + ' (now ' + (current[k] > 0 ? current[k] + ' days' : 'disabled') + ')';
+        })) };
+      }
+      changed = Object.keys(m.changes);
+      const props = PropertiesService.getScriptProperties();
+      const ch = m.changes, has = function (k) { return Object.prototype.hasOwnProperty.call(ch, k); };
+      if (has('archiveDays')) props.setProperty('CN_NOTE_ARCHIVE_DAYS', String(ch.archiveDays));
+      if (has('retentionDays')) props.setProperty('CN_NOTE_RETENTION_DAYS', String(ch.retentionDays));
+      if (has('archiveRetentionDays')) props.setProperty('CN_ARCHIVE_RETENTION_DAYS', String(ch.archiveRetentionDays));
+      if (has('viewUsageDays')) props.setProperty(VIEW_USAGE_RETENTION_PROP, String(ch.viewUsageDays));
+      if (has('clientErrDays')) props.setProperty(CLIENT_ERR_RETENTION_PROP, String(ch.clientErrDays));
+    } finally { lock.releaseLock(); }
+    if (changed.length) {
+      writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+        'Updated retention windows: ' + changed.map(function (k) { return RETENTION_WINDOWS[k].short + '=' + next[k] + 'd'; }).join(', '),
+        callerEmp.email);
+    }
+    const now = retentionWindowsNow_();
+    return { success: true, changed: changed, warnings: retentionWarnings_(now.archiveDays, now.retentionDays, now.archiveRetentionDays) };
   } catch (err) { return { success: false, error: err.message }; }
+}
+/** F18 — the five retention windows the Admin panel saves, by payload key:
+ *  what the conflict message and the audit row call each. */
+const RETENTION_WINDOWS = {
+  archiveDays:          { label: 'Archive after',                short: 'archive' },
+  retentionDays:        { label: 'Purge live after',             short: 'purge' },
+  archiveRetentionDays: { label: 'Purge cold after',             short: 'archivePurge' },
+  viewUsageDays:        { label: 'Purge ViewUsage rows after',   short: 'viewUsage' },
+  clientErrDays:        { label: 'Purge ClientErrors rows after', short: 'clientErrors' },
+};
+/** F18 — every retention window as it is stored NOW (the resolved values the
+ *  panel loads; read inside the save's lock). */
+function retentionWindowsNow_() {
+  return { archiveDays: getNoteArchiveDays_(), retentionDays: getNoteRetentionDays_(), archiveRetentionDays: getArchiveRetentionDays_(),
+           viewUsageDays: viewUsageRetentionDays_(), clientErrDays: clientErrRetentionDays_() };
+}
+const ADMIN_SAVE_STALE_PAGE = 'This page is out of date — reload it, then make your change again. Nothing was saved.';
+/** PURE (Node-pinned; cycle 26 F18) — an admin save as a MERGE of what the
+ *  caller CHANGED, checked against what is stored now. `next` = the values the
+ *  page sent, `base` = the values that page LOADED, `current` = the stored
+ *  values at save time (all {key: value}). A key is the caller's change when
+ *  next differs from base. It is a CONFLICT when somebody else moved it
+ *  meanwhile (current differs from base) — unless they moved it to the very
+ *  value asked for. Returns { changes: {key: value}, conflicts: [key] }. A key
+ *  the caller did not change is never in `changes`, whatever the page sent for
+ *  it: a stale page cannot write an old value back. */
+function adminSettingsMerge_(next, base, current) {
+  const changes = {}, conflicts = [];
+  Object.keys(next || {}).forEach(function (k) {
+    if (next[k] === base[k]) return;
+    if (current[k] === next[k]) return;
+    if (current[k] !== base[k]) { conflicts.push(k); return; }
+    changes[k] = next[k];
+  });
+  return { changes: changes, conflicts: conflicts };
+}
+/** PURE — the refusal a conflicting save gets: what moved, and what to do. */
+function adminSaveConflictText_(names) {
+  return 'Changed by someone else since you opened this page: ' + (names || []).join('; ') +
+    '. Nothing was saved — reload to see the current settings, then make your change again.';
 }
 /** Manager-gated read of the feature-toggle registry + resolved values
  *  (also embedded in getAdminConfig; kept standalone for testability). */
@@ -473,7 +544,7 @@ function getFeatureFlags() {
  *  AdminConfigChange audit row (INV-57 family). Takes effect immediately:
  *  server reads getFlag_ fresh per request; clients pick it up on their next
  *  config fetch (page load / view enter) — see the runtime-flag design note. */
-function saveFeatureFlags(flagMap) {
+function saveFeatureFlags(flagMap, baseline) {
   try {
     const callerEmp = getEmployeeInfo_();
     if (!callerEmp || !callerEmp.isAdmin) return { success: false, error: 'Admin access required.' };
@@ -489,11 +560,41 @@ function saveFeatureFlags(flagMap) {
       if (v !== true && v !== false) return { success: false, error: 'Flag "' + k + '" must be true or false.' };
       clean[k] = v;
     }
-    propSetBounded_('CN_FEATURE_FLAGS', JSON.stringify(clean), { hint: 'the registry is bounded — this cannot happen' });
-    writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
-      'Updated feature toggles: ' + keys.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
-      callerEmp.email);
-    return { success: true, values: getFeatureFlagsResolved_() };
+    // F18 (cycle 26): the page sends EVERY toggle it shows, and this replaced
+    // the stored map with them — so a page left open put back a flag another
+    // admin had turned off since. `baseline` is what the page LOADED: only the
+    // toggles this caller flipped are written, onto the map as stored now, and
+    // a toggle somebody else flipped meanwhile refuses the save by name.
+    const base = {};
+    for (let i = 0; i < keys.length; i++) {
+      const b = (baseline && typeof baseline === 'object') ? baseline[keys[i]] : undefined;
+      if (b !== true && b !== false) return { success: false, stale: true, error: ADMIN_SAVE_STALE_PAGE };
+      base[keys[i]] = b;
+    }
+    let changed = [];
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      // No conflict branch: a toggle has two values, so two admins who both
+      // flipped one have made the same change (the merge writes nothing for it).
+      const m = adminSettingsMerge_(clean, base, getFeatureFlagsResolved_());
+      changed = Object.keys(m.changes);
+      if (changed.length) {
+        // The stored overrides as they are NOW (registry keys only, as booleans), plus the changes.
+        const raw = getFlagOverrides_(), stored = {};
+        FEATURE_FLAGS.forEach(function (f) {
+          if (Object.prototype.hasOwnProperty.call(raw, f.key)) stored[f.key] = (raw[f.key] === true || raw[f.key] === 'true');
+        });
+        changed.forEach(function (k) { stored[k] = m.changes[k]; });
+        propSetBounded_('CN_FEATURE_FLAGS', JSON.stringify(stored), { hint: 'the registry is bounded — this cannot happen' });
+      }
+    } finally { lock.releaseLock(); }
+    if (changed.length) {
+      writeAuditLog_(callerEmp, 'AdminConfigChange', '', '', false, 0,
+        'Updated feature toggles: ' + changed.map(function (k) { return k + '=' + (clean[k] ? 'on' : 'off'); }).join(', '),
+        callerEmp.email);
+    }
+    return { success: true, changed: changed, values: getFeatureFlagsResolved_() };
   } catch (err) { return { success: false, error: err.message }; }
 }
 function saveUpdateSuggestions(suggestionsJson) {
@@ -1542,18 +1643,34 @@ function moveLedgersOutOfScriptProperties() {
     ((report.pto.error || report.runs.error) ? ' failed=1' : ''));
   return report;
 }
-/** PURE-ish (the two converters are passed) — folds the run ledger into the
- *  tail scan's {action: last} map IN PLACE. The NEWER run wins, so a ledger
- *  stamp never hides a later tail row and vice versa; an unparseable ledger
- *  stamp never displaces a tail row that parsed. */
-function automationLastRunMerge_(byAction, ledger, parseMs, toMgr) {
+/** F2 (cycle 26) — THE one builder of a job's last-run record, from its stored
+ *  stamp ('yyyy-MM-dd HH:mm:ss', written in CONFIG.TIMEZONE): `ms` the run's
+ *  time, `ym` its MONTH in the manager's timezone, `timestampMgr` the DISPLAY
+ *  string ("Nov 1, 6:02 PM"). "Ran this month" is decided on `ym`. It used to
+ *  be decided on `timestampMgr` — tested for a '2026-11' prefix it can never
+ *  have — so the monthly accrual line read "has not run this month" from the
+ *  3rd to month end, every month, beside a credit that had been paid. An
+ *  unparseable stamp gives ms null and ym '' (unknown — never "this month",
+ *  never "another month"). Never throws. */
+function automationRunRecord_(tsRaw, mgrTz, notes) {
+  let ms = null;
+  try { ms = Utilities.parseDate(String(tsRaw), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) { ms = null; }
+  if (!isFinite(ms)) ms = null;
+  let ym = '';
+  if (ms) { try { ym = Utilities.formatDate(new Date(ms), mgrTz, 'yyyy-MM'); } catch (_) { ym = ''; } }
+  return { timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz), ms: ms, ym: ym, notes: notes };
+}
+/** PURE-ish (the record builder is passed — automationRunRecord_) — folds the
+ *  run ledger into the tail scan's {action: last} map IN PLACE. The NEWER run
+ *  wins, so a ledger stamp never hides a later tail row and vice versa; an
+ *  unparseable ledger stamp never displaces a tail row that parsed. */
+function automationLastRunMerge_(byAction, ledger, build) {
   Object.keys(ledger || {}).forEach(function (a) {
-    let ms = null;
-    try { ms = parseMs(ledger[a].ts); } catch (_) { ms = null; }
-    if (!isFinite(ms)) ms = null;
+    const rec = build(ledger[a].ts, ledger[a].notes);
     const tail = byAction[a];
-    if (tail && (!ms || (tail.ms && tail.ms >= ms))) return;
-    byAction[a] = { timestampMgr: toMgr(ledger[a].ts), ms: ms, notes: ledger[a].notes, source: 'ledger' };
+    if (tail && (!rec.ms || (tail.ms && tail.ms >= rec.ms))) return;
+    rec.source = 'ledger';
+    byAction[a] = rec;
   });
   return byAction;
 }
@@ -1633,19 +1750,30 @@ function automationJobProblems_(lastRuns, errors, nowMs, todayDom, thisMonthPref
     };
     if (job.cadence === 'monthly') {
       // In arrears: a row is expected on/just after the 1st. Before the grace
-      // day the absence is normal, so the check simply does not apply yet.
-      if (todayDom < (job.graceDays || 3)) return;
-      const ranThisMonth = !!(last && last.timestampMgr &&
-        String(last.timestampMgr).indexOf(thisMonthPrefix) === 0);
-      if (!ranThisMonth && ran && ran.ym === thisMonthPrefix) {
+      // day the absence is normal, so the LIVENESS check does not apply yet.
+      // F17 (cycle 26): only the liveness check — this was a `return` out of
+      // the whole job, so a FAILURE the job stamped on the 1st was hidden on
+      // the 1st and 2nd of every month, the two days it is most likely.
+      const judged = todayDom >= (job.graceDays || 3);
+      // F2 (cycle 26): the run's MONTH (`last.ym` — automationRunRecord_),
+      // never its display string.
+      const ranThisMonth = !!(last && last.ym && last.ym === thisMonthPrefix);
+      if (!judged || ranThisMonth) {
+        // nothing to say about liveness
+      } else if (ran && ran.ym === thisMonthPrefix) {
         // 25post: the job RAN this month and wrote no row — the trigger is
         // alive, and "may be missing" would send the operator to reinstall it.
         push('job', job.action, 'The ' + job.label + ' ran on ' + ran.mgr + ' but wrote no row this month, so its trigger is running' +
           (typeof job.noRowHint === 'function' ? ' — ' + job.noRowHint(thisMonthPrefix) : '') + '.');
-      } else if (!ranThisMonth && watched && watched.ym === thisMonthPrefix) {
+      } else if (watched && watched.ym === thisMonthPrefix) {
         // 25post: first watched this month, after the 1st it is judged on — a
         // deploy or a setting started the watch, and the 1st was never seen.
-      } else if (!ranThisMonth && (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix))) {
+      } else if (last && !last.ym) {
+        // F2: a run is on record but its stamp cannot be read — which month it
+        // ran in is UNKNOWN, and "the trigger may be missing" would be a guess.
+        push('job', job.action, 'The ' + job.label + ' has a run on record (' + (last.timestampMgr || 'no time') +
+          ') whose time could not be read, so whether it ran this month is unknown — check the ' + AUTOMATION_RUN_LEDGER_PROP + ' Script Property.');
+      } else if (last || auditWindowCoversMonth_(auditWindow, thisMonthPrefix)) {
         // A1 (cycle 22): with NO run on record, absence is only evidence when the
         // AuditLog window read reaches back past the 1st. A truncated window that
         // starts mid-month cannot tell "did not run" from "scrolled out" — that is
@@ -1768,6 +1896,13 @@ function triggerOwnerOffboarded_(owner, rosterEmails, offboarded) {
   const gone = (offboarded || []).some(function (e) { return String(e || '').toLowerCase().trim() === email; });
   return (gone && !onRoster) ? email : '';
 }
+/** PURE (Node-pinned; cycle 26 F32) — the roster as managerSourceDrift_ needs
+ *  it for the ADMIN_EMAILS check: who is ON the roster, with nobody "demoted"
+ *  (that half is MANAGER_EMAILS' — an admin listed without the manager bit
+ *  simply has no power). */
+function adminDriftRoster_(pairs) {
+  return (pairs || []).map(function (p) { return { email: p && p.email, isManager: true }; });
+}
 function readOffboardedEmails_() {
   try {
     const a = JSON.parse(PropertiesService.getScriptProperties().getProperty(OFFBOARDED_EMAILS_PROP) || '[]');
@@ -1851,7 +1986,11 @@ function automationDetectorChecks_() {
     // bit (empIsAdmin_ is a subset check), but an offboarded address left there
     // is re-armed by a re-onboard as manager — name it.
     const adminRaw = String(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS') || '');
-    const adminDrift = managerSourceDrift_(adminRaw.split(','), [], offboarded);
+    // F32 (cycle 26): this passed an EMPTY roster, so "not back on the roster"
+    // was true of everyone and a re-onboarded admin was named for ever — the
+    // offboarded record keeps the address. The roster rides along (every row
+    // as a manager: ADMIN_EMAILS has no demotion half to judge, only presence).
+    const adminDrift = managerSourceDrift_(adminRaw.split(','), adminDriftRoster_(pairs), offboarded);
     if (adminDrift.length) {
       throw new Error('ADMIN_EMAILS still lists offboarded ' + adminDrift.join(', ') +
         ' — remove them (offboarding keeps a list\'s LAST entry rather than empty it; add a replacement first).');
@@ -1982,13 +2121,8 @@ function computeAutomationHealth_(opts) {
           // `ms` (raw run time) is additive — the Admin panel renders timestampMgr/
           // notes; sendAutomationHealthDigest uses ms to detect a STALE last run
           // (the F1 class — a daily job that silently stopped).
-          let _runMs = null;
-          try { _runMs = Utilities.parseDate(tsRaw, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); } catch (_) {}
-          lastRunByAction[action] = {
-            timestampMgr: convertAuditTs_(tsRaw, CONFIG.TIMEZONE, mgrTz),
-            ms: _runMs,
-            notes: String(data[i][AUDIT.NOTES]),
-          };
+          // F2 (cycle 26): `ym` rides the record too — the one builder.
+          lastRunByAction[action] = automationRunRecord_(tsRaw, mgrTz, String(data[i][AUDIT.NOTES]));
         }
       }
     }
@@ -1996,8 +2130,7 @@ function computeAutomationHealth_(opts) {
     // a job that has not stamped it yet (every job, the day this ships). The
     // NEWER of the two wins, so neither can mask the other's later run.
     automationLastRunMerge_(lastRunByAction, readAutomationRunLedger_(),
-      function (ts) { return Utilities.parseDate(ts, CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss').getTime(); },
-      function (ts) { return convertAuditTs_(ts, CONFIG.TIMEZONE, mgrTz); });
+      function (ts, notes) { return automationRunRecord_(ts, mgrTz, notes); });
     const automationLastRuns = AUTOMATION_AUDIT_ACTIONS.map(function (a) {
       return { action: a, last: lastRunByAction[a] || null };
     });

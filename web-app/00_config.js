@@ -2035,6 +2035,11 @@ var CDR_STAMP_CACHE_KEY = 'cdr_stamp_v1';
 var CDR_STAMP_TTL = 120;
 var CDR_STAMP_TAIL_ROWS = 300;
 var CDR_WINDOW_CACHE_TTL = 21600;
+// F25 (cycle 26): CacheService caps a value at 100 KB and an oversize put
+// THROWS. Every CDR window reader skips a payload over this headroom on
+// purpose and notes it (cdrCacheOversizeNote_), so the hourly read-ahead can
+// say which window it could not keep.
+var CDR_CACHE_VALUE_MAX = 95000;
 var CDR_WARM_CACHE_KEY = 'cdr_warm_stamp_v1';
 var DASH_MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 // ── Dashboard "Needs you" — one rep-callable aggregate of pending tasks ─────
@@ -2073,6 +2078,11 @@ const INTAKE_ADDR_CHECK_CAP = 1000;
 const INTAKE_ADDR_CACHE_SECONDS = 21600;
 const PAY_WEEK_MONTHLY_MIN_DAYS = 4;
 const PAY_WEEK_REMINDER_HOUR = 9;
+// F28 (cycle 26): who has been sent TODAY's pay-week reminder — {day, to:
+// [addresses]} — so the hourly job sends at or after the hour exactly once per
+// person, and a run that was missed or failed is made up by the next one.
+// Auto-managed; one day only (the next remind day replaces it).
+const PAY_WEEK_SENT_PROP = 'PAY_WEEK_REMINDER_SENT';
 const INTAKE_PPD_SUB_HEADERS  = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','Language','AnswersJSON','Recommendations','Selections','Recipient','AmendsId'];
 const INTAKE_ACCT_SUB_HEADERS = ['SubmissionId','Timestamp','RepId','RepName','PatientInfo','DOB','Language','AnswersJSON','Recipient','ImageCount','AmendsId'];
 // F49 (cycle 25): the DOB is typed text, and an ordinary cell COERCES it —

@@ -10465,6 +10465,49 @@ test('ADM-13: shortening a diagnostics purge window asks before anything is save
   assert.strictEqual(h.run.pending('saveRetentionConfig').length, 1, 'confirmed: saved');
 });
 
+// ── Cycle 26 Batch 4 (F18): an Admin save carries what the page loaded ──
+test('F18 DOM (cycle 26): the retention save sends the windows the page LOADED beside the ones typed; a save the server refuses (someone else changed a window) stays on screen as an error and the panel reloads to show the current values; a save that changed nothing says so (driven)', async () => {
+  const h = boot();
+  h.bootShell({ isManager: true }); h.run.drain();
+  const area = mount_(h, 'cn-admin-retention');
+  area.innerHTML = '<input id="cn-ret-archive" value="60"><input id="cn-ret-purge" value="365"><input id="cn-ret-archpurge" value="">' +
+    '<button id="cn-ret-save">Save retention</button>';
+  // The page loaded archive=30 and purge=365 this morning; the admin changes only the archive window.
+  h.read('CN_STATE.retentionCfg = { archiveDays: { value: 30 }, retentionDays: { value: 365 }, archiveRetentionDays: { value: 0 } }');
+  h.read('cnSaveRetention_')();
+  await tick();
+  const call = h.run.pending('saveRetentionConfig')[0];
+  assert.ok(call, 'an unchanged purge window is not "raised": no danger question, the save goes');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(Array.from(call.args))),
+    [{ archiveDays: '60', retentionDays: '365', archiveRetentionDays: '' }, { archiveDays: 30, retentionDays: 365, archiveRetentionDays: 0 }],
+    'THE RULE: the loaded values ride the save, so the server can tell what THIS admin changed');
+  const last = () => { const all = h.$$('#toast-stack .toast'); const t = all[all.length - 1]; return t ? { text: t.querySelector('.toast-msg').textContent, cls: t.className } : { text: '', cls: '' }; };
+  const before = h.run.calls.filter((c) => c.method === 'getRetentionConfig').length;
+  h.run.flushSuccess({ success: false, conflict: ['retentionDays'],
+    error: 'Changed by someone else since you opened this page: Purge live after (now disabled). Nothing was saved — reload to see the current settings, then make your change again.' }, 'saveRetentionConfig');
+  let t = last();
+  assert.ok(/Changed by someone else since you opened this page: Purge live after \(now disabled\)/.test(t.text), t.text);
+  assert.ok(/toast-error/.test(t.cls) && /toast-sticky/.test(t.cls), 'a refusal that says what to do next stays until it is dismissed: ' + t.cls);
+  assert.strictEqual(h.run.calls.filter((c) => c.method === 'getRetentionConfig').length, before + 1, 'and the panel reloads, so the values on screen are the current ones');
+  // A stale page (no baseline accepted) is the same kind of refusal.
+  area.innerHTML = '<input id="cn-ret-archive" value="60"><input id="cn-ret-purge" value="365"><input id="cn-ret-archpurge" value=""><button id="cn-ret-save">Save retention</button>';
+  h.read('cnSaveRetention_')(); await tick();
+  h.run.flushSuccess({ success: false, stale: true, error: 'This page is out of date — reload it, then make your change again. Nothing was saved.' }, 'saveRetentionConfig');
+  t = last();
+  assert.ok(/out of date — reload it/.test(t.text) && /toast-sticky/.test(t.cls), t.text);
+  // An ordinary failure is not sticky and gives the button back.
+  area.innerHTML = '<input id="cn-ret-archive" value="60"><input id="cn-ret-purge" value="365"><input id="cn-ret-archpurge" value=""><button id="cn-ret-save">Save retention</button>';
+  h.read('cnSaveRetention_')(); await tick();
+  h.run.flushSuccess({ success: false, error: 'Each window must be a whole number of days ≥ 0 (0 = disabled).' }, 'saveRetentionConfig');
+  t = last();
+  assert.ok(/whole number/.test(t.text) && !/toast-sticky/.test(t.cls));
+  assert.ok(!h.$('#cn-ret-save').disabled && h.$('#cn-ret-save').textContent === 'Save retention', 'the button is usable again');
+  // Nothing changed.
+  h.read('cnSaveRetention_')(); await tick();
+  h.run.flushSuccess({ success: true, changed: [], warnings: [] }, 'saveRetentionConfig');
+  assert.strictEqual(last().text, 'No retention window was changed');
+});
+
 test('ADM-12: a tag merge that fails in transit says it may have PARTLY applied, and the warning stays on screen', async () => {
   const h = boot();
   h.read('cnPromptMergeTag_')('old-tag');

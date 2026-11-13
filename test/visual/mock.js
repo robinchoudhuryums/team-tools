@@ -324,6 +324,16 @@ function HB_PEOPLE_VIEW() {
     everyone: [me, boss].concat(team, [p('riley.brooks@example.com', 'Riley Brooks', POWER, 'pat.gone@example.com', 'Pat Gone', 'gone')]) };
 }
 function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+// Cycle 26 F2: a job's last-run record in the SHAPE the server ships
+// (automationRunRecord_) — `timestampMgr` is a display string ("Nov 1, 6:02 PM"),
+// never an ISO stamp, and `ym` is the run's month. The fixtures used to type an
+// ISO string here, a format production never emits.
+function runRecAgo(msAgo, notes) {
+  var d = new Date(Date.now() - msAgo), h = d.getHours();
+  var M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return { timestampMgr: M[d.getMonth()] + ' ' + d.getDate() + ', ' + (h % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0') + ' ' + (h < 12 ? 'AM' : 'PM'),
+           ms: d.getTime(), ym: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), notes: notes };
+}
   function ts(dIso, hms) { return dIso + 'T' + hms; }
   function prefixDate(iso) { return String(iso || '').slice(0, 10); }
 
@@ -2683,14 +2693,14 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
       automationLastRuns: [
-        { action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } },
+        { action: 'CallNotesReconcile', last: runRecAgo(3600000, 'rowsBackfilled=0') },
         { action: 'AdpExportAuto', last: null },
         { action: 'FormDataPurge', last: null },
         { action: 'CallNotesPurge', last: null },
         { action: 'CallNotesArchive', last: null },
         { action: 'CallNotesArchivePurge', last: null },
         { action: 'TimesheetArchive', last: null },
-        { action: 'PtoAccrualCredit', last: { timestampMgr: daysAgo(0) + ' 06:00:03', ms: Date.now() - 7200000, notes: 'credited=2' } }],
+        { action: 'PtoAccrualCredit', last: runRecAgo(7200000, 'credited=2') }],
       // F4: stamped last-errors for jobs that catch their own failure. Empty on
       // a healthy deployment — the shape, not a fault, is what the panel reads.
       automationErrors: {},
@@ -3094,7 +3104,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
     })(),
     getAutomationHealth: {
       syncFails: { count: 0, recent: [], windowDays: 30 },
-      automationLastRuns: [{ action: 'CallNotesReconcile', last: { timestampMgr: daysAgo(0) + ' 05:00:12', ms: Date.now() - 3600000, notes: 'rowsBackfilled=0' } }],
+      automationLastRuns: [{ action: 'CallNotesReconcile', last: runRecAgo(3600000, 'rowsBackfilled=0') }],
       automationErrors: {},
       digests: [
         { key: 'eod', last: daysAgo(0) + ' 17:00:04', stale: false },
