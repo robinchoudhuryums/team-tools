@@ -3082,7 +3082,8 @@ function spanishResolveAsk_(count) {
         '<label class="sp-res-note-lbl" for="sp-res-note">Note <span class="sp-res-opt-hint">(optional)</span></label>' +
         '<textarea id="sp-res-note" class="sp-res-note" rows="3" maxlength="' + noteMax + '"></textarea>' +
         '<p class="sp-res-hint">' + esc((many ? 'Each request gets its own reply' : 'A reply') +
-          ' with the outcome and your note, sent on the email thread to the requester. A voicemail request has no email, so it gets none. ' +
+          ' with the outcome and your note goes to everyone on the request’s email — the requester and anyone copied. ' +
+          'A voicemail request has no email, so it gets none; neither does an email that includes an address outside the company. ' +
           'This can’t be undone in-app — if the requester writes again, it comes back as a new request, unclaimed.') + '</p>' +
       '</div>' +
       '<div class="modal-footer">' +
@@ -3118,6 +3119,7 @@ function spanishBulkReplyText_(r) {
   var bits = [];
   if (p.sent) bits.push(p.sent + ' repl' + (p.sent === 1 ? 'y' : 'ies') + ' sent');
   if (p.voicemail) bits.push(p.voicemail + ' voicemail' + (p.voicemail === 1 ? '' : 's') + ' (no email to reply to)');
+  if (p.outside) bits.push(p.outside + ' not replied to (an address outside the company is on the email)');   // F12
   if ((p.failed || []).length) bits.push(p.failed.length + ' repl' + (p.failed.length === 1 ? 'y' : 'ies') + ' could not be sent');
   return bits.join(' · ');
 }
@@ -3507,8 +3509,9 @@ function spanishResolve_(btn) {
         }
         // The toast fires BEFORE the animation: it is the outcome, and a
         // reduced-motion user must not depend on a fade to learn anything.
-        showToast(r.already ? 'Already marked resolved' : 'Marked resolved.' + (r.replyNote ? ' ' + r.replyNote : ''),
-          (r.reply && r.reply.reason === 'failed') ? 'warn' : 'success');   // SP1: what became of the reply
+        // F11 (cycle 26): "already" is also a request a member answered by email — nothing was marked.
+        showToast(r.already ? 'Already resolved — nothing was changed' : 'Marked resolved.' + (r.replyNote ? ' ' + r.replyNote : ''),
+          (r.reply && (r.reply.reason === 'failed' || r.reply.reason === 'outside')) ? 'warn' : 'success');   // SP1: what became of the reply; F12: a withheld one is said
         spanishResolveDone_(tid, card);
       })
       .withFailureHandler(function (e) {

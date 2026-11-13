@@ -4348,6 +4348,46 @@
     "getMyMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-13",
+   "why": "Cycle 26 Batch 3 (thread replies): appReplyAll_ + mailHeaderAddrs_ + mailReplyAudience_ (the one reply seam, F33); drReplyTargetIdx_ (F9); spanishIsAutomatic_ / spanishMsgAutomatic_ (F10); spanishRolesCtx_ / spanishThreadRolesIn_ / spanishRolesOpen_ (F11); spanishReplyLeavesOrg_ (F12); SPANISH_APP_REPLY_LEAD (F3)",
+   "added": [
+    "SPANISH_APP_REPLY_LEAD",
+    "appReplyAll_",
+    "drReplyTargetIdx_",
+    "mailHeaderAddrs_",
+    "mailReplyAudience_",
+    "spanishIsAutomatic_",
+    "spanishMsgAutomatic_",
+    "spanishReplyLeavesOrg_",
+    "spanishRolesCtx_",
+    "spanishRolesOpen_",
+    "spanishThreadRolesIn_"
+   ],
+   "removed": [],
+   "changed": [
+    "drResolvedReplyNote_",
+    "drSendResolvedReply_",
+    "resolveSpanishThread",
+    "resolveSpanishThreads",
+    "spanishIsAppReply_",
+    "spanishResolveReplyNote_",
+    "spanishResolveReplyParts_",
+    "spanishSendResolveReply_",
+    "spanishThreadRoles_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-13",
+   "why": "Cycle 26 Batch 3: the spanishResolveReply toggle's description names who the reply reaches (F12)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "FEATURE_FLAGS"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -5485,7 +5525,7 @@
   "FEATURE_FLAGS": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "de05bf4358d4c808"
+   "sha": "a5d1d3cdfcd02f02"
   },
   "FORMULA_SCAN_BUDGET_MS": {
    "file": "10_core.js",
@@ -7147,6 +7187,11 @@
    "kind": "const",
    "sha": "1a64e9138d22e365"
   },
+  "SPANISH_APP_REPLY_LEAD": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "ea1bf839fadd3142"
+  },
   "SPANISH_APP_REPLY_MARKER": {
    "file": "00_config.js",
    "kind": "const",
@@ -7946,6 +7991,11 @@
    "file": "50_deptrequests.js",
    "kind": "function",
    "sha": "8edc27ea36e21ad2"
+  },
+  "appReplyAll_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "5e09f0d1b568505f"
   },
   "appSendMail_": {
    "file": "10_core.js",
@@ -9312,6 +9362,11 @@
    "kind": "function",
    "sha": "8767aafcfccb2cfa"
   },
+  "drReplyTargetIdx_": {
+   "file": "50_deptrequests.js",
+   "kind": "function",
+   "sha": "68f7f7ce6b81a2de"
+  },
   "drReplyThreadId_": {
    "file": "50_deptrequests.js",
    "kind": "function",
@@ -9340,7 +9395,7 @@
   "drResolvedReplyNote_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "4f6fadae80360503"
+   "sha": "cc2f0fe5c138aaf9"
   },
   "drResolvedReplyParts_": {
    "file": "50_deptrequests.js",
@@ -9360,7 +9415,7 @@
   "drSendResolvedReply_": {
    "file": "50_deptrequests.js",
    "kind": "function",
-   "sha": "80e9455911506746"
+   "sha": "cdcf6384b6fb44df"
   },
   "drSharedRequestIds_": {
    "file": "50_deptrequests.js",
@@ -12352,6 +12407,11 @@
    "kind": "function",
    "sha": "c762960f9f9d2217"
   },
+  "mailHeaderAddrs_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "e9d0e84cd90a5fe7"
+  },
   "mailMergeBcc_": {
    "file": "10_core.js",
    "kind": "function",
@@ -12361,6 +12421,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "dffb62ebf001c4bd"
+  },
+  "mailReplyAudience_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b6693bf58575c609"
   },
   "managerAggregateFlagged_": {
    "file": "30_callnotes.js",
@@ -13675,12 +13740,12 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "5e5a1c9f84789cf8"
+   "sha": "80dcbb605aad46c5"
   },
   "resolveSpanishThreads": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "1cec8fd3534d8ffd"
+   "sha": "1d87ac227098b816"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -14290,7 +14355,12 @@
   "spanishIsAppReply_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "11e7475e99e8002f"
+   "sha": "da8b5017787f480f"
+  },
+  "spanishIsAutomatic_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "d02d77c34139bce2"
   },
   "spanishIsCourtesyOnly_": {
    "file": "51_spanish.js",
@@ -14316,6 +14386,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "4aecb446c7b5938e"
+  },
+  "spanishMsgAutomatic_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "d12bbe98b78ccb49"
   },
   "spanishMyOpenClaims_": {
    "file": "51_spanish.js",
@@ -14367,6 +14442,11 @@
    "kind": "function",
    "sha": "76c72f71fda5da24"
   },
+  "spanishReplyLeavesOrg_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "2f8d325515ccb47e"
+  },
   "spanishReplyTargetIdx_": {
    "file": "51_spanish.js",
    "kind": "function",
@@ -14385,12 +14465,22 @@
   "spanishResolveReplyNote_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "8939e7028d0797b3"
+   "sha": "ade329b8faa0c62b"
   },
   "spanishResolveReplyParts_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "f865743127d81759"
+   "sha": "2e71caa76ce4c588"
+  },
+  "spanishRolesCtx_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "df99ad65b5b24f2c"
+  },
+  "spanishRolesOpen_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "ae3e280a53d07a16"
   },
   "spanishSearchQuery_": {
    "file": "51_spanish.js",
@@ -14405,7 +14495,7 @@
   "spanishSendResolveReply_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "4f26f2e03e0782ac"
+   "sha": "0b431256b811c39d"
   },
   "spanishSenderDeptIndexFrom_": {
    "file": "51_spanish.js",
@@ -14457,10 +14547,15 @@
    "kind": "function",
    "sha": "8cdcf43dc889ce9f"
   },
+  "spanishThreadRolesIn_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "3931cfedf24a2d12"
+  },
   "spanishThreadRoles_": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "d38687f90a118361"
+   "sha": "d23e2ba68d3715dd"
   },
   "spanishVmCaller_": {
    "file": "51_spanish.js",

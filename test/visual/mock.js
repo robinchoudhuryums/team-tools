@@ -1704,7 +1704,7 @@ function daysAgo(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.t
       pd.pending = (pd.pending || []).filter(function (p) { return !want[p.threadId]; });
       // SP1: one reply per resolved email thread; a voicemail gets none.
       const vm = picked.filter(function (p) { return p.kind === 'voicemail'; }).length;
-      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, failed: [], off: false } };
+      return { success: true, resolved: resolved, already: [], failed: [], replies: { sent: resolved.length - vm, voicemail: vm, outside: 0, failed: [], off: false } };
     },
     getSpanishInboxResolved: { resolved: [
       { threadId: 't3', requester: 'jrivera@umsupply.com', senderDept: 'Billing', receivedMs: Date.now() - 2 * 86400000, resolver: 'avery@umsupply.com', manual: false, resolveMinutes: 45, resolveWallMinutes: 1180, resolvedAtMs: Date.now() - 7200000, subject: 'Pregunta sobre facturación', permalink: 'https://mail.google.com/mail/u/0/#inbox/t3' },

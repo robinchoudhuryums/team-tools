@@ -6060,6 +6060,59 @@ test('SP1 DOM: Mark resolved asks how it ended (the server\'s choices) and for a
   }
 });
 
+// ── Cycle 26 Batch 3 (F11 + F12): what the Spanish resolve tells the person ──
+test('F11 + F12 DOM (cycle 26): the resolve dialog says the reply goes to EVERYONE on the request\'s email; a reply withheld because an outside address is on the email is a WARNING that says so; "already" says nothing was changed; Resolve selected counts the withheld replies apart from failed ones (driven)', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true, canSeeSpanish: true });
+  const outs = { reached: 'Reached the patient', noanswer: 'No answer' };
+  const pend = [spItem_('a', 30), spItem_('b', 20), spItem_('c', 10), spItem_('d', 5)];
+  h.run.respond('getSpanishInboxStats', () => ({ address: 'sp@x.com', days: 30, pending: 4, resolved: 0, avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null,
+    businessCount: 0, businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 4, truncated: false }));
+  h.run.respond('getSpanishInboxPending', () => ({ escalateDays: 7, pending: JSON.parse(JSON.stringify(pend)), members: ['me@x.com'], self: 'me@x.com', truncated: false, deptUnavailable: '',
+    resolveOutcomes: outs, resolveNoteMax: 500 }));
+  h.run.respond('getSpanishInboxResolved', () => ({ resolved: [], members: ['me@x.com'], truncated: false, deptUnavailable: '' }));
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  const last = () => { const all = h.$$('#toast-stack .toast'); const t = all[all.length - 1]; return t ? { text: t.querySelector('.toast-msg').textContent, cls: t.className } : { text: '', cls: '' }; };
+  const resolveOne = async (tid, answer) => {
+    h.read('spanishResolve_')(h.$('.sp-resolve[data-thread="' + tid + '"]'));
+    await tick();
+    h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+    const hint = h.$('#sp-resolve-overlay .sp-res-hint').textContent;
+    h.window.spanishResolveConfirm_();
+    await tick();
+    h.run.flushSuccess(answer, 'resolveSpanishThread');
+    return hint;
+  };
+  // F12: the dialog names who the reply reaches.
+  const hint = await resolveOne('a', { success: true, reply: { sent: false, reason: 'outside' },
+    replyNote: 'No reply was sent: it would have gone to an address outside the company. Tell the requester yourself if they need to know.' });
+  assert.ok(/goes to everyone on the request’s email — the requester and anyone copied/.test(hint), 'THE WORDING: ' + hint);
+  assert.ok(/neither does an email that includes an address outside the company/.test(hint) && !/to the requester\./.test(hint));
+  let t = last();
+  assert.ok(/Marked resolved\. No reply was sent: it would have gone to an address outside the company/.test(t.text), t.text);
+  assert.ok(/toast-warn/.test(t.cls), 'THE RULE: a reply withheld on purpose is a warning, not a quiet success — ' + t.cls);
+  h.flushTimers();
+  // F11: the server found nothing open on the thread.
+  await resolveOne('b', { success: true, already: true });
+  t = last();
+  assert.strictEqual(t.text, 'Already resolved — nothing was changed', 'a request a member had already answered was not "marked" by this click');
+  assert.ok(/toast-success/.test(t.cls));
+  h.flushTimers();
+  // Resolve selected: the withheld replies are counted apart.
+  ['c', 'd'].forEach((id) => { const bx = h.$('input.sp-sel[data-thread="' + id + '"]'); bx.checked = true; h.window.spanishSelToggle_(bx); });
+  h.window.spanishResolveSelected_();
+  await tick();
+  h.$('input[name="sp-res-outcome"][value="reached"]').checked = true; h.window.spanishResolveSync_();
+  h.window.spanishResolveConfirm_();
+  await tick();
+  h.run.flushSuccess({ success: true, resolved: ['c', 'd'], already: [], failed: [], replies: { sent: 1, voicemail: 0, outside: 1, failed: [], off: false } }, 'resolveSpanishThreads');
+  t = last();
+  assert.strictEqual(t.text, 'Marked 2 resolved · 1 reply sent · 1 not replied to (an address outside the company is on the email)');
+  assert.ok(/toast-success/.test(t.cls), 'nothing failed: a withheld reply is said, the run is not a failure');
+});
+
 test('Batch C DOM: past SPANISH_GROUP_MIN the list groups — by received day, or by sending department (largest first, Other and Voicemail last), remembered in this browser; a closed group\'s cards are not "shown" to Select all; at the threshold the list stays flat; every card shows its received date', () => {
   const MIN = 15;
   const depts = ['Billing', 'Intake', 'Billing', '', 'Billing'];

@@ -1482,19 +1482,40 @@ function drResolvedReplyNote_(reply) {
   if (reply.sent) return 'A reply saying so was sent on the email thread.';
   if (reply.reason === 'untracked') return 'No reply was sent on the email thread: this request was sent before thread tracking began, so it has no thread to reply on.';
   if (reply.reason === 'missing') return 'No reply was sent: the request\'s email thread is no longer in the mailbox the app runs as.';
+  if (reply.reason === 'unmatched') return 'No reply was sent: this request\'s own email could not be found on its thread, and a reply to another message could reach the wrong people.';
   if (reply.reason === 'failed') return 'The reply on the email thread could not be sent — the request is still resolved.';
   return '';
+}
+/** PURE (Node-pinned; cycle 26 F9) — the message a resolved reply answers: the
+ *  request's OWN email. Two requests can share one Gmail thread (DR-1 — Gmail
+ *  threads same-subject mail), and the reply went to the thread's FIRST
+ *  message: the OTHER request's email, so that request's department was told
+ *  "this request was marked resolved". The request's email is the one the app
+ *  sent (a `selfAddrs` address) whose body carries this request's id — its
+ *  resolve link; a re-send carries the same id, so the NEWEST wins. -1 when
+ *  none does: the caller sends nothing rather than guess (g159).
+ *  `msgs` = [{fromAddr, body}] in thread order. */
+function drReplyTargetIdx_(msgs, reqId, selfAddrs) {
+  const id = String(reqId == null ? '' : reqId).trim();
+  if (!id) return -1;
+  for (let i = (msgs || []).length - 1; i >= 0; i--) {
+    const m = msgs[i] || {};
+    if ((selfAddrs || {})[String(m.fromAddr || '').toLowerCase()] && String(m.body || '').indexOf(id) >= 0) return i;
+  }
+  return -1;
 }
 /** DR1 — reply on a freshly resolved request's email thread. Called AFTER
  *  markDeptRequestResolved_ has released its lock (g34: no mail inside a
  *  lock), and never throws — the resolve already happened. Replies-all to
- *  the thread's FIRST message, the request email itself: its Reply-To is the
- *  sender and the deployer's mailbox, its To the department and its CC the
- *  deployer (sendRepEmail_'s tracked send), so the reply reaches exactly the
- *  people on the request — never whoever wrote last. Returns null (nothing
+ *  the request's OWN email (drReplyTargetIdx_ — F9: not the thread's first
+ *  message, which on a shared thread is another request's): its Reply-To is
+ *  the sender and the deployer's mailbox, its To the department and its CC
+ *  the deployer (sendRepEmail_'s tracked send), so the reply reaches exactly
+ *  the people on the request — never whoever wrote last. Sent through
+ *  appReplyAll_ (F33 — MAIL_BCC_ALL rides it). Returns null (nothing
  *  attempted: already resolved, or not found) or { sent: true } or
  *  { sent: false, reason } — 'off' (the deptResolvedReply toggle),
- *  'untracked', 'missing' or 'failed'. Audited by id, PHI-free. */
+ *  'untracked', 'missing', 'unmatched' or 'failed'. Audited by id, PHI-free. */
 function drSendResolvedReply_(res, byLabel) {
   if (!res || !res.found || res.already) return null;
   let outcome;
@@ -1507,13 +1528,20 @@ function drSendResolvedReply_(res, byLabel) {
       try { const th = GmailApp.getThreadById(tid); msgs = th ? th.getMessages() : []; } catch (e) { msgs = []; }
       if (!msgs.length) outcome = { sent: false, reason: 'missing' };
       else {
-        const parts = drResolvedReplyParts_({ by: byLabel, label: res.label, via: res.via,
-          at: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a z') });
-        const opts = { htmlBody: parts.html, name: 'UMS Team Tools' };
-        const from = repSenderFrom_();
-        if (from) opts.from = from;
-        msgs[0].replyAll(parts.text, opts);
-        outcome = { sent: true };
+        // F9: only the app's own messages can be the request email, so only
+        // their bodies are read.
+        const self = drReplyExcludedBase_();
+        const idx = drReplyTargetIdx_(msgs.map(function (gm) {
+          const fromAddr = drAddrOf_(gm.getFrom());
+          return { fromAddr: fromAddr, body: self[fromAddr] ? gm.getPlainBody() : '' };
+        }), res.reqId, self);
+        if (idx < 0) outcome = { sent: false, reason: 'unmatched' };
+        else {
+          const parts = drResolvedReplyParts_({ by: byLabel, label: res.label, via: res.via,
+            at: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a z') });
+          appReplyAll_(msgs[idx], parts.text, parts.html);
+          outcome = { sent: true };
+        }
       }
     }
   } catch (e) {

@@ -3747,6 +3747,40 @@ function mailMergeBcc_(opts) {
 function appSendMail_(opts) {
   MailApp.sendEmail(mailMergeBcc_(opts));
 }
+/** PURE (Node-pinned; cycle 26 F12 + F33) — every address in the given header
+ *  values, lowercased, de-duplicated, in order. Read by PATTERN, never by
+ *  splitting on commas: a display name may hold one ("Ruiz, Ana" <ana@x.com>). */
+function mailHeaderAddrs_(headers) {
+  const seen = {}, out = [];
+  (Array.isArray(headers) ? headers : [headers]).forEach(function (h) {
+    (String(h == null ? '' : h).match(/[^\s<>"',;:()]+@[^\s<>"',;:()]+/g) || []).forEach(function (a) {
+      const v = a.toLowerCase();
+      if (!seen[v]) { seen[v] = 1; out.push(v); }
+    });
+  });
+  return out;
+}
+/** Everyone a reply-all to this Gmail message can reach: its From, Reply-To,
+ *  To and Cc. Deliberately the WIDEST reading (Gmail answers Reply-To when
+ *  there is one, else From) — a caller deciding whether a reply may leave the
+ *  company must see every address either reading could mail. */
+function mailReplyAudience_(message) {
+  return mailHeaderAddrs_([message.getFrom(), message.getReplyTo(), message.getTo(), message.getCc()]);
+}
+/** Cycle 26 F33 — THE one reply on an existing thread, for every automated
+ *  reply (the Dept Request and Spanish "resolved" replies). A reply is a send:
+ *  both call sites called `replyAll` themselves, so MAIL_BCC_ALL — which rides
+ *  every other mail the app sends — never saw them, and the MAIL-SWEEP pin
+ *  counted `sendEmail` only. The BCC list rides here (never an address already
+ *  on the message), as "UMS Team Tools", from the Send-mail-as alias when one
+ *  is set. Throws like any send; the caller records the outcome. */
+function appReplyAll_(message, text, htmlBody) {
+  const opts = mailMergeBcc_({ to: mailReplyAudience_(message).join(','), htmlBody: htmlBody, name: 'UMS Team Tools' });
+  delete opts.to;   // only there so the merge can skip an address the reply already reaches
+  const from = repSenderFrom_();
+  if (from) opts.from = from;
+  message.replyAll(text, opts);
+}
 function esc_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

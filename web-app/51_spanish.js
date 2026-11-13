@@ -203,8 +203,8 @@ function spanishSearchQuery_(addr, days) {
  *  opened, exactly as the first-reply rule read it), or 'other' (a cc'd colleague, a non-member, or the
  *  requester's COURTESY reply — `spanishIsCourtesyOnly_`, operator 2026-10-05 — NEUTRAL: it neither
  *  answers nor reopens). The first message is always the request.
- *  `kind` is 'email' or 'vm'. Reads From/Subject/Date, and the body of a
- *  requester's later message. */
+ *  `kind` is 'email' or 'vm'. Reads From/Subject/Date, and the body (and, F10,
+ *  the auto-reply headers) of a requester's later message. */
 function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilter) {
   const requester = msgs.length ? emailAddrOnly_(msgs[0].getFrom()) : '';
   return msgs.map(function (m, i) {
@@ -217,12 +217,44 @@ function spanishThreadRoles_(msgs, kind, members, haveMembers, vmSender, vmFilte
     else if (from && from === requester) {
       // A thank-you is not a request (operator 2026-10-05), and neither is the
       // app's own resolved reply (SP1) — on a thread the deployer's mailbox
-      // opened, that reply comes from the requester's own address.
+      // opened, that reply comes from the requester's own address. F3 (cycle
+      // 26): a follow-up that QUOTES that reply is a request — the helper
+      // reads the reply's own opening, not the marker anywhere in the body.
       const body = m.getPlainBody();
-      role = (spanishIsCourtesyOnly_(body) || spanishIsAppReply_(body)) ? 'other' : 'request';
+      if (spanishIsCourtesyOnly_(body) || spanishIsAppReply_(body)) role = 'other';
+      // F10 (cycle 26): the requester's out-of-office answers the app's
+      // reply-all on the same thread, from the requester's address — it
+      // reopened the request it was resolved on, unclaimed, every time. An
+      // automatic message is NEUTRAL. Only when the request itself was not
+      // one: a phone system or a form mailer marks ALL its mail automatic, and
+      // its second message is as real as its first (g159 — a rule that hides
+      // work fails toward a look).
+      else role = (spanishMsgAutomatic_(m) && !spanishMsgAutomatic_(msgs[0])) ? 'other' : 'request';
     }
     else role = (!haveMembers && from) ? 'resolver' : 'other';
     return { ms: m.getDate().getTime(), role: role, from: from };
+  });
+}
+/** PURE (Node-pinned; cycle 26 F10) — is this an AUTOMATIC message (an
+ *  out-of-office, an auto-reply)? `h` = {subject, autoSubmitted, xAutoreply}.
+ *  The Dept Request rule (drReplyIsAutomatic_) with two tests left out ON
+ *  PURPOSE: the sender's address (here the sender is the requester, whose first
+ *  message was already taken as a request) and the Precedence header (mail
+ *  delivered through the group inbox carries `Precedence: list`, so that test
+ *  would call every follow-up automatic). Plus the Spanish subjects. */
+function spanishIsAutomatic_(h) {
+  const o = h || {};
+  if (/^\s*(respuesta autom[aá]tica|fuera de (la )?oficina)\b/i.test(String(o.subject || ''))) return true;
+  return drReplyIsAutomatic_({ fromAddr: '', subject: o.subject, autoSubmitted: o.autoSubmitted, xAutoreply: o.xAutoreply, precedence: '' });
+}
+/** F10 — spanishIsAutomatic_ over a Gmail message. A header that cannot be
+ *  read is "not automatic": the message stays a request. */
+function spanishMsgAutomatic_(m) {
+  const read = function (fn) { try { return fn(); } catch (_) { return ''; } };
+  return spanishIsAutomatic_({
+    subject: read(function () { return m.getSubject(); }),
+    autoSubmitted: read(function () { return m.getHeader('Auto-Submitted'); }),
+    xAutoreply: read(function () { return m.getHeader('X-Autoreply'); }),
   });
 }
 /** SP-2 follow-up (operator 2026-10-05): the words a COURTESY reply is made
@@ -933,9 +965,16 @@ function spanishResolveInput_(outcome, note) {
   const n = String(note == null ? '' : note).replace(/\r\n?/g, '\n').trim().slice(0, SPANISH_RESOLVE_NOTE_MAX);
   return { outcome: k, outcomeLabel: k ? SPANISH_RESOLVE_OUTCOMES[k] : '', note: n };
 }
-/** PURE (Node-pinned) — is this message body the app's own resolved reply? */
+/** PURE (Node-pinned) — is this message body the app's own resolved reply?
+ *  F3 (cycle 26): it OPENS with the reply's lead and carries the marker. The
+ *  marker anywhere was the old test, and a requester's follow-up quotes the
+ *  app's reply — marker and all — so "that didn't work, please call again"
+ *  was read as the app talking and never became a request. A message that
+ *  quotes the reply opens with the person's words or a quote header, never
+ *  with the lead; a note inside the real reply cannot change how it opens. */
 function spanishIsAppReply_(body) {
-  return String(body == null ? '' : body).indexOf(SPANISH_APP_REPLY_MARKER) >= 0;
+  const t = String(body == null ? '' : body).replace(/^\s+/, '');
+  return t.indexOf(SPANISH_APP_REPLY_LEAD) === 0 && t.indexOf(SPANISH_APP_REPLY_MARKER) > 0;
 }
 /** PURE (Node-pinned) — the message a reply answers: the LATEST request in the
  *  thread (a requester's follow-up is the request being resolved), else the
@@ -951,7 +990,7 @@ function spanishResolveReplyParts_(info) {
   const o = info || {};
   const P = CN_EMAIL_PALETTE;
   const by = String(o.by || 'someone');
-  const head = 'This request was marked resolved by ' + by + (o.at ? ' on ' + o.at : '') + '.';
+  const head = SPANISH_APP_REPLY_LEAD + by + (o.at ? ' on ' + o.at : '') + '.';   // F3: the lead spanishIsAppReply_ reads
   const lines = [head];
   if (o.outcomeLabel) lines.push('Outcome: ' + o.outcomeLabel + '.');
   if (o.note) lines.push('Note: ' + o.note);
@@ -970,6 +1009,7 @@ function spanishResolveReplyNote_(reply) {
   if (!reply) return '';
   if (reply.sent) return 'A reply saying so was sent on the email thread.';
   if (reply.reason === 'voicemail') return 'A voicemail request has no email to reply to, so no reply was sent.';
+  if (reply.reason === 'outside') return 'No reply was sent: it would have gone to an address outside the company. Tell the requester yourself if they need to know.';
   if (reply.reason === 'failed') return 'The reply on the email thread could not be sent — the request is still resolved.';
   return '';
 }
@@ -986,10 +1026,22 @@ function spanishThreadKind_(msgs) {
   const vmSender = getSpanishVmSender_(), vmFilter = getSpanishVmFilter_();
   return (msgs && msgs.length && vmSender && vmFilter && spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), vmSender, vmFilter)) ? 'vm' : 'email';
 }
+/** PURE (Node-pinned; cycle 26 F12) — would a reply to these addresses leave
+ *  the company? True when ANY of them is outside the org's domains — and when
+ *  there is none to judge (an unreadable header is not "inside"). */
+function spanishReplyLeavesOrg_(addrs) {
+  const list = addrs || [];
+  return !list.length || list.some(function (a) { return !isOrgEmail_(a); });
+}
 /** SP1 — reply on a freshly resolved request's thread. Called AFTER the
  *  resolve's lock is released (g34) and never throws — the resolve stands.
- *  Replies-all to the latest request message, as "UMS Team Tools". Returns
- *  { sent: true } or { sent: false, reason } — 'off', 'voicemail', 'failed'. */
+ *  Replies-all to the latest request message, as "UMS Team Tools", through
+ *  appReplyAll_ (F33 — MAIL_BCC_ALL rides it). F12 (cycle 26): a reply-all
+ *  goes to EVERYONE on that message, and it carries the resolver's free-text
+ *  note — so when any address it can reach is outside the org's domains
+ *  (CONFIG.ORG_EMAIL_DOMAINS), nothing is sent and the resolver is told.
+ *  Returns { sent: true } or { sent: false, reason } — 'off', 'voicemail',
+ *  'outside', 'failed'. */
 function spanishSendResolveReply_(msgs, kind, emp, input) {
   try {
     if (!getFlag_('spanishResolveReply')) return { sent: false, reason: 'off' };
@@ -997,18 +1049,42 @@ function spanishSendResolveReply_(msgs, kind, emp, input) {
     const members = getSpanishInboxMembers_();
     const roles = spanishThreadRoles_(msgs, 'email', members, Object.keys(members).length > 0);
     const target = msgs[spanishReplyTargetIdx_(roles)] || msgs[0];
+    if (spanishReplyLeavesOrg_(mailReplyAudience_(target))) return { sent: false, reason: 'outside' };   // F12
     const parts = spanishResolveReplyParts_({ by: drResolverLabel_(emp && emp.name, emp && emp.email),
       at: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMM d, yyyy h:mm a z'),
       outcomeLabel: input && input.outcomeLabel, note: input && input.note });
-    const opts = { htmlBody: parts.html, name: 'UMS Team Tools' };
-    const from = repSenderFrom_();
-    if (from) opts.from = from;
-    target.replyAll(parts.text, opts);
+    appReplyAll_(target, parts.text, parts.html);
     return { sent: true };
   } catch (e) {
     console.warn('spanishSendResolveReply_ failed: ' + e.message);
     return { sent: false, reason: 'failed' };
   }
+}
+/** F11 (cycle 26) — what the roles walk needs besides the messages, read ONCE
+ *  per resolve call: the member list and the voicemail sender / filter. */
+function spanishRolesCtx_() {
+  const members = getSpanishInboxMembers_();
+  return { members: members, haveMembers: Object.keys(members).length > 0,
+           vmSender: getSpanishVmSender_(), vmFilter: getSpanishVmFilter_() };
+}
+/** F11 — a thread's roles under its OWN kind (a voicemail thread walks as
+ *  'vm'), the walk the pending list and the claim floor run. Reads Gmail, so
+ *  a resolve calls it BEFORE its lock. */
+function spanishThreadRolesIn_(msgs, ctx) {
+  const kind = (msgs && msgs.length && ctx.vmSender && ctx.vmFilter &&
+    spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), ctx.vmSender, ctx.vmFilter)) ? 'vm' : 'email';
+  return spanishThreadRoles_(msgs, kind, ctx.members, ctx.haveMembers, ctx.vmSender, ctx.vmFilter);
+}
+/** PURE (Node-pinned; cycle 26 F11) — does the thread still hold an OPEN
+ *  request? The pending list's own rule (spanishEpisodes_: the last episode
+ *  has no resolve). The resolve endpoints asked only "is there a manual
+ *  resolve at least as new as the newest message" — so a card left on screen
+ *  after a MEMBER answered by email (no manual row at all), or after a
+ *  thank-you arrived, still wrote a resolve row and sent a second "this
+ *  request was resolved" reply on a thread with nothing open. */
+function spanishRolesOpen_(roles, manualRec) {
+  const eps = spanishEpisodes_(roles, manualRec).episodes;
+  return !!eps.length && eps[eps.length - 1].resolveMs == null;
 }
 /** Manual resolve — gated on canSeeSpanishInbox_ (the members who action the
  *  inbox + managers), SCOPE-GUARDED like getSpanishInboxThreadBody (the thread
@@ -1034,13 +1110,17 @@ function resolveSpanishThread(threadId, outcome, note) {
     if (!msgs.length) return { error: 'Empty thread.' };
     if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
+    const roles = spanishThreadRolesIn_(msgs, spanishRolesCtx_());   // F11 — Gmail reads, so before the lock
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-      // SP-1 (cycle 23): "already" only when the existing resolve covers the
+      // SP-1 (cycle 23): "already" when the existing resolve covers the
       // thread's NEWEST message — a voicemail that arrived after it is new
       // work, and resolving it appends a later row (the fold keeps the latest).
-      if (spanishResolveCovered_(spanishManualResolvedMap_()[tid], spanishThreadLatestMs_(msgs, spanishSelfAddrs_()))) return { success: true, already: true };
+      // F11 (cycle 26): and "already" when NO request is open on the thread —
+      // a member answered by email, or the newer mail was only a thank-you.
+      const prior = spanishManualResolvedMap_()[tid];
+      if (spanishResolveCovered_(prior, spanishThreadLatestMs_(msgs, spanishSelfAddrs_())) || !spanishRolesOpen_(roles, prior)) return { success: true, already: true };
       getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(), input.outcome,
       ]));
@@ -1084,7 +1164,8 @@ function spanishBulkIds_(ids, max) {
  *  (Gmail reads never hold it), then ONE lock, ONE read of the resolve fold
  *  and ONE write of the rows not already covered (g145 — appendRowsSafe_).
  *  A thread that cannot be resolved is NAMED in `failed`, never dropped;
- *  `already` is the idempotent half. PHI-free audit row (counts + ids). */
+ *  `already` is the idempotent half — covered by a resolve, or (F11) with no
+ *  request open. PHI-free audit row (counts + ids). */
 function resolveSpanishThreads(threadIds, outcome, note) {
   try {
     const emp = getEmployeeInfo_();
@@ -1099,6 +1180,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
     if (!ids.length) return { error: 'No requests selected.' };
     const failed = [], ok = [];
     const self = spanishSelfAddrs_();
+    const rolesCtx = spanishRolesCtx_();   // F11
     ids.forEach(function (tid) {
       try {
         const th = GmailApp.getThreadById(tid);
@@ -1106,7 +1188,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
         const msgs = th.getMessages();
         if (!msgs.length) { failed.push({ threadId: tid, error: 'Empty thread.' }); return; }
         if (!spanishThreadInScope_(msgs[0], addr)) { failed.push({ threadId: tid, error: 'Not a Spanish-inbox thread.' }); return; }
-        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs, self), msgs: msgs });
+        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs, self), msgs: msgs, roles: spanishThreadRolesIn_(msgs, rolesCtx) });
       } catch (eT) { failed.push({ threadId: tid, error: String((eT && eT.message) || eT) }); }
     });
     const resolved = [], already = [];
@@ -1119,7 +1201,8 @@ function resolveSpanishThreads(threadIds, outcome, note) {
         const stamp = fmtDate_(now) + ' ' + fmtTime_(now);
         const rows = [];
         ok.forEach(function (o) {
-          if (spanishResolveCovered_(manual[o.threadId], o.latestMs)) { already.push(o.threadId); return; }
+          // F11: the single resolve's rule — covered, or nothing open on the thread.
+          if (spanishResolveCovered_(manual[o.threadId], o.latestMs) || !spanishRolesOpen_(o.roles, manual[o.threadId])) { already.push(o.threadId); return; }
           rows.push([stamp, o.threadId, emp.email, now.getTime(), input.outcome]);
           resolved.push(o.threadId);
         });
@@ -1127,7 +1210,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
       } finally { lock.releaseLock(); }
     }
     // SP1: ONE reply per resolved thread, after the lock; a voicemail gets none.
-    const replies = { sent: 0, voicemail: 0, failed: [], off: false };
+    const replies = { sent: 0, voicemail: 0, outside: 0, failed: [], off: false };   // F12: `outside` — not sent, on purpose
     const byId = {};
     ok.forEach(function (o) { byId[o.threadId] = o; });
     resolved.forEach(function (tid) {
@@ -1135,6 +1218,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
       const r = spanishSendResolveReply_(msgs, spanishThreadKind_(msgs), emp, input);
       if (r.sent) replies.sent++;
       else if (r.reason === 'voicemail') replies.voicemail++;
+      else if (r.reason === 'outside') replies.outside++;
       else if (r.reason === 'off') replies.off = true;
       else replies.failed.push(tid);
     });

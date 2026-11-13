@@ -23963,7 +23963,12 @@ test('MAIL-SWEEP: every MailApp/GmailApp send in the server lives inside sendRep
     .reduce((a, b) => a + b, 0);
   assert.ok(total >= 2, 'the two senders exist (' + total + ' sends found)');
   assert.strictEqual(total, inside, (total - inside) + ' send(s) outside the two sanctioned senders -- route through appSendMail_ / sendRepEmail_ so MAIL_BCC_ALL rides along');
-  assert.ok(/mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'sendRepEmail_')) && /mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'appSendMail_')), 'both senders merge the BCC list');
+  assert.ok(/mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'sendRepEmail_')) && /mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'appSendMail_')), 'both senders merge the BCC list');  // Cycle 26 F33: a reply on an existing thread is a send too, and this sweep
+  // counted `sendEmail` only — two `replyAll` calls went out with no BCC list.
+  // The third sanctioned sender is appReplyAll_ (its own pin drives it).
+  const replies = (src.match(/\.(?:replyAll|reply|forward)\(/g) || []).length;
+  const inSeam = (foNc(extractRawFunction('Code.js', 'appReplyAll_')).match(/\.(?:replyAll|reply|forward)\(/g) || []).length;
+  assert.ok(replies >= 1 && replies === inSeam, (replies - inSeam) + ' thread reply call(s) outside appReplyAll_');
 });
 
 test('QC-TYPE: cnQaCritRetyped_ behavioural + the Admin editor asks before a criterion changes TYPE under existing answers', () => {
@@ -34014,7 +34019,9 @@ test('SP-1 (cycle 23): a voicemail that arrives AFTER a manual resolve can be re
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: () => {}, spanishPendingIdsDrop_: (t) => dropped.push(t),
       spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
       // SP1: the reply is its own pins' business here — no self addresses, no reply.
-      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }) });
+      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }),
+      // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
+      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true, });
     vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
     ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));   // Batch C: the coverage rule is shared with the bulk resolve
     return { r: JSON.parse(JSON.stringify(c.resolveSpanishThread('t1'))), appended, dropped };
@@ -36309,8 +36316,9 @@ const b13CourtesySrc_ = () => {
   return codeSrc.slice(i, codeSrc.indexOf('];', i) + 2).replace(/^const /, 'var ') + '\n' +
     extractRawFunction('Code.js', 'drReplyNewText_') + '\n' + extractRawFunction('Code.js', 'spanishIsCourtesyOnly_') + '\n' +
     // SP1: the roles also read the app's own resolved reply as neutral.
-    ['SPANISH_APP_REPLY_MARKER', 'SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
-    extractRawFunction('Code.js', 'spanishIsAppReply_');
+    // Cycle 26 F3 + F10: the reply's lead, and the automatic-message rule the roles read.
+    ['SPANISH_APP_REPLY_MARKER', 'SPANISH_APP_REPLY_LEAD', 'SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
+    ['spanishIsAppReply_', 'drReplyIsAutomatic_', 'spanishIsAutomatic_', 'spanishMsgAutomatic_'].map((f) => extractRawFunction('Code.js', f)).join('\n');
 };
 // b10Ctx_ plus the courtesy rule the roles read (SP-2 follow-up).
 // Batch C: the list readers' department index is stubbed (empty, readable) unless a test names it.
@@ -42723,7 +42731,9 @@ test('Batch C: resolveSpanishThreads — the caller gate before any read, a sele
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a, x, y, z, n, note) => log.push('audit:' + a + ':' + note),
       spanishPendingIdsDrop_: (t) => log.push('drop:' + t), spanishClaimsMap_: () => ({ t2: { by: 'ana@x' } }), spanishBustClaimants_: (e) => log.push('bust:' + e.join(',')),
       // SP1: the replies are the SP1 pins' business — none here.
-      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }) });
+      spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }),
+      // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
+      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true, });
     vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
     ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
     return { r: J(c.resolveSpanishThreads(opts.ids)), log };
@@ -44282,6 +44292,8 @@ test('ED4: a written body\'s formatting — :::center / :::right … ::: aligns 
 
 console.log('\nOperator round 2026-11-09 — DR1 (Dept Request audit list + the resolved reply)');
 const DR1_DR = Object.assign({}, DR_D_ENUM, { REPLY_REASON: 18 });
+// Cycle 26 F12 + F33: the reply seam and the org check, real, for a context that sends a thread reply.
+const mailSeamSrc_ = () => ['mailHeaderAddrs_', 'mailReplyAudience_', 'mailMergeBcc_', 'appReplyAll_', 'isOrgEmail_'].map((f) => extractRawFunction('Code.js', f)).join('\n');
 const dr1Ctx_ = (extra, fns, consts) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, RegExp, Date, Error, isFinite, console,
     DR: DR1_DR, DR_HEADERS: new Array(19).fill('h'), DR_RESOLVED_VIA_VALUES: ['email', 'app', 'reply', 'self', 'copy'],
@@ -44322,34 +44334,46 @@ test('DR1: the resolved reply goes on the NEWEST thread a request has; a request
   assert.deepStrictEqual([c.drResolvedReplyNote_(null), c.drResolvedReplyNote_({ sent: false, reason: 'off' })], ['', ''], 'nothing tried: nothing said');
 });
 
-test('DR1: drSendResolvedReply_ — only after a FRESH resolve; the toggle off sends nothing; no thread is "untracked"; it replies-all to the thread’s FIRST message (the request email, never whoever wrote last) as UMS Team Tools; a missing thread or a throw is said, never thrown; each outcome is audited by id with no patient (driven)', () => {
+test('DR1: drSendResolvedReply_ — only after a FRESH resolve; the toggle off sends nothing; no thread is "untracked"; it replies-all to the request’s OWN email (cycle 26 F9 — never the thread’s first message, never whoever wrote last) as UMS Team Tools; a missing thread, an unmatched one or a throw is said, never thrown; each outcome is audited by id with no patient (driven)', () => {
   let flag = true;
   const sent = [], audits = [];
+  // A Gmail message as the reply reads it: who sent it, its plain body, who it reaches.
+  const gm = (tag, from, body, extra) => Object.assign({ getFrom: () => from, getPlainBody: () => body, getTo: () => 'billing@ums.com', getCc: () => 'ops@ums.com',
+    getReplyTo: () => 'nina@ums.com, ops@ums.com', replyAll: (t, o) => sent.push([tag, t, o]) }, extra || {});
+  const link = (id) => 'Note text\n\nMark this request resolved: https://script.google.com/x/exec?resolve=' + id;
   const threads = {
-    T1: [{ replyAll: (t, o) => sent.push(['first', t, o]) }, { replyAll: () => sent.push(['last']) }],
-    T2: [], T3: [{ replyAll: () => { throw new Error('quota'); } }],
+    // T1 is SHARED (DR-1): another request's email opened it; this request's email is the second message.
+    T1: [gm('other-request', 'UMS Team Tools <ops@ums.com>', link('R0')), gm('own', 'Nina via UMS <ops@ums.com>', link('R1')),
+         gm('dept-reply', 'Billing <billing@ums.com>', 'Done.\n\n> ' + link('R1'))],
+    T2: [], T3: [gm('boom', 'ops@ums.com', link('R1'), { replyAll: () => { throw new Error('quota'); } })],
+    T4: [gm('other-request', 'ops@ums.com', link('R0')), gm('dept-reply', 'billing@ums.com', 'Done.\n\n> ' + link('R1'))],
   };
   const c = dr1Ctx_({ getFlag_: (k) => (k === 'deptResolvedReply' ? flag : false),
     GmailApp: { getThreadById: (id) => (id === 'GONE' ? null : { getMessages: () => threads[id] || [] }) },
-    Utilities: { formatDate: () => 'Nov 9, 2026 3:04 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago' },
+    Utilities: { formatDate: () => 'Nov 9, 2026 3:04 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago', CALL_NOTES: { CC_EMAIL: 'ops@ums.com' } },
+    Session: { getEffectiveUser: () => ({ getEmail: () => 'ops@ums.com' }) }, mailBccAll_: () => [],
     repSenderFrom_: () => '', writeAuditLog_: (e, a, d, t, adj, h, n) => audits.push([e.id, a, n].join(' | ')) },
-  ['drReplyThreadId_', 'drResolvedReplyParts_', 'drSendResolvedReply_']);
+  ['drReplyThreadId_', 'drResolvedReplyParts_', 'drAddrOf_', 'drReplyExcludedBase_', 'drReplyTargetIdx_', 'drSendResolvedReply_']);
+  vm.runInContext(mailSeamSrc_(), c);
   const base = { found: true, already: false, reqId: 'R1', via: 'app', label: 'Close Order', byId: 'E1', byName: 'Nina', threadIds: 'T0 T1' };
   assert.strictEqual(c.drSendResolvedReply_(Object.assign({}, base, { already: true }), 'Ana'), null, 'already resolved: nothing tried');
   assert.strictEqual(c.drSendResolvedReply_({ found: false }, 'Ana'), null);
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(base, 'Ana (ana@x.com)')), { sent: true });
   assert.strictEqual(sent.length, 1);
-  assert.strictEqual(sent[0][0], 'first', 'THE RULE: the request email itself, so the reply reaches its sender, department and CC');
+  assert.strictEqual(sent[0][0], 'own', 'THE RULE (F9): this request’s own email — not the other request’s that opened the shared thread, not the department’s reply that quotes it');
   assert.ok(/marked resolved by Ana \(ana@x\.com\)/.test(sent[0][1]) && sent[0][2].name === 'UMS Team Tools' && /<p/.test(sent[0][2].htmlBody));
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: '' }), 'Ana')), { sent: false, reason: 'untracked' });
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'T2' }), 'Ana')), { sent: false, reason: 'missing' });
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'GONE' }), 'Ana')), { sent: false, reason: 'missing' });
+  assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'T4' }), 'Ana')), { sent: false, reason: 'unmatched' },
+    'F9: no message the app sent carries this request’s id — nothing is sent rather than a reply to another request’s email');
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(Object.assign({}, base, { threadIds: 'T3' }), 'Ana')), { sent: false, reason: 'failed' }, 'a throw is a failed reply, never a failed resolve');
   flag = false;
   assert.deepStrictEqual(hJ(c.drSendResolvedReply_(base, 'Ana')), { sent: false, reason: 'off' });
   assert.strictEqual(sent.length, 1, 'off: nothing sent');
   assert.deepStrictEqual(audits, ['E1 | DeptRequestResolvedReply | reqId=R1; sent', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=untracked',
-    'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=failed']);
+    'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=missing', 'E1 | DeptRequestResolvedReply | reqId=R1; notSent=unmatched',
+    'E1 | DeptRequestResolvedReply | reqId=R1; notSent=failed']);
 });
 
 test('DR1: every person-made resolve replies AFTER the resolve writer has released its lock — the in-app button, the email link’s confirm page and a Replies-to-check "Resolved" — and hands back what became of it; the writer returns the thread ids and who sent the request (source + driven)', () => {
@@ -44734,7 +44758,7 @@ test('PF1: the cards and Stats take ONE cohort list, so the read-ahead\u2019s wi
 });
 
 console.log('\nOperator round 2026-11-09 — SP1 (Spanish resolve with a reply; auto-assign to clocked-in members)');
-const sp1Consts_ = () => ['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX', 'SPANISH_APP_REPLY_MARKER'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n');
+const sp1Consts_ = () => ['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX', 'SPANISH_APP_REPLY_MARKER', 'SPANISH_APP_REPLY_LEAD'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n');
 const sp1Ctx_ = (extra, fns) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, Error, RegExp, console: { warn() {} },
     esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
@@ -44744,8 +44768,11 @@ const sp1Ctx_ = (extra, fns) => {
   (fns || []).forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   return ctx;
 };
-const sp1Msg_ = (from, ms, body, log) => ({ getFrom: () => from, getDate: () => new Date(ms), getSubject: () => 'Ayuda', getPlainBody: () => body || '',
-  replyAll: (t, o) => { if (log) log.push(['reply', from, ms, t, o]); } });
+const sp1Msg_ = (from, ms, body, log, extra) => Object.assign({ getFrom: () => from, getDate: () => new Date(ms), getSubject: () => 'Ayuda', getPlainBody: () => body || '',
+  // Cycle 26 F10 + F12: the walk reads auto-reply headers, the reply reads who it would reach.
+  getTo: () => 'spanish@umsupply.com', getCc: () => '', getReplyTo: () => '', getHeader: () => '',
+  replyAll: (t, o) => { if (log) log.push(['reply', from, ms, t, o]); } }, extra || {});
+
 
 test('SP1: the outcome is one of the server’s four or none (an older page), an unknown one is refused; the note is trimmed, its line breaks kept and capped; the reply names who, the outcome and the note, escapes every word and carries the marker; the person is told what became of it (driven)', () => {
   const c = sp1Ctx_({}, ['spanishResolveInput_', 'spanishResolveReplyParts_', 'spanishResolveReplyNote_', 'spanishIsAppReply_']);
@@ -44758,7 +44785,8 @@ test('SP1: the outcome is one of the server’s four or none (an older page), an
   const p = hJ(c.spanishResolveReplyParts_({ by: 'Ana <x>', at: 'Nov 9', outcomeLabel: 'Reached the patient', note: 'Called back\n<b>ok</b>' }));
   assert.ok(/^This request was marked resolved by Ana <x> on Nov 9\.\nOutcome: Reached the patient\.\nNote: Called back\n<b>ok<\/b>\n\nSent automatically by UMS Team Tools/.test(p.text), p.text);
   assert.ok(p.html.includes('Ana &lt;x&gt;') && p.html.includes('Called back<br>&lt;b&gt;ok&lt;/b&gt;') && !p.html.includes('<b>ok'), 'escaped, the note’s lines kept');
-  assert.ok(c.spanishIsAppReply_(p.text) && c.spanishIsAppReply_(p.html), 'the marker rides both parts');
+  const marker = vm.runInContext('SPANISH_APP_REPLY_MARKER', c);
+  assert.ok(c.spanishIsAppReply_(p.text) && p.html.includes(marker), 'the plain-text part — the one the thread walk reads — is recognised (cycle 26 F3: by how it opens), and the marker rides the HTML part too');
   const bare = hJ(c.spanishResolveReplyParts_({ by: 'Ana' }));
   assert.ok(!/Outcome:|Note:/.test(bare.text), 'no outcome and no note: no such lines');
   assert.ok(/sent on the email thread/.test(c.spanishResolveReplyNote_({ sent: true })));
@@ -44791,9 +44819,9 @@ test('SP1: spanishSendResolveReply_ — off sends nothing; a voicemail gets no r
   const log = [];
   let flag = true;
   const c = sp1Ctx_({ getFlag_: (k) => (k === 'spanishResolveReply' ? flag : false), getSpanishInboxMembers_: () => ({ 'm@ums.com': true }),
-    Utilities: { formatDate: () => 'Nov 9, 2026 3:00 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago' }, repSenderFrom_: () => '' },
-  ['spanishIsAppReply_', 'spanishThreadRoles_', 'spanishReplyTargetIdx_', 'spanishResolveReplyParts_', 'drResolverLabel_', 'spanishSendResolveReply_']);
-  vm.runInContext(b13CourtesySrc_(), c);
+    Utilities: { formatDate: () => 'Nov 9, 2026 3:00 PM CST' }, CONFIG: { TIMEZONE: 'America/Chicago', ORG_EMAIL_DOMAINS: ['ums.com', 'umsupply.com'] }, repSenderFrom_: () => '', mailBccAll_: () => [] },
+  ['spanishIsAppReply_', 'spanishThreadRoles_', 'spanishReplyTargetIdx_', 'spanishResolveReplyParts_', 'drResolverLabel_', 'spanishReplyLeavesOrg_', 'spanishSendResolveReply_']);
+  vm.runInContext(b13CourtesySrc_() + '\n' + mailSeamSrc_(), c);
   c.spanishVmMatch_ = () => false;
   const msgs = [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda', log), sp1Msg_('m@ums.com', 150, 'Listo', log), sp1Msg_('rep@ums.com', 200, 'Una pregunta mas?', log)];
   const input = { outcome: 'reached', outcomeLabel: 'Reached the patient', note: 'Called her back' };
@@ -44802,7 +44830,7 @@ test('SP1: spanishSendResolveReply_ — off sends nothing; a voicemail gets no r
   assert.deepStrictEqual([log[0][1], log[0][2]], ['rep@ums.com', 200], 'the latest request message — the follow-up being resolved');
   assert.ok(/marked resolved by Ana \(ana@ums\.com\) on Nov 9, 2026 3:00 PM CST\.\nOutcome: Reached the patient\.\nNote: Called her back/.test(log[0][3]) && log[0][4].name === 'UMS Team Tools' && /<p/.test(log[0][4].htmlBody));
   assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(msgs, 'vm', {}, input)), { sent: false, reason: 'voicemail' }, 'a voicemail: no reply');
-  const boom = [{ getFrom: () => 'rep@ums.com', getDate: () => new Date(1), getPlainBody: () => '', replyAll: () => { throw new Error('quota'); } }];
+  const boom = [sp1Msg_('rep@ums.com', 1, '', null, { replyAll: () => { throw new Error('quota'); } })];
   assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(boom, 'email', {}, input)), { sent: false, reason: 'failed' });
   flag = false;
   assert.deepStrictEqual(hJ(c.spanishSendResolveReply_(msgs, 'email', {}, input)), { sent: false, reason: 'off' });
@@ -44822,6 +44850,8 @@ test('SP1: resolveSpanishThread — an unknown outcome is refused before any Gma
       fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a, x, y, z, n, note) => log.push(['audit', a, note]),
       spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
       spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: () => 100, spanishThreadKind_: () => 'email',
+      // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
+      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true,
       spanishSendResolveReply_: (m, k, e, inp) => { log.push(['reply', inp.outcome, inp.note]); return { sent: true }; } },
     ['spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread']);
     return { r: hJ(c.resolveSpanishThread('t1', outcome, 'a <note>')), log };
@@ -44854,6 +44884,7 @@ test('SP1: resolveSpanishThreads — one outcome and note for all; ONE reply per
     appendRowsSafe_: (sh, rows) => log.push(['rows', rows.map((r) => r[1] + ':' + r[4])]), fmtDate_: () => 'd', fmtTime_: () => 't',
     writeAuditLog_: (e, a, x, y, z, n, note) => log.push(['audit', note]), spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
     spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: (m) => m[0].getDate().getTime(),
+    spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true,   // cycle 26 F11: its own pin's business
     spanishThreadKind_: (m) => (m === threads.v ? 'vm' : 'email'),
     spanishSendResolveReply_: (m, kind) => { log.push(['reply', m[0].getFrom()]); if (kind === 'vm') return { sent: false, reason: 'voicemail' }; return m === threads.b ? { sent: false, reason: 'failed' } : { sent: true }; } },
   ['spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads']);
@@ -44862,7 +44893,7 @@ test('SP1: resolveSpanishThreads — one outcome and note for all; ONE reply per
   assert.deepStrictEqual(hJ(log.filter((e) => e[0] === 'rows')[0][1]), ['a:voicemail', 'b:voicemail', 'v:voicemail'], 'every row carries the one outcome');
   assert.deepStrictEqual(log.filter((e) => e[0] === 'reply').map((e) => e[1]), ['a@ums.com', 'b@ums.com', 'v@ums.com'], 'one reply attempt per resolved thread — none for the already-resolved one');
   assert.ok(log.indexOf('unlock') < log.findIndex((e) => e[0] === 'reply'), 'after the lock');
-  assert.deepStrictEqual(r.replies, { sent: 1, voicemail: 1, failed: ['b'], off: false });
+  assert.deepStrictEqual(r.replies, { sent: 1, voicemail: 1, outside: 0, failed: ['b'], off: false });
   assert.ok(/outcome=voicemail replies=1 threadIds=a,b,v$/.test(log.filter((e) => e[0] === 'audit')[0][1]) && !/left one/.test(JSON.stringify(log.filter((e) => e[0] === 'audit'))), 'counted, never the note');
   assert.ok(/how the request ended/.test(c.resolveSpanishThreads(['a'], 'nope', '').error), 'an unknown outcome refuses the whole selection');
 });
@@ -46338,6 +46369,250 @@ test('F75 (cycle 26): a card-reader failure says WHICH — only "start" blames t
   const read = extractFnFrom(src, 'intakeCardRead_');
   assert.ok(/kind: \(e && e\.kind\) \|\| 'start'/.test(read) && /fail\(intakeOcrFailText_\(res\.kind, es\)\);/.test(read), 'the kind reaches the message');
   assert.ok(/if \(res\.kind === 'checksum' && typeof errBeaconSend_ === 'function'\) errBeaconSend_\(intakeOcrBeaconText_\(res\.kind, res\.file\), '', 'errorState'\);/.test(read), 'only a checksum failure is beaconed, through the bounded text');
+});
+
+// ---------------------------------------------------------------------------
+// Cycle 26 Batch 3 — thread replies (F3, F9, F10, F11, F12, F33). The app
+// replies on two kinds of email thread (a Dept Request's, a Spanish request's)
+// and reads the Spanish thread back as a sequence of requests. Six ways that
+// went wrong: a follow-up quoting the app's reply was read as the app (F3), a
+// reply went to another request's email (F9), an out-of-office reopened a
+// request (F10), a stale card resolved and replied on a thread with nothing
+// open (F11), a free-text note went to an address outside the company (F12),
+// and neither reply carried the BCC every other mail does (F33).
+console.log('\nCycle 26 Batch 3 — thread replies (F3, F9, F10, F11, F12, F33)');
+
+const c26Marker_ = () => vm.runInContext(extractConstDecl_('SPANISH_APP_REPLY_MARKER').replace(/^const /, 'var ') + '; SPANISH_APP_REPLY_MARKER', vm.createContext({}));
+// The Spanish thread walk, real: the roles, the episodes, the open rule.
+const c26SpCtx_ = (extra, fns) => {
+  const c = sp1Ctx_(Object.assign({ spanishVmMatch_: () => false }, extra || {}),
+    ['spanishThreadRoles_', 'spanishManualStamps_', 'spanishEpisodes_', 'spanishRolesOpen_', 'spanishReplyTargetIdx_'].concat(fns || []));
+  vm.runInContext(b13CourtesySrc_(), c);
+  return c;
+};
+
+test('F3 (cycle 26): a requester’s follow-up that QUOTES the app’s resolved reply is a request — top-posted, bottom-posted and Outlook-style; the app’s own reply is still neutral whatever its note holds; the marker alone proves nothing (driven)', () => {
+  const c = c26SpCtx_({}, ['spanishResolveReplyParts_']);
+  const marker = c26Marker_();
+  const appReply = hJ(c.spanishResolveReplyParts_({ by: 'Ana (ana@ums.com)', at: 'Nov 9', outcomeLabel: 'Left a voicemail', note: 'Called twice' })).text;
+  const quoted = appReply.split('\n').map((l) => '> ' + l).join('\n');
+  const followUps = {
+    'top-posted (Gmail)': 'No me llamaron, por favor intenten otra vez\n\nOn Mon, Nov 9, 2026 at 3:01 PM UMS Team Tools <ops@ums.com> wrote:\n' + quoted,
+    'bottom-posted': 'On Mon, Nov 9, 2026 at 3:01 PM UMS Team Tools <ops@ums.com> wrote:\n' + quoted + '\n\nEl paciente sigue esperando la llamada',
+    'Outlook (unprefixed quote)': 'Still no call back for this patient\n\nFrom: UMS Team Tools <ops@ums.com>\nSent: Monday, November 9, 2026 3:01 PM\nTo: Rep\nSubject: RE: Ayuda\n\n' + appReply,
+    'quote only, no header': quoted + '\n\nOtra vez por favor',
+  };
+  Object.keys(followUps).forEach((k) => {
+    assert.strictEqual(c.spanishIsAppReply_(followUps[k]), false, k + ': a message that quotes the app’s reply is not the app’s reply');
+    // The thread: the request, a manual resolve at 200, the app's reply at 210 (from the deployer, a member), then the follow-up.
+    const msgs = [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda'), sp1Msg_('ops@ums.com', 210, appReply), sp1Msg_('rep@ums.com', 300, followUps[k])];
+    const roles = hJ(c.spanishThreadRoles_(msgs, 'email', { 'ops@ums.com': true }, true));
+    assert.strictEqual(roles[2].role, 'request', 'THE REGRESSION (' + k + '): the follow-up was read as the app talking and never became a request');
+    assert.strictEqual(c.spanishRolesOpen_(roles, { by: 'ana@ums.com', ms: 200 }), true, k + ': so the thread is pending again');
+  });
+  // The app's own reply, on a thread its own mailbox opened — neutral, even with a note built to look like a quote.
+  const hostile = hJ(c.spanishResolveReplyParts_({ by: 'Ana', at: 'Nov 9', note: 'see below\n--\nOn Monday the patient wrote:\n> call me\n_____\nFrom: x\nSent: y' })).text;
+  [appReply, hostile, '\n  ' + appReply].forEach((body, i) => {
+    assert.strictEqual(c.spanishIsAppReply_(body), true, 'the app’s reply #' + i + ' is recognised by how it opens');
+    const roles = hJ(c.spanishThreadRoles_([sp1Msg_('ops@ums.com', 100, 'Necesito ayuda'), sp1Msg_('ops@ums.com', 210, body)], 'email', {}, false));
+    assert.strictEqual(roles[1].role, 'other', 'and stays neutral on a thread the app’s mailbox opened #' + i);
+  });
+  assert.strictEqual(c.spanishIsAppReply_('Gracias.\n\n' + marker), false, 'the marker without the reply’s opening is not the app’s reply');
+  assert.strictEqual(c.spanishIsAppReply_(vm.runInContext('SPANISH_APP_REPLY_LEAD', c) + 'Ana.'), false, 'nor is the opening without the marker');
+  assert.ok(appReply.indexOf(vm.runInContext('SPANISH_APP_REPLY_LEAD', c)) === 0, 'the reply is built from the lead the test reads (one constant)');
+});
+
+test('F10 (cycle 26): a requester’s out-of-office does not reopen the request the app just replied on — an automatic message is neutral; the group inbox’s Precedence header and the sender’s address are NOT consulted; a phone system whose every mail is automatic keeps its repeat messages; an unreadable header is a request (driven)', () => {
+  const c = c26SpCtx_({}, []);
+  const A = (h) => c.spanishIsAutomatic_(h);
+  assert.strictEqual(A({ autoSubmitted: 'auto-replied' }), true);
+  assert.strictEqual(A({ autoSubmitted: 'auto-generated' }), true);
+  assert.strictEqual(A({ autoSubmitted: 'no' }), false, 'Auto-Submitted: no is a person');
+  assert.strictEqual(A({ xAutoreply: 'yes' }), true);
+  ['Automatic reply: Ayuda', 'Out of Office: back Monday', 'Auto-Reply: Ayuda', 'Respuesta automática: Ayuda', 'Respuesta automatica: Ayuda', 'Fuera de la oficina', 'Fuera de oficina: vuelvo el lunes']
+    .forEach((s) => assert.strictEqual(A({ subject: s }), true, s));
+  ['Re: Ayuda', 'Ayuda — respuesta', ''].forEach((s) => assert.strictEqual(A({ subject: s }), false, 'an ordinary subject: ' + s));
+  // The two tests the Dept Request rule makes and this one must not.
+  assert.strictEqual(c.drReplyIsAutomatic_({ precedence: 'list' }), true, 'non-vacuous: the Dept Request rule does read Precedence');
+  assert.strictEqual(A({ precedence: 'list', fromAddr: 'no-reply@8x8.com' }), false,
+    'THE GUARD: mail delivered through the group inbox carries Precedence: list — reading it would hide every follow-up');
+  // Driven through the walk.
+  const hdr = (map) => ({ getHeader: (k) => map[k] || '' });
+  const ooo = sp1Msg_('rep@ums.com', 320, 'I am out of the office until Monday.', null, hdr({ 'Auto-Submitted': 'auto-replied' }));
+  const base = [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda'), sp1Msg_('m@ums.com', 300, 'Listo')];
+  const members = { 'm@ums.com': true };
+  let roles = hJ(c.spanishThreadRoles_(base.concat([ooo]), 'email', members, true));
+  assert.strictEqual(roles[2].role, 'other', 'THE REGRESSION: the out-of-office reopened the request, unclaimed');
+  assert.strictEqual(c.spanishRolesOpen_(roles, null), false, 'so the thread stays answered');
+  roles = hJ(c.spanishThreadRoles_(base.concat([sp1Msg_('rep@ums.com', 320, 'Automatic reply body', null, { getSubject: () => 'Automatic reply: Ayuda' })]), 'email', members, true));
+  assert.strictEqual(roles[2].role, 'other', 'by its subject too');
+  roles = hJ(c.spanishThreadRoles_(base.concat([sp1Msg_('rep@ums.com', 320, 'Otra pregunta sobre el pedido')]), 'email', members, true));
+  assert.strictEqual(roles[2].role, 'request', 'a person’s follow-up still reopens');
+  roles = hJ(c.spanishThreadRoles_(base.concat([sp1Msg_('rep@ums.com', 320, 'Otra pregunta', null, { getHeader: () => { throw new Error('Gmail said no'); } })]), 'email', members, true));
+  assert.strictEqual(roles[2].role, 'request', 'a header that cannot be read is a request — the rule hides nothing it cannot prove (g159)');
+  // A sender whose FIRST message is automatic too (a phone system, a form mailer): its later mail is as real as its first.
+  const sys = (ms) => sp1Msg_('voicemail@pbx.example', ms, 'New voicemail from 555-0100', null, hdr({ 'Auto-Submitted': 'auto-generated' }));
+  roles = hJ(c.spanishThreadRoles_([sys(100), sp1Msg_('m@ums.com', 150, 'Listo'), sys(200)], 'email', members, true));
+  assert.deepStrictEqual(roles.map((r) => r.role), ['request', 'resolver', 'request'], 'THE GUARD: an all-automatic sender’s second message is not hidden');
+});
+
+test('F11 (cycle 26): a resolve on a thread with NO open request answers "already" — a member answered by email, or the only newer mail is a thank-you: no row, no reply; a real follow-up and an unanswered request still resolve; the bulk resolve runs the same rule; a voicemail thread walks as voicemail (driven through both endpoints)', () => {
+  const members = { 'm@ums.com': true };
+  const threads = {
+    open: [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda')],
+    answered: [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda'), sp1Msg_('m@ums.com', 150, 'Listo, ya la llamé')],
+    thanked: [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda'), sp1Msg_('rep@ums.com', 300, 'Muchas gracias!')],          // manual resolve at 200
+    followed: [sp1Msg_('rep@ums.com', 100, 'Necesito ayuda'), sp1Msg_('rep@ums.com', 300, 'Otra pregunta sobre el pedido')],   // manual resolve at 200
+  };
+  const manual = { thanked: { by: 'ana@ums.com', ms: 200 }, followed: { by: 'ana@ums.com', ms: 200 } };
+  const mk = () => {
+    const log = [];
+    const c = c26SpCtx_({ SPANISH_BULK_RESOLVE_MAX: 10, getEmployeeInfo_: () => ({ email: 'ana@ums.com', name: 'Ana' }), canSeeSpanishInbox_: () => true,
+      GmailApp: { getThreadById: (t) => (threads[t] ? { getMessages: () => threads[t] } : null) },
+      getSpanishInboxAddress_: () => 'sp@x', spanishThreadInScope_: () => true, getSpanishInboxMembers_: () => members,
+      getSpanishVmSender_: () => '', getSpanishVmFilter_: () => '',
+      LockService: { getScriptLock: () => ({ waitLock() { log.push('lock'); }, releaseLock() { log.push('unlock'); } }) },
+      spanishManualResolvedMap_: () => { log.push('fold'); return manual; },
+      getOrCreateSpanishResolvedSheet_: () => ({ appendRow: (r) => log.push('row:' + r[1]) }), sheetSafeRow_: (r) => r,
+      appendRowsSafe_: (sh, rows) => log.push('rows:' + rows.map((r) => r[1]).join(',')),
+      fmtDate_: () => 'd', fmtTime_: () => 't', writeAuditLog_: (e, a) => log.push('audit:' + a),
+      spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
+      spanishSelfAddrs_: () => ({ 'ops@ums.com': true }), spanishThreadKind_: () => 'email',
+      spanishSendResolveReply_: (m) => { log.push('reply:' + Object.keys(threads).filter((k) => threads[k] === m)[0]); return { sent: true }; } },
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishRolesCtx_', 'spanishThreadRolesIn_', 'spanishBulkIds_', 'spanishResolveInput_', 'spanishResolveReplyNote_',
+     'resolveSpanishThread', 'resolveSpanishThreads']);
+    return { c, log };
+  };
+  const one = (tid) => { const x = mk(); return { r: hJ(x.c.resolveSpanishThread(tid, 'reached', '')), log: x.log }; };
+  let x = one('open');
+  assert.ok(x.r.success && !x.r.already && x.log.includes('row:open') && x.log.includes('reply:open'), 'non-vacuous: an unanswered request resolves and is replied to');
+  x = one('answered');
+  assert.ok(x.r.success && x.r.already, 'THE REGRESSION: a member had answered by email — the stale card still wrote a resolve row');
+  assert.ok(!x.log.some((e) => /^row:|^reply:|^audit:/.test(e)), 'no row, no second "resolved" reply, no audit row: ' + x.log.join(','));
+  assert.ok(x.log.indexOf('fold') > x.log.indexOf('lock') && x.log.indexOf('fold') < x.log.indexOf('unlock'), 'the rule is judged inside the lock, on the resolves as they are then');
+  x = one('thanked');
+  assert.ok(x.r.already && !x.log.some((e) => /^row:|^reply:/.test(e)), 'THE REGRESSION: a thank-you after the resolve was "new mail", so a second click resolved and replied again');
+  x = one('followed');
+  assert.ok(x.r.success && !x.r.already && x.log.includes('row:followed'), 'a real follow-up after a resolve is new work — still resolvable');
+  // The bulk resolve: the same rule, each thread on its own.
+  const b = mk();
+  const r = hJ(b.c.resolveSpanishThreads(['open', 'answered', 'thanked', 'followed'], 'reached', ''));
+  assert.deepStrictEqual([r.resolved, r.already], [['open', 'followed'], ['answered', 'thanked']], 'bulk: resolved vs already');
+  assert.deepStrictEqual(b.log.filter((e) => /^rows:|^reply:/.test(e)), ['rows:open,followed', 'reply:open', 'reply:followed'], 'ONE write of the open ones, one reply each — none for a thread with nothing open');
+  // The pure rule, and the kind a voicemail thread walks under.
+  const c = c26SpCtx_({}, ['spanishThreadRolesIn_']);
+  assert.strictEqual(c.spanishRolesOpen_([], null), false, 'no messages: nothing open');
+  assert.strictEqual(c.spanishRolesOpen_([{ role: 'request', ms: 1 }], { by: 'x', ms: 0 }), false, 'a legacy unstamped resolve closes whatever is open');
+  assert.strictEqual(c.spanishRolesOpen_([{ role: 'request', ms: 1 }, { role: 'resolver', ms: 2 }, { role: 'request', ms: 3 }], null), true);
+  c.spanishVmMatch_ = (from) => /pbx/.test(from);
+  const vmCtx = { members: members, haveMembers: true, vmSender: 'pbx@x', vmFilter: 'Q' };
+  // The repeat voicemail comes from the phone system's OTHER address: only the voicemail walk (the sender + subject match) reads it as a request.
+  const vm1 = [sp1Msg_('pbx@x', 100, 'vm'), sp1Msg_('m@ums.com', 150, 'Listo'), sp1Msg_('pbx-b@x', 200, 'vm 2')];
+  assert.deepStrictEqual(hJ(c.spanishThreadRolesIn_(vm1, vmCtx)).map((e) => e.role), ['request', 'resolver', 'request'], 'a voicemail thread walks as voicemail: a repeat voicemail is a request');
+  assert.deepStrictEqual(hJ(c.spanishThreadRoles_(vm1, 'email', members, true)).map((e) => e.role), ['request', 'resolver', 'other'], 'non-vacuous: the email walk would not see it');
+  assert.strictEqual(c.spanishRolesOpen_(hJ(c.spanishThreadRolesIn_(vm1, vmCtx)), null), true, 'and is open');
+  assert.strictEqual(c.spanishRolesOpen_(hJ(c.spanishThreadRolesIn_(vm1.slice(0, 2), vmCtx)), null), false, 'an answered voicemail is not');
+  // The endpoints read the roles BEFORE the lock (Gmail reads never hold it) and judge inside it.
+  const single = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'));
+  assert.ok(single.indexOf('spanishThreadRolesIn_(') < single.indexOf('lock.waitLock(') && single.indexOf('spanishRolesOpen_(') > single.indexOf('lock.waitLock('), 'single: read before, judged inside');
+  const bulk = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThreads'));
+  assert.ok(bulk.indexOf('spanishThreadRolesIn_(') < bulk.indexOf('lock.waitLock(') && bulk.indexOf('spanishRolesOpen_(') > bulk.indexOf('lock.waitLock('), 'bulk: read before, judged inside');
+});
+
+test('F12 (cycle 26): the Spanish resolved reply carries a free-text note to EVERYONE on the message — when any address it can reach is outside the company nothing is sent and the resolver is told; a look-alike domain is outside; headers are read by pattern, not by comma; the dialog no longer says "to the requester" (driven)', () => {
+  const log = [];
+  const c = sp1Ctx_({ getFlag_: () => true, getSpanishInboxMembers_: () => ({ 'm@ums.com': true }), spanishVmMatch_: () => false,
+    Utilities: { formatDate: () => 'Nov 9' }, CONFIG: { TIMEZONE: 'America/Chicago', ORG_EMAIL_DOMAINS: ['ums.com', 'umsupply.com'] }, repSenderFrom_: () => '', mailBccAll_: () => [] },
+  ['spanishThreadRoles_', 'spanishReplyTargetIdx_', 'spanishResolveReplyParts_', 'spanishResolveReplyNote_', 'drResolverLabel_', 'spanishReplyLeavesOrg_', 'spanishSendResolveReply_']);
+  vm.runInContext(b13CourtesySrc_() + '\n' + mailSeamSrc_(), c);
+  // The header reader.
+  assert.deepStrictEqual(hJ(c.mailHeaderAddrs_(['"Ruiz, Ana" <Ana@UMS.com>, b@ums.com', 'ana@ums.com', '', null, 'Rep <rep@umsupply.com>'])), ['ana@ums.com', 'b@ums.com', 'rep@umsupply.com'],
+    'a comma inside a display name is not a separator; case-folded, de-duplicated');
+  assert.deepStrictEqual(hJ(c.mailHeaderAddrs_('no address here')), []);
+  // The rule.
+  const L = (list) => c.spanishReplyLeavesOrg_(list);
+  assert.strictEqual(L(['a@ums.com', 'b@umsupply.com']), false);
+  assert.strictEqual(L(['a@ums.com', 'pat@gmail.com']), true, 'ONE outside address is enough');
+  assert.strictEqual(L(['a@notums.com']), true, 'a look-alike domain is outside');
+  assert.strictEqual(L(['a@ums.com.evil.test']), true, 'so is the org domain as a prefix');
+  assert.strictEqual(L([]), true, 'nobody to judge is not "inside"');
+  // Driven: who the target message reaches decides.
+  const input = { outcome: 'reached', outcomeLabel: 'Reached the patient', note: 'Spoke to Maria about her CPAP' };
+  const send = (extra) => { log.length = 0; return hJ(c.spanishSendResolveReply_([sp1Msg_('rep@ums.com', 100, 'Necesito ayuda', log, extra)], 'email', { name: 'Ana', email: 'ana@ums.com' }, input)); };
+  assert.deepStrictEqual(send({}), { sent: true }, 'non-vacuous: an all-company email is replied to');
+  assert.ok(log.length === 1 && /Spoke to Maria/.test(log[0][3]), 'with the note');
+  [['a copied outside address', { getCc: () => 'Familia <maria.family@gmail.com>' }],
+   ['an outside Reply-To', { getReplyTo: () => 'someone@outlook.com' }],
+   ['an outside To', { getTo: () => 'spanish@umsupply.com, vendor@supplier.example' }],
+   ['a look-alike domain', { getCc: () => 'boss@ums.com.evil.test' }]].forEach(([why, extra]) => {
+    assert.deepStrictEqual(send(extra), { sent: false, reason: 'outside' }, 'THE REGRESSION (' + why + '): the note went wherever reply-all went');
+    assert.strictEqual(log.length, 0, why + ': nothing is sent');
+  });
+  log.length = 0;
+  const outsideRequester = hJ(c.spanishSendResolveReply_([sp1Msg_('patient@gmail.com', 100, 'Hola', log)], 'email', {}, input));
+  assert.deepStrictEqual([outsideRequester, log.length], [{ sent: false, reason: 'outside' }, 0], 'an outside requester gets no automatic reply either');
+  const note = c.spanishResolveReplyNote_({ sent: false, reason: 'outside' });
+  assert.ok(/No reply was sent/.test(note) && /outside the company/.test(note), 'the resolver is told: ' + note);
+  // The bulk resolve counts it apart from a failure, and the client says so.
+  const bulk = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThreads'));
+  assert.ok(/r\.reason === 'outside'\) replies\.outside\+\+/.test(bulk) && /outside: 0/.test(bulk), 'bulk: an on-purpose non-send is not a failed reply');
+  const met = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  const cc = vm.createContext({ String, Number, Object, Array });
+  vm.runInContext(extractFnFrom(met, 'spanishBulkReplyText_'), cc);
+  assert.strictEqual(cc.spanishBulkReplyText_({ replies: { sent: 1, voicemail: 0, outside: 2, failed: [], off: false } }),
+    '1 reply sent · 2 not replied to (an address outside the company is on the email)');
+  assert.strictEqual(cc.spanishBulkReplyText_({ replies: { sent: 1, voicemail: 0, outside: 0, failed: [], off: false } }), '1 reply sent', 'none withheld: not mentioned');
+  const ask = extractFnFrom(met, 'spanishResolveAsk_');
+  assert.ok(/goes to everyone on the request’s email/.test(ask) && /outside the company/.test(ask) && !/thread to the requester\./.test(ask), 'the dialog says who the reply reaches');
+  const flag = serverSource();
+  assert.ok(/key: 'spanishResolveReply'[\s\S]{0,400}everyone on the request’s email/.test(flag), 'and so does the Admin toggle');
+});
+
+test('F33 (cycle 26): a reply on a thread is a send — both resolved replies go through appReplyAll_, which carries MAIL_BCC_ALL (never an address already on the message), the app’s name and the sending alias; no other `replyAll` / `reply` / `forward` exists in the server (derived sweep + driven)', () => {
+  // Driven: the seam.
+  const sent = [];
+  let bccAll = ['audit@ums.com', 'Nina@ums.com'], alias = '';
+  const c = vm.createContext({ String, Number, Object, Array, mailBccAll_: () => bccAll, repSenderFrom_: () => alias });
+  vm.runInContext(['mailHeaderAddrs_', 'mailReplyAudience_', 'mailMergeBcc_', 'appReplyAll_'].map((f) => extractRawFunction('Code.js', f)).join('\n'), c);
+  const msg = { getFrom: () => 'UMS <ops@ums.com>', getReplyTo: () => 'nina@ums.com', getTo: () => 'billing@ums.com', getCc: () => '',
+    replyAll: (t, o) => sent.push([t, hJ(o)]) };
+  c.appReplyAll_(msg, 'plain', '<p>html</p>');
+  assert.deepStrictEqual(sent[0], ['plain', { htmlBody: '<p>html</p>', name: 'UMS Team Tools', bcc: 'audit@ums.com' }],
+    'THE RULE: the BCC list rides the reply — minus the address the reply already reaches — and no `to` is passed (reply-all picks its own)');
+  alias = 'team@ums.com'; bccAll = [];
+  c.appReplyAll_(msg, 'plain', '<p>html</p>');
+  assert.deepStrictEqual(sent[1][1], { htmlBody: '<p>html</p>', name: 'UMS Team Tools', from: 'team@ums.com' }, 'no BCC list: none added; the alias sends');
+  // Derived: every thread-reply call in the server is the seam's.
+  const src = foNc(serverSource());
+  const RE = /\.(?:replyAll|reply|forward|createDraftReply|createDraftReplyAll)\(/g;
+  const total = (src.match(RE) || []).length;
+  const inside = (foNc(extractRawFunction('Code.js', 'appReplyAll_')).match(RE) || []).length;
+  assert.strictEqual(inside, 1, 'non-vacuous: the seam holds the one reply call');
+  assert.strictEqual(total, inside, (total - inside) + ' thread reply call(s) outside appReplyAll_ — MAIL_BCC_ALL would not ride them');
+  ['drSendResolvedReply_', 'spanishSendResolveReply_'].forEach((f) =>
+    assert.ok(/appReplyAll_\(/.test(foNc(extractRawFunction('Code.js', f))), f + ' replies through the seam'));
+  assert.ok(/mailMergeBcc_\(/.test(extractRawFunction('Code.js', 'appReplyAll_')), 'the seam merges the BCC list');
+});
+
+test('F9 (cycle 26): the message a Dept Request’s resolved reply answers is the request’s OWN email — the newest one the app sent that carries its id; a department reply quoting it, another request’s email and an empty id are never it (pure grid; the endpoint is driven in the DR1 pin)', () => {
+  const c = dr1Ctx_({}, ['drReplyTargetIdx_', 'drResolvedReplyNote_']);
+  const self = { 'ops@ums.com': 1 };
+  const m = (from, id) => ({ fromAddr: from, body: 'text\n\nMark this request resolved: https://x/exec?resolve=' + id });
+  const T = (msgs, id) => c.drReplyTargetIdx_(msgs, id, self);
+  assert.strictEqual(T([m('ops@ums.com', 'R1')], 'R1'), 0);
+  assert.strictEqual(T([m('ops@ums.com', 'R0'), m('ops@ums.com', 'R1'), m('billing@ums.com', 'R1')], 'R1'), 1,
+    'THE REGRESSION: on a thread two requests share, the first message is the OTHER request’s email');
+  assert.strictEqual(T([m('ops@ums.com', 'R1'), m('billing@ums.com', 'R1'), m('ops@ums.com', 'R1')], 'R1'), 2, 'a re-send carries the same id: the newest');
+  assert.strictEqual(T([m('ops@ums.com', 'R0'), m('billing@ums.com', 'R1')], 'R1'), -1, 'only a quoting reply carries the id: none — never the department’s own message');
+  assert.strictEqual(T([m('OPS@ums.com', 'R1')], 'R1'), 0, 'the sender is matched case-folded');
+  assert.strictEqual(T([m('ops@ums.com', 'R1')], ''), -1, 'no id: none (an empty id would match every body)');
+  assert.strictEqual(T([], 'R1'), -1);
+  assert.strictEqual(c.drReplyTargetIdx_([m('ops@ums.com', 'R1')], 'R1', {}), -1, 'the app’s own addresses unknown: none, never a guess');
+  const note = c.drResolvedReplyNote_({ sent: false, reason: 'unmatched' });
+  assert.ok(/No reply was sent/.test(note) && /own email could not be found/.test(note), note);
+  // The request email really does carry its id on a line of its plain body — the thing the rule reads.
+  const send = extractRawFunction('Code.js', 'emailFromCallNote');
+  assert.ok(/'\?resolve=' \+ encodeURIComponent\(drId\)/.test(send) && (send.match(/Mark this request resolved: ' \+ drResolveUrl/g) || []).length === 2, 'both tracked sends put the resolve link in the plain body');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
