@@ -1067,13 +1067,17 @@ function spanishRolesCtx_() {
   return { members: members, haveMembers: Object.keys(members).length > 0,
            vmSender: getSpanishVmSender_(), vmFilter: getSpanishVmFilter_() };
 }
-/** F11 — a thread's roles under its OWN kind (a voicemail thread walks as
- *  'vm'), the walk the pending list and the claim floor run. Reads Gmail, so
- *  a resolve calls it BEFORE its lock. */
-function spanishThreadRolesIn_(msgs, ctx) {
-  const kind = (msgs && msgs.length && ctx.vmSender && ctx.vmFilter &&
-    spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), ctx.vmSender, ctx.vmFilter)) ? 'vm' : 'email';
-  return spanishThreadRoles_(msgs, kind, ctx.members, ctx.haveMembers, ctx.vmSender, ctx.vmFilter);
+/** F11 — a thread's roles under EVERY walk the pending list could have shown
+ *  it by: the email walk (the list's group-address pass walks every thread it
+ *  finds as email), and for a voicemail thread the voicemail walk as well (the
+ *  voicemail fold's rule). Reads Gmail, so a resolve calls it BEFORE its lock. */
+function spanishThreadWalks_(msgs, ctx) {
+  const walks = [spanishThreadRoles_(msgs, 'email', ctx.members, ctx.haveMembers)];
+  if (msgs && msgs.length && ctx.vmSender && ctx.vmFilter &&
+      spanishVmMatch_(msgs[0].getFrom(), msgs[0].getSubject(), ctx.vmSender, ctx.vmFilter)) {
+    walks.push(spanishThreadRoles_(msgs, 'vm', ctx.members, ctx.haveMembers, ctx.vmSender, ctx.vmFilter));
+  }
+  return walks;
 }
 /** PURE (Node-pinned; cycle 26 F11) — does the thread still hold an OPEN
  *  request? The pending list's own rule (spanishEpisodes_: the last episode
@@ -1085,6 +1089,12 @@ function spanishThreadRolesIn_(msgs, ctx) {
 function spanishRolesOpen_(roles, manualRec) {
   const eps = spanishEpisodes_(roles, manualRec).episodes;
   return !!eps.length && eps[eps.length - 1].resolveMs == null;
+}
+/** PURE (Node-pinned; F11) — open under ANY of the thread's walks. The rule
+ *  refuses a resolve, so it errs toward allowing one: a card the list shows —
+ *  by either walk — must stay resolvable, or it could never be cleared. */
+function spanishWalksOpen_(walks, manualRec) {
+  return (walks || []).some(function (r) { return spanishRolesOpen_(r, manualRec); });
 }
 /** Manual resolve — gated on canSeeSpanishInbox_ (the members who action the
  *  inbox + managers), SCOPE-GUARDED like getSpanishInboxThreadBody (the thread
@@ -1110,7 +1120,7 @@ function resolveSpanishThread(threadId, outcome, note) {
     if (!msgs.length) return { error: 'Empty thread.' };
     if (!spanishThreadInScope_(msgs[0], addr))
       return { error: 'Not a Spanish-inbox thread.' };   // F(cycle-8): exact address match, not substring
-    const roles = spanishThreadRolesIn_(msgs, spanishRolesCtx_());   // F11 — Gmail reads, so before the lock
+    const walks = spanishThreadWalks_(msgs, spanishRolesCtx_());   // F11 — Gmail reads, so before the lock
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
@@ -1120,7 +1130,7 @@ function resolveSpanishThread(threadId, outcome, note) {
       // F11 (cycle 26): and "already" when NO request is open on the thread —
       // a member answered by email, or the newer mail was only a thank-you.
       const prior = spanishManualResolvedMap_()[tid];
-      if (spanishResolveCovered_(prior, spanishThreadLatestMs_(msgs, spanishSelfAddrs_())) || !spanishRolesOpen_(roles, prior)) return { success: true, already: true };
+      if (spanishResolveCovered_(prior, spanishThreadLatestMs_(msgs, spanishSelfAddrs_())) || !spanishWalksOpen_(walks, prior)) return { success: true, already: true };
       getOrCreateSpanishResolvedSheet_().appendRow(sheetSafeRow_([
         fmtDate_(new Date()) + ' ' + fmtTime_(new Date()), tid, emp.email, Date.now(), input.outcome,
       ]));
@@ -1188,7 +1198,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
         const msgs = th.getMessages();
         if (!msgs.length) { failed.push({ threadId: tid, error: 'Empty thread.' }); return; }
         if (!spanishThreadInScope_(msgs[0], addr)) { failed.push({ threadId: tid, error: 'Not a Spanish-inbox thread.' }); return; }
-        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs, self), msgs: msgs, roles: spanishThreadRolesIn_(msgs, rolesCtx) });
+        ok.push({ threadId: tid, latestMs: spanishThreadLatestMs_(msgs, self), msgs: msgs, walks: spanishThreadWalks_(msgs, rolesCtx) });
       } catch (eT) { failed.push({ threadId: tid, error: String((eT && eT.message) || eT) }); }
     });
     const resolved = [], already = [];
@@ -1202,7 +1212,7 @@ function resolveSpanishThreads(threadIds, outcome, note) {
         const rows = [];
         ok.forEach(function (o) {
           // F11: the single resolve's rule — covered, or nothing open on the thread.
-          if (spanishResolveCovered_(manual[o.threadId], o.latestMs) || !spanishRolesOpen_(o.roles, manual[o.threadId])) { already.push(o.threadId); return; }
+          if (spanishResolveCovered_(manual[o.threadId], o.latestMs) || !spanishWalksOpen_(o.walks, manual[o.threadId])) { already.push(o.threadId); return; }
           rows.push([stamp, o.threadId, emp.email, now.getTime(), input.outcome]);
           resolved.push(o.threadId);
         });

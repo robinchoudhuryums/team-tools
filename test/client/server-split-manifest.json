@@ -4388,6 +4388,22 @@
     "FEATURE_FLAGS"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-13",
+   "why": "Cycle 26 Batch 3 (F11): spanishThreadRolesIn_ became spanishThreadWalks_ + spanishWalksOpen_ — a voicemail thread is judged under both walks the pending list can show it by",
+   "added": [
+    "spanishThreadWalks_",
+    "spanishWalksOpen_"
+   ],
+   "removed": [
+    "spanishThreadRolesIn_"
+   ],
+   "changed": [
+    "resolveSpanishThread",
+    "resolveSpanishThreads"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -13740,12 +13756,12 @@
   "resolveSpanishThread": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "80dcbb605aad46c5"
+   "sha": "ca068b80905f276c"
   },
   "resolveSpanishThreads": {
    "file": "51_spanish.js",
    "kind": "function",
-   "sha": "1d87ac227098b816"
+   "sha": "2bb18416c41be3c8"
   },
   "resumeShiftForEmployee_": {
    "file": "20_timeclock.js",
@@ -14547,15 +14563,15 @@
    "kind": "function",
    "sha": "8cdcf43dc889ce9f"
   },
-  "spanishThreadRolesIn_": {
-   "file": "51_spanish.js",
-   "kind": "function",
-   "sha": "3931cfedf24a2d12"
-  },
   "spanishThreadRoles_": {
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "d23e2ba68d3715dd"
+  },
+  "spanishThreadWalks_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "f58a49204b332e7a"
   },
   "spanishVmCaller_": {
    "file": "51_spanish.js",
@@ -14596,6 +14612,11 @@
    "file": "51_spanish.js",
    "kind": "function",
    "sha": "5de83c5b4a6b5abe"
+  },
+  "spanishWalksOpen_": {
+   "file": "51_spanish.js",
+   "kind": "function",
+   "sha": "fe7a9c5048e4a7c0"
   },
   "spanishWorkingMembers_": {
    "file": "51_spanish.js",

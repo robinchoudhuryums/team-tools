@@ -34021,7 +34021,7 @@ test('SP-1 (cycle 23): a voicemail that arrives AFTER a manual resolve can be re
       // SP1: the reply is its own pins' business here — no self addresses, no reply.
       spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }),
       // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
-      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true, });
+      spanishRolesCtx_: () => ({}), spanishThreadWalks_: () => [], spanishWalksOpen_: () => true, });
     vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
     ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));   // Batch C: the coverage rule is shared with the bulk resolve
     return { r: JSON.parse(JSON.stringify(c.resolveSpanishThread('t1'))), appended, dropped };
@@ -42733,7 +42733,7 @@ test('Batch C: resolveSpanishThreads — the caller gate before any read, a sele
       // SP1: the replies are the SP1 pins' business — none here.
       spanishSelfAddrs_: () => null, spanishThreadKind_: () => 'email', spanishSendResolveReply_: () => ({ sent: false, reason: 'off' }),
       // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
-      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true, });
+      spanishRolesCtx_: () => ({}), spanishThreadWalks_: () => [], spanishWalksOpen_: () => true, });
     vm.runInContext(['SPANISH_RESOLVE_OUTCOMES', 'SPANISH_RESOLVE_NOTE_MAX'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n'), c);
     ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), c));
     return { r: J(c.resolveSpanishThreads(opts.ids)), log };
@@ -44851,7 +44851,7 @@ test('SP1: resolveSpanishThread — an unknown outcome is refused before any Gma
       spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
       spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: () => 100, spanishThreadKind_: () => 'email',
       // Cycle 26 F11: the open-request rule is its own pin's business here — the thread reads as open.
-      spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true,
+      spanishRolesCtx_: () => ({}), spanishThreadWalks_: () => [], spanishWalksOpen_: () => true,
       spanishSendResolveReply_: (m, k, e, inp) => { log.push(['reply', inp.outcome, inp.note]); return { sent: true }; } },
     ['spanishResolveInput_', 'spanishResolveReplyNote_', 'resolveSpanishThread']);
     return { r: hJ(c.resolveSpanishThread('t1', outcome, 'a <note>')), log };
@@ -44884,7 +44884,7 @@ test('SP1: resolveSpanishThreads — one outcome and note for all; ONE reply per
     appendRowsSafe_: (sh, rows) => log.push(['rows', rows.map((r) => r[1] + ':' + r[4])]), fmtDate_: () => 'd', fmtTime_: () => 't',
     writeAuditLog_: (e, a, x, y, z, n, note) => log.push(['audit', note]), spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
     spanishSelfAddrs_: () => ({}), spanishThreadLatestMs_: (m) => m[0].getDate().getTime(),
-    spanishRolesCtx_: () => ({}), spanishThreadRolesIn_: () => [], spanishRolesOpen_: () => true,   // cycle 26 F11: its own pin's business
+    spanishRolesCtx_: () => ({}), spanishThreadWalks_: () => [], spanishWalksOpen_: () => true,   // cycle 26 F11: its own pin's business
     spanishThreadKind_: (m) => (m === threads.v ? 'vm' : 'email'),
     spanishSendResolveReply_: (m, kind) => { log.push(['reply', m[0].getFrom()]); if (kind === 'vm') return { sent: false, reason: 'voicemail' }; return m === threads.b ? { sent: false, reason: 'failed' } : { sent: true }; } },
   ['spanishResolveCovered_', 'spanishBulkIds_', 'spanishResolveInput_', 'resolveSpanishThreads']);
@@ -46479,7 +46479,7 @@ test('F11 (cycle 26): a resolve on a thread with NO open request answers "alread
       spanishPendingIdsDrop_: () => {}, spanishClaimsMap_: () => ({}), spanishBustClaimants_: () => {},
       spanishSelfAddrs_: () => ({ 'ops@ums.com': true }), spanishThreadKind_: () => 'email',
       spanishSendResolveReply_: (m) => { log.push('reply:' + Object.keys(threads).filter((k) => threads[k] === m)[0]); return { sent: true }; } },
-    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishRolesCtx_', 'spanishThreadRolesIn_', 'spanishBulkIds_', 'spanishResolveInput_', 'spanishResolveReplyNote_',
+    ['spanishThreadLatestMs_', 'spanishResolveCovered_', 'spanishRolesCtx_', 'spanishThreadWalks_', 'spanishWalksOpen_', 'spanishBulkIds_', 'spanishResolveInput_', 'spanishResolveReplyNote_',
      'resolveSpanishThread', 'resolveSpanishThreads']);
     return { c, log };
   };
@@ -46499,8 +46499,8 @@ test('F11 (cycle 26): a resolve on a thread with NO open request answers "alread
   const r = hJ(b.c.resolveSpanishThreads(['open', 'answered', 'thanked', 'followed'], 'reached', ''));
   assert.deepStrictEqual([r.resolved, r.already], [['open', 'followed'], ['answered', 'thanked']], 'bulk: resolved vs already');
   assert.deepStrictEqual(b.log.filter((e) => /^rows:|^reply:/.test(e)), ['rows:open,followed', 'reply:open', 'reply:followed'], 'ONE write of the open ones, one reply each — none for a thread with nothing open');
-  // The pure rule, and the kind a voicemail thread walks under.
-  const c = c26SpCtx_({}, ['spanishThreadRolesIn_']);
+  // The pure rule, and the walks a voicemail thread is judged under.
+  const c = c26SpCtx_({}, ['spanishThreadWalks_', 'spanishWalksOpen_']);
   assert.strictEqual(c.spanishRolesOpen_([], null), false, 'no messages: nothing open');
   assert.strictEqual(c.spanishRolesOpen_([{ role: 'request', ms: 1 }], { by: 'x', ms: 0 }), false, 'a legacy unstamped resolve closes whatever is open');
   assert.strictEqual(c.spanishRolesOpen_([{ role: 'request', ms: 1 }, { role: 'resolver', ms: 2 }, { role: 'request', ms: 3 }], null), true);
@@ -46508,15 +46508,25 @@ test('F11 (cycle 26): a resolve on a thread with NO open request answers "alread
   const vmCtx = { members: members, haveMembers: true, vmSender: 'pbx@x', vmFilter: 'Q' };
   // The repeat voicemail comes from the phone system's OTHER address: only the voicemail walk (the sender + subject match) reads it as a request.
   const vm1 = [sp1Msg_('pbx@x', 100, 'vm'), sp1Msg_('m@ums.com', 150, 'Listo'), sp1Msg_('pbx-b@x', 200, 'vm 2')];
-  assert.deepStrictEqual(hJ(c.spanishThreadRolesIn_(vm1, vmCtx)).map((e) => e.role), ['request', 'resolver', 'request'], 'a voicemail thread walks as voicemail: a repeat voicemail is a request');
-  assert.deepStrictEqual(hJ(c.spanishThreadRoles_(vm1, 'email', members, true)).map((e) => e.role), ['request', 'resolver', 'other'], 'non-vacuous: the email walk would not see it');
-  assert.strictEqual(c.spanishRolesOpen_(hJ(c.spanishThreadRolesIn_(vm1, vmCtx)), null), true, 'and is open');
-  assert.strictEqual(c.spanishRolesOpen_(hJ(c.spanishThreadRolesIn_(vm1.slice(0, 2), vmCtx)), null), false, 'an answered voicemail is not');
+  const walks = (msgs, ctx) => hJ(c.spanishThreadWalks_(msgs, ctx)).map((w) => w.map((e) => e.role));
+  assert.deepStrictEqual(walks(vm1, vmCtx), [['request', 'resolver', 'other'], ['request', 'resolver', 'request']],
+    'a voicemail thread is walked BOTH ways — the email walk (the list’s group-address pass) and the voicemail walk, which alone sees the repeat voicemail');
+  assert.strictEqual(c.spanishWalksOpen_(hJ(c.spanishThreadWalks_(vm1, vmCtx)), null), true, 'open under either walk is open — a card the list shows must stay resolvable');
+  assert.strictEqual(c.spanishWalksOpen_(hJ(c.spanishThreadWalks_(vm1.slice(0, 2), vmCtx)), null), false, 'an answered voicemail is open under neither');
+  assert.deepStrictEqual(walks(vm1, { members: members, haveMembers: true, vmSender: '', vmFilter: '' }).length, 1, 'no voicemail settings: the email walk alone');
+  // The reverse case: the phone system's own address writes again under a subject the voicemail filter does not match. The email walk
+  // (the list's group-address pass) shows that as a request; the voicemail walk does not — and the card must still be resolvable.
+  c.spanishVmMatch_ = (from, subj) => /pbx/.test(from) && subj === 'VM';
+  const vmMsg = (ms, subj) => sp1Msg_('pbx@x', ms, 'New message 555', null, { getSubject: () => subj });
+  const vm2 = [vmMsg(100, 'VM'), sp1Msg_('m@ums.com', 150, 'Listo'), vmMsg(200, 'Re: other')];
+  assert.deepStrictEqual(walks(vm2, vmCtx), [['request', 'resolver', 'request'], ['request', 'resolver', 'other']]);
+  assert.strictEqual(c.spanishWalksOpen_(hJ(c.spanishThreadWalks_(vm2, vmCtx)), null), true, 'THE GUARD: open by the email walk alone is still resolvable');
+  assert.strictEqual(c.spanishWalksOpen_([], null), false);
   // The endpoints read the roles BEFORE the lock (Gmail reads never hold it) and judge inside it.
   const single = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThread'));
-  assert.ok(single.indexOf('spanishThreadRolesIn_(') < single.indexOf('lock.waitLock(') && single.indexOf('spanishRolesOpen_(') > single.indexOf('lock.waitLock('), 'single: read before, judged inside');
+  assert.ok(single.indexOf('spanishThreadWalks_(') >= 0 && single.indexOf('spanishThreadWalks_(') < single.indexOf('lock.waitLock(') && single.indexOf('spanishWalksOpen_(') > single.indexOf('lock.waitLock('), 'single: read before, judged inside');
   const bulk = stripJsComments_(extractRawFunction('Code.js', 'resolveSpanishThreads'));
-  assert.ok(bulk.indexOf('spanishThreadRolesIn_(') < bulk.indexOf('lock.waitLock(') && bulk.indexOf('spanishRolesOpen_(') > bulk.indexOf('lock.waitLock('), 'bulk: read before, judged inside');
+  assert.ok(bulk.indexOf('spanishThreadWalks_(') >= 0 && bulk.indexOf('spanishThreadWalks_(') < bulk.indexOf('lock.waitLock(') && bulk.indexOf('spanishWalksOpen_(') > bulk.indexOf('lock.waitLock('), 'bulk: read before, judged inside');
 });
 
 test('F12 (cycle 26): the Spanish resolved reply carries a free-text note to EVERYONE on the message — when any address it can reach is outside the company nothing is sent and the resolver is told; a look-alike domain is outside; headers are read by pattern, not by comma; the dialog no longer says "to the requester" (driven)', () => {
