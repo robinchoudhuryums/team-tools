@@ -45887,6 +45887,9 @@ test('P1: the email job — manager-gated, heartbeat before the toggle; off it s
   sent.length = 0; centralHour = 10; failFor = '';
   const made = c.sendPayWeekReminders();
   assert.deepStrictEqual([made.outcome.status, sent.map((m2) => m2.to)], ['ok', ['bo@x']], 'F28: the next hour sends to the one that failed — and only that one; ok clears the stamp');
+  assert.deepStrictEqual(JSON.parse(propStore.PAY_WEEK_REMINDER_SENT).to.slice().sort(), ['asha@x', 'bo@x', 'cy@x'], 'the record KEEPS who was sent to earlier and adds the make-up send');
+  sent.length = 0; centralHour = 11;
+  assert.deepStrictEqual([c.sendPayWeekReminders().outcome.status, sent.length], ['idle', 0], 'so the hour after that sends to nobody — the earlier recipients are not forgotten');
   // THE REGRESSION: the 9 am run never happened (a lock wait, a trigger hiccup). Every later run that day was "the wrong hour".
   propStore = {}; sent.length = 0; centralHour = 13;
   const late = c.sendPayWeekReminders();
