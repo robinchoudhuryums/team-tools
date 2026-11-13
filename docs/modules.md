@@ -845,6 +845,15 @@ longer sent to reps.
      tracking has no thread, so it gets none, and its button and the
      confirmation say so. The `deptResolvedReply` toggle turns the reply off.
 
+     **Cycle 26 Batch 3 — the replies on a thread.** A Dept Request's resolved
+     reply answers the request's own email (the newest one the app sent that
+     carries its id), not the thread's first message; a thread where that
+     email cannot be found gets no reply and the person is told. A Spanish
+     resolved reply is not sent when it could reach an address outside the
+     company, and a resolve on a thread with nothing open is "already". A
+     requester who replies to the app's "marked resolved" email — quoting it —
+     is a new request; their out-of-office is not. Both replies carry
+     `MAIL_BCC_ALL` (`appReplyAll_`).
      **SP1 (operator 2026-11-09) — Spanish Inbox resolve with a reply.** Mark
      resolved (and Resolve selected) asks how the request ended — reached the
      patient, left a voicemail, no answer or wrong number — and for an optional

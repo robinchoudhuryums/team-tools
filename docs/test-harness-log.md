@@ -3663,3 +3663,39 @@ F72, F75.**
   guard is the point.
 - **Visual** — the fourteen intake scenarios re-shot and measured clean; the
   longer Drafts note wraps at 390px.
+
+**Cycle 26 Batch 3 (2026-11-13) — Thread replies: F3, F9, F10, F11, F12,
+F33.**
+- **Pure** — six pins: F3 (a follow-up quoting the app's reply, in four
+  quoting styles, through the roles and the open rule; the app's own reply
+  with a note built to look like a quote); F10 (the automatic-message grid,
+  the two tests it must NOT make, the walk, an unreadable header, an
+  all-automatic sender); F11 (both resolve endpoints driven over real roles
+  and episodes — answered by a member, thanked, followed up, open — plus a
+  voicemail thread judged under both walks, and the read-before /
+  judge-inside order); F12 (the header
+  reader, the rule, the send over four kinds of outside address, the note,
+  the bulk count, the client text, the dialog and toggle wording); F33 (the
+  seam driven, and a derived sweep of every thread-reply call in the server);
+  F9 (the target grid). MAIL-SWEEP counts thread replies too.
+- **Test doubles brought forward, not worked around:** the DR1 reply pin's
+  thread was `{ replyAll }` objects and asserted "the FIRST message" — the
+  defect. It is now a shared thread of real-shaped messages (sender, body,
+  recipients) and asserts the request's own email. Four older Spanish drives
+  stub the open-request rule ("its own pin's business"); `sp1Msg_` gained
+  recipients and headers; `b13CourtesySrc_` carries the automatic rule.
+- **DOM** — one drive: the dialog wording, the withheld-reply warning, the
+  "already" toast, and Resolve selected counting withheld replies apart.
+- **The manifest** (`server-split-manifest.json`) was regenerated twice — the
+  eleven new declarations, then the toggle's description.
+- **Visual** — the two Spanish resolve-dialog scenarios re-shot and read: the
+  longer hint wraps inside the dialog at 1440 and at 390.
+- **What bit:** the first F11 rule judged a voicemail thread under the
+  voicemail walk alone, and its fixture could not tell the two walks apart
+  (the repeat voicemail came from the same address, which the email walk
+  also reads as a request) — the mutation "walks as email" would not have
+  bitten. The fixture now uses the phone system's other address, and the
+  rule itself changed to take either walk, because the pending list's
+  group-address pass walks every thread as email. An interrupted bite
+  leaves its mutation on disk: read the diff, then restore the file.
+- **Bites: 46 mutations, 46 bit** (42 pure, 4 DOM).

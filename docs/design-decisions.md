@@ -6770,9 +6770,15 @@ pick them up without re-deriving the context.
     `drSendResolvedReply_` runs once `markDeptRequestResolved_` has released the
     lock (g34), for a fresh resolve only, from the email link's confirm page, the
     in-app button and a Replies-to-check "Resolved". It replies-all to the
-    thread's FIRST message — Reply-To the sender and the deployer, To the
+    request's OWN email — Reply-To the sender and the deployer, To the
     department, CC the deployer — so it reaches the people on the request,
-    never whoever wrote last; the newest thread of a re-sent request. A request
+    never whoever wrote last; the newest thread of a re-sent request.
+    **Amended (cycle 26 F9):** it used to be the thread's FIRST message, which
+    on a thread two requests share (DR-1) is the other request's email. The
+    target is now the newest message the app sent whose body carries the
+    request id (`drReplyTargetIdx_`); none is `unmatched` — nothing sent, the
+    person told. It goes through `appReplyAll_` (F33), so `MAIL_BCC_ALL`
+    rides it. A request
     sent before thread tracking has none: the person is told it got no reply,
     and its Mark resolved button says so beforehand. A missing thread or a
     failed send is said, and the resolve stands. Off with the
@@ -6803,13 +6809,27 @@ pick them up without re-deriving the context.
     resolved it, when, the outcome and the note, escaped. A voicemail thread is
     resolved with no reply; a failed send is said in the toast and the audit
     row, and the request stays resolved. The `spanishResolveReply` toggle turns
-    the reply off.
+    the reply off. **Amended (cycle 26 F12 + F33 + F11):** a reply-all reaches
+    everyone on the message and this one carries free text, so it is NOT sent
+    when any address it can reach (From, Reply-To, To, Cc) is outside
+    `CONFIG.ORG_EMAIL_DOMAINS` — the resolver is told, and the dialog says the
+    reply goes to everyone on the request's email. Withheld rather than sent
+    without the note: the app had never mailed outside the company from this
+    path, and a "resolved" notice naming an employee is not owed to an outside
+    address. It goes through `appReplyAll_`, so `MAIL_BCC_ALL` rides it. And a
+    resolve on a thread with no open request (a member already answered by
+    email) is "already": no row, no reply.
   - **The app's own reply never reopens the request.** The reply carries a
     marker line (`SPANISH_APP_REPLY_MARKER`); a message carrying it is neither a
     requester's follow-up (`spanishThreadRoles_`) nor new activity on the
     thread (`spanishThreadLatestMs_`, from the app's own addresses), so the
     SP-2 rule — a requester who writes again after a resolve is a new request —
-    still holds for every message a person writes.
+    still holds for every message a person writes. **Amended (cycle 26 F3 +
+    F10):** "carrying it" was too wide — a person who replies to the app's
+    email quotes the marker, so their follow-up was hidden. The app's reply is
+    the message that OPENS with `SPANISH_APP_REPLY_LEAD` and carries the
+    marker. And the requester's out-of-office, which answers the reply-all
+    from the requester's own address, is neutral too (`spanishIsAutomatic_`).
   - **Auto-assign reads who is working.** `spanishWorkingMembers_` counts a
     member as working when their LAST punch today, in their own timezone, is a
     Clock In or a Lunch In (the latest time, never the last row — g14). The

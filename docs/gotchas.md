@@ -975,6 +975,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deliberately a single locked unit). New in-lock mail = move it to a
   post-lock closure or allowlist it WITH a reason.
 
+  **AMENDED (cycle 26 F33): a reply on a thread is a send.** `MAIL_BCC_ALL`
+  rides every mail the app sends because every send goes through
+  `sendRepEmail_` or `appSendMail_`, and the MAIL-SWEEP pin fails on a third
+  `sendEmail`. The two "resolved" replies (DR1, SP1) called
+  `message.replyAll(…)` themselves — not a `sendEmail`, so the sweep never
+  saw them and the BCC list never rode them. `appReplyAll_` (10_core) is the
+  third sanctioned sender: it merges the BCC list (never an address the reply
+  already reaches), sends as "UMS Team Tools" from the alias when one is set,
+  and the sweep now counts `replyAll` / `reply` / `forward` too. Verify: the
+  F33 pin (driven + derived) and MAIL-SWEEP.
+
 <a id="g35-callnoteemail-audit-row-is-deliberately-phi-free"></a>
 
 - **CallNoteEmail audit row is deliberately PHI-free.**
@@ -1015,6 +1026,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   through `drRecipientDomains_` (one deduped domain per address — the Dept
   Request row's helper). Use the list helper wherever a field can hold several
   addresses.
+
+  **AMENDED (cycle 26 F12): a reply-all goes to everyone on the message.** The
+  Spanish resolved reply (SP1) carries the resolver's free-text note — which
+  may name a patient — and it was a reply-all to the latest request message,
+  with no look at who that reaches; the dialog said "to the requester". A
+  copied outside address, an outside Reply-To or an outside requester got the
+  note. `spanishSendResolveReply_` now reads everyone the reply can reach
+  (`mailReplyAudience_`: From, Reply-To, To and Cc — the widest reading, by
+  pattern, never by splitting on commas) and sends NOTHING when any address
+  is outside `CONFIG.ORG_EMAIL_DOMAINS` (`spanishReplyLeavesOrg_`; nobody to
+  judge is not "inside"). The resolver is told (`outside`), the audit row says
+  `reply=outside`, Resolve selected counts it apart from a failed reply, and
+  the dialog and the Admin toggle say who the reply reaches. The Dept Request
+  reply carries no free text (the label, who and when), so it is unchanged.
+  Verify: the F12 pin + the F11 + F12 DOM drive.
 
 <a id="g37-buildcallnoteemailhtml-must-esc-every-user-supplied-field"></a>
 
@@ -5647,6 +5673,29 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   and the voicemail rule place each at its own time (`spanishManualStamps_`).
   Verify: the F13 drive (fold → episodes, and the voicemail rule).
 
+  **AMENDED (cycle 26 F9 + F11): the first message is not the REQUEST'S email,
+  and a resolve asks the walk the list asks.** Two instances on the reply
+  side of the same class. (F9) A Dept Request's resolved reply went to the
+  thread's first message — "the request email itself". But two requests can
+  share one Gmail thread (DR-1: same subject), and then the first message is
+  the OTHER request's email: that request's department was told "this request
+  was marked resolved". The reply now answers the request's own email —
+  `drReplyTargetIdx_`: the newest message the app sent whose body carries the
+  request id (its resolve link; a re-send carries the same id). None found is
+  `unmatched`: nothing is sent, and the person is told. (F11) The Spanish
+  resolve endpoints asked only "is there a manual resolve at least as new as
+  the newest message". A card left on screen after a MEMBER answered by email
+  has no manual resolve at all, and a thank-you is "newer mail" — so the stale
+  click wrote a resolve row and sent a second "this request was resolved"
+  reply on a thread with nothing open. Both endpoints now also ask the walk
+  the pending list asks (`spanishWalksOpen_` over `spanishThreadWalks_`, read
+  before the lock, judged inside it): no open request is "already". A
+  voicemail thread is judged under BOTH walks the list can show it by, and
+  open under either is open — the rule refuses a resolve, so it errs toward
+  allowing one (a card the list shows must stay clearable).
+  Verify: the DR1 reply pin + the F9 grid; the F11 drive through both
+  endpoints.
+
 <a id="g156-read-a-word-or-a-number-by-token"></a>
 
 - **Read an operator's word or a rep's number by TOKEN, never by character
@@ -5783,6 +5832,26 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   emoji); a "?", a digit, a name, any other word or an empty new text keeps it
   a request. "Gracias Ana" reopens — one click — rather than "gracias, ya
   está?" hiding. Verify: the courtesy grid (`spanishIsCourtesyOnly_`).
+
+  **A THIRD and FOURTH instance (cycle 26 F3 + F10): two rules that HIDE a
+  message on a Spanish thread.** (F3) The app's own resolved reply must not
+  read as a requester's follow-up, so a body carrying the reply's marker line
+  was neutral. A requester who replies to that reply QUOTES it — marker and
+  all — so "no me llamaron, por favor intenten otra vez" was read as the app
+  talking and never became a request. The reply is now known by how it OPENS
+  (`SPANISH_APP_REPLY_LEAD`, the constant the reply is built from) plus the
+  marker; a message that quotes it opens with the person's words or a quote
+  header, whatever the reply's note holds. (F10) The opposite error: the
+  requester's out-of-office answers the app's reply-all on the same thread,
+  from the requester's address, and reopened the request it was resolved on,
+  unclaimed, every time. An automatic message (`spanishIsAutomatic_`: the
+  Auto-Submitted / X-Autoreply headers, an auto-reply subject in English or
+  Spanish) is neutral — built to fail toward a look: the Precedence header is
+  NOT read (mail delivered through the group inbox carries `Precedence:
+  list`, so it would call every follow-up automatic), the sender's address is
+  not read, a header that cannot be read is a request, and a sender whose
+  FIRST message is itself automatic (a phone system, a form mailer) keeps the
+  old rule for its later mail. Verify: the F3 and F10 drives.
 
 <a id="g160-an-escape-first-renderer-must-match-escaped-markers"></a>
 

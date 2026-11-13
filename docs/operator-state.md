@@ -2771,8 +2771,13 @@ entry says which it is.
   a person marks a request resolved — the email's link, the in-app button or a
   "Resolved" answer under Replies to check — the app replies on the request's
   email thread from the mailbox it runs as, to the sender and the department,
-  saying who marked it and when. A request sent before thread tracking (before
-  the 22post D deploy) has no thread and gets no reply; the person is told so.
+  saying who marked it and when (every `MAIL_BCC_ALL` address is copied, since
+  cycle 26 F33). A request sent before thread tracking (before the 22post D
+  deploy) has no thread and gets no reply; the person is told so. Since cycle
+  26 F9 the reply answers the request's OWN email — on a thread two requests
+  share it is no longer the first request's; when that email cannot be found
+  on the thread, no reply is sent and the person is told (`notSent=unmatched`
+  in the audit row).
   **Toggle:** `deptResolvedReply` (Admin → Config → feature toggles), ON by
   default; off = no reply, the resolve unchanged. Each reply (or why there was
   none) is an AuditLog `DeptRequestResolvedReply` row, by id. **Tell the
@@ -2785,7 +2790,12 @@ entry says which it is.
   patient / left a voicemail / no answer / wrong number) and an optional note,
   and replies on the request's thread from the deploying mailbox (or the
   `REP_SENDER_FROM` alias when set) as "UMS Team Tools" — the requester and
-  everyone on the thread receive it. Turn the reply off with Admin → Config →
+  everyone on the request's email receive it (and every `MAIL_BCC_ALL`
+  address, since cycle 26 F33). **Since cycle 26 F12 the reply is NOT sent
+  when the email includes an address outside `CONFIG.ORG_EMAIL_DOMAINS`** (the
+  note may name a patient): the request still resolves and the toast says no
+  reply was sent — if staff write from a domain that list lacks, add it. Turn
+  the reply off with Admin → Config →
   feature toggles → `spanishResolveReply`; the resolve itself is unchanged.
   `SpanishManualResolved` gains a fifth header, `Outcome`, written by itself on
   the first resolve after the deploy (older rows stay blank); the note is never

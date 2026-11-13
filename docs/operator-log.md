@@ -11,6 +11,28 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-13 — Cycle 26 Batch 3 (Thread replies)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched).
+
+- **Spanish Inbox — the resolved reply is not sent outside the company.** When
+  the request's email includes any address outside `CONFIG.ORG_EMAIL_DOMAINS`
+  (the requester, Reply-To, To or Cc), the request resolves but no reply goes
+  out, and the toast says so. If staff write from a domain that list does not
+  hold, add it in `00_config.js`. The dialog now says the reply goes to
+  everyone on the request's email.
+- **A requester who replies to the "marked resolved" email** (quoting it) now
+  comes back as a new, unclaimed request; their out-of-office does not.
+- **Mark resolved on a request someone already answered by email** says
+  "Already resolved — nothing was changed": no row, no second reply.
+- **Dept Requests — the resolved reply goes on the request's own email.** On a
+  thread two same-subject requests share, the other department is no longer
+  told. Where that email cannot be found, no reply is sent and the person is
+  told.
+- **`MAIL_BCC_ALL` now receives both resolved replies** (it did not before).
+- Tell the Spanish Inbox members the first three. Walk S179 on DEV.
+
 ## 2026-11-13 — Cycle 26 Batch 2 (Intake: the right patient)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version
