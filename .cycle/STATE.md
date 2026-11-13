@@ -2,12 +2,12 @@
 
 ## Current
 Cycle: 26 — opened 2026-11-13 by /broad-scan (the cycle after 25post; every later phase of this cycle carries this number)
-Phase: audit
+Phase: implement
 Scope: broad — /broad-scan of 2026-11-13 (Server, every client subsystem, handbook-app, Test Suite, docs)
 Test Command: manual
-Estimates: (none yet — each batch's goes here before its first edit)
+Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h)
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16) and the 25post stretch's /reflect (2026-11-12). The cadence is every 4.
-Updated: 2026-11-13 (cycle 26 opened by /broad-scan)
+Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan started)
 
 ## In progress (facts to carry forward — NOT judgments)
 - (none — cycle 25post is closed; its record is the top block of `.cycle/HISTORY.md`)
@@ -21,6 +21,7 @@ Updated: 2026-11-13 (cycle 26 opened by /broad-scan)
 - **XR1 (2026-11-12):** import the re-exported `manual.json` — Check lists 3.7, 10.5, 10.9 and 10.21 as updated.
 - **T1 deploy (2026-11-11):** Team Tools `clasp push -f` + New version (rides with AC1/M1). Everyone who took the first tour sees a short "what's new" run on their next load; new people get the full tour. Walk S175.
 - **RE1 RingCentral Embeddable spike (operator 2026-11-11):** next on the roadmap, not started. Owed before it can start: a RingCentral developer app (client ID) and whether RingCentral admin must approve it.
+- **ST5 — one insurance suggestion per card, and the card reader off the page's thread (cycle 26 scan, operator 2026-11-13: roadmap only, not started).** Today the reader merges every attached image into ONE suggestion (scan F21: a Humana ID with an Aetna group) and runs on the page's thread, so the form freezes in bursts during a call, with a ~30 MB first download and no progress or cancel. The roadmap item: group the images into cards, offer a suggestion per card (primary / secondary), and run the reader in a worker with progress and cancel. L, ~10 h; it changes the confirm flow, so it needs a product decision before a batch — and it builds on Batch 2's F20 (a per-form generation counter) and Batch 13's F21.
 - **ED4 deploy (2026-11-09):** Team Tools `clasp push -f` + New version. Then Manage → Admin → Config → Letterheads: addresses, footers and logos for UniversalMed Supply and Infimed Solutions; write `Infimed Solutions` in roster column S for the India-based employees. Walk S164.
 - **DR1 deploy (2026-11-09):** Team Tools `clasp push -f` + New version. Tell the departments a resolved request now gets an automatic reply on its thread. Walk S165.
 - **M1 deploy (2026-11-11):** Team Tools `clasp push -f` + New version (rides with AC1). The CDR Report needs call-data-reporting's `Outbound Calls` tab (its outbound export); until then Stats says "Outbound calls — not read". Tell the team what Adjusted means. Walk S174.
