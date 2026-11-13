@@ -11,6 +11,33 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-13 — Cycle 26 Batch 4 (Automation health honesty)
+
+**One new auto-managed Script Property: `PAY_WEEK_REMINDER_SENT`** (the day
+and who was sent that day's pay-week reminder; nothing to set). Deploy: Team
+Tools `clasp push -f` + New version (`handbook-app/` is untouched; no trigger
+reinstall).
+
+- **The health dot stops crying wolf about the PTO accrual credit.** From the
+  3rd to month end it said the credit "has not run this month" although it had
+  — every month. If it was that alarm that made you check whether September
+  was credited, the credit itself was not at fault; `previewPtoAccruals` still
+  answers the question directly.
+- **A failed accrual run is reported on the 1st and 2nd** (it was held back
+  to the 3rd).
+- **Feature toggles and retention windows: your Save writes only what you
+  changed.** A page left open no longer puts back a toggle — or a purge window
+  — another admin changed. If someone changed the same retention window, the
+  save is refused and says so; reload and decide. A page open across the
+  deploy is asked to reload once.
+- **Dashboard read-ahead:** the year-to-date card is now actually kept in the
+  cache; the job no longer fails hourly where there is no CDR store or
+  Transfer tab.
+- **Pay-week reminder:** sent at or after 9 am Central, so a missed run no
+  longer loses the reminder; turning the toggle off clears an old failure.
+- **A re-onboarded admin** is no longer listed as offboarded.
+- Walk S180 on DEV (two browser windows for the toggle and retention steps).
+
 ## 2026-11-13 — Cycle 26 Batch 3 (Thread replies)
 
 **No new operator state.** Deploy: Team Tools `clasp push -f` + New version

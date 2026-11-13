@@ -1783,6 +1783,18 @@ states what must stay true, and CLAUDE.md's Common Gotchas state what has bitten
   stateful, don't flip mid-cycle) require a `uiConfirm({tone:'danger'})`
   in the Admin UI. Pinned by the `getFlag_` / registry-integrity Node
   tests.
+  **Amended (cycle 26 F18): a save is a merge of what the caller changed.**
+  The page sends every toggle it shows; the server used to store exactly
+  that, so a page left open put back a flag another admin had turned off.
+  `saveFeatureFlags(flagMap, baseline)` takes what the page loaded and writes
+  only the toggles that differ from it, onto the overrides as stored now,
+  inside the ScriptLock (`adminSettingsMerge_`). The retention panel's save
+  works the same way and, because a day count has more than two values,
+  REFUSES when someone else moved the same window meanwhile. Rejected: a
+  version stamp per blob (the scan's ST3 — it would cover every admin blob,
+  and is a separate piece of work); last-write-wins with a warning (the
+  purge windows are irreversible). A page from before the deploy sends no
+  baseline and is told to reload.
 - <a id="stale-flag-badge-on-the-manager-cn-landing"></a>**Stale-flag badge on the manager CN landing.**
   `managerGetUnresolvedActionCount` scans the flag + resolved columns
   (2 cols only, not full rows) across all enrolled reps' Sheets and
@@ -5008,6 +5020,13 @@ pick them up without re-deriving the context.
   missing price column or an unreadable eligibility cell instead of leaving it to
   a panel below.
 
+  **Amended (cycle 26 F2 + F17).** The monthly job's line could never read
+  clean: "ran this month" was a prefix test on the run's DISPLAY string. A
+  last-run record is now built by one function (`automationRunRecord_`) and
+  carries the run's month in the manager's timezone; the check compares
+  months. The grace days apply to the liveness line only — a failure the job
+  stamped is on the list from the 1st.
+
 - <a id="a-half-day-is-graded-on-the-hours-worked"></a>**A half day is graded on the hours worked, not on a start it does not have (cycle 22 T5 rework, operator 2026-09-25).**
   The operator's rule: a half day "could really start and end at any time, as
   long as at least half the typical hours are worked (at least 4 hours)". So
@@ -6743,6 +6762,13 @@ pick them up without re-deriving the context.
   - **Measured where it runs.** Both endpoints log "cached" or "read" with
     their milliseconds to the execution log, so the before and after can be
     read on the real sheets.
+  - **Amended (cycle 26 F25).** A year of per-day transfer rows for the team
+    does not fit a 100 KB cache value, so that window was never kept. The
+    Dashboard needs only the totals: the transfer reader takes
+    `aggregatesOnly` and keeps that shape under its own key. Any window too
+    large to keep is skipped on purpose, noted, and makes the read-ahead a
+    partial run; a deployment with no CDR store is `ok`, and the optional
+    Transfer tab's absence is not a failed read.
 - <a id="dr1-audit-list-and-resolved-reply"></a>**A manager checks Dept Requests against the CRM from an audit list with a per-request mark kept in its own tab; a person's Mark resolved replies on the request's email thread (DR1, operator 2026-11-09)**
   The operator: "make a list of 'Close Order' requests, so I can use that list
   and check the status in the CRM", and "can the 'Mark Resolved' button … then
@@ -7071,6 +7097,13 @@ pick them up without re-deriving the context.
   - **Not done:** naming what to check (an open day, a pending request) — the
     close checklist already finds those for the manager, and repeating them
     to every rep is a second reader of the same data.
+  - **Amended (cycle 26 F28): at or after the hour, once per person.** The
+    job acted only in the hour that was exactly 9 am Central, with no record
+    of having sent, so one missed run lost the period's reminder. It now
+    sends at any hour from 9 am on, to whoever is not yet in that day's
+    `PAY_WEEK_REMINDER_SENT` record; a failed send is retried each hour that
+    day. Switched off, the job is `ok` (not `idle`), which clears a failure
+    stamped before it was switched off.
 - <a id="i1-intake-safeguards-and-address-check"></a>**Intake safeguards warn and never block; the address check asks Google Maps only when an admin turns it on (I1, operator 2026-11-05)**
   The operator: "intake safeguards, e.g. phone formatting 4691113333 →
   469-111-3333, with +1 handled … proceed with warnings, flexible formats, e.g.

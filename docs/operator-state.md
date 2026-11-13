@@ -1338,6 +1338,10 @@ entry says which it is.
   inline warnings, and **danger-confirms** (uiConfirm) only when a manager
   ENABLES or RAISES one of the two irreversible purge windows. Takes effect on the
   next nightly run (re-run `installAutomationTriggers()` once if not yet done).
+  **Since cycle 26 F18** Save writes only the windows YOU changed, and
+  refuses — naming the window and its current value — when another admin
+  changed the same window after your page loaded; the panel then reloads.
+  Before, a page left open put a purge window back to its old number.
 <a id="operator-form-data-retention-is-off-by-default"></a>
 - **Form-data retention is OFF by default.** `purgeExpiredFormData`
   (daily manager-tz 2am, inside the `runNightlyPurges` dispatcher since
@@ -2187,6 +2191,13 @@ entry says which it is.
   it under the BAA before turning it on. Its auto-managed counter
   `INTAKE_ADDR_CHECKS_24H` (24 hourly counts, the route-lookup counter's shape) caps the checks at 1,000 a day;
   delete it to reset.
+  **Since cycle 26 F18** the toggle save writes only the toggles YOU changed:
+  a page left open no longer puts back a toggle another admin changed since.
+  A page that was open across a deploy is asked to reload before it can save.
+  **The pay-week reminder (cycle 26 F28)** now sends at or after 9 am Central
+  — a missed or failed run is made up by the next hourly one — and keeps
+  `PAY_WEEK_REMINDER_SENT` (auto-managed: the day and who was sent to;
+  deleting it during a reminder day sends that day's reminders again).
 <a id="operator-script-property-automation-digest-last-runs"></a>
 - **Script Property `AUTOMATION_DIGEST_LAST_RUNS`** (auto-managed). JSON
   object `{ eod|urgent|weekly|trainingOverdue|deptReqReminder|managerBrief|selfTest|coachingRecap|spanishAutoAssign|missedPunch|exportCheck|automationHealth:
@@ -2758,6 +2769,11 @@ entry says which it is.
   Property, no tab; it all expires by itself. **To see the speed-up:** Apps
   Script → Executions — `getDashboardMetrics` and `getMyMetrics` log "cached"
   or "read" with their milliseconds.
+  **Since cycle 26 F25** the read-ahead is healthy on a deployment with no
+  CDR store and on one without the optional Transfer tab (it failed or was
+  "partial" every hour before), and it reports a window it read but could not
+  keep (over the cache's 100 KB per value) as a partial run, by name — if that
+  ever appears, tell the developer: the window needs a smaller cached shape.
 <a id="operator-dept-request-audit-and-resolved-reply-dr1"></a>
 - **Dept Request audit list and the resolved reply (DR1, operator 2026-11-09) —
   the `DeptRequestCrmChecks` tab and the `deptResolvedReply` toggle.** **Nothing

@@ -3699,3 +3699,37 @@ F33.**
   group-address pass walks every thread as email. An interrupted bite
   leaves its mutation on disk: read the diff, then restore the file.
 - **Bites: 46 mutations, 46 bit** (42 pure, 4 DOM).
+
+**Cycle 26 Batch 4 (2026-11-13) — Automation health honesty: F2, F17, F18,
+F25, F28, F32.**
+- **Fixtures are built, not typed (F2).** `gasUtilities_()` is a
+  timezone-aware stand-in for `Utilities.formatDate` / `parseDate` (the
+  formats the automation-health code uses; anything else throws), and
+  `autoRunRec_(stamp)` / `autoRunRecAt_(ms)` build a job's last-run record
+  through the real `automationRunRecord_`. Every older pin that typed a
+  record with an ISO-shaped `timestampMgr` now builds it — the Gap4 block,
+  A1, the ledger merge, the two 25post pins — and the messages they assert
+  are in the format production emits ("Aug 18, 12:00 PM"). The visual mock
+  gained `runRecAgo()` for the same reason.
+- **Pure** — eight pins: F2 (the Nov 1 credit, the manager-timezone month, an
+  unreadable stamp, no hand-built record left); F17; the merge grid;
+  `saveFeatureFlags` and `saveRetentionConfig` driven over a stored map and a
+  stale page; the Admin client's baseline; the transfer reader's
+  `aggregatesOnly` shape, key and oversize note over a payload really over
+  100 KB; the ADMIN_EMAILS drift check. The PF1 read-ahead pin and the P1
+  email-job pin were extended in place for F25 and F28 (their sandboxes
+  already drove those jobs).
+- **DOM** — one drive: the retention save's two arguments, the sticky
+  refusal, the panel reload, an ordinary failure, "nothing changed".
+- **What bit:** an existing pin (Q-1) allowlists every scalar `setProperty`
+  BY NAME, so the retention save's writes stayed five literal calls rather
+  than one loop over a table. And `saveFeatureFlags` had a conflict branch
+  that a boolean can never reach (if both admins flipped a toggle, they made
+  the same change) — removed rather than left untested.
+- **Bites: 49 mutations, 49 bit — one only after its pin was strengthened.**
+  "A later run forgets who was sent to earlier" (the pay-week record written
+  from the new sends alone) did not bite: the pin checked the make-up run but
+  never the run after it, where the earlier recipients would have been sent
+  to again. The pin now reads the record after the make-up run and drives one
+  more hour. A NO BITE that names a real path is a missing assertion, not an
+  equivalent mutant.

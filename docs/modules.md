@@ -845,6 +845,12 @@ longer sent to reps.
      tracking has no thread, so it gets none, and its button and the
      confirmation say so. The `deptResolvedReply` toggle turns the reply off.
 
+     **Cycle 26 Batch 4 — Admin and automation.** The Admin toggle and
+     retention saves write only what the admin changed (a stale page cannot
+     put another admin's change back). The monthly accrual health line reads
+     clean once the credit has run; the hourly call-data read-ahead keeps the
+     Dashboard's year-to-date transfer totals and reports honestly; the
+     pay-week reminder is sent at or after 9 am Central, once per person.
      **Cycle 26 Batch 3 — the replies on a thread.** A Dept Request's resolved
      reply answers the request's own email (the newest one the app sent that
      carries its id), not the thread's first message; a thread where that

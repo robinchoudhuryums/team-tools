@@ -86,6 +86,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   renders muted as "Not set up on this deployment". A SET store that will not
   open is still an error. Verify: the ADM-08 pin (server walk + panel).
 
+  **A FOURTH instance (cycle 26 F2): the monthly accrual line.** The check
+  for "the monthly PTO accrual credit ran this month" tested the run's
+  `timestampMgr` for a `2026-11` prefix. `timestampMgr` is a DISPLAY string
+  ("Nov 1, 6:02 PM"), so the test was false for every run there has ever
+  been: from the 3rd to the end of every month the health dot was red and the
+  daily failure email said the credit "has not run this month — the trigger
+  may be missing", beside a credit that had been paid on the 1st. It trained
+  the reader to ignore the dot, and it sent the operator checking whether
+  September had been credited. Two earlier fixes to this same alarm (cycle 22
+  A1, 25post) each corrected a different cause and neither could have made it
+  clean. A run's record now carries its MONTH (`ym`, in the manager's
+  timezone), built from the stored stamp by ONE builder
+  (`automationRunRecord_`), and the check compares months; a stamp that cannot
+  be read is "unknown", said as such. Verify: the F2 pin, driven through the
+  real builder.
+
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
@@ -518,6 +534,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   scan of its own body. A leased action never takes the ScriptLock as well. A
   killed save's lease expires after 60 seconds. Verify: the 25post lease pins
   (the derived writer net, driven acquire / release / wait).
+
+  **AMENDED (cycle 26 F18): a save that replaces a stored map from a page's
+  copy is a lost update.** The Admin page sends EVERY feature toggle it shows,
+  and `saveFeatureFlags` replaced the stored map with them; the retention
+  panel sends every window, and `saveRetentionConfig` wrote them all. So a
+  page left open since morning put back whatever another admin had changed
+  since — a flag turned off came back on, and a purge window set to 0 came
+  back as 365 days: an irreversible PHI delete re-armed by someone who never
+  touched it. Neither save took the lock. Both now take what the page LOADED
+  as a second argument and write only the keys the caller changed
+  (`adminSettingsMerge_`), onto what is stored NOW, inside the lock; a
+  retention window someone else moved meanwhile refuses the save by name with
+  its current value (a toggle has two values, so two admins who both flipped
+  one have made the same change); a call with no baseline — a page from
+  before the deploy — is refused with "reload". The other blob saves
+  (department emails, templates, links, …) still replace whole maps; that is
+  the scan's ST3, not this fix. Verify: the three F18 pins + the F18 DOM
+  drive.
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
@@ -1751,6 +1785,28 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   lost row (`DIGEST_DELIVERY_LOG_FAILS`) and the Email deliveries panel names it
   — on a missing tab too, the case where it matters most. Verify: the E1
   follow-ups write-failure pin.
+
+  **AMENDED (cycle 26 F17 + F25 + F28): the contract's outcome must be the
+  TRUE one.** One contract for every job (E1) closed "a job that says
+  nothing"; three jobs still said the wrong thing. (F17) The monthly check's
+  grace days — "before the 3rd its absence is normal" — were a `return` out of
+  the whole job, so the failure the accrual job STAMPED on the 1st was not
+  reported until the 3rd. The grace days now hold back only the liveness line.
+  (F25) The hourly call-data read-ahead said `ok` although its year-to-date
+  transfer window was never kept (the cache put threw — see g157); it was
+  `partial` every hour for ever on a deployment without the OPTIONAL Transfer
+  tab, and `failed` every hour on one with no CDR store at all. It now reads
+  the totals the Dashboard reads, calls a window that was read but too large
+  to keep a partial run (named), treats a missing optional tab as no failure,
+  and is `ok` where there is no store. (F28) The pay-week reminder acted only
+  in the exact hour, with no record of having sent: a 9 am run that was
+  missed lost that period's reminder silently. It now sends at or after the
+  hour, once per person per day (`PAY_WEEK_REMINDER_SENT`), so a later run
+  makes up a missed or failed one; and with its toggle off it returns `ok`,
+  because `idle` leaves a stamped failure in place and nothing else would
+  ever clear it. Rule of thumb: `idle` is for "nothing to do this time";
+  "switched off" and "not set up here" are `ok`. Verify: the F17 pin, the PF1
+  read-ahead pin, the P1 email-job pin.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -3709,6 +3765,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   states a COUNT of dependencies must compute it; and a batch is not green until
   the workflow run on its pushed commit is — read it after the push.
 
+  **A TWENTY-THIRD direction (cycle 26 F2): a fixture typed by hand in a
+  shape production never emits.** Every pin of the monthly liveness check fed
+  it a last-run record written out in the test — `{ ms, timestampMgr:
+  '2026-08-01 06:00:00' }` — and the code tested `timestampMgr` for a
+  `2026-08` prefix. The fixture satisfied the code; production's value
+  ("Aug 1, 6:00 AM") never could. Five pins across three cycles were green
+  over a check that was false for every real run. A fixture of a server-built
+  record is now BUILT: `autoRunRec_(stamp)` runs the real
+  `automationRunRecord_` over a timezone-aware stand-in for the two
+  `Utilities` calls it makes (`gasUtilities_`), so a pin sees what the Admin
+  panel and the digest see. The visual fixture carries the real shape too.
+  When a pin needs a value some other function produces, produce it with that
+  function.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data
@@ -5590,6 +5660,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   departed address, with a line saying why the notice came to them. An unreadable
   roster sends where it always did. Verify: the F41 (cycle 25) drive.
 
+  **AMENDED (cycle 26 F32): the ADMIN_EMAILS half was handed an empty
+  roster.** `managerSourceDrift_` clears an offboarded address once it is
+  "back on the roster". The MANAGER_EMAILS call passed the roster; the
+  ADMIN_EMAILS call passed `[]` (its demotion half does not apply — an admin
+  without the manager bit simply has no power), so nobody was ever "back on
+  the roster" and a re-onboarded admin was named in the health digest every
+  day, with nothing they could do short of editing `OFFBOARDED_EMAILS`. The
+  roster now rides along, every row as a manager (`adminDriftRoster_`).
+  Verify: the F32 pin.
+
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 
 - **A half day is neither a day off nor a normal day, and it has NO fixed start
@@ -5760,6 +5840,19 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   changing only the slug served old anchors from the shared cache. The key now
   hashes `kbSlug_`, and a pin derives the builder's call closure and requires
   the key to hash exactly that set. Verify: the Seams F18 pin.
+
+  **AMENDED (cycle 26 F25): a `put` over 100 KB throws.** CacheService caps a
+  value at 100 KB. The transfer reader cached its whole answer — the per-day
+  map for every rep — and for the Dashboard's year-to-date window that is
+  several hundred KB: the `put` threw into `catch (_) {}`, the window was
+  never cached, every Dashboard open re-read the year, and the hourly
+  read-ahead reported `ok`. The Dashboard reads only the per-agent totals, so
+  the reader takes `aggregatesOnly` and keeps that small shape under its own
+  key (and returns no `perRepDaily` key at all, never an empty one). Every
+  CDR window reader now checks the payload against one headroom constant
+  (`CDR_CACHE_VALUE_MAX`), skips an oversize one ON PURPOSE and notes it
+  (`cdrCacheOversizeNote_`), and the read-ahead reports what it could not
+  keep. Verify: the F25 pin.
 
 <a id="g158-a-threshold-changes-meaning-with-its-basis"></a>
 
