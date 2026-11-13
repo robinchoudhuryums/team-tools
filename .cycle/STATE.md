@@ -1,13 +1,13 @@
 # Cycle State
 
 ## Current
-Cycle: 25post — closed 2026-11-12 (reflected net +14 (16 prod fixes − 2 new failure modes; 8 defensive)). The next /broad-scan, /audit or /targeted-audit opens the next cycle.
-Phase: idle
-Scope: —
+Cycle: 26 — opened 2026-11-13 by /broad-scan (the cycle after 25post; every later phase of this cycle carries this number)
+Phase: audit
+Scope: broad — /broad-scan of 2026-11-13 (Server, every client subsystem, handbook-app, Test Suite, docs)
 Test Command: manual
 Estimates: (none yet — each batch's goes here before its first edit)
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16) and the 25post stretch's /reflect (2026-11-12). The cadence is every 4.
-Updated: 2026-11-12 (close-out of cycle 25post by scripts/cycle-closeout.mjs)
+Updated: 2026-11-13 (cycle 26 opened by /broad-scan)
 
 ## In progress (facts to carry forward — NOT judgments)
 - (none — cycle 25post is closed; its record is the top block of `.cycle/HISTORY.md`)
