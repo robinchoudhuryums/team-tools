@@ -5804,6 +5804,18 @@ pick them up without re-deriving the context.
   deploy walk that vanished with the cycle would be the silent loss the move must
   not cause. Rejected: regenerating the whole file (destroys the prose), and
   closing at audit time (the audit cannot write).
+  **Amended, cycle 26 F4 (2026-11-13).** "An audit may write only STATE's
+  fields" cut the other way too: the region named the cycle STATE is on, so the
+  audit's own CYCLE OPEN left `--check` red, and the pin beside it was satisfied
+  only by a hand-written sentence, so the script's `--write` could not turn it
+  green — the first CI step red, every later step skipped, on the commit that
+  opened cycle 26. The standing now follows the last REFLECTION only; the cycle
+  in progress is written in one place, STATE's `Cycle:` line. The same commit
+  made the job's checks independent (`!cancelled()`, the dependent ones waiting
+  on `npm ci`), so one red step no longer hides the others. Rejected: letting
+  the audit write PROJECT_HEALTH (the command's one-write rule is the template's,
+  synced byte-identical), and an `--open` script (a new capability — the scan's
+  ST1 — and the check must be right without it).
   **ST4.** The page-height and column-width measurements already shipped with
   F69; what was missing was anyone running them. A fixed subset (every tool at
   phone and pop-out width, the wide reader of F67) runs in its own CI job and

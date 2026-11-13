@@ -3609,3 +3609,23 @@ per-change detail. By delta:
 - **DOM** — the Day Edit no-activity line says when a day predates what was
   kept, and a plain "none" inside it.
 
+**Cycle 26 Batch 1 (2026-11-13) — F4, a cycle open leaves CI green and
+checking; F74, one Chromium resolver.**
+- **Pure** — the standing pin (F25 + F26 + F27 + F64) reads PROJECT_HEALTH's
+  GENERATED region for the last reflected cycle; it used to look for the cycle
+  STATE.md is on anywhere in Current Standing, which only hand prose could
+  satisfy. The E5 `--write` drive asserts the region's new shape. New: a drive
+  that closes a fixture cycle, opens the next one in STATE.md alone and requires
+  `--check` green and `--write` idle — and still red once a reflect row lands;
+  a pin that parses the `client-tests` job's steps (every run step after the
+  syntax check under `!cancelled()`, the five dependent ones on `steps.deps`,
+  no `continue-on-error`, no `always()`); `chromiumPath` driven over fake trees
+  (override, either layout, numeric build order, an absent root, nothing
+  found); and a derived net over `test/visual/*.mjs` (every launching script
+  imports the resolver, keeps no copy, names no `chrome-linux` directory).
+  Eleven bite-checks, all biting.
+- **Visual** — `a11y-names.mjs` and `print-check.mjs` ran in the web container
+  with no override for the first time; the CI subset (`shoot.mjs --ci`) ran
+  through the shared resolver.
+- **What bit:** `bite.sh` refuses a mutation containing a double quote, so a
+  mutation that inserts a JS string is written with single quotes or `chr()`.

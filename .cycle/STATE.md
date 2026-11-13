@@ -5,15 +5,17 @@ Cycle: 26 — opened 2026-11-13 by /broad-scan (the cycle after 25post; every la
 Phase: implement
 Scope: broad — /broad-scan of 2026-11-13 (Server, every client subsystem, handbook-app, Test Suite, docs)
 Test Command: manual
-Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h)
+Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h) — actual ~2 h
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16) and the 25post stretch's /reflect (2026-11-12). The cadence is every 4.
-Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan started)
+Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan implemented)
 
 ## In progress (facts to carry forward — NOT judgments)
-- (none — cycle 25post is closed; its record is the top block of `.cycle/HISTORY.md`)
+- **Cycle 26 opened by the /broad-scan of 2026-11-13** (75 findings F1–F75: 4 High — F1 intake amend ships the previous patient's card images, F2 the monthly accrual health line can never read clean, F3 a Spanish follow-up quoting the app's resolved reply never reopens, F4 the cycle open left CI red; gaps G1–G5, suggestions ST1–ST5). The scan report is in the session that ran it, not on disk — its batch plan: Batch 1 CI unblock (F4, F74) · 2 Intake, the right patient (F1, F19, F20, F72, F75) · 3 Thread replies (F3, F9, F11, F10, F12, F33) · 4 Automation health (F2, F17, F18, F25, F28, F32) · 5 Payor lookups (F5, F6, F7, F8, F37, F38, F40) · 6 Employee Docs (F13, F14, F15, F44, F56, F64) · 7 Handbook server (F49, F50, F48, F52, F53, F54, F57) · 8 Handbook client (F45, F46, F47, F55, F65, F66) · 9 Time Clock (F16, F26, F27, F30, F29, F31) · 10 Stats (F24, F34, F35) · 11 Shell and Call Notes client (F58–F63) · 12 Server small items (F41, F42, F43) · 13 Intake remainder (F21, F22, F23, F67) · 14 Docs and tooling (F70, F69, F73, F71, F68). Deferred: F36 (operator ruling on a minimum cohort), F51 (quiz key — a decision), F39 (needs the real payor exports). Expansion: E1 ST1 + ST2 · E2 ST4 + ST3 · E3 G1 + G5 · E4 G3 + G2 · E5 G4; ST5 → roadmap (Pending).
+- **Batch 1 is DONE** (block `.cycle/blocks/26-batch1-broad-implement.md`); the next batch the operator names starts from a clean tree.
 
 ## Completed this cycle
-- (none yet)
+- F4 | scripts/cycle-closeout.mjs, PROJECT_HEALTH.md, .github/workflows/client-tests.yml, test/client/run.js | the generated standing follows the last reflection only (a STATE-only cycle open owes nothing); the job's checks run under `!cancelled()` so one red step no longer hides the rest
+- F74 | test/visual/chromium-path.cjs (new) + the eight launching scripts | one Chromium resolver: either layout, newest build by number, CHROMIUM_PATH honoured everywhere
 
 ## Pending / not yet done
 - **Handbook refresh HBR3 deploy (2026-11-11):** `npm run handbook:push` + New version (Team Tools unchanged; no new operator state). Walk S176.
@@ -89,6 +91,9 @@ Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan started)
 - **F19 DECIDED + shipped in E2 (2026-10-15).** **DEFERRED, operator decisions:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides; HR-2 (roadmap — the operator is the only editor of the HR sheet and the script); whether members' first names should join the Spanish courtesy vocabulary ("Gracias Ana" still reopens).
 
 ## Open follow-on items
+- [scripts/cycle-closeout.mjs: Batch 1] — the close-out writes `Cycle: 25post — closed …` while the audit command says a non-numeric Cycle counts as 0 (so the next audit would be "Cycle 1", which the script then refuses as behind metrics.csv). Nothing enforces the reading; the scan opened 26 by judgement. Belongs with ST1 (a cycle-open script).
+- [PROJECT_HEALTH.md: Batch 1] — Current Standing's prose still says "No audit has run since cycle 25's" and carries the 2026-10-14 scores; the cycle 26 scan re-scored (Overall 7.3). Not pinned any more (F4) — update it at /health-pulse or the reflect.
+- [scripts/counts.mjs: Batch 1] — `--block` prints the block but nothing writes it; the row is hand-edited after every batch that adds a pin.
 - [web-app/script_tour.html: T1] — the Coaching and My Docs tabs have no step of their own (named in the Training step's text); add steps if people miss them. The Team Training fixture in the visual mock renders an error state (the tour step still finds its container) — a mock gap, not app behaviour.
 - [web-app/40_metrics.js: M1] — the Outbound Calls tab is not watched by the PF1 data stamp (cdrDataStamp_), so its reader keeps the old five-minute cache; add it to the stamp's probes if Stats timings call for it.
 - [web-app/intake/script_intake.html: M1] — a reload or a restored draft restarts the intake timer from the next input (the note then carries the shorter time, or none). Fine for an estimate; revisit only if timed counts look low.
@@ -132,6 +137,9 @@ Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan started)
 - **Numbers — do not reuse:** the held invariant numbers now live in `.cycle/config.md`'s `HELD NUMBERS` line (seams F5) — that line, not this one, is what the pin reads. INV-229/230/231/374/375 were written this cycle; INV-350 is retired. **Next free: INV-376; gotcha g171; scenario S138.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **F4: the standing follows the last REFLECTION only** — the generated region no longer names the cycle STATE is on; the cycle in progress is written in one place, STATE's `Cycle:` line. Rejected: letting the audit write PROJECT_HEALTH (the command's one-write rule is the synced template's), and fixing it with an `--open` script alone (that is ST1, a capability; the check has to be right without it).
+- **F4: CI steps run under `!cancelled()`, never `always()` and never `continue-on-error`** — a failed step still fails the job; the steps that need the dev dependencies wait on `steps.deps`.
+- **ST5 is a roadmap item (operator 2026-11-13)**, not a batch — it changes the confirm flow and needs a product decision first.
 - **HBR3: the handoff's decision 4 beats shot 09** — the quiz sitting's header is a light chapter wash, not the mockup's dark bar; the result never says "your manager has been told" (nothing tells a manager); it lists what the reader CHOSE for every question and never an option they did not choose (TRN-1).
 - **No gradients in the handbook app (operator 2026-11-11, handoff decision 13)** — the gradient look read as cheap; a chapter colour is a flat tint or a rule, the score ring and shelf spines are the only fills. **HBR4: a theme is a Display setting** ('' follows the device, applied in the head before paint); an overdue team row is a red rule, not a tint (axe contrast); a form card's page is drawn in CSS, not a PDF thumbnail (that would load pdf.js for the list).
 - **T1: a tour step's gate is its TAB** (`tabVisibleForUser_`), never a flag on the step; steps carry `since`, so a version bump offers only the newer steps (a what's-new run) to people who saw the old tour; finishing or skipping stamps the version; replay lives in Settings, not the pop-out.
@@ -205,4 +213,4 @@ Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan started)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 25post was closed on 2026-11-12 by `scripts/cycle-closeout.mjs --close`. Next: an audit opens the next cycle; the carried Pending items are the operator's open steps.
+Cycle 26: the scan of 2026-11-13 is done and Batch 1 (F4 + F74) is implemented, pinned (11 of 11 bites) and pushed on `claude/loving-rubin-90vdtu`; nothing in `web-app/` or `handbook-app/` changed, so there is nothing to deploy. Next: the operator names the next batch (the scan's order puts Batch 2 — Intake, the right patient — first); record its estimate in the Estimates line before the first edit.
