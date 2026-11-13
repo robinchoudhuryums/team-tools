@@ -38567,8 +38567,17 @@ test('F25 + F26 + F27 + F64 (cycle 25): the docs describe the gates, the standin
   const cur = ph.slice(ph.indexOf('## Current Standing'), ph.indexOf('## Prior standing'));
   assert.ok(/^Overall \(weighted avg\): \d/m.test(cur) && /^Top vertical priority: \S/m.test(cur) && /^Top horizontal priority: \S/m.test(cur),
     'the three labels /cycle-init says portfolio tooling parses are in Current Standing');
-  const cyc = /^Cycle: (\d+\w*)/m.exec(R('.cycle/STATE.md'))[1];
-  assert.ok(new RegExp('Cycle ' + cyc + '\\b').test(cur), 'Current Standing names the cycle STATE.md is on (' + cyc + ')');
+  // F4 (cycle 26): the standing names the last REFLECTED cycle, read from the
+  // GENERATED region — not the cycle STATE.md is on, and not a hand-written
+  // sentence. The old assertion was satisfied only by prose ("Cycle 25post
+  // closed…"), so opening a cycle per the audit command (STATE.md and nothing
+  // else) turned it red, and the script's own --write could not turn it green.
+  const reflected = R('.cycle/metrics.csv').split('\n').slice(1).filter((l) => /^\d{4}-\d{2}-\d{2},[^,]+,/.test(l) && /,reflect,/.test(l)).map((l) => l.split(',')[1]);
+  const lastReflected = reflected[reflected.length - 1];
+  assert.ok(lastReflected && reflected.length > 20, 'metrics.csv yields the reflected cycles (non-vacuous): ' + reflected.length);
+  const gen = cur.slice(cur.indexOf('<!-- closeout:begin'), cur.indexOf('<!-- closeout:end -->'));
+  assert.ok(gen.indexOf('**Last closed cycle: ' + lastReflected + ', reflected ') >= 0, 'the generated standing names the last reflected cycle (' + lastReflected + ')');
+  assert.ok(!/Now: cycle/.test(gen), 'F4: the generated standing does not name the cycle in progress — STATE.md is where that is written');
   const metricsCycles = new Set(R('.cycle/metrics.csv').split('\n').slice(1).map((l) => l.split(',')[1]).filter(Boolean));
   const histCycles = new Set([...ph.matchAll(/^\| \d{4}-\d{2}-\d{2} \| (\w+) \|/gm)].map((m) => m[1]));
   const missing = [...metricsCycles].filter((c) => !histCycles.has(c));
@@ -39806,7 +39815,8 @@ test('E5 (cycle 25, ST5): --check fails while PROJECT_HEALTH lags metrics.csv; -
   const ph = e5Read_(dir, 'PROJECT_HEALTH.md');
   assert.ok(ph.includes('| 2026-10-05 | 23 | net +10 (hand) | hand-written row |'), 'the hand row is untouched');
   assert.ok(ph.includes('| 2026-10-06 | 24 | net −2 (1 prod fix − 3 new failure modes; 21 defensive) | Cycle 24 - a seams \\| audit, with commas. Axis-B lowest: Test Coverage Quality. Reflect block: `.cycle/blocks/24-b-reflect.md`. |'), ph);
-  assert.ok(/\*\*Now: cycle 24 is closed\*\* \(reflected 2026-10-06\)/.test(ph) && /\*\*Last closed cycle: 24, reflected 2026-10-06 — net −2/.test(ph), ph);
+  assert.ok(/\*\*Last closed cycle: 24, reflected 2026-10-06 — net −2/.test(ph) && /\*\*The cycle in progress\*\* is the `Cycle:` line of `\.cycle\/STATE\.md`/.test(ph), ph);
+  assert.ok(!/Now: cycle/.test(ph), 'F4 (cycle 26): the region no longer names the cycle STATE is on');
   assert.ok(ph.startsWith(before.slice(0, before.indexOf('<!-- closeout:begin'))), 'the prose above the region is kept');
   assert.strictEqual(e5Run_(dir, '--check').status, 0);
   e5Run_(dir, '--write');
@@ -39857,6 +39867,27 @@ test('E5 (cycle 25, ST5): --close --write moves STATE verbatim to the top of HIS
   assert.ok(/phase "implement"/.test(e5Run_(impl, '--close', '--write').stderr));
   const unref = e5Tree_({ metrics: E5_M23, state: E5_STATE('24', 'reflect') });
   assert.ok(/no reflect row for cycle 24/.test(e5Run_(unref, '--close', '--write').stderr));
+});
+
+test('F4 (cycle 26): a STATE-only cycle open owes nothing — after a close-out, moving STATE to the next cycle (the one write an audit may make) leaves --check green and --write with nothing to change; a NEW reflect row is still owed', () => {
+  const dir = e5Tree_({ metrics: E5_M23 + E5_M24, state: E5_STATE('24', 'reflect'), blocks: ['24-a-reflect.md'] });
+  assert.strictEqual(e5Run_(dir, '--close', '--write', '--today', '2026-10-20').status, 0);
+  assert.strictEqual(e5Run_(dir, '--check').status, 0, 'in step after the close-out');
+  const ph = e5Read_(dir, 'PROJECT_HEALTH.md');
+  // The audit's CYCLE OPEN: Cycle +1, Phase audit — STATE.md and nothing else.
+  const st = e5Read_(dir, '.cycle/STATE.md');
+  assert.ok(/^Cycle: 24 — closed/m.test(st) && /^Phase: idle$/m.test(st), 'the fixture starts from a closed cycle');
+  fs.writeFileSync(path.join(dir, '.cycle', 'STATE.md'), st.replace(/^Cycle: .*$/m, 'Cycle: 25 — opened by /broad-scan').replace(/^Phase: .*$/m, 'Phase: audit'));
+  const c = e5Run_(dir, '--check');
+  assert.strictEqual(c.status, 0, 'THE REGRESSION: opening cycle 25 in STATE.md alone left --check red — ' + c.stdout + c.stderr);
+  assert.ok(/in step \(cycle 25; last reflected 24\)/.test(c.stdout), c.stdout);
+  assert.strictEqual(e5Run_(dir, '--write').status, 0);
+  assert.strictEqual(e5Read_(dir, 'PROJECT_HEALTH.md'), ph, 'and --write changes nothing: the standing follows the last reflection only');
+  // Non-vacuous: the check still bites when the thing it derives from moves.
+  fs.appendFileSync(path.join(dir, '.cycle', 'metrics.csv'), '2026-10-30,25,x,reflect,3,3,0,,Other,"Cycle 25 reflected.",2\n');
+  const owed = e5Run_(dir, '--check');
+  assert.strictEqual(owed.status, 1, 'a new reflect row IS owed');
+  assert.ok(/generated region/.test(owed.stderr) && /Score History: \+ \| 2026-10-30 \| 25/.test(owed.stderr), owed.stderr);
 });
 
 test('E5 (cycle 25, ST5): the real tree is in step, CI runs --check, and CLAUDE.md\'s close-out procedure names the script', () => {
@@ -46065,6 +46096,99 @@ test('I3 cards: the reader runs only in the browser — every file it loads is a
   assert.ok(start > 0 && !/google\.script\.run/.test(block), 'no image or value is sent to the server to be read');
   assert.ok(/fetch\(INTAKE_OCR_CDN \+ f\.path/.test(block) && (block.match(/fetch\(/g) || []).length === 1, 'the one fetch is a pinned file');
   assert.ok(/delete INTAKE_CARD\[form\]/.test(extractFnFrom(src, 'intakeClearForm_')), 'what was read goes with the form');
+});
+
+// ── Cycle 26 Batch 1 (the /broad-scan of 2026-11-13): F4 + F74 ───────────────
+console.log('\nCycle 26 Batch 1 — a cycle open leaves CI green and checking (F4); one Chromium resolver (F74)');
+const C26_ROOT = path.join(__dirname, '../..');
+
+test('F4 (cycle 26): the client-tests job is not one chain — every check after the syntax step runs even when an earlier one failed, a step that needs the dev dependencies waits for npm ci, and the job has no way to pass a failed step', () => {
+  const wf = fs.readFileSync(path.join(C26_ROOT, '.github', 'workflows', 'client-tests.yml'), 'utf8');
+  const job = wf.slice(wf.indexOf('\n    steps:'), wf.indexOf('\n  visual-layout:'));
+  const steps = job.split(/\n      - /).slice(1).map((t) => ({
+    name: (/^name: (.*)$/m.exec(t) || [])[1] || '',
+    cond: (/^\s+if: (.*)$/m.exec(t) || [])[1] || '',
+    id: (/^\s+id: (.*)$/m.exec(t) || [])[1] || '',
+    run: /^\s+run:/m.test(t),
+    text: t,
+  }));
+  const runs = steps.filter((x) => x.run);
+  assert.ok(runs.length >= 9, 'the job\'s run steps were found (non-vacuous): ' + runs.length);
+  // The first run step (the syntax check) has nothing before it to outlive.
+  assert.ok(/Syntax-check/.test(runs[0].name) && !runs[0].cond, 'the syntax check runs first, unconditionally');
+  const chained = runs.slice(1).filter((x) => !/!cancelled\(\)/.test(x.cond)).map((x) => x.name);
+  assert.deepStrictEqual(chained, [], 'THE REGRESSION: a red floor skipped every later check — these steps still ride the default (skip after a failure)');
+  const deps = steps.filter((x) => x.id === 'deps');
+  assert.ok(deps.length === 1 && /run: npm ci/.test(deps[0].text), 'npm ci is the step the dependent checks wait for');
+  const NEEDS = ['scripts/lint-server.mjs', 'REQUIRE_DEPS=1', 'handbook-sync.mjs --check', 'test/client/dom/runDom.js', 'counts.mjs --check'];
+  NEEDS.forEach((cmd) => {
+    const st = runs.filter((x) => x.text.indexOf(cmd) >= 0);
+    assert.strictEqual(st.length, 1, 'one step runs ' + cmd);
+    assert.ok(/steps\.deps\.outcome == 'success'/.test(st[0].cond), cmd + ' waits for a successful npm ci (a failed install is one failure, not six)');
+  });
+  const floor = runs.filter((x) => /run: node test\/client\/run\.js\s*$/m.test(x.text));
+  const close = runs.filter((x) => x.text.indexOf('cycle-closeout.mjs --check') >= 0);
+  [floor, close].forEach((st) => {
+    assert.strictEqual(st.length, 1);
+    assert.ok(!/steps\.deps/.test(st[0].cond), 'the dependency-free checks do not wait for npm ci: ' + st[0].name);
+  });
+  const py = steps.filter((x) => x.id === 'python');
+  assert.ok(py.length === 1 && /actions\/setup-python/.test(py[0].text) && /!cancelled\(\)/.test(py[0].cond), 'Python is set up whatever happened before');
+  const build = runs.filter((x) => /Build the handbook/.test(x.name));
+  assert.ok(build.length === 1 && /steps\.python\.outcome == 'success'/.test(build[0].cond), 'the handbook build waits for Python only');
+  // Running after a failure must never become PASSING after one.
+  assert.ok(!/continue-on-error/.test(wf) && !/\|\|\s*true/.test(wf.replace(/^\s*#.*$/gm, '')), 'no step is allowed to fail quietly');
+  assert.ok(!/always\(\)/.test(wf), 'cancelled runs stay cancelled (!cancelled(), never always())');
+});
+
+const C26_CP = require(path.join(C26_ROOT, 'test', 'visual', 'chromium-path.cjs'));
+test('F74 (cycle 26): chromiumPath — the override wins; the newest build is found in EITHER layout (chrome-linux64 is the web container\'s); builds order numerically; a missing root is skipped; nothing found is undefined, so Playwright resolves its own (driven)', () => {
+  const cp = C26_CP.chromiumPath;
+  const fsOf = (tree) => ({
+    exists: (f) => Object.prototype.hasOwnProperty.call(tree.files || {}, f),
+    readdir: (d) => { if (!tree.dirs || !tree.dirs[d]) throw new Error('ENOENT ' + d); return tree.dirs[d]; },
+  });
+  const run = (env, tree) => { const f = fsOf(tree); return cp(env, f.exists, f.readdir); };
+  assert.strictEqual(run({ CHROMIUM_PATH: '/x/chrome' }, {}), '/x/chrome', 'CHROMIUM_PATH wins, unchecked');
+  // THE REGRESSION: the web container's layout — every copy looked for chrome-linux/ only.
+  const c64 = { dirs: { '/opt/pw-browsers': ['chromium', 'chromium-1243', 'chromium_headless_shell-1243', 'ffmpeg-1011'] },
+    files: { '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome': 1 } };
+  assert.strictEqual(run({}, c64), '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome');
+  const old = { dirs: { '/opt/pw-browsers': ['chromium-1100'] }, files: { '/opt/pw-browsers/chromium-1100/chrome-linux/chrome': 1 } };
+  assert.strictEqual(run({}, old), '/opt/pw-browsers/chromium-1100/chrome-linux/chrome', 'the older layout still resolves');
+  // Numeric, not lexicographic: 1243 is newer than 999.
+  const two = { dirs: { '/opt/pw-browsers': ['chromium-999', 'chromium-1243'] },
+    files: { '/opt/pw-browsers/chromium-999/chrome-linux/chrome': 1, '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome': 1 } };
+  assert.strictEqual(run({}, two), '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome', 'the newest BUILD, by number');
+  // A build directory with no binary falls through to the next build.
+  const hollow = { dirs: { '/opt/pw-browsers': ['chromium-999', 'chromium-1243'] }, files: { '/opt/pw-browsers/chromium-999/chrome-linux/chrome': 1 } };
+  assert.strictEqual(run({}, hollow), '/opt/pw-browsers/chromium-999/chrome-linux/chrome');
+  // PLAYWRIGHT_BROWSERS_PATH is tried first; an absent root is skipped, not fatal.
+  const env = { PLAYWRIGHT_BROWSERS_PATH: '/cache' };
+  assert.strictEqual(run(env, c64), '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome', 'an absent first root does not stop the search');
+  const both = { dirs: { '/cache': ['chromium-1300'], '/opt/pw-browsers': ['chromium-1243'] },
+    files: { '/cache/chromium-1300/chrome-linux64/chrome': 1, '/opt/pw-browsers/chromium-1243/chrome-linux64/chrome': 1 } };
+  assert.strictEqual(run(env, both), '/cache/chromium-1300/chrome-linux64/chrome');
+  assert.strictEqual(run({}, {}), undefined, 'nothing found → undefined (CI: Playwright\'s managed download)');
+  assert.strictEqual(run({}, { dirs: { '/opt/pw-browsers': ['chromium', 'chromium_headless_shell-1243'] } }), undefined, 'a symlink or a headless shell is not a chromium-<build> directory');
+  assert.deepStrictEqual(C26_CP.CHROME_DIRS.slice(), ['chrome-linux64', 'chrome-linux']);
+});
+
+test('F74 (cycle 26): every script in test/visual that launches Chromium imports the ONE resolver — none keeps its own copy, none names a chrome-linux directory, and each launch passes it (derived from the folder)', () => {
+  const dir = path.join(C26_ROOT, 'test', 'visual');
+  const scripts = fs.readdirSync(dir).filter((f) => /\.mjs$/.test(f)).filter((f) => /chromium\.launch\(/.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+  assert.ok(scripts.length >= 8 && scripts.indexOf('shoot.mjs') >= 0 && scripts.indexOf('a11y-names.mjs') >= 0 && scripts.indexOf('print-check.mjs') >= 0,
+    'the launching scripts were found (non-vacuous): ' + scripts.join(', '));
+  scripts.forEach((f) => {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    assert.ok(/^import \{ chromiumPath \} from '\.\/chromium-path\.cjs';/m.test(src), f + ' imports the shared resolver');
+    assert.ok(!/function chromiumPath\s*\(/.test(src), f + ' keeps no copy of its own (THE REGRESSION: eight copies, two of them ignoring CHROMIUM_PATH)');
+    assert.ok(!/chrome-linux/.test(src), f + ' names no browser directory itself');
+    const launches = src.match(/chromium\.launch\(([^)]*)\)/g) || [];
+    assert.ok(launches.length >= 1 && launches.every((l) => /executablePath: chromiumPath\(\)/.test(l)), f + ' launches through it: ' + launches.join(' '));
+  });
+  const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');
+  assert.ok(/chromium-path\.cjs/.test(readme), 'the README names the resolver');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

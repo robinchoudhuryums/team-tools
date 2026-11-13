@@ -1,23 +1,13 @@
 // Ad-hoc measurement: the Settings flyout + View-as preview (operator
 // 2026-08-13). Not part of the matrix — run on demand.
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(here, 'page.html');
-
-function chromiumPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  for (const root of [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean)) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) { const exe = path.join(root, hit, 'chrome-linux', 'chrome'); if (fs.existsSync(exe)) return exe; }
-    } catch {}
-  }
-  return undefined;
-}
 
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

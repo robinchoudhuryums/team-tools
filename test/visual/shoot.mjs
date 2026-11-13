@@ -3,6 +3,7 @@
 // Usage: node shoot.mjs [name-substring ...]   — no args shoots everything.
 //        node shoot.mjs --ci   — the CI subset (ci-gate.cjs), exit 1 on a layout finding.
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,22 +19,9 @@ const PAGE_HB = 'file://' + path.join(HERE, 'page-handbook.html');   // HB1.4: t
 const OUT = path.join(HERE, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 
-// Chromium resolution: explicit env override → the pre-provisioned pw-browsers
-// install (any version) → Playwright's own default download.
-function chromiumPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean);
-  for (const root of roots) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) {
-        const exe = path.join(root, hit, 'chrome-linux', 'chrome');
-        if (fs.existsSync(exe)) return exe;
-      }
-    } catch (e) { /* root absent — keep looking */ }
-  }
-  return undefined; // let Playwright resolve its own managed browser
-}
+// Chromium resolution — explicit env override → the pre-provisioned
+// pw-browsers install (newest build, either layout) → Playwright's own default
+// download — is chromium-path.cjs's, shared by every script here (F74).
 
 const WIDE = { width: 1440, height: 900 };
 const COMPACT = { width: 480, height: 800 };

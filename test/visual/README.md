@@ -103,9 +103,13 @@ control groups, Esc closing it, the CSR preview (banner up, Manage tool +
 Spanish tab gone, exit restoring), and the 390px header-gear open with zero
 page overflow. Screenshots land in `shots/settings-*.png`.
 
-Chromium resolution order (`shoot.mjs`): `CHROMIUM_PATH` env var → newest
-`chromium-*` under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the
-Claude Code remote-env pre-install) → Playwright's own managed download.
+Chromium resolution order — ONE resolver, `chromium-path.cjs`, used by every
+script in this folder (cycle 26 F74; each script had its own copy, none of them
+found the web container's `chrome-linux64/` layout, and the two companion
+checks ignored the override): `CHROMIUM_PATH` env var → the newest
+`chromium-*` build under `PLAYWRIGHT_BROWSERS_PATH` or `/opt/pw-browsers` (the
+Claude Code remote-env pre-install; `chrome-linux64/` or `chrome-linux/`) →
+Playwright's own managed download.
 
 ## What to look at
 

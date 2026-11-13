@@ -4,20 +4,12 @@
 // `:has()` interactions only exist in a real engine. Run after `node build.mjs`.
 //   node print-check.mjs
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = 'file://' + path.join(HERE, 'page.html');
-function chromiumPath() {
-  for (const root of [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean)) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) { const exe = path.join(root, hit, 'chrome-linux', 'chrome'); if (fs.existsSync(exe)) return exe; }
-    } catch (e) {}
-  }
-  return undefined;
-}
 const browser = await chromium.launch({ executablePath: chromiumPath() });
 const results = [];
 for (const mode of ['light', 'dark']) {

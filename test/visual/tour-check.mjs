@@ -12,6 +12,7 @@
 //   node build.mjs && node tour-check.mjs          (CI runs it after the layout gate)
 //   node tour-check.mjs csr                        (only runs whose name contains "csr")
 import { chromium } from 'playwright';
+import { chromiumPath } from './chromium-path.cjs';   // F74 (cycle 26): the ONE resolver for every script here
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
@@ -21,17 +22,6 @@ const PAGE = 'file://' + path.join(HERE, 'page.html');
 const OUT = path.join(HERE, 'shots');
 fs.mkdirSync(OUT, { recursive: true });
 const only = process.argv.slice(2);
-
-function chromiumPath() {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  for (const root of [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers'].filter(Boolean)) {
-    try {
-      const hit = fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().pop();
-      if (hit) { const exe = path.join(root, hit, 'chrome-linux', 'chrome'); if (fs.existsSync(exe)) return exe; }
-    } catch {}
-  }
-  return undefined;
-}
 
 const WIDE = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };

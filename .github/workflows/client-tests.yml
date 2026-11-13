@@ -54,10 +54,22 @@ jobs:
 
       # The always-on floor: no dependencies, so it is green even if the jsdom
       # install below ever fails.
+      #
+      # F4 (cycle 26): every check from here on runs even when an EARLIER one
+      # failed (`!cancelled()`). The job used to be one chain: a red floor
+      # skipped the lint, the handbook-copy check, the DOM harness, the Python
+      # build, the counts and the close-out, so a commit with one failing pin
+      # was red AND unchecked by everything else — and the pin that failed was
+      # the one every cycle open tripped. The job still fails if any step does.
+      # A step that needs the dev dependencies also waits for `npm ci`
+      # (`steps.deps`), so a failed install reads as one failure, not six.
       - name: Run pure-helper unit tests
+        if: ${{ !cancelled() }}
         run: node test/client/run.js
 
       - name: Install dev dependencies (jsdom for the DOM harness)
+        id: deps
+        if: ${{ !cancelled() }}
         run: npm ci
 
       # g118: the undeclared-identifier net. `node --check` above parses each
@@ -68,6 +80,7 @@ jobs:
       # dependency-free floor, so it must never be the only thing between a
       # broken server and prod — the floor above still runs first.
       - name: Resolve every server identifier (no-undef over the one global scope)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: node scripts/lint-server.mjs
 
       # HB1.2: handbook-app/ is a second Apps Script project whose server and
@@ -78,12 +91,15 @@ jobs:
       # The floor above SKIPS (visibly) a pin that needs a package; here, with
       # the packages installed, REQUIRE_DEPS turns any such skip into a failure.
       - name: Re-run the pure tests with the dev dependencies (no skips allowed)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: REQUIRE_DEPS=1 node test/client/run.js
 
       - name: Check the handbook app's copies of Team Tools are current
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: node scripts/handbook-sync.mjs --check
 
       - name: Run DOM-lifecycle tests
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: node test/client/dom/runDom.js
 
       # Cycle 25 F29 + F65: the handbook's Python build. It never ran here, so a
@@ -94,11 +110,14 @@ jobs:
       # LibreOffice, no Word render) and then fails if regenerating changed a
       # committed diagram or the diagram partial the app ships.
       - name: Set up Python (handbook build)
+        id: python
+        if: ${{ !cancelled() }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Build the handbook (no browser) and check its generated files are current
+        if: ${{ !cancelled() && steps.python.outcome == 'success' }}
         run: |
           set -e
           python -m pip install "markdown==3.7" "beautifulsoup4==4.15.0"
@@ -123,14 +142,18 @@ jobs:
       # (tests registered in loops), and run.js's own pins cannot ask for them
       # without spawning the harness that is asking.
       - name: Check the generated counts block
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: node scripts/counts.mjs --check
 
       # Cycle 25 E5 (ST5): PROJECT_HEALTH's standing and Score History are
-      # DERIVED from .cycle/metrics.csv and STATE.md's Cycle line, and a
-      # reflected cycle's STATE block must have moved to HISTORY.md once a later
-      # cycle opens. The standing named cycle 21 for four cycles (F26) because
-      # nothing compared it with anything. Zero dependencies.
+      # DERIVED from .cycle/metrics.csv, and a reflected cycle's STATE block
+      # must have moved to HISTORY.md once a later cycle opens. The standing
+      # named cycle 21 for four cycles (F26) because nothing compared it with
+      # anything. Zero dependencies. Since F4 (cycle 26) the standing follows
+      # the last REFLECTION only: an audit that opens a cycle writes STATE.md
+      # and nothing else, and that must not turn this red.
       - name: Check the cycle close-out (standing, Score History, HISTORY)
+        if: ${{ !cancelled() }}
         run: node scripts/cycle-closeout.mjs --check
 
   # Cycle 25 E5 (ST4): the visual matrix's measurements, in CI. shoot.mjs reports
