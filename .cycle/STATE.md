@@ -5,9 +5,9 @@ Cycle: 26 — opened 2026-11-13 by /broad-scan (the cycle after 25post; every la
 Phase: implement
 Scope: broad — /broad-scan of 2026-11-13 (Server, every client subsystem, handbook-app, Test Suite, docs)
 Test Command: manual
-Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h) — actual ~2 h
+Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h) — actual ~2 h · Batch 2 (F1, F19, F20, F72, F75 — Intake, the right patient): M (~6.5 h)
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16) and the 25post stretch's /reflect (2026-11-12). The cadence is every 4.
-Updated: 2026-11-13 (cycle 26: Batch 1 of the scan's plan implemented)
+Updated: 2026-11-13 (cycle 26: Batch 2 of the scan's plan started)
 
 ## In progress (facts to carry forward — NOT judgments)
 - **Cycle 26 opened by the /broad-scan of 2026-11-13** (75 findings F1–F75: 4 High — F1 intake amend ships the previous patient's card images, F2 the monthly accrual health line can never read clean, F3 a Spanish follow-up quoting the app's resolved reply never reopens, F4 the cycle open left CI red; gaps G1–G5, suggestions ST1–ST5). The scan report is in the session that ran it, not on disk — its batch plan: Batch 1 CI unblock (F4, F74) · 2 Intake, the right patient (F1, F19, F20, F72, F75) · 3 Thread replies (F3, F9, F11, F10, F12, F33) · 4 Automation health (F2, F17, F18, F25, F28, F32) · 5 Payor lookups (F5, F6, F7, F8, F37, F38, F40) · 6 Employee Docs (F13, F14, F15, F44, F56, F64) · 7 Handbook server (F49, F50, F48, F52, F53, F54, F57) · 8 Handbook client (F45, F46, F47, F55, F65, F66) · 9 Time Clock (F16, F26, F27, F30, F29, F31) · 10 Stats (F24, F34, F35) · 11 Shell and Call Notes client (F58–F63) · 12 Server small items (F41, F42, F43) · 13 Intake remainder (F21, F22, F23, F67) · 14 Docs and tooling (F70, F69, F73, F71, F68). Deferred: F36 (operator ruling on a minimum cohort), F51 (quiz key — a decision), F39 (needs the real payor exports). Expansion: E1 ST1 + ST2 · E2 ST4 + ST3 · E3 G1 + G5 · E4 G3 + G2 · E5 G4; ST5 → roadmap (Pending).
