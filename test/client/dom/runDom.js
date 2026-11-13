@@ -10955,6 +10955,251 @@ test('I3a DOM: each image is read on its own — a broken one is NAMED and the o
   delete h.window.INTAKE_OCR_ENGINE;
 });
 
+section('Intake — cycle 26 Batch 2: the right patient (F1, F19, F20, F72, F75)');
+
+const c26IntakeBoot_ = (view) => {
+  const h = boot();
+  h.bootShell();   // empState.email = rep@umsupply.com
+  h.run.drain();
+  mount_(h, 'view-area');
+  h.window.localStorage.removeItem('umsIntakeSaved');
+  h.window.localStorage.removeItem('umsIntakeDrafts');
+  h.window.enterTool('intake', view || 'intakePmdAccount');
+  h.run.drain();
+  const f = (i) => h.$('#intk-pmd-form [data-intk-idx="' + i + '"]');
+  const answer = (o) => { h.window.uiConfirm = o; h.read('uiConfirm = window.uiConfirm'); };
+  return { h, f, answer };
+};
+
+test('F1 DOM (cycle 26): amending a sent PMD over a half-done one ASKS first — Keep the form keeps the answers, the card images and the suggestion — and on Amend the form is the sent patient\'s alone: no image, no card suggestion, no saved-draft id carried over, and the other patient\'s parked draft is not touched (driven)', async () => {
+  const { h, f, answer } = c26IntakeBoot_();
+  // Patient A, mid-form: answers, two card photos, an open card suggestion, and the saved draft the form came from.
+  f(1).value = 'Patient A'; f(2).value = '469-111-3333';
+  h.window.localStorage.setItem('umsIntakeSaved', JSON.stringify([{ id: 'dA', form: 'pmd', owner: 'rep@umsupply.com', at: Date.now(), label: 'Patient A', answers: { 1: 'Patient A' }, lang: 'EN' }]));
+  h.read('INTAKE_STATE.pmd.savedId = "dA"');
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"]');
+  h.read('INTAKE_CARD.pmd = { fields: { payer: "Humana", memberId: "H123" }, failed: [] }');
+  h.read('intakeRenderGallery_')('pmd');
+  assert.ok(h.$$('#intk-gallery .intk-thumb').length === 2 && h.$('#intk-card-read .intk-card-panel'), 'patient A\'s images and suggestion are on the form');
+  // The rep opens a SENT submission for patient S and presses Amend & re-send.
+  h.read('INTAKE_STATE.sentDetail = { formType: "PMD", submissionId: "S1", timestamp: "2026-11-10 09:00", language: "EN", answers: { 1: "Patient S", 2: "214-555-0000" } }');
+  const asked = [];
+  answer((o) => { asked.push(o); return Promise.resolve(false); });
+  h.read('intakeBeginAmend_')();
+  await tick();
+  assert.strictEqual(asked.length, 1, 'THE REGRESSION: the amendment replaced the form without a word');
+  assert.ok(/Replace what is on the PMD Account form\?/.test(asked[0].title) && asked[0].confirmLabel === 'Amend', asked[0].title);
+  assert.ok(/\d+ answers? and 2 insurance card images/.test(asked[0].message) && /the images are removed, not sent with the amendment/.test(asked[0].message), asked[0].message);
+  assert.ok(f(1).value === 'Patient A' && h.read('INTAKE_STATE.pmd.images').length === 2 && !h.read('INTAKE_STATE.pmd.amendOf'), 'Keep the form keeps everything');
+  // Amend.
+  answer((o) => { asked.push(o); return Promise.resolve(true); });
+  h.read('intakeBeginAmend_')();
+  await tick();
+  h.run.drain();
+  assert.ok(f(1).value === 'Patient S' && f(2).value === '214-555-0000', 'the form holds the sent submission');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images').length, 0, 'THE REGRESSION: patient A\'s card images rode the AMENDED email for patient S');
+  assert.strictEqual(h.$$('#intk-gallery .intk-thumb').length, 0, 'and the gallery shows none');
+  assert.ok(h.read('INTAKE_CARD.pmd') === undefined && !h.$('.intk-card-panel'), 'patient A\'s card suggestion is gone');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.savedId'), null, 'F19: the amendment is not patient A\'s saved draft — its send must not delete it');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.amendOf.submissionId'), 'S1');
+  assert.ok(h.$('.intk-amend-bar'), 'the amend banner is up');
+  assert.ok(/No insurance card images attached/.test(h.read('intakeImagesNoteText_')('pmd')), 'the preview will say no images are going');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsIntakeSaved'))[0].id, 'dA', 'patient A\'s parked draft is still in Drafts');
+  // An empty form amends at once — no question.
+  h.read('intakeClearForm_')('pmd');
+  const n = asked.length;
+  h.read('intakeBeginAmend_')();
+  await tick();
+  h.run.drain();
+  assert.ok(asked.length === n && f(1).value === 'Patient S', 'nothing to lose, nothing asked');
+  // From another view the question reads that form's AUTOSAVE (the rep is on Sent, not on the form).
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({ pap: { owner: 'rep@umsupply.com', at: Date.now(), answers: { 1: 'Pap Patient', 2: '469-222-0000' } } }));
+  const holds = h.read('intakeFormHolds_')('pap');
+  assert.deepStrictEqual([holds.answers, holds.images], [2, 0], 'the autosave counts when the form is not on screen');
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({ pap: { owner: 'someone.else@umsupply.com', at: Date.now(), answers: { 1: 'Other' } } }));
+  assert.strictEqual(h.read('intakeFormHolds_')('pap').answers, 0, 'another rep\'s autosave is not this rep\'s work');
+});
+
+test('F19 DOM (cycle 26): the working copy remembers the saved draft it came from across a reload (so the send still removes it), forgets one that was deleted, and re-opening the draft already on the form asks once something was typed since (driven)', async () => {
+  const { h, f, answer } = c26IntakeBoot_();
+  const saved = () => JSON.parse(h.window.localStorage.getItem('umsIntakeSaved') || '[]');
+  const auto = () => JSON.parse(h.window.localStorage.getItem('umsIntakeDrafts') || '{}');
+  // Park a draft through the real flow, then open it.
+  f(1).value = 'Ana Ruiz'; f(2).value = '469-111-3333';
+  h.read('intakeSaveNamedDraft_')('pmd');
+  const id = saved()[0].id;
+  h.read('intakeOpenSavedDraft_')(id);
+  h.run.drain();
+  assert.ok(f(1).value === 'Ana Ruiz' && h.read('INTAKE_STATE.pmd.savedId') === id);
+  assert.strictEqual(auto().pmd.savedId, id, 'the autosave carries the saved draft\'s id');
+  // (b) A reload: memory is gone, the autosave is not.
+  h.read('INTAKE_STATE.pmd.savedId = null');
+  h.read('intakeReenterForm_')('pmd');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.savedId'), id, 'THE REGRESSION: after a reload the send no longer removed the draft it came from');
+  // (c) Re-opening the same draft, untouched: no question.
+  const asked = [];
+  answer((o) => { asked.push(o); return Promise.resolve(false); });
+  h.read('intakeOpenSavedDraft_')(id);
+  await tick();
+  h.run.drain();
+  assert.strictEqual(asked.length, 0, 'nothing typed since — nothing to ask');
+  // …and after typing: asked, and Keep the form keeps the typing.
+  f(3).value = '214-555-0101';
+  h.read('intakeOpenSavedDraft_')(id);
+  await tick();
+  assert.ok(asked.length === 1 && /Replace what is on the PMD Account form\?/.test(asked[0].title), 'THE REGRESSION: the older saved copy replaced what was typed after it, unasked');
+  assert.strictEqual(f(3).value, '214-555-0101');
+  // …and with an image attached since.
+  f(3).value = '';
+  h.read('INTAKE_STATE.pmd.images = ["data:image/png;base64,AAAA"]');
+  h.read('intakeOpenSavedDraft_')(id);
+  await tick();
+  assert.strictEqual(asked.length, 2, 'an attached image is work too');
+  h.read('INTAKE_STATE.pmd.images = []');
+  // The saved draft was deleted elsewhere: a reload does not point at it.
+  h.read('intakeDraftSaveNow_')('pmd');
+  assert.strictEqual(auto().pmd.savedId, id);
+  h.window.localStorage.removeItem('umsIntakeSaved');
+  h.read('INTAKE_STATE.pmd.savedId = null');
+  h.read('intakeReenterForm_')('pmd');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.savedId'), null, 'a deleted draft is not restored as the form\'s origin');
+});
+
+test('F20 DOM (cycle 26): a card read still in flight is DROPPED when the form moves on — Clear for the next patient, or a switch from PMD to PAP — so the previous patient\'s payer and member ID are never offered on another form; an undisturbed read still lands (driven, reader stood in)', async () => {
+  const { h } = c26IntakeBoot_();
+  const host = () => h.$('#intk-card-read');
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const sure = (t) => t.split('').map(() => 0.99);
+  const L = (text, y) => ({ text, x: 0, y, w: 300, h: 20, probs: sure(text) });
+  const card = [L('Humana Gold Plus (HMO)', 0), L('Member ID: H71938642', 40)];
+  let release = null, calls = 0;
+  h.window.INTAKE_OCR_ENGINE = { read: () => { calls++; return new Promise((r) => { release = () => r(card); }); } };
+  h.read('intakeCardImage_ = function (src) { return Promise.resolve({ src: src }); }');
+  const attach = (form) => { h.read('INTAKE_STATE.' + form + '.images = ["data:image/png;base64,GOOD"]'); h.read('intakeRenderGallery_')(form); };
+  // Non-vacuous: an undisturbed read lands.
+  attach('pmd');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.strictEqual(calls, 1, 'the read is out');
+  release(); await settle();
+  assert.ok(host().querySelector('.intk-card-panel') && host().querySelector('[data-card-key="memberId"]').value === 'H71938642', 'an undisturbed read offers what it found');
+  host().querySelector('[data-card-close]').click();
+  // 1. Clear for the next patient while the read is still out.
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.strictEqual(calls, 2);
+  h.read('intakeClearForm_')('pmd');
+  release(); await settle();
+  assert.strictEqual(h.read('INTAKE_CARD.pmd'), undefined, 'THE REGRESSION: the read finished over patient A\'s images and set the suggestion for the blank form');
+  assert.ok(!h.$('.intk-card-panel') && host().textContent.trim() === '', 'nothing is offered on the next patient\'s form');
+  // The next patient's card gets a fresh Read button.
+  attach('pmd');
+  assert.ok(host().querySelector('[data-card-read]'), 'a fresh Read button for the next patient\'s card');
+  // 2. A PMD read finishing after a switch to PAP (the two forms share the ids).
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.strictEqual(calls, 3);
+  h.window.enterTool('intake', 'intakePapAccount');
+  h.run.drain();
+  assert.ok(h.$('#intk-pap-form') && h.$('#intk-drop').getAttribute('data-form') === 'pap', 'the PAP form is on screen');
+  release(); await settle();
+  assert.ok(!host().querySelector('.intk-card-panel') && h.read('INTAKE_CARD.pmd') === undefined, 'THE REGRESSION: the PMD patient\'s details were painted into the PAP view');
+  // And the PMD gallery never paints into PAP's (the Dismiss path did).
+  h.read('intakeRenderGallery_')('pmd');
+  assert.strictEqual(h.$$('#intk-gallery .intk-thumb').length, 0, 'PMD\'s image is not drawn in PAP\'s gallery');
+  assert.strictEqual(h.read('INTAKE_STATE.pmd.images').length, 1, '(it is still PMD\'s, in memory)');
+  delete h.window.INTAKE_OCR_ENGINE;
+});
+
+test('F72 DOM (cycle 26): the SSN is never written to either draft store — a tool switch keeps it (memory), a reload does not and says so; a parked draft and its re-open say so; drafts stored before the rule are scrubbed by the sweep, which arms one timer; the Drafts note says when a draft is removed (driven)', async () => {
+  const { h, f } = c26IntakeBoot_();
+  const ls = (k) => h.window.localStorage.getItem(k) || '';
+  const SSN = '123-45-6789';
+  f(1).value = 'Ana Ruiz'; f(10).value = SSN;
+  h.read('intakeDraftSaveNow_')('pmd');
+  assert.ok(ls('umsIntakeDrafts').indexOf('Ana Ruiz') >= 0 && ls('umsIntakeDrafts').indexOf(SSN) < 0, 'THE REGRESSION: the SSN sat in localStorage in plain text');
+  assert.strictEqual(JSON.parse(ls('umsIntakeDrafts')).pmd.omitted, true);
+  // A tool switch and back: the autosave plus what is held in memory.
+  h.read('intakeReenterForm_')('pmd');
+  assert.ok(f(1).value === 'Ana Ruiz' && f(10).value === SSN, 'a tool switch keeps the SSN (held in memory, not in the draft)');
+  assert.ok(b10Toasts(h).some((t) => /^Draft restored$/.test(t.trim())) && !b10Toasts(h).some((t) => /SSN is never kept/.test(t)), 'and says nothing about it');
+  // A reload: memory is gone.
+  h.read('INTAKE_STATE.pmd.held = null');
+  h.read('intakeReenterForm_')('pmd');
+  assert.ok(f(1).value === 'Ana Ruiz' && f(10).value === '', 'after a reload the SSN is not there');
+  assert.ok(b10Toasts(h).some((t) => /Draft restored — The SSN is never kept in a draft — enter it again\./.test(t)), 'and the rep is told to enter it again: ' + JSON.stringify(b10Toasts(h)));
+  // Save draft: parked without it, and said.
+  f(10).value = SSN;
+  h.read('intakeSaveNamedDraft_')('pmd');
+  const saved = JSON.parse(ls('umsIntakeSaved'));
+  assert.ok(saved.length === 1 && saved[0].answers['1'] === 'Ana Ruiz' && !('10' in saved[0].answers) && saved[0].omitted === true && ls('umsIntakeSaved').indexOf(SSN) < 0, 'a parked draft never holds the SSN');
+  assert.ok(b10Toasts(h).some((t) => /Draft saved for Ana Ruiz.*The SSN is never kept in a draft/.test(t)));
+  h.read('intakeOpenSavedDraft_')(saved[0].id);
+  h.run.drain();
+  assert.ok(f(1).value === 'Ana Ruiz' && f(10).value === '' && b10Toasts(h).some((t) => /Draft opened — Ana Ruiz\. The SSN is never kept in a draft/.test(t)), 'opening it says so');
+  // Drafts stored before the rule: scrubbed by the sweep, in both stores; ONE timer for the session.
+  const now = Date.now();
+  h.window.localStorage.setItem('umsIntakeDrafts', JSON.stringify({ pap: { owner: 'rep@umsupply.com', at: now, answers: { 1: 'Legacy Pap', 10: '999-99-9999' } } }));
+  h.window.localStorage.setItem('umsIntakeSaved', JSON.stringify([{ id: 'L1', form: 'pmd', owner: 'rep@umsupply.com', at: now, label: 'Legacy', answers: { 1: 'Legacy', 10: '999-99-9999' }, lang: 'EN' }]));
+  const armed = [];
+  h.window.setInterval = (fn, ms) => { armed.push(ms); return 7; };
+  h.read('_intakeSweepTimer = null');
+  h.read('intakeSweepDrafts_')();
+  h.read('intakeSweepDrafts_')();
+  assert.ok(ls('umsIntakeDrafts').indexOf('999-99-9999') < 0 && ls('umsIntakeDrafts').indexOf('Legacy Pap') >= 0, 'the autosave store is scrubbed, the rest kept');
+  assert.ok(ls('umsIntakeSaved').indexOf('999-99-9999') < 0 && JSON.parse(ls('umsIntakeSaved'))[0].omitted === true, 'the parked drafts are scrubbed and marked');
+  assert.deepStrictEqual(armed, [h.read('INTAKE_SWEEP_EVERY_MS')], 'two sweeps arm ONE timer');
+  // The Drafts list says when a draft is removed and what is never kept.
+  h.read('intakeOpenDraftsList_')();
+  const note = h.$('#intk-drafts-overlay .intk-drafts-note').textContent;
+  assert.ok(/the next time Team Tools is open in this browser/.test(note) && /delete your drafts before you leave/.test(note) && /Insurance card images and the SSN are never kept/.test(note), note);
+});
+
+test('F75 DOM (cycle 26): the card reader says WHICH failure — a download failure names the network, a checksum failure says the files were not used and beacons the file KEY, and only a reader that cannot start blames the browser; the fetch tags a refused request, a failed request and a wrong file (driven)', async () => {
+  const { h } = bootAcct('pmd');
+  const host = () => h.$('#intk-card-read');
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const beacons = () => h.run.calls.filter((c) => c.method === 'recordClientError').map((c) => c.args[0]);
+  h.read('INTAKE_STATE.pmd.images.push("data:image/png;base64,AAAA")');
+  h.read('intakeRenderGallery_')('pmd');
+  h.read('window.__eng = intakeOcrEngine_');
+  // A blocked or dropped download.
+  h.read('intakeOcrEngine_ = function () { return Promise.reject(intakeOcrErr_("download", "det")); }');
+  host().querySelector('[data-card-read]').click();
+  await settle();
+  assert.ok(/The card reader could not be downloaded \(the network blocked it, or the connection dropped\)/.test(host().textContent) && !/in this browser/.test(host().textContent),
+    'THE REGRESSION: a blocked CDN read "in this browser" — ' + host().textContent);
+  assert.ok(host().querySelector('.intk-card-retry'), 'Try again');
+  assert.strictEqual(beacons().length, 0, 'a network failure is not beaconed');
+  // A file that is not the pinned file.
+  h.read('intakeOcrEngine_ = function () { return Promise.reject(intakeOcrErr_("checksum", "det")); }');
+  host().querySelector('.intk-card-retry').click();
+  await settle();
+  assert.ok(/failed a safety check and were not used — type the insurance details, and tell your admin/.test(host().textContent) && !/in this browser/.test(host().textContent), host().textContent);
+  const b = beacons();
+  assert.ok(b.length === 1 && b[0].message === 'Intake card reader: a pinned file failed its checksum — file det' && b[0].source === 'errorState', 'THE REGRESSION: a failed checksum reached nobody — ' + JSON.stringify(b));
+  assert.ok(!/AAAA|data:image/.test(JSON.stringify(b)), 'no image rides the beacon');
+  // A reader that cannot start still says the browser.
+  h.read('intakeOcrEngine_ = function () { return Promise.reject(new Error("no wasm")); }');
+  host().querySelector('.intk-card-retry').click();
+  await settle();
+  assert.ok(/could not be read in this browser — type the insurance details instead/.test(host().textContent));
+  h.read('intakeOcrEngine_ = window.__eng');
+  // The fetch itself: each failure tagged with its kind and the file key.
+  const fetchOne = (key) => h.read('intakeOcrFetch_')(key).then(() => ({ ok: true }), (e) => ({ kind: e.kind, file: e.file }));
+  h.window.fetch = () => Promise.resolve({ ok: false, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) });
+  assert.deepStrictEqual(await fetchOne('det'), { kind: 'download', file: 'det' }, 'a refused request (404, blocked)');
+  h.window.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  assert.deepStrictEqual(await fetchOne('wasm'), { kind: 'download', file: 'wasm' }, 'a failed request (offline, firewall)');
+  h.window.fetch = () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+  const digestOf = (bytes) => Object.defineProperty(h.window, 'crypto', { configurable: true, value: { subtle: { digest: () => Promise.resolve(new Uint8Array(bytes).buffer) } } });
+  digestOf([1, 2, 3]);
+  assert.deepStrictEqual(await fetchOne('rec'), { kind: 'checksum', file: 'rec' }, 'a file that is not the pinned file');
+  const pinned = h.read('INTAKE_OCR_FILES.rec.sha256').match(/../g).map((x) => parseInt(x, 16));
+  digestOf(pinned);
+  assert.deepStrictEqual(await fetchOne('rec'), { ok: true }, 'the pinned file is accepted (non-vacuous)');
+});
+
 section('Intake — I1 format safeguards and the address check (operator 2026-11-05/06)');
 
 const i1Leave_ = (h, el, v) => { el.value = v; el.dispatchEvent(new h.window.Event('input', { bubbles: true })); el.dispatchEvent(new h.window.Event('change', { bubbles: true })); };

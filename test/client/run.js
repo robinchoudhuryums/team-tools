@@ -37003,7 +37003,11 @@ test('Seams F12 (cycle 24): INV-362\'s Node pins — a draft is written only wit
     INTAKE_DRAFT_MAX_AGE_MS: maxAge, INTAKE_DRAFT_KEY: 'umsIntakeDrafts', empState: null,
     localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
     intakeFormRoot_: () => ({}), intakeCollectAcct_: () => ({ answers: { 1: 'Jane Doe' } }), intakeCollectPpd_: () => ({ answers: {}, patientInfo: 'x' }) });
-  ['intakeDraftOwner_', 'intakeDraftsKept_', 'intakeReadDrafts_', 'intakeWriteDrafts_', 'intakeDraftSaveNow_'].forEach((f) => vm.runInContext(extractFnFrom(src, f), ctx));
+  // F72 / F19 (cycle 26): the save splits off what a draft may not keep and
+  // reads the form's state — the sandbox carries what the function now reads.
+  ['INTAKE_FMT_FIELDS', 'INTAKE_DRAFT_NEVER_KINDS'].forEach((n) => { const i = src.indexOf('var ' + n + ' = '); assert.ok(i >= 0, n); vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx); });
+  vm.runInContext('var INTAKE_STATE = { ppd: {}, pmd: {}, pap: {} };', ctx);
+  ['intakeDraftOwner_', 'intakeDraftsKept_', 'intakeReadDrafts_', 'intakeWriteDrafts_', 'intakeDraftSplit_', 'intakeDraftSaveNow_'].forEach((f) => vm.runInContext(extractFnFrom(src, f), ctx));
   // No owner → nothing is ever written (PHI nobody can be named as owning).
   ctx.intakeDraftSaveNow_('pmd');
   assert.strictEqual(store.umsIntakeDrafts, undefined, 'THE RULE: no signed-in owner, no draft');
@@ -45949,7 +45953,8 @@ test('I2 drafts: the saved drafts are their own ums… key read and written in t
   assert.strictEqual((src.match(/onclick="intakeSaveNamedDraft_\(/g) || []).length, 2, 'PPD and the shared account rail');
   assert.strictEqual((src.match(/class="intk-btn intk-drafts-btn" onclick="intakeOpenDraftsList_\(\)"/g) || []).length, 2);
   assert.strictEqual((src.match(/intakeSavedRemove_\(INTAKE_STATE(\.ppd|\[form\])\.savedId\)/g) || []).length, 2, 'both send paths drop the saved draft they sent');
-  assert.ok(/INTAKE_STATE\[form\]\.savedId = null;/.test(extractFnFrom(src, 'intakeClearForm_')), 'a cleared form is no longer that draft');
+  // F1 + F19 (cycle 26): the reset is ONE helper every subject change calls.
+  assert.ok(/intakeResetFormSubject_\(form\);/.test(extractFnFrom(src, 'intakeClearForm_')) && /st\.savedId = null;/.test(extractFnFrom(src, 'intakeResetFormSubject_')), 'a cleared form is no longer that draft');
   assert.ok(!/intakeSavedRemove_/.test(extractFnFrom(src, 'intakeClearForm_')), '…but Clear never deletes the saved draft');
   assert.ok(/intakeSavedMine_\(\)/.test(extractFnFrom(src, 'intakeSweepDrafts_')), 'the boot sweep drops other reps\' and expired saved drafts too');
   const open = extractFnFrom(src, 'intakeOpenSavedDraft_');
@@ -46095,7 +46100,7 @@ test('I3 cards: the reader runs only in the browser — every file it loads is a
   const block = src.slice(start, src.indexOf('// ── Draft autosave', start));
   assert.ok(start > 0 && !/google\.script\.run/.test(block), 'no image or value is sent to the server to be read');
   assert.ok(/fetch\(INTAKE_OCR_CDN \+ f\.path/.test(block) && (block.match(/fetch\(/g) || []).length === 1, 'the one fetch is a pinned file');
-  assert.ok(/delete INTAKE_CARD\[form\]/.test(extractFnFrom(src, 'intakeClearForm_')), 'what was read goes with the form');
+  assert.ok(/intakeResetFormSubject_\(form\);/.test(extractFnFrom(src, 'intakeClearForm_')) && /delete INTAKE_CARD\[form\]/.test(extractFnFrom(src, 'intakeResetFormSubject_')), 'what was read goes with the form (through the one reset, F1)');
 });
 
 // ── Cycle 26 Batch 1 (the /broad-scan of 2026-11-13): F4 + F74 ───────────────
@@ -46189,6 +46194,150 @@ test('F74 (cycle 26): every script in test/visual that launches Chromium imports
   });
   const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');
   assert.ok(/chromium-path\.cjs/.test(readme), 'the README names the resolver');
+});
+
+// ── Cycle 26 Batch 2 (the /broad-scan of 2026-11-13): F1, F19, F20, F72, F75 ─
+console.log('\nCycle 26 Batch 2 — Intake, the right patient: one subject reset (F1 / F19 / F20), no SSN in a draft (F72), a reader failure that says which (F75)');
+const c26Intake_ = () => {
+  const src = fs.readFileSync(path.join(C26_ROOT, 'web-app', 'intake', 'script_intake.html'), 'utf8');
+  const ctx = vm.createContext({ String, Number, Math, Date, Object, Array, JSON, Error });
+  ['INTAKE_FMT_FIELDS', 'INTAKE_DRAFT_NEVER_KINDS', 'INTAKE_DRAFT_SSN_NOTE', 'INTAKE_OCR_FILES'].forEach((n) => {
+    const i = src.indexOf('var ' + n + ' = ');
+    assert.ok(i >= 0, n);
+    vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx);
+  });
+  ['intakeDraftSplit_', 'intakeDraftScrub_', 'intakeSameAnswers_', 'intakeHoldsText_', 'intakeOcrErr_', 'intakeOcrFailText_', 'intakeOcrBeaconText_']
+    .forEach((n) => vm.runInContext(extractFnFrom(src, n), ctx));
+  return { ctx, src, J: (v) => JSON.parse(JSON.stringify(v)) };
+};
+
+test('F1 + F19 + F20 (cycle 26): what belongs to the patient on a form is reset in ONE helper, and every path that replaces a form\'s subject calls it — Clear, both late sends, a saved draft, an amendment, and the prefill itself; no path resets its own subset (derived from the partial)', () => {
+  const { src } = c26Intake_();
+  const reset = extractFnFrom(src, 'intakeResetFormSubject_');
+  ['st.images = [];', 'st.amendOf = null;', 'st.savedId = null;', 'st.held = null;', 'delete INTAKE_CARD[form];'].forEach((line) =>
+    assert.ok(reset.indexOf(line) >= 0, 'the reset drops: ' + line));
+  assert.ok(/INTAKE_CARD_SEQ\[form\] = \(INTAKE_CARD_SEQ\[form\] \|\| 0\) \+ 1;/.test(reset), 'F20: and it invalidates a card read in flight');
+  // Every subject change goes through it.
+  ['intakeClearForm_', 'intakeBeginAmend_', 'intakeOpenSavedDraft_', 'intakeConsumeAmendPrefill_', 'intakePpdSend_', 'intakeAcctSend_'].forEach((fn) =>
+    assert.ok(/intakeResetFormSubject_\(/.test(extractFnFrom(src, fn)), fn + ' resets the subject'));
+  // THE REGRESSION (F1): the amend path reset nothing. It now clears the working
+  // copy and resets BEFORE it parks the prefill — and asks when the form holds work.
+  const amend = extractFnFrom(src, 'intakeBeginAmend_');
+  const iReset = amend.indexOf('intakeResetFormSubject_(form)'), iPark = amend.indexOf('window.INTAKE_AMEND_PREFILL = {');
+  assert.ok(iReset > 0 && iPark > iReset && amend.indexOf('intakeClearDraft_(form)') < iReset, 'clear the autosave, reset, THEN park the amendment');
+  assert.ok(/intakeFormHolds_\(form\)/.test(amend) && /uiConfirm\(/.test(amend), 'and it asks when the form holds another call\'s work');
+  // The prefill consumer resets too (whichever path parked it), then redraws the gallery.
+  const consume = extractFnFrom(src, 'intakeConsumeAmendPrefill_');
+  assert.ok(consume.indexOf('intakeResetFormSubject_(form);') < consume.indexOf('INTAKE_STATE[form].amendOf = {') &&
+    consume.indexOf('intakeResetFormSubject_(form);') < consume.indexOf('INTAKE_STATE[form].savedId = p.savedId;') &&
+    /intakeResetFormSubject_\(form\);\s*\n\s*intakeRenderGallery_\(form\);/.test(consume), 'reset before the amendment or the saved draft is applied');
+  // No path keeps a private subset: these writes exist in the helper only.
+  const body = stripJsComments_(src.slice(src.indexOf('<script>')));
+  assert.strictEqual((body.match(/\.images = \[\]/g) || []).length, 1, 'ONE place empties a form\'s images (the helper)');
+  assert.strictEqual((body.match(/\.amendOf = null/g) || []).length, 2, 'amendOf is cleared by the helper and by Detach only');
+  // F20: the read's sequence is per FORM, never on a DOM node, and the host is looked up through one function.
+  assert.ok(!/\._seq\b/.test(body), 'F20: no counter on the host element (a re-render replaced the node and the counter never moved)');
+  assert.strictEqual((body.match(/getElementById\('intk-card-read'\)/g) || []).length, 1, 'one lookup of the card host — intakeCardHost_');
+  assert.ok(/drop\.getAttribute\('data-form'\) !== form\) return null;/.test(extractFnFrom(src, 'intakeCardHost_')), 'and it answers only for the form on screen (PMD and PAP share the ids)');
+  const read = extractFnFrom(src, 'intakeCardRead_');
+  assert.ok(/var live = function \(\) \{ return INTAKE_CARD_SEQ\[form\] === seq \? intakeCardHost_\(form\) : null; \};/.test(read) && /if \(!live\(\) \|\| !res\) return;/.test(read),
+    'a finished read paints only while it is still the form\'s current read, on the form\'s own host');
+});
+
+test('F19 (cycle 26): intakeSameAnswers_ — blank and missing are the same, key order is not compared, one changed or added answer differs; intakeHoldsText_ names answers and images (driven)', () => {
+  const { ctx } = c26Intake_();
+  const same = ctx.intakeSameAnswers_;
+  assert.strictEqual(same('pmd', { answers: { 1: 'Ana Ruiz', 2: '469-111-3333', 3: '' } }, { answers: { 2: '469-111-3333', 1: 'Ana Ruiz' } }), true, 'blank = missing; order ignored');
+  assert.strictEqual(same('pmd', { answers: { 1: ' Ana Ruiz ' } }, { answers: { 1: 'Ana Ruiz' } }), true, 'trimmed');
+  assert.strictEqual(same('pmd', { answers: { 1: 'Ana Ruiz', 3: '214-555-0101' } }, { answers: { 1: 'Ana Ruiz' } }), false, 'THE REGRESSION: something typed since the draft was opened');
+  assert.strictEqual(same('pap', { answers: { 1: 'Ana Ruis' } }, { answers: { 1: 'Ana Ruiz' } }), false, 'a changed answer');
+  assert.strictEqual(same('ppd', { answers: {}, patientInfo: 'Cy Doe — TRX 9' }, { answers: {}, patientInfo: 'Cy Doe — TRX 8' }), false, 'the PPD patient line counts');
+  // An account form's snapshot carries a patient line derived from answer 1; a saved draft stores it for the PPD only.
+  assert.strictEqual(same('pmd', { answers: { 1: 'Ana Ruiz' }, patientInfo: 'Ana Ruiz' }, { answers: { 1: 'Ana Ruiz' }, patientInfo: '' }), true, 'an account form is compared on its answers alone');
+  assert.strictEqual(same('ppd', null, { answers: {} }), true, 'nothing against nothing');
+  assert.strictEqual(ctx.intakeHoldsText_(3, 2), '3 answers and 2 insurance card images');
+  assert.strictEqual(ctx.intakeHoldsText_(1, 0), '1 answer');
+  assert.strictEqual(ctx.intakeHoldsText_(0, 1), '1 insurance card image');
+});
+
+test('F72 (cycle 26): a draft never keeps the SSN — intakeDraftSplit_ splits it off for PMD and PAP (the `ssn` kind of INTAKE_FMT_FIELDS, not an index typed twice), leaves PPD whole, and a blank SSN omits nothing; intakeDraftScrub_ cleans a draft stored before the rule (driven)', () => {
+  const { ctx, J } = c26Intake_();
+  const ssnIdx = (form) => Object.keys(ctx.INTAKE_FMT_FIELDS[form]).filter((k) => ctx.INTAKE_FMT_FIELDS[form][k] === 'ssn');
+  assert.deepStrictEqual([ssnIdx('pmd'), ssnIdx('pap')], [['10'], ['10']], 'each account form has its SSN field (non-vacuous)');
+  ['pmd', 'pap'].forEach((form) => {
+    const r = J(ctx.intakeDraftSplit_(form, { 1: 'Ana Ruiz', 8: 'Humana · ID H123', 10: '123-45-6789' }));
+    assert.deepStrictEqual(r, { kept: { 1: 'Ana Ruiz', 8: 'Humana · ID H123' }, held: { 10: '123-45-6789' }, omitted: true }, form);
+  });
+  assert.deepStrictEqual(J(ctx.intakeDraftSplit_('pmd', { 1: 'Ana', 10: '  ' })), { kept: { 1: 'Ana' }, held: {}, omitted: false }, 'a blank SSN is not "omitted" — and is not stored either');
+  assert.deepStrictEqual(J(ctx.intakeDraftSplit_('ppd', { 10: 'Yes', 38: '210' })), { kept: { 10: 'Yes', 38: '210' }, held: {}, omitted: false }, 'PPD question 10 is not an SSN');
+  assert.deepStrictEqual(J(ctx.intakeDraftSplit_('pmd', null)), { kept: {}, held: {}, omitted: false });
+  // A stored draft from before the rule.
+  const legacy = { owner: 'rep@umsupply.com', at: 1, answers: { 1: 'Ana Ruiz', 10: '123-45-6789' } };
+  assert.strictEqual(ctx.intakeDraftScrub_('pmd', legacy), true);
+  assert.deepStrictEqual(J(legacy), { owner: 'rep@umsupply.com', at: 1, answers: { 1: 'Ana Ruiz' }, omitted: true }, 'scrubbed in place and marked');
+  assert.strictEqual(ctx.intakeDraftScrub_('pmd', legacy), false, 'idempotent');
+  assert.strictEqual(ctx.intakeDraftScrub_('pmd', { answers: { 1: 'Bo' } }), false, 'nothing to scrub');
+  assert.ok(/SSN is never kept in a draft/.test(ctx.INTAKE_DRAFT_SSN_NOTE));
+});
+
+test('F72 + F19 (cycle 26): the autosave writes the draft WITHOUT the SSN, marks it omitted, holds the SSN in memory for the session, and carries the saved draft it came from; both draft stores are written through the split, the sweep scrubs and runs on a timer, and the Drafts note says what "24 hours" means (driven + source)', () => {
+  const { src } = c26Intake_();
+  const store = {};
+  const ctx = vm.createContext({ String, Object, JSON, Date, Number, Array,
+    INTAKE_DRAFT_MAX_AGE_MS: 86400000, INTAKE_DRAFT_KEY: 'umsIntakeDrafts', empState: { email: 'rep@umsupply.com' },
+    localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+    intakeFormRoot_: () => ({}), answers: { 1: 'Ana Ruiz', 10: '123-45-6789' } });
+  vm.runInContext('function intakeCollectAcct_() { return { answers: answers }; } function intakeCollectPpd_() { return { answers: {}, patientInfo: "x" }; }', ctx);
+  ['INTAKE_FMT_FIELDS', 'INTAKE_DRAFT_NEVER_KINDS'].forEach((n) => { const i = src.indexOf('var ' + n + ' = '); vm.runInContext(src.slice(i, src.indexOf(';\n', i) + 1), ctx); });
+  vm.runInContext('var INTAKE_STATE = { ppd: {}, pmd: { savedId: "dA" }, pap: {} };', ctx);
+  ['intakeDraftOwner_', 'intakeReadDrafts_', 'intakeWriteDrafts_', 'intakeDraftSplit_', 'intakeDraftSaveNow_'].forEach((f) => vm.runInContext(extractFnFrom(src, f), ctx));
+  ctx.intakeDraftSaveNow_('pmd');
+  const d = JSON.parse(store.umsIntakeDrafts).pmd;
+  assert.ok(!('10' in d.answers) && d.answers['1'] === 'Ana Ruiz', 'THE REGRESSION: the SSN was written to localStorage in plain text — ' + JSON.stringify(d.answers));
+  assert.ok(!/123-45-6789/.test(store.umsIntakeDrafts), 'the SSN is nowhere in the stored draft');
+  assert.strictEqual(d.omitted, true, 'the draft says something was left out');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext('INTAKE_STATE.pmd.held', ctx))), { 10: '123-45-6789' }, 'held in memory for the session (a tool switch keeps it)');
+  assert.strictEqual(d.savedId, 'dA', 'F19: the working copy carries the saved draft it came from');
+  // The SSN is cleared on the form → nothing held, nothing marked.
+  vm.runInContext('answers = { 1: "Ana Ruiz", 10: "" }; INTAKE_STATE.pmd.savedId = null;', ctx);
+  ctx.intakeDraftSaveNow_('pmd');
+  const d2 = JSON.parse(store.umsIntakeDrafts).pmd;
+  assert.ok(!d2.omitted && !d2.savedId && vm.runInContext('INTAKE_STATE.pmd.held', ctx) === null, 'cleared: nothing held, nothing marked, no stale saved id');
+  // Source: the parked draft is written through the same split; reads scrub; the sweep has a clock.
+  const save = extractFnFrom(src, 'intakeSaveNamedDraft_');
+  assert.ok(/var split = intakeDraftSplit_\(form, snap\.answers \|\| \{\}\);/.test(save) && /answers: split\.kept,/.test(save) && /if \(split\.omitted\) entry\.omitted = true;/.test(save), 'a parked draft never holds the SSN');
+  assert.ok(/intakeDraftScrub_\(d\.form, d\)/.test(extractFnFrom(src, 'intakeSavedMine_')), 'a draft parked before the rule is scrubbed when read');
+  const sweep = extractFnFrom(src, 'intakeSweepDrafts_');
+  assert.ok(/intakeDraftScrub_\(form, r\.kept\[form\]\)/.test(sweep), 'and the autosave is scrubbed by the sweep');
+  assert.ok(/if \(!_intakeSweepTimer && typeof setInterval === 'function'\) \{\s*_intakeSweepTimer = setInterval\(/.test(sweep) && /INTAKE_SWEEP_EVERY_MS\)/.test(sweep), 'the sweep arms ONE timer for the session');
+  const every = vm.runInNewContext(/var INTAKE_SWEEP_EVERY_MS = ([^;]+);/.exec(src)[1]);
+  assert.ok(every >= 60000 && every <= 3600000, 'between a minute and an hour: ' + every);
+  const list = extractFnFrom(src, 'intakeOpenDraftsList_');
+  assert.ok(/the next time Team Tools is open in this browser/.test(list) && /the SSN are never kept/.test(list), 'the Drafts note says when a draft is removed, and what is never kept');
+  assert.ok(!/24 hours from the last save\. Insurance card images are not kept\./.test(list), 'the unqualified promise is gone');
+});
+
+test('F75 (cycle 26): a card-reader failure says WHICH — only "start" blames the browser, a download failure names the network, a checksum failure says to tell an admin; the beacon line carries the kind and an allowlisted file KEY only (driven)', () => {
+  const { ctx, src } = c26Intake_();
+  const t = ctx.intakeOcrFailText_;
+  assert.ok(/in this browser/.test(t('start', false)) && /en este navegador/.test(t('start', true)));
+  assert.ok(/could not be downloaded/.test(t('download', false)) && /network/.test(t('download', false)) && !/in this browser/.test(t('download', false)), 'THE REGRESSION: a blocked CDN read "in this browser"');
+  assert.ok(/failed a safety check/.test(t('checksum', false)) && /tell your admin/.test(t('checksum', false)) && !/in this browser/.test(t('checksum', false)));
+  assert.ok(/No se pudo descargar/.test(t('download', true)) && /verificación de seguridad/.test(t('checksum', true)), 'Spanish too');
+  assert.strictEqual(t('anything-else', false), t('start', false), 'an unknown kind is the browser message');
+  const e = ctx.intakeOcrErr_('checksum', 'det', 'det did not match its checksum');
+  assert.deepStrictEqual([e.kind, e.file, e.message], ['checksum', 'det', 'det did not match its checksum']);
+  const b = ctx.intakeOcrBeaconText_;
+  assert.strictEqual(b('checksum', 'det'), 'Intake card reader: a pinned file failed its checksum — file det');
+  assert.strictEqual(b('checksum', 'https://evil.example/x?patient=Ana'), 'Intake card reader: a pinned file failed its checksum — file unknown', 'only an allowlisted key rides the beacon (g146)');
+  assert.strictEqual(b('download', 'wasm'), 'Intake card reader: failed (download) — file wasm');
+  // Source: the fetch tags each failure, and the read passes the kind on and beacons only a checksum failure.
+  const fetchFn = extractFnFrom(src, 'intakeOcrFetch_');
+  assert.ok(/if \(!r\.ok\) throw intakeOcrErr_\('download', key/.test(fetchFn) && /function \(\) \{ throw intakeOcrErr_\('download', key/.test(fetchFn), 'a refused and a failed request are both "download"');
+  assert.ok(/!== f\.sha256\) throw intakeOcrErr_\('checksum', key/.test(fetchFn), 'a file that is not the pinned file is "checksum"');
+  const read = extractFnFrom(src, 'intakeCardRead_');
+  assert.ok(/kind: \(e && e\.kind\) \|\| 'start'/.test(read) && /fail\(intakeOcrFailText_\(res\.kind, es\)\);/.test(read), 'the kind reaches the message');
+  assert.ok(/if \(res\.kind === 'checksum' && typeof errBeaconSend_ === 'function'\) errBeaconSend_\(intakeOcrBeaconText_\(res\.kind, res\.file\), '', 'errorState'\);/.test(read), 'only a checksum failure is beaconed, through the bounded text');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
