@@ -7116,6 +7116,23 @@ pick them up without re-deriving the context.
     call's work) and then filled; the autosave then mirrors it. Opening over a
     form with unsaved answers asks first. Re-saving an opened draft updates it;
     Clear only detaches the form from it.
+  - **Amended, cycle 26 (F1, F19, F72 — 2026-11-13).** Three things the
+    first version left open. *The amendment was not a subject change:* the
+    amend path replaced the answers and nothing else, so the previous
+    patient's card images, card suggestion and saved-draft id stayed on the
+    form (an AMENDED email with another patient's insurance cards). Everything
+    beside the fields is now reset by one helper on every such path, and the
+    amend flow asks first when the form holds work (g173, INV-419). *The
+    saved-draft id was memory-only:* a reload left the draft in the list after
+    its send, to be opened and sent again; the autosave carries it now, and
+    re-opening the draft on the form asks once anything was typed since. *"24
+    hours" was a promise the browser could not keep:* a draft is plain text at
+    rest and is removed only when Team Tools is next open there, so the SSN is
+    never written to a draft (memory for the session; a reload or a parked
+    draft asks for it again), the sweep runs on a timer, and the note says what
+    the 24 hours mean. Rejected: dropping the insurance IDs as well (the draft
+    would be nearly useless for the form it parks), and encrypting the draft
+    (the key would sit beside it).
   - **Not done:** drafts that follow the rep to another computer — the operator
     asked for the browser only, and a server copy would be PHI at rest in a
     new place.
@@ -7148,6 +7165,14 @@ pick them up without re-deriving the context.
     bytes, and a file that does not match is refused. A failed load is not
     kept (g129) — the next press tries again — and the rep is told to type
     the details instead.
+  - **Amended, cycle 26 (F20, F75 — 2026-11-13).** A read belongs to the
+    patient whose images it was started on: its sequence is per FORM and its
+    result paints only on that form while it is on screen, so a read that
+    outlives a Clear, a send or a switch to the other account form offers
+    nothing (it had offered the previous patient's member ID on a blank form).
+    And a failed load says which failure — the network, a file that is not the
+    pinned file, or the browser; only a checksum failure is reported to the
+    error log, by file key, because that is the event the pinning exists for.
   - **Offered, corrected, then used.** The parser finds labels glued to their
     values ("RxPCNMEDDPRIME"), values printed under their labels, and a card
     photographed at an angle (rows are levelled by the lines' typical tilt); a

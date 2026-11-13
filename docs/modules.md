@@ -576,6 +576,14 @@ next call (insurance card images are not kept). Drafts lists every form's
 saved drafts, newest first, with Open and Delete; a send removes the draft it
 came from. The silent autosave is unchanged.
 
+**Cycle 26 Batch 2 (2026-11-13):** a draft never holds the SSN (the rep is asked for it
+again after a reload or when a parked draft is opened), and the Drafts note says a draft
+is removed the next time Team Tools is open in that browser. Amend & re-send asks before it
+replaces a form that holds another call's answers or card images, and the amended form
+carries none of them. A card read that outlives a Clear or a switch of form offers nothing;
+a reader that fails says whether it was the network, a file that failed its check, or the
+browser.
+
 **P1 (operator 2026-11-05):** on each employee's pay week a **Check your
 timesheet** item appears in Needs you (Review opens Time / PTO; Done hides it
 until the next period) and a banner sits atop the Time / PTO calendar, from

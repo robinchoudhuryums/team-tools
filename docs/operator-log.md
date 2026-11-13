@@ -10,6 +10,25 @@ line** — the `.cycle/HISTORY.md` pattern. CLAUDE.md's Operator State Checklist
 keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
+
+## 2026-11-13 — Cycle 26 Batch 2 (Intake: the right patient)
+
+**No new operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched).
+
+- **Amend & re-send** now asks before it replaces a form that holds another
+  call's answers or insurance card images, and the amended form starts with no
+  images — attach the patient's cards again if they should go with it.
+- **The SSN is never kept in a draft.** It survives a switch to another tool;
+  after a reload, or when a parked draft is opened, the rep enters it again
+  (the toast says so). Drafts already stored are cleaned the first time the
+  app opens after the deploy.
+- A draft that was sent no longer stays in **Drafts** after a page reload.
+- The card reader says why it failed: the download (network), a file that
+  failed its safety check (tell the admin — it is also written to Admin →
+  System → client errors, by file name only), or the browser.
+- Tell the team the first two. Walk S178 on DEV.
+
 ## 2026-11-02 — Operator round, Batch H (Employee Docs from a PDF)
 
 **No new operator state** (the `EmpDocFiles` tab in the HR spreadsheet creates

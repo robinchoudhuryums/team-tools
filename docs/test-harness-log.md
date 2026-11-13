@@ -3629,3 +3629,37 @@ checking; F74, one Chromium resolver.**
   through the shared resolver.
 - **What bit:** `bite.sh` refuses a mutation containing a double quote, so a
   mutation that inserts a JS string is written with single quotes or `chr()`.
+
+**Cycle 26 Batch 2 (2026-11-13) — Intake, the right patient: F1, F19, F20,
+F72, F75.**
+- **Pure** — a derived net over the intake partial (the ONE reset helper, its
+  six callers, the order in the amend flow, one place that empties images, no
+  counter on the host element, one lookup of the card host); `intakeSameAnswers_`
+  / `intakeHoldsText_` driven; `intakeDraftSplit_` / `intakeDraftScrub_` driven
+  (the SSN index DERIVED from `INTAKE_FMT_FIELDS`, not typed twice); the
+  autosave driven in a sandbox (no SSN in the stored string, `omitted`, the
+  memory-held copy, the carried saved-draft id); the reader's failure text and
+  beacon line driven by kind. Three existing pins (Seams F12, the I2 source
+  pin, the I3 source pin) now read through the shared reset.
+- **DOM** — five drives: the amend flow (asked, Keep the form, Amend, the
+  autosave read when the form is off screen); the saved-draft id across a
+  reload and the re-open question; a read in flight dropped by Clear and by
+  PMD → PAP, with an undisturbed read as the control; the SSN across a tool
+  switch, a reload, a parked draft, the legacy scrub and the sweep's one timer;
+  the reader's three failures, the beacon, and `intakeOcrFetch_` driven over a
+  stood-in `fetch` and `crypto.subtle`.
+- **What bit:** the first F19 drive failed against correct-looking code — an
+  account form's snapshot carries a patient line derived from answer 1, a saved
+  draft stores that line for the PPD only, so "untouched" never held and every
+  re-open asked. Found by driving, not by reading; `intakeSameAnswers_` takes
+  the form. A DOM bite re-runs the whole DOM harness (about two minutes), so
+  the batch's bites were scripted and run in the background, with the doc
+  edits held until they finished (a bite mutates the file the harness reads).
+- **Bites: 24 mutations, 22 bit.** The two NO BITEs were each one of TWO guards
+  (g116's twelfth): a read's sequence is checked inside the read loop and
+  again at the final paint, and a parked draft is split on write and scrubbed
+  on every read. Each was then bitten with both guards off, and the write
+  path separately through its pure pin. Recorded, not "fixed" — the second
+  guard is the point.
+- **Visual** — the fourteen intake scenarios re-shot and measured clean; the
+  longer Drafts note wraps at 390px.

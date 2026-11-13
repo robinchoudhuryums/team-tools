@@ -5,19 +5,25 @@ Cycle: 26 — opened 2026-11-13 by /broad-scan (the cycle after 25post; every la
 Phase: implement
 Scope: broad — /broad-scan of 2026-11-13 (Server, every client subsystem, handbook-app, Test Suite, docs)
 Test Command: manual
-Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h) — actual ~2 h · Batch 2 (F1, F19, F20, F72, F75 — Intake, the right patient): M (~6.5 h)
+Estimates: Batch 1 (F4 + F74 — unblock CI): S (~2 h) — actual ~2 h · Batch 2 (F1, F19, F20, F72, F75 — Intake, the right patient): M (~6.5 h) — actual ~6 h
 Subsystem cycles since last Seams audit: 3 — reset to 0 by the Seams & Invariants audit of 2026-10-05 (cycle 24); incremented by cycle 24's /reflect (2026-10-06), cycle 25's /reflect (2026-10-16) and the 25post stretch's /reflect (2026-11-12). The cadence is every 4.
-Updated: 2026-11-13 (cycle 26: Batch 2 of the scan's plan started)
+Updated: 2026-11-13 (cycle 26: Batches 1 and 2 of the scan's plan implemented)
 
 ## In progress (facts to carry forward — NOT judgments)
 - **Cycle 26 opened by the /broad-scan of 2026-11-13** (75 findings F1–F75: 4 High — F1 intake amend ships the previous patient's card images, F2 the monthly accrual health line can never read clean, F3 a Spanish follow-up quoting the app's resolved reply never reopens, F4 the cycle open left CI red; gaps G1–G5, suggestions ST1–ST5). The scan report is in the session that ran it, not on disk — its batch plan: Batch 1 CI unblock (F4, F74) · 2 Intake, the right patient (F1, F19, F20, F72, F75) · 3 Thread replies (F3, F9, F11, F10, F12, F33) · 4 Automation health (F2, F17, F18, F25, F28, F32) · 5 Payor lookups (F5, F6, F7, F8, F37, F38, F40) · 6 Employee Docs (F13, F14, F15, F44, F56, F64) · 7 Handbook server (F49, F50, F48, F52, F53, F54, F57) · 8 Handbook client (F45, F46, F47, F55, F65, F66) · 9 Time Clock (F16, F26, F27, F30, F29, F31) · 10 Stats (F24, F34, F35) · 11 Shell and Call Notes client (F58–F63) · 12 Server small items (F41, F42, F43) · 13 Intake remainder (F21, F22, F23, F67) · 14 Docs and tooling (F70, F69, F73, F71, F68). Deferred: F36 (operator ruling on a minimum cohort), F51 (quiz key — a decision), F39 (needs the real payor exports). Expansion: E1 ST1 + ST2 · E2 ST4 + ST3 · E3 G1 + G5 · E4 G3 + G2 · E5 G4; ST5 → roadmap (Pending).
-- **Batch 1 is DONE** (block `.cycle/blocks/26-batch1-broad-implement.md`); the next batch the operator names starts from a clean tree.
+- **Batches 1 and 2 are DONE** (blocks `.cycle/blocks/26-batch1-broad-implement.md`, `.cycle/blocks/26-batch2-broad-implement.md`); the next batch the operator names starts from a clean tree. Batch 1's CI run was green on its pushed commit (run 1769).
 
 ## Completed this cycle
 - F4 | scripts/cycle-closeout.mjs, PROJECT_HEALTH.md, .github/workflows/client-tests.yml, test/client/run.js | the generated standing follows the last reflection only (a STATE-only cycle open owes nothing); the job's checks run under `!cancelled()` so one red step no longer hides the rest
 - F74 | test/visual/chromium-path.cjs (new) + the eight launching scripts | one Chromium resolver: either layout, newest build by number, CHROMIUM_PATH honoured everywhere
+- F1 | web-app/intake/script_intake.html | `intakeResetFormSubject_` — one reset of everything that belongs to the patient on a form, called by every subject change; the amend flow resets before it parks and asks when the form holds work
+- F19 | web-app/intake/script_intake.html | the saved-draft id is not inherited by an amendment, rides the autosave across a reload, and re-opening the draft on the form asks once anything was typed since
+- F20 | web-app/intake/script_intake.html | a card read is sequenced per form and paints only its own form's current read (`INTAKE_CARD_SEQ`, `intakeCardHost_`)
+- F72 | web-app/intake/script_intake.html | the SSN is never written to a draft (memory for the session); stored drafts scrubbed; the sweep on a timer; the Drafts note says what 24 hours means
+- F75 | web-app/intake/script_intake.html | a card-reader failure says which — download, checksum (beaconed by file key) or start
 
 ## Pending / not yet done
+- **Cycle 26 Batch 2 deploy (2026-11-13):** Team Tools `clasp push -f` + New version (rides with the owed I1 / I2 / I3 deploy; `handbook-app/` untouched; no operator state). Tell the team: Amend & re-send asks before replacing a form in progress and starts with no card images; the SSN is never kept in a draft. Walk S178 on DEV.
 - **Handbook refresh HBR3 deploy (2026-11-11):** `npm run handbook:push` + New version (Team Tools unchanged; no new operator state). Walk S176.
 - **Handbook refresh flat + HBR4 deploy (2026-11-12):** `npm run handbook:push` + New version (Team Tools unchanged; no new operator state — the theme is a browser setting). Walk S177.
 - **XR1 (2026-11-12):** import the re-exported `manual.json` — Check lists 3.7, 10.5, 10.9 and 10.21 as updated.
@@ -91,6 +97,8 @@ Updated: 2026-11-13 (cycle 26: Batch 2 of the scan's plan started)
 - **F19 DECIDED + shipped in E2 (2026-10-15).** **DEFERRED, operator decisions:** F-09's holiday FALLBACK; what a LocationAcceptance city row's Accepts column decides; HR-2 (roadmap — the operator is the only editor of the HR sheet and the script); whether members' first names should join the Spanish courtesy vocabulary ("Gracias Ana" still reopens).
 
 ## Open follow-on items
+- [web-app/intake/script_intake.html: Batch 2] — the amendment flag (`amendOf`) is memory-only: after a reload mid-amendment the send goes out as a NEW submission, not AMENDED (F19(b)'s shape; not in the scan's findings).
+- [web-app/intake/script_intake.html: Batch 2] — the insurance member IDs still sit in a stored draft; dropping them was rejected in the batch (a draft without them is nearly useless) — an operator call.
 - [scripts/cycle-closeout.mjs: Batch 1] — the close-out writes `Cycle: 25post — closed …` while the audit command says a non-numeric Cycle counts as 0 (so the next audit would be "Cycle 1", which the script then refuses as behind metrics.csv). Nothing enforces the reading; the scan opened 26 by judgement. Belongs with ST1 (a cycle-open script).
 - [PROJECT_HEALTH.md: Batch 1] — Current Standing's prose still says "No audit has run since cycle 25's" and carries the 2026-10-14 scores; the cycle 26 scan re-scored (Overall 7.3). Not pinned any more (F4) — update it at /health-pulse or the reflect.
 - [scripts/counts.mjs: Batch 1] — `--block` prints the block but nothing writes it; the row is hand-edited after every batch that adds a pin.
@@ -137,6 +145,8 @@ Updated: 2026-11-13 (cycle 26: Batch 2 of the scan's plan started)
 - **Numbers — do not reuse:** the held invariant numbers now live in `.cycle/config.md`'s `HELD NUMBERS` line (seams F5) — that line, not this one, is what the pin reads. INV-229/230/231/374/375 were written this cycle; INV-350 is retired. **Next free: INV-376; gotcha g171; scenario S138.**
 
 ## Decisions made (so the next session doesn't re-litigate)
+- **Batch 2: one reset, called from the prefill consumer too** — `intakeResetFormSubject_` is the only code that empties a form's images; `intakeConsumeAmendPrefill_` calls it as well as its callers, so a prefill parked by any path lands on a clean form. Two guards on purpose (two of the batch's bites were NO BITE for that reason and were re-run with both off).
+- **Batch 2 (F72): the SSN is never stored in a draft; the insurance IDs still are** — memory for the session, re-entered after a reload or on a parked draft. Rejected: dropping the IDs (the draft would be nearly useless), encrypting the draft (the key would sit beside it).
 - **F4: the standing follows the last REFLECTION only** — the generated region no longer names the cycle STATE is on; the cycle in progress is written in one place, STATE's `Cycle:` line. Rejected: letting the audit write PROJECT_HEALTH (the command's one-write rule is the synced template's), and fixing it with an `--open` script alone (that is ST1, a capability; the check has to be right without it).
 - **F4: CI steps run under `!cancelled()`, never `always()` and never `continue-on-error`** — a failed step still fails the job; the steps that need the dev dependencies wait on `steps.deps`.
 - **ST5 is a roadmap item (operator 2026-11-13)**, not a batch — it changes the confirm flow and needs a product decision first.
@@ -213,4 +223,4 @@ Updated: 2026-11-13 (cycle 26: Batch 2 of the scan's plan started)
 - The 22post operator decisions (Close reasons, Scratchpad, presence, Dashboard layout, reply tracking, reopen, DR defaults, Spanish notify) stand as recorded in the 22post HISTORY block.
 
 ## Where I left off
-Cycle 26: the scan of 2026-11-13 is done and Batch 1 (F4 + F74) is implemented, pinned (11 of 11 bites) and pushed on `claude/loving-rubin-90vdtu`; nothing in `web-app/` or `handbook-app/` changed, so there is nothing to deploy. Next: the operator names the next batch (the scan's order puts Batch 2 — Intake, the right patient — first); record its estimate in the Estimates line before the first edit.
+Cycle 26: the scan of 2026-11-13 is done; Batch 1 (F4 + F74) and Batch 2 (F1, F19, F20, F72, F75 — `web-app/intake/script_intake.html`) are implemented, pinned and pushed on `claude/loving-rubin-90vdtu`. Batch 2's deploy is owed (Pending, top). Next: the operator names the next batch (the scan's order puts Batch 3 — Thread replies: F3, F9, F11, F10, F12, F33 — next); record its estimate in the Estimates line before the first edit.

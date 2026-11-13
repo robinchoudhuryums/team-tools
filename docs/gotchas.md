@@ -3354,6 +3354,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the dashboard-feedback batch: the toggle button lived inside the column it
   hid, so once collapsed there was no way back, and the `?compact=1` pop-out
   already covers compact.)
+  **AMENDED (cycle 26 F72, 2026-11-13): what a key keeps at rest is a choice,
+  and "24 hours" is not a clock.** The intake drafts (`umsIntakeDrafts`,
+  `umsIntakeSaved`) stored every field in plain text, the SSN included, and
+  the UI said "24 hours from the last save" — but the expiry ran only at boot
+  and when an intake view opened, so on a loaner or a shared profile that
+  never opened Team Tools again the draft stayed for good. The SSN is now
+  never written to either store (`intakeDraftSplit_`: held in memory for the
+  session, so a tool switch keeps it and a reload or a parked draft does not,
+  and says so); drafts stored before the rule are scrubbed by the sweep, which
+  also runs on a timer while the app is open; and the Drafts note says a draft
+  is removed the next time Team Tools is open in that browser. RULE: before a
+  field goes into a stored draft, ask what it costs if the draft is never
+  swept. Verify: the F72 pure pins + DOM drive.
 
 <a id="g114-a-zero-that-could-mean-three-different"></a>
 - **A computed ZERO that could mean three different things must say WHICH —
@@ -5036,6 +5049,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   a run this month with no row reads "ran on … but wrote no row this month, so
   its trigger is running", with the remedy (column R, `previewPtoAccruals`).
   Verify: the six 25post pins.
+  **AMENDED (cycle 26 F75, 2026-11-13): the intake card reader.** Its files
+  come from a CDN and each is checked against a SHA-256, but the rejection
+  reason was discarded: a firewall blocking the CDN, a file that failed its
+  checksum and a browser that cannot run the reader all read "The card could
+  not be read in this browser". Two of the three name the wrong source, and
+  the checksum failure — the one event the pinning exists to catch — reached
+  nobody. The fetch now tags each failure (`download` / `checksum` / `start`),
+  the message follows the kind, and a checksum failure is beaconed with the
+  file KEY only (an allowlisted name — never an image, a value or a URL).
+  Verify: the F75 pure pin + DOM drive.
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
@@ -5247,6 +5270,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   captures the editor (`KB_EDIT`) it was dropped into, and the read's handlers
   and the RPC's both drop a result for any other. Verify: the KB2-9 DOM drive (a
   late read and a late conversion).
+  **AMENDED (cycle 26 F20, 2026-11-13): a sequence counter kept ON the host
+  dies with it too.** The intake card reader guarded a read in flight with
+  `host._seq` — a property of `#intk-card-read`. Clear, a saved draft, a send
+  and a language switch all re-render the form, which replaces that node; the
+  read went on checking the detached node, whose counter never moved again, and
+  then painted through a lookup by id. So the read finished over the PREVIOUS
+  patient's images and offered their payer and member ID, with a working "Use
+  as primary insurance", on the next patient's blank form. PMD and PAP also
+  share the ids `intk-card-read` and `intk-gallery`, so a PMD read finishing
+  after a switch to PAP painted there. RULES: the sequence is state
+  (`INTAKE_CARD_SEQ[form]`), bumped by a new read, a change to the images and
+  every subject change; every paint looks the host up AGAIN through
+  `intakeCardHost_(form)`, which answers only while that form's drop zone is on
+  screen. Verify: the F20 DOM drive (Clear mid-read; PMD → PAP mid-read; an
+  undisturbed read still lands).
 
 <a id="g148-a-lagged-source-s-windows-count-days"></a>
 
@@ -6037,3 +6075,35 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   it with. Fires when you build a "for how long" check on a cache entry, a
   heartbeat or any expiring stamp. Verify: the B8 pins (the driven
   `liveIdleMin_` grid, and `recordPresence` writing both stamps).
+
+<a id="g173-what-belongs-to-the-patient-on-a-form"></a>
+
+- **What belongs to the PATIENT on a form but lives outside its fields is
+  reset in ONE helper, on every path that replaces the form's subject (cycle 26
+  F1 + F19, 2026-11-13).** An intake form's fields are only part of what it
+  holds. Beside them, in memory, sit the attached insurance-card images, the
+  card reader's open suggestion, the id of the saved draft the form was opened
+  from, and the sent submission it is amending. Four paths replace a form's
+  patient — Clear, a send, opening a saved draft, amending a sent submission —
+  and each reset its own subset by hand. The amend path reset NONE of it: it
+  parked the sent submission's answers and navigated. So a rep who was mid-PMD
+  for patient A with A's card photos attached, and pressed Amend & re-send on
+  patient S, sent S's AMENDED email to Sales with A's insurance cards inline;
+  the stale saved-draft id then made that send delete A's parked draft (or a
+  Save draft overwrite it with S's answers); and after a send that answered
+  while the rep was on another view, the amendment flag stayed on a blank form.
+  The preview did say "N insurance card images will be sent" — on an
+  amendment the rep expects images there, since the original's are not stored.
+  RULES: (1) `intakeResetFormSubject_(form)` drops all of it, and it is the
+  ONLY code that empties a form's images; every subject change calls it,
+  including `intakeConsumeAmendPrefill_` itself, so a prefill parked by any
+  path lands on a clean form. (2) The amend flow clears the working autosave
+  and resets BEFORE it parks the prefill, and asks first (`intakeFormHolds_`)
+  when that form — on screen, or its autosave — holds answers or images. (3)
+  The autosave carries the saved-draft id, so a reload does not orphan the
+  draft a send should remove. (4) Re-opening the draft already on the form
+  skips the question only while nothing was typed or attached since
+  (`intakeSameAnswers_`). Fires when you add state beside a form's fields, or
+  a path that fills a form from somewhere else. Verify: the F1 derived net (the
+  callers, the order in the amend flow, ONE place that empties images) + the
+  F1 and F19 DOM drives.
