@@ -2016,10 +2016,20 @@ function hbPutNote_(id, text, after) {
   });
 }
 /** Send notes to the account and keep the merged answer. */
+var HB_NOTES_REFUSED_SAID = 0;
 function hbSyncNotes_(map, cb) {
   var fin = function (r) {
     if (!r || !r.success) { cb(false, r && r.error); return; }
     hbNotesPut_(hbNotesMergeLocal_(hbNotes_(), r.notes || {}));
+    // F52 (cycle 26): the account takes a note only for a section in the
+    // handbook, so a note it did not take is SAID (once per count, not at
+    // every sync) — it stays in this browser.
+    var refused = Number(r.refused) || 0;
+    if (refused && refused !== HB_NOTES_REFUSED_SAID) {
+      HB_NOTES_REFUSED_SAID = refused;
+      showToast(refused + (refused === 1 ? ' note was' : ' notes were') + ' not kept in your account — ' + (refused === 1 ? 'its section is' : 'their sections are') +
+        ' no longer in the handbook. ' + (refused === 1 ? 'It stays' : 'They stay') + ' in this browser.', 'toast-warn', { sticky: true });
+    }
     cb(true);
   };
   google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbSyncNotes(map);

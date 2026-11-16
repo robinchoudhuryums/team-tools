@@ -12937,6 +12937,23 @@ test('F50 DOM (cycle 26): My training shows an item that can no longer be done a
   assert.ok(toast && /Archived\. 2 live plans still list it \(First week, Second <i>week<\/i>\) — it no longer counts there\./.test(toast.textContent) && !toast.querySelector('i'), toast && toast.textContent);
 });
 
+test('F52 DOM (cycle 26): a note the account did not take is SAID — once, not at every sync — and stays in this browser (driven)', async () => {
+  let refused = 2;
+  const h = await hbBoot_({ ls: { umsHbNotesSync: '1', umsHbNotes: JSON.stringify({ 'man-3-2': { t: 'Mine', ms: 5 }, 'man-8-8': { t: 'Old section', ms: 6 }, 'man-8-9': { t: 'Older', ms: 7 } }) },
+    answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbSyncNotes: () => ({ success: true, notes: { 'man-3-2': { t: 'Mine', ms: 5 } }, written: 1, refused }) } });
+  await h.settleAll();
+  const said = () => [...h.d.querySelectorAll('#toast-stack .toast-sticky')].map((t) => t.textContent).filter((t) => /not kept in your account/.test(t));
+  assert.ok(h.calls.indexOf('hbSyncNotes') >= 0, 'the fixture: a browser with syncing on sends its notes at the start');
+  assert.strictEqual(said().length, 1, 'THE REGRESSION (of the fix itself): the server counted what it refused and the page said nothing');
+  assert.ok(/^2 notes were not kept in your account — their sections are no longer in the handbook\. They stay in this browser\./.test(said()[0]), said()[0]);
+  assert.strictEqual(JSON.parse(h.w.localStorage.getItem('umsHbNotes'))['man-8-8'].t, 'Old section', 'and they are still here');
+  h.w.hbSyncNotes_({}, () => {}); await h.settleAll();
+  assert.strictEqual(said().length, 1, 'the same count again says nothing more');
+  refused = 1;
+  h.w.hbSyncNotes_({}, () => {}); await h.settleAll();
+  assert.ok(said().length === 2 && /^1 note was not kept in your account — its section is no longer in the handbook\. It stays in this browser\./.test(said()[1]), 'a different count is said');
+});
+
 test('F54 DOM (cycle 26): Team progress says what the last reminder run did — sent and failed, a run that failed, one that never finished, and no run on record (driven)', async () => {
   const withRun = async (remindersOn, reminders) => {
     const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: Object.assign(HB34_PROGRESS(), { remindersOn, reminders }) } });
