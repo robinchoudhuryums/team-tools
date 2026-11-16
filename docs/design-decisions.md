@@ -5320,6 +5320,10 @@ pick them up without re-deriving the context.
   Rejected: chunking the upload through CacheService (the file is ~1.6 MB,
   well within one call) and storing images in Script Properties (~9KB a
   value).
+  **Amended (cycle 26 F40).** The images tab — and the quizzes' and forms'
+  tabs beside it — is rewritten in place by `sheetReplaceBody_`: one write
+  over the old rows, the header after. It was `clearContent()` then a write,
+  so a write that failed left the handbook with no images at all.
 - <a id="the-manual-s-recent-changes-ride-getwhatsnew"></a>**The manual's recent changes ride `getWhatsNew` — one payload, one renderer, for the panel and the landing (22post M4, operator 2026-09-29).** Two surfaces show the same
   list: the What's new panel and the Reference landing. A second reader of the
   changelog would have been a second rule for "recently changed" (g126), so the
@@ -6919,6 +6923,58 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="c26-payor-lookups-say-what-they-searched"></a>**A payor lookup says which tables it searched, a table import writes what its preview showed, and the handbook's import tabs are written in place (cycle 26 Batch 5: F5, F6, F7, F8, F37, F38, F40)**
+  - **Coverage rides the answer (F5).** The lookup is ONE search over every
+    payor table, so "not found" is a claim about all of them. Rather than
+    fail the whole lookup when one table is absent (four tables answering is
+    better than none), the answer carries `coverage` — each configured table
+    as searched, missing or empty, with the rows read and any left unread —
+    and the client decides what may be said: a gap is named above the cards,
+    and a no-match under a gap is "not yet plan not listed", with the TRY
+    instruction withheld. Rejected: an error when any table is missing (the
+    by-state and Manual Mobility tables are imported one at a time, so the
+    lookup would be down for days), and a quiet "searched N of M" count (the
+    rep needs the table's NAME to know whether it matters for this caller).
+  - **The cross-table check stays bounded, and says when it stopped (F38).**
+    Twelve reads per search is the cost ceiling on a rep-facing lookup; the
+    card it did not reach carries `alsoUnchecked` and tells the rep to search
+    the plan by its full name, which narrows the list until the check covers
+    it. Raising the bound was rejected — it moves the silence, it does not
+    remove it.
+  - **An exclusion is what directly follows the word (F6).** The grammar is
+    narrow on purpose: a state list after "except / other than / not in /
+    Non-…" (a few lead-in words allowed before the first state — "plans in",
+    "the state of"), ended by the first other word or the closing bracket.
+    "except HMO plans TX" excludes nothing; "except TX plans in Ohio" excludes
+    Texas. A name that excludes a state in some other phrasing ("excluding
+    all Medicare products sold in TX") is NOT detected and ranks as an
+    ordinary plan, its own words still on the card — the direction chosen,
+    because the old over-reading labelled a state's own plan as excluding it
+    and ranked it last.
+  - **Green means the whole value is an accept (F7).** The colour is read as
+    the answer, so the rule fails toward amber: anything written beside an
+    accept is a condition the rep must read. "No auth required" is neutral
+    rather than green — it says a requirement is absent, not that the plan
+    is accepted. More cells are amber than before; that is the point.
+  - **A write is bound to its preview by a fingerprint (F37).** The dry run
+    and the write already share one parse, but they are two requests: a
+    deploy between them can change the converter, and the page resends the
+    file. The preview returns a SHA-256 over what WOULD be written (table,
+    every converted cell, the note and key); the write must hand it back and
+    is refused before anything is cleared if it differs. A page from before
+    the deploy sends none and is told to reload — refusing is safer than a
+    last-write-wins replace of a table every lookup reads. Rejected: storing
+    the previewed grid server-side (state to expire, per admin, per table).
+  - **After the replace, nothing reports the import as failed (F37).** The
+    note and the audit row are separate caught steps on an `imported`
+    answer; the admin sees what could not be finished and how to finish it
+    (upload the same file again).
+  - **One write, not clear-then-write (F40).** `sheetReplaceBody_` writes a
+    block that covers the old extent — new rows, then blanks — in a single
+    `setValues`, so there is no moment, and no failure, in which the tab is
+    empty. Chosen over ADM-05's capture-and-restore because these tabs hold
+    megabytes of base64: reading them back to keep a copy would double the
+    import's reads for a case one write avoids.
 - <a id="m1-adjusted-metrics"></a>**Adjusted figures sit BESIDE the actual ones: outbound calls from the CDR Report, intake calls by their timed forms, and % Answered never adjusted (M1, operator 2026-11-11)**
   The operator asked for "adjusted" numbers that credit the work the actual
   figures miss — outbound calls (mostly the bilingual reps' Spanish

@@ -3733,3 +3733,47 @@ F25, F28, F32.**
   to again. The pin now reads the record after the make-up run and drives one
   more hour. A NO BITE that names a real path is a missing assertion, not an
   equivalent mutant.
+
+**Cycle 26 Batch 5 (2026-11-16) — Payor lookups: F5, F6, F7, F8, F37, F38,
+F40.**
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  PT1's search context carried a stand-in matcher taking the JOINED cells —
+  it now takes the name and the other cells, as the endpoint calls it. The
+  two import contexts (`adm05Ctx_`, `pt1aImportCtx_`) gained the fingerprint
+  and its hash, and every test write goes through `dtWrite_` (dry run, then
+  the write with that run's fingerprint — the way the page does it). The fake
+  KB book (`m1Book_`) reports its last row as the last row WITH CONTENT, as
+  Sheets does, and can be asked its grid size; M3-I2's failed-write injection
+  moved from `appendRowsSafe_` to the sheet's own `setValues`. S2's named
+  list of raw-text writers lost the quiz and form writers and gained
+  `sheetReplaceBody_`.
+- **Pure** — nine pins: F6 (the grammar grid, the matcher per cell, the
+  endpoint with the REAL matcher over a by-state table — `c26SearchCtx_`);
+  F5 + F38 on the server (coverage for searched / empty / missing, the row
+  cap, the comparison bound set to 1); the F5 client helpers; F7 (refusals,
+  conditions, plain accepts, "nothing required", and a sweep — no value is
+  green unless all of it is an accept); F8; two for F37 (the server: bound,
+  refused, and each post-write step failing; the Admin client driven in a
+  sandbox); two for F40 (`sheetReplaceBody_` over `c26Tab_`, a fixed-grid tab
+  that logs every call and can fail a write; and `kbImportManual` with the
+  image write failing over an existing tab).
+- **DOM** — three drives: a no-match under a gap, with full coverage and
+  from an older server; matches under a gap with the uncompared-card note and
+  the three tones; the price row's cross-reference.
+- **Visual** — the payor fixture is a function of its query now ("molina" is
+  the no-match under a gap); two scenarios added
+  (`reference-notfound-gap-light-wide`, `…-dark-mobile`); the base answer
+  carries `coverage`, `tableLabel`, one `alsoUnchecked` card and one
+  conditioned accept.
+- **What bit:** planning the mutations exposed two pieces of code that could
+  not fail — a `state || 'missing'` default that hid a path which forgot to
+  set the state, and an outer-catch branch nothing could reach once every
+  post-write step had its own catch — both removed before the run. The run
+  itself returned four NO BITEs out of 69: two equivalent mutants over
+  redundant code (an upper-case test on a word looked up in an all-capitals
+  list; a "cannot" alternative beside one that already matched it),
+  simplified away; and two missing assertions (that a word only the Company
+  cell carries counts toward the score; that "No power chairs" is still a
+  refusal), added. And one of the new pin's own cases ("except TX plans in
+  Ohio") caught the widened lead-in words joining two states — they now apply
+  before the first state only.

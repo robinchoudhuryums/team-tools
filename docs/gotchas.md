@@ -1253,6 +1253,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   — a diagnostic that pointed away from the real effect (g142). With the
   negation read, the engine and the validator now agree.
 
+  **AMENDED (cycle 26 F6): a marker's scope is what directly follows it, in
+  its own cell.** A payor name can exclude a state ("UHC (all states other
+  than TX)"), and the lookup ranks such a plan last and labels it "TX
+  excluded". The reader matched an exclusion word and then took EVERY state
+  from there to the end of the text — and the text was the name joined to the
+  row's State and Company cells. So "UHC Community Plan Non-Dual", in the
+  Texas section of the by-state table, read as a plan that excludes Texas: the
+  word was "Non", the state was the next cell. `insPayorNameStates_` now
+  takes only the states that DIRECTLY follow the word (`insLeadingStates_`: a
+  list of states joined by "and"/"or", after at most a few lead-in words —
+  "plans in", "the state of", "for members in" — ended by the first other
+  word or the closing bracket); a word followed by anything else excludes
+  nothing. And
+  `insPayorMatch_` is handed the name and the other cells separately, each
+  read for states on its own. Verify: the F6 pin — the grammar grid, the
+  matcher, and the endpoint over a by-state table.
+
 <a id="g42-intake-ppd-controls-are-engine-safe-via"></a>
 
 - **Intake PPD controls are engine-safe via CANONICAL-ENGLISH VALUES, not
@@ -1807,6 +1824,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   ever clear it. Rule of thumb: `idle` is for "nothing to do this time";
   "switched off" and "not set up here" are `ok`. Verify: the F17 pin, the PF1
   read-ahead pin, the P1 email-job pin.
+
+  **AMENDED (cycle 26 F5 + F37): a source that was not read must be named.**
+  The payor lookup searches every payor table as one. A table whose tab had
+  not been imported yet, or held no rows, was skipped with a bare `return` —
+  and a search that then found nothing told the rep the plan "isn't in the
+  payor sheet" and to follow the TRY rules: a claim about every table, made
+  after reading some of them. `searchInsurancePayors` now returns `coverage`
+  — every configured payor table as searched (rows read, rows left unread),
+  missing or empty — the client names a table that was not searched above the
+  cards, and a no-match under a gap says it is NOT YET "plan not listed" and
+  withholds the TRY instruction. The same batch found the server building a
+  warning (`noteWarning`) that no client code read: an import's standing note
+  could be lost with nothing on screen. It is shown now, as a sticky warning.
+  Verify: the F5 pure pins (server and client) and the F5 DOM drive; the F37
+  client pin.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -4340,6 +4372,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   F46 (cycle 25) drive.
 
 
+  **AMENDED (cycle 26 F8): a second renderer of the payor rule dropped most
+  of it.** A price row cross-references the payors on screen: "what does this
+  payor say about this item's code". The payor card draws the column's own
+  label ("K0827 (451- 600) No In HI"), the plan's state and its table; the
+  cross-reference kept only the payor's name and the value — so a column
+  whose qualifier says "No In HI" showed as a bare green X. The rule now
+  carries where it came from (`oopPayorRulesFor_`: the column label, the
+  state, the table's label, an excluded state) and the row draws all of it,
+  escaped. Verify: the F8 pure pin and DOM drive.
+
 <a id="g127-calchours-wraps-out-in-as-overnight"></a>
 
 - **`calcHours_` wraps `out < in` as overnight; an EQUAL minute pair is ZERO
@@ -5309,6 +5351,25 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   instead of one call per row under the global lock. Verify: the QA-3 and 4a-FU2
   drives + C5's fake grid, which now refuses per `deleteRows` call.
 
+  **AMENDED (cycle 26 F40 + F37): clear-then-write with nothing to put back,
+  and a failure reported about the wrong step.** The manual import's three
+  tabs — `ManualImages`, `ManualQuizzes`, `ManualFiles` — were each rewritten
+  by `clearContent()` on the old rows and then a write. ADM-05 gave the
+  data-table import a restore for exactly this; these had none, so a write
+  that failed left the handbook with no images, quizzes or forms until the
+  next successful import. `sheetReplaceBody_` (10_core.js) replaces a tab's
+  data rows in ONE `setValues` that covers the old extent — the new rows,
+  and blanks over whatever the tab held past them — so the tab goes from the
+  old table to the new one in a single step or stays the old one. The header
+  is written after the rows. The other half is `kbImportDataTable`: once the
+  table write had succeeded, the standing-note write and the audit row ran
+  inside the same `try`, so a throw in either answered "Import failed" over
+  a live table that had just been replaced. Each is its own step now,
+  reported on the answer (`noteWarning` / `noteSaved: false`,
+  `auditWarning`), and the answer says `imported`. Verify: the two F40 pins
+  (the helper driven, and an import whose image write fails over an existing
+  tab) and the F37 pin.
+
 <a id="g146-a-failure-message-that-echoes-typed-input"></a>
 
 - **A failure message that echoes what the rep TYPED must not ride the error
@@ -5618,6 +5679,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   "No fillable forms sent yet" over a cut list), and the timeline names sent
   forms among its truncated sources. Verify: the F33 (cycle 25) drive.
 
+  **AMENDED (cycle 26 F38 + F5): a bounded CHECK's silence is evidence only
+  for what it checked.** The lookup compares each matched plan with the same
+  plan in the other payor tables, at most `INS_PAYOR_ALSO_MAX` (12) reads per
+  search. The loop's condition was the bound itself, so past 12 it simply
+  stopped — and a card with no "answer differs" note read as "the tables
+  agree". A card the bound stopped short of now carries `alsoUnchecked` and
+  says it was not compared; a plan no other table lists is not flagged. The
+  row cap is the same shape: rows past `INS_PAYOR_MAX_ROWS` are counted as
+  `unread` on the table's coverage, never dropped in silence. Verify: the
+  F5 + F38 pin (the bound set to 1, three cards flagged, the one with no twin
+  not).
+
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
 - **Clearing the roster email revokes every IN-APP gate, but not the Script
@@ -5810,6 +5883,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   conversion, is UNREADABLE and names itself ("reads as 12 lbs, outside
   20–1000 lbs") on the explain row and the recommendation screen; it never
   reaches the capacity filter. Verify: the Batch 11 weight drive.
+
+  **AMENDED (cycle 26 F7): a word found inside a value is not the value.**
+  The payor tone map (K11, cycle 22) reads words, not substrings — and still
+  toned on a word's PRESENCE. "Cannot be accepted" carries "accepted" and no
+  negation the list knew, so it was green; "Accepted except HI" was green;
+  "No auth required" opens with "No", so it was red. A colour on a compliance
+  field is read as the answer. Now: green only when the WHOLE value is an
+  accept (`INS_IS.acceptedExact` — X, Yes, Accepted, In-Network, INN, alone
+  or together); an accept with anything beside it is amber and explained as
+  "Accepted, with a condition"; the refusals gained cannot / can't / unable
+  to / will not / does not, "be accepted" and "acceptable"; and a leading
+  "No" that only says something is not required (`INS_IS.noRequirement`) is
+  no verdict — neutral, verbatim. Verify: the F7 pin (a sweep: no value is
+  green unless all of it is an accept) and the DOM drive.
 
 <a id="g157-scriptcache-is-shared-by-every-deployment"></a>
 

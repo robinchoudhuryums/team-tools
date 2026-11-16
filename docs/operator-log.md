@@ -11,6 +11,36 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-16 — Cycle 26 Batch 5 (Payor lookups)
+
+**Adds NO operator state.** Deploy: Team Tools `clasp push -f` + New version
+(`handbook-app/` is untouched; no trigger reinstall).
+
+- **The insurance lookup says which payor tables it searched.** If a table
+  has not been imported (or its tab is empty), every result opens with "Not
+  searched: …", and a plan that is not found is no longer called "plan not
+  listed → TRY" until every table has been read. Import the tables the team
+  relies on to make the line go away.
+- **"TX excluded" is no longer shown on a plan that is FOR Texas.** A plan
+  name containing "Non-", "except" or "not in" was read as excluding the
+  state in the next column. Real exclusions ("all states other than TX")
+  still rank last and are labelled.
+- **Colours: green only for a plain accept.** "Accepted except HI",
+  "In-Network (… only)" and the like are now amber — read the rest of the
+  cell; "Cannot be accepted" is red (it was green); "No auth required" is
+  neutral (it was red). Expect more amber than before.
+- **The price row's payor line** shows the payor's state and table and the
+  column's own label (e.g. "K0827 (451- 600) No In HI"), not just the value.
+- **A card says when it was not compared with the other payor tables** (a
+  search that matches many plans stops comparing after 12).
+- **Reference data tables — Replace writes what the preview showed.** A page
+  open across the deploy must be reloaded once before it can Replace. If the
+  note or audit row cannot be written after the table went in, the import
+  says so instead of "Import failed".
+- **Handbook import:** the images, quizzes and forms tabs are replaced in one
+  write each; a failed write leaves the previous ones in place.
+- Walk S181 on DEV.
+
 ## 2026-11-13 — Cycle 26 Batch 4 (Automation health honesty)
 
 **One new auto-managed Script Property: `PAY_WEEK_REMINDER_SENT`** (the day

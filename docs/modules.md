@@ -879,6 +879,19 @@ longer sent to reps.
      step in the preview before anything is replaced. The rule in the source's
      top-left cell is shown above every insurance lookup answer.
 
+     **Cycle 26 Batch 5 (2026-11-16) — payor lookups.** The lookup's answer
+     says what became of every payor table (searched, not imported, empty,
+     only partly read); a no-match while a table was not searched is not
+     called "plan not listed". An exclusion in a plan's name covers only the
+     states written directly after it. Green is a plain accept; an accept
+     with anything beside it is amber, "Cannot be accepted" is red and "No
+     auth required" is neutral. A card the cross-table check did not reach
+     says so, and the price row's payor line shows the column label, state
+     and table. On the Admin panel, Replace writes exactly what the preview
+     showed (a fingerprint), and a note or audit row that fails after the
+     table went in is reported on a successful import. The handbook import
+     replaces its images, quizzes and forms tabs in one write each.
+
      **PT1 (operator 2026-11-09) — payor tables.** The insurance lookup
      searches Primary Medicaid as well as Medicare / MA, as one search: the
      answer is grouped by table, each group with its own standing note and the

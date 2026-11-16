@@ -1692,6 +1692,14 @@ entry says which it is.
 
   The rep's QUERY is never persisted (the `kbMapDistances` privacy posture).
 
+  **Since cycle 26 F5** the lookup tells the rep which payor tables it did
+  NOT search: a table whose tab does not exist yet reads "not imported yet",
+  one with a header and no rows "its tab has no rows", and one longer than
+  5,000 rows "only its first 5000 rows". While any of those is true, a plan
+  that is not found is NOT called "plan not listed". So: import every payor
+  table the team relies on (Admin → Config → Reference data tables shows
+  which have rows), and keep each under 5,000 rows.
+
 <a id="operator-the-ooppricing-and-locationacceptance-tabs-kb-spreadsheet"></a>
 - **The `OopPricing` and `LocationAcceptance` tabs** (operator 2026-09-16) live
   in the **KB spreadsheet** (`KB_SS_ID`) — no Script Property of their own.
@@ -2834,6 +2842,13 @@ entry says which it is.
   with an empty top-left cell removes it. Until the first source upload after
   the deploy there is no note. If the preview warns that two columns would both
   be read as one field, rename one in the source before importing.
+  **Since cycle 26 F37** Replace writes exactly what the preview showed. A
+  page that was open across a deploy is refused with "Reload the page" —
+  reload, pick the file again, check the preview, Replace. If the table goes
+  in but its standing note (or the audit row) cannot be written, the import
+  still succeeds and a warning stays on screen saying which; upload the same
+  file again to set the note.
+
 <a id="operator-pt1-payor-tables"></a>
 - **Payor tables — the `MedicaidPayors` tab (PT1, operator 2026-11-09).**
   **Nothing to set up beyond the upload.** Manage → Admin → Config → Reference
@@ -3116,3 +3131,8 @@ entry says which it is.
   makes and checks a PDF of the Word manual only where LibreOffice works; if it
   prints "pdf: not made", export the Word file from Word or Google Docs and
   check it for blank pages yourself.
+
+  **Since cycle 26 F40** the import replaces the `ManualImages`,
+  `ManualQuizzes` and `ManualFiles` tabs in one write each — they are never
+  emptied first. An import whose write fails leaves the previous images,
+  quizzes or forms in place and names the failure in the import result.
