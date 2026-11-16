@@ -1204,11 +1204,16 @@
   .cn-scratch-editor ul.cn-sp-check > li::before {
     content: ''; position: absolute; left: 2px; top: .25em; width: 12px; height: 12px;
     border: 1.5px solid var(--muted); border-radius: 3px; background: var(--paper-card); cursor: pointer;
+    /* F64 (cycle 26): the box is a drawing, so a screen reader is told its state
+       in words. A browser without alternative text for generated content drops
+       this line and keeps the one above. */
+    content: '' / 'Not done: ';
   }
   .cn-scratch-editor ul.cn-sp-check > li.cn-sp-done { color: var(--muted); text-decoration: line-through; }
   .cn-scratch-editor ul.cn-sp-check > li.cn-sp-done::before {
     background: var(--accent-ink); border-color: var(--accent-ink);
     box-shadow: inset 0 0 0 2px var(--paper-card);
+    content: '' / 'Done: ';
   }
   .cn-sp-pages { display: flex; align-items: center; gap: 4px; padding: 0 0 6px; flex-wrap: wrap; }
   .cn-sp-page-lbl { font-size: 11px; color: var(--muted); }
@@ -5694,6 +5699,7 @@ function cnScratchEnable_(ed) {
     ed.addEventListener('input', cnScratchInput_);
     ed.addEventListener('paste', cnScratchPaste_);
     ed.addEventListener('click', cnScratchEditorClick_);     // Batch S: a checklist box, a Ctrl/⌘+click link
+    ed.addEventListener('keydown', cnScratchEditorKeydown_); // F64 (cycle 26): the same two, from the keyboard
     ed.addEventListener('keyup', cnScratchEditorKeyup_);     // Batch S: a finished URL becomes a link
     ed._listening = true;
   }
@@ -5834,7 +5840,7 @@ function cnOpenScratchpadModal_() {
       cnScratchToolbarHtml_() +
       '<div id="cn-scratch-text" class="cn-scratch-editor" role="textbox" aria-multiline="true" aria-label="Scratchpad contents"' +
         ' contenteditable="false" aria-disabled="true" data-placeholder="Loading…"></div>' +
-      '<div class="cn-scratch-hint">Saved to your own Call Notes sheet — it follows you across devices; if two windows edit, the last save wins. Ctrl/⌘+click a link to open it.</div>' +
+      '<div class="cn-scratch-hint">Saved to your own Call Notes sheet — it follows you across devices; if two windows edit, the last save wins. Ctrl/⌘+click a link to open it; from the keyboard, Ctrl/⌘+Enter opens the link the cursor is in, or ticks the checklist item it is on.</div>' +
       '<div class="cn-scratch-status mono" id="cn-scratch-status" role="status"></div>' +
     '</div>' +
     '<div class="modal-footer cn-scratch-foot">' +
@@ -6301,6 +6307,26 @@ function cnScratchChecklist_(ed, range) {
   var made = h2 && h2.closest ? h2.closest('ul') : null;
   if (made && ed.contains(made)) made.classList.add('cn-sp-check');
 }
+/** Open a scratchpad link in a new tab (only an address the pad itself
+ *  allows); a blocked tab is said (g135). */
+function cnScratchOpenLink_(a) {
+  var href = (a && a.getAttribute('href')) || '';
+  if (!CN_SCRATCH_HREF_RE.test(href)) return;
+  var w = null;
+  try { w = window.open(href, '_blank'); } catch (_) { w = null; }
+  if (!w) { cnScratchStatus_('Your browser blocked the link — copy it instead', true); return; }   // g135
+  try { w.opener = null; } catch (_) {}
+}
+/** Is `li` an item of a checklist inside the editor? */
+function cnScratchIsCheckItem_(ed, li) {
+  var list = li && li.parentNode;
+  return !!(ed && li && ed.contains(li) && list && list.classList && list.classList.contains('cn-sp-check'));
+}
+/** Tick or untick a checklist item, and save. */
+function cnScratchToggleItem_(li) {
+  li.classList.toggle('cn-sp-done');
+  cnScratchInput_();
+}
 /** A click in the editor: on a checklist item's box, tick or untick it; a
  *  Ctrl/⌘+click on a link opens it in a new tab (a plain click edits). */
 function cnScratchEditorClick_(e) {
@@ -6309,22 +6335,34 @@ function cnScratchEditorClick_(e) {
   var a = e.target.closest('a');
   if (a && ed.contains(a) && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
-    var href = a.getAttribute('href') || '';
-    if (!CN_SCRATCH_HREF_RE.test(href)) return;
-    var w = null;
-    try { w = window.open(href, '_blank'); } catch (_) { w = null; }
-    if (!w) { cnScratchStatus_('Your browser blocked the link — copy it instead', true); return; }   // g135
-    try { w.opener = null; } catch (_) {}
+    cnScratchOpenLink_(a);
     return;
   }
   var li = e.target.closest('li');
-  var list = li && li.parentNode;
-  if (!li || !ed.contains(li) || !list || !list.classList || !list.classList.contains('cn-sp-check')) return;
+  if (!cnScratchIsCheckItem_(ed, li)) return;
   var left = li.getBoundingClientRect ? li.getBoundingClientRect().left : 0;
   if (e.clientX - left > 22) return;   // the text, not the box
   e.preventDefault();
-  li.classList.toggle('cn-sp-done');
-  cnScratchInput_();
+  cnScratchToggleItem_(li);
+}
+/** F64 (cycle 26) — the keyboard's way to do what a click does: Ctrl/⌘+Enter
+ *  with the cursor in a link opens it; on a checklist item it ticks or unticks
+ *  it. Both were pointer-only (the box is hit-tested by its x-offset), so a
+ *  keyboard user could do neither. Any other key, and Ctrl/⌘+Enter anywhere
+ *  else in the pad, is left to the editor. */
+function cnScratchEditorKeydown_(e) {
+  if (!e || e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+  var ed = cnScratchEditor_();
+  var r = cnScratchRange_(ed);
+  var node = r ? r.startContainer : null;
+  var el = node && node.nodeType === 1 ? node : (node && node.parentNode);
+  if (!ed || !el || !el.closest || !ed.contains(el)) return;
+  var a = el.closest('a');
+  if (a && ed.contains(a)) { e.preventDefault(); e.stopPropagation(); cnScratchOpenLink_(a); return; }
+  var li = el.closest('li');
+  if (!cnScratchIsCheckItem_(ed, li)) return;
+  e.preventDefault(); e.stopPropagation();
+  cnScratchToggleItem_(li);
 }
 /** PURE (DOM-driven) — wrap every finished URL in root's text as a link: a run
  *  starting http(s):// or www., its trailing punctuation left outside. A URL

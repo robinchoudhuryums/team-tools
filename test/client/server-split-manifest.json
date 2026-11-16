@@ -4504,6 +4504,61 @@
     "insLeadingStates_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 6: empDocVerdict_ and the Employee Docs integrity helpers (F13/F14/F15/F44)",
+   "added": [
+    "EMPDOC_ACK_TEXTS",
+    "EMPDOC_COPY_WINDOW_MAX",
+    "EMPDOC_COPY_WINDOW_SECS",
+    "EMPDOC_RESPONSES_TOTAL_MAX",
+    "EMPDOC_SIG_MIN_CHARS",
+    "EMPDOC_TPL_TEXT_IDX",
+    "TRAIN_QUIZ_TEXT_IDX",
+    "coachRecapCutoff_",
+    "empDocAckTextFor_",
+    "empDocBodyLinkedImage_",
+    "empDocCopyManagers_",
+    "empDocCopySentCount_",
+    "empDocDrawnPng_",
+    "empDocRecordState_",
+    "empDocVerdictLine_",
+    "empDocVerdict_",
+    "rosterManagerEmails_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "acknowledgeDoc",
+    "coachRecapBuckets_",
+    "createCoaching",
+    "emailEmpDocCopy",
+    "empDocCertificateHtml_",
+    "empDocCopyEmailParts_",
+    "empDocInitialsCheck_",
+    "empDocValidateIssue_",
+    "empDocValidateResponses_",
+    "getEmpDocCertificate",
+    "getMyDoc",
+    "hrNoticeTargets_",
+    "issueDoc",
+    "saveEmpDocTemplate",
+    "saveQuiz",
+    "sendCoachingRecapDigest",
+    "verifyDocSignature"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 6: empDocHasSigBlock_ removed (no caller since F44)",
+   "added": [],
+   "removed": [
+    "empDocHasSigBlock_"
+   ],
+   "changed": [],
+   "moved": []
   }
  ],
  "order": [
@@ -5161,7 +5216,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "cc31b56bc02e2e95"
+   "sha": "a95b19440bad7fe3"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -5473,6 +5528,11 @@
    "kind": "const",
    "sha": "3fcf8e4488e10ee0"
   },
+  "EMPDOC_ACK_TEXTS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cdc0c9ea6e5b1f84"
+  },
   "EMPDOC_ACK_VERSION": {
    "file": "00_config.js",
    "kind": "const",
@@ -5492,6 +5552,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "830acdece0549369"
+  },
+  "EMPDOC_COPY_WINDOW_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3e8cbe7cef2f4c44"
+  },
+  "EMPDOC_COPY_WINDOW_SECS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4d53636effe1314e"
   },
   "EMPDOC_FIELD_CAP": {
    "file": "00_config.js",
@@ -5583,6 +5653,11 @@
    "kind": "const",
    "sha": "417f30782a501150"
   },
+  "EMPDOC_RESPONSES_TOTAL_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "cb1f686d938db3cb"
+  },
   "EMPDOC_RESPONSE_MAX": {
    "file": "00_config.js",
    "kind": "const",
@@ -5602,6 +5677,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "a425602a3dbd94a9"
+  },
+  "EMPDOC_SIG_MIN_CHARS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "b3188ee45c11c953"
   },
   "EMPDOC_SIG_TAB": {
    "file": "00_config.js",
@@ -5637,6 +5717,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "fc28ec6126026103"
+  },
+  "EMPDOC_TPL_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "01cf02349306b508"
   },
   "EMPDOC_TYPES": {
    "file": "00_config.js",
@@ -7583,6 +7668,11 @@
    "kind": "const",
    "sha": "0fd35ecf494a563f"
   },
+  "TRAIN_QUIZ_TEXT_IDX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "a282f720062b37d6"
+  },
   "TRIGGER_GROUPS": {
    "file": "00_config.js",
    "kind": "const",
@@ -7941,7 +8031,7 @@
   "acknowledgeDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "c9ac50676df01edd"
+   "sha": "b16ab7637211bdf5"
   },
   "activityBlocksDecode_": {
    "file": "20_timeclock.js",
@@ -9081,7 +9171,12 @@
   "coachRecapBuckets_": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "849e16068940cd7f"
+   "sha": "a7b6cc8754b9fcd6"
+  },
+  "coachRecapCutoff_": {
+   "file": "82_coaching.js",
+   "kind": "function",
+   "sha": "0e2eceb1ee0f5c5f"
   },
   "coachRetractionMailHtml_": {
    "file": "82_coaching.js",
@@ -9196,7 +9291,7 @@
   "createCoaching": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "9eb558b6f31f6c32"
+   "sha": "079b6c414ebda188"
   },
   "createFormToken": {
    "file": "61_forms.js",
@@ -9681,7 +9776,7 @@
   "emailEmpDocCopy": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "6e4e61db9b7208de"
+   "sha": "da26465dc70d3bd8"
   },
   "emailFromCallNote": {
    "file": "30_callnotes.js",
@@ -9693,6 +9788,16 @@
    "kind": "function",
    "sha": "ad43e50edb1883c6"
   },
+  "empDocAckTextFor_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "4996f46494a847f7"
+  },
+  "empDocBodyLinkedImage_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "cb63c88cd05b5a70"
+  },
   "empDocCanManagerSee_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9701,7 +9806,7 @@
   "empDocCertificateHtml_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "815c4f76ce760eb5"
+   "sha": "519914e2e82e9756"
   },
   "empDocContentHashMatches_": {
    "file": "20_timeclock.js",
@@ -9721,27 +9826,37 @@
   "empDocCopyEmailParts_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "fde574ee0d7ea613"
+   "sha": "e40fdc0da56f3bd1"
   },
   "empDocCopyFileName_": {
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "65bcf69b6d00d214"
   },
+  "empDocCopyManagers_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "dd70e11580503d14"
+  },
   "empDocCopyRecipients_": {
    "file": "81_empdocs.js",
    "kind": "function",
    "sha": "5b3229bd854eecdb"
   },
-  "empDocHasSigBlock_": {
+  "empDocCopySentCount_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "11a579835170fd04"
+   "sha": "c3731cf31bb12b92"
+  },
+  "empDocDrawnPng_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "a340ad50a3a8d6f9"
   },
   "empDocInitialsCheck_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "c02fadb7ee48c3bd"
+   "sha": "b50522cec525b2bd"
   },
   "empDocLatestSigRow_": {
    "file": "81_empdocs.js",
@@ -9838,6 +9953,11 @@
    "kind": "function",
    "sha": "60f4303d64c665f8"
   },
+  "empDocRecordState_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "cff02d7ad99b2a2f"
+  },
   "empDocRowToObj_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -9871,12 +9991,22 @@
   "empDocValidateIssue_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c0d015a63f25a591"
+   "sha": "1b42724759b8b37b"
   },
   "empDocValidateResponses_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7ca0a4efdfc1bf23"
+   "sha": "1c8fd0ba440cf534"
+  },
+  "empDocVerdictLine_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "034181c1870088ca"
+  },
+  "empDocVerdict_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "6d24af77d5cf3d18"
   },
   "empDocsOverdueAll_": {
    "file": "20_timeclock.js",
@@ -10436,7 +10566,7 @@
   "getEmpDocCertificate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "0d37a0c750eebc13"
+   "sha": "7e6c8bebddf8fba5"
   },
   "getEmpDocLetterheads": {
    "file": "81_empdocs.js",
@@ -10691,7 +10821,7 @@
   "getMyDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "f4ca212d3ec8d52b"
+   "sha": "e5125b4a53e7c1a2"
   },
   "getMyDocs": {
    "file": "81_empdocs.js",
@@ -11226,7 +11356,7 @@
   "hrNoticeTargets_": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "60609e0c3352073c"
+   "sha": "0dcd8e777ff6c932"
   },
   "hrSweepFailed_": {
    "file": "81_empdocs.js",
@@ -11756,7 +11886,7 @@
   "issueDoc": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "ec024abbdb31bd26"
+   "sha": "469ae9bd92df819f"
   },
   "kbAddComment": {
    "file": "70_kb.js",
@@ -13978,6 +14108,11 @@
    "kind": "function",
    "sha": "1a37be5691c30e7c"
   },
+  "rosterManagerEmails_": {
+   "file": "81_empdocs.js",
+   "kind": "function",
+   "sha": "18a9fd24c9302443"
+  },
   "routeLookupReserve_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -14101,7 +14236,7 @@
   "saveEmpDocTemplate": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "9dcfec6e079bc845"
+   "sha": "9ebf827b236e96f2"
   },
   "saveExternalLinks": {
    "file": "10_core.js",
@@ -14136,7 +14271,7 @@
   "saveQuiz": {
    "file": "80_training.js",
    "kind": "function",
-   "sha": "0a949ae6f505dbf8"
+   "sha": "9e7f330f4d2e6c29"
   },
   "saveRetentionConfig": {
    "file": "10_core.js",
@@ -14301,7 +14436,7 @@
   "sendCoachingRecapDigest": {
    "file": "82_coaching.js",
    "kind": "function",
-   "sha": "ca5d1c9d48560cc8"
+   "sha": "f922d58f29e9540e"
   },
   "sendDailyMissedPunchAlerts": {
    "file": "20_timeclock.js",
@@ -15186,7 +15321,7 @@
   "verifyDocSignature": {
    "file": "81_empdocs.js",
    "kind": "function",
-   "sha": "5c72be2813a94c9c"
+   "sha": "9bab185044e01e0d"
   },
   "verifyFormSubmissionIntegrity_": {
    "file": "61_forms.js",

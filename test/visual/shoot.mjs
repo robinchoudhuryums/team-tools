@@ -357,6 +357,8 @@ const SCENARIOS = [
   // the signature block signed); the issue form's Preview on the employee's letterhead; the
   // admin's letterhead cards; the written document's printed copy.
   ['empdocs-letterhead-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
+  // Cycle 26 F14: a signed document whose signature record no longer verifies — the note above it.
+  ['empdocs-record-altered-light-wide', { tool: 'develop', tab: 'myDocs' }, WIDE, 'light', '', "edOpenDoc_('d-altered')", { wait: 1200 }],
   ['empdocs-letterhead-dark-mobile', { tool: 'develop', tab: 'myDocs' }, MOBILE, 'dark', '', "edOpenDoc_('d-signed')", { wait: 1200 }],
   ['empdocs-issue-preview-light-wide', { tool: 'develop', tab: 'docsManage' }, WIDE, 'light', '',
     "setTimeout(function () { var e = document.getElementById('ed-is-emp'); if (e) { e.value = e.options[1] ? e.options[1].value : ''; e.dispatchEvent(new Event('change')); } var t = document.getElementById('ed-is-title'); if (t) t.value = 'Remote work policy'; var b = document.getElementById('ed-is-body'); if (b) b.value = ':::center\\n**Remote work policy**\\n:::\\n\\nYou may work from home on Fridays with your manager\u2019s approval.\\n\\n[signature]'; var p = document.querySelector('[data-ed-wp=\\\"preview\\\"]'); if (p) p.click(); var w = document.getElementById('ed-is-wp'); if (w) w.scrollIntoView(); }, 800);", { wait: 1800 }],
@@ -739,11 +741,15 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   const ctx = await browser.newContext(ctxOpts);
   // HB4.1: the handbook's form viewer loads pdf.js from cdnjs; the harness
   // serves the same pinned build from node_modules (no network in CI or here).
-  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', (route) => {
+  // Cycle 26 F56: both apps FETCH it now (checksum first), so the answer
+  // carries the CORS header a fetch needs; jsDelivr is the second source.
+  const servePdfJs = (route) => {
     const file = path.join(HERE, 'node_modules/pdfjs-dist/build', path.basename(new URL(route.request().url()).pathname));
-    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
-    return route.fulfill({ path: file, contentType: 'text/javascript' });
-  });
+    if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '', headers: { 'access-control-allow-origin': '*' } });
+    return route.fulfill({ path: file, contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
+  };
+  await ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/*', servePdfJs);
+  await ctx.route('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/*', servePdfJs);
   // ED3: the finished copy fetches pdf-lib from jsDelivr (SHA-256 pinned);
   // the harness serves the same pinned file from node_modules.
   await ctx.route('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', (route) =>

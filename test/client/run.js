@@ -1103,7 +1103,8 @@ test('TRIPWIRE (H-1): coaching overdue consumers use coachParseTs_, never the T-
   // trainQuizAttemptList_ (cycle 23 TRN-1) reads a QuizAttempts SubmittedAt —
   // the same CONFIG.TIMEZONE space-form stamp — for the quiz retry limit.
   const GUARDED = ['getCoachingDashboard', 'coachUnackedAll_', 'getMyCoaching',
-    'coachRecapBuckets_', 'coachAnalytics_', 'trainQuizAttemptList_'];
+    'coachRecapBuckets_', 'coachAnalytics_', 'trainQuizAttemptList_',
+    'sendCoachingRecapDigest'];   // cycle 26 F44: the previous recap's heartbeat stamp
   GUARDED.forEach((fn) => {
     const src = extractRawFunction('Code.js', fn);
     assert.ok(/coachParseTs_\(/.test(src), fn + ' parses createdAt via coachParseTs_');
@@ -4365,7 +4366,7 @@ test('KB-HL (operator 2026-10-27): a search word is marked where a WORD STARTS �
 // status-chip renderer, and the signature-pad export-cap parity tripwire.
 console.log('\nempdocs — validator / chip / pad export cap (T3)');
 ['EMPDOC_TYPES', 'EMPDOC_TITLE_MAX', 'EMPDOC_BODY_MAX',
- 'EMPDOC_FIELD_TYPES', 'EMPDOC_SIGN_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX'].forEach((name) => {
+ 'EMPDOC_FIELD_TYPES', 'EMPDOC_SIGN_FIELD_TYPES', 'EMPDOC_FIELD_CAP', 'EMPDOC_FIELD_LABEL_MAX', 'EMPDOC_RESPONSE_MAX', 'EMPDOC_RESPONSES_TOTAL_MAX'].forEach((name) => {
   const m = codeSrc.match(new RegExp('const (' + name + '\\s*=\\s*[^;]+);'));
   assert.ok(m, name + ' declaration found in Code.js');
   vm.runInContext(m[1] + ';', sb, { filename: 'Code.js#' + name });
@@ -4373,6 +4374,7 @@ console.log('\nempdocs — validator / chip / pad export cap (T3)');
 vm.runInContext(extractRawFunction('Code.js', 'empDocValidateFields_'), sb, { filename: 'Code.js#empDocValidateFields_' });
 vm.runInContext(extractRawFunction('Code.js', 'empDocValidateResponses_'), sb, { filename: 'Code.js#empDocValidateResponses_' });
 vm.runInContext(extractRawFunction('Code.js', 'empDocNeedsAction_'), sb, { filename: 'Code.js#empDocNeedsAction_' });
+vm.runInContext(extractRawFunction('Code.js', 'empDocBodyLinkedImage_'), sb, { filename: 'Code.js#empDocBodyLinkedImage_' });   // cycle 26 F44
 vm.runInContext(extractRawFunction('Code.js', 'empDocValidateIssue_'), sb,
   { filename: 'Code.js#empDocValidateIssue_' });
 test('empDocValidateFields_: normalizes, slugs ids, dedupes, whitelists type, caps', () => {
@@ -5822,7 +5824,8 @@ test('C13: EmpDocs hashes default to the NUL delimiter; every recompute site dua
   const ack = extractRawFunction('Code.js', 'acknowledgeDoc');
   assert.ok(/empDocContentHashMatches_\(/.test(ack),
     'acknowledgeDoc integrity gate dual-verifies — a pre-C13 doc must still sign');
-  const verify = extractRawFunction('Code.js', 'verifyDocSignature');
+  assert.ok(/return empDocVerdict_\(d, empDocLatestSigRow_\(d\.docId\)\)/.test(extractRawFunction('Code.js', 'verifyDocSignature')), 'Verify is the shared verdict (cycle 26 F14)');
+  const verify = extractRawFunction('Code.js', 'empDocVerdict_');
   assert.ok(/empDocContentHashMatches_\(/.test(verify), 'verifyDocSignature content check dual-verifies');
   assert.ok(/EMPDOC_HASH_DELIM_LEGACY/.test(verify),
     'verifyDocSignature recomputes the signature hash in the legacy form too');
@@ -23269,11 +23272,11 @@ test('F-24: a doc with NO content hash is REFUSED at signing, and verify reports
   assert.ok(/if \(!d\.contentHash\) \{\s*return \{ success: false, error: 'This document has no integrity hash on record/.test(ack), 'a hash-less doc cannot be signed');
   assert.ok(ack.indexOf('if (!d.contentHash)') < ack.indexOf('empDocContentHashMatches_('), 'the missing-hash refusal precedes the mismatch check');
   assert.ok(!/if \(d\.contentHash && !empDocContentHashMatches_/.test(ack), 'the gate is no longer conditional on the hash existing');
-  const ver = foNc(extractRawFunction('Code.js', 'verifyDocSignature'));
+  const ver = foNc(extractRawFunction('Code.js', 'empDocVerdict_'));   // cycle 26 F14: Verify's recompute lives here
   assert.ok(/const hashWarning = \(contentMatch === null\) \? 'No content hash on record/.test(ver), 'a null contentMatch is named');
   assert.strictEqual((ver.match(/warning: hashWarning/g) || []).length, 2, 'both the unsigned and the signed returns carry it');
   const cli = foNc(fs.readFileSync(path.join(__dirname, '../../web-app/train/script_empdocs.html'), 'utf8'));
-  assert.ok(/res\.warning \? ' — ' \+ res\.warning/.test(cli) && /Integrity NOT verified/.test(cli), 'the client renders the warning, never a bare "legacy row" info toast');
+  assert.ok(/'Not signed yet — ' \+ \(res\.warning \? res\.warning/.test(cli) && /var why = res\.warning \|\|/.test(cli) && /Integrity NOT verified/.test(cli), 'the client renders the warning, never a bare "legacy row" info toast');
 });
 
 test('F-23: an Area Eligibility value that names a STATE beside a radius is UNKNOWN — a warehouse\'s own state and the operator\'s prose are not', () => {
@@ -28422,10 +28425,10 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
-  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
+  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveEmpDocTemplate', 'saveMyScratchpad', 'saveQuiz', 'scratchpadPageOp',
     'setOneOnOneCadence', 'sheetReplaceBody_', 'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known sixteen (cycle 26 F40 moved the handbook quizzes and forms onto the one in-place writer, sheetReplaceBody_; HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names; Batch F a manager\'s cadence stamp)');
-  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'logOneOnOne', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
+    'the raw plain-text writers are exactly the known eighteen (cycle 26 F44 made a template name and body and a quiz title text cells; cycle 26 F40 moved the handbook quizzes and forms onto the one in-place writer, sheetReplaceBody_; HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names; Batch F a manager\'s cadence stamp)');
+  assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'logOneOnOne', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings', 'saveEmpDocTemplate', 'saveQuiz',
     'setOneOnOneCadence', 'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation), the activity summary (Batch G), and the 1-on-1 log and cadence (Batch F)');
   // Every caller chain of a CALLER_LOCKED helper reaches a lock holder: a
@@ -30022,7 +30025,7 @@ test('FU-B8a: every Employee Doc read checks the content hash — an altered doc
   assert.strictEqual(note({ integrity: 'unverifiable', isOwner: true }), '', 'a rep is not shown a legacy-row note they can do nothing about');
   assert.ok(/data-integrity="unverifiable"/.test(note({ integrity: 'unverifiable', isOwner: false })), 'a manager is');
   assert.strictEqual(note({ integrity: 'ok' }), '');
-  assert.ok(/body \+= edIntegrityNoteHtml_\(doc\);/.test(extractFunction('train/script_empdocs.html', 'edRenderDoc_')), 'the reader renders it');
+  assert.ok(/body \+= edIntegrityNoteHtml_\(doc\) \+ edRecordNoteHtml_\(doc\);/.test(extractFunction('train/script_empdocs.html', 'edRenderDoc_')), 'the reader renders it (and, cycle 26 F14, the signature record\'s note)');
   assert.ok(/\.ed-integrity-note \{/.test(fs.readFileSync(path.join(FU_WEB, 'train/script_empdocs.html'), 'utf8')), 'with a rule of its own (the T6 ratchet)');
 });
 
@@ -33556,7 +33559,7 @@ test('HR-3 / MAIL-3 (cycle 23): the coaching recap counts a FAILED send as faile
       getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann'], ['E2', 'Bo']], empRosterEmail_: (r) => r[1].toLowerCase() + '@x',
       esc_: (x) => x, brandedKvRows_: () => '', buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => '',
       coachSendMail_: (m) => !(opts.failTo || []).includes(m.to) });
-    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), ctx);
+    autoContract_(ctx); vm.runInContext(extractRawFunction('Code.js', 'coachRecapCutoff_') + extractRawFunction('Code.js', 'sendCoachingRecapDigest'), ctx);   // cycle 26 F44
     ctx.sendCoachingRecapDigest();
     return log;
   };
@@ -38202,7 +38205,7 @@ const b8aConst_ = (k) => {
 };
 test('F41 (cycle 25): an HR notice whose issuer is no longer a roster manager goes to the rep\'s current manager (or the manager list) and says why — never to a departed or demoted address (driven)', () => {
   const ctx = vm.createContext({ String, Object, Array, Math, JSON, console: { warn() {} } });
-  ['hrNoticeRoute_', 'hrNoticeTargets_', 'hrDepartedIssuerLine_', 'notifyEmpDocSigned_', 'notifyManagerOfCoachingAck_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  ['hrNoticeRoute_', 'hrNoticeTargets_', 'rosterManagerEmails_', 'hrDepartedIssuerLine_', 'notifyEmpDocSigned_', 'notifyManagerOfCoachingAck_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   const J = (x) => JSON.parse(JSON.stringify(x));
   const R = (...a) => J(ctx.hrNoticeRoute_(...a));
   assert.deepStrictEqual(R('Boss@x.com', 'm2@x.com', ['boss@x.com', 'm2@x.com'], ['g@x.com']), { to: ['Boss@x.com'], rerouted: false }, 'a current manager keeps the notice, case-insensitively');
@@ -39097,7 +39100,7 @@ test('E1 follow-ups (cycle 25): the rep- and agent-facing reminders log each sen
     getOrCreateEmpDocSheet_: () => ({ getLastRow: () => 1 }), coachRecapBuckets_: () => ({ E1: [{ severity: 'praise', createdAt: '2026-10-14' }], E2: [{ severity: 'praise', createdAt: '2026-10-13' }] }),
     getEmployeeRosterRows_: () => [['h'], ['E1', 'Ann'], ['E2', 'Bob']], empRosterEmail_: (r) => (r[0] === 'E1' ? 'a@x' : 'b@x'),
     brandedKvRows_: () => '', esc_: String, buildBrandedEmailHtml_: () => '', safeWebAppUrl_: () => 'u', coachSendMail_: (m) => m.to === 'a@x' });
-  vm.runInContext(extractRawFunction('Code.js', 'sendCoachingRecapDigest'), c);
+  vm.runInContext(extractRawFunction('Code.js', 'coachRecapCutoff_') + extractRawFunction('Code.js', 'sendCoachingRecapDigest'), c);   // cycle 26 F44
   c.sendCoachingRecapDigest();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c.__rows)), [['coachingRecap', 'a@x', 'sent', 1, ''], ['coachingRecap', 'b@x', 'failed', 1, 'the recap email could not be sent']]);
   // The overdue-documents nudge: the static shape (the training digest's drive is the HR-3 pin's).
@@ -42764,19 +42767,22 @@ test('HBR3-c: the quiz screens keep the refresh\'s rules — every header card i
   assert.strictEqual(sb.hbQuizStanding_([Object.assign(F(9 * H), { email: 'b@x.org' })], [], 'a@x.org', 'q-1', 10 * H).lastMs, null, 'another reader\'s attempt is not theirs');
 });
 
-test('HB4.1-e: the viewer loads ONE pinned pdf.js build from cdnjs only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build', () => {
+test('HB4.1-e: the viewer loads ONE pinned pdf.js build only when a form is opened, runs it on the page\'s thread, never evaluates font code, and the harness serves the same build (cycle 26 F56: fetched and checksum-checked, cdnjs then jsDelivr)', () => {
   const page = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
-  const base = /var HB_PDFJS_BASE = '(https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/pdf\.js\/(\d+\.\d+\.\d+)\/)';/.exec(page);
-  assert.ok(base, 'an exact version on cdnjs');
+  const ver = /var HB_PDFJS_VERSION = '(\d+\.\d+\.\d+)';/.exec(page);
+  assert.ok(ver, 'an exact version');
   const pkg = JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'test/visual/package.json'), 'utf8'));
-  assert.strictEqual((pkg.devDependencies || {})['pdfjs-dist'], base[2], 'the harness pins the same build');
+  assert.strictEqual((pkg.devDependencies || {})['pdfjs-dist'], ver[1], 'the harness pins the same build');
   const sh = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
-  assert.ok(sh.indexOf("ctx.route('" + base[1] + "*'") >= 0, 'and serves it in place of cdnjs');
+  assert.ok(sh.indexOf("ctx.route('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/" + ver[1] + "/*', servePdfJs)") >= 0 &&
+    sh.indexOf("ctx.route('https://cdn.jsdelivr.net/npm/pdfjs-dist@" + ver[1] + "/build/*', servePdfJs)") >= 0, 'and serves it in place of both sources');
+  assert.ok(/'access-control-allow-origin': '\*'/.test(sh.slice(sh.indexOf('const servePdfJs'), sh.indexOf("ctx.route('https://cdnjs"))), 'with the header a fetch needs');
   assert.ok(/isEvalSupported: false/.test(extractFnFrom(page, 'hbOpenForm_')), 'pdf.js never evaluates a PDF\'s font code');
-  assert.ok(/load\('pdf\.worker\.min\.js'/.test(extractFnFrom(page, 'hbPdfJs_')), 'the worker code is a plain script — no cross-origin Worker');
+  const ld = extractFnFrom(page, 'hbPdfJs_');
+  assert.ok(/hbCheckedScript_\(HB_PDFJS_SOURCES, HB_PDFJS_FILES\[1\]\[0\]/.test(ld) && !/new Worker/.test(page), 'the worker code is run as a plain script — no cross-origin Worker');
   const callers = (page.match(/hbPdfJs_\(/g) || []).length;
   assert.strictEqual(callers, 2, 'declared once and called once — from the viewer');
-  assert.ok(!/HB_PDFJS_BASE/.test(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8')), 'never at page load');
+  assert.ok(!/HB_PDFJS_/.test(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/index.html'), 'utf8')), 'never at page load');
 });
 
 test('HB4.1-f: the import result says what happened to the forms — checked, stored, unchanged, a failed write, or an older file — and the dialog draws that line beside the quizzes (driven)', () => {
@@ -43704,8 +43710,16 @@ const hCtx_ = (extra) => {
   ['const EMPDOC_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_TITLE_MAX = \\d+;', 'const EMPDOC_BODY_MAX = \\d+;', 'const EMPDOC_FIELD_TYPES = \\[[^\\]]*\\];', 'const EMPDOC_SIGN_FIELD_TYPES = \\[[^\\]]*\\];',
     'const EMPDOC_FIELD_CAP = \\d+;', 'const EMPDOC_FIELD_LABEL_MAX = \\d+;', 'const EMPDOC_PDF_KEY_RE = /[^;]*;', 'const EMPDOC_PDF_MAX_BYTES = \\d+;',
     'const EMPDOC_PDF_NAME_MAX = \\d+;', 'const EMPDOC_PDF_MAX_PAGES = \\d+;', 'const EMPDOC_COPY_MAX_BYTES = \\d+;', 'const EMPDOC_COPY_EXTRA_MAX = \\d+;', "const EMPDOC_FILES_TAB = '[^']*';", "const EMPDOC_SIG_TAB = '[^']*';",
-    'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];']
+    'const EMPDOC_SIG_HEADERS = \\[[^\\]]*\\];', 'const EDS = \\{[^}]*\\};', 'const KB_MANUAL_IMAGES_HEADERS = \\[[^\\]]*\\];',
+    // cycle 26 Batch 6: what the verdict, the copy cap and the sign-path checks read
+    'const EMPDOC_ACK_VERSION = \\d+;', 'const EMPDOC_ACK_TEXT = [^;]*;', 'const EMPDOC_ACK_TEXTS = \\{[^}]*\\};', "var EMPDOC_HASH_DELIM_LEGACY = ' ';",
+    'const EMPDOC_COPY_WINDOW_MAX = \\d+;', 'const EMPDOC_COPY_WINDOW_SECS = \\d+;', 'const EMPDOC_SIG_MIN_CHARS = \\d+;', 'const EMPDOC_RESPONSES_TOTAL_MAX = \\d+;']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+  ['fmtDate_', 'fmtTime_', 'tzAbbr_'].forEach((f, i) => { if (typeof ctx[f] !== 'function') ctx[f] = () => ['2026-11-16', '09:00:00', 'CST'][i]; });
+  if (!ctx.CONFIG) ctx.CONFIG = { TIMEZONE: 'America/Chicago' };
+  ['empDocBodyLinkedImage_', 'empDocContentHash_', 'empDocContentHashMatches_', 'empDocSignatureHash_', 'empDocVerdict_', 'empDocRecordState_', 'empDocVerdictLine_',
+    'empDocAckTextFor_', 'empDocCopyManagers_', 'empDocCopySentCount_', 'empDocDrawnPng_']
+    .forEach((f) => { if (typeof ctx[f] !== 'function') vm.runInContext(extractRawFunction('Code.js', f), ctx); });
   ['empDocSha256Hex_', 'empDocValidateIssue_', 'empDocValidateFields_', 'empDocNormBox_', 'empDocPdfLine_', 'empDocPdfFromBody_',
     'empDocPdfPageCount_', 'empDocPdfPagesOf_', 'empDocPdfItem_', 'empDocCopyRecipients_', 'empDocCopyFileName_', 'empDocCopyEmailParts_', 'empDocCopyAuditNote_', 'emailEmpDocCopy', 'empDocPdfCheck_', 'getEmpDocPdf', 'empDocCertificateHtml_', 'getEmpDocCertificate', 'empDocLatestSigRow_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
@@ -43790,7 +43804,7 @@ test('Batch H: the issue stores the PDF BEFORE the row that names it (a store th
   const gate = ack.search(/empDocContentHashMatches_\(d\.contentHash/), pdfAt = ack.search(/empDocPdfCheck_\(d\)/), write = ack.search(/sheet\.getRange\(found\.rowIdx/);
   assert.ok(gate > 0 && pdfAt > gate && pdfAt < write, 'THE RULE: a PDF document is signed over its bytes — re-hashed after the content gate, before anything is written');
   assert.ok(/if \(!pc\.ok\) return \{ success: false/.test(ack));
-  const ver = stripJsComments_(extractRawFunction('Code.js', 'verifyDocSignature'));
+  const ver = stripJsComments_(extractRawFunction('Code.js', 'empDocVerdict_'));   // cycle 26 F14
   assert.ok(/pdfMatch = pc\.ok \? true : \(pc\.why === 'altered' \|\| pc\.why === 'missing' \? false : null\)/.test(ver), 'unreadable is unknown (null), never a verdict');
   assert.ok((ver.match(/pdfMatch === false/g) || []).length === 2, 'both return paths count a changed file as tampering');
   assert.ok(/pdfKey: EMPDOC_PDF_KEY_RE\.test\(/.test(extractRawFunction('Code.js', 'empDocRowToObj_')), 'a cell that is not a PDF key reads as none');
@@ -43872,11 +43886,13 @@ test('ED1: the initials — a document with an initials box needs a drawn PNG (c
   vm.runInContext(extractRawFunction('Code.js', 'empDocSignatureHash_'), c);
   vm.runInContext(new RegExp('const EMPDOC_INITIALS_MAX_CHARS = \\d+;').exec(serverSource())[0].replace(/^const /, 'var '), c);
   const ini = [{ id: 'i', type: 'initials' }];
-  assert.deepStrictEqual(hJ(c.empDocInitialsCheck_([{ id: 't', type: 'text' }], 'data:image/png;base64,AAAA')), { initials: '' }, 'no initials box: nothing kept');
+  const PNG = 'data:image/png;base64,iVBORw0KGgo' + 'A'.repeat(240);   // cycle 26 F44: the pad's export — the PNG signature, long enough to be a drawing
+  assert.deepStrictEqual(hJ(c.empDocInitialsCheck_([{ id: 't', type: 'text' }], PNG)), { initials: '' }, 'no initials box: nothing kept');
   assert.ok(/Draw your initials/.test(c.empDocInitialsCheck_(ini, '').error), 'missing');
   assert.ok(/Draw your initials/.test(c.empDocInitialsCheck_(ini, 'javascript:alert(1)').error), 'not a PNG data URL');
-  assert.ok(/too large/.test(c.empDocInitialsCheck_(ini, 'data:image/png;base64,' + 'A'.repeat(20000)).error), 'over the cap');
-  assert.strictEqual(c.empDocInitialsCheck_(ini, 'data:image/png;base64,AAAA').initials, 'data:image/png;base64,AAAA');
+  assert.ok(/Draw your initials/.test(c.empDocInitialsCheck_(ini, 'data:image/png;base64,AAAA').error), 'F44: a PNG data URL that is not a PNG is not a drawing');
+  assert.ok(/too large/.test(c.empDocInitialsCheck_(ini, PNG + 'A'.repeat(20000)).error), 'over the cap');
+  assert.strictEqual(c.empDocInitialsCheck_(ini, PNG).initials, PNG);
   const h0 = c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}');
   assert.strictEqual(c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}', undefined, ''), h0, 'no initials: the hash every earlier signature carries');
   const h1 = c.empDocSignatureHash_('ch', 'E1', 'd1', 'sig', 1, '{"a":"b"}', undefined, 'data:image/png;base64,AAAA');
@@ -43887,7 +43903,7 @@ test('ED1: the initials — a document with an initials box needs a drawn PNG (c
   assert.ok(/empDocInitialsCheck_\(d\.fields, initialsDataUrl\)/.test(ack) && /EMPDOC_ACK_VERSION, responsesRaw, undefined, ini\.initials\)/.test(ack) && /sigHash, cert, ini\.initials\]/.test(ack), 'checked, hashed and stored');
   assert.ok(ack.indexOf('empDocInitialsCheck_') < ack.indexOf('appendRow'), 'checked before anything is written');
   assert.ok(/'\|initials'/.test(ack), 'the certificate JSON names what the hash covers');
-  const ver = extractRawFunction('Code.js', 'verifyDocSignature');
+  const ver = extractRawFunction('Code.js', 'empDocVerdict_');   // cycle 26 F14
   assert.ok(/rowInitials = String\(sigRow\[EDS\.INITIALS\]/.test(ver) && /d\.responsesRaw, undefined, rowInitials\)/.test(ver), 'verify recomputes with the row\'s initials');
   assert.ok(/'InitialsDataUrl'\]/.test(serverSource()) && /INITIALS:7 \}/.test(serverSource()), 'a trailing column on DocSignatures');
 });
@@ -43903,7 +43919,7 @@ test('ED1: a signed document shows its drawings — getMyDoc reads the newest si
   swapped = true;
   assert.strictEqual(c.empDocLatestSigRow_('d1'), null, 'a row that no longer carries the key it was found by is refused');
   const gm = extractRawFunction('Code.js', 'getMyDoc');
-  assert.ok(/d\.status === 'signed' && \(?\(d\.fields \|\| \[\]\)\.some\(function \(f\) \{ return EMPDOC_SIGN_FIELD_TYPES\.indexOf\(f\.type\) >= 0; \}\)/.test(gm) && /out\.signatureImage = /.test(gm) && /out\.initialsImage = /.test(gm), 'only a signed document with a drawing box carries them');
+  assert.ok(/if \(sr && d\.status === 'signed'\) \{ out\.signatureImage = String\(sr\[EDS\.SIGNATURE\]/.test(gm) && /out\.initialsImage = /.test(gm), 'a signed document carries them (cycle 26 F44: every signed one — a written document with no [signature] line got none)');
   assert.ok(gm.indexOf('empDocCanManagerSee_') < gm.indexOf('empDocLatestSigRow_'), 'after the read gate');
   const html = c.empDocCertificateHtml_({ title: 'T', fields: [{ id: 's', label: 'Sign', type: 'signature', box: { page: 2 } }, { id: 'i', label: 'Init', type: 'initials', box: { page: 1 } }],
     responses: {}, signature: 'data:image/png;base64,AAAA', initials: 'data:image/png;base64,BBBB' });
@@ -44209,6 +44225,7 @@ test('ED3: emailEmpDocCopy — only who may read the document, once signed or co
     findEmpDocRow_: () => ({ rowIdx: 2, doc: { docId: 'doc-1', empId: 'E1', status: status, title: 'PIP', issuedBy: 'boss@ums.com', signedAt: '2026-11-03 10:00:00' } }),
     empDocCanManagerSee_: (e) => !!e.isManager, lookupEmployeeById_: () => ({ name: 'Ann', email: 'ann@ums.com', managerEmail: 'mgr@ums.com' }),
     isOrgEmail_: (a) => /@ums\.com$/.test(a), sendRepEmail_: (e, o) => sent.push(o), writeAuditLog_: (e, a, d, t, adj, n, note) => audit.push([a, note]),
+    rosterManagerEmails_: () => ['boss@ums.com', 'mgr@ums.com'],   // cycle 26 F15: both are managers on the roster today
     buildBrandedEmailHtml_: (h, inner) => '<html>' + inner + '</html>', fmtDate_: () => '2026-11-06' }, extra || {}));
   const blobs = [];
   const withBlob = (x) => { x.Utilities.newBlob = (bytes, type, name) => { blobs.push([bytes.length, type, name]); return { name }; }; return x; };
@@ -44245,7 +44262,7 @@ const ed4ServerCtx_ = (extra) => {
   ['const EMPDOC_LETTERHEAD_SEED = \\[[^\\]]*\\];', 'const EMPDOC_LETTERHEAD_MAX = \\d+;', 'const EMPDOC_LOGO_KEY_RE = /[^;]*;', "const EMPDOC_LETTERHEADS_PROP = '[^']*';",
     "const EMPDOC_LOGO_TAB = '[^']*';", 'const EMPDOC_LOGO_MAX_BYTES = \\d+;', 'const EMPDOC_LOGO_TYPES = \\[[^\\]]*\\];']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  ['empDocLetterheadList_', 'empDocLetterheadFor_', 'empDocLetterheadUpsert_', 'empDocLetterheadPick_', 'empDocHasSigBlock_',
+  ['empDocLetterheadList_', 'empDocLetterheadFor_', 'empDocLetterheadUpsert_', 'empDocLetterheadPick_',
     'getEmpDocLetterheads', 'saveEmpDocLetterhead', 'deleteEmpDocLetterhead', 'setEmpDocLetterheadLogo', 'empDocLetterheads_']
     .forEach((f) => { if (!(extra && extra[f])) vm.runInContext(extractRawFunction('Code.js', f), ctx); });
   return ctx;
@@ -44280,7 +44297,6 @@ test('ED4: an employee\'s document starts on the letterhead the roster Company n
     ['infimed', 'infimed', 'infimed', 'ums', 'ums', 'ums', 'ums']);
   assert.deepStrictEqual([hJ(c.empDocLetterheadPick_('', list)), hJ(c.empDocLetterheadPick_(undefined, list)), hJ(c.empDocLetterheadPick_('infimed', list))], [{ id: '' }, { id: '' }, { id: 'infimed' }]);
   assert.ok(/no longer exists/.test(c.empDocLetterheadPick_('gone', list).error));
-  assert.deepStrictEqual(['Read.\n[signature]', '  [Signature]  \nnext', 'Sign: [signature] here', '[signatures]'].map((b) => c.empDocHasSigBlock_(b)), [true, true, false, false]);
 });
 
 test('ED4: an admin\'s edit replaces its letterhead (keeping its logo) or adds one with an id from its name, made unique; no name, a long field, a removed id or a seventh is refused (driven)', () => {
@@ -44335,10 +44351,10 @@ test('ED4: the letterhead endpoints — the read is any manager\'s (with each em
 
 test('ED4: a document carries its letterhead id beside the PdfKey (not in the content hash); getMyDoc carries the letterhead and the employee\'s name, and the drawing for a [signature] block; the certificate is headed by the letterhead — every word escaped, a logo only as a PNG or JPEG data URL — and ends with its footer; roster column S is the Company, and the cache key moved (source + driven)', () => {
   const issue = extractRawFunction('Code.js', 'issueDoc');
-  assert.ok(/const lhPick = empDocLetterheadPick_\(payload && payload\.letterheadId, empDocLetterheads_\(\)\);(\s*\/\/[^\n]*)?\s*if \(lhPick\.error\) return \{ success: false, error: lhPick\.error \};/.test(issue) && /pdf \? pdf\.key : '', lhPick\.id,/.test(issue));
+  assert.ok(/lhPick = empDocLetterheadPick_\(payload && payload\.letterheadId, empDocLetterheads_\(\)\);(\s*\/\/[^\n]*)?\s*if \(lhPick\.error\) return \{ success: false, error: lhPick\.error \};/.test(issue) && /pdf \? pdf\.key : '', lhPick\.id,/.test(issue));
   assert.ok(!/letterhead/i.test(extractRawFunction('Code.js', 'empDocContentHash_')), 'the letterhead is not hashed');
   const gm = extractRawFunction('Code.js', 'getMyDoc');
-  assert.ok(/letterhead: empDocLetterheadView_\(d\.letterheadId\)/.test(gm) && /empName: \(lookupEmployeeById_\(d\.empId\) \|\| \{\}\)\.name/.test(gm) && /\|\| empDocHasSigBlock_\(d\.bodyMd\)/.test(gm));
+  assert.ok(/letterhead: empDocLetterheadView_\(d\.letterheadId\)/.test(gm) && /empName: \(lookupEmployeeById_\(d\.empId\) \|\| \{\}\)\.name/.test(gm) && /out\.signatureImage = String\(sr\[EDS\.SIGNATURE\]/.test(gm));
   const src = serverSource();
   assert.ok(/COMPANY:18,/.test(src) && /const ROSTER_CACHE_KEY = 'employee_roster_v12'/.test(src) && /'PdfKey','LetterheadId'\]/.test(src) && /PDF_KEY:15, LETTERHEAD:16 \}/.test(src));
   assert.ok(/company: String\(rows\[i\]\[EMP\.COMPANY\]/.test(extractRawFunction('Code.js', 'lookupEmployeeById_')));
@@ -47397,6 +47413,351 @@ test('F40 (cycle 26): a manual import whose image write fails over an EXISTING t
   assert.ok(r2.success && /Service Spreadsheets failed/.test(r2.images.error), JSON.stringify(r2.images));
   assert.deepStrictEqual(J2(book.sheets.ManualImages.grid), before, 'THE REGRESSION: the tab had been cleared before the write, so every handbook image was gone');
   assert.ok(!book.writes.some((w) => w[0] === 'ManualImages' && w[1] === 'clear'), 'nothing cleared the tab');
+});
+
+// ── Cycle 26 Batch 6 — Employee Docs integrity ──────────────────────────────
+console.log('\nCycle 26 Batch 6 — Employee Docs integrity: what "verified" means, the certificate and the copy, the copy email, the sign path, pdf.js, the keyboard');
+
+const C26_PNG = 'data:image/png;base64,iVBORw0KGgo' + 'A'.repeat(260);
+const c26EdSrc_ = () => fs.readFileSync(path.join(PA_WEB, 'train/script_empdocs.html'), 'utf8');
+/** A signed document and its signature row, hashed by the REAL functions. */
+function c26Signed_(over) {
+  const c = hCtx_(Object.assign({ esc_: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
+    trainCellTs_: (v) => String(v), getHrDocsSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC' }) }, over || {}));
+  const d = { docId: 'd1', empId: 'E1', docType: 'pip', title: 'PIP', bodyMd: 'Read and sign.', fieldsRaw: '', responsesRaw: '{"goal":"Ship it"}',
+    responses: { goal: 'Ship it' }, fields: [{ id: 'goal', label: 'Goal', type: 'text' }], status: 'signed', pdfKey: '', issuedAt: '2026-11-01 09:00:00', issuedBy: 'boss@ums.com', signedAt: '2026-11-03 10:00:00' };
+  d.contentHash = c.empDocContentHash_(d.bodyMd, d.title, d.docType, d.empId, d.fieldsRaw);
+  const sigHash = c.empDocSignatureHash_(d.contentHash, d.empId, d.docId, C26_PNG, 1, d.responsesRaw, undefined, '');
+  const row = ['d1', 'E1', '2026-11-03 10:00:00', C26_PNG, 1, sigHash, '{}', ''];
+  return { c, d, row };
+}
+
+test('F13 (cycle 26): "verified" is ONE rule — a signature row, nothing mismatched and NOTHING left unchecked; a PDF that could not be re-hashed is not verified, and Verify says so (driven: the server verdict and the client wording)', () => {
+  const { c, d, row } = c26Signed_();
+  let pdfCalls = 0, pdfAnswer = { ok: true };
+  c.empDocPdfCheck_ = () => { pdfCalls++; return pdfAnswer; };
+  const V = (doc, r, o) => hJ(c.empDocVerdict_(doc, r, o));
+  let v = V(d, row);
+  assert.deepStrictEqual([v.signed, v.contentMatch, v.match, v.pdfMatch, v.tampered, v.verified, v.unchecked, v.hasPdf], [true, true, true, null, false, true, [], false], 'a written document: content and signature checked — verified');
+  const withPdf = Object.assign({}, d, { pdfKey: 'empdocpdf-' + 'a'.repeat(24) });
+  v = V(withPdf, row);
+  assert.deepStrictEqual([v.pdfMatch, v.verified, v.hasPdf], [true, true, true], 'a PDF document whose bytes re-hash');
+  // THE CASE: the stored PDF cannot be READ (an edited header, a damaged cell).
+  pdfAnswer = { ok: false, why: 'unreadable', error: 'The PDF could not be read.' };
+  v = V(withPdf, row);
+  assert.deepStrictEqual([v.pdfMatch, v.tampered, v.match, v.verified, v.unchecked], [null, false, true, false, ['the PDF could not be read']],
+    'THE REGRESSION: tampered stayed false and match true, so Verify said "Integrity verified" about bytes nobody had hashed');
+  pdfAnswer = { ok: false, why: 'altered', error: 'The PDF on file is not the one that was issued (its SHA-256 differs).' };
+  v = V(withPdf, row);
+  assert.deepStrictEqual([v.pdfMatch, v.tampered, v.verified], [false, true, false]);
+  // The other halves: a changed response, a missing content hash, no signature row.
+  pdfAnswer = { ok: true };
+  v = V(Object.assign({}, d, { responsesRaw: '{"goal":"Changed"}' }), row);
+  assert.deepStrictEqual([v.match, v.tampered, v.verified], [false, true, false], 'the signature hash covers the responses');
+  v = V(Object.assign({}, d, { contentHash: '' }), row);
+  assert.deepStrictEqual([v.contentMatch, v.tampered, v.verified, v.unchecked], [null, false, false, ['no content hash is on record']], 'a legacy row is unverifiable, never verified and never tampered (F-24)');
+  v = V(d, null);
+  assert.deepStrictEqual([v.signed, v.verified, v.tampered], [false, false, false], 'nothing signed, nothing verified');
+  // The reader's check asks for no PDF read (getEmpDocPdf re-hashes the bytes where they are shown).
+  pdfCalls = 0;
+  v = V(withPdf, row, { pdf: false });
+  assert.deepStrictEqual([pdfCalls, v.pdfMatch, v.verified, v.unchecked], [0, null, true, []], 'pdf:false reads no bytes and does not count the PDF as unchecked');
+  // The client: green only on `verified`.
+  const ctx = vm.createContext({ String });
+  vm.runInContext(extractFnFrom(c26EdSrc_(), 'edVerifyToast_'), ctx);
+  const T = (r) => hJ(ctx.edVerifyToast_(r));
+  const signed = { signed: true, contentMatch: true, match: true, tampered: false, signedAt: '2026-11-03 10:00:00', unchecked: [] };
+  assert.deepStrictEqual(T(Object.assign({ verified: true }, signed)), { tone: 'success', text: '✓ Integrity verified — signature and content hashes match (signed 2026-11-03).' });
+  assert.ok(/signature, content and PDF hashes match/.test(T(Object.assign({ verified: true, hasPdf: true, pdfMatch: true }, signed)).text), 'a PDF document names the PDF check');
+  let t = T(Object.assign({ verified: false, hasPdf: true, pdfMatch: null, pdfNote: 'The PDF could not be read.', unchecked: ['the PDF could not be read'] }, signed, { unchecked: ['the PDF could not be read'] }));
+  assert.deepStrictEqual([t.tone, /The PDF could not be checked: The PDF could not be read\. Integrity NOT verified\./.test(t.text), /✓/.test(t.text)], ['warn', true, false],
+    'THE REGRESSION (client): match true and tampered false read "✓ Integrity verified": ' + t.text);
+  assert.strictEqual(T(signed).tone, 'warn', 'an answer with no `verified` (an older server) is never a pass');
+  t = T(Object.assign({}, signed, { tampered: true, match: false }));
+  assert.deepStrictEqual([t.tone, /INTEGRITY MISMATCH/.test(t.text)], ['error', true]);
+  t = T({ signed: false, completed: false, contentMatch: true, pdfMatch: false, hasPdf: true, pdfNote: 'The PDF is not stored.', tampered: true, unchecked: [] });
+  assert.deepStrictEqual(t, { tone: 'error', text: 'Not signed yet — PDF MISMATCH: The PDF is not stored.' }, 'THE REGRESSION: an unsigned document\'s missing PDF read "Not signed yet."');
+  t = T({ signed: false, contentMatch: true, pdfMatch: null, hasPdf: true, pdfNote: 'The PDF could not be read.', unchecked: ['the PDF could not be read'] });
+  assert.deepStrictEqual([t.tone, /The PDF could not be checked: The PDF could not be read\./.test(t.text)], ['warn', true]);
+  assert.deepStrictEqual(T({ signed: false, contentMatch: true, unchecked: [] }), { tone: 'info', text: 'Not signed yet.' });
+  assert.strictEqual(T({ signed: false, contentMatch: false, unchecked: [] }).tone, 'error');
+  assert.ok(/edVerifyToast_\(res\)/.test(extractFnFrom(c26EdSrc_(), 'edVerify_')) && /\{ sticky: true \}/.test(extractFnFrom(c26EdSrc_(), 'edVerify_')), 'Verify shows that verdict, and one that is not a pass stays on screen');
+  assert.ok(/return empDocVerdict_\(d, empDocLatestSigRow_\(d\.docId\)\);/.test(stripJsComments_(extractRawFunction('Code.js', 'verifyDocSignature'))), 'the endpoint returns the shared verdict');
+});
+
+test('F14 (cycle 26): the certificate verifies its own record when it is made and SAYS the result — an altered response prints under "NOT VERIFIED", never beside the original hash as if nothing happened; the reader and the copy read the same verdict (driven)', () => {
+  const { c, d, row } = c26Signed_();
+  const L = (v) => c.empDocVerdictLine_(v, '2026-11-16 09:00:00 CST');
+  const clean = hJ(c.empDocVerdict_(d, row));
+  assert.strictEqual(L(clean), 'Verified 2026-11-16 09:00:00 CST: the content hash and the signature hash were recomputed from the HR record when this certificate was made, and match.');
+  assert.ok(/the content hash, the PDF's SHA-256 and the signature hash/.test(L(Object.assign({}, clean, { hasPdf: true }))), 'a PDF document names its PDF');
+  assert.ok(/and the completion hash/.test(L(Object.assign({}, clean, { completed: true, signed: false }))));
+  const bad = hJ(c.empDocVerdict_(Object.assign({}, d, { responsesRaw: '{"goal":"Changed"}' }), row));
+  assert.strictEqual(L(bad), 'NOT VERIFIED — the HR record no longer matches what was signed: the signature, the responses or the initials were changed after it was signed. Do not rely on this certificate.');
+  assert.ok(/the document's text or fields were changed after it was issued/.test(L(Object.assign({}, clean, { tampered: true, verified: false, contentMatch: false }))));
+  assert.ok(/the PDF on file is not the one that was issued \(its SHA-256 differs\)\. Do not rely/.test(L(Object.assign({}, clean, { tampered: true, verified: false, pdfMatch: false, pdfNote: 'The PDF on file is not the one that was issued (its SHA-256 differs).' }))));
+  assert.strictEqual(L(Object.assign({}, clean, { verified: false, unchecked: ['no content hash is on record', 'the PDF could not be read'] })),
+    'NOT VERIFIED — no content hash is on record; the PDF could not be read, so this record could not be checked.');
+  assert.deepStrictEqual([c.empDocRecordState_(clean), c.empDocRecordState_(bad), c.empDocRecordState_(Object.assign({}, clean, { verified: false, unchecked: ['x'] })), c.empDocRecordState_(null)],
+    ['ok', 'altered', 'unverifiable', 'unverifiable']);
+  // The HTML: a box under the title when not verified, a row when verified, neither when no verdict is passed.
+  const base = { title: 'T', docType: 'pip', empId: 'E1', empName: 'Ann', issuedAt: '', signed: true, signedAt: '', contentHash: 'c', sigHash: 's', ackText: 'a', fields: [] };
+  let html = c.empDocCertificateHtml_(Object.assign({ verified: false, verdict: 'NOT VERIFIED — <x>' }, base));
+  assert.ok(/border:2px solid #b3261e[^>]*>NOT VERIFIED — &lt;x><\/td>/.test(html) && html.indexOf('NOT VERIFIED') < html.indexOf('Content hash') && !/Verification<\/th>/.test(html), 'the box sits above the table, escaped');
+  html = c.empDocCertificateHtml_(Object.assign({ verified: true, verdict: 'Verified now' }, base));
+  assert.ok(/Verification<\/th><td[^>]*>Verified now<\/td>/.test(html) && !/#b3261e/.test(html));
+  assert.ok(!/Verification|NOT VERIFIED/.test(c.empDocCertificateHtml_(base)), 'no verdict passed: neither is drawn');
+  // The endpoint, driven over a record whose response was changed after signing.
+  const mk = (doc) => {
+    const x = c26Signed_({ getEmployeeInfo_: () => ({ id: 'E1' }), findEmpDocRow_: () => ({ rowIdx: 2, doc: doc }), empDocCanManagerSee_: () => false,
+      lookupEmployeeById_: () => ({ name: 'Ann' }) }).c;
+    x.empDocLatestSigRow_ = () => row;
+    x.shown = '';
+    x.Utilities.newBlob = (h) => { x.shown = String(h); return { getAs: () => ({ getBytes: () => [37, 80, 68, 70] }) }; };
+    return x;
+  };
+  let x = mk(d);
+  let res = hJ(x.getEmpDocCertificate('d1'));
+  assert.deepStrictEqual([res.success, res.verified, res.tampered, /^Verified 2026-11-16 09:00:00 CST/.test(res.verdict)], [true, true, false, true]);
+  assert.ok(/Verification<\/th>/.test(x.shown) && /v1 — I acknowledge that I have read/.test(x.shown), 'the verdict is printed, and the acknowledgement is the SIGNED version\'s text (F44)');
+  x = mk(Object.assign({}, d, { responsesRaw: '{"goal":"Changed"}', responses: { goal: 'Changed' } }));
+  res = hJ(x.getEmpDocCertificate('d1'));
+  assert.deepStrictEqual([res.success, res.verified, res.tampered], [true, false, true], 'still produced — the record must be readable — but marked');
+  assert.ok(/NOT VERIFIED — the HR record no longer matches what was signed/.test(x.shown) && /Changed/.test(x.shown) && x.shown.indexOf('NOT VERIFIED') < x.shown.indexOf('Changed'),
+    'THE REGRESSION: the altered response printed beside the original signature hash with nothing said');
+  // getMyDoc ships the record's state for a finished document; the reader notes it; the copy refuses it.
+  const gm = stripJsComments_(extractRawFunction('Code.js', 'getMyDoc'));
+  assert.ok(/if \(d\.status === 'signed' \|\| d\.status === 'completed'\) \{[\s\S]*out\.record = empDocRecordState_\(empDocVerdict_\(d, sr, \{ pdf: false \}\)\);/.test(gm), 'the reader\'s state is the same verdict, without a PDF read');
+  const ed = c26EdSrc_();
+  const cl = vm.createContext({ String, icon: () => '' });
+  ['edRecordNoteHtml_', 'edCopyLabel_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), cl));
+  assert.ok(/data-record="altered"/.test(cl.edRecordNoteHtml_({ record: 'altered', status: 'signed', isOwner: true })) && /tell your manager/.test(cl.edRecordNoteHtml_({ record: 'altered', status: 'signed', isOwner: true })));
+  assert.ok(/No copy can be made from it/.test(cl.edRecordNoteHtml_({ record: 'altered', status: 'completed', isOwner: false })) && /what was completed/.test(cl.edRecordNoteHtml_({ record: 'altered', status: 'completed', isOwner: false })));
+  assert.strictEqual(cl.edRecordNoteHtml_({ record: 'altered', integrity: 'altered', isOwner: true }), '', 'one note, not two, when the text itself is already reported');
+  assert.strictEqual(cl.edRecordNoteHtml_({ record: 'unverifiable', isOwner: true }), '', 'a rep is not shown a legacy-row note');
+  assert.ok(/data-record="unverifiable"/.test(cl.edRecordNoteHtml_({ record: 'unverifiable', isOwner: false })));
+  assert.strictEqual(cl.edRecordNoteHtml_({ record: 'ok' }) + cl.edRecordNoteHtml_({}), '');
+  const lab = (m) => cl.edCopyLabel_(Object.assign({ madeOn: '2026-11-16', signed: true }, m));
+  assert.strictEqual(lab({ verified: true }), 'COPY · made 2026-11-16 from the signed original · record verified · the certificate is the record');
+  assert.strictEqual(lab({ verified: false }), 'COPY · made 2026-11-16 from the signed original · record NOT verified · the certificate is the record');
+  assert.strictEqual(lab({}), 'COPY · made 2026-11-16 from the signed original · the certificate is the record', 'no verdict yet: nothing claimed either way');
+  const oc = stripJsComments_(extractFnFrom(ed, 'edOpenCopy_'));
+  assert.ok(/if \(doc\.integrity === 'altered' \|\| doc\.record === 'altered'\) \{\s*fail\('No copy was made/.test(oc) && oc.indexOf("doc.record === 'altered'") < oc.indexOf("edRpc_('getEmpDocCertificate'"),
+    'an altered record makes no copy, before anything is fetched');
+  assert.ok(/if \(res\.tampered\) throw new Error\('No copy was made\. '/.test(oc) && /edBuildCopy_\(got\[0\], doc, got\[1\], got\[2\]\.bytes, edToday_\(\), \{ verified: got\[2\]\.verified \}\)/.test(oc), 'and the certificate\'s verdict decides the rest');
+});
+
+test('F15 (cycle 26): the copy email — "the managers" are managers on the roster TODAY (a departed issuer is left out and named), one person may send only so many, and the message says where the attachment was made (driven)', () => {
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.7 copy').toString('base64');
+  const c0 = hCtx_();
+  const M = (...a) => hJ(c0.empDocCopyManagers_(...a));
+  assert.deepStrictEqual(M('Boss@ums.com', 'mgr@ums.com', ['boss@ums.com', 'mgr@ums.com']), { list: ['boss@ums.com', 'mgr@ums.com'], dropped: [], why: '' });
+  assert.deepStrictEqual(M('gone@ums.com', 'mgr@ums.com', ['mgr@ums.com']), { list: ['mgr@ums.com'], dropped: ['gone@ums.com'], why: 'no longer a manager on the team roster' },
+    'THE REGRESSION: the stored issuer was CC\'d the whole signed document after leaving the role');
+  assert.deepStrictEqual(M('boss@ums.com', 'boss@ums.com', ['boss@ums.com']).list, ['boss@ums.com'], 'the same address once');
+  assert.deepStrictEqual(M('a@ums.com', 'b@ums.com', null), { list: [], dropped: ['a@ums.com', 'b@ums.com'], why: 'the team roster could not be read, so nobody could be confirmed as a manager' }, 'an unreadable roster includes nobody');
+  assert.deepStrictEqual(M('', '', ['x@ums.com']), { list: [], dropped: [], why: '' });
+  const sent = [], audit = [], cache = {};
+  const mk = (extra) => hCtx_(Object.assign({ esc_: (x) => String(x), getEmployeeInfo_: () => ({ id: 'E1', name: 'Ann' }),
+    findEmpDocRow_: () => ({ rowIdx: 2, doc: { docId: 'doc-1', empId: 'E1', status: 'signed', title: 'PIP', issuedBy: 'gone@ums.com', signedAt: '2026-11-03 10:00:00' } }),
+    empDocCanManagerSee_: () => false, lookupEmployeeById_: () => ({ name: 'Ann', email: 'ann@ums.com', managerEmail: 'mgr@ums.com' }),
+    isOrgEmail_: (a) => /@ums\.com$/.test(a), sendRepEmail_: (e, o) => sent.push(o), writeAuditLog_: (e, a, d2, t, adj, n, note) => audit.push([a, note]),
+    buildBrandedEmailHtml_: (h, inner) => inner, fmtDate_: () => '2026-11-16', rosterManagerEmails_: () => ['mgr@ums.com'],
+    CacheService: { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put: (k, v, ttl) => { cache[k] = v; cache.__ttl = ttl; } }) } }, extra || {}));
+  let x = mk();
+  x.Utilities.newBlob = (bytes, type, name) => ({ name });
+  const pv = hJ(x.emailEmpDocCopy('doc-1', { preview: true, managers: true }));
+  assert.deepStrictEqual([pv.to, pv.cc, pv.notIncluded, pv.notIncludedWhy], [['ann@ums.com'], ['mgr@ums.com'], ['gone@ums.com'], 'no longer a manager on the team roster'], 'the preview names who was left out, and why');
+  assert.ok(/put together on Ann's computer; Team Tools did not produce the attachment\. The record is the certificate held in Team Tools/.test(pv.html), 'the message says where the file was made');
+  assert.deepStrictEqual(Object.keys(cache), [], 'a preview counts nothing');
+  // The cap: ten sends, then refused; the count is the caller's own.
+  const max = Number(/const EMPDOC_COPY_WINDOW_MAX = (\d+);/.exec(serverSource())[1]);
+  for (let i = 0; i < max; i++) assert.ok(x.emailEmpDocCopy('doc-1', { managers: true, pdf }).success, 'send ' + (i + 1));
+  assert.deepStrictEqual([cache['edcopy:E1'], cache.__ttl, sent.length], [String(max), Number(/const EMPDOC_COPY_WINDOW_SECS = (\d+);/.exec(serverSource())[1]), max]);
+  assert.strictEqual(sent[0].cc, 'mgr@ums.com', 'the departed issuer is not on the send either');
+  const over = hJ(x.emailEmpDocCopy('doc-1', { pdf }));
+  assert.ok(over.capped && /You have emailed 10 copies in the last few hours, which is the limit\. Download the copy/.test(over.error) && sent.length === max, 'THE REGRESSION: nothing limited repeats: ' + over.error);
+  assert.ok(x.emailEmpDocCopy('doc-1', { preview: true }).success, 'a preview is still answered at the cap');
+  // A send that FAILS is not counted; a cache that cannot be read lets the send through.
+  delete cache['edcopy:E1'];
+  const boom = mk({ sendRepEmail_: () => { throw new Error('quota'); } });
+  boom.Utilities.newBlob = () => ({});
+  assert.ok(/The copy was not sent: quota/.test(boom.emailEmpDocCopy('doc-1', { pdf }).error) && !('edcopy:E1' in cache), 'a failed send spends none of the allowance');
+  const dark = mk({ CacheService: { getScriptCache: () => { throw new Error('cache down'); } } });
+  dark.Utilities.newBlob = () => ({});
+  assert.ok(dark.emailEmpDocCopy('doc-1', { pdf }).success, 'the cap is a guard: an unreadable cache does not block an HR document');
+  // An unreadable roster: nobody is confirmed, so "the managers" adds nobody.
+  const noRoster = mk({ rosterManagerEmails_: () => { throw new Error('roster down'); } });
+  assert.deepStrictEqual(hJ(noRoster.emailEmpDocCopy('doc-1', { preview: true, managers: true })).cc, []);
+  const prev = extractFnFrom(c26EdSrc_(), 'edCopyMailPreview_');
+  assert.ok(/res\.notIncluded \|\| \[\]\)\.length \? '<div class="ed-mail-out">'[\s\S]*esc\(res\.notIncluded\.join\(', '\)\)[\s\S]*esc\(res\.notIncludedWhy/.test(prev), 'the panel draws it, escaped');
+});
+
+test('F44 (cycle 26): the sign path — a body may not embed an image the hash cannot vouch for; answers are capped together, naming the longest; a signature is a drawn PNG, not a prefix; a review-only document offers nothing to submit; every signed document carries its drawing (driven)', () => {
+  const c = hCtx_();
+  const I = (md) => hJ(c.empDocBodyLinkedImage_(md));
+  assert.strictEqual(I('Text only.\n\n![alt](kbimg:kbimg-' + 'a'.repeat(24) + ')'), null, 'a content-addressed image passes');
+  assert.deepStrictEqual([I('x ![Doc image 1](kbdoc:1AbC:1) y').kind, /placeholder for an image from the converted Google Doc/.test(I('![d](kbdoc:1:1)').error)], ['kbdoc', true]);
+  assert.deepStrictEqual([I('![logo](https://example.com/a.png)').kind, /covers the address, not the picture/.test(I('![logo](https://example.com/a.png)').error)], ['link', true]);
+  assert.strictEqual(I('![x](kbimg:not-a-key)').kind, 'link', 'only a real key is content-addressed');
+  assert.strictEqual(I('![x]( http://a/b )').kind, 'link');
+  assert.strictEqual(I('A [link](https://example.com) is not an image.'), null);
+  const base = { empId: 'E1', docType: 'policy', title: 'P' };
+  assert.ok(c.empDocValidateIssue_(Object.assign({ bodyMd: 'Plain.' }, base), null).ok);
+  let v = c.empDocValidateIssue_(Object.assign({ bodyMd: 'See ![s](https://x.test/s.png)' }, base), null);
+  assert.ok(!v.ok && /remove the image, or issue the document as a PDF/.test(v.error), 'THE REGRESSION: an image by address was frozen, hashed as its address and signed');
+  v = c.empDocValidateIssue_(Object.assign({ bodyMd: 'Note ![Doc image 2](kbdoc:1:2)' }, base), { sha: 'a'.repeat(64), name: 'p.pdf' });
+  assert.ok(!v.ok && /Doc image/.test(v.error), 'a PDF document\'s note is read the same way');
+  // Answers together.
+  const fields = [{ id: 'a', label: 'Short', type: 'textarea' }, { id: 'b', label: 'The long one', type: 'textarea' }, { id: 'c', label: 'Third', type: 'textarea' }];
+  const big = (n) => 'x'.repeat(n);
+  const each = Number(/const EMPDOC_RESPONSE_MAX = (\d+);/.exec(serverSource())[1]);
+  const many = []; for (let i = 0; i < 7; i++) many.push({ id: 'f' + i, label: 'Field ' + i, type: 'textarea' });
+  const all = {}; many.forEach((f, i) => { all[f.id] = big(each - i); });
+  let r = sb.empDocValidateResponses_(many, all);
+  assert.ok(!r.ok && /Your answers together are [\d,]+ characters — more than the 45,000 this record can hold\. Shorten the longest one \("Field 0"\) and submit again\./.test(r.error),
+    'THE REGRESSION: seven answers each inside their limit overflowed the cell and the employee was shown the spreadsheet\'s error: ' + r.error);
+  assert.ok(sb.empDocValidateResponses_(fields, { a: big(100), b: big(each), c: big(100) }).ok, 'under the total: accepted as before');
+  // The drawing.
+  const P = (s) => c.empDocDrawnPng_(s);
+  assert.deepStrictEqual([P(C26_PNG), P('data:image/png;base64,'), P('data:image/png;base64,AAAA'), P('data:image/png;base64,iVBORw0KGgo' + 'A'.repeat(20)), P(C26_PNG + '"onload="x'), P('javascript:alert(1)'), P('')],
+    [true, false, false, false, false, false, false], 'a PNG data URL, the PNG signature, long enough to be a drawing, base64 to the end');
+  const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeDoc'));
+  assert.ok(/if \(!empDocDrawnPng_\(sig\)\) return \{ success: false, error: 'Draw your signature before submitting\.' \};/.test(ack) && !/sig\.indexOf\('data:image\/png;base64,'\) !== 0/.test(ack),
+    'THE REGRESSION: the signature was checked by its prefix only — a hand-made call could "sign" with nothing drawn');
+  assert.ok(ack.indexOf('empDocDrawnPng_(sig)') < ack.indexOf('appendRow'), 'before anything is written');
+  // getMyDoc, driven: a review-only document, and a written one with no [signature] line.
+  const mk = (doc, sr) => {
+    const g = hCtx_({ getEmployeeInfo_: () => ({ id: 'E1' }), findEmpDocRow_: () => ({ rowIdx: 2, doc: doc }), empDocCanManagerSee_: () => false, empDocReadIntegrity_: () => 'ok',
+      lookupEmployeeById_: () => ({ name: 'Ann' }), trainCellTs_: (x) => String(x), getHrDocsSS_: () => ({ getSpreadsheetTimeZone: () => 'UTC' }) });
+    g.empDocLatestSigRow_ = () => sr;
+    vm.runInContext(extractRawFunction('Code.js', 'getMyDoc'), g);
+    return hJ(g.getMyDoc('d1'));
+  };
+  const issued = { docId: 'd1', empId: 'E1', status: 'issued', title: 'P', bodyMd: 'Read.', fields: [], responses: {} };
+  assert.strictEqual(mk(Object.assign({ requiresSignature: false }, issued), null).canComplete, false, 'THE REGRESSION: a review-only document showed a Submit that the server always refused');
+  assert.deepStrictEqual([mk(Object.assign({ requiresSignature: true }, issued), null).canComplete, mk(Object.assign({ requiresSignature: false }, issued, { fields: [{ id: 'a' }] }), null).canComplete], [true, true]);
+  const s = c26Signed_();
+  const out = mk(Object.assign({}, s.d, { fields: [], bodyMd: s.d.bodyMd }), s.row);
+  assert.deepStrictEqual([out.signatureImage, out.record], [C26_PNG, 'ok'], 'THE REGRESSION: a written document with no [signature] line and no signature box was sent no drawing, so its copy never drew one');
+  assert.strictEqual(mk(Object.assign({}, s.d, { status: 'completed' }), s.row).signatureImage, undefined, 'a completion has no signature to draw');
+  assert.ok(!/function empDocHasSigBlock_/.test(serverSource()), 'the helper that decided who got a drawing is gone with the rule');
+  // The acknowledgement a certificate prints is the SIGNED version's.
+  assert.strictEqual(c.empDocAckTextFor_(1), 'v1 — ' + /const EMPDOC_ACK_TEXT = '([^']*)' \+\s*'([^']*)';/.exec(serverSource()).slice(1).join(''));
+  assert.strictEqual(c.empDocAckTextFor_('7'), 'v7 — the text of this version is not on file.', 'never the current wording under an older or unknown version');
+  assert.strictEqual(c.empDocAckTextFor_(''), 'No acknowledgement version is on record.');
+  assert.ok(/ackText: empDocAckTextFor_\(sigRow\[EDS\.ACK_VERSION\]\)/.test(extractRawFunction('Code.js', 'getEmpDocCertificate')));
+});
+
+test('F44 (cycle 26): the heavy checks run BEFORE the project lock; a template\'s name and body and a quiz\'s title are text cells; the weekly recap starts where the last one ended (driven + source)', () => {
+  const order = (fn, before, lockRe) => {
+    const src = stripJsComments_(extractRawFunction('Code.js', fn));
+    const lockAt = src.search(lockRe || /lock\.waitLock\(/);
+    before.forEach((re) => { const at = src.search(re); assert.ok(at > 0 && at < lockAt, fn + ': ' + re + ' runs before the lock'); });
+    return src;
+  };
+  let src = order('issueDoc', [/empDocPdfItem_\(payload\.pdf, payload\.pdfName\)/, /empDocValidateIssue_\(payload, pdf \?/, /empDocLetterheadPick_\(/]);
+  assert.ok(src.search(/empDocPdfStoreCallerLocked_\(pdf\)/) > src.search(/lock\.waitLock\(/) && src.search(/!callerEmp\.isManager/) < src.search(/empDocPdfItem_/), 'the gate first, the store and the append under the lock');
+  src = order('createCoaching', [/coachValidate_\(payload\)/, /coachImageItem_\(payload\.image\)/]);
+  assert.ok(src.search(/coachImageStoreCallerLocked_\(image\)/) > src.search(/lock\.waitLock\(/));
+  // Text cells.
+  const tpl = stripJsComments_(extractRawFunction('Code.js', 'saveEmpDocTemplate'));
+  assert.ok(/getRange\(r, EDT\.NAME \+ 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(v\.tpl\.name\)\)/.test(tpl) && /getRange\(r, EDT\.BODY_MD \+ 1\)\.setNumberFormat\('@'\)\.setValue\(sheetText_\(v\.tpl\.bodyMd\)\)/.test(tpl) &&
+    /appendRowsTextSafe_\(sheet, \[\[templateId, v\.tpl\.name,[\s\S]*\]\], EMPDOC_TPL_TEXT_IDX\)/.test(tpl), 'an edit and a new template both land in \'@\' cells');
+  const quiz = stripJsComments_(extractRawFunction('Code.js', 'saveQuiz'));
+  assert.ok(/TRAIN_QUIZ_TEXT_IDX\.forEach\(function \(i\) \{ sheet\.getRange\(existing\.rowIdx, i \+ 1\)\.setNumberFormat\('@'\); \}\);\s*sheet\.getRange\(existing\.rowIdx, 1, 1, TRAIN_QUIZ_HEADERS\.length\)\.setValues\(sheetTextRows_\(\[rowVals\], TRAIN_QUIZ_TEXT_IDX\)\)/.test(quiz) &&
+    /else appendRowsTextSafe_\(sheet, \[rowVals\], TRAIN_QUIZ_TEXT_IDX\)/.test(quiz));
+  const idx = (name) => vm.runInNewContext('var EDT = ' + /const EDT = (\{[^}]*\});/.exec(serverSource())[1] + ', TQ = ' + /const TQ = (\{[^}]*\});/.exec(serverSource())[1] + '; ' +
+    new RegExp('const ' + name + ' = (\\[[^\\]]*\\]);').exec(serverSource())[1]);
+  assert.deepStrictEqual([hJ(idx('EMPDOC_TPL_TEXT_IDX')), hJ(idx('TRAIN_QUIZ_TEXT_IDX'))], [[1, 3], [1]], 'the name and body; the title');
+  // The recap's window.
+  const k = vm.createContext({ Number, isFinite, isNaN, Date, coachParseTs_: (x) => Date.parse(String(x).replace(' ', 'T') + 'Z') });
+  ['coachRecapCutoff_', 'coachRecapBuckets_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), k));
+  const D = 86400000, now = Date.parse('2026-11-13T14:10:00Z'), prev = Date.parse('2026-11-06T14:03:00Z');
+  const C = (...a) => hJ(k.coachRecapCutoff_(...a));
+  assert.deepStrictEqual(C(now, 7, prev, 600000), { cutoff: prev - 600000, since: 'lastRecap' }, 'from the previous recap, less the overlap');
+  assert.deepStrictEqual(C(now, 7, NaN, 600000), { cutoff: now - 7 * D, since: 'window' }, 'no previous run: the plain window');
+  assert.deepStrictEqual(C(now, 7, now - 3600000, 600000).since, 'window', 'a stamp from the last hour is this run\'s own retry, not last week\'s');
+  assert.deepStrictEqual(C(now, 7, now - 29 * D, 600000).since, 'window', 'a job that was off for a month does not send a month of items');
+  assert.deepStrictEqual(C(now, 7, now - 28 * D, 0), { cutoff: now - 28 * D, since: 'lastRecap' });
+  // THE CASE: last Friday's run at 14:03, this Friday's at 14:10; an item logged last Friday at 14:05.
+  const item = { coachId: 'c1', empId: 'E1', severity: 'minor', status: 'open', createdAt: '2026-11-06 14:05:00' };
+  assert.deepStrictEqual(Object.keys(k.coachRecapBuckets_([item], now, 7)), [], 'the plain 7×24 h window drops it — it was logged after last week\'s run and more than seven days ago');
+  assert.deepStrictEqual(Object.keys(k.coachRecapBuckets_([item], now, 7, C(now, 7, prev, 600000).cutoff)), ['E1'], 'THE REGRESSION: with the window started at the last recap it is in this one');
+  const early = Object.assign({}, item, { createdAt: '2026-11-06 13:50:00' });
+  assert.deepStrictEqual(Object.keys(k.coachRecapBuckets_([early], now, 7, C(now, 7, prev, 600000).cutoff)), [], 'an item last week\'s recap already carried is not repeated');
+  const job = stripJsComments_(extractRawFunction('Code.js', 'sendCoachingRecapDigest'));
+  assert.ok(/prevRunMs = coachParseTs_\(runs\.coachingRecap\)/.test(job) && /coachRecapCutoff_\(nowMs, windowDays, prevRunMs, \(CONFIG\.COACHING_RECAP_OVERLAP_MIN \|\| 0\) \* 60000\)/.test(job) &&
+    /coachRecapBuckets_\(items, nowMs, windowDays, from\.cutoff\)/.test(job) && /'since your last recap'/.test(job), 'the job reads the heartbeat and words the email to match');
+});
+
+test('F44 + F64 (cycle 26): a converted Google Doc\'s images are taken out (and said), not frozen as placeholders; "Add box" places a centred box of the chosen type (driven)', () => {
+  const ed = c26EdSrc_();
+  const ctx = vm.createContext({ String, Number, Math, RegExp });
+  vm.runInContext(/var ED_BOX_DEFAULT_PTS = \{[^}]*\};/.exec(ed)[0] + /var ED_BOX_MIN_H_PTS = \{[^}]*\};/.exec(ed)[0], ctx);
+  ['edConvertedForDoc_', 'edBoxFromDrag_', 'edBoxAtCentre_'].forEach((n) => vm.runInContext(extractFnFrom(ed, n), ctx));
+  let r = hJ(ctx.edConvertedForDoc_({ markdown: '# Plan\n\n![Doc image 1](kbdoc:1AbC:1)\n\nStep one.\n\n![Doc image 2](kbdoc:1AbC:2)\n\nEnd.',
+    warnings: ['2 image(s) marked for export — they upload to the KB Images Drive folder when you press Save (the preview shows their alt text until then).', 'A table was flattened.'] }));
+  assert.deepStrictEqual([r.body, r.dropped], ['# Plan\n\nStep one.\n\nEnd.', 2], 'THE REGRESSION: the tokens stayed, and the signed document read "Doc image 1 — appears after Save"');
+  assert.deepStrictEqual(r.warnings, ['2 images from the Doc were left out — an employee document cannot carry a Doc’s images. If it needs them, download the Doc as a PDF and issue that.', 'A table was flattened.'],
+    'the count is said, the "press Save" line (true of Reference, not here) is dropped, the rest kept');
+  r = hJ(ctx.edConvertedForDoc_({ markdown: 'No images.', warnings: [] }));
+  assert.deepStrictEqual(r, { body: 'No images.', dropped: 0, warnings: [] });
+  assert.ok(/1 image from the Doc was left out/.test(ctx.edConvertedForDoc_({ markdown: '![a](kbdoc:x:1)' }).warnings[0]));
+  const conv = extractFnFrom(ed, 'edConvertDoc_');
+  assert.ok(/var conv = edConvertedForDoc_\(res\);/.test(conv) && /body\.value = conv\.body;/.test(conv) && /conv\.warnings\.join\(' '\), 'toast-warn', \{ sticky: true \}/.test(conv), 'the warnings are shown in words and stay');
+  // Add box.
+  const letter = { w: 612, h: 792 };
+  const b = hJ(ctx.edBoxAtCentre_('signature', letter));
+  assert.deepStrictEqual(b, { x: 0.3529, y: 0.4747, w: 0.2941, h: 0.0505 }, 'a signature box (180 × 40 pt) centred on a Letter page');
+  assert.ok(Math.abs(b.x + b.w / 2 - 0.5) < 0.001 && Math.abs(b.y + b.h / 2 - 0.5) < 0.001, 'its centre is the page\'s');
+  assert.deepStrictEqual([hJ(ctx.edBoxAtCentre_('text', null)), hJ(ctx.edBoxAtCentre_('text', { w: 0, h: 792 }))], [null, null], 'no page size: no box');
+  assert.ok(ctx.edBoxAtCentre_('textarea', letter).w > ctx.edBoxAtCentre_('date', letter).w, 'the type\'s own default size');
+  const add = stripJsComments_(extractFnFrom(ed, 'edAddBoxAtCentre_'));
+  assert.ok(/if \(!ED_STATE\.issuePdf\)/.test(add) && /ED_FIELD_CAP/.test(add) && /if \(!\(pn >= 1 && pn <= pages\)\)/.test(add) && /edAddBox_\(pn, rect\);/.test(add) &&
+    /\.ed-pdf-box\[data-ed-box="' \+ i \+ '"\]/.test(add) && /el\.focus\(/.test(add), 'guarded, placed through the one add path, and the BOX (not its name field) takes focus');
+  assert.ok(/id="ed-box-page"/.test(ed) && /id="ed-box-add"/.test(ed) && /addBox\.addEventListener\('click', edAddBoxAtCentre_\)/.test(ed) && /\.ed-pdf-retry \{/.test(ed), 'the control is on the form, and the retry row has a rule (g140)');
+});
+
+testNeedsDeps(['pdfjs-dist'], 'F56 (cycle 26): both apps fetch pdf.js, check its SHA-256 and run the checked bytes — the pinned hashes are the installed pdfjs-dist files\', from cdnjs then jsDelivr; a failed load is not kept; no script tag points at a CDN (driven over the files)', () => {
+  const crypto = require('crypto');
+  const ed = c26EdSrc_(), hb = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/script_handbook.html'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'package.json'), 'utf8'));
+  const read = (src, p) => {
+    const ctx = vm.createContext({});
+    vm.runInContext(new RegExp('var ' + p + '_PDFJS_VERSION = \'[^\']*\';').exec(src)[0] + new RegExp('var ' + p + '_PDFJS_SOURCES = \\[[\\s\\S]*?\\];').exec(src)[0] +
+      new RegExp('var ' + p + '_PDFJS_FILES = \\[[\\s\\S]*?\\]\\];').exec(src)[0] + new RegExp('var ' + p + '_PDFJS_TIMEOUT_MS = \\d+;').exec(src)[0], ctx);
+    return hJ({ version: ctx[p + '_PDFJS_VERSION'], sources: ctx[p + '_PDFJS_SOURCES'], files: ctx[p + '_PDFJS_FILES'], timeout: ctx[p + '_PDFJS_TIMEOUT_MS'] });
+  };
+  const a = read(ed, 'ED'), b = read(hb, 'HB');
+  assert.deepStrictEqual(a, b, 'Team Tools and the handbook app carry the same version, sources, files and hashes');
+  assert.strictEqual(a.version, (pkg.devDependencies || {})['pdfjs-dist'], 'the version the harness installs');
+  assert.deepStrictEqual(a.sources, ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + a.version + '/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + a.version + '/build/']);
+  assert.deepStrictEqual(a.files.map((f) => f[0]), ['pdf.min.js', 'pdf.worker.min.js']);
+  a.files.forEach((f) => {
+    const bytes = fs.readFileSync(path.join(HB_ROOT, 'node_modules/pdfjs-dist/build', f[0]));
+    assert.strictEqual(f[1], crypto.createHash('sha256').update(bytes).digest('hex'), f[0] + ': the pinned SHA-256 is the installed file\'s');
+  });
+  [[ed, 'edCheckedScript_', 'edPdfJs_', 'ED'], [hb, 'hbCheckedScript_', 'hbPdfJs_', 'HB']].forEach(([src, chk, ld, p]) => {
+    const c = stripJsComments_(extractFnFrom(src, chk)), l = stripJsComments_(extractFnFrom(src, ld));
+    assert.ok(/crypto\.subtle\.digest\('SHA-256', buf\)/.test(c) && /!== sha256\) throw/.test(c) && /sc\.textContent = new TextDecoder\(\)\.decode\(buf\);/.test(c), chk + ': hashed, refused on a mismatch, run from the hashed bytes');
+    assert.ok(/return tryAt\(i \+ 1\);/.test(c) && /new AbortController\(\)/.test(c) && /setTimeout\(function \(\) \{ ctl\.abort\(\); \}, timeoutMs\)/.test(c), chk + ': the next source on any failure; a request that hangs is ended');
+    assert.ok(new RegExp(p + "_PDFJS\\.state = ok \\? 'ready' : '';").test(l) && !/'failed'/.test(l), ld + ': THE REGRESSION — a failed load was kept for the whole session');
+    assert.ok(!/\.src = /.test(c + l), ld + ': no script tag points at a CDN');
+  });
+  assert.ok(!/ED_PDFJS_BASE|HB_PDFJS_BASE/.test(ed + hb), 'the unchecked base URL is gone from both');
+  const rd = extractFnFrom(ed, 'edLoadDocPdf_');
+  assert.ok(/data-ed-pdf-retry="1"/.test(rd) && /edLoadDocPdf_\(doc\);/.test(rd) && /data-ed-pdf-dl="1"/.test(rd) && /edDownloadPdf_\(got\.bytes, got\.name/.test(rd), 'the reader offers Try again, and the original to download once its bytes are here');
+});
+
+test('F64 (cycle 26): the Scratchpad\'s keyboard path — Ctrl/⌘+Enter is wired, shares the click\'s two actions, and the tick box says its state in words (source)', () => {
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const key = stripJsComments_(extractFnFrom(cn, 'cnScratchEditorKeydown_')), click = stripJsComments_(extractFnFrom(cn, 'cnScratchEditorClick_'));
+  assert.ok(/e\.key !== 'Enter' \|\| !\(e\.ctrlKey \|\| e\.metaKey\) \|\| e\.shiftKey \|\| e\.altKey\) return;/.test(key), 'only Ctrl/⌘+Enter');
+  assert.ok(/cnScratchOpenLink_\(a\)/.test(key) && /cnScratchToggleItem_\(li\)/.test(key) && /cnScratchOpenLink_\(a\)/.test(click) && /cnScratchToggleItem_\(li\)/.test(click), 'the key and the click share the two actions');
+  assert.ok(/ed\.addEventListener\('keydown', cnScratchEditorKeydown_\);/.test(cn), 'wired on the editor');
+  assert.ok(/content: '' \/ 'Not done: ';/.test(cn) && /content: '' \/ 'Done: ';/.test(cn), 'the drawn box carries alternative text');
+  assert.ok(/Ctrl\/⌘\+Enter opens the link the cursor is in, or ticks the checklist item it is on/.test(cn), 'and the hint says so');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

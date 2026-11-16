@@ -11146,6 +11146,197 @@ const c26IntakeBoot_ = (view) => {
   return { h, f, answer };
 };
 
+// ── Cycle 26 Batch 6 — Employee Docs integrity ──────────────────────────────
+/** A page whose fetch, WebCrypto and TextDecoder are the harness's: `serve(url)`
+ *  answers each request with text (a script's bytes) or null (a failed one). */
+const c26Net_ = (w, read, serve) => {
+  const asked = [];
+  if (!(w.crypto && w.crypto.subtle)) Object.defineProperty(w, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+  w.TextDecoder = TextDecoder;
+  w.fetch = (u) => {
+    asked.push(String(u));
+    const text = serve(String(u));
+    if (text == null) return Promise.reject(new Error('blocked'));
+    return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(text).buffer) });
+  };
+  read('fetch = window.fetch; TextDecoder = window.TextDecoder');
+  return asked;
+};
+const c26Sha_ = (text) => require('crypto').createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
+const C26_LIB_JS = 'window.pdfjsLib = window.__c26Lib;', C26_WORKER_JS = 'window.pdfjsWorker = window.__c26Worker;';
+const C26_CDNJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/', C26_JSD = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/';
+
+test('F14 + F44 DOM (cycle 26): the reader notes a signature record that no longer verifies, shows no Submit on a review-only document, and makes NO copy from an altered record — nothing is even asked for (driven)', async () => {
+  const h = boot();
+  hFakePdf_(h, 1);
+  let doc = { docId: 'dr', title: 'Phone policy', status: 'issued', isOwner: true, canComplete: false, requiresSignature: false, bodyMd: 'Read this.', fields: [], responses: {}, integrity: 'ok' };
+  h.run.respond('getMyDoc', () => doc);
+  h.read('edOpenDoc_')('dr');
+  await hSettle_();
+  assert.ok(/Read this\./.test(h.$('#ed-reader-overlay').textContent) && !h.$('#ed-sign-btn'), 'THE REGRESSION: a review-only document showed a Submit that always errored');
+  doc = Object.assign({}, doc, { requiresSignature: true, canComplete: true, ackText: 'I have read this.' });
+  h.read('edOpenDoc_')('dr');
+  await hSettle_();
+  assert.ok(h.$('#ed-sign-btn'), 'a document with something to do still offers it');
+  // A signed document whose record was altered after signing.
+  doc = { docId: 'dw', title: 'PIP', status: 'signed', isOwner: false, requiresSignature: true, bodyMd: 'Agreed terms.', fields: [], responses: {}, integrity: 'ok', record: 'altered', signedAt: '2026-11-03 10:00:00' };
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  const note = h.$('#ed-reader-overlay [data-record="altered"]');
+  assert.ok(note && /signature record no longer matches what was signed/.test(note.textContent) && /No copy can be made from it/.test(note.textContent), 'the reader says so');
+  h.$('[data-ed-copy="print"]').click();
+  await hSettle_();
+  assert.ok(/No copy was made: this document’s record no longer matches what was signed/.test(h.$('#ed-copy-pages').textContent), h.$('#ed-copy-pages').textContent);
+  assert.deepStrictEqual([h.run.calls.filter((c) => c.method === 'getEmpDocCertificate' || c.method === 'getEmpDocPdf').length, [...h.$$('#ed-copy-overlay [data-ed-copy-act]')].filter((b) => b.disabled).length], [0, 3],
+    'THE REGRESSION: the copy was built, stamped "made from the signed original" and offered for email');
+  h.$('[data-ed-copy-act="close"]').click();
+  // A record with no hash on file: said to a manager, never to the rep.
+  doc = Object.assign({}, doc, { record: 'unverifiable' });
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  assert.ok(h.$('#ed-reader-overlay [data-record="unverifiable"]'));
+  doc = Object.assign({}, doc, { isOwner: true });
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  assert.ok(!h.$('#ed-reader-overlay [data-record]'), 'the rep is not shown a legacy-row note');
+});
+
+test('F14 DOM (cycle 26): a certificate whose record did not verify says so above its pages; one that verified says nothing extra; the finished copy refuses a tampered record and labels an unverified one (driven)', async () => {
+  const h = boot();
+  hFakePdf_(h, 1);
+  let ans = { success: true, dataUri: hPdfUri_, fileName: 'PIP - certificate.pdf', verified: false, tampered: true, verdict: 'NOT VERIFIED — the HR record no longer matches what was signed: <b>x</b>. Do not rely on this certificate.' };
+  h.run.respond('getEmpDocCertificate', () => ans);
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  const vn = h.$('#ed-cert-overlay .ed-integrity-note[role="alert"]');
+  assert.ok(vn && vn.textContent === ans.verdict && vn.getAttribute('data-integrity') === 'altered' && !vn.querySelector('b'), 'the server\'s sentence, as text');
+  assert.ok(vn.compareDocumentPosition(h.$('#ed-cert-pages')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING, 'above the pages');
+  h.click('[data-ed-cert-close]');
+  ans = { success: true, dataUri: hPdfUri_, fileName: 'c.pdf', verified: true, tampered: false, verdict: 'Verified now.' };
+  h.read('edOpenCertificate_')('dp');
+  await hSettle_();
+  assert.ok(!h.$('#ed-cert-overlay .ed-integrity-note'), 'a verified certificate carries its line on the page, not a warning here');
+  h.click('[data-ed-cert-close]');
+  // The copy: a tampered verdict from the certificate makes none. (pdf-lib is stood in: the copy never gets as far as using it.)
+  h.read('window.PDFLib = { PDFDocument: {} }');
+  h.run.respond('getMyDoc', () => ({ docId: 'dw', title: 'PIP', status: 'signed', isOwner: true, requiresSignature: true, bodyMd: 'Terms.', fields: [], responses: {}, integrity: 'ok', record: 'ok', signedAt: '2026-11-03 10:00:00' }));
+  ans = { success: true, dataUri: hPdfUri_, verified: false, tampered: true, verdict: 'NOT VERIFIED — the responses were changed.' };
+  h.read('edOpenDoc_')('dw');
+  await hSettle_();
+  h.$('[data-ed-copy="print"]').click();
+  await hSettle_(40);
+  assert.ok(/No copy was made\. NOT VERIFIED — the responses were changed\./.test(h.$('#ed-copy-pages').textContent), h.$('#ed-copy-pages').textContent);
+  assert.ok(!h.read('ED_STATE.copy'), 'nothing to print, download or email');
+});
+
+test('F56 DOM (cycle 26): pdf.js is run only from bytes that match its checksum — a source serving something else is passed over and its code never runs; a failed load is not kept, and the reader offers Try again and the original (driven)', async () => {
+  // 1. The loader: cdnjs serves the WRONG bytes for the library, jsDelivr the right ones.
+  const h = boot();
+  h.window.__c26Lib = { GlobalWorkerOptions: {} }; h.window.__c26Worker = {};
+  const files = h.read('ED_PDFJS_FILES');
+  files[0][1] = c26Sha_(C26_LIB_JS); files[1][1] = c26Sha_(C26_WORKER_JS);
+  const asked = c26Net_(h.window, h.read, (u) => (u === C26_CDNJS + 'pdf.min.js' ? 'window.__c26Evil = 1;' : (/pdf\.min\.js$/.test(u) ? C26_LIB_JS : C26_WORKER_JS)));
+  // This harness's page does not run a script added to it (the handbook app's
+  // does — its drive of the same loader runs the injected code for real), so a
+  // script element given text is run here the way a browser runs it (g116).
+  const addToHead = h.document.head.appendChild.bind(h.document.head);
+  h.document.head.appendChild = (n) => { const out = addToHead(n); if (n.tagName === 'SCRIPT' && !n.src && n.textContent) h.window.eval(n.textContent); return out; };
+  let got = 'pending';
+  h.read('edPdfJs_')((lib) => { got = lib; });
+  await ed3Until_(h, () => got !== 'pending');
+  assert.strictEqual(got, h.window.__c26Lib, 'the library that ran is the one whose bytes matched');
+  assert.deepStrictEqual(asked, [C26_CDNJS + 'pdf.min.js', C26_JSD + 'pdf.min.js', C26_CDNJS + 'pdf.worker.min.js'], 'a mismatch moves on to the next source; a match stops there');
+  assert.strictEqual(h.window.__c26Evil, undefined, 'THE RULE: bytes that fail the checksum never run');
+  assert.ok(![...h.document.querySelectorAll('script')].some((s) => /__c26Evil/.test(s.textContent) || /pdf\.js/.test(s.src || '')), 'nothing unchecked is put on the page, and no script tag points at a CDN');
+  assert.strictEqual(h.read('ED_PDFJS.state'), 'ready');
+  assert.strictEqual(got.GlobalWorkerOptions.workerSrc, C26_CDNJS + 'pdf.worker.min.js');
+  // 2. Every source fails: said, not kept, and the reader offers a way on.
+  const r = boot();
+  const net = c26Net_(r.window, r.read, () => null);
+  r.run.respond('getMyDoc', () => hPdfDoc_());
+  let pdfAsks = 0;
+  r.run.respond('getEmpDocPdf', () => { pdfAsks++; return { success: true, dataUri: hPdfUri_, name: 'PIP.pdf' }; });
+  r.read('edOpenDoc_')('dp');
+  await ed3Until_(r, () => /could not be loaded just now/.test(r.$('#ed-pdf-pages').textContent));
+  assert.ok(/The PDF viewer could not be loaded just now\. It cannot be completed until it shows here\./.test(r.$('#ed-pdf-pages').textContent), r.$('#ed-pdf-pages').textContent);
+  assert.deepStrictEqual(net, [C26_CDNJS + 'pdf.min.js', C26_JSD + 'pdf.min.js'], 'both sources were tried');
+  assert.strictEqual(r.read('ED_PDFJS.state'), '', 'THE REGRESSION: the failure was kept for the whole session, so nothing could be signed until the app was reloaded');
+  assert.ok(r.$('#ed-sign-btn').disabled && r.$('[data-ed-pdf-retry]') && r.$('[data-ed-pdf-dl]'), 'Sign is held; Try again and the original are offered');
+  // The viewer becomes available (here: already on the page) — Try again draws it and gives Sign back.
+  hFakePdf_(r, 2);
+  r.$('[data-ed-pdf-retry]').click();
+  await ed3Until_(r, () => r.$$('#ed-pdf-pages .ed-pdf-page').length === 2);
+  assert.deepStrictEqual([pdfAsks, r.$('#ed-sign-btn').disabled, !!r.$('[data-ed-pdf-retry]')], [2, false, false], 'the PDF was asked for again and drawn');
+});
+
+test('F64 DOM (cycle 26): "Add box" places the chosen type in the middle of the page typed beside it and SELECTS it, so the arrow keys take over; a page the PDF does not have is refused (driven)', async () => {
+  const { h } = await ed2Mgr_([ed2Letter_(), ed2Letter_()]);
+  const fields = () => h.read('ED_STATE.issueFields');
+  assert.strictEqual(fields().length, 0);
+  assert.strictEqual(h.$('#ed-box-page').max, '2', 'the page field knows how many pages the PDF has');
+  h.$('#ed-box-type').value = 'signature';
+  h.$('#ed-box-page').value = '2';
+  h.$('#ed-box-add').click();
+  await hSettle_();
+  assert.strictEqual(fields().length, 1, 'THE REGRESSION: a box could only be placed with a pointer');
+  const f = fields()[0];
+  assert.deepStrictEqual([f.type, f.box.page], ['signature', 2]);
+  assert.ok(Math.abs(f.box.x + f.box.w / 2 - 0.5) < 0.001 && Math.abs(f.box.y + f.box.h / 2 - 0.5) < 0.001, 'centred on that page: ' + JSON.stringify(f.box));
+  assert.ok(h.$('#ed-is-sig').checked, 'a signature box turns "Require signature" on, as a drawn one does');
+  const el = h.$('#ed-is-pdf-pages .ed-pdf-box[data-ed-box="0"]');
+  assert.strictEqual(h.document.activeElement, el, 'the box itself has focus');
+  const y0 = f.box.y;
+  el.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+  await hSettle_();
+  assert.ok(fields()[0].box.y > y0, 'and an arrow key moves it');
+  h.$('#ed-box-page').value = '3';
+  h.$('#ed-box-add').click();
+  await hSettle_();
+  assert.strictEqual(fields().length, 1, 'page 3 of 2: nothing added');
+  assert.ok(/This PDF has 2 pages — type a page from 1 to 2\./.test(h.$('#toast-stack').textContent), h.$('#toast-stack').textContent);
+});
+
+test('F64 DOM (cycle 26): in the Scratchpad, Ctrl/⌘+Enter ticks the checklist item the cursor is on and opens the link it is in — and does nothing else anywhere else (driven)', () => {
+  const h = boot();
+  const doc = h.document, w = h.window;
+  h.read('cnOpenScratchpadModal_')();
+  h.run.flushSuccess({ content: '', format: 'html', updatedAtMs: Date.now(), maxChars: 40000, pageId: 'main', pages: [{ id: 'main', name: 'Notes' }] }, 'getMyScratchpad');
+  const ed = doc.getElementById('cn-scratch-text');
+  const caretAt = (node, off) => { const r = doc.createRange(); r.setStart(node, off); r.collapse(true); const s = w.getSelection(); s.removeAllRanges(); s.addRange(r); };
+  const press = (init) => { const e = new w.KeyboardEvent('keydown', Object.assign({ key: 'Enter', bubbles: true, cancelable: true }, init)); ed.dispatchEvent(e); return e; };
+  ed.innerHTML = '<ul class="cn-sp-check"><li>call back</li><li>send form</li></ul><p>plain line</p><ul><li>not a checklist</li></ul>';
+  const items = ed.querySelectorAll('ul.cn-sp-check li');
+  caretAt(items[1].firstChild, 3);
+  let e = press({ ctrlKey: true });
+  assert.ok(items[1].classList.contains('cn-sp-done') && !items[0].classList.contains('cn-sp-done') && e.defaultPrevented, 'THE REGRESSION: the tick box was reachable only by a click at its x-offset');
+  e = press({ metaKey: true });
+  assert.ok(!items[1].classList.contains('cn-sp-done'), '⌘+Enter too, and it unticks');
+  // Not Ctrl/⌘+Enter, or not on a checklist item: the editor keeps the key.
+  e = press({});
+  assert.ok(!items[1].classList.contains('cn-sp-done') && !e.defaultPrevented, 'a plain Enter is the editor\'s');
+  e = press({ ctrlKey: true, shiftKey: true });
+  assert.ok(!items[1].classList.contains('cn-sp-done') && !e.defaultPrevented);
+  caretAt(ed.querySelector('p').firstChild, 2);
+  assert.ok(!press({ ctrlKey: true }).defaultPrevented, 'a plain paragraph: nothing');
+  caretAt(ed.querySelectorAll('ul')[1].querySelector('li').firstChild, 2);
+  e = press({ ctrlKey: true });
+  assert.ok(!e.defaultPrevented && !ed.querySelectorAll('ul')[1].querySelector('li').classList.contains('cn-sp-done'), 'an ordinary list is not a checklist');
+  // A link: opened, through the pad's own address rule; a blocked tab is said.
+  ed.innerHTML = '<ul class="cn-sp-check"><li>see <a href="https://example.com/a">the page</a></li></ul><p><a href="javascript:alert(1)">bad</a></p>';
+  let opened = [];
+  w.open = (u) => { opened.push(u); return {}; };
+  caretAt(ed.querySelector('a').firstChild, 2);
+  e = press({ ctrlKey: true });
+  assert.deepStrictEqual([opened, e.defaultPrevented, ed.querySelector('li').classList.contains('cn-sp-done')], [['https://example.com/a'], true, false], 'in a link, the link wins over the checklist item around it');
+  caretAt(ed.querySelectorAll('a')[1].firstChild, 1);
+  press({ ctrlKey: true });
+  assert.deepStrictEqual(opened, ['https://example.com/a'], 'an address the pad does not allow is not opened');
+  w.open = () => null;
+  caretAt(ed.querySelector('a').firstChild, 2);
+  press({ ctrlKey: true });
+  assert.ok(/blocked/.test(doc.getElementById('cn-scratch-status').textContent), 'a blocked tab is said (g135)');
+});
+
 test('F1 DOM (cycle 26): amending a sent PMD over a half-done one ASKS first — Keep the form keeps the answers, the card images and the suggestion — and on Amend the form is the sent patient\'s alone: no image, no card suggestion, no saved-draft id carried over, and the other patient\'s parked draft is not touched (driven)', async () => {
   const { h, f, answer } = c26IntakeBoot_();
   // Patient A, mid-form: answers, two card photos, an open card suggestion, and the saved draft the form came from.
@@ -13173,11 +13364,33 @@ test('HB4.1 DOM: Open draws every page of the PDF in the viewer, each a named im
 
 test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer says so and points at Download; a viewer closed before its answer paints nothing (driven)', async () => {
   const h = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { success: true, dataUri: 'data:application/pdf;base64,' + HB41_PDF_B64 } } });
+  // Cycle 26 F56: pdf.js is FETCHED (checksum first) only now, from cdnjs and
+  // then jsDelivr at its pinned version; when neither answers the viewer says
+  // so, and the failure is not kept — opening the form again tries again.
+  const asked = c26Net_(h.w, (code) => h.w.eval(code), () => null);
   h.w.hbOpenForm_('form-eaa'); await h.settleAll();
-  const sc = [...h.d.querySelectorAll('script[src]')].filter((s) => /pdf\.js\/3\.11\.174\/pdf\.min\.js$/.test(s.src))[0];
-  assert.ok(sc, 'pdf.js is fetched from cdnjs only now, at its pinned version');
-  sc.onerror(); await h.settleAll();
-  assert.ok(/The viewer could not load in this browser\. Use Download/.test(h.d.getElementById('hb-fv-body').textContent));
+  for (let i = 0; i < 20 && !/could not be loaded just now/.test(h.d.getElementById('hb-fv-body').textContent); i++) await new Promise((res) => setTimeout(res, 10));
+  assert.deepStrictEqual(asked, [C26_CDNJS + 'pdf.min.js', C26_JSD + 'pdf.min.js'], 'pdf.js is asked for only now, from both sources in turn, at its pinned version');
+  assert.ok(/The viewer could not be loaded just now\. Close and open the form to try again, or use Download/.test(h.d.getElementById('hb-fv-body').textContent), h.d.getElementById('hb-fv-body').textContent);
+  assert.ok(![...h.d.querySelectorAll('script[src]')].some((sc) => /pdf/.test(sc.src)), 'no script tag points at a CDN');
+  assert.strictEqual(h.w.eval('HB_PDFJS.state'), '', 'the failure is not kept');
+  // The same page, with the sources answering: the wrong bytes are passed over, the right ones run, the form draws.
+  h.w.__c26Lib = { GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve({ numPages: 1,
+    getPage: () => Promise.resolve({ getViewport: ({ scale }) => ({ width: 600 * scale, height: 800 * scale }), render: () => ({ promise: Promise.resolve() }) }) }) }) };
+  h.w.__c26Worker = {};
+  h.w.HTMLCanvasElement.prototype.getContext = () => ({});
+  const hbFiles = h.w.eval('HB_PDFJS_FILES');
+  hbFiles[0][1] = c26Sha_(C26_LIB_JS); hbFiles[1][1] = c26Sha_(C26_WORKER_JS);
+  asked.length = 0;
+  h.w.fetch = (u) => { asked.push(String(u)); const text = String(u) === C26_CDNJS + 'pdf.min.js' ? 'window.__c26Evil = 1;' : (/pdf\.min\.js$/.test(u) ? C26_LIB_JS : C26_WORKER_JS);
+    return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new TextEncoder().encode(text).buffer) }); };
+  h.w.eval('fetch = window.fetch');
+  h.w.closeOverlay(h.d.getElementById('hb-form-ov'));
+  h.w.hbOpenForm_('form-eaa'); await h.settleAll();
+  for (let i = 0; i < 40 && !h.d.querySelector('#hb-form-ov canvas'); i++) await new Promise((res) => setTimeout(res, 10));
+  assert.ok(h.d.querySelector('#hb-form-ov canvas'), 'the second open tried again, and the form is drawn');
+  assert.deepStrictEqual(asked, [C26_CDNJS + 'pdf.min.js', C26_JSD + 'pdf.min.js', C26_CDNJS + 'pdf.worker.min.js'], 'a source whose bytes fail the checksum is passed over');
+  assert.strictEqual(h.w.__c26Evil, undefined, 'and its code never ran');
   const r = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: { error: 'That form is not in the library — it may have been removed at the last import.' } } });
   hb41PdfJs_(r.w);
   r.w.hbOpenForm_('form-eaa'); await r.settleAll();

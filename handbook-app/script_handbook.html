@@ -846,13 +846,23 @@ function hbPaintQuizList_(res) {
 // ── Forms (HB4.1) ─────────────────────────────────────────────────────────
 // The handbook's form library: Team Tools' Import stores the PDFs (ManualFiles)
 // and this page lists them, offers each on the bar above the sections that name
-// it, shows one in an in-page viewer (pdf.js, loaded from cdnjs only when a
-// form is opened, run on the page's own thread — the sandbox cannot start a
-// worker from another origin) and downloads it. A failed list never replaces
+// it, shows one in an in-page viewer (pdf.js, loaded only when a form is
+// opened, run on the page's own thread — the sandbox cannot start a worker
+// from another origin) and downloads it. A failed list never replaces
 // one that loaded (g129), and a failure is said, never "no forms" (g53).
 var HB_FM = { list: undefined, lseq: 0, showing: false, seq: 0, vseq: 0, bytes: {} };   // seq: the list view's; vseq: the open viewer's
-var HB_PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
-var HB_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' | 'failed'
+// Cycle 26 F56 — Team Tools' posture for pdf.js (its Employee Docs loader, the
+// same constants, pinned to agree): each file is fetched, its SHA-256 checked
+// against the npm package's (pdfjs-dist, the version the harness installs),
+// and run from the checked bytes; two sources serve those bytes and each is
+// tried in turn; a failed load is not kept.
+var HB_PDFJS_VERSION = '3.11.174';
+var HB_PDFJS_SOURCES = ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + HB_PDFJS_VERSION + '/',
+  'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + HB_PDFJS_VERSION + '/build/'];
+var HB_PDFJS_FILES = [['pdf.min.js', '5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946'],
+  ['pdf.worker.min.js', 'feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b']];
+var HB_PDFJS_TIMEOUT_MS = 20000;
+var HB_PDFJS = { state: '', waiting: [] };   // '' | 'loading' | 'ready' — a failure is not kept (g129)
 function hbLoadForms_(then) {
   var lseq = ++HB_FM.lseq;
   var take = function (res) {
@@ -930,32 +940,57 @@ function hbFormBytes_(key, done) {
     .withFailureHandler(function (err) { done(null, (err && err.message) || 'The server did not answer.'); })
     .hbGetForm(key);
 }
+/** F56 — one script, from the first source whose bytes match `sha256`:
+ *  fetched (with a time limit), hashed, and run from the bytes that were
+ *  hashed. Resolves once it has run; rejects when no source gave those bytes. */
+function hbCheckedScript_(sources, file, sha256, timeoutMs) {
+  var hex = function (buf) { return Array.prototype.map.call(new Uint8Array(buf), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); };
+  var tryAt = function (i) {
+    if (i >= sources.length) return Promise.reject(new Error(file + ' could not be loaded from any source'));
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
+    var stop = function () { if (timer) clearTimeout(timer); };
+    // Inside a promise, so a browser with no fetch (or no crypto.subtle) is a
+    // failed load like any other, never an uncaught error.
+    return Promise.resolve().then(function () { return fetch(sources[i] + file, ctl ? { signal: ctl.signal } : undefined); })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); })
+      .then(function (buf) {
+        return crypto.subtle.digest('SHA-256', buf).then(function (d) {
+          if (hex(d) !== sha256) throw new Error(file + ' did not match its checksum');
+          return buf;
+        });
+      })
+      .then(function (buf) {
+        stop();
+        var sc = document.createElement('script');
+        sc.textContent = new TextDecoder().decode(buf);
+        document.head.appendChild(sc);
+      }, function () { stop(); return tryAt(i + 1); });
+  };
+  return tryAt(0);
+}
 /** pdf.js, loaded once: the library, then its worker code as a plain script
  *  so it runs on this thread (pdf.js uses a global pdfjsWorker when one is
- *  there). done(lib) or done(null) when either cannot load. */
+ *  there). done(lib) or done(null) when either cannot load — and a failure is
+ *  not kept: opening a form again tries again. */
 function hbPdfJs_(done) {
-  if (HB_PDFJS.state === '' && window.pdfjsLib && window.pdfjsWorker) HB_PDFJS.state = 'ready';   // already on the page
+  if (window.pdfjsLib && window.pdfjsWorker) HB_PDFJS.state = 'ready';   // already on the page
   if (HB_PDFJS.state === 'ready') { done(window.pdfjsLib); return; }
-  if (HB_PDFJS.state === 'failed') { done(null); return; }
   HB_PDFJS.waiting.push(done);
   if (HB_PDFJS.state === 'loading') return;
   HB_PDFJS.state = 'loading';
   var finish = function (ok) {
-    HB_PDFJS.state = ok ? 'ready' : 'failed';
-    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = HB_PDFJS_BASE + 'pdf.worker.min.js'; } catch (e) {} }
+    HB_PDFJS.state = ok ? 'ready' : '';
+    if (ok) { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = HB_PDFJS_SOURCES[0] + 'pdf.worker.min.js'; } catch (e) {} }
     var w = HB_PDFJS.waiting; HB_PDFJS.waiting = [];
     w.forEach(function (fn) { fn(ok ? window.pdfjsLib : null); });
   };
-  var load = function (file, next) {
-    var sc = document.createElement('script');
-    sc.src = HB_PDFJS_BASE + file;
-    sc.onload = next; sc.onerror = function () { finish(false); };
-    document.head.appendChild(sc);
-  };
-  load('pdf.min.js', function () {
-    if (!window.pdfjsLib) { finish(false); return; }
-    load('pdf.worker.min.js', function () { finish(!!window.pdfjsWorker); });
-  });
+  hbCheckedScript_(HB_PDFJS_SOURCES, HB_PDFJS_FILES[0][0], HB_PDFJS_FILES[0][1], HB_PDFJS_TIMEOUT_MS)
+    .then(function () {
+      if (!window.pdfjsLib) throw new Error('pdf.js did not start');
+      return hbCheckedScript_(HB_PDFJS_SOURCES, HB_PDFJS_FILES[1][0], HB_PDFJS_FILES[1][1], HB_PDFJS_TIMEOUT_MS);
+    })
+    .then(function () { finish(!!window.pdfjsWorker); }, function () { finish(false); });
 }
 /** Open a form in the viewer: its pages drawn one under another, each named
  *  for a screen reader; Download beside Close. */
@@ -986,7 +1021,7 @@ function hbOpenForm_(key) {
     if (!bytes) { fail('The form could not be loaded: ' + String(err || '').replace(/\.$/, '') + '.'); return; }
     hbPdfJs_(function (lib) {
       if (!body()) return;
-      if (!lib) { fail('The viewer could not load in this browser. Use Download to open the form on your computer.'); return; }
+      if (!lib) { fail('The viewer could not be loaded just now. Close and open the form to try again, or use Download to open it on your computer.'); return; }
       // A copy: pdf.js takes ownership of the buffer it is given.
       lib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise.then(function (doc) {
         var b = body(); if (!b) return;

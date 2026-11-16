@@ -2879,12 +2879,20 @@ function runRecAgo(msAgo, notes) {
       if (id === 'd-pdf-signed') {
         var signed = FIXTURES.getMyDoc('d-pdf');
         signed.docId = 'd-pdf-signed'; signed.status = 'signed'; signed.signedAt = daysAgo(0) + ' 10:12:00';
+        signed.record = 'ok';   // cycle 26 F14: the signature record's state rides a finished document
         delete signed.canComplete; delete signed.ackText; delete signed.ackVersion;
         signed.responses = { 'review-date': daysAgo(-14), 'anything-else': 'No.',
           'employee-comments': 'I understand the goals. I will answer within three rings and write a note on every call, and I would like a check-in after the first week to make sure I am on track with both. I also want to note that the queue was short-staffed during two of the weeks this plan covers, which affected my numbers on those days. Two of the calls listed in the review were transfers from the Spanish queue that reached me after a long hold, and I do not think they reflect how I answer my own queue. I have already started keeping a short note template open during calls so that every call gets a note before the next one rings, and I have asked Robin for a few minutes in our next one-on-one to go through the transfers together. I would also like the plan to name who I should go to when the queue is short-staffed again, and to say how the review date can move if that happens.' };
         signed.signatureImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAABACAYAAACgPErgAAACBklEQVR42u3bTU7EMAwG0DkCCxbc/6IgdiMEZfLX2M57UjWIBYya5ovjto8HAAAAAAAAAAAAAAAAAAAAAAAAAAAAANm8vX98Pn/+/BkgRDh9f14dwgvYFlKjh7MJLA2r2YeqC9gSVL9tE1urMme7v+q9Ou9Xv4PyQdV78au6YlW8V4EHZcJqVlUgvNacNz3GONWuBSFxUI1uOY3LvYdJ9no4WQwCTYgo1YNqas6Wr/dvq2zdJT+yqhqZrJVX/R0TorVSOKXqWrn9ljpFgirz94yy5dNj3DsWIXtY2QcpWwhUDK3ZK3iECXzKWIQJotYBFFS2iSsCoHXyRJrU0cdi5JWydHM+86pSaVXMGrxV+iDZHgY++iZD1uqk2oBkuthmVVMRxyzaFmr0cYOSTfHs/Z9K4xC14nr1u1VZ7XdUMTMeNygbUtlC67RbqlEuyqw9qp1b37/6RDOfIUvfj6ocCic//7EjBFobuKf0T+58lcizT0m3XQZsbV+l90HL0yfWSG/Jy9zFguK/W/4nj8lIX2XWqywqgPkV2PHbu9WhteqkmgRr+iqzGriCqj28XulhcdPEyPZ/rOr9WznjQ4ngWtU3sQKt7av09EgEFSVX895JZCKsDbEZi4DxQQ9FUAGZQssZBUL1TXr7XgC3hJhwAgAAAAAAAAAAAAAAAAAAAAAAAACACb4AeenYjKoA5AMAAAAASUVORK5CYII=';
         signed.initialsImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAG4AAAAwCAYAAADw3098AAABDUlEQVR42u2ZOQ7DMAwE/YQUKfz/jyZVWis81ga1M4A7g4BndVDycQAAAAAAAAAAAAAY8Hqfn9+DjYGhEd7g0KaGZzPgrkKbJMFqtViFNkXCLqtFeZROEmAf2lVwGRFqeTvty617QjU0pURCW3xwRohapm1o/+5hFTEKmbt0v+l9JfLRGTl3h7bVLOp6NypKIdYmtMgsUg6Iqtitl8ao4KwAZW3rBiTTJWZC657NdI3Bc1m1xVeEZrM0ZoLJiljVroq2PputZka33K6mxD606P1jV+2OhoefuIf2V01XXQITylXNEkJ7aBmq1CW0guC7b2rUV2KWZzv1TY3qkA4PDigsAAAAAAAAAAAAjOULTnojrgUB7rkAAAAASUVORK5CYII=';
         return signed;
+      }
+      // Cycle 26 F14: the same policy with a signature record that no longer
+      // verifies — the reader says so, and makes no copy from it.
+      if (id === 'd-altered') {
+        var alt = FIXTURES.getMyDoc('d-signed');
+        alt.docId = 'd-altered'; alt.record = 'altered'; alt.isOwner = false;
+        return alt;
       }
       if (id === 'd-signed') {
         // ED4: on its letterhead, with a centred heading, a page break and a
@@ -2893,7 +2901,7 @@ function runRecAgo(msAgo, notes) {
         return { docId: 'd-signed', empId: 'E-1042', docType: 'policy', title: 'Phone etiquette policy', status: 'signed', requiresSignature: true,
           bodyMd: ':::center\n**Customer Service Department**\n:::\n\nAnswer within three rings, name the company, and confirm the caller\'s identity before discussing an order.\n\n- Smile while you speak\n- Never place a caller on hold for more than two minutes\n\n[page break]\n\nI have read and will follow this policy.\n\n[signature]',
           issuedAt: daysAgo(20) + ' 09:00:00', empName: 'Avery Blake',
-          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', pdf: null,
+          dueAt: '', signedAt: daysAgo(18) + ' 10:12:00', voidReason: '', isOwner: true, fields: [], responses: {}, integrity: 'ok', record: 'ok', pdf: null,
           letterhead: { id: lh.id, name: lh.name, address: lh.address, footer: lh.footer, logo: lh.logo },
           signatureImage: FIXTURES.getMyDoc('d-pdf-signed').signatureImage };
       }
@@ -2933,14 +2941,17 @@ function runRecAgo(msAgo, notes) {
       (opts.extra || []).forEach(function (a) { a = String(a).toLowerCase(); cc.push(a); if (!/@(universalmedsupply|umsupply)\.com$/.test(a)) outside.push(a); });
       if (opts.preview) {
         return { success: true, preview: true, to: to, cc: cc, outside: outside, subject: 'Copy: Performance Improvement Plan (signed ' + daysAgo(0) + ')',
+          // cycle 26 F15: the document's issuer has since left the manager role — left out, and named.
+          notIncluded: opts.managers ? ['jordan.pike@universalmedsupply.com'] : [], notIncludedWhy: opts.managers ? 'no longer a manager on the team roster' : '',
           html: '<p style="margin:0 0 12px;">Avery Blake sent you a copy of <b>Performance Improvement Plan</b>, signed by Sam Ortiz on ' + daysAgo(0) + '.</p>' +
             (opts.note ? '<p style="margin:0 0 12px;white-space:pre-wrap;"><i>Avery Blake wrote:</i> ' + String(opts.note).replace(/[&<>"]/g, '') + '</p>' : '') +
-            '<p style="margin:0 0 4px;">Attached: <b>Performance Improvement Plan (copy).pdf</b> — a copy made from the signed original. The certificate on its last pages is the record; the HR record holds the original.</p>',
+            '<p style="margin:0 0 8px;">Attached: <b>Performance Improvement Plan (copy).pdf</b> — a copy made from the signed original. The certificate on its last pages is the record; the HR record holds the original.</p>' +
+            '<p style="margin:0 0 4px;color:#555;font-size:12px;">This copy was put together on Avery Blake\'s computer; Team Tools did not produce the attachment. The record is the certificate held in Team Tools (Training &amp; Employee Docs).</p>',
           fileName: 'Performance Improvement Plan (copy).pdf', maxBytes: 10485760 };
       }
       return { success: true, sent: to.length + cc.length, to: to, cc: cc };
     },
-    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' },
+    getEmpDocCertificate: { success: true, dataUri: 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOTggPj4Kc3RyZWFtCkJUIC9GMSAxNCBUZiA2MCA3NDAgVGQgKFVNUyBUZWFtIFRvb2xzKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNzAwIFRkIChDZXJ0aWZpY2F0ZSBvZiBzaWduYXR1cmUpIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA2NzQgVGQgKERvY3VtZW50OiBQZXJmb3JtYW5jZSBJbXByb3ZlbWVudCBQbGFuKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjQ4IFRkIChFbXBsb3llZTogU2FtIE9ydGl6IChFLTEwODgpKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNjIyIFRkIChTaWduZWQ6IDIwMjYtMTEtMDQgMTA6MTI6MDApIFRqIEVUCkJUIC9GMSAxMSBUZiA2MCA1OTYgVGQgKFBERiBTSEEtMjU2OiAzZjJhLi4uKSBUaiBFVApCVCAvRjEgMTEgVGYgNjAgNTcwIFRkIChTaWduYXR1cmUgaGFzaDogOWIxYy4uLikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDA2ODkgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo3NTkKJSVFT0YK', fileName: 'Phone etiquette policy - certificate.pdf' , verified: true, tampered: false, verdict: 'Verified ' + daysAgo(0) + ' 09:00:00 CST: the content hash and the signature hash were recomputed from the HR record when this certificate was made, and match.' },
     getDocsDashboard: { docs: [
       { docId: 'd-pdf', empId: 'E-1088', empName: 'Sam Ortiz', docType: 'pip', title: 'Performance Improvement Plan', status: 'issued', requiresSignature: true,
         issuedBy: 'robin@umsupply.com', issuedAt: daysAgo(1) + ' 09:00:00', dueAt: daysAgo(-6), signedAt: '', fieldCount: 3, hasPdf: true, overdue: false }],

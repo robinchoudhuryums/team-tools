@@ -99,6 +99,7 @@ const CONFIG = {
   // digest (the "now a meeting is warranted" reminder). 'praise' never nags.
   COACHING_UNACK_REMINDER_DAYS: 7,
   COACHING_RECAP_DAYS: 7,               // K8 — the weekly agent recap's lookback window (the cadence itself is the Friday trigger)
+  COACHING_RECAP_OVERLAP_MIN: 10,       // cycle 26 F44 — how far before the previous recap's stamp the next one reaches (the run stamps when it ends)
   COACHING_ONE_ON_ONE_DAYS: 14,         // Batch F (operator 2026-11-02) — the default 1-on-1 cadence; each manager adjusts their own in the CoachingSettings tab (0 = no reminders)
   QA_AUDIT_TARGET_PER_PERIOD: 3,        // Q4 (design handoff PR 5) — sampled calls owed per employee per audit period (Script Property QA_AUDIT_TARGET_PER_PERIOD overrides, 1..50)
   // Spanish-inbox efficiency tracking (Gmail). All bilingual-assistance requests
@@ -2956,6 +2957,7 @@ const TRAIN_ATTEMPT_TAB = 'QuizAttempts';
 const TRAIN_QUIZ_HEADERS = ['QuizId','Title','KbItemId','PassPct','QuestionsJson','UpdatedBy','UpdatedAt'];
 const TRAIN_ATTEMPT_HEADERS = ['AttemptId','QuizId','EmpId','SubmittedAt','ScorePct','Passed','PerQuestionJson'];
 const TQ = { QUIZ_ID:0, TITLE:1, KB_ITEM_ID:2, PASS_PCT:3, QUESTIONS_JSON:4, UPDATED_BY:5, UPDATED_AT:6 };
+const TRAIN_QUIZ_TEXT_IDX = [TQ.TITLE];   // cycle 26 F44: a quiz title is free text — an '@' cell
 const TQA = { ATTEMPT_ID:0, QUIZ_ID:1, EMP_ID:2, SUBMITTED_AT:3, SCORE_PCT:4, PASSED:5, PER_QUESTION_JSON:6 };
 const TRAIN_QUIZ_MAX_QUESTIONS = 50;
 const TRAIN_QUIZ_MAX_OPTIONS = 6;
@@ -3017,6 +3019,9 @@ const EMPDOC_TYPES = ['review','pip','policy','other'];
 const EMPDOC_TPL_TAB = 'EmpDocTemplates';
 const EMPDOC_TPL_HEADERS = ['TemplateId','Name','DocType','BodyMd','FieldsJson','RequiresSignature','CreatedBy','CreatedAt'];
 const EDT = { TPL_ID:0, NAME:1, DOC_TYPE:2, BODY_MD:3, FIELDS:4, REQUIRES_SIG:5, CREATED_BY:6, CREATED_AT:7 };
+// Cycle 26 F44: a template's name and body are free text — '@' cells, like an
+// issued document's (a template named "3/4" read back as a date).
+const EMPDOC_TPL_TEXT_IDX = [EDT.NAME, EDT.BODY_MD];
 // v2 — employee-completable fields on a doc (in addition to the signature).
 const EMPDOC_FIELD_TYPES = ['text','textarea','date','signature','initials'];
 // ED1 (operator 2026-11-05 — "a 'signature' box type that allows for a
@@ -3031,10 +3036,12 @@ const EMPDOC_INITIALS_MAX_CHARS = 20000;   // the pad exports at <= 300px wide
 const EMPDOC_FIELD_CAP = 40;              // max fields per doc/template
 const EMPDOC_FIELD_LABEL_MAX = 200;
 const EMPDOC_RESPONSE_MAX = 8000;         // per free-text response
+const EMPDOC_RESPONSES_TOTAL_MAX = 45000; // cycle 26 F44: every answer together, as stored JSON — under the 50k cell limit
 const EMPDOC_TPL_NAME_MAX = 120;
 const EMPDOC_TITLE_MAX = 200;
 const EMPDOC_BODY_MAX = 49000;        // under the 50k Sheets cell limit
 const EMPDOC_SIG_MAX_CHARS = 45000;   // INV-96 cap; the pad export downscales to <=600px
+const EMPDOC_SIG_MIN_CHARS = 200;     // cycle 26 F44: shorter than any drawn PNG — a blank or hand-made value is not a signature
 // ── Batch H (operator 2026-11-02 — "it needs to at least work with PDFs; can I
 // add highlighted boxes that indicate what needs to be completed, like a date"):
 // a document may be ISSUED AS A PDF. The bytes live in the HR store's
@@ -3054,6 +3061,11 @@ const EMPDOC_PDF_MAX_PAGES = 200;              // the highest page a field box m
 // to the employee, the managers if chosen, and at most this many other addresses.
 const EMPDOC_COPY_MAX_BYTES = 10485760;        // 10 MB
 const EMPDOC_COPY_EXTRA_MAX = 5;
+// Cycle 26 F15: how many copies one person may email inside the window. The
+// attachment is made in the sender's browser, so the server cannot vouch for
+// its bytes — the cap bounds what one account can send under the app's name.
+const EMPDOC_COPY_WINDOW_MAX = 10;
+const EMPDOC_COPY_WINDOW_SECS = 21600;       // 6 hours — the longest a ScriptCache entry lives
 // ED4 (operator 2026-11-09): the company letterheads an employee document is
 // dressed in — each a name, an address (lines), a footer and a logo. The admin
 // keeps them (Manage → Admin → Config → Letterheads) in ONE Script Property;
@@ -3071,6 +3083,10 @@ const EMPDOC_LOGO_TYPES = ['image/png', 'image/jpeg'];   // what the certificate
 const EMPDOC_ACK_VERSION = 1;
 const EMPDOC_ACK_TEXT = 'I acknowledge that I have read and understood this document. ' +
   'I understand this electronic acknowledgment has the same effect as a handwritten signature.';
+// Cycle 26 F44: the acknowledgement as it read at EACH version. A certificate
+// prints the text for the version on the signature row — when the wording is
+// bumped, add the new version here and keep the old ones.
+const EMPDOC_ACK_TEXTS = { 1: EMPDOC_ACK_TEXT };
 /** Content hash — freezes what was issued (body+title+type+empId, + the v2
  *  fillable-field SCHEMA when present). `fieldsJson` is appended ONLY when
  *  non-empty so legacy 4-arg callers / fieldless rows hash identically to

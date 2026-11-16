@@ -245,24 +245,29 @@ function coachCanManagerSee_(callerEmp, item) {
 function createCoaching(payload) {
   const callerEmp = getEmployeeInfo_();
   if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  // Cycle 26 F44: the validation and the screenshot's decode-and-hash change
+  // nothing, so they run BEFORE the project lock (g17) — only the store and
+  // the append are inside it.
+  let v, image = null;
+  try {
+    v = coachValidate_(payload);
+    if (!v.ok) return { success: false, error: v.error };
+    if (payload && payload.image) {
+      image = coachImageItem_(payload.image);
+      if (image.error) return { success: false, error: image.error };
+    }
+  } catch (err) { return { success: false, error: err.message }; }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let notifyAfter = null;
   let result = null;
   try {
-    const v = coachValidate_(payload);
-    if (!v.ok) return { success: false, error: v.error };
     const target = lookupEmployeeById_(v.item.empId);
     if (!target) return { success: false, error: 'Unknown employee.' };
-    // Batch F: the optional screenshot is checked, then stored BEFORE the row,
-    // so an item never names an image that is not there; a screenshot that
-    // cannot be stored logs nothing (the manager can send it again without one).
-    let image = null;
-    if (payload && payload.image) {
-      image = coachImageItem_(payload.image);
-      if (image.error) return { success: false, error: image.error };
-      coachImageStoreCallerLocked_(image);
-    }
+    // Batch F: the optional screenshot is stored BEFORE the row, so an item
+    // never names an image that is not there; a screenshot that cannot be
+    // stored logs nothing (the manager can send it again without one).
+    if (image) coachImageStoreCallerLocked_(image);
     const coachId = Utilities.getUuid();
     const now = new Date();
     const ts = fmtDate_(now) + ' ' + fmtTime_(now);
@@ -1019,11 +1024,30 @@ function notifyManagerOfCoachingAck_(item, rep, replied) {
         { tone: 'success', subLabel: 'Training · Coaching', ctaUrl: safeWebAppUrl_('coaching'), ctaLabel: 'Open Coaching' }) });
   } catch (e) { console.warn('notifyManagerOfCoachingAck_ failed: ' + e.message); }
 }
+/** PURE (Node-pinned) — cycle 26 F44: where this recap's window STARTS. The
+ *  window was "now − 7×24 h", and the weekly trigger does not fire at the same
+ *  second each week: an item logged just after last Friday's run and more than
+ *  seven days before this one was in neither recap (and a non-critical item
+ *  gets no other email); the opposite drift listed one twice. So the window
+ *  starts where the PREVIOUS recap ended — its heartbeat stamp, less a short
+ *  overlap, because that stamp is written when the run finishes and an item
+ *  logged while it ran must not fall between the two. With no previous run on
+ *  record, or one too recent or too old to be last week's (under a day, or
+ *  more than four windows back), it is the plain window. → { cutoff, since }. */
+function coachRecapCutoff_(nowMs, windowDays, prevRunMs, overlapMs) {
+  const win = (windowDays || 7) * 86400000;
+  const prev = Number(prevRunMs);
+  if (isFinite(prev) && prev > 0 && nowMs - prev >= 86400000 && nowMs - prev <= 4 * win) {
+    return { cutoff: prev - (overlapMs || 0), since: 'lastRecap' };
+  }
+  return { cutoff: nowMs - win, since: 'window' };
+}
 /** Pure (Node-pinned) — bucket the trailing-window NON-critical items by rep.
  *  Returns { empId: [items] }; critical items are excluded (they mailed at
- *  create), voided rows are excluded, older rows are excluded. */
-function coachRecapBuckets_(items, nowMs, windowDays) {
-  const cutoff = nowMs - (windowDays || 7) * 86400000;
+ *  create), voided rows are excluded, older rows are excluded. `cutoffMs`
+ *  (F44) is where the window starts; without it, windowDays before now. */
+function coachRecapBuckets_(items, nowMs, windowDays, cutoffMs) {
+  const cutoff = (cutoffMs != null && isFinite(cutoffMs)) ? cutoffMs : nowMs - (windowDays || 7) * 86400000;
   const by = {};
   (items || []).forEach(function (c) {
     if (!c || !c.coachId || c.status === 'void' || c.severity === 'critical') return;
@@ -1065,7 +1089,15 @@ function sendCoachingRecapDigest() {
       if (hrDocsConfigured_()) return { outcome: automationOutcome_('failed', 'the Employee Docs store (HR_DOCS_SS_ID) could not be read: ' + e.message) };
       return { outcome: automationOutcome_('ok') };
     }
-    const buckets = coachRecapBuckets_(items, nowMs, windowDays);
+    // F44: the window starts where the last recap ended (coachRecapCutoff_).
+    let prevRunMs = NaN;
+    try {
+      const runs = JSON.parse(PropertiesService.getScriptProperties().getProperty(DIGEST_LAST_RUN_PROP)) || {};
+      prevRunMs = coachParseTs_(runs.coachingRecap);
+    } catch (eRuns) { prevRunMs = NaN; }
+    const from = coachRecapCutoff_(nowMs, windowDays, prevRunMs, (CONFIG.COACHING_RECAP_OVERLAP_MIN || 0) * 60000);
+    const span = from.since === 'lastRecap' ? 'since your last recap' : 'in the last ' + windowDays + ' days';
+    const buckets = coachRecapBuckets_(items, nowMs, windowDays, from.cutoff);
     const roster = getEmployeeRosterRows_();
     const byId = {}, nameByEmail = {};
     for (let r = 1; r < roster.length; r++) {
@@ -1085,10 +1117,10 @@ function sendCoachingRecapDigest() {
           (c.severity === 'praise' ? '' : (c.status === 'acknowledged' ? ' · acknowledged' : ' · not yet acknowledged')) +
           (c.followUpAt ? ' · revisit ' + c.followUpAt : '')];
       });
-      const html = '<p style="margin:0 0 6px;">Hi ' + esc_(who.name || 'there') + ', here is the coaching logged for you in the last ' + windowDays + ' days. Open the app to read each item' +
+      const html = '<p style="margin:0 0 6px;">Hi ' + esc_(who.name || 'there') + ', here is the coaching logged for you ' + span + '. Open the app to read each item' +
         (list.some(function (c) { return c.severity !== 'praise' && c.status !== 'acknowledged'; }) ? ' and acknowledge the ones still waiting on you' : '') + '.</p>' +
         brandedKvRows_(rowsHtml);
-      const text = 'Coaching logged for you in the last ' + windowDays + ' days:\n' +
+      const text = 'Coaching logged for you ' + span + ':\n' +
         rowsHtml.map(function (r) { return '  ' + r[0] + ' — ' + r[1]; }).join('\n') +
         '\n\nOpen Team Tools → Training & Employee Docs → Coaching to read them.';
       // HR-3 / MAIL-3 (cycle 23): coachSendMail_ RETURNS false on a failed

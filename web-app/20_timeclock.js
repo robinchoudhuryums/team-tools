@@ -9900,6 +9900,11 @@ function empDocValidateIssue_(payload, pdf) {
   if (pdf) bodyMd = (bodyMd.trim() ? bodyMd.trim() + '\n\n' : '') + empDocPdfLine_(pdf.sha, pdf.name);
   if (!bodyMd.trim()) return { ok: false, error: 'Document body is required.' };
   if (bodyMd.length > EMPDOC_BODY_MAX) return { ok: false, error: 'Document is too long (max ~49,000 chars).' };
+  // Cycle 26 F44: what a signer SEES must be what the hash covers. An image by
+  // web address is hashed as its address only, and a converted Google Doc's
+  // image placeholder never becomes an image here — both are refused.
+  const linked = empDocBodyLinkedImage_(bodyMd);
+  if (linked) return { ok: false, error: linked.error };
   const dueAt = String(payload.dueAt || '').trim();
   if (dueAt && !/^\d{4}-\d{2}-\d{2}$/.test(dueAt)) return { ok: false, error: 'Invalid due date.' };
   const fv = empDocValidateFields_(payload.fields, { allowBoxes: !!pdf, pages: pdf ? empDocPdfPagesOf_(pdf.pages, payload.pdfPages) : 0 });
@@ -9917,6 +9922,24 @@ function empDocValidateIssue_(payload, pdf) {
     // later; default behavior (no flag) is to issue immediately (back-compat).
     status: payload.release === false ? 'draft' : 'issued',
   } };
+}
+/** PURE (Node-pinned) — cycle 26 F44: the first image in a document body that
+ *  the content hash cannot vouch for, as { kind, error }, or null. `kbimg:` keys
+ *  are content-addressed (the key IS the picture) and pass; a `kbdoc:` token is
+ *  the Google Doc converter's placeholder, which only a Reference save ever
+ *  turns into an image; any other address is a picture someone else controls. */
+function empDocBodyLinkedImage_(bodyMd) {
+  const re = /!\[[^\]]*\]\(\s*([^)\s]*)/g;
+  let m;
+  while ((m = re.exec(String(bodyMd || '')))) {
+    const url = m[1];
+    if (/^kbimg:kbimg-[a-f0-9]{24}$/.test(url)) continue;
+    if (/^kbdoc:/i.test(url)) {
+      return { kind: 'kbdoc', error: 'The body still holds a placeholder for an image from the converted Google Doc ("Doc image…"). An employee document cannot carry a Doc\'s images — remove the placeholder, or issue the document as a PDF.' };
+    }
+    return { kind: 'link', error: 'The body embeds an image by its web address. The integrity hash covers the address, not the picture, so what a signed document shows could change later — remove the image, or issue the document as a PDF.' };
+  }
+  return null;
 }
 /** Pure (Node-pinned) — normalize + validate a fillable-field schema. Returns
  *  {ok, fields:[{id,label,type,required}]} or {ok:false,error}. Auto-derives a
@@ -10040,6 +10063,16 @@ function empDocValidateResponses_(fields, responses) {
     if (val.length > EMPDOC_RESPONSE_MAX) return { ok: false, error: 'A response is too long (max ' + EMPDOC_RESPONSE_MAX + ' chars).' };
     if (f.type === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return { ok: false, error: 'Invalid date for: ' + f.label };
     if (val) out[f.id] = val;
+  }
+  // Cycle 26 F44: the answers are stored together in ONE cell. Each fits its
+  // own limit, yet seven long ones overflowed the cell and the employee was
+  // shown the spreadsheet's raw error — refuse here, naming the longest.
+  const total = JSON.stringify(out).length;
+  if (total > EMPDOC_RESPONSES_TOTAL_MAX) {
+    let longest = null;
+    fields.forEach(function (f) { if (out[f.id] && (!longest || out[f.id].length > out[longest.id].length)) longest = f; });
+    return { ok: false, error: 'Your answers together are ' + total.toLocaleString() + ' characters — more than the ' + EMPDOC_RESPONSES_TOTAL_MAX.toLocaleString() +
+      ' this record can hold. Shorten the longest one' + (longest ? ' ("' + longest.label + '")' : '') + ' and submit again.' };
   }
   return { ok: true, responses: out };
 }
