@@ -13671,6 +13671,10 @@ function cnDTableRead_(key, file) {
         var el = document.getElementById('cn-dt-prev-' + key);
         if (!el) return;
         if (!res || res.error) { el.innerHTML = errorStateHtml_((res && res.error) || 'Could not read that file'); return; }
+        // F37 (cycle 26): the write is handed back the fingerprint of the
+        // preview that is on screen — and only for the file still pending.
+        var pendNow = (CN_STATE.dtablePending || {})[key];
+        if (pendNow && pendNow.b64 === b64) pendNow.fingerprint = res.fingerprint || '';
         el.innerHTML = cnDTablePreviewHtml_(key, file.name, res);
       })
       .withFailureHandler(function (err) {
@@ -13715,6 +13719,12 @@ function cnDTablePreviewHtml_(key, fileName, r) {
   '</div>';
 }
 
+/** PURE (Node-pinned) — F37: what an import that DID replace the table could
+ *  not finish, as one sentence run ('' when it finished everything). */
+function cnDTableAfterWarnings_(res) {
+  return [res && res.noteWarning, res && res.auditWarning, res && res.afterWarning]
+    .filter(function (w) { return !!w; }).join(' ');
+}
 function cnDTableImport_(key, btn) {
   var pend = (CN_STATE.dtablePending || {})[key];
   if (!pend) { showToast('Pick the file again', 'toast-warn'); return; }
@@ -13735,7 +13745,12 @@ function cnDTableImport_(key, btn) {
           showToast((res && res.error) || 'Import failed', 'toast-error');
           return;
         }
-        showToast('Imported ' + res.rows + ' row(s) into ' + res.tab, 'toast-success');
+        // F37 (cycle 26): the table is in — and anything the server could not
+        // finish beside it (the standing note, the audit row) is SAID, and
+        // stays on screen until dismissed. It was built and never shown.
+        var after = cnDTableAfterWarnings_(res);
+        if (after) showToast('Imported ' + res.rows + ' row(s) into ' + res.tab + ' — but: ' + after, 'toast-warn', { sticky: true });
+        else showToast('Imported ' + res.rows + ' row(s) into ' + res.tab, 'toast-success');
         if (CN_STATE.dtablePending) delete CN_STATE.dtablePending[key];
         cnAdminLoadDataTables_();
       })
@@ -13743,7 +13758,7 @@ function cnDTableImport_(key, btn) {
         btn.disabled = false; btn.textContent = 'Replace';
         showToast('Import failed: ' + ((err && err.message) || 'Server error'), 'toast-error');
       })
-      .kbImportDataTable(key, pend.b64, { dryRun: false });
+      .kbImportDataTable(key, pend.b64, { dryRun: false, expect: pend.fingerprint || '' });
   });
 }
 

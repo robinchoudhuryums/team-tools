@@ -4910,6 +4910,85 @@ test('T3 DOM: a pricing tab the server could not read is ANNOUNCED — bare code
     'no join attempted, nothing to warn about');
 });
 
+// ── Cycle 26 Batch 5 — payor lookups ────────────────────────────────────────
+const C26_COVER_GAP = [
+  { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 120, unread: 0 },
+  { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'missing', rows: 0, unread: 0 }];
+const C26_COVER_FULL = [
+  { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 120, unread: 0 },
+  { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 40, unread: 0 }];
+
+test('F5 DOM (cycle 26): a plan not found while a payor table was NOT searched is not called "plan not listed" — the table is named and the TRY rule is withheld; with every table searched the TRY rule stands', async () => {
+  const h = boot();
+  let cover = C26_COVER_GAP;
+  h.run.respond('searchInsurancePayors', () => ({ matches: [], total: 0, notFound: true, cap: 8, coverage: cover,
+    tables: [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', legend: null, noteError: '', hasStatus: true }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'molina');
+  const host = h.$('#kb-ins-results');
+  const gap = host.querySelector('.kb-ins-cover.gap');
+  assert.ok(gap, 'the table that was not searched is named');
+  assert.ok(/Not searched: Primary Medicaid \(not imported yet\)\. Searched: Medicare \/ MA\./.test(gap.textContent), gap.textContent);
+  const guide = host.querySelector('.kb-ins-guide');
+  assert.ok(guide.classList.contains('gap') && /not yet/.test(guide.textContent) && /not every table was/.test(guide.textContent), guide.textContent);
+  assert.ok(!/isn’t in the payor sheet\./.test(guide.textContent) && !/submit to test authorization/.test(guide.textContent),
+    'THE REGRESSION: it said the plan "isn’t in the payor sheet" and to follow TRY — about a table nobody had read');
+
+  cover = C26_COVER_FULL;
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'molina x');
+  assert.strictEqual(host.querySelectorAll('.kb-ins-cover.gap').length, 0, 'every table searched: no warning');
+  assert.ok(/Searched: Medicare \/ MA, Primary Medicaid\./.test(host.querySelector('.kb-ins-cover').textContent), 'the no-match says what it searched');
+  const g2 = host.querySelector('.kb-ins-guide');
+  assert.ok(!g2.classList.contains('gap') && /follows the TRY rules/.test(g2.textContent), 'and the TRY rule stands: ' + g2.textContent);
+
+  // An answer with no coverage (a server from before the deploy) reads exactly as it did.
+  h.run.respond('searchInsurancePayors', () => ({ matches: [], total: 0, notFound: true, cap: 8 }));
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'molina xy');
+  assert.strictEqual(host.querySelectorAll('.kb-ins-cover').length, 0);
+  assert.ok(/follows the TRY rules/.test(host.querySelector('.kb-ins-guide').textContent));
+});
+
+test('F5 + F38 + F7 DOM (cycle 26): matches under a gap keep the gap above the cards; a card the cross-table check never reached says so; and a conditioned accept is amber, never green', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({ total: 3, cap: 8, codeJoin: { attempted: false, error: '' }, coverage: C26_COVER_GAP,
+    tables: [{ key: 'InsurancePayors', label: 'Medicare / MA', note: '', legend: null, noteError: '', hasStatus: true }],
+    matches: [
+      { name: 'AETNA ONE', table: 'InsurancePayors', networkStatus: 'Accepted except HI', details: [] },
+      { name: 'AETNA TWO', table: 'InsurancePayors', networkStatus: 'Cannot be accepted', alsoUnchecked: true, details: [] },
+      { name: 'AETNA THREE', table: 'InsurancePayors', networkStatus: 'In-Network', details: [] }] }));
+  bootLookups(h);
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'aetna');
+  const host = h.$('#kb-ins-results');
+  const first = host.firstElementChild;
+  assert.ok(first.classList.contains('kb-ins-cover') && first.classList.contains('gap'), 'the gap is the first thing in the results, above every card');
+  const cards = Array.from(host.querySelectorAll('.kb-ins-card'));
+  assert.strictEqual(cards.length, 3);
+  const pill = (i) => cards[i].querySelector('.kb-ins-pill');
+  assert.ok(pill(0).classList.contains('warn') && !pill(0).classList.contains('good'), '"Accepted except HI" is amber (it was green): ' + pill(0).className);
+  assert.ok(pill(1).classList.contains('bad'), '"Cannot be accepted" is red (it was green): ' + pill(1).className);
+  assert.ok(pill(2).classList.contains('good'), 'a plain In-Network stays green');
+  assert.strictEqual(cards[0].querySelectorAll('.kb-ins-also.unchecked').length, 0);
+  const un = cards[1].querySelector('.kb-ins-also.unchecked');
+  assert.ok(un && /Not compared with the other payor tables/.test(un.textContent), 'the card says its cross-table check did not happen');
+});
+
+test('F8 DOM (cycle 26): the price row names the payor column its rule came from, with the plan\'s state and table', async () => {
+  const h = boot();
+  h.run.respond('searchInsurancePayors', () => ({ total: 1, cap: 8, codeJoin: { attempted: true, error: '' },
+    matches: [{ name: 'UHC DUAL', state: 'Texas', table: 'UhcPayors', tableLabel: 'UHC by state', networkStatus: 'INN', details: [
+      { label: 'K0800 (451- 600) No In HI', value: 'X', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }] }] }));
+  h.run.respond('searchOopPricing', () => T3_ITEM_OK);
+  bootLookups(h);
+  await t3Search(h, '#kb-oop-item', 'oopLookupInput_', 'scout');
+  await t3Search(h, '#kb-ins-input', 'insLookupInput_', 'uhc');
+  const row = h.$('#kb-oop-results').querySelector('.kb-oop-xref-r');
+  assert.ok(row, 'the cross-reference is drawn');
+  assert.strictEqual(row.querySelector('.c').textContent, 'K0800 (451- 600) No In HI', 'the column label with its qualifier — the row showed a bare X before');
+  assert.strictEqual(row.querySelector('.w').textContent, 'Texas · UHC by state');
+  assert.ok(/UHC DUAL/.test(row.querySelector('.p').textContent));
+  assert.ok(row.querySelector('.kb-oop-xref-v').classList.contains('good'), 'and the value keeps its tone');
+});
+
 function t3Key(h, el, key) {
   const e = new h.window.KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
   el.dispatchEvent(e);

@@ -348,6 +348,13 @@
   .kb-ins-catch { font-size: .72rem; color: var(--info-deep); margin: 2px 0 2px; display: flex; gap: 4px; align-items: center; }
   .kb-ins-also { font-size: .72rem; color: var(--warning-deep); background: var(--warn-soft); border-radius: 6px; padding: 3px 7px; margin: 3px 0; display: flex; gap: 5px; align-items: flex-start; }
   .kb-ins-also > svg { flex: none; margin-top: 2px; }
+  .kb-ins-also.unchecked { color: var(--muted); background: var(--info-soft); }
+  .kb-ins-cover { font-size: .74rem; color: var(--muted); margin: 6px 0; }
+  .kb-ins-cover.gap { display: flex; gap: 6px; align-items: flex-start; padding: 6px 9px; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--ink); }
+  .kb-ins-cover.gap > svg { flex: none; margin-top: 2px; color: var(--warning-deep); }
+  .kb-ins-cover span { min-width: 0; }
+  .kb-ins-cover b { font-weight: 600; }
+  .kb-ins-guide.gap { background: var(--warn-soft); color: var(--ink); }
   .kb-ins-also span { min-width: 0; }
   .kb-ins-also b { font-weight: 600; }
   .kb-ins-also-d { overflow-wrap: anywhere; }
@@ -371,6 +378,9 @@
   .kb-oop-xref-lbl { font-family: var(--mono); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-2); }
   .kb-oop-xref-r { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
   .kb-oop-xref-r .p { color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+  .kb-oop-xref-r .p .w { color: var(--muted-2); font-size: .68rem; }
+  .kb-oop-xref-r .p .x { color: var(--destructive); font-size: .68rem; font-weight: 600; }
+  .kb-oop-xref-r .p .c { display: block; font-family: var(--mono); font-size: .68rem; color: var(--muted-2); overflow-wrap: anywhere; }
   .kb-oop-xref-v { font-weight: 600; color: var(--ink); text-align: right; flex-shrink: 0; max-width: 60%; }
   .kb-oop-xref-v.good { color: var(--success-deep); }
   .kb-oop-xref-v.bad { color: var(--danger-deep); }
@@ -1572,8 +1582,20 @@ var INS_IS = {
   // "no longer accepted", "never accepted", "non-accepted", "unaccepted".
   notAccepted: function (v) {
     // PT4: "NO ( Process E0144)" — a No with an instruction is still a no.
-    return v === 'no' || /^no([^a-z]|$)/.test(v) || /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't)[\s-]*(currently\s+|yet\s+)?accept(ed|ing)?([^a-z]|$)/.test(v) ||
-      insWord_(v, 'unaccepted');
+    // F7 (cycle 26): "Cannot be accepted", "Unable to accept", "Will not
+    // accept" and "Not acceptable" are refusals too — each carries the word
+    // "accept" and toned GREEN. A leading "No" that only says nothing is
+    // required ("No auth required") is not a refusal — see noRequirement.
+    return v === 'no' || (/^no([^a-z]|$)/.test(v) && !INS_IS.noRequirement(v)) ||
+      /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't|does\s*n[o']?t|cannot|can\s*not|can'?t|won'?t|will\s+not|unable\s+to)[\s-]*((currently|yet|be|being)\s+)*accept(ed|ing|able|s)?([^a-z]|$)/.test(v) ||
+      insWord_(v, 'unaccepted') || insWord_(v, 'unacceptable');
+  },
+  // F7: "No auth required", "No PA needed", "No referral" — a statement that
+  // something is NOT needed. It toned red as a "No"; it is no verdict at all,
+  // so it renders neutral and verbatim like any value nobody has defined.
+  noRequirement: function (v) {
+    return /^no\s+(prior\s+|pre[\s-]*)?(auth(orization)?s?|pa|referrals?|precert(ification)?s?|restrictions?|limits?|limitations?|requirements?)([^a-z]|$)/.test(v) ||
+      /^no\s+[a-z][a-z\s\/-]*\s(required|needed|necessary)([^a-z]|$)/.test(v);
   },
   oonBare: function (v) { return /^(oon|out[\s-]*of[\s-]*network)$/.test(v); },
   oonAny: function (v) { return /(^|[^a-z])(oon|out[\s-]*of[\s-]*network)([^a-z]|$)/.test(v); },
@@ -1609,6 +1631,13 @@ var INS_IS = {
   accepted: function (v) {
     if (/(^|[^a-z])(not|non|out)[\s-]*(of[\s-]*)?in[\s-]*network/.test(v)) return false;
     return insWord_(v, 'in-network') || /(^|[^a-z])(inn|in network)([^a-z]|$)/.test(v) || insWord_(v, 'accepted') || v === 'x' || v === 'yes';
+  },
+  // F7 (cycle 26): GREEN is for a value that is an accept and nothing else —
+  // X, Yes, Accepted, In-Network, INN, alone or together. "Accepted except
+  // HI" contains the word and toned green; anything written beside the accept
+  // is a condition, and a condition is amber.
+  acceptedExact: function (v) {
+    return /^[\s(]*((x|yes|accepted|in[\s-]*network|inn)([\s\/,;&.!()–—:-]+|$))+$/.test(v);
   },
 };
 var INS_TERMS = [
@@ -1687,8 +1716,12 @@ var INS_TERMS = [
     match: function (v) { return /hawaii\s*only|only\s*(in\s*)?hawaii/.test(v); } },
   { term: 'MDX Hawaii', why: 'An HMO and IPA (independent physician association) in Hawaii that coordinates medical care for Medicare Advantage plan members.',
     match: function (v) { return /(^|[^a-z])mdx([^a-z]|$)/.test(v); } },
+  // F7 (cycle 26): an accept with anything written beside it. Amber, and
+  // before the plain accept because the tone tests it that way round.
+  { term: 'Accepted, with a condition', why: 'Accepted only as the rest of the value says — read the whole value before you quote it.',
+    match: function (v) { return INS_IS.accepted(v) && !INS_IS.notAccepted(v) && !INS_IS.acceptedExact(v); } },
   { term: 'Accepted / X', why: 'We can accept orders for patients with this plan.',
-    match: function (v) { return INS_IS.accepted(v) && !INS_IS.notAccepted(v); } },
+    match: function (v) { return INS_IS.acceptedExact(v) && !INS_IS.notAccepted(v); } },
   // Legend-only: this one is the rule for a plan the sheet does not carry, so
   // no cell ever reads it and it has no matcher.
   { term: 'Plan not listed', why: 'Follow the TRY criteria.', match: null },
@@ -1730,7 +1763,8 @@ function insToneCls_(value) {
   if (INS_IS.location(v) || INS_IS.siPr(v) || INS_IS.si(v) || INS_IS.pr(v) || INS_IS.both(v)) return 'warn';
   if (INS_IS.tryIt(v)) return 'info';
   if (INS_IS.hawaii(v)) return 'info';
-  if (INS_IS.accepted(v)) return 'good';
+  // F7: green only when the value is an accept and nothing else.
+  if (INS_IS.accepted(v)) return INS_IS.acceptedExact(v) ? 'good' : 'warn';
   return '';
 }
 
@@ -1997,7 +2031,12 @@ function oopPayorRulesFor_(item, matches) {
       var c = d.code;
       if (!c || !c.certain || !(c.tokens || []).length) return;
       var hit = c.tokens.some(function (t) { return codes.tokens.indexOf(t) >= 0; });
-      if (hit) out.push({ payor: m.name, code: d.label, value: d.value });
+      // F8 (cycle 26): the rule keeps WHERE it came from — the plan's state,
+      // its payor table, and whether the plan excludes the searched state. The
+      // column label (`code`) carries the sheet's own qualifier ("K0827
+      // (451–600) No In HI") and is drawn, not dropped.
+      if (hit) out.push({ payor: m.name, code: d.label, value: d.value,
+        state: m.state || '', table: m.tableLabel || '', excluded: m.excludedState || '' });
     });
   });
   return out;
@@ -2032,7 +2071,11 @@ function oopPayorXrefHtml_(m, matches) {
     rules.map(function (r) {
       var known = insTermsIn_(r.value).length > 0;
       var cls = 'kb-oop-xref-v ' + esc(insToneCls_(r.value)) + (known ? ' kb-term' : '');
-      return '<span class="kb-oop-xref-r"><span class="p">' + esc(r.payor) + '</span>' +
+      var where = [r.state, r.table].filter(function (x) { return !!x; }).map(function (x) { return esc(x); });
+      return '<span class="kb-oop-xref-r"><span class="p">' + esc(r.payor) +
+        (where.length ? ' <span class="w">' + where.join(' \u00b7 ') + '</span>' : '') +
+        (r.excluded ? ' <span class="x">' + esc(r.excluded) + ' excluded</span>' : '') +
+        '<span class="c">' + esc(r.code) + '</span></span>' +
         (known
           ? '<button type="button" class="' + cls + '" onclick="insTermClick_(this)">' + esc(r.value) + '</button>'
           : '<span class="' + cls + '">' + esc(r.value) + '</span>') + '</span>';
@@ -2733,6 +2776,43 @@ function insGroupedCells_(det, cellFn) {
     return head + cellFn(d);
   }).join('');
 }
+/** PURE (Node-pinned) — F5 (cycle 26): what became of each configured payor
+ *  table, from the server's `coverage`: searched, skipped (no tab, or no
+ *  rows) or only partly read. `known` is false for an answer that carries no
+ *  coverage (a server from before F5) — nothing is claimed either way. */
+function insCoverage_(res) {
+  var out = { known: false, searched: [], skipped: [], partial: [] };
+  var cov = res && res.coverage;
+  if (!cov || !cov.length) return out;
+  out.known = true;
+  cov.forEach(function (t) {
+    if (t.state === 'searched') { out.searched.push(t); if (t.unread > 0) out.partial.push(t); }
+    else out.skipped.push(t);
+  });
+  out.complete = !out.skipped.length && !out.partial.length;
+  return out;
+}
+/** F5: the "searched / not searched" line. A table that was NOT searched is
+ *  always named — its silence is what told a rep "plan not listed" about a
+ *  table nobody had read (g53). With nothing skipped the line is drawn only
+ *  where `always` asks for it (the no-match answer, which is a claim about
+ *  every table). */
+function insCoverageHtml_(res, always) {
+  var c = insCoverage_(res);
+  if (!c.known) return '';
+  var name = function (t) { return esc(t.label || t.key || ''); };
+  var searched = c.searched.map(name).join(', ');
+  var gaps = c.skipped.map(function (t) {
+    return '<b>' + name(t) + '</b> (' + (t.state === 'empty' ? 'its tab has no rows' : 'not imported yet') + ')';
+  }).concat(c.partial.map(function (t) {
+    return '<b>' + name(t) + '</b> (only its first ' + esc(String(t.rows)) + ' rows \u2014 ' + esc(String(t.unread)) + ' not read)';
+  }));
+  if (gaps.length) {
+    return '<div class="kb-ins-cover gap" role="note">' + icon('warning', 12) + '<span>Not searched: ' + gaps.join('; ') + '.' +
+      (searched ? ' Searched: ' + searched + '.' : '') + '</span></div>';
+  }
+  return always && searched ? '<div class="kb-ins-cover">Searched: ' + searched + '.</div>' : '';
+}
 /** PT1: the payor tables the answer covers, in the server's order. An answer
  *  from before PT1 (one table, a top-level note) reads as one unnamed table. */
 function insTablesOf_(res) {
@@ -2757,12 +2837,20 @@ function insRenderResults_(suffix, q, res) {
   if (res.notFound || !(res.matches || []).length) {
     // The operator's rule for a plan the sheet doesn't carry: TRY criteria.
     // Every table's note shows — each applies to plans it does not list.
-    host.innerHTML = tables.map(function (t) { return insNoteHtml_(t, named); }).join('') + '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
-      'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>';
+    // F5 (cycle 26): "not listed" is a claim about EVERY payor table. When one
+    // was not searched the claim is not made — the TRY rule is for a plan the
+    // sheets do not carry, not for one whose sheet was never read.
+    var cov = insCoverage_(res);
+    host.innerHTML = tables.map(function (t) { return insNoteHtml_(t, named); }).join('') + insCoverageHtml_(res, true) +
+      (cov.known && !cov.complete
+        ? '<div class="kb-ins-guide gap">' + icon('warning', 13) + ' “' + esc(q) + '” isn’t in the payor tables that were searched — but not every table was, ' +
+          'so this is <b>not yet</b> “plan not listed”. Check the table named above in its source sheet before following the TRY rules.</div>'
+        : '<div class="kb-ins-guide">' + icon('info', 13) + ' “' + esc(q) + '” isn’t in the payor sheet. ' +
+          'Per the acceptance criteria, a plan that isn’t listed follows the <b>TRY</b> rules — submit to test authorization; credentialing decides going forward.</div>');
     oopRepaintXref_(suffix);
     return;
   }
-  var html = '';
+  var html = insCoverageHtml_(res, false);   // F5: a table that was not searched is named above the cards
   var cards = {};
   // The join is BEST-EFFORT and its absence is reassuring, so it announces
   // itself when it fails: bare codes with no names look exactly like a payor
@@ -2825,7 +2913,12 @@ function insRenderResults_(suffix, q, res) {
       (m.catchAll ? '<div class="kb-ins-catch">' + icon('info', 11) + ' Covers any ' +
         (m.state && !/^(multi-state|not state specific)/i.test(m.state) ? esc(m.state) + ' ' : '') + 'plan this sheet does not list by name</div>' : '') +
       (meta.length ? '<div class="kb-ins-meta">' + meta.join(' · ') + '</div>' : '') +
-      insAlsoHtml_(m.alsoIn) + detHtml + '</div>';
+      insAlsoHtml_(m.alsoIn) +
+      // F38 (cycle 26): the cross-table check is bounded; a card it stopped
+      // short of says so — no note here used to mean "the tables agree".
+      (m.alsoUnchecked ? '<div class="kb-ins-also unchecked" role="note">' + icon('info', 11) +
+        ' <span>Not compared with the other payor tables — this search matched too many listings to check them all. Search the plan by its full name to compare.</span></div>' : '') +
+      detHtml + '</div>';
   });
   // PT1: a group per payor table that has matches, in the server's order —
   // its name (when there is more than one table), its standing note, its

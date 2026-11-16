@@ -40,6 +40,11 @@ const KBD_SEARCH = "kbDrawerOpen_(); setTimeout(function(){ var a=document.getEl
 const E6_SIGNAL_SCROLL = "setTimeout(function(){ var r=document.querySelector('#kb-land-blocks .kb-land-req'); if(r) r.scrollIntoView({ block: 'start' }); }, 300)";
 const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value='aetna'; insLookupInput_(a);} var b=document.getElementById('kb-oop-item'); var c=document.getElementById('kb-oop-addr'); if(b&&c){b.value='scout'; c.value='75038'; oopLookupInput_(c);}";
 
+// Cycle 26 F5: a plan nobody lists, searched while one payor table was never
+// imported, one is empty and one is only partly read — the no-match that names
+// what it did not search instead of saying "plan not listed → TRY".
+const KBL_NOTFOUND_GAP = "var a=document.getElementById('kb-ins-input'); if(a){a.value='molina'; insLookupInput_(a);}";
+
 // The acceptance-by-code grid is behind a disclosure, so the codes T3 NAMES
 // were never in a shot. This polls for the button rather than guessing a delay:
 // the results arrive on a 350ms debounce and the shooter waits 1000ms, so a
@@ -606,6 +611,8 @@ const SCENARIOS = [
   ['reference-codes-light-wide',    { tool: 'reference', tab: null }, WIDE,    'light', '',           KBL_CODES],
   ['reference-codes-dark-wide',     { tool: 'reference', tab: null }, WIDE,    'dark',  '',           KBL_CODES],
   ['reference-drawer-xref-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '',            KBD_XREF],
+  ['reference-notfound-gap-light-wide', { tool: 'reference', tab: null }, WIDE, 'light', '', KBL_NOTFOUND_GAP],
+  ['reference-notfound-gap-dark-mobile', { tool: 'reference', tab: null }, MOBILE, 'dark', '', KBL_NOTFOUND_GAP],
   ['manual-copy-light-wide',        { tool: 'reference', tab: null }, WIDE,    'light', '',           MANUAL_COPY],
   ['manual-copy-dark-wide',         { tool: 'reference', tab: null }, WIDE,    'dark',  '',           MANUAL_COPY],
 

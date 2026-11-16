@@ -781,7 +781,7 @@ function runRecAgo(msAgo, notes) {
       var base = { tab: 'InsurancePayors', label: 'Insurance payor acceptance', rows: 1035, cols: 25,
         headers: ['Payor / Plan', 'Waystar Payor ID', 'Network Status', 'Qualifaction', 'Reimbursement'],
         sample: [], duplicateNames: ['Wellcare (rows 656, 858)'], blankNameRows: [587], blankNameCount: 2,
-        warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
+        fingerprint: 'c0ffee' + new Array(59).join('0'), warnings: [], replacingRows: 1035, currentNote: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
         // PT1a: a source-sheet export is converted, each step listed.
         converted: { from: 'source', sourceRows: 1147, note: 'Traditional Medicare or MA: no power orders in OR, WA, ID, ND, SD, WY or MT.',
           changes: ['Header "Network Last Update" → "Last Update" (it would have been read as the network status).',
@@ -2181,7 +2181,7 @@ function runRecAgo(msAgo, notes) {
           note: "Use the row for the patient's primary insurance. Branch to Delivery Locations (Can deliver beyond an hour for priority referrals): Dallas-Fort Worth, TX (Irving, Texas); Austin/San Antonio; O'ahu Island, HI (Honolulu, HI).",
           legend: { MO: 'Medicaid Only', Yes: 'We can process', No: 'Do not process', OOP: 'OOP Only', 'Yes - Delivery Only': 'Based on several factors including shipping cost and profitability' } }],
       matches: [
-      { table: 'InsurancePayors', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'AETNA NETWORK GOLD S Plan Number 000001-EXTX0107', networkStatus: 'status not recorded',
         waystar: '60054', qualification: 'Standard', reimbursement: '',
         details: [
           // T3: the server names each code column from the pricing tab. K0800
@@ -2199,27 +2199,28 @@ function runRecAgo(msAgo, notes) {
             code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
           { label: 'Category', value: 'POV/Scooter',
             code: { shaped: false, certain: false, tokens: [] }, item: '', itemCount: 0 }] },
-      { table: 'InsurancePayors', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'MDX HAWAII (UHC AND HUMANA — MEDICARE ADVANTAGE PLANS)', networkStatus: 'in-network',
         waystar: 'MDXHI', qualification: 'Yes', reimbursement: 'Yes', details: [] },
-      { table: 'InsurancePayors', name: 'PACIFICARE (UHC)', networkStatus: '', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
-      { table: 'MedicaidPayors', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
-        reimbursement: 'Testing', details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'PACIFICARE (UHC)', networkStatus: 'Accepted except HI', waystar: 'MULTIPLE', qualification: '', reimbursement: 'No', details: [] },
+      { table: 'MedicaidPayors', tableLabel: 'Primary Medicaid', name: 'Aetna Better Health of Texas (MCO)', networkStatus: 'OON W/ PA', waystar: '128TX', qualification: 'X',
+        reimbursement: 'Testing', alsoUnchecked: true,   // F38: the bounded cross-table check stopped before this card
+        details: [{ label: 'K0814', value: 'TRY', code: { shaped: true, certain: true, tokens: ['K0814'] }, item: '', itemCount: 0 }] },
       // D3 (operator 2026-10-27): a plan whose name excludes the searched state ranks last, named.
-      { table: 'InsurancePayors', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
+      { table: 'InsurancePayors', tableLabel: 'Medicare / MA', name: 'UHC (ALL STATES OTHER THAN TX)', networkStatus: 'in-network', waystar: '87726', qualification: 'Yes',
         reimbursement: 'Yes', details: [], excludedState: 'TX' },
       // PT2: a sheet grouped by state — the plan's state chip, its insurer, and a
       // catch-all row that covers any plan of its state the sheet does not list.
-      { table: 'UhcPayors', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
+      { table: 'UhcPayors', tableLabel: 'UHC by state', name: 'TEXAS-All TX UHC Plans unless the specific plan code is below TRY it', state: 'Texas', catchAll: true,
         networkStatus: 'In-Network', waystar: '87726', qualification: '', reimbursement: '',
         details: [{ label: 'K0821/K0823 (Up to 285 lbs)', value: 'L ( Up To 285) & SI/PR', code: { shaped: true, certain: true, tokens: ['K0821', 'K0823'] }, item: '', itemCount: 0 }] },
-      { table: 'BcbsPayors', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
+      { table: 'BcbsPayors', tableLabel: 'BCBS / Anthem', name: 'Anthem Blue Cross MediBlue Plus (HMO)', state: 'Ohio', company: 'Anthem',
         networkStatus: 'INN', waystar: '', qualification: '', reimbursement: '',
         details: [{ label: 'K0800', value: 'SI', code: { shaped: true, certain: true, tokens: ['K0800'] }, item: 'Drive Scout 3 Wheel', itemCount: 1 }],
         // PT3: the same plan answered differently on the Medicare / MA sheet.
         alsoIn: [{ table: 'InsurancePayors', label: 'Medicare / MA', state: '',
           differs: [{ codes: ['K0800', 'K0816', 'K0821', 'K0825'], here: 'SI', there: 'X' }] }] },
       // PT4: a row per payor, its codes under their item; no network status.
-      { table: 'ManualMobilityPayors', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
+      { table: 'ManualMobilityPayors', tableLabel: 'Manual Mobility items', name: 'Aetna', networkStatus: '', waystar: '', qualification: '', reimbursement: '',
         details: [
           { label: 'K0001', value: 'Yes', group: 'Wheelchair', code: { shaped: true, certain: true, tokens: ['K0001'] }, item: '', itemCount: 0 },
           { label: 'K0006 w/ E1226 (22") (K0007 billed as K0006)', value: 'Yes - DFW, SA, Austin', group: 'Wheelchair', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 },
@@ -2228,6 +2229,13 @@ function runRecAgo(msAgo, notes) {
           { label: 'E0149', value: 'MO', group: 'Walker', code: { shaped: true, certain: true, tokens: ['E0149'] }, item: '', itemCount: 0 },
           { label: 'A4670', value: 'OOP Only', group: 'BPM', code: { shaped: true, certain: true, tokens: ['A4670'] }, item: '', itemCount: 0 },
           { label: 'Any singular supply code - i.e. A7003, A7004, A7013, A7015', value: 'Needs a supervisor exception', group: 'Nebulizer Supplies Only', code: { shaped: true, certain: false, tokens: [] }, item: '', itemCount: 0 }] }],
+      // Cycle 26 F5: what became of every configured payor table (all searched here).
+      coverage: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 1035, unread: 0 },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 212, unread: 0 },
+        { key: 'UhcPayors', label: 'UHC by state', state: 'searched', rows: 562, unread: 0 },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', state: 'searched', rows: 318, unread: 0 },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', state: 'searched', rows: 26, unread: 0 }],
       codeJoin: { attempted: true, error: '' } },
     // D2: the Synonyms editor's "Suggest payor aliases" (kbSuggestPayorSynonyms).
     kbSuggestPayorSynonyms: { payors: 212, groups: [['uhc', 'unitedhealthcare', 'united healthcare', 'united health care'],
@@ -2956,6 +2964,21 @@ function runRecAgo(msAgo, notes) {
       { id: 'E-1042', name: 'Avery Blake', timezone: 'Asia/Kolkata', tzAbbr: 'IST' },
       { id: 'E-1088', name: 'Sam Ortiz', timezone: 'Asia/Manila', tzAbbr: 'PHT' },
       { id: 'E-1090', name: 'Leo Kim', timezone: 'America/Chicago', tzAbbr: 'CST' }] },
+  };
+  // Cycle 26 F5: the payor lookup answers for its QUERY. "molina" is the plan
+  // nobody lists while one payor table has never been imported and another is
+  // only partly read — the no-match that must not say "plan not listed".
+  var INS_PAYORS_FOUND = FIXTURES.searchInsurancePayors;
+  FIXTURES.searchInsurancePayors = function (q) {
+    if (!/molina/i.test(String(q || ''))) return INS_PAYORS_FOUND;
+    return { matches: [], total: 0, notFound: true, cap: 8, codeJoin: { attempted: false, error: '' },
+      tables: INS_PAYORS_FOUND.tables.slice(0, 2),
+      coverage: [
+        { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 5000, unread: 35 },
+        { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 212, unread: 0 },
+        { key: 'UhcPayors', label: 'UHC by state', state: 'missing', rows: 0, unread: 0 },
+        { key: 'BcbsPayors', label: 'BCBS / Anthem', state: 'empty', rows: 0, unread: 0 },
+        { key: 'ManualMobilityPayors', label: 'Manual Mobility items', state: 'searched', rows: 26, unread: 0 }] };
   };
   // The agent-facing scoped audio endpoint serves the SAME chunk shape as the
   // reviewer one (both delegate to qaAudioChunkFor_ server-side — INV-185),

@@ -889,14 +889,58 @@ function insStatesIn_(text, isQuery) {
   }
   return { states: states, rest: rest.join(' ') };
 }
+/** PURE (Node-pinned) — cycle 26 F6: the states a text OPENS with — a list of
+ *  states (code in capitals, or a full name) joined by "and", "or", commas and
+ *  the like, read until the first word that is neither. Returns { states,
+ *  end } — `end` is how far into the text the list runs (0 when it opens with
+ *  something else). "TX and Oklahoma plans" → TX, OK; "Dual TX" → none. */
+function insLeadingStates_(text) {
+  const s = String(text == null ? '' : text);
+  const re = /[A-Za-z0-9]+/g;
+  const words = [];
+  let m;
+  while ((m = re.exec(s))) words.push({ w: m[0], end: m.index + m[0].length });
+  const fillers = ['and', 'or', 'the', 'state', 'states', 'of', 'in', 'for'];
+  const states = [];
+  let end = 0, i = 0;
+  const add = function (c, at) { if (states.indexOf(c) < 0) states.push(c); end = at; };
+  while (i < words.length) {
+    const w = words[i].w, lc = w.toLowerCase();
+    const two = i + 1 < words.length ? lc + ' ' + words[i + 1].w.toLowerCase() : '';
+    if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two], words[i + 1].end); i += 2; continue; }
+    if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc], words[i].end); i++; continue; }
+    if (w.length === 2 && w === w.toUpperCase() && US_STATE_CODES.indexOf(w) >= 0) { add(w, words[i].end); i++; continue; }
+    if (fillers.indexOf(lc) >= 0) { i++; continue; }
+    break;
+  }
+  return { states: states, end: end };
+}
 /** PURE (Node-pinned) — D3: the states a payor NAME excludes ("UHC (all
  *  states other than TX)", "Aetna except Texas and Oklahoma"), and the states
- *  it names otherwise. Returns { excluded: [...], named: [...] }. */
+ *  it names otherwise. Returns { excluded: [...], named: [...] }.
+ *
+ *  Cycle 26 F6: an exclusion word excludes only the states that DIRECTLY
+ *  follow it (inside its bracket). It used to take every state from the word
+ *  to the end of the text, so "UHC Community Plan Non-Dual" beside a State
+ *  cell reading Texas — or "… Non-Dual TX" on its own — was shown as
+ *  excluding the one state it is for. A word followed by anything else
+ *  ("Non-Dual", "except where noted") excludes nothing and stays in the name. */
 function insPayorNameStates_(name) {
   const n = String(name == null ? '' : name);
-  const m = n.match(/\b(?:other\s+than|except|excluding|excludes|excl|outside(?:\s+of)?|not\s+in|non)\b[\s.-]*([^)]*)/i);
-  const excluded = m ? insStatesIn_(m[1], false).states : [];
-  const outside = m ? n.slice(0, m.index) + ' ' + n.slice(m.index + m[0].length) : n;
+  const re = /\b(?:other\s+than|except|excluding|excludes|excl|outside(?:\s+of)?|not\s+in|non)\b[\s.:-]*/gi;
+  const excluded = [];
+  let outside = '', from = 0, m;
+  while ((m = re.exec(n))) {
+    const start = m.index + m[0].length;
+    const stop = n.indexOf(')', start);
+    const lead = insLeadingStates_(n.slice(start, stop < 0 ? n.length : stop));
+    if (!lead.states.length) continue;
+    lead.states.forEach(function (c) { if (excluded.indexOf(c) < 0) excluded.push(c); });
+    outside += n.slice(from, m.index) + ' ';
+    from = start + lead.end;
+    re.lastIndex = from;
+  }
+  outside += n.slice(from);
   return { excluded: excluded, named: insStatesIn_(outside, false).states };
 }
 /** PURE (Node-pinned) — D1–D3 (operator 2026-10-27): score a payor name for
@@ -906,10 +950,22 @@ function insPayorNameStates_(name) {
  *  alias the Synonyms list gives it ("uhc" → "unitedhealthcare"). A plan
  *  naming the searched state ranks above one naming another; one whose name
  *  EXCLUDES it carries `excluded` and the caller ranks it last. Returns
- *  { score, excluded: 'TX' | '' }; 0 = no match. */
-function insPayorMatch_(name, query, groups) {
+ *  { score, excluded: 'TX' | '' }; 0 = no match.
+ *
+ *  Cycle 26 F6: `cells` are the row's OTHER scored cells (a by-state table's
+ *  State and Company). They are scored with the name, and each is read for
+ *  states ON ITS OWN — an exclusion word in the name never reaches into the
+ *  State cell beside it. */
+function insPayorMatch_(nameCell, query, groups, cells) {
   const q = insStatesIn_(query, true);
-  const ns = insPayorNameStates_(name);
+  const ns = insPayorNameStates_(nameCell);
+  const others = (cells || []).filter(function (c) { return String(c == null ? '' : c).trim(); });
+  others.forEach(function (c) {
+    const cs = insPayorNameStates_(c);
+    cs.excluded.forEach(function (x) { if (ns.excluded.indexOf(x) < 0) ns.excluded.push(x); });
+    cs.named.forEach(function (x) { if (ns.named.indexOf(x) < 0) ns.named.push(x); });
+  });
+  const name = others.length ? String(nameCell == null ? '' : nameCell) + ' ' + others.join(' ') : nameCell;
   let base;
   if (!q.states.length) base = insPayorScore_(name, query);
   else if (q.rest.trim()) base = insPayorScore_(name, q.rest);
@@ -3431,9 +3487,18 @@ function searchInsurancePayors(query) {
     const groups = getKbSearchSynonyms_();
     const scored = [];
     tables.forEach(function (t, ti) {
-      if (!t.sh) return;
-      const last = Math.min(t.sh.getLastRow(), INS_PAYOR_MAX_ROWS + 1);
-      if (last < 2) return;
+      // Cycle 26 F5: a table that is not searched is SAID. A tab not imported
+      // yet, or one with no rows, used to be skipped in silence — and the
+      // answer then told the rep the plan "isn't in the payor sheet → follow
+      // TRY" about a table nobody had read. Rows past the read cap are named
+      // too (`unread`), never dropped.
+      if (!t.sh) { t.state = 'missing'; return; }
+      const total = Math.max(0, t.sh.getLastRow() - 1);
+      if (!total) { t.state = 'empty'; return; }
+      t.state = 'searched';
+      t.rows = Math.min(total, INS_PAYOR_MAX_ROWS);
+      t.unread = total - t.rows;
+      const last = t.rows + 1;
       t.width = t.sh.getLastColumn();
       t.headers = t.sh.getRange(1, 1, 1, t.width).getDisplayValues()[0];
       // PT4: a table with no network status column (the Manual Mobility sheet)
@@ -3448,7 +3513,7 @@ function searchInsurancePayors(query) {
       const names = t.sh.getRange(2, 1, last - 1, scan).getDisplayValues();
       t.keys = names.map(function (r) { return insPayorNameKey_(r[0]); });   // PT3: the cross-table check
       for (let i = 0; i < names.length; i++) {
-        const sc = insPayorMatch_(names[i].join(' '), q, groups);
+        const sc = insPayorMatch_(names[i][0], q, groups, names[i].slice(1));   // F6: each cell read for states on its own
         if (sc.score > 0) scored.push({ ti: ti, i: i, score: sc.score, excluded: sc.excluded });
       }
     });
@@ -3463,15 +3528,20 @@ function searchInsurancePayors(query) {
       const row = tb.sh.getRange(t.i + 2, 1, 1, tb.width).getDisplayValues()[0];
       const o = insPayorRowObj_(tb.headers, row);
       o.table = tb.key;
+      o.tableLabel = tb.label;   // F8: the price row's cross-reference names the table
       if (t.excluded) o.excludedState = t.excluded;   // D3: the card says "TX excluded"
       // PT3: the same plan in ANOTHER payor table with a different answer on a
       // code both fill is said on the card — a rep never picks one silently.
-      // Bounded: at most INS_PAYOR_ALSO_MAX other listings read per search.
+      // Bounded: at most INS_PAYOR_ALSO_MAX other listings read per search —
+      // and (cycle 26 F38) a card the bound stopped short of says so: "the
+      // tables agree" and "the tables were not compared" look the same on a
+      // card that carries no note.
       const key = tb.keys[t.i];
       tables.forEach(function (ob, oi) {
         if (oi === t.ti || !ob.keys || !key) return;
-        for (let j = 0; j < ob.keys.length && alsoReads < INS_PAYOR_ALSO_MAX; j++) {
+        for (let j = 0; j < ob.keys.length; j++) {
           if (ob.keys[j] !== key) continue;
+          if (alsoReads >= INS_PAYOR_ALSO_MAX) { o.alsoUnchecked = true; break; }
           alsoReads++;
           const other = ob.sh.getRange(j + 2, 1, 1, ob.width).getDisplayValues()[0];
           const diff = insPayorCrossDiff_(tb.headers, row, ob.headers, other);
@@ -3501,6 +3571,11 @@ function searchInsurancePayors(query) {
     return { matches: matches, total: scored.length, notFound: scored.length === 0, cap: INS_PAYOR_TOP,
       tables: tables.filter(function (t) { return t.sh; }).map(function (t) {
         return { key: t.key, label: t.label, note: t.note, legend: t.legend, noteError: t.noteError, hasStatus: t.hasStatus !== false };
+      }),
+      // F5: EVERY configured payor table and what became of it — searched (with
+      // the rows read and any left unread), missing (no tab) or empty.
+      coverage: tables.map(function (t) {
+        return { key: t.key, label: t.label, state: t.state || 'missing', rows: t.rows || 0, unread: t.unread || 0 };
       }),
       // NAMED, not inferred from empty `item` fields. A pricing tab that is
       // missing or unreadable produces exactly the same bare codes as a payor
@@ -3600,6 +3675,15 @@ function kbEnsureGrid_(sh, rows, cols) {
   if (rows > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), rows - sh.getMaxRows());
   if (cols > sh.getMaxColumns()) sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
 }
+/** PURE given the hash (Node-pinned) — cycle 26 F37: what an import WOULD
+ *  write, as one fingerprint: the table, every cell of the grid after
+ *  conversion, and the note and key a source upload sets. The preview returns
+ *  it and the write must be handed it back, so "Replace" writes exactly what
+ *  the admin was shown — not what the same file reads as after a deploy
+ *  changed the converter, and not a different file. */
+function kbDataTableFingerprint_(tabKey, grid, conv) {
+  return kbSha256Hex_(JSON.stringify([String(tabKey), grid, conv ? [conv.note || '', conv.key || null] : null]));
+}
 /** Upload a CSV into one ALLOWLISTED KB sheet tab. Admin-gated (INV-136 tier —
  *  it rewrites a store the whole team reads), locked (INV-01), audited.
  *  `dryRun` returns the summary WITHOUT writing, so the same parse drives the
@@ -3615,6 +3699,9 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
   if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
   const lock = dryRun ? null : LockService.getScriptLock();
   if (lock) lock.waitLock(15000);
+  // F37: once the table has been replaced, nothing below may report the import
+  // as failed — `done` is the answer from then on, with what went wrong on it.
+  let done = null;
   try {
     const spec = Object.prototype.hasOwnProperty.call(KB_DATA_TABLES, String(tabKey)) ? KB_DATA_TABLES[String(tabKey)] : null;
     if (!spec) return { error: 'Unknown data table: ' + String(tabKey) };
@@ -3654,6 +3741,15 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     const summary = kbDataTableSummary_(grid, spec);
     if (conv) {
       summary.converted = { from: 'source', sourceRows: conv.sourceRows, changes: conv.changes, note: conv.note };
+    }
+    summary.fingerprint = kbDataTableFingerprint_(tabKey, grid, conv);
+    // F37: the write is bound to the preview that was approved. A page from
+    // before this rule sends no fingerprint and is told to reload; a file that
+    // no longer reads as it was previewed is refused before anything changes.
+    if (!dryRun && String(o.expect || '') !== summary.fingerprint) {
+      return { error: o.expect
+        ? 'This file no longer reads the way the preview you approved did — the app was updated, or the file is not the same one. Nothing was changed. Pick the file again and check the new preview.'
+        : 'This page is from before an update and cannot confirm what it previewed. Nothing was changed. Reload the page, pick the file again and check the preview.' };
     }
     if (spec.sourceFormat === 'payorAcceptance') {
       // The note the lookup shows NOW, so the preview can say what changes.
@@ -3711,27 +3807,46 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
         : '') };
     }
 
+    // F37: the table IS replaced from here. The note and the audit row are
+    // separate steps, each reported on the answer — a throw in either used to
+    // reach the catch below as "Import failed", over a live table that had
+    // just been replaced.
+    summary.imported = true;
+    done = summary;
     // PT1a: a source upload sets the standing note to what its A1 says — an
     // empty A1 clears it; a file in the tab's shape carries no note and leaves
     // it alone. After the table write, so a failed write changes neither.
     if (conv) {
-      // PT1: one map for every payor table; this table's entry carries its note
-      // and its source key. A map that cannot be read is started afresh rather
-      // than blocking an import that has already been written (the other
-      // tables' notes return with their next source upload) — and said.
-      let map = {};
-      try { map = insPayorNotesParse_(PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP)); }
-      catch (eM) { summary.noteWarning = 'The stored notes could not be read (' + eM.message + ') — only this table\'s note was kept; re-upload the other payor tables\' source exports to restore theirs.'; }
-      map[String(tabKey)] = { text: conv.note, key: conv.key, at: new Date().toISOString(), by: emp.email || '' };
-      // Bounded (Q-1): each note is capped at INS_PAYOR_NOTE_MAX characters, far under a value's limit.
-      propSetBounded_(INS_PAYOR_NOTE_PROP, JSON.stringify(map));
+      try {
+        // PT1: one map for every payor table; this table's entry carries its note
+        // and its source key. A map that cannot be read is started afresh rather
+        // than blocking an import that has already been written (the other
+        // tables' notes return with their next source upload) — and said.
+        let map = {};
+        try { map = insPayorNotesParse_(PropertiesService.getScriptProperties().getProperty(INS_PAYOR_NOTE_PROP)); }
+        catch (eM) { summary.noteWarning = 'The stored notes could not be read (' + eM.message + ') — only this table\'s note was kept; re-upload the other payor tables\' source exports to restore theirs.'; }
+        map[String(tabKey)] = { text: conv.note, key: conv.key, at: new Date().toISOString(), by: emp.email || '' };
+        // Bounded (Q-1): each note is capped at INS_PAYOR_NOTE_MAX characters, far under a value's limit.
+        propSetBounded_(INS_PAYOR_NOTE_PROP, JSON.stringify(map));
+      } catch (eNote) {
+        summary.noteSaved = false;
+        summary.noteWarning = 'The table was replaced, but its standing note could not be saved (' + String(eNote.message || eNote).substring(0, 200) +
+          ') — insurance results still show the note from before. Upload the same file again to set it.';
+      }
     }
-    writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
-      'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows +
-      (conv ? '; converted=source; note=' + (conv.note ? 'set' : 'cleared') : ''));
-    summary.imported = true;
+    try {
+      writeAuditLog_(emp, 'KbDataTableImport', '', '', false, 0,
+        'tab=' + spec.tab + '; rows=' + summary.rows + '; cols=' + summary.cols + '; replaced=' + summary.replacingRows +
+        (conv ? '; converted=source; note=' + (summary.noteSaved === false ? 'not saved' : (conv.note ? 'set' : 'cleared')) : ''));
+    } catch (eAudit) {
+      summary.auditWarning = 'The table was replaced, but the audit row could not be written (' + String(eAudit.message || eAudit).substring(0, 200) + ').';
+    }
     return summary;
   } catch (err) {
+    if (done) {
+      done.afterWarning = 'The table was replaced, but a later step failed (' + String(err.message || err).substring(0, 200) + ').';
+      return done;
+    }
     return { error: 'Import failed: ' + err.message };
   } finally {
     if (lock) lock.releaseLock();
@@ -5271,10 +5386,10 @@ function kbImageTabLedger_(sheet, headers, keyRe) {
  *  a failure throws to the caller, which reports it beside the sections. */
 function kbManualImagesWrite_(rows) {
   const sheet = getOrCreateManualImagesSheet_();
+  // F40 (cycle 26): the rows first, in ONE write over the old ones, then the
+  // header — a tab is never left cleared by a write that then fails.
+  sheetReplaceBody_(sheet, KB_MANUAL_IMAGES_HEADERS.length, rows, []);
   sheet.getRange(1, 1, 1, KB_MANUAL_IMAGES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_IMAGES_HEADERS]));
-  const last = sheet.getLastRow();
-  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_IMAGES_HEADERS.length)).clearContent();
-  if (rows.length) appendRowsSafe_(sheet, rows);
 }
 
 // ── HB3.1 — the handbook's official quizzes ─────────────────────────────────
@@ -5334,16 +5449,10 @@ function kbManualQuizzesWrite_(rows) {
   const ss = getKbSS_();
   let sheet = ss.getSheetByName(KB_MANUAL_QUIZZES_TAB);
   if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_QUIZZES_TAB); sheet.setFrozenRows(1); }
+  // F40 (cycle 26): written in place by the one helper — grid grown (g145),
+  // text columns formatted, ONE write over the old rows; never clear-then-write.
+  sheetReplaceBody_(sheet, KB_MANUAL_QUIZZES_HEADERS.length, rows, KB_MANUAL_QUIZZES_TEXT_IDX);
   sheet.getRange(1, 1, 1, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_QUIZZES_HEADERS]));
-  const last = sheet.getLastRow();
-  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_QUIZZES_HEADERS.length)).clearContent();
-  if (!rows.length) return;
-  // From row 2, whatever the cleared tab's grid: grown first (g145), the text
-  // columns formatted, then one write.
-  const need = rows.length + 1;
-  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
-  KB_MANUAL_QUIZZES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
-  sheet.getRange(2, 1, rows.length, KB_MANUAL_QUIZZES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_QUIZZES_TEXT_IDX));
 }
 
 // ── HB4.1 — the handbook's form library ─────────────────────────────────────
@@ -5437,14 +5546,8 @@ function kbManualFormsWrite_(rows) {
   const ss = getKbSS_();
   let sheet = ss.getSheetByName(KB_MANUAL_FILES_TAB);
   if (!sheet) { sheet = ss.insertSheet(KB_MANUAL_FILES_TAB); sheet.setFrozenRows(1); }
+  sheetReplaceBody_(sheet, KB_MANUAL_FILES_HEADERS.length, rows, KB_MANUAL_FILES_TEXT_IDX);   // F40: in place, one write
   sheet.getRange(1, 1, 1, KB_MANUAL_FILES_HEADERS.length).setValues(sheetSafeRows_([KB_MANUAL_FILES_HEADERS]));
-  const last = sheet.getLastRow();
-  if (last >= 2) sheet.getRange(2, 1, last - 1, Math.max(sheet.getLastColumn(), KB_MANUAL_FILES_HEADERS.length)).clearContent();
-  if (!rows.length) return;
-  const need = rows.length + 1;
-  if (need > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), need - sheet.getMaxRows());
-  KB_MANUAL_FILES_TEXT_IDX.forEach(function (i) { sheet.getRange(2, i + 1, rows.length, 1).setNumberFormat('@'); });
-  sheet.getRange(2, 1, rows.length, KB_MANUAL_FILES_HEADERS.length).setValues(sheetTextRows_(rows, KB_MANUAL_FILES_TEXT_IDX));
 }
 /** One form's PDF as a data URL, through the images' reader: "not stored"
  *  (missing) and "could not read" (failed) apart (g128), the bytes re-checked

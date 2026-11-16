@@ -4453,6 +4453,26 @@
     "saveFeatureFlags"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 5: sheetReplaceBody_ (F40), insLeadingStates_ (F6), kbDataTableFingerprint_ (F37)",
+   "added": [
+    "insLeadingStates_",
+    "kbDataTableFingerprint_",
+    "sheetReplaceBody_"
+   ],
+   "removed": [],
+   "changed": [
+    "insPayorMatch_",
+    "insPayorNameStates_",
+    "kbImportDataTable",
+    "kbManualFormsWrite_",
+    "kbManualImagesWrite_",
+    "kbManualQuizzesWrite_",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -11222,6 +11242,11 @@
    "kind": "function",
    "sha": "177959f9200f704a"
   },
+  "insLeadingStates_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "8dd15f6f2035eaf5"
+  },
   "insNameCodeDetail_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -11260,7 +11285,7 @@
   "insPayorMatch_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "d6c86f97464b0587"
+   "sha": "b8155a72cca89978"
   },
   "insPayorNameKey_": {
    "file": "70_kb.js",
@@ -11270,7 +11295,7 @@
   "insPayorNameStates_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "c4e6063149f42dcc"
+   "sha": "bb68f3c5b666a5d9"
   },
   "insPayorNoteTidy_": {
    "file": "70_kb.js",
@@ -11817,6 +11842,11 @@
    "kind": "function",
    "sha": "9ff0d8c9e3943136"
   },
+  "kbDataTableFingerprint_": {
+   "file": "70_kb.js",
+   "kind": "function",
+   "sha": "a46ad6c79ed071e4"
+  },
   "kbDataTableSummary_": {
    "file": "70_kb.js",
    "kind": "function",
@@ -12035,7 +12065,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "111caeb335a7fdb8"
+   "sha": "6d4f71726be6a208"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -12085,7 +12115,7 @@
   "kbManualFormsWrite_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3d3d0e7fa17a7b99"
+   "sha": "02527f4616490e00"
   },
   "kbManualHashBasis_": {
    "file": "70_kb.js",
@@ -12120,7 +12150,7 @@
   "kbManualImagesWrite_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6ba26c9703e93c89"
+   "sha": "f20a44e5bf9f7b5d"
   },
   "kbManualLedger_": {
    "file": "70_kb.js",
@@ -12175,7 +12205,7 @@
   "kbManualQuizzesWrite_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "3cbf7cd3c58b847a"
+   "sha": "3f5f9eecbf3282f0"
   },
   "kbManualRecentPayload_": {
    "file": "70_kb.js",
@@ -14180,7 +14210,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "7f7a204de55fa577"
+   "sha": "2d089b4dd8750364"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",
@@ -14381,6 +14411,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "0aedafc6935fd6ca"
+  },
+  "sheetReplaceBody_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "926265f93f27b262"
   },
   "sheetSafeRow_": {
    "file": "10_core.js",

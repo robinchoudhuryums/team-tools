@@ -5374,6 +5374,36 @@ function appendRowsSafe_(sheet, rows) {
   sheet.getRange(r, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
   return r;
 }
+/** Cycle 26 F40 — REPLACE a tab's data rows (row 2 down) with `rows`, in ONE
+ *  write. The block written covers the new rows AND whatever the tab held
+ *  before — the old rows past the new ones, and any columns past `width`, are
+ *  written blank in the same call — so the tab goes from the old table to the
+ *  new one in a single step, or (when the write throws) stays the old one.
+ *  The writers this replaces cleared the tab first and wrote after: a write
+ *  that failed left the handbook's images, quizzes or forms EMPTY, with no
+ *  copy to put back. `textIdx` are the plain-text columns ('@' formatted on
+ *  the new rows before the write, their cells written raw — g144); every other
+ *  cell is sheet-safe. The grid is grown first (g145). The caller holds the
+ *  ScriptLock and writes the header row itself. Returns the rows written. */
+function sheetReplaceBody_(sheet, width, rows, textIdx) {
+  const n = rows ? rows.length : 0;
+  const before = Math.max(0, sheet.getLastRow() - 1);
+  const span = Math.max(n, before);
+  if (!span) return 0;
+  const wide = Math.max(sheet.getLastColumn(), width);
+  if (span + 1 > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), span + 1 - sheet.getMaxRows());
+  if (wide > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), wide - sheet.getMaxColumns());
+  const idx = textIdx || [];
+  if (n) idx.forEach(function (i) { sheet.getRange(2, i + 1, n, 1).setNumberFormat('@'); });
+  const block = [];
+  for (let r = 0; r < span; r++) {
+    const row = r < n ? rows[r].slice(0, wide) : [];
+    while (row.length < wide) row.push('');
+    block.push(row);
+  }
+  sheet.getRange(2, 1, span, wide).setValues(sheetTextRows_(block, idx));
+  return n;
+}
 /** Column LETTER for a 0-based index (A..Z — every '@' column in this app is
  *  inside the first 26). One source for the '@' columns: the index list. */
 function sheetColLetter_(i) { return String.fromCharCode(65 + i); }

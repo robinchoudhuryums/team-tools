@@ -16493,7 +16493,7 @@ test('D1–D3 (operator 2026-10-27): the payor lookup reads STATES by code or na
   vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var ') + '\n' +
     (serverSource().match(/const INS_PAYOR_ALIAS_FAMILIES = \[[\s\S]*?\n\];/) || [''])[0].replace(/^const /, 'var '), ctx);
-  ['insPayorScore_', 'insStatesIn_', 'insPayorNameStates_', 'insPayorMatch_', 'insPayorAliasSuggest_']
+  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_', 'insPayorAliasSuggest_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'D#' + f }));
   const J = (e) => JSON.parse(vm.runInContext('JSON.stringify(' + e + ')', ctx));
   const UHC = [['uhc', 'unitedhealthcare', 'united healthcare']];
@@ -16539,7 +16539,7 @@ test('D1–D3 (operator 2026-10-27): the payor lookup reads STATES by code or na
   const ep = extractRawFunction('Code.js', 'kbSuggestPayorSynonyms');
   assert.ok(/!emp \|\| !emp\.isAdmin\) return \{ error: 'Admin access required\.' \}/.test(ep));
   const se = stripJsComments_(extractRawFunction('Code.js', 'searchInsurancePayors'));
-  assert.ok(/insPayorMatch_\(names\[i\]\.join\(' '\), q, groups\)/.test(se) && /\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\)/.test(se), 'the search uses the matcher and sorts excluded last');
+  assert.ok(/insPayorMatch_\(names\[i\]\[0\], q, groups, names\[i\]\.slice\(1\)\)/.test(se) && /\(a\.excluded \? 1 : 0\) - \(b\.excluded \? 1 : 0\)/.test(se), 'the search uses the matcher and sorts excluded last');
   assert.ok(/o\.excludedState = t\.excluded/.test(se), 'and ships the state');
 });
 
@@ -28422,9 +28422,9 @@ test('S2: every raw plain-text write sits after a setNumberFormat(\'@\') in its 
   // added the handbook feedback export: section titles and reps' notes.
   // HB1.4 added the handbook app's search mirror (a JSON cell — "3/4" in a synonym must stay text).
   // HB3.1 added the handbook's quizzes on import (a title like "3/4" stays text).
-  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbManualFormsWrite_', 'kbManualQuizzesWrite_', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
-    'setOneOnOneCadence', 'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
-    'the raw plain-text writers are exactly the known seventeen (HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names; Batch F a manager\'s cadence stamp)');
+  assert.deepStrictEqual(uses.sort(), ['accrualLedgerWriteRows_', 'acknowledgeCoaching', 'archiveSheetRowsOlderThan_', 'exportCallNotesRange', 'exportHandbookFeedback', 'kbImportDataTable', 'kbMirrorSearchConfig_', 'qaSetRecordingAgent', 'qaSetRecordingStatus', 'saveMyScratchpad', 'scratchpadPageOp',
+    'setOneOnOneCadence', 'sheetReplaceBody_', 'updateCallNote', 'voidCoaching', 'voidDoc'].sort(),
+    'the raw plain-text writers are exactly the known sixteen (cycle 26 F40 moved the handbook quizzes and forms onto the one in-place writer, sheetReplaceBody_; HB4.1 added the form library\'s tab; the Script Property consolidation the PTO accrual ledger tab; Batch S the Scratchpad page names; Batch F a manager\'s cadence stamp)');
   assert.deepStrictEqual(appenders.sort(), ['accrualLedgerWriteRows_', 'activityLogCondenseAndPurge_', 'createCoaching', 'intakeSendAcct_', 'issueDoc', 'kbRecordSearchSignal_', 'logOneOnOne', 'qaAddComment', 'qaCreateManualRecording', 'qaSaveScorecard', 'qaSetExemption', 'qaSyncRecordings',
     'setOneOnOneCadence', 'submitCallNote'].sort(),
     'the plain-text appenders are exactly the five QA writers, plus the coaching, doc and note creators (cycle 23 HR-1 + CN-7), the intake account backup row (cycle 25 F49), the search signal (cycle 25 E6) and the PTO accrual ledger tab (the Script Property consolidation), the activity summary (Batch G), and the 1-on-1 log and cadence (Batch F)');
@@ -31367,7 +31367,8 @@ function m1Book_(kbRows, ledgerRows) {
   const mkSheet = (name, width, rows) => {
     const grid = [new Array(width).fill('h')].concat(rows.map((r) => r.slice()));
     return { name, grid,
-      getLastRow: () => grid.length, getMaxRows: () => 1000, insertRowsAfter: () => {}, getFrozenRows: () => 1,
+      getLastRow: () => { let n = grid.length; while (n > 0 && !(grid[n - 1] || []).some((x) => x !== '' && x != null)) n--; return n; },
+      getMaxRows: () => 1000, insertRowsAfter: () => {}, getMaxColumns: () => 26, insertColumnsAfter: () => {}, getFrozenRows: () => 1,
       deleteRow: (r) => { grid.splice(r - 1, 1); writes.push([name, 'delete', r]); },
       appendRow: (r) => { grid.push(r.slice()); writes.push([name, 'append']); },
       setFrozenRows: () => {},
@@ -31433,7 +31434,7 @@ function m1Importer_(book, fileText, who, extra) {
   ['kbRowStatus_', 'kbSha256Hex_', 'getOrCreateManualImportSheet_', 'kbManualLedger_', 'kbManualBundle_', 'kbManualMetaValidate_',
     'kbManualOrphans_', 'kbDeleteRowSafe_', 'getOrCreateManualMetaSheet_', 'kbManualMetaRead_', 'kbImportManual', 'kbPublishManual',
     'kbDeptRank_', 'kbDeptCompare_', 'kbParseImageDataUrl_', 'kbManualImagesValidate_', 'kbManualImagesPlan_', 'kbManualImagesRows_',
-    'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_',
+    'getOrCreateManualImagesSheet_', 'kbManualImagesHeaderOk_', 'kbManualImagesLedger_', 'kbManualImagesWrite_', 'sheetReplaceBody_',
     'kbImageTabHeaderOk_', 'kbImageTabLedger_', 'kbManualReviewOnUpdate_',
     // HB3.1: the quizzes the bundle carries, checked by the shared engine.
     'kbManualQuizzesValidate_', 'kbManualQuizzesRows_', 'kbManualQuizzesStored_', 'kbManualQuizzesWrite_',
@@ -32171,7 +32172,13 @@ test('M3-I2 (M4-FU3): the import stores the images IN the ManualImages tab — n
   // A failed image write: named, and the sections are in.
   const bookF = m1Book_([], null);
   const impF = m3Importer_(bookF, m3Bundle_(imgs));
-  impF.ctx.appendRowsSafe_ = function (sh, rows) { if (sh === bookF.sheets.ManualImages) throw new Error('Service Spreadsheets failed'); rows.forEach((r) => sh.grid.push(r.slice())); };
+  // Cycle 26 F40: the images are written by sheetReplaceBody_'s ONE setValues over the data rows — that is the write that fails here.
+  const insF = bookF.insertSheet;
+  bookF.insertSheet = (n) => {
+    const sh = insF(n);
+    if (n === 'ManualImages') { const gr = sh.getRange; sh.getRange = (r, c, nr, nc) => { const x = gr(r, c, nr, nc); if (r >= 2) x.setValues = () => { throw new Error('Service Spreadsheets failed'); }; return x; }; }
+    return sh;
+  };
   const rF = impF.ctx.kbImportManual(M1_LINK, {});
   assert.ok(rF.success && rF.images.stored === 0 && /Service Spreadsheets failed/.test(rF.images.error), JSON.stringify(rF.images));
   assert.ok(bookF.sheets.KB.grid.some((r) => r[0] === 'man-7-2'), 'the section itself is in');
@@ -32949,6 +32956,12 @@ function adm05Sheet_(rows, maxRows, maxCols) {
     } };
   return sh;
 }
+// Cycle 26 F37: a write is bound to its preview — the tests write the way the
+// page does, handing back the fingerprint the dry run returned.
+function dtWrite_(ctx, key, csv) {
+  const dry = ctx.kbImportDataTable(key, csv, {});
+  return ctx.kbImportDataTable(key, csv, { dryRun: false, expect: dry && dry.fingerprint });
+}
 function adm05Ctx_(sheet) {
   const book = { audits: 0, inserted: 0 };
   const ctx = vm.createContext({ String, Array, Object, Math, Number, JSON, console: { warn: () => {} },
@@ -32957,12 +32970,14 @@ function adm05Ctx_(sheet) {
     KB_DATA_TABLES: { T: { tab: 'Tab', label: 'Insurance payor acceptance', minCols: 2 } },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     getEmployeeInfo_: () => ({ isAdmin: true, email: 'admin@x' }),
-    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }) },
+    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }),
+      computeDigest: (alg, t) => Array.from(require('crypto').createHash('sha256').update(String(t), 'utf8').digest()).map((x) => (x > 127 ? x - 256 : x)),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' } },
     SpreadsheetApp: { flush: () => {} },
     getKbSS_: () => ({ getSheetByName: () => sheet.exists === false ? null : sheet,
       insertSheet: () => { book.inserted++; sheet.exists = true; return sheet; } }),
     writeAuditLog_: () => { book.audits++; } });
-  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable']
+  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable', 'kbDataTableFingerprint_', 'kbSha256Hex_']
     .forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
   return { ctx, book };
 }
@@ -32974,7 +32989,7 @@ test('ADM-05 (cycle 23): a data-table import larger than the tab\'s grid GROWS i
   // 1,200 data rows × 30 columns into a 1000×26 tab — both limits allow it, the grid does not.
   let sh = adm05Sheet_(prev, 1000, 26);
   let s = adm05Ctx_(sh);
-  let res = JSON.parse(JSON.stringify(s.ctx.kbImportDataTable('T', csvOf(1200, 30), { dryRun: false })));
+  let res = JSON.parse(JSON.stringify(dtWrite_(s.ctx, 'T', csvOf(1200, 30))));
   assert.strictEqual(res.imported, true, 'imported: ' + JSON.stringify(res.error));
   assert.strictEqual(sh.data.length, 1201, 'every row landed (it threw after the clear before)');
   assert.strictEqual(sh.data[1200][29], 'r1199c29', 'out to the last cell');
@@ -32985,7 +33000,7 @@ test('ADM-05 (cycle 23): a data-table import larger than the tab\'s grid GROWS i
   sh = adm05Sheet_(prev, 1000, 26);
   sh.failWrites = 1;
   s = adm05Ctx_(sh);
-  res = s.ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  res = dtWrite_(s.ctx, 'T', csvOf(5, 3));
   assert.ok(/Import failed/.test(res.error) && /put back unchanged/.test(res.error), 'the failure says the table was restored: ' + res.error);
   assert.deepStrictEqual(sh.data, prev, 'the readers see exactly what they saw before');
   assert.strictEqual(s.book.audits, 0, 'no import row for an import that did not happen');
@@ -32993,13 +33008,13 @@ test('ADM-05 (cycle 23): a data-table import larger than the tab\'s grid GROWS i
   // Both writes fail: say so, and name the real recovery.
   sh = adm05Sheet_(prev, 1000, 26);
   sh.failWrites = 2;
-  res = adm05Ctx_(sh).ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  res = dtWrite_(adm05Ctx_(sh).ctx, 'T', csvOf(5, 3));
   assert.ok(/ALSO failed/.test(res.error) && /Version history/.test(res.error), 'an unrestorable failure names Version history: ' + res.error);
 
   // A brand-new tab has nothing to restore — the message does not pretend it does.
   sh = adm05Sheet_([], 1000, 26);
   sh.exists = false; sh.failWrites = 1;
-  res = adm05Ctx_(sh).ctx.kbImportDataTable('T', csvOf(5, 3), { dryRun: false });
+  res = dtWrite_(adm05Ctx_(sh).ctx, 'T', csvOf(5, 3));
   assert.ok(/Import failed/.test(res.error) && !/put back|Version history/.test(res.error), 'no restore claim for a first import: ' + res.error);
 
   // An over-long cell is refused BEFORE the clear — in the preview AND the write.
@@ -33007,7 +33022,7 @@ test('ADM-05 (cycle 23): a data-table import larger than the tab\'s grid GROWS i
   sh = adm05Sheet_(prev, 1000, 26);
   s = adm05Ctx_(sh);
   assert.ok(/at most \d+/.test(s.ctx.kbImportDataTable('T', long, {}).error), 'the dry run reports it');
-  assert.ok(/Row 2, column 2/.test(s.ctx.kbImportDataTable('T', long, { dryRun: false }).error), 'the write refuses it by cell');
+  assert.ok(/Row 2, column 2/.test(dtWrite_(s.ctx, 'T', long).error), 'the write refuses it by cell');
   assert.strictEqual(sh.cleared, 0, 'and never touched the live table');
   assert.deepStrictEqual(sh.data, prev);
 });
@@ -45173,14 +45188,16 @@ function pt1aImportCtx_(sheet, props) {
     KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', label: 'Insurance payor acceptance', minCols: 2, nameHeader: /payor|plan|name|insur/i, sourceFormat: 'payorAcceptance' } },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     getEmployeeInfo_: () => ({ isAdmin: true, email: 'admin@x' }),
-    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }) },
+    Utilities: { base64Decode: (s) => s, newBlob: (b) => ({ getDataAsString: () => b }),
+      computeDigest: (alg, t) => Array.from(require('crypto').createHash('sha256').update(String(t), 'utf8').digest()).map((x) => (x > 127 ? x - 256 : x)),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' } },
     SpreadsheetApp: { flush: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (props[k] === undefined ? null : props[k]),
       deleteProperty: (k) => { book.deleted.push(k); delete props[k]; } }) },
     propSetBounded_: (k, v) => { book.bounded.push(k); props[k] = v; return v.length; },
     getKbSS_: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }),
     writeAuditLog_: (e, a, x, y, z, n, d) => { book.audits.push(d); } });
-  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable',
+  ['sheetSafe_', 'sheetTextRows_', 'kbParseCsv_', 'kbDataTableSummary_', 'kbEnsureGrid_', 'kbImportDataTable', 'kbDataTableFingerprint_', 'kbSha256Hex_',
     'hcpcsParse_', 'insCodeHeaderClean_', 'insPayorFromSource_', 'insPayorSlotOf_', 'insPayorNotesParse_', 'insPayorNotes_',
     'insPayorNoteTidy_', 'insPayorCatchAll_', 'insStateLead_', 'insEditDistance_', 'insColLetter_',
     'insPlanStatesNamed_', 'insNetworkTidy_', 'insPayorBelowKey_', 'insPayorValueTidy_', 'insCodeGroupSplit_']
@@ -45205,7 +45222,7 @@ test('PT1a: kbImportDataTable — the preview converts and lists every step and 
   assert.strictEqual(res.currentNote, 'old rule', 'the preview names the note shown today');
   assert.deepStrictEqual([sh.data.length, s.book.bounded.length, s.book.audits.length], [2, 0, 0], 'a dry run writes nothing');
 
-  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  res = hJ(dtWrite_(s.ctx, 'InsurancePayors', pt1aCsv_(PT1A_SRC)));
   assert.strictEqual(res.imported, true, JSON.stringify(res.error));
   assert.strictEqual(sh.data[0][16], 'Last Update', 'the CONVERTED header row is what lands');
   assert.strictEqual(sh.data.length, 4);
@@ -45217,7 +45234,7 @@ test('PT1a: kbImportDataTable — the preview converts and lists every step and 
 
   const blankA1 = PT1A_SRC.map((r) => r.slice());
   blankA1[0][0] = '';
-  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(blankA1), { dryRun: false }));
+  res = hJ(dtWrite_(s.ctx, 'InsurancePayors', pt1aCsv_(blankA1)));
   const cleared = JSON.parse(props.INS_PAYOR_NOTE).InsurancePayors;
   assert.ok(res.imported && cleared.text === '' && cleared.key && cleared.key.Z === 'Hawaii Only', 'a source with no note clears its note (its key stays)');
   assert.ok(/note=cleared/.test(s.book.audits[1]));
@@ -45225,7 +45242,7 @@ test('PT1a: kbImportDataTable — the preview converts and lists every step and 
   props = { INS_PAYOR_NOTE: prevNote };
   sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
   s = pt1aImportCtx_(sh, props);
-  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', 'Insurance,Network Status,K0800\nAetna,In-Network,X', { dryRun: false }));
+  res = hJ(dtWrite_(s.ctx, 'InsurancePayors', 'Insurance,Network Status,K0800\nAetna,In-Network,X'));
   assert.ok(res.imported && !res.converted, 'a tab-shaped file is not converted');
   assert.deepStrictEqual([s.book.bounded.length, s.book.deleted.length, props.INS_PAYOR_NOTE], [0, 0, prevNote], 'and the note is left exactly as it was');
   assert.ok(!/converted/.test(s.book.audits[0]));
@@ -45235,7 +45252,7 @@ test('PT1a: kbImportDataTable — the preview converts and lists every step and 
   sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
   sh.failWrites = 1;
   s = pt1aImportCtx_(sh, props);
-  res = hJ(s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  res = hJ(dtWrite_(s.ctx, 'InsurancePayors', pt1aCsv_(PT1A_SRC)));
   assert.ok(res.error && props.INS_PAYOR_NOTE === prevNote && !s.book.bounded.length, 'a failed write keeps the old note: ' + res.error);
 });
 
@@ -45331,7 +45348,7 @@ function pt1SearchCtx_(tabs, rawNotes) {
     KB_DATA_TABLES: { InsurancePayors: { tab: 'InsurancePayors', payorTable: 'Medicare / MA' }, OopPricing: { tab: 'X' },
       MedicaidPayors: { tab: 'MedicaidPayors', payorTable: 'Primary Medicaid' } },
     getEmployeeInfo_: () => ({ email: 'rep@x' }), getKbSearchSynonyms_: () => [],
-    insPayorMatch_: (name, q) => { const n = String(name).toLowerCase(); return { score: n.indexOf(q) >= 0 ? (n === q ? 10 : 5) : 0, excluded: '' }; },
+    insPayorMatch_: (name, q, g, cells) => { const n = [name].concat(cells || []).join(' ').toLowerCase(); return { score: n.indexOf(q) >= 0 ? (n === q ? 10 : 5) : 0, excluded: '' }; },
     oopCodeIndex_: () => ({ byToken: {}, error: '' }),
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => rawNotes }) },
     getKbSS_: () => ({ getSheetByName: (n) => (tabs[n] ? sheet(tabs[n]) : null) }) });
@@ -45376,14 +45393,14 @@ test('PT1: the Medicaid table is allowlisted beside InsurancePayors with the sam
   s.ctx.KB_DATA_TABLES.MedicaidPayors = { tab: 'MedicaidPayors', label: 'Primary Medicaid acceptance', minCols: 2, nameHeader: /payor|plan|name|insur|medicaid/i, sourceFormat: 'payorAcceptance' };
   const dry = hJ(s.ctx.kbImportDataTable('MedicaidPayors', pt1aCsv_(PT1_MCD), {}));
   assert.ok(dry.converted && dry.currentNote === '', 'the preview reads THIS table\'s current note (none yet)');
-  const res = hJ(s.ctx.kbImportDataTable('MedicaidPayors', pt1aCsv_(PT1_MCD), { dryRun: false }));
+  const res = hJ(dtWrite_(s.ctx, 'MedicaidPayors', pt1aCsv_(PT1_MCD)));
   assert.ok(res.imported, JSON.stringify(res.error));
   const map = JSON.parse(props.INS_PAYOR_NOTE);
   assert.strictEqual(map.InsurancePayors.text, 'MA rule', 'the other table\'s note is untouched');
   assert.ok(/Can Accept Patients In Facilities/.test(map.MedicaidPayors.text) && map.MedicaidPayors.key.Try === 'Create account and insurance team will verify');
   const props2 = { INS_PAYOR_NOTE: '{bad' };
   const s2 = pt1aImportCtx_(adm05Sheet_([], 1000, 40), props2);
-  const res2 = hJ(s2.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(PT1A_SRC), { dryRun: false }));
+  const res2 = hJ(dtWrite_(s2.ctx, 'InsurancePayors', pt1aCsv_(PT1A_SRC)));
   assert.ok(res2.imported && /could not be read/.test(res2.noteWarning) && JSON.parse(props2.INS_PAYOR_NOTE).InsurancePayors, 'an unreadable map: this table\'s note is kept and the loss is SAID');
   const nc = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.ok(/insPayorTables_\(\)\.forEach/.test(nc(extractRawFunction('Code.js', 'kbSuggestPayorSynonyms'))), 'the alias suggestion reads every payor table\'s names');
@@ -47020,6 +47037,359 @@ test('F32 (cycle 26): the ADMIN_EMAILS drift check sees the roster — a re-onbo
   const det = stripJsComments_(extractRawFunction('Code.js', 'automationDetectorChecks_'));
   assert.ok(/managerSourceDrift_\(adminRaw\.split\(','\), adminDriftRoster_\(pairs\), offboarded\)/.test(det) && !/managerSourceDrift_\(adminRaw\.split\(','\), \[\], offboarded\)/.test(det),
     'the detector passes the roster it already read');
+});
+
+// ── Cycle 26 Batch 5 — payor lookups ────────────────────────────────────────
+console.log('\nCycle 26 Batch 5 — payor lookups: which tables were searched, exclusions, tone, the cross-reference, the import, the manual tabs');
+
+function c26StateCtx_() {
+  const ctx = vm.createContext({});
+  vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
+    (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), ctx);
+  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'c26#' + f }));
+  return ctx;
+}
+/** PT1's search context with the REAL matcher in it (its stand-in cannot read a state). */
+function c26SearchCtx_(tabs, tables) {
+  const c = pt1SearchCtx_(tabs, null);
+  vm.runInContext((serverSource().match(/const US_STATE_CODES = \[[\s\S]*?\];/) || [''])[0].replace(/^const /, 'var ') + '\n' +
+    (serverSource().match(/const US_STATE_NAMES = \{[\s\S]*?\};/) || [''])[0].replace(/^const /, 'var '), c);
+  ['insPayorScore_', 'insStatesIn_', 'insLeadingStates_', 'insPayorNameStates_', 'insPayorMatch_']
+    .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  Object.keys(tables || {}).forEach((k) => { c.KB_DATA_TABLES[k] = tables[k]; });
+  return c;
+}
+
+test('F6 (cycle 26): an exclusion word excludes only the states that DIRECTLY follow it — "Non-Dual" beside a Texas State cell is a Texas plan, not one that excludes Texas (driven)', () => {
+  const c = c26StateCtx_();
+  const NS = (n) => hJ(c.insPayorNameStates_(n));
+  // THE CASE: the word, then something that is not a state.
+  assert.deepStrictEqual(NS('UHC Community Plan Non-Dual'), { excluded: [], named: [] });
+  assert.deepStrictEqual(NS('UHC Community Plan Non-Dual TX'), { excluded: [], named: ['TX'] }, 'it took every state to the end of the name before');
+  assert.deepStrictEqual(NS('Plan except where noted (Texas)'), { excluded: [], named: ['TX'] });
+  // A real exclusion still reads — code or name, a list, inside its bracket only.
+  assert.deepStrictEqual(NS('UHC (all states other than TX)'), { excluded: ['TX'], named: [] });
+  assert.deepStrictEqual(NS('Aetna except Texas and Oklahoma'), { excluded: ['TX', 'OK'], named: [] });
+  assert.deepStrictEqual(NS('Humana (not in HI)'), { excluded: ['HI'], named: [] });
+  assert.deepStrictEqual(NS('Cigna Non-TX'), { excluded: ['TX'], named: [] });
+  assert.deepStrictEqual(NS('Aetna except in Hawaii'), { excluded: ['HI'], named: [] });
+  assert.deepStrictEqual(NS('Plan excluding the state of New York, NJ'), { excluded: ['NY', 'NJ'], named: [] });
+  assert.deepStrictEqual(NS('UHC (all states other than TX) Oklahoma'), { excluded: ['TX'], named: ['OK'] }, 'the list ends at its bracket');
+  assert.deepStrictEqual(NS('Aetna except TX plans in Ohio'), { excluded: ['TX'], named: ['OH'] }, 'and at the first word that is not a state');
+  assert.deepStrictEqual(NS('BCBS Non-Dual plan except HI'), { excluded: ['HI'], named: [] }, 'a word that excludes nothing does not hide a later one');
+  assert.deepStrictEqual(hJ(c.insLeadingStates_('TX and Oklahoma plans')), { states: ['TX', 'OK'], end: 15 });
+  assert.deepStrictEqual(hJ(c.insLeadingStates_('Dual TX')), { states: [], end: 0 });
+  assert.deepStrictEqual(hJ(c.insLeadingStates_('in or near tx')).states, [], 'a code reads only in capitals, as in any name');
+  // The matcher: each cell is read for states on its own.
+  const M = (name, q, cells) => hJ(c.insPayorMatch_(name, q, [], cells));
+  const tx = M('UHC Community Plan Non-Dual', 'uhc community texas', ['Texas']);
+  const ga = M('UHC Community Plan Non-Dual', 'uhc community texas', ['Georgia']);
+  assert.strictEqual(tx.excluded, '', 'THE REGRESSION: it read "TX excluded" — the word in the name reached the State cell');
+  assert.ok(tx.score > ga.score && ga.score > 0, 'and the Texas plan outranks the Georgia one: ' + [tx.score, ga.score]);
+  assert.ok(M('UHC Silver HMO', 'alabama', ['Alabama']).score > 0, 'a state alone still finds a plan by its State cell (PT2)');
+  assert.strictEqual(M('UHC Silver HMO', 'alabama', ['Georgia']).score, 0);
+  assert.strictEqual(M('UHC Plan', 'uhc tx', ['All states except TX']).excluded, 'TX', 'a State cell that states its own exclusion is still read');
+  assert.ok(M('medicaid', 'arkansas', ['Multi-state / other', 'BCBS Arkansas']).score > 0, 'the Company cell is scored and read too');
+  assert.deepStrictEqual(M('Aetna', 'aetna', undefined), M('Aetna', 'aetna', []), 'a one-column table is scored exactly as before');
+  // The endpoint, driven with the real matcher over a by-state table.
+  const UHC = [['Insurance', 'State', 'Network Status'], ['UHC Community Plan Non-Dual', 'Georgia', 'OON'], ['UHC Community Plan Non-Dual', 'Texas', 'INN']];
+  const s = c26SearchCtx_({ UhcPayors: UHC }, { UhcPayors: { tab: 'UhcPayors', payorTable: 'UHC by state' } });
+  const r = hJ(s.searchInsurancePayors('uhc community texas'));
+  assert.deepStrictEqual(r.matches.map((m) => m.state + ':' + (m.excludedState || '')), ['Texas:', 'Georgia:'], 'the Texas plan first, and neither shown as excluding Texas');
+});
+
+test('F5 + F38 (cycle 26): the lookup says what became of EVERY payor table — searched, missing, empty, or only partly read — and flags a card its cross-table check stopped short of (driven)', () => {
+  const MA = [['Insurance', 'K0800'], ['Aetna', 'X'], ['Aetna Plus', 'X'], ['Aetna Solo', 'X']];
+  const MCD = [['Insurance', 'K0800'], ['Aetna', 'NO'], ['Aetna Plus', 'NO']];
+  const extra = { UhcPayors: { tab: 'UhcPayors', payorTable: 'UHC by state' }, BcbsPayors: { tab: 'BcbsPayors', payorTable: 'BCBS / Anthem' } };
+  // F5: one table searched, one with a header and no rows, one never imported.
+  let c = c26SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD, UhcPayors: [['Insurance', 'State']] }, extra);
+  let r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual(r.coverage, [
+    { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 3, unread: 0 },
+    { key: 'MedicaidPayors', label: 'Primary Medicaid', state: 'searched', rows: 2, unread: 0 },
+    { key: 'UhcPayors', label: 'UHC by state', state: 'empty', rows: 0, unread: 0 },
+    { key: 'BcbsPayors', label: 'BCBS / Anthem', state: 'missing', rows: 0, unread: 0 }],
+    'every configured payor table, in order — the two that were skipped are NAMED (they were skipped in silence)');
+  assert.ok(r.matches.every((m) => m.tableLabel === (m.table === 'InsurancePayors' ? 'Medicare / MA' : 'Primary Medicaid')), 'F8: each plan carries its table\'s label');
+  r = hJ(c.searchInsurancePayors('zzz no such plan'));
+  assert.strictEqual(r.notFound, true);
+  assert.deepStrictEqual(r.coverage.map((t) => t.state), ['searched', 'searched', 'empty', 'missing'], 'a no-match carries the coverage too — that is where it matters');
+  // F5: rows past the read cap are counted, not dropped.
+  c = c26SearchCtx_({ InsurancePayors: MA }, {});
+  c.INS_PAYOR_MAX_ROWS = 2;
+  r = hJ(c.searchInsurancePayors('aetna'));
+  assert.deepStrictEqual(r.coverage[0], { key: 'InsurancePayors', label: 'Medicare / MA', state: 'searched', rows: 2, unread: 1 });
+  assert.deepStrictEqual(r.matches.map((m) => m.name), ['Aetna', 'Aetna Plus'], 'the row past the cap was not read');
+  // F38: the cross-table check is bounded; a card it never reached says so.
+  c = c26SearchCtx_({ InsurancePayors: MA, MedicaidPayors: MCD }, {});
+  r = hJ(c.searchInsurancePayors('aetna'));
+  const by = (res) => res.matches.map((m) => m.table.slice(0, 2) + ':' + m.name + ':' + (m.alsoIn ? 'differs' : '') + ':' + (m.alsoUnchecked ? 'unchecked' : ''));
+  assert.deepStrictEqual(by(r).sort(), ['In:Aetna Plus:differs:', 'In:Aetna Solo::', 'In:Aetna:differs:', 'Me:Aetna Plus:differs:', 'Me:Aetna:differs:'].sort(),
+    'inside the bound every twin is compared, and nothing is flagged');
+  c.INS_PAYOR_ALSO_MAX = 1;
+  r = hJ(c.searchInsurancePayors('aetna'));
+  const flags = by(r);
+  assert.strictEqual(flags.filter((x) => /:differs:/.test(x)).length, 1, 'one comparison was made: ' + flags.join(' | '));
+  assert.strictEqual(flags.filter((x) => /:unchecked$/.test(x)).length, 3, 'the other three cards with a twin say they were NOT compared: ' + flags.join(' | '));
+  assert.ok(flags.indexOf('In:Aetna Solo::') >= 0, 'a plan no other table lists has nothing to compare, and is not flagged');
+});
+
+function c26InsClient_() {
+  const kb = extractScript('kb/script_kb.html');
+  const ctx = vm.createContext({ esc: (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
+    icon: (n) => '[' + n + ']' });
+  vm.runInContext(kb.slice(kb.indexOf('function insWord_('), kb.indexOf('function insTermsIn_(')) +
+    ['insTermsIn_', 'insToneCls_', 'insCoverage_', 'insCoverageHtml_', 'oopPayorRulesFor_', 'oopPayorXrefHtml_'].map((f) => extractFunction('kb/script_kb.html', f)).join('\n') +
+    '; this.INS_TERMS = INS_TERMS; this.INS_IS = INS_IS;', ctx);
+  return ctx;
+}
+
+test('F5 (cycle 26): the client names a payor table that was not searched, and draws "searched" only where it is asked to (driven)', () => {
+  const c = c26InsClient_();
+  const cov = (states) => ({ coverage: states });
+  const all = cov([{ key: 'A', label: 'Medicare / MA', state: 'searched', rows: 40, unread: 0 }, { key: 'B', label: 'Primary <Medicaid>', state: 'searched', rows: 9, unread: 0 }]);
+  assert.deepStrictEqual([hJ(c.insCoverage_(all)).known, hJ(c.insCoverage_(all)).complete], [true, true]);
+  assert.strictEqual(c.insCoverageHtml_(all, false), '', 'every table searched: nothing above the cards');
+  assert.strictEqual(c.insCoverageHtml_(all, true), '<div class="kb-ins-cover">Searched: Medicare / MA, Primary &lt;Medicaid&gt;.</div>', 'and one plain line where a no-match asks for it — escaped');
+  const gap = cov([{ key: 'A', label: 'Medicare / MA', state: 'searched', rows: 5000, unread: 12 }, { key: 'B', label: 'Primary Medicaid', state: 'missing' }, { key: 'C', label: 'UHC by state', state: 'empty' }]);
+  const g = hJ(c.insCoverage_(gap));
+  assert.deepStrictEqual([g.complete, g.skipped.length, g.partial.length, g.searched.length], [false, 2, 1, 1]);
+  const html = c.insCoverageHtml_(gap, false);
+  assert.ok(/class="kb-ins-cover gap" role="note"/.test(html), 'a gap is drawn whether or not it was asked for: ' + html);
+  assert.ok(/Not searched: <b>Primary Medicaid<\/b> \(not imported yet\); <b>UHC by state<\/b> \(its tab has no rows\); <b>Medicare \/ MA<\/b> \(only its first 5000 rows — 12 not read\)\. Searched: Medicare \/ MA\./.test(html), html);
+  // An answer from a server before F5 claims nothing either way.
+  assert.deepStrictEqual([hJ(c.insCoverage_({})).known, c.insCoverageHtml_({}, true), c.insCoverageHtml_(null, true)], [false, '', '']);
+  // The renderer: the gap rides both paths, and a no-match under a gap does not make the TRY claim.
+  const fn = stripJsComments_(extractFunction('kb/script_kb.html', 'insRenderResults_'));
+  assert.ok(/insCoverageHtml_\(res, true\)/.test(fn) && /var html = insCoverageHtml_\(res, false\)/.test(fn), 'the no-match answer and the card list both draw it');
+  assert.ok(/cov\.known && !cov\.complete/.test(fn) && /m\.alsoUnchecked \?/.test(fn), 'the TRY guidance is conditional on full coverage, and a card says when it was not compared (F38)');
+});
+
+test('F7 (cycle 26): green is an accept and NOTHING else — "Cannot be accepted" is a refusal, "Accepted except HI" is amber, "No auth required" is no verdict; every colour is still explained by the term that decided it (driven)', () => {
+  const c = c26InsClient_();
+  const first = (v) => { const t = c.insTermsIn_(v); return t.length ? t[0].term : ''; };
+  const row = (v) => [c.insToneCls_(v), first(v)];
+  // Refusals that carry the word "accept" — each toned GREEN before.
+  ['Cannot be accepted', 'Can\'t accept', 'Can not accept', 'Unable to accept', 'Will not accept', 'Won\'t be accepted', 'Not acceptable', 'Doesn\'t accept', 'Not being accepted', 'Unacceptable']
+    .forEach((v) => assert.deepStrictEqual(row(v), ['bad', 'Not Accepted / NO'], v));
+  // An accept with anything beside it is a condition: amber, and explained as one.
+  ['Accepted except HI', 'Accepted soon', 'In-Network (Medicare plans only)', 'Accepted w/ referral', 'INN for DME', 'Accepted after 1/1']
+    .forEach((v) => assert.deepStrictEqual(row(v), ['warn', 'Accepted, with a condition'], v));
+  // The plain accepts stay green — alone, punctuated, or two of them together.
+  ['X', 'x', 'YES', 'Yes', 'Accepted', 'In-Network', 'in network', 'INN', 'Accepted.', 'In-Network / Accepted', 'Accepted (INN)', 'X - Accepted']
+    .forEach((v) => assert.deepStrictEqual(row(v), ['good', 'Accepted / X'], v));
+  // "No <something> required" is not a No. Neutral, verbatim, unexplained.
+  ['No auth required', 'No PA needed', 'No prior authorization', 'No referral', 'No pre-auth necessary', 'No face to face required']
+    .forEach((v) => assert.deepStrictEqual([c.insToneCls_(v), c.insTermsIn_(v).length], ['', 0], v + ' — it toned red as a refusal'));
+  // …and a real No is still one, instruction or not.
+  ['NO', 'no', 'No.', 'NO ( Process E0144)', 'NO - K0837', 'No longer accepted', 'No - auth required first', 'No auth required - not accepted']
+    .forEach((v) => assert.deepStrictEqual(row(v), ['bad', 'Not Accepted / NO'], v));
+  // An accept word inside a stronger rule keeps that rule's colour and first term.
+  assert.deepStrictEqual(row('In-Network SI/PR'), ['warn', 'SI/PR']);
+  assert.deepStrictEqual(row('Accepted - Hawaii only'), ['info', 'Hawaii only']);
+  assert.deepStrictEqual(row('Not in network'), ['', ''], 'a negated in-network is still never a yes (PT2)');
+  // THE RULE, swept: no value is green unless the whole of it is an accept; and
+  // the two accept terms never both claim one value's colour.
+  const words = ['x', 'yes', 'accepted', 'in-network', 'inn', 'in network'];
+  const tails = ['', ' except hi', ' - tx only?', ' (see note)', ' w/ pa', ' pending', ' 2026', ' unless dual', ', call first'];
+  words.forEach((w) => tails.forEach((t) => {
+    const v = w + t, tone = c.insToneCls_(v);
+    assert.strictEqual(tone === 'good', t === '', JSON.stringify(v) + ' → ' + tone);
+    const terms = c.insTermsIn_(v).map((x) => x.term);
+    assert.ok(!(terms.indexOf('Accepted / X') >= 0 && terms.indexOf('Accepted, with a condition') >= 0), v + ' is explained as one or the other');
+    if (tone === 'good') assert.strictEqual(terms[0], 'Accepted / X', v);
+  }));
+  const order = c.INS_TERMS.map((t) => t.term);
+  assert.ok(order.indexOf('Accepted, with a condition') === order.indexOf('Accepted / X') - 1, 'the condition term sits just before the plain accept, as the tone tests them');
+});
+
+test('F8 (cycle 26): the price row\'s payor cross-reference keeps the column\'s own label, the plan\'s state and table, and an excluded state — it showed a bare value (driven)', () => {
+  const c = c26InsClient_();
+  const item = { name: 'Group 3 chair', codes: { raw: 'K0827', shaped: true, certain: true, tokens: ['K0827'] } };
+  const payors = [{ name: 'UHC <Dual>', state: 'Texas', table: 'UhcPayors', tableLabel: 'UHC by state', excludedState: 'HI',
+    details: [{ label: 'K0827 (451- 600) No In HI', value: 'X', code: { shaped: true, certain: true, tokens: ['K0827'] } },
+      { label: 'K0800', value: 'NO', code: { shaped: true, certain: true, tokens: ['K0800'] } }] },
+  { name: 'Aetna', details: [{ label: 'K0827', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0827'] } }] }];
+  const rules = hJ(c.oopPayorRulesFor_(item, payors));
+  assert.deepStrictEqual(rules, [
+    { payor: 'UHC <Dual>', code: 'K0827 (451- 600) No In HI', value: 'X', state: 'Texas', table: 'UHC by state', excluded: 'HI' },
+    { payor: 'Aetna', code: 'K0827', value: 'SI/PR', state: '', table: '', excluded: '' }], 'the rule carries where it came from');
+  const html = c.oopPayorXrefHtml_(item, payors);
+  assert.ok(html.indexOf('<span class="c">K0827 (451- 600) No In HI</span>') >= 0, 'THE REGRESSION: the column\'s qualifier is drawn — it was dropped, leaving a bare green X: ' + html);
+  assert.ok(html.indexOf('UHC &lt;Dual&gt; <span class="w">Texas · UHC by state</span> <span class="x">HI excluded</span>') >= 0, 'the state, the table and the exclusion beside the payor, escaped: ' + html);
+  assert.ok(html.indexOf('Aetna<span class="c">K0827</span>') >= 0, 'a plan with no state or table draws neither');
+  assert.strictEqual((html.match(/class="kb-oop-xref-r"/g) || []).length, 2, 'one row per matching rule, as before');
+  const css = extractScript('kb/script_kb.html') + require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'web-app', 'kb', 'script_kb.html'), 'utf8');
+  ['.kb-oop-xref-r .p .w', '.kb-oop-xref-r .p .x', '.kb-oop-xref-r .p .c', '.kb-ins-cover', '.kb-ins-cover.gap', '.kb-ins-also.unchecked', '.kb-ins-guide.gap']
+    .forEach((sel) => assert.ok(css.indexOf(sel + ' {') >= 0, 'a rule exists for ' + sel + ' (g140)'));
+});
+
+test('F37 (cycle 26): an import is bound to the preview that was approved, and once the table is replaced nothing reports it as failed — a note or audit row that could not be written is SAID (driven)', () => {
+  const prevNote = JSON.stringify({ InsurancePayors: { text: 'old rule', key: null, at: 't', by: 'a@x' } });
+  const fresh = () => {
+    const props = { INS_PAYOR_NOTE: prevNote };
+    const sh = adm05Sheet_([['Insurance', 'Network Status'], ['Old', 'In-Network']], 1000, 26);
+    return { props, sh, s: pt1aImportCtx_(sh, props) };
+  };
+  const SRC = pt1aCsv_(PT1A_SRC);
+  // The preview carries a fingerprint of what WOULD be written.
+  let t = fresh();
+  const dry = hJ(t.s.ctx.kbImportDataTable('InsurancePayors', SRC, {}));
+  assert.ok(/^[0-9a-f]{64}$/.test(dry.fingerprint), 'a SHA-256: ' + dry.fingerprint);
+  assert.strictEqual(hJ(t.s.ctx.kbImportDataTable('InsurancePayors', SRC, {})).fingerprint, dry.fingerprint, 'the same file reads the same');
+  const other = PT1A_SRC.map((r) => r.slice()); other[2][4] = 'Out-of-Network';
+  assert.notStrictEqual(hJ(t.s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(other), {})).fingerprint, dry.fingerprint, 'one changed cell is a different file');
+  const noteOnly = PT1A_SRC.map((r) => r.slice()); noteOnly[0][0] = 'A different standing note';
+  assert.notStrictEqual(hJ(t.s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(noteOnly), {})).fingerprint, dry.fingerprint, 'and so is a changed note — it is part of what the import writes');
+  // A write with no fingerprint (a page from before the deploy), or the wrong one, changes nothing.
+  let res = hJ(t.s.ctx.kbImportDataTable('InsurancePayors', SRC, { dryRun: false }));
+  assert.ok(/Reload the page/.test(res.error) && /Nothing was changed/.test(res.error), res.error);
+  res = hJ(t.s.ctx.kbImportDataTable('InsurancePayors', pt1aCsv_(other), { dryRun: false, expect: dry.fingerprint }));
+  assert.ok(/no longer reads the way the preview you approved did/.test(res.error) && /Nothing was changed/.test(res.error), res.error);
+  assert.deepStrictEqual([t.sh.cleared, t.sh.data.length, t.s.book.audits.length, t.props.INS_PAYOR_NOTE], [0, 2, 0, prevNote], 'neither refusal touched the table, the note or the log');
+  res = hJ(t.s.ctx.kbImportDataTable('InsurancePayors', SRC, { dryRun: false, expect: dry.fingerprint }));
+  assert.ok(res.imported && !res.error && !res.noteWarning && t.sh.data.length === 4, 'the approved preview writes: ' + JSON.stringify(res.error));
+  // THE CASE: the table is replaced, then the note write throws.
+  t = fresh();
+  t.s.ctx.propSetBounded_ = () => { throw new Error('INS_PAYOR_NOTE would be 12,000 bytes'); };
+  res = hJ(dtWrite_(t.s.ctx, 'InsurancePayors', SRC));
+  assert.strictEqual(res.error, undefined, 'THE REGRESSION: it answered "Import failed" over a table it had just replaced');
+  assert.deepStrictEqual([res.imported, res.noteSaved, t.sh.data.length], [true, false, 4]);
+  assert.ok(/table was replaced, but its standing note could not be saved \(INS_PAYOR_NOTE would be 12,000 bytes\)/.test(res.noteWarning) && /Upload the same file again/.test(res.noteWarning), res.noteWarning);
+  assert.strictEqual(t.props.INS_PAYOR_NOTE, prevNote, 'the stored note is the one from before');
+  assert.ok(/note=not saved/.test(t.s.book.audits[0]), 'and the audit row says so: ' + t.s.book.audits[0]);
+  // The audit row throws: still imported, and said.
+  t = fresh();
+  t.s.ctx.writeAuditLog_ = () => { throw new Error('AuditLog is full'); };
+  res = hJ(dtWrite_(t.s.ctx, 'InsurancePayors', SRC));
+  assert.ok(res.imported && !res.error && /audit row could not be written \(AuditLog is full\)/.test(res.auditWarning), JSON.stringify(res).slice(0, 300));
+  assert.ok(JSON.parse(t.props.INS_PAYOR_NOTE).InsurancePayors.text !== 'old rule', 'the note was set before the audit step');
+  // A write that fails BEFORE the table is replaced is still a failed import (ADM-05).
+  t = fresh();
+  t.sh.failWrites = 1;
+  res = hJ(dtWrite_(t.s.ctx, 'InsurancePayors', SRC));
+  assert.ok(/Import failed/.test(res.error) && /put back unchanged/.test(res.error) && !res.imported, res.error);
+  // The order in the source: fingerprint check before any write; `done` set right after the write.
+  const f = stripJsComments_(extractRawFunction('Code.js', 'kbImportDataTable'));
+  assert.ok(f.indexOf('o.expect') > 0 && f.indexOf('o.expect') < f.indexOf('sh.clear()'), 'the fingerprint is checked before the tab is cleared');
+  assert.ok(f.indexOf('done = summary') > f.indexOf('SpreadsheetApp.flush()') && f.indexOf('done = summary') < f.indexOf('propSetBounded_('), 'and the import is "done" before the note step');
+});
+
+test('F37 (cycle 26): the Admin client hands the write the fingerprint of the preview on screen, and shows what an import could not finish as a sticky warning (driven + source)', () => {
+  const cn = extractScript('cn/script_callnotes.html');
+  const toasts = [], calls = [];
+  let ok = null, loads = 0;
+  const chain = { withSuccessHandler: (fn) => { ok = fn; return chain; }, withFailureHandler: () => chain, kbImportDataTable: (...a) => { calls.push(a); } };
+  const ctx = vm.createContext({ CN_STATE: { dtablePending: { T: { b64: 'B64', name: 'payors.csv', fingerprint: 'FP1' } } },
+    uiConfirm: () => ({ then: (fn) => fn(true) }), showToast: (...a) => toasts.push(a), cnAdminLoadDataTables_: () => { loads++; },
+    google: { script: { run: chain } } });
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnDTableAfterWarnings_') + extractFunction('cn/script_callnotes.html', 'cnDTableImport_'), ctx);
+  const btn = { disabled: false, innerHTML: '', textContent: '' };
+  ctx.cnDTableImport_('T', btn);
+  assert.deepStrictEqual(hJ(calls), [['T', 'B64', { dryRun: false, expect: 'FP1' }]], 'the write carries the fingerprint the preview returned');
+  ok({ imported: true, rows: 12, tab: 'InsurancePayors', noteWarning: 'The table was replaced, but its standing note could not be saved (x).' });
+  assert.deepStrictEqual(hJ(toasts), [['Imported 12 row(s) into InsurancePayors — but: The table was replaced, but its standing note could not be saved (x).', 'toast-warn', { sticky: true }]],
+    'THE REGRESSION: the warning the server built was never shown');
+  assert.deepStrictEqual([loads, ctx.CN_STATE.dtablePending.T], [1, undefined], 'the table list reloads and the pending file is cleared — the import happened');
+  // A clean import is the plain success toast.
+  ctx.CN_STATE.dtablePending.T = { b64: 'B64', name: 'payors.csv', fingerprint: 'FP2' };
+  toasts.length = 0;
+  ctx.cnDTableImport_('T', btn);
+  ok({ imported: true, rows: 3, tab: 'InsurancePayors' });
+  assert.deepStrictEqual(hJ(toasts), [['Imported 3 row(s) into InsurancePayors', 'toast-success']]);
+  assert.strictEqual(ctx.cnDTableAfterWarnings_({ noteWarning: 'a', auditWarning: 'b', afterWarning: 'c' }), 'a b c');
+  assert.strictEqual(ctx.cnDTableAfterWarnings_({}), '');
+  // The fingerprint is stored only for the file that is still the pending one.
+  const read = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnDTableRead_'));
+  assert.ok(/pendNow && pendNow\.b64 === b64\) pendNow\.fingerprint = res\.fingerprint/.test(read), 'a late preview of an earlier file never lends its fingerprint to a newer one');
+  assert.ok(cn.indexOf('expect: pend.fingerprint') > 0);
+});
+
+/** A tab with a FIXED grid whose last row is the last row WITH CONTENT, as Sheets reports it. */
+function c26Tab_(rows, maxRows, maxCols) {
+  const sh = { data: rows.map((r) => r.slice()), maxRows: maxRows || 1000, maxCols: maxCols || 26, log: [], failWrites: 0,
+    getLastRow: () => { let n = sh.data.length; while (n > 0 && !(sh.data[n - 1] || []).some((x) => x !== '' && x != null)) n--; return n; },
+    getLastColumn: () => sh.data.reduce((w, r) => { let n = r.length; while (n > 0 && (r[n - 1] === '' || r[n - 1] == null)) n--; return Math.max(w, n); }, 0),
+    getMaxRows: () => sh.maxRows, getMaxColumns: () => sh.maxCols,
+    insertRowsAfter: (a, n) => { sh.maxRows += n; sh.log.push(['growRows', n]); },
+    insertColumnsAfter: (a, n) => { sh.maxCols += n; sh.log.push(['growCols', n]); },
+    getRange: (r, c, n, w) => {
+      if (r + n - 1 > sh.maxRows || c + w - 1 > sh.maxCols) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      return {
+        setNumberFormat: (f) => { sh.log.push(['format', r, c, n, w, f]); },
+        clearContent: () => { sh.log.push(['clear', r, c, n, w]); for (let i = 0; i < n; i++) for (let j = 0; j < w; j++) if (sh.data[r - 1 + i]) sh.data[r - 1 + i][c - 1 + j] = ''; },
+        setValues: (v) => {
+          sh.log.push(['set', r, c, n, w]);
+          if (v.length !== n || v.some((row) => row.length !== w)) throw new Error('The number of rows or columns in the data does not match the range.');
+          if (sh.failWrites > 0) { sh.failWrites--; throw new Error('Service Spreadsheets failed while accessing document'); }
+          v.forEach((row, i) => { const at = r - 1 + i; if (!sh.data[at]) sh.data[at] = []; row.forEach((x, j) => { sh.data[at][c - 1 + j] = x; }); });
+        },
+      };
+    } };
+  return sh;
+}
+
+test('F40 (cycle 26): the handbook\'s three import tabs are rewritten IN PLACE by one write — never cleared first — so a write that fails leaves the old table readable (driven)', () => {
+  const ctx = vm.createContext({ String, Array, Object, Math });
+  ['sheetSafe_', 'sheetTextRows_', 'sheetReplaceBody_'].forEach((n) => vm.runInContext(extractRawFunction('Code.js', n), ctx));
+  const H = ['Id', 'Title', 'Pct'];
+  const old = [H.concat(['Legacy']), ['q-a', 'Old A', 80, 'x'], ['q-b', 'Old B', 80, 'x'], ['q-c', 'Old C', 80, 'x'], ['q-d', 'Old D', 80, 'x']];
+  // Fewer, narrower rows over more, wider ones: ONE write that also blanks what is left over.
+  let sh = c26Tab_(old);
+  assert.strictEqual(ctx.sheetReplaceBody_(sh, 3, [['q-a', '=1+1', 70], ['q-z', '3/4', '=x']], [0, 1]), 2);
+  assert.deepStrictEqual(sh.log.filter((e) => e[0] === 'set'), [['set', 2, 1, 4, 4]], 'one setValues over the old extent — four rows, the old tab\'s four columns');
+  assert.strictEqual(sh.log.filter((e) => e[0] === 'clear').length, 0, 'and no clear at all');
+  assert.deepStrictEqual(sh.log.filter((e) => e[0] === 'format'), [['format', 2, 1, 2, 1, '@'], ['format', 2, 2, 2, 1, '@']], 'the text columns are formatted on the new rows, before the write');
+  assert.ok(sh.log.findIndex((e) => e[0] === 'format') < sh.log.findIndex((e) => e[0] === 'set'));
+  assert.deepStrictEqual(sh.data.slice(1), [['q-a', '=1+1', 70, ''], ['q-z', '3/4', '\'=x', ''], ['', '', '', ''], ['', '', '', '']],
+    'the new rows — a text cell raw, any other cell sheet-safe (g144) — and the left-over rows and the extra column blank');
+  assert.strictEqual(sh.getLastRow(), 3, 'the tab ends at the new last row');
+  // THE CASE: the write throws. Nothing was cleared first, so the old table is still there.
+  sh = c26Tab_(old);
+  sh.failWrites = 1;
+  assert.throws(() => ctx.sheetReplaceBody_(sh, 3, [['q-a', 'New', 70]], [0, 1]), /Service Spreadsheets failed/);
+  assert.deepStrictEqual(sh.data, old, 'THE REGRESSION: clear-then-write left the tab empty here, with no copy to put back');
+  // More rows than the grid: grown before the write (g145).
+  sh = c26Tab_([H], 3, 26);
+  ctx.sheetReplaceBody_(sh, 3, Array.from({ length: 10 }, (_, i) => ['q-' + i, 'T', 1]), [0]);
+  assert.ok(sh.log.findIndex((e) => e[0] === 'growRows') >= 0 && sh.log.findIndex((e) => e[0] === 'growRows') < sh.log.findIndex((e) => e[0] === 'set'), 'the grid grows first');
+  assert.strictEqual(sh.getLastRow(), 11);
+  // No new rows over old ones: blanked in one write. Nothing over nothing: no write.
+  sh = c26Tab_(old);
+  ctx.sheetReplaceBody_(sh, 3, [], [0, 1]);
+  assert.deepStrictEqual([sh.getLastRow(), sh.log.filter((e) => e[0] === 'set').length, sh.log.filter((e) => e[0] === 'format').length], [1, 1, 0]);
+  sh = c26Tab_([H]);
+  assert.strictEqual(ctx.sheetReplaceBody_(sh, 3, [], [0]), 0);
+  assert.deepStrictEqual(sh.log, []);
+  // The three writers use it, write their header AFTER the rows, and clear nothing.
+  ['kbManualImagesWrite_', 'kbManualQuizzesWrite_', 'kbManualFormsWrite_'].forEach((n) => {
+    const f = stripJsComments_(extractRawFunction('Code.js', n));
+    assert.ok(/sheetReplaceBody_\(sheet, KB_MANUAL_[A-Z]+_HEADERS\.length, rows, /.test(f), n + ' writes through the one helper');
+    assert.ok(!/clearContent|\.clear\(|appendRowsSafe_|appendRowsTextSafe_/.test(f), n + ' no longer clears, or appends after a clear');
+    assert.ok(f.indexOf('sheetReplaceBody_(') < f.indexOf('_HEADERS]))'), n + ': the rows first, then the header');
+  });
+  // Derived: no server function outside the test suite clears a range's contents and writes after.
+  const kbSrc = stripJsComments_(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'web-app', '70_kb.js'), 'utf8'));
+  assert.strictEqual((kbSrc.match(/\.clearContent\(\)/g) || []).length, 0, 'no clearContent() is left in the KB server file');
+});
+
+test('F40 (cycle 26): a manual import whose image write fails over an EXISTING tab leaves the images that were there — and says the write failed (driven through kbImportManual)', () => {
+  const imgs = { 'fig-o2-reg': { alt: 'Regulator', kind: 'figure', dataUri: M3_JPG }, 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG }, 'thumb-unused': { alt: 'U', kind: 'thumb', dataUri: M3_JPG } };
+  const book = m1Book_([], null);
+  const r1 = m3Importer_(book, m3Bundle_(imgs)).ctx.kbImportManual(M1_LINK, {});
+  assert.strictEqual(r1.success, true, r1.error || JSON.stringify(r1.problems));
+  assert.strictEqual(r1.images.stored, 3);
+  const before = J2(book.sheets.ManualImages.grid);
+  // The next import changes an image; its one write over the data rows throws.
+  const sh = book.sheets.ManualImages, gr = sh.getRange;
+  sh.getRange = (r, c, nr, nc) => { const x = gr(r, c, nr, nc); if (r >= 2) x.setValues = () => { throw new Error('Service Spreadsheets failed'); }; return x; };
+  const imgs2 = Object.assign({}, imgs, { 'icon-delivered': { alt: 'Delivered', kind: 'icon', dataUri: M3_PNG.replace('ggg==', 'gga==') } });
+  const r2 = m3Importer_(book, m3Bundle_(imgs2)).ctx.kbImportManual(M1_LINK, {});
+  assert.ok(r2.success && /Service Spreadsheets failed/.test(r2.images.error), JSON.stringify(r2.images));
+  assert.deepStrictEqual(J2(book.sheets.ManualImages.grid), before, 'THE REGRESSION: the tab had been cleared before the write, so every handbook image was gone');
+  assert.ok(!book.writes.some((w) => w[0] === 'ManualImages' && w[1] === 'clear'), 'nothing cleared the tab');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
