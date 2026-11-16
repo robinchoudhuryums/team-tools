@@ -39,7 +39,8 @@
 
 const HB_KB_SS_PROP = 'HANDBOOK_KB_SS_ID';
 const HB_CACHE_TTL = 300;
-const HB_PARTS_CACHE_KEY = 'hb_parts_v2:';   // v2 (HB1.3): the answer carries its stamp
+const HB_PARTS_CACHE_KEY = 'hb_parts_v3:';   // v3 (cycle 26 F49): the answer carries each item's version
+const HB_STAMP_FORMAT = 'v2.';               // prefixes the chapters' stamp: a browser's kept copy from before F49 (no versions) never matches
 const HB_NOT_HERE = 'is not available in the handbook app yet.';
 const HB_SEARCH_CFG_CACHE_KEY = 'hb_search_cfg_v1';
 
@@ -92,6 +93,18 @@ function getOrCreateKbSheet_() {
  *  both apps (CONFIG.TIMEZONE, copied by the sync). */
 function fmtDate_(d) { return Utilities.formatDate(d, HB_TT_CONFIG.TIMEZONE, 'yyyy-MM-dd'); }
 function fmtTime_(d) { return Utilities.formatDate(d, HB_TT_CONFIG.TIMEZONE, 'HH:mm:ss'); }
+/** F53 (cycle 26) — a DAY in this app's own records (a plan's due day against
+ *  today, the day a sign-off was made) is the PROJECT's timezone, the one
+ *  appsscript.json sets and the reminder trigger fires in. fmtDate_ above is
+ *  Team Tools' storage timezone (India), kept for what is written into Team
+ *  Tools' tabs — used for these, a plan due on the 13th read "Overdue" from
+ *  about 12:30 pm US Central ON the 13th. */
+function hbTz_() {
+  let tz = '';
+  try { tz = String(Session.getScriptTimeZone() || ''); } catch (e) { tz = ''; }
+  return tz || HB_TT_CONFIG.TIMEZONE;
+}
+function hbDay_(d) { return Utilities.formatDate(d, hbTz_(), 'yyyy-MM-dd'); }
 
 /** HB1.4 — the search settings Team Tools keeps in ITS Script Properties (the
  *  synonym groups, and the auto-tag rules the search signal's vocabulary is
@@ -192,13 +205,54 @@ function getManualParts() {
   if (!getEmployeeInfo_()) return { error: 'Not authorized.' };
   const hit = hbCacheGetJson_(HB_PARTS_CACHE_KEY);
   if (hit) return hit;
+  return hbPartsLoad_();
+}
+/** The chapters read from the sheet NOW and kept for the next reader: the
+ *  answer carries `versions` (F49 — each section's and chapter's version, the
+ *  stamp of the text beside it, which the page hands back when its reader
+ *  signs) and the `stamp` of the whole. hbMarkRead calls this directly when a
+ *  sign-off must be judged against the sheet rather than a five-minute-old
+ *  answer — and the cache then holds what it read, so a reader told to reload
+ *  gets the new text. */
+function hbPartsLoad_() {
   const res = ttGetManualParts_();
-  if (res && !res.error) {
-    res.stamp = hbStamp_(JSON.stringify(res.parts));
+  if (res && !res.error && Array.isArray(res.parts)) {
+    res.versions = hbVersions_(res.parts);
+    res.stamp = HB_STAMP_FORMAT + hbStamp_(JSON.stringify(res.parts));
     hbCachePutJson_(HB_PARTS_CACHE_KEY, res);
     try { CacheService.getScriptCache().put(HB_PARTS_CACHE_KEY + 'stamp', res.stamp, HB_CACHE_TTL); } catch (e) {}
   }
   return res;
+}
+/** The handbook's changelog read from the sheet NOW (F49) — never the cached
+ *  meta, and never "none" for a list that could not be read: a sign-off records
+ *  the retraining state it saw, so an unreadable list throws and the sign-off
+ *  is not recorded. What it read is kept for the next reader. */
+function hbChangelogNow_() {
+  let raw;
+  try { raw = kbManualMetaRead_(getKbSS_().getSheetByName(KB_MANUAL_META_TAB)); }
+  catch (err) { throw new Error('The handbook\'s list of changes could not be read, so nothing was recorded: ' + err.message); }
+  if (!raw) return [];
+  let meta;
+  try { meta = JSON.parse(raw); } catch (err) { throw new Error('The handbook\'s list of changes could not be read, so nothing was recorded.'); }
+  try { CacheService.getScriptCache().put(KB_MANUAL_META_CACHE_KEY, raw, KB_CACHE_TTL); } catch (e) {}
+  return meta && Array.isArray(meta.changelog) ? meta.changelog : [];
+}
+/** PURE — each section's and chapter's VERSION, by item key: a section's is
+ *  the stamp of its text; a chapter's, the stamp of its sections' versions in
+ *  order (HB3.4). */
+function hbVersions_(parts) {
+  const out = {};
+  (parts || []).forEach(function (p) {
+    if (!p || !p.department) return;
+    const stamps = (p.sections || []).map(function (s) {
+      const v = hbStamp_(String(s.bodyMd || ''));
+      out['section:' + s.id] = v;
+      return v;
+    });
+    out['chapter:' + String(p.department)] = hbStamp_(stamps.join('|'));
+  });
+  return out;
 }
 /** HB1.3 — what the browser's kept copy of the chapters is checked against:
  *  the stamp of the chapters this server would send now. Cheap while the
@@ -285,9 +339,56 @@ function kbMapDistances() { return { error: 'Distances ' + HB_NOT_HERE }; }
  *  (`signal: true`) adds its vocabulary terms to the search signal; nothing
  *  else from the options reaches the copy. */
 function searchReference(query, opts) {
-  const res = ttSearchReference_(query, { signal: !!(opts && opts.signal === true) });
+  // F48 (cycle 26): handbook sections only, asked of the search itself
+  // (`manualOnly`) — it skips every other row BEFORE it scores or cuts the
+  // list. Filtering the finished list (which stays, as a second check) let
+  // twenty better-scoring Reference articles leave the handbook nothing, and
+  // a search that then showed nothing was not even counted as one.
+  const res = ttSearchReference_(query, { signal: !!(opts && opts.signal === true), manualOnly: true });
   if (res && Array.isArray(res.results)) res.results = res.results.filter(function (r) { return KB_MANUAL_ID_RE.test(String(r && r.id || '')); });
   return res;
+}
+
+// ── F52 (cycle 26) — how much one reader may add to Team Tools' tabs ────────
+// The feedback and topic-request writers append to tabs Team Tools' managers
+// read (KbFeedback, KbContentRequests), from any signed-in account in the
+// domain. Each is limited per reader per WINDOW (the script cache's longest
+// life), and a repeat of the same thing inside the window is answered as done
+// without a second row. The count lives in the cache: a guard against a flood,
+// not an accounting — an unreadable cache lets the write through.
+const HB_WINDOW_SECS = 21600;        // six hours
+const HB_FEEDBACK_WINDOW_MAX = 30;   // feedback rows one reader may add in a window
+const HB_REQUEST_WINDOW_MAX = 5;     // topic requests one reader may add in a window
+
+/** PURE — one more use against a window's count. `raw` is the stored
+ *  `{n, until}` (or nothing); a window that has ended starts again. Returns
+ *  { ok: false, until } at the limit, else { ok: true, next } to store. */
+function hbWindowStep_(raw, nowMs, max, windowMs) {
+  let cur = null;
+  try { cur = raw ? JSON.parse(raw) : null; } catch (e) { cur = null; }
+  if (!cur || !(Number(cur.until) > nowMs) || !(Number(cur.n) >= 0)) cur = { n: 0, until: nowMs + windowMs };
+  if (Number(cur.n) >= max) return { ok: false, until: Number(cur.until) };
+  return { ok: true, next: { n: Number(cur.n) + 1, until: Number(cur.until) } };
+}
+/** May `email` add one more to `bucket`, and is `what` new? { ok: false } at
+ *  the limit; { ok: true, already: true } for a repeat; else { ok: true,
+ *  commit } — call commit() once the row is written. */
+function hbWindowTake_(bucket, email, max, what) {
+  const base = 'hb_win:' + bucket + ':' + hbStamp_(email);
+  const seenKey = base + ':' + hbStamp_(String(what));
+  let raw = null, seen = null;
+  const cache = CacheService.getScriptCache();
+  try { raw = cache.get(base); seen = cache.get(seenKey); } catch (e) { return { ok: true, commit: function () {} }; }
+  if (seen) return { ok: true, already: true };
+  const now = Date.now();
+  const step = hbWindowStep_(raw, now, max, HB_WINDOW_SECS * 1000);
+  if (!step.ok) return { ok: false };
+  return { ok: true, commit: function () {
+    try {
+      cache.put(base, JSON.stringify(step.next), Math.max(1, Math.ceil((step.next.until - now) / 1000)));
+      cache.put(seenKey, '1', HB_WINDOW_SECS);
+    } catch (e) {}
+  } };
 }
 /** HB1.4 — a reader's section feedback (helpful, not helpful, out of date, a
  *  suggested edit), checked by Team Tools' own rule and appended to KbFeedback,
@@ -301,9 +402,17 @@ function kbFlagItem(itemId, kind, note) {
   if (fe.error) return { success: false, error: fe.error };
   if (!KB_MANUAL_ID_RE.test(fe.id)) return { success: false, error: 'Feedback here is for handbook sections.' };
   try {
+    // F52: a section of the handbook as published — an id that only LOOKS like
+    // one was accepted, so a script could fill Team Tools' tab with rows about
+    // sections that do not exist.
+    if (!hbPublished_().sectionIds[fe.id]) return { success: false, error: 'That section is not in the handbook.' };
+    const take = hbWindowTake_('fb', emp.email, HB_FEEDBACK_WINDOW_MAX, fe.id + '|' + fe.kind + '|' + fe.note);
+    if (!take.ok) return { success: false, limited: true, error: 'You have sent a lot of feedback in the last few hours. Try again later.' };
+    if (take.already) return { success: true, already: true };   // the same feedback, again: one row is enough
     const now = new Date();
     hbAppendTab_(KB_FEEDBACK_TAB, KB_FEEDBACK_HEADERS)
       .appendRow(sheetSafeRow_([fmtDate_(now) + ' ' + fmtTime_(now), fe.id, '', emp.email, fe.kind, fe.note]));
+    take.commit();
     return { success: true };
   } catch (err) { return { success: false, error: err.message }; }
 }
@@ -426,9 +535,14 @@ function hbRequestTopic(topic) {
   if (!t) return { success: false, error: 'Say what you were looking for.' };
   if (t.length > HB_REQUEST_TOPIC_MAX) return { success: false, error: 'Keep it under ' + HB_REQUEST_TOPIC_MAX + ' characters.' };
   try {
+    // F52: a few requests per reader per window, and the same topic once.
+    const take = hbWindowTake_('req', emp.email, HB_REQUEST_WINDOW_MAX, t.toLowerCase());
+    if (!take.ok) return { success: false, limited: true, error: 'You have asked for several topics in the last few hours. Try again later.' };
+    if (take.already) return { success: true, already: true };
     const reqId = Utilities.getUuid(), now = new Date();
     hbAppendTab_(HB_REQUESTS_TAB, HB_REQUESTS_HEADERS)
       .appendRow(sheetSafeRow_([fmtDate_(now) + ' ' + fmtTime_(now), reqId, emp.id, emp.email, "'" + t, '', '', 'open', '', '']));
+    take.commit();
     return { success: true, reqId: reqId };
   } catch (err) { return { success: false, error: err.message }; }
 }

@@ -11,7 +11,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 /** The host's state — the four fields the reader reads through state(). */
-var HB = { tree: [], isAdmin: false, currentId: null, landing: true };
+var HB = { tree: [], isAdmin: false, currentId: null, landing: true, versions: {} };
 var HB_SEARCH = { seq: 0, q: '', timer: null, showing: false };   // HB1.4: the search view's own state
 var HB_SEARCH_MIN = 2, HB_SEARCH_DEBOUNCE_MS = 300;
 // HB2.1: who is reading (hbGetMe's answer — undefined while it loads), the
@@ -1452,17 +1452,24 @@ function hbPaintMine_() {
   if (!res.plans.length) { host.innerHTML = head + '<p class="hb-quiet">Nothing is assigned to you right now.</p>'; return; }
   host.innerHTML = head + res.plans.map(function (p) {
     var pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+    // F50 (cycle 26): an item that can no longer be done (an archived quiz, a
+    // section taken out of the handbook) is shown, said, and not counted.
+    var gone = p.missing || 0;
     return '<div class="hb-tr-plan' + (p.overdue ? ' overdue' : '') + '"><div class="hb-tr-ph"><span class="hb-tr-pk">' + p.total + ' item' + (p.total === 1 ? '' : 's') + ' · from ' + esc(p.authorName) + '</span>' +
       '<span class="hb-pp-row-n">' + esc(p.title) + '</span>' +
-      (p.overdue ? '<span class="hb-qz-chip lock">Overdue' + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>' : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : (p.due ? '<span class="hb-qz-chip">Due ' + esc(hbDueLabel_(p.due)) + '</span>' : ''))) + '</div>' +
+      (p.overdue ? '<span class="hb-qz-chip lock">Overdue' + (p.due ? ' · due ' + esc(hbDueLabel_(p.due)) : '') + '</span>'
+        : (!p.total ? '<span class="hb-qz-chip">Nothing to do</span>'
+        : (p.done === p.total ? '<span class="hb-qz-chip pass">Done</span>' : (p.due ? '<span class="hb-qz-chip">Due ' + esc(hbDueLabel_(p.due)) + '</span>' : '')))) + '</div>' +
       '<div class="hb-tr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="' + p.total + '" aria-valuenow="' + p.done + '" aria-label="' + esc(p.title) + ' progress"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done</div>' +
+      '<div class="hb-quiet hb-tr-count">' + p.done + ' of ' + p.total + ' done' + (gone ? ' · ' + gone + ' no longer available, not counted' : '') + '</div>' +
       '<ul class="hb-tr-items">' + p.items.map(function (it) {
         var label = '<span class="hb-tr-it-t">' + esc(hbItemLabel_(it)) + '</span>';
         var act = '';
-        if (it.kind === 'quiz') {
-          act = hbQuizChip_(it.quiz) + (it.missing ? '' : '<button type="button" class="kb-btn" data-quiz="' + esc(it.id) + '"' + (it.quiz && it.quiz.locked ? ' disabled' : '') +
-            ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (it.done ? 'Take again' : 'Take the quiz') + '</button>');
+        if (it.missing) {
+          act = '<span class="hb-quiet">No longer available</span>';
+        } else if (it.kind === 'quiz') {
+          act = hbQuizChip_(it.quiz) + '<button type="button" class="kb-btn" data-quiz="' + esc(it.id) + '"' + (it.quiz && it.quiz.locked ? ' disabled' : '') +
+            ' onclick="hbTakeQuiz_(this.getAttribute(\'data-quiz\'), true)">' + (it.done ? 'Take again' : 'Take the quiz') + '</button>';
         } else {
           var openId = it.kind === 'section' ? it.id : kbManualDepts_().first(it.id);
           act = (openId && (it.kind === 'chapter' || HB.tree.some(function (x) { return x.id === it.id; }))
@@ -1492,7 +1499,8 @@ function hbPaintTeamTraining_() {
   host.innerHTML = head + '<section id="hb-tr-progress"></section>' + (res.unreadable ? '<p class="hb-quiet">' + res.unreadable + ' saved item' + (res.unreadable === 1 ? '' : 's') + ' could not be read and ' + (res.unreadable === 1 ? 'is' : 'are') + ' not shown.</p>' : '') +
     '<h3 class="hb-pp-h3">Plans <span class="hb-quiet">Assigned to your team</span></h3>' + (ps.length ? '<div class="hb-tr-cards">' + ps.map(function (p) {
       var b = p.plan || {}, n = (b.items || []).length;
-      return row(b.title, (p.live ? 'Reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : 'Reaches nobody while archived') + (res.isAdmin ? ' · by ' + p.authorName : ''), 'plan', p.id, p.live,
+      return row(b.title, (p.live ? 'Reaches ' + p.reaches + (p.reaches === 1 ? ' person' : ' people') : 'Reaches nobody while archived') + (res.isAdmin ? ' · by ' + p.authorName : '') +
+          (p.live && p.missing ? ' · ' + p.missing + ' item' + (p.missing === 1 ? '' : 's') + ' no longer available (not counted) — edit the plan to take ' + (p.missing === 1 ? 'it' : 'them') + ' out' : ''), 'plan', p.id, p.live,
         n + ' item' + (n === 1 ? '' : 's') + (b.due ? ' · due ' + hbDueLabel_(b.due) : ' · ongoing'));
     }).join('') + '</div>' : '<p class="hb-quiet">No plans yet.</p>') +
     '<div class="hb-qz-actions"><button type="button" class="kb-btn hb-pp-yes" onclick="hbEditPlan_(\'\')">' + icon('plus', 12) + ' New plan</button></div>' +
@@ -1510,7 +1518,9 @@ function hbArchive_(btn) {
     var done = function (res) {
       if (btn.isConnected) btn.disabled = false;
       if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-      showToast(live ? 'Archived.' : 'Restored.', 'toast-success');
+      var used = live && res.inPlans && res.inPlans.length ? res.inPlans : null;
+      showToast(used ? 'Archived. ' + (used.length === 1 ? 'One live plan still lists it (' : used.length + ' live plans still list it (') + used.slice(0, 3).join(', ') + (used.length > 3 ? ', …' : '') + ') — it no longer counts there.'
+        : (live ? 'Archived.' : 'Restored.'), used ? 'toast-warn' : 'toast-success', used ? { sticky: true } : undefined);
       hbLoadTeamTraining_();
     };
     google.script.run.withSuccessHandler(done).withFailureHandler(function (e) { done({ error: e && e.message }); }).hbArchiveTraining(kind, id, live);
@@ -1726,7 +1736,11 @@ function hbSignOff_(btn) {
   var key = kind + ':' + id;
   var fin = function (res) {
     if (btn.isConnected) btn.disabled = false;
-    if (!res || !res.success) { showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
+    if (!res || !res.success) {
+      // A refusal that asks for a reload stays until it is dismissed.
+      showToast('Not saved: ' + String((res && res.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error', res && (res.changed || res.reload) ? { sticky: true } : undefined);
+      return;
+    }
     var so = done ? { state: 'signed', signedMs: Date.now(), changed: false } : null;
     if (so) HB_SO.signoffs[key] = so; else delete HB_SO.signoffs[key];
     // Every plan with this item agrees: one sign-off serves them all.
@@ -1740,7 +1754,9 @@ function hbSignOff_(btn) {
     hbPaintCounts_();   // HBR1: the rail's share and Training count follow it
     if (HB_TR.showing) hbPaintMine_();
   };
-  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done);
+  // F49: the version of the text on this page — the server refuses a sign-off
+  // of text that is no longer the handbook's, and says to reload.
+  google.script.run.withSuccessHandler(fin).withFailureHandler(function (e) { fin({ error: e && e.message }); }).hbMarkRead(kind, id, done, done ? (HB.versions[key] || '') : '');
 }
 
 // — team progress —
@@ -1790,12 +1806,29 @@ function hbCsvCell_(v) {
   var s = tsvCell_(v == null ? '' : v);
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
+/** PURE (Node-pinned) — F54 (cycle 26): what the last reminder run did, as a
+ *  sentence after "…once a day." — '' only for an outcome that says nothing
+ *  (reminders were off). No run on record is SAID: the daily trigger may not
+ *  be installed. */
+function hbReminderRunText_(o, nowMs) {
+  if (!o || !(Number(o.at) > 0)) return ' No run is on record yet — if this stays, the daily trigger is not installed.';
+  var when = new Date(Number(o.at)).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  if (o.status === 'off') return '';
+  if (o.status === 'running') {
+    return nowMs - Number(o.at) > 900000 ? ' The last run started ' + when + ' and did not finish.' : ' A run started ' + when + '.';
+  }
+  var n = function (v) { return Number(v) || 0; };
+  var counts = n(o.sent) + ' sent' + (n(o.failed) ? ', ' + n(o.failed) + ' could not be sent' : '') + ' (' + n(o.overdue) + (n(o.overdue) === 1 ? ' person' : ' people') + ' overdue)';
+  if (o.status === 'ok') return ' Last run ' + when + ': ' + counts + '.';
+  if (o.status === 'partial') return ' Last run ' + when + ': ' + counts + (o.error ? ' — ' + String(o.error).replace(/\.$/, '') : '') + (o.notRecorded ? '; who was emailed could not be recorded, so a second run today may email them again' : '') + '.';
+  return ' The last run (' + when + ') failed' + (o.error ? ': ' + String(o.error).replace(/\.$/, '') : '') + '.';
+}
 function hbPaintProgress_() {
   var host = document.getElementById('hb-tr-progress'); if (!host) return;
   var res = HB_TR.progress, head = '<h3 class="hb-pp-h3">Progress</h3>';
   if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Progress could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
   var rows = hbProgressRows_(res.people);
-  var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' : '<b>off</b>.') + '</p>';
+  var reminders = '<p class="hb-quiet hb-tr-rem">Reminder emails are ' + (res.remindersOn ? '<b>on</b> — anyone with an overdue plan is emailed once a day.' + esc(hbReminderRunText_(res.reminders, Date.now())) : '<b>off</b>.') + '</p>';
   var sub = document.getElementById('hb-tr-sub'), me = HB_ME || {};
   var people = res.people || [];
   if (sub && hbTrIsLead_()) sub.textContent = (me.me && me.me.department ? hbChapterLabel_(me.me.department) + ' · ' : '') + people.length + (people.length === 1 ? ' person' : ' people');
@@ -3005,6 +3038,9 @@ function hbLoadFailed_(kept, msg) {
 }
 function hbReady_(res) {
   HB.tree = hbTreeOf_(res);
+  // F49 (cycle 26): each section's and chapter's version, as the server sent it
+  // WITH this text — a sign-off hands it back, so the server knows what was read.
+  HB.versions = (res && res.versions) || {};
   hbPaintToc_();
   hbPaintDeptPicker_();
   if (HB_PP.showing) hbPaintPeopleMe_();   // the department list needed the chapters

@@ -4559,6 +4559,16 @@
    ],
    "changed": [],
    "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 7 F48: searchReference takes manualOnly — handbook sections only, applied before scoring and the cut",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "searchReference"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -14391,7 +14401,7 @@
   "searchReference": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "0ddcd35ff0ddc3f1"
+   "sha": "ba8880c15b1d9263"
   },
   "selfDeletePunch": {
    "file": "20_timeclock.js",

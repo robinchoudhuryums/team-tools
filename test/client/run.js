@@ -41242,13 +41242,21 @@ testNeedsDeps(['acorn', 'eslint-scope'], 'HB1.2-b: the sync refuses a copied WRI
  *  Apps Script services. `reads` counts sheet reads; tabs is name → rows. */
 function hbServer_(opts) {
   const reads = { n: 0 }, locks = { n: 0 }, uuids = { n: 0 }, mails = [], triggers = [];
+  // Cycle 26 Batch 7: a tab has a GRID (opts.maxRows, 1000 by default) that a block written past it does not grow (g145).
+  const grid = new Map();
+  const maxOf = (rows) => Math.max(grid.get(rows) || opts.maxRows || 1000, 0);
   const sheetOf = (rows) => ({
     getLastRow: () => rows.length,
     getLastColumn: () => Math.max.apply(null, rows.map((r) => r.length)),
+    getMaxRows: () => maxOf(rows),
+    insertRowsAfter: (r, n) => { grid.set(rows, maxOf(rows) + n); writes.push(['grow', n]); },
     getRange: (r, c, nr, nc) => ({ getValues: () => { reads.n++; const out = []; for (let i = 0; i < (nr || 1); i++) { const row = rows[r - 1 + i] || []; const o = []; for (let j = 0; j < (nc || 1); j++) o.push(row[c - 1 + j] === undefined ? '' : row[c - 1 + j]); out.push(o); } return out; },
       getValue: () => { reads.n++; const row = rows[r - 1] || []; return row[c - 1] === undefined ? '' : row[c - 1]; },
       // HB2.1: the People tab is updated in place (the Handbook spreadsheet is this project's alone).
-      setValues: (vals) => { vals.forEach((v, i) => { rows[r - 1 + i] = JSON.parse(JSON.stringify(v)); }); writes.push(['set', r, vals]); },
+      setValues: (vals) => {
+        if (r - 1 + vals.length > maxOf(rows)) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+        vals.forEach((v, i) => { rows[r - 1 + i] = JSON.parse(JSON.stringify(v)); }); writes.push(['set', r, vals]);
+      },
       // HB2.2: notes turned off empty their rows.
       clearContent: () => { for (let i = 0; i < (nr || 1); i++) rows[r - 1 + i] = (rows[r - 1 + i] || []).map(() => ''); writes.push(['clear', r]); } }),
     // HB1.4: the app appends (feedback, its search signal) — recorded.
@@ -41261,19 +41269,28 @@ function hbServer_(opts) {
   const ssOf = (t) => ({ getSheetByName: (n) => (t[n] ? sheetOf(t[n]) : null), getSpreadsheetTimeZone: () => 'UTC',   // HBR1: the shelf reads KbViews in the sheet's tz
     insertSheet: (n) => { if (t[n]) throw new Error('A sheet with the name "' + n + '" already exists.'); t[n] = []; writes.push(['insert', n]); return sheetOf(t[n]); } });
   const store = new Map();
+  const cacheFail = (k) => { if (opts.cacheFail && opts.cacheFail(k)) throw new Error('Service error: Cache'); };   // Batch 7: an unreadable cache, by key
   const cache = {
-    get: (k) => (store.has(k) ? store.get(k) : null),
+    get: (k) => { cacheFail(k); return store.has(k) ? store.get(k) : null; },
     getAll: (ks) => { const o = {}; ks.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; },
     put: (k, v) => { store.set(k, v); }, putAll: (o) => { Object.keys(o).forEach((k) => store.set(k, o[k])); }, remove: (k) => store.delete(k),
   };
   const sb = vm.createContext({
-    console, JSON, Math, Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,
-    Session: { getActiveUser: () => ({ getEmail: () => sb.__email }), getEffectiveUser: () => ({ getEmail: () => opts.deployer || 'owner@example.org' }) },
+    console, JSON, Math, Date: opts.Date || Date, String, Number, Object, Array, RegExp, Error, parseInt, isFinite,   // opts.Date: a clock a pin sets (F53)
+    Session: { getActiveUser: () => ({ getEmail: () => sb.__email }), getEffectiveUser: () => ({ getEmail: () => opts.deployer || 'owner@example.org' }),
+      getScriptTimeZone: () => (opts.scriptTz === undefined ? 'America/Chicago' : opts.scriptTz) },   // F53: the project's timezone (appsscript.json)
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (opts.props || {})[k] || null,
-      setProperty: (k, v) => { opts.props = opts.props || {}; opts.props[k] = String(v); } }) },
-    // HB3.4: the reminder emails and their trigger, recorded.
-    MailApp: { sendEmail: (m) => { if (opts.mailFail) throw new Error('Service invoked too many times'); mails.push(JSON.parse(JSON.stringify(m))); } },
-    ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/ex.org/s/HB/exec' }),
+      setProperty: (k, v) => {
+        if ((opts.propMax && String(v).length > opts.propMax) || (opts.propFail && opts.propFail(k))) throw new Error('Argument too large: value');   // a Script Property holds about 9 KB (g07)
+        opts.props = opts.props || {}; opts.props[k] = String(v);
+      },
+      deleteProperty: (k) => { if (opts.props) delete opts.props[k]; } }) },
+    // HB3.4: the reminder emails and their trigger, recorded. mailFail: true fails every send; a function decides per message.
+    MailApp: { sendEmail: (m) => {
+      if (typeof opts.mailFail === 'function' ? opts.mailFail(m, mails) : opts.mailFail) throw new Error('Service invoked too many times');
+      mails.push(JSON.parse(JSON.stringify(m)));
+    } },
+    ScriptApp: { getService: () => ({ getUrl: () => opts.serviceUrl || 'https://script.google.com/a/macros/ex.org/s/HB/exec' }),
       getProjectTriggers: () => triggers.slice(), deleteTrigger: (t) => { triggers.splice(triggers.indexOf(t), 1); },
       newTrigger: (fn) => ({ timeBased: () => ({ everyDays: (n) => ({ atHour: (h) => ({ create: () => { const t = { getHandlerFunction: () => fn, n, h }; triggers.push(t); return t; } }) }) }) }) },
     SpreadsheetApp: { openById: (id) => {
@@ -41282,12 +41299,15 @@ function hbServer_(opts) {
     } },
     LockService: { getScriptLock: () => ({ tryLock: () => { locks.n++; return !opts.lockBusy; }, releaseLock: () => { locks.held = false; } }) },
     CacheService: { getScriptCache: () => cache },
-    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19) : d.toISOString().slice(0, 10)),
+    // A day is UTC's unless a test asks for real timezones (opts.realTz — F53's pins): most fixtures build their dates from toISOString.
+    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm:ss' ? d.toISOString().slice(11, 19)
+      : (opts.realTz ? new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) : d.toISOString().slice(0, 10))),
       getUuid: () => 'u' + (++uuids.n).toString(16).padStart(11, '0') + '-0000' },   // HB3.3: new plan / team quiz ids
     HtmlService: opts.HtmlService,
   });
   sb.__email = opts.email || '';
   ['kb_shared.js', 'Handbook.js', 'People.js', 'Quiz.js', 'Training.js', 'Reminders.js', 'Saved.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8'), sb, { filename: 'handbook-app/' + f }));
+  sb.__cacheClear = () => store.clear();   // "five minutes later": every cached answer has expired
   sb.__reads = reads; sb.__writes = writes; sb.__tabs = tabs; sb.__hbTabs = hbTabs; sb.__locks = locks; sb.__mails = mails; sb.__triggers = triggers; sb.__props = () => opts.props;
   return sb;
 }
@@ -41305,6 +41325,10 @@ const hbTabs_ = () => ({
 });
 const HB_ENV = { email: 'rep@example.org', props: { HANDBOOK_KB_SS_ID: 'ss1' } };
 const hbPlain_ = (v) => JSON.parse(JSON.stringify(v));
+/** The version of an item as the page holds it — what getManualParts sent with the text (cycle 26 F49). */
+const hbShown_ = (sb, kind, id) => sb.getManualParts().versions[kind + ':' + id];
+/** A reader signs what they are shown, the way the page does. */
+const hbSign_ = (sb, kind, id) => sb.hbMarkRead(kind, id, true, hbShown_(sb, kind, id));
 
 test('HB1.2-c: the handbook server serves published handbook sections to any signed-in reader, and nothing else', () => {
   const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
@@ -41476,14 +41500,14 @@ test('HB1.3-b: the page installs EVERY hook the reader declares — none falls t
   assert.ok(hooks.length >= 18, 'the contract is read, not assumed');
   assert.deepStrictEqual(hooks.filter((k) => ctx.MANUAL_HOST[k] === defaults[k]), [], 'every hook is the page\'s own');
   // And the page's state carries the four fields the reader reads.
-  assert.ok(/var HB = \{ tree: \[\], isAdmin: false, currentId: null, landing: true \};/.test(page), 'the host state, never an admin');
+  assert.ok(/var HB = \{ tree: \[\], isAdmin: false, currentId: null, landing: true, versions: \{\} \};/.test(page), 'the host state, never an admin');
 });
 
 test('HB1.3-c: the server stamps the chapters it sends, the stamp moves when a section does, and doGet hands the page only a section-shaped ?s=', () => {
   let tabs = hbTabs_();
   const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
   const parts = sb.getManualParts();
-  assert.ok(/^[0-9a-f]{8}-[0-9a-z]+$/.test(parts.stamp), 'the answer carries its stamp');
+  assert.ok(/^v2\.[0-9a-f]{8}-[0-9a-z]+$/.test(parts.stamp), 'the answer carries its stamp (v2: a kept copy from before the versions rode along never matches)');
   assert.strictEqual(sb.getManualStamp().stamp, parts.stamp, 'and getManualStamp names the same one');
   const n = sb.__reads.n;
   sb.getManualStamp();
@@ -41967,7 +41991,7 @@ test('HB3.3-a: the plan helpers — JSON rows (a broken one counted), the latest
   const rows = hbPlainV_(sb.hbJsonRows_([['h'], ['pl-aaaaaaaa', 'B@ex.org', '{"title":"T"}', 5, 'live'], ['pl-bbbbbbbb', 'b@ex.org', 'not json', 5, ''], ['bad id', 'b@ex.org', '{}', 5, ''], ['pl-cccccccc', 'b@ex.org', '{"title":"X"}', 6, 'Archived']], /^pl-[a-z0-9]{8,24}$/));
   assert.deepStrictEqual([rows.rows.map((r) => [r.id, r.author, r.live, r.row]), rows.unreadable], [[['pl-aaaaaaaa', 'b@ex.org', true, 2], ['pl-cccccccc', 'b@ex.org', false, 5]], 2]);
   const done = hbPlainV_(sb.hbSignMarks_([['h'], [100, 'a@ex.org', 'section:man-1-1', 'yes', 'v1'], [200, 'a@ex.org', 'section:man-1-1', 'no', 'v1'], [150, 'a@ex.org', 'chapter:1 · Intro', 'YES']]));
-  assert.deepStrictEqual(done, { 'a@ex.org|section:man-1-1': { ms: 200, done: false, version: 'v1' }, 'a@ex.org|chapter:1 · Intro': { ms: 150, done: true, version: '' } }, 'the latest mark wins; Done is a word');
+  assert.deepStrictEqual(done, { 'a@ex.org|section:man-1-1': { ms: 200, done: false, version: 'v1', retrain: '' }, 'a@ex.org|chapter:1 · Intro': { ms: 150, done: true, version: '', retrain: '' } }, 'the latest mark wins; Done is a word');
   const P = (email, manager, dept, status, role) => ({ email, manager, department: dept, status: status || 'confirmed', role: role || '' });
   const people = [P('boss@ex.org', '', '', '', 'manager'), P('a@ex.org', 'boss@ex.org', 'D1'), P('b@ex.org', 'boss@ex.org', 'D2', 'pending'), P('c@ex.org', 'x@ex.org', 'D1')];
   assert.deepStrictEqual(sb.hbAuthorTeam_(people, 'boss@ex.org', false).map((p) => p.email), ['a@ex.org'], 'confirmed only');
@@ -42020,8 +42044,8 @@ test('HB3.3-b: a manager writes a quiz and a plan for their team in a department
   assert.strictEqual(sb.hbGetQuiz(q.id).error, 'That quiz is not in the handbook.', 'and not takeable');
   // rep marks reading done and passes the quiz.
   hbAs_(sb, 'rep@ex.org');
-  assert.strictEqual(sb.hbMarkRead('section', 'man-1-1', true).success, true);
-  assert.strictEqual(sb.hbMarkRead('chapter', '1 · Intro', true).success, true);
+  assert.strictEqual(hbSign_(sb, 'section', 'man-1-1').success, true);
+  assert.strictEqual(hbSign_(sb, 'chapter', '1 · Intro').success, true);
   const sub = hbPlainV_(sb.hbSubmitQuiz(q.id, [0, 1]));
   assert.deepStrictEqual([sub.success, sub.passed], [true, true]);
   mine = hbPlainV_(sb.hbMyTraining());
@@ -42112,11 +42136,11 @@ test('HB3.4-a: the sign-off helpers — the latest mark with its version, the la
   assert.strictEqual(sb.hbRetrainDate_(log, ['man-1-1']), '2026-10-20', 'only a flagged change counts; a bad date is dropped');
   assert.strictEqual(sb.hbRetrainDate_(log, ['man-1-1', 'man-2-1']), '2026-10-28', 'a chapter: any of its sections');
   assert.strictEqual(sb.hbRetrainDate_(log, ['man-9-9']), '');
-  assert.strictEqual(sb.hbSignState_(null, '', '2026-10-20'), 'unsigned');
-  assert.strictEqual(sb.hbSignState_({ done: false }, '2026-10-21', ''), 'unsigned', 'withdrawn');
-  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-19', '2026-10-20'), 'resign', 'a retraining change after the sign-off');
-  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-20', '2026-10-20'), 'signed', 'signed the day of the change: current');
-  assert.strictEqual(sb.hbSignState_({ done: true }, '2026-10-21', '2026-10-20'), 'signed');
+  // The three states. (Cycle 26 F49 rewrote the rule: see the F49 pin for the retraining state a mark records; these are a mark from before it.)
+  assert.strictEqual(sb.hbSignState_(null, { signedDay: '', retrainDate: '2026-10-20' }), 'unsigned');
+  assert.strictEqual(sb.hbSignState_({ done: false }, { signedDay: '2026-10-21', retrainDate: '' }), 'unsigned', 'withdrawn');
+  assert.strictEqual(sb.hbSignState_({ done: true }, { signedDay: '2026-10-19', retrainDate: '2026-10-20' }), 'resign', 'a retraining change after the sign-off');
+  assert.strictEqual(sb.hbSignState_({ done: true }, { signedDay: '2026-10-21', retrainDate: '2026-10-20' }), 'signed');
   assert.deepStrictEqual(hbPlainV_(sb.hbReminderPicks_({ 'a@x.org': [1], 'b@x.org': [1], 'c@x.org': [] }, { 'a@x.org': '2026-10-29' }, '2026-10-29')), ['b@x.org'], 'once a day; nobody with nothing overdue');
   const html = sb.hbReminderHtml_('Rep', [{ title: '<b>Onboarding</b>', due: '2026-10-01', done: 1, total: 3 }], 'https://x/exec');
   assert.ok(/&lt;b&gt;Onboarding/.test(html) && !/<b>Onboarding/.test(html), 'plan titles are escaped');
@@ -42133,9 +42157,9 @@ test('HB3.4-b: "I\'ve read this" records the section\'s version; a change flagge
   assert.deepStrictEqual([so.signoffs['section:man-1-1'].state, so.signoffs['section:man-1-1'].changed], ['resign', true]);
   assert.strictEqual(hbPlainV_(sb.hbMyTraining()).plans[0].done, 0, 'asked again: not done');
   // Sign again: the version is the section's current stamp.
-  assert.strictEqual(sb.hbMarkRead('section', 'man-1-1', true).success, true);
+  assert.strictEqual(hbSign_(sb, 'section', 'man-1-1').success, true);
   const row = sb.__hbTabs.ReadMarks[sb.__hbTabs.ReadMarks.length - 1];
-  assert.deepStrictEqual(row.slice(1, 5), ['rep@ex.org', 'section:man-1-1', 'yes', sb.hbStamp_('Hello')], 'the version signed is the body\'s stamp');
+  assert.deepStrictEqual(row.slice(1, 6), ['rep@ex.org', 'section:man-1-1', 'yes', sb.hbStamp_('Hello'), hb34Day_(-1) + '#1'], 'the version signed is the body\'s stamp; the retraining state seen rides beside it (F49)');
   so = hbPlainV_(sb.hbMySignOffs());
   assert.deepStrictEqual([so.signoffs['section:man-1-1'].state, so.signoffs['section:man-1-1'].changed], ['signed', false]);
   const item = hbPlainV_(sb.hbMyTraining()).plans[0].items[0];
@@ -42193,7 +42217,7 @@ test('HB3.4-d: reminders — refused to anyone but the owner, nothing sent while
   f.__props().HANDBOOK_REMINDERS = 'on';
   const fr = hbPlainV_(hbAs_(f, 'owner@example.org').hbSendTrainingReminders());
   assert.deepStrictEqual([fr.sent, fr.failed], [0, 1]);
-  assert.deepStrictEqual(JSON.parse(f.__props().HANDBOOK_REMINDERS_LAST), {}, 'not recorded as sent');
+  assert.strictEqual(f.__props().HANDBOOK_REMINDERS_LAST, undefined, 'not recorded as sent');
   // The installer: one daily trigger, replaced on a second run.
   assert.strictEqual(sb.installHandbookReminders().installed, true);
   sb.installHandbookReminders();
@@ -47771,6 +47795,479 @@ test('F64 (cycle 26): the Scratchpad\'s keyboard path — Ctrl/⌘+Enter is wire
   assert.ok(/ed\.addEventListener\('keydown', cnScratchEditorKeydown_\);/.test(cn), 'wired on the editor');
   assert.ok(/content: '' \/ 'Not done: ';/.test(cn) && /content: '' \/ 'Done: ';/.test(cn), 'the drawn box carries alternative text');
   assert.ok(/Ctrl\/⌘\+Enter opens the link the cursor is in, or ticks the checklist item it is on/.test(cn), 'and the hint says so');
+});
+
+
+// ── Cycle 26 Batch 7 — the handbook server ──────────────────────────────────
+console.log('\nCycle 26 Batch 7 — the handbook server: search, sign-offs, unfinishable items, limits, days, reminders, the push');
+
+const c26HbSrc_ = (f) => fs.readFileSync(path.join(HB_ROOT, 'handbook-app', f), 'utf8');
+/** A clock a pin sets: `new Date()` and `Date.now()` are `at`; `new Date(x)` is itself. */
+/** A top-level `const` of the handbook server (it is not a property of the sandbox). */
+const c26Const_ = (sb, name) => vm.runInContext(name, sb);
+const c26Clock_ = (at) => class extends Date { constructor(...a) { if (a.length) super(...a); else super(at); } static now() { return at; } };
+/** The hb34 world with `n` more confirmed readers on boss's team, in 1 · Intro. */
+function c26Team_(n, extra) {
+  const sb = hb34World_(null, false, extra);
+  for (let i = 0; i < n; i++) {
+    hbAs_(sb, 'r' + i + '@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');
+    hbAs_(sb, 'owner@example.org').hbConfirmPerson('r' + i + '@ex.org', true);
+  }
+  return sb;
+}
+
+test('F48 (cycle 26): handbook search asks for handbook sections BEFORE the list is cut — twenty-five better-scoring Reference articles no longer leave it nothing — and a search that finds nothing is counted after that (driven through the handbook\'s copy)', () => {
+  const tabs = hbTabs_();
+  tabs.KB[1][4] = 'Hello. An oxygen tank goes back to the warehouse.';
+  for (let i = 0; i < 25; i++) tabs.KB.push(hbRow_('kb-ox' + i, 'Sales', 'Oxygen tanks ' + i, 'oxygen oxygen oxygen tank oxygen regulator', 'published', i + 5));
+  const sb = hbServer_(Object.assign({ tabs }, HB_ENV));
+  const zeros = [];
+  sb.kbRecordSearchSignal_ = (emp, q, zero) => { zeros.push(zero); return 0; };
+  // The search as Team Tools runs it: the twenty best are all Reference articles.
+  const all = hbPlain_(sb.ttSearchReference_('oxygen', {}));
+  assert.deepStrictEqual([all.results.length, all.results.filter((r) => /^man-/.test(r.id)).length], [20, 0], 'the fixture: the handbook section is outscored out of the twenty');
+  // THE REGRESSION: the handbook filtered THAT list, so the reader saw nothing.
+  const res = hbPlain_(sb.searchReference('oxygen', { signal: true }));
+  assert.deepStrictEqual(res.results.map((r) => r.id), ['man-1-1'], 'the handbook\'s own section is found');
+  assert.deepStrictEqual(zeros, [false], 'and the search is not recorded as one that found nothing');
+  // Only Reference articles match: nothing for the handbook, and THAT is a zero.
+  const none = hbPlain_(sb.searchReference('regulator', { signal: true }));
+  assert.deepStrictEqual([none.results, zeros], [[], [false, true]], 'a search the handbook cannot answer is counted as one (it was "20 results" before the filter)');
+  // The option is narrowing only, applied to the row before anything is scored.
+  const tt = stripJsComments_(extractRawFunction('Code.js', 'searchReference'));
+  assert.ok(/const manualOnly = !!\(opts && opts\.manualOnly === true\);/.test(tt), 'true only');
+  assert.ok(tt.indexOf('if (manualOnly && !KB_MANUAL_ID_RE.test(id)) continue;') > 0 && tt.indexOf('if (manualOnly && !KB_MANUAL_ID_RE.test(id)) continue;') < tt.indexOf('visible[id] ='), 'before the row is scored or made visible to the router');
+  assert.ok(/ttSearchReference_\(query, \{ signal: !!\(opts && opts\.signal === true\), manualOnly: true \}\)/.test(c26HbSrc_('Handbook.js')), 'the handbook always asks for it; nothing else from the caller\'s options reaches the copy');
+  // Team Tools' own search is unchanged without the option (a draft still hidden from a reader).
+  assert.ok(all.results.every((r) => r.id !== 'man-1-2'));
+});
+
+test('F49 (cycle 26): where a sign-off stands — a mark that recorded the retraining state it saw is judged by that; an older mark fails toward asking (driven: the helpers)', () => {
+  const sb = hb32Sb_();
+  const log = [{ id: 'man-1-1', date: '2026-10-20', retraining: true }, { id: 'man-1-1', date: '2026-10-25', retraining: false }, { id: 'man-2-1', date: '2026-10-28', retraining: true },
+    { id: 'man-1-1', date: 'soon', retraining: true }, { id: 'man-1-1', date: '2026-10-20', retraining: true }];
+  assert.strictEqual(sb.hbRetrainStamp_(log, ['man-1-1']), '2026-10-20#2', 'the latest flagged date and how many are flagged; a bad date and an unflagged change are not counted');
+  assert.strictEqual(sb.hbRetrainStamp_(log, ['man-1-1', 'man-2-1']), '2026-10-28#3', 'a chapter: any of its sections');
+  assert.strictEqual(sb.hbRetrainStamp_(log, ['man-9-9']), 'none', 'nothing flagged is SAID — it is not the blank of an older mark');
+  assert.strictEqual(sb.hbRetrainStamp_(null, ['man-1-1']), 'none');
+  const N = (now, seen) => sb.hbRetrainNewer_(now, seen);
+  assert.deepStrictEqual([N('2026-10-28#1', '2026-10-20#1'), N('2026-10-20#2', '2026-10-20#1'), N('2026-10-20#1', '2026-10-20#1'), N('2026-10-20#1', '2026-10-28#1'), N('2026-10-20#1', 'none'), N('none', '2026-10-20#1'), N('none', 'none'), N('2026-10-20#1', '2026-10-20#3')],
+    [true, true, false, false, true, false, false, false], 'a later date, or more flagged changes on the same date; nothing flagged now is never newer');
+  const S = (mark, cur) => sb.hbSignState_(mark, cur);
+  assert.strictEqual(S(null, { retrainStamp: '2026-10-20#1' }), 'unsigned');
+  assert.strictEqual(S({ done: false, retrain: 'none', version: 'a' }, { version: 'a' }), 'unsigned', 'withdrawn');
+  // A mark that recorded what it saw: only a flagged change it has not seen asks again — whatever the dates and the text.
+  const cur = { version: 'v2', retrainStamp: '2026-10-28#1', retrainDate: '2026-10-28', signedDay: '2026-11-05' };
+  assert.strictEqual(S({ done: true, version: 'v1', retrain: '2026-10-28#1' }, cur), 'signed', 'the text changed since, but nothing flagged that they have not seen: a later typo fix never asks again');
+  assert.strictEqual(S({ done: true, version: 'v1', retrain: 'none' }, cur), 'resign',
+    'THE REGRESSION: signed on 5 November, a change authored on 28 October and imported after — "dated after the day it was signed" was false, and the reader was never asked');
+  assert.strictEqual(S({ done: true, version: 'v2', retrain: '2026-10-20#1' }, cur), 'resign', 'a flagged change they have not seen asks even when the text reads the same (the change may be in a figure)');
+  assert.strictEqual(S({ done: true, version: 'v1', retrain: 'none' }, { version: 'v2', retrainStamp: 'none', retrainDate: '' }), 'signed', 'nothing flagged: never asked');
+  // A mark from before the state was recorded.
+  assert.strictEqual(S({ done: true, version: 'v2' }, cur), 'signed', 'they signed the text as it is now');
+  assert.strictEqual(S({ done: true, version: 'v1' }, cur), 'resign', 'THE REGRESSION (older marks): other text, and the section has a flagged change — asked once, whatever the dates');
+  assert.strictEqual(S({ done: true, version: 'v1' }, { version: 'v2', retrainStamp: 'none', retrainDate: '', signedDay: '2026-11-05' }), 'signed', 'other text, nothing flagged: only "changed"');
+  assert.strictEqual(S({ done: true }, { version: 'v2', retrainDate: '2026-10-28', signedDay: '2026-10-28' }), 'resign', 'no version on the mark: a change on the day it was signed asks (it was "after", so the same day never did)');
+  assert.strictEqual(S({ done: true }, { version: 'v2', retrainDate: '2026-10-28', signedDay: '2026-10-29' }), 'signed');
+});
+
+test('F49 (cycle 26): a sign-off is of the text the reader SAW — the page sends its version, text that is no longer the handbook\'s is refused and not recorded, and the mark records the retraining state it saw (driven through hbMarkRead)', () => {
+  const sb = hb34World_(null, false);
+  hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Read 1.1', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+  hbAs_(sb, 'rep@ex.org');
+  // The reader opens the handbook: the chapters, each item's version with them.
+  const shown = hbPlainV_(sb.getManualParts());
+  assert.deepStrictEqual([shown.versions['section:man-1-1'], shown.versions['chapter:1 · Intro']], [sb.hbStamp_('Hello'), sb.hbStamp_(sb.hbStamp_('Hello'))], 'a section\'s version is its text\'s stamp; a chapter\'s, its sections\' versions');
+  assert.ok(!('section:man-1-2' in shown.versions), 'a draft has no version to sign');
+  // A page from before the update sends none: refused, and told to reload.
+  let r = hbPlainV_(sb.hbMarkRead('section', 'man-1-1', true));
+  assert.deepStrictEqual([r.success, r.reload, /Reload the handbook, then sign/.test(r.error)], [false, true, true]);
+  // Team Tools publishes a change flagged for retraining while the page is open. The server's five-minute copy still holds the old text.
+  sb.__tabs.KB[1][4] = 'Hello — the Spanish queue comes first now.';
+  sb.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.1', changelog: [{ id: 'man-1-1', date: hb34Day_(-9), num: '1.1', summary: 'Spanish queue first', retraining: true }] })]];
+  assert.strictEqual(sb.getManualParts().versions['section:man-1-1'], shown.versions['section:man-1-1'], 'the fixture: the cached chapters are the old ones');
+  const marks = () => (sb.__hbTabs.ReadMarks || []).length;
+  const before = marks();
+  r = hbPlainV_(sb.hbMarkRead('section', 'man-1-1', true, shown.versions['section:man-1-1']));
+  assert.deepStrictEqual([r.success, r.changed, /was updated after you opened it\. Reload the handbook/.test(r.error)], [false, true, true],
+    'THE REGRESSION: "I\'ve read this" on the old text was recorded with the NEW version — a reading of an update nobody had read');
+  assert.strictEqual(marks(), before, 'nothing is recorded');
+  // The refusal read the sheet, so a reload gets the new text at once.
+  const fresh = hbPlainV_(sb.getManualParts());
+  assert.notStrictEqual(sb.getManualStamp().stamp, shown.stamp, 'the stamp the page checks its kept copy against has moved');
+  assert.strictEqual(fresh.versions['section:man-1-1'], sb.hbStamp_('Hello — the Spanish queue comes first now.'));
+  // Reloaded: signed, with the version read and the retraining state seen.
+  r = hbPlainV_(sb.hbMarkRead('section', 'man-1-1', true, fresh.versions['section:man-1-1']));
+  assert.strictEqual(r.success, true, JSON.stringify(r));
+  const row = sb.__hbTabs.ReadMarks[sb.__hbTabs.ReadMarks.length - 1];
+  assert.deepStrictEqual(row.slice(1), ['rep@ex.org', 'section:man-1-1', 'yes', fresh.versions['section:man-1-1'], hb34Day_(-9) + '#1']);
+  assert.deepStrictEqual(sb.__hbTabs.ReadMarks[0], ['AtMs', 'Email', 'ItemKey', 'Done', 'Version', 'Retrain'], 'the tab is made with the sixth column');
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'signed', 'the flagged change is nine days old — the mark saw it, so the date no longer matters');
+  // A second flagged change, later: asked again; an unflagged one: not.
+  sb.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.2', changelog: [{ id: 'man-1-1', date: hb34Day_(-9), retraining: true }, { id: 'man-1-1', date: hb34Day_(-8), retraining: false }] })]];
+  sb.__cacheClear();
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'signed', 'an unflagged change never asks');
+  sb.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.3', changelog: [{ id: 'man-1-1', date: hb34Day_(-9), retraining: true }, { id: 'man-1-1', date: hb34Day_(-9), retraining: true }] })]];
+  sb.__cacheClear();
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'resign', 'a second flagged change on the same date is one the mark has not seen');
+  assert.strictEqual(hbPlainV_(sb.hbMyTraining()).plans[0].done, 0, 'and its plan item is not done until it is signed again');
+  // A section the changelog flags nothing for is judged against the kept chapters — no sheet read of the chapters.
+  const quiet = hb34World_(null, false);
+  hbAs_(quiet, 'rep@ex.org');
+  const v = hbShown_(quiet, 'section', 'man-2-1');
+  const reads = quiet.__reads.n;
+  assert.strictEqual(quiet.hbMarkRead('section', 'man-2-1', true, v).success, true);
+  assert.ok(quiet.__reads.n - reads <= 2, 'the changelog cell, and nothing else of the Knowledge Base: ' + (quiet.__reads.n - reads));
+  assert.strictEqual(quiet.__hbTabs.ReadMarks[1][5], 'none', 'nothing flagged is recorded as that');
+  // Withdrawing needs no version and records no state.
+  assert.strictEqual(quiet.hbMarkRead('section', 'man-2-1', false).success, true);
+  assert.deepStrictEqual(quiet.__hbTabs.ReadMarks[2].slice(3), ['no', v, '']);
+  // A changelog that cannot be read: not recorded as "nothing flagged".
+  const bad = hb34World_(null, false);
+  hbAs_(bad, 'rep@ex.org');
+  const bv = hbShown_(bad, 'section', 'man-1-1');
+  bad.__tabs.ManualMeta = [['Meta'], ['{not json']];
+  r = hbPlainV_(bad.hbMarkRead('section', 'man-1-1', true, bv));
+  assert.deepStrictEqual([r.success, /list of changes could not be read, so nothing was recorded/.test(r.error), (bad.__hbTabs.ReadMarks || []).length], [false, true, 0]);
+  // The page: it keeps the versions that came with the text it shows, and hands the item's back when its reader signs.
+  const page = HB_PAGE_SRC();
+  assert.ok(/HB\.versions = \(res && res\.versions\) \|\| \{\};/.test(extractFnFrom(page, 'hbReady_')), 'from the same answer as the text');
+  assert.ok(/\.hbMarkRead\(kind, id, done, done \? \(HB\.versions\[key\] \|\| ''\) : ''\);/.test(extractFnFrom(page, 'hbSignOff_')), 'sent with the sign-off');
+});
+
+test('F50 (cycle 26): a plan item that can no longer be done is `missing` and not counted — an archived quiz or a section taken out no longer keeps a plan unfinished and overdue for ever; archiving says which live plans list the quiz (driven)', () => {
+  const sb = hb33World_();
+  const q = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbSaveTeamQuiz(HB33_TQ));
+  sb.hbSavePlan({ title: 'Intro week', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }, { kind: 'chapter', id: '1 · Intro' }, { kind: 'quiz', id: q.id }], assign: { departments: ['1 · Intro'] } });
+  sb.hbSavePlan({ title: 'Quiz only', due: '2000-01-01', items: [{ kind: 'quiz', id: q.id }], assign: { departments: ['1 · Intro'] } });
+  hbAs_(sb, 'rep@ex.org');
+  hbSign_(sb, 'section', 'man-1-1'); hbSign_(sb, 'chapter', '1 · Intro');
+  let mine = hbPlainV_(sb.hbMyTraining()).plans;
+  assert.deepStrictEqual(mine.map((p) => [p.title, p.done, p.total, p.missing, p.overdue]), [['Intro week', 2, 3, 0, true], ['Quiz only', 0, 1, 0, true]], 'the quiz is still to do');
+  // The manager archives the quiz. The answer names the live plans that list it.
+  const arch = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbArchiveTraining('quiz', q.id, true));
+  assert.deepStrictEqual([arch.success, arch.inPlans], [true, ['Intro week', 'Quiz only']]);
+  assert.ok(!('inPlans' in hbPlainV_(sb.hbArchiveTraining('quiz', q.id, false))), 'restoring says nothing of plans');
+  sb.hbArchiveTraining('quiz', q.id, true);
+  mine = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMyTraining()).plans;
+  assert.deepStrictEqual(mine.map((p) => [p.title, p.done, p.total, p.missing, p.overdue]), [['Intro week', 2, 2, 1, false], ['Quiz only', 0, 0, 1, false]],
+    'THE REGRESSION: 2 of 3 and 0 of 1, overdue for ever — the quiz was offered as "Take the quiz" and refused');
+  const it = mine[0].items[2];
+  assert.deepStrictEqual([it.kind, it.missing, it.done, it.title], ['quiz', true, false, 'Our intake checks'], 'still named, said to be gone');
+  assert.strictEqual(sb.hbGetQuiz(q.id).error, 'That quiz is not in the handbook.', 'the fixture: it cannot be taken');
+  // A reader who had PASSED it: the pass no longer counts either way — the item is not in the total.
+  sb.__hbTabs.QuizAttempts = (sb.__hbTabs.QuizAttempts || [['AtMs', 'Email', 'QuizId', 'ScorePct', 'Passed', 'PerQuestionJson']]).concat([[Date.now(), 'rep@ex.org', q.id, 100, 'yes', '[]']]);
+  mine = hbPlainV_(sb.hbMyTraining()).plans;
+  assert.deepStrictEqual([mine[0].done, mine[0].total, mine[0].items[2].done], [2, 2, false]);
+  // The author sees how many of each plan's items are gone; a manager's progress view counts the same way.
+  const tt = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamTraining());
+  assert.deepStrictEqual(tt.plans.map((p) => [p.plan.title, p.missing]), [['Intro week', 1], ['Quiz only', 1]]);
+  const prog = hbPlainV_(sb.hbTeamProgress()).people.filter((p) => p.email === 'rep@ex.org')[0];
+  assert.deepStrictEqual([prog.plans.map((p) => [p.done, p.total, p.overdue]), prog.overdue], [[[2, 2, false], [0, 0, false]], 0]);
+  // A section taken out of the handbook (an import un-publishes it), and a chapter that is gone.
+  sb.__tabs.KB[1][12] = 'draft';
+  sb.__cacheClear();
+  mine = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMyTraining()).plans;
+  assert.deepStrictEqual(mine[0].items.map((i) => [i.kind, i.missing]), [['section', true], ['chapter', true], ['quiz', true]], '1 · Intro has no published section left, so the chapter is gone too');
+  assert.deepStrictEqual([mine[0].done, mine[0].total, mine[0].missing, mine[0].overdue], [0, 0, 3, false], 'nothing left to do is not overdue');
+  // The pure rule.
+  const pub = { departments: ['A'], sectionIds: { 'man-a-1': 1 } };
+  const M = (kind, id) => sb.hbItemMissing_({ kind, id }, pub, { 'q-live': 1 });
+  assert.deepStrictEqual([M('quiz', 'q-live'), M('quiz', 'tq-archived'), M('chapter', 'A'), M('chapter', 'B'), M('section', 'man-a-1'), M('section', 'man-a-2')], [false, true, false, true, false, true]);
+  // The page: a missing item draws no button of any kind, and is said; the local recount after a sign-off cannot count one.
+  const page = HB_PAGE_SRC(), paint = extractFnFrom(page, 'hbPaintMine_');
+  assert.ok(/if \(it\.missing\) \{\s*act = '<span class="hb-quiet">No longer available<\/span>';\s*\} else if \(it\.kind === 'quiz'\)/.test(paint), 'before either kind\'s button');
+  assert.ok(/no longer available, not counted/.test(paint) && /!p\.total \? '<span class="hb-qz-chip">Nothing to do<\/span>'/.test(paint), 'the count says what was left out; an emptied plan is not "Done"');
+  assert.ok(/res\.inPlans && res\.inPlans\.length/.test(extractFnFrom(page, 'hbArchive_')), 'the archive toast names the plans');
+});
+
+test('F52 (cycle 26): what one reader may add to Team Tools\' tabs — feedback only on a published section, the same feedback once, a limit per window; topic requests likewise; an unreadable cache lets a write through (driven)', () => {
+  const sb = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  // The window, pure.
+  const W = (raw, now, max) => hbPlain_(sb.hbWindowStep_(raw, now, max, 1000));
+  assert.deepStrictEqual(W(null, 5000, 2), { ok: true, next: { n: 1, until: 6000 } }, 'a first use opens the window');
+  assert.deepStrictEqual(W('{"n":1,"until":6000}', 5500, 2), { ok: true, next: { n: 2, until: 6000 } }, 'the window does not slide');
+  assert.deepStrictEqual(W('{"n":2,"until":6000}', 5900, 2), { ok: false, until: 6000 }, 'at the limit');
+  assert.deepStrictEqual(W('{"n":2,"until":6000}', 6000, 2), { ok: true, next: { n: 1, until: 7000 } }, 'a window that has ended starts again');
+  assert.deepStrictEqual(W('not json', 5000, 2), { ok: true, next: { n: 1, until: 6000 } });
+  // Feedback.
+  const rows = () => (sb.__tabs.KbFeedback || []).length;
+  assert.strictEqual(sb.kbFlagItem('man-9-9', 'helpful', '').error, 'That section is not in the handbook.', 'THE REGRESSION: any id shaped like a section was written to Team Tools\' tab');
+  assert.strictEqual(sb.kbFlagItem('man-1-2', 'helpful', '').error, 'That section is not in the handbook.', 'a draft is not published');
+  assert.strictEqual(rows(), 0);
+  assert.deepStrictEqual(hbPlain_(sb.kbFlagItem('man-1-1', 'helpful', '')), { success: true });
+  assert.deepStrictEqual(hbPlain_(sb.kbFlagItem('man-1-1', 'helpful', '')), { success: true, already: true }, 'the same feedback again is answered as done');
+  assert.strictEqual(rows(), 2, 'the header and ONE row');
+  assert.strictEqual(sb.kbFlagItem('man-1-1', 'notHelpful', '').success, true, 'a different answer is a different row');
+  assert.strictEqual(sb.kbFlagItem('man-1-1', 'suggest', 'Say which queue.').success, true);
+  assert.strictEqual(sb.kbFlagItem('man-1-1', 'suggest', 'Say which queue first.').success, true, 'a different suggestion too');
+  assert.strictEqual(rows(), 5);
+  const max = c26Const_(sb, 'HB_FEEDBACK_WINDOW_MAX');
+  let last = null;
+  for (let i = 0; rows() - 1 < max; i++) last = sb.kbFlagItem('man-2-1', 'suggest', 'Suggestion ' + i);
+  assert.strictEqual(last.success, true);
+  const over = hbPlain_(sb.kbFlagItem('man-2-1', 'suggest', 'One more'));
+  assert.deepStrictEqual([over.success, over.limited, /a lot of feedback in the last few hours/.test(over.error), rows() - 1], [false, true, true, max], 'THE REGRESSION: no limit — a script could bury the managers\' open flags');
+  // Another reader has their own count.
+  assert.strictEqual(hbServer_(Object.assign({ tabs: sb.__tabs }, HB_ENV, { email: 'ann@example.org' })).kbFlagItem('man-1-1', 'helpful', '').success, true);
+  // Topic requests.
+  const t = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
+  const reqs = () => (t.__tabs.KbContentRequests || []).length - 1;
+  assert.strictEqual(t.hbRequestTopic('Oxygen tank pick-up').success, true);
+  assert.deepStrictEqual(hbPlain_(t.hbRequestTopic('  oxygen TANK   pick-up ')), { success: true, already: true }, 'the same topic, however it is typed');
+  assert.strictEqual(reqs(), 1);
+  const reqMax = c26Const_(t, 'HB_REQUEST_WINDOW_MAX');
+  for (let i = 0; i < reqMax - 1; i++) assert.strictEqual(t.hbRequestTopic('Topic ' + i).success, true);
+  const tOver = hbPlain_(t.hbRequestTopic('Yet another'));
+  assert.deepStrictEqual([tOver.success, tOver.limited, reqs()], [false, true, reqMax]);
+  // An unreadable cache: the limit is a guard, and must not stop feedback.
+  const nc = hbServer_(Object.assign({ tabs: hbTabs_(), cacheFail: (k) => /^hb_win:/.test(k) }, HB_ENV));
+  assert.strictEqual(nc.kbFlagItem('man-1-1', 'helpful', '').success, true);
+  assert.strictEqual(nc.kbFlagItem('man-1-1', 'helpful', '').success, true, 'no dedupe without the cache either — two rows, never a refusal');
+  // The count is taken after the row is written (a failed write is not counted).
+  const fb = stripJsComments_(extractFnFrom(c26HbSrc_('Handbook.js'), 'kbFlagItem'));
+  assert.ok(fb.indexOf('.appendRow(') > 0 && fb.indexOf('.appendRow(') < fb.indexOf('take.commit()'), 'append, then count');
+});
+
+test('F52 (cycle 26): notes are capped per ACCOUNT, taken only for a published section, and new ones are written in one block; hbConfirmPerson checks its caller before the lock and tells a reader nothing about the person named (driven)', () => {
+  const sb = hbAs_(hb22Sb_(), 'rep@ex.org');
+  const now = Date.now();
+  // A first sync of two notes: ONE write, not an append each.
+  let w = sb.__writes.length;
+  let r = hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'a', ms: now - 9 }, 'man-2-1': { t: 'b', ms: now - 8 } }));
+  assert.deepStrictEqual([r.success, r.written], [true, 2]);
+  assert.deepStrictEqual(sb.__writes.slice(w).filter((x) => x[0] !== 'insert').map((x) => [x[0], x[0] === 'set' ? x[2].length : 0]), [['append', 0], ['set', 2]], 'the header, then one block of two rows');
+  // A note for a section that is not published is not taken — it was, for any id shaped like one.
+  r = hbPlain_(sb.hbSyncNotes({ 'man-7-7': { t: 'x', ms: now }, 'man-1-2': { t: 'draft', ms: now } }));
+  assert.deepStrictEqual([r.success, r.refused, r.written, Object.keys(r.notes).sort()], [true, 2, 0, ['man-1-1', 'man-2-1']], 'THE REGRESSION: fresh ids grew the tab without end');
+  // But a note the account already holds for a section since removed is kept, and can still be edited or deleted.
+  sb.__hbTabs.Notes.push(['rep@ex.org', 'man-8-1', '{"t":"old"}', now - 100]);
+  r = hbPlain_(sb.hbSyncNotes({ 'man-8-1': { t: '', ms: now } }));
+  assert.deepStrictEqual([r.success, r.notes['man-8-1'].t, r.refused], [true, '', 0], 'the deletion of a kept note travels');
+  // The limit is on what the account holds.
+  const cap = c26Const_(sb, 'HB_NOTES_SYNC_MAX');
+  assert.strictEqual(cap, 500);
+  const full = hbAs_(hb22Sb_(), 'rep@ex.org');
+  full.__hbTabs.Notes = [['Email', 'SectionId', 'NoteJson', 'UpdatedMs']];
+  for (let i = 0; i < cap - 1; i++) full.__hbTabs.Notes.push(['rep@ex.org', 'man-9-' + i, '{"t":"n"}', now - 1000]);
+  w = full.__writes.length;
+  r = hbPlain_(full.hbSyncNotes({ 'man-1-1': { t: 'a', ms: now } }));
+  assert.strictEqual(r.success, true, 'the ' + cap + 'th fits');
+  r = hbPlain_(full.hbSyncNotes({ 'man-2-1': { t: 'b', ms: now } }));
+  assert.deepStrictEqual([r.success, /At most 500 notes can be kept in your account\. Delete some first\./.test(r.error)], [false, true], 'THE REGRESSION: the message said the account, the check counted one call');
+  assert.strictEqual(full.__hbTabs.Notes.length, cap + 1, 'and nothing was written');
+  // A block past the tab's grid grows it first (g145).
+  const small = hbAs_(hb22Sb_({ maxRows: 2 }), 'rep@ex.org');
+  r = hbPlain_(small.hbSyncNotes({ 'man-1-1': { t: 'a', ms: now }, 'man-2-1': { t: 'b', ms: now } }));
+  assert.deepStrictEqual([r.success, small.__writes.filter((x) => x[0] === 'grow').map((x) => x[1])], [true, [1]], JSON.stringify(r));
+  // hbConfirmPerson.
+  const p = hb33World_();
+  hbAs_(p, 'rep4@ex.org').hbSaveProfile('1 · Intro', 'boss@ex.org');   // waiting on boss
+  hbAs_(p, 'rep5@ex.org').hbSaveProfile('1 · Intro', '');              // has chosen nobody
+  const refusal = 'Only their manager can answer this.';
+  // A reader: ONE answer whoever is named — pending, without a manager, or nobody at all — and no lock taken.
+  hbAs_(p, 'rep@ex.org');
+  const locks = p.__locks.n;
+  assert.deepStrictEqual(['rep4@ex.org', 'rep5@ex.org', 'nobody@ex.org'].map((e) => p.hbConfirmPerson(e, true).error), [refusal, refusal, refusal],
+    'THE REGRESSION: "has not chosen a manager" told any reader which addresses had picked one');
+  assert.strictEqual(p.__locks.n, locks, 'and a caller who can never succeed does not take the lock (g17)');
+  // Another manager: the same one answer, for every case.
+  hbAs_(p, 'other@ex.org');
+  assert.deepStrictEqual(['rep4@ex.org', 'rep5@ex.org', 'nobody@ex.org'].map((e) => p.hbConfirmPerson(e, true).error), [refusal, refusal, refusal]);
+  // Their manager confirms; the admin is told what is actually wrong.
+  assert.strictEqual(hbAs_(p, 'boss@ex.org').hbConfirmPerson('rep4@ex.org', true).success, true);
+  assert.strictEqual(hbAs_(p, 'owner@example.org').hbConfirmPerson('rep5@ex.org', true).error, 'That person has not chosen a manager.');
+  assert.strictEqual(p.hbConfirmPerson('nobody@ex.org', true).error, 'That person has not chosen a manager.');
+});
+
+test('F53 (cycle 26): a plan\'s due day and a sign-off\'s day are the PROJECT\'s timezone — a plan due today is not overdue at 1 pm Central because it is tomorrow in India; what goes into Team Tools\' tabs keeps Team Tools\' day (driven, real timezones)', () => {
+  const at = Date.parse('2026-11-13T19:00:00Z');   // 1:00 pm in Chicago on the 13th; 12:30 am on the 14th in India
+  const world = (scriptTz) => {
+    const sb = hb34World_(null, false, { realTz: true, Date: c26Clock_(at), scriptTz });
+    hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Due today', due: '2026-11-13', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+    return hbAs_(sb, 'rep@ex.org');
+  };
+  const sb = world('America/Chicago');
+  assert.deepStrictEqual([sb.hbDay_(new Date(at)), sb.fmtDate_(new Date(at))], ['2026-11-13', '2026-11-14'], 'the project\'s day, and Team Tools\' (India)');
+  assert.strictEqual(hbPlainV_(sb.hbMyTraining()).plans[0].overdue, false, 'THE REGRESSION: "Overdue" from about 12:30 pm Central ON the due day');
+  assert.strictEqual(hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamProgress()).people.filter((p) => p.email === 'rep@ex.org')[0].overdue, 0, 'the manager\'s tile agrees');
+  // The pin can tell: the same moment judged in India IS overdue.
+  assert.strictEqual(hbPlainV_(world('Asia/Kolkata').hbMyTraining()).plans[0].overdue, true);
+  // A project timezone that cannot be read falls back to Team Tools' (never a throw).
+  assert.strictEqual(world('').hbDay_(new Date(at)), '2026-11-14');
+  // A sign-off's day (the older-mark rule) is the project's too: signed at 1 pm Central on the 13th, a change dated the 14th asks; one dated the 13th asks (the same day); the 12th does not.
+  const S = (date) => {
+    const w = hb34World_(null, false, { realTz: true, Date: c26Clock_(at), scriptTz: 'America/Chicago' });
+    w.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ changelog: [{ id: 'man-1-1', date, retraining: true }] })]];
+    w.__hbTabs.ReadMarks = [['AtMs', 'Email', 'ItemKey', 'Done', 'Version'], [at, 'rep@ex.org', 'section:man-1-1', 'yes', '']];
+    return hbPlainV_(hbAs_(w, 'rep@ex.org').hbMySignOffs()).signoffs['section:man-1-1'].state;
+  };
+  assert.deepStrictEqual([S('2026-11-14'), S('2026-11-13'), S('2026-11-12')], ['resign', 'resign', 'signed']);
+  // What is written into Team Tools' tabs is stamped in Team Tools' timezone still.
+  sb.kbFlagItem('man-1-1', 'helpful', '');
+  assert.ok(/^2026-11-14 /.test(String(sb.__tabs.KbFeedback[1][0])), String(sb.__tabs.KbFeedback[1][0]));
+  // No plan or sign-off day is taken from fmtDate_ any more.
+  const tr = stripJsComments_(c26HbSrc_('Training.js')), rm = stripJsComments_(c26HbSrc_('Reminders.js'));
+  assert.ok(!/fmtDate_\(/.test(tr) && !/fmtDate_\(/.test(rm), 'Training.js and Reminders.js use hbDay_');
+  assert.ok(/today: hbDay_\(new Date\(\)\)/.test(tr) && /signedDay: mark \? hbDay_\(new Date\(mark\.ms\)\) : ''/.test(tr));
+  assert.strictEqual(JSON.parse(c26HbSrc_('appsscript.json')).timeZone, 'America/Chicago', 'the timezone the project is in');
+});
+
+test('F54 (cycle 26): the reminder run\'s helpers — the link a reader can open, the sent list in pieces a property can hold, and the list read back (pure)', () => {
+  const sb = hb32Sb_();
+  const U = (prop, svc) => sb.hbAppUrl_(prop, svc);
+  assert.deepStrictEqual([U('', 'https://script.google.com/a/macros/ex.org/s/ID/dev'), U(null, 'https://script.google.com/macros/s/ID/exec'), U(' https://example.org/handbook ', 'https://x/dev'), U('javascript:alert(1)', 'https://x/dev'), U('', '')],
+    ['https://script.google.com/a/macros/ex.org/s/ID/exec', 'https://script.google.com/macros/s/ID/exec', 'https://example.org/handbook', 'https://x/exec', ''],
+    'a head (/dev) address opens only for the project\'s editors — it is made the deployed one; the property overrides it only when it is an https address');
+  const P = (emails, chars, max) => hbPlainV_(sb.hbReminderPieces_(emails, chars, max));
+  assert.deepStrictEqual(P(['a@x.org', 'b@x.org', 'c@x.org'], 16, 5), ['a@x.org,b@x.org', 'c@x.org'], 'whole addresses, never cut');
+  assert.deepStrictEqual(P(['a@x.org', 'b@x.org', 'c@x.org'], 16, 1), [], 'a list that will not fit is said (nothing), never stored short');
+  assert.deepStrictEqual(P([], 16, 5), []);
+  // Round trip, 600 readers, a property that holds 9 KB.
+  const props = {}, store = { getProperty: (k) => (k in props ? props[k] : null), deleteProperty: (k) => { delete props[k]; },
+    setProperty: (k, v) => { if (String(v).length > 9000) throw new Error('Argument too large: value'); props[k] = String(v); } };
+  const many = []; for (let i = 0; i < 600; i++) many.push('reader.number.' + i + '@universalmedsupply.example');
+  assert.strictEqual(sb.hbRemindersLastSave_(store, '2026-11-13', many), true, 'THE REGRESSION: one {email: day} property — past about 200 readers the write failed and a second run emailed everyone again');
+  const head = JSON.parse(props.HANDBOOK_REMINDERS_LAST);
+  assert.ok(head.day === '2026-11-13' && head.pieces >= 3 && Object.keys(props).length === head.pieces + 1, JSON.stringify(head));
+  assert.deepStrictEqual(Object.keys(hbPlainV_(sb.hbRemindersLast_(store, '2026-11-13'))).sort(), many.slice().sort(), 'read back whole');
+  assert.deepStrictEqual(hbPlainV_(sb.hbRemindersLast_(store, '2026-11-14')), {}, 'another day: nobody has been sent one');
+  // A shorter list afterwards leaves no stale piece behind.
+  assert.strictEqual(sb.hbRemindersLastSave_(store, '2026-11-14', ['a@x.org']), true);
+  assert.deepStrictEqual(Object.keys(props).sort(), ['HANDBOOK_REMINDERS_LAST', 'HANDBOOK_REMINDERS_LAST_1']);
+  // The shape an older deploy left is read as it was.
+  props.HANDBOOK_REMINDERS_LAST = JSON.stringify({ 'a@x.org': '2026-11-13', 'b@x.org': '2026-11-12' });
+  assert.deepStrictEqual(hbPlainV_(sb.hbRemindersLast_(store, '2026-11-13')), { 'a@x.org': '2026-11-13' });
+  props.HANDBOOK_REMINDERS_LAST = '{not json';
+  assert.deepStrictEqual(hbPlainV_(sb.hbRemindersLast_(store, '2026-11-13')), {});
+  // The page's sentence about the last run.
+  const ctx = vm.createContext({ String, Number, Date });
+  vm.runInContext(extractFnFrom(HB_PAGE_SRC(), 'hbReminderRunText_'), ctx);
+  const T = (o, now) => ctx.hbReminderRunText_(o, now || 2e12);
+  assert.ok(/No run is on record yet — if this stays, the daily trigger is not installed\./.test(T({})) && /No run is on record/.test(T(null)), 'no run is SAID');
+  assert.ok(/^ Last run .*: 3 sent \(3 people overdue\)\.$/.test(T({ at: 1.9e12, status: 'ok', sent: 3, failed: 0, overdue: 3 })), T({ at: 1.9e12, status: 'ok', sent: 3, failed: 0, overdue: 3 }));
+  assert.ok(/1 sent, 2 could not be sent \(3 people overdue\) — Service invoked too many times; who was emailed could not be recorded, so a second run today may email them again\.$/.test(T({ at: 1.9e12, status: 'partial', sent: 1, failed: 2, overdue: 3, error: 'Service invoked too many times.', notRecorded: true })));
+  assert.ok(/^ The last run \(.*\) failed: Could not open the Handbook spreadsheet\.$/.test(T({ at: 1.9e12, status: 'failed', error: 'Could not open the Handbook spreadsheet.' })));
+  assert.ok(/started .* and did not finish\.$/.test(T({ at: 2e12 - 3600000, status: 'running' })) && /^ A run started /.test(T({ at: 2e12 - 60000, status: 'running' })), 'a run that was cut off left only its start');
+  assert.strictEqual(T({ at: 1.9e12, status: 'off' }), '');
+});
+
+test('F54 (cycle 26): every reminder run records what it did, the sent list is written as the run goes, one run at a time, and the link is the deployed address (driven)', () => {
+  const outcome = (sb) => JSON.parse(sb.__props().HANDBOOK_REMINDERS_OUTCOME || 'null');
+  const late = (sb) => hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Late', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }], assign: { departments: ['1 · Intro'] } });
+  // Off: said, and recorded as off.
+  const sb = c26Team_(2, { serviceUrl: 'https://script.google.com/a/macros/ex.org/s/HB/dev' });
+  late(sb);
+  hbAs_(sb, 'owner@example.org');
+  assert.ok(/Reminders are off/.test(sb.hbSendTrainingReminders().skipped));
+  assert.strictEqual(outcome(sb).status, 'off');
+  // On: three overdue readers, three emails, the outcome recorded — THE REGRESSION: a trigger's return value reached nobody.
+  sb.__props().HANDBOOK_REMINDERS = 'on';
+  let r = hbPlainV_(sb.hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, r.sent, r.failed, r.overdue], ['ok', 3, 0, 3]);
+  let o = outcome(sb);
+  assert.deepStrictEqual([o.status, o.sent, o.failed, o.overdue, o.at > 0], ['ok', 3, 0, 3, true]);
+  assert.ok(sb.__mails.every((m) => /href="https:\/\/script\.google\.com\/a\/macros\/ex\.org\/s\/HB\/exec"/.test(m.htmlBody)), 'THE REGRESSION: the head (/dev) address was mailed as it came');
+  assert.strictEqual(sb.__props().HANDBOOK_REMINDERS_RUNNING, undefined, 'the claim is given up');
+  assert.deepStrictEqual(hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamProgress()).reminders.status, 'ok', 'Team progress carries the outcome');
+  // The same day: nobody twice, and that is an ok run of nothing.
+  r = hbPlainV_(hbAs_(sb, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, r.sent, sb.__mails.length], ['ok', 0, 3]);
+  // HANDBOOK_URL overrides the link.
+  const u = c26Team_(0, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on', HANDBOOK_URL: 'https://go.example.org/handbook' }) });
+  late(u); hbAs_(u, 'owner@example.org').hbSendTrainingReminders();
+  assert.ok(/href="https:\/\/go\.example\.org\/handbook"/.test(u.__mails[0].htmlBody));
+  // A run already in progress: this one sends nothing and does NOT write over the other's outcome; a stale claim does not block.
+  const two = c26Team_(0, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }) });
+  late(two); hbAs_(two, 'owner@example.org');
+  two.__props().HANDBOOK_REMINDERS_RUNNING = String(Date.now() + 60000);
+  two.__props().HANDBOOK_REMINDERS_OUTCOME = '{"status":"running","at":1}';
+  r = hbPlainV_(two.hbSendTrainingReminders());
+  assert.deepStrictEqual([/Another reminder run is in progress/.test(r.skipped), two.__mails.length, outcome(two).at], [true, 0, 1], 'THE REGRESSION: two runs at once each read the sent list before the other wrote it');
+  two.__props().HANDBOOK_REMINDERS_RUNNING = String(Date.now() - 1);
+  assert.strictEqual(hbPlainV_(two.hbSendTrainingReminders()).sent, 1, 'a claim that has run out is not a run');
+  // Some sends fail: partial, with the first error; the failed reader is not on the sent list and is tried again.
+  let missedOnce = false;
+  const part = c26Team_(2, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }), mailFail: (m) => (m.to === 'r1@ex.org' && !missedOnce ? (missedOnce = true) : false) });
+  late(part);
+  r = hbPlainV_(hbAs_(part, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, r.sent, r.failed, r.error], ['partial', 2, 1, 'Service invoked too many times']);
+  assert.deepStrictEqual([outcome(part).status, outcome(part).error], ['partial', 'Service invoked too many times']);
+  r = hbPlainV_(part.hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, r.sent, part.__mails.map((m) => m.to).sort()], ['ok', 1, ['r0@ex.org', 'r1@ex.org', 'rep@ex.org']], 'the one who was missed, and only them');
+  // Every send fails: failed. The store cannot be opened: failed, with the reason — the run used to return an object nobody read.
+  const none = c26Team_(0, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }), mailFail: true });
+  late(none);
+  assert.strictEqual(hbPlainV_(hbAs_(none, 'owner@example.org').hbSendTrainingReminders()).status, 'failed');
+  const shut = hbServer_(Object.assign({ tabs: hb32Tabs_(), hbTabs: {}, openFail: ['hbss'] }, HB_PPL_ENV, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }) }));
+  r = hbPlainV_(hbAs_(shut, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, /Could not open the Handbook spreadsheet/.test(r.error), /Could not open/.test(outcome(shut).error), shut.__props().HANDBOOK_REMINDERS_RUNNING], ['failed', true, true, undefined]);
+  // The sent list is written DURING the run: by the 26th email the first 25 are on it, and the outcome says "running".
+  let seenAt26 = null;
+  const every = c26Const_(sb, 'HB_REMINDERS_SAVE_EVERY');
+  const big = c26Team_(every + 1, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }),
+    mailFail: (m, sent) => { if (sent.length === every && !seenAt26) seenAt26 = { last: Object.keys(hbPlainV_(big.hbRemindersLast_({ getProperty: (k) => big.__props()[k] || null }, big.hbDay_(new Date())))).length, status: outcome(big).status }; return false; } });
+  late(big);
+  r = hbPlainV_(hbAs_(big, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.sent, seenAt26], [every + 2, { last: every, status: 'running' }],
+    'THE REGRESSION: the list was written once, after the loop — a run cut off part-way recorded nobody, and the next emailed them all again');
+  // The list cannot be kept (a property that will not take it): the emails went, and the outcome says a second run may repeat them.
+  const full = c26Team_(0, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }), propFail: (k) => /^HANDBOOK_REMINDERS_LAST/.test(k) });
+  late(full);
+  r = hbPlainV_(hbAs_(full, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, r.sent, r.notRecorded, outcome(full).notRecorded], ['partial', 1, true, true]);
+  // The run cannot even take its claim (the properties will not write): a failed run, said — never a throw nobody sees.
+  const dead = c26Team_(0, { props: Object.assign({}, HB_PPL_ENV.props, { HANDBOOK_REMINDERS: 'on' }), propFail: (k) => k === 'HANDBOOK_REMINDERS_RUNNING' });
+  late(dead);
+  r = hbPlainV_(hbAs_(dead, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([r.status, /could not be started/.test(r.error), dead.__mails.length], ['failed', true, 0]);
+  // A reader still cannot run it, and their call records nothing.
+  const rd = c26Team_(0, {});
+  assert.ok(/Only the handbook's owner/.test(hbAs_(rd, 'rep@ex.org').hbSendTrainingReminders().error));
+  assert.strictEqual(rd.__props().HANDBOOK_REMINDERS_OUTCOME, undefined);
+});
+
+testNeedsDeps(['acorn'], 'F57 (cycle 26): the handbook push finds its script id (the environment, a local file, the committed file), refuses the placeholder by name, puts the committed file back whatever clasp does, and uses the same pinned clasp as Team Tools (driven: the script itself)', () => {
+  const cp = require('child_process'), os = require('os');
+  const script = path.join(HB_ROOT, 'scripts/handbook-push.mjs');
+  const run = (args, env) => cp.spawnSync(process.execPath, [script].concat(args), { encoding: 'utf8', cwd: HB_ROOT, env: Object.assign({}, process.env, { HANDBOOK_SCRIPT_ID: '', CLASP: '' }, env || {}) });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hbpush-'));
+  try {
+    const committed = JSON.stringify({ scriptId: 'SET-ME-see-docs-operator-state-md', rootDir: '.', filePushOrder: ['kb_shared.js', 'Handbook.js'] }, null, 2) + '\n';
+    fs.writeFileSync(path.join(tmp, '.clasp.json'), committed);
+    const ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', ID2 = '1ZyXwVuTsRqPoNmLkJiHgFeDcBa9876543210';
+    // No id anywhere: refused, naming the three places — never handed to clasp.
+    let r = run(['--app', tmp, '--dry-run']);
+    assert.deepStrictEqual([r.status, /holds a placeholder/.test(r.stderr), /\.clasp\.local\.json/.test(r.stderr), /HANDBOOK_SCRIPT_ID/.test(r.stderr)], [1, true, true, true], r.stderr);
+    assert.strictEqual(run(['--app', tmp]).status, 1, 'THE REGRESSION: the placeholder went to clasp, which failed with a message about something else');
+    // The environment, then the local file, then the committed one.
+    r = run(['--app', tmp, '--dry-run'], { HANDBOOK_SCRIPT_ID: ID });
+    assert.ok(r.status === 0 && r.stdout.indexOf('to script ' + ID + ' (from the HANDBOOK_SCRIPT_ID environment variable)') > 0 && /with `npx --yes @google\/clasp@2\.4\.2 push -f`/.test(r.stdout), r.stdout + r.stderr);
+    fs.writeFileSync(path.join(tmp, '.clasp.local.json'), JSON.stringify({ scriptId: ID2 }));
+    r = run(['--app', tmp, '--dry-run']);
+    assert.ok(r.status === 0 && r.stdout.indexOf('to script ' + ID2 + ' (from handbook-app/.clasp.local.json)') > 0, r.stdout + r.stderr);
+    assert.ok(run(['--app', tmp, '--dry-run'], { HANDBOOK_SCRIPT_ID: ID }).stdout.indexOf(ID + ' (from the HANDBOOK') > 0, 'the environment wins');
+    assert.deepStrictEqual([run(['--app', tmp, '--dry-run'], { HANDBOOK_SCRIPT_ID: 'not an id' }).status, fs.readFileSync(path.join(tmp, '.clasp.json'), 'utf8') === committed], [1, true], 'a value that is not an id is refused; a dry run writes nothing');
+    // A real run, with a stand-in clasp that records the .clasp.json it was given.
+    const fake = path.join(tmp, 'fakeclasp.cjs');
+    fs.writeFileSync(fake, 'const fs = require("fs"); fs.writeFileSync(' + JSON.stringify(path.join(tmp, 'seen.json')) + ', JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), clasp: JSON.parse(fs.readFileSync(".clasp.json", "utf8")) })); process.exit(Number(process.env.FAKE_EXIT || 0));');
+    const CLASP = JSON.stringify(process.execPath) + ' ' + JSON.stringify(fake);
+    r = run(['--app', tmp], { CLASP });
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    const seen = JSON.parse(fs.readFileSync(path.join(tmp, 'seen.json'), 'utf8'));
+    assert.deepStrictEqual([seen.argv, fs.realpathSync(seen.cwd), seen.clasp.scriptId, seen.clasp.filePushOrder], [['push', '-f'], fs.realpathSync(tmp), ID2, ['kb_shared.js', 'Handbook.js']], 'clasp ran in the app folder with the real id and the committed load order');
+    assert.strictEqual(fs.readFileSync(path.join(tmp, '.clasp.json'), 'utf8'), committed, 'and the committed file is back, byte for byte');
+    // clasp fails: its status is the script's, and the file is still put back.
+    r = run(['--app', tmp], { CLASP, FAKE_EXIT: '3' });
+    assert.deepStrictEqual([r.status, fs.readFileSync(path.join(tmp, '.clasp.json'), 'utf8') === committed], [3, true]);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  // The wiring: the npm script, the ignored local file, the SAME pinned clasp as Team Tools' push, and a committed id that is the placeholder or a real one.
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(HB_ROOT, 'package.json'), 'utf8')).scripts['handbook:push'], 'node scripts/handbook-push.mjs');
+  assert.ok(/^handbook-app\/\.clasp\.local\.json$/m.test(fs.readFileSync(path.join(HB_ROOT, '.gitignore'), 'utf8')), 'the local id is never committed');
+  const pin = (src) => (/@google\/clasp@(\d+\.\d+\.\d+)/.exec(src) || [])[1];
+  assert.ok(pin(fs.readFileSync(script, 'utf8')) && pin(fs.readFileSync(script, 'utf8')) === pin(fs.readFileSync(path.join(HB_ROOT, 'scripts/push-env.sh'), 'utf8')), 'one clasp version for both projects');
+  const id = JSON.parse(c26HbSrc_('.clasp.json')).scriptId;
+  assert.ok(/^SET-ME/.test(id) || /^[A-Za-z0-9_-]{20,}$/.test(id), 'the committed id is the placeholder or looks like a script id: ' + id);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

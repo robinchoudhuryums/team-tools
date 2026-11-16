@@ -162,39 +162,62 @@ function hbToggleBookmark(id, on) {
 
 /** Sync the reader's notes: `local` ({sectionId: {t, ms}}) is merged with the
  *  account's copy, later wins per section; what changed is written; the
- *  merged map comes back for the browser to keep. A note for a section no
- *  longer in the handbook is kept as it is (the reader may still want it). */
+ *  merged map comes back for the browser to keep. A note the account already
+ *  holds for a section no longer in the handbook is kept as it is (the reader
+ *  may still want it).
+ *  F52 (cycle 26): the limit is on what the ACCOUNT holds, not on one call —
+ *  it was checked against the keys sent, so calls with fresh ids grew the tab
+ *  without end; a note is taken only for a published section (or one the
+ *  account already has); and the new rows are written in ONE block, where each
+ *  was its own append under the project lock. */
 function hbSyncNotes(local) {
   const c = hbSavedCall_();
   if (c.error) return { success: false, error: c.error };
   if (!c.ss) return { success: false, error: hbSavedNotSetUp_() };
   if (!local || typeof local !== 'object' || Array.isArray(local)) return { success: false, error: 'Those notes could not be read.' };
   const ids = Object.keys(local);
-  if (ids.length > HB_NOTES_SYNC_MAX) return { success: false, error: 'At most ' + HB_NOTES_SYNC_MAX + ' notes can be kept in your account.' };
+  const tooMany = 'At most ' + HB_NOTES_SYNC_MAX + ' notes can be kept in your account.';
+  if (ids.length > HB_NOTES_SYNC_MAX) return { success: false, error: tooMany };
+  let pub;
+  try { pub = hbPublished_(); } catch (err) { return { success: false, error: err.message }; }
   const maxMs = Date.now() + 86400000;
-  const clean = {};
-  let refused = 0;
-  ids.forEach(function (id) {
-    const n = HB_SECTION_ID_RE.test(id) ? hbNoteClean_(local[id], maxMs) : null;
-    if (n) clean[id] = n; else refused++;
-  });
   return hbWithLock_(function () {
     try {
       const mine = hbNotesRows_(hbNotesValues_(c.ss), c.emp.email);
+      const clean = {};
+      let refused = 0;
+      ids.forEach(function (id) {
+        const known = HB_SECTION_ID_RE.test(id) && (pub.sectionIds[id] || mine.map[id]);
+        const n = known ? hbNoteClean_(local[id], maxMs) : null;
+        if (n) clean[id] = n; else refused++;
+      });
       const merged = hbNotesMerge_(mine.map, clean);
+      if (Object.keys(merged).length > HB_NOTES_SYNC_MAX) return { success: false, error: tooMany + ' Delete some first.' };
       const sheet = hbSavedSheet_(c.ss, HB_NOTES_TAB, HB_NOTES_HEADERS, true);
+      const fresh = [];
       let written = 0;
       Object.keys(merged).forEach(function (id) {
         const had = mine.map[id];
         if (had && had.ms === merged[id].ms && had.t === merged[id].t) return;
         const row = [c.emp.email, id, JSON.stringify({ t: merged[id].t }), merged[id].ms];
         if (had) sheet.getRange(had.row, 1, 1, row.length).setValues(sheetSafeRows_([row]));
-        else sheet.appendRow(sheetSafeRow_(row));
+        else fresh.push(row);
         written++;
       });
+      hbAppendBlock_(sheet, fresh);
       return { success: true, notes: merged, written: written, refused: refused, unreadable: mine.unreadable };
     } catch (err) { return { success: false, error: err.message }; }
   });
+}
+/** Rows added below a tab's last row in ONE write — the grid grown first, since
+ *  a block written past its last row throws (g145). The caller holds the lock;
+ *  only this project writes the Handbook spreadsheet. */
+function hbAppendBlock_(sheet, rows) {
+  if (!rows.length) return;
+  const at = sheet.getLastRow() + 1;
+  const short = at + rows.length - 1 - sheet.getMaxRows();
+  if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);
+  sheet.getRange(at, 1, rows.length, rows[0].length).setValues(sheetSafeRows_(rows));
 }
 
 /** Sync turned off: the account's copies of the reader's notes are removed

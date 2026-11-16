@@ -5,3 +5,6 @@ node_modules/
 # Dev-project clasp target (holds your personal dev scriptId — never committed).
 # Copy web-app/.clasp.dev.json.example → web-app/.clasp.dev.json. See docs/deployment.md.
 web-app/.clasp.dev.json
+# The handbook app's real script id, kept on this machine (cycle 26 F57): {"scriptId": "…"}.
+# scripts/handbook-push.mjs reads it; the committed handbook-app/.clasp.json keeps a placeholder.
+handbook-app/.clasp.local.json

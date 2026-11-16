@@ -1583,7 +1583,9 @@ function runRecAgo(msAgo, notes) {
     hbMyTraining: function () {
       var me = function (o) { return Object.assign({ locked: false, retryAtMs: null, attemptsLeft: 3, maxAttempts: 3, attempts: 0, best: null, passed: false }, o || {}); };
       return { setUp: true, plans: [
-        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, items: [
+        // Cycle 26 F50: one item can no longer be done (its quiz was archived) — shown, said, not counted.
+        { id: 'pl-000000000001', title: 'New starter: first week', authorName: 'Dana Reyes', due: daysAgo(3), overdue: true, done: 2, total: 4, missing: 1, items: [
+          { kind: 'quiz', id: 'tq-00000000000z', key: 'quiz:tq-00000000000z', title: 'Last year\'s intake checks', done: false, missing: true, quiz: me() },
           { kind: 'section', id: 'man-0-11', key: 'section:man-0-11', done: true },
           { kind: 'section', id: 'man-0-10', key: 'section:man-0-10', done: true },
           { kind: 'chapter', id: 'Chapter 03 \u2014 Respiratory & Resupply', key: 'chapter:x', done: false, sign: { state: 'resign', signedMs: Date.now() - 40 * 86400000, changed: true } },
@@ -1597,7 +1599,7 @@ function runRecAgo(msAgo, notes) {
           { type: 'single', q: 'What do you confirm before a pick-up?', options: ['The address and the equipment', 'The weather'], correct: 0, explain: 'The ticket must match what is collected.', section: 'man-0-11', anchor: '' },
           { type: 'multi', q: 'Which go on the ticket?', options: ['Serial number', 'Condition', 'Your opinion'], correct: [0, 1], explain: '', section: '', anchor: '' },
           { type: 'truefalse', q: 'A pick-up can be closed without a signature.', options: ['True', 'False'], correct: 1, explain: '', section: '', anchor: '' }] } }],
-        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, plan: { title: 'New starter: first week', due: daysAgo(-7),
+        plans: [{ id: 'pl-000000000001', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: true, reaches: 3, missing: 1, plan: { title: 'New starter: first week', due: daysAgo(-7),
           items: [{ kind: 'section', id: 'man-0-11' }, { kind: 'quiz', id: 'q-core-calls' }], assign: { people: ['alex.kim@example.com'], departments: ['Chapter 03 \u2014 Respiratory & Resupply'] } } },
           { id: 'pl-000000000003', author: 'dana.reyes@example.com', authorName: 'Dana Reyes', live: false, reaches: 0, plan: { title: 'Last quarter\'s refresher', due: '', items: [{ kind: 'section', id: 'man-0-10' }], assign: { people: [], departments: ['Chapter 05 \u2014 Power Mobility'] } } }],
         team: [{ email: 'alex.kim@example.com', name: 'Alex Kim', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'jordan.lee@example.com', name: 'Jordan Lee', department: 'Chapter 03 \u2014 Respiratory & Resupply' }, { email: 'casey.nguyen@example.com', name: 'Casey Nguyen', department: 'Chapter 05 \u2014 Power Mobility' }],
@@ -1624,7 +1626,8 @@ function runRecAgo(msAgo, notes) {
     },
     hbTeamProgress: function () {
       var R = 'Chapter 03 \u2014 Respiratory & Resupply', P = 'Chapter 05 \u2014 Power Mobility';
-      return { remindersOn: false, people: [
+      // Cycle 26 F54: reminders on, and what the last run did.
+      return { remindersOn: true, reminders: { at: Date.now() - 5 * 3600000, status: 'partial', sent: 1, failed: 1, overdue: 2, error: 'Service invoked too many times for one day: email.' }, people: [
         { email: 'alex.kim@example.com', name: 'Alex Kim', department: R, overdue: 1, signed: 6, resign: 1,
           plans: [{ id: 'pl-000000000001', title: 'New starter: first week', due: daysAgo(3), done: 2, total: 4, overdue: true }],
           quizzes: [{ id: 'q-core-calls', title: 'Taking a call', best: 50, attempts: 1, passed: false, locked: false },
@@ -1636,7 +1639,7 @@ function runRecAgo(msAgo, notes) {
     },
     hbSaveTeamQuiz: { success: true, id: 'tq-00000000000b' },
     hbSavePlan: { success: true, id: 'pl-000000000004', reaches: 2 },
-    hbArchiveTraining: { success: true },
+    hbArchiveTraining: { success: true, inPlans: ['New starter: first week'] },   // F50: the live plans that still list an archived quiz
     // Cycle 25 E3 (G2): the handbook feedback export — a window that did not reach the tab's first row.
     exportHandbookFeedback: { success: true, url: 'https://docs.google.com/spreadsheets/d/MOCKFEEDBACK/edit', fileName: 'Handbook feedback (20261015_101500)',
       sections: 160, open: 7, truncated: true, windowFrom: daysAgo(200) },

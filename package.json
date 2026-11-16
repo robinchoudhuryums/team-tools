@@ -11,7 +11,7 @@
     "push:dev": "bash scripts/push-env.sh dev",
     "push:prod": "bash scripts/push-env.sh prod",
     "handbook:sync": "node scripts/handbook-sync.mjs",
-    "handbook:push": "node scripts/handbook-sync.mjs --check && cd handbook-app && clasp push -f"
+    "handbook:push": "node scripts/handbook-push.mjs"
   },
   "devDependencies": {
     "acorn": "^8.19.0",

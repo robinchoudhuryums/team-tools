@@ -12068,7 +12068,9 @@ function hbPageHtml_(params) {
   return html;
 }
 const HB_DAY = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
-const HB_PARTS = () => ({ isAdmin: false, stamp: 'S1', parts: [
+// Cycle 26 F49: the answer carries each item's version WITH its text — the page hands an item's back when its reader signs.
+const HB_PARTS = () => ({ isAdmin: false, stamp: 'S1', versions: { 'section:man-5-1': 'v51', 'section:man-3-1': 'v31', 'section:man-3-2': 'v32',
+  'chapter:Chapter 05 — Power Mobility': 'vc5', 'chapter:Chapter 03 — Respiratory & Resupply': 'vc3' }, parts: [
   { department: 'Chapter 05 — Power Mobility', sections: [{ id: 'man-5-1', title: '5.1 Chairs', status: 'published', sortOrder: 1, bodyMd: 'Chairs roll.' }] },
   { department: 'Chapter 03 — Respiratory & Resupply', sections: [
     { id: 'man-3-1', title: '3.1 Oxygen basics', status: 'published', sortOrder: 1, bodyMd: 'Intro.\n\n## 3.1.1 Tanks\n\nTanks hold oxygen.' },
@@ -12693,7 +12695,7 @@ test('HB3.3 DOM: My training — each plan with its progress and Overdue; Mark a
   assert.ok(/Overdue/.test(plans[0].textContent) && /0 of 3 done/.test(plans[0].textContent));
   assert.deepStrictEqual([...plans[0].querySelectorAll('.hb-tr-it-t')].map((t) => t.textContent), ['3.1 Oxygen basics', '3 · Respiratory & Resupply', 'Nebulizers'], 'a section by its title, a chapter by its label, a quiz by its title');
   plans[0].querySelector('.hb-tr-mark[data-kind="section"]').click(); await h.settleAll();
-  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true, 'v31'], 'with the version of the text on this page (F49)');
   const after = [...h.d.querySelectorAll('.hb-tr-plan')];
   assert.ok(/1 of 3 done/.test(after[0].textContent) && /1 of 1 done/.test(after[1].textContent), 'one mark serves both plans');
   assert.strictEqual(after[0].querySelector('.hb-tr-mark[data-kind="section"]').getAttribute('aria-pressed'), 'true');
@@ -12806,10 +12808,10 @@ test('HB3.4 DOM: the bar above a section — "I\'ve read this" signs it off at t
   const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent))[0];
   assert.ok(btn(/^I've read this$/), 'an unsigned section offers the sign-off');
   btn(/^I've read this$/).click(); await h.settleAll();
-  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true]);
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true, 'v32'], 'the version shown rides the sign-off (F49)');
   assert.ok(/You read this on/.test(bar().textContent) && btn(/^Undo$/), 'signed: the date, and Undo');
   btn(/^Undo$/).click(); await h.settleAll();
-  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', false]);
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', false, ''], 'withdrawing sends none');
   assert.ok(btn(/^I've read this$/) && !/You read this/.test(bar().textContent), 'withdrawn');
   // The section a retraining change touched asks again.
   h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
@@ -12835,7 +12837,7 @@ test('HB3.4 DOM: My training — a changed item asks to be read again, its sign-
   const mark = h.d.querySelector('.hb-tr-plan .hb-tr-mark[data-kind="section"]');
   assert.strictEqual(mark.textContent, "Changed — I've read it again");
   mark.click(); await h.settleAll();
-  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true]);
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-1', true, 'v31']);
   assert.ok(/1 of 1 done/.test(h.d.querySelectorAll('.hb-tr-plan')[1].textContent), 'every plan with it agrees');
   h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
   assert.ok(/You read this on/.test(h.d.getElementById('hb-quizbar').textContent), 'the bar no longer asks');
@@ -12875,6 +12877,88 @@ test('HB3.4 DOM: Team training shows each person\'s progress — overdue marked,
 // HB2.2 — bookmarks (the reader bar's star, the reader's account) and notes
 // (this browser; the account only when the reader turns it on).
 // ═════════════════════════════════════════════════════════════════════════════
+// ── Cycle 26 Batch 7 — the handbook server, as the page shows it ────────────
+test('F49 DOM (cycle 26): the page signs with the version of the text it SHOWS — a kept copy from before the versions sends none; a refusal ("updated after you opened it") stays on screen and marks nothing signed (driven)', async () => {
+  let answer = { success: false, changed: true, error: 'This section was updated after you opened it. Reload the handbook to read it as it is now, then sign.' };
+  const h = await hbBoot_({ answers: { hbMySignOffs: { setUp: true, signoffs: {} }, hbMarkRead: () => answer } });
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const btn = (re) => [...bar().querySelectorAll('button')].filter((b) => re.test(b.textContent))[0];
+  btn(/^I've read this$/).click(); await h.settleAll();
+  assert.deepStrictEqual(h.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true, 'v32'], 'the version that came with the text');
+  const toast = h.d.querySelector('#toast-stack .toast-sticky');
+  assert.ok(toast && /Not saved: This section was updated after you opened it\. Reload the handbook to read it as it is now, then sign\./.test(toast.textContent), 'the refusal stays until it is dismissed');
+  assert.ok(btn(/^I've read this$/) && !/You read this on/.test(bar().textContent), 'and nothing is shown as signed');
+  // A ordinary failure is a passing toast, as before.
+  answer = { success: false, error: 'The handbook is busy — try again in a moment.' };
+  const stickies = h.d.querySelectorAll('#toast-stack .toast-sticky').length;
+  btn(/^I've read this$/).click(); await h.settleAll();
+  assert.strictEqual(h.d.querySelectorAll('#toast-stack .toast-sticky').length, stickies, 'only a refusal that asks for a reload stays');
+  // The chapters as an older server sent them (no versions): the sign-off sends none, and the server asks for a reload.
+  const parts = HB_PARTS(); delete parts.versions;
+  const old = await hbBoot_({ answers: { getManualParts: parts, hbMySignOffs: { setUp: true, signoffs: {} }, hbMarkRead: { success: false, reload: true, error: 'Reload the handbook, then sign — this page was opened before an update to the app.' } } });
+  old.w.MANUAL_HOST.openItem('man-3-2'); await old.settleAll();
+  [...old.d.getElementById('hb-quizbar').querySelectorAll('button')].filter((b) => /^I've read this$/.test(b.textContent))[0].click(); await old.settleAll();
+  assert.deepStrictEqual(old.argsOf.filter((a) => a[0] === 'hbMarkRead').pop(), ['hbMarkRead', 'section', 'man-3-2', true, '']);
+  assert.ok(/Reload the handbook, then sign/.test(old.d.querySelector('#toast-stack .toast-sticky').textContent));
+});
+
+test('F50 DOM (cycle 26): My training shows an item that can no longer be done as that — no button, not counted — and a plan with nothing left is not "Done"; archiving a quiz names the live plans that list it (driven)', async () => {
+  const mine = { setUp: true, plans: [
+    { id: 'pl-000000000001', title: 'First week', authorName: 'Boss', due: '2000-01-01', overdue: false, done: 1, total: 1, missing: 2, items: [
+      { kind: 'section', id: 'man-3-1', key: 'section:man-3-1', done: true, missing: false, sign: { state: 'signed' } },
+      { kind: 'section', id: 'man-8-8', key: 'section:man-8-8', done: false, missing: true, sign: { state: 'unsigned' } },
+      { kind: 'quiz', id: 'tq-000000000001', key: 'quiz:tq-000000000001', title: 'Our <b>checks</b>', done: false, missing: true, quiz: hb32Me_() }] },
+    { id: 'pl-000000000002', title: 'All gone', authorName: 'Boss', due: '2000-01-01', overdue: false, done: 0, total: 0, missing: 1, items: [
+      { kind: 'quiz', id: 'tq-000000000001', key: 'quiz:tq-000000000001', title: 'Our <b>checks</b>', done: false, missing: true, quiz: hb32Me_() }] }] };
+  const h = await hbBoot_({ answers: { hbGetMe: hbMeView_(), hbMyTraining: mine, hbMarkRead: { success: true } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const plans = [...h.d.querySelectorAll('.hb-tr-plan')];
+  const rows = [...plans[0].querySelectorAll('.hb-tr-it')];
+  assert.deepStrictEqual(rows.map((r) => [r.querySelector('.hb-tr-it-t').textContent, r.querySelectorAll('button').length, /No longer available/.test(r.textContent)]),
+    [['3.1 Oxygen basics', 2, false], ['A section no longer in the handbook', 0, true], ['Our <b>checks</b>', 0, true]],
+    'THE REGRESSION: the archived quiz was offered as "Take the quiz", and the removed section as "I\'ve read this" — both refused by the server');
+  assert.ok(!plans[0].querySelector('.hb-tr-it b'), 'the quiz\'s title is text');
+  assert.ok(/1 of 1 done · 2 no longer available, not counted/.test(plans[0].querySelector('.hb-tr-count').textContent) && /Done/.test(plans[0].querySelector('.hb-qz-chip.pass').textContent));
+  assert.ok(/Nothing to do/.test(plans[1].querySelector('.hb-tr-ph').textContent) && !plans[1].querySelector('.hb-qz-chip.pass') && !/Overdue/.test(plans[1].textContent), 'an emptied plan is neither Done nor Overdue');
+  // The author's side: the plan says how many items are gone; archiving a quiz names the plans.
+  const team = { isAdmin: false, unreadable: 0, team: [], official: [],
+    quizzes: [{ id: 'tq-000000000001', author: 'boss@ex.org', authorName: 'Boss', live: true, updatedMs: 1, quiz: { title: 'Our checks', passPct: 80, questions: [] } }],
+    plans: [{ id: 'pl-000000000001', author: 'boss@ex.org', authorName: 'Boss', live: true, updatedMs: 1, reaches: 4, missing: 2, plan: { title: 'First week', due: '', items: [1, 2, 3] } }] };
+  const b = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: team, hbTeamProgress: HB34_PROGRESS(),
+    hbArchiveTraining: { success: true, inPlans: ['First week', 'Second <i>week</i>'] } } });
+  b.w.hbGoTraining_(); await b.settleAll();
+  const cards = [...b.d.querySelectorAll('#hb-tr-team .hb-tr-card')];
+  assert.ok(/Reaches 4 people · 2 items no longer available \(not counted\) — edit the plan to take them out/.test(cards[0].textContent), cards[0].textContent);
+  [...cards[1].querySelectorAll('button')].filter((x) => /^Archive$/.test(x.textContent))[0].click(); await b.settleAll();
+  b.d.querySelector('.ui-dialog .ui-dialog-ok').click(); await b.settleAll();
+  assert.deepStrictEqual(b.argsOf.filter((a) => a[0] === 'hbArchiveTraining').pop(), ['hbArchiveTraining', 'quiz', 'tq-000000000001', true]);
+  const toast = b.d.querySelector('#toast-stack .toast-sticky');
+  assert.ok(toast && /Archived\. 2 live plans still list it \(First week, Second <i>week<\/i>\) — it no longer counts there\./.test(toast.textContent) && !toast.querySelector('i'), toast && toast.textContent);
+});
+
+test('F54 DOM (cycle 26): Team progress says what the last reminder run did — sent and failed, a run that failed, one that never finished, and no run on record (driven)', async () => {
+  const withRun = async (remindersOn, reminders) => {
+    const h = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: Object.assign(HB34_PROGRESS(), { remindersOn, reminders }) } });
+    h.w.hbGoTraining_(); await h.settleAll();
+    return h.d.querySelector('#hb-tr-progress .hb-tr-rem');
+  };
+  let p = await withRun(true, { at: Date.now() - 3600000, status: 'partial', sent: 4, failed: 2, overdue: 6, error: 'Service invoked too many times <b>today</b>.' });
+  assert.ok(/Reminder emails are on — anyone with an overdue plan is emailed once a day\. Last run .*: 4 sent, 2 could not be sent \(6 people overdue\) — Service invoked too many times <b>today<\/b>\.$/.test(p.textContent), p.textContent);
+  assert.strictEqual(p.querySelectorAll('b').length, 1, 'the run\'s words are text (the one bold is "on")');
+  p = await withRun(true, { at: Date.now() - 3600000, status: 'failed', error: 'Could not open the Handbook spreadsheet.' });
+  assert.ok(/The last run \(.*\) failed: Could not open the Handbook spreadsheet\.$/.test(p.textContent), p.textContent);
+  p = await withRun(true, { at: Date.now() - 2 * 3600000, status: 'running' });
+  assert.ok(/started .* and did not finish\.$/.test(p.textContent), p.textContent);
+  p = await withRun(true, {});
+  assert.ok(/No run is on record yet — if this stays, the daily trigger is not installed\.$/.test(p.textContent), 'THE REGRESSION: "on" was all it said, whether or not anything ran');
+  p = await withRun(false, { at: Date.now(), status: 'off' });
+  assert.strictEqual(p.textContent, 'Reminder emails are off.');
+  // An older server (no outcome on the answer) with reminders on: no run on record is still said.
+  p = await withRun(true, undefined);
+  assert.ok(/No run is on record yet/.test(p.textContent));
+});
+
 section('HB2.2 — bookmarks and notes');
 const hb22Ls_ = (w, k) => { try { return JSON.parse(w.localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
 
