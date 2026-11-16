@@ -47075,12 +47075,16 @@ test('F6 (cycle 26): an exclusion word excludes only the states that DIRECTLY fo
   assert.deepStrictEqual(NS('Cigna Non-TX'), { excluded: ['TX'], named: [] });
   assert.deepStrictEqual(NS('Aetna except in Hawaii'), { excluded: ['HI'], named: [] });
   assert.deepStrictEqual(NS('Plan excluding the state of New York, NJ'), { excluded: ['NY', 'NJ'], named: [] });
+  assert.deepStrictEqual(NS('Aetna excluding plans in TX'), { excluded: ['TX'], named: [] }, '"plans in" between the word and the state is still the list');
+  assert.deepStrictEqual(NS('Humana except for members in Texas or OK'), { excluded: ['TX', 'OK'], named: [] });
+  assert.deepStrictEqual(NS('Humana Gold except HMO plans TX'), { excluded: [], named: ['TX'] }, 'an exclusion of something that is not a state leaves the plan\'s own state alone');
   assert.deepStrictEqual(NS('UHC (all states other than TX) Oklahoma'), { excluded: ['TX'], named: ['OK'] }, 'the list ends at its bracket');
   assert.deepStrictEqual(NS('Aetna except TX plans in Ohio'), { excluded: ['TX'], named: ['OH'] }, 'and at the first word that is not a state');
   assert.deepStrictEqual(NS('BCBS Non-Dual plan except HI'), { excluded: ['HI'], named: [] }, 'a word that excludes nothing does not hide a later one');
   assert.deepStrictEqual(hJ(c.insLeadingStates_('TX and Oklahoma plans')), { states: ['TX', 'OK'], end: 15 });
   assert.deepStrictEqual(hJ(c.insLeadingStates_('Dual TX')), { states: [], end: 0 });
   assert.deepStrictEqual(hJ(c.insLeadingStates_('in or near tx')).states, [], 'a code reads only in capitals, as in any name');
+  assert.deepStrictEqual(hJ(c.insLeadingStates_('tx, ok')).states, [], 'lower-case codes are words');
   // The matcher: each cell is read for states on its own.
   const M = (name, q, cells) => hJ(c.insPayorMatch_(name, q, [], cells));
   const tx = M('UHC Community Plan Non-Dual', 'uhc community texas', ['Texas']);
@@ -47093,6 +47097,7 @@ test('F6 (cycle 26): an exclusion word excludes only the states that DIRECTLY fo
   assert.strictEqual(M('Wellcare Value HMO - excl.', 'wellcare texas', ['Texas']).excluded, '', 'a name that ENDS in an exclusion word does not reach into the State cell');
   assert.ok(M('Wellcare Value HMO - excl.', 'wellcare texas', ['Texas']).score > M('Wellcare Value HMO - excl.', 'wellcare texas', ['Ohio']).score);
   assert.ok(M('medicaid', 'arkansas', ['Multi-state / other', 'BCBS Arkansas']).score > 0, 'the Company cell is scored and read too');
+  assert.ok(M('MediBlue Plus (HMO)', 'anthem mediblue', ['Ohio', 'Anthem']).score > M('MediBlue Plus (HMO)', 'anthem mediblue', []).score, 'a word only the Company cell carries counts toward the score');
   assert.deepStrictEqual(M('Aetna', 'aetna', undefined), M('Aetna', 'aetna', []), 'a one-column table is scored exactly as before');
   // The endpoint, driven with the real matcher over a by-state table.
   const UHC = [['Insurance', 'State', 'Network Status'], ['UHC Community Plan Non-Dual', 'Georgia', 'OON'], ['UHC Community Plan Non-Dual', 'Texas', 'INN']];
@@ -47186,7 +47191,7 @@ test('F7 (cycle 26): green is an accept and NOTHING else — "Cannot be accepted
   ['No auth required', 'No PA needed', 'No prior authorization', 'No referral', 'No pre-auth necessary', 'No face to face required']
     .forEach((v) => assert.deepStrictEqual([c.insToneCls_(v), c.insTermsIn_(v).length], ['', 0], v + ' — it toned red as a refusal'));
   // …and a real No is still one, instruction or not.
-  ['NO', 'no', 'No.', 'NO ( Process E0144)', 'NO - K0837', 'No longer accepted', 'No - auth required first', 'No auth required - not accepted']
+  ['NO', 'no', 'No.', 'NO ( Process E0144)', 'NO - K0837', 'No longer accepted', 'No - auth required first', 'No auth required - not accepted', 'No power chairs', 'No orders for this plan']
     .forEach((v) => assert.deepStrictEqual(row(v), ['bad', 'Not Accepted / NO'], v));
   // An accept word inside a stronger rule keeps that rule's colour and first term.
   assert.deepStrictEqual(row('In-Network SI/PR'), ['warn', 'SI/PR']);

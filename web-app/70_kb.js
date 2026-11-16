@@ -891,7 +891,8 @@ function insStatesIn_(text, isQuery) {
 }
 /** PURE (Node-pinned) — cycle 26 F6: the states a text OPENS with — a list of
  *  states (code in capitals, or a full name) joined by "and", "or", commas and
- *  the like, read until the first word that is neither. Returns { states,
+ *  the like ("plans in", "members in"), read until the first word that is
+ *  neither. Returns { states,
  *  end } — `end` is how far into the text the list runs (0 when it opens with
  *  something else). "TX and Oklahoma plans" → TX, OK; "Dual TX" → none. */
 function insLeadingStates_(text) {
@@ -900,7 +901,11 @@ function insLeadingStates_(text) {
   const words = [];
   let m;
   while ((m = re.exec(s))) words.push({ w: m[0], end: m.index + m[0].length });
-  const fillers = ['and', 'or', 'the', 'state', 'states', 'of', 'in', 'for'];
+  // Lead-in words may stand between the exclusion word and the FIRST state
+  // ("excluding plans in TX"); once a state is read only "and" / "or" joins
+  // the next — "except TX plans in Ohio" excludes Texas, and names Ohio.
+  const leadIn = ['and', 'or', 'the', 'state', 'states', 'of', 'in', 'for', 'plan', 'plans', 'members', 'residents', 'patients'];
+  const joins = ['and', 'or'];
   const states = [];
   let end = 0, i = 0;
   const add = function (c, at) { if (states.indexOf(c) < 0) states.push(c); end = at; };
@@ -909,8 +914,8 @@ function insLeadingStates_(text) {
     const two = i + 1 < words.length ? lc + ' ' + words[i + 1].w.toLowerCase() : '';
     if (two && Object.prototype.hasOwnProperty.call(US_STATE_NAMES, two)) { add(US_STATE_NAMES[two], words[i + 1].end); i += 2; continue; }
     if (Object.prototype.hasOwnProperty.call(US_STATE_NAMES, lc)) { add(US_STATE_NAMES[lc], words[i].end); i++; continue; }
-    if (w.length === 2 && w === w.toUpperCase() && US_STATE_CODES.indexOf(w) >= 0) { add(w, words[i].end); i++; continue; }
-    if (fillers.indexOf(lc) >= 0) { i++; continue; }
+    if (w.length === 2 && US_STATE_CODES.indexOf(w) >= 0) { add(w, words[i].end); i++; continue; }   // capitals only: the list holds none in lower case
+    if ((states.length ? joins : leadIn).indexOf(lc) >= 0) { i++; continue; }
     break;
   }
   return { states: states, end: end };

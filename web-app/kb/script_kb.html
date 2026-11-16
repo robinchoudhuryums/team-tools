@@ -1587,7 +1587,7 @@ var INS_IS = {
     // "accept" and toned GREEN. A leading "No" that only says nothing is
     // required ("No auth required") is not a refusal — see noRequirement.
     return v === 'no' || (/^no([^a-z]|$)/.test(v) && !INS_IS.noRequirement(v)) ||
-      /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't|does\s*n[o']?t|cannot|can\s*not|can'?t|won'?t|will\s+not|unable\s+to)[\s-]*((currently|yet|be|being)\s+)*accept(ed|ing|able|s)?([^a-z]|$)/.test(v) ||
+      /(^|[^a-z])(not|no\s+longer|never|non|do\s*n[o']?t|don't|does\s*n[o']?t|can\s*not|can'?t|won'?t|will\s+not|unable\s+to)[\s-]*((currently|yet|be|being)\s+)*accept(ed|ing|able|s)?([^a-z]|$)/.test(v) ||
       insWord_(v, 'unaccepted') || insWord_(v, 'unacceptable');
   },
   // F7: "No auth required", "No PA needed", "No referral" — a statement that

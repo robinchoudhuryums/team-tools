@@ -4484,6 +4484,26 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 5: insLeadingStates_ simplified, fillers widened",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insLeadingStates_"
+   ],
+   "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 5: insLeadingStates_ lead-in words before the first state only",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "insLeadingStates_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -11256,7 +11276,7 @@
   "insLeadingStates_": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "8dd15f6f2035eaf5"
+   "sha": "3cfcd020e0cfcb5b"
   },
   "insNameCodeDetail_": {
    "file": "70_kb.js",
