@@ -11227,6 +11227,20 @@ test('F14 DOM (cycle 26): a certificate whose record did not verify says so abov
   await hSettle_(40);
   assert.ok(/No copy was made\. NOT VERIFIED — the responses were changed\./.test(h.$('#ed-copy-pages').textContent), h.$('#ed-copy-pages').textContent);
   assert.ok(!h.read('ED_STATE.copy'), 'nothing to print, download or email');
+  // A record short of verified (a legacy row) is not tampered: the copy IS made — its builder is handed the verdict for
+  // the label, and the sentence stands above the preview. (The builder is stood in; ED3's drives run the real one.)
+  h.read('edBuildCopy_ = function () { window.__c26Rec = arguments[5]; return Promise.resolve(null); }');
+  ans = { success: true, dataUri: hPdfUri_, verified: false, tampered: false, verdict: 'NOT VERIFIED — no signature hash is on record, so this record could not be checked.' };
+  h.$('[data-ed-copy="print"]').click();
+  await hSettle_(40);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.window.__c26Rec)), { verified: false }, 'the copy\'s label is told the record did not verify');
+  const cn = h.$('#ed-copy-overlay .ed-integrity-note[role="alert"]');
+  assert.ok(cn && cn.textContent === ans.verdict && cn.getAttribute('data-integrity') === 'unverifiable', 'and the preview says so above the pages');
+  ans = { success: true, dataUri: hPdfUri_, verified: true, tampered: false, verdict: 'Verified now.' };
+  h.$('[data-ed-copy="print"]').click();
+  await hSettle_(40);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.window.__c26Rec)), { verified: true }, 'a verified record is labelled so');
+  assert.ok(!h.$('#ed-copy-overlay .ed-integrity-note'), 'with nothing extra above the preview');
 });
 
 test('F56 DOM (cycle 26): pdf.js is run only from bytes that match its checksum — a source serving something else is passed over and its code never runs; a failed load is not kept, and the reader offers Try again and the original (driven)', async () => {

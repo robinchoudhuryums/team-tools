@@ -47458,6 +47458,16 @@ test('F13 (cycle 26): "verified" is ONE rule — a signature row, nothing mismat
   assert.deepStrictEqual([v.contentMatch, v.tampered, v.verified, v.unchecked], [null, false, false, ['no content hash is on record']], 'a legacy row is unverifiable, never verified and never tampered (F-24)');
   v = V(d, null);
   assert.deepStrictEqual([v.signed, v.verified, v.tampered], [false, false, false], 'nothing signed, nothing verified');
+  // A signature row with no stored hash (a hand-entered or legacy row): nothing to compare, so not verified — and named.
+  const noHash = row.slice(); noHash[5] = '';
+  v = V(d, noHash);
+  assert.deepStrictEqual([v.signed, v.match, v.tampered, v.verified, v.unchecked], [true, null, false, false, ['no signature hash is on record']]);
+  // An UNSIGNED PDF document whose file is not the one issued: tampering, said before anyone signs it.
+  pdfAnswer = { ok: false, why: 'missing', error: 'The PDF is not stored.' };
+  v = V(withPdf, null);
+  assert.deepStrictEqual([v.signed, v.pdfMatch, v.pdfNote, v.tampered, v.verified], [false, false, 'The PDF is not stored.', true, false],
+    'THE REGRESSION: the unsigned branch computed the PDF check and reported tampered from the content hash alone');
+  pdfAnswer = { ok: true };
   // The reader's check asks for no PDF read (getEmpDocPdf re-hashes the bytes where they are shown).
   pdfCalls = 0;
   v = V(withPdf, row, { pdf: false });
@@ -47620,8 +47630,9 @@ test('F44 (cycle 26): the sign path — a body may not embed an image the hash c
   assert.ok(sb.empDocValidateResponses_(fields, { a: big(100), b: big(each), c: big(100) }).ok, 'under the total: accepted as before');
   // The drawing.
   const P = (s) => c.empDocDrawnPng_(s);
-  assert.deepStrictEqual([P(C26_PNG), P('data:image/png;base64,'), P('data:image/png;base64,AAAA'), P('data:image/png;base64,iVBORw0KGgo' + 'A'.repeat(20)), P(C26_PNG + '"onload="x'), P('javascript:alert(1)'), P('')],
-    [true, false, false, false, false, false, false], 'a PNG data URL, the PNG signature, long enough to be a drawing, base64 to the end');
+  assert.deepStrictEqual([P(C26_PNG), P('data:image/png;base64,'), P('data:image/png;base64,AAAA'), P('data:image/png;base64,iVBORw0KGgo' + 'A'.repeat(20)), P(C26_PNG + '"onload="x'), P('javascript:alert(1)'), P(''),
+    P('data:image/png;base64,' + 'B'.repeat(300))],
+    [true, false, false, false, false, false, false, false], 'a PNG data URL, the PNG signature (300 base64 characters that are not a PNG are not a drawing), long enough to be one, base64 to the end');
   const ack = stripJsComments_(extractRawFunction('Code.js', 'acknowledgeDoc'));
   assert.ok(/if \(!empDocDrawnPng_\(sig\)\) return \{ success: false, error: 'Draw your signature before submitting\.' \};/.test(ack) && !/sig\.indexOf\('data:image\/png;base64,'\) !== 0/.test(ack),
     'THE REGRESSION: the signature was checked by its prefix only — a hand-made call could "sign" with nothing drawn');
@@ -47713,6 +47724,8 @@ test('F44 + F64 (cycle 26): a converted Google Doc\'s images are taken out (and 
   assert.ok(Math.abs(b.x + b.w / 2 - 0.5) < 0.001 && Math.abs(b.y + b.h / 2 - 0.5) < 0.001, 'its centre is the page\'s');
   assert.deepStrictEqual([hJ(ctx.edBoxAtCentre_('text', null)), hJ(ctx.edBoxAtCentre_('text', { w: 0, h: 792 }))], [null, null], 'no page size: no box');
   assert.ok(ctx.edBoxAtCentre_('textarea', letter).w > ctx.edBoxAtCentre_('date', letter).w, 'the type\'s own default size');
+  const tiny = hJ(ctx.edBoxAtCentre_('textarea', { w: 100, h: 20 }));
+  assert.deepStrictEqual(tiny, { x: 0, y: 0, w: 1, h: 1 }, 'a page smaller than the box: the whole page, never off it');
   const add = stripJsComments_(extractFnFrom(ed, 'edAddBoxAtCentre_'));
   assert.ok(/if \(!ED_STATE\.issuePdf\)/.test(add) && /ED_FIELD_CAP/.test(add) && /if \(!\(pn >= 1 && pn <= pages\)\)/.test(add) && /edAddBox_\(pn, rect\);/.test(add) &&
     /\.ed-pdf-box\[data-ed-box="' \+ i \+ '"\]/.test(add) && /el\.focus\(/.test(add), 'guarded, placed through the one add path, and the BOX (not its name field) takes focus');

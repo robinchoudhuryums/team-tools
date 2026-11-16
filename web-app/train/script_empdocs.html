@@ -2441,7 +2441,7 @@ function edAddBox_(page, rect) {
 function edBoxAtCentre_(type, pagePts) {
   if (!pagePts || !(pagePts.w > 0) || !(pagePts.h > 0)) return null;
   var d = ED_BOX_DEFAULT_PTS[type] || ED_BOX_DEFAULT_PTS.text;
-  var w = Math.min(1, d[0] / pagePts.w), h = Math.min(1, d[1] / pagePts.h);
+  var w = d[0] / pagePts.w, h = d[1] / pagePts.h;   // edBoxFromDrag_ keeps the box on the page
   return edBoxFromDrag_((1 - w) / 2, (1 - h) / 2, (1 - w) / 2, (1 - h) / 2, type, pagePts);
 }
 /** F64 (cycle 26) — "Add box": the keyboard's way to place a box. The box
