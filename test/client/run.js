@@ -47880,6 +47880,7 @@ test('F49 (cycle 26): a sign-off is of the text the reader SAW — the page send
   assert.deepStrictEqual([shown.versions['section:man-1-1'], shown.versions['chapter:1 · Intro']], [sb.hbStamp_('Hello'), sb.hbStamp_(sb.hbStamp_('Hello'))], 'a section\'s version is its text\'s stamp; a chapter\'s, its sections\' versions');
   assert.ok(!('section:man-1-2' in shown.versions), 'a draft has no version to sign');
   sb.getManualMeta();   // and the list of changes is cached too, as it is for any reader who has opened the page
+  assert.strictEqual(sb.getManualStamp().stamp, shown.stamp, 'as is the stamp a page checks its kept copy against');
   // A page from before the update sends none: refused, and told to reload.
   let r = hbPlainV_(sb.hbMarkRead('section', 'man-1-1', true));
   assert.deepStrictEqual([r.success, r.reload, /Reload the handbook, then sign/.test(r.error)], [false, true, true]);
@@ -48010,8 +48011,9 @@ test('F52 (cycle 26): what one reader may add to Team Tools\' tabs — feedback 
   assert.strictEqual(last.success, true);
   const over = hbPlain_(sb.kbFlagItem('man-2-1', 'suggest', 'One more'));
   assert.deepStrictEqual([over.success, over.limited, /a lot of feedback in the last few hours/.test(over.error), rows() - 1], [false, true, true, max], 'THE REGRESSION: no limit — a script could bury the managers\' open flags');
-  // Another reader has their own count.
-  assert.strictEqual(hbServer_(Object.assign({ tabs: sb.__tabs }, HB_ENV, { email: 'ann@example.org' })).kbFlagItem('man-1-1', 'helpful', '').success, true);
+  // Another reader has their own count — in the same cache, at the moment the first is at the limit.
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'ann@example.org').kbFlagItem('man-2-1', 'suggest', 'One more')), { success: true }, 'the limit is per reader');
+  assert.strictEqual(hbAs_(sb, 'rep@example.org').kbFlagItem('man-2-1', 'suggest', 'And another').limited, true, 'and the first reader is still at theirs');
   // Topic requests.
   const t = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
   const reqs = () => (t.__tabs.KbContentRequests || []).length - 1;
