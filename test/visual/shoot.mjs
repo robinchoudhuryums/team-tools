@@ -43,7 +43,9 @@ const KBL_SEARCH = "var a=document.getElementById('kb-ins-input'); if(a){a.value
 // Cycle 26 F5: a plan nobody lists, searched while one payor table was never
 // imported, one is empty and one is only partly read — the no-match that names
 // what it did not search instead of saying "plan not listed → TRY".
-const KBL_NOTFOUND_GAP = "var a=document.getElementById('kb-ins-input'); if(a){a.value='molina'; insLookupInput_(a);}";
+const KBL_NOTFOUND_GAP = "var a=document.getElementById('kb-ins-input'); if(a){a.value='molina'; insLookupInput_(a);}" +
+  " (function tick(n){ var g=document.querySelector('#kb-ins-results .kb-ins-guide');" +
+  " if(g){ g.scrollIntoView({ block: 'end' }); return; } if(n>0) setTimeout(function(){tick(n-1);}, 50); })(18)";
 
 // The acceptance-by-code grid is behind a disclosure, so the codes T3 NAMES
 // were never in a shot. This polls for the button rather than guessing a delay:
