@@ -4473,6 +4473,17 @@
     "searchInsurancePayors"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-16",
+   "why": "cycle 26 Batch 5: kbImportDataTable and searchInsurancePayors settled (no dead outer-catch branch; no state default)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "kbImportDataTable",
+    "searchInsurancePayors"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -12065,7 +12076,7 @@
   "kbImportDataTable": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "6d4f71726be6a208"
+   "sha": "0d325fb4c9ca6789"
   },
   "kbImportManual": {
    "file": "70_kb.js",
@@ -14210,7 +14221,7 @@
   "searchInsurancePayors": {
    "file": "70_kb.js",
    "kind": "function",
-   "sha": "2d089b4dd8750364"
+   "sha": "952c0ecbe6422382"
   },
   "searchMyCallNotes": {
    "file": "30_callnotes.js",

@@ -13722,7 +13722,7 @@ function cnDTablePreviewHtml_(key, fileName, r) {
 /** PURE (Node-pinned) — F37: what an import that DID replace the table could
  *  not finish, as one sentence run ('' when it finished everything). */
 function cnDTableAfterWarnings_(res) {
-  return [res && res.noteWarning, res && res.auditWarning, res && res.afterWarning]
+  return [res && res.noteWarning, res && res.auditWarning]
     .filter(function (w) { return !!w; }).join(' ');
 }
 function cnDTableImport_(key, btn) {

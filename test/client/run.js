@@ -47090,6 +47090,8 @@ test('F6 (cycle 26): an exclusion word excludes only the states that DIRECTLY fo
   assert.ok(M('UHC Silver HMO', 'alabama', ['Alabama']).score > 0, 'a state alone still finds a plan by its State cell (PT2)');
   assert.strictEqual(M('UHC Silver HMO', 'alabama', ['Georgia']).score, 0);
   assert.strictEqual(M('UHC Plan', 'uhc tx', ['All states except TX']).excluded, 'TX', 'a State cell that states its own exclusion is still read');
+  assert.strictEqual(M('Wellcare Value HMO - excl.', 'wellcare texas', ['Texas']).excluded, '', 'a name that ENDS in an exclusion word does not reach into the State cell');
+  assert.ok(M('Wellcare Value HMO - excl.', 'wellcare texas', ['Texas']).score > M('Wellcare Value HMO - excl.', 'wellcare texas', ['Ohio']).score);
   assert.ok(M('medicaid', 'arkansas', ['Multi-state / other', 'BCBS Arkansas']).score > 0, 'the Company cell is scored and read too');
   assert.deepStrictEqual(M('Aetna', 'aetna', undefined), M('Aetna', 'aetna', []), 'a one-column table is scored exactly as before');
   // The endpoint, driven with the real matcher over a by-state table.
@@ -47208,17 +47210,17 @@ test('F7 (cycle 26): green is an accept and NOTHING else — "Cannot be accepted
 test('F8 (cycle 26): the price row\'s payor cross-reference keeps the column\'s own label, the plan\'s state and table, and an excluded state — it showed a bare value (driven)', () => {
   const c = c26InsClient_();
   const item = { name: 'Group 3 chair', codes: { raw: 'K0827', shaped: true, certain: true, tokens: ['K0827'] } };
-  const payors = [{ name: 'UHC <Dual>', state: 'Texas', table: 'UhcPayors', tableLabel: 'UHC by state', excludedState: 'HI',
+  const payors = [{ name: 'UHC <Dual>', state: 'Texas', table: 'UhcPayors', tableLabel: 'UHC by <state>', excludedState: 'HI',
     details: [{ label: 'K0827 (451- 600) No In HI', value: 'X', code: { shaped: true, certain: true, tokens: ['K0827'] } },
       { label: 'K0800', value: 'NO', code: { shaped: true, certain: true, tokens: ['K0800'] } }] },
   { name: 'Aetna', details: [{ label: 'K0827', value: 'SI/PR', code: { shaped: true, certain: true, tokens: ['K0827'] } }] }];
   const rules = hJ(c.oopPayorRulesFor_(item, payors));
   assert.deepStrictEqual(rules, [
-    { payor: 'UHC <Dual>', code: 'K0827 (451- 600) No In HI', value: 'X', state: 'Texas', table: 'UHC by state', excluded: 'HI' },
+    { payor: 'UHC <Dual>', code: 'K0827 (451- 600) No In HI', value: 'X', state: 'Texas', table: 'UHC by <state>', excluded: 'HI' },
     { payor: 'Aetna', code: 'K0827', value: 'SI/PR', state: '', table: '', excluded: '' }], 'the rule carries where it came from');
   const html = c.oopPayorXrefHtml_(item, payors);
   assert.ok(html.indexOf('<span class="c">K0827 (451- 600) No In HI</span>') >= 0, 'THE REGRESSION: the column\'s qualifier is drawn — it was dropped, leaving a bare green X: ' + html);
-  assert.ok(html.indexOf('UHC &lt;Dual&gt; <span class="w">Texas · UHC by state</span> <span class="x">HI excluded</span>') >= 0, 'the state, the table and the exclusion beside the payor, escaped: ' + html);
+  assert.ok(html.indexOf('UHC &lt;Dual&gt; <span class="w">Texas · UHC by &lt;state&gt;</span> <span class="x">HI excluded</span>') >= 0, 'the state, the table and the exclusion beside the payor, escaped: ' + html);
   assert.ok(html.indexOf('Aetna<span class="c">K0827</span>') >= 0, 'a plan with no state or table draws neither');
   assert.strictEqual((html.match(/class="kb-oop-xref-r"/g) || []).length, 2, 'one row per matching rule, as before');
   const css = extractScript('kb/script_kb.html') + require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'web-app', 'kb', 'script_kb.html'), 'utf8');
@@ -47274,7 +47276,7 @@ test('F37 (cycle 26): an import is bound to the preview that was approved, and o
   // The order in the source: fingerprint check before any write; `done` set right after the write.
   const f = stripJsComments_(extractRawFunction('Code.js', 'kbImportDataTable'));
   assert.ok(f.indexOf('o.expect') > 0 && f.indexOf('o.expect') < f.indexOf('sh.clear()'), 'the fingerprint is checked before the tab is cleared');
-  assert.ok(f.indexOf('done = summary') > f.indexOf('SpreadsheetApp.flush()') && f.indexOf('done = summary') < f.indexOf('propSetBounded_('), 'and the import is "done" before the note step');
+  assert.ok(f.indexOf('summary.imported = true') > f.lastIndexOf('SpreadsheetApp.flush()') && f.indexOf('summary.imported = true') < f.indexOf('propSetBounded_('), 'and the import is marked imported before the note step, never after it');
 });
 
 test('F37 (cycle 26): the Admin client hands the write the fingerprint of the preview on screen, and shows what an import could not finish as a sticky warning (driven + source)', () => {
@@ -47299,7 +47301,7 @@ test('F37 (cycle 26): the Admin client hands the write the fingerprint of the pr
   ctx.cnDTableImport_('T', btn);
   ok({ imported: true, rows: 3, tab: 'InsurancePayors' });
   assert.deepStrictEqual(hJ(toasts), [['Imported 3 row(s) into InsurancePayors', 'toast-success']]);
-  assert.strictEqual(ctx.cnDTableAfterWarnings_({ noteWarning: 'a', auditWarning: 'b', afterWarning: 'c' }), 'a b c');
+  assert.strictEqual(ctx.cnDTableAfterWarnings_({ noteWarning: 'a', auditWarning: 'b' }), 'a b');
   assert.strictEqual(ctx.cnDTableAfterWarnings_({}), '');
   // The fingerprint is stored only for the file that is still the pending one.
   const read = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnDTableRead_'));

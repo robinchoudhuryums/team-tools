@@ -3575,7 +3575,7 @@ function searchInsurancePayors(query) {
       // F5: EVERY configured payor table and what became of it — searched (with
       // the rows read and any left unread), missing (no tab) or empty.
       coverage: tables.map(function (t) {
-        return { key: t.key, label: t.label, state: t.state || 'missing', rows: t.rows || 0, unread: t.unread || 0 };
+        return { key: t.key, label: t.label, state: t.state, rows: t.rows || 0, unread: t.unread || 0 };
       }),
       // NAMED, not inferred from empty `item` fields. A pricing tab that is
       // missing or unreadable produces exactly the same bare codes as a payor
@@ -3699,9 +3699,6 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
   if (!emp || !emp.isAdmin) return { error: 'Admin access required.' };
   const lock = dryRun ? null : LockService.getScriptLock();
   if (lock) lock.waitLock(15000);
-  // F37: once the table has been replaced, nothing below may report the import
-  // as failed — `done` is the answer from then on, with what went wrong on it.
-  let done = null;
   try {
     const spec = Object.prototype.hasOwnProperty.call(KB_DATA_TABLES, String(tabKey)) ? KB_DATA_TABLES[String(tabKey)] : null;
     if (!spec) return { error: 'Unknown data table: ' + String(tabKey) };
@@ -3808,11 +3805,11 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     }
 
     // F37: the table IS replaced from here. The note and the audit row are
-    // separate steps, each reported on the answer — a throw in either used to
-    // reach the catch below as "Import failed", over a live table that had
-    // just been replaced.
+    // separate steps, each inside its OWN catch and reported on the answer — a
+    // throw in either used to reach the catch below as "Import failed", over a
+    // live table that had just been replaced. Nothing after this line may
+    // throw out of its step.
     summary.imported = true;
-    done = summary;
     // PT1a: a source upload sets the standing note to what its A1 says — an
     // empty A1 clears it; a file in the tab's shape carries no note and leaves
     // it alone. After the table write, so a failed write changes neither.
@@ -3843,10 +3840,6 @@ function kbImportDataTable(tabKey, csvBase64, opts) {
     }
     return summary;
   } catch (err) {
-    if (done) {
-      done.afterWarning = 'The table was replaced, but a later step failed (' + String(err.message || err).substring(0, 200) + ').';
-      return done;
-    }
     return { error: 'Import failed: ' + err.message };
   } finally {
     if (lock) lock.releaseLock();
