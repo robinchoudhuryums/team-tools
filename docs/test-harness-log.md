@@ -3841,3 +3841,61 @@ F44, F56, F64.**
   mutations bite; and one equivalent mutant — a `Math.min(1, …)` in
   `edBoxAtCentre_` that `edBoxFromDrag_` already performs — removed, with a
   page-smaller-than-the-box case added that a broken centre fails.
+
+**Cycle 26 Batch 7 (2026-11-16) — the handbook server: F49, F50, F48, F52,
+F53, F54, F57.**
+- **The handbook sandbox (`hbServer_`) grew what the fixes needed.** A tab has
+  a GRID a block written past it does not grow (`getMaxRows`,
+  `insertRowsAfter`, a `setValues` that throws outside it — g145);
+  `Session.getScriptTimeZone`; `deleteProperty`, and a property store that
+  can refuse a write by size or by key; a `MailApp` whose failure a pin
+  decides per message; a cache that can be unreadable by key and cleared
+  ("five minutes later"); `opts.Date`, a clock a pin sets; and `opts.realTz`,
+  which makes `Utilities.formatDate` honour its timezone — opt-in, because
+  most fixtures build their days from `toISOString`.
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  Every sign-off in the pure harness goes through `hbSign_` (the version the
+  chapters answer carried, as the page sends it); `hbSignState_`'s
+  three-state pin takes the new shape; the mark fixture carries `retrain`;
+  the chapters' stamp is `v2.`-prefixed; the reminder pin's "not recorded as
+  sent" reads a property that is absent rather than `{}`. The DOM chapters
+  fixture carries `versions`, and the three drives that assert the sign-off
+  call expect the fourth argument.
+- **Pure** — ten pins: F48 (driven through the handbook's copy, twenty-five
+  better-scoring articles); F49's helpers (the retraining stamp, "newer",
+  the state grid) and F49 driven through `hbMarkRead` (a publish while a
+  page is open, the cached chapters, the refusal, the reload, the recorded
+  state, an unreadable changelog); F50 (an archived quiz, a section taken
+  out, the author's and the manager's views); two for F52 (feedback and
+  topic limits; notes and the confirm endpoint); F53 (real timezones, a
+  clock at 1 pm Central); two for F54 (the helpers with 600 readers and a
+  9 KB property; every outcome of a run); and F57, which RUNS
+  `scripts/handbook-push.mjs` — dry runs, and a real run against a temp app
+  folder with a stand-in clasp that records the `.clasp.json` it was handed.
+- **DOM** — four drives: the sign-off's version and a refusal that stays on
+  screen; an item that can no longer be done, and the archive toast; a note
+  the account did not take; the reminder run's sentence.
+- **Visual** — the handbook's Training fixtures carry a missing item, a plan
+  card with one, and a reminder run's outcome; the three training scenarios
+  were shot and read.
+- **What bit:** 119 mutations across four parallel worktrees (the worker
+  restarted mid-run, which killed the streams — the script was made
+  resumable: a mutation whose verdict is already in its stream's output is
+  skipped, and each worktree is restored first). 116 bit. The three that did
+  not were each a pin missing set-up or an assertion, not missing code: the
+  stamp a page checks its kept copy against was never cached before the
+  publish, so a fresh read that failed to move it could not be seen;
+  "another reader has their own count" built that reader a new sandbox, with
+  a new cache — the same cache now, at the moment the first reader is at the
+  limit; and nothing said that the SAME feedback from another reader is
+  theirs rather than a repeat. All three bite since. Three more mutations
+  never applied: `bite.sh --fn` finds a function's body by its first brace,
+  and `resolveScriptId({ env, local, committed })` opens one in its
+  parameters — re-run unscoped, they bit. Two pins were tightened BEFORE the
+  run for the same reason as the misses (the
+  changelog cached before a publish; a missing item's own done flag) — found
+  by asking, for each planned mutation, what the pin would have to have set
+  up to see it.
+- **One fix of the fix.** F52's server counted the notes it refused and the
+  page ignored the count — a narrower rule that would have failed silently.
+  The page says it, once per count; a DOM drive holds that.

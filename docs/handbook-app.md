@@ -341,10 +341,20 @@ sync switch and Export / Copy / Import below.
   says when it was read, with Undo. One sign-off serves every plan that names
   the section.
 - **Retraining.** When a section changes and the handbook's changelog flags the
-  change for retraining, a reader who signed before that day is asked again —
-  "Changed since you read it — please read it again" — and the plan item goes
-  back to not done until they do. A change not flagged for retraining never
-  asks; the bar only adds "it has been updated since".
+  change for retraining, a reader whose sign-off has not seen that change is
+  asked again — "Changed since you read it — please read it again" — and the
+  plan item goes back to not done until they do. A change not flagged for
+  retraining never asks; the bar only adds "it has been updated since".
+  Since cycle 26 the sign-off is of the text ON THE PAGE: the page sends that
+  text's version, and a sign-off of text that is no longer the handbook's is
+  refused ("updated after you opened it — reload"). Each mark records the
+  flagged changes that existed when it was made, so "asked again" no longer
+  depends on dates. A sign-off made before this change is asked once more if
+  its section's text has changed and the changelog flags that section at all.
+- **A plan item that can no longer be done** — a quiz its author archived, a
+  section or chapter no longer published — is shown as "No longer available"
+  and is not counted: the plan finishes on its other items and is never
+  overdue because of it. Archiving a quiz says which live plans list it.
 - **Progress** (Team training, for a manager or the admin): one row per person
   on the team — plans done and overdue, quizzes passed and locked, sections
   signed and waiting to be re-signed — with Details per plan and quiz.
@@ -352,11 +362,20 @@ sync switch and Export / Copy / Import below.
   saves a file where the browser allows it (Copy table is the reliable one).
 - **Reminder emails** are built but OFF. Once on, a daily run at 8am emails each
   reader with an overdue plan — once a day at most — the plans' titles and due
-  dates and a link. Turning them on is in
+  dates and a link (the app's /exec address, or `HANDBOOK_URL`). Each run
+  records what it did, and Team training → My team shows it beside "Reminder
+  emails are on": how many were sent and failed, a run that failed and why,
+  one that started and never finished, or that no run is on record. Turning
+  them on is in
   [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
+- **Days** — a plan's due day and the day a sign-off was made — are the
+  project's timezone (Chicago, `appsscript.json`), not Team Tools' storage
+  timezone.
 
-Sign-offs ride the `ReadMarks` tab (a fifth column, `Version`); a mark written
-before HB3.4 has none and counts as signed.
+Sign-offs ride the `ReadMarks` tab: a fifth column, `Version`, and since cycle
+26 a sixth, `Retrain` (the flagged changes the reader had seen: a date and a
+count, or `none`). A mark written before HB3.4 has no version; one written
+before cycle 26 has no `Retrain` cell.
 
 ## Setup and deploying
 
@@ -365,7 +384,12 @@ domain, and since HB2.1 the Handbook spreadsheet) is in
 [`operator-state.md`](operator-state.md#operator-the-handbook-app-hb1-2).
 
 To ship a change: `npm run handbook:push` (it checks that the copies match
-`web-app/` — run `npm run handbook:sync` first if they do not — then pushes), then
+`web-app/` — run `npm run handbook:sync` first if they do not — then pushes
+with the same pinned clasp Team Tools uses; `-- --dry-run` says which project
+it would push to). The script id comes from the `HANDBOOK_SCRIPT_ID`
+environment variable, else `handbook-app/.clasp.local.json`
+(`{"scriptId": "…"}`, gitignored), else the committed `.clasp.json`; while none
+holds a real id the push stops and says so. Then
 Deploy → Manage deployments → Edit → New version. A change to the handbook
 reader or its server readers ships in **both** projects — Team Tools with
 `clasp push -f` and a New version as usual.

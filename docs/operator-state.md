@@ -2956,7 +2956,12 @@ entry says which it is.
      committed manifest): `mkdir /tmp/hb && cd /tmp/hb && clasp create --type
      standalone --title "UMS Handbook"`. Copy the `scriptId` from
      `/tmp/hb/.clasp.json` into `handbook-app/.clasp.json` (replacing
-     `SET-ME-…`) and commit it.
+     `SET-ME-…`) and commit it — **or, since cycle 26 F57, keep it on the
+     machine**: write `{"scriptId": "<the id>"}` to
+     `handbook-app/.clasp.local.json` (gitignored), or set the
+     `HANDBOOK_SCRIPT_ID` environment variable. The push uses the first of
+     environment, local file, committed file that holds a real id, and puts
+     the committed `.clasp.json` back afterwards.
   2. `npm run handbook:push` — it checks that the copies match `web-app/` (run
      `npm run handbook:sync` first if they do not), then pushes.
   3. In the new project's editor: Project Settings → Script Properties → add
@@ -3155,3 +3160,35 @@ entry says which it is.
   is no longer kept: closing and reopening the form tries again. This change
   is in the hand-written page, so push the handbook app
   (`npm run handbook:push`) and cut a new version.
+
+  **Since cycle 26 Batch 7 (the handbook server).** Nothing must be set.
+  - **`npm run handbook:push`** now refuses to push while no script id is
+    configured (see step 1) and runs a pinned clasp through npx; `npm run
+    handbook:push -- --dry-run` says which project it would push to. If you
+    have been pushing from a hand-edited `handbook-app/.clasp.json`, move the
+    id into `handbook-app/.clasp.local.json` and `git checkout` the committed
+    file.
+  - **`ReadMarks` gains a sixth column, `Retrain`** — written by the app; on an
+    existing tab its header cell (F1) stays blank (type `Retrain` there if
+    you like — the app does not read this tab's header). Do not edit the
+    cells: they decide who is asked to read a section again.
+  - **After the deploy** every reader's browser re-reads the chapters once;
+    a page that was open across the deploy must be reloaded before "I've
+    read this" works (it says so). **Expect a one-time wave of "read it
+    again"**: anyone who signed a section before this deploy whose text has
+    since changed, where the changelog flags that section for retraining, is
+    asked once more.
+  - **Auto-managed Script Properties** (handbook project):
+    `HANDBOOK_REMINDERS_OUTCOME` (the last reminder run — `{at, status, sent,
+    failed, overdue, error}`; shown on Training → My team; delete to forget
+    it), `HANDBOOK_REMINDERS_RUNNING` (a run's claim, gone when it ends; a run
+    the platform cut off leaves it for at most fifteen minutes — delete it to
+    run again sooner), and `HANDBOOK_REMINDERS_LAST` with `…_LAST_1`,
+    `…_LAST_2`… (who has been emailed today — deleting them during the day
+    lets a second run email people again).
+  - **Optional: `HANDBOOK_URL`** — the address reminder emails link to. Unset,
+    it is the deployment's own address with a `/dev` ending made `/exec`. Set
+    it if readers should arrive through another address.
+  - **Limits a reader can meet:** 30 pieces of section feedback and 5 topic
+    requests per six hours (`HB_FEEDBACK_WINDOW_MAX`, `HB_REQUEST_WINDOW_MAX`
+    in `Handbook.js`), and 500 synced notes per account.

@@ -11,6 +11,40 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-16 — Cycle 26 Batch 7 (the handbook server)
+
+**Adds NO operator state that must be set.** Deploy the handbook app:
+`npm run handbook:push` + New version. Team Tools' own change (a search option
+only the handbook uses) rides with its next deploy; nothing depends on it.
+
+- **`npm run handbook:push` needs the script id somewhere real.** The committed
+  `handbook-app/.clasp.json` still holds the placeholder. Put the id in
+  `handbook-app/.clasp.local.json` as `{"scriptId": "…"}` (it is gitignored)
+  or in `HANDBOOK_SCRIPT_ID`, or commit it. With none, the push stops and says
+  so. `npm run handbook:push -- --dry-run` shows what it would do.
+- **"I've read this" is of the text on the page.** If the section changed
+  after the page was opened, the sign-off is refused with "reload" and nothing
+  is recorded. A page open across this deploy must be reloaded once.
+- **Who is asked to read again** no longer depends on dates. Expect a one-time
+  wave after the deploy: readers who signed a section before it, where the
+  text has since changed and the changelog flags that section for retraining.
+  This catches the people who signed the OLD text of a flagged change while
+  its import was pending (the two flagged changes of late October among them).
+- **A plan with an archived quiz or a removed section can finish.** The item
+  shows as "No longer available" and is not counted. Archiving a quiz names
+  the live plans that list it.
+- **Handbook search** finds handbook sections even when many Team Tools
+  Reference articles score higher for the same words.
+- **"Overdue" follows the day in Chicago**, not India.
+- **Limits:** 30 pieces of section feedback and 5 topic requests per reader
+  per six hours; the same feedback or topic twice is recorded once; 500 synced
+  notes per account.
+- **Reminders (still off by default):** each run records its outcome, shown on
+  Training → My team; two runs cannot overlap; the list of who was emailed
+  survives a long list and a cut-off run; the link ends /exec (or is
+  `HANDBOOK_URL`).
+- Walk S183 on DEV.
+
 ## 2026-11-16 — Cycle 26 Batch 6 (Employee Docs integrity)
 
 **Adds NO operator state** (three constants in `00_config.js`: the copy-email

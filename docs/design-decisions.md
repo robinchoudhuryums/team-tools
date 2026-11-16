@@ -6265,6 +6265,12 @@ pick them up without re-deriving the context.
   beside Mark as read (two buttons that mean nearly the same); reminders on by
   default (they spend the deployer's shared email allowance — the operator's
   call to make).
+  **Amended (cycle 26 F49).** What asks again is still the changelog's
+  retraining flag and never a bare version change — but it is no longer
+  judged by a date. A mark records the retraining state it saw, and the page
+  sends the version of the text it showed; see
+  [the Batch 7 decision](#c26-a-handbook-sign-off-is-of-the-text-shown).
+  The reminder ledger, outcome and link changed in the same batch (F54).
 - <a id="bookmarks-follow-the-account-notes-stay-in-the-browser"></a>**Bookmarks follow the reader's account; notes stay in the browser unless the reader turns on syncing behind a patient-information warning (handbook app HB2.2, operator plan 2026-10-28)**
   The plan's two answers: bookmarks are synced to the account, and notes are
   "kept in the browser by default; syncing is optional and warns against
@@ -6923,6 +6929,70 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="c26-a-handbook-sign-off-is-of-the-text-shown"></a>**A handbook sign-off is of the text shown and records the retraining state it saw; a plan counts only what can be done; per-reader limits; a reminder run records its outcome; the push finds its script id (cycle 26 Batch 7: F49, F50, F48, F52, F53, F54, F57).**
+  - **The versions ride the chapters answer; the page hashes nothing (F49).**
+    The server must know which text the reader saw. A client twin of
+    `hbStamp_` would be a mirror whose drift refuses every sign-off (g120);
+    instead `getManualParts` sends each item's version WITH the text, the
+    browser keeps both together (IndexedDB), and a sign-off hands the item's
+    back. The chapters' stamp gained a format prefix so a copy kept from
+    before — text without versions — is refetched rather than trusted.
+  - **A mark records the retraining state it saw (F49).** The alternatives
+    for "has a flagged change happened since this was signed" were a date
+    compare (the changelog's date is authored, the import comes later — the
+    finding), a version compare alone (a typo fix would send everyone back,
+    which the HB3.4 decision ruled out), and a ledger of which version each
+    flagged entry produced (the handbook app only reads the KB; it would be
+    guessing from two caches). Recording `latest flagged date # count` on
+    the mark is exact with what the app can see: the changelog and the text
+    are published together, the sign-off is refused unless the reader's text
+    is the sheet's, so "the flagged changes present when I signed" IS "the
+    flagged changes I have read".
+  - **A flagged item is judged against the sheet, not the cache (F49).** The
+    changelog and the chapters are cached separately for five minutes; a mark
+    must not pair a new flagged change with the text before it. So the
+    changelog is read from the sheet at every sign-off (one cell), and the
+    chapters too when it flags the item or the versions differ — a second or
+    two on those sign-offs only. The read refreshes the cache, so the reader
+    told to reload gets the new text at once.
+  - **Older marks fail toward asking (F49, g159).** A mark made before the
+    state was recorded cannot say what it saw. Signed on the text as it is
+    now: signed. Signed on other text, and the section has a flagged change
+    at all: asked again, once (the new mark records the state). This asks a
+    few readers who had in fact read the flagged text and then saw a later
+    typo fix — chosen over leaving unasked the readers who signed the old
+    text while an import was pending, which is the case the record exists for.
+  - **A missing item leaves the count; it does not block or vanish (F50).**
+    Refusing to archive a quiz a live plan lists was rejected (the manager
+    archives because the quiz is wrong); dropping the item from the plan was
+    rejected (restoring the quiz should bring it back). The item stays in the
+    plan, is shown as "No longer available", and is counted nowhere.
+  - **The search option is narrowing-only and lives in Team Tools' search
+    (F48).** The handbook cannot edit its copy, and a second search would
+    drift. `manualOnly` is honoured only when exactly `true`, cannot show a
+    caller anything they could not already see, and Team Tools itself does
+    not use it.
+  - **Limits live in the script cache and fail open (F52).** Six hours is the
+    cache's longest life, so the window is that. A Script Property per reader
+    was rejected (g07); a sheet scan per write was rejected (it is the tab
+    being protected). An unreadable cache lets feedback through: the limit
+    guards against a flood, and must not be the reason a real suggestion is
+    lost. Team Tools still reads `KbFeedback` over a row tail — a follow-on.
+  - **The reminder ledger is today's list in a few pieces (F54).** A tab in
+    the Handbook spreadsheet was the alternative; properties were kept
+    because the run must record who it emailed even when the spreadsheet is
+    the thing failing, and the pieces are bounded (twenty), not one per reader.
+  - **One run at a time by a claim, not by holding the lock (F54).** The
+    project lock for the length of a mail loop would refuse every reader's
+    save with "The handbook is busy". The claim is a property set under the
+    lock and held for at most fifteen minutes.
+  - **The script id can stay on the machine (F57).** A script id is not a
+    secret, and committing it (the documented way) still works; but the file
+    had held a placeholder since HB1.2 while the app was deployed from a
+    hand-edited copy that any checkout puts back. `handbook-push.mjs` reads
+    the id from the environment, then a gitignored `.clasp.local.json`, then
+    the committed file, writes it into `.clasp.json` only for the push, and
+    restores the committed bytes. clasp is the version Team Tools' push pins.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

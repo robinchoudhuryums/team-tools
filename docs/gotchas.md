@@ -102,6 +102,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   be read is "unknown", said as such. Verify: the F2 pin, driven through the
   real builder.
 
+  **A FIFTH instance (cycle 26 F50): a plan nobody can finish.** A handbook
+  training plan lists chapters, sections and quizzes. Its progress counted
+  every item, and "missing" was decided only for a quiz, by whether a TITLE
+  could be found — among archived quizzes too. So a plan that listed a quiz
+  its author later archived showed "Take the quiz" (refused: "not in the
+  handbook"), could never reach done = total, turned Overdue for good, sat in
+  the manager's overdue tile, and — reminders on — emailed its reader every
+  day. A section an import removed did the same through "I've read this".
+  `hbItemMissing_` decides for every kind (a quiz that cannot be TAKEN now; a
+  chapter or section not published); a missing item is shown and said, and
+  is not in the total, the done count or the overdue test. A plan with
+  nothing left is "Nothing to do", never Overdue. Archiving a quiz answers
+  with the live plans that still list it, and the author's plan card says
+  how many items are gone. Verify: the F50 pin and DOM drive.
+
 <a id="g03-roster-inclusion-goes-through-emprosteremail-row-the"></a>
 
 - **Roster INCLUSION goes through `empRosterEmail_(row)` — the one predicate
@@ -235,6 +250,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   once each copy reads back. A property you must set past the page's limit can
   be set from a one-line editor function
   (`PropertiesService.getScriptProperties().setProperty(k, v)`).
+
+  **AMENDED (cycle 26 F54): a ledger that grows with the audience.** The
+  handbook's reminders kept `{email: day}` for every reader still overdue in
+  ONE property, written once after the whole loop. About two hundred
+  addresses fill a value: the write then failed with a warning in a log, and
+  any second run that day emailed everyone again; a run cut off part-way had
+  recorded nobody. The list is today's addresses only now, split into pieces
+  of whole addresses (`HANDBOOK_REMINDERS_LAST` is `{day, pieces}`; the
+  pieces are `…_1`, `…_2` — a fixed few, not a key per reader), written every
+  25 emails and at the end, pieces before the head. A list too long to keep
+  is said in the run's outcome. The older shape is still read. Verify: the
+  F54 helper pin (600 readers, a 9 KB property).
 
 <a id="g08-a-test-function-defined-twice-silently-wins"></a>
 
@@ -562,6 +589,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   inside the lock. (A refused caller is still refused before any of it —
   F58.) Verify: the F44 "heavy checks" pin, which reads each function's
   order.
+
+  **AMENDED (cycle 26 F52): the caller before the person named.** The
+  handbook's `hbConfirmPerson` took the lock, looked up the address it was
+  given, and answered "That person has not chosen a manager" before it asked
+  whether the CALLER could answer for anyone — so any signed-in reader could
+  learn, address by address, who had picked a manager, and held the lock to
+  be told. A caller who is neither an admin nor a manager is refused before
+  the lock, and every non-admin refusal is one sentence whatever the reason;
+  only an admin (who sees everyone anyway) is told what is actually wrong.
+  The same finding's other halves are limits, not order: synced notes are
+  capped per ACCOUNT (the check counted the keys in one call) and taken only
+  for a published section, new ones written in one block; and the two writers
+  into Team Tools' tabs (section feedback, topic requests) take a per-reader
+  count in the script cache — a window that does not slide, the same thing
+  once — failing OPEN when the cache cannot be read. Verify: the two F52 pins.
 
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
@@ -1634,6 +1676,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   "did this happen today" check over a `fmtDate_` stamp owes the same
   conversion. Pinned in PR4-1.
 
+  **AMENDED (cycle 26 F53): whose day.** The handbook app copies Team Tools'
+  readers, and with them `fmtDate_` — Team Tools' storage timezone, India.
+  It used that for its OWN days: a plan's due day against today, and the day
+  a sign-off was made. Its readers are the whole domain and its project is
+  in Chicago (appsscript.json; the reminder trigger's 8 am), so a plan due
+  on the 13th read "Overdue" from about 12:30 pm Central ON the 13th.
+  `hbDay_` formats in `Session.getScriptTimeZone()`; `fmtDate_` stays for
+  what the app writes into Team Tools' tabs. Verify: the F53 pin, which runs
+  with real timezones and a clock set to 1 pm Central.
+
 <a id="g52-the-test-roster-rows-keep-their-fixture"></a>
 
 - **The TEST roster rows keep their FIXTURE timezones, and setup restores them
@@ -1849,6 +1901,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   could be lost with nothing on screen. It is shown now, as a sticky warning.
   Verify: the F5 pure pins (server and client) and the F5 DOM drive; the F37
   client pin.
+
+  **AMENDED (cycle 26 F54): a trigger reads nothing.** The handbook's daily
+  reminder run ended `return { sent, failed, overdue }` — and on a store that
+  would not open, `return { error }`. Run from the editor that is a log line;
+  run from its trigger it reaches nobody, and the app has no health surface.
+  Every path past the owner check now writes `HANDBOOK_REMINDERS_OUTCOME`
+  (status ok / partial / failed / off, the counts, the first error) — and
+  `running` at its start, which is what a run the platform cut off leaves
+  behind. Team progress shows the last run beside "Reminder emails are on",
+  and says so when NO run is on record. The same batch: one run at a time (a
+  claim taken under the lock, held past it, fifteen minutes at most); the
+  sent list written as the run goes; and the link made the deployed address
+  (`/dev` → `/exec`, or the `HANDBOOK_URL` property). Verify: the two F54
+  pins and the F54 DOM drive.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -3194,6 +3260,32 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   without a `[signature]` block never drew its signature in the copy — the
   signature image now rides every signed document. Verify: the F44 "sign
   path" pin and the F14 + F44 DOM drive.
+
+  **AMENDED (cycle 26 F49): a record of what was read must be of what was
+  SHOWN (the handbook's sign-offs).** "I've read this" appends a mark with
+  the section's version — the stamp of its text — so the record says WHAT was
+  read. Two holes. (1) The version was the SERVER's at the moment of the
+  click. A reader's page holds the chapters it loaded (kept in the browser,
+  checked against a stamp the server caches for five minutes): a reader who
+  pressed the button on text opened before an import was recorded as having
+  read the import. (2) What asks a reader to sign again is a changelog entry
+  flagged for retraining — judged by "dated after the day it was signed".
+  The date is AUTHORED in the repo; the import comes later. Anyone who signed
+  the old text between the two — or the same day, the compare being strict,
+  or across midnight in India, where the day was taken — was never asked.
+  Now the chapters answer carries each item's `versions`, the page hands back
+  the one for the text it shows, and `hbMarkRead` refuses a sign-off whose
+  version is not the handbook's (reading the sheet, not the cache, where the
+  changelog flags the item — and refreshing the cache, so a reload gets the
+  new text). The mark also records the RETRAINING STATE the handbook was in
+  (`hbRetrainStamp_`: the latest flagged date and how many are flagged, read
+  from the sheet at that moment), and a mark is asked again exactly when the
+  changelog flags something it has not seen (`hbRetrainNewer_`) — no dates.
+  A mark from before this cannot be exact, so it fails toward asking (g159):
+  other text than now's, and the item has a flagged change at all — asked
+  once. A changelog that cannot be read refuses the sign-off rather than
+  record "nothing flagged". Verify: the two F49 pure pins and the F49 DOM
+  drive.
 
 <a id="g103-leave-deduction-client-mirrors-the-server-s"></a>
 
@@ -5803,6 +5895,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `unread` on the table's coverage, never dropped in silence. Verify: the
   F5 + F38 pin (the bound set to 1, three cards flagged, the one with no twin
   not).
+
+  **AMENDED (cycle 26 F48): cut, then filtered.** The handbook app searches
+  with Team Tools' own search, copied, and serves handbook sections only. It
+  did that by FILTERING the answer: the search scored every row of the KB tab
+  — Team Tools' ordinary Reference articles included — cut the list to its
+  twenty best, and the handbook's wrapper then dropped whatever was not a
+  handbook section. A query where twenty article hits (an article gives up to
+  three) outscored the handbook left the reader nothing, under "Didn't find
+  it?", though sections matched; and "nothing found" was computed before the
+  filter, so the search signal never counted those searches as zero-result.
+  The search now takes `manualOnly` (true only — narrowing, like
+  `publishedOnly`) and skips every other row BEFORE it scores, makes a row
+  visible to the call router, or cuts; the handbook's wrapper always passes
+  it and keeps its filter as a second check. Verify: the F48 pin, driven
+  through the handbook's copy with twenty-five better-scoring articles.
 
 <a id="g153-clearing-the-roster-email-does-not-reach-the-gate-lists"></a>
 
