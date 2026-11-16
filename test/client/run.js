@@ -47879,6 +47879,7 @@ test('F49 (cycle 26): a sign-off is of the text the reader SAW — the page send
   const shown = hbPlainV_(sb.getManualParts());
   assert.deepStrictEqual([shown.versions['section:man-1-1'], shown.versions['chapter:1 · Intro']], [sb.hbStamp_('Hello'), sb.hbStamp_(sb.hbStamp_('Hello'))], 'a section\'s version is its text\'s stamp; a chapter\'s, its sections\' versions');
   assert.ok(!('section:man-1-2' in shown.versions), 'a draft has no version to sign');
+  sb.getManualMeta();   // and the list of changes is cached too, as it is for any reader who has opened the page
   // A page from before the update sends none: refused, and told to reload.
   let r = hbPlainV_(sb.hbMarkRead('section', 'man-1-1', true));
   assert.deepStrictEqual([r.success, r.reload, /Reload the handbook, then sign/.test(r.error)], [false, true, true]);
@@ -47970,6 +47971,7 @@ test('F50 (cycle 26): a plan item that can no longer be done is `missing` and no
   mine = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMyTraining()).plans;
   assert.deepStrictEqual(mine[0].items.map((i) => [i.kind, i.missing]), [['section', true], ['chapter', true], ['quiz', true]], '1 · Intro has no published section left, so the chapter is gone too');
   assert.deepStrictEqual([mine[0].done, mine[0].total, mine[0].missing, mine[0].overdue], [0, 0, 3, false], 'nothing left to do is not overdue');
+  assert.deepStrictEqual(mine[0].items.map((i) => i.done), [false, false, false], 'a missing item is not shown as done either — the section was signed, the quiz passed');
   // The pure rule.
   const pub = { departments: ['A'], sectionIds: { 'man-a-1': 1 } };
   const M = (kind, id) => sb.hbItemMissing_({ kind, id }, pub, { 'q-live': 1 });
