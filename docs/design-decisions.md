@@ -6923,6 +6923,70 @@ pick them up without re-deriving the context.
     written by a source import for its own table only; PT1a's single-table
     value reads as InsurancePayors'. An unreadable map is said on every result
     group and, on import, the loss of the other tables' notes is said too.
+- <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
+  - **`verified` is its own field, not "not tampered" (F13).** A check has
+    three outcomes and the old flag recorded one of them. `empDocVerdict_`
+    keeps `tampered` (something is provably wrong) and adds `verified`
+    (everything was checked and matched) and `unchecked` (what could not be,
+    by name), so a client cannot turn "we could not read the PDF" into a
+    green tick by testing the wrong flag. Rejected: making an unreadable PDF
+    `tampered` — it would call a Sheets outage tampering on every document.
+  - **The certificate is still produced when its record fails, and says so
+    (F14).** HR needs the document in hand exactly when something is wrong
+    with it, so a certificate that does not verify is made with "NOT
+    VERIFIED" and the reason in a red box under its title (and above the
+    pages in the viewer) rather than refused. The COPY is different — it is
+    the thing that gets emailed onward as "from the signed original" — so an
+    altered record makes none; one that is merely short of verified (a legacy
+    row with no hash) is made and labelled "record NOT verified".
+  - **The reader learns the record's state without re-reading the PDF
+    (F14).** `getMyDoc` runs the verdict with `{ pdf: false }`: the hashes
+    are recomputed from cells already read, and the megabytes of the stored
+    PDF are not fetched a second time per open (the reader's own PDF load
+    re-hashes them anyway and reports through `integrity`).
+  - **The copy email keeps outside addresses, behind the confirm it already
+    had (F15).** ED3's operator decision stands: a signed document sometimes
+    has to reach a personal address or a lawyer. What changed is around it —
+    a per-person cap (`EMPDOC_COPY_WINDOW_MAX`, ScriptCache, failing open so
+    a cache outage cannot stop HR sending a document), managers limited to
+    people who are managers today, and a sentence in the message saying the
+    attachment was assembled on the sender's computer and that the
+    certificate in the app is the record. Restricting the endpoint to
+    company addresses was the alternative and was not taken. Building the
+    copy on the server (so the bytes could be vouched for) is not possible
+    here: Apps Script has no PDF library and the domain blocks Drive. The
+    audit row's SHA-256 stays the tie between a sent file and its send.
+  - **A dropped manager is named, not rerouted (F15).** F41 reroutes a
+    NOTICE to the current manager because somebody must act on it. A copy of
+    a signed document is not a task; sending it to a person the sender did
+    not choose would be a disclosure. The preview says who was left out and
+    why, and the sender can add an address.
+  - **A body image must be a stored one (F44).** Refusing at issue was
+    chosen over fetching and hashing a linked image at issue: the fetch
+    would have to be repeated at every read to mean anything. A document
+    that needs pictures is issued as a PDF, whose bytes are hashed.
+  - **A review-only document has no Submit (F44).** Adding a "mark as read"
+    record would be a new capability; the defect was a button that could
+    only fail, so the button is withheld and the document is simply shown.
+  - **pdf.js is fetched, checked and injected — not `integrity` on a script
+    tag (F56).** SRI on a `<script src>` would verify one source and stop: a
+    blocked CDN is the common failure here, and the two apps need a second
+    source. Fetch-then-hash gives both properties with one code path, and
+    the hashes are derived from the `pdfjs-dist` the repo already installs
+    for its tests, so the pin can recompute them offline. The worker is
+    loaded the same way and run on the page's thread (as HB4.1 chose).
+    Bundling pdf.js into the project was rejected again: about 1.4 MB of
+    minified source in every page load of both apps, for a feature most
+    sessions never open.
+  - **Ctrl/⌘+Enter in the Scratchpad (F64).** Plain Enter must keep making a
+    new line, and Space must keep typing a space, in an editor, so the
+    action takes a chord. State on the tick
+    box rides CSS alternative text because the Scratchpad's sanitizer
+    (INV-307) strips every attribute it does not list, ARIA included, and
+    widening a sanitizer allowlist for this was not worth the risk.
+  - **"Add box" centres and selects (F64).** A keyboard user cannot point at
+    a place on a page; ED2's arrow keys already move and resize a selected
+    box on the 1/8-inch grid, so the missing step was only creating one.
 - <a id="c26-payor-lookups-say-what-they-searched"></a>**A payor lookup says which tables it searched, a table import writes what its preview showed, and the handbook's import tabs are written in place (cycle 26 Batch 5: F5, F6, F7, F8, F37, F38, F40)**
   - **Coverage rides the answer (F5).** The lookup is ONE search over every
     payor table, so "not found" is a claim about all of them. Rather than

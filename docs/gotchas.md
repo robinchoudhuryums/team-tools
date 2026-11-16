@@ -553,6 +553,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the scan's ST3, not this fix. Verify: the three F18 pins + the F18 DOM
   drive.
 
+  **AMENDED (cycle 26 F44): work that changes nothing runs before the
+  lock.** `issueDoc` took the project lock and THEN decoded the uploaded PDF
+  (up to 4 MB of base64), hashed it, counted its pages and validated the
+  payload; `createCoaching` did the same with a screenshot. None of that
+  writes, and all of it is slow — every punch and note save in the building
+  waited on it. The checks now run first; only the store and the append are
+  inside the lock. (A refused caller is still refused before any of it —
+  F58.) Verify: the F44 "heavy checks" pin, which reads each function's
+  order.
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -2862,6 +2872,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   which would otherwise drop a per-element listener; `cnBeginEdit_` only
   focuses the field.
 
+  **AMENDED (cycle 26 F64): a pointer action needs a keyboard path.** Three
+  things could only be done with a mouse. In the Scratchpad, a checklist
+  item is ticked by clicking its box — hit-tested by the click's x-offset
+  inside the list item — and a link opens on Ctrl/⌘+click; a keyboard user
+  could do neither, and a screen reader heard no state on the box. Ctrl/⌘+
+  Enter now does what the click does for whatever the cursor is in
+  (`cnScratchEditorKeydown_`, sharing `cnScratchOpenLink_` and
+  `cnScratchToggleItem_` with the click), and the box carries its state as
+  CSS alternative text ("Not done: " / "Done: ") — the sanitizer strips ARIA
+  attributes from stored HTML, so the state cannot ride one. In Issue Docs,
+  a field box could only be DRAWN on the PDF by dragging: "Add box" beside
+  the box type places one of that type in the middle of the page typed next
+  to it and selects it, and the arrow keys ED2 already gave a selected box
+  take it from there. Verify: the F64 pure pin and the two F64 DOM drives.
+
 <a id="g92-training-questions-email-managers-immediately"></a>
 
 - **Training questions email managers immediately.**
@@ -3145,6 +3170,30 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (PT/OT Rx, seating evals) submitted to payers — those need a certified e-sign
   vendor or a DMEPOS platform (CMS signature-validity + the supplier-can't-author
   rule + corroborating-record requirements are out of this tool's reach).
+
+  **AMENDED (cycle 26 F44): a hash vouches only for the bytes it covers
+  (Employee Docs).** Four places where the signed record said more than it
+  could prove. (1) A written document's body could embed an image by web
+  address: the content hash covered the ADDRESS, so what a signed document
+  shows could change after signing with every hash still matching. A body
+  image must be a stored one (`kbimg:`) — `empDocBodyLinkedImage_` refuses
+  anything else at issue, and a converted Google Doc's `kbdoc:` placeholders
+  (which nothing resolves for a document, so they were frozen into the body
+  as text) are taken out by the converter's Employee Docs path and said. (2)
+  A signature was accepted if it BEGAN `data:image/png;base64,` — a
+  hand-made call could sign with the prefix alone; the row said signed,
+  hashed it, and every reader drew nothing. `empDocDrawnPng_` checks the
+  whole shape. (3) The certificate printed the CURRENT acknowledgement text
+  under any signature; it prints the text of the version on the signature
+  row (`EMPDOC_ACK_TEXTS`), or says that version's text is not on file. (4)
+  Answers were capped per field but stored together in one cell, so several
+  long answers failed in the spreadsheet with its raw error —
+  `EMPDOC_RESPONSES_TOTAL_MAX` refuses first, naming the longest. Also: a
+  review-only document (no signature, no fields) showed a Submit that could
+  only fail — `canComplete` withholds it; and a written document signed
+  without a `[signature]` block never drew its signature in the copy — the
+  signature image now rides every signed document. Verify: the F44 "sign
+  path" pin and the F14 + F44 DOM drive.
 
 <a id="g103-leave-deduction-client-mirrors-the-server-s"></a>
 
@@ -3558,6 +3607,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   again); and **a ledger that is the record itself** rather than a second
   store that can disagree with it. Verify: the R pin's four verdicts, the
   round-trip mirror, and the editor suite's replay of the 2026-08 sequence.
+
+  **AMENDED (cycle 26 F44): a recurring job's window starts where its last
+  run ended.** The weekly coaching recap mailed each rep the non-critical
+  items "logged in the last 7 days" — `now − 7×24h`. A trigger does not fire
+  at the same second each week: a run an hour later than the week before
+  dropped the items logged in that hour, for ever (they were older than the
+  window when it finally ran, and the previous run was before them); a run
+  made up a day late dropped a day. `coachRecapCutoff_` starts the window at
+  the previous recap's heartbeat (`AUTOMATION_DIGEST_LAST_RUNS.coachingRecap`)
+  minus `CONFIG.COACHING_RECAP_OVERLAP_MIN`, when that heartbeat is between a
+  day and four windows old; otherwise the fixed window stands (a first run, a
+  manual re-run minutes later, a job dormant for months). The overlap means
+  an item logged in the minutes around a run can appear in two recaps — at
+  least once, chosen over at most once. The email says "since your last
+  recap" when that is the window. Verify: the F44 "heavy checks" pin (the
+  cutoff grid and the digest's wiring).
 
 <a id="g116-your-test-tooling-lies-in-both"></a>
 - **Your test TOOLING lies in both directions, and a green pin is not the same
@@ -4496,6 +4561,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   imported" on purpose — the next import rewrites it. Verify: the Seams F20
   drive.
 
+  **AMENDED (cycle 26 F13 + F14): "could not check" is not "checked".**
+  Employee Docs' Verify recomputes three things: the content hash, the PDF's
+  SHA-256 (Batch H) and the signature hash. Each can come back true, false
+  or NULL — null meaning the check could not be made (no hash on record; the
+  stored PDF could not be read). The verdict was `tampered`, built from the
+  falses alone, and the client toasted green whenever it was not tampered: a
+  signed PDF document whose file could not be read at all said "Integrity
+  verified — signature, content and PDF hashes match". And only Verify ran
+  the recompute. The certificate was produced straight from the stored row
+  (an altered response printed beside the ORIGINAL signature hash, under a
+  title that reads as proof), and the finished copy was built from a document
+  the reader already knew was altered, then stamped "from the signed
+  original". Now there is ONE verdict, `empDocVerdict_(d, sigRow, opts)`:
+  `verified` is true only with a signature row, nothing mismatched AND
+  nothing left unchecked, and `unchecked` names each check that could not be
+  made. Verify, the certificate (`empDocVerdictLine_`, printed on it and
+  returned beside it) and the reader's `record` state all read it; the copy
+  refuses an altered record and labels one that is short of verified; an
+  UNSIGNED document's PDF mismatch is reported too (it was computed and
+  dropped). Verify: the F13 and F14 pure pins and the two F14 DOM drives.
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -4549,6 +4635,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the team only from a read that succeeded, so the next preview asks again; the
   server caches the parsed roster only after a read that parsed. Verify: the B6
   DOM drive (a failed read is said, nothing cached, the next preview re-asks).
+
+  **AMENDED (cycle 26 F56): a failed library load, kept — and a loaded one,
+  unchecked.** Both apps draw PDFs with pdf.js, loaded on first use by a
+  `<script src>` from cdnjs. Two defects in one loader. (1) A failed load set
+  the loader's state to `failed` and every later call answered from it: one
+  blocked request and no PDF employee document could be read — or signed —
+  and no handbook form opened, until the page was reloaded. The state is now
+  `ready` or nothing; the next open tries again, and Team Tools' reader
+  offers "Try again" (and "Download the PDF" once the bytes are in hand).
+  (2) The script ran whatever the CDN served, in the page that holds an HR
+  signature pad. The loader now FETCHES each file, checks its SHA-256
+  against the hash pinned in the source (`ED_PDFJS_FILES` / `HB_PDFJS_FILES`
+  — the installed `pdfjs-dist` files', which a pure pin recomputes), and
+  runs only bytes that match; a source that fails, times out or serves
+  something else is passed over for the next (cdnjs, then jsDelivr). An
+  `integrity` attribute was not used: a script tag gives one source and no
+  second try. Upgrading pdf.js means changing the version AND both hashes;
+  the F56 pin fails until they agree with `node_modules`. Verify: the F56
+  pure pin and DOM drive, and the rewritten HB4.1 failed-load drive.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -5301,6 +5406,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the same way ("3/4/28" → 2028-03-04) and is now a '@' cell
   (`INTAKE_ACCT_TEXT_IDX`). Verify: the F6 and F49 (cycle 25) pins.
 
+  **AMENDED (cycle 26 F44): three more free-text cells.** A document
+  template's Name and Body and a quiz's Title went through `sheetSafe_` into
+  plain cells — safe from formulas, but a template named "3/4" or a quiz
+  titled "10-12" was stored as a date and read back as one. They are '@'
+  cells now (`EMPDOC_TPL_TEXT_IDX`, `TRAIN_QUIZ_TEXT_IDX`), written by
+  `appendRowsTextSafe_` / a re-asserted format on edit, and S2's named list
+  of raw-text writers gained `saveEmpDocTemplate` and `saveQuiz`.
+
 <a id="g145-a-positional-write-at-getlastrow-1"></a>
 
 - **A positional write at `getLastRow() + 1` THROWS once the tab outgrows its
@@ -5742,6 +5855,25 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   day, with nothing they could do short of editing `OFFBOARDED_EMAILS`. The
   roster now rides along, every row as a manager (`adminDriftRoster_`).
   Verify: the F32 pin.
+
+  **AMENDED (cycle 26 F15): an address stored on a record, in a copy
+  email.** A finished document's copy can be emailed "to the managers": the
+  document's issuer and the employee's roster manager. The issuer is an
+  address stored on the EmpDocs row when the document was issued — F41 had
+  rerouted the NOTICES for a departed or demoted issuer, but this path read
+  the cell raw, so a signed HR document went to someone who had since left
+  the manager role (or the company, where the mailbox still delivers).
+  `empDocCopyManagers_` admits an address only if it is a manager on the
+  roster TODAY (`rosterManagerEmails_`, the list F41's routing reads); one
+  that is not is left out and NAMED on the preview with the reason — never
+  rerouted to somebody else, because who receives an HR document is the
+  sender's decision. An unreadable roster confirms nobody, and says that.
+  The same endpoint took any bytes from any employee with no limit: it now
+  caps one person at `EMPDOC_COPY_WINDOW_MAX` copies while the count's
+  `EMPDOC_COPY_WINDOW_SECS` lasts (ScriptCache; an unreadable cache does not
+  block a send), and the message says the attachment was put together on the
+  sender's computer and that the certificate held in the app is the record.
+  Verify: the F15 pure pin.
 
 <a id="g154-a-half-day-has-no-fixed-start"></a>
 

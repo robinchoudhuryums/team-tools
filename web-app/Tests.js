@@ -23,6 +23,9 @@ const _TEST_INDIA_ID    = 'TEST_IN_001';
 const _TEST_INDIA_EMAIL = 'do-not-send-india@example.invalid';
 const _TEST_PH_ID       = 'TEST_PH_001';
 const _TEST_PH_EMAIL    = 'do-not-send-ph@example.invalid';
+// A drawn signature as the pad exports it: a real 48x16 PNG (a wavy line), long
+// enough to pass empDocDrawnPng_ (cycle 26 F44 — a 1x1 PNG no longer signs).
+const _TEST_SIG_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAQCAAAAAB1xaNtAAAAb0lEQVR42sWSwQ3AIAwDPYSn8/57pCqp2kDMg1d5oZxNYhTE4cEfBpJeOwB6VZKzDNANvIshNUeCZqCei2ID4MsRSwv50OXdeSj6X5o01VE6o8g4Dy4L8AGuQS3AC5reAyQgjd6CDC1Jdhs6OF6+C2QDuF9YvnK7AAAAAElFTkSuQmCC';
 const _TEST_MGR_ID      = 'TEST_US_001';
 const _TEST_MGR_EMAIL   = 'do-not-send-mgr@example.invalid';
 
@@ -8383,10 +8386,17 @@ function test_empdocs_issueSignVerifyFlow() {
       _assertTrue(!full.error && full.bodyMd.indexOf('Policy') >= 0, 'owner reads the frozen body');
       _assertNotNull(full.ackText, 'ack text present while unsigned');
 
-      // Bad signature payload rejected; valid 1x1 PNG accepted.
+      // Bad signature payload rejected; a drawn PNG accepted. Cycle 26 F44: the
+      // signature must be a whole drawn PNG (empDocDrawnPng_) — the prefix
+      // alone, and a PNG too small to hold a drawing (the 1x1 this test used
+      // to sign with), are refused like any other non-signature.
       const badSig = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'not-a-data-url'); });
       _assertFailure(badSig, 'signature', 'non-PNG payload rejected');
-      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const prefixOnly = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,'); });
+      _assertFailure(prefixOnly, 'signature', 'the PNG prefix alone is not a signature');
+      const onePixel = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='); });
+      _assertFailure(onePixel, 'signature', 'a 1x1 PNG is not a drawn signature');
+      const png = _TEST_SIG_PNG;
       const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
       _assertTrue(signed && signed.success, 'owner signs');
       const again = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
@@ -8493,7 +8503,7 @@ function test_empdocs_legacyHashDualVerify() {
       _assertEq(v.contentMatch, true, 'legacy space-form content hash still verifies (dual-verify)');
       _assertEq(v.tampered, false, 'legacy hash is never reported as tamper');
       // The owner can still SIGN the legacy-hashed doc (acknowledgeDoc gate).
-      const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      const png = _TEST_SIG_PNG;
       const signed = _asUser(_TEST_INDIA_EMAIL, function () { return acknowledgeDoc(docId, png); });
       _assertTrue(signed && signed.success, 'legacy-hashed doc still signs (dual-verify gate)');
       v = _asUser(_TEST_MGR_EMAIL, function () { return verifyDocSignature(docId); });

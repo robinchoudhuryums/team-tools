@@ -634,6 +634,22 @@ lines, break pages and place a signature block, with Insert buttons and a
 Preview of exactly what the employee will see. The letterhead also heads the
 certificate and the printed copy.
 
+**Cycle 26 Batch 6 (2026-11-16) — Employee Docs integrity.** Verify, the
+certificate and the copy read ONE verdict: green only when the content hash,
+the PDF's hash and the signature hash were all recomputed and match; a check
+that could not be made is "NOT verified", with its reason. The certificate
+prints that verdict on its face; the reader notes a record that no longer
+verifies; no copy is made from an altered one. "The managers" on a copy email
+are today's roster managers (anyone left out is named), one person may send
+ten copies before waiting, and the message says where the copy was made. A
+written body may embed only stored images; a converted Google Doc's image
+placeholders are removed. A review-only document shows no Submit. The PDF
+viewer is fetched with a checksum check from two CDNs and a failed load can
+be retried in place. "Add box" places a field box from the keyboard. The
+weekly coaching recap covers everything since the previous one. In the
+Scratchpad, Ctrl/⌘+Enter ticks the checklist item the cursor is on or opens
+the link it is in.
+
 **Batch F (operator 2026-11-02):** Coaching's "Who needs a 1-on-1" board shows
 each rep's last 1-on-1 and when the next is due (late in red, none on record as
 "due now"), with a **Log** button that records one (the date, an optional note)

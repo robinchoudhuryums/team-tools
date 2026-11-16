@@ -2304,6 +2304,18 @@ entry says which it is.
   column (self-healing — nothing to set up), filled only for a document with
   an initials box; like the signature cell beside it, never edit it — it is
   inside the signature hash.
+  **Since cycle 26 Batch 6:** Verify is green only when every check ran and
+  matched; "Integrity NOT verified" with a reason means a check could not be
+  made (usually the PDF could not be read — look at `EmpDocFiles`), and a
+  certificate made in that state says NOT VERIFIED on its face. The PDF
+  viewer is fetched from cdnjs.cloudflare.com, then cdn.jsdelivr.net, and
+  run only if its checksum matches the one in the code — at least ONE of the
+  two hosts must be reachable from the team's browsers. A written document's
+  body may no longer embed an image by web address (issue it as a PDF
+  instead); a TEMPLATE that does will be refused when it is used — edit the
+  template. Emailing copies is limited to 10 per person, the count kept for
+  six hours after the latest send (`EMPDOC_COPY_WINDOW_MAX` /
+  `EMPDOC_COPY_WINDOW_SECS` in `00_config.js`).
 <a id="operator-letterheads-and-roster-company-ed4"></a>
 - **Letterheads (ED4, operator 2026-11-09) — `Employees` column S =
   `Company`, the `EMPDOC_LETTERHEADS` Script Property and the
@@ -3136,3 +3148,10 @@ entry says which it is.
   `ManualQuizzes` and `ManualFiles` tabs in one write each — they are never
   emptied first. An import whose write fails leaves the previous images,
   quizzes or forms in place and names the failure in the import result.
+
+  **Since cycle 26 F56** the form viewer's pdf.js is fetched from
+  cdnjs.cloudflare.com, then cdn.jsdelivr.net, and run only when its checksum
+  matches the code's — one of the two hosts must be reachable. A failed load
+  is no longer kept: closing and reopening the form tries again. This change
+  is in the hand-written page, so push the handbook app
+  (`npm run handbook:push`) and cut a new version.

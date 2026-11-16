@@ -3777,3 +3777,67 @@ F40.**
   refusal), added. And one of the new pin's own cases ("except TX plans in
   Ohio") caught the widened lead-in words joining two states — they now apply
   before the first state only.
+
+**Cycle 26 Batch 6 (2026-11-16) — Employee Docs integrity: F13, F14, F15,
+F44, F56, F64.**
+- **Test doubles that encoded the old behaviour, updated with the fixes.**
+  The pins that read `verifyDocSignature`'s source (C13, F-24, Batch H, ED1)
+  read `empDocVerdict_` — the recompute moved there. `hCtx_` (the Batch H
+  context) loads the verdict helpers and the new constants. ED1's initials
+  fixtures use a value shaped like a real PNG (`data:image/png;base64,` +
+  the PNG signature), since a prefix alone is refused now. The recap
+  sandboxes load `coachRecapCutoff_`; F41's and ED3's email sandboxes carry
+  `rosterManagerEmails_`; S2's named list of raw-text writers gained
+  `saveEmpDocTemplate` and `saveQuiz`; H-1's guarded list gained
+  `sendCoachingRecapDigest`; ED4 lost its `empDocHasSigBlock_` assertions
+  with the function. HB4.1-e (the handbook's pinned pdf.js) was rewritten
+  for a fetch-based loader, and the HB4.1 failed-load DOM drive with it.
+  **The editor suite too:** `Tests.js`'s two Employee Docs sign tests signed
+  with a real but 1x1 PNG, which the new shape rule refuses — found by
+  reading the suite for the fixture, not by any Node pin (the editor suite
+  does not run here). They sign with `_TEST_SIG_PNG` (a real 48x16 PNG,
+  checked against pdf-lib) and now assert that the bare prefix and the 1x1
+  are refused.
+- **Pure** — eight pins: F13 (the server verdict over really-hashed rows —
+  `c26Signed_` — and the client's wording), F14 (the record state, the
+  verdict line, the certificate's HTML and endpoint, the copy label), F15
+  (who "the managers" are, the cap, the device statement, the preview), two
+  for F44 (the sign path: linked images, the answers' total, the drawn PNG,
+  the acknowledgement by version, review-only, the signature image; and the
+  lock order, the '@' cells and the recap window), F44 + F64 (the converted
+  Doc and Add box's geometry), F56 (`testNeedsDeps`: both apps' pinned
+  hashes recomputed from the installed `pdfjs-dist`, both sources, no
+  `<script src>`), F64 (the Scratchpad's wiring and its state text).
+- **DOM** — five drives: the reader's record note, no Submit on a
+  review-only document and no copy from an altered record; the certificate
+  viewer's verdict and the copy's refusal / label; pdf.js run only from
+  checked bytes, a second source, a failed load retried; Add box from the
+  keyboard; Ctrl/⌘+Enter in the Scratchpad. Helpers `c26Net_` (a fetch that
+  serves, withholds or corrupts each URL and records the order asked),
+  `c26Sha_`, and stand-in library and worker scripts.
+- **Two harness facts found the hard way.** jsdom has no `fetch`: a bare
+  call threw synchronously out of the loader and took the whole DOM run
+  down, so the call sits inside a promise in both apps — which is also the
+  right behaviour in a browser without it. And the web-app DOM harness does
+  NOT run a script appended to the page (the handbook harness does): the F56
+  drive patches `appendChild` to evaluate an injected text script, and says
+  so; the handbook's drive runs the injected code for real.
+- **Visual** — the pdf.js route answers for both CDNs with the installed
+  files and a CORS header (the loader fetches now); `getMyDoc` fixtures
+  carry `record`; one scenario added (`empdocs-record-altered-light-wide`).
+  In Chromium the PDF pages draw through the checksum-checked loader with
+  the real files and the real hashes.
+- **What bit:** 98 mutations planned across four parallel worktrees (the
+  runs share nothing but `node_modules`, so server, client and two DOM
+  halves ran at once). One did not apply (a version literal the source
+  builds from a variable — re-aimed, and it bit). Of the 97 that ran, 92 bit.
+  The five that did not: three missing assertions on the server verdict and
+  the signature shape (a signature row with no stored hash is named as
+  unchecked; an UNSIGNED document's PDF mismatch is tampering; 300 base64
+  characters that are not a PNG are not a drawing) — added, and the same
+  mutations then bit; one DOM pin whose TITLE said the copy "labels an
+  unverified one" and whose body never drove it (g138) — it drives the
+  verdict to the label and the note above the preview now, and both
+  mutations bite; and one equivalent mutant — a `Math.min(1, …)` in
+  `edBoxAtCentre_` that `edBoxFromDrag_` already performs — removed, with a
+  page-smaller-than-the-box case added that a broken centre fails.

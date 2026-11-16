@@ -11,6 +11,43 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-16 — Cycle 26 Batch 6 (Employee Docs integrity)
+
+**Adds NO operator state** (three constants in `00_config.js`: the copy-email
+cap, its window, the recap overlap). Deploy BOTH apps: Team Tools `clasp push
+-f` + New version, and `npm run handbook:push` + New version (the handbook's
+form viewer changed). No trigger reinstall.
+
+- **Verify is green only when everything was checked.** A signed PDF whose
+  file cannot be read now says "Integrity NOT verified" with the reason (it
+  said "verified"). A document that is not signed yet reports a PDF mismatch
+  too. A failed or incomplete verdict stays on screen until dismissed.
+- **The certificate checks its own record** when it is made and prints the
+  result: a Verification line, or a red "NOT VERIFIED" box with the reason.
+  **Print… / Email… make no copy from an altered record**, and the copy's
+  label ends "record verified" or "record NOT verified".
+- **Email a copy:** "the managers" now means people who are managers on the
+  roster today — the preview names anyone left out; one person can send 10
+  copies, then must wait (or download and attach it); the message says the
+  copy was put together on the sender's computer.
+- **Issuing:** a written body with an image by web address is refused (use a
+  PDF); a converted Google Doc's image placeholders are removed and counted;
+  "Add box" places a field box from the keyboard.
+- **Signing:** a review-only document no longer shows a Submit that fails;
+  very long answers are refused together with the longest named; a written
+  document's signature shows in its copy even without a signature block; the
+  certificate prints the acknowledgement text of the version that was signed.
+- **PDF viewer (both apps):** loaded with a checksum check from two CDNs; a
+  failed load can be retried without reloading the page. **Check on DEV
+  first** that a PDF document and a handbook form open — the CDN bytes could
+  not be fetched from the build sandbox, so the first real load is yours.
+- **Coaching recap:** covers everything since the previous recap (it could
+  drop an item logged in the gap when a run fired later than the week
+  before); an item logged within ten minutes of a run may appear twice.
+- **Scratchpad:** Ctrl+Enter ticks the checklist item the cursor is on, or
+  opens the link it is in.
+- Walk S182 on DEV.
+
 ## 2026-11-16 — Cycle 26 Batch 5 (Payor lookups)
 
 **Adds NO operator state.** Deploy: Team Tools `clasp push -f` + New version
