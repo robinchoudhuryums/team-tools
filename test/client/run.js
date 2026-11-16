@@ -48013,6 +48013,8 @@ test('F52 (cycle 26): what one reader may add to Team Tools\' tabs — feedback 
   assert.deepStrictEqual([over.success, over.limited, /a lot of feedback in the last few hours/.test(over.error), rows() - 1], [false, true, true, max], 'THE REGRESSION: no limit — a script could bury the managers\' open flags');
   // Another reader has their own count — in the same cache, at the moment the first is at the limit.
   assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'ann@example.org').kbFlagItem('man-2-1', 'suggest', 'One more')), { success: true }, 'the limit is per reader');
+  const beforeAnn = rows();
+  assert.deepStrictEqual([hbPlain_(sb.kbFlagItem('man-1-1', 'helpful', '')), rows() - beforeAnn], [{ success: true }, 1], 'the same feedback from ANOTHER reader is theirs, not a repeat');
   assert.strictEqual(hbAs_(sb, 'rep@example.org').kbFlagItem('man-2-1', 'suggest', 'And another').limited, true, 'and the first reader is still at theirs');
   // Topic requests.
   const t = hbServer_(Object.assign({ tabs: hbTabs_() }, HB_ENV));
