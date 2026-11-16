@@ -47613,9 +47613,9 @@ test('F44 (cycle 26): the sign path — a body may not embed an image the hash c
   const big = (n) => 'x'.repeat(n);
   const each = Number(/const EMPDOC_RESPONSE_MAX = (\d+);/.exec(serverSource())[1]);
   const many = []; for (let i = 0; i < 7; i++) many.push({ id: 'f' + i, label: 'Field ' + i, type: 'textarea' });
-  const all = {}; many.forEach((f, i) => { all[f.id] = big(each - i); });
+  const all = {}; many.forEach((f, i) => { all[f.id] = big(each - (6 - i)); });   // the LAST field is the longest
   let r = sb.empDocValidateResponses_(many, all);
-  assert.ok(!r.ok && /Your answers together are [\d,]+ characters — more than the 45,000 this record can hold\. Shorten the longest one \("Field 0"\) and submit again\./.test(r.error),
+  assert.ok(!r.ok && /Your answers together are [\d,]+ characters — more than the 45,000 this record can hold\. Shorten the longest one \("Field 6"\) and submit again\./.test(r.error),
     'THE REGRESSION: seven answers each inside their limit overflowed the cell and the employee was shown the spreadsheet\'s error: ' + r.error);
   assert.ok(sb.empDocValidateResponses_(fields, { a: big(100), b: big(each), c: big(100) }).ok, 'under the total: accepted as before');
   // The drawing.
