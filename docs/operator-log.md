@@ -11,6 +11,40 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-17 — Cycle 26 Batch 8 (the handbook page)
+
+**Adds NO operator state that must be set.** Deploy the handbook app:
+`npm run handbook:push` + New version. Team Tools' own change (its reader's
+scripted scroll honours the device's reduced-motion setting) rides with its
+next deploy; nothing depends on it.
+
+- **The toolbar above a section is for the section in view** — and stays on it
+  after "I've read this", Listen or a note. Before, a sign-off's own answer
+  put the FIRST-opened section's unsigned button back under the reader; a
+  second press signed that section too. If Team progress shows sign-offs of a
+  chapter's opening section clustered seconds after another section's, that
+  is this.
+- **A person whose manager was unmarked can choose again**: Profile's Manager
+  list is no longer emptied for them.
+- **A read that failed says so** — the toolbar, Home (My reading, Due for
+  you), Training, Saved — with a Try again; the Training count shows "?".
+  None of them reads as "nothing" any more.
+- **An unreadable changelog is an error, not "nothing to re-read".** If the KB
+  spreadsheet's `ManualMeta` cell cannot be read, the toolbar, Training and My
+  team say so, and the reminder run records `failed` (it used to find nobody
+  overdue). Nothing to set; re-import the handbook if it persists.
+- **A quiz in progress asks before it is left** — by the search, Back, the
+  rail, a tab or Profile, not only by "Leave quiz".
+- **A kept copy is under a banner** for as long as it shows, with Try again.
+- **Note sync turned off is the account's.** The `Notes` tab gains, per reader
+  who turns it off, one row whose SectionId is `sync-off`; leave it alone. A
+  reader who turned sync off BEFORE this deploy on one computer while another
+  still has it on is not protected until they turn it off once more.
+- **At 800–1100px** the home hero is one column, and up to 1040px the results
+  and home's two cards are too.
+- **Display → Theme "Match my device"** follows the device live; **Reduce
+  motion** reaches the in-chapter scroll.
+
 ## 2026-11-16 — Cycle 26 Batch 7 (the handbook server)
 
 **Adds NO operator state that must be set.** Deploy the handbook app:

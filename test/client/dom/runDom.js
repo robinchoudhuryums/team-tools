@@ -14443,6 +14443,11 @@ test('F66 DOM (cycle 26): the bar keeps the focus — Listen hands it to Pause, 
   h.w.kbManualBarPaint_('man-3-1'); await h.settleAll();
   ctl('quiz:q1').focus(); ctl('quiz:q1').click(); await h.settleAll();
   assert.ok(at() && at().classList.contains('hb-qz-ht') && at().textContent === 'Nebulizers', 'the quiz\'s heading');
+  // …but a quiz reached by Back or Forward leaves the focus where it was (HB2.4's rule for every view).
+  h.w.hbGoHome_(); await h.settleAll();
+  const box = h.d.getElementById('hb-q'); box.focus();
+  h.w.__hbChange({ state: { quiz: 'q-neb' } }); await h.settleAll();
+  assert.ok(h.d.querySelector('.hb-qz-ht') && at() === box, 'the quiz is showing, and the focus was not taken');
   // A quiz that could not be opened: its message.
   const e = await hbBoot_({ answers: { hbGetQuiz: { error: 'That quiz is not available.' } } });
   e.w.hbTakeQuiz_('q-x', true); await e.settleAll();

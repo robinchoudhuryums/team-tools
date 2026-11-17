@@ -14,7 +14,8 @@ findings need human eyes. Run it before cutting a deploy that touched
 scenarios `ci-gate.cjs` names (every tool, at the widths its layout defects have
 lived) and exits non-zero on what a screenshot cannot show: sideways overflow,
 a page taller than its content (`verticalRunawayPx` past 200px), a text column
-narrower than a word (`narrowText`), an RPC with no fixture, or an uncaught page
+narrower than a word (`narrowText`), a box its scenario says must be usable
+narrower than it needs (`tooNarrow`), an RPC with no fixture, or an uncaught page
 error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
 the shots as an artifact when it fails. A finding owned elsewhere goes in
 `ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
@@ -129,6 +130,12 @@ Playwright's own managed download.
   - `narrowText` (cycle 25 F69) — an element holding a real run of its own text
     laid out narrower than a word (under 48px); F68's 22px text column at 390px
     is the shape (g72). Printed under SQUEEZED TEXT.
+  - `tooNarrow` (cycle 26 F65) — a scenario may say what USABLE is: its options
+    carry `minWidth: { selector: px }` (the handbook's `HB_MIN({...})`), and a
+    named box narrower than that — or not found, which is a selector that
+    stopped matching, not a pass — is listed. `narrowText` cannot stand in:
+    its floor is a word, and a 208px column beside a 360px one is past it and
+    still wrong. Printed under TOO NARROW.
 - `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)

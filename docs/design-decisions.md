@@ -6993,6 +6993,67 @@ pick them up without re-deriving the context.
     the id from the environment, then a gitignored `.clasp.local.json`, then
     the committed file, writes it into `.clasp.json` only for the push, and
     restores the committed bytes. clasp is the version Team Tools' push pins.
+- <a id="c26-the-handbook-page-says-what-it-could-not-load"></a>**The handbook page says what it could not load, asks before a quiz is left, marks a kept copy for as long as it shows and keeps its toolbar on the section in view; note sync off is the account's (cycle 26 Batch 8: F45, F46, F47, F55, F65, F66).**
+  - **One "bar's section", decided in one place (F45).** The scan's sketch was
+    an accessor reading the scroll-spy's id, falling back to the section
+    opened. The spy's id outlives the chapter (it is still set on Home), so a
+    late answer would have painted a toolbar for a section no longer on
+    screen. Instead the bar remembers the id it was last told
+    (`hbMarkCurrent_` — which both an open and the spy already call, and
+    which every other view calls with null), and every repaint asks for
+    "where it is". No success toast was added: the toolbar itself now shows
+    the section just signed as signed, which is the confirmation.
+  - **A failed read is a third state, shown where the answer would be (F47).**
+    Not a page-level error and not a toast: each surface that would have shown
+    the data says it could not be loaded and offers Try again in place — the
+    toolbar, My reading, Due for you, My training, Saved. A count that would
+    leave things out is "?" rather than a smaller number. A failure after a
+    good load changes nothing on screen except, on the page the reader asked
+    to refresh, a line saying the list is the earlier one. On the server the
+    changelog read THROWS rather than flagging the answer: a sign-off state
+    computed without the list is wrong in one direction only (it says
+    "signed"), so there is no partial answer worth sending.
+  - **The chapters' answer takes, but only the placeholder routes (F55).** The
+    alternative — keeping the reader out until the chapters arrive — would
+    put a seconds-long wait in front of Profile and search, which need no
+    chapters. So late chapters are taken wherever the reader is and each view
+    repaints the part that named a section.
+  - **One guard at the door of every view, not a flag on the quiz (F55).** The
+    views are plain functions that replace `<main>`; there is no router to
+    hook. The guard is the first line of each, and a pin derives the list
+    from the functions that leave a quiz, so a new view cannot be added
+    without it. It re-runs the switch with its own arguments rather than
+    recording "where the reader was going". "Leave quiz" lost its own dialog:
+    one question, one wording.
+  - **A banner, and the retry replaces the text on screen (F55).** A sticky
+    toast can be dismissed, after which nothing marks the page. The banner
+    stays until a read succeeds; the retry then redraws the section in view
+    from the new text rather than asking for a reload — a sign-off made from
+    the old text is refused by the server anyway (Batch 7).
+  - **"Off" is a row, not the absence of rows (F55).** An account with sync on
+    and no notes yet has no rows either, so "no rows" cannot mean off. The
+    marker lives in the `Notes` tab (no new tab, no Script Property per
+    reader — g07) under an id no section can have; turning sync on removes
+    it. An account that turned sync off BEFORE this change has no marker:
+    another browser of theirs still uploads once, until they turn it off
+    again. Scoping the browser's keys to the signed-in account (a second
+    person on the same profile) is left as a follow-on — it changes where
+    every reader's existing notes are found.
+  - **Two fold points, measured (F65).** One number would have been simpler.
+    The hero's own column needs about 350px (a 2rem heading and the search
+    box), which the window gives from 1100px; the results list beside its
+    filters is 463px at 1041. Folding results at 1100 too would put the
+    chapter filters under the whole list for no gain. Profile's own grid
+    (900px) was not part of the finding and is unchanged.
+  - **The focus is returned by what a control does, not by position (F66).**
+    The bar is rebuilt from a string; patching it in place would mean a
+    second renderer. Each control carries `data-hb-bar`, the bar is rewritten
+    only when its HTML changed, and the control with the same key takes the
+    focus. Reduced motion is asked by the shared reader itself
+    (`kbMotionReduced_`: the device's setting, or the handbook's
+    `data-hb-motion` attribute, which Team Tools never sets) rather than
+    through a new host hook — Team Tools' reader gains the device's setting
+    for free.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

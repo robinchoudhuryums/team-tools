@@ -1916,6 +1916,28 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`/dev` → `/exec`, or the `HANDBOOK_URL` property). Verify: the two F54
   pins and the F54 DOM drive.
 
+  **AMENDED (cycle 26 F47 + F55): the handbook page.** Three boot reads ended
+  `if (!r || r.error) return;` with an empty failure handler, and each "nothing
+  loaded" state was drawn as an answer. Sign-offs: no "I've read this" on any
+  section for the whole visit (the comment claimed the button was offered),
+  home's My reading a loading bar that never ended, and re-reads missing from
+  "Due for you". Training: "Nothing is due — you're up to date" and an empty
+  count for a reader with an overdue plan — and one failed open of the
+  Training page REPLACED the plans home had loaded. Bookmarks: "Nothing
+  bookmarked yet" under "Kept in your account". Each read now keeps its
+  failure apart from "not loaded" and from "loaded, and empty": the bar, the
+  shelf, Due and Saved say "could not be loaded" with a Try again; the rail's
+  Training count reads "?"; a refresh that fails keeps the plans that loaded
+  and says they may be out of date; Saved shows a loading bar until its answer
+  arrives. A failure after a good load still changes nothing (g129). F55, the
+  same shape: a kept copy of the chapters shown because the server could not
+  be reached was marked by a toast that left after 3.5 seconds — superseded
+  text for the whole visit with nothing on the page saying so. It is a banner
+  now, there for as long as the copy is, with a Try again that replaces the
+  copy, the contents and the text on screen. Verify: the three F47 DOM drives
+  and the F55 kept-copy drive; the visual scenarios `handbook-failed-light-wide`,
+  `handbook-saved-failed-light-mobile` and `handbook-stale-dark-mobile`.
+
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute
@@ -2463,6 +2485,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `min-width: 0` column squeezed by an unshrinkable sibling no longer needs an
   eye on the right screenshot to be found.
 
+  **AMENDED (cycle 26 F65): a breakpoint set where the rail goes.** The
+  handbook's only narrow breakpoint was 760px — where its 252px rail is
+  hidden. Every two-column layout therefore kept two columns for as long as
+  the rail was on screen: MEASURED in Chromium, the home hero's own column
+  (the greeting, the heading, the search box) was 48px beside the 360px shelf
+  at an 800px window, 9px at 761 and 208px at 960; the results list 222px
+  beside its 260px filters. No sideways overflow, no console error, and the
+  matrix shot the handbook only at 390 and 1440. The hero folds from 1100px
+  (its column is 349px at 1101), results and home's two cards from 1040, in
+  blocks BEFORE the 760 one so the phone's rules still win. The matrix has the
+  widths in between now (`TABLET` 800, `HALF` 960) and two of those scenarios
+  ride CI's gate. **And the first version of that guard could not fail:** the
+  matrix's squeezed-text measure reports text under 48px — narrower than a
+  word — and the unfolded column was EXACTLY 48px at 800 (208 at 960). CI's
+  gate passed on the old stylesheet; it was run there because a scenario that
+  has never failed has not been shown to work (g116). A scenario now names the
+  boxes that carry its content and the width each needs (`minWidth`); one
+  that is narrower, or no longer found, is `tooNarrow` in the report and a
+  finding in the gate, which fails on the old stylesheet with the measured
+  widths. Verify: the F65 pin; `handbook-home-light-tablet`.
+
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
 - **The `hidden` attribute LOSES to any class rule that sets `display`
@@ -2722,6 +2765,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `always` now runs on every settle path — and clears only History's own pill, since
   another view's shares the id. Verify: the F36, F37 + F38 and F39 (cycle 25) DOM
   drives.
+
+  **AMENDED (cycle 26 F55): the answer that routes.** The handbook's boot
+  asks for the chapters and, when they arrive, `hbReady_` opened Home (or the
+  link's section). On a first visit the whole handbook is one answer and takes
+  seconds — and the bar's search, the avatar and the phone's tabs work from
+  the first paint. A reader who had opened Profile, typed a search or started
+  a quiz was put back on Home when the chapters landed: the search in flight
+  dropped, the sitting discarded. Only the boot placeholder (`#hb-boot`) is
+  routed away from now; with any other view on screen the chapters are taken
+  (the contents, the versions) and the view repaints only what needed their
+  names — Profile's department list, Saved, My training, the quiz list, Forms,
+  Home's tiles (`hbChaptersLanded_`). A failure with the reader elsewhere is a
+  sticky toast, not a message in place of their view. Verify: the F55 "the
+  chapters" DOM drive (a slow `getManualParts`, each view opened meanwhile).
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -3622,6 +3679,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   is removed the next time Team Tools is open in that browser. RULE: before a
   field goes into a stored draft, ask what it costs if the draft is never
   swept. Verify: the F72 pure pins + DOM drive.
+
+  **AMENDED (cycle 26 F55): a per-browser switch is not the account's.**
+  "Keep my notes in my account" was `umsHbNotesSync` in each browser. Turning
+  it off on one computer deleted the account's copies and said so; the other
+  computer's own flag was still on, so its next visit sent every note back
+  into the spreadsheet the admin can open. Off is the ACCOUNT's now: a row in
+  the `Notes` tab whose SectionId is `sync-off` (never a section's id).
+  `hbSyncNotes(local, turnOn)` refuses with `off` while it is there, unless
+  `turnOn` is exactly `true` — the reader's own choice on the Saved page,
+  which removes the marker. A browser that is refused turns its own switch
+  off, says so once in a toast that stays, and keeps its notes. (The keys are
+  still per deployment origin, not per signed-in account — a second person on
+  the same browser profile sees the first's notes; a follow-on.) Verify: the
+  F55 "note sync" pin and DOM drive.
 
 <a id="g114-a-zero-that-could-mean-three-different"></a>
 - **A computed ZERO that could mean three different things must say WHICH —
@@ -4674,6 +4745,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   UNSIGNED document's PDF mismatch is reported too (it was computed and
   dropped). Verify: the F13 and F14 pure pins and the two F14 DOM drives.
 
+  **AMENDED (cycle 26 F47): an unreadable changelog is not an empty one.**
+  Every read of where a handbook sign-off stands — the bar, My training, Team
+  progress, the reminder run — took the changelog as
+  `meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : []`.
+  With the list unreadable nothing is flagged for retraining, so every "read
+  it again" read as "signed", a plan waiting on a re-read as done, and the
+  reminder run found nobody overdue and said ok. (Batch 7's F49 had closed the
+  WRITE side: a sign-off is refused when the list cannot be read.) All four go
+  through `hbChangelogRead_` now, which throws; each caller's answer is then an
+  error its page shows, and the reminder run records `failed`. A handbook with
+  no meta at all has flagged nothing — that is an answer, not a failure.
+  Verify: the F47 changelog pin (the control: a flagged change asks again).
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -5248,6 +5332,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   re-opened on every re-render. A collapsed group is now remembered for the visit
   (`CN_STATE.histCollapsed`). Verify: the F37 + F38 and F40 (cycle 25) DOM drives.
 
+  **AMENDED (cycle 26 F66): the toolbar is a view too.** The handbook's bar
+  above a section (`#hb-quizbar`: the sign-off, the note, Listen, a quiz, a
+  form) was `bar.innerHTML = …` on every call — and it is called by every load
+  answer at boot, by the scroll-spy at every section boundary, and at the end
+  of every action its own buttons start. A keyboard reader who pressed Listen
+  was on a button that no longer existed: the focus fell to `<body>`, and Stop
+  was a Tab from the top of the page away. `hbPaintQuizBar_` now keeps what it
+  last drew (`HB_BAR.html`) and rewrites only when that changed; when it does,
+  the control the focus was on gets it back BY WHAT IT DOES (`data-hb-bar`:
+  sign, note, listen, stop, quiz:<id>, form:<key>) — Stop gives way to Listen,
+  a control the new section has not to the bar's first. A press whose button
+  was disabled meanwhile (browsers drop the focus from a disabled button) is
+  remembered for that one answer (`HB_BAR.pressed`) and never pulls the focus
+  back from somewhere the reader has since gone. Opening a quiz was the one
+  view that moved no focus at all; it goes to the quiz's heading. Verify: the
+  F66 DOM drive, and the pure pin that every button the bar draws carries
+  `data-hb-bar`. (jsdom will not blur a disabled button — the drive moves the
+  focus to `<body>` through another element; g116's fifteenth direction.)
+
 <a id="g142-a-diagnostic-that-names-the-wrong-source"></a>
 ### g142 — A diagnostic that names the WRONG source is worse than a vague one, because it is actionable and the action is destructive
 
@@ -5647,6 +5750,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `intakeCardHost_(form)`, which answers only while that form's drop zone is on
   screen. Verify: the F20 DOM drive (Clear mid-read; PMD → PAP mid-read; an
   undisturbed read still lands).
+
+  **AMENDED (cycle 26 F45): two "current sections".** The handbook reader has
+  the section OPENED (`HB.currentId` — set by an open, kept while the reader
+  scrolls) and the section IN VIEW (the scroll-spy's). The bar above the
+  reader is painted for the one in view; twelve other callers repainted it
+  with `hbPaintQuizBar_(HB.currentId)`. Open 3.1, scroll to 3.4, press "I've
+  read this": 3.4 is signed, and the answer repaints the bar for 3.1 — an
+  unsigned "I've read this" under the reader's hand, reading as "it didn't
+  take". A second press signs 3.1, a versioned attestation a manager's table
+  counts. Listen read 3.1 from the top; a note saved on 3.4 left "Add a note"
+  showing; every boot answer flipped the bar back. The bar's section has ONE
+  writer now (`hbMarkCurrent_` sets `HB_BAR.id`) and one reader
+  (`hbBarId_()`; `hbRepaintBar_()` for "repaint where it is"). Verify: the F45
+  net (the painter is called with nothing else) and the F45 DOM drive.
 
 <a id="g148-a-lagged-source-s-windows-count-days"></a>
 
@@ -6437,6 +6554,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `unsaved`. A grade in flight is `busy` (the attempt is recorded either way), and
   the result view, the lock view and a retake start clean. Verify: the F44
   (cycle 25) DOM drive.
+
+  **AMENDED (cycle 26 F55): a view switch is a close.** A handbook quiz is a
+  view, not an overlay, so `closeOverlay`'s guard never saw it. Its own "Leave
+  quiz" asked; nothing else did — two characters typed in the bar's search
+  (the results replace the view 300 ms later), Back, a rail item, a phone tab,
+  the brand, Profile each ran `HB_QZ.taking = null` on question 9 of 12. One
+  guard, `hbHoldSitting_(again, stay)`, opens EVERY view switch (the F55 net
+  derives them: every function that calls `hbLeaveQuiz_()`); it asks once
+  however many ways out are tried, re-runs the switch if the reader leaves,
+  and on "Keep going" undoes what the attempt left behind — the search box is
+  emptied, a quiz popped off the history by Back is pushed again. Answers
+  already SENT are not asked about (the attempt is the server's); if the
+  reader has left when the result arrives it is said in a sticky toast and the
+  quiz list refreshed — it used to be dropped without a word. Verify: the F55
+  net (pure) and the F55 "a quiz in progress" DOM drive.
 
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 

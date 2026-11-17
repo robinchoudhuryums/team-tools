@@ -166,7 +166,7 @@ function hbOnHistory_(e) {
   if (st && st.search) { var box = document.getElementById('hb-q'); if (box) box.value = st.search; hbSearch_(st.search, false); }
   else if (st && st.people) hbPeople_(false);
   else if (st && st.quizzes) hbQuizList_(false);
-  else if (st && st.quiz) hbTakeQuiz_(st.quiz, false);
+  else if (st && st.quiz) hbTakeQuiz_(st.quiz, false, true);   // F66: Back and Forward leave the focus where it was
   else if (st && st.training) hbTraining_(false);
   else if (st && st.saved) hbSaved_(false);
   else if (st && st.forms) hbFormList_(false);   // HB4.1
@@ -1169,8 +1169,8 @@ function hbDownloadForm_(key) {
 
 /** Open a quiz to take: its questions shuffled for this sitting, shown one
  *  per screen (HBR3). */
-function hbTakeQuiz_(id, push) {
-  if (hbHoldSitting_(function () { hbTakeQuiz_(id, push); })) return;
+function hbTakeQuiz_(id, push, quiet) {
+  if (hbHoldSitting_(function () { hbTakeQuiz_(id, push, quiet); })) return;
   hbCloseSide_(); hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   HB.currentId = null; HB.landing = false;
   MANUAL_STATE.manualSeq = (MANUAL_STATE.manualSeq || 0) + 1;
@@ -1182,18 +1182,19 @@ function hbTakeQuiz_(id, push) {
   main.scrollTop = 0;
   if (push) hbHistory_('push', { quiz: id }, {});
   google.script.run
-    .withSuccessHandler(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_(res || { error: 'The server did not answer.' }); })
-    .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_({ error: (err && err.message) || 'The server did not answer.' }); })
+    .withSuccessHandler(function (res) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_(res || { error: 'The server did not answer.' }, quiet); })
+    .withFailureHandler(function (err) { if (seq === HB_QZ.seq && HB_QZ.showing === 'take') hbQuizOpened_({ error: (err && err.message) || 'The server did not answer.' }, quiet); })
     .hbGetQuiz(id);
 }
 /** F66 (cycle 26) — the quiz arrived: draw it and take the focus to it. The
  *  button that opened it is gone with the old view, so the focus fell to
  *  <body> and nothing announced the first question — the one view that opened
- *  without moving it (HB2.4: focus follows the reader). */
-function hbQuizOpened_(res) {
+ *  without moving it (HB2.4: focus follows the reader). `quiet`: reached by
+ *  Back or Forward, which leave the focus where it was. */
+function hbQuizOpened_(res, quiet) {
   hbPaintTake_(res);
   var host = document.getElementById('hb-qz-take');
-  if (host) hbFocusEl_(host.querySelector('.hb-qz-ht') || host.querySelector('[role="alert"]'));
+  if (host && !quiet) hbFocusEl_(host.querySelector('.hb-qz-ht') || host.querySelector('[role="alert"]'));
 }
 /** HBR3 — a sitting's header: the chapter's colour wash (light, decision 4 —
  *  never a dark bar), its icon, the quiz, where the reader is, and Leave. */

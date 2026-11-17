@@ -3192,3 +3192,8 @@ entry says which it is.
   - **Limits a reader can meet:** 30 pieces of section feedback and 5 topic
     requests per six hours (`HB_FEEDBACK_WINDOW_MAX`, `HB_REQUEST_WINDOW_MAX`
     in `Handbook.js`), and 500 synced notes per account.
+  - **A `Notes` row whose SectionId is `sync-off`** (cycle 26 F55) marks a
+    reader who turned "Keep my notes in my account" off: while it is there the
+    app refuses to take their notes from any computer. It is written and
+    removed by the app (one row per reader). Do not delete it — the reader's
+    other computers would send their notes back; do not add one by hand.

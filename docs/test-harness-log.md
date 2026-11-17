@@ -3899,3 +3899,74 @@ F53, F54, F57.**
 - **One fix of the fix.** F52's server counted the notes it refused and the
   page ignored the count — a narrower rule that would have failed silently.
   The page says it, once per count; a DOM drive holds that.
+
+## Cycle 26 Batch 8 — the handbook page (2026-11-17)
+
+- **Pure (+7), "Cycle 26 Batch 8 — the handbook client".** F45: a net over the
+  page's source — the bar's painter is reached with `HB_BAR.id` and nothing
+  else, the id has one writer, Listen reads `hbBarId_()`. F47: the changelog
+  read driven through `hbServer_` (readable and flagged → asked again;
+  unreadable → an error from the bar's read, My training, Team progress and a
+  `failed` reminder run; no meta at all → an empty list), and the Due
+  helpers' grid. F55: the sync marker driven (written into a row the notes
+  left, refusing every sync but an explicit turn-on, one per reader, another
+  reader untouched, written even with no `Notes` tab) and the guard net — the
+  view switches are DERIVED as "every function that calls `hbLeaveQuiz_()`",
+  and each must open with the guard re-running ITSELF with its own
+  parameters. F65: the fold blocks and their order before the 760 block, the
+  two viewports, the scenarios, and CI's gate naming two of them. F66:
+  `kbMotionReduced_` driven over its two sources (and a `matchMedia` that is
+  missing or throws), the handbook copy equal to Team Tools', and every
+  button the bar draws carrying `data-hb-bar`.
+- **DOM (+11), "Cycle 26 Batch 8 — the handbook client".** F45 (the spy moved
+  by calling its own paint — jsdom lays nothing out), F46, F47 ×3 (sign-offs,
+  training, bookmarks — each with its control: loaded and empty IS "nothing"),
+  F55 ×4 (late chapters over Profile / a quiz / Saved / the quiz list / My
+  training / Forms / Home; the sitting guard through every way out; the
+  banner and its retry; the sync flag), F66 ×2 (the bar's focus; the live
+  theme and reduced motion). `hbBoot_` takes `before(w)` — the window before
+  any script runs — for a `matchMedia` the test moves (`b8Media_`: `fire(q)`
+  for the change event, and a legacy form with only `addListener`).
+- **Three existing tests encoded the old behaviour** and changed with it: the
+  kept copy's toast is a banner (HB1.3), a boot sync carries `false` as its
+  second argument (HB2.2), and a failed training read leaves "?" on the rail,
+  not a blank (HBR1). Three pure pins too: `hbNotesRows_` returns `off`, a
+  sync after "forget" is refused until turned on, and the versions are taken
+  in `hbTakeChapters_`.
+- **Visual (+6).** `handbook-home-light-tablet`, `handbook-home-dark-half`,
+  `handbook-search-light-tablet` (800 and 960px — the first widths between
+  390 and 1440 the handbook has been shot at), `handbook-failed-light-wide`,
+  `handbook-saved-failed-light-mobile`, `handbook-stale-dark-mobile`. The two
+  light tablet scenarios joined CI's gate — and passed it on the OLD
+  stylesheet: `narrowText`'s floor is 48px and the unfolded hero column was
+  exactly 48px. The matrix gained a third layout measure, `tooNarrow`: a
+  scenario's `minWidth: { selector: px }` names the boxes that must be usable;
+  a narrower one, or one no longer found, is reported and gated (`findingsOf`
+  in `ci-gate.cjs`). On the old stylesheet the gate now fails with 48, 255,
+  231 and 222px; on the fix it passes. Reading the first shots found two
+  slips no measurement reports: a Try again button stretched across the shelf
+  and across the Saved card (a button in a column box) — fixed. Axe flagged
+  the banner scenario on section 0.11 for a reason that is not the banner:
+  the shared reader's CRITICAL callout kicker fails contrast in dark mode,
+  with or without this batch. The scenario shoots 0.10 and says why; the
+  kicker is reported as a follow-on.
+- **Bite-checks: 124 mutations, 122 bit at the first run; the other two bite since.** Plus CI's
+  visual gate run against the pre-fix stylesheet (above). The DOM mutations ran the batch's
+  own drives only: a worktree-local, never-committed filter on the runner
+  (`DOM_ONLY`, refusing a pattern that matches nothing) — each drive boots its
+  own page, so the verdict is the full harness's, in seconds instead of
+  minutes. The full harnesses ran unfiltered before and after. Misses, each
+  a real gap in a drive rather than in the fix: the quiz list's late answer
+  was asserted together with the form library's, whose own repaint covered
+  for it (asserted one at a time now); "Keep going" after Back was held to
+  "the last history entry is the quiz" — which the entry that OPENED the quiz
+  already satisfied (the count is asserted now).
+- **Before the run**, asking of each planned mutation what the drive would
+  have to set up to see it added six assertions: the marker reuses a row; Due
+  when BOTH sources failed; the rail's count after a load on the Training
+  page; a bookmark toggle clearing the failure; four more views learning
+  late chapters; a quiz list still loading when a dropped submit answers (the
+  first version's list had already painted, so "superseded" was untested).
+- **A harness lesson (g116):** jsdom's `blur()` does nothing on a disabled
+  button, so "the focus fell to `<body>`" cannot be produced by blurring the
+  pressed control — another element takes the focus and gives it up.
