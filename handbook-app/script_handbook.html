@@ -2042,15 +2042,45 @@ function hbDownloadProgress_() {
 // information — does one reach the server, by MERGE: per section the later
 // note wins, and a deletion is a tombstone (empty text, its time) so it
 // travels too. The same merge rule is the server's hbNotesMerge_ (pinned).
+// Cycle 26 (Batch 8 follow-on 6): these three are kept PER ACCOUNT in the
+// browser — `umsHbNotes:<u>`, where u is the short key doGet hands the page
+// for the signed-in account (HB_PARAMS.u; hbAccountKey_ on the server). They
+// were shared by everyone using that browser profile. With no key (a page
+// served without one) they are the unscoped keys, as before. What was stored
+// before the change is adopted once by the first account to open the handbook
+// in that browser, and the shared copy removed (hbAdoptLegacy_ — operator
+// 2026-11-17: one person per browser profile). The reader's department, the
+// resume point, the visit day and the display settings stay the browser's.
+var HB_U = /^[a-f0-9]{8,32}$/.test(String((window.HB_PARAMS || {}).u || '')) ? String(window.HB_PARAMS.u) : '';
+function hbKey_(base) { return HB_U ? base + ':' + HB_U : base; }
 var HB_LS_BOOKMARKS = 'umsHbBookmarks';   // the list (the account's copy, or the browser's own while unset)
 var HB_LS_NOTES = 'umsHbNotes';           // { sectionId: { t, ms } } — tombstones included
 var HB_LS_NOTES_SYNC = 'umsHbNotesSync';  // '1' while this browser keeps its notes in the account
 var HB_NOTE_MAX = 4000;
 var HB_SV = { setUp: undefined, bookmarks: [], seq: 0, showing: false, error: '' };
 
-function hbNotes_() { var n = hbLsJson_(HB_LS_NOTES); return n && typeof n === 'object' && !Array.isArray(n) ? n : {}; }
-function hbNotesPut_(map) { hbLsSet_(HB_LS_NOTES, JSON.stringify(map || {})); }
-function hbNotesSyncOn_() { return hbLs_(HB_LS_NOTES_SYNC) === '1'; }
+function hbNotes_() { var n = hbLsJson_(hbKey_(HB_LS_NOTES)); return n && typeof n === 'object' && !Array.isArray(n) ? n : {}; }
+function hbNotesPut_(map) { hbLsSet_(hbKey_(HB_LS_NOTES), JSON.stringify(map || {})); }
+function hbNotesSyncOn_() { return hbLs_(hbKey_(HB_LS_NOTES_SYNC)) === '1'; }
+function hbNotesSyncSet_(on) { hbLsSet_(hbKey_(HB_LS_NOTES_SYNC), on ? '1' : ''); }
+/** Follow-on 6 — once, at boot, before anything reads them: what this browser
+ *  stored under the shared keys becomes this account's, and the shared copy
+ *  goes. Notes are MERGED into any the account already has here (the later
+ *  note per section wins) — a tab still on the old page may have written the
+ *  shared key after the first adoption; the bookmark copy and the switch are
+ *  taken only where the account has none. */
+function hbAdoptLegacy_() {
+  if (!HB_U) return;
+  try {
+    var old = hbLsJson_(HB_LS_NOTES);
+    if (old && typeof old === 'object' && !Array.isArray(old)) hbNotesPut_(hbNotesMergeLocal_(hbNotes_(), old));
+    [HB_LS_BOOKMARKS, HB_LS_NOTES_SYNC].forEach(function (base) {
+      var v = hbLs_(base);
+      if (v !== null && hbLs_(hbKey_(base)) === null) hbLsSet_(hbKey_(base), v);
+    });
+    [HB_LS_NOTES, HB_LS_BOOKMARKS, HB_LS_NOTES_SYNC].forEach(function (base) { localStorage.removeItem(base); });
+  } catch (e) {}
+}
 /** The note for a section, or '' (a tombstone is no note). */
 function hbNoteText_(id) { var n = hbNotes_()[id]; return n && typeof n.t === 'string' ? n.t : ''; }
 /** PURE — the server's hbNotesMerge_, for an import: per section the later
@@ -2104,7 +2134,7 @@ function hbRepaintStars_() {
   });
 }
 function hbLoadBookmarks_() {
-  var kept = hbLsJson_(HB_LS_BOOKMARKS);
+  var kept = hbLsJson_(hbKey_(HB_LS_BOOKMARKS));
   if (Array.isArray(kept)) HB_SV.bookmarks = kept;
   // A failure keeps what this browser had (g129) — and F47 (cycle 26) SAYS so:
   // with no copy here the Saved page read "Nothing bookmarked yet" under "Kept
@@ -2114,7 +2144,7 @@ function hbLoadBookmarks_() {
     else {
       HB_SV.error = '';
       HB_SV.setUp = r.setUp !== false;
-      if (HB_SV.setUp) { HB_SV.bookmarks = r.bookmarks || []; hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks)); }
+      if (HB_SV.setUp) { HB_SV.bookmarks = r.bookmarks || []; hbLsSet_(hbKey_(HB_LS_BOOKMARKS), JSON.stringify(HB_SV.bookmarks)); }
     }
     hbRepaintStars_();
     if (HB_SV.showing) hbPaintSaved_();
@@ -2135,7 +2165,7 @@ function hbToggleBookmark_(btn) {
   if (!id) return;
   var on = !hbBookmarked_(id);
   var done = function () {
-    hbLsSet_(HB_LS_BOOKMARKS, JSON.stringify(HB_SV.bookmarks));
+    hbLsSet_(hbKey_(HB_LS_BOOKMARKS), JSON.stringify(HB_SV.bookmarks));
     hbRepaintStars_();
     if (HB_SV.showing) hbPaintSaved_();
     showToast(on ? 'Bookmarked' : 'Removed bookmark', 'toast-success');
@@ -2189,7 +2219,7 @@ function hbSyncNotes_(map, cb, turnOn) {
     // switch was still on, so its next visit sent every note back. It obeys the
     // account now: off here too, said once, the notes kept in this browser.
     if (r && r.off) {
-      hbLsSet_(HB_LS_NOTES_SYNC, '');
+      hbNotesSyncSet_(false);
       showToast('Keeping your notes in your account was turned off on another computer, so it is off here too. Your notes stay in this browser — you can turn it on again on the Saved page.', 'toast-warn', { sticky: true });
       if (HB_SV.showing) hbPaintSaved_();
       cb(true); return;
@@ -2366,7 +2396,7 @@ function hbSetNotesSync_(box) {
         hbSyncNotes_(hbNotes_(), function (ok, err) {
           box.disabled = false;
           if (!ok) { showToast('Not turned on: ' + String(err || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-          hbLsSet_(HB_LS_NOTES_SYNC, '1');
+          hbNotesSyncSet_(true);
           showToast('Your notes are kept in your account.', 'toast-success');
           hbPaintSaved_(); hbRepaintBar_();
         }, true);
@@ -2381,7 +2411,7 @@ function hbSetNotesSync_(box) {
       var fin = function (r) {
         box.disabled = false;
         if (!r || !r.success) { showToast('Not turned off: ' + String((r && r.error) || 'the server did not answer').replace(/\.$/, '') + '.', 'toast-error'); return; }
-        hbLsSet_(HB_LS_NOTES_SYNC, '');
+        hbNotesSyncSet_(false);
         showToast('Your notes are kept in this browser only.', 'toast-success');
         hbPaintSaved_();
       };
@@ -3217,6 +3247,7 @@ function hbBoot_() {
     if (!e.target.closest('#hb-side') && !e.target.closest('#hb-menu')) hbCloseSide_(true);
   });
   try { if (window.google && google.script && google.script.history) google.script.history.setChangeHandler(hbOnHistory_); } catch (e) {}
+  hbAdoptLegacy_();   // follow-on 6: before anything reads the notes, the bookmark copy or the sync switch
   hbPaintChrome_();   // HBR1: the bar's icons and the phone's tabs
   hbLoadMe_();
   hbLoadShelf_();     // HBR1: home's shelf — the team's lookups on calls

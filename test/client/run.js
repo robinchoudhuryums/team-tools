@@ -48614,6 +48614,41 @@ test('FO11 (cycle 26): Team Tools is shot between the phone and the desk — a l
   Object.keys(tools).forEach((t) => assert.ok(new RegExp('\\n  ' + t + ':\\s*\\{').test(reg), 'a registry key: ' + t));
 });
 
+test('FO6 (cycle 26): the page is told WHOSE browser storage it holds — a short key per signed-in account, stable, different for another person, never the address — and doGet hands it over with the section; with nobody known it is empty and the page keeps the shared keys (driven)', () => {
+  const seen = [];
+  const HtmlService = { createTemplateFromFile: () => { const t = { evaluate: () => ({ setTitle: () => ({ addMetaTag: () => 'page' }) }) }; seen.push(t); return t; } };
+  const web = hbServer_(Object.assign({ tabs: hbTabs_(), HtmlService }, HB_ENV));
+  hbAs_(web, 'rep@ex.org').doGet({ parameter: { s: '6.9.3' } });
+  const a = seen[0].hbParams;
+  assert.ok(/^[a-f0-9]{12}$/.test(a.u) && a.s === '6.9.3', JSON.stringify(a));
+  assert.ok(a.u.indexOf('rep') < 0 && JSON.stringify(a).indexOf('ex.org') < 0, 'the address is not in it');
+  web.doGet(undefined);
+  assert.strictEqual(seen[1].hbParams.u, a.u, 'the same person: the same key, every visit');
+  hbAs_(web, 'ann@ex.org').doGet(undefined);
+  assert.ok(/^[a-f0-9]{12}$/.test(seen[2].hbParams.u) && seen[2].hbParams.u !== a.u, 'another person: another key');
+  hbAs_(web, 'REP@ex.org').doGet(undefined);
+  assert.strictEqual(seen[3].hbParams.u, a.u, 'an address is one account whatever its case');
+  const nobody = hbServer_({ tabs: hbTabs_(), props: HB_ENV.props, HtmlService });
+  nobody.doGet(undefined);
+  assert.strictEqual(seen[4].hbParams.u, '', 'nobody known: no key — the page keeps the shared keys');
+  // The page: a key that is not twelve-ish hex digits is no key (it is spliced into storage keys).
+  const page = HB_PAGE_SRC();
+  const U = (u) => { const ctx = vm.createContext({ window: { HB_PARAMS: u === undefined ? undefined : { u } }, String, RegExp });
+    vm.runInContext(page.slice(page.indexOf('var HB_U = '), page.indexOf('\n', page.indexOf('var HB_U = '))) + '\n' + extractFnFrom(page, 'hbKey_'), ctx);
+    return ctx.hbKey_('umsHbNotes'); };
+  assert.deepStrictEqual([U('abcdef012345'), U(''), U(undefined), U('../x'), U('ABCDEF012345'), U('abc')],
+    ['umsHbNotes:abcdef012345', 'umsHbNotes', 'umsHbNotes', 'umsHbNotes', 'umsHbNotes', 'umsHbNotes']);
+  // Every read and write of the three goes through the key — derived: no bare use outside the adoption.
+  const body = page.replace(extractFnFrom(page, 'hbAdoptLegacy_'), '');
+  ['HB_LS_NOTES', 'HB_LS_BOOKMARKS', 'HB_LS_NOTES_SYNC'].forEach((k) => {
+    const uses = body.match(new RegExp('.{0,8}\\b' + k + '\\b(?!_)', 'g')) || [];
+    const bare = uses.filter((u) => !/hbKey_\($/.test(u.slice(0, u.length - k.length)) && !/^var $/.test(u.slice(-k.length - 4, -k.length)) && !/var $/.test(u.slice(0, u.length - k.length)));
+    assert.deepStrictEqual(bare, [], k + ' is used only through hbKey_ (and its own declaration)');
+    assert.ok(uses.length >= 2, k + ': the net is not vacuous');
+  });
+  assert.ok(extractFnFrom(page, 'hbBoot_').indexOf('hbAdoptLegacy_();') < extractFnFrom(page, 'hbBoot_').indexOf('hbLoadBookmarks_();'), 'adopted before anything reads them');
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

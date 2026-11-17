@@ -14658,3 +14658,39 @@ test('FO5 DOM (cycle 26): a search announces its COUNT, not its results — the 
   bad.w.hbSearch_('neb', true); await bad.settleAll();
   assert.ok(bad.d.querySelector('.hb-results-list [role="alert"]'));
 });
+
+test('FO6 DOM (cycle 26): notes, the bookmark copy and the sync switch are kept per ACCOUNT in the browser — what was stored before is adopted once by the first account and the shared copy removed; a second person in the same browser sees none of it and sends none of it; without a key the page works as before (driven)', async () => {
+  const A = 'aaaaaaaaaaaa', B = 'bbbbbbbbbbbb';
+  const sent = [];
+  const answers = () => ({ hbMyBookmarks: { __fail: 'offline' }, hbSyncNotes: (m) => { sent.push(Object.keys(m)); return { success: true, notes: m }; } });
+  const legacy = { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Mine', ms: 5 } }), umsHbBookmarks: JSON.stringify([{ id: 'man-3-2', title: '3.2 Nebulizers' }]), umsHbNotesSync: '1' };
+  // The first account to open the handbook in this browser after the change: it takes what was there.
+  const a = await hbBoot_({ params: { u: A }, ls: legacy, answers: answers() });
+  const ls = (w) => { const o = {}; for (let i = 0; i < w.localStorage.length; i++) { const k = w.localStorage.key(i); if (/^umsHb(Notes|Bookmarks|NotesSync)/.test(k)) o[k] = w.localStorage.getItem(k); } return o; };
+  assert.deepStrictEqual(Object.keys(ls(a.w)).sort(), ['umsHbBookmarks:' + A, 'umsHbNotes:' + A, 'umsHbNotesSync:' + A], 'theirs now; the shared copy is gone');
+  assert.deepStrictEqual(sent, [['man-3-1']], 'their own switch came with it, so their notes are synced as before');
+  a.w.hbGoSaved_(); await a.settleAll();
+  assert.ok(/Mine/.test(a.main().textContent) && a.main().querySelectorAll('.hb-sv-row').length === 2 && a.d.getElementById('hb-sv-sync').checked, 'Saved shows them — the bookmark copy too');
+  // A second person, same browser profile: nothing of the first's — not on screen, and not sent anywhere.
+  const afterA = ls(a.w);
+  const b = await hbBoot_({ params: { u: B }, ls: afterA, answers: answers() });
+  assert.strictEqual(sent.length, 1, 'nothing is uploaded into the second person\'s account');
+  b.w.hbGoSaved_(); await b.settleAll();
+  assert.ok(!/Mine/.test(b.main().textContent) && b.main().querySelectorAll('.hb-sv-row').length === 0 && !b.d.getElementById('hb-sv-sync').checked);
+  assert.deepStrictEqual(ls(b.w), afterA, 'and the first person\'s are untouched');
+  // What the second person writes is theirs alone.
+  b.w.hbPutNote_('man-5-1', 'B\'s note', () => {}); await b.settleAll();
+  assert.deepStrictEqual(JSON.parse(ls(b.w)['umsHbNotes:' + B])['man-5-1'].t, 'B\'s note');
+  assert.strictEqual(ls(b.w)['umsHbNotes:' + A], afterA['umsHbNotes:' + A]);
+  // A tab still on the old page wrote the shared key after the adoption: merged in (the later note wins), then removed.
+  const late = Object.assign({}, afterA, { umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Older', ms: 1 }, 'man-5-1': { t: 'From the old tab', ms: 9 } }), umsHbNotesSync: '' });
+  const m = await hbBoot_({ params: { u: A }, ls: late, answers: answers() });
+  const mine = JSON.parse(ls(m.w)['umsHbNotes:' + A]);
+  assert.deepStrictEqual([mine['man-3-1'].t, mine['man-5-1'].t, 'umsHbNotes' in ls(m.w)], ['Mine', 'From the old tab', false]);
+  assert.strictEqual(ls(m.w)['umsHbNotesSync:' + A], '1', 'the account\'s own switch is kept, not replaced by the shared one');
+  // No key (or one that is not a key): the shared keys, exactly as before.
+  const n = await hbBoot_({ params: { u: '../x' }, ls: legacy, answers: answers() });
+  assert.deepStrictEqual(Object.keys(ls(n.w)).sort(), ['umsHbBookmarks', 'umsHbNotes', 'umsHbNotesSync']);
+  n.w.hbGoSaved_(); await n.settleAll();
+  assert.ok(/Mine/.test(n.main().textContent));
+});

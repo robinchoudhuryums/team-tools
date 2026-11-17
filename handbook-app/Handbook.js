@@ -50,13 +50,27 @@ const HB_SEARCH_CFG_CACHE_KEY = 'hb_search_cfg_v1';
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('index');
   const s = String((e && e.parameter && e.parameter.s) || '').trim();
-  t.hbParams = { s: /^[\w.§ -]{1,24}$/.test(s) ? s : '' };
+  // u (cycle 26, Batch 8 follow-on 6): whose browser storage this is — see hbAccountKey_.
+  t.hbParams = { s: /^[\w.§ -]{1,24}$/.test(s) ? s : '', u: hbAccountKey_() };
   return t.evaluate()
     .setTitle('UMS Handbook')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+/** Cycle 26 (Batch 8 follow-on 6) — a short, stable key for the signed-in
+ *  account, so the page keeps its browser storage (notes, the bookmark copy,
+ *  the note-sync switch) apart per person: the keys were shared by everyone
+ *  who used that browser profile, so a second person saw the first's notes —
+ *  and, with the first's sync switch on, sent them into their own account.
+ *  Twelve hex digits from two hashes of the address; never the address itself
+ *  (it would sit in the browser's storage keys). '' when nobody is known — the
+ *  page then keeps the unscoped keys, as before. */
+function hbAccountKey_() {
+  const emp = getEmployeeInfo_();
+  if (!emp || !emp.email) return '';
+  return hbStamp_('hb-browser-a:' + emp.email).slice(0, 8) + hbStamp_('hb-browser-b:' + emp.email).slice(0, 4);
 }
 
 // ── The environment the copied code expects ─────────────────────────────
