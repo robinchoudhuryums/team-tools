@@ -198,9 +198,13 @@ function harnessTotal(rel) {
   // Catch it, read the summary out of the captured output, and say that.
   let out;
   try {
+    // DOM_ONLY (the DOM harness's bite-check subset) is CLEARED: a count taken
+    // from a subset would be a smaller number that looks like the harness's.
+    const env = Object.assign({}, process.env, { [NO_SPAWN]: '1' });
+    delete env.DOM_ONLY;
     out = execFileSync(process.execPath, [path.join(ROOT, rel)], {
       encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-      env: Object.assign({}, process.env, { [NO_SPAWN]: '1' }),
+      env,
     });
   } catch (e) {
     const captured = String(e && e.stdout || '');

@@ -48499,6 +48499,121 @@ test('F66 (cycle 26): scripted scrolling asks whether motion is reduced — the 
   buttons.forEach((b) => assert.ok(/ data-hb-bar="/.test(b), 'a bar button says what it does: ' + b));
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cycle 26 — the follow-on items of Batch 8 (FO1–FO11). The page is driven in
+// runDom.js ("Cycle 26 Batch 8 follow-ons"); here: the shared reader's two
+// fixes, the pure helpers, the DOM harness's subset DRIVEN as a subprocess, and
+// the scenarios.
+console.log('\nCycle 26 Batch 8 follow-ons');
+
+test('FO1 (cycle 26): the CRITICAL callout\'s kicker is legible in dark mode — the red mixed toward the INK there (3.34:1 on the callout\'s tint with the token, which mixes toward the dark paper); a dark handbook scenario with a CRITICAL callout is under axe', () => {
+  const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  const base = shared.indexOf('.kb-callout-critical .kb-co-kick { color: var(--danger-deep); }');
+  const dark = shared.indexOf('[data-mode="dark"] .kb-callout-critical .kb-co-kick { color: color-mix(in oklab, var(--destructive), var(--ink) 30%); }');
+  assert.ok(base > 0 && dark > base, 'the dark rule exists and comes after the base one (same weight plus an attribute — it must not lose by order either)');
+  assert.ok(!/\[data-mode="dark"\] \.kb-callout-critical \.kb-co-kick \{[^}]*oklch/.test(shared), 'oklab, never oklch (g56)');
+  const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
+  assert.ok(copy.indexOf('[data-mode="dark"] .kb-callout-critical .kb-co-kick') > 0, 'the handbook\'s copy carries it');
+  // The measurement is axe's, in the matrix: the banner scenario is back on section 0.11, which holds a CRITICAL callout.
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  const row = shoot.split('\n').filter((l) => l.indexOf("['handbook-stale-dark-mobile',") >= 0)[0];
+  assert.ok(/MOBILE, 'dark',\s+'\?s=0\.11'/.test(row), row);
+  // …and that section's fixture really holds one (a scenario that shoots no critical callout would pass on any colour).
+  const mock = fs.readFileSync(path.join(HB_ROOT, 'test/visual/mock.js'), 'utf8');
+  const sec = mock.slice(mock.indexOf("id: 'man-0-11'"), mock.indexOf("id: 'man-0-11'") + 4000);
+  assert.ok(mock.indexOf("id: 'man-0-11'") > 0 && /> \*\*Critical — /.test(sec), 'section 0.11\'s fixture has a CRITICAL callout to measure');
+});
+
+test('FO7 (cycle 26): an image inside a link draws the IMAGE — `[![logo](…)](…)` drew the stash sentinel; the link\'s text is expanded (the image alone, no anchor inside an anchor), its URL never is (driven)', () => {
+  const c = m1Md_();
+  const out = c.kbMd_('See [![logo](https://x.example/a.png)](https://x.example/page) here.');
+  assert.ok(!/\u0000/.test(out), 'no sentinel reaches the page: ' + JSON.stringify(out));
+  assert.ok(/<a href="https:\/\/x\.example\/page" target="_blank" rel="noopener"><img src="https:\/\/x\.example\/a\.png" alt="logo" loading="lazy"><\/a>/.test(out), out);
+  assert.strictEqual((out.match(/<a /g) || []).length, 1, 'one anchor: the image\'s own link is not nested in it');
+  // On its own an image still links to itself.
+  const alone = c.kbMd_('![logo](https://x.example/a.png)');
+  assert.ok(/<a href="https:\/\/x\.example\/a\.png" target="_blank" rel="noopener" class="kb-img-lnk"><img /.test(alone), alone);
+  // Emphasis around it, and text beside it, still draw.
+  const mixed = c.kbMd_('[**Open** ![i](https://x.example/i.png)](https://x.example/p)');
+  assert.ok(/<a href="https:\/\/x\.example\/p"[^>]*><strong>Open<\/strong> <img src="https:\/\/x\.example\/i\.png" alt="i" loading="lazy"><\/a>/.test(mixed), mixed);
+  // A handbook cross-reference whose text is a handbook image chip.
+  const xref = c.kbMd_('[![Ticket](manimg:fig-ticket)](kb:man-0-10)');
+  assert.ok(/<a href="#" class="kb-xref" data-kb-id="man-0-10" data-kb-anchor=""><span class="kb-img-pending kb-manimg" data-manimg="fig-ticket"/.test(xref) && !/\u0000/.test(xref), xref);
+  // Hostile: quotes in the inner image's URL and alt stay inert inside the link, as they do outside it.
+  const bad = c.kbMd_('[![a"b](https://x.example/a.png"onerror="x)](https://x.example/p)');
+  assert.ok(!/onerror="x/.test(bad) && !/\u0000/.test(bad), bad);
+  // The URL is never expanded: a token cannot be smuggled into an href.
+  const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  const fn = extractFnFrom(shared, 'kbMd_');
+  assert.strictEqual((fn.match(/' \+ linkText\(txt\) \+/g) || []).length, 4, 'every link kind draws its text through the one helper');
+  assert.ok(!/linkText\(url\)/.test(fn) && !/emph\(txt\) \+ '<\/a>'/.test(fn));
+});
+
+test('FO2 (cycle 26): what the page knows of whether the reader leads a team is FOUR states — not answered, could not be read, yes, no — and "could not be read" is never "no"', () => {
+  const page = HB_PAGE_SRC();
+  const run = (me) => { const ctx = vm.createContext({ HB_ME: me });
+    ['hbTrIsLead_', 'hbLeadState_'].forEach((n) => vm.runInContext(extractFnFrom(page, n), ctx)); return ctx.hbLeadState_(); };
+  assert.deepStrictEqual([run(undefined), run({ error: 'x' }), run(null), run({ setUp: true, isManager: true }), run({ setUp: true, isAdmin: true }),
+    run({ setUp: true, isManager: false, isAdmin: false }), run({ setUp: false, isManager: true })], ['wait', 'error', 'error', 'yes', 'yes', 'no', 'no']);
+  // Each manager surface records what it was drawn for, and the profile's answer redraws it only when that changed.
+  assert.ok(/HB_TR\.lead = hbLeadState_\(\);/.test(extractFnFrom(page, 'hbLoadTeamTraining_')) && /HB_PP\.lead = hbLeadState_\(\);/.test(extractFnFrom(page, 'hbLoadLocks_')));
+  const apply = extractFnFrom(page, 'hbApplyMe_');
+  assert.ok(/if \(HB_TR\.showing && lead !== HB_TR\.lead\) \{ hbTrTabs_\(\); hbLoadTeamTraining_\(\); \}/.test(apply) && /if \(HB_PP\.showing && lead !== HB_PP\.lead\) hbLoadLocks_\(\);/.test(apply));
+});
+
+test('FO8 (cycle 26): Profile\'s two columns fold with the other two-column layouts (1040px) — the rule sits AFTER the base rule it overrides — and the matrix measures the team column at 960', () => {
+  const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
+  const base = css.indexOf('.hb-pp-cols { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr);');
+  const fold = css.indexOf('@media (max-width: 1040px) { .hb-pp-cols { grid-template-columns: minmax(0, 1fr); } }');
+  assert.ok(base > 0 && fold > base, 'a same-weight override placed before the base rule loses');
+  assert.strictEqual((css.match(/\.hb-pp-cols \{ grid-template-columns: minmax\(0, 1fr\); \}/g) || []).length, 1, 'one fold rule (the 900px one is gone)');
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  const row = shoot.split('\n').filter((l) => l.indexOf("['handbook-people-light-half',") >= 0)[0];
+  assert.ok(row && /HALF/.test(row) && /HB_MIN\(\{ '\.hb-pp-right': 400 \}\)/.test(row), row);
+});
+
+test('FO10 (cycle 26): the DOM harness runs a NAMED subset for a bite-check and never passes it off as a run — a pattern that matches nothing or is not a regex is refused, the summary says SUBSET, counts.mjs clears the variable, and bite.sh runs it only with --dom, only when the named test is in it (the harness DRIVEN as a subprocess)', () => {
+  const dom = path.join(HB_ROOT, 'test/client/dom/runDom.js');
+  const run = (only) => require('child_process').spawnSync(process.execPath, [dom], { encoding: 'utf8', env: Object.assign({}, process.env, { DOM_ONLY: only }) });
+  const none = run('zzz-there-is-no-such-test');
+  assert.deepStrictEqual([none.status, /DOM_ONLY matched no test — nothing was run/.test(none.stdout), /passed/.test(none.stdout)], [2, true, false], 'an empty subset is refused, not "0 failed"');
+  const bad = run('(');
+  assert.deepStrictEqual([bad.status, /DOM_ONLY is not a regular expression/.test(bad.stdout)], [2, true]);
+  const one = run('^records a terminal call with its handlers');
+  assert.strictEqual(one.status, 0, one.stdout.slice(-300));
+  const m = /(\d+) passed, (\d+) failed — SUBSET: (\d+) of (\d+) tests \(DOM_ONLY\), not a harness result/.exec(one.stdout);
+  assert.ok(m && m[1] === '1' && m[2] === '0' && m[3] === '1' && Number(m[4]) > 400, one.stdout.slice(-200));
+  assert.strictEqual((one.stdout.match(/^  [✓✗] /gm) || []).length, 1, 'only the named test ran');
+  // counts.mjs: the count is never taken from a subset.
+  const counts = fs.readFileSync(path.join(HB_ROOT, 'scripts/counts.mjs'), 'utf8');
+  assert.ok(/delete env\.DOM_ONLY;/.test(counts) && counts.indexOf('delete env.DOM_ONLY;') < counts.indexOf('out = execFileSync(process.execPath'), 'cleared before the harness is spawned');
+  // CI sets it nowhere.
+  const wf = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  assert.ok(!/DOM_ONLY/.test(wf));
+  // bite.sh (structural — it cannot bite itself; the branches were run by hand): --only needs --dom, the subset must have run
+  // the needle's test, an inherited DOM_ONLY is cleared otherwise, and the file is restored before a refusal after the mutation.
+  const sh = fs.readFileSync(path.join(HB_ROOT, 'scripts/bite.sh'), 'utf8').split('\n').map((l) => (/^\s*#/.test(l) ? '' : l)).join('\n');
+  assert.ok(/--only\)/.test(sh) && /\[ -n "\$only" \] && \[ "\$harnessName" != "DOM" \]/.test(sh), '--only without --dom is refused');
+  assert.ok(/out="\$\(DOM_ONLY="\$only" node "\$harness" 2>&1\)"/.test(sh) && /out="\$\(env -u DOM_ONLY node "\$harness" 2>&1\)"/.test(sh));
+  const refuse = sh.indexOf("ran no test matching");
+  assert.ok(refuse > sh.indexOf('python3 -c') && /git checkout -- "\$file"\n\s+exit 2/.test(sh.slice(refuse, refuse + 400)), 'refused AFTER the mutation: the file is restored first');
+});
+
+test('FO11 (cycle 26): Team Tools is shot between the phone and the desk — a landing view per tool at 800px and the two densest at 960 — where nothing had ever looked', () => {
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  const names = [];
+  shoot.replace(/^  \['([a-z0-9-]+)',\s*(\{[^}]*\}),\s*([A-Z_]+),/gm, (m, n, nav, vp) => { names.push([n, nav, vp]); return m; });
+  const mid = names.filter((r) => (r[2] === 'TABLET' || r[2] === 'HALF') && !/^handbook-/.test(r[0]));
+  const tools = {};
+  mid.forEach((r) => { const t = /tool: '([a-zA-Z]+)'/.exec(r[1]); if (t) tools[t[1]] = 1; });
+  assert.deepStrictEqual(Object.keys(tools).sort(), ['callNotes', 'develop', 'intake', 'manage', 'qa', 'reference', 'timeClock'], 'every tool in the TOOLS registry has a mid-width scenario');
+  assert.ok(mid.length >= 19 && mid.some((r) => r[2] === 'HALF'), mid.length + ' mid-width Team Tools scenarios');
+  // The registry is the authority on what "every tool" is.
+  const core = fs.readFileSync(path.join(HB_ROOT, 'web-app/script_core.html'), 'utf8');
+  const reg = core.slice(core.indexOf('const TOOLS = {'));
+  Object.keys(tools).forEach((t) => assert.ok(new RegExp('\\n  ' + t + ':\\s*\\{').test(reg), 'a registry key: ' + t));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

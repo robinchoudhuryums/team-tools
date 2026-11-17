@@ -18,7 +18,7 @@ var HB_SEARCH_MIN = 2, HB_SEARCH_DEBOUNCE_MS = 300;
 // people view's state, and the newest answer applied (an older one never
 // overwrites a newer — every action answers with the caller's whole view).
 var HB_ME = undefined;
-var HB_PP = { showing: false, dirty: false, sent: 0, applied: 0 };
+var HB_PP = { showing: false, dirty: false, sent: 0, applied: 0, lead: '' };   // lead: what the lock-outs were drawn for
 var HB_LS_DEPT = 'umsHbDept';      // the reader's chosen department (a chapter)
 var HB_LS_VISIT = 'umsHbVisit';    // { last, prev } — local dates, for "since your last visit"
 var HB_LS_PREFS = 'umsHbReader';   // the reader's own prefs (resume, card state)
@@ -133,6 +133,14 @@ function hbMain_() { return document.getElementById('kb-main'); }
  *  Back), a Back itself does not push again. */
 function hbOpen_(id, anchor, nav, push) {
   if (hbHoldSitting_(function () { hbOpen_(id, anchor, nav, push); })) return;
+  // Cycle 26 (Batch 8 follow-on 3): a link to a section this app does not serve
+  // (not published yet, a Team Tools article, gone since it was bookmarked) is
+  // refused BEFORE the view is left — it wiped the chapter being read and put a
+  // one-line error in its place, with the toolbar still on the old section.
+  if (!HB.tree.some(function (it) { return it.id === id; })) {
+    showToast(HB.tree.length ? 'That section is not in the handbook.' : 'The handbook is still loading — try again in a moment.', 'toast-warn');
+    return;
+  }
   hbCloseSide_();
   hbLeaveSearch_(); HB_PP.showing = false; hbLeaveQuiz_();
   if (!kbOpenManualSection_(id, anchor || '', nav)) { hbMsg_('That section is not in the handbook.', true); return; }
@@ -226,7 +234,7 @@ function hbSearch_(q, record) {
   main.innerHTML = '<div class="hb-results"><h1 class="hb-results-h">Results for “' + esc(q) + '”</h1>' +
     (jump ? '<button type="button" class="hb-hit hb-hit-jump" data-kb-id="' + esc(jump.id) + '" data-kb-anchor="' + esc(jump.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
       icon('chevronRight', 14) + ' Go to <b>' + esc(jump.num) + '</b> ' + esc(kbManualSplitTitle_(jump.title).rest) + '</button>' : '') +
-    '<div class="hb-res-grid"><div class="hb-results-list" role="status">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
+    '<div class="hb-res-grid"><div class="hb-results-list">' + loSweep() + '</div><aside class="hb-res-side" aria-label="Narrow the results"></aside></div></div>';
   main.scrollTop = 0;
   if (handOver) {
     var bar = document.getElementById('hb-q');
@@ -250,9 +258,12 @@ function hbSearch_(q, record) {
 /** The result rows: the section (its number as a chip), the part of it that
  *  matched, and a line of it. Router answers ("the caller said …") lead. */
 function hbResultsHtml_(results, q) {
-  if (!results.length) return '<p class="hb-quiet">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
+  // Cycle 26 (Batch 8 follow-on 5): the COUNT is what is announced. The whole
+  // list was a role="status" region, so a screen reader read every result out
+  // at each search.
+  if (!results.length) return '<p class="hb-quiet" role="status">Nothing in the handbook matches “' + esc(q) + '”.</p>' + hbSuggestTopicHtml_();
   // HBR2: the first result is the best match; every hit carries its chapter (colour, icon, name) and a key the filters use.
-  return '<p class="hb-quiet">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
+  return '<p class="hb-quiet" role="status">' + results.length + (results.length === 1 ? ' result' : ' results') + '</p>' +
     results.map(function (r, i) {
       var t = kbManualSplitTitle_(r.title || ''), ck = kbManualChapterKey_(r.department || ''), cp = kbManualChapterParts_(r.department || '');
       return '<button type="button" class="hb-hit' + (i === 0 ? ' hb-hit-best' : '') + (ck ? ' kb-man-' + ck : '') + '" data-dept="' + esc(r.department || '') + '" data-kb-id="' + esc(r.id) + '" data-kb-anchor="' + esc(r.anchor || '') + '" onclick="MANUAL_HOST.openItem(this.getAttribute(\'data-kb-id\'), this.getAttribute(\'data-kb-anchor\'))">' +
@@ -371,6 +382,14 @@ function hbApplyMe_(seq, me, parts) {
       if (k === 'me') hbPaintPeopleMe_(); else if (k === 'team') hbPaintPeopleTeam_(); else hbPaintPeopleAdmin_();
     });
   }
+  // Cycle 26 (Batch 8 follow-on 2): what a manager sees was decided ONCE, when
+  // the view was painted — a manager who opened Training or Profile before this
+  // answer arrived got no Team training, no Mine / My team and no lock-outs
+  // until they left and came back. Each is redrawn when what it was drawn for
+  // (a manager, not one, not known yet, could not tell) has changed — and only then.
+  var lead = hbLeadState_();
+  if (HB_TR.showing && lead !== HB_TR.lead) { hbTrTabs_(); hbLoadTeamTraining_(); }
+  if (HB_PP.showing && lead !== HB_PP.lead) hbLoadLocks_();
   return true;
 }
 function hbPaintMeBtn_() {
@@ -1404,8 +1423,8 @@ function hbPaintResult_(quiz, res, sitting) {
 /** People view: the manager's (or admin's) people locked out of a quiz. */
 function hbLoadLocks_() {
   var host = document.getElementById('hb-pp-locks'); if (!host) return;
-  var me = HB_ME;
-  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  HB_PP.lead = hbLeadState_();   // what this was drawn for (follow-on 2)
+  if (HB_PP.lead !== 'yes') { host.innerHTML = ''; return; }   // a failed profile is said by "Your profile", above
   google.script.run
     .withSuccessHandler(function (res) { hbPaintLocks_(res || { error: 'The server did not answer.' }); })
     .withFailureHandler(function (err) { hbPaintLocks_({ error: (err && err.message) || 'The server did not answer.' }); })
@@ -1466,7 +1485,7 @@ function hbDueLabel_(due) {
   try { return new Date(due + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return due; }
 }
 
-var HB_TR = { seq: 0, showing: false, mine: undefined, mineStale: '', team: undefined, tab: '' };   // tab: HBR4's Mine / My team ('' = the default for the role)
+var HB_TR = { seq: 0, showing: false, mine: undefined, mineStale: '', team: undefined, tab: '', lead: '' };   // tab: HBR4's Mine / My team ('' = the default for the role)
 function hbLeaveTraining_() { HB_TR.showing = false; HB_TR.seq++; hbLeaveSaved_(); }   // and the Saved page (HB2.2)
 function hbGoTraining_() { hbTraining_(true); }
 function hbTraining_(push) {
@@ -1493,6 +1512,15 @@ function hbTraining_(push) {
 /** HBR4 — the Mine / My team toggle, for a manager or the admin only (a
  *  reader has one view). A manager opens on My team. */
 function hbTrIsLead_() { var me = HB_ME; return !!(me && !me.error && me.setUp !== false && (me.isManager || me.isAdmin)); }
+/** PURE-ish — what the page knows of whether the reader leads a team: 'wait'
+ *  (the profile has not answered), 'error' (it could not be read — NOT "no"),
+ *  'yes', 'no'. The manager surfaces record the state they were drawn for. */
+function hbLeadState_() {
+  var me = HB_ME;
+  if (me === undefined) return 'wait';
+  if (!me || me.error) return 'error';
+  return hbTrIsLead_() ? 'yes' : 'no';
+}
 function hbTrTabs_() {
   var bar = document.getElementById('hb-tr-tabs'), mine = document.getElementById('hb-tr-mine'), team = document.getElementById('hb-tr-team');
   if (!bar || !mine || !team) return;
@@ -1525,8 +1553,14 @@ function hbLoadMine_(refocus) {
 }
 function hbLoadTeamTraining_() {
   var host = document.getElementById('hb-tr-team'); if (!host) return;
-  var me = HB_ME;
-  if (!me || me.error || me.setUp === false || !(me.isManager || me.isAdmin)) { host.innerHTML = ''; return; }
+  HB_TR.lead = hbLeadState_();   // what this was drawn for — hbApplyMe_ redraws when it changes
+  // A profile that could not be read is not "not a manager": say so, with a way to ask again.
+  if (HB_TR.lead === 'error') {
+    host.innerHTML = '<p class="hb-msg bad" role="alert">Could not tell whether you manage a team, so team training is not shown: ' +
+      esc(String((HB_ME && HB_ME.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p><button type="button" class="kb-btn hb-retry" onclick="hbLoadMe_()">Try again</button>';
+    return;
+  }
+  if (HB_TR.lead !== 'yes') { host.innerHTML = ''; return; }
   host.innerHTML = '<h2 class="hb-pp-h2">Team training</h2>' + loSweep();
   var seq = HB_TR.seq;
   var take = function (res) { if (seq !== HB_TR.seq || !HB_TR.showing) return; HB_TR.team = res; hbPaintTeamTraining_(); };
@@ -1589,7 +1623,8 @@ function hbPaintMine_() {
 function hbPaintTeamTraining_() {
   var host = document.getElementById('hb-tr-team'); if (!host) return;
   var res = HB_TR.team, head = '<h2 class="hb-pp-h2">Team training</h2>';
-  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>'; return; }
+  if (!res || res.error) { host.innerHTML = head + '<p class="hb-msg bad" role="alert">Team training could not be loaded: ' + esc(String((res && res.error) || 'the server did not answer').replace(/\.$/, '')) + '.</p>' +
+    '<button type="button" class="kb-btn hb-retry" onclick="hbLoadTeamTraining_()">Try again</button>'; return; }
   // HBR4: plans and quizzes as cards — the kicker says what it holds, the title, who it reaches.
   var row = function (title, sub, kind, id, live, kick) {
     return '<div class="hb-tr-card' + (live ? '' : ' hb-tr-arch') + '"><div class="hb-pp-row-b"><span class="hb-tr-pk">' + esc(kick) + '</span><span class="hb-pp-row-n">' + esc(title) + (live ? '' : ' <span class="hb-qz-chip">Archived</span>') + '</span>' +
@@ -2552,6 +2587,10 @@ function hbReadAloud_() {
   var speech = hbSpeech_(), id = hbBarId_();   // F45: the section the Listen button is shown FOR
   if (!speech) { showToast('This browser cannot read aloud.', 'toast-warn'); return; }
   hbStopReading_();
+  // Cycle 26 (Batch 8 follow-on 4): whatever the engine still holds goes first —
+  // a page reloaded while paused left it paused, so Listen showed Pause and
+  // Stop and nothing was heard. (hbStopReading_ cancels only what THIS page started.)
+  try { speech.cancel(); } catch (e) {}
   var blocks = hbReadBlocks_(document.getElementById('kb-man-sec-' + id));
   if (!blocks.length) { showToast('Nothing to read in this section.', 'toast-warn'); return; }
   HB_RA = { id: id, blocks: blocks, i: 0, state: 'playing', seq: HB_RA.seq + 1 };
@@ -3190,6 +3229,8 @@ function hbBoot_() {
   hbApplyDisplay_(hbDisplay_(), false);   // HB2.3: the head applied the stored attributes; this loads the font if it is on
   var sp = hbSpeech_();
   if (sp) { try { sp.addEventListener('voiceschanged', hbVoicesChanged_); } catch (e) {} }
+  // Follow-on 4: leaving or reloading the page stops the reading with it.
+  window.addEventListener('pagehide', function () { var s = hbSpeech_(); if (s) { try { s.cancel(); } catch (e) {} } });
   var vis = hbVisitStep_(hbLsJson_(HB_LS_VISIT), hbIsoDay_(new Date()));
   HB_SINCE = vis.since;
   hbLsSet_(HB_LS_VISIT, JSON.stringify(vis.rec));

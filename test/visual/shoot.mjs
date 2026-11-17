@@ -152,10 +152,9 @@ const SCENARIOS = [
   // the server could not confirm (the banner) with no sign-off state to show.
   ['handbook-failed-light-wide',   {}, WIDE,   'light', '', HB_FAILED, HB_PAGE],
   ['handbook-saved-failed-light-mobile', {}, MOBILE, 'light', '', "hbGoSaved_(); setTimeout(function(){ HB_SV.error = 'The Handbook spreadsheet could not be opened.'; HB_SV.bookmarks = []; hbPaintSaved_(); }, 300)", HB_PAGE],
-  // (Section 0.10, not 0.11: 0.11's CRITICAL callout kicker fails axe's contrast in dark mode with or
-  // without this batch — the shared reader's own colour, reported as a follow-on, not hidden: the
-  // banner is what this scenario is for.)
-  ['handbook-stale-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.10', "setTimeout(function(){ HB_STALE.on = true; hbPaintStale_(); HB_SO.setUp = undefined; HB_SO.error = 'offline'; hbRepaintBar_(); }, 300)", HB_PAGE],
+  // (Section 0.11: it holds a CRITICAL callout, whose kicker failed axe's contrast in dark mode until
+  // the Batch 8 follow-ons — FO1. No other dark scenario shot one without high contrast.)
+  ['handbook-stale-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.11', "setTimeout(function(){ HB_STALE.on = true; hbPaintStale_(); HB_SO.setUp = undefined; HB_SO.error = 'offline'; hbRepaintBar_(); }, 300)", HB_PAGE],
   // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
   ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
   ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],
@@ -176,6 +175,8 @@ const SCENARIOS = [
   // first visit's home prompt.
   ['handbook-people-light-wide',   {}, WIDE,   'light', '', 'hbGoPeople_()', HB_PAGE],
   ['handbook-people-dark-mobile',  {}, MOBILE, 'dark',  '', 'hbGoPeople_()', HB_PAGE],
+  // FO8 (cycle 26): Profile at 960px — the team column was 304px beside the 340px profile card.
+  ['handbook-people-light-half',   {}, HALF,   'light', '', 'hbGoPeople_()', HB_MIN({ '.hb-pp-right': 400 })],
   ['handbook-firstvisit-light-mobile', {}, MOBILE, 'light', '', HB_FIRST, HB_PAGE],
   // HB3.2 — quizzes: the list, a sitting, a result, the bar on a section.
   ['handbook-quizzes-light-wide',  {}, WIDE,   'light', '', 'hbGoQuizzes_()', HB_PAGE],
@@ -737,6 +738,30 @@ const SCENARIOS = [
   // mid-shift. The Dashboard must still read as Chicago: today's date, the
   // punches, the ribbon's now-cursor and the break-chip states all on the
   // CST day, not a fresh PHT day with "Clock In".
+  // Cycle 26 (Batch 8 follow-on 11): Team Tools BETWEEN the phone and the desk.
+  // Every scenario above is 360–480px or 1440px; nothing had ever shot the app
+  // at the width of a window beside another one (800px), or half a 1920px
+  // screen (960px) — the widths where the handbook's hero was a 48px sliver
+  // (F65). One landing view per tool at 800, and the two densest at 960.
+  ['clock-light-tablet', { tool: 'timeClock', tab: 'clock' }, TABLET, 'light', ''],
+  ['manage-light-tablet', { tool: 'manage', tab: 'manage' }, TABLET, 'light', ''],
+  ['timeoff-light-tablet', { tool: 'timeClock', tab: 'timeoff' }, TABLET, 'light', ''],
+  ['cn-log-light-tablet', { tool: 'callNotes', tab: 'callNotes' }, TABLET, 'light', ''],
+  ['cn-history-light-tablet', { tool: 'callNotes', tab: 'callNotesHistory' }, TABLET, 'light', ''],
+  ['metrics-light-tablet', { tool: 'timeClock', tab: 'metricsMyStats' }, TABLET, 'light', ''],
+  ['metrics-team-light-tablet', { tool: 'timeClock', tab: 'metricsTeam' }, TABLET, 'light', '?teamrange=7d'],
+  ['spanish-light-tablet', { tool: 'timeClock', tab: 'metricsSpanish' }, TABLET, 'light', ''],
+  ['deptreq-looks-light-tablet', { tool: 'callNotes', tab: 'metricsDeptReq' }, TABLET, 'light', ''],
+  ['intake-light-tablet', { tool: 'intake', tab: null }, TABLET, 'light', ''],
+  ['reference-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', ''],
+  ['reference-manual-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-0-10')"],
+  ['training-light-tablet', { tool: 'develop', tab: null }, TABLET, 'light', ''],
+  ['coaching-light-tablet', { tool: 'develop', tab: 'coaching' }, TABLET, 'light', ''],
+  ['qa-queue-light-tablet', { tool: 'qa', tab: 'qaQueue' }, TABLET, 'light', ''],
+  ['admin-system-light-tablet', { tool: 'manage', tab: 'callNotesAdmin' }, TABLET, 'light', '', "cnAdminTab_('system')"],
+  ['admin-config-light-tablet', { tool: 'manage', tab: 'callNotesAdmin' }, TABLET, 'light', '', "cnAdminTab_('config')"],
+  ['manage-light-half', { tool: 'manage', tab: 'manage' }, HALF, 'light', ''],
+  ['metrics-team-light-half', { tool: 'timeClock', tab: 'metricsTeam' }, HALF, 'light', '?teamrange=7d'],
   ['clock-light-wide-pht', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?tz=America/Chicago&role=rep', '', { tz: 'Asia/Manila', utc: [16, 5] }],
 ];
 

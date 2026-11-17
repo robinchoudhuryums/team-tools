@@ -4,7 +4,16 @@
 # A "bite-check": break the thing a pin is supposed to catch and confirm the pin
 # goes red. A pin that never bit is a pin that has never been shown to work.
 #
-#   scripts/bite.sh [--dom] [--fn <function>] "<label>" <file> "<python mutation on the string s>" "<test-name substring>"
+#   scripts/bite.sh [--dom [--only <regex>]] [--fn <function>] "<label>" <file> "<python mutation on the string s>" "<test-name substring>"
+#
+# `--only <regex>` (with `--dom`) runs just the DOM tests whose name matches —
+# the harness's own DOM_ONLY. A full DOM run is minutes, so sixty DOM mutations
+# were an afternoon; cycle 26's Batch 8 got round it with an uncommitted filter
+# patched into the runner in each worktree, which is tooling in a state the
+# repo does not have. It is the tool's job now, with the tool's guards: the
+# subset must RUN a test the needle names (a subset that leaves it out could
+# only ever say NO BITE), and without --only an inherited DOM_ONLY is cleared,
+# so a verdict is never about fewer tests than it says.
 #
 # `--dom` drives the DOM harness (test/client/dom/runDom.js) instead of the pure
 # one. Before it existed, biting a DOM pin meant hand-rolling the same mutate →
@@ -41,24 +50,40 @@ if [ "${1:-}" = "--dom" ]; then
 fi
 
 fnName=""
-if [ "${1:-}" = "--fn" ]; then
-  fnName="${2:-}"
-  shift 2 || true
-  case "$fnName" in
-    ''|*[!A-Za-z0-9_]*)
-      echo "  REFUSING: --fn takes a bare function name ([A-Za-z0-9_]), got: '$fnName'" >&2
-      exit 2 ;;
+only=""
+# The options, in any order (`--dom` may also lead — handled above).
+while [ $# -gt 0 ]; do
+  case "${1:-}" in
+    --dom)
+      harness="test/client/dom/runDom.js"
+      harnessName="DOM"
+      shift ;;
+    --fn)
+      fnName="${2:-}"
+      shift 2 || true
+      case "$fnName" in
+        ''|*[!A-Za-z0-9_]*)
+          echo "  REFUSING: --fn takes a bare function name ([A-Za-z0-9_]), got: '$fnName'" >&2
+          exit 2 ;;
+      esac ;;
+    --only)
+      only="${2:-}"
+      shift 2 || true
+      if [ -z "$only" ]; then
+        echo "  REFUSING: --only takes a regular expression over DOM test names" >&2
+        exit 2
+      fi ;;
+    *) break ;;
   esac
-fi
+done
 
-if [ "${1:-}" = "--dom" ]; then
-  harness="test/client/dom/runDom.js"
-  harnessName="DOM"
-  shift
+if [ -n "$only" ] && [ "$harnessName" != "DOM" ]; then
+  echo "  REFUSING: --only is the DOM harness's subset (use it with --dom); the pure harness runs whole" >&2
+  exit 2
 fi
 
 if [ $# -lt 4 ]; then
-  echo "usage: scripts/bite.sh [--dom] [--fn <function>] <label> <file> <python-mutation-on-s> <test-name-substring>" >&2
+  echo "usage: scripts/bite.sh [--dom [--only <regex>]] [--fn <function>] <label> <file> <python-mutation-on-s> <test-name-substring>" >&2
   exit 2
 fi
 label="$1"; file="$2"; mutation="$3"; needle="$4"
@@ -141,7 +166,21 @@ if s == before:
 io.open(p, 'w', encoding='utf-8').write(full[:lo] + s + full[hi:])
 " || { echo "  MUTATION FAILED: $label" >&2; exit 1; }
 
-out="$(node "$harness" 2>&1)"
+# With --only: the harness's own subset. Without it an inherited DOM_ONLY is
+# CLEARED — a verdict must never be about fewer tests than the caller asked for.
+if [ -n "$only" ]; then
+  out="$(DOM_ONLY="$only" node "$harness" 2>&1)"
+  # The subset must have RUN a test the needle names: one that leaves it out
+  # could only ever answer NO BITE, about nothing.
+  if ! grep -q "[✓✗] .*$needle" <<<"$out"; then
+    echo "  REFUSING: --only '$only' ran no test matching '$needle' — the verdict would be about nothing" >&2
+    echo "$out" | tail -2 >&2
+    git checkout -- "$file"
+    exit 2
+  fi
+else
+  out="$(env -u DOM_ONLY node "$harness" 2>&1)"
+fi
 # HERESTRING, not `echo "$out" | grep -q`. Under `set -o pipefail`, `grep -q`
 # exits the moment it matches; if the harness output is larger than the pipe
 # buffer (~64KB — it is ~83KB) the writer then dies of SIGPIPE and the PIPELINE

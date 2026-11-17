@@ -26,12 +26,27 @@ const tick = () => new Promise((r) => setImmediate(r));
 function settle(p) { const s = { done: false, value: undefined }; p.then((v) => { s.done = true; s.value = v; }); return s; }
 
 async function runAll() {
+  // Cycle 26 (Batch 8 follow-on 10): DOM_ONLY=<regex> runs only the tests whose
+  // NAME matches. It exists for bite-checks (`scripts/bite.sh --dom --only`):
+  // a mutation is checked against the drive that should catch it, and a full
+  // run per mutation is minutes. It is NEVER a harness result — the summary
+  // line says SUBSET, `counts.mjs` clears the variable for its own run, and a
+  // pattern that is not a regex, or matches no test, is refused: an empty
+  // subset would otherwise be "0 failed".
+  let only = null;
+  if (process.env.DOM_ONLY) {
+    try { only = new RegExp(process.env.DOM_ONLY); }
+    catch (e) { console.log('DOM_ONLY is not a regular expression (' + e.message + ') — nothing was run'); process.exit(2); }
+    if (!tests.some((t) => t.name && only.test(t.name))) { console.log('DOM_ONLY matched no test — nothing was run'); process.exit(2); }
+  }
+  const total = tests.filter((t) => t.name).length;
   for (const t of tests) {
-    if (t.section) { curSection = t.section; console.log('\n' + curSection); continue; }
+    if (t.section) { curSection = t.section; if (!only) console.log('\n' + curSection); continue; }
+    if (only && !only.test(t.name)) continue;
     try { await t.fn(); pass++; console.log('  ✓ ' + t.name); }
     catch (e) { fail++; console.log('  ✗ ' + t.name + '\n      ' + (e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n      ') : e)); }
   }
-  console.log('\n' + pass + ' passed, ' + fail + ' failed');
+  console.log('\n' + pass + ' passed, ' + fail + ' failed' + (only ? ' — SUBSET: ' + (pass + fail) + ' of ' + total + ' tests (DOM_ONLY), not a harness result' : ''));
   if (fail > 0) process.exit(1);
 }
 // Run after the synchronous section()/test() registrations below have all run.
@@ -13532,14 +13547,17 @@ test('HB4.1 DOM: when pdf.js cannot load, or the form cannot be read, the viewer
   // Close one form and open another before the first answer lands: the first
   // must not draw into the second's viewer.
   const pdf = 'data:application/pdf;base64,' + HB41_PDF_B64;
-  const two = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: (k) => ({ __delay: k === 'form-eaa' ? 30 : 120, value: { success: true, dataUri: pdf } }) } });
+  // (Cycle 26, Batch 8 follow-on 9: each answer is released by the test. The assertion between the two
+  // was "after 70 ms, before 120 ms" — the shape that failed CI for Batch 8's own drives on a busy runner.)
+  const first = {}, second = {};
+  const two = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), hbGetForm: (k) => ({ __hold: k === 'form-eaa' ? first : second, value: { success: true, dataUri: pdf } }) } });
   const got2 = hb41PdfJs_(two.w, 1);
   two.w.hbOpenForm_('form-eaa');
   two.w.closeOverlay(two.d.getElementById('hb-form-ov'));
   two.w.hbOpenForm_('form-pt-ot-rx');
-  await new Promise((res) => setTimeout(res, 70)); await two.settleAll();
+  first.release(); await new Promise((res) => setTimeout(res, 40)); await two.settleAll();
   assert.strictEqual(got2.length, 0, 'the closed form\'s answer drew nothing into the open viewer');
-  await new Promise((res) => setTimeout(res, 120)); await two.settleAll();
+  second.release(); await new Promise((res) => setTimeout(res, 40)); await two.settleAll();
   assert.deepStrictEqual([...two.d.querySelectorAll('#hb-form-ov canvas')].map((c) => c.getAttribute('aria-label')), ['PT/OT Evaluation Rx (sample) — page 1 of 1'], 'the open form, once');
 });
 
@@ -14526,4 +14544,117 @@ test('F66 DOM (cycle 26): "Match my device" follows the device WHILE the page is
   h.w.hbSetDisplay_('motion', true);
   h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
   assert.ok(seen.length && seen.every((b) => b === 'auto'), 'an open inside the chapter does not glide: ' + seen.join(','));
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cycle 26 — the follow-on items of Batch 8 (FO2–FO5): the page driven.
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 26 Batch 8 follow-ons');
+
+test('FO2 DOM (cycle 26): a manager who opens Training or Profile BEFORE their profile answers gets their team surfaces when it does — Team training, the Mine / My team switch, the lock-outs (they stayed empty until the view was left and re-entered); a profile that could not be read says so; a later profile answer redraws nothing it need not (driven)', async () => {
+  const me = {};
+  const h = await hbBoot_({ answers: { hbGetMe: { __hold: me, value: hb33Boss_() }, hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(),
+    hbTeamQuizLocks: { locks: [] }, hbSaveProfile: { success: true, changed: false, view: hb33Boss_() } } });
+  h.w.hbGoTraining_(); await h.settleAll();
+  const tabs = () => h.d.getElementById('hb-tr-tabs'), team = () => h.d.getElementById('hb-tr-team');
+  const asked = (fn) => h.calls.filter((c) => c === fn).length;
+  assert.deepStrictEqual([tabs().hidden, team().textContent, asked('hbTeamTraining')], [true, '', 0], 'the profile has not answered: nothing is known yet');
+  me.release(); await h.settleAll();
+  assert.deepStrictEqual([tabs().hidden, asked('hbTeamTraining')], [false, 1], 'it answered: the switch is there and Team training was asked for');
+  assert.ok(/Team training/.test(team().textContent));
+  // A later answer about the same reader (a profile action) redraws nothing: the team view is not rebuilt under them.
+  const before = team().firstElementChild;
+  h.w.hbApplyMe_(h.w.HB_PP.sent + 1, hb33Boss_());
+  await h.settleAll();
+  assert.deepStrictEqual([asked('hbTeamTraining'), team().firstElementChild === before], [1, true]);
+  // Profile: the lock-outs arrive the same way.
+  const me2 = {};
+  const p = await hbBoot_({ answers: { hbGetMe: { __hold: me2, value: hb33Boss_() }, hbTeamQuizLocks: { locks: [] } } });
+  p.w.hbGoPeople_(); await p.settleAll();
+  assert.strictEqual(p.calls.indexOf('hbTeamQuizLocks'), -1);
+  me2.release(); await p.settleAll();
+  assert.strictEqual(p.calls.filter((c) => c === 'hbTeamQuizLocks').length, 1, 'asked once the page knows this is a manager');
+  // A reader gets none of it, before or after.
+  const me3 = {};
+  const r = await hbBoot_({ answers: { hbGetMe: { __hold: me3, value: hbMeView_() }, hbMyTraining: { setUp: true, plans: [] } } });
+  r.w.hbGoTraining_(); await r.settleAll();
+  me3.release(); await r.settleAll();
+  assert.deepStrictEqual([r.d.getElementById('hb-tr-tabs').hidden, r.d.getElementById('hb-tr-team').textContent, r.calls.indexOf('hbTeamTraining')], [true, '', -1]);
+  // A profile that could not be read is not "not a manager": it says so, and Try again asks again.
+  let fail = true;
+  const e = await hbBoot_({ answers: { hbGetMe: () => (fail ? { error: 'The Handbook spreadsheet is busy.' } : hb33Boss_()), hbMyTraining: { setUp: true, plans: [] }, hbTeamTraining: HB33_TEAM(), hbTeamProgress: HB34_PROGRESS() } });
+  e.w.hbGoTraining_(); await e.settleAll();
+  const et = () => e.d.getElementById('hb-tr-team');
+  assert.ok(/Could not tell whether you manage a team, so team training is not shown: The Handbook spreadsheet is busy\./.test(et().textContent) && et().querySelector('[role="alert"]'));
+  fail = false;
+  et().querySelector('.hb-retry').click(); await e.settleAll();
+  assert.ok(/Team training/.test(et().textContent) && !et().querySelector('[role="alert"]') && !e.d.getElementById('hb-tr-tabs').hidden);
+  // Team training that failed to load has a way to ask again.
+  let tfail = true;
+  const t = await hbBoot_({ answers: { hbGetMe: hb33Boss_(), hbMyTraining: { setUp: true, plans: [] }, hbTeamProgress: HB34_PROGRESS(), hbTeamTraining: () => (tfail ? { __fail: 'offline' } : HB33_TEAM()) } });
+  t.w.hbGoTraining_(); await t.settleAll();
+  const tt = () => t.d.getElementById('hb-tr-team');
+  assert.ok(/Team training could not be loaded: offline\./.test(tt().textContent));
+  tfail = false;
+  tt().querySelector('.hb-retry').click(); await t.settleAll();
+  assert.ok(!/could not be loaded/.test(tt().textContent) && t.calls.filter((c) => c === 'hbTeamTraining').length === 2);
+});
+
+test('FO3 DOM (cycle 26): a link to a section this app does not serve leaves the reader where they are — a toast, the chapter still on screen, the toolbar and the history untouched (it wiped the chapter for a one-line error); before the chapters arrive it says the handbook is still loading (driven)', async () => {
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMySignOffs: { setUp: true, signoffs: {} } }) });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const entries = h.hist.length;
+  h.w.MANUAL_HOST.openItem('man-9-9', '9.9.1'); await h.settleAll();
+  assert.ok(/That section is not in the handbook/.test(hbToasts_(h)));
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1') && !h.main().querySelector('.hb-msg.bad'), 'the chapter is still there');
+  assert.deepStrictEqual([h.w.HB.currentId, h.w.hbBarId_(), h.hist.length], ['man-3-1', 'man-3-1', entries], 'nothing moved');
+  assert.strictEqual(h.d.querySelector('#hb-quizbar [data-hb-bar="sign"]').getAttribute('data-id'), 'man-3-1');
+  // A Team Tools article id is the same answer.
+  h.w.MANUAL_HOST.openItem('kb-neb'); await h.settleAll();
+  assert.ok(h.d.getElementById('kb-man-sec-man-3-1'));
+  // From another view: that view stays too.
+  h.w.hbGoSaved_(); await h.settleAll();
+  h.w.MANUAL_HOST.openItem('man-9-9'); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-sv') && h.w.HB_SV.showing, 'Saved is still the view, and still knows it is');
+  // Before the chapters arrive.
+  const g = {};
+  const b = await hbBoot_({ answers: { getManualParts: { __hold: g, value: HB_PARTS() } } });
+  b.w.MANUAL_HOST.openItem('man-3-1'); await b.settleAll();
+  assert.ok(/still loading/.test(hbToasts_(b)) && b.d.getElementById('hb-boot'), 'not "not in the handbook" — it is not known yet');
+  g.release(); await b.settleAll();
+  b.w.MANUAL_HOST.openItem('man-3-1'); await b.settleAll();
+  assert.ok(b.d.getElementById('kb-man-sec-man-3-1'));
+});
+
+test('FO4 DOM (cycle 26): read aloud cancels whatever the engine still holds before it speaks — a page reloaded while paused left Listen silent — and leaving the page stops it (driven)', async () => {
+  const h = await hbBoot_();
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  assert.strictEqual(sp.log.indexOf('cancel'), -1, 'nothing yet');
+  h.d.querySelector('#hb-quizbar [data-hb-bar="listen"]').click(); await h.settleAll();
+  assert.ok(sp.log.indexOf('cancel') >= 0 && sp.log.indexOf('cancel') < sp.log.indexOf('speak'), 'a fresh page cancels BEFORE its first words: ' + sp.log.join(','));
+  const n = sp.log.filter((x) => x === 'cancel').length;
+  h.w.dispatchEvent(new h.w.Event('pagehide'));
+  assert.strictEqual(sp.log.filter((x) => x === 'cancel').length, n + 1, 'leaving the page cancels');
+  // A browser with no speech: the listener does nothing, and throws nothing.
+  const q = await hbBoot_();
+  q.w.dispatchEvent(new q.w.Event('pagehide'));
+});
+
+test('FO5 DOM (cycle 26): a search announces its COUNT, not its results — the whole list was a live region, read out at every search (driven)', async () => {
+  const h = await hbBoot_();
+  h.w.hbSearch_('neb', true); await h.settleAll();
+  const list = h.d.querySelector('.hb-results-list');
+  assert.ok(list && !list.hasAttribute('role'), 'the list is not a live region');
+  const said = [...list.querySelectorAll('[role="status"]')].map((e) => e.textContent);
+  assert.deepStrictEqual(said, ['1 result'], 'the count is what is announced');
+  assert.ok(!list.querySelector('.hb-hit').closest('[role="status"]'), 'no result sits inside a live region');
+  // Nothing found: that sentence is the announcement.
+  const none = await hbBoot_({ answers: { searchReference: { sectioned: true, terms: ['zzz'], results: [] } } });
+  none.w.hbSearch_('zzz', true); await none.settleAll();
+  assert.deepStrictEqual([...none.d.querySelectorAll('.hb-results-list [role="status"]')].map((e) => e.textContent), ['Nothing in the handbook matches “zzz”.']);
+  // A failure still interrupts.
+  const bad = await hbBoot_({ answers: { searchReference: { __fail: 'offline' } } });
+  bad.w.hbSearch_('neb', true); await bad.settleAll();
+  assert.ok(bad.d.querySelector('.hb-results-list [role="alert"]'));
 });
