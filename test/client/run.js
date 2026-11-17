@@ -48381,8 +48381,10 @@ test('F55 (cycle 26): note sync turned off is the ACCOUNT\'s — a marker row re
   hbAs_(sb, 'ann@ex.org').hbSyncNotes({ 'man-1-1': { t: 'Ann\'s', ms: now - 7 } }, true);
   const mine = () => sb.__hbTabs.Notes.slice(1).filter((r) => r[0] === 'rep@ex.org');
   assert.strictEqual(mine().length, 2);
+  const tabRows = sb.__hbTabs.Notes.length;
   // Computer A turns it off: the copies go, and the account says so.
   assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbForgetNotes()), { success: true, removed: 2 });
+  assert.strictEqual(sb.__hbTabs.Notes.length, tabRows, 'the marker took a row the notes left — the tab does not grow with every off');
   assert.deepStrictEqual(mine().map((r) => [r[1], r[2]]), [[OFF, '']], 'the notes are gone; the marker took the first row they left');
   assert.ok(mine()[0][3] >= now, 'and says when');
   // Computer B, its own switch still on, visits: BEFORE, every note went back into the spreadsheet.
