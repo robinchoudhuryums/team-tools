@@ -4039,6 +4039,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   When a pin needs a value some other function produces, produce it with that
   function.
 
+  **AMENDED (cycle 26 Batch 8): a TWENTY-FOURTH direction — the clock in a
+  drive.** Several of Batch 8's DOM drives had to assert what the page shows
+  WHILE an answer is on its way ("still loading", "Profile before the chapters
+  arrive", "the list is not drawn yet"). They were written with the harness's
+  `__delay` — the fake server answers after 90 ms — and an assertion made
+  after the boot's own awaits. On this machine those awaits take about 50 ms.
+  CI's run 1785 passed the DOM step and then FAILED the same harness inside
+  `counts.mjs --check` a minute later: on a busier runner the awaits took
+  longer than the delay, the answer arrived first, and "still loading" was
+  false. The fix was correct; the drive was a race. `hbBoot_` now takes
+  `{ __hold: gate, value }` — the answer waits until the test calls
+  `gate.release()` (every answer held on that gate, oldest first) — and no
+  Batch 8 drive uses a clock to order two things. The one wait left is a
+  lower bound (the search's 300 ms debounce, waited 340): a timer scheduled
+  earlier with a shorter delay fires first whatever the load. Verified by six
+  concurrent runs of the DOM harness on four cores — the load that produced
+  it. A green run on an idle machine says nothing about a test that orders
+  events by time.
+
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
   done (operator 2026-09-15).** The reconcile pass (g115) makes late punch data

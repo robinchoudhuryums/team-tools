@@ -12117,6 +12117,15 @@ async function hbBoot_(opts) {
           if (name === 'withFailureHandler') return (f) => { c.bad = f; return p; };
           return (...args) => { calls.push(name); argsOf.push(JSON.parse(JSON.stringify([name].concat(args)))); let a = answers[name];
             if (typeof a === 'function') a = a(...args);
+            // Cycle 26 Batch 8: `{ __hold: gate, value }` — the answer WAITS until the test calls gate.release()
+            // (every answer held on that gate, oldest first). A wall-clock __delay races the test's own awaits on
+            // a busy runner: "still loading" asserted before a 90 ms answer failed in CI once the runner was slower.
+            if (a && a.__hold) {
+              const gate = a.__hold, val = a.value;
+              (gate.q = gate.q || []).push(() => { if (c.ok) c.ok(JSON.parse(JSON.stringify(val))); });
+              gate.release = () => { const q = gate.q; gate.q = []; q.forEach((f) => f()); };
+              return;
+            }
             const delay = a && a.__delay ? a.__delay : 0;   // HB1.4: a slower answer, to drop a stale one
             if (a && a.__delay) a = a.value;
             setTimeout(() => {
@@ -14132,11 +14141,12 @@ test('F47 DOM (cycle 26): bookmarks that could not be loaded are not "Nothing bo
   kc().querySelector('.hb-sv-star').click(); await k.settleAll();
   assert.ok(!kc().querySelector('[role="alert"]') && /Kept in your account/.test(kc().textContent) && /Nothing bookmarked yet/.test(kc().textContent));
   // While they are on their way: a loading bar — not "nothing".
-  const slow = await hbBoot_({ answers: { hbMyBookmarks: { __delay: 90, value: { setUp: true, bookmarks: [] } } } });
+  const bmGate = {};
+  const slow = await hbBoot_({ answers: { hbMyBookmarks: { __hold: bmGate, value: { setUp: true, bookmarks: [] } } } });
   slow.w.hbGoSaved_(); await slow.settleAll();
   const sc = () => slow.d.querySelector('#hb-sv .hb-sv-card');
   assert.ok(sc().querySelector('.lo-sweep') && !/Nothing bookmarked yet/.test(sc().textContent), 'still loading');
-  await b8Wait_(110); await slow.settleAll();
+  bmGate.release(); await slow.settleAll();
   assert.ok(!sc().querySelector('.lo-sweep') && /Nothing bookmarked yet/.test(sc().textContent), 'loaded, and empty: now it may say so');
   // No account store: the browser's own list, as before.
   const local = await hbBoot_({ answers: { hbMyBookmarks: { setUp: false, bookmarks: [] } } });
@@ -14145,62 +14155,74 @@ test('F47 DOM (cycle 26): bookmarks that could not be loaded are not "Nothing bo
 });
 
 test('F55 DOM (cycle 26): the chapters landing late do not repaint over where the reader went — Profile stays (its department list filled in), a quiz in progress keeps its answers, the contents arrive; only the boot placeholder is routed away from; a failure with the reader elsewhere is a sticky toast (driven)', async () => {
-  const slow = () => ({ __delay: 90, value: HB_PARTS() });
-  const h = await hbBoot_({ params: { s: '3.2' }, answers: { hbGetMe: hbMeView_(), getManualParts: slow() } });
+  // The chapters arrive when the test says so (a gate per boot) — never by the clock.
+  const G = () => ({});
+  const slow = (g) => ({ __hold: g, value: HB_PARTS() });
+  const g1 = G();
+  const h = await hbBoot_({ params: { s: '3.2' }, answers: { hbGetMe: hbMeView_(), getManualParts: slow(g1) } });
   assert.ok(h.d.getElementById('hb-boot'), 'the chapters are still on their way');
   h.d.getElementById('hb-me').click(); await h.settleAll();
   assert.ok(h.d.getElementById('hb-pp-me') && !h.d.getElementById('hb-boot'));
   assert.strictEqual(h.d.getElementById('hb-pp-dept').options.length, 1, 'no chapters yet: no departments to choose');
-  await b8Wait_(110); await h.settleAll();
+  g1.release(); await h.settleAll();
   assert.ok(h.d.getElementById('hb-pp-me'), 'Profile is still the view');
   assert.ok(!h.d.querySelector('.hb-home') && !h.d.getElementById('kb-man-sec-man-3-2'), 'neither Home nor the link\'s section was painted over it');
   assert.strictEqual(h.d.getElementById('hb-pp-dept').options.length, 3, 'and its department list has the chapters now');
   assert.strictEqual(h.d.querySelectorAll('#hb-toc .hb-ch').length, 2, 'the contents arrived');
   assert.deepStrictEqual(h.hist.filter((x) => x[0] === 'replace'), [], 'no history entry was rewritten under the reader');
   // The control: a reader who waited is taken where the link pointed.
-  const w = await hbBoot_({ params: { s: '3.2' }, answers: { getManualParts: slow() } });
-  await b8Wait_(110); await w.settleAll();
+  const g2 = G();
+  const w = await hbBoot_({ params: { s: '3.2' }, answers: { getManualParts: slow(g2) } });
+  assert.ok(w.d.getElementById('hb-boot'));
+  g2.release(); await w.settleAll();
   assert.ok(w.d.getElementById('kb-man-sec-man-3-2') && !w.d.getElementById('hb-boot'));
   // A quiz started meanwhile keeps its sitting and its answers.
-  const q = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, getManualParts: slow() } });
+  const g3 = G();
+  const q = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, getManualParts: slow(g3) } });
   q.w.hbTakeQuiz_('q-neb', true); await q.settleAll();
   const first = q.d.querySelector('#hb-qz-card input'); first.checked = true; first.dispatchEvent(new q.w.Event('change', { bubbles: true }));
   const sitting = q.w.HB_QZ.taking;
-  await b8Wait_(110); await q.settleAll();
+  g3.release(); await q.settleAll();
   assert.ok(q.w.HB_QZ.taking === sitting && q.d.querySelector('#hb-qz-card input').checked && !q.d.querySelector('.hb-home'), 'the sitting is untouched');
   assert.ok(!b8Dlg_(q), 'and nothing was asked — nothing tried to leave');
   // Saved, opened meanwhile, learns the sections' names (it said "No longer in the handbook" for every bookmark).
-  const s = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-3-1', title: 'old title' }] }, getManualParts: slow() } });
+  const g4 = G();
+  const s = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-3-1', title: 'old title' }] }, getManualParts: slow(g4) } });
   s.w.hbGoSaved_(); await s.settleAll();
   assert.ok(/No longer in the handbook/.test(s.d.getElementById('hb-sv').textContent), 'before the chapters: it cannot know');
-  await b8Wait_(110); await s.settleAll();
+  g4.release(); await s.settleAll();
   assert.ok(/3\.1 Oxygen basics/.test(s.d.getElementById('hb-sv').textContent) && !/No longer in the handbook/.test(s.d.getElementById('hb-sv').textContent));
   // The Quizzes list, My training and Forms, each opened meanwhile, learn the chapters' and sections' names.
-  const l = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbMyTraining: HB33_MINE(), hbListForms: HB41_FORMS(), getManualParts: slow() } });
+  const g5 = G();
+  const l = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbMyTraining: HB33_MINE(), hbListForms: HB41_FORMS(), getManualParts: slow(g5) } });
   l.w.hbGoQuizzes_(); await l.settleAll();
   assert.ok(l.d.querySelector('.hb-qc') && !/Respiratory/.test(l.d.getElementById('hb-qz-body').textContent));
-  await b8Wait_(110); await l.settleAll();
+  g5.release(); await l.settleAll();
   assert.ok(/Chapter 3 · Respiratory & Resupply/.test(l.d.getElementById('hb-qz-body').textContent), 'each quiz under its chapter');
-  const tr = await hbBoot_({ answers: { hbMyTraining: HB33_MINE(), getManualParts: slow() } });
+  const g6 = G();
+  const tr = await hbBoot_({ answers: { hbMyTraining: HB33_MINE(), getManualParts: slow(g6) } });
   tr.w.hbGoTraining_(); await tr.settleAll();
   assert.ok(/A section no longer in the handbook/.test(tr.d.getElementById('hb-tr-mine').textContent));
-  await b8Wait_(110); await tr.settleAll();
+  g6.release(); await tr.settleAll();
   assert.ok(/3\.1 Oxygen basics/.test(tr.d.getElementById('hb-tr-mine').textContent) && !/no longer in the handbook/.test(tr.d.getElementById('hb-tr-mine').textContent));
-  const fm = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), getManualParts: slow() } });
+  const g7 = G();
+  const fm = await hbBoot_({ answers: { hbListForms: HB41_FORMS(), getManualParts: slow(g7) } });
   fm.w.hbGoForms_(); await fm.settleAll();
   assert.ok(fm.d.querySelector('.hb-fm-card') && !fm.d.querySelector('.hb-fm-chip'));
-  await b8Wait_(110); await fm.settleAll();
+  g7.release(); await fm.settleAll();
   assert.deepStrictEqual([...fm.d.querySelector('.hb-fm-card').querySelectorAll('.hb-fm-chip')].map((c) => c.textContent), ['3.1'], 'a form\'s sections are linked once they exist');
   // Home, pressed while the chapters were on their way, gets its tiles — and stays Home, not the link's section.
-  const hm = await hbBoot_({ params: { s: '3.2' }, answers: { getManualParts: slow() } });
+  const g8 = G();
+  const hm = await hbBoot_({ params: { s: '3.2' }, answers: { getManualParts: slow(g8) } });
   hm.d.querySelector('.hb-brand').click(); await hm.settleAll();
   assert.ok(hm.d.querySelector('.hb-home') && hm.d.querySelectorAll('.hb-card').length === 0);
-  await b8Wait_(110); await hm.settleAll();
+  g8.release(); await hm.settleAll();
   assert.ok(hm.d.querySelector('.hb-home') && hm.d.querySelectorAll('.hb-card').length === 2 && !hm.d.getElementById('kb-man-sec-man-3-2'));
   // The chapters FAIL while the reader is elsewhere: their view stays, and they are told (a sticky toast).
-  const f = await hbBoot_({ answers: { hbGetMe: hbMeView_(), getManualParts: { __delay: 90, value: { error: 'The handbook is not set up yet.' } } } });
+  const g9 = G();
+  const f = await hbBoot_({ answers: { hbGetMe: hbMeView_(), getManualParts: { __hold: g9, value: { error: 'The handbook is not set up yet.' } } } });
   f.w.hbGoPeople_(); await f.settleAll();
-  await b8Wait_(110); await f.settleAll();
+  g9.release(); await f.settleAll();
   assert.ok(f.d.getElementById('hb-pp-me'), 'Profile was not replaced by the error');
   assert.ok(b8Sticky_(f).some((t) => /could not be loaded: The handbook is not set up yet\. Reload the page/.test(t)));
   // …and on the placeholder it is the page's own message, as before.
@@ -14211,7 +14233,8 @@ test('F55 DOM (cycle 26): the chapters landing late do not repaint over where th
 test('F55 DOM (cycle 26): a quiz in progress asks before ANY way out — the rail, the bar\'s search, Back, Profile, its own Leave — once; "Keep going" keeps every answer (the search box emptied, the quiz back on the history); with nothing chosen nothing is asked; answers already sent are not asked about, and their result is said if the reader has left (driven)', async () => {
   const result = { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true], review: [], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) };
   let slowList = false;
-  const h = await hbBoot_({ answers: { hbListQuizzes: () => (slowList ? { __delay: 80, value: HB32_LIST() } : HB32_LIST()), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbGetMe: hbMeView_(), hbSubmitQuiz: { __delay: 50, value: result } } });
+  const subGate = {}, listGate = {};   // the submit's answer and the list's arrive when the test says — never by the clock
+  const h = await hbBoot_({ answers: { hbListQuizzes: () => (slowList ? { __hold: listGate, value: HB32_LIST() } : HB32_LIST()), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbGetMe: hbMeView_(), hbSubmitQuiz: { __hold: subGate, value: result } } });
   const take = async () => { h.w.hbTakeQuiz_('q-neb', true); await h.settleAll(); };
   const pick = () => { const i = h.d.querySelector('#hb-qz-card input'); i.checked = true; i.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
   const onQuiz = () => !!h.d.getElementById('hb-qz-card') && !!h.w.HB_QZ.taking;
@@ -14270,19 +14293,21 @@ test('F55 DOM (cycle 26): a quiz in progress asks before ANY way out — the rai
   h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
   h.w.hbGoQuizzes_(); await h.settleAll();
   assert.ok(!b8Dlg_(h) && h.d.getElementById('hb-qz-body') && !h.d.querySelector('.hb-qc'), 'no question: the attempt is the server\'s now (the list is on its way)');
-  await b8Wait_(70); await h.settleAll();
+  subGate.release(); await h.settleAll();
   assert.ok(b8Sticky_(h).some((t) => /“Nebulizers” was submitted: 67% — passed\./.test(t)), 'the result is said, and stays until read: ' + b8Sticky_(h).join(' | '));
   assert.strictEqual(h.calls.filter((c) => c === 'hbListQuizzes').length, lists + 2, 'and the list is asked for again, to learn the new standing');
-  await b8Wait_(110); await h.settleAll();
+  assert.ok(!h.d.querySelector('.hb-qc'), 'both list answers are still on their way');
+  listGate.release(); await h.settleAll();
   assert.ok(h.d.querySelector('.hb-qc'), 'the list the reader is on is drawn — its own load was superseded by the refresh, which paints it');
   slowList = false;
   // A dropped FAILURE is said too.
-  const f = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: { __delay: 50, value: { success: false, error: 'The handbook is busy.' } } } });
+  const failGate = {};
+  const f = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: { __hold: failGate, value: { success: false, error: 'The handbook is busy.' } } } });
   f.w.hbTakeQuiz_('q-neb', true); await f.settleAll();
   for (let k = 0; k < 3; k++) hb32Answer_(f, words, k < 2);
   f.d.getElementById('hb-qz-submit').click(); await f.settleAll();
   f.w.hbGoHome_(); await f.settleAll();
-  await b8Wait_(70); await f.settleAll();
+  failGate.release(); await f.settleAll();
   assert.ok(b8Sticky_(f).some((t) => /“Nebulizers” was not submitted: The handbook is busy\./.test(t)));
   // On the page, a failed submit means the answers are at risk again: leaving asks.
   const g = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: { success: false, error: 'The handbook is busy.' } } });
@@ -14297,10 +14322,11 @@ test('F55 DOM (cycle 26): a kept copy the server could not confirm is marked by 
   const idb = new Map();
   await hbBoot_({ idb });   // a first visit keeps S1
   let mode = 'down';
+  const retryGate = {};
   const newer = () => { const p = HB_PARTS(); p.stamp = 'S2'; p.versions['section:man-3-2'] = 'v32b';
     p.parts[1].sections[1].bodyMd = 'Nebs ship monthly now.'; p.parts[1].sections[1].title = '3.2 Nebulizers and kits'; return p; };
   const h = await hbBoot_({ idb, params: { s: '3.2' }, answers: { getManualStamp: { __fail: 'offline' },
-    getManualParts: () => (mode === 'down' ? { __fail: 'offline' } : mode === 'slow' ? { __delay: 40, value: newer() } : newer()) } });
+    getManualParts: () => (mode === 'down' ? { __fail: 'offline' } : mode === 'slow' ? { __hold: retryGate, value: newer() } : newer()) } });
   const banner = () => h.d.getElementById('hb-stale');
   const retry = () => h.d.getElementById('hb-stale-retry');
   assert.ok(/could not be reached — this is the copy kept on this device, and it may be out of date/.test(banner().textContent) && retry());
@@ -14324,7 +14350,7 @@ test('F55 DOM (cycle 26): a kept copy the server could not confirm is marked by 
   assert.deepStrictEqual([retry().disabled, retry().textContent], [true, 'Trying…']);
   h.w.hbStaleRetry_();
   assert.strictEqual(n(), c0 + 2, 'one request');
-  await b8Wait_(60); await h.settleAll();
+  retryGate.release(); await h.settleAll();
   // It answered: the banner goes; the text on screen, the contents and the versions are the new ones; the kept copy is replaced.
   assert.strictEqual(banner().textContent, '');
   assert.ok(/Nebs ship monthly now\./.test(h.d.getElementById('kb-man-sec-man-3-2').textContent), 'the section on screen is the new text');

@@ -3972,6 +3972,16 @@ F53, F54, F57.**
   focus stays where it was. Found by re-reading the HB2.4 section of
   `docs/handbook-app.md` during the regression check; `hbTakeQuiz_` takes
   `quiet` from the history handler, and the F66 drive holds it (bitten).
+- **A flake, caught by CI (run 1785 on 527bd09).** One of the new drives
+  failed in the DOM run inside `counts.mjs --check` after passing in the DOM
+  step of the same job: it asserted "still loading" before a 90 ms `__delay`
+  answer, which the boot's own awaits outran on a busier runner. Every
+  before-the-answer assertion in the batch's drives had that shape (the late
+  chapters, the list still loading under a dropped submit, the banner's
+  retry). `hbBoot_` gained `{ __hold: gate, value }` — the test releases the
+  answer — and the batch's drives use no clock to order two events. Six
+  concurrent runs of the DOM harness on four cores pass; g116's
+  twenty-fourth direction.
 - **A harness lesson (g116):** jsdom's `blur()` does nothing on a disabled
   button, so "the focus fell to `<body>`" cannot be produced by blurring the
   pressed control — another element takes the focus and gives it up.
