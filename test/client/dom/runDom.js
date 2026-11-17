@@ -12109,6 +12109,7 @@ async function hbBoot_(opts) {
     beforeParse(w) {
       Object.keys(opts.ls || {}).forEach((k) => w.localStorage.setItem(k, opts.ls[k]));
       if (opts.idb) w.indexedDB = hbFakeIdb_(opts.idb);
+      if (opts.before) opts.before(w);   // cycle 26 Batch 8: set up the window before any script runs (a matchMedia the test moves)
       w.print = () => {};
       const chain = () => { const c = { ok: null, bad: null };
         return new Proxy({}, { get(t, name) {
@@ -13924,4 +13925,530 @@ test('HBR4 DOM: the head applies a chosen theme before the page script — dark 
   light.d.documentElement.setAttribute('data-mode', 'dark');   // as if the device were dark
   light.w.hbApplyDisplay_(light.w.hbDisplay_(), false);
   assert.ok(!light.d.documentElement.hasAttribute('data-mode'), 'light wins over the device');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cycle 26 Batch 8 — the handbook client (F45, F46, F47, F55, F66). The page is
+// driven; the server halves and the derived nets are in run.js, and F65's
+// measurement is the visual matrix's (handbook-home-light-tablet).
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 26 Batch 8 — the handbook client');
+
+/** A matchMedia the test moves: `state.dark` / `state.reduce`, and `fire(query)`
+ *  for the change event. `legacy`: only the old addListener (Safari < 14). */
+function b8Media_(w, legacy) {
+  const state = { dark: false, reduce: false }, subs = [];
+  const val = (q) => (q === '(prefers-color-scheme: dark)' ? state.dark : q === '(prefers-reduced-motion: reduce)' ? state.reduce : false);
+  w.matchMedia = (q) => {
+    const m = { media: q, get matches() { return val(q); } };
+    if (legacy) m.addListener = (f) => subs.push([q, f]);
+    else m.addEventListener = (t, f) => { if (t === 'change') subs.push([q, f]); };
+    return m;
+  };
+  return { state, subs, fire: (q) => subs.filter((s) => s[0] === q).forEach((s) => s[1]({ matches: val(q) })) };
+}
+const b8Dlg_ = (h) => h.d.querySelector('.overlay.open.ui-dialog');
+const b8Sticky_ = (h) => [...h.d.querySelectorAll('#toast-stack .toast-sticky')].map((t) => t.textContent);
+const b8Wait_ = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test('F45 DOM (cycle 26): the bar\'s tools are for the section IN VIEW — after "I\'ve read this" on the section scrolled to, the bar shows THAT section signed (it showed the opened one\'s unsigned button, inviting a second attestation); a late load answer, Listen and a saved note all stay with it (driven)', async () => {
+  const marks = [];
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMySignOffs: { setUp: true, signoffs: {} }, hbMyBookmarks: { setUp: true, bookmarks: [] },
+    hbMarkRead: (kind, id, done, v) => { marks.push([kind, id, done, v]); return { success: true }; } }) });
+  const sp = hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const ctl = (k) => bar().querySelector('[data-hb-bar="' + k + '"]');
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), /Quiz: Resp quiz/.test(bar().textContent)], ['man-3-1', true], '3.1 opened: its tools, its quiz');
+  // The reader scrolls on to 3.2: the scroll-spy paints the bar for it (jsdom lays nothing out, so the spy's own paint is called).
+  h.w.kbManualBarPaint_('man-3-2'); await h.settleAll();
+  assert.deepStrictEqual([h.w.HB.currentId, h.w.hbBarId_()], ['man-3-1', 'man-3-2'], 'the section OPENED stays what it was; the bar is on the one in view');
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), ctl('sign').textContent], ['man-3-2', 'I\'ve read this']);
+  ctl('sign').click(); await h.settleAll();
+  assert.deepStrictEqual(marks, [['section', 'man-3-2', true, 'v32']], 'the section in view was signed, at the version shown');
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), ctl('sign').textContent, /You read this on/.test(bar().textContent)], ['man-3-2', 'Undo', true],
+    'and the bar says so for THAT section — not 3.1\'s unsigned button');
+  assert.ok(!/Resp quiz/.test(bar().textContent), '3.1\'s quiz did not come back with it');
+  // Late answers at boot (the quiz list, the forms): they repaint the bar where it IS.
+  h.w.hbLoadQuizzes_(); h.w.hbLoadForms_(); await h.settleAll();
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), /Resp quiz/.test(bar().textContent)], ['man-3-2', false]);
+  // Listen reads the section its button is shown for.
+  ctl('listen').click(); await h.settleAll();
+  assert.strictEqual(sp.spoken[0].text, '3.2 Nebulizers', 'not 3.1 from the top');
+  assert.ok(h.d.querySelector('#kb-man-sec-man-3-2 .kb-man-sec-h').classList.contains('hb-ra-on'));
+  assert.ok(/Pause/.test(ctl('listen').textContent), 'and the bar shows it reading');
+  ctl('stop').click(); await h.settleAll();
+  // A note saved on 3.2: the bar keeps showing 3.2's note button, now "Your note".
+  assert.deepStrictEqual([ctl('note').getAttribute('data-id'), /Add a note/.test(ctl('note').textContent)], ['man-3-2', true]);
+  ctl('note').click(); await h.settleAll();
+  assert.ok(/3\.2 Nebulizers/.test(h.d.getElementById('hb-note-ov').textContent));
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Kits monthly'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  h.d.querySelector('#hb-note-ov .btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual([ctl('note').getAttribute('data-id'), /Your note/.test(ctl('note').textContent)], ['man-3-2', true]);
+  // Off a section the bar has none: a late answer does not bring a stale one back.
+  h.w.hbGoHome_(); await h.settleAll();
+  h.w.hbLoadQuizzes_(); await h.settleAll();
+  assert.deepStrictEqual([h.w.hbBarId_(), bar().textContent.trim()], [null, '']);
+});
+
+test('F46 DOM (cycle 26): a reader whose manager was unmarked can choose again — the Manager list offers the managers there are (it was emptied to "No managers have been set up yet"), none chosen for them, and Save sends the new one (driven)', async () => {
+  const sent = [];
+  const gone = hbMeView_({ managers: [{ email: 'boss@ex.org', name: 'Boss' }, { email: 'lead@ex.org', name: 'Lead' }],
+    me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'old@ex.org', managerName: 'Old', standing: 'gone' }) });
+  const after = hbMeView_({ managers: gone.managers, me: hbPerson_('rep@ex.org', { department: HB_DEPT, manager: 'lead@ex.org', managerName: 'Lead', standing: 'pending' }) });
+  const h = await hbBoot_({ answers: { hbGetMe: gone, hbSaveProfile: (d, m) => { sent.push([d, m]); return { success: true, changed: true, view: after }; } } });
+  const prompt = h.d.querySelector('#hb-me-prompt .hb-prompt');
+  assert.ok(/Old is no longer a manager here\. Choose your manager again/.test(prompt.textContent), 'home asks them to choose again');
+  prompt.querySelector('button').click(); await h.settleAll();
+  const sel = () => h.d.getElementById('hb-pp-mgr');
+  assert.deepStrictEqual([...sel().options].map((o) => [o.value, o.textContent]), [['', 'No manager'], ['boss@ex.org', 'Boss (boss@ex.org)'], ['lead@ex.org', 'Lead (lead@ex.org)']],
+    'the managers there are — the list is not emptied');
+  assert.strictEqual(sel().value, '', 'the one who left is not in it, so nobody is chosen for them');
+  assert.ok(/Old is no longer a manager/.test(h.d.querySelector('.hb-pp-standing').textContent));
+  sel().value = 'lead@ex.org'; sel().dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  h.d.querySelector('.hb-pp-save').click(); await h.settleAll();
+  assert.deepStrictEqual(sent, [[HB_DEPT, 'lead@ex.org']]);
+  assert.ok(/Lead will be asked to confirm/.test(hbToasts_(h)));
+  assert.strictEqual(sel().value, 'lead@ex.org');
+  // With no managers at all, the list still says so (the wording the bug showed to everyone).
+  const none = await hbBoot_({ answers: { hbGetMe: hbMeView_({ managers: [] }) } });
+  none.w.hbGoPeople_(); await none.settleAll();
+  assert.deepStrictEqual([...none.d.getElementById('hb-pp-mgr').options].map((o) => o.textContent), ['No managers have been set up yet']);
+});
+
+test('F47 DOM (cycle 26): sign-offs that could not be loaded are SAID — the bar, home\'s My reading and Due for you each say so with a Try again (they showed no button, an endless loading bar, and "Nothing is due"); asking again loads them; a failure after a good load keeps it (driven)', async () => {
+  let fail = true;
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: { setUp: true, plans: [] }, hbMySignOffs: () => (fail ? { error: 'The Handbook spreadsheet is busy.' } : HBR_SO()) }) });
+  const due = () => h.d.getElementById('hb-due');
+  assert.ok(/Your sign-offs could not be loaded, so this list may be missing something/.test(due().textContent) && due().querySelector('[role="alert"]'));
+  assert.ok(!/Nothing is due/.test(due().textContent) && !due().querySelector('.lo-sweep'), 'not "up to date", and not "still loading"');
+  const badge = () => h.d.querySelector('[data-count="training"]');
+  assert.deepStrictEqual([badge().textContent, /could not be loaded/.test(badge().getAttribute('title'))], ['?', true]);
+  // Home's shelf, My reading.
+  h.w.hbShelfView_('me'); await h.settleAll();
+  const shelf = () => h.d.getElementById('hb-shelf');
+  assert.ok(/Your reading could not be loaded/.test(shelf().textContent) && shelf().querySelector('.hb-retry') && !shelf().querySelector('.lo-sweep'), 'said, with a way to ask again — not a loading bar for the whole visit');
+  // The bar above a section.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  assert.ok(/Your sign-offs could not be loaded/.test(bar().textContent) && !bar().querySelector('[data-hb-bar="sign"]'), 'no sign-off button is offered over a state nobody knows');
+  const n = h.calls.filter((c) => c === 'hbMySignOffs').length;
+  // Still failing: it says so again (and asked).
+  bar().querySelector('[data-hb-bar="retry"]').click(); await h.settleAll();
+  assert.strictEqual(h.calls.filter((c) => c === 'hbMySignOffs').length, n + 1);
+  assert.ok(/Your sign-offs could not be loaded/.test(bar().textContent));
+  // Asked again, and answered.
+  fail = false;
+  bar().querySelector('[data-hb-bar="retry"]').click(); await h.settleAll();
+  assert.ok(/You read this on/.test(bar().textContent) && bar().querySelector('[data-hb-bar="sign"]') && !/could not be loaded/.test(bar().textContent));
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.deepStrictEqual([...due().querySelectorAll('.hb-due-row b')].map((b) => b.textContent), ['Read 3.2 Nebulizers again']);
+  assert.ok(!due().querySelector('[role="alert"]'));
+  assert.strictEqual(badge().textContent, '1');
+  assert.ok(/1 of 3 sections read/.test(shelf().textContent), 'My reading has its numbers');
+  // A failure AFTER a good load keeps what loaded (g129) — nothing turns to an error.
+  fail = true;
+  h.w.hbLoadSignOffs_(); await h.settleAll();
+  assert.ok(!/could not be loaded/.test(due().textContent) && h.w.HB_SO.error === '' && h.w.HB_SO.setUp === true);
+  // The transport failing is the same answer.
+  const t = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: { setUp: true, plans: [] }, hbMySignOffs: { __fail: 'offline' } }) });
+  assert.ok(/Your sign-offs could not be loaded/.test(t.d.getElementById('hb-due').textContent) && !/Nothing is due/.test(t.d.getElementById('hb-due').textContent));
+  // And the control: both loaded and nothing due IS "up to date".
+  const ok = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: { setUp: true, plans: [] }, hbMySignOffs: { setUp: true, signoffs: {} } }) });
+  assert.ok(/Nothing is due — you’re up to date/.test(ok.d.getElementById('hb-due').textContent));
+  assert.strictEqual(ok.d.querySelector('[data-count="training"]').textContent, '');
+});
+
+test('F47 DOM (cycle 26): training that could not be loaded is not "Nothing is due" — home says so and counts "?", and Try again loads it; a failed REFRESH on the Training page keeps the plans that loaded, says it could not refresh, and home keeps listing them (driven)', async () => {
+  let fail = true;
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMySignOffs: { setUp: true, signoffs: {} }, hbMyTraining: () => (fail ? { __fail: 'offline' } : HBR_TRAIN()) }) });
+  const due = () => h.d.getElementById('hb-due');
+  const badge = () => h.d.querySelector('[data-count="training"]');
+  assert.ok(/Your training plans could not be loaded/.test(due().textContent) && !/Nothing is due/.test(due().textContent), 'a reader with an overdue plan is not told "you\'re up to date"');
+  assert.strictEqual(badge().textContent, '?');
+  fail = false;
+  due().querySelector('.hb-retry').click(); await h.settleAll();
+  assert.deepStrictEqual([...due().querySelectorAll('.hb-due-row b')].map((b) => b.textContent), ['Late plan', 'First week']);
+  assert.ok(!due().querySelector('[role="alert"]'));
+  assert.strictEqual(badge().textContent, '2');
+  assert.strictEqual(h.d.activeElement, due(), 'the focus stays on the card whose button went');
+  // The Training page: loaded, then a refresh that fails.
+  h.w.hbGoTraining_(); await h.settleAll();
+  const mine = () => h.d.getElementById('hb-tr-mine');
+  assert.strictEqual(mine().querySelectorAll('.hb-tr-plan').length, 3);
+  fail = true;
+  h.w.hbLoadMine_(); await h.settleAll();
+  assert.strictEqual(mine().querySelectorAll('.hb-tr-plan').length, 3, 'the plans that loaded are still there');
+  assert.ok(/could not be refreshed: offline\. This is what loaded earlier/.test(mine().textContent) && mine().querySelector('.hb-retry'), 'and the page says they may be out of date');
+  assert.ok(h.w.HB_TR.mine && !h.w.HB_TR.mine.error, 'the list home reads was not replaced by the failure');
+  assert.strictEqual(badge().textContent, '2');
+  fail = false;
+  mine().querySelector('.hb-retry').click(); await h.settleAll();
+  assert.ok(!/could not be refreshed/.test(mine().textContent) && mine().querySelectorAll('.hb-tr-plan').length === 3);
+  assert.strictEqual(h.d.activeElement, mine().querySelector('h2'), 'the focus goes to the section, not to <body>');
+  fail = true;
+  h.w.hbLoadMine_(); await h.settleAll();
+  h.w.hbGoHome_(); await h.settleAll();
+  assert.deepStrictEqual([...due().querySelectorAll('.hb-due-row b')].map((b) => b.textContent), ['Late plan', 'First week'], 'one failed open of Training no longer empties home');
+  // Opened with nothing ever loaded: the failure, and a Try again that works.
+  const t = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: () => (fail ? { error: 'The Handbook spreadsheet is busy.' } : HBR_TRAIN()) }) });
+  t.w.hbGoTraining_(); await t.settleAll();
+  const tm = () => t.d.getElementById('hb-tr-mine');
+  assert.ok(/could not be loaded: The Handbook spreadsheet is busy\./.test(tm().textContent) && !/Nothing is assigned/.test(tm().textContent));
+  fail = false;
+  tm().querySelector('.hb-retry').click(); await t.settleAll();
+  assert.strictEqual(tm().querySelectorAll('.hb-tr-plan').length, 3);
+});
+
+test('F47 DOM (cycle 26): bookmarks that could not be loaded are not "Nothing bookmarked yet" — Saved says so (a kept list is said to be this browser\'s last copy), shows a loading bar while they are on their way, and Try again loads them (driven)', async () => {
+  let fail = true;
+  const good = { setUp: true, bookmarks: [{ id: 'man-3-1', title: '3.1 Oxygen basics' }] };
+  const h = await hbBoot_({ answers: { hbMyBookmarks: () => (fail ? { error: 'The Handbook spreadsheet could not be opened.' } : good) } });
+  h.w.hbGoSaved_(); await h.settleAll();
+  const card = () => h.d.querySelector('#hb-sv .hb-sv-card');
+  assert.ok(/Your bookmarks could not be loaded from your account: The Handbook spreadsheet could not be opened\./.test(card().textContent) && card().querySelector('[role="alert"]'));
+  assert.ok(!/Nothing bookmarked yet/.test(card().textContent) && !/Kept in your account/.test(card().textContent) && !/last saw/.test(card().textContent), 'an empty list is not claimed, nor that it is the account\'s');
+  fail = false;
+  card().querySelector('.hb-retry').click(); await h.settleAll();
+  assert.strictEqual(card().querySelectorAll('.hb-sv-row').length, 1);
+  assert.ok(/Kept in your account/.test(card().textContent) && !card().querySelector('[role="alert"]'));
+  // With a list kept in this browser: it is shown, and said to be the browser's last copy.
+  const k = await hbBoot_({ ls: { umsHbBookmarks: JSON.stringify(good.bookmarks) }, answers: { hbMyBookmarks: { __fail: 'offline' } } });
+  k.w.hbGoSaved_(); await k.settleAll();
+  const kc = k.d.querySelector('#hb-sv .hb-sv-card');
+  assert.ok(kc.querySelectorAll('.hb-sv-row').length === 1 && /could not be loaded from your account: offline\. These are the ones this browser last saw/.test(kc.textContent));
+  // A toggle the server answers is the account's own list again.
+  // While they are on their way: a loading bar — not "nothing".
+  const slow = await hbBoot_({ answers: { hbMyBookmarks: { __delay: 90, value: { setUp: true, bookmarks: [] } } } });
+  slow.w.hbGoSaved_(); await slow.settleAll();
+  const sc = () => slow.d.querySelector('#hb-sv .hb-sv-card');
+  assert.ok(sc().querySelector('.lo-sweep') && !/Nothing bookmarked yet/.test(sc().textContent), 'still loading');
+  await b8Wait_(110); await slow.settleAll();
+  assert.ok(!sc().querySelector('.lo-sweep') && /Nothing bookmarked yet/.test(sc().textContent), 'loaded, and empty: now it may say so');
+  // No account store: the browser's own list, as before.
+  const local = await hbBoot_({ answers: { hbMyBookmarks: { setUp: false, bookmarks: [] } } });
+  local.w.hbGoSaved_(); await local.settleAll();
+  assert.ok(/Kept in this browser/.test(local.d.querySelector('#hb-sv .hb-sv-card').textContent) && /Nothing bookmarked yet/.test(local.d.querySelector('#hb-sv .hb-sv-card').textContent));
+});
+
+test('F55 DOM (cycle 26): the chapters landing late do not repaint over where the reader went — Profile stays (its department list filled in), a quiz in progress keeps its answers, the contents arrive; only the boot placeholder is routed away from; a failure with the reader elsewhere is a sticky toast (driven)', async () => {
+  const slow = () => ({ __delay: 90, value: HB_PARTS() });
+  const h = await hbBoot_({ params: { s: '3.2' }, answers: { hbGetMe: hbMeView_(), getManualParts: slow() } });
+  assert.ok(h.d.getElementById('hb-boot'), 'the chapters are still on their way');
+  h.d.getElementById('hb-me').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-pp-me') && !h.d.getElementById('hb-boot'));
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').options.length, 1, 'no chapters yet: no departments to choose');
+  await b8Wait_(110); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-pp-me'), 'Profile is still the view');
+  assert.ok(!h.d.querySelector('.hb-home') && !h.d.getElementById('kb-man-sec-man-3-2'), 'neither Home nor the link\'s section was painted over it');
+  assert.strictEqual(h.d.getElementById('hb-pp-dept').options.length, 3, 'and its department list has the chapters now');
+  assert.strictEqual(h.d.querySelectorAll('#hb-toc .hb-ch').length, 2, 'the contents arrived');
+  assert.deepStrictEqual(h.hist.filter((x) => x[0] === 'replace'), [], 'no history entry was rewritten under the reader');
+  // The control: a reader who waited is taken where the link pointed.
+  const w = await hbBoot_({ params: { s: '3.2' }, answers: { getManualParts: slow() } });
+  await b8Wait_(110); await w.settleAll();
+  assert.ok(w.d.getElementById('kb-man-sec-man-3-2') && !w.d.getElementById('hb-boot'));
+  // A quiz started meanwhile keeps its sitting and its answers.
+  const q = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, getManualParts: slow() } });
+  q.w.hbTakeQuiz_('q-neb', true); await q.settleAll();
+  const first = q.d.querySelector('#hb-qz-card input'); first.checked = true; first.dispatchEvent(new q.w.Event('change', { bubbles: true }));
+  const sitting = q.w.HB_QZ.taking;
+  await b8Wait_(110); await q.settleAll();
+  assert.ok(q.w.HB_QZ.taking === sitting && q.d.querySelector('#hb-qz-card input').checked && !q.d.querySelector('.hb-home'), 'the sitting is untouched');
+  assert.ok(!b8Dlg_(q), 'and nothing was asked — nothing tried to leave');
+  // Saved, opened meanwhile, learns the sections' names (it said "No longer in the handbook" for every bookmark).
+  const s = await hbBoot_({ answers: { hbMyBookmarks: { setUp: true, bookmarks: [{ id: 'man-3-1', title: 'old title' }] }, getManualParts: slow() } });
+  s.w.hbGoSaved_(); await s.settleAll();
+  assert.ok(/No longer in the handbook/.test(s.d.getElementById('hb-sv').textContent), 'before the chapters: it cannot know');
+  await b8Wait_(110); await s.settleAll();
+  assert.ok(/3\.1 Oxygen basics/.test(s.d.getElementById('hb-sv').textContent) && !/No longer in the handbook/.test(s.d.getElementById('hb-sv').textContent));
+  // The chapters FAIL while the reader is elsewhere: their view stays, and they are told (a sticky toast).
+  const f = await hbBoot_({ answers: { hbGetMe: hbMeView_(), getManualParts: { __delay: 90, value: { error: 'The handbook is not set up yet.' } } } });
+  f.w.hbGoPeople_(); await f.settleAll();
+  await b8Wait_(110); await f.settleAll();
+  assert.ok(f.d.getElementById('hb-pp-me'), 'Profile was not replaced by the error');
+  assert.ok(b8Sticky_(f).some((t) => /could not be loaded: The handbook is not set up yet\. Reload the page/.test(t)));
+  // …and on the placeholder it is the page's own message, as before.
+  const p = await hbBoot_({ answers: { getManualParts: { error: 'The handbook is not set up yet.' } } });
+  assert.ok(/could not be loaded: The handbook is not set up yet/.test(p.main().textContent) && p.main().querySelector('[role="alert"]') && !b8Sticky_(p).length);
+});
+
+test('F55 DOM (cycle 26): a quiz in progress asks before ANY way out — the rail, the bar\'s search, Back, Profile, its own Leave — once; "Keep going" keeps every answer (the search box emptied, the quiz back on the history); with nothing chosen nothing is asked; answers already sent are not asked about, and their result is said if the reader has left (driven)', async () => {
+  const result = { success: true, scorePct: 67, right: 2, total: 3, passed: true, passPct: 67, perQuestion: [true, false, true], review: [], me: hb32Me_({ attempts: 1, passed: true, best: 67 }) };
+  const h = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbGetMe: hbMeView_(), hbSubmitQuiz: { __delay: 50, value: result } } });
+  const take = async () => { h.w.hbTakeQuiz_('q-neb', true); await h.settleAll(); };
+  const pick = () => { const i = h.d.querySelector('#hb-qz-card input'); i.checked = true; i.dispatchEvent(new h.w.Event('change', { bubbles: true })); };
+  const onQuiz = () => !!h.d.getElementById('hb-qz-card') && !!h.w.HB_QZ.taking;
+  // Nothing chosen: nothing to lose, nothing asked.
+  await take();
+  h.d.querySelector('#hb-toc [data-nav="home"]').click(); await h.settleAll();
+  assert.ok(!b8Dlg_(h) && h.d.querySelector('.hb-home'));
+  // One answer chosen: the rail asks.
+  await take(); pick();
+  h.d.querySelector('#hb-toc [data-nav="home"]').click(); await h.settleAll();
+  assert.ok(b8Dlg_(h) && /Leave this quiz\?/.test(b8Dlg_(h).textContent) && /not kept/.test(b8Dlg_(h).textContent) && onQuiz(), 'asked, and the quiz is still there');
+  assert.deepStrictEqual([b8Dlg_(h).querySelector('.ui-dialog-cancel').textContent, b8Dlg_(h).querySelector('.ui-dialog-ok').textContent], ['Keep going', 'Leave quiz']);
+  // A second way out while it is asking: still one question.
+  h.w.hbGoPeople_(); h.w.hbGoSaved_(); await h.settleAll();
+  assert.strictEqual(h.d.querySelectorAll('.overlay.open.ui-dialog').length, 1);
+  b8Dlg_(h).querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.ok(onQuiz() && h.d.querySelector('#hb-qz-card input').checked && h.w.HB_QZ.taking.picked[0].length === 1, 'Keep going: the answer is still chosen');
+  // Two characters in the bar's search (it replaced the quiz 300 ms later).
+  const q = h.d.getElementById('hb-q');
+  const searches = () => h.calls.filter((c) => c === 'searchReference').length;
+  const before = searches();
+  q.value = 'ne'; q.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  await b8Wait_(340); await h.settleAll();
+  assert.ok(b8Dlg_(h) && onQuiz() && searches() === before, 'the search waits for the answer');
+  b8Dlg_(h).querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.deepStrictEqual([q.value, onQuiz(), searches()], ['', true, before], 'Keep going: the box is emptied, nothing was searched');
+  // Back.
+  h.w.__hbChange({ state: { home: true } }); await h.settleAll();
+  assert.ok(b8Dlg_(h) && onQuiz());
+  b8Dlg_(h).querySelector('.ui-dialog-cancel').click(); await h.settleAll();
+  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { quiz: 'q-neb' }, {}], 'the quiz is put back on the history Back took it off');
+  assert.ok(onQuiz());
+  // Profile, and this time leave.
+  h.d.getElementById('hb-me').click(); await h.settleAll();
+  b8Dlg_(h).querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-pp-me') && !h.w.HB_QZ.taking && !b8Dlg_(h), 'left, to where they were going');
+  // Back, and leave: the route the history named.
+  await take(); pick();
+  h.w.__hbChange({ state: { saved: true } }); await h.settleAll();
+  b8Dlg_(h).querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-sv') && !h.w.HB_QZ.taking);
+  // The header's own Leave quiz: the same question, then the list.
+  await take(); pick();
+  h.d.querySelector('.hb-qz-leave').click(); await h.settleAll();
+  assert.ok(b8Dlg_(h) && onQuiz());
+  b8Dlg_(h).querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.ok(h.d.getElementById('hb-qz-body') && !h.w.HB_QZ.taking);
+  // Answers SENT: leaving loses nothing, so nothing is asked — and the result is said where the reader went.
+  await take();
+  const words = { 'How often?': ['Monthly'], 'Which ship?': ['Masks', 'Kits'], 'Nebs are respiratory.': ['True'] };
+  for (let k = 0; k < 3; k++) hb32Answer_(h, words, k < 2);
+  const lists = h.calls.filter((c) => c === 'hbListQuizzes').length;
+  h.d.getElementById('hb-qz-submit').click(); await h.settleAll();
+  h.w.hbGoQuizzes_(); await h.settleAll();
+  assert.ok(!b8Dlg_(h) && h.d.getElementById('hb-qz-body'), 'no question: the attempt is the server\'s now');
+  await b8Wait_(70); await h.settleAll();
+  assert.ok(b8Sticky_(h).some((t) => /“Nebulizers” was submitted: 67% — passed\./.test(t)), 'the result is said, and stays until read: ' + b8Sticky_(h).join(' | '));
+  assert.ok(h.calls.filter((c) => c === 'hbListQuizzes').length > lists + 1, 'and the list learns the new standing');
+  assert.ok(h.d.querySelector('.hb-qc'), 'the list the reader is on is drawn — its own load was superseded by the refresh');
+  // A dropped FAILURE is said too.
+  const f = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: { __delay: 50, value: { success: false, error: 'The handbook is busy.' } } } });
+  f.w.hbTakeQuiz_('q-neb', true); await f.settleAll();
+  for (let k = 0; k < 3; k++) hb32Answer_(f, words, k < 2);
+  f.d.getElementById('hb-qz-submit').click(); await f.settleAll();
+  f.w.hbGoHome_(); await f.settleAll();
+  await b8Wait_(70); await f.settleAll();
+  assert.ok(b8Sticky_(f).some((t) => /“Nebulizers” was not submitted: The handbook is busy\./.test(t)));
+  // On the page, a failed submit means the answers are at risk again: leaving asks.
+  const g = await hbBoot_({ answers: { hbListQuizzes: HB32_LIST(), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() }, hbSubmitQuiz: { success: false, error: 'The handbook is busy.' } } });
+  g.w.hbTakeQuiz_('q-neb', true); await g.settleAll();
+  for (let k = 0; k < 3; k++) hb32Answer_(g, words, k < 2);
+  g.d.getElementById('hb-qz-submit').click(); await g.settleAll();
+  g.w.hbGoHome_(); await g.settleAll();
+  assert.ok(b8Dlg_(g) && g.w.HB_QZ.taking, 'not submitted: the answers are only on this page');
+});
+
+test('F55 DOM (cycle 26): a kept copy the server could not confirm is marked by a banner that STAYS (a 3.5-second toast was the only mark) — a Try again that fails keeps it and says so; one that succeeds replaces the copy, the contents and the text on screen, and the banner goes (driven)', async () => {
+  const idb = new Map();
+  await hbBoot_({ idb });   // a first visit keeps S1
+  let mode = 'down';
+  const newer = () => { const p = HB_PARTS(); p.stamp = 'S2'; p.versions['section:man-3-2'] = 'v32b';
+    p.parts[1].sections[1].bodyMd = 'Nebs ship monthly now.'; p.parts[1].sections[1].title = '3.2 Nebulizers and kits'; return p; };
+  const h = await hbBoot_({ idb, params: { s: '3.2' }, answers: { getManualStamp: { __fail: 'offline' },
+    getManualParts: () => (mode === 'down' ? { __fail: 'offline' } : mode === 'slow' ? { __delay: 40, value: newer() } : newer()) } });
+  const banner = () => h.d.getElementById('hb-stale');
+  const retry = () => h.d.getElementById('hb-stale-retry');
+  assert.ok(/could not be reached — this is the copy kept on this device, and it may be out of date/.test(banner().textContent) && retry());
+  assert.strictEqual(banner().getAttribute('role'), 'status');
+  assert.ok(/Nebs\./.test(h.d.getElementById('kb-man-sec-man-3-2').textContent), 'the kept text is what shows');
+  // It stays: on another view, and back.
+  h.w.hbGoHome_(); await h.settleAll();
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(/may be out of date/.test(banner().textContent), 'still said, wherever the reader goes');
+  // Try again, still down.
+  const n = () => h.calls.filter((c) => c === 'getManualParts').length;
+  const c0 = n();
+  retry().click(); await h.settleAll();
+  assert.strictEqual(n(), c0 + 1);
+  assert.ok(/may be out of date/.test(banner().textContent) && !retry().disabled, 'the banner stays');
+  assert.ok(/Still could not reach the handbook: offline\./.test(hbToasts_(h)));
+  assert.strictEqual(h.d.activeElement, retry(), 'and the focus is back on the button');
+  // In flight: the button says so and a second press asks nothing more.
+  mode = 'slow';
+  retry().click();
+  assert.deepStrictEqual([retry().disabled, retry().textContent], [true, 'Trying…']);
+  h.w.hbStaleRetry_();
+  assert.strictEqual(n(), c0 + 2, 'one request');
+  await b8Wait_(60); await h.settleAll();
+  // It answered: the banner goes; the text on screen, the contents and the versions are the new ones; the kept copy is replaced.
+  assert.strictEqual(banner().textContent, '');
+  assert.ok(/Nebs ship monthly now\./.test(h.d.getElementById('kb-man-sec-man-3-2').textContent), 'the section on screen is the new text');
+  assert.ok([...h.d.querySelectorAll('#hb-toc .hb-it')].some((b) => /Nebulizers and kits/.test(b.textContent)), 'the contents too');
+  assert.strictEqual(h.w.HB.versions['section:man-3-2'], 'v32b', 'a sign-off now sends the version of the text shown');
+  assert.strictEqual(idb.get('parts').stamp, 'S2');
+  assert.ok(/The handbook is up to date/.test(hbToasts_(h)));
+  assert.ok(h.d.activeElement && h.d.activeElement !== h.d.body, 'the focus did not fall to <body> with the button');
+  // A visit the server answers shows no banner.
+  const fine = await hbBoot_({ idb });
+  assert.strictEqual(fine.d.getElementById('hb-stale').textContent, '');
+});
+
+test('F55 DOM (cycle 26): note sync turned off on another computer is obeyed here — the boot sync is refused, this browser\'s switch goes off, it is said once and stays, the notes stay in this browser; turning it on again is the one call that says so (driven)', async () => {
+  const sent = [];
+  let off = true;
+  const answers = { hbMyBookmarks: { setUp: true, bookmarks: [] },
+    hbSyncNotes: (m, on) => { sent.push([Object.keys(m), on]); if (off && on !== true) return { success: false, off: true, error: 'Keeping notes in your account was turned off.' }; off = false; return { success: true, notes: m }; } };
+  const h = await hbBoot_({ ls: { umsHbNotesSync: '1', umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'Mine', ms: 5 } }) }, answers });
+  assert.deepStrictEqual(sent, [[['man-3-1'], false]], 'the boot sync asks as an ordinary sync');
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '', 'this browser obeys the account');
+  assert.deepStrictEqual(b8Sticky_(h).filter((t) => /turned off on another computer/.test(t)).length, 1, 'said, and it stays until read');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-1'].t, 'Mine', 'the notes stay in this browser');
+  h.w.hbGoSaved_(); await h.settleAll();
+  const box = () => h.d.getElementById('hb-sv-sync');
+  assert.ok(!box().checked && /Off: your notes stay in this browser only/.test(h.main().textContent));
+  // A note saved now goes nowhere.
+  h.w.hbPutNote_('man-3-2', 'Local only', () => {}); await h.settleAll();
+  assert.strictEqual(sent.length, 1);
+  // The reader turns it on again: that call — and only that one — says so.
+  box().checked = true; box().dispatchEvent(new h.w.Event('change', { bubbles: true })); await h.settleAll();
+  b8Dlg_(h).querySelector('.ui-dialog-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[1], [['man-3-1', 'man-3-2'], true]);
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '1');
+  // Turned off elsewhere in the middle of a visit: the next save is refused the same way — saved here, said once more.
+  off = true;
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  h.d.querySelector('#hb-quizbar .hb-note-btn').click(); await h.settleAll();
+  const ta = h.d.getElementById('hb-note-text');
+  ta.value = 'Edited'; ta.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  h.d.querySelector('#hb-note-ov .btn-modal-ok').click(); await h.settleAll();
+  assert.deepStrictEqual(sent[2], [['man-3-2'], false]);
+  assert.strictEqual(h.w.localStorage.getItem('umsHbNotesSync'), '');
+  assert.strictEqual(hb22Ls_(h.w, 'umsHbNotes')['man-3-2'].t, 'Edited', 'kept here');
+  assert.ok(/Note saved/.test(hbToasts_(h)) && !/not in your account yet/.test(hbToasts_(h)), 'not reported as a failed save');
+  assert.strictEqual(b8Sticky_(h).filter((t) => /turned off on another computer/.test(t)).length, 2);
+  // The turn-off dialog says what it now does.
+  const b = await hbBoot_({ ls: { umsHbNotesSync: '1' }, answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbSyncNotes: { success: true, notes: {} }, hbForgetNotes: { success: true, removed: 0 } } });
+  b.w.hbGoSaved_(); await b.settleAll();
+  const bb = b.d.getElementById('hb-sv-sync');
+  bb.checked = false; bb.dispatchEvent(new b.w.Event('change', { bubbles: true })); await b.settleAll();
+  assert.ok(/other computers stop sending theirs/.test(b8Dlg_(b).textContent));
+});
+
+test('F66 DOM (cycle 26): the bar keeps the focus — Listen hands it to Pause, Stop back to Listen, "I\'ve read this" to Undo (also when disabling the button let it fall to <body>); a repaint that changes nothing rebuilds nothing; a failed sign-off gives it back; focus elsewhere is never taken; opening a quiz moves the focus to it (driven)', async () => {
+  let ok = true;
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMySignOffs: { setUp: true, signoffs: {} }, hbMyBookmarks: { setUp: true, bookmarks: [] },
+    hbMarkRead: () => (ok ? { success: true } : { success: false, error: 'The handbook is busy.' }), hbGetQuiz: { quiz: HB32_QUIZ, me: hb32Me_() } }) });
+  hb23Speech_(h.w);
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const ctl = (k) => bar().querySelector('[data-hb-bar="' + k + '"]');
+  const at = () => h.d.activeElement;
+  // The focus falling to <body>, as a browser's focus fix-up does when the focused button is disabled
+  // (jsdom will not blur() a disabled button, so another element takes the focus and gives it up).
+  const toBody = () => { const m = h.d.getElementById('kb-main'); m.focus(); m.blur(); };
+  // A repaint that changes nothing rebuilds nothing — every load answer and section boundary used to replace every button.
+  const same = ctl('listen');
+  h.w.hbRepaintBar_(); h.w.hbLoadQuizzes_(); h.w.hbLoadForms_(); await h.settleAll();
+  assert.strictEqual(ctl('listen'), same, 'the same node');
+  // Listen → Pause → Resume: the focus stays on the control that does it.
+  ctl('listen').focus(); ctl('listen').click(); await h.settleAll();
+  assert.ok(at() === ctl('listen') && /Pause/.test(at().textContent) && at() !== same, 'the bar was redrawn, and the focus is on Pause');
+  at().click(); await h.settleAll();
+  assert.ok(at() === ctl('listen') && /Resume/.test(at().textContent));
+  // Stop: its button goes; the focus goes to what took its place.
+  ctl('stop').focus(); ctl('stop').click(); await h.settleAll();
+  assert.ok(at() === ctl('listen') && /Listen/.test(at().textContent) && !ctl('stop'));
+  // "I've read this" → Undo.
+  ctl('sign').focus(); ctl('sign').click(); await h.settleAll();
+  assert.ok(at() === ctl('sign') && at().textContent === 'Undo', 'the focus is on Undo, not on <body>');
+  // …and when the browser dropped the focus as the button was disabled (Chrome's focus fix-up): the bar gives it back.
+  ctl('sign').focus(); ctl('sign').click(); toBody();
+  assert.strictEqual(at(), h.d.body);
+  await h.settleAll();
+  assert.ok(at() === ctl('sign') && at().textContent === 'I\'ve read this', 'back on the control that was pressed');
+  assert.strictEqual(h.w.HB_BAR.pressed, '', 'and the memory of the press does not outlive it');
+  // A sign-off that FAILS redraws nothing: the focus returns to the button itself.
+  ok = false;
+  const failing = ctl('sign');
+  failing.focus(); failing.click(); toBody(); await h.settleAll();
+  assert.ok(/Not saved: The handbook is busy/.test(hbToasts_(h)));
+  assert.ok(at() === failing && !failing.disabled && h.w.HB_BAR.pressed === '');
+  ok = true;
+  // The scroll-spy redraws the bar for another section while the focus is in it: the same control, for the new section.
+  ctl('note').focus();
+  h.w.kbManualBarPaint_('man-3-1'); await h.settleAll();
+  assert.ok(at() === ctl('note') && at().getAttribute('data-id') === 'man-3-1');
+  // A control the new section has not: the focus stays in the toolbar (its first control).
+  ctl('quiz:q1').focus();
+  h.w.kbManualBarPaint_('man-3-2'); await h.settleAll();
+  assert.ok(bar().contains(at()) && at() === bar().querySelector('[data-hb-bar]'), 'q1 is 3.1\'s quiz — 3.2 has none');
+  // Focus elsewhere is never taken by a redraw.
+  const main = h.d.getElementById('kb-main');
+  main.focus();
+  h.w.kbManualBarPaint_('man-3-1'); await h.settleAll();
+  assert.strictEqual(at(), main);
+  toBody();
+  h.w.kbManualBarPaint_('man-3-2'); await h.settleAll();
+  assert.strictEqual(at(), h.d.body, 'nor from <body> — nothing was pressed');
+  // Opening a quiz: the button that opened it is gone with the view — the focus goes to the quiz.
+  h.w.kbManualBarPaint_('man-3-1'); await h.settleAll();
+  ctl('quiz:q1').focus(); ctl('quiz:q1').click(); await h.settleAll();
+  assert.ok(at() && at().classList.contains('hb-qz-ht') && at().textContent === 'Nebulizers', 'the quiz\'s heading');
+  // A quiz that could not be opened: its message.
+  const e = await hbBoot_({ answers: { hbGetQuiz: { error: 'That quiz is not available.' } } });
+  e.w.hbTakeQuiz_('q-x', true); await e.settleAll();
+  assert.ok(e.d.activeElement.getAttribute('role') === 'alert' && /could not be opened/.test(e.d.activeElement.textContent));
+});
+
+test('F66 DOM (cycle 26): "Match my device" follows the device WHILE the page is open — a chosen Light or Dark does not; the reader\'s scripted scroll is smooth only when neither the device nor the Display switch asks for less motion (driven)', async () => {
+  let media;
+  const h = await hbBoot_({ before: (w) => { media = b8Media_(w); } });
+  const root = h.d.documentElement;
+  const dark = '(prefers-color-scheme: dark)';
+  assert.ok(!root.hasAttribute('data-mode') && media.subs.some((s) => s[0] === dark), 'the page listens');
+  media.state.dark = true; media.fire(dark);
+  assert.strictEqual(root.getAttribute('data-mode'), 'dark', 'the device went dark during the visit: so does the page');
+  media.state.dark = false; media.fire(dark);
+  assert.ok(!root.hasAttribute('data-mode'));
+  // A chosen theme is the reader's: the device changing does not move it.
+  h.w.hbSetDisplay_('theme', 'light');
+  media.state.dark = true; media.fire(dark);
+  assert.ok(!root.hasAttribute('data-mode'), 'Light stays light');
+  h.w.hbSetDisplay_('theme', 'dark');
+  media.state.dark = false; media.fire(dark);
+  assert.strictEqual(root.getAttribute('data-mode'), 'dark', 'Dark stays dark');
+  h.w.hbSetDisplay_('theme', '');
+  assert.ok(!root.hasAttribute('data-mode'), 'back to the device');
+  media.state.dark = true; media.fire(dark);
+  assert.strictEqual(root.getAttribute('data-mode'), 'dark');
+  // An older browser's matchMedia has only addListener.
+  let old;
+  const o = await hbBoot_({ before: (w) => { old = b8Media_(w, true); } });
+  old.state.dark = true; old.fire(dark);
+  assert.strictEqual(o.d.documentElement.getAttribute('data-mode'), 'dark');
+  // Scripted scrolling.
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const main = h.d.getElementById('kb-main'), seen = [];
+  main.scrollTo = (opt) => { seen.push(opt.behavior); };
+  const el = h.d.getElementById('kb-man-sec-man-3-2');
+  const scroll = (smooth) => { h.w.kbReaderScroll_(el, 'start', smooth); return seen.pop(); };
+  assert.deepStrictEqual([scroll(true), scroll(false)], ['smooth', 'auto'], 'the control: nothing asks for less motion');
+  h.w.hbSetDisplay_('motion', true);
+  assert.strictEqual(root.getAttribute('data-hb-motion'), 'reduce');
+  assert.strictEqual(scroll(true), 'auto', 'Display → Reduce motion reaches the scripted scroll');
+  h.w.hbSetDisplay_('motion', false);
+  assert.strictEqual(scroll(true), 'smooth');
+  media.state.reduce = true;
+  assert.strictEqual(scroll(true), 'auto', 'and so does the device\'s own setting');
+  media.state.reduce = false;
+  assert.strictEqual(scroll(true), 'smooth');
+  // An in-chapter open is such a scroll.
+  h.w.hbSetDisplay_('motion', true);
+  h.w.MANUAL_HOST.openItem('man-3-2'); await h.settleAll();
+  assert.ok(seen.length && seen.every((b) => b === 'auto'), 'an open inside the chapter does not glide: ' + seen.join(','));
 });

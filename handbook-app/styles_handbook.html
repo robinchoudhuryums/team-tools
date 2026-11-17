@@ -167,7 +167,8 @@
   .hb-stale .kb-btn { padding: 5px 11px; font-size: .8rem; border-radius: 9px; }
   /* F47 (cycle 26): a read that failed says so where its answer would have been, with a Try again under it */
   .hb-hc .hb-msg, .hb-sv-card .hb-msg, .hb-tr .hb-msg { margin: 0; text-align: left; max-width: none; }
-  .hb-retry { margin-top: 8px; }
+  .hb-retry { margin-top: 8px; align-self: flex-start; width: fit-content; }   /* in a column box a button stretches to its width (seen in the shot) */
+  .hb-sv-card .hb-retry { margin: 8px 18px 14px; }
   .hb-qb-t { display: inline-flex; align-items: center; gap: 6px; font-size: .86rem; font-weight: 600; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
   .hb-qb-go { flex: none; }
   .hb-toc-quizzes { font: inherit; font-size: .86rem; font-weight: 600; text-align: left; padding: 7px 9px; border: none; border-radius: 7px; background: none; color: var(--ink); cursor: pointer; }

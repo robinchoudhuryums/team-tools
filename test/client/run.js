@@ -48279,6 +48279,209 @@ testNeedsDeps(['acorn'], 'F57 (cycle 26): the handbook push finds its script id 
   assert.ok(/^SET-ME/.test(id) || /^[A-Za-z0-9_-]{20,}$/.test(id), 'the committed id is the placeholder or looks like a script id: ' + id);
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Cycle 26 Batch 8 — the handbook client (F45, F46, F47, F55, F65, F66).
+// What the page DOES is driven in runDom.js ("Cycle 26 Batch 8"); here are the
+// server halves (F47's changelog read, F55's account-level sync marker), the
+// pure helpers, and the derived nets over the page's own source.
+console.log('\nCycle 26 Batch 8 — the handbook client');
+
+test('F45 (cycle 26): the bar\'s section has ONE writer and one reader — hbMarkCurrent_ decides it, every repaint and Listen go through it, and nothing paints the bar for the section OPENED (derived from the page)', () => {
+  const page = HB_PAGE_SRC();
+  // Every call of the painter, with what it is handed: the definition, and the two that hand it the bar's own section.
+  const args = [];
+  page.replace(/hbPaintQuizBar_\(([^)]*)\)/g, (m, a) => { args.push(a.trim()); return m; });
+  assert.deepStrictEqual(args.sort(), ['HB_BAR.id', 'HB_BAR.id', 'id'], 'the painter is reached only with the bar\'s own section: ' + args.join(' | '));
+  assert.ok(/hbPaintQuizBar_\(HB_BAR\.id\)/.test(extractFnFrom(page, 'hbRepaintBar_')) && /hbPaintQuizBar_\(HB_BAR\.id\)/.test(extractFnFrom(page, 'hbMarkCurrent_')));
+  // One writer.
+  const writes = page.match(/HB_BAR\.id\s*=[^=]/g) || [];
+  assert.strictEqual(writes.length, 1, 'the bar\'s section is assigned in one place');
+  assert.ok(/HB_BAR\.id = id \|\| null;/.test(extractFnFrom(page, 'hbMarkCurrent_')), 'and that place is hbMarkCurrent_ — what the scroll-spy and an open both call');
+  // The repaints that used to name HB.currentId: there are many, and all of them go through the accessor.
+  const repaints = (page.match(/hbRepaintBar_\(\)/g) || []).length;
+  assert.ok(repaints >= 12, 'the net is not vacuous: ' + repaints + ' repaints');
+  // Listen reads the section the button is shown for.
+  const listen = extractFnFrom(page, 'hbReadAloud_');
+  assert.ok(/id = hbBarId_\(\)/.test(listen) && !/HB\.currentId/.test(listen), 'Listen reads the bar\'s section, never the opened one');
+  assert.ok(!/HB\.currentId/.test(extractFnFrom(page, 'hbSignOff_')) && !/HB\.currentId/.test(extractFnFrom(page, 'hbLoadSignOffs_')) && !/HB\.currentId/.test(extractFnFrom(page, 'hbEditNote_')));
+});
+
+test('F47 (cycle 26): a changelog that cannot be read is an ERROR for every read of where sign-offs stand — never "nothing flagged", which read a "read it again" as signed and an overdue plan as done; a handbook with no changelog has flagged nothing (driven)', () => {
+  const sb = hb34World_(null, false);
+  hbAs_(sb, 'boss@ex.org').hbSavePlan({ title: 'Late', due: '2000-01-01', items: [{ kind: 'section', id: 'man-1-1' }], assign: { people: ['rep@ex.org'] } });
+  hbAs_(sb, 'rep@ex.org');
+  // No changelog at all: nothing is flagged, and that is an answer.
+  assert.strictEqual(hbPlainV_(hbSign_(sb, 'section', 'man-1-1')).success, true);
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'signed');
+  assert.deepStrictEqual(hbPlainV_(sb.hbMyTraining()).plans.map((p) => [p.done, p.total, p.overdue]), [[1, 1, false]]);
+  assert.ok(hbPlainV_(sb.hbChangelogRead_()).length > 0, 'the list the import wrote');
+  // No changelog at all (a handbook imported before there was one): an empty list, not an error.
+  const keptMeta = sb.__tabs.ManualMeta;
+  delete sb.__tabs.ManualMeta; sb.__cacheClear();
+  assert.deepStrictEqual(hbPlainV_(sb.hbChangelogRead_()), [], 'no meta: an empty list, not an error');
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'signed');
+  sb.__tabs.ManualMeta = keptMeta; sb.__cacheClear();
+  // The control: a change flagged for retraining asks again — the plan is not done, and overdue.
+  sb.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.1', changelog: [{ id: 'man-1-1', date: hb34Day_(1), num: '1.1', summary: 'Changed', retraining: true }] })]];
+  sb.__cacheClear();
+  assert.strictEqual(hbPlainV_(sb.hbMySignOffs()).signoffs['section:man-1-1'].state, 'resign');
+  assert.deepStrictEqual(hbPlainV_(sb.hbMyTraining()).plans.map((p) => [p.done, p.overdue]), [[0, true]]);
+  assert.strictEqual(hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamProgress()).people[0].resign, 1);
+  // The list cannot be read. Before: every one of these answered as if nothing were flagged — signed, done, nobody overdue.
+  sb.__tabs.ManualMeta = [['Meta'], ['{not json']];
+  sb.__cacheClear();
+  const said = /list of changes could not be read/;
+  const so = hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMySignOffs());
+  assert.deepStrictEqual([said.test(so.error), so.signoffs], [true, undefined], 'the bar\'s read is an error, not a map with "signed" in it');
+  const tr = hbPlainV_(sb.hbMyTraining());
+  assert.deepStrictEqual([said.test(tr.error), tr.plans], [true, undefined], 'My training too');
+  const tp = hbPlainV_(hbAs_(sb, 'boss@ex.org').hbTeamProgress());
+  assert.deepStrictEqual([said.test(tp.error), tp.people], [true, undefined], 'and the manager\'s progress table');
+  assert.throws(() => sb.hbChangelogRead_(), said);
+  // The reminder run: it would have found nobody overdue and said "ok" — it fails, by name.
+  sb.__props().HANDBOOK_REMINDERS = 'on';
+  const run = hbPlainV_(hbAs_(sb, 'owner@example.org').hbSendTrainingReminders());
+  assert.deepStrictEqual([run.status, said.test(run.error), sb.__mails.length], ['failed', true, 0], JSON.stringify(run));
+  // Readable again: the same answers as before.
+  sb.__tabs.ManualMeta = [['Meta'], [JSON.stringify({ version: '3.1', changelog: [{ id: 'man-1-1', date: hb34Day_(1), num: '1.1', summary: 'Changed', retraining: true }] })]];
+  sb.__cacheClear();
+  assert.strictEqual(hbPlainV_(hbAs_(sb, 'rep@ex.org').hbMySignOffs()).signoffs['section:man-1-1'].state, 'resign');
+  // Both readers of the list go through the one helper — neither reads the meta for itself.
+  const tsrc = c26HbSrc_('Training.js');
+  assert.ok(!/getManualMeta\(\)/.test(tsrc), 'Training.js reads the changelog only through hbChangelogRead_ / hbChangelogNow_');
+  assert.ok(/hbChangelogRead_\(\)/.test(extractFnFrom(tsrc, 'hbProgressCtx_')) && /hbChangelogRead_\(\)/.test(extractFnFrom(tsrc, 'hbMySignOffs')));
+});
+
+test('F47 (cycle 26): Due for you names the source that FAILED — a failed read is not an empty list, and the line says which (the pure helpers)', () => {
+  const ctx = vm.createContext({});
+  ['hbDueFailed_', 'hbDueFailedText_', 'hbDueList_'].forEach((n) => vm.runInContext(extractFnFrom(HB_PAGE_SRC(), n), ctx));
+  const F = (mine, so) => hbJ_(ctx.hbDueFailed_(mine, so));
+  assert.deepStrictEqual(F(undefined, ''), [], 'still loading is not a failure');
+  assert.deepStrictEqual(F({ setUp: true, plans: [] }, ''), []);
+  assert.deepStrictEqual(F({ error: 'x' }, ''), ['training']);
+  assert.deepStrictEqual(F({ setUp: true, plans: [] }, 'the server did not answer'), ['signoffs']);
+  assert.deepStrictEqual(F({ error: 'x' }, 'y'), ['training', 'signoffs']);
+  assert.strictEqual(ctx.hbDueFailedText_([]), '');
+  assert.strictEqual(ctx.hbDueFailedText_(['training']), 'Your training plans could not be loaded, so this list may be missing something.');
+  assert.strictEqual(ctx.hbDueFailedText_(['signoffs']), 'Your sign-offs could not be loaded, so this list may be missing something.');
+  assert.strictEqual(ctx.hbDueFailedText_(['training', 'signoffs']), 'Your training plans and your sign-offs could not be loaded, so this list may be missing something.');
+  // The list itself is unchanged — an EMPTY array for a failed training read is exactly why the card needs the helper beside it.
+  assert.deepStrictEqual(hbJ_(ctx.hbDueList_({ error: 'x' }, {}, true, [])), [], 'one source failed, the other has nothing: [] — which the card may not call "up to date"');
+  const card = extractFnFrom(HB_PAGE_SRC(), 'hbDueHtml_');
+  assert.ok(/if \(!items\.length\) return head \+ \(said \|\| /.test(card), '"Nothing is due" is said only when nothing failed');
+});
+
+test('F55 (cycle 26): note sync turned off is the ACCOUNT\'s — a marker row refuses every later sync until the reader turns it on again, so another browser no longer sends the notes back; one marker per reader; another reader is untouched (driven)', () => {
+  const sb = hb22Sb_();
+  const now = Date.now();
+  const OFF = c26Const_(sb, 'HB_NOTES_OFF_ID');
+  assert.ok(!c26Const_(sb, 'HB_SECTION_ID_RE').test(OFF), 'the marker\'s id can never be a section\'s');
+  hbAs_(sb, 'rep@ex.org');
+  assert.strictEqual(hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'One', ms: now - 9 }, 'man-2-1': { t: 'Two', ms: now - 8 } }, true)).success, true);
+  hbAs_(sb, 'ann@ex.org').hbSyncNotes({ 'man-1-1': { t: 'Ann\'s', ms: now - 7 } }, true);
+  const mine = () => sb.__hbTabs.Notes.slice(1).filter((r) => r[0] === 'rep@ex.org');
+  assert.strictEqual(mine().length, 2);
+  // Computer A turns it off: the copies go, and the account says so.
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbForgetNotes()), { success: true, removed: 2 });
+  assert.deepStrictEqual(mine().map((r) => [r[1], r[2]]), [[OFF, '']], 'the notes are gone; the marker took the first row they left');
+  assert.ok(mine()[0][3] >= now, 'and says when');
+  // Computer B, its own switch still on, visits: BEFORE, every note went back into the spreadsheet.
+  const boot = hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'One', ms: now - 9 }, 'man-2-1': { t: 'Two', ms: now - 8 } }));
+  assert.deepStrictEqual(boot, { success: false, off: true, error: 'Keeping notes in your account was turned off.' });
+  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'Later', ms: now } }, false)).off, true, 'a save is refused the same way — only `true` turns it on');
+  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'Later', ms: now } }, 'yes')).off, true);
+  assert.deepStrictEqual(mine().map((r) => r[1]), [OFF], 'nothing was written');
+  // Another reader's sync is theirs.
+  assert.strictEqual(hbPlain_(hbAs_(sb, 'ann@ex.org').hbSyncNotes({})).notes['man-1-1'].t, 'Ann\'s');
+  // Off again (a second browser's own switch): still one marker, and nothing counted as a note removed.
+  assert.deepStrictEqual(hbPlain_(hbAs_(sb, 'rep@ex.org').hbForgetNotes()), { success: true, removed: 0 });
+  assert.deepStrictEqual(mine().map((r) => r[1]), [OFF], 'one marker per reader, however often it is turned off');
+  // The reader turns it on again, on the Saved page: the marker goes and the notes go up.
+  const on = hbPlain_(sb.hbSyncNotes({ 'man-1-1': { t: 'One', ms: now - 9 } }, true));
+  assert.deepStrictEqual([on.success, Object.keys(on.notes)], [true, ['man-1-1']]);
+  assert.deepStrictEqual(mine().map((r) => r[1]).sort(), ['man-1-1'], 'the marker row was emptied');
+  assert.strictEqual(hbPlain_(sb.hbSyncNotes({ 'man-2-1': { t: 'Two', ms: now } })).success, true, 'and an ordinary sync is taken again');
+  // The rows helper: the marker is neither a note nor an unreadable row.
+  const rows = hbPlain_(sb.hbNotesRows_([['Email', 'SectionId', 'NoteJson', 'UpdatedMs'], ['rep@ex.org', 'man-1-1', '{"t":"one"}', 5], ['rep@ex.org', OFF, '', 9], ['ann@ex.org', OFF, '', 9]], 'rep@ex.org'));
+  assert.deepStrictEqual(rows, { map: { 'man-1-1': { t: 'one', ms: 5, row: 2 } }, unreadable: 0, off: [3] });
+  // Turned off where no note was ever kept (no Notes tab): the marker is still written — the other browser must be refused.
+  const bare = hb22Sb_();
+  hbAs_(bare, 'rep@ex.org');
+  assert.deepStrictEqual(hbPlain_(bare.hbForgetNotes()), { success: true, removed: 0 });
+  assert.deepStrictEqual(bare.__hbTabs.Notes.slice(1).map((r) => [r[0], r[1]]), [['rep@ex.org', OFF]]);
+  assert.strictEqual(hbPlain_(bare.hbSyncNotes({ 'man-1-1': { t: 'x', ms: now } })).off, true);
+});
+
+test('F55 (cycle 26): EVERY view switch opens with the sitting guard — derived from the functions that leave a quiz, so a new view cannot discard answers unasked; the header\'s own button rides the same guard', () => {
+  const page = HB_PAGE_SRC();
+  // The view switches: every function that calls hbLeaveQuiz_() (what "leaving the view" is, in this page).
+  const fns = [];
+  const re = /^function (hb[A-Za-z0-9_]+)\(([^)]*)\) \{/gm;
+  let m;
+  while ((m = re.exec(page))) {
+    const body = extractFnFrom(page, m[1]);
+    if (m[1] !== 'hbLeaveQuiz_' && /hbLeaveQuiz_\(\)/.test(body)) fns.push([m[1], m[2], body]);
+  }
+  const names = fns.map((f) => f[0]).sort();
+  assert.deepStrictEqual(names, ['hbFormList_', 'hbHome_', 'hbOpen_', 'hbPeople_', 'hbQuizList_', 'hbSaved_', 'hbSearch_', 'hbTakeQuiz_', 'hbTraining_'], 'the view switches, derived');
+  fns.forEach(([name, params, body]) => {
+    const first = body.slice(body.indexOf('{') + 1).split('\n').map((l) => l.trim()).filter((l) => l && l.indexOf('//') !== 0)[0];
+    const again = name + '(' + params + ');';
+    assert.ok(first.indexOf('if (hbHoldSitting_(function () { ' + again + ' }') === 0 && /\)\) return;$/.test(first),
+      name + ' opens with the guard, and re-runs ITSELF with its own arguments if the reader leaves: ' + first);
+  });
+  // Back: the history handler asks before it routes anywhere.
+  const hist = extractFnFrom(page, 'hbOnHistory_');
+  assert.ok(hist.indexOf('hbHoldSitting_(') > 0 && hist.indexOf('hbHoldSitting_(') < hist.indexOf('hbSearch_('), 'Back is held before any route');
+  assert.ok(/hbHistory_\('push', \{ quiz: sitting\.quiz\.id \}, \{\}\)/.test(hist), 'and "keep going" puts the quiz back on the history');
+  // The header's "Leave quiz" has no dialog of its own any more: one guard, one wording.
+  const leave = extractFnFrom(page, 'hbLeaveSitting_');
+  assert.ok(/hbGoQuizzes_\(\)/.test(leave) && !/uiConfirm/.test(leave));
+  assert.strictEqual((page.match(/title: 'Leave this quiz\?'/g) || []).length, 1, 'one question in the page');
+});
+
+test('F65 (cycle 26): the handbook\'s two-column layouts fold while the rail is still on screen — the hero from 1100px, results and home\'s two cards from 1040px — in blocks BEFORE the phone\'s, whose own rules still win there; the matrix measures it at 800 and 960', () => {
+  const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
+  const block = (w) => { const at = css.indexOf('@media (max-width: ' + w + 'px) {'); assert.ok(at > 0, 'a ' + w + 'px block'); let d = 0, i = css.indexOf('{', at);
+    for (let j = i; j < css.length; j++) { if (css[j] === '{') d++; else if (css[j] === '}' && --d === 0) return { at, text: css.slice(i + 1, j) }; } throw new Error('unclosed'); };
+  const hero = block(1100), two = block(1040);
+  const phone = css.indexOf('@media (max-width: 760px) {\n    .hb-wrap');
+  assert.ok(/\.hb-hero \{ grid-template-columns: minmax\(0, 1fr\);/.test(hero.text), 'the hero is one column from 1100px');
+  assert.ok(/\.hb-res-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(two.text) && /\.hb-home-two \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(two.text) && /\.hb-res-side \{ position: static; \}/.test(two.text));
+  assert.ok(hero.at < two.at && two.at < phone, 'wider blocks first: the phone\'s rules (the shelf hidden, no gap) come later and win');
+  // The rail these widths still show: the fold must begin above where it goes.
+  assert.ok(/\.hb-wrap \{[^}]*grid-template-columns: 252px minmax\(0, 1fr\)/.test(css) && /@media \(max-width: 760px\) \{\s*\.hb-wrap \{ grid-template-columns: minmax\(0, 1fr\); \}/.test(css));
+  // The measurement lives in the matrix: scenarios at the widths in between, and one of them in CI's gate.
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  assert.ok(/const TABLET = \{ width: 800, height: 900 \};/.test(shoot) && /const HALF = \{ width: 960, height: 900 \};/.test(shoot));
+  ['handbook-home-light-tablet', 'handbook-home-dark-half', 'handbook-search-light-tablet'].forEach((n) => assert.ok(shoot.indexOf("['" + n + "',") > 0, n));
+  const gate = require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'));
+  assert.ok(gate.CI_SCENARIOS.indexOf('handbook-home-light-tablet') >= 0 && gate.CI_SCENARIOS.indexOf('handbook-search-light-tablet') >= 0, 'CI shoots the tablet width');
+});
+
+test('F66 (cycle 26): scripted scrolling asks whether motion is reduced — the reader\'s scroll is smooth only when neither the device nor the handbook\'s own switch says otherwise; every bar control says what it does, so a redrawn bar can give the focus back', () => {
+  const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+  const scroll = extractFnFrom(shared, 'kbReaderScroll_');
+  assert.ok(/smooth = smooth && !kbMotionReduced_\(\);/.test(scroll), 'asked before the scroll');
+  assert.ok(scroll.indexOf('kbMotionReduced_()') < scroll.indexOf("behavior: smooth ? 'smooth' : 'auto'"), 'before EITHER scroll call is built');
+  assert.strictEqual((scroll.match(/behavior: smooth \? 'smooth' : 'auto'/g) || []).length, 2, 'both paths read the one flag');
+  // Driven: the helper's two sources.
+  const run = (attr, media) => { const ctx = vm.createContext({ document: { documentElement: { getAttribute: (k) => (k === 'data-hb-motion' ? attr : null) } },
+    window: { matchMedia: media === 'throws' ? () => { throw new Error('no'); } : media === undefined ? undefined : (q) => ({ matches: media && q === '(prefers-reduced-motion: reduce)' }) } });
+    vm.runInContext(extractFnFrom(shared, 'kbMotionReduced_'), ctx); return ctx.kbMotionReduced_(); };
+  assert.deepStrictEqual([run(null, false), run('reduce', false), run(null, true), run('', true), run(null, undefined), run(null, 'throws'), run('reduce', 'throws')],
+    [false, true, true, true, false, false, true]);
+  // The handbook app's copy is the same function (the sync writes it).
+  const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
+  assert.strictEqual(extractFnFrom(copy, 'kbMotionReduced_'), extractFnFrom(shared, 'kbMotionReduced_'));
+  // Every button the bar draws carries data-hb-bar — derived from the three builders and the painter.
+  const page = HB_PAGE_SRC();
+  const built = ['hbPaintQuizBar_', 'hbSignBarHtml_', 'hbNoteBarHtml_', 'hbListenBarHtml_'].map((n) => extractFnFrom(page, n)).join('\n');
+  const buttons = built.match(/<button type="button"[^>]*/g) || [];
+  assert.ok(buttons.length >= 9, 'the bar\'s buttons: ' + buttons.length);
+  buttons.forEach((b) => assert.ok(/ data-hb-bar="/.test(b), 'a bar button says what it does: ' + b));
+});
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 
 process.exit(fail ? 1 : 0);

@@ -18,6 +18,8 @@ const RUNAWAY_PX = 200;
 // rather than shooting nothing and passing.
 const CI_SCENARIOS = [
   'handbook-home-light-mobile',     // HB1.4: the handbook app's frame
+  'handbook-home-light-tablet',     // F65 (cycle 26): 800px — the rail still on screen, the hero folded
+  'handbook-search-light-tablet',
   'handbook-search-light-mobile',
   'handbook-section-light-wide',
   'handbook-people-dark-mobile',    // HB2.1: the people view

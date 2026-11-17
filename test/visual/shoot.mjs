@@ -116,6 +116,8 @@ const HB_LARGE = (o) => "hbApplyDisplay_(" + o + ", true)";
 const HB_READING = "Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { q: [], speak: function (u) { this.q.push(u); }, pause: function () {}, resume: function () {}, cancel: function () {}, getVoices: function () { return []; }, addEventListener: function () {} } });" +
   " window.SpeechSynthesisUtterance = function (t) { this.text = t; };" +
   " setTimeout(function () { hbReadAloud_(); var s = window.speechSynthesis; for (var i = 0; i < 2; i++) { var u = s.q[s.q.length - 1]; if (u && u.onend) u.onend(); } }, 400)";
+const HB_FAILED = "setTimeout(function(){ HB_SO.setUp = undefined; HB_SO.signoffs = {}; HB_SO.error = 'The Handbook spreadsheet is busy.'; HB_TR.mine = { error: 'offline' };" +
+  " hbPaintCounts_(); hbPatchHome_(); hbShelfView_('me'); }, 300)";
 const HB_SUGGEST = "setTimeout(function(){ var b=document.querySelector('[data-kb-man-fb=\"suggest\"]'); if(b){ b.disabled=false; MANUAL_HOST.suggestEdit(b); } }, 300)";
 
 const SCENARIOS = [
@@ -136,6 +138,16 @@ const SCENARIOS = [
   ['handbook-home-light-tablet',   {}, TABLET, 'light', '', '', HB_PAGE],
   ['handbook-home-dark-half',      {}, HALF,   'dark',  '', '', HB_PAGE],
   ['handbook-search-light-tablet', {}, TABLET, 'light', '', HB_SEARCH, HB_PAGE],
+  // F47 + F55 (cycle 26): what a failed read looks like — home with the sign-offs
+  // and the training plans not loaded (My reading, Due for you, the rail's "?"),
+  // Saved with the bookmarks not loaded, and a section read from a kept copy
+  // the server could not confirm (the banner) with no sign-off state to show.
+  ['handbook-failed-light-wide',   {}, WIDE,   'light', '', HB_FAILED, HB_PAGE],
+  ['handbook-saved-failed-light-mobile', {}, MOBILE, 'light', '', "hbGoSaved_(); setTimeout(function(){ HB_SV.error = 'The Handbook spreadsheet could not be opened.'; HB_SV.bookmarks = []; hbPaintSaved_(); }, 300)", HB_PAGE],
+  // (Section 0.10, not 0.11: 0.11's CRITICAL callout kicker fails axe's contrast in dark mode with or
+  // without this batch — the shared reader's own colour, reported as a follow-on, not hidden: the
+  // banner is what this scenario is for.)
+  ['handbook-stale-dark-mobile',   {}, MOBILE, 'dark',  '?s=0.10', "setTimeout(function(){ HB_STALE.on = true; hbPaintStale_(); HB_SO.setUp = undefined; HB_SO.error = 'offline'; hbRepaintBar_(); }, 300)", HB_PAGE],
   // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
   ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
   ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],
