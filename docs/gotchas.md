@@ -2017,20 +2017,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   callout kicker (`--danger-deep` on `--danger-soft`) measured 3.34:1, under
   axe's 4.5 for 10.5px text. It was found by accident — a scenario added for
   another reason happened to shoot a section with a CRITICAL callout in dark
-  mode without high contrast, which none had. The kicker now mixes toward the
-  ink in dark mode (`color-mix(in oklab, var(--destructive), var(--ink) 30%)`,
-  the light mode's recipe); the token itself is unchanged — it has other
-  consumers (the watch-out kicker is at 4.53:1 and passes). Verify: axe on
+  mode without high contrast, which none had. The first fix was a rule for
+  the kicker alone (`color-mix(in oklab, var(--destructive), var(--ink) 30%)`,
+  the light mode's recipe), leaving the token as it was (the watch-out kicker
+  is at 4.53:1 and passes). Verify: axe on
   `handbook-stale-dark-mobile` (section 0.11), which fails without the rule.
   **A second instance, the same day, found by CI and not here:** with that
   scenario on section 0.11, CI's axe failed an HCPCS code chip
   (`a.kb-hcpcs`: `--info-deep` on `--info-soft`, 4.34:1 in dark mode,
   measured) that the SAME command had passed locally — axe reports a contrast
   it cannot fully determine as "incomplete", not as a violation, and which
-  elements those are depends on the browser build. The chip mixes toward the
-  ink in dark mode too (8.80:1). The pair itself is the problem: any text in
-  `--info-deep` on `--info-soft` is 4.34:1 in dark mode. A local axe PASS is
-  not CI's; a colour pair is measured, not inferred from a gate.
+  elements those are depends on the browser build. The chip was given its
+  own dark rule — and the NEXT run failed the "Updated" badge, the same pair
+  again. The pair is the problem, so the fix moved to the pair: inside the
+  reader (`.kb-main`, `.kb-article`) the three `-deep` tones are redefined for
+  dark mode, mixed toward the ink, and every consumer follows; the
+  per-consumer rules are gone, and Team Tools' app-wide tokens are untouched.
+  Every text element of nine dark handbook screens was then measured directly
+  (its colour against its composited background) rather than trusted to the
+  local gate: nothing under 4.5 but three masthead labels at 4.50, which CI
+  has always passed. A local axe PASS is not CI's; a colour pair is measured,
+  and fixed where the pair is defined.
 
 <a id="g57-a-var-x-fallback-on-a-token"></a>
 

@@ -70,13 +70,23 @@
   .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
   .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
   .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
+  /* Cycle 26 (Batch 8 follow-on 1): in DARK mode the tokens mix a "-deep" tone
+     toward the dark paper, and on its own "-soft" tint that is too little
+     contrast for small text — MEASURED: --danger-deep 3.34:1 (the CRITICAL
+     kicker), --info-deep 4.34:1 (an HCPCS chip, the "Updated" badge),
+     --warning-deep 4.53:1; axe wants 4.5. CI's axe found them one consumer at
+     a time, so the fix is the PAIR, not each consumer: inside the reader the
+     three deep tones mix toward the ink in dark mode — the light mode's own
+     recipe. Scoped to the reader's containers; the app-wide tokens are not
+     touched. In oklab (g56). A custom property set on a container wins over
+     the root's for everything inside it. */
+  [data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {
+    --danger-deep: color-mix(in oklab, var(--destructive), var(--ink) 30%);
+    --info-deep: color-mix(in oklab, var(--info), var(--ink) 35%);
+    --warning-deep: color-mix(in oklab, var(--warn), var(--ink) 30%);
+  }
   .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
-  /* Cycle 26 (Batch 8 follow-on 1): in dark mode --danger-deep is the red mixed
-     TOWARD the dark paper, and on the callout's own red tint the kicker measured
-     3.34:1 (axe: 4.5 for 10.5px text). Mixed toward the ink instead — the light
-     mode's own recipe, which in dark mode is the lighter red. In oklab (g56). */
-  [data-mode="dark"] .kb-callout-critical .kb-co-kick { color: color-mix(in oklab, var(--destructive), var(--ink) 30%); }
   .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
   .kb-callout-watch-out .kb-co-kick { color: var(--warning-deep); }
   .kb-callout-note .kb-co-kick { color: var(--muted); }
@@ -90,10 +100,6 @@
   /* M5: a code is a chip (it LOOKS UP), a section link a solid underline (it OPENS),
      a glossary term the one dotted mark (it EXPLAINS). */
   a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
-  /* Cycle 26 (Batch 8 follow-on 1, second instance — found by CI's axe once a dark scenario shot this
-     section): --info-deep on --info-soft is 4.34:1 in dark mode (measured), under 4.5 for the chip's
-     13px text. Mixed toward the ink there, as the CRITICAL kicker is. */
-  [data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab, var(--info), var(--ink) 35%); }
   a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
   /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
   a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }

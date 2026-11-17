@@ -48506,27 +48506,32 @@ test('F66 (cycle 26): scripted scrolling asks whether motion is reduced — the 
 // the scenarios.
 console.log('\nCycle 26 Batch 8 follow-ons');
 
-test('FO1 (cycle 26): the CRITICAL callout\'s kicker is legible in dark mode — the red mixed toward the INK there (3.34:1 on the callout\'s tint with the token, which mixes toward the dark paper); a dark handbook scenario with a CRITICAL callout is under axe', () => {
+test('FO1 (cycle 26): in dark mode the reader\'s "-deep" tones mix toward the INK — on their own "-soft" tints the tokens (which mix toward the dark paper) measured 3.34:1, 4.34:1 and 4.53:1; the override is the PAIR\'s, scoped to the reader, in both copies; a dark handbook scenario with a CRITICAL callout and a code chip is under axe', () => {
   const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
-  const base = shared.indexOf('.kb-callout-critical .kb-co-kick { color: var(--danger-deep); }');
-  const dark = shared.indexOf('[data-mode="dark"] .kb-callout-critical .kb-co-kick { color: color-mix(in oklab, var(--destructive), var(--ink) 30%); }');
-  assert.ok(base > 0 && dark > base, 'the dark rule exists and comes after the base one (same weight plus an attribute — it must not lose by order either)');
-  assert.ok(!/\[data-mode="dark"\] \.kb-callout-critical \.kb-co-kick \{[^}]*oklch/.test(shared), 'oklab, never oklch (g56)');
+  const at = shared.indexOf('[data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {');
+  assert.ok(at > 0, 'the scoped override');
+  const block = shared.slice(at, shared.indexOf('}', at) + 1);
+  assert.ok(/--danger-deep: color-mix\(in oklab, var\(--destructive\), var\(--ink\) 30%\);/.test(block)
+    && /--info-deep: color-mix\(in oklab, var\(--info\), var\(--ink\) 35%\);/.test(block)
+    && /--warning-deep: color-mix\(in oklab, var\(--warn\), var\(--ink\) 30%\);/.test(block), block);
+  assert.ok(!/oklch/.test(block), 'oklab, never oklch (g56)');
+  // The pair, not each consumer: CI's axe found the kicker, then a chip, then a badge — one per run.
+  assert.ok(!/\[data-mode="dark"\] \.kb-callout-critical \.kb-co-kick/.test(shared) && !/\[data-mode="dark"\] a\.kb-hcpcs/.test(shared), 'no per-consumer dark rule is left to drift from it');
+  // The reader's consumers still read the tokens the override sets.
+  ['.kb-callout-critical .kb-co-kick { color: var(--danger-deep); }', 'color: var(--info-deep); text-decoration: none;', 'background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }']
+    .forEach((c) => assert.ok(shared.indexOf(c) > 0, 'a consumer: ' + c));
+  // The app-wide tokens are not touched.
+  const tokens = fs.readFileSync(path.join(HB_ROOT, 'web-app/styles_design_tokens.html'), 'utf8');
+  assert.ok(/--danger-deep:\s+color-mix\(in oklab, var\(--destructive\), var\(--paper-card\) 25%\);/.test(tokens), 'Team Tools\' own dark token is as it was');
   const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
-  assert.ok(copy.indexOf('[data-mode="dark"] .kb-callout-critical .kb-co-kick') > 0, 'the handbook\'s copy carries it');
-  // The second instance, found by CI's axe on the same section: an HCPCS code chip (--info-deep on --info-soft, 4.34:1 in dark).
-  const chip = shared.indexOf('a.kb-hcpcs { font-family: var(--mono);'), chipDark = shared.indexOf('[data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab, var(--info), var(--ink) 35%); }');
-  assert.ok(chip > 0 && chipDark > chip && copy.indexOf('[data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab,') > 0, 'the chip\'s dark rule, after its base rule, in both copies');
-  const mockAll = fs.readFileSync(path.join(HB_ROOT, 'test/visual/mock.js'), 'utf8');
-  assert.ok(/regulator \(E1353\)/.test(mockAll), 'and that section\'s fixture holds a code for the chip to be drawn from');
-  // The measurement is axe's, in the matrix: the banner scenario is back on section 0.11, which holds a CRITICAL callout.
+  assert.ok(copy.indexOf('[data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {') > 0, 'the handbook\'s copy carries it');
+  // The measurement is axe's, in the matrix: the banner scenario is on section 0.11, which holds a CRITICAL callout and code chips.
   const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
   const row = shoot.split('\n').filter((l) => l.indexOf("['handbook-stale-dark-mobile',") >= 0)[0];
   assert.ok(/MOBILE, 'dark',\s+'\?s=0\.11'/.test(row), row);
-  // …and that section's fixture really holds one (a scenario that shoots no critical callout would pass on any colour).
   const mock = fs.readFileSync(path.join(HB_ROOT, 'test/visual/mock.js'), 'utf8');
   const sec = mock.slice(mock.indexOf("id: 'man-0-11'"), mock.indexOf("id: 'man-0-11'") + 4000);
-  assert.ok(mock.indexOf("id: 'man-0-11'") > 0 && /> \*\*Critical — /.test(sec), 'section 0.11\'s fixture has a CRITICAL callout to measure');
+  assert.ok(mock.indexOf("id: 'man-0-11'") > 0 && /> \*\*Critical — /.test(sec) && /regulator \(E1353\)/.test(sec), 'section 0.11\'s fixture has a CRITICAL callout and a code to measure');
 });
 
 test('FO7 (cycle 26): an image inside a link draws the IMAGE — `[![logo](…)](…)` drew the stash sentinel; the link\'s text is expanded (the image alone, no anchor inside an anchor), its URL never is (driven)', () => {

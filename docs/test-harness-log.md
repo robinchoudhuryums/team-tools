@@ -4041,9 +4041,13 @@ F53, F54, F57.**
   harness was re-run here with `node_modules` moved aside to see it skip.
   (2) CI's axe failed `handbook-stale-dark-mobile` on an HCPCS code chip that
   the same command passed here. Measured: 4.34:1 in dark mode — a real
-  failure; this machine's Chromium left it "incomplete". Fixed (8.80:1), and
-  the chips and kickers were measured directly in both modes rather than
-  trusted to the gate. A local `--axe` PASS is not CI's.
+  failure; this machine's Chromium left it "incomplete". Its own dark rule
+  fixed it — and run 1790 failed the "Updated" badge, the same colour pair.
+  Third time: the fix moved to the pair (the reader redefines its three
+  `-deep` tones for dark mode), and every text element of nine dark handbook
+  screens at two widths was measured directly by a one-off probe (colour
+  against composited background) before pushing again. A local `--axe` PASS
+  is not CI's; three red runs is what trusting it cost.
 - **A slip the measurement caught:** FO8's first edit put the Profile
   override in the 1040px block that precedes the base rule; it changed
   nothing. Measuring before and after is why it was seen.
