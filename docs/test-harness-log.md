@@ -3985,3 +3985,48 @@ F53, F54, F57.**
 - **A harness lesson (g116):** jsdom's `blur()` does nothing on a disabled
   button, so "the focus fell to `<body>`" cannot be produced by blurring the
   pressed control — another element takes the focus and gives it up.
+
+## Cycle 26 — the Batch 8 follow-ons (2026-11-17)
+
+- **The DOM harness runs a named subset — `DOM_ONLY=<regex>`**, and
+  `scripts/bite.sh --dom --only <regex>` uses it (FO10). It exists for
+  bite-checks only. Guards: no match, or not a regex → exit 2 and "nothing was
+  run"; the summary reads `… — SUBSET: n of m tests (DOM_ONLY), not a harness
+  result`; section headings are not printed (they would name sections nothing
+  ran in); `counts.mjs` deletes the variable from the harness's environment;
+  bite.sh needs `--dom` with it, refuses a subset in which no test matching
+  the needle RAN (restoring the mutated file first), and clears an inherited
+  `DOM_ONLY` when `--only` is not given. The harness's half is DRIVEN by a
+  pure pin as a subprocess (three short runs); bite.sh's half is structural,
+  as its other pins are, and both refusals were run by hand.
+- **Pure (+6):** FO1 (the dark rule, after the base rule, in both copies; the
+  scenario on 0.11 and a CRITICAL callout in that fixture), FO7 (driven
+  through `kbMd_`: an image in a link, alone, with emphasis, inside a
+  cross-reference, with hostile quotes), FO2 (the four states), FO8 (the fold
+  rule after the base rule, one of them, and the scenario's `minWidth`), FO10
+  (above), FO11 (every key of the `TOOLS` registry has a mid-width scenario —
+  derived from the registry).
+- **DOM (+4):** FO2 (the profile held on a gate while Training and Profile
+  open; a later answer rebuilds nothing; a reader; a failed profile and its
+  Try again; Team training's Try again), FO3 (a dead link from a section and
+  from Saved; before the chapters arrive), FO4 (cancel before the first
+  words; `pagehide`), FO5 (the count is the live region; nothing found; a
+  failure).
+- **FO9:** every `__delay` left in the handbook drives was re-read. One (the
+  form viewer: an assertion after a 30 ms answer and before a 120 ms one) had
+  the shape that failed CI for Batch 8 and is released by the test now. The
+  others wait LONGER than a delay scheduled before the wait began, which
+  holds whatever the load.
+- **Visual (+20):** `handbook-people-light-half` (with `minWidth`), and
+  nineteen Team Tools scenarios at 800 and 960px. The banner scenario is back
+  on section 0.11, so axe measures the CRITICAL kicker in dark mode. The
+  mid-width shots are clean except `reference-manual-light-tablet`
+  (`span.kb-man-cn-k` and `-n` at 5px — the chapter-end card; open).
+- **Bite-checks: 29 mutations, 29 bit** — the DOM ones through `--only`,
+  about ten seconds each. Plus two measured checks on the pre-fix styles: axe
+  fails `handbook-stale-dark-mobile` without the dark kicker rule, and
+  `handbook-people-light-half` reports `.hb-pp-right 304px (needs 400px)`
+  with the 900px fold.
+- **A slip the measurement caught:** FO8's first edit put the Profile
+  override in the 1040px block that precedes the base rule; it changed
+  nothing. Measuring before and after is why it was seen.

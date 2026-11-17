@@ -72,7 +72,11 @@ under the "handbook app" entries.
   bar's search, Profile and the phone's tabs already work. Whatever the reader
   opened meanwhile stays when the chapters arrive (cycle 26 F55); only a
   reader still on the loading screen is taken to Home or the link's section.
-- **Between a phone and a desk** (cycle 26 F65): up to 1100px wide the home
+- **A manager's surfaces arrive with their profile** (cycle 26 FO2): Team
+  training, the Mine / My team switch and the quiz lock-outs appear as soon as
+  the page knows the reader manages a team — also when Training or Profile was
+  opened first.
+- **Between a phone and a desk** (cycle 26 F65; Profile since FO8): up to 1100px wide the home
   hero is one column — the greeting, heading and search above the shelf — and
   up to 1040px the results list is full width with its filters below, and
   *Continue reading* sits above *Due for you*.
@@ -260,6 +264,9 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
   name (Default … Largest); line spacing stays a choice of three; high
   contrast, the reading font and reduce motion are switches. The Profile page's
   Display row says what is set.
+- **Cycle 26 FO4.** Listen clears whatever the browser's speech engine still
+  holds before it speaks (a page reloaded while paused left Listen silent),
+  and leaving the page stops the voice.
 - **Cycle 26 F66.** *System* follows the device while the page is open — a
   device that turns dark in the evening turns the page dark without a reload;
   a chosen Light or Dark stays. *Reduce motion* (and the device's own
@@ -316,7 +323,8 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
   being read, else the first entry — and give it back to the Contents button on
   Escape, a tap outside or a second press.
 - **What is announced.** The reading area is not a live region (a repaint would
-  be read out whole). A slideshow says "Slide 2 of 4: caption" when it steps,
+  be read out whole). A search announces its count ("3 results"), not its
+  list (cycle 26 FO5 — the whole list was a live region). A slideshow says "Slide 2 of 4: caption" when it steps,
   never on load; its visible counter is hidden from screen readers so it is not
   read twice. The bar's previous/next buttons are named for their visible
   label and the section they open.
@@ -440,6 +448,8 @@ reader or its server readers ships in **both** projects — Team Tools with
 | "Keeping your notes in your account was turned off on another computer, so it is off here too." | The account's note sync is off; the notes stay in this browser. Saved turns it on again |
 | "“<quiz>” was submitted: N% — passed." (a toast that stays) | The reader left the quiz while the answers were being checked; the attempt is recorded |
 | "Section 9.9 is not in the handbook — here is the home page." | A link to a section that does not exist (or is still a draft) |
+| "That section is not in the handbook." (a toast) | A cross-reference, bookmark or search hit names a section this app does not serve; the page being read stays as it was (cycle 26 FO3) |
+| "Could not tell whether you manage a team, so team training is not shown: …" | The profile could not be read — not the same as "not a manager"; **Try again** beside it (cycle 26 FO2) |
 | "The search failed: …" | The search did not run — never read as "no matches" |
 | "Profiles are not set up yet …" (Profile) | `HANDBOOK_SS_ID` is not set — an admin is told so by name |
 | "Could not load your profile: Could not open the Handbook spreadsheet …" | The property names a spreadsheet the deploying account cannot open |

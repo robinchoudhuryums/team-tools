@@ -2010,6 +2010,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (source-level `in oklab` + a computed ≤20° hue-drift bound, both modes) —
   don't add a `-deep` alias, or "correct" a fallback hex, without re-running it.
 
+  **AMENDED (cycle 26 FO1): "deep" goes the other way in the dark.** In light
+  mode a `-deep` tone is the semantic colour mixed toward the ink — darker, for
+  text on the colour's own `-soft` tint. In dark mode the tokens mix it toward
+  the PAPER instead, which is darker too: the handbook reader's CRITICAL
+  callout kicker (`--danger-deep` on `--danger-soft`) measured 3.34:1, under
+  axe's 4.5 for 10.5px text. It was found by accident — a scenario added for
+  another reason happened to shoot a section with a CRITICAL callout in dark
+  mode without high contrast, which none had. The kicker now mixes toward the
+  ink in dark mode (`color-mix(in oklab, var(--destructive), var(--ink) 30%)`,
+  the light mode's recipe); the token itself is unchanged — it has other
+  consumers (the watch-out kicker is at 4.53:1 and passes). Verify: axe on
+  `handbook-stale-dark-mobile` (section 0.11), which fails without the rule.
+
 <a id="g57-a-var-x-fallback-on-a-token"></a>
 
 - **A `var(--x, fallback)` on a token the tokens partial DEFINES is banned (design
@@ -2506,6 +2519,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   finding in the gate, which fails on the old stylesheet with the measured
   widths. Verify: the F65 pin; `handbook-home-light-tablet`.
 
+  **AMENDED (cycle 26 FO8 + FO11): the same shape twice more, and where
+  nobody had looked.** Profile's two columns folded at 900px: at 960 the team
+  column was 304px beside the 340px profile card (measured). It folds at 1040
+  with the others — and the first attempt at that did nothing: the override
+  was written into the 1040 block that sits BEFORE the base rule in the
+  sheet, and a same-weight rule earlier in the sheet loses. Measuring after
+  the edit is what showed it. Team Tools itself had never been shot between
+  480 and 1440px; it has a landing view per tool at 800 and two at 960 now.
+  They are clean except one: the Reference reader's handbook chapter at 800px
+  squeezes its chapter-end card's text to 5px (open — a Team Tools layout
+  finding, not part of these follow-ons). Verify: the FO8 and FO11 pins;
+  `handbook-people-light-half`.
+
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
 - **The `hidden` attribute LOSES to any class rule that sets `display`
@@ -2779,6 +2805,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Home's tiles (`hbChaptersLanded_`). A failure with the reader elsewhere is a
   sticky toast, not a message in place of their view. Verify: the F55 "the
   chapters" DOM drive (a slow `getManualParts`, each view opened meanwhile).
+
+  **AMENDED (cycle 26 FO2): a view that branched on an answer not yet here.**
+  The handbook's Training and Profile pages decide what a MANAGER sees — Team
+  training, the Mine / My team switch, quiz lock-outs — from the profile
+  (`HB_ME`). A manager who opened either before `hbGetMe` answered got a
+  reader's page, and the answer's arrival repainted only the profile's own
+  sections; the team surfaces stayed empty until the view was left and
+  re-entered. A profile that FAILED to load looked the same. The page now
+  holds four states (`hbLeadState_`: wait, error, yes, no), each surface
+  records the state it was drawn for, and `hbApplyMe_` redraws one only when
+  that changed — so an ordinary profile answer rebuilds nothing under the
+  reader. "Could not tell whether you manage a team" is said, with Try again.
+  Verify: the FO2 pin and DOM drive (the profile held on a gate).
 
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
@@ -4057,6 +4096,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   concurrent runs of the DOM harness on four cores — the load that produced
   it. A green run on an idle machine says nothing about a test that orders
   events by time.
+
+  **AMENDED (cycle 26 FO9 + FO10): the subset, and one more clock.** Batch 8
+  bit its DOM drives through a filter patched into the runner in each
+  worktree — tooling in a state the repo does not have. It is the tool's now:
+  `DOM_ONLY=<regex>` runs the DOM tests whose name matches, and
+  `scripts/bite.sh --dom --only <regex>` uses it. Three guards keep a subset
+  from lying: a pattern that matches nothing (or is not a regex) is refused
+  rather than run as "0 failed"; the summary line says SUBSET and how many of
+  how many; `counts.mjs` clears the variable for its own run; and bite.sh
+  refuses a subset that did not RUN a test the needle names (it could only
+  ever say NO BITE), restoring the file first, and clears an inherited
+  `DOM_ONLY` when `--only` is not given. One older drive (the form viewer's
+  two answers) asserted between a 30 ms and a 120 ms answer; it is released by
+  the test now. The other clock delays in the handbook drives were re-read:
+  each only waits LONGER than a delay scheduled earlier, which holds under
+  any load.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -6423,6 +6478,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   `kbMd_`, the note-marker formatter (g38) or any other escape-then-format
   pass. Verify: M1-R1 (a callout holding a paragraph, a table and a
   list; each label's tone; HTML inside a callout still inert).
+
+  **AMENDED (cycle 26 FO7): a stash inside a stash.** `kbMd_` stashes each
+  finished link or image as a sentinel and restores them in ONE pass at the
+  end — one pass is also what stops a sentinel smuggled into a URL from being
+  expanded. But a link's TEXT can hold an image: `[![logo](…)](…)`. The image
+  was stashed first, the link stashed with the image's sentinel inside it, and
+  the single pass restored only the outer one: the page drew the sentinel.
+  The text of a link — never its URL — is expanded when the link is stashed
+  (`linkText`), and an image inside a link is the `<img>` alone (its own
+  anchor would nest). Verify: the FO7 pin, driven, with hostile quotes.
 
 <a id="g161-inline-svg-is-not-encapsulated"></a>
 

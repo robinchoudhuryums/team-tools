@@ -136,6 +136,11 @@ Playwright's own managed download.
     stopped matching, not a pass — is listed. `narrowText` cannot stand in:
     its floor is a word, and a 208px column beside a 360px one is past it and
     still wrong. Printed under TOO NARROW.
+- **Widths.** Most scenarios are a phone (390), the pop-out (360 / 480) or a
+  desk (1440). Since cycle 26 there are also `TABLET` (800) and `HALF` (960)
+  — a window beside another app, half a 1920px screen: the handbook's home,
+  search and Profile, and one landing view per Team Tools tool. Nothing had
+  looked there before; the handbook's hero column was 48px at 800.
 - `shots/*.png` — the renders. Wide scenarios are fullPage; compact/mobile are
   viewport-clipped frames + a `-bottom` frame, because fullPage stitching
   PAINTS off-viewport fixed elements (the closed KB drawer, the mobile nav)

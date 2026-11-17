@@ -11,6 +11,26 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-17 — Cycle 26, the Batch 8 follow-ons
+
+**Adds NO operator state.** Deploy BOTH apps when convenient: the handbook app
+(`npm run handbook:push` + New version) and Team Tools (`clasp push -f` + New
+version) — Team Tools' part is its Reference reader (the dark-mode CRITICAL
+kicker, an image inside a link). Nothing depends on the order.
+
+- **Dark mode:** the red "CRITICAL" label on a handbook callout is legible
+  (it measured 3.34:1; it passes the accessibility check now), in both apps.
+- **Managers:** Team training, Mine / My team and quiz lock-outs appear even
+  when Training or Profile is opened before the profile has loaded.
+- **A link to a section that is not in the handbook** (a draft, a removed
+  one) says so and leaves the reader where they were.
+- **Listen** works after a reload while paused, and stops when the tab closes.
+- **Profile** is one column up to 1040px wide.
+- **Not done, waiting on a decision:** keeping each person's notes and
+  bookmarks apart when two people use the same browser profile.
+- **Open, found by the new mid-width shots:** in Team Tools → Reference at an
+  800px window, the card at the end of a handbook chapter is squeezed.
+
 ## 2026-11-17 — Cycle 26 Batch 8 (the handbook page)
 
 **Adds NO operator state that must be set.** Deploy the handbook app:

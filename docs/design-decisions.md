@@ -7054,6 +7054,38 @@ pick them up without re-deriving the context.
     `data-hb-motion` attribute, which Team Tools never sets) rather than
     through a new host hook — Team Tools' reader gains the device's setting
     for free.
+- <a id="c26-batch-8-follow-ons"></a>**The Batch 8 follow-ons: manager surfaces follow a late profile, a dead link leaves the reader in place, and the DOM harness runs a named subset for bite-checks (cycle 26: FO1–FO5, FO7–FO11).**
+  - **Four states, and redraw only on a change (FO2).** The simple fix —
+    repaint the team surfaces on every profile answer — rebuilds Team training
+    under a manager each time they confirm someone. Each surface records the
+    state it was drawn for and is redrawn only when the profile's answer
+    changes it. "Could not be read" is its own state: it is not "not a
+    manager", and it is said.
+  - **Refuse before leaving, not after (FO3).** `kbOpenManualSection_` already
+    answers false for an id it does not know — after `hbOpen_` had torn the
+    view down. The check moved in front of the teardown; the old message
+    stays as the fallback for a failure inside the reader.
+  - **The kicker, not the token (FO1).** `--danger-deep` has other consumers
+    in Team Tools' dark mode, none under an accessibility gate; changing the
+    token would recolour them unseen. The one rule that was measured failing
+    is the one that changed.
+  - **A link's text is expanded, never its URL (FO7).** The single-pass restore
+    is a safety property (a sentinel in a URL is never expanded); it stays,
+    and the expansion happens where the text is known to be text.
+  - **A subset is never a result (FO10).** The DOM harness needed a way to run
+    one drive for a bite-check; the risk is a green subset read as a green
+    run. So the summary line says SUBSET, `counts.mjs` clears the variable,
+    an empty or malformed pattern is refused, and `bite.sh` refuses a subset
+    that leaves out the test its needle names. CI sets it nowhere.
+  - **Scenarios first, fixes when named (FO11).** Shooting Team Tools at 800
+    and 960px found one defect (the Reference reader's chapter-end card at
+    800px). It is recorded, not fixed here: the follow-on was "nothing looks
+    at these widths", and choosing a breakpoint for Team Tools' Reference
+    layout is its own change.
+  - **Not done: scoping the handbook's browser keys to the signed-in account
+    (FO6)** — how notes already in a browser are handed to an account depends
+    on whether workstations share a browser profile, which is the operator's
+    to say. **F51** stays deferred, as the scan recorded.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
