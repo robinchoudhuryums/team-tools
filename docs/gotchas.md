@@ -3733,6 +3733,25 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the same browser profile sees the first's notes; a follow-on.) Verify: the
   F55 "note sync" pin and DOM drive.
 
+  **AMENDED (cycle 26 FO6): per site is not per person.** localStorage is
+  keyed by the page's origin, so the handbook's `umsHbNotes`,
+  `umsHbBookmarks` and `umsHbNotesSync` belonged to whoever used that browser
+  profile: a second person saw the first's notes on Saved, and with the
+  first's sync switch still on their own first visit uploaded those notes
+  into their account. `doGet` now hands the page a short key for the
+  signed-in account (`hbAccountKey_`: twelve hex digits from two hashes of
+  the address — never the address, which would sit in the storage keys) and
+  the three are `umsHbNotes:<key>` and so on (`hbKey_`). What a browser held
+  before is ADOPTED once, by the first account to open the handbook there,
+  and the shared copy removed (`hbAdoptLegacy_`) — the operator's answer was
+  one person per browser profile; on a shared profile the first person would
+  take them. Notes are merged into any the account already has (the later
+  note wins), because a tab still on the old page can write the shared key
+  after the adoption. With no key the page uses the shared keys, as before.
+  The department, the resume point, the visit day and the display settings
+  stay the browser's. Verify: the FO6 pin (the key; the net that no read or
+  write of the three bypasses `hbKey_`) and the FO6 DOM drive.
+
 <a id="g114-a-zero-that-could-mean-three-different"></a>
 - **A computed ZERO that could mean three different things must say WHICH —
   the accrual audit row (operator 2026-09-14).** `creditMonthlyPtoAccruals`

@@ -360,6 +360,11 @@ plans and quizzes are cards ("Reaches N people", or nobody while archived).
   its next sync, turns its switch off and says so — it used to send every note
   back. The reader turns it on again on the Saved page of any computer.
 
+**Kept per person** (cycle 26 FO6): in the browser, notes, the bookmark copy
+and the sync switch belong to the signed-in account — another person using
+the same browser profile sees none of them. What a browser held before this
+was adopted by the first account to open the handbook there.
+
 Bookmarks that could not be loaded are said to be that (cycle 26 F47): Saved
 shows the browser's last copy, labelled, or nothing — never "Nothing
 bookmarked yet" — with a **Try again**.

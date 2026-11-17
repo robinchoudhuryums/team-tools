@@ -7082,10 +7082,17 @@ pick them up without re-deriving the context.
     800px). It is recorded, not fixed here: the follow-on was "nothing looks
     at these widths", and choosing a breakpoint for Team Tools' Reference
     layout is its own change.
-  - **Not done: scoping the handbook's browser keys to the signed-in account
-    (FO6)** — how notes already in a browser are handed to an account depends
-    on whether workstations share a browser profile, which is the operator's
-    to say. **F51** stays deferred, as the scan recorded.
+  - **Browser storage per account, adopted once (FO6; operator 2026-11-17).**
+    The page cannot know who is signed in until `hbGetMe` answers, and the
+    notes are read before that — so the account's key rides `doGet`, with the
+    section. It is a hash, not the address. The open question was what to do
+    with notes already in a browser, which have no owner recorded: the
+    operator's answer — one person per browser profile — makes "the first
+    account to open the handbook there takes them, and the shared copy goes"
+    correct; on a shared profile it would hand them to whoever came first,
+    which is why it was asked. Only the three keys with personal content or
+    consent are scoped (notes, the bookmark copy, the sync switch).
+    **F51** stays deferred, as the scan recorded.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

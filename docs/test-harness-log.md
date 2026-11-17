@@ -4022,7 +4022,14 @@ F53, F54, F57.**
   on section 0.11, so axe measures the CRITICAL kicker in dark mode. The
   mid-width shots are clean except `reference-manual-light-tablet`
   (`span.kb-man-cn-k` and `-n` at 5px — the chapter-end card; open).
-- **Bite-checks: 29 mutations, 29 bit** — the DOM ones through `--only`,
+- **FO6** (added after the operator's answer): one pure pin — `doGet` driven
+  for the key (stable, per person, case-blind, not the address, empty for
+  nobody), the page's `HB_U` filter, and a derived net that no use of the
+  three key names bypasses `hbKey_` — and one DOM drive: adoption by the
+  first account, a second account in the same storage, a late write to the
+  shared key merged, and no key at all. `hbBoot_`'s `params` carries `u`;
+  every older drive has none and runs on the shared keys unchanged.
+- **Bite-checks: 46 mutations, 46 bit** — the DOM ones through `--only`,
   about ten seconds each. Plus two measured checks on the pre-fix styles: axe
   fails `handbook-stale-dark-mobile` without the dark kicker rule, and
   `handbook-people-light-half` reports `.hb-pp-right 304px (needs 400px)`

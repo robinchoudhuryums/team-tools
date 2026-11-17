@@ -26,8 +26,11 @@ kicker, an image inside a link). Nothing depends on the order.
   one) says so and leaves the reader where they were.
 - **Listen** works after a reload while paused, and stops when the tab closes.
 - **Profile** is one column up to 1040px wide.
-- **Not done, waiting on a decision:** keeping each person's notes and
-  bookmarks apart when two people use the same browser profile.
+- **Notes, bookmarks and the note-sync setting are kept per person in the
+  browser.** After the deploy, the first person to open the handbook in a
+  browser keeps what that browser already held (operator 2026-11-17: one
+  person per browser profile); anyone else signing in to that same profile
+  later starts empty and their notes stay apart. Nothing to do.
 - **Open, found by the new mid-width shots:** in Team Tools → Reference at an
   800px window, the card at the end of a handbook chapter is squeezed.
 
