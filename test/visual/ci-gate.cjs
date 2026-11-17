@@ -67,6 +67,8 @@ function findingsOf(r) {
   if (r.overflowPx > 0) out.push({ kind: 'overflow', detail: '+' + r.overflowPx + 'px sideways' });
   if (r.verticalRunawayPx > RUNAWAY_PX) out.push({ kind: 'runaway', detail: '+' + r.verticalRunawayPx + 'px past the content' });
   (r.narrowText || []).forEach((n) => out.push({ kind: 'narrowText', detail: n.tag + ' ' + n.w + 'px "' + n.text + '"' }));
+  // Cycle 26 F65: a box its scenario says must be usable (shoot.mjs `minWidth`) is narrower than it needs, or gone.
+  (r.tooNarrow || []).forEach((n) => out.push({ kind: 'tooNarrow', detail: n.sel + ' ' + (n.w === null ? 'not found' : n.w + 'px') + ' (needs ' + n.min + 'px)' }));
   (r.missing || []).forEach((m) => out.push({ kind: 'missingFixture', detail: m }));
   (r.errors || []).filter((e) => /^PAGEERROR: |threw: /.test(e)).forEach((e) => out.push({ kind: 'pageError', detail: e.slice(0, 160) }));
   return out;

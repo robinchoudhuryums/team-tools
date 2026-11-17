@@ -104,6 +104,8 @@ const MANUAL_COPY = "try { Object.defineProperty(navigator, 'clipboard', { value
   " { ok: 'Copied', label: 'Drive Scout 3 Wheel \u00b7 W/ Shipping Cost' });";
 
 const HB_PAGE = { page: 'handbook' };
+// F65 (cycle 26): a handbook scenario whose named boxes must each be at least so wide (see `tooNarrow` below).
+const HB_MIN = (minWidth) => ({ page: 'handbook', minWidth });
 const HB_SEARCH = "var q=document.getElementById('hb-q'); q.value='waiting'; hbSearch_('waiting', true)";
 const HB_DEPT = "try { localStorage.setItem('umsHbDept', 'Chapter 03 \u2014 Respiratory & Resupply'); } catch (e) {} hbPaintDeptPicker_(); hbHome_(false)";
 const HB_FIRST = "hbApplyMe_(99, { email: 'alex.kim@example.com', name: 'Alex Kim', setUp: true, isAdmin: false, isManager: false, me: null, managers: [{ email: 'dana.reyes@example.com', name: 'Dana Reyes' }] }); hbHome_(false)";
@@ -135,9 +137,15 @@ const SCENARIOS = [
   // F65 (cycle 26): home and search at 800 and 960px — the rail still showing.
   // The two-column layouts folded only at 760px, so the hero's own column (the
   // greeting, the heading, the search box) was a sliver beside the shelf.
-  ['handbook-home-light-tablet',   {}, TABLET, 'light', '', '', HB_PAGE],
-  ['handbook-home-dark-half',      {}, HALF,   'dark',  '', '', HB_PAGE],
-  ['handbook-search-light-tablet', {}, TABLET, 'light', '', HB_SEARCH, HB_PAGE],
+  // Each names the boxes that carry its content and the width each needs
+  // (minWidth): `narrowText` only reports text under 48px — narrower than a
+  // word — and the old hero column was EXACTLY 48px at 800 (208 at 960), so
+  // these scenarios passed on the layout they exist to catch until they said
+  // what "usable" is. Measured before → after: the hero's column 48 → 442px at
+  // 800 and 208 → 602 at 960; Continue reading 255 → 504; the results list 222 → 504.
+  ['handbook-home-light-tablet',   {}, TABLET, 'light', '', '', HB_MIN({ '.hb-hero-l': 340, '#hb-cont': 300, '#hb-due': 300 })],
+  ['handbook-home-dark-half',      {}, HALF,   'dark',  '', '', HB_MIN({ '.hb-hero-l': 340 })],
+  ['handbook-search-light-tablet', {}, TABLET, 'light', '', HB_SEARCH, HB_MIN({ '.hb-results-list': 400 })],
   // F47 + F55 (cycle 26): what a failed read looks like — home with the sign-offs
   // and the training plans not loaded (My reading, Due for you, the rail's "?"),
   // Saved with the bookmarks not loaded, and a section read from a kept copy
@@ -870,12 +878,24 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     const scrollH = document.documentElement.scrollHeight;
     return { runaway: Math.max(0, Math.round(scrollH - Math.max(bottom, vh))), scrollH, narrow: narrow.slice(0, 5) };
   });
+  // Cycle 26 F65 — (3) A COLUMN TOO NARROW TO USE. A scenario may name the boxes
+  // that carry its content and the width each needs (opts.minWidth:
+  // { selector: px }). A box narrower than that — or not there at all, which is
+  // a selector that stopped matching, not a pass — is reported. `narrowText`
+  // cannot stand in for it: its floor is a word (48px), and a 208px column
+  // beside a 360px one is past that floor and still wrong.
+  const tooNarrow = opts && opts.minWidth ? await page.evaluate((want) => Object.keys(want).map((sel) => {
+    const el = document.querySelector(sel);
+    const w = el ? Math.round(el.getBoundingClientRect().width) : null;
+    return w === null || w < want[sel] ? { sel, w, min: want[sel] } : null;
+  }).filter(Boolean), opts.minWidth) : [];
   report.push({
     name, view, missing,
     viewport: vp.width + 'x' + vp.height,
     overflowPx,
     verticalRunawayPx: shape.runaway,
     narrowText: shape.narrow,
+    tooNarrow,
     errors: Array.from(new Set(errors)).slice(0, 8),
   });
   await ctx.close();
@@ -903,6 +923,11 @@ const runaway = report.filter((r) => r.verticalRunawayPx > RUNAWAY_PX);
 if (runaway.length) {
   console.log('\nVERTICAL RUNAWAY (the page scrolls past its content — an escaped absolute element?):');
   runaway.forEach((r) => console.log('  ' + r.name + '  +' + r.verticalRunawayPx + 'px blank @ ' + r.viewport));
+}
+const cramped = report.filter((r) => r.tooNarrow.length);
+if (cramped.length) {
+  console.log('\nTOO NARROW (a box its scenario says must be usable is narrower than it needs):');
+  cramped.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.tooNarrow.map((n) => n.sel + ' ' + (n.w === null ? 'not found' : n.w + 'px') + ' (needs ' + n.min + 'px)').join(' · ')));
 }
 const squeezed = report.filter((r) => r.narrowText.length);
 if (squeezed.length) {

@@ -13970,8 +13970,11 @@ test('F45 DOM (cycle 26): the bar\'s tools are for the section IN VIEW — after
     'and the bar says so for THAT section — not 3.1\'s unsigned button');
   assert.ok(!/Resp quiz/.test(bar().textContent), '3.1\'s quiz did not come back with it');
   // Late answers at boot (the quiz list, the forms): they repaint the bar where it IS.
-  h.w.hbLoadQuizzes_(); h.w.hbLoadForms_(); await h.settleAll();
-  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), /Resp quiz/.test(bar().textContent)], ['man-3-2', false]);
+  // (Each on its own: the later answer would repaint over what an earlier one got wrong.)
+  h.w.hbLoadQuizzes_(); await h.settleAll();
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), /Resp quiz/.test(bar().textContent)], ['man-3-2', false], 'the quiz list\'s answer');
+  h.w.hbLoadForms_(); await h.settleAll();
+  assert.deepStrictEqual([ctl('sign').getAttribute('data-id'), /Resp quiz/.test(bar().textContent)], ['man-3-2', false], 'the form library\'s answer');
   // Listen reads the section its button is shown for.
   ctl('listen').click(); await h.settleAll();
   assert.strictEqual(sp.spoken[0].text, '3.2 Nebulizers', 'not 3.1 from the top');
@@ -14236,10 +14239,12 @@ test('F55 DOM (cycle 26): a quiz in progress asks before ANY way out — the rai
   b8Dlg_(h).querySelector('.ui-dialog-cancel').click(); await h.settleAll();
   assert.deepStrictEqual([q.value, onQuiz(), searches()], ['', true, before], 'Keep going: the box is emptied, nothing was searched');
   // Back.
+  const entries = h.hist.length;
   h.w.__hbChange({ state: { home: true } }); await h.settleAll();
   assert.ok(b8Dlg_(h) && onQuiz());
+  assert.strictEqual(h.hist.length, entries, 'nothing is written to the history while it asks');
   b8Dlg_(h).querySelector('.ui-dialog-cancel').click(); await h.settleAll();
-  assert.deepStrictEqual(h.hist[h.hist.length - 1], ['push', { quiz: 'q-neb' }, {}], 'the quiz is put back on the history Back took it off');
+  assert.deepStrictEqual([h.hist.length, h.hist[h.hist.length - 1]], [entries + 1, ['push', { quiz: 'q-neb' }, {}]], 'the quiz is put back on the history Back took it off — one new entry');
   assert.ok(onQuiz());
   // Profile, and this time leave.
   h.d.getElementById('hb-me').click(); await h.settleAll();

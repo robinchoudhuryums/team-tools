@@ -48459,6 +48459,21 @@ test('F65 (cycle 26): the handbook\'s two-column layouts fold while the rail is 
   ['handbook-home-light-tablet', 'handbook-home-dark-half', 'handbook-search-light-tablet'].forEach((n) => assert.ok(shoot.indexOf("['" + n + "',") > 0, n));
   const gate = require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'));
   assert.ok(gate.CI_SCENARIOS.indexOf('handbook-home-light-tablet') >= 0 && gate.CI_SCENARIOS.indexOf('handbook-search-light-tablet') >= 0, 'CI shoots the tablet width');
+  // …and those scenarios SAY what usable is. The matrix's squeezed-text measure has a 48px floor, and the
+  // unfolded hero column was exactly 48px at 800 — the scenarios passed on the layout they exist to catch.
+  const row = (n) => shoot.split('\n').filter((l) => l.indexOf("['" + n + "',") >= 0)[0];
+  assert.ok(/HB_MIN\(\{ '\.hb-hero-l': 340, '#hb-cont': 300, '#hb-due': 300 \}\)/.test(row('handbook-home-light-tablet')), row('handbook-home-light-tablet'));
+  assert.ok(/HB_MIN\(\{ '\.hb-hero-l': 340 \}\)/.test(row('handbook-home-dark-half')) && /HB_MIN\(\{ '\.hb-results-list': 400 \}\)/.test(row('handbook-search-light-tablet')));
+  assert.ok(/const tooNarrow = opts && opts\.minWidth \? /.test(shoot) && /w === null \|\| w < want\[sel\]/.test(shoot), 'a box that is narrower — or gone — is reported');
+  // The gate fails on it: the old layout's measurements (48px, and a selector that stopped matching), driven.
+  const clean = (name) => ({ name, missing: [], overflowPx: 0, verticalRunawayPx: 0, narrowText: [], tooNarrow: [], errors: [] });
+  const sub = ['handbook-home-light-tablet'];
+  assert.strictEqual(gate.ciVerdict([clean(sub[0])], sub, []).ok, true);
+  const old = gate.ciVerdict([Object.assign(clean(sub[0]), { tooNarrow: [{ sel: '.hb-hero-l', w: 48, min: 340 }] })], sub, []);
+  assert.deepStrictEqual([old.ok, old.failures], [false, [{ scenario: sub[0], kind: 'tooNarrow', detail: '.hb-hero-l 48px (needs 340px)' }]]);
+  const gone = gate.ciVerdict([Object.assign(clean(sub[0]), { tooNarrow: [{ sel: '.hb-hero-l', w: null, min: 340 }] })], sub, []);
+  assert.deepStrictEqual([gone.ok, gone.failures[0].detail], [false, '.hb-hero-l not found (needs 340px)']);
+  assert.strictEqual(gate.ciVerdict([Object.assign(clean(sub[0]), { tooNarrow: undefined })], sub, []).ok, true, 'a report from before the field existed is not a finding');
 });
 
 test('F66 (cycle 26): scripted scrolling asks whether motion is reduced — the reader\'s scroll is smooth only when neither the device nor the handbook\'s own switch says otherwise; every bar control says what it does, so a redrawn bar can give the focus back', () => {
