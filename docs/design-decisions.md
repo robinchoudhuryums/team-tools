@@ -7093,6 +7093,50 @@ pick them up without re-deriving the context.
     which is why it was asked. Only the three keys with personal content or
     consent are scoped (notes, the bookmark copy, the sync switch).
     **F51** stays deferred, as the scan recorded.
+- <a id="c26-second-pass-follow-ons"></a>**The second pass over the Batch 8 follow-ons: Reference folds at the shell's breakpoint, the dark deep tones mix toward the ink at the token, the matrix measures contrast itself, and a sign-off names its section (cycle 26, 2026-11-17).**
+  Four decisions, each the smaller of two options.
+  - **Where Reference folds: at the shell's breakpoint, not at a width of its
+    own.** The alternative was a container query on `.kb-wrap`. The shell
+    already decides, at 1024px, between "sidebar and a wide view" and "bottom
+    nav and a view capped at 600px"; a 600px view cannot hold a 280px tree and
+    a reader, so there is nothing for Reference to decide in between. One
+    number, the shell's, and the pin derives it. Above 1024px the reader is
+    480px at its narrowest (tree beside it), which the reader's own container
+    queries handle.
+  - **The reader's queries get containers, not media queries.** The reader
+    runs in three frames — Team Tools' Reference, its Ctrl/⌘+K drawer, and the
+    handbook app — whose widths have nothing to do with the window's. That was
+    why the rules were written as container queries; they were only missing
+    the containers. The masthead and the chapter-end nav are small leaf
+    regions, so `container-type` on them changes nothing else (a container on
+    the whole chapter would have made it a containing block for every popover
+    in it). The nav became a flex row because a container cannot restyle
+    itself: the query now sets its cards' basis.
+  - **The dark `-deep` tones mix toward the ink, 30% (35% for blue).** These
+    are the proportions FO1 measured inside the reader, where they have been
+    under axe since; the alternative, restating the fallback hexes, would have
+    cut the tones loose from their base colours and from the palettes' inks.
+    In dark mode a `-deep` tone is now lighter than its base everywhere, as its
+    comment always said. The reader's scoped copy is deleted rather than left
+    as a belt: two definitions of one recipe is how FO1's three red runs
+    started (a rule per consumer).
+  - **The contrast sweep is reported everywhere and GATED where there is a
+    gate.** The handbook app is the surface held to WCAG 2.1 AA (HB2.4), so
+    `--axe` fails on the sweep there. Team Tools is not under that gate, and
+    the first full run says why it cannot simply be put under it: light mode
+    has 1,595 low text elements, on about four of every five screens shot, most of them one
+    colour (`--accent` green as text on white, 4.4:1 — the pair the handbook
+    replaced with `--accent-ink`). That is a decision about Team Tools'
+    palette, not a tooling one; the report now lists it by pair on every run.
+    After this batch dark mode has 111 (it had 346), none of them a `-deep`
+    tone.
+  - **The sign-off names its section with a visible number, and the button's
+    words stay.** "I've read this" and "You read this on …" are what readers
+    and every existing test know; the number in front disambiguates without
+    rewording, and the accessible name carries the full title after the
+    button's own words (WCAG 2.5.3).
+  INV-427; S186.
+
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

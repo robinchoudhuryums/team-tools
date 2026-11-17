@@ -2039,6 +2039,26 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   has always passed. A local axe PASS is not CI's; a colour pair is measured,
   and fixed where the pair is defined.
 
+  **AMENDED (cycle 26 FP2): the fix moved to the token.** FO1 fixed the three
+  tones inside the reader, because the reader was what axe was pointed at. The
+  numbers were the same everywhere else: with the contrast sweep kept in the
+  matrix (g116), Team Tools' dark screens showed `--info-deep` (#5995c0) under
+  4.5:1 on 75 scenario-pairs — avatars, claim pills, "you" tags — and
+  `--danger-deep` (#bd5261) on 57: "Overdue", "4 overdue", "1 escalated", the
+  critical KPI delta, 3.99:1 on a PLAIN card, not only on a tint. The dark
+  block's own comment said the tones "read as lighter shades against the dark
+  canvas", and its pre-color-mix fallback hexes are lighter; the color-mix
+  under them mixed 25% toward `--paper-card`, which is darker. So the recipe
+  now mixes toward `--ink` (30%; `--info-deep` 35%), for all four, and the
+  reader's scoped copy is deleted — one definition. Computed from the token
+  file as the browser computes it (the FP2 pin) and held to 4.5:1 in every
+  palette; in Console the lowest pair is now 7.08:1 on its own tint (it was
+  3.32:1). Two things to know when you
+  use a `-deep` tone: in dark mode it is now LIGHTER than its base, so (1) as
+  TEXT it is safe on a card, the canvas and its own tint, and (2) as a FILL
+  its text must be a token that flips (g170) — four hover fills use it, and
+  one of them carried a literal white.
+
 <a id="g57-a-var-x-fallback-on-a-token"></a>
 
 - **A `var(--x, fallback)` on a token the tokens partial DEFINES is banned (design
@@ -2547,6 +2567,29 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   squeezes its chapter-end card's text to 5px (open — a Team Tools layout
   finding, not part of these follow-ons). Verify: the FO8 and FO11 pins;
   `handbook-people-light-half`.
+
+  **AMENDED (cycle 26 FP1): a fifth, and the fold is the container's.**
+  Reference stacked at `@media (max-width: 720px)`. But below 1024px the shell
+  is the phone layout — bottom nav, and `.view-area { max-width: 600px }` — so
+  from 721 to 1023px the view was 568px wide whatever the window was, holding a
+  280px tree, a 16px gap and what was left: MEASURED at an 800px window,
+  `.kb-main` 272px, a chapter's text column 226px. A viewport breakpoint is a
+  proxy for "the container has run out of room", and this container stops
+  growing at 600px; the fold is the shell's own, 1023px, and the FP1 pin
+  DERIVES it from the shell's rule rather than restating it. Found by FO11's
+  800px scenarios — nothing had ever been shot between 480 and 1440px.
+  The same scenarios showed the chapter-end cards with a 5px title, which is a
+  different mechanism: **an `@container` rule with no container above it never
+  matches.** The reader's queries were written for "a narrow reader", but in
+  Team Tools nothing above the masthead or the chapter-end nav declared
+  `container-type`, so their one-column forms never applied at any width (the
+  handbook app had given the masthead a container on its own side, which is why
+  it looked right there). The masthead is a container now; the nav is one whose
+  CARDS the query restyles, because a container cannot restyle itself. The FP1
+  pin maps every class a reader query restyles to the container it sits under
+  and fails on one that has none. Fixing the fold then put the reader bar at
+  566px, where its chapter name had 9px — its narrow form starts at 640px now
+  (measured: the name has a word's room from about 630px).
 
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
@@ -4147,6 +4190,24 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the test now. The other clock delays in the handbook drives were re-read:
   each only waits LONGER than a delay scheduled earlier, which holds under
   any load.
+
+  **A TWENTY-FIFTH (cycle 26 FP3): a local `--axe` PASS was not CI's.** axe's
+  colour-contrast rule marks a pair it cannot resolve "incomplete", which is
+  not a violation, and which pairs it can resolve differs between Chromium
+  builds. Run on the old tokens, this container's axe reports ONE low pair on
+  the dark handbook section (the CRITICAL kicker); CI's reported the kicker,
+  then an HCPCS chip, then the "Updated" badge — one per red run, three runs.
+  `test/visual/contrast.cjs` does not ask axe: for every text element it reads
+  the colour and every ancestor's background and opacity, composites them as
+  the browser does (through a canvas, so `color-mix()` and `oklab()` values are
+  read rather than parsed) and computes the WCAG ratio. On the same old tokens
+  it lists all three pairs at once. `shoot.mjs` reports it for every scenario
+  and `--axe` fails on it; `contrast-check.mjs` runs the sweep over a page of
+  pairs whose answers are known (CI), because a sweep that sees nothing passes
+  everything. What it cannot judge — text over an image — is COUNTED, not
+  passed (g128). Its first version stopped walking at the first opaque
+  ancestor and so missed a see-through GROUP above it; the known-pairs page is
+  what caught that, before any screen was trusted to it.
 
 <a id="g117-a-recovery-is-not-a-prevention"></a>
 - **A recovery is not a prevention, and shipping one can make the other feel
@@ -6770,6 +6831,16 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   badges) now paint `--warn-fill`, a lighter amber in light mode (`#dda23a`,
   8.02:1 under the ink) and `--warn` itself in dark mode. MRD-5 now requires
   every `--on-warn` rule to sit on `--warn-fill`. Verify: MRD-5.
+
+  **AMENDED (cycle 26 FP2): a `-deep` fill is light in dark mode.** Since the
+  dark `-deep` tones mix toward the ink (g56), a rule that FILLS with one —
+  the hover of Clock Out, Approve, a destructive confirm, the Call Notes Clear
+  button — paints a light colour in dark mode. Three of the four already took
+  their text from `--paper-card`; `.cn-form-clear-btn:hover` said `color:
+  white`, which would have been about 2:1. It takes `--paper-card`. MEASURED on
+  hover, dark mode, before → after: Clock Out 3.99 → 8.49:1, Approve 7.29 →
+  13.64:1, Clear 4.62 → 8.49:1. The FP2 sweep fails on any rule in either app
+  that fills with a `-deep` tone and sets a literal white.
 
 <a id="g171-a-visually-hidden-absolute-element-escapes-its-scroller"></a>
 

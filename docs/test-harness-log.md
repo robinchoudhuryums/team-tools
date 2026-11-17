@@ -4051,3 +4051,41 @@ F53, F54, F57.**
 - **A slip the measurement caught:** FO8's first edit put the Profile
   override in the 1040px block that precedes the base rule; it changed
   nothing. Measuring before and after is why it was seen.
+
+## Cycle 26 — the second pass over the Batch 8 follow-ons (2026-11-17)
+
+- **`test/visual/contrast.cjs` — the matrix measures contrast itself.** The
+  maths (`lum`, `ratio`, `need`, `over`, `mix`, `paint`) is plain functions the
+  pure harness drives; the page walk (`inPage`) is serialised with those same
+  functions, by name, into the one expression `page.evaluate` runs, so the
+  browser runs what the pins drive. `contrast-check.mjs` drives the WALK in
+  Chromium against eighteen elements whose answers are known (a low pair, the edge pair, large
+  and bold text, a see-through layer, a see-through group, a gradient, a
+  gradient covered by an opaque colour, disabled, hidden, a `color-mix()`
+  colour, a repeated pair) — CI's visual job runs it.
+- **The first version was wrong, and the known-pairs page is what said so:** it
+  stopped at the first opaque ancestor, so black text in a half-transparent
+  group read 21:1. The walk goes to the root now.
+- **A baseline needs the same tool on both sides.** The first baseline run had
+  the old walk loaded; it was thrown away and re-shot in a worktree at HEAD
+  with the new `shoot.mjs` and `contrast.cjs` copied in. Before: 346 low text
+  elements in dark mode, 1,595 in light. After: 111 and 1,595 — no pair new or
+  lower in either mode (compared per scenario by element, colour and ground).
+- **`minWidth` on Team Tools scenarios.** F65's measure was only used through
+  `HB_MIN`; a Team Tools scenario passes `{ minWidth: {...} }` as its options.
+  `reference-manual-light-tablet` holds `.kb-main` ≥ 480px and `.kb-man-cn` ≥
+  200px, and is in the CI subset with `reference-manual-chapend-light-mobile`.
+- **Pins:** FP1 ×2 (the fold derived from the shell's rule; every class a
+  reader container query restyles mapped to a declared container), FP2 ×2 (the
+  dark deep tones' contrast COMPUTED from the token file in oklab for every
+  palette — the same model reproduces the old measurements, 3.3 / 4.0 / 4.3;
+  no literal white on a deep fill, swept), FP3 ×2, FP4 + its DOM drive. V-1,
+  MRD-7 and FO1 were updated: each encoded the state this batch changed.
+- **Bite-checks: 64 mutations, 64 bit.** Three kinds: `bite.sh` over the pure
+  pins, `bite.sh --dom --only` over the DOM drive, and — by hand in a worktree,
+  since `bite.sh` drives the two Node harnesses only — Chromium: eight
+  mutations of the sweep against `contrast-check.mjs`, the old token against
+  `shoot.mjs --axe` (axe: 1 violation; the sweep: all 3 pairs), and the three
+  old stylesheets against `shoot.mjs --ci`.
+- **One NO BITE, fixed:** listing the same pair twice passed the self-check;
+  it asserts the pair is listed once now, and that mutation bites.

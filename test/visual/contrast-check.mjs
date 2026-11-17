@@ -69,6 +69,8 @@ else if (!(mix.ratio > 1.5 && mix.ratio < 3.5)) problems.push('div.c-mix: ' + mi
 // 12 elements are read (everything but the gradient, the disabled button and the three hidden ones); 1 is over an image.
 if (got.checked !== 13) problems.push('checked ' + got.checked + ' elements, wanted 13');
 if (got.unchecked !== 1) problems.push('unchecked ' + got.unchecked + ', wanted 1 (the text over a gradient is not judged, and is counted)');
+const twice = got.low.filter((l) => l.el === 'div.c-twice').length;
+if (twice !== 1) problems.push('div.c-twice: listed ' + twice + ' times, wanted once — the same pair on two elements is one line');
 if (got.lowCount !== 8) problems.push('lowCount ' + got.lowCount + ', wanted 8 (the repeated pair counts twice and lists once)');
 
 console.log('CONTRAST CHECK (' + (Object.keys(WANT_LOW).length + 4) + ' known pairs): ' + (problems.length ? 'FAIL' : 'PASS'));

@@ -384,7 +384,10 @@ sync switch and Export / Copy / Import below.
   item in My training. It is recorded with the section's VERSION (a stamp of
   its text); a chapter's version is the stamp of its sections'. The bar then
   says when it was read, with Undo. One sign-off serves every plan that names
-  the section.
+  the section. The bar is for the section IN VIEW, so the sign-off group opens
+  with that section's number ("0.10 ✓ You read this on …") and each button's
+  accessible name ends with the section's title — at a section boundary "this"
+  was otherwise only where the bar happened to sit (cycle 26).
 - **Retraining.** When a section changes and the handbook's changelog flags the
   change for retraining, a reader whose sign-off has not seen that change is
   asked again — "Changed since you read it — please read it again" — and the

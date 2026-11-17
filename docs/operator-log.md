@@ -11,6 +11,31 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-17 — Cycle 26, the second pass over the Batch 8 follow-ons
+
+**Adds NO operator state.** Deploy BOTH apps when convenient: Team Tools
+(`clasp push -f` + New version) and the handbook app (`npm run handbook:push`
++ New version). Nothing depends on the order.
+
+- **Reference on a tablet or a half-width window (721–1023px):** one column —
+  the search box and Contents, then the reader at full width. It was a 280px
+  tree beside a 272px reader. From 1024px the tree is back.
+- **A handbook chapter's Previous / Next cards and its "In this chapter" list**
+  fit the reader's width (the cards' names were 5px wide at 800px; the list was
+  two cramped columns on a phone).
+- **Dark mode, all of Team Tools:** red, blue, amber and green status text —
+  "Overdue", "escalated", claim pills, count pills, avatars — is a light tint
+  now and reads clearly; it was darker than intended and under the 4.5:1
+  accessibility line in most places. Hovering Clock Out, Approve or Clear
+  shows a light tint with dark text. Light mode is unchanged.
+- **Handbook app:** the "I've read this" control starts with the number of the
+  section it is for.
+- **Measured, not changed:** in LIGHT mode Team Tools has a lot of text under
+  4.5:1 — mostly the brand green used as text on white (4.4:1), also the
+  breadcrumb separators and some muted captions. The handbook app already uses
+  a darker green for this. Changing Team Tools' green is a look decision, so it
+  is listed for you rather than done.
+
 ## 2026-11-17 — Cycle 26, the Batch 8 follow-ons
 
 **Adds NO operator state.** Deploy BOTH apps when convenient: the handbook app

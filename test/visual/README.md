@@ -19,7 +19,9 @@ narrower than it needs (`tooNarrow`), an RPC with no fixture, or an uncaught pag
 error. The workflow's `visual-layout` job installs Playwright's Chromium and keeps
 the shots as an artifact when it fails. A finding owned elsewhere goes in
 `ci-gate.cjs`'s `KNOWN` list with its reason — the list only shrinks: an entry
-whose finding stops firing fails the run, so remove it with the fix. A subset
+whose finding stops firing fails the run, so remove it with the fix (it is
+EMPTY since cycle 26: its one entry, the chapter masthead's index at 390px,
+was a container query with no container). A subset
 name the matrix lacks is refused before the browser starts.
 
 **The onboarding tour, walked (T1).** `node tour-check.mjs` presses Next
@@ -39,6 +41,23 @@ first targets and failure summary) and exits non-zero on any violation, or when
 a filter after `--axe` matched no handbook scenario. CI runs it in the same
 job, after the layout gate and even when that failed. A new handbook screen is
 checked by giving it a scenario.
+
+**The contrast sweep (cycle 26).** axe's colour-contrast rule leaves a pair it
+cannot resolve "incomplete" — not a violation — and which pairs those are
+differs by Chromium build: a PASS here was not CI's, three red runs in a row.
+`contrast.cjs` measures instead of asking: every element with text of its own,
+its colour against every ancestor's background and opacity composited the way
+the browser paints them (read through a canvas, so `color-mix()` and `oklab()`
+values are read, not parsed), at WCAG 2.1's 4.5:1, or 3:1 for 24px / 18.66px
+bold. `shoot.mjs` puts the result in every scenario's report (`contrast: { low,
+lowCount, checked, unchecked }`) and prints LOW CONTRAST by PAIR, with how many
+scenarios show it. `--axe` FAILS on it for the handbook's scenarios, so that
+command fails here where CI's axe would. Team Tools is reported, not gated.
+What it does not judge: text over a background image or gradient (counted
+`unchecked`, never passed), SVG text, placeholder text, disabled controls; a
+positioned element is judged against its DOM ancestors.
+`node contrast-check.mjs` runs the sweep over a page of pairs whose ratios are
+known and fails on a wrong answer — CI runs it. Change the sweep, run it.
 
 **pdf.js (HB4.1).** The handbook's form viewer loads pdf.js from cdnjs; the
 harness has no network, so every context routes that URL to the same pinned

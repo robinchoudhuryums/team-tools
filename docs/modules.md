@@ -1813,9 +1813,13 @@ longer sent to reps.
      - **Manual home:** the landing opens with the manual's version, three router
        openers, "Go to a section" and a tile per chapter; in the pop-out and on a
        phone the lookups come first.
-     - **Narrow screens:** in the pop-out and at ≤720px the side is one row —
+     - **Narrow screens:** in the pop-out and below 1024px (the shell's phone
+       layout, which caps the view at 600px — the fold was 720px until cycle 26,
+       leaving a 272px reader up to 1023px) the side is one row —
        search and **Contents** (every chapter and article in a dialog) — and the
-       tree shows only while searching.
+       tree shows only while searching. A chapter's masthead index and its
+       Previous / Next cards answer to the READER's width (container queries):
+       one column when it is narrow.
      - **Quick cards:** a chapter's Quick Reference Card closes its masthead (open
        unless closed for that chapter), Print card prints it as a card with its
        diagram on the next sheet, and Appendix C offers Print all cards. Cards 4,
