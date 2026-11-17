@@ -3950,7 +3950,7 @@ F53, F54, F57.**
   the shared reader's CRITICAL callout kicker fails contrast in dark mode,
   with or without this batch. The scenario shoots 0.10 and says why; the
   kicker is reported as a follow-on.
-- **Bite-checks: 124 mutations, 122 bit at the first run; the other two bite since.** Plus CI's
+- **Bite-checks: 125 mutations, 123 bit at the first run; the other two bite since.** Plus CI's
   visual gate run against the pre-fix stylesheet (above). The DOM mutations ran the batch's
   own drives only: a worktree-local, never-committed filter on the runner
   (`DOM_ONLY`, refusing a pattern that matches nothing) — each drive boots its
@@ -3967,6 +3967,11 @@ F53, F54, F57.**
   page; a bookmark toggle clearing the failure; four more views learning
   late chapters; a quiz list still loading when a dropped submit answers (the
   first version's list had already painted, so "superseded" was untested).
+- **One fix of the fix.** Opening a quiz moved the focus to it on EVERY open —
+  including one reached by Back, where the handbook's own rule is that the
+  focus stays where it was. Found by re-reading the HB2.4 section of
+  `docs/handbook-app.md` during the regression check; `hbTakeQuiz_` takes
+  `quiet` from the history handler, and the F66 drive holds it (bitten).
 - **A harness lesson (g116):** jsdom's `blur()` does nothing on a disabled
   button, so "the focus fell to `<body>`" cannot be produced by blurring the
   pressed control — another element takes the focus and gives it up.
