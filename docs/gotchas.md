@@ -2022,6 +2022,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   the light mode's recipe); the token itself is unchanged — it has other
   consumers (the watch-out kicker is at 4.53:1 and passes). Verify: axe on
   `handbook-stale-dark-mobile` (section 0.11), which fails without the rule.
+  **A second instance, the same day, found by CI and not here:** with that
+  scenario on section 0.11, CI's axe failed an HCPCS code chip
+  (`a.kb-hcpcs`: `--info-deep` on `--info-soft`, 4.34:1 in dark mode,
+  measured) that the SAME command had passed locally — axe reports a contrast
+  it cannot fully determine as "incomplete", not as a violation, and which
+  elements those are depends on the browser build. The chip mixes toward the
+  ink in dark mode too (8.80:1). The pair itself is the problem: any text in
+  `--info-deep` on `--info-soft` is 4.34:1 in dark mode. A local axe PASS is
+  not CI's; a colour pair is measured, not inferred from a gate.
 
 <a id="g57-a-var-x-fallback-on-a-token"></a>
 

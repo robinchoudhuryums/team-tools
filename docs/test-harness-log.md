@@ -4034,6 +4034,16 @@ F53, F54, F57.**
   fails `handbook-stale-dark-mobile` without the dark kicker rule, and
   `handbook-people-light-half` reports `.hb-pp-right 304px (needs 400px)`
   with the 900px fold.
+- **Two things CI caught that this machine did not (runs 1788 / 1789).**
+  (1) The FO10 pin spawns the DOM harness, and CI's FIRST pure step runs with
+  no dev dependencies installed — the pin failed there and passed in the
+  "no skips allowed" step. It is `testNeedsDeps(['jsdom'], …)` now; the pure
+  harness was re-run here with `node_modules` moved aside to see it skip.
+  (2) CI's axe failed `handbook-stale-dark-mobile` on an HCPCS code chip that
+  the same command passed here. Measured: 4.34:1 in dark mode — a real
+  failure; this machine's Chromium left it "incomplete". Fixed (8.80:1), and
+  the chips and kickers were measured directly in both modes rather than
+  trusted to the gate. A local `--axe` PASS is not CI's.
 - **A slip the measurement caught:** FO8's first edit put the Profile
   override in the 1040px block that precedes the base rule; it changed
   nothing. Measuring before and after is why it was seen.

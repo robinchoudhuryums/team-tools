@@ -90,6 +90,10 @@
   /* M5: a code is a chip (it LOOKS UP), a section link a solid underline (it OPENS),
      a glossary term the one dotted mark (it EXPLAINS). */
   a.kb-hcpcs { font-family: var(--mono); font-size: .86em; padding: 1px 5px; border-radius: 4px; background: var(--info-soft); color: var(--info-deep); text-decoration: none; font-variant-numeric: tabular-nums; }
+  /* Cycle 26 (Batch 8 follow-on 1, second instance — found by CI's axe once a dark scenario shot this
+     section): --info-deep on --info-soft is 4.34:1 in dark mode (measured), under 4.5 for the chip's
+     13px text. Mixed toward the ink there, as the CRITICAL kicker is. */
+  [data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab, var(--info), var(--ink) 35%); }
   a.kb-hcpcs:hover, a.kb-hcpcs:focus-visible { background: color-mix(in oklab, var(--info) 22%, var(--paper-card)); }
   /* 25post — a `lookup:` link opens a lookup in the drawer, not a page: dotted, like a control. */
   a.kb-lookup { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }

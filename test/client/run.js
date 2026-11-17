@@ -48514,6 +48514,11 @@ test('FO1 (cycle 26): the CRITICAL callout\'s kicker is legible in dark mode —
   assert.ok(!/\[data-mode="dark"\] \.kb-callout-critical \.kb-co-kick \{[^}]*oklch/.test(shared), 'oklab, never oklch (g56)');
   const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
   assert.ok(copy.indexOf('[data-mode="dark"] .kb-callout-critical .kb-co-kick') > 0, 'the handbook\'s copy carries it');
+  // The second instance, found by CI's axe on the same section: an HCPCS code chip (--info-deep on --info-soft, 4.34:1 in dark).
+  const chip = shared.indexOf('a.kb-hcpcs { font-family: var(--mono);'), chipDark = shared.indexOf('[data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab, var(--info), var(--ink) 35%); }');
+  assert.ok(chip > 0 && chipDark > chip && copy.indexOf('[data-mode="dark"] a.kb-hcpcs { color: color-mix(in oklab,') > 0, 'the chip\'s dark rule, after its base rule, in both copies');
+  const mockAll = fs.readFileSync(path.join(HB_ROOT, 'test/visual/mock.js'), 'utf8');
+  assert.ok(/regulator \(E1353\)/.test(mockAll), 'and that section\'s fixture holds a code for the chip to be drawn from');
   // The measurement is axe's, in the matrix: the banner scenario is back on section 0.11, which holds a CRITICAL callout.
   const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
   const row = shoot.split('\n').filter((l) => l.indexOf("['handbook-stale-dark-mobile',") >= 0)[0];
@@ -48572,7 +48577,8 @@ test('FO8 (cycle 26): Profile\'s two columns fold with the other two-column layo
   assert.ok(row && /HALF/.test(row) && /HB_MIN\(\{ '\.hb-pp-right': 400 \}\)/.test(row), row);
 });
 
-test('FO10 (cycle 26): the DOM harness runs a NAMED subset for a bite-check and never passes it off as a run — a pattern that matches nothing or is not a regex is refused, the summary says SUBSET, counts.mjs clears the variable, and bite.sh runs it only with --dom, only when the named test is in it (the harness DRIVEN as a subprocess)', () => {
+// (jsdom: this pin RUNS the DOM harness. CI's first pure step has no dev dependencies — it failed there once.)
+testNeedsDeps(['jsdom'], 'FO10 (cycle 26): the DOM harness runs a NAMED subset for a bite-check and never passes it off as a run — a pattern that matches nothing or is not a regex is refused, the summary says SUBSET, counts.mjs clears the variable, and bite.sh runs it only with --dom, only when the named test is in it (the harness DRIVEN as a subprocess)', () => {
   const dom = path.join(HB_ROOT, 'test/client/dom/runDom.js');
   const run = (only) => require('child_process').spawnSync(process.execPath, [dom], { encoding: 'utf8', env: Object.assign({}, process.env, { DOM_ONLY: only }) });
   const none = run('zzz-there-is-no-such-test');
