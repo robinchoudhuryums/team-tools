@@ -203,6 +203,15 @@ jobs:
         working-directory: test/visual
         run: node shoot.mjs --axe
 
+      # Cycle 26: the axe step above also fails on the contrast sweep (contrast.cjs
+      # — every text element's colour against what is painted behind it). This
+      # checks the SWEEP: a page of pairs whose ratios are known, so a sweep that
+      # stopped seeing anything cannot pass every screen it is pointed at.
+      - name: Check the contrast sweep against known pairs
+        if: ${{ !cancelled() }}
+        working-directory: test/visual
+        run: node contrast-check.mjs
+
       - name: Keep the shots and the report when the gate fails
         if: failure()
         uses: actions/upload-artifact@v4

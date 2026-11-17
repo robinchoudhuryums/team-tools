@@ -681,7 +681,7 @@ function hbPaintQuizBar_(id) {
   if (id && list && !list.error && Array.isArray(list.quizzes)) mine = list.quizzes.filter(function (q) { return q.section === id; });
   // F47 (cycle 26): sign-offs that could not be loaded are SAID, with a way to
   // ask again — the bar showed no button at all for the whole visit.
-  var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp)
+  var sign = HB_SO.setUp ? hbSignBarHtml_(id, HB_SO.signoffs['section:' + id], HB_SO.setUp, kbManualSplitTitle_(hbSectionTitle_(id)))
     : (id && HB_SO.error ? '<span class="hb-so-t warn">' + icon('warning', 13) + ' Your sign-offs could not be loaded.</span>' +
         '<button type="button" class="kb-btn" data-hb-bar="retry" onclick="hbRetrySignOffs_()">Try again</button>' : '');
   // HBR2: each quiz and form is one item, so a wide screen can leave them to the side column.
@@ -1862,20 +1862,30 @@ function hbRetrySignOffs_() {
 }
 /** PURE — the bar's sign-off part for a section: the button, the date it was
  *  signed, or the ask to read it again. `so` is the section's sign-off or
- *  undefined; '' when sign-offs are not set up. */
-function hbSignBarHtml_(id, so, setUp) {
+ *  undefined; '' when sign-offs are not set up.
+ *  `name` is the section's title split by kbManualSplitTitle_ ({num, rest}).
+ *  The bar is for the section IN VIEW (F45), and "this" named it only by where
+ *  the bar sat: a reader at a section boundary, or one who hears the button and
+ *  does not see the page, could not tell which section a press would sign. The
+ *  group opens with the section's number, and every button's accessible name
+ *  carries the title (it still begins with the words on the button — 2.5.3). */
+function hbSignBarHtml_(id, so, setUp, name) {
   if (!id || setUp === false) return '';
+  var n = name || { num: '', rest: '' };
+  var full = ((n.num ? n.num + ' ' : '') + (n.rest || '')).trim();
+  var chip = full ? '<span class="hb-so-n" title="' + esc(full) + '">' + esc(n.num || n.rest) + '</span>' : '';
   var btn = function (label, done, cls) {
-    return '<button type="button" class="kb-btn ' + (cls || '') + '" data-hb-bar="sign" data-kind="section" data-id="' + esc(id) + '" data-done="' + (done ? '1' : '') + '" onclick="hbSignOff_(this)">' + label + '</button>';
+    return '<button type="button" class="kb-btn ' + (cls || '') + '" data-hb-bar="sign" data-kind="section" data-id="' + esc(id) + '" data-done="' + (done ? '1' : '') + '"' +
+      (full ? ' aria-label="' + esc(label + ': ' + full) + '"' : '') + ' onclick="hbSignOff_(this)">' + label + '</button>';
   };
   if (so && so.state === 'resign') {
-    return '<span class="hb-so-t warn">' + icon('warning', 13) + ' Changed since you read it — please read it again.</span>' + btn("I've read it again", true, 'hb-pp-yes');
+    return chip + '<span class="hb-so-t warn">' + icon('warning', 13) + ' Changed since you read it — please read it again.</span>' + btn("I've read it again", true, 'hb-pp-yes');
   }
   if (so && so.state === 'signed') {
-    return '<span class="hb-so-t ok">' + icon('checkCircle', 13) + ' You read this on ' + esc(new Date(so.signedMs).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) +
+    return chip + '<span class="hb-so-t ok">' + icon('checkCircle', 13) + ' You read this on ' + esc(new Date(so.signedMs).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })) +
       (so.changed ? ' — it has been updated since' : '') + '</span>' + btn('Undo', false, 'hb-so-undo');
   }
-  return btn("I've read this", true, 'hb-pp-yes');
+  return chip + btn("I've read this", true, 'hb-pp-yes');
 }
 /** Sign off (or withdraw) a section or chapter, from the bar or My training. */
 function hbSignOff_(btn) {

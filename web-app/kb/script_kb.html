@@ -242,7 +242,7 @@
        pop-out override alone leaves desktop tracks on a phone, and the @media
        alone leaves them in a 480px pop-out on a wide screen. Both, or neither
        works. 1100px is where the 280px tree track plus this band stops fitting
-       (the .kb-wrap stack at 720px is a separate, later step).
+       (the .kb-wrap stack is a separate, later step — at 1023px, the shell's own fold, since cycle 26).
 
        .kb-oop-fields is auto-fit instead, because neither trigger can see the
        case that actually breaks it: the Ctrl/⌘+K DRAWER is ~340px wide on a
@@ -597,12 +597,22 @@
   :root[data-compact] .kb-toc-btn { display: inline-flex; }
   :root[data-compact] .kb-side:not(.kb-side-q) #kb-tree { display: none; }
   :root[data-compact] .kb-side.kb-side-q #kb-tree { flex-basis: 100%; max-height: 45vh; }
-  @media (max-width: 720px) {
+  /* Cycle 26 (second pass over the Batch 8 follow-ons): the fold is the SHELL's,
+     1023px, not 720px. Below 1024px the shell is the phone layout — the bottom
+     nav, and `.view-area { max-width: 600px }` — so from 721 to 1023px this
+     view had 568px for a 280px tree and a reader: MEASURED in Chromium at an
+     800px window, .kb-main 272px, a chapter's text column 226px, and the
+     chapter-end card's title 5px. A breakpoint is where the CONTAINER runs out
+     of room, and this container stops growing at 600px. The reader bar's 44px
+     arrows ride the same fold here (the shared reader's own block stays at
+     720px — the handbook app's frame is not capped at 600px). */
+  @media (max-width: 1023px) {
     .kb-side { flex-direction: row; flex-wrap: wrap; align-items: center; }
     .kb-side input#kb-search { flex: 1 1 10em; min-width: 0; min-height: 44px; box-sizing: border-box; }
     .kb-toc-btn { display: inline-flex; }
     .kb-side:not(.kb-side-q) #kb-tree { display: none; }
     .kb-side.kb-side-q #kb-tree { flex-basis: 100%; }
+    .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }
   }
   .kb-toc { width: min(520px, calc(100vw - 24px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: 14px 16px 18px; }
   .kb-toc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -619,7 +629,7 @@
   .kb-toc-t { min-width: 0; }
   .kb-toc-sub { margin: 16px 0 4px; font-family: var(--mono); font-size: .66rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-2); }
   .kb-toc-dept { margin: 8px 0 2px; font-size: .74rem; font-weight: 600; color: var(--muted); }
-  @media (max-width: 720px) {
+  @media (max-width: 1023px) {
     .kb-wrap { grid-template-columns: 1fr; min-height: 0; }
     /* Stacked, a viewport-tall tree would push the reader entirely below the
        fold; cap the tree and let the reader take the height it needs. */

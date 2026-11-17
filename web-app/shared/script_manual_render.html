@@ -69,21 +69,14 @@
   .kb-article.kb-diagram-big .kb-diagram { margin: 0; }
   .kb-article .kb-diagram a.kb-xref:hover text, .kb-article .kb-diagram a.kb-xref:focus text, .kb-article .kb-diagram a.kb-xref:hover { text-decoration: underline; }
   .kb-article .kb-diagram a.kb-xref:focus-visible { outline: 2px solid var(--ring-focus); }
-  /* Cycle 26 (Batch 8 follow-on 1): in DARK mode the tokens mix a "-deep" tone
-     toward the dark paper, and on its own "-soft" tint that is too little
-     contrast for small text — MEASURED: --danger-deep 3.34:1 (the CRITICAL
-     kicker), --info-deep 4.34:1 (an HCPCS chip, the "Updated" badge),
-     --warning-deep 4.53:1; axe wants 4.5. CI's axe found them one consumer at
-     a time, so the fix is the PAIR, not each consumer: inside the reader the
-     three deep tones mix toward the ink in dark mode — the light mode's own
-     recipe. Scoped to the reader's containers; the app-wide tokens are not
-     touched. In oklab (g56). A custom property set on a container wins over
-     the root's for everything inside it. */
-  [data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {
-    --danger-deep: color-mix(in oklab, var(--destructive), var(--ink) 30%);
-    --info-deep: color-mix(in oklab, var(--info), var(--ink) 35%);
-    --warning-deep: color-mix(in oklab, var(--warn), var(--ink) 30%);
-  }
+  /* Cycle 26: in DARK mode a "-deep" tone on its own "-soft" tint was too
+     little contrast for small text — MEASURED: --danger-deep 3.34:1 (the
+     CRITICAL kicker), --info-deep 4.34:1 (an HCPCS chip, the "Updated" badge),
+     --warning-deep 4.53:1; axe wants 4.5, and CI's axe found them one consumer
+     at a time. The fix is the PAIR's, and since the second pass it is the
+     TOKEN's (styles_design_tokens.html mixes the dark deep tones toward the
+     ink): the reader's own scoped copy of that recipe is gone, so there is one
+     definition and no per-consumer dark rule here to drift from it. */
   .kb-co-kick { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
   .kb-callout-critical .kb-co-kick { color: var(--danger-deep); }
   .kb-callout-policy .kb-co-kick { color: var(--info-deep); }
@@ -486,7 +479,11 @@
   /* M9 (design handoff, Phase 3): the chapter's masthead — kicker, the badge at
      44px, the short name, a meta line (kbManualPaintMeta_) and "In this chapter".
      The skeleton paints the same masthead from the tree, so nothing jumps. */
-  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; }
+  /* Cycle 26: the masthead is the size CONTAINER its index's one-column query
+     reads. A container query with no container above it never matches — in Team
+     Tools there was none, so "In this chapter" stayed two columns at any width
+     (37px titles at 390px, the gate's one KNOWN finding since cycle 25). */
+  .kb-man-mast { padding: 14px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 8px; max-width: 900px; container-type: inline-size; }
   .kb-man-mast-k { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 10px; }
   .kb-man-mast-h { display: flex; align-items: center; gap: 14px; margin: 0; font-family: var(--display); font-size: 1.85rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; color: var(--ink); }
   .kb-man-mast .kb-man-badge { width: 44px; height: 44px; }
@@ -530,16 +527,21 @@
   .kb-man-skel-p { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 26px; }
   .kb-man-skel-p .skel-bar { height: 12px; }
   /* M11: the chapter's neighbours, after its last section. */
-  .kb-man-chapnav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  /* Cycle 26: the nav is a size container and its CARDS are what the query
+     restyles — a container cannot restyle itself, and as a two-column grid with
+     a query on the grid there was nothing above it to answer the query: at a
+     226px text column each card was 107px and its title 5px (measured). Half the
+     row each (a lone "Next" keeps the right half), the whole row when narrow. */
+  .kb-man-chapnav { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; container-type: inline-size; }
   .kb-man-chapnav:empty { display: none; }
-  .kb-man-cn { display: flex; align-items: center; gap: 12px; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
+  .kb-man-cn { display: flex; align-items: center; gap: 12px; flex: 0 0 calc(50% - 6px); box-sizing: border-box; padding: 14px 16px; font: inherit; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-card); color: var(--ink); cursor: pointer; min-width: 0; }
   .kb-man-cn:hover, .kb-man-cn:focus-visible { border-color: var(--border-strong); background: var(--paper-2); }
-  .kb-man-cn-next { grid-column: 2; justify-content: flex-end; text-align: right; }
+  .kb-man-cn-next { margin-left: auto; justify-content: flex-end; text-align: right; }
   .kb-man-cn > svg { flex: none; color: var(--muted-2); }
   .kb-man-cn-txt { display: flex; flex-direction: column; min-width: 0; }
   .kb-man-cn-k { font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); }
   .kb-man-cn-n { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
-  @container (max-width: 520px) { .kb-man-chapnav { grid-template-columns: minmax(0, 1fr); } .kb-man-cn-next { grid-column: auto; } }
+  @container (max-width: 520px) { .kb-man-cn { flex-basis: 100%; } }
   .kb-man-sec:last-of-type { border-bottom: none; }   /* the chapter cards follow it (M11) */
   .kb-man-badges:empty { display: none; }
   /* Operator testing 2026-10-08 — the reader reads like the HTML manual: the
@@ -648,8 +650,11 @@
      and ‹ › shrink to their chevrons (the label stays in the tooltip and the
      accessible name) — at 390px the title had kept five letters. Since the
      feedback joined the bar (2026-10-12) the buttons take a second row there, or
-     the title kept ONE letter: feedback, star and Print left, ‹ › right. */
-  @container (max-width: 560px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
+     the title kept ONE letter: feedback, star and Print left, ‹ › right.
+     Cycle 26: 640px, not 560px — MEASURED, a 566px bar (Reference at an 800px
+     window, once it folds) gave the chapter name 9px and the title 83px, and a
+     604px one 32px; the name has a word's room (48px) only from about 630px. */
+  @container (max-width: 640px) { .kb-man-bar-cn, .kb-man-bar-chev, .kb-man-bar-sep, .kb-man-bar-nav span { display: none; } .kb-man-bar { gap: 6px; padding-right: 10px; flex-wrap: wrap; row-gap: 4px; } .kb-man-bar-acts { flex-basis: 100%; margin-left: 0; } .kb-man-bar-acts [data-kb-man-bar-prev] { margin-left: auto; } .kb-man-bar-nav { padding: 5px 6px; } .kb-trail-chip { min-height: 32px; } }
   /* Helpful / Suggest an edit ride the reader bar for the section in view (operator
      2026-10-12 — a row closing every sub-section was clutter). A vote sent is
      pressed and the pair goes quiet; a disabled pair is faded unless pressed. */

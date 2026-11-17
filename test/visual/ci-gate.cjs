@@ -45,6 +45,8 @@ const CI_SCENARIOS = [
   'reference-light-mobile',
   'reference-drawer-light-compact',
   'reference-manual-light-wide',
+  'reference-manual-light-tablet',          // cycle 26: 800px — Reference folded at the shell's breakpoint, the reader the column
+  'reference-manual-chapend-light-mobile',  // cycle 26: the chapter-end cards, one to a row when the reader is narrow
   'reference-manual-polish-light-mobile',
   'reference-manual-diagram-light-mobile',
   'training-light-mobile',
@@ -57,10 +59,7 @@ const CI_SCENARIOS = [
 // Findings that are KNOWN and owned elsewhere, each with its reason. The list
 // only shrinks: an entry whose finding no longer fires fails the run too, so a
 // fix cannot leave a stale excuse behind for the next regression to hide under.
-const KNOWN = [
-  { scenario: 'reference-manual-diagram-light-mobile', kind: 'narrowText',
-    reason: 'the chapter masthead\'s "In this chapter" index stays two columns in a 320px container (its @container rule does not take effect), so titles get 37px at 390px — found by F69\'s first run, the open cycle-25 Batch 9 follow-on (1) in .cycle/STATE.md' },
-];
+const KNOWN = [];   // cycle 26: the one entry (the masthead index at 390px) is fixed — the masthead is a size container now
 
 function findingsOf(r) {
   const out = [];
@@ -72,6 +71,16 @@ function findingsOf(r) {
   (r.missing || []).forEach((m) => out.push({ kind: 'missingFixture', detail: m }));
   (r.errors || []).filter((e) => /^PAGEERROR: |threw: /.test(e)).forEach((e) => out.push({ kind: 'pageError', detail: e.slice(0, 160) }));
   return out;
+}
+
+// Cycle 26 — the contrast sweep's verdict for one scenario (contrast.cjs). Text
+// the sweep could not judge (over an image) is not a finding; it is counted in
+// the report so "nothing low" is never read as "everything checked".
+function contrastFindings(r) {
+  const c = r && r.contrast;
+  if (!c) return [{ kind: 'contrast', detail: 'not measured' }];
+  return (c.low || []).map((l) => ({ kind: 'contrast',
+    detail: l.el + ' ' + l.ratio + ':1 (needs ' + l.need + ') ' + l.fg + ' on ' + l.bg + ' "' + l.text + '"' }));
 }
 
 // { ok, failures: [{scenario, kind, detail}], stale: [KNOWN entries that did
@@ -94,4 +103,4 @@ function ciVerdict(report, subset, known) {
   return { ok: !failures.length && !stale.length && !unshot.length, failures, stale, unshot };
 }
 
-module.exports = { RUNAWAY_PX, CI_SCENARIOS, KNOWN, findingsOf, ciVerdict };
+module.exports = { RUNAWAY_PX, CI_SCENARIOS, KNOWN, findingsOf, ciVerdict, contrastFindings };

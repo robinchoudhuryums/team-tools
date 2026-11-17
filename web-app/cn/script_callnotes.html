@@ -1363,8 +1363,11 @@
     color: var(--danger-deep); cursor: pointer;
     transition: border-color var(--t) var(--ease), color var(--t) var(--ease), background var(--t) var(--ease);
   }
+  /* The text on a filled theme colour takes the token that flips with it (g170):
+     in dark mode --danger-deep is a LIGHT red (cycle 26), and a literal white on
+     it would be about 2:1. */
   .cn-form-clear-btn:hover {
-    background: var(--danger-deep); border-color: var(--danger-deep); color: white;
+    background: var(--danger-deep); border-color: var(--danger-deep); color: var(--paper-card);
   }
 
   /* Operator feedback (2026-06-12 r3): delete-in-flight state — the card

@@ -304,18 +304,20 @@ test('V-1: the -deep aliases mix in oklab and stay in their own hue family', () 
   const hue = (c) => (Math.atan2(c[2], c[1]) * 180 / Math.PI + 360) % 360;
   const hueDiff = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
   const MAX_DRIFT_DEG = 20;   // worst measured 10.1 (light --good); oklch was 48–75
-  // Each mode block mixes with its own partner + weight (light: ink 45%;
-  // dark: paper-card 25%) — read them from the source so a retune can't
-  // silently invalidate the pin.
+  // Each mode block mixes with its own weight (light: ink 45%; dark: ink 30% —
+  // toward the INK in both since cycle 26 FP2; the dark block mixed toward
+  // --paper-card, which came out darker than the base and under AA on its own
+  // tint) — read them from the source so a retune can't silently invalidate
+  // the pin. The n-th declaration is the n-th mode's.
   // Palette-aware (2026-08-12): the -deep tokens are color-mixed toward
   // --ink / --paper-card, and a PALETTE changes both — so the drift must be
   // re-checked for every palette, not just Console. This is the reason a
   // palette may not touch the semantic sources: only the PARTNER varies here.
   const { blocks: palBlocks } = tokenBlocks();
-  [['ink', 0], ['paper-card', 1]].forEach(([partnerTok, mode]) => {
+  [['ink', 0], ['ink', 1]].forEach(([partnerTok, mode]) => {
     const modeName = mode ? 'dark' : 'light';
-    const declared = new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
-      partnerTok + '\\) (\\d+)%\\)').exec(toks);
+    const declared = [...toks.matchAll(new RegExp('--success-deep: color-mix\\(in oklab, var\\(--good\\),\\s*var\\(--' +
+      partnerTok + '\\) (\\d+)%\\)', 'g'))][mode];
     assert.ok(declared, modeName + ' block mixes --good with --' + partnerTok);
     const w = Number(declared[1]) / 100;
     palBlocks.filter((b) => b.mode === modeName).forEach((blk) => {
@@ -37863,7 +37865,7 @@ test('MRD-8 (manual reader design Phase 8): a diagram drawn twice keeps its mark
   assert.ok(/\(card_figs if in_card else blocks\)\.append\(\{"k": "diagram"/.test(mm) && /end_card\(\)\njson\.dump/.test(mm), 'Word holds a card\'s diagram until the card ends, so its landscape page follows the card');
 });
 
-test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND ≤720px — A2) is one row, search + Contents; the tree shows only while a search has a query; Contents is an ensureOverlay dialog closed through closeOverlay; the bar\'s ‹ › are 44px there', () => {
+test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND the shell\'s phone layout, ≤1023px since cycle 26 — A2) is one row, search + Contents; the tree shows only while a search has a query; Contents is an ensureOverlay dialog closed through closeOverlay; the bar\'s ‹ › are 44px there', () => {
   const kb = M1_KB_SRC;
   const rule = (sel, body) => assert.ok(kb.indexOf(sel + ' { ' + body) >= 0 || new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{[^}]*' + body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(kb), sel + ' → ' + body);
   // both triggers carry the same four rules
@@ -37871,8 +37873,9 @@ test('MRD-7 (manual reader design Phase 7): a narrow Reference (the pop-out AND 
   rule(':root[data-compact] .kb-toc-btn', 'display: inline-flex;');
   rule(':root[data-compact] .kb-side:not(.kb-side-q) #kb-tree', 'display: none;');
   rule(':root[data-compact] .kb-man-bar-nav', 'min-width: 44px; min-height: 44px;');
-  const media = (/@media \(max-width: 720px\) \{\n    \.kb-side \{([\s\S]*?)\n  \}/.exec(kb) || [])[0] || '';
-  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤720px block also has ' + r));
+  // Cycle 26 (FP1): the viewport trigger is the SHELL's fold, 1023px — below it the view is capped at 600px.
+  const media = (/@media \(max-width: 1023px\) \{\n    \.kb-side \{([\s\S]*?)\n  \}/.exec(kb) || [])[0] || '';
+  ['.kb-side { flex-direction: row;', '.kb-toc-btn { display: inline-flex; }', '.kb-side:not(.kb-side-q) #kb-tree { display: none; }', '.kb-man-bar-nav { min-width: 44px; min-height: 44px;'].forEach((r) => assert.ok(media.indexOf(r) >= 0, 'the ≤1023px block also has ' + r));
   // HB1.1b: the reader bar's rule moved with the reader into the shared partial's own ≤720px block
   const shCss = fs.readFileSync(path.join(PA_WEB, 'shared/script_manual_render.html'), 'utf8');
   assert.ok(/@media \(max-width: 720px\) \{\n[^@]*?\.kb-man-bar-nav \{ min-width: 44px; min-height: 44px;/.test(shCss), 'the ≤720px block also has .kb-man-bar-nav { min-width: 44px; min-height: 44px; — in the shared reader\'s styles');
@@ -38042,7 +38045,7 @@ test('MRD-3 (manual reader design Phase 3 + Phase 2\'s open items): no filled-ac
   assert.deepStrictEqual(bad, [], 'white text on a filled accent — a pale green / lilac in dark mode');
   assert.ok(filled >= 10, 'the sweep sees the filled-accent rules (non-vacuous): ' + filled);
   // the bar when narrow: the labels go, the name stays
-  assert.ok(/@container \(max-width: 560px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 560px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
+  assert.ok(/@container \(max-width: 640px\) \{[^}]*\.kb-man-bar-nav span \{ display: none; \}|@container \(max-width: 640px\) \{ [^@]*\.kb-man-bar-nav span[^{]*\{ display: none; \}/.test(kb), 'the ‹ › labels hide inside the narrow container query');
   assert.ok(/b\.setAttribute\('aria-label', x\[1\] \? x\[2\] \+ ' — ' \+ x\[1\]\.label/.test(extractFnFrom(kb, 'kbManualBarPaint_')), 'and each keeps an accessible name that carries its visible label (HB2.4, WCAG 2.5.3)');
   // the masthead, driven
   const ctx = vm.createContext({ String, Object, Number, KB_STATE: {}, icon: (n, sz) => '<i data-icon="' + n + '"></i>',
@@ -48506,25 +48509,20 @@ test('F66 (cycle 26): scripted scrolling asks whether motion is reduced — the 
 // the scenarios.
 console.log('\nCycle 26 Batch 8 follow-ons');
 
-test('FO1 (cycle 26): in dark mode the reader\'s "-deep" tones mix toward the INK — on their own "-soft" tints the tokens (which mix toward the dark paper) measured 3.34:1, 4.34:1 and 4.53:1; the override is the PAIR\'s, scoped to the reader, in both copies; a dark handbook scenario with a CRITICAL callout and a code chip is under axe', () => {
+test('FO1 (cycle 26): in dark mode the "-deep" tones mix toward the INK — on their own "-soft" tints, mixed toward the dark paper, they measured 3.34:1, 4.34:1 and 4.53:1; the fix is the PAIR\'s, never a consumer\'s — and since the second pass (FP2) it is the TOKEN\'s, with no copy of the recipe left in the reader; a dark handbook scenario with a CRITICAL callout and a code chip is under axe', () => {
   const shared = fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
-  const at = shared.indexOf('[data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {');
-  assert.ok(at > 0, 'the scoped override');
-  const block = shared.slice(at, shared.indexOf('}', at) + 1);
-  assert.ok(/--danger-deep: color-mix\(in oklab, var\(--destructive\), var\(--ink\) 30%\);/.test(block)
-    && /--info-deep: color-mix\(in oklab, var\(--info\), var\(--ink\) 35%\);/.test(block)
-    && /--warning-deep: color-mix\(in oklab, var\(--warn\), var\(--ink\) 30%\);/.test(block), block);
-  assert.ok(!/oklch/.test(block), 'oklab, never oklch (g56)');
   // The pair, not each consumer: CI's axe found the kicker, then a chip, then a badge — one per run.
   assert.ok(!/\[data-mode="dark"\] \.kb-callout-critical \.kb-co-kick/.test(shared) && !/\[data-mode="dark"\] a\.kb-hcpcs/.test(shared), 'no per-consumer dark rule is left to drift from it');
-  // The reader's consumers still read the tokens the override sets.
+  assert.ok(shared.indexOf('[data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {') < 0, 'and no scoped copy of the recipe: the token is the one definition (FP2)');
+  // The reader's consumers still read the tokens.
   ['.kb-callout-critical .kb-co-kick { color: var(--danger-deep); }', 'color: var(--info-deep); text-decoration: none;', 'background: var(--info-soft); color: var(--info-deep); white-space: nowrap; }']
     .forEach((c) => assert.ok(shared.indexOf(c) > 0, 'a consumer: ' + c));
-  // The app-wide tokens are not touched.
+  // The recipe, at the token, in oklab (g56).
   const tokens = fs.readFileSync(path.join(HB_ROOT, 'web-app/styles_design_tokens.html'), 'utf8');
-  assert.ok(/--danger-deep:\s+color-mix\(in oklab, var\(--destructive\), var\(--paper-card\) 25%\);/.test(tokens), 'Team Tools\' own dark token is as it was');
-  const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
-  assert.ok(copy.indexOf('[data-mode="dark"] .kb-main, [data-mode="dark"] .kb-article {') > 0, 'the handbook\'s copy carries it');
+  assert.ok(/--danger-deep:\s+color-mix\(in oklab, var\(--destructive\), var\(--ink\) 30%\);/.test(tokens)
+    && /--info-deep:\s+color-mix\(in oklab, var\(--info\),\s+var\(--ink\) 35%\);/.test(tokens)
+    && /--warning-deep:\s+color-mix\(in oklab, var\(--warn\),\s+var\(--ink\) 30%\);/.test(tokens), 'the dark tokens mix toward the ink');
+  assert.ok(!/-deep:\s+color-mix\(in oklab, [^;]*var\(--paper-card\)/.test(tokens), 'none mixes toward the paper');
   // The measurement is axe's, in the matrix: the banner scenario is on section 0.11, which holds a CRITICAL callout and code chips.
   const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
   const row = shoot.split('\n').filter((l) => l.indexOf("['handbook-stale-dark-mobile',") >= 0)[0];
@@ -48658,6 +48656,260 @@ test('FO6 (cycle 26): the page is told WHOSE browser storage it holds — a shor
     assert.ok(uses.length >= 2, k + ': the net is not vacuous');
   });
   assert.ok(extractFnFrom(page, 'hbBoot_').indexOf('hbAdoptLegacy_();') < extractFnFrom(page, 'hbBoot_').indexOf('hbLoadBookmarks_();'), 'adopted before anything reads them');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Cycle 26 — the second pass over Batch 8's follow-on items (FP1–FP4): where
+// Reference folds and the reader's size containers, the dark `-deep` tones at
+// the token, the contrast sweep kept in the visual matrix, and a sign-off that
+// names its section. The measurements are Chromium's (the matrix, its CI gate
+// and contrast-check.mjs); here: the rules those measure, DERIVED where a
+// number has an owner, and the maths driven.
+console.log('\nCycle 26 Batch 8 follow-ons, second pass');
+
+const FP_SHARED = () => fs.readFileSync(path.join(HB_ROOT, 'web-app/shared/script_manual_render.html'), 'utf8');
+const FP_CONTRAST = require(path.join(HB_ROOT, 'test/visual/contrast.cjs'));
+
+test('FP1 (cycle 26): Reference folds at the SHELL\'s breakpoint — below it the shell caps the view at 600px, so a 720px fold left 721–1023px with a 272px reader beside a 280px tree (measured); the number is derived from the shell\'s own rule; the fold carries the tree, the Contents button, the stack and the bar\'s 44px arrows', () => {
+  const kb = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8');   // the partial itself — the shared reader keeps its own 720px block
+  const shell = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  // The shell's phone layout: the block that caps .view-area. Its max-width is the fold.
+  const m = /@media \(max-width: (\d+)px\) \{\n(?:(?!\n  \}\n)[\s\S])*?\.view-area \{[^}]*max-width: (\d+)px;/.exec(shell);
+  assert.ok(m, 'the shell caps .view-area inside a max-width block');
+  const fold = m[1], cap = Number(m[2]);
+  assert.ok(cap < 280 + 16 + 480, 'the capped view (' + cap + 'px) has no room for the 280px tree, the gap and a 480px reader — which is WHY the fold is here');
+  const blocks = kb.split('\n').filter((l) => /^\s*@media \(max-width: \d+px\) \{$/.test(l) || /^\s*@media \(max-width: \d+px\) \{ /.test(l));
+  // Every rule that restyles the Reference frame for a narrow window sits in a block at the shell's fold.
+  const at = (needle) => {
+    const i = kb.indexOf(needle); assert.ok(i > 0, 'rule present: ' + needle);
+    const open = kb.lastIndexOf('@media (max-width: ', i);
+    const close = kb.indexOf('\n  }\n', open);
+    assert.ok(open > 0 && close > i, 'inside a media block: ' + needle);
+    return /@media \(max-width: (\d+)px\)/.exec(kb.slice(open, open + 40))[1];
+  };
+  ['\n    .kb-side { flex-direction: row; flex-wrap: wrap; align-items: center; }', '\n    .kb-toc-btn { display: inline-flex; }',
+    '\n    .kb-side:not(.kb-side-q) #kb-tree { display: none; }', '\n    .kb-wrap { grid-template-columns: 1fr; min-height: 0; }',
+    '\n    .kb-man-bar-nav { min-width: 44px; min-height: 44px; justify-content: center; }']
+    .forEach((r) => assert.strictEqual(at(r), fold, 'THE REGRESSION: ' + r.trim() + ' folds at ' + at(r) + 'px, the shell at ' + fold + 'px — between the two the reader is squeezed beside the tree'));
+  assert.ok(blocks.length >= 2, 'non-vacuous: the partial has media blocks to place them in');
+  // The pop-out trigger is separate and still there (g50: both triggers).
+  assert.ok(kb.indexOf(':root[data-compact] .kb-wrap { grid-template-columns: 1fr;') > 0 && kb.indexOf(':root[data-compact] .kb-side:not(.kb-side-q) #kb-tree { display: none; }') > 0);
+  // The gate measures it: the tablet scenario names the boxes that must be usable, and CI shoots it.
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  const row = shoot.split('\n').filter((l) => l.indexOf("['reference-manual-light-tablet',") >= 0)[0];
+  assert.ok(/TABLET, 'light'/.test(row) && /minWidth: \{ '\.kb-main': 480, '\.kb-man-cn': 200 \}/.test(row), row);
+  const gate = require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'));
+  ['reference-manual-light-tablet', 'reference-manual-chapend-light-mobile'].forEach((n) => assert.ok(gate.CI_SCENARIOS.indexOf(n) >= 0, 'CI shoots ' + n));
+});
+
+test('FP1 (cycle 26): a container query needs a CONTAINER — the masthead is one (its index\'s one-column query never matched in Team Tools: 37px titles at 390px), and the chapter-end nav is one whose CARDS the query restyles (a two-column grid with nothing above it to answer: 5px titles); the reader bar goes narrow at 640px, where its chapter name has a word\'s room; the gate\'s KNOWN list is empty', () => {
+  const sh = FP_SHARED();
+  const rule = (sel) => { const i = sh.indexOf('\n  ' + sel + ' {'); assert.ok(i > 0, sel); return sh.slice(i, sh.indexOf('}', i) + 1); };
+  assert.ok(/container-type: inline-size;/.test(rule('.kb-man-mast')), 'the masthead is a size container: ' + rule('.kb-man-mast'));
+  const nav = rule('.kb-man-chapnav');
+  assert.ok(/display: flex; flex-wrap: wrap;/.test(nav) && /container-type: inline-size;/.test(nav), nav);
+  assert.ok(!/grid-template-columns/.test(nav), 'not a grid: a container cannot restyle ITSELF, so the query has to move the cards');
+  assert.ok(/flex: 0 0 calc\(50% - 6px\);/.test(rule('.kb-man-cn')), 'half the row each');
+  assert.ok(/margin-left: auto;/.test(rule('.kb-man-cn-next')) && !/grid-column/.test(rule('.kb-man-cn-next')), 'a lone Next keeps the right half');
+  assert.ok(sh.indexOf('@container (max-width: 520px) { .kb-man-cn { flex-basis: 100%; } }') > 0, 'the whole row when the nav is narrow');
+  assert.ok(!/@container \([^)]*\) \{ \.kb-man-chapnav \{/.test(sh), 'THE REGRESSION: the query restyles the nav itself — with no container above it, it never matched');
+  // DERIVED: every class a container query in the reader restyles sits under an element the reader makes a container.
+  // The map is by the markup's own nesting; a query added for a class outside it fails here until it has a container.
+  const UNDER = { 'kb-man-mast-ix': 'kb-man-mast', 'kb-man-mast-h': 'kb-man-mast', 'kb-man-cn': 'kb-man-chapnav', 'kb-man-card-b': 'kb-man-card', 'kb-man-card-cols': 'kb-man-card',
+    'kb-man-bar-cn': 'kb-man-top', 'kb-man-bar-chev': 'kb-man-top', 'kb-man-bar-sep': 'kb-man-top', 'kb-man-bar-nav': 'kb-man-top', 'kb-man-bar': 'kb-man-top',
+    'kb-man-bar-acts': 'kb-man-top', 'kb-trail-chip': 'kb-man-top' };
+  const css = sh.slice(0, sh.indexOf('</style>'));
+  const queries = css.split('\n').filter((l) => /^\s*@container \(/.test(l));
+  assert.ok(queries.length >= 4, 'non-vacuous: the reader has container queries (' + queries.length + ')');
+  let seen = 0;
+  queries.forEach((q) => {
+    const body = q.slice(q.indexOf('{') + 1);
+    if (!body.trim()) return;   // a multi-line block (the table wrap's) — its container is on the same rule set, pinned below
+    (body.match(/\.[a-z][a-z0-9-]*/g) || []).map((c) => c.slice(1)).filter((c) => /^kb-/.test(c)).forEach((c) => {
+      const host = UNDER[c];
+      assert.ok(host, 'a container query restyles .' + c + ' — name the container it sits under (and make it one)');
+      assert.ok(new RegExp('\\n  \\.' + host + ' \\{[^}]*container-type: inline-size').test(css), '.' + c + '\'s container .' + host + ' declares container-type');
+      seen++;
+    });
+  });
+  assert.ok(seen >= 8, 'non-vacuous: ' + seen + ' restyled classes were checked');
+  assert.ok(/\n  \.kb-man-tw \{ container-type: inline-size; \}\n  @container \(max-width: 480px\) \{\n/.test(css), 'the multi-line block\'s container is the rule above it');
+  // The bar's narrow form: one threshold, 640px.
+  assert.ok(/@container \(max-width: 640px\) \{ \.kb-man-bar-cn, \.kb-man-bar-chev, \.kb-man-bar-sep, \.kb-man-bar-nav span \{ display: none; \}/.test(sh) && !/@container \(max-width: 560px\) \{ \.kb-man-bar-cn/.test(sh));
+  const copy = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/shared/script_manual_render.html'), 'utf8');
+  assert.ok(copy.indexOf('@container (max-width: 520px) { .kb-man-cn { flex-basis: 100%; } }') > 0, 'the handbook\'s copy carries it');
+  assert.deepStrictEqual(require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs')).KNOWN, [], 'the gate excuses nothing — its one entry was this');
+});
+
+// sRGB hex ↔ OKLab, and the browser's `color-mix(in oklab, A, B p%)`: p% of B.
+function fpOklab_(hex) {
+  const lin = [1, 3, 5].map((i) => { const v = parseInt(hex.slice(i, i + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+  const l = Math.cbrt(0.4122214708 * lin[0] + 0.5363325363 * lin[1] + 0.0514459929 * lin[2]);
+  const m = Math.cbrt(0.2119034982 * lin[0] + 0.6806995451 * lin[1] + 0.1073969566 * lin[2]);
+  const s = Math.cbrt(0.0883024619 * lin[0] + 0.2817188376 * lin[1] + 0.6299787005 * lin[2]);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+function fpFromOklab_(c) {
+  const l = Math.pow(c[0] + 0.3963377774 * c[1] + 0.2158037573 * c[2], 3);
+  const m = Math.pow(c[0] - 0.1055613458 * c[1] - 0.0638541728 * c[2], 3);
+  const s = Math.pow(c[0] - 0.0894841775 * c[1] - 1.2914855480 * c[2], 3);
+  const lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  return lin.map((v) => { v = Math.min(1, Math.max(0, v)); return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055); });
+}
+function fpMix_(a, b, pct) {
+  const A = fpOklab_(a), B = fpOklab_(b), t = pct / 100;
+  return fpFromOklab_([A[0] * (1 - t) + B[0] * t, A[1] * (1 - t) + B[1] * t, A[2] * (1 - t) + B[2] * t]);
+}
+const fpRgb_ = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+test('FP2 (cycle 26): in DARK mode every "-deep" tone is readable as TEXT — on its own "-soft" tint, on a card and on the canvas — in every palette: the token mixed them toward the paper, DARKER than the base colour (measured 3.34:1 and 4.34:1 on the tints, 3.99:1 on a card); it mixes toward the ink; computed from the token file as the browser computes it (driven)', () => {
+  const { toks, blocks } = tokenBlocks();
+  const PAIRS = [['success-deep', 'good', 'good-soft'], ['warning-deep', 'warn', 'warn-soft'], ['danger-deep', 'destructive', 'destructive-soft'], ['info-deep', 'info', 'info-soft']];
+  // The dark recipe, read from the dark @supports block: which token it mixes toward, and how far.
+  const darkAt = toks.indexOf('@supports (color: color-mix(in oklch, red, blue)) {\n    :root[data-mode="dark"]');
+  assert.ok(darkAt > 0);
+  const darkMix = toks.slice(darkAt, toks.indexOf('\n  }\n', darkAt));
+  const recipe = {};
+  PAIRS.forEach(([deep, base]) => {
+    const m = new RegExp('--' + deep + ':\\s*color-mix\\(in oklab, var\\(--' + base + '\\),\\s*var\\(--([a-z-]+)\\) (\\d+)%\\);').exec(darkMix);
+    assert.ok(m, '--' + deep + ' is mixed from --' + base + ' in the dark block');
+    assert.strictEqual(m[1], 'ink', 'THE REGRESSION: the dark --' + deep + ' mixes toward --' + m[1] + ' — toward the paper it is DARKER than its base, and under 4.5:1 on its own tint');
+    recipe[deep] = Number(m[2]);
+  });
+  // The dark semantic colours and their tints (rgba over the surface they sit on).
+  const console_ = blocks.filter((b) => b.id === 'console/dark')[0];
+  const softA = (name) => { const m = new RegExp('--' + name + ':\\s*rgba\\((\\d+), (\\d+), (\\d+), ([\\d.]+)\\)').exec(console_.body); assert.ok(m, '--' + name + ' is an rgba tint in dark mode'); return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]; };
+  const darks = blocks.filter((b) => b.mode === 'dark');
+  assert.ok(darks.length >= 4, 'non-vacuous: Console and every palette (' + darks.length + ' dark blocks)');
+  let checked = 0, worst = 99;
+  darks.forEach((b) => {
+    const v = Object.assign({}, console_.vals, b.vals);
+    PAIRS.forEach(([deep, base, soft]) => {
+      const text = fpMix_(v[base], v.ink, recipe[deep]);
+      ['paper', 'paper-card', 'paper-2'].forEach((surf) => {
+        const plain = FP_CONTRAST.ratio(text, fpRgb_(v[surf]));
+        const tint = FP_CONTRAST.ratio(text, FP_CONTRAST.over(softA(soft), fpRgb_(v[surf])));
+        worst = Math.min(worst, plain, tint);
+        assert.ok(plain >= 4.5, b.id + ' --' + deep + ' on --' + surf + ' is ' + plain.toFixed(2) + ':1');
+        assert.ok(tint >= 4.5, b.id + ' --' + deep + ' on --' + soft + ' over --' + surf + ' is ' + tint.toFixed(2) + ':1');
+        checked += 2;
+      });
+    });
+  });
+  assert.ok(checked >= 96 && worst >= 4.5, checked + ' pairs, the worst ' + worst.toFixed(2) + ':1');
+  // The model is the browser's: the OLD recipe, computed the same way, gives the numbers Chromium measured.
+  const v = console_.vals;
+  const oldDanger = fpMix_(v.destructive, v['paper-card'], 25), oldInfo = fpMix_(v.info, v['paper-card'], 25);
+  const was = [FP_CONTRAST.ratio(oldDanger, FP_CONTRAST.over(softA('destructive-soft'), fpRgb_(v['paper-card']))), FP_CONTRAST.ratio(oldDanger, fpRgb_(v['paper-card'])),
+    FP_CONTRAST.ratio(oldInfo, FP_CONTRAST.over(softA('info-soft'), fpRgb_(v['paper-card'])))];
+  assert.deepStrictEqual(was.map((r) => r.toFixed(1)), ['3.3', '4.0', '4.3'], 'toward the paper: ' + was.map((r) => r.toFixed(2)).join(', ') + ' — the measured 3.34, 3.99 and 4.34');
+  // One definition: the reader's own scoped copy of the recipe is gone, in both copies.
+  ['web-app/shared/script_manual_render.html', 'handbook-app/shared/script_manual_render.html'].forEach((f) => {
+    const src = fs.readFileSync(path.join(HB_ROOT, f), 'utf8');
+    assert.ok(!/\[data-mode="dark"\][^{]*\{[^}]*--(danger|info|warning|success)-deep:/.test(src), f + ' redefines a -deep tone for dark mode — the token is the one definition');
+  });
+  assert.ok(fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_design_tokens.html'), 'utf8').indexOf('--danger-deep:  color-mix(in oklab, var(--destructive), var(--ink) 30%);') > 0, 'the handbook\'s copy of the tokens carries it');
+});
+
+test('FP2 (cycle 26): a rule that FILLS with a "-deep" tone takes its text from a token that flips with it — in dark mode the fill is now a light colour, and a literal white on it is about 2:1 (the Call Notes clear button\'s hover) — swept over every partial (derived)', () => {
+  const files = [];
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p); else if (/\.html$/.test(e.name)) files.push(p);
+  });
+  walk(PA_WEB);
+  ['styles_handbook.html', 'script_handbook.html', 'index.html'].forEach((f) => files.push(path.join(HB_ROOT, 'handbook-app', f)));
+  let fills = 0;
+  const bad = [];
+  files.forEach((f) => {
+    const src = fs.readFileSync(f, 'utf8');
+    const re = /([^{}]+)\{([^{}]*background(?:-color)?:\s*var\(--(?:success|warning|danger|info)-deep\)[^{}]*)\}/g;
+    let m;
+    while ((m = re.exec(src))) {
+      fills++;
+      const col = /(?:^|[;\s])color:\s*([^;}]+)/.exec(m[2]);
+      if (col && /^(white|#fff(?:fff)?|rgb\(255, ?255, ?255\))\b/i.test(col[1].trim())) bad.push(path.relative(HB_ROOT, f) + ': ' + m[1].trim() + ' → color: ' + col[1].trim());
+    }
+  });
+  assert.ok(fills >= 4, 'non-vacuous: the sweep sees the rules that fill with a deep tone (' + fills + ')');
+  assert.deepStrictEqual(bad, [], 'a literal white on a fill that is LIGHT in dark mode');
+  assert.ok(fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8').indexOf('background: var(--danger-deep); border-color: var(--danger-deep); color: var(--paper-card);') > 0);
+});
+
+test('FP3 (cycle 26): the contrast sweep\'s maths — WCAG ratio, the large-text threshold, a see-through colour over what is behind it, and a group\'s opacity — driven; the page walk is serialised with the SAME functions, so the browser runs what is driven here', () => {
+  const C = FP_CONTRAST;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  assert.strictEqual(r2(C.ratio([0, 0, 0], [255, 255, 255])), 21);
+  assert.strictEqual(r2(C.ratio([255, 255, 255], [0, 0, 0])), 21, 'order does not matter');
+  assert.strictEqual(r2(C.ratio([0x77, 0x77, 0x77], [255, 255, 255])), 4.48, '#777 on white is under AA');
+  assert.strictEqual(r2(C.ratio([0x76, 0x76, 0x76], [255, 255, 255])), 4.54, '#767676 is the lightest grey that passes');
+  assert.deepStrictEqual([C.need(16, 400), C.need(23.9, 400), C.need(24, 400), C.need(18.66, 700), C.need(18.66, 600), C.need(18, 700)], [4.5, 4.5, 3, 3, 4.5, 4.5]);
+  assert.deepStrictEqual(C.over([0, 0, 0, 0.5], [255, 255, 255]).map(Math.round), [128, 128, 128], 'half black over white');
+  assert.deepStrictEqual(C.over([10, 20, 30, 1], [255, 255, 255]), [10, 20, 30], 'an opaque colour covers');
+  assert.deepStrictEqual(C.over([10, 20, 30, 0], [1, 2, 3]), [1, 2, 3], 'a transparent one shows what is behind');
+  // paint: root → element. A dark card holds a see-through red tint; the text is on the tint.
+  const dark = { bg: [16, 20, 29, 1], op: 1 }, tint = { bg: [255, 102, 121, 0.14], op: 1 };
+  const shown = C.paint([{ bg: [0, 0, 0, 0], op: 1 }, dark, tint], [189, 82, 97, 1], [255, 255, 255]);
+  assert.deepStrictEqual(shown.bg.map(Math.round), [49, 31, 42], 'the tint composited on the card');
+  assert.strictEqual(r2(C.ratio(shown.fg, shown.bg)), 3.32, 'the pair CI\'s axe failed (3.34 with the unrounded colour)');
+  // A group at half opacity: its black text on its white ground is mid-grey on white.
+  const half = C.paint([{ bg: [255, 255, 255, 1], op: 1 }, { bg: [0, 0, 0, 0], op: 0.5 }, { bg: [255, 255, 255, 1], op: 1 }], [0, 0, 0, 1], [255, 255, 255]);
+  assert.deepStrictEqual([half.fg.map(Math.round), half.bg.map(Math.round)], [[128, 128, 128], [255, 255, 255]]);
+  assert.strictEqual(C.need(16, 400) > r2(C.ratio(half.fg, half.bg)), true, 'and that is under AA — an opaque ground does not hide a see-through ancestor');
+  // The expression the page runs declares the same functions by name and hands them to the walk.
+  ['lum', 'ratio', 'need', 'over', 'mix', 'paint'].forEach((n) => assert.ok(C.SWEEP.indexOf(C[n].toString()) >= 0, 'SWEEP carries ' + n + ' verbatim'));
+  assert.ok(C.SWEEP.indexOf(C.inPage.toString()) >= 0 && /\}\)\(\{ lum, ratio, need, over, mix, paint \}\); \}\)\(\)$/.test(C.SWEEP));
+  // What the walk refuses to judge is COUNTED, never passed (g128): its three outcomes are in the source.
+  const walk = C.inPage.toString();
+  assert.ok(/if \(image\) \{ unchecked\+\+; continue; \}/.test(walk) && /return \{ low, lowCount, checked, unchecked \};/.test(walk));
+  assert.ok(/Math\.round\(got \* 100\) \/ 100 < want/.test(walk), 'compared at two decimals, as axe reports it');
+});
+
+test('FP3 (cycle 26): the sweep is KEPT and it gates — every scenario\'s report carries it, `--axe` fails a handbook screen on a low pair (a local PASS was not CI\'s, three times), the verdict is the gate\'s (driven), and CI checks the sweep against known pairs', () => {
+  const shoot = fs.readFileSync(path.join(HB_ROOT, 'test/visual/shoot.mjs'), 'utf8');
+  assert.strictEqual((shoot.match(/await page\.evaluate\(contrast\.SWEEP\)/g) || []).length, 2, 'measured in the axe run and in the shoot');
+  assert.ok(/axeReport\.push\(\{ name, viewport: vp\.width \+ 'x' \+ vp\.height, mode, violations: res, contrast: swept,/.test(shoot) && /\n    contrast: swept,\n/.test(shoot));
+  assert.ok(/const bad = axeReport\.filter\(\(r\) => r\.violations\.length \|\| gate\.contrastFindings\(r\)\.length\);/.test(shoot), 'a low pair fails the axe run');
+  assert.ok(/process\.exit\(bad\.length \? 1 : 0\);/.test(shoot));
+  const gate = require(path.join(HB_ROOT, 'test/visual/ci-gate.cjs'));
+  const low = { el: 'span.kb-co-kick', ratio: 3.34, need: 4.5, fg: '#bd5261', bg: '#311f2a', text: 'CRITICAL' };
+  assert.deepStrictEqual(gate.contrastFindings({ contrast: { low: [], lowCount: 0, checked: 200, unchecked: 3 } }), [], 'nothing low; text over an image is not a finding');
+  const f = gate.contrastFindings({ contrast: { low: [low], lowCount: 4, checked: 200, unchecked: 0 } });
+  assert.ok(f.length === 1 && f[0].kind === 'contrast' && /span\.kb-co-kick 3\.34:1 \(needs 4\.5\) #bd5261 on #311f2a/.test(f[0].detail), JSON.stringify(f));
+  assert.deepStrictEqual(gate.contrastFindings({}).map((x) => x.detail), ['not measured'], 'a scenario with no measurement is a finding, never a pass (g128)');
+  // CI: the self-check runs in the visual job, and still runs after a failure above it.
+  const yml = fs.readFileSync(path.join(HB_ROOT, '.github/workflows/client-tests.yml'), 'utf8');
+  const step = yml.slice(yml.indexOf('node contrast-check.mjs') - 400, yml.indexOf('node contrast-check.mjs') + 40);
+  assert.ok(yml.indexOf('node contrast-check.mjs') > 0 && /if: \$\{\{ !cancelled\(\) \}\}/.test(step) && /working-directory: test\/visual/.test(step), step);
+  const check = fs.readFileSync(path.join(HB_ROOT, 'test/visual/contrast-check.mjs'), 'utf8');
+  assert.ok(/await page\.evaluate\(contrast\.SWEEP\)/.test(check) && /if \(problems\.length\) \{[^}]*process\.exit\(1\); \}/.test(check), 'it runs the SAME expression and exits 1 on a wrong answer');
+  ['c-low', 'c-alpha', 'c-opacity', 'c-image', 'c-covered', 'c-disabled', 'c-mix'].forEach((c) => assert.ok(check.indexOf('class="' + c + '"') > 0 || check.indexOf(c + '"') > 0, 'a known pair: ' + c));
+});
+
+test('FP4 (cycle 26): the sign-off group names its section — the bar is for the section IN VIEW, and "I\'ve read this" named it only by where the bar sat; the number shows, the title is the tooltip, and every button\'s accessible name begins with its own words and carries the title (driven)', () => {
+  const page = HB_PAGE_SRC();
+  const sb = { esc: (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'), icon: () => '<svg></svg>' };
+  vm.createContext(sb);
+  vm.runInContext(extractFnFrom(page, 'hbSignBarHtml_'), sb);
+  const name = { num: '3.4', rest: 'Returns & "exchanges"' };
+  const un = sb.hbSignBarHtml_('man-3-4', undefined, true, name);
+  assert.ok(/^<span class="hb-so-n" title="3\.4 Returns &amp; &quot;exchanges&quot;">3\.4<\/span><button /.test(un), un);
+  assert.ok(/aria-label="I&#39;ve read this: 3\.4 Returns &amp; &quot;exchanges&quot;"/.test(un) && />I've read this<\/button>$/.test(un), un);
+  const signed = sb.hbSignBarHtml_('man-3-4', { state: 'signed', signedMs: Date.UTC(2026, 10, 3, 18), changed: false }, true, name);
+  assert.ok(/^<span class="hb-so-n"/.test(signed) && /You read this on /.test(signed) && /aria-label="Undo: 3\.4 Returns/.test(signed) && />Undo<\/button>$/.test(signed), signed);
+  const again = sb.hbSignBarHtml_('man-3-4', { state: 'resign' }, true, name);
+  assert.ok(/^<span class="hb-so-n"/.test(again) && /aria-label="I&#39;ve read it again: 3\.4 Returns/.test(again), again);
+  // A section with no number shows its title; one the page does not know shows no chip and no made-up name.
+  const card = sb.hbSignBarHtml_('man-c-3', undefined, true, { num: '', rest: 'Quick card' });
+  assert.ok(/<span class="hb-so-n" title="Quick card">Quick card<\/span>/.test(card) && /aria-label="I&#39;ve read this: Quick card"/.test(card), card);
+  const none = sb.hbSignBarHtml_('man-9-9', undefined, true, { num: '', rest: '' });
+  assert.ok(!/hb-so-n/.test(none) && !/aria-label/.test(none) && />I've read this<\/button>$/.test(none), none);
+  assert.strictEqual(sb.hbSignBarHtml_('man-9-9', undefined, true), none, 'no name at all is the same');
+  assert.strictEqual(sb.hbSignBarHtml_('man-3-4', undefined, false, name), '', 'sign-offs not set up: nothing');
+  // The caller names the section the bar is FOR (the id it paints), from the tree's own title.
+  assert.ok(/hbSignBarHtml_\(id, HB_SO\.signoffs\['section:' \+ id\], HB_SO\.setUp, kbManualSplitTitle_\(hbSectionTitle_\(id\)\)\)/.test(extractFnFrom(page, 'hbPaintQuizBar_')));
+  const css = fs.readFileSync(path.join(HB_ROOT, 'handbook-app/styles_handbook.html'), 'utf8');
+  assert.ok(/\n  \.hb-so-n \{[^}]*text-overflow: ellipsis;[^}]*color: var\(--muted\);/.test(css), 'the chip has a rule (g140), and a title too long for it is cut, not wrapped');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

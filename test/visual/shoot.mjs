@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import gate from './ci-gate.cjs';
+import contrast from './contrast.cjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // I3: the reader's real output for a specimen card (fake data), shared with the Node pins.
@@ -754,7 +755,13 @@ const SCENARIOS = [
   ['deptreq-looks-light-tablet', { tool: 'callNotes', tab: 'metricsDeptReq' }, TABLET, 'light', ''],
   ['intake-light-tablet', { tool: 'intake', tab: null }, TABLET, 'light', ''],
   ['reference-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', ''],
-  ['reference-manual-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-0-10')"],
+  // Cycle 26 (second pass): below 1024px the shell caps the view at 600px, so
+  // Reference folds THERE — the reader is the column (it was 272px beside a
+  // 280px tree), and the chapter-end cards answer to their own width (their
+  // titles were 5px). `minWidth` holds both; the second scenario looks at the cards.
+  ['reference-manual-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-0-10')", { minWidth: { '.kb-main': 480, '.kb-man-cn': 200 } }],
+  ['reference-manual-chapend-light-tablet', { tool: 'reference', tab: null }, TABLET, 'light', '', "kbOpenItem_('man-3-8'); setTimeout(function(){ var n=document.querySelector('.kb-man-chapnav'); if(n) n.scrollIntoView({ block: 'center' }); }, 500)", { minWidth: { '.kb-main': 480, '.kb-man-cn': 200 } }],
+  ['reference-manual-chapend-light-mobile', { tool: 'reference', tab: null }, MOBILE, 'light', '', "kbOpenItem_('man-3-8'); setTimeout(function(){ var n=document.querySelector('.kb-man-chapnav'); if(n) n.scrollIntoView({ block: 'center' }); }, 500)", { minWidth: { '.kb-man-cn': 280 } }],
   ['training-light-tablet', { tool: 'develop', tab: null }, TABLET, 'light', ''],
   ['coaching-light-tablet', { tool: 'develop', tab: 'coaching' }, TABLET, 'light', ''],
   ['qa-queue-light-tablet', { tool: 'qa', tab: 'qaQueue' }, TABLET, 'light', ''],
@@ -836,10 +843,11 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
   }
   if (AXE) {
     await page.addScriptTag({ content: AXE_SRC });
+    const swept = await page.evaluate(contrast.SWEEP);
     const res = await page.evaluate((tags) => window.axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
       .then((r) => r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length,
         targets: v.nodes.slice(0, 4).map((n) => n.target.join(' ')), summary: (v.nodes[0] && v.nodes[0].failureSummary || '').split('\n').slice(0, 3).join(' ') }))), AXE_TAGS);
-    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, errors: Array.from(new Set(errors)).slice(0, 4) });
+    axeReport.push({ name, viewport: vp.width + 'x' + vp.height, mode, violations: res, contrast: swept, errors: Array.from(new Set(errors)).slice(0, 4) });
     await ctx.close();
     continue;
   }
@@ -914,6 +922,11 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     const w = el ? Math.round(el.getBoundingClientRect().width) : null;
     return w === null || w < want[sel] ? { sel, w, min: want[sel] } : null;
   }).filter(Boolean), opts.minWidth) : [];
+  // Cycle 26 — (4) TEXT TOO FAINT TO READ. Every text element's colour against
+  // what is painted behind it, composited and measured here rather than asked of
+  // axe (contrast.cjs says why). Measured after the scroll above, which moves
+  // nothing a colour depends on.
+  const swept = await page.evaluate(contrast.SWEEP);
   report.push({
     name, view, missing,
     viewport: vp.width + 'x' + vp.height,
@@ -921,6 +934,8 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
     verticalRunawayPx: shape.runaway,
     narrowText: shape.narrow,
     tooNarrow,
+    mode,
+    contrast: swept,
     errors: Array.from(new Set(errors)).slice(0, 8),
   });
   await ctx.close();
@@ -928,9 +943,17 @@ for (const [name, nav, vp, mode, query, post, opts] of SCENARIOS) {
 await browser.close();
 if (AXE) {
   fs.writeFileSync(path.join(HERE, 'axe-report.json'), JSON.stringify(axeReport, null, 2));
-  const bad = axeReport.filter((r) => r.violations.length);
+  // Cycle 26: the contrast sweep rides the same run and fails it too. axe leaves
+  // a pair it cannot resolve "incomplete", and which pairs those are differs by
+  // Chromium build — a PASS here was not CI's, three times. The sweep measures
+  // the pair itself, so this command fails here where CI's axe would.
+  const faint = axeReport.filter((r) => gate.contrastFindings(r).length);
+  const bad = axeReport.filter((r) => r.violations.length || gate.contrastFindings(r).length);
   console.log('AXE (' + axeReport.length + ' handbook scenarios, WCAG 2.1 A + AA): ' + (bad.length ? 'FAIL' : 'PASS'));
-  bad.forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  axeReport.filter((r) => r.violations.length).forEach((r) => r.violations.forEach((v) => console.log('  ' + r.name + '  ' + v.id + ' (' + v.impact + ', ' + v.nodes + ')  ' + v.targets.join(' | '))));
+  console.log('CONTRAST SWEEP (' + axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.checked : 0), 0) + ' text elements measured, ' +
+    axeReport.reduce((n, r) => n + (r.contrast ? r.contrast.unchecked : 0), 0) + ' over an image and not judged): ' + (faint.length ? 'FAIL' : 'PASS'));
+  faint.forEach((r) => gate.contrastFindings(r).forEach((f) => console.log('  ' + r.name + '  ' + f.detail)));
   if (!axeReport.length) { console.log('  no handbook scenario matched — nothing was checked'); process.exit(1); }
   process.exit(bad.length ? 1 : 0);
 }
@@ -958,6 +981,22 @@ const squeezed = report.filter((r) => r.narrowText.length);
 if (squeezed.length) {
   console.log('\nSQUEEZED TEXT (a text column laid out narrower than a word):');
   squeezed.forEach((r) => console.log('  ' + r.name + ' @ ' + r.viewport + '  ' + r.narrowText.map((n) => n.tag + ' ' + n.w + 'px "' + n.text + '"').join(' · ')));
+}
+// Cycle 26: reported for every scenario, gated for the handbook (`--axe`). The
+// same pair shows on many screens, so the list is by PAIR, with how many
+// scenarios show it — the fix is the pair's, not each screen's.
+const faintRows = report.filter((r) => r.contrast && r.contrast.low.length);
+if (faintRows.length) {
+  const pairs = new Map();
+  faintRows.forEach((r) => r.contrast.low.forEach((l) => {
+    const k = r.mode + ' ' + l.el + ' ' + l.fg + ' on ' + l.bg;
+    const p = pairs.get(k) || { mode: r.mode, l, n: 0, first: r.name };
+    p.n++; pairs.set(k, p);
+  }));
+  console.log('\nLOW CONTRAST (text under WCAG AA against what is painted behind it — ' + faintRows.length + ' of ' + report.length + ' scenarios, ' + pairs.size + ' pairs):');
+  Array.from(pairs.values()).sort((a, b) => b.n - a.n).slice(0, 40).forEach((p) =>
+    console.log('  ' + p.mode + '  ' + p.l.el + '  ' + p.l.ratio + ':1 (needs ' + p.l.need + ')  ' + p.l.fg + ' on ' + p.l.bg + '  ×' + p.n + '  e.g. ' + p.first));
+  if (pairs.size > 40) console.log('  … and ' + (pairs.size - 40) + ' more (report.json has every one)');
 }
 const fixtureGaps = report.filter((r) => r.missing.length);
 if (fixtureGaps.length) {

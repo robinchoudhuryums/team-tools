@@ -14694,3 +14694,37 @@ test('FO6 DOM (cycle 26): notes, the bookmark copy and the sync switch are kept 
   n.w.hbGoSaved_(); await n.settleAll();
   assert.ok(/Mine/.test(n.main().textContent));
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Cycle 26 — the second pass over Batch 8's follow-on items (FP4).
+test('FP4 DOM (cycle 26): the sign-off names the section it is for — the group opens with the number of the section IN VIEW and each button\'s accessible name carries its title; it follows the scroll-spy, a sign, and Undo (driven)', async () => {
+  const h = await hbBoot_({ answers: HBR_ALL({ hbMySignOffs: { setUp: true, signoffs: {} }, hbMyBookmarks: { setUp: true, bookmarks: [] },
+    hbMarkRead: () => ({ success: true }) }) });
+  h.w.MANUAL_HOST.openItem('man-3-1'); await h.settleAll();
+  const bar = () => h.d.getElementById('hb-quizbar');
+  const ctl = () => bar().querySelector('[data-hb-bar="sign"]');
+  const chip = () => bar().querySelector('.hb-so .hb-so-n');
+  const title = (id) => h.w.HB.tree.filter((x) => x.id === id)[0].title;
+  const split = (id) => h.w.kbManualSplitTitle_(title(id));
+  assert.ok(split('man-3-1').num && split('man-3-2').num && split('man-3-1').num !== split('man-3-2').num, 'the fixture\'s two sections are numbered, differently');
+  // Opened on 3.1: the chip is its number, the tooltip its title, the button's name its own words then the title.
+  assert.deepStrictEqual([chip().textContent, chip().getAttribute('title')], [split('man-3-1').num, title('man-3-1')]);
+  assert.deepStrictEqual([ctl().textContent, ctl().getAttribute('aria-label')], ['I\'ve read this', 'I\'ve read this: ' + title('man-3-1')]);
+  assert.strictEqual(chip().nextElementSibling, ctl(), 'the number sits beside the button it names');
+  // The reader scrolls on to 3.2: the group names 3.2 — THE REGRESSION was a button that read the same for both.
+  h.w.kbManualBarPaint_('man-3-2'); await h.settleAll();
+  assert.deepStrictEqual([chip().textContent, ctl().getAttribute('data-id'), ctl().getAttribute('aria-label')],
+    [split('man-3-2').num, 'man-3-2', 'I\'ve read this: ' + title('man-3-2')], 'the name follows the section in view');
+  // Signed: the chip stays, and Undo says what it undoes.
+  ctl().click(); await h.settleAll();
+  assert.deepStrictEqual([chip().textContent, ctl().textContent, ctl().getAttribute('aria-label'), /You read this on/.test(bar().textContent)],
+    [split('man-3-2').num, 'Undo', 'Undo: ' + title('man-3-2'), true]);
+  // Every accessible name begins with the words on the button (WCAG 2.5.3).
+  [...bar().querySelectorAll('[data-hb-bar="sign"]')].forEach((b) => assert.strictEqual(b.getAttribute('aria-label').indexOf(b.textContent), 0, b.getAttribute('aria-label')));
+  // Back on 3.1 (unsigned): its own name again.
+  h.w.kbManualBarPaint_('man-3-1'); await h.settleAll();
+  assert.deepStrictEqual([chip().textContent, ctl().textContent, ctl().getAttribute('aria-label')], [split('man-3-1').num, 'I\'ve read this', 'I\'ve read this: ' + title('man-3-1')]);
+  // Off a section (home): no bar tools, no chip left behind.
+  h.w.hbHome_(true); await h.settleAll();
+  assert.ok(!h.d.querySelector('.hb-so-n'), 'no chip off a section');
+});
