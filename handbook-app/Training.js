@@ -251,13 +251,13 @@ function hbPublished_(fresh) {
 }
 /** Everything an item's progress is read from, for one request. */
 function hbProgressCtx_(ss) {
-  const meta = getManualMeta();
+  const changelog = hbChangelogRead_();   // F47: throws when it cannot be read — never "nothing flagged"
   // F50: a title for every quiz ever written (an archived one is still named),
   // and — separately — the quizzes that can be TAKEN now.
   const titles = {}, liveQuiz = {};
   hbQuizzes_().quizzes.forEach(function (q) { titles[q.id] = q.title; liveQuiz[q.id] = 1; });
   hbTeamQuizRows_(ss).rows.forEach(function (r) { titles[r.id] = String(r.body.title || ''); if (r.live) liveQuiz[r.id] = 1; });
-  return { pub: hbPublished_(), changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [],
+  return { pub: hbPublished_(), changelog: changelog,
     marks: hbSignOffs_(ss), attempts: hbQuizAttempts_(ss), resets: hbQuizResets_(ss), titles: titles, liveQuiz: liveQuiz, now: Date.now(), today: hbDay_(new Date()) };
 }
 /** One reader's sign-off on one reading item: { state, signedMs, changed }. */
@@ -544,8 +544,7 @@ function hbMySignOffs() {
   if (!ss) return { setUp: false, signoffs: {} };
   try {
     const marks = hbSignOffs_(ss);
-    const meta = getManualMeta();
-    const ctx = { marks: marks, changelog: meta && !meta.error && Array.isArray(meta.changelog) ? meta.changelog : [], pub: hbPublished_() };
+    const ctx = { marks: marks, changelog: hbChangelogRead_(), pub: hbPublished_() };   // F47: an unreadable list is this read's error
     const out = {};
     Object.keys(marks).forEach(function (k) {
       const bar = k.indexOf('|');

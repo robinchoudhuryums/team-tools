@@ -42256,7 +42256,7 @@ test('HB2.2-a: the helpers — a bookmark goes to the top once and comes off, ca
   const rows = hbPlain_(sb.hbNotesRows_([['Email', 'SectionId', 'NoteJson', 'UpdatedMs'],
     ['rep@ex.org', 'man-1-1', '{"t":"one"}', 5], ['other@ex.org', 'man-1-1', '{"t":"theirs"}', 9],
     ['rep@ex.org', 'man-2-1', 'not json', 6], ['', '', '', ''], ['REP@ex.org', 'man-1-1', '{"t":"later"}', 7]], 'rep@ex.org'));
-  assert.deepStrictEqual(rows, { map: { 'man-1-1': { t: 'later', ms: 7, row: 6 } }, unreadable: 1 }, 'the reader\'s own, the latest row, a bad one counted, a cleared one skipped');
+  assert.deepStrictEqual(rows, { map: { 'man-1-1': { t: 'later', ms: 7, row: 6 } }, unreadable: 1, off: [] }, 'the reader\'s own, the latest row, a bad one counted, a cleared one skipped');
 });
 
 test('HB2.2-b: bookmarks live in the reader\'s account — a published section only, the handbook\'s title, one row per reader updated in place; another reader\'s list is their own; an unreadable list is said, never "none"', () => {
@@ -42313,7 +42313,9 @@ test('HB2.2-c: notes sync — the account\'s copy and the browser\'s merge, late
   // Off: the reader's account copies go; Ann's stay.
   const f = hbPlain_(sb.hbForgetNotes());
   assert.deepStrictEqual(f, { success: true, removed: 2 });
-  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({})).notes, {}, 'nothing of theirs left');
+  // F55 (cycle 26): and the ACCOUNT is off — a sync is refused until the reader turns it on again (the F55 pin drives that).
+  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({})), { success: false, off: true, error: 'Keeping notes in your account was turned off.' });
+  assert.deepStrictEqual(hbPlain_(sb.hbSyncNotes({}, true)).notes, {}, 'nothing of theirs left');
   assert.strictEqual(hbPlain_(hbAs_(sb, 'ann@ex.org').hbSyncNotes({})).notes['man-1-1'].t, 'Ann\'s');
 });
 
@@ -47933,7 +47935,8 @@ test('F49 (cycle 26): a sign-off is of the text the reader SAW — the page send
   assert.deepStrictEqual([r.success, /list of changes could not be read, so nothing was recorded/.test(r.error), (bad.__hbTabs.ReadMarks || []).length], [false, true, 0]);
   // The page: it keeps the versions that came with the text it shows, and hands the item's back when its reader signs.
   const page = HB_PAGE_SRC();
-  assert.ok(/HB\.versions = \(res && res\.versions\) \|\| \{\};/.test(extractFnFrom(page, 'hbReady_')), 'from the same answer as the text');
+  // (F55 moved the taking into hbTakeChapters_, which the boot and the kept-copy retry both go through.)
+  assert.ok(/HB\.versions = \(res && res\.versions\) \|\| \{\};/.test(extractFnFrom(page, 'hbTakeChapters_')) && /^\s*hbTakeChapters_\(res\);/m.test(extractFnFrom(page, 'hbReady_')), 'from the same answer as the text');
   assert.ok(/\.hbMarkRead\(kind, id, done, done \? \(HB\.versions\[key\] \|\| ''\) : ''\);/.test(extractFnFrom(page, 'hbSignOff_')), 'sent with the sign-off');
 });
 

@@ -27,6 +27,10 @@ const WIDE = { width: 1440, height: 900 };
 const COMPACT = { width: 480, height: 800 };
 const COMPACT_SM = { width: 360, height: 640 };
 const MOBILE = { width: 390, height: 844 };
+// F65 (cycle 26): the widths BETWEEN the phone and the desk — a window beside
+// another app, half a 1920 screen. The handbook's rail is still on screen there.
+const TABLET = { width: 800, height: 900 };
+const HALF = { width: 960, height: 900 };
 
 // [name, {tool, tab}, viewport, mode, query, post?]
 // `post` (optional 6th element) is a JS expression evaluated in the page AFTER
@@ -126,6 +130,12 @@ const SCENARIOS = [
   // HBR1 — home's shelf on the reader's own view, and home in dark on a phone.
   ['handbook-shelf-me-light-wide', {}, WIDE,   'light', '', "setTimeout(function(){ hbShelfView_('me'); }, 300)", HB_PAGE],
   ['handbook-home-dark-mobile',    {}, MOBILE, 'dark',  '', '', HB_PAGE],
+  // F65 (cycle 26): home and search at 800 and 960px — the rail still showing.
+  // The two-column layouts folded only at 760px, so the hero's own column (the
+  // greeting, the heading, the search box) was a sliver beside the shelf.
+  ['handbook-home-light-tablet',   {}, TABLET, 'light', '', '', HB_PAGE],
+  ['handbook-home-dark-half',      {}, HALF,   'dark',  '', '', HB_PAGE],
+  ['handbook-search-light-tablet', {}, TABLET, 'light', '', HB_SEARCH, HB_PAGE],
   // HBR2 — a chapter opened at its top (the masthead as a banner, the side column), and Suggest a topic.
   ['handbook-chapter-light-wide',  {}, WIDE,   'light', '', "setTimeout(function(){ MANUAL_HOST.openItem('man-0-2', '', { chapter: true }); setTimeout(function(){ document.getElementById('kb-main').scrollTop = 0; }, 900); }, 300)", HB_PAGE],
   ['handbook-suggest-topic-light-mobile', {}, MOBILE, 'light', '', HB_SEARCH + "; setTimeout(function(){ hbSuggestTopic_(); }, 600)", HB_PAGE],

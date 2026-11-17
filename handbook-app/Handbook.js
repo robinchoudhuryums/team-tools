@@ -238,6 +238,21 @@ function hbChangelogNow_() {
   try { CacheService.getScriptCache().put(KB_MANUAL_META_CACHE_KEY, raw, KB_CACHE_TTL); } catch (e) {}
   return meta && Array.isArray(meta.changelog) ? meta.changelog : [];
 }
+/** F47 (cycle 26) — the changelog for a READ of where sign-offs stand (the
+ *  bar, My training, Team progress, the reminder run): the cached meta's — and
+ *  never "none" for a list that could not be read. With no list nothing is
+ *  flagged for retraining, so every "read it again" read as "signed" and an
+ *  overdue plan as done: could not check is not checked (g128). An unreadable
+ *  list throws; each caller's answer is then an error its page shows. A
+ *  handbook with no meta at all ({ none }) has flagged nothing. */
+function hbChangelogRead_() {
+  const meta = getManualMeta();
+  if (!meta || meta.error) {
+    throw new Error('The handbook\'s list of changes could not be read' + (meta && meta.error ? ': ' + String(meta.error).replace(/\.$/, '') : '') +
+      ', so it cannot be told what needs reading again.');
+  }
+  return Array.isArray(meta.changelog) ? meta.changelog : [];
+}
 /** PURE — each section's and chapter's VERSION, by item key: a section's is
  *  the stamp of its text; a chapter's, the stamp of its sections' versions in
  *  order (HB3.4). */

@@ -3481,6 +3481,7 @@ function kbFlashBlock_(el, instant) {
 function kbReaderScroll_(el, block, smooth) {
   var main = document.getElementById('kb-main');
   if (!el) return;
+  smooth = smooth && !kbMotionReduced_();   // F66 (cycle 26)
   if (!main || !main.contains(el)) { try { el.scrollIntoView({ block: block, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) {} return; }
   var mr = main.getBoundingClientRect(), r = el.getBoundingClientRect(), cs = window.getComputedStyle ? getComputedStyle(main) : {};
   // Below the sticky band's REAL height when there is one — the trail row and the
@@ -3490,6 +3491,17 @@ function kbReaderScroll_(el, block, smooth) {
     : pad + (parseFloat((window.getComputedStyle ? getComputedStyle(el) : {}).scrollMarginTop) || 0);
   var y = Math.max(0, main.scrollTop + (r.top - mr.top - (main.clientTop || 0)) - off);
   try { main.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' }); } catch (e) { main.scrollTop = y; }
+}
+/** F66 (cycle 26) — does the reader want no animation? The device's setting,
+ *  or the handbook app's own Display switch (data-hb-motion on <html>; Team
+ *  Tools never sets it). An explicit `behavior: 'smooth'` is NOT overridden by
+ *  CSS `scroll-behavior`, so the stylesheet's reduced-motion rule never reached
+ *  a scripted scroll: an in-chapter open still glided. The script asks. */
+function kbMotionReduced_() {
+  try {
+    if (document.documentElement.getAttribute('data-hb-motion') === 'reduce') return true;
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) { return false; }
 }
 /** The element a link with context `ctx` lands on in a rendered section, or null. */
 function kbXrefLandEl_(host, bodyMd, anchor, ctx, text) {

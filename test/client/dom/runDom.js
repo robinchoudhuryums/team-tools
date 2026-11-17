@@ -12213,7 +12213,8 @@ test('HB1.3 DOM: a failed read falls back to the kept copy and says so; with non
   const down = { getManualStamp: { __fail: 'offline' }, getManualParts: { __fail: 'offline' } };
   const k = await hbBoot_({ idb, answers: down });
   assert.strictEqual(k.d.querySelectorAll('.hb-card').length, 2, 'the kept copy');
-  assert.ok(/may be out of date/.test(k.d.getElementById('toast-stack').textContent));
+  // F55 (cycle 26): said by a banner that stays, not a toast that goes (the F55 DOM drive presses its Try again).
+  assert.ok(/may be out of date/.test(k.d.getElementById('hb-stale').textContent) && !/may be out of date/.test(k.d.getElementById('toast-stack').textContent));
   const none = await hbBoot_({ answers: { getManualParts: { error: 'The handbook is not set up yet: the HANDBOOK_KB_SS_ID Script Property is not set.' } } });
   assert.ok(/could not be loaded: The handbook is not set up yet/.test(none.main().textContent), 'the server\'s own words');
   assert.ok(none.main().querySelector('[role="alert"]'));
@@ -13101,7 +13102,8 @@ test('HB2.2 DOM: syncing notes — turning it on warns about patient information
   // On at boot: this browser's notes go up once.
   const b = await hbBoot_({ ls: { umsHbNotesSync: '1', umsHbNotes: JSON.stringify({ 'man-3-1': { t: 'x', ms: 5 } }) },
     answers: { hbMyBookmarks: { setUp: true, bookmarks: [] }, hbSyncNotes: (m) => ({ success: true, notes: m }) } });
-  assert.deepStrictEqual(b.argsOf.filter((a) => a[0] === 'hbSyncNotes'), [['hbSyncNotes', { 'man-3-1': { t: 'x', ms: 5 } }]]);
+  // (F55: the second argument is "the reader is turning sync on" — a boot sync never is.)
+  assert.deepStrictEqual(b.argsOf.filter((a) => a[0] === 'hbSyncNotes'), [['hbSyncNotes', { 'man-3-1': { t: 'x', ms: 5 } }, false]]);
 });
 
 test('HB2.2 DOM: export and import — the export carries each note with its section\'s title; an import keeps the newer note per section, says what it took, and refuses a file that is not an export (driven)', async () => {
@@ -13618,9 +13620,10 @@ test('HBR1 DOM: Due for you lists sections to read again, then unfinished plans,
   assert.strictEqual(share(h.d, 'Chapter 05 — Power Mobility'), '0%');
   const tile = [...h.d.querySelectorAll('.hb-card')].filter((c) => /Respiratory/.test(c.textContent))[0];
   assert.ok(/Quiz passed|Your department/.test(tile.textContent) && /50% read/.test(tile.textContent), 'the tile carries its share');
-  // Nothing loaded for Training: no count is invented (g53).
+  // Nothing loaded for Training: no count is invented (g53) — and F47 (cycle 26): it is not left blank either, which read as "nothing due".
   const none = await hbBoot_({ answers: HBR_ALL({ hbMyTraining: { __fail: 'x' }, hbMySignOffs: { __fail: 'x' } }) });
-  assert.strictEqual(none.d.querySelector('[data-count="training"]').textContent, '');
+  const badge = none.d.querySelector('[data-count="training"]');
+  assert.deepStrictEqual([badge.textContent, /could not be loaded/.test(badge.getAttribute('title'))], ['?', true]);
   assert.strictEqual(share(none.d, 'Chapter 03 — Respiratory & Resupply'), '', 'no share without sign-offs');
 });
 
