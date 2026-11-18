@@ -14835,3 +14835,93 @@ test('F29 + F30 DOM (cycle 26): the shell sends WHEN the last gesture was with i
   h.run.flushSuccess({ success: false }, 'recordActivityCounts');
   assert.deepStrictEqual(held(), [0, 0]);
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cycle 26 Batch 10 — Stats (F34, F35)
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 26 Batch 10 — Stats');
+
+const b10Rep_ = (id, name, over) => Object.assign({ repId: id, repName: name, totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83, tttFormatted: '1:00:00', attFormatted: '0:06:00', tttSeconds: 3600, attSeconds: 360,
+  noteCount: 8, noteCoverage: 80, intakeNotes: 1, hasCdrData: true, transferred: 0, queues: {}, queueTotal: 0, queueUnattributed: 0, outbound: { placed: 0, connected: 0, talkSec: 0 }, adjusted: null }, over || {});
+const b10Cells_ = (h, name) => {
+  const ths = Array.from(h.$$('#m-team-content th')).map((t) => t.textContent.replace(/[▲▼]/g, '').trim());
+  const tr = Array.from(h.$$('#m-team-content tbody tr')).filter((r) => r.textContent.indexOf(name) >= 0)[0];
+  const tds = Array.from(tr.querySelectorAll('td')).map((t) => t.textContent.trim());
+  const out = {};
+  ths.forEach((t, i) => { out[t] = tds[i]; });
+  return out;
+};
+
+test('F35 DOM: Team → Today, before the call report is in — the rail has ONE call row with no figure and says why, the outbound row says it is not in yet, and a listed rep\'s call cells are dashes; Copy table exports them blank', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const noCdr = { totalRung: 0, totalAnswered: 0, totalMissed: 0, pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0, noteCoverage: null, hasCdrData: false };
+  const data = fullTeamData_({ teamTotals: { pctAnswered: null, rung: 0, answered: 0, missed: 0, tttFormatted: '0:00:00', noteCount: 16, noteCoverage: null, outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0,
+      adjusted: null, hasCallData: false, callDataPending: true },
+    outboundMeta: { available: true, error: null, through: '2026-06-14' },
+    reps: [b10Rep_('E1', 'Ana', noCdr), b10Rep_('E2', 'Ben', noCdr)] });
+  h.window.mRenderTeamMetrics_(data);
+  const rail = h.$('#m-team-content .m-rail');
+  const labels = Array.from(rail.querySelectorAll('.m-row-label')).map((l) => l.textContent);
+  assert.deepStrictEqual(labels.slice(0, 2), ['Calls', 'Notes filed'], 'THE REGRESSION: Rung 0 · Answered 0 · Missed 0 · Total talk 0:00:00 — ' + labels.join('|'));
+  assert.ok(/Calls\s*—\s*Call data for this day is not in yet — it is imported the next morning\./.test(rail.textContent), rail.textContent);
+  assert.ok(!rail.querySelector('.m-row-value.good'), 'nothing green: a day with no data missed nothing and answered nothing');
+  assert.ok(/Outbound calls\s*—\s*not in yet — outbound data is in through 06-14/.test(rail.textContent), 'the outbound row: ' + rail.textContent);
+  const ana = b10Cells_(h, 'Ana');
+  assert.deepStrictEqual([ana.Rung, ana.Answered, ana.Missed, ana['% Ans'], ana.ATT, ana.Outbound, ana.Notes], ['—', '—', '—', '—', '—', '—', '8'], 'no call-data row: dashes, and her notes still counted — ' + JSON.stringify(ana));
+  const tsv = h.read('mTeamTableTsv_')(data, 'combined', { key: 'repName', dir: 'asc' }).split('\n');
+  assert.ok(/^Ana\t\t\t\t\t\t8\t1\t\t\t\t\t$/.test(tsv[1]), 'exported blank, never 0: ' + JSON.stringify(tsv[1]));
+  // An older window with no row: no calls — and nothing promised.
+  h.window.mRenderTeamMetrics_(Object.assign({}, data, { teamTotals: Object.assign({}, data.teamTotals, { callDataPending: false }), outboundMeta: { available: true, error: null, through: '2026-06-15' } }));
+  assert.ok(/Calls\s*—\s*No call data for this day\./.test(h.$('#m-team-content .m-rail').textContent) && !/not in yet/.test(h.$('#m-team-content .m-rail').textContent));
+  // A day with data: the four rows, toned, and figures in the cells.
+  h.window.mRenderTeamMetrics_(fullTeamData_({ teamTotals: { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, hasCallData: true, callDataPending: false },
+    reps: [b10Rep_('E1', 'Ana'), b10Rep_('E2', 'Ben', noCdr)] }));
+  const rail2 = h.$('#m-team-content .m-rail');
+  assert.deepStrictEqual(Array.from(rail2.querySelectorAll('.m-row-label')).map((l) => l.textContent).slice(0, 4), ['Rung', 'Answered', 'Missed', 'Total talk']);
+  assert.ok(rail2.querySelector('.m-row-value.good') && rail2.querySelector('.m-row-value.warn'));
+  assert.deepStrictEqual([b10Cells_(h, 'Ana').Rung, b10Cells_(h, 'Ben').Rung, b10Cells_(h, 'Ben').ATT], ['12', '—', '—'], 'one rep with no row beside one with: only hers is a dash');
+});
+
+test('F35 DOM: the Team table\'s Intake header sorts the rows — it turned its arrow and left them in name order', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  h.window.mRenderTeamMetrics_(fullTeamData_({ teamTotals: { pctAnswered: 83, rung: 36, answered: 30, missed: 6, tttFormatted: '3:00:00', noteCount: 24, noteCoverage: 80, hasCallData: true },
+    reps: [b10Rep_('E1', 'Ana', { intakeNotes: 1 }), b10Rep_('E2', 'Ben', { intakeNotes: 4 }), b10Rep_('E3', 'Cy', { intakeNotes: null })] }));
+  const names = () => Array.from(h.$$('#m-team-content tbody tr .m-rep-link')).map((b) => b.textContent);
+  h.window.mTeamSort_('intakeNotes');
+  assert.deepStrictEqual(names(), ['Ben', 'Ana', 'Cy'], 'most intake calls first; an unread count last');
+  const th = Array.from(h.$$('#m-team-content th')).filter((t) => /^Intake/.test(t.textContent.trim()))[0];
+  assert.strictEqual(th.getAttribute('aria-sort'), 'descending', 'and the header says what the rows now are');
+  h.window.mTeamSort_('intakeNotes');
+  assert.deepStrictEqual(names(), ['Cy', 'Ana', 'Ben'], 'and the other way');
+});
+
+test('F35 + F34 DOM: My Stats — a day whose outbound export is not in says so even with no call placed, a covered day with none draws no row; the adjusted average sits beside the average it was taken from', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  const cdr = { totalRung: 46, totalAnswered: 40, totalMissed: 6, pctAnswered: 87, tttFormatted: '3:20:00', attFormatted: '0:05:00', tttSeconds: 12000, attSeconds: 300 };
+  const zero = { placed: 0, connected: 0, talkSec: 0 };
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: zero, outboundThrough: '2026-10-12', adjusted: null }));
+  const rail = () => h.$('#m-my-content .m-rail').textContent;
+  assert.ok(/Outbound calls\s*—\s*not in yet — outbound data is in through 10-12/.test(rail()), 'THE REGRESSION: no row — the same page as a rep who placed none: ' + rail());
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: zero, outboundThrough: '2026-10-13', adjusted: null }));
+  assert.ok(!/Outbound calls/.test(rail()), 'the export holds the day and no call was placed: no row');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr: null, outbound: zero, outboundThrough: '2026-10-12', adjusted: null }));
+  assert.ok(h.$('#m-my-content .m-empty') && /Outbound calls\s*—\s*not in yet/.test(h.$('#m-my-content').textContent), 'below the "No call data" card too');
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: zero, outboundThrough: '2026-10-13',
+    adjusted: { handled: 40, talkSec: 12000, talkFormatted: '3:20:00', outbound: zero, intakeTimed: 3, intakeAvgSec: 1000, attSec: 300, attFormatted: '0:05:00', attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' } }));
+  const panel = h.$('#m-my-content .m-adj');
+  assert.ok(panel && /Avg talk excl\. intake\s*0:04:03\s*0:05:00 with them · 3 timed intake calls, ≈17 min each/.test(panel.textContent), panel && panel.textContent);
+  assert.deepStrictEqual(Array.from(panel.querySelectorAll('.m-row-label')).map((l) => l.textContent), ['Avg talk excl. intake'], 'no outbound call placed: only the intake line');
+});
+
+test('F34 DOM: an AMENDED intake send logs its call note with no form time — correcting a sent form is not a call', () => {
+  const h = boot(); mount_(h, 'view-area');
+  h.run.drain();
+  h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {}, amendsSubmissionId: 'SUB-77' }, 'Sales', null, false, 95);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[0].args[0].subformData)), { intakeType: 'pmd' },
+    'THE REGRESSION: completionSeconds 95 — counted as a timed intake call and taken out of the rep\'s average talk time');
+  h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {}, amendsSubmissionId: '' }, 'Sales', null, false, 95);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[1].args[0].subformData)), { intakeType: 'pmd', completionSeconds: 95 }, 'a new submission keeps its time');
+});

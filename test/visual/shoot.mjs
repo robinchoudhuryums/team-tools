@@ -266,6 +266,13 @@ const SCENARIOS = [
   // call-data report never covers — every rep listed through notes, no rates
   // (M1: "—", never a red 0%). The three shots above/below preset a past range.
   ['metrics-team-today-light-wide', { tool: 'timeClock', tab: 'metricsTeam' }, WIDE, 'light', ''],
+  // Cycle 26 F35: the same lagged Today on a phone in dark — ONE call row
+  // with no figure and its reason (it drew "Answered 0 · Missed 0" in green),
+  // and the outbound row saying the export is not in yet.
+  ['metrics-team-today-dark-mobile', { tool: 'timeClock', tab: 'metricsTeam' }, MOBILE, 'dark', ''],
+  // Cycle 26 F35: My Stats on TODAY — the outbound export never holds it, and
+  // the rail says so whatever was placed (no row at all before).
+  ['metrics-today-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '', "M_STATE.myMode='single';M_STATE.myDate=mTodayIso_();mMyStatsSyncPresets_();mLoadMyStats_()"],
   ['metrics-team-dark-wide',  { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],

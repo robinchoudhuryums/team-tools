@@ -363,12 +363,18 @@ function runRecAgo(msAgo, notes) {
       outbound: ob ? Object.assign({}, ob, { talkFormatted: mFmt(ob.talkSec) }) : null,
       intakeTimed: it ? it.timed : 0, intakeAvgSec: it && it.timed ? Math.round(it.seconds / it.timed) : null, attExIntakeSec: null };
     o.talkFormatted = mFmt(o.talkSec);
-    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
+    o.attSec = ans > 0 ? Math.round(ttt / ans) : null;   // F34: the average the adjusted one is taken from, on the same sum
+    o.attFormatted = o.attSec == null ? null : mFmt(o.attSec);
+    if (it && it.timed > 0 && ans > it.timed && ttt > it.seconds && it.seconds * ans > ttt * it.timed) o.attExIntakeSec = Math.round((ttt - it.seconds) / (ans - it.timed));
     o.attExIntakeFormatted = o.attExIntakeSec == null ? null : mFmt(o.attExIntakeSec);
     return o;
   };
   var myOb = { placed: 6, connected: 4, talkSec: 1325 }, myIt = { timed: 3, seconds: 3240 };   // M1 — My Stats' own day
-  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:44', attFormatted: '0:04:41', tttSeconds: 11564, attSeconds: 281 };
+  // F35: the outbound export never holds a day after `outboundThrough` — a
+  // fixture that placed six calls on such a day drew a state the server
+  // cannot produce (INV-185), so the day asked for decides.
+  var myObOn = function (date) { return String(date || todayIso) > daysAgo(1) ? { placed: 0, connected: 0, talkSec: 0 } : myOb; };
+  var kpis = { totalRung: 46, totalAnswered: 41, totalMissed: 5, pctAnswered: 89, tttFormatted: '3:12:01', attFormatted: '0:04:41', tttSeconds: 11521, attSeconds: 281 };   // F34: 41 calls × 281 s — the day's talk and its average agree, as the sheet's do
   // The server's trends walk WORKDAYS only (metricsWorkdayIsos_, 2026-09-04) —
   // the fixture mirrors that (INV-185): weekend dates are skipped, not gaps.
   function isWeekendIso(iso) { var dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return dow === 0 || dow === 6; }
@@ -841,7 +847,7 @@ function runRecAgo(msAgo, notes) {
     // shape depends on its arguments must BE a function of them.
     getMyMetrics: function (date) {
       return { date: date || todayIso, repName: 'Avery Blake', cdr: kpis, trend: trend30(), series: kpiSeries(), kpiMinCohort: 3, noteCount: 35, noteCoverage: 85, missingCount: 6, intakeNotes: 3,
-        outbound: myOb, outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myOb, myIt),   // M1
+        outbound: myObOn(date), outboundThrough: daysAgo(1), outboundUnavailable: null, intakeTimed: myIt, adjusted: adjOf(kpis, myObOn(date), myIt),   // M1
         transfer: { transferred: 4, transferPct: 9.8 }, alertThreshold: 85, standardSource: 'sheet' };   // F-08: the source rides every Metrics payload
     },
     // Batch 8 — the Catalog browse tab. Mirrors intakeListOfferings exactly:
@@ -909,7 +915,8 @@ function runRecAgo(msAgo, notes) {
         teamTotals: { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: populated.teamTotals.noteCount,
           transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
           tttFormatted: '0:00:00', noteCoverage: null, transferPct: null,
-          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null },
+          outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null,
+          hasCallData: false, callDataPending: true },   // F35: today's call data is not in yet
         outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
         unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
         queueRows: [], groupRows: [],
@@ -967,6 +974,7 @@ function runRecAgo(msAgo, notes) {
       totals.adjusted = adjOf({ totalAnswered: totals.answered, tttSeconds: totals.tttSeconds },
         { placed: totals.outboundPlaced, connected: totals.outboundConnected, talkSec: totals.outboundTalkSec }, tIt);
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
+      totals.hasCallData = true; totals.callDataPending = false;   // F35
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
       // #5 — mirrors the server: null unless the Transfer read succeeded AND

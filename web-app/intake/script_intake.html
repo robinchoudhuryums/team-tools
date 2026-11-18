@@ -4885,6 +4885,12 @@ function intakeNoteFields_(formType, payload, recipient, recs) {
   };
 }
 
+/** PURE — the form time an intake send's call note carries: the seconds from
+ *  first input to send, and none for an amendment of a sent submission. */
+function intakeNoteTimedSec_(payload, formSec) {
+  if (payload && String(payload.amendsSubmissionId || '').trim()) return 0;
+  return formSec > 0 ? formSec : 0;
+}
 function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec) {
   var f = intakeNoteFields_(formType, payload, recipient, recs);
   var label = f.label, ft = f.ft;
@@ -4917,7 +4923,10 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec)
   };
   // M1: the form's time (first input to send) — the whitelisted
   // completionSeconds the Call Notes form timer already writes.
-  if (formSec > 0) notePayload.subformData.completionSeconds = formSec;
+  // F34 (cycle 26): never for an AMENDMENT — correcting a sent form is not a
+  // call, and its few seconds were counted as a timed intake call and taken
+  // out of the rep's average talk time.
+  if (intakeNoteTimedSec_(payload, formSec) > 0) notePayload.subformData.completionSeconds = formSec;
   google.script.run
     .withSuccessHandler(function (res) {
       var ok = res && res.success;

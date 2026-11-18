@@ -805,7 +805,7 @@ function mRenderMyStats_(data) {
     // M1: a day with outbound calls and no inbound ones is still a day of
     // calls — the outbound row and the Adjusted panel stand below the card
     // (never when the inbound read FAILED: there is nothing to add them to).
-    if (!data.cdrUnavailable) html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date) + mAdjustedHtml_(data.adjusted, 'my');
+    if (!data.cdrUnavailable) html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date, data.from || data.date) + mAdjustedHtml_(data.adjusted, 'my');
     el.innerHTML = html;
     return;
   }
@@ -894,7 +894,7 @@ function mRenderMyStats_(data) {
       isRange ? null : { values: seriesOwn('transferPct') });
   }
   html += mRailRow_('Total talk', c.tttFormatted);
-  html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date);   // M1
+  html += mOutboundRowHtml_(data.outbound, data.outboundUnavailable, data.outboundThrough, data.to || data.date, data.from || data.date);   // M1
   html += '</div>';
   html += '</div>';
   html += mAdjustedHtml_(data.adjusted, 'my');   // M1 — beside the actual figures, never in place of them
@@ -1169,12 +1169,38 @@ function mMiniSparkSvg_(values) {
  *  { values:[…], tone:'warn'? } trend sparkline rendered full-width below. */
 /** M1 — the Outbound calls rail row: drawn when the rep placed a call, or
  *  when the tab could not be read (named, never a zero — INV-175); the
- *  export runs each morning, so a window past its newest day says so. */
-function mOutboundRowHtml_(ob, unavailable, through, to) {
+ *  export runs each morning, so a window past its newest day says so.
+ *
+ *  F35 (cycle 26): and says so WHATEVER was placed. The notice rode the
+ *  placed-a-call branch only, so in exactly the lagged case — the day's
+ *  inbound calls in, its outbound export not yet — there was no row at all,
+ *  the same page as "placed none". mOutboundLag_ is the one rule: a window
+ *  wholly past the export's newest day has NO figure ("—", not in yet); one
+ *  that only reaches past it keeps its count and names the day it is in
+ *  through. A window the export covers, with no call placed, still draws
+ *  nothing (most reps place none). */
+function mOutboundRowHtml_(ob, unavailable, through, to, from) {
   if (unavailable) return mRailRow_('Outbound calls', '—', 'warn', 'not read — ' + unavailable);
-  if (!ob || !(ob.placed > 0)) return '';
-  var lag = through && to && through < to ? ' · data through ' + String(through).substring(5) : '';
-  return mRailRow_('Outbound calls', ob.placed, ob.connected + ' connected · ' + mFmtTalk_(ob.talkSec) + ' talk' + lag);
+  if (!ob) return '';
+  var lag = mOutboundLag_(through, from || to, to);
+  if (lag.state === 'none') return mRailRow_('Outbound calls', '—', lag.text);
+  var placed = ob.placed > 0;
+  if (!placed && lag.state !== 'part') return '';
+  return mRailRow_('Outbound calls', ob.placed || 0,
+    (placed ? ob.connected + ' connected · ' + mFmtTalk_(ob.talkSec) + ' talk' : '') + (lag.text ? (placed ? ' · ' : '') + lag.text : ''));
+}
+/** PURE — how far the outbound export reaches into a window [from, to].
+ *  {state: 'in' | 'part' | 'none', text}: 'none' when the window starts after
+ *  the export's newest day (or the tab holds no day at all) — nothing for it
+ *  has arrived; 'part' when only its end is past that day. */
+function mOutboundLag_(through, from, to) {
+  var day = function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : ''; };
+  var th = day(through), f = day(from), t = day(to);
+  if (!t) return { state: 'in', text: '' };
+  if (!th) return { state: 'none', text: 'not in yet — the Outbound Calls tab holds no day' };
+  if (th >= t) return { state: 'in', text: '' };
+  if (f && f > th) return { state: 'none', text: 'not in yet — outbound data is in through ' + th.substring(5) };
+  return { state: 'part', text: 'data through ' + th.substring(5) };
 }
 function mFmtTalk_(sec) {
   sec = Math.max(0, Math.round(Number(sec) || 0));
@@ -1195,7 +1221,10 @@ function mAdjustedHtml_(adj, scope) {
   }
   if (adj.attExIntakeFormatted) {
     var mins = adj.intakeAvgSec != null ? Math.round(adj.intakeAvgSec / 60) : null;
+    // F34: beside the average it was taken from — talk ÷ answered, the same
+    // sum — so the two lines are one comparison (absent on an older payload).
     rows += mRailRow_('Avg talk excl. intake', adj.attExIntakeFormatted,
+      (adj.attFormatted ? adj.attFormatted + ' with them · ' : '') +
       adj.intakeTimed + ' timed intake call' + (adj.intakeTimed === 1 ? '' : 's') + (mins != null ? ', ≈' + mins + ' min each' : ''));
   }
   if (!rows) return '';
@@ -1206,7 +1235,8 @@ function mAdjustedHtml_(adj, scope) {
         icon('info', 14) + '</button></div>' +
     '<div class="m-adj-why" id="' + id + '" hidden>The actual figures above are unchanged. <b>Handled calls</b> and <b>talk</b> add the connected outbound calls ' +
       '(from the CDR Report\u2019s Outbound Calls tab) and their talk time. <b>Avg talk excl. intake</b> takes the intake calls out, using each intake form\u2019s ' +
-      'time from first input to send as its length \u2014 an estimate, and only for forms the app timed. % Answered is never adjusted: it is the inbound standard.</div>' +
+      'time from first input to send as its length \u2014 an estimate, only for forms the app timed, and only when those forms ran longer than the average call ' +
+      '(a form\u2019s time is the least its call can have lasted). % Answered is never adjusted: it is the inbound standard.</div>' +
     rows + '</div>';
 }
 function mAdjInfo_(btn) {
@@ -1289,21 +1319,30 @@ function mTeamAdjColumns_(data) {
   var cols = [];
   var dash = '<span style="color:var(--muted)">—</span>';
   if (data && data.outboundMeta && data.outboundMeta.available) {
+    var obLag = mOutboundLag_(data.outboundMeta.through, data.from || data.date, data.to || data.date);
     cols.push({ key: 'outboundPlaced', label: 'Outbound', numeric: true, sortable: true, cell: function (r) {
       if (!r.outbound) return dash;
+      if (obLag.state === 'none') return '<span style="color:var(--muted)" title="' + esc(obLag.text) + '">—</span>';   // F35: not a zero
       if (!r.outbound.placed) return '<span style="color:var(--muted)">0</span>';
       return '<span title="' + esc(r.outbound.connected + ' connected · ' + mFmtTalk_(r.outbound.talkSec) + ' talk') + '">' + esc(r.outbound.placed) + '</span>'; } });
   }
   if (reps.some(function (r) { return r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0; })) {
     cols.push({ key: 'adjHandled', label: 'Handled (adj.)', numeric: true, sortable: true, cell: function (r) {
-      return r.adjusted ? esc(r.adjusted.handled) : esc(r.totalAnswered); } });
+      return r.adjusted ? esc(r.adjusted.handled) : (mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered)); } });
   }
   if (reps.some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; })) {
     cols.push({ key: 'attExIntake', label: 'ATT excl. intake', numeric: true, sortable: true, cell: function (r) {
-      return r.adjusted && r.adjusted.attExIntakeFormatted ? esc(r.adjusted.attExIntakeFormatted) : dash; } });
+      if (!(r.adjusted && r.adjusted.attExIntakeFormatted)) return dash;
+      var a = r.adjusted;   // F34: the average it was taken from, on the same sum
+      return a.attFormatted ? '<span title="' + esc(a.attFormatted + ' with the ' + a.intakeTimed + ' timed intake call' + (a.intakeTimed === 1 ? '' : 's')) + '">' + esc(a.attExIntakeFormatted) + '</span>'
+        : esc(a.attExIntakeFormatted); } });
   }
   return cols;
 }
+/** F35 — a rep row with no call-data row in the window (the server says so;
+ *  a payload that does not say draws as before). */
+function mNoCallData_(r) { return !!r && r.hasCdrData === false; }
+function mNoCallCell_() { return '<span style="color:var(--muted)" title="no call data for this rep in this window">—</span>'; }
 function mSortReps_(reps, sort) {
   var key = sort.key, dir = (sort.dir === 'asc') ? 1 : -1;
   var get = function (r) {
@@ -1315,6 +1354,7 @@ function mSortReps_(reps, sort) {
       case 'pctAnswered': return (r.pctAnswered == null ? -1 : r.pctAnswered);   // M1: no rate sorts lowest, never as 0%
       case 'attSeconds': return r.attSeconds || 0;
       case 'noteCount': return r.noteCount || 0;
+      case 'intakeNotes': return (r.intakeNotes == null ? -1 : r.intakeNotes);   // F35: the column was sortable and had no case; unread sorts lowest
       case 'noteCoverage': return (r.noteCoverage == null ? -1 : r.noteCoverage);
       case 'transferred': return r.transferred || 0;   // Phase 2
       case 'outboundPlaced': return r.outbound ? r.outbound.placed : -1;   // M1: unread sorts lowest
@@ -1600,6 +1640,23 @@ function mLoadTeamMetrics_(opts) {
     .getTeamMetrics(from, to);
 }
 
+/** PURE — the Team rail's four call rows. F35 (cycle 26): a window in which
+ *  no rep has a call-data row has no call figures — the rows drew "Answered 0"
+ *  and "Missed 0" in green for a today the import never holds, which reads as
+ *  a team that missed nothing. They are ONE row with no figure and the
+ *  reason: not in yet (the report is imported the next morning) or no calls
+ *  in the window.
+ *  `hasCallData` absent (a payload from before this) draws as before. */
+function mTeamCallRowsHtml_(t, multiDay) {
+  if (t && t.hasCallData === false) {
+    var span = multiDay ? 'this range' : 'this day';
+    var why = t.callDataPending ? 'Call data for ' + span + ' is not in yet — it is imported the next morning.'
+      : 'No call data for ' + span + '.';
+    return mRailRow_('Calls', '—', why);
+  }
+  return mRailRow_('Rung', t.rung) + mRailRow_('Answered', t.answered, 'good') +
+    mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good') + mRailRow_('Total talk', t.tttFormatted);
+}
 function mRenderTeamMetrics_(data) {
   var el = document.getElementById('m-team-content');
   if (!el) return;
@@ -1674,10 +1731,7 @@ function mRenderTeamMetrics_(data) {
 
   // Side rail
   html += '<div class="m-rail">';
-  html += mRailRow_('Rung', t.rung);
-  html += mRailRow_('Answered', t.answered, 'good');
-  html += mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good');
-  html += mRailRow_('Total talk', t.tttFormatted);
+  html += mTeamCallRowsHtml_(t, multiDay);
   // F5: flag a team total assembled from at least one unreadable rep Sheet.
   // NOTE mRailRow_'s 3rd arg is polymorphic (tone OR sub-line) and `sub` is
   // only rendered on the TONE branch — so the two cases need distinct calls.
@@ -1695,7 +1749,7 @@ function mRenderTeamMetrics_(data) {
   // M1 — the team's outbound calls (named when the tab could not be read).
   var om = data.outboundMeta || null;
   if (om) html += mOutboundRowHtml_(om.available ? { placed: t.outboundPlaced, connected: t.outboundConnected, talkSec: t.outboundTalkSec } : null,
-    om.available ? null : om.error, om.through, data.to || data.date);
+    om.available ? null : om.error, om.through, data.to || data.date, data.from || data.date);
   html += '</div>';
   html += '</div>';
   html += mAdjustedHtml_(t.adjusted, 'team');   // M1
@@ -1824,11 +1878,13 @@ function mRenderTeamMetrics_(data) {
             return '<button type="button" class="m-rep-link" data-rep="' + esc(r.repId) + '"' +
               ' data-date="' + esc(drillDate) + '" onclick="mRepDrill_(this)"' +
               ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>'; } },
-        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return esc(r.totalRung); } },
-        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return esc(r.totalAnswered); } },
-        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'; } },
+        // F35 (cycle 26): a rep with no call-data row in the window (the lagged
+        // Today, PTO, a non-phone day) has no call figures — "—", never a 0.
+        { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalRung); } },
+        { key: 'totalAnswered', label: 'Answered', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered); } },
+        { key: 'totalMissed', label: 'Missed', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : (r.totalMissed > 0 ? '<span style="color:var(--warn)">' + esc(r.totalMissed) + '</span>' : '0'); } },
         { key: 'pctAnswered', label: '% Ans', numeric: true, sortable: true, cell: function (r) { return (r.pctAnswered == null) ? '<span style="color:var(--muted)">—</span>' : '<span class="' + mPctClass_(r.pctAnswered, thr, band) + '">' + esc(r.pctAnswered) + '%</span>'; } },
-        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return esc(r.attFormatted); } },
+        { key: 'attSeconds', label: 'ATT', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.attFormatted); } },
         // F5 (cycle 12): a rep whose notes Sheet could not be read shows "—",
         // not "0" — a zero here reads as a rep who logged nothing.
         { key: 'noteCount', label: 'Notes', numeric: true, sortable: true, cell: function (r) { return r.noteCountUnavailable ? '<span style="color:var(--warn)" title="notes Sheet unreadable — count unavailable">—</span>' : esc(r.noteCount); } },
@@ -2006,6 +2062,7 @@ function mTeamTableTsv_(data, scope, sort) {
     var hasTr = !!(data.queueRows && data.queueRows.length);
     var head = ['Rep', 'Rung', 'Answered', 'Missed', '% Ans', 'ATT', 'Notes', 'Intake', 'Coverage'];
     var hasOb = !!(data.outboundMeta && data.outboundMeta.available);   // M1
+    var obPast = hasOb && mOutboundLag_(data.outboundMeta.through, data.from || data.date, data.to || data.date).state === 'none';
     if (hasOb) head.push('Outbound placed', 'Outbound connected', 'Outbound talk', 'Handled (adj.)');
     var hasAdjAtt = (data.reps || []).some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; });
     if (hasAdjAtt) head.push('ATT excl. intake');
@@ -2013,15 +2070,17 @@ function mTeamTableTsv_(data, scope, sort) {
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
     reps.forEach(function (r) {
-      var row = [r.repName, r.totalRung, r.totalAnswered, r.totalMissed,
+      var noCalls = mNoCallData_(r);   // F35: no call-data row exports BLANK, never 0
+      var row = [r.repName, noCalls ? '' : r.totalRung, noCalls ? '' : r.totalAnswered, noCalls ? '' : r.totalMissed,
         (r.pctAnswered != null ? r.pctAnswered + '%' : ''),
-        r.attFormatted,
+        noCalls ? '' : r.attFormatted,
         (r.noteCountUnavailable ? '' : r.noteCount),
         (r.intakeNotes == null ? '' : r.intakeNotes),   // batch 6 — an unavailable count exports BLANK, never 0
         (r.noteCoverage != null ? r.noteCoverage + '%' : '')];
       // M1: an outbound figure that was not read exports BLANK, never 0.
-      if (hasOb) row.push(r.outbound ? r.outbound.placed : '', r.outbound ? r.outbound.connected : '', r.outbound ? mFmtTalk_(r.outbound.talkSec) : '',
-        r.adjusted ? r.adjusted.handled : r.totalAnswered);
+      var ob = (r.outbound && !obPast) ? r.outbound : null;   // F35: a window the export has not reached exports BLANK too
+      if (hasOb) row.push(ob ? ob.placed : '', ob ? ob.connected : '', ob ? mFmtTalk_(ob.talkSec) : '',
+        r.adjusted ? r.adjusted.handled : (noCalls ? '' : r.totalAnswered));
       if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
       out.push(tsvRow_(row));

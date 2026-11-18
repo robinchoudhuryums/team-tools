@@ -4604,6 +4604,24 @@
     "recordPunchCore_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-18",
+   "why": "Cycle 26 Batch 10: the outbound reader is stamped and shared (F24), the adjusted average is on one basis (F34), the team call-data state (F35)",
+   "added": [
+    "cdrOutboundWindowIsPastData_",
+    "teamCallDataState_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrDataStamp_",
+    "getCdrOutboundPerRep_",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "metricsAdjusted_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -8786,7 +8804,7 @@
   "cdrDataStamp_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "11283761e9f4d929"
+   "sha": "338caf7d42a5fde8"
   },
   "cdrDateColIsos_": {
    "file": "40_metrics.js",
@@ -8847,6 +8865,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "7c51f38099ac5d99"
+  },
+  "cdrOutboundWindowIsPastData_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "a904aee9d91968c8"
   },
   "cdrParseDateRanges_": {
    "file": "40_metrics.js",
@@ -10501,7 +10524,7 @@
   "getCdrOutboundPerRep_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "4c6153b39c73ec5e"
+   "sha": "bb5b02952df6a2c6"
   },
   "getCdrQueueGroups_": {
    "file": "40_metrics.js",
@@ -10901,12 +10924,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "5f3f107d03387f55"
+   "sha": "b7db0ea8764f721f"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c18de6e6a4ff72aa"
+   "sha": "d149780d9f6cbe9d"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -11336,7 +11359,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "5023ef5edce03dcf"
+   "sha": "c74423d4eac91b54"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -12951,7 +12974,7 @@
   "metricsAdjusted_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "be6557fd31180209"
+   "sha": "c9fc8da03dc53af5"
   },
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
@@ -15112,6 +15135,11 @@
    "file": "10_core.js",
    "kind": "function",
    "sha": "befe34762d40e5be"
+  },
+  "teamCallDataState_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "ea6622831afe1a27"
   },
   "teamMetricsRepView_": {
    "file": "40_metrics.js",

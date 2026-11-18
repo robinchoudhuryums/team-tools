@@ -11074,7 +11074,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\)\) \{/.test(f),   // MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v4:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v5:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -22404,7 +22404,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v4:/.test(my) && /metrics_range_v4:/.test(rng) && /team_metrics_v4:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v5:/.test(my) && /metrics_range_v5:/.test(rng) && /team_metrics_v5:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -33881,7 +33881,8 @@ test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoi
       getCdrAgentMetrics_: () => agg, getCdrDailyBreakdown_: () => bd, metricsWorkdayIsos_: () => ['2026-05-04'],
       getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }),
       cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: c.cdrAgentsOrThrow_,
-      getCdrOutboundPerRep_: () => ({ agents: {}, through: null }) };   // M1: the outbound tab, read clean and empty
+      getCdrOutboundPerRep_: () => ({ agents: {}, through: null }),   // M1: the outbound tab, read clean and empty
+      cdrCohortNames_: () => ['Ann'], getEmployeeRosterRows_: () => [] };   // F24: asked with the one cohort list
     vm.createContext(ctx);
     ['metricsOutboundOf_', 'metricsAdjusted_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     vm.runInContext(extractRawFunction('Code.js', 'getMyMetricsRange'), ctx);
@@ -43368,8 +43369,12 @@ const m1Ctx_ = (extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, console: { warn() {}, log() {} } }, extra || {}));
   ['const METRICS_INTAKE_TIMED_MIN_SEC = \\d+;', 'const METRICS_INTAKE_TIMED_MAX_SEC = \\d+;']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
-  vm.runInContext('var _cdrDateColMemo = {};', ctx);
+  vm.runInContext('var _cdrDateColMemo = {}; var _cdrCacheOversize = [];', ctx);
+  ['var CDR_WINDOW_CACHE_TTL = \\d+;', 'var CDR_CACHE_VALUE_MAX = \\d+;']
+    .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0], ctx));
+  if (typeof ctx.cdrDataStamp_ !== 'function') ctx.cdrDataStamp_ = () => '';   // F24: no stamp unless a test names one
   ['cdrParseHms_', 'cdrFmtHms_', 'cdrRowDateIso_', 'cdrDateColIsos_', 'cdrDqeWindowSpan_', 'cdrOutboundColumns_', 'cdrOutboundAggregate_',
+    'cdrWindowCacheSpec_', 'cdrCacheOversizeNote_', 'cdrCachePutSized_', 'cdrOutboundWindowIsPastData_',
     'getCdrOutboundPerRep_', 'metricsAdjusted_', 'metricsOutboundOf_', 'cnCountIntakeNotesResult_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'M1#' + f }));
   return ctx;
@@ -43410,7 +43415,7 @@ test('M1: getCdrOutboundPerRep_ over a real-shaped tab — a missing tab or colu
     const sheet = { getLastRow: () => data.length + 1, getLastColumn: () => (opts.head || head).length,
       getRange: (r, col, n, w) => { reads.push([r, col, n, w]); if (opts.throwRead) throw new Error('quota');
         return { getDisplayValues: () => [opts.head || head], getValues: () => data.slice(r - 2, r - 2 + n).map((x) => x.slice(col - 1, col - 1 + (w || 1))) }; } };
-    const c = m1Ctx_({ CONFIG: { CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_CACHE_TTL: 300 },
+    const c = m1Ctx_({ CONFIG: { CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_CACHE_TTL: 300, CDR_CACHE_KEY: 'cdr' },
       CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
       cdrRosterHash_: () => 'h', getCdrNameMap_: () => ({}), cdrNameMapDegraded_: () => !!opts.degraded,
       getCdrSS_: () => ({ getSheetByName: (t) => (opts.noTab ? null : t === 'Outbound Calls' ? sheet : null), getSpreadsheetTimeZone: () => 'UTC' }) });
@@ -43440,8 +43445,8 @@ test('M1: the ADJUSTED figures sit beside the actual ones — handled = answered
   assert.deepStrictEqual([a.outbound.placed, a.outbound.connected, a.outbound.talkFormatted], [6, 4, '0:15:00']);
   assert.deepStrictEqual([a.intakeTimed, a.intakeAvgSec, a.attExIntakeSec, a.attExIntakeFormatted], [3, 1000, 243, '0:04:03'], '(12000 − 3000) ÷ (40 − 3)');
   assert.ok(!('pctAnswered' in a), 'the inbound standard is never adjusted');
-  const unread = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 600 }));
-  assert.deepStrictEqual([unread.outbound, unread.handled, unread.attExIntakeSec], [null, 40, 300], 'an unread outbound tab adds nothing — the intake part still stands');
+  const unread = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 800 }));
+  assert.deepStrictEqual([unread.outbound, unread.handled, unread.attExIntakeSec], [null, 40, 295], 'an unread outbound tab adds nothing — the intake part still stands: (12000 − 800) ÷ 38');
   assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 2, tttSeconds: 900 }, null, { timed: 2, seconds: 600 })).attExIntakeSec, null, 'every call an intake: nothing left to average');
   assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 9, tttSeconds: 500 }, null, { timed: 2, seconds: 600 })).attExIntakeSec, null, 'form time past the talk time is no average');
   assert.deepStrictEqual(m1J(c.metricsAdjusted_(null, { placed: 2, connected: 2, talkSec: 100 }, null)).handled, 2, 'an outbound-only day: the connected calls are the handled ones');
@@ -43464,10 +43469,10 @@ test('M1: an intake call\'s form time is read off its note — counted as timed 
 
 test('M1: the three Stats endpoints carry outbound + adjusted beside the actual figures — never cache a failed outbound read, keys bumped (INV-85); the team view lists an outbound-only rep, sums the outbound, and its rep view carries the tab\'s state but no names (source + driven range)', () => {
   const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
-  assert.ok(/var obRes = getCdrOutboundPerRep_\(date, date, \[emp\.name\]\);/.test(my) && /outboundUnavailable: obRes\.error \|\| null,/.test(my), 'My Stats reads the own day');
+  assert.ok(/var obRes = getCdrOutboundPerRep_\(date, date, allNames\);/.test(my) && /var ob = metricsOutboundOf_\(obRes, emp\.name\);/.test(my) && /outboundUnavailable: obRes\.error \|\| null,/.test(my), 'My Stats reads the own day — out of the cohort\'s one read (F24)');
   assert.ok(/adjusted: cdrUnavailable \? null : metricsAdjusted_\(todayCdr, ob,/.test(my), 'an unread inbound day has nothing to adjust');
   const rng = stripJsComments_(extractRawFunction('Code.js', 'getMyMetricsRange'));
-  assert.ok(/getCdrOutboundPerRep_\(from, to, \[emp\.name\]\)/.test(rng) && /&& !\(obRes\.error && !obRes\.steady\)\) \{/.test(rng), 'the range reads it, and a failed read is never cached');
+  assert.ok(/getCdrOutboundPerRep_\(from, to, cdrCohortNames_\(getEmployeeRosterRows_\(\)\)\)/.test(rng) && /&& !\(obRes\.error && !obRes\.steady\)\) \{/.test(rng), 'the range reads it (the cohort\'s one read, F24), and a failed read is never cached');
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   assert.ok(/var obRes = getCdrOutboundPerRep_\(from, toDate, rosterNames\);/.test(team) && /outboundMeta: outboundMeta,/.test(team), 'one read for the team, its state shipped');
   assert.ok(/\|\| \(rep\.outbound && rep\.outbound\.placed > 0\)\) \{/.test(team), 'a rep with outbound calls and no inbound ones is still listed');
@@ -43483,7 +43488,8 @@ test('M1: the three Stats endpoints carry outbound + adjusted beside the actual 
       getCdrAgentMetrics_: () => ({ agents: { Ann: { totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83.3, tttSeconds: 3000 } }, meta: {} }),
       getCdrDailyBreakdown_: () => ({ perRepDaily: {} }), metricsWorkdayIsos_: () => [],
       getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 2, timed: 2, seconds: 1200 }),
-      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents, getCdrOutboundPerRep_: () => ob };
+      cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents, getCdrOutboundPerRep_: () => ob,
+      cdrCohortNames_: () => ['Ann', 'Ben'], getEmployeeRosterRows_: () => [] };
     vm.createContext(ctx);
     ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     return { out: m1J(ctx.getMyMetricsRange('2026-11-03', '2026-11-07')), puts };
@@ -43507,12 +43513,12 @@ test('M1: the client — the intake form timer starts on the first input, is tak
     const clear = ik.indexOf('intakeClearDraft_(' + (f === 'ppd' ? "'ppd'" : 'form') + ');   // drop the persisted draft', take);
     assert.ok(take > 0 && clear > take, 'the time is taken before the form is cleared (' + f + ')');
   });
-  assert.ok(/if \(formSec > 0\) notePayload\.subformData\.completionSeconds = formSec;/.test(ik), 'the time rides the intake note (the whitelisted completionSeconds)');
+  assert.ok(/if \(intakeNoteTimedSec_\(payload, formSec\) > 0\) notePayload\.subformData\.completionSeconds = formSec;/.test(ik), 'the time rides the intake note (the whitelisted completionSeconds) — never an amendment\'s (F34)');
   assert.ok(/function intakeClearForm_\(form\) \{\s*INTAKE_TIMER\[form\] = 0;/.test(ik), 'a cleared form is a new call');
   const cn = stripJsComments_(extractRawFunction('Code.js', 'sanitizeCallNotePayload_'));
   assert.ok(/subformData\.completionSeconds = Math\.round\(cs\)/.test(cn), 'the server keeps completionSeconds (the whitelist)');
   const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
-  ['mRailRow_', 'mFmtTalk_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   vm.runInContext('var M_ADJ_SEQ = 0;', c);
   assert.strictEqual(c.mAdjustedHtml_(null, 'my'), '', 'nothing to adjust, no panel');
   const adj = { handled: 44, talkSec: 12900, talkFormatted: '3:35:00', outbound: { placed: 6, connected: 4, talkSec: 900, talkFormatted: '0:15:00' }, intakeTimed: 3, intakeAvgSec: 1000, attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
@@ -43521,8 +43527,8 @@ test('M1: the client — the intake form timer starts on the first input, is tak
   assert.ok(/aria-expanded="false" aria-controls="m-adj-why-my-1"/.test(html) && /id="m-adj-why-my-1" hidden/.test(html) && /% Answered is never adjusted/.test(html), 'the ⓘ is a disclosure, and says what is never adjusted');
   assert.ok(!/m-row-label">Handled calls/.test(c.mAdjustedHtml_(Object.assign({}, adj, { outbound: null }), 'my')) && /Avg talk excl\. intake/.test(c.mAdjustedHtml_(Object.assign({}, adj, { outbound: null }), 'my')), 'an unread outbound tab draws only the intake line');
   assert.ok(/not read — The tab/.test(c.mOutboundRowHtml_(null, 'The tab could not be read', null, '2026-11-09')), 'an unread tab is named on the row');
-  assert.strictEqual(c.mOutboundRowHtml_({ placed: 0, connected: 0, talkSec: 0 }, null, '2026-11-08', '2026-11-09'), '', 'no outbound call: no row (most reps place none)');
-  assert.ok(/data through 11-08/.test(c.mOutboundRowHtml_({ placed: 2, connected: 1, talkSec: 75 }, null, '2026-11-08', '2026-11-09')), 'a window past the export\'s newest day says so');
+  assert.strictEqual(c.mOutboundRowHtml_({ placed: 0, connected: 0, talkSec: 0 }, null, '2026-11-09', '2026-11-09'), '', 'no outbound call in a day the export holds: no row (most reps place none)');
+  assert.ok(/data through 11-08/.test(c.mOutboundRowHtml_({ placed: 2, connected: 1, talkSec: 75 }, null, '2026-11-08', '2026-11-09', '2026-11-07')), 'a window that reaches past the export\'s newest day says so');
   const data = { outboundMeta: { available: true }, reps: [{ repName: 'A', totalAnswered: 10, outbound: { placed: 3, connected: 2, talkSec: 60 }, adjusted: { handled: 12, outbound: { placed: 3 }, attExIntakeSec: 200, attExIntakeFormatted: '0:03:20' } },
     { repName: 'B', totalAnswered: 8, outbound: null, adjusted: null }] };
   const cols = c.mTeamAdjColumns_(data);
@@ -43531,9 +43537,9 @@ test('M1: the client — the intake form timer starts on the first input, is tak
   assert.deepStrictEqual(m1J(c.mTeamAdjColumns_({ outboundMeta: { available: false }, reps: [{ adjusted: null }] }).map((x) => x.key)), [], 'no column with nothing to say');
   assert.deepStrictEqual(m1J(c.mSortReps_(data.reps, { key: 'outboundPlaced', dir: 'asc' }).map((r) => r.repName)), ['B', 'A'], 'an unread outbound sorts lowest');
   const mtx = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
-  assert.ok(/row\.push\(r\.outbound \? r\.outbound\.placed : '', r\.outbound \? r\.outbound\.connected : '', r\.outbound \? mFmtTalk_\(r\.outbound\.talkSec\) : '',/.test(mtx), 'an unread outbound figure exports BLANK, never 0');
+  assert.ok(/var ob = \(r\.outbound && !obPast\) \? r\.outbound : null;/.test(mtx) && /row\.push\(ob \? ob\.placed : '', ob \? ob\.connected : '', ob \? mFmtTalk_\(ob\.talkSec\) : '',/.test(mtx), 'an unread outbound figure — or one the export has not reached (F35) — exports BLANK, never 0');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
-  assert.ok(/outboundMeta: \{ available: true, error: null, through: daysAgo\(1\) \}/.test(mock) && /adjusted: adjOf\(kpis, myOb, myIt\)/.test(mock), 'the fixtures carry the new fields (INV-185)');
+  assert.ok(/outboundMeta: \{ available: true, error: null, through: daysAgo\(1\) \}/.test(mock) && /adjusted: adjOf\(kpis, myObOn\(date\), myIt\)/.test(mock), 'the fixtures carry the new fields (INV-185)');
 });
 
 console.log('\nOperator round 2026-11-02 — Batch F (coaching 1-on-1s, cadence, screenshot)');
@@ -49407,6 +49413,212 @@ test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s —
   assert.ok(/Each date is in that person&#39;s own timezone\.|Each date is in that person's own timezone\./.test(mx) && !/Dates in /.test(mx), mx.slice(-200));
   assert.ok(!/Dates in /.test(card(Object.assign({ tzAbbr: '', tzMixed: false }, base))), 'no zone known: no claim');
   assert.ok(!/tzAbbr_\(CONFIG\.TIMEZONE\)/.test(stripJsComments_(extractRawFunction('Code.js', 'getPayPeriodClose'))) && !/fmtDate_\(/.test(stripJsComments_(extractRawFunction('Code.js', 'getPayPeriodClose'))));
+});
+
+console.log('\nCycle 26 Batch 10 — Stats (F24, F34, F35)');
+
+// ── F24 ─────────────────────────────────────────────────────────────────────
+const b10Stamp_ = (obRows) => {
+  const reads = [];
+  const tab = (name, rows) => ({ getLastRow: () => rows.length, getLastColumn: () => (rows[0] || []).length,
+    getRange: (r, col, n, w) => { reads.push([name, r, col, n, w]); return { getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w)) }; } });
+  const tabs = { 'DQE Historical Data': tab('dqe', [['h'], ['1'], ['2']]), 'CSR Transfer Historical Data': tab('tr', [['h'], ['t']]), 'Agent Alias Overrides': tab('al', [['Old'], ['a']]) };
+  if (obRows) tabs['Outbound Calls'] = tab('ob', obRows);
+  const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300, CDR_OUTBOUND_TAB: 'Outbound Calls' }, CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 },
+    CSR_TRANSFER_TAB: 'CSR Transfer Historical Data', CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300,
+    Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
+    getCdrSS_: () => ({ getSheetByName: (n) => tabs[n] || null }),
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) } });
+  vm.runInContext('var _cdrStampMemo = null;', ctx);
+  ['cdrDigestHex_', 'cdrStampFromProbes_', 'cdrDataStamp_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  return { stamp: ctx.cdrDataStamp_(), reads };
+};
+const B10_OB_HEAD = ['Call Date', 'Call ID', 'Callee Hash', 'Agent Name', 'Agent Ext', 'Department', 'Connected', 'Talk Sec', 'Ring Sec'];
+const b10ObRow_ = (d, id, talk) => [d, id, 'h', 'Ana Lopez', '101', 'CSR', 'TRUE', String(talk), '4'];
+
+test('F24: the CDR data stamp watches the Outbound Calls tab — its newest rows, every column it has; a corrected cell or a new row is a new stamp, and a deployment without the tab still has one (driven)', () => {
+  const rows = [B10_OB_HEAD, b10ObRow_('2026-11-09', 'c1', 40), b10ObRow_('2026-11-10', 'c2', 60)];
+  const base = b10Stamp_(rows);
+  assert.ok(/^[0-9a-f]{32}$/.test(base.stamp), 'a stamp');
+  assert.deepStrictEqual(base.reads.filter((r) => r[0] === 'ob'), [['ob', 2, 1, 2, 9]], 'THE RULE: the data rows of the tab, all nine columns — the tab is read by header, so no fixed width is ours to name');
+  assert.strictEqual(b10Stamp_(rows.map((r) => r.slice())).stamp, base.stamp, 'the same tab, the same stamp');
+  assert.notStrictEqual(b10Stamp_([rows[0], rows[1], b10ObRow_('2026-11-10', 'c2', 61)]).stamp, base.stamp, 'THE REGRESSION: a corrected outbound cell changed nothing the stamp could see — the reader had its own five-minute key instead');
+  assert.notStrictEqual(b10Stamp_(rows.concat([b10ObRow_('2026-11-11', 'c3', 5)])).stamp, base.stamp, 'a new outbound row (the morning export)');
+  const none = b10Stamp_(null);
+  assert.ok(/^[0-9a-f]{32}$/.test(none.stamp) && none.stamp !== base.stamp, 'no Outbound Calls tab: still a stamp (the tab is optional), and not the one with it');
+  const headOnly = b10Stamp_([B10_OB_HEAD]);
+  assert.ok(/^[0-9a-f]{32}$/.test(headOnly.stamp) && !headOnly.reads.some((r) => r[0] === 'ob'), 'a header-only tab has no row to read and no zero-row range is asked for');
+  assert.deepStrictEqual(base.reads.filter((r) => r[0] === 'dqe')[0].slice(1), [2, 1, 2, PF1_CDR.ATT], 'the DQE probe keeps its own fixed width');
+});
+
+test('F24: the outbound reader is keyed by the data stamp and asked with ONE cohort list — read once for the team and kept until the data changes; a window that starts after the tab\'s newest day opens no sheet; no stamp is five minutes; a round without the aliases is not kept; a failed read keeps nothing (driven)', () => {
+  const data = [b10ObRow_('2026-11-07', 'c1', 40), b10ObRow_('2026-11-09', 'c2', 60), b10ObRow_('2026-11-09', 'c3', 0), b10ObRow_('2026-11-10', 'c4', 30)];
+  const store = {}, puts = [];
+  let opens = 0, stamp = 'S1', degraded = false, boom = false;
+  const sheet = { getLastRow: () => data.length + 1, getLastColumn: () => B10_OB_HEAD.length,
+    getRange: (r, col, n, w) => { if (boom) throw new Error('quota');
+      return { getDisplayValues: () => [B10_OB_HEAD], getValues: () => data.slice(r - 2, r - 2 + n).map((x) => x.slice(col - 1, col - 1 + (w || 1))) }; } };
+  const run = (from, to, names) => m1J(m1Ctx_({ CONFIG: { CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_CACHE_TTL: 300, CDR_CACHE_KEY: 'cdr' }, cdrDataStamp_: () => stamp,
+    CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v, t) => { store[k] = v; puts.push([k, t]); } }) },
+    cdrRosterHash_: (names2) => 'H' + (names2 || []).length, getCdrNameMap_: () => ({}), cdrNameMapDegraded_: () => degraded,
+    getCdrSS_: () => { opens++; return { getSheetByName: (t) => (t === 'Outbound Calls' ? sheet : null), getSpreadsheetTimeZone: () => 'UTC' }; } })
+    .getCdrOutboundPerRep_(from, to, names));
+  const cohort = ['Ana Lopez', 'Ben Ray'];
+  const a = run('2026-11-09', '2026-11-09', cohort);
+  assert.deepStrictEqual([a.agents, a.through, opens], [{ 'Ana Lopez': { placed: 2, connected: 2, talkSec: 60 } }, '2026-11-10', 1], 'the first ask reads the tab');
+  assert.deepStrictEqual(puts, [['cdr:obthrough:S1', 21600], ['cdr:ob:S1:H2:2026-11-09:2026-11-09', 21600]],
+    'THE RULE: kept against the stamp for the window TTL — the key was `cdr_outbound_v1:<this rep>` and lived five minutes');
+  assert.deepStrictEqual([run('2026-11-09', '2026-11-09', cohort), opens], [a, 1], 'THE REGRESSION: the next rep (another execution) re-read the whole date column — now the kept window answers');
+  const today = run('2026-11-11', '2026-11-11', cohort);
+  assert.deepStrictEqual([today, opens, puts.length], [{ agents: {}, through: '2026-11-10' }, 1, 2], 'a today the export never holds: no sheet opened, the newest day still said');
+  const reach = run('2026-11-10', '2026-11-11', cohort);
+  assert.deepStrictEqual([reach.agents['Ana Lopez'].placed, opens], [1, 2], 'a window that reaches back into the data is read');
+  stamp = 'S2';
+  run('2026-11-11', '2026-11-11', cohort);
+  assert.strictEqual(opens, 3, 'new data: the kept newest day belonged to the old stamp, so the tab is asked again');
+  assert.ok(puts.some((p) => p[0] === 'cdr:obthrough:S2'), 'and its newest day kept against the new one');
+  stamp = ''; puts.length = 0;
+  run('2026-11-09', '2026-11-09', cohort);
+  assert.deepStrictEqual(puts, [['cdr:ob:nostamp:H2:2026-11-09:2026-11-09', 300]], 'no stamp: five minutes, and no newest-day key to trust');
+  stamp = 'S3'; degraded = true; puts.length = 0;
+  run('2026-11-09', '2026-11-09', cohort);
+  assert.deepStrictEqual(puts.map((p) => p[0]), ['cdr:obthrough:S3'], 'a round read without the aliases is not kept (F16) — the newest day needs no alias');
+  stamp = 'S4'; degraded = false; boom = true; puts.length = 0;
+  const bad = run('2026-11-09', '2026-11-09', cohort);
+  assert.ok(/could not be read: quota/.test(bad.error) && bad.steady === false && puts.length === 0, 'a failed read is named and keeps nothing (g129)');
+  // The callers: one list, so one key.
+  const calls = stripJsComments_(['getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].map((f) => extractRawFunction('Code.js', f)).join('\n')).match(/getCdrOutboundPerRep_\([^;]*\);/g) || [];
+  assert.strictEqual(calls.length, 3, 'the three Stats endpoints: ' + calls.join(' | '));
+  calls.forEach((cl) => assert.ok(!/emp\.name/.test(cl) && /allNames|cdrCohortNames_\(getEmployeeRosterRows_\(\)\)|rosterNames/.test(cl), 'asked with the cohort, never the rep\'s own name: ' + cl));
+  assert.ok(!/cdr_outbound_v1/.test(serverSource()), 'the per-rep key is gone');
+});
+
+test('F24: a window is past the outbound data only when it STARTS after the kept newest day — anything that is not a day is no answer (pure)', () => {
+  const c = m1Ctx_();
+  [['2026-11-11', '2026-11-10', true], ['2026-11-10', '2026-11-10', false], ['2026-11-01', '2026-11-10', false],
+    ['2026-11-11', '', false], ['2026-11-11', null, false], ['2026-11-11', 'null', false], ['', '2026-11-10', false], ['tomorrow', '2026-11-10', false]]
+    .forEach((g) => assert.strictEqual(c.cdrOutboundWindowIsPastData_(g[0], g[1]), g[2], JSON.stringify(g)));
+});
+
+// ── F34 ─────────────────────────────────────────────────────────────────────
+test('F34: "Avg talk excl. intake" is given only when the timed forms ran LONGER than the rep\'s own average, and beside that average on the same sum — it can never read higher than the figure it explains (driven + swept)', () => {
+  const c = m1Ctx_();
+  const cdr = { totalAnswered: 40, tttSeconds: 9600 };
+  const short = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 150 }));
+  assert.deepStrictEqual([short.attSec, short.attFormatted, short.attExIntakeSec, short.attExIntakeFormatted, short.intakeTimed, short.intakeAvgSec], [240, '0:04:00', null, null, 2, 75],
+    'THE REGRESSION: forty calls at 4:00 with forms of 60 s and 90 s read "Avg talk excl. intake 4:09" — a form\'s time is the least its call lasted, so shorter forms say nothing');
+  const long = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 1800 }));
+  assert.deepStrictEqual([long.attSec, long.attExIntakeSec, long.attExIntakeFormatted], [240, 205, '0:03:25'], '(9600 − 1800) ÷ 38, beside 9600 ÷ 40');
+  assert.strictEqual(m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 480 })).attExIntakeSec, null, 'forms exactly at the average take nothing out');
+  assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 0, tttSeconds: 0 }, { placed: 2, connected: 1, talkSec: 30 }, null)).attSec, null, 'nothing answered: no average at all, never 0');
+  let given = 0;
+  for (let ans = 2; ans <= 60; ans += 7) for (let ttt = 60; ttt <= 20000; ttt += 1777) for (let timed = 1; timed <= 5; timed++) for (let isec = 30; isec <= 9000; isec += 613) {
+    const r = c.metricsAdjusted_({ totalAnswered: ans, tttSeconds: ttt }, null, { timed, seconds: isec });
+    if (!r || r.attExIntakeSec == null) continue;
+    given++;
+    assert.ok(r.attExIntakeSec <= r.attSec, 'never above the average it was taken from: ' + JSON.stringify([ans, ttt, timed, isec, r.attExIntakeSec, r.attSec]));
+    assert.ok(isec / timed > ttt / ans && ans > timed && ttt > isec);
+  }
+  assert.ok(given > 50, 'the sweep reached the given branch: ' + given);
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/o\.attSec = ans > 0 \? Math\.round\(ttt \/ ans\) : null;/.test(mock) && /it\.seconds \* ans > ttt \* it\.timed\) o\.attExIntakeSec =/.test(mock), 'the fixture\'s mirror of the rule follows it (INV-185)');
+});
+
+test('F34: the Adjusted line names the average it was taken from; the explanation says when the figure is given; the team column carries it on hover; an amendment\'s note carries no form time (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  vm.runInContext('var M_ADJ_SEQ = 0;', c);
+  const adj = { handled: 40, talkSec: 12000, talkFormatted: '3:20:00', outbound: null, intakeTimed: 3, intakeAvgSec: 1000, attSec: 300, attFormatted: '0:05:00', attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
+  const html = c.mAdjustedHtml_(adj, 'my');
+  assert.ok(/m-row-value">0:04:03<\/span><div class="m-row-sub">0:05:00 with them · 3 timed intake calls, ≈17 min each/.test(html), 'THE RULE: the two averages on one line, one sum: ' + html.slice(-260));
+  assert.ok(/only when those forms ran longer than the average call/.test(html), 'the explanation says when the figure is given');
+  const old = c.mAdjustedHtml_(Object.assign({}, adj, { attFormatted: undefined }), 'my');
+  assert.ok(/m-row-sub">3 timed intake calls/.test(old), 'a payload from before this draws as before');
+  const cols = c.mTeamAdjColumns_({ outboundMeta: { available: false }, reps: [{ adjusted: adj }] });
+  assert.ok(/title="0:05:00 with the 3 timed intake calls">0:04:03</.test(cols[0].cell({ adjusted: adj })), 'the team column: ' + cols[0].cell({ adjusted: adj }));
+  assert.ok(/title="0:05:00 with the 1 timed intake call">/.test(cols[0].cell({ adjusted: Object.assign({}, adj, { intakeTimed: 1 }) })));
+  const ic = vm.createContext({ String });
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeNoteTimedSec_'), ic);
+  [[{}, 95, 95], [{ amendsSubmissionId: 'SUB-1' }, 95, 0], [{ amendsSubmissionId: '  ' }, 95, 95], [null, 95, 95], [{}, 0, 0], [{}, -4, 0], [{}, undefined, 0]]
+    .forEach((g) => assert.strictEqual(ic.intakeNoteTimedSec_(g[0], g[1]), g[2], JSON.stringify(g)));
+  const ik = fs.readFileSync(path.join(PA_WEB, 'intake/script_intake.html'), 'utf8');
+  assert.ok(/amendsSubmissionId: \(INTAKE_STATE\.ppd\.amendOf && INTAKE_STATE\.ppd\.amendOf\.submissionId\) \|\| ''/.test(ik) && /amendsSubmissionId: \(INTAKE_STATE\[form\]\.amendOf && INTAKE_STATE\[form\]\.amendOf\.submissionId\) \|\| '',/.test(ik),
+    'both forms\' payloads name the submission they amend — the field the rule reads');
+});
+
+// ── F35 ─────────────────────────────────────────────────────────────────────
+test('F35: every sortable column of the Team table has a sort — "Intake" was marked sortable with no case, so the header turned and the rows did not (driven + derived)', () => {
+  const c = vm.createContext({ String });
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mSortReps_'), c);
+  const reps = [{ repName: 'A', intakeNotes: 2 }, { repName: 'B', intakeNotes: null }, { repName: 'C', intakeNotes: 5 }, { repName: 'D', intakeNotes: 0 }];
+  const order = (dir) => m1J(c.mSortReps_(reps, { key: 'intakeNotes', dir })).map((r) => r.repName).join('');
+  assert.strictEqual(order('desc'), 'CADB', 'THE REGRESSION: every row compared equal and the table kept the server\'s name order');
+  assert.strictEqual(order('asc'), 'BDAC', 'an unread count sorts lowest, below a real zero');
+  const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  const keys = Array.from(new Set((src.match(/\{ key: '(\w+)', label: '[^']*',[^\n]*?sortable: true/g) || []).map((m) => /key: '(\w+)'/.exec(m)[1])));
+  assert.ok(keys.length >= 12 && keys.indexOf('intakeNotes') >= 0 && keys.indexOf('repName') >= 0, 'the sortable columns were found: ' + keys.join(','));
+  const sorter = extractFunction('metrics/script_metrics.html', 'mSortReps_');
+  keys.forEach((k) => assert.ok(new RegExp("case '" + k + "':").test(sorter), 'a sortable column with no case sorts nothing: ' + k));
+});
+
+test('F35: a Team window in which no rep has a call-data row has no call figures — "not in yet" for a window that ends on the previous workday or later, "no call data" for an older one (pure + source)', () => {
+  const c = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'teamCallDataState_'), c);
+  const S = (any, to, prev) => m1J(c.teamCallDataState_(any, to, prev));
+  assert.deepStrictEqual(S(false, '2026-11-18', '2026-11-17'), { hasCallData: false, callDataPending: true }, 'today: the import brings it tomorrow');
+  assert.deepStrictEqual(S(false, '2026-11-17', '2026-11-17'), { hasCallData: false, callDataPending: true }, 'the previous workday before the morning import');
+  assert.deepStrictEqual(S(false, '2026-11-15', '2026-11-17'), { hasCallData: false, callDataPending: false }, 'a weekend already past: there were no calls');
+  assert.deepStrictEqual(S(true, '2026-11-18', '2026-11-17'), { hasCallData: true, callDataPending: false }, 'any rep with a row: the totals are figures');
+  assert.deepStrictEqual(S(false, '2026-11-18', ''), { hasCallData: false, callDataPending: false }, 'no previous workday known: nothing is claimed about the import');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/teamCallDataState_\(reps\.some\(function \(rp\) \{ return rp\.hasCdrData; \}\), toDate,\s*prevWorkdayIso_\(Utilities\.formatDate\(new Date\(\), CONFIG\.TIMEZONE, 'yyyy-MM-dd'\)\)\);/.test(team),
+    'from the listed reps and the org\'s day — the cached payload is every caller\'s, so nothing in it is the caller\'s own');
+  assert.ok(/teamTotals\.hasCallData = callState\.hasCallData;\s*teamTotals\.callDataPending = callState\.callDataPending;/.test(team), 'on the totals, which the rep view ships whole');
+  assert.ok(/teamTotals: full\.teamTotals,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')));
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/hasCallData: false, callDataPending: true \}/.test(mock) && /totals\.hasCallData = true; totals\.callDataPending = false;/.test(mock), 'both Team fixtures carry the state (INV-185)');
+});
+
+test('F35: the Team rail draws ONE row with no figure for a window with no call data — never "Answered 0 · Missed 0" in green; a window with data, and a payload from before this, draw the four rows (driven)', () => {
+  const c = vm.createContext({ String, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mTeamCallRowsHtml_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const zero = { rung: 0, answered: 0, missed: 0, tttFormatted: '0:00:00' };
+  const pend = c.mTeamCallRowsHtml_(Object.assign({ hasCallData: false, callDataPending: true }, zero), false);
+  assert.ok(/m-row-label">Calls<\/span><span class="m-row-value">—<\/span><div class="m-row-sub">Call data for this day is not in yet — it is imported the next morning\./.test(pend), pend);
+  assert.ok(!/Answered|Missed|Rung|good|0:00:00/.test(pend), 'THE REGRESSION: "Answered 0" and "Missed 0" in green for a day the call report never holds');
+  assert.ok(/Call data for this range is not in yet/.test(c.mTeamCallRowsHtml_(Object.assign({ hasCallData: false, callDataPending: true }, zero), true)), 'a range says range');
+  const none = c.mTeamCallRowsHtml_(Object.assign({ hasCallData: false, callDataPending: false }, zero), false);
+  assert.ok(/m-row-sub">No call data for this day\.</.test(none) && !/not in yet/.test(none), 'an older window with no row: no calls, and no promise that some will arrive');
+  const real = c.mTeamCallRowsHtml_({ hasCallData: true, rung: 9, answered: 8, missed: 1, tttFormatted: '0:40:00' }, false);
+  assert.ok(/Rung<\/span><span class="m-row-value">9</.test(real) && /m-row-value good">8</.test(real) && /m-row-value warn">1</.test(real) && /0:40:00/.test(real), 'figures draw as figures: ' + real);
+  assert.ok(/m-row-value good">0</.test(c.mTeamCallRowsHtml_(zero, false)), 'a payload that does not say draws as before');
+});
+
+test('F35: the outbound row says how far the export reaches WHATEVER was placed — a window wholly past it has no figure, one that reaches past it keeps its count, a covered window with no call draws nothing; the Team column and its export follow (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const L = (th, f, t) => m1J(c.mOutboundLag_(th, f, t));
+  assert.deepStrictEqual(L('2026-11-10', '2026-11-10', '2026-11-10'), { state: 'in', text: '' });
+  assert.deepStrictEqual(L('2026-11-10', '2026-11-11', '2026-11-11'), { state: 'none', text: 'not in yet — outbound data is in through 11-10' });
+  assert.deepStrictEqual(L('2026-11-10', '2026-11-05', '2026-11-11'), { state: 'part', text: 'data through 11-10' });
+  assert.deepStrictEqual(L('2026-11-10', '2026-11-10', '2026-11-11'), { state: 'part', text: 'data through 11-10' }, 'a window that starts ON the newest day has that day');
+  assert.deepStrictEqual(L(null, '2026-11-11', '2026-11-11'), { state: 'none', text: 'not in yet — the Outbound Calls tab holds no day' }, 'a tab with no day in it');
+  assert.deepStrictEqual(L('2026-11-10', '', ''), { state: 'in', text: '' }, 'no window named: nothing is claimed');
+  const zero = { placed: 0, connected: 0, talkSec: 0 };
+  const lagged = c.mOutboundRowHtml_(zero, null, '2026-11-10', '2026-11-11', '2026-11-11');
+  assert.ok(/Outbound calls<\/span><span class="m-row-value">—<\/span><div class="m-row-sub">not in yet — outbound data is in through 11-10/.test(lagged),
+    'THE REGRESSION: the day\'s inbound calls in, its outbound export not yet — no row at all, the same page as "placed none": ' + lagged);
+  assert.ok(/m-row-value">0<\/span><div class="m-row-sub">data through 11-10</.test(c.mOutboundRowHtml_(zero, null, '2026-11-10', '2026-11-11', '2026-11-05')), 'a range that reaches past the export: the zero is of the part that is in, and says so');
+  assert.ok(/m-row-value">2<\/span><div class="m-row-sub">1 connected · 0:01:15 talk · data through 11-10</.test(c.mOutboundRowHtml_({ placed: 2, connected: 1, talkSec: 75 }, null, '2026-11-10', '2026-11-11', '2026-11-05')));
+  assert.ok(/m-row-sub">1 connected · 0:01:15 talk</.test(c.mOutboundRowHtml_({ placed: 2, connected: 1, talkSec: 75 }, null, '2026-11-10', '2026-11-10', '2026-11-10')), 'a covered window: no notice');
+  assert.strictEqual(c.mOutboundRowHtml_(zero, null, '2026-11-10', '2026-11-10', '2026-11-10'), '', 'a covered window with no call: no row (most reps place none)');
+  assert.strictEqual(c.mOutboundRowHtml_(null, null, '2026-11-10', '2026-11-11', '2026-11-11'), '', 'no outbound object and no failure named: nothing to say');
+  const past = c.mTeamAdjColumns_({ from: '2026-11-11', to: '2026-11-11', outboundMeta: { available: true, through: '2026-11-10' }, reps: [] });
+  assert.ok(/title="not in yet — outbound data is in through 11-10">—</.test(past[0].cell({ outbound: zero })), 'the Team column: a dash with the reason, where it drew a muted 0');
+  const inWin = c.mTeamAdjColumns_({ from: '2026-11-10', to: '2026-11-10', outboundMeta: { available: true, through: '2026-11-10' }, reps: [] });
+  assert.ok(/>0</.test(inWin[0].cell({ outbound: zero })) && !/—/.test(inWin[0].cell({ outbound: zero })), 'a covered day: a real zero');
+  const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.strictEqual((src.match(/mOutboundRowHtml_\([^;]*data\.from \|\| data\.date\)/g) || []).length, 3, 'all three callers name the window\'s start');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -8938,6 +8938,7 @@ function test_metrics_getTeamMetrics_cdrIntegration() {
   // Only the two test agents have CDR rows in the fixture (queue sentinel excluded).
   _assertEq(r.teamTotals.rung, 15, "team rung = 10 + 5");
   _assertEq(r.teamTotals.answered, 13, "team answered = 8 + 5");
+  _assertEq(r.teamTotals.hasCallData, true, "F35 (cycle 26): the window holds call data, and says so");
   let india = null;
   for (let i = 0; i < r.reps.length; i++) { if (r.reps[i].repName === _TEST_INDIA_NAME) india = r.reps[i]; }
   _assertNotNull(india, "India rep present in team metrics");

@@ -307,8 +307,11 @@ function cdrStampFromProbes_(probes, digest) {
  *  across all users (a CacheService entry) and once per execution. Watches the
  *  DQE tab and the transfer tab (row count + the newest CDR_STAMP_TAIL_ROWS
  *  rows of the columns the readers use) and the alias overrides whole — an
- *  alias edit changes who a row counts for. Never under the CDR test override
- *  (the callers bypass every cache there). */
+ *  alias edit changes who a row counts for. Since cycle 26 F24 the Outbound
+ *  Calls tab too (row count + the newest rows, every column — it is read by
+ *  header, so no fixed width is ours to name): its reader is keyed by this
+ *  stamp like the rest. Never under the CDR test override (the callers bypass
+ *  every cache there). */
 function cdrDataStamp_() {
   if (_cdrStampMemo !== null) return _cdrStampMemo;
   var cache = CacheService.getScriptCache();
@@ -316,13 +319,14 @@ function cdrDataStamp_() {
   var stamp = '';
   try {
     var ss = getCdrSS_();
-    var probes = [['DQE Historical Data', CDR.ATT], [CSR_TRANSFER_TAB, CSRT.TRANSFERRED + 1], ['Agent Alias Overrides', 3]].map(function (t) {
+    var probes = [['DQE Historical Data', CDR.ATT], [CSR_TRANSFER_TAB, CSRT.TRANSFERRED + 1], ['Agent Alias Overrides', 3], [CONFIG.CDR_OUTBOUND_TAB, 0]].map(function (t) {
       var sh = ss.getSheetByName(t[0]);
       if (!sh) return { name: t[0], missing: true };
       var last = sh.getLastRow();
       var n = t[0] === 'Agent Alias Overrides' ? Math.max(0, last) : Math.min(CDR_STAMP_TAIL_ROWS, Math.max(0, last - 1));
       var first = t[0] === 'Agent Alias Overrides' ? 1 : last - n + 1;
-      return { name: t[0], lastRow: last, tail: n > 0 ? sh.getRange(first, 1, n, t[1]).getDisplayValues() : [] };
+      var width = t[1] || sh.getLastColumn();   // F24: 0 = every column the tab has (a tab read by header)
+      return { name: t[0], lastRow: last, tail: n > 0 && width > 0 ? sh.getRange(first, 1, n, width).getDisplayValues() : [] };
     });
     stamp = cdrStampFromProbes_(probes, cdrDigestHex_);
   } catch (e) {
@@ -694,13 +698,30 @@ function cdrOutboundAggregate_(rows, col, opts) {
  *  there yet). {agents, through} or {error, steady} — a missing tab or column
  *  is NAMED, never an empty map that reads as "no outbound calls" (g128);
  *  `steady` marks a configuration state (cacheable) apart from a failed read.
- *  Cached CDR_CACHE_TTL on a clean round read with the aliases (F16, g129);
- *  bypassed under the CDR test override like every sibling reader. */
+ *
+ *  F24 (cycle 26): keyed by the CDR data stamp like every other window reader
+ *  (cdrWindowCacheSpec_ — kept until the data changes, five minutes without a
+ *  stamp), and every endpoint asks with the ONE cohort list, so a window is
+ *  read once for the team and not once per rep. Until then the key carried the
+ *  asking rep's own name and lived five minutes, so each open Dashboard re-read
+ *  the tab's whole date column about every five minutes — for a `today` the
+ *  export never holds. The tab's newest day is kept against the stamp too, so
+ *  a window that starts after it opens no sheet at all. Kept only from a clean
+ *  round read with the aliases (F16, g129); bypassed under the CDR test
+ *  override like every sibling reader. */
 function getCdrOutboundPerRep_(from, to, rosterNames) {
   var useCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
-  var key = 'cdr_outbound_v1:' + cdrRosterHash_(rosterNames) + ':' + from + ':' + to;
+  var stamp = useCache ? cdrDataStamp_() : '';
+  var spec = cdrWindowCacheSpec_('ob', stamp, cdrRosterHash_(rosterNames), from, to);
+  var throughKey = stamp ? CONFIG.CDR_CACHE_KEY + ':obthrough:' + stamp : '';
   var cache = CacheService.getScriptCache();
-  if (useCache) { try { var hit = cache.get(key); if (hit) return JSON.parse(hit); } catch (e) {} }
+  if (useCache) { try { var hit = cache.get(spec.key); if (hit) return JSON.parse(hit); } catch (e) {} }
+  if (throughKey) {
+    try {
+      var kept = cache.get(throughKey);
+      if (cdrOutboundWindowIsPastData_(from, kept)) return { agents: {}, through: kept };
+    } catch (e) {}
+  }
   var tab = CONFIG.CDR_OUTBOUND_TAB;
   try {
     var ss = getCdrSS_();
@@ -723,11 +744,20 @@ function getCdrOutboundPerRep_(from, to, rosterNames) {
         out.agents = agg.agents;
       }
     }
-    if (useCache && !cdrNameMapDegraded_()) { try { cache.put(key, JSON.stringify(out), CONFIG.CDR_CACHE_TTL); } catch (e) {} }
+    if (useCache) {
+      if (throughKey && out.through) { try { cache.put(throughKey, out.through, spec.ttl); } catch (e) {} }
+      if (!cdrNameMapDegraded_()) cdrCachePutSized_(spec.key, JSON.stringify(out), spec.ttl, 'the outbound calls ' + from + '..' + to);
+    }
     return out;
   } catch (err) {
     return { error: 'The "' + tab + '" tab could not be read: ' + (err && err.message ? err.message : String(err)), steady: false };
   }
+}
+/** PURE (Node-pinned) — F24: a window that STARTS after the newest day the
+ *  Outbound Calls tab holds has no row to find. `through` is that day as kept
+ *  against the data stamp; anything that is not a day is no answer (read). */
+function cdrOutboundWindowIsPastData_(from, through) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(through || '')) && /^\d{4}-\d{2}-\d{2}$/.test(String(from || '')) && String(from) > String(through);
 }
 /** PURE (Node-pinned) — the ADJUSTED figures beside the actual ones, never in
  *  place of them. `cdr` = {totalAnswered, tttSeconds} or null; `outbound` =
@@ -737,7 +767,15 @@ function getCdrOutboundPerRep_(from, to, rosterNames) {
  *  form time stands in for their length — an estimate, said so on screen),
  *  only while a call is left to average. Null when there is nothing to adjust
  *  — no outbound call and no timed intake — so no Adjusted line repeats the
- *  actual one. Answer % is never adjusted: it is the inbound standard. */
+ *  actual one. Answer % is never adjusted: it is the inbound standard.
+ *
+ *  F34 (cycle 26): a form's time is the LEAST its call can have lasted, so the
+ *  figure is given only when the timed forms averaged LONGER than the rep's
+ *  own average — taking shorter "calls" out raised the average, and the panel
+ *  that exists to explain a long talk time showed a longer one (40 calls at
+ *  4:00 with two forms of 60 s and 90 s read 4:09). And it is given beside
+ *  the average it was taken from, `attSec` = talk ÷ answered — the SAME sum,
+ *  not the sheet's own ATT column, so the two can be compared. */
 function metricsAdjusted_(cdr, outbound, intake) {
   var ans = (cdr && Number(cdr.totalAnswered)) || 0;
   var ttt = (cdr && Number(cdr.tttSeconds)) || 0;
@@ -749,7 +787,9 @@ function metricsAdjusted_(cdr, outbound, intake) {
     intakeTimed: timed, intakeAvgSec: timed > 0 ? Math.round(isec / timed) : null, attExIntakeSec: null };
   out.talkFormatted = cdrFmtHms_(out.talkSec);
   if (ob) ob.talkFormatted = cdrFmtHms_(ob.talkSec);
-  if (timed > 0 && ans > timed && ttt > isec) out.attExIntakeSec = Math.round((ttt - isec) / (ans - timed));
+  out.attSec = ans > 0 ? Math.round(ttt / ans) : null;
+  out.attFormatted = out.attSec == null ? null : cdrFmtHms_(out.attSec);
+  if (timed > 0 && ans > timed && ttt > isec && isec * ans > ttt * timed) out.attExIntakeSec = Math.round((ttt - isec) / (ans - timed));
   out.attExIntakeFormatted = out.attExIntakeSec == null ? null : cdrFmtHms_(out.attExIntakeSec);
   return out;
 }
@@ -1955,7 +1995,7 @@ function getMyMetrics(date) {
     // coverage strip — a just-filed note surfaces within the TTL. Keyed by
     // emp.id so no rep ever reads another rep's cached self-view.
     var metricsCache = CacheService.getScriptCache();
-    var myCacheKey = 'metrics_my_v4:' + emp.id + ':' + date;   // v4 (M1): outbound + adjusted   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
+    var myCacheKey = 'metrics_my_v5:' + emp.id + ':' + date;   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): the dashboard's rate formula + published standard + excluded benchmark (INV-85)
     // Bypass the endpoint cache whenever a test points the CDR reader at a
     // fixture/bogus id (the getCdrSS_ override pattern) — otherwise a stale
     // entry from a prior fixture read would mask a later test's CDR state
@@ -2032,7 +2072,7 @@ function getMyMetrics(date) {
     // Operator 2026-08-25 (batch 6): intake-flagged note count — additive,
     // null on a failed read (absence ≠ 0, INV-180/187).
     var intakeRes = cnCountIntakeNotesResult_(emp, date, date);
-    var obRes = getCdrOutboundPerRep_(date, date, [emp.name]);   // M1
+    var obRes = getCdrOutboundPerRep_(date, date, allNames);   // M1; F24: the cohort's one read, the rep's own row out of it
     var ob = metricsOutboundOf_(obRes, emp.name);
 
     var result = {
@@ -2117,7 +2157,7 @@ function getMyMetricsRange(from, to) {
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v4:' + emp.id + ':' + from + ':' + to;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var rangeKey = 'metrics_range_v5:' + emp.id + ':' + from + ':' + to;   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -2175,7 +2215,7 @@ function getMyMetricsRange(from, to) {
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
     var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
-    var obRes = getCdrOutboundPerRep_(from, to, [emp.name]);   // M1
+    var obRes = getCdrOutboundPerRep_(from, to, cdrCohortNames_(getEmployeeRosterRows_()));   // M1; F24: the cohort's one read
     var ob = metricsOutboundOf_(obRes, emp.name);
     var rangeResult = {
       from: from, to: to, repName: emp.name,
@@ -2245,6 +2285,15 @@ function teamMetricsRepView_(full) {
     standardSource: full.standardSource,
   };
 }
+/** PURE (Node-pinned) — F35: whether a Team Metrics window holds ANY call
+ *  data, and, when it holds none, whether that is a day still to come: the
+ *  call report is imported the next morning, so a window that ends on the
+ *  previous workday or later may simply not be in yet. An older window with
+ *  no row is a window with no calls (a weekend, a holiday). */
+function teamCallDataState_(anyRepHasCdr, toDate, prevWorkday) {
+  var has = !!anyRepHasCdr;
+  return { hasCallData: has, callDataPending: !has && !!prevWorkday && String(toDate || '') >= String(prevWorkday) };
+}
 function getTeamMetrics(dateOrFrom, to) {
   try {
     var t0 = Date.now();
@@ -2287,7 +2336,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v4:' + from + ':' + toDate;   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v5:' + from + ':' + toDate;   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2510,6 +2559,14 @@ function getTeamMetrics(dateOrFrom, to) {
     });
 
     teamTotals.pctAnswered = cdrAnswerPct_(teamTotals.answered, teamTotals.missed);   // H2
+    // F35 (cycle 26): the call side of these totals starts at zero, and stays
+    // there when no rep has a call-data row — the page drew "Answered 0,
+    // Missed 0" in green for a today the import never holds. The state rides
+    // the totals (no names, no count — the rep view ships them whole).
+    var callState = teamCallDataState_(reps.some(function (rp) { return rp.hasCdrData; }), toDate,
+      prevWorkdayIso_(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd')));
+    teamTotals.hasCallData = callState.hasCallData;
+    teamTotals.callDataPending = callState.callDataPending;
     // M1 — the team's adjusted figures, by the same rule as each rep's.
     teamTotals.adjusted = metricsAdjusted_({ totalAnswered: teamTotals.answered, tttSeconds: teamTotals.tttSeconds },
       outboundMeta.available ? { placed: teamTotals.outboundPlaced, connected: teamTotals.outboundConnected, talkSec: teamTotals.outboundTalkSec } : null,
