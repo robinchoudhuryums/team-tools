@@ -11,6 +11,27 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-18 — Cycle 26 Batch PD (Partial Days)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched. The first loads after the deploy read cold (the
+data stamp gained a tab, so every stamped key turns over once).
+
+- **A day marked partial on the Department Dashboard now counts as its share
+  here.** For the marked rep only: the Dashboard's "on pace" line divides by
+  their credited days and shows "X of Y workdays, N partial" under it (hover
+  for the days and shares); the month-to-date change on Answered and Missed
+  compares over the same share of days; the daily Answered and Missed trends
+  on Stats mark the day. No count, total, rate or talk time changes.
+- **The Reason column is never read.** Team Tools opens columns A–C of the
+  `Partial Days` tab and nothing else, and writes nothing to the workbook.
+- **Admin → System → CDR Report** states the tab. "No partial days marked"
+  is normal until someone marks a day.
+- **Worth telling the team:** a rep sees only their own partial days; the
+  Department card and Team Metrics are not adjusted.
+- **For call-data-reporting:** this is the ninth tab of the CDR Report that
+  Team Tools reads. The tab name and columns A–C are now a two-repo contract.
+
 ## 2026-11-18 — Cycle 26 Batch 10 (Stats)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

@@ -7245,6 +7245,60 @@ pick them up without re-deriving the context.
     was placed. On a day the export has not reached, every rep sees the row —
     including the many who never place an outbound call. That is the honest
     reading of an export that has not run, and it clears when it does.
+- <a id="c26-batch-pd-partial-days"></a>**Batch PD (Partial Days): the Department Dashboard's marks are read three columns wide; the divisor is this app's workdays less the uncredited share; counts are compared over the same share; the Team card is not adjusted (cycle 26, operator 2026-11-18).**
+  call-data-reporting's Department Dashboard lets its admins mark a day an
+  agent worked only part of, in the CDR Report's `Partial Days` tab
+  (`Date | Agent | Credit | Reason | Added By | Added At`), and handed this
+  app the matching change. Its rule is "pace while present": wherever a call
+  count is divided by days, a marked day counts as its Credit. The handoff
+  was adjusted for this app before it was built; the operator accepted the
+  four recommendations.
+  - **Only columns A–C exist, as far as this app is concerned.** The Reason
+    is for the dashboard's admins. Every read — the reader's and the data
+    stamp's — is `CDR_PARTIAL_COLS` wide from column 1, so the Reason is
+    never asked for and cannot leak through a log, a cache or a later
+    change. The tab is read only when row 1 names those three columns.
+  - **The divisor is WORKDAYS, less the uncredited share (A1).** The
+    dashboard divides by days with calls. This app's pace line has divided
+    by workdays since cycle 25 F12 — a day off is a zero day. Taking the
+    dashboard's divisor would have changed every rep's pace on the day this
+    shipped. Instead a marked day the rep took a call on comes out of the
+    workday divisor by `1 − credit`. The handoff's worked example (21 days,
+    marks of 0.5 and 0.25) gives 19.75 either way; an unmarked rep's numbers
+    do not move at all. A mark on a day with no call, on a weekend or on a
+    company holiday changes nothing — that day was a zero day, or never in
+    the divisor.
+  - **A partial day in the daily trend keeps its count and is marked (A2).**
+    The handoff would show a dash under one credited day; a single partial
+    day is always under one. The rep's count is real, so it is drawn, with a
+    ring and "Partial day: Nov 10 (0.5 day)" in words. The team average for
+    that day is per credited rep-day: a partial rep's calls stay in the sum
+    and they count as their share. The cohort guard still counts people.
+  - **Month-to-date deltas stay in calls (A3).** Last month's Answered and
+    Missed are multiplied by (this window's credited share ÷ last window's)
+    before the difference — exactly 1 with no mark, clamped month or not —
+    and the delta's hover says "adjusted for partial days". Rates and talk
+    time are not day-based and are compared as they are. Under one credited
+    day in either window, totals are compared as before.
+  - **The Team card is not adjusted (A4).** Partial days are an individual
+    matter; the department's pace is over the calendar's workdays.
+  - **Names go through the alias map (A5)** — a mark written under the phone
+    system's spelling counts for the roster name the call data counts for.
+    A mark for a name not on this roster is ignored; Storage Health counts
+    such agents as a fact, not a warning (the phone system is shared).
+  - **A missing tab is silent; a failed read is said and never cached (A6).**
+    See the gotcha amendment under "never cache a failure".
+  - **Three cache layers (A7).** The tab's three columns are part of the CDR
+    data stamp, so every window total turns over when a mark changes; the
+    marks themselves are kept against that stamp; the Dashboard card's
+    six-hour key carries a digest of the caller's own marks; My Stats' key
+    is `v6`.
+  - **Only the caller's own partial days leave the server.** Dates and
+    shares; no manager view of other reps' marks was built — the dashboard
+    is where an admin sees those.
+  - **Not done:** a manager-facing list of marks; partial days on Team
+    Metrics or the Department card; the range view's own sparkline; any
+    change to the adjusted (M1) figures.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

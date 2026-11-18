@@ -473,6 +473,16 @@ lighter `--warn-fill`.
      in each rep's call cells; the Intake column sorts; the outbound row says
      "not in yet" or "data through MM-DD" whenever the export is behind.
 
+     **Cycle 26 Batch PD (2026-11-18) — partial days.** A day the Department
+     Dashboard marks partial for a rep counts as its share of a day in the
+     three day-based call figures: the Dashboard's "on pace" line (with "X of
+     Y workdays, N partial" under it, the days and shares on hover), its
+     month-to-date deltas on Answered and Missed, and My Stats' daily
+     Answered / Missed trends (a ring on the day, the date in words, and a
+     team average per credited rep-day). Counts, rates and talk time do not
+     change; the Department card and Team Metrics are not adjusted; a rep
+     sees only their own partial days, and never a reason.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a

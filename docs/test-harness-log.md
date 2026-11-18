@@ -4154,3 +4154,47 @@ F53, F54, F57.**
   rather than after a NO BITE.
 - **Bite-checks: 58 mutations, 58 bit** — pure in two streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 Batch PD — Partial Days (2026-11-18)
+
+- **Pure harness: thirteen `PD:` pins.** The Credit rule's grid; the header
+  check; the row parser; the reader DRIVEN over a six-column fake tab whose
+  `getRange` throws on anything past column C (so a pass proves the Reason
+  was never asked for), through every state — sheet, no tab, empty, moved
+  header, a read that throws — with the cache and the per-execution memo; a
+  source net (every range on the tab is `CDR_PARTIAL_COLS` wide, the tab is
+  opened in two places); the data stamp over the same fake (a changed credit
+  is a new stamp, a changed REASON is not); the DQE reader and the daily
+  breakdown with and without marks (the agents maps byte-identical, the
+  marks in maps of their own, nothing kept when the marks could not be
+  read); the divisor maths with the handoff's own example (21 → 19.75,
+  419 ÷ 19.75 = 21.2); the series builders; `getDashboardMetrics` DRIVEN for
+  an unmarked rep, a marked one, both months marked, a failed read and the
+  one-day period (another rep's marks nowhere in the payload); the card's
+  pure helpers with the handoff's two strings to the letter; the trend
+  card's note and rings; the Storage Health probe and findings.
+- **DOM harness: three drives** — the Dashboard own card (the pace, the
+  credited-days line with its title and accessible name, the scaled deltas,
+  the Department card untouched, under one credited day), My Stats' trend
+  cards, and the Admin finding.
+- **Editor suite: one registration**, `partialDays_readsFixtureTab` — a real
+  six-column tab in the TEST CDR fixture with a marker in the Reason column
+  that must appear nowhere in what was read.
+- **Older pins updated, not loosened:** the shared CDR sandbox supplies "no
+  marks, read cleanly" unless a test names them; the read-ahead pin gained
+  the kept-nothing case; six source checks follow the new cache keys and put
+  conditions; the M2 pin now also requires that ONLY the own card's
+  projection carries the rep's partial days.
+- **Fixtures:** the Dashboard fixture gained the workday basis it had lacked
+  since cycle 25 and `partial: null`; `?partial=1` gives a rep two partial
+  days on both screens; the Storage Health CDR row carries `partialDays`.
+  Four scenarios (the Dashboard and My Stats, light wide and dark mobile).
+- **Found by the shot, not the tests:** inside the inline-flex pace line the
+  credited-days text wrapped in two fragments; it has a line of its own.
+- **A pin lesson:** "the tab's name is written once" counted the literal
+  `'Partial Days'` and failed on the read-ahead's own message — the claim
+  that mattered was "never opened by a literal name", and that is what the
+  pin now asserts.
+- **Bite-checks: 99 mutations, 99 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`. One planned mutation was dropped as equivalent:
+  `dashPartialScale_`'s no-mark early return is also 1 by arithmetic.

@@ -1,6 +1,6 @@
 ---PLAN: Batch PD — Partial Days (cycle 26; from call-data-reporting's handoff of 2026-11-16, adjusted 2026-11-18)---
 
-STATUS: planned, NOT built. Its own batch, sequenced AFTER Batch 10 (Stats): Batch 10's F24 reworks the
+STATUS: BUILT 2026-11-18 — see `.cycle/blocks/26-PD-broad-implement.md`. (Was: planned, NOT built.) Its own batch, sequenced AFTER Batch 10 (Stats): Batch 10's F24 reworks the
 stamped call-data reader this builds on. A new capability from another repo, not a scan finding — /reflect
 counts it under "New capabilities", never as a production fix. Estimate: L (~10 h).
 

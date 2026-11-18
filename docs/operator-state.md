@@ -297,6 +297,35 @@ entry says which it is.
   range) — if that line stays past mid-morning, the outbound export in
   call-data-reporting did not run. "Avg talk excl. intake" now appears only
   for a rep whose timed intake forms ran longer than their average call.
+<a id="operator-pd-partial-days-tab"></a>
+- **The CDR Report's `Partial Days` tab — a marked day counts as its share (cycle 26 Batch PD, operator 2026-11-18).**
+  **Nothing to set up in Team Tools.** The tab is the Department
+  Dashboard's (call-data-reporting): its admins mark a day an agent worked
+  only part of, and the dashboard creates the tab the first time. Row 1 is
+  `Date | Agent | Credit | Reason | Added By | Added At`. Team Tools reads
+  columns A–C only — never the Reason — and never writes to the workbook.
+  Until the tab exists nothing changes and Admin → System says "No partial
+  days marked" in green.
+  **What a mark does here:** for that rep only, the day counts as its Credit
+  in the Dashboard's "on pace" line, in the month-to-date change on Answered
+  and Missed, and in the daily Answered / Missed trends on Stats. The calls
+  stay in every count; rates and talk time do not change; the Department
+  card and Team Metrics are not adjusted. A Credit of 1 is the dashboard's
+  "reviewed, a whole day" and is ignored, as is a mark on a day the rep took
+  no call.
+  **Names:** a mark counts for the roster name the call data counts for — an
+  agent whose phone name differs needs their Agent Alias Overrides row, as
+  for every other call figure. Marks for agents not on this roster (other
+  departments) are ignored and counted on the System tab's CDR row.
+  **If something is wrong:** Admin → System → the CDR Report row states the
+  tab ("sheet · N marks for M agents", "no tab yet", "no day is marked"). A
+  warning there means row 1 is no longer `Date | Agent | Credit` (a change
+  in call-data-reporting that needs the matching change here) or the tab
+  could not be read; either way Stats counts no day as partial meanwhile.
+  A new or changed mark shows within about two minutes (the data stamp).
+  **Two-repo contract:** the tab's name and the meaning of columns A–C. A
+  rename, or a move of any of the three, is an edit in both repos.
+
 <a id="operator-set-script-property-cdr-ss-id"></a>
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`

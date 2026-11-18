@@ -1025,6 +1025,21 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   MANAGER dashboard only. The four-key pin (D-N10) and the editor test's
   allow-list both hold it.
 
+  **AMENDED (cycle 26 Batch PD): the same boundary, drawn for partial days.**
+  The Department Dashboard marks a day an agent worked only part of, with a
+  Reason "for admins only". Two rules follow here. (1) THE REASON IS NEVER
+  READ: every range on the tab is `CDR_PARTIAL_COLS` (3) wide from column 1
+  — the reader's two reads and the data stamp's probe — and the pins drive a
+  six-column tab whose `getRange` throws on anything past column C. Not
+  "read and dropped": never asked for, so it cannot be logged, cached or
+  shipped by a later change. (2) A REP'S PARTIAL DAYS GO TO THAT REP ONLY.
+  `getCdrAgentMetrics_` returns them in a `partial` map BESIDE `agents`,
+  never as a field on an agent's object — Team Metrics, the shift stats and
+  the Dashboard all pass those objects on, and a field added there would
+  ride every one of them. `getDashboardMetrics` takes `partial[emp.name]`
+  and nothing else; the My Stats series marks only the caller's own point;
+  Storage Health ships counts.
+
 <a id="g34-fire-and-forget-email"></a>
 
 - **Fire-and-forget email.** Decision emails
@@ -4523,6 +4538,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   `test_oop_pricingTab_isNAMEDnotTheFirstSheet`, which renames the tab aside on
   a real spreadsheet and requires the error rather than a fall-through.
 
+  **AMENDED (cycle 26 Batch PD): a named tab is not a known shape.** The
+  Partial Days tab is owned by call-data-reporting and named, so the rule
+  above is met — but its columns are a contract between two repos: A–C are
+  Date, Agent and Credit, and D is a Reason this app must never read. If the
+  other repo ever moves a column, a positional read would silently take the
+  Reason for the Credit (or worse, ship it). `getCdrPartialDays_` therefore
+  checks row 1 for `Date | Agent | Credit` by name and, when it is anything
+  else, reads NOTHING further (`source: 'bad-header'`, said on Storage
+  Health) — the fail direction is "no day is partial", which leaves every
+  number as it was. The header read itself is three columns wide.
+
 <a id="g122-a-config-seed-that-is-a"></a>
 - **A CONFIG seed that is a PLAUSIBLE substitute for real config is worse than
   no seed — it turns "unconfigured" into "configured slightly wrong", which
@@ -5138,6 +5164,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   second try. Upgrading pdf.js means changing the version AND both hashes;
   the F56 pin fails until they agree with `node_modules`. Verify: the F56
   pure pin and DOM drive, and the rewritten HB4.1 failed-load drive.
+
+  **AMENDED (cycle 26 Batch PD): a read that could not see the marks.** A
+  Partial Days read that throws returns no marks — for nearly every rep that
+  is the right answer, and for a marked rep it is last week's pace. So the
+  failure is carried, not just logged: `cdrPartialDaysDegraded_()` is true
+  for the rest of the execution, and `getCdrAgentMetrics_`,
+  `getCdrDailyBreakdown_`, `getDashboardMetrics`, `getMyMetrics` and the
+  marks' own cache all decline to keep what they computed. The hourly
+  read-ahead reports `partial` ("the windows read ahead were not kept")
+  rather than `ok`. A MISSING tab is not this — it is the steady state
+  before anyone marks a day, and it is cached like any other answer.
 
 <a id="g130-a-registered-onclose-hook-owns-the-close"></a>
 
@@ -6141,6 +6178,20 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   window that starts after the export's newest day has no figure ("—, not in
   yet"), one that only reaches past it keeps its count and names the day,
   and a covered window with no call still draws nothing.
+
+  **AMENDED (cycle 26 Batch PD): a day is not always a whole day.** Three
+  figures here divide or compare call COUNTS by days: the Dashboard's "on
+  pace" line, its month-to-date deltas on Answered and Missed, and My Stats'
+  daily Answered / Missed trend against the team. A rep who worked half a
+  day counted as a full one in each. call-data-reporting's handoff gave its
+  own rule (days with calls, a marked day as its credit); this app's divisor
+  is WORKDAYS — a day off already counts as a zero day — so adopting theirs
+  would have moved every rep's pace. The rule here: a marked day the rep
+  took a call on comes out of the workday divisor by its uncredited share,
+  and nothing else changes. The two repos agree on a marked rep's credited
+  days and may differ on an unmarked rep's divisor, as they did before.
+  **The check:** before copying another system's formula, find what its
+  divisor already is here.
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
