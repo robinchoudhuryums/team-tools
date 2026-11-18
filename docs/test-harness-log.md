@@ -4117,3 +4117,40 @@ F53, F54, F57.**
   shared the manager's day), and the team table's lost-rows note.
 - **Bite-checks: 81 mutations, 81 bit** — pure in two streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 Batch 10 — Stats (2026-11-18)
+
+- **Pure harness: nine pins.** `F24:` ×3 — the stamp over fake tabs (the
+  outbound probe reads the data rows at the tab's own width; a corrected cell
+  and a new row change the stamp; no tab and a header-only tab still give
+  one); the reader driven across executions over one shared cache (one read,
+  the kept window served, a `today` answered with no sheet opened, a range
+  that reaches back read, a new stamp read again, no stamp five minutes, a
+  round without aliases and a failed read keeping no window) plus the three
+  call sites; the past-data rule's grid. `F34:` ×2 — the scan's own example
+  and a sweep of about 8,000 inputs asserting the figure is never above the
+  average it was taken from; the client line, the explanation, the team
+  cell's hover, and `intakeNoteTimedSec_`. `F35:` ×4 — the Intake sort plus
+  a derived net (every `sortable: true` key has a case), `teamCallDataState_`
+  and where `getTeamMetrics` takes its inputs, the rail's no-data row, and
+  `mOutboundLag_` with the row, the Team column and the callers.
+- **DOM harness: four drives** — Team → Today (the rail, the cells, the
+  export), the Intake header, My Stats with the export behind (a day and a
+  range) and the same-basis line, and an amended intake send's note.
+- **Older pins updated, not loosened:** the M1 reader pin's sandbox gained
+  the stamp helpers; the M1 adjusted pin's "intake part still stands" case
+  used forms exactly at the average (now no figure) and uses longer ones;
+  the M1 client pin's no-row case used a day past the export (now a row);
+  three key pins read `_v5`.
+- **Fixtures:** `adjOf` mirrors the new rule and ships `attSec`; the Team
+  fixtures carry `hasCallData` / `callDataPending`; My Stats' day fixture no
+  longer places outbound calls on a day after its own `outboundThrough`; the
+  day's talk time now equals answered × average (it was a second out, which
+  the new line would have drawn). Two scenarios: Team → Today on a dark
+  phone, and My Stats on today.
+- **A pin lesson:** the F35 sort pin's first fixture put the unread count
+  before the real zero, so "unread sorts as zero" and "unread sorts lowest"
+  gave the same order under a stable sort — reordered before the bite-check
+  rather than after a NO BITE.
+- **Bite-checks: 58 mutations, 58 bit** — pure in two streams, DOM through
+  `bite.sh --dom --only`.

@@ -11,6 +11,29 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-18 — Cycle 26 Batch 10 (Stats)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats loads the outbound calls once for the team (F24).** The Outbound
+  Calls tab was re-read for every rep about every five minutes while a
+  Dashboard was open. It is now read once per window and kept until the CDR
+  Report changes. Nothing to check, but the `getMyMetrics` executions should
+  be shorter from the second one of the day.
+- **"Avg talk excl. intake" can no longer read higher than the average
+  (F34).** It is shown only when the timed intake forms ran longer than the
+  rep's average call, with that average beside it. Reps whose forms were
+  quick will no longer see the line — that is intended. An amended intake
+  send is no longer counted as a timed intake call.
+- **Team → Today no longer shows green zeros (F35).** Before the call report
+  is in, the page says "Call data for this day is not in yet" and each rep's
+  call cells are "—". The Intake column now sorts. The outbound row says
+  "not in yet" / "data through MM-DD" whenever the outbound export is behind
+  the call data.
+- **Worth telling the team:** "—" on Team → Today means not imported yet,
+  not zero.
+
 ## 2026-11-18 — Cycle 26 Batch 9 (Time Clock)
 
 **Adds one auto-managed Script Property, nothing to set:** `ACTIVITY_LOG_FAILS`

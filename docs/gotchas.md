@@ -175,6 +175,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   Pinned by the F1 tripwire (every CONFIG key has a reader, allowlist must
   self-declare).
 
+  **AMENDED (cycle 26 F35): `sortable: true` is a declaration too.** The Team
+  table's Intake column (Batch 6, 2026-08-25) was marked sortable, and
+  `mSortReps_` had no `intakeNotes` case — its `default` returns 0, so every
+  row compared equal. The header drew ▼ and `aria-sort="descending"`, the
+  rows stayed in the server's name order, and Copy table exported that order
+  as the sorted one. The three M1 columns got cases two months later; this
+  one was never noticed because nothing fails. The pin derives the sortable
+  keys from the column definitions and requires a case for each.
+
 <a id="g05-cdr-enrichment-in-managergetshiftstats-is-best-effort"></a>
 
 - **CDR enrichment in `managerGetShiftStats` is best-effort.**
@@ -2017,6 +2026,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   because a gap is visibly a gap and a substitute silently becomes data** —
   the same instinct as the note-count and PTO-overlay entries above, applied to
   arithmetic rather than to a read outcome.
+
+  **AMENDED (cycle 26 F34): a lower bound is not a length.** M1's "Avg talk
+  excl. intake" took each timed intake form's seconds (first input to send)
+  out of the rep's talk time and the form out of the call count. A form's
+  time is the LEAST its call can have lasted — the call began before the
+  first keystroke and usually ran past the send. When the forms averaged
+  less than the rep's own average, removing those "calls" RAISED the
+  average: forty calls at 4:00 with forms of 60 s and 90 s read "Avg talk
+  excl. intake 4:09", on the panel that exists to explain a long talk time.
+  `metricsAdjusted_` now gives the figure only when the timed forms averaged
+  longer than talk ÷ answered (`isec × ans > ttt × timed`), and ships that
+  average (`attSec`) so the line reads "3:25 · 4:00 with them" — both on the
+  same sum, where the actual "Avg talk" above is the sheet's own ATT column
+  and can differ by a second. An amended intake send no longer logs a form
+  time at all (`intakeNoteTimedSec_`): correcting a sent form is not a call.
+  **The check:** before subtracting an estimate from a measure, ask which
+  way the estimate is biased, and what the result reads as when it is small.
 
 <a id="g55-timetomins-returns-null-never-nan-and-an"></a>
 
@@ -4765,6 +4791,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   caches an error. Verify: the M10 pin.
 
 
+  **AMENDED (cycle 26 F24): a reader keyed by who asked.** M1's outbound
+  reader shipped two days after PF1 and beside it, and took none of it: its
+  key was `cdr_outbound_v1:<roster hash>:<from>:<to>`, My Stats passed
+  `[emp.name]` as the roster, and the entry lived `CDR_CACHE_TTL` (five
+  minutes). So the key was per rep, nothing was shared, and every rep with a
+  Dashboard open (the coverage strip and Needs-you both call
+  `getMyMetrics(today)`) re-read the Outbound Calls tab's whole Call Date
+  column about every five minutes — for a `today` the export never holds. The
+  span rule above was followed; what was missing was everything around it.
+  The reader is now keyed through `cdrWindowCacheSpec_('ob', …)` by the data
+  stamp, the stamp probes the Outbound Calls tab (every column — the tab is
+  read by header, so no fixed width is ours to name), all three endpoints ask
+  with `cdrCohortNames_` and take the rep's row out of the answer, and the
+  tab's newest day is kept against the stamp so a window that starts after it
+  opens no sheet. **The check when adding a CDR reader:** who is in the key?
+  If it is the caller, the cache is a per-person memo, not a cache.
+
 <a id="g126-two-readers-of-one-operator-sheet"></a>
 
 - **Two readers of ONE operator sheet share ONE column resolver (Batch 1 of the
@@ -5322,6 +5365,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   every consumer already skipped. The visual fixture carries one null day.
   Verify: the M9 sweep (no `: 0` default across the three endpoints, all eleven
   null fields found) and the sparkline gap, driven.
+
+  **AMENDED (cycle 26 F35): a total is a series of one.** Team Metrics opens
+  on Today, and the call report is imported the next morning, so
+  `teamTotals` was the zero it was initialised to. The rail drew "Rung 0 ·
+  Answered 0 · Missed 0 · Total talk 0:00:00" with Answered and Missed in
+  green — a team that missed nothing — and the manager's table gave every
+  rep listed through their notes a row of zeros. M1 (cycle 22) had already
+  made the RATE null; the counts beside it stayed. The server now says
+  whether any listed rep has a call-data row (`teamTotals.hasCallData`) and,
+  when none has, whether the window ends on the previous workday or later
+  (`callDataPending`, `teamCallDataState_`); the rail draws one "Calls —"
+  row with the reason, a rep with `hasCdrData: false` draws "—" in Rung,
+  Answered, Missed and ATT, and Copy table exports those blank.
 
 <a id="g137-a-static-net-that-pre-declares-names"></a>
 
@@ -6074,6 +6130,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   now ends on last month's same-numbered workday (`dashWorkdayCount_` over the one
   company calendar), and the run-rate projects over workdays shipped by the server.
   Verify: the rewritten dashboardPrevRange_ pin and the F12 (cycle 25) pin.
+
+  **AMENDED (cycle 26 F35): the lag notice rode the wrong branch.** The
+  outbound row's "data through MM-DD" was appended inside the branch that
+  draws a placed call. In exactly the lagged case — the day's inbound calls
+  imported, its outbound export not yet — nothing was placed as far as the
+  tab knew, so no row was drawn: the same page as a rep who placed none, and
+  the design decision said the window "says data through …". `mOutboundLag_`
+  is now the one rule for the rail row, the Team column and the export: a
+  window that starts after the export's newest day has no figure ("—, not in
+  yet"), one that only reaches past it keeps its count and names the day,
+  and a covered window with no call still draws nothing.
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 

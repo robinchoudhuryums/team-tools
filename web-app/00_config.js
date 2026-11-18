@@ -2036,7 +2036,7 @@ var DASHBOARD_CACHE_TTL = 21600;
 // window, the 30-day breakdown) is cached against a STAMP of the data rather
 // than for five minutes: each tab's row count and a digest of its newest
 // CDR_STAMP_TAIL_ROWS rows (where the daily import writes), and the alias tab
-// whole. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
+// whole — the DQE, transfer and (cycle 26 F24) Outbound Calls tabs. The stamp itself is re-probed every CDR_STAMP_TTL seconds, so new or
 // corrected data reaches every reader within that — sooner than the old
 // five-minute tier — and an unchanged tab is never re-scanned for the window
 // TTL. A stamp that cannot be read caches nothing longer than before.

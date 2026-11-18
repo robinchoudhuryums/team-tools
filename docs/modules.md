@@ -464,6 +464,15 @@ lighter `--warn-fill`.
      without the timed intake calls (the intake form times itself, first input
      to send). % Answered is never adjusted.
 
+     **Cycle 26 Batch 10 (2026-11-18).** The outbound read is cached against
+     the CDR data stamp and shared by the team (it was re-read per rep every
+     five minutes). "Avg talk excl. intake" appears only when the timed forms
+     ran longer than the rep's average call, beside that average ("… with
+     them"); an amended intake send is not a timed intake call. Team → a
+     window with no call data draws one "Calls —" row with the reason and "—"
+     in each rep's call cells; the Intake column sorts; the outbound row says
+     "not in yet" or "data through MM-DD" whenever the export is behind.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a

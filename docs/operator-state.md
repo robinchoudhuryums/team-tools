@@ -290,6 +290,13 @@ entry says which it is.
   intake form timer needs nothing either: intake notes logged after the
   deploy carry their form time; older ones count as intake calls, untimed.
   **Tell the team** what Adjusted means (the ⓘ on the panel says it too).
+  **Cycle 26 Batch 10:** the tab is part of the CDR data stamp, so the app
+  sees the morning's export within about two minutes and does not re-read
+  the tab between exports. While the export is behind the call data, Stats
+  says "Outbound calls — not in yet" (a day) or "data through MM-DD" (a
+  range) — if that line stays past mid-morning, the outbound export in
+  call-data-reporting did not run. "Avg talk excl. intake" now appears only
+  for a rep whose timed intake forms ran longer than their average call.
 <a id="operator-set-script-property-cdr-ss-id"></a>
 - **Set Script Property `CDR_SS_ID`** to the CDR Report spreadsheet
   ID (the same spreadsheet backing the `call-data-reporting`

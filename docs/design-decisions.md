@@ -7197,6 +7197,54 @@ pick them up without re-deriving the context.
     the defect. The pin checks either placement.
   INV-428; S187.
 
+- <a id="c26-batch-10-stats"></a>**Batch 10 (Stats): the outbound read is stamped and shared; the adjusted average is given beside its own basis, only when the forms ran longer; a Team window with no call data has no call figures (cycle 26, 2026-11-18).**
+  - **The outbound reader joins PF1 rather than keeping a cache of its own
+    (F24).** It is keyed by the CDR data stamp, and the stamp now probes the
+    Outbound Calls tab. The alternative — leave the stamp alone and only
+    share the key — would have kept a six-hour entry blind to the morning's
+    export. The cost is one more tab in the stamp probe (the newest 300 rows,
+    every column, every two minutes at most), and that a failure of that
+    probe is a failure of the stamp: every CDR reader then caches for five
+    minutes, as with any other probe. The tab is optional; a missing one is a
+    stable part of the stamp, not a failure.
+  - **One cohort list, one key.** My Stats needs one rep's outbound calls and
+    now reads the cohort's and takes its row, exactly as the Dashboard card
+    does for inbound. The answer is a few numbers per rep, far under the
+    100 KB limit, and Team Metrics asks with the same set, so a manager's
+    open warms every rep's.
+  - **The newest day is kept against the stamp.** `through` needs the whole
+    date column; a window that starts after it needs nothing else. Kept under
+    `…:obthrough:<stamp>`, it answers every "today" without opening the
+    workbook. It is only trusted for a window that STARTS after it — a range
+    that reaches back into the data is read.
+  - **Not done: reading ahead.** The hourly read-ahead (`warmCdrMetricsCache`)
+    does not warm the outbound windows. The first reader after new data pays
+    one read per window; that was judged cheaper than another way for the
+    job to be partial.
+  - **"Avg talk excl. intake" is one-sided (F34).** A form's time is the
+    least its call lasted. The figure is given when the timed forms averaged
+    longer than the rep's own talk ÷ answered — then the true figure is at
+    most what is shown — and not otherwise, where it could only mislead. It
+    is drawn beside talk ÷ answered ("… with them"), not beside the sheet's
+    ATT column, because the two are the same sum only by construction. When
+    the forms were shorter the panel says nothing about intake; the count of
+    intake calls stays on its own row above.
+  - **An amendment is not a call.** Its note still counts as an intake note
+    (the app cannot tell an amendment's note from a call's once it is
+    written), but it carries no form time, so it is never a "timed intake
+    call". Notes written before this keep the time they have.
+  - **No call data is one row, not four dashes (F35).** With no rep holding a
+    call-data row, the rail draws "Calls —" and why. "Not in yet" is claimed
+    only for a window that ends on the previous workday or later, by
+    CONFIG.TIMEZONE's day — the payload is cached for every caller, so
+    nothing in it may be the caller's. A Saturday viewed on Saturday reads
+    "not in yet" until Monday, then "no call data"; that was accepted over a
+    holiday-calendar read for a caption.
+  - **The outbound notice follows the M1 decision's own words.** "A window
+    past the export's newest day says 'data through …'" is now true whatever
+    was placed. On a day the export has not reached, every rep sees the row —
+    including the many who never place an outbound call. That is the honest
+    reading of an export that has not run, and it clears when it does.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`
@@ -7324,7 +7372,8 @@ pick them up without re-deriving the context.
     the same Agent Alias Overrides as the DQE reader, so the outbound figure
     and the inbound one count the same person. A missing tab or column is
     named, a failed read is never cached, and a window past the export's
-    newest day says "data through …".
+    newest day says "data through …" (whatever was placed — cycle 26 F35;
+    and the read is stamped and shared since F24: see the Batch 10 entry).
   - **An intake call is measured by its form.** The DQE data has one row per
     rep per day, so no single call's length is known. The intake form times
     itself from the first input to the send and the seconds ride the intake
