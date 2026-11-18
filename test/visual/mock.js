@@ -1883,7 +1883,7 @@ function runRecAgo(msAgo, notes) {
                         { empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), time: '17:02:00', type: 'ClockOut', isAdjustment: true, empTzAbbr: 'PHT', canDelete: true }],
         recentAudits: [{ timestamp: daysAgo(0) + ' 08:04:12', empName: 'Avery Blake', action: 'PunchIn', actor: '', notes: '', punchDate: todayIso, punchTime: '08:04:00', isAdjustment: false },
                        { timestamp: daysAgo(1) + ' 17:03:40', empName: 'Sam Ortiz', action: 'TimeOffStatusChange', actor: 'mgr@umsupply.com', notes: 'Pending->Approved (Full Day)', punchDate: daysAgo(-4), punchTime: '', isAdjustment: false }],
-        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST',
+        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST', idleCheckFailed: false,
         punchTrend: wspark(8, 3, 0).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
         toSummary: { approved: 6, pending: 1, denied: 1 },
         pendingTrend: spark(14, 1), missedTrend: wspark(14, 2, 1),
@@ -1894,7 +1894,7 @@ function runRecAgo(msAgo, notes) {
     // with an OFFBOARDED rep's open day (editable) and one past the edit window,
     // pending requests, a current period that is ready, and an orphan request.
     getPayPeriodClose: {
-      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST',
+      todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'CST', tzMixed: false,   // F31: the roster's own zone, never CONFIG.TIMEZONE
       periods: [
         { cycle: 'Monthly', which: 'previous', start: daysAgo(44), end: daysAgo(14), checkedThrough: daysAgo(14),
           counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1 }, ready: false,
@@ -2079,14 +2079,16 @@ function runRecAgo(msAgo, notes) {
       }
       return { date: date, timezone: 'America/Chicago', blockMin: 10, gapMin: 10, retentionDays: 14, keptFrom: '2026-09-01',
         pings: blocks.filter(function (x) { return x; }).length, first: '07:56', last: '17:06', blocks: blocks,
-        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10 };
+        hasCounts: true, level: level, clicks: clicks, keys: keys, activeMin: blocks.filter(function (x) { return x; }).length * 10,
+        // Cycle 26 Batch 9: `kept` is the reader's own list (not drawn); nothing ignored (F27), no lost rows (F30).
+        kept: [], ignored: 0, logFails: null };
     },
     // AC1: the team day table's read — keys mirror activityHourly_'s return
     // (INV-185). Three reps active (one only on/off, a day before levels),
     // Leo Kim with nothing.
     managerGetTeamActivity: function (date) {
       var hrs = function (from, to, base) { var h = []; for (var i = 0; i < 24; i++) h.push(i >= from && i < to && i !== 12 ? base + (i * 37) % 90 : 0); return h; };
-      return { date: date, blockMin: 10, keptFrom: '2026-09-01', reps: {
+      return { date: date, blockMin: 10, keptFrom: '2026-09-01', logFails: null, reps: {
         'E-1042': { hours: hrs(8, 17, 120), hasCounts: true, clicks: 640, keys: 2210, activeMin: 470, pings: 48, first: '08:01', last: '16:58' },
         'E-1077': { hours: hrs(8, 17, 60), hasCounts: true, clicks: 410, keys: 980, activeMin: 430, pings: 44, first: '07:57', last: '16:55' },
         'E-1088': { hours: [0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 6, 5, 0, 4, 6, 6, 2, 0, 0, 0, 0, 0, 0, 0], hasCounts: false, clicks: 0, keys: 0, activeMin: 440, pings: 40, first: '08:31', last: '16:20' },
@@ -2316,8 +2318,8 @@ function runRecAgo(msAgo, notes) {
     // server's viewUsageAggregate_ / getViewUsageStats shapes).
     recordClientError: { success: true },
     recordViewEnter: { success: true },
-    recordPresence: { success: true },   // note 10 — the shell's gesture beacon
-    recordActivityCounts: { success: true },   // AC1 — the pause flush
+    recordPresence: { success: true, logged: true },   // note 10 — the shell's gesture beacon; F30: the row was written
+    recordActivityCounts: { success: true, logged: true },   // AC1 — the pause flush
     getViewUsageStats: { url: '', truncated: false, stats: {
       views: [
         { view: 'callNotes', n7: 61, n30: 240, reps30: 7 },
@@ -2757,6 +2759,7 @@ function runRecAgo(msAgo, notes) {
         { key: 'cdrOffRoster', label: 'CDR off-roster diagnostic channel present', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      activityLogFails: null,   // F30 (cycle 26): no ActivityLog row failed to write lately
       // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
       // pass: nothing topped up, and nothing the pass deliberately declined to
       // fix — but the shapes automationProblems_ reads must still be present,
@@ -3164,6 +3167,7 @@ function runRecAgo(msAgo, notes) {
       detectors: [{ key: 'cnTimestamp', label: 'CN timestamp boundary round-trip', ok: true, detail: '' }],
       clientErrors: { count: 0, last24h: 0, recent: [], windowDays: 7, url: '' },
       witnessFails: { count: 0, lastAt: null, lastAction: '', recent: false },
+      activityLogFails: null,   // F30 (cycle 26): no ActivityLog row failed to write lately
       // The last PTO accrual reconcile pass (operator 2026-09-15). A CLEAN
       // pass: nothing topped up, and nothing the pass deliberately declined to
       // fix — but the shapes automationProblems_ reads must still be present,

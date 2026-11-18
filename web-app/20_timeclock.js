@@ -1791,12 +1791,18 @@ function recordPunch(punchType, custom) {
   return result;
 }
 function recordPunchCore_(punchType, custom) {
+  // F26 (cycle 26): the caller is read BEFORE the lock (g17 / F58). This is a
+  // private helper under the public recordPunch, so the F58 net — which looked
+  // only at public functions that take the lock themselves — never saw it: a
+  // signed-in domain user who is not on the roster waited up to 15 s on the
+  // one project lock, then held it through a roster read, in front of every
+  // rep's punch, to be told "Employee not found".
+  const emp = getEmployeeInfo_();
+  if (!emp) return { success: false, error: 'Employee not found.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   let alertPayload = null;
   try {
-    const emp = getEmployeeInfo_();
-    if (!emp) return { success: false, error: 'Employee not found.' };
 
     const empTz    = empTz_(emp);
     const now      = new Date();
@@ -2331,7 +2337,8 @@ function getManagerDashboard() {
       }
       const present = Object.prototype.hasOwnProperty.call(seen, e.id);
       const disp = presenceDisplay_(status, present, e.isPh, false);
-      const idleMin = liveIdleMin_(e, status, last, now, seenLast[e.id]);   // 25post B8
+      // 25post B8; F29: no idle verdict at all when the stamps could not be read.
+      const idleMin = seenLast ? liveIdleMin_(e, status, last, now, seenLast[e.id]) : null;
       return {
         idleMin: idleMin,
         id: e.id, name: e.name, status: disp.status,
@@ -2687,6 +2694,9 @@ function getManagerDashboard() {
       adjustWindowDays:    CONFIG.ADJUST_WINDOW_DAYS,
       ptoEnabled:          !!getFlag_('enablePtoTracking'),
       mgrTzAbbr,
+      // F29 (cycle 26): no idle chip is "nobody is idle" only when the check
+      // RAN — a failed stamp read says so on the card (g53).
+      idleCheckFailed:     seenLast === null,
       punchTrend, toSummary,
       pendingTrend, missedTrend,
     };
@@ -4266,8 +4276,12 @@ function recordPresence(counts) {
     CacheService.getScriptCache().put(PRESENCE_LAST_PREFIX + emp.id, String(Date.now()), PRESENCE_LAST_TTL_SEC);
     // round 12 E2 — the durable record (best-effort); AC1 — with the clicks
     // and keystrokes the window counted since its last send (counts only).
-    activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
-    return { success: true };
+    // F30 (cycle 26): whether the row was WRITTEN rides back. The stamp above
+    // is the presence either way, but the counts in a row that was not written
+    // are gone unless the window puts them back — it only did so when the
+    // call itself failed, never when the append did.
+    const logged = activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
+    return { success: true, logged: logged };
   } catch (e) {
     return { success: false };
   }
@@ -4297,8 +4311,48 @@ function activityLogAppend_(empId, ms, counts, kind) {
     return true;
   } catch (e) {
     console.warn('activityLogAppend_ failed: ' + e.message);
+    noteActivityLogWriteFailure_(e);   // F30: counted, so a day with no activity can say why
     return false;
   }
+}
+/** F30 (cycle 26) — counts an ActivityLog row that could not be written
+ *  (ACTIVITY_LOG_FAIL_PROP). Best-effort and lock-free like the append it
+ *  follows: a lost increment under a race undercounts a counter that only has
+ *  to be non-zero to be shown (the DigestDeliveries posture). Never throws. */
+function noteActivityLogWriteFailure_(err) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let rec = null;
+    try { rec = JSON.parse(props.getProperty(ACTIVITY_LOG_FAIL_PROP)); } catch (_) {}
+    if (!rec || typeof rec !== 'object') rec = { count: 0, firstMs: Date.now() };
+    rec.count = (Number(rec.count) || 0) + 1;
+    rec.lastMs = Date.now();
+    rec.lastError = String((err && err.message) || err || '').slice(0, 200);
+    propSetBounded_(ACTIVITY_LOG_FAIL_PROP, JSON.stringify(rec), { mode: 'degrade', shrink: propShrinkStripFields_(['lastError']) });
+  } catch (e) { /* best-effort — the console line above is the floor */ }
+}
+/** PURE (Node-pinned) — the write-failure record as a reader shows it, or
+ *  null: only when the failures' span [firstMs, lastMs] touches [fromMs, toMs]
+ *  (a day being viewed, or the last 48 hours for Automation Health). */
+function activityLogFailsView_(raw, fromMs, toMs) {
+  let rec = null;
+  try { rec = JSON.parse(raw); } catch (_) { return null; }
+  if (!rec || typeof rec !== 'object') return null;
+  const count = Number(rec.count) || 0, lastMs = Number(rec.lastMs) || 0;
+  const firstMs = Number(rec.firstMs) || lastMs;
+  if (!(count > 0) || !(lastMs > 0)) return null;
+  if (lastMs < fromMs || firstMs > toMs) return null;
+  return { count: count, firstMs: firstMs, lastMs: lastMs, lastError: String(rec.lastError || '') };
+}
+/** The record for a day's readers: `{count, firstDate, lastDate}` in `tz`, or
+ *  null. Best-effort — an unreadable property is no note, never an error. */
+function activityLogFailsFor_(fromMs, toMs, tz) {
+  try {
+    const v = activityLogFailsView_(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_FAIL_PROP), fromMs, toMs);
+    if (!v) return null;
+    return { count: v.count, firstDate: Utilities.formatDate(new Date(v.firstMs), tz, 'yyyy-MM-dd'),
+      lastDate: Utilities.formatDate(new Date(v.lastMs), tz, 'yyyy-MM-dd') };
+  } catch (e) { return null; }
 }
 /** Rep-callable, fire-and-forget (AC1, operator 2026-11-11): the clicks and
  *  keystrokes a window counted since its last send, sent once its rep has
@@ -4312,12 +4366,44 @@ function recordActivityCounts(counts) {
     const emp = getEmployeeInfo_();
     if (!emp) return { success: false };
     const now = Date.now();
+    // F29 (cycle 26): the flush also says WHEN the last gesture was, and that
+    // moves the six-hour idle stamp — only that one, never the 30-minute
+    // presence stamp (this arrives minutes after the rep stopped). The stamp
+    // was written by recordPresence alone, at most once per 10 minutes, so a
+    // rep active 10:00–10:09 read "idle 30 min" at 10:30 after 21.
+    presenceLastStampAtLeast_(emp.id, activityLastGestureMs_(counts, now));
     const clean = activityCountsClean_(counts, now);
     if (!clean.length) return { success: true, empty: true };
-    return { success: activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND) };
+    // F30: `logged` false is "not written — send these again"; the page's
+    // success handler used to ignore a false `success`.
+    const logged = activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND);
+    return { success: logged, logged: logged };
   } catch (e) {
     return { success: false };
   }
+}
+/** PURE (Node-pinned, F29) — the server time of a window's last gesture, from
+ *  the client's `{at, last}` (both on ITS clock, so only their difference is
+ *  used — a clock that is off cancels out); 0 when it is not said, is in the
+ *  client's future, or is older than ACTIVITY_COUNTS_MAX_AGE_MS. */
+function activityLastGestureMs_(raw, nowMs) {
+  if (!raw || typeof raw !== 'object' || !(nowMs > 0)) return 0;
+  const at = Number(raw.at), last = Number(raw.last);
+  if (!isFinite(at) || !isFinite(last) || !(at > 0) || !(last > 0)) return 0;
+  const ago = at - last;
+  if (!(ago >= 0) || ago > ACTIVITY_COUNTS_MAX_AGE_MS) return 0;
+  return Math.floor(nowMs - ago);
+}
+/** F29 — move the six-hour idle stamp FORWARD to `ms` (never back: another
+ *  window's ping may be later). Cache only; best-effort; never throws. */
+function presenceLastStampAtLeast_(empId, ms) {
+  try {
+    if (!empId || !(ms > 0)) return;
+    const cache = CacheService.getScriptCache();
+    const have = Number(cache.get(PRESENCE_LAST_PREFIX + empId));
+    if (isFinite(have) && have >= ms) return;
+    cache.put(PRESENCE_LAST_PREFIX + empId, String(ms), PRESENCE_LAST_TTL_SEC);
+  } catch (e) { /* best-effort */ }
 }
 /** PURE (Node-pinned) — a window's counts as the server keeps them, or [].
  *  `raw` is the client's `{at, b: [[block, clicks, keys]]}` — `block` the
@@ -4379,8 +4465,19 @@ function activityLowerBound_(list, x) {
 /** PURE (Node-pinned) — a day of pings as the Day Edit chart reads it.
  *  `mins` are minutes of the day in the REP's timezone (any order, 0..1439).
  *  Returns { pings, first, last, blocks } — `blocks` one count per
- *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings. */
-function activityDayView_(mins, blockMin, counts) {
+ *  ACTIVITY_BLOCK_MIN-minute block; first/last 'HH:mm' or '' with no pings.
+ *  F27 (cycle 26): a block's counts are kept only BESIDE A PING — a ping in
+ *  that block or the one either side — and a block's total is capped here,
+ *  over every row. The server takes counts for any block of the last six
+ *  hours (a laptop asleep sends late) and capped only each SEND, so a rep back
+ *  from two hours away could send counts for the whole gap, as often as they
+ *  liked, and the manager saw steady activity across it. A ping cannot be
+ *  back-dated (its time is the server's), and a window that counts a gesture
+ *  has pinged within the ten minutes before it — so real counts always have
+ *  one beside them. `edgeMins` are pings just outside the day (a negative
+ *  minute, or 1440+), which vouch for its first and last block. `kept` is the
+ *  counts that passed, by block; `ignored` how many blocks' worth did not. */
+function activityDayView_(mins, blockMin, counts, edgeMins) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
   const n = Math.ceil(1440 / size);
   const blocks = new Array(n).fill(0);
@@ -4393,19 +4490,32 @@ function activityDayView_(mins, blockMin, counts) {
   // window whose counts never arrived) has hasCounts false and is drawn
   // on/off from the pings, as it always was — never as a level of zero.
   const level = new Array(n).fill(0);
-  let clicks = 0, keys = 0, hasCounts = false;
+  const near = {};
+  ok.forEach(function (m) { near[Math.floor(m / size)] = true; });
+  (edgeMins || []).forEach(function (m) { if (typeof m === 'number' && isFinite(m)) near[Math.floor(m / size)] = true; });
+  const cBy = new Array(n).fill(0), kBy = new Array(n).fill(0), unbacked = {};
   (counts || []).forEach(function (e) {
     const m = Array.isArray(e) ? Number(e[0]) : NaN;
     if (!(m >= 0 && m < 1440)) return;
     const c = Math.max(0, Math.floor(Number(e[1]) || 0)), k = Math.max(0, Math.floor(Number(e[2]) || 0));
     if (!c && !k) return;
-    hasCounts = true;
-    level[Math.floor(m / size)] += c + k;
-    clicks += c; keys += k;
+    const b = Math.floor(m / size);
+    if (!near[b - 1] && !near[b] && !near[b + 1]) { unbacked[b] = true; return; }
+    cBy[b] += c; kBy[b] += k;
   });
+  let clicks = 0, keys = 0, hasCounts = false;
+  const kept = [];
+  for (let b = 0; b < n; b++) {
+    const c = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, cBy[b]), k = Math.min(ACTIVITY_COUNTS_MAX_PER_BLOCK, kBy[b]);
+    if (!c && !k) continue;
+    hasCounts = true;
+    level[b] = c + k; clicks += c; keys += k;
+    kept.push([b * size, c, k]);
+  }
   const active = blocks.filter(function (b, i) { return b > 0 || level[i] > 0; }).length;
   return { pings: ok.length, first: ok.length ? hhmm(ok[0]) : '', last: ok.length ? hhmm(ok[ok.length - 1]) : '', blocks: blocks,
-    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size };
+    hasCounts: hasCounts, level: level, clicks: clicks, keys: keys, activeMin: active * size,
+    kept: kept, ignored: Object.keys(unbacked).length };
 }
 // ── Batch G (operator 2026-11-02 — "condense, archive condensed, then
 // delete"): the ActivityLog's raw pings are condensed, each night, into ONE
@@ -4435,21 +4545,37 @@ function activityBlocksDecode_(str, n) {
  *  {date: 'YYYY-MM-DD', min}; todayOf(tz) → 'YYYY-MM-DD'; existing:
  *  {'date|empId': true} already summarised. Only a FINISHED day (before the
  *  rep's today) is condensed — a day still being worked would be cut short —
- *  and a day already summarised is never summarised twice. Returns
+ *  and a day already summarised is never summarised twice. F30 (cycle 26):
+ *  the caller's `todayOf` is the day ACTIVITY_COUNTS_MAX_AGE_MS ago, so a day
+ *  is condensed only once no count for it can still arrive (the server takes
+ *  a block up to that old; counts landing after the 2 am condense were decoded
+ *  and then skipped for ever, the reader preferring the summary). F27: the
+ *  summary keeps only the counts beside a ping, capped (activityDayView_) —
+ *  a ping in a neighbouring day's first or last block vouches across midnight.
+ *  Returns
  *  {summaries: [{date, empId, tz, pings, first, last, activeMin, blocks}],
  *  finished: {'date|empId': true}} — every finished day seen. */
 function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
   const size = blockMin > 0 ? blockMin : ACTIVITY_BLOCK_MIN;
   const bms = ACTIVITY_BLOCK_MIN * 60000;
-  const days = {}, today = {};
-  const dayOf = function (id, ms) {
+  const days = {}, today = {}, edges = {};
+  const shift = function (date, n) {
+    const p = String(date).split('-');
+    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n)).toISOString().slice(0, 10);
+  };
+  const localIn = function (id, ms) {
     const tz = tzOf(id);
     if (today[tz] == null) today[tz] = todayOf(tz);
     const l = localOf(ms, tz);
-    if (!l || !l.date || !(l.date < today[tz])) return null;
-    const k = l.date + '|' + id;
-    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: tz, mins: [], counts: [] }), min: l.min };
+    return l && l.date ? { tz: tz, date: l.date, min: l.min, finished: l.date < today[tz] } : null;
   };
+  const dayOf = function (id, ms) {
+    const l = localIn(id, ms);
+    if (!l || !l.finished) return null;
+    const k = l.date + '|' + id;
+    return { d: (days[k] = days[k] || { date: l.date, empId: id, tz: l.tz, mins: [], counts: [] }), min: l.min };
+  };
+  const edge = function (date, id, min) { const k = date + '|' + id; (edges[k] = edges[k] || []).push(min); };
   (rows || []).forEach(function (r) {
     const id = String((r && r[0]) || '').trim();
     const ms = Number(r && r[1]);
@@ -4462,6 +4588,13 @@ function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
       if (at) at.d.counts.push([at.min, e[1], e[2]]);
     });
     if (String(r[3] || '') === ACTIVITY_COUNTS_KIND) return;
+    // A ping in a day's last block vouches for the next day's first, and the
+    // other way round — whether or not its own day is finished yet.
+    const pl = localIn(id, ms);
+    if (pl) {
+      if (pl.min >= 1440 - size) edge(shift(pl.date, 1), id, pl.min - 1440);
+      if (pl.min < size) edge(shift(pl.date, -1), id, pl.min + 1440);
+    }
     const at = dayOf(id, ms);
     if (at) at.d.mins.push(at.min);
   });
@@ -4470,9 +4603,9 @@ function activityCondense_(rows, tzOf, localOf, todayOf, existing, blockMin) {
     finished[k] = true;
     if ((existing || {})[k]) return;
     const d = days[k];
-    const v = activityDayView_(d.mins, size, d.counts);
+    const v = activityDayView_(d.mins, size, d.counts, edges[k]);
     summaries.push({ date: d.date, empId: d.empId, tz: d.tz, pings: v.pings, first: v.first, last: v.last,
-      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(d.counts, size) });
+      activeMin: v.activeMin, blocks: activityBlocksEncode_(v.blocks), counts: activityDayCountsEncode_(v.kept, size) });
   });
   return { summaries: summaries, finished: finished };
 }
@@ -4500,14 +4633,27 @@ function activityDayCountsDecode_(str, blockMin) {
 }
 /** PURE (Node-pinned) — which raw rows (0-based data indexes) the purge may
  *  delete: older than `cutoffMs` AND their day summarised. A ping whose day
- *  has no summary row is NEVER deleted, so nothing goes before it is kept. */
+ *  has no summary row is NEVER deleted, so nothing goes before it is kept.
+ *  F30 (cycle 26): a COUNTS-ONLY row is not a ping, so the condense files it
+ *  under the day of each BLOCK it names, never its own — a flush just after
+ *  midnight, on a day the rep never pinged, had no summary key for its own
+ *  date and was never purged. It goes once every day its blocks name is
+ *  summarised. */
 function activityPurgeIndexes_(rows, cutoffMs, summarised, tzOf, localOf, budget) {
   const out = [];
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
   for (let i = 0; i < (rows || []).length && out.length < budget; i++) {
     const id = String((rows[i] && rows[i][0]) || '').trim();
     const ms = Number(rows[i] && rows[i][1]);
     if (!id || !(ms > 0) || !(ms < cutoffMs)) continue;
-    const l = localOf(ms, tzOf(id));
+    const tz = tzOf(id);
+    const blocks = String(rows[i][3] || '') === ACTIVITY_COUNTS_KIND ? activityCountsDecode_(rows[i][2]) : [];
+    if (blocks.length) {
+      const all = blocks.every(function (e) { const bl = localOf(e[0] * bms, tz); return !!(bl && summarised[bl.date + '|' + id]); });
+      if (all) out.push(i);
+      continue;
+    }
+    const l = localOf(ms, tz);
     if (l && summarised[l.date + '|' + id]) out.push(i);
   }
   return out;
@@ -4569,7 +4715,9 @@ function activityLogCondenseAndPurge_(ss, nowMs) {
     const s = Utilities.formatDate(new Date(ms), tz, 'yyyy-MM-dd HH:mm');
     return { date: s.slice(0, 10), min: parseInt(s.slice(11, 13), 10) * 60 + parseInt(s.slice(14, 16), 10) };
   };
-  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs), tz, 'yyyy-MM-dd'); };
+  // F30: "today" for the condense is the day it was ACTIVITY_COUNTS_MAX_AGE_MS
+  // ago — a day is finished once nothing more can arrive for it.
+  const todayOf = function (tz) { return Utilities.formatDate(new Date(nowMs - ACTIVITY_COUNTS_MAX_AGE_MS), tz, 'yyyy-MM-dd'); };
   const sumSheet = getOrCreateActivitySummarySheet_();
   activityHealHeader_(sumSheet, ACTIVITY_SUMMARY_HEADERS);
   const existing = activitySummaryKeys_(sumSheet);
@@ -4617,9 +4765,15 @@ function activityDaysFor_(ss, targets, date, keptTz) {
     const span = sum.getRange(r0, 1, r1 - r0 + 1, ACTIVITY_SUMMARY_HEADERS.length).getValues();
     fromSum.forEach(function (d, i) {
       const r = span[nums[i] - r0];
-      const v = activityDayView_([], ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN));
+      // F27: the row's own block map says where the pings were, so a summary
+      // condensed before the rule existed is held to it too; its first and
+      // last block are taken on trust (the neighbouring day is not read here).
+      const blk = activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN));
+      const at = [];
+      blk.forEach(function (c, b) { if (c > 0) at.push(b * ACTIVITY_BLOCK_MIN); });
+      const v = activityDayView_(at, ACTIVITY_BLOCK_MIN, activityDayCountsDecode_(r[9], ACTIVITY_BLOCK_MIN), [-1, 1440]);
       views[d.id] = Object.assign(v, { pings: Number(r[3]) || 0, first: String(r[4] || ''), last: String(r[5] || ''),
-        blocks: activityBlocksDecode_(r[7], Math.ceil(1440 / ACTIVITY_BLOCK_MIN)), fromSummary: true });
+        blocks: blk, fromSummary: true });
       if (Number(r[6]) > v.activeMin) views[d.id].activeMin = Number(r[6]);
     });
   }
@@ -4636,16 +4790,17 @@ function activityDaysFor_(ss, targets, date, keptTz) {
   }
   const minStart = Math.min.apply(null, rest.map(function (d) { return d.startMs; }));
   const maxEnd = Math.max.apply(null, rest.map(function (d) { return d.endMs; }));
-  const lo = activityLowerBound_(msCol, minStart), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
+  const bms = ACTIVITY_BLOCK_MIN * 60000;
+  // F27: one block before the first day too — a ping there vouches for the day's first block.
+  const lo = activityLowerBound_(msCol, minStart - bms), hi = activityLowerBound_(msCol, maxEnd + ACTIVITY_COUNTS_MAX_AGE_MS);
   const want = {};
-  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [] }; });
+  rest.forEach(function (d) { want[d.id] = { d: d, mins: [], counts: [], edges: [] }; });
   const minOf = function (ms, tz) {
     const t = Utilities.formatDate(new Date(ms), tz, 'HH:mm').split(':');
     return parseInt(t[0], 10) * 60 + parseInt(t[1], 10);
   };
   if (hi > lo) {
     const cells = sheet.getRange(2 + lo, 2, hi - lo, 4).getValues();   // id, ms, counts, kind
-    const bms = ACTIVITY_BLOCK_MIN * 60000;
     for (let i = 0; i < cells.length; i++) {
       const w = want[String(cells[i][0]).trim()];
       if (!w) continue;
@@ -4656,9 +4811,11 @@ function activityDaysFor_(ss, targets, date, keptTz) {
       });
       if (String(cells[i][3] || '') === ACTIVITY_COUNTS_KIND) continue;
       if (ms >= w.d.startMs && ms < w.d.endMs) w.mins.push(minOf(ms, w.d.tz));
+      else if (ms >= w.d.startMs - bms && ms < w.d.startMs) w.edges.push(-1);
+      else if (ms >= w.d.endMs && ms < w.d.endMs + bms) w.edges.push(1440);
     }
   }
-  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts); });
+  rest.forEach(function (d) { views[d.id] = activityDayView_(want[d.id].mins, ACTIVITY_BLOCK_MIN, want[d.id].counts, want[d.id].edges); });
   return { views: views, keptFrom: base.keptFrom };
 }
 /** Manager-gated, read-only — one rep's app activity on one day of THEIR
@@ -4675,7 +4832,9 @@ function managerGetDayActivity(empId, date) {
     const tz = empTz_(target);
     const base = { date: String(date), timezone: tz, blockMin: ACTIVITY_BLOCK_MIN, gapMin: ACTIVITY_PING_GAP_MIN, retentionDays: ACTIVITY_LOG_DAYS };
     const r = activityDaysFor_(getAdpSS_(), [{ id: target.id, tz: tz }], String(date), tz);
-    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom });
+    // F30: rows that could not be written on (or around) this day are said.
+    const dayStart = Utilities.parseDate(String(date) + ' 00:00:00', tz, 'yyyy-MM-dd HH:mm:ss').getTime();
+    return Object.assign(base, r.views[target.id], { keptFrom: r.keptFrom, logFails: activityLogFailsFor_(dayStart, dayStart + 86400000, tz) });
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
 }
 /** PURE (Node-pinned) — a day view as the team table draws it: 24 hourly
@@ -4710,6 +4869,8 @@ function managerGetTeamActivity(date) {
     if (!targets.length) return out;
     const r = activityDaysFor_(getAdpSS_(), targets, String(date), empTz_(caller));
     out.keptFrom = r.keptFrom;
+    const dayStart = Utilities.parseDate(String(date) + ' 00:00:00', empTz_(caller), 'yyyy-MM-dd HH:mm:ss').getTime();
+    out.logFails = activityLogFailsFor_(dayStart, dayStart + 86400000, empTz_(caller));   // F30
     targets.forEach(function (t) { out.reps[t.id] = activityHourly_(r.views[t.id]); });
     return out;
   } catch (err) { return { error: 'Could not read app activity: ' + err.message }; }
@@ -4746,20 +4907,25 @@ function presenceTimes_(empIds) {
   } catch (e) { /* best-effort — no stamps */ }
   return out;
 }
-/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp (best-effort,
- *  like presenceTimes_; a failed read is no stamps, which the idle rule reads
- *  as "measure from the last punch"). */
+/** 25post B8 — { empId: lastActivityMs } from the six-hour stamp, or NULL when
+ *  the read failed. F29 (cycle 26): a failed read used to be `{}` — "no
+ *  stamps" — and the idle rule then measured EVERY clocked-in rep from their
+ *  last punch: at 3 pm the dashboard said the whole team had been idle since
+ *  lunch. "Could not read" is not "nobody was active" (g128); null skips the
+ *  rule, and the view says the check could not run. A rep with no stamp in a
+ *  read that WORKED is still measured from the last punch, as documented. */
 function presenceLastTimes_(empIds) {
   const out = {};
   try {
     const keys = (empIds || []).map(id => PRESENCE_LAST_PREFIX + id);
     if (!keys.length) return out;
-    const hits = CacheService.getScriptCache().getAll(keys) || {};
+    const hits = CacheService.getScriptCache().getAll(keys);
+    if (!hits || typeof hits !== 'object') return null;
     Object.keys(hits).forEach(k => {
       const n = Number(hits[k]);
       if (isFinite(n) && n > 1e12) out[k.slice(PRESENCE_LAST_PREFIX.length)] = n;
     });
-  } catch (e) { /* best-effort */ }
+  } catch (e) { return null; }
   return out;
 }
 /** PURE (25post B8, operator 2026-10-16) — how long a clocked-in rep has gone
@@ -6384,8 +6550,9 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
         if (d < per.start || d > through) return;
         const v = days[d];
         if (v !== TIMESHEET_DAY_INCOMPLETE && v !== TIMESHEET_DAY_ORPHAN) return;
+        // F31: by the rep's own today when the caller gives one (Day Edit's frame).
         repOf(emp).openDays.push({ date: d, kind: v === TIMESHEET_DAY_INCOMPLETE ? 'no clock-out' : 'clock-out with no clock-in',
-          editable: d >= editableFrom });
+          editable: d >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom) });
       });
     });
     pending.forEach((p) => {
@@ -6419,16 +6586,26 @@ function getPayPeriodClose() {
     if (!caller || !caller.isManager) return { error: 'Manager access required.' };
     const rows = getEmployeeRosterRows_();
     const anchor = orgBiweeklyAnchor_(rows);
-    const roster = [], cycles = {};
+    const roster = [], cycles = {}, zones = {};
+    const now = new Date();
     for (let i = 1; i < rows.length; i++) {
       const id = payrollSubjectId_(rows[i]);
       if (!id) continue;
       const pc = empPayCycle_(rows[i], anchor).payCycle;
       cycles[pc] = true;
+      const tz = safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim());
+      // F31: Day Edit accepts a day by the REP's own today (managerSaveDay), so
+      // "editable" is judged in that frame too.
       roster.push({ id: id, name: String(rows[i][EMP.NAME] || '').trim(), payCycle: pc,
-        offboarded: !empRosterEmail_(rows[i]), timezone: safeTimezone_(String(rows[i][EMP.TIMEZONE] || '').trim()) });
+        offboarded: !empRosterEmail_(rows[i]), timezone: tz, todayIso: fmtDateTz_(now, tz) });
+      zones[tz] = true;
     }
-    const todayIso = fmtDate_(new Date());
+    // F31 (cycle 26): "today" is the MANAGER's, the frame checkOpenPunches
+    // uses with the same grace constant — it was CONFIG.TIMEZONE (India), a
+    // day ahead from about 12:30 pm Central: the card called a period "(just
+    // ended)" on its last afternoon, disagreed with the 8 am scan on what was
+    // open, and said a day still inside the edit window was past it.
+    const todayIso = fmtDateTz_(now, CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE);
     const periods = payPeriodsForClose_(todayIso, cycles, anchor);
     const dated = periods.filter((p) => !p.error);
     let perDayByEmp = {};
@@ -6440,8 +6617,13 @@ function getPayPeriodClose() {
     const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
     const parRows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
     const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS);
+    // The dates listed are Timesheet dates — each in that rep's ROSTER timezone,
+    // never CONFIG.TIMEZONE (the card said "Dates in IST" over Chicago dates).
+    // One zone on the roster is named; more than one is said, not guessed.
+    const zoneList = Object.keys(zones);
     return { periods: plan.periods, orphans: plan.orphans, todayIso: todayIso,
-      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS, graceDays: OPEN_PUNCH_GRACE_DAYS, tzAbbr: tzAbbr_(CONFIG.TIMEZONE) };
+      adjustWindowDays: CONFIG.ADJUST_WINDOW_DAYS, graceDays: OPEN_PUNCH_GRACE_DAYS,
+      tzAbbr: zoneList.length === 1 ? tzAbbr_(zoneList[0]) : '', tzMixed: zoneList.length > 1 };
   } catch (err) {
     return { error: err.message };
   }
@@ -8721,15 +8903,19 @@ function updatePunchAdjustStatusBulk(reqIds, newStatus) {
   return punchAdjustDecideAll_(reqIds, newStatus);
 }
 function punchAdjustDecideAll_(reqIds, newStatus) {
+  // F26 (cycle 26): the caller BEFORE the lock (g17 / F58) — both public
+  // wrappers above reach the lock only through here, so any signed-in rep
+  // calling either one queued on the project lock and then held it, to be
+  // refused. Nothing that changes nothing runs under the lock.
+  const callerEmp = getEmployeeInfo_();
+  if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
+  if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   const later = [];                                            // post-lock notifications (M-7)
   let notifyAfter = null;
   const results = [];
   try {
-    const callerEmp = getEmployeeInfo_();
-    if (!callerEmp || !callerEmp.isManager) return { success: false, error: 'Manager access required.' };
-    if (newStatus !== 'Approved' && newStatus !== 'Denied') return { success: false, error: 'Invalid status.' };
     const ids = [];
     (Array.isArray(reqIds) ? reqIds : [reqIds]).forEach((x) => {
       const id = String(x || '').trim();

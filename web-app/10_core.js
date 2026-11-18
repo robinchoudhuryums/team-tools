@@ -2302,6 +2302,18 @@ function computeAutomationHealth_(opts) {
       }
     } catch (_) {}
 
+    // F30 (cycle 26) — ActivityLog rows that could not be written
+    // (ACTIVITY_LOG_FAIL_PROP, stamped by activityLogAppend_). Reported while
+    // the latest failure is inside ACTIVITY_LOG_FAIL_RECENT_MS; an old blip is
+    // history, and the counter does not know about later successes.
+    let activityLogFails = null;
+    try {
+      const nowMs = Date.now();
+      activityLogFails = activityLogFailsView_(PropertiesService.getScriptProperties().getProperty(ACTIVITY_LOG_FAIL_PROP),
+        nowMs - ACTIVITY_LOG_FAIL_RECENT_MS, nowMs);
+      if (activityLogFails) activityLogFails.lastMgr = Utilities.formatDate(new Date(activityLogFails.lastMs), mgrTz, 'yyyy-MM-dd HH:mm');
+    } catch (_) { activityLogFails = null; }
+
     // K-A alternative — last nightly self-test outcome (SELF_TEST_LAST_RESULT
     // Script Property; null = never ran, the fresh-deploy posture).
     let selfTest = null;
@@ -2345,6 +2357,7 @@ function computeAutomationHealth_(opts) {
       detectors: detectors,   // Turn C — detector-liveness checks
       clientErrors: clientErrorsSummary_(mgrTz),   // #1 — client error beacon (INV-150)
       witnessFails: witnessFails,   // C4 — lost tamper-witness audit rows
+      activityLogFails: activityLogFails,   // F30 — app-activity rows that could not be written (recent), or null
       accrualReconcile: readAccrualReconcile_(),   // the last PTO accrual reconcile pass (operator 2026-09-15)
       openPunches: openPunches,                    // the last open-punch scan (operator 2026-09-15)
       selfTest: selfTest,     // K-A alternative — nightly self-test outcome
@@ -2485,6 +2498,14 @@ function automationProblems_(report, opts) {
     add('witness', '', 'A tamper-witness audit row was LOST in the last 48h (' +
       report.witnessFails.lastAction + '; ' + report.witnessFails.count +
       ' total) — a signed/submitted record has no independent audit witness. See INV-113/122.');
+  }
+  // F30 (cycle 26): the app-activity record is written best-effort on every
+  // gesture ping, and a failed write reached only console.warn — Day Edit then
+  // read "No app activity recorded" for a rep who was working.
+  if (report.activityLogFails && report.activityLogFails.count > 0) {
+    const af = report.activityLogFails;
+    add('activityLog', '', 'The app-activity log could not be written ' + af.count + ' time(s), most recently ' + (af.lastMgr || 'recently') +
+      (af.lastError ? ' (' + af.lastError + ')' : '') + ' — Day Edit and Team Punches may show no activity, or less, for work that happened.');
   }
   (report.detectors || []).forEach(function (c) {
     if (c && c.ok === false) add('detector', c.key, 'Detector dead: ' + c.label + ' — ' + c.detail);

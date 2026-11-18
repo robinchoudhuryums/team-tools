@@ -1020,6 +1020,14 @@ const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this whe
 // and never purged before their day is summarised. The purge has its own
 // per-run budget, apart from DIAG_PURGE_MAX_ROWS_PER_RUN, so the busiest tab
 // cannot starve the others.
+// F30 (cycle 26): an ActivityLog row that could not be written is counted here
+// — {count, firstMs, lastMs, lastError} — because the append is best-effort
+// and its failure reached only console.warn: the day then read "No app
+// activity recorded". Read by Automation Health (while the latest failure is
+// inside ACTIVITY_LOG_FAIL_RECENT_MS) and by the two activity views (for a day
+// the failures touch). Auto-managed; delete to reset.
+const ACTIVITY_LOG_FAIL_PROP = 'ACTIVITY_LOG_FAILS';
+const ACTIVITY_LOG_FAIL_RECENT_MS = 48 * 3600000;
 const ACTIVITY_LOG_DAYS = 14;
 const ACTIVITY_LOG_PURGE_MAX_PER_RUN = 6000;
 const ACTIVITY_SUMMARY_TAB = 'ActivitySummary';

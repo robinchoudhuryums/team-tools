@@ -2490,17 +2490,22 @@ var PRESENCE = { sentAt: 0, bound: false };
 // and the thing clicked are never read. The counts ride the next presence
 // ping; a window whose rep has PAUSED for ACT_FLUSH_IDLE_MS sends what it has
 // through recordActivityCounts, which stamps no presence, so the minutes
-// before a break or the end of the day are kept. A send that fails puts its
-// counts back for the next one; counts still held when the window closes are
-// lost (said on the Day Edit card).
+// before a break or the end of the day are kept. A send that fails — the call
+// itself, or (F30, cycle 26) the server saying the row was not written — puts
+// its counts back for the next one; counts still held when the window closes
+// are lost (said on the Day Edit card). F29: `last` is the time of the last
+// gesture counted, sent with the counts so the manager's idle time is measured
+// from it and not from the last ping, which can be ten minutes older.
 var ACT_BLOCK_MS = 10 * 60 * 1000;            // = the server's ACTIVITY_BLOCK_MIN (pinned)
 var ACT_FLUSH_IDLE_MS = 2 * 60 * 1000;
-var ACT_COUNTS = { b: {}, t: null };
+var ACT_MAX_AGE_MS = 6 * 60 * 60 * 1000;      // = the server's ACTIVITY_COUNTS_MAX_AGE_MS (pinned): an older block would be dropped there
+var ACT_COUNTS = { b: {}, t: null, last: 0 };
 function actCount_(e) {
   if (!e || (e.type === 'keydown' && e.repeat)) return;
   var blk = Math.floor(Date.now() / ACT_BLOCK_MS);
   var cur = ACT_COUNTS.b[blk] || (ACT_COUNTS.b[blk] = [0, 0]);
   if (e.type === 'keydown') cur[1]++; else cur[0]++;
+  ACT_COUNTS.last = Date.now();
   if (ACT_COUNTS.t) clearTimeout(ACT_COUNTS.t);
   ACT_COUNTS.t = setTimeout(actFlush_, ACT_FLUSH_IDLE_MS);
 }
@@ -2510,16 +2515,27 @@ function actCount_(e) {
 function actTake_() {
   var ks = Object.keys(ACT_COUNTS.b);
   if (!ks.length) return null;
-  var out = { at: Date.now(), b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
+  var out = { at: Date.now(), last: ACT_COUNTS.last || 0, b: ks.map(function (k) { return [Number(k), ACT_COUNTS.b[k][0], ACT_COUNTS.b[k][1]]; }) };
   ACT_COUNTS.b = {};
   return out;
 }
+/** Put a send's counts back for the next one. A block too old for the server
+ *  to take is let go here, so a window whose sends keep failing never grows a
+ *  list the server would cut from the wrong end. */
 function actRestore_(p) {
   if (!p || !p.b) return;
+  var oldest = Math.floor((Date.now() - ACT_MAX_AGE_MS) / ACT_BLOCK_MS);
   p.b.forEach(function (e) {
+    if (!(e[0] >= oldest)) return;
     var cur = ACT_COUNTS.b[e[0]] || (ACT_COUNTS.b[e[0]] = [0, 0]);
     cur[0] += e[1]; cur[1] += e[2];
   });
+}
+/** F30 (cycle 26): the server answered — but did it WRITE the row? `logged:
+ *  false` is "not written": the counts go back, as they do when the call
+ *  fails. (A refusal with no `logged` — not on the roster — keeps nothing.) */
+function actSent_(p, res) {
+  if (p && res && res.logged === false) actRestore_(p);
 }
 function actFlush_() {
   ACT_COUNTS.t = null;
@@ -2527,7 +2543,7 @@ function actFlush_() {
     var p = actTake_();
     if (!p) return;
     google.script.run
-      .withSuccessHandler(function () {})
+      .withSuccessHandler(function (res) { actSent_(p, res); })
       .withFailureHandler(function () { actRestore_(p); })
       .recordActivityCounts(p);
   } catch (e) { /* never break input handling */ }
@@ -2540,7 +2556,7 @@ function presenceOnGesture_(e) {
     PRESENCE.sentAt = now;                         // stamp BEFORE the send — a slow/failed RPC never double-fires
     var p = actTake_();
     google.script.run
-      .withSuccessHandler(function () {})
+      .withSuccessHandler(function (res) { actSent_(p, res); })
       .withFailureHandler(function () { actRestore_(p); })   // the stamp stays; only the counts wait for the next send
       .recordPresence(p);
   } catch (err) { /* never break input handling */ }

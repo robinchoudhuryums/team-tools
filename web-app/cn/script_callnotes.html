@@ -13076,6 +13076,8 @@ var CN_SYS_PROBLEM_KINDS_ = {
   job: { fix: 'The trigger may be missing or disabled — re-run installAutomationTriggers(), then check the job under Automation detail.', auditLink: true },
   openPunch: { fix: 'Fix each day in Manage → Manage Time (Day Edit) before it leaves the adjust window.' },
   accrual: { fix: 'The balance was NOT changed automatically — compare the PtoAccrualCredit audit rows with the Timesheet.', auditLink: true },
+  // F30 (cycle 26)
+  activityLog: { fix: 'Check the ActivityLog tab on the ADP sheet is there, unprotected and has room (the workbook\'s cell limit). It ages out 48 hours after the last failure; delete ACTIVITY_LOG_FAILS to reset the count.' },
 };
 var CN_SYS_AREAS_ = [['automation', 'Automation'], ['cdr', 'CDR'], ['storage', 'Storage']];
 

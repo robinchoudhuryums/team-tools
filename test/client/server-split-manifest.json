@@ -4569,6 +4569,41 @@
     "searchReference"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-18",
+   "why": "Batch 9 (cycle 26): the activity log's failure counter and views, the last-gesture stamp; F26/F27/F29/F30/F31 changes to the punch, activity, idle and pay-close functions",
+   "added": [
+    "ACTIVITY_LOG_FAIL_PROP",
+    "ACTIVITY_LOG_FAIL_RECENT_MS",
+    "activityLastGestureMs_",
+    "activityLogFailsFor_",
+    "activityLogFailsView_",
+    "noteActivityLogWriteFailure_",
+    "presenceLastStampAtLeast_"
+   ],
+   "removed": [],
+   "changed": [
+    "activityCondense_",
+    "activityDayView_",
+    "activityDaysFor_",
+    "activityLogAppend_",
+    "activityLogCondenseAndPurge_",
+    "activityPurgeIndexes_",
+    "automationProblems_",
+    "computeAutomationHealth_",
+    "getManagerDashboard",
+    "getPayPeriodClose",
+    "managerGetDayActivity",
+    "managerGetTeamActivity",
+    "planPayPeriodClose_",
+    "presenceLastTimes_",
+    "punchAdjustDecideAll_",
+    "recordActivityCounts",
+    "recordPresence",
+    "recordPunchCore_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4622,6 +4657,16 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "2506503b49d02e61"
+  },
+  "ACTIVITY_LOG_FAIL_PROP": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "86e1f754ff2d980a"
+  },
+  "ACTIVITY_LOG_FAIL_RECENT_MS": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4835afd27e020a45"
   },
   "ACTIVITY_LOG_HEADERS": {
    "file": "00_config.js",
@@ -8056,7 +8101,7 @@
   "activityCondense_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e0dd8c784568076d"
+   "sha": "05eb515ba45d2659"
   },
   "activityCountsClean_": {
    "file": "20_timeclock.js",
@@ -8086,12 +8131,12 @@
   "activityDayView_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "009df7b6fea94ee8"
+   "sha": "5db83f3054d51b84"
   },
   "activityDaysFor_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "4951951cc1bca537"
+   "sha": "f9a6308b6a1dc20f"
   },
   "activityHealHeader_": {
    "file": "20_timeclock.js",
@@ -8103,15 +8148,30 @@
    "kind": "function",
    "sha": "9ec41a2d3f566525"
   },
+  "activityLastGestureMs_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "b7cbfaf91b84e4e3"
+  },
   "activityLogAppend_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9e3f53e33a848503"
+   "sha": "4355fd8c7b9f9d3c"
   },
   "activityLogCondenseAndPurge_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9449b892e525a3a2"
+   "sha": "02257106a11a5424"
+  },
+  "activityLogFailsFor_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "23fbdedcd1483344"
+  },
+  "activityLogFailsView_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "14492e4478ff1b87"
   },
   "activityLowerBound_": {
    "file": "20_timeclock.js",
@@ -8121,7 +8181,7 @@
   "activityPurgeIndexes_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ea0fe6f9e5e51cc6"
+   "sha": "8491aaa49cb1d540"
   },
   "activitySummaryKeys_": {
    "file": "20_timeclock.js",
@@ -8396,7 +8456,7 @@
   "automationProblems_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b40c1925ac123665"
+   "sha": "62b51c0e89e3d4b6"
   },
   "automationRunKey_": {
    "file": "10_core.js",
@@ -9251,7 +9311,7 @@
   "computeAutomationHealth_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "387a89c937c09b24"
+   "sha": "2b856f9110dd6415"
   },
   "computeCnEmailHash_": {
    "file": "30_callnotes.js",
@@ -10771,7 +10831,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ae33439a7ffe89f3"
+   "sha": "7ba46ce7cc65e067"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -11136,7 +11196,7 @@
   "getPayPeriodClose": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "abdde657755edeb5"
+   "sha": "a26d98bbfa3bd419"
   },
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -12791,7 +12851,7 @@
   "managerGetDayActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "74ed23dc1b6944da"
+   "sha": "80a16da0ccc932b2"
   },
   "managerGetFormSubmission": {
    "file": "61_forms.js",
@@ -12816,7 +12876,7 @@
   "managerGetTeamActivity": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ea56954174b9ff21"
+   "sha": "c7c0749fe2f9d8b4"
   },
   "managerGetTrainingQueue": {
    "file": "80_training.js",
@@ -12972,6 +13032,11 @@
    "file": "61_forms.js",
    "kind": "function",
    "sha": "3654ab2ba4f67118"
+  },
+  "noteActivityLogWriteFailure_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "00be64d192091d6b"
   },
   "noteDigestDeliveryWriteFailure_": {
    "file": "10_core.js",
@@ -13316,7 +13381,7 @@
   "planPayPeriodClose_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "e7bd2c9347d9f169"
+   "sha": "dde544936200855c"
   },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
@@ -13328,10 +13393,15 @@
    "kind": "function",
    "sha": "d287591dbfa9dea6"
   },
+  "presenceLastStampAtLeast_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "dc5ec3d35ebe4ba4"
+  },
   "presenceLastTimes_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "163f465b4e751fac"
+   "sha": "7676681936b82375"
   },
   "presenceMap_": {
    "file": "20_timeclock.js",
@@ -13406,7 +13476,7 @@
   "punchAdjustDecideAll_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a93296628b63be96"
+   "sha": "2b01246c62d4e137"
   },
   "punchDayAdd_": {
    "file": "20_timeclock.js",
@@ -13941,7 +14011,7 @@
   "recordActivityCounts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a44c19c6817f964d"
+   "sha": "ceee4f8f44a5eaf3"
   },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
@@ -13956,7 +14026,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "c256c31d7699739c"
+   "sha": "bb6e4033f15352dc"
   },
   "recordPunch": {
    "file": "20_timeclock.js",
@@ -13966,7 +14036,7 @@
   "recordPunchCore_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6079b68f68103acc"
+   "sha": "1f20cb7ceaf75bca"
   },
   "recordViewEnter": {
    "file": "10_core.js",

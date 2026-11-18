@@ -2283,6 +2283,11 @@ test('E2 DOM (operator 2026-10-28): Day Edit charts the rep\'s app activity, off
   h2.run.flushSuccess(act(t2), 'managerGetDayActivity');
   assert.ok(h2.document.getElementById('de-act').hidden, 'the answer for the day it left never paints');
   h2.run.flushSuccess(act(y), 'managerGetDayActivity');
+  // F16 (cycle 26): nothing is suggested until that day's punches are on the form.
+  assert.ok(!h2.document.querySelector('#de-act [data-de-apply]'), 'the activity alone suggests nothing');
+  h2.run.flushSuccess({ days: [] }, 'getEmployeeTimesheetForManager');                       // the open's own read, for the day it left — dropped
+  assert.ok(!h2.document.querySelector('#de-act [data-de-apply]'), 'a late answer for the day it left does not make this one known');
+  h2.run.flushSuccess({ days: [{ date: y, breaks: [] }] }, 'getEmployeeTimesheetForManager');
   assert.ok(h2.document.querySelector('#de-act [data-de-apply="ClockOut"]'), 'a past day offers Out');
   // "To" filled: range mode, no single-day suggestion.
   const to = h2.document.getElementById('de-date-to');
@@ -14727,4 +14732,106 @@ test('FP4 DOM (cycle 26): the sign-off names the section it is for — the group
   // Off a section (home): no bar tools, no chip left behind.
   h.w.hbHome_(true); await h.settleAll();
   assert.ok(!h.d.querySelector('.hb-so-n'), 'no chip off a section');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Cycle 26 Batch 9 — Time Clock (F16, F29, F30): the page.
+test('F16 DOM (cycle 26): Day Edit with the activity answering BEFORE the punches — no Apply is offered, the function itself refuses, and when the punches land the real Clock In is on the form and only the punch the day lacks is suggested; a failed punches read suggests nothing and says so; a day with no row suggests both (driven)', () => {
+  const blocks = new Array(144).fill(0); for (let b = 47; b <= 102; b++) blocks[b] = 1;
+  const open = () => {
+    const h = boot();
+    h.read('openDayEditModal')('E-1077', 'Nina Patel');
+    const t = h.read('_deDate'), y = h.read('mgrAddDaysIso_')(t, -1);
+    const dEl = h.document.getElementById('de-date');
+    dEl.value = y; dEl.dispatchEvent(new h.window.Event('change'));
+    // The open's own two reads are for the day it left: both are dropped.
+    h.run.flushSuccess({ days: [] }, 'getEmployeeTimesheetForManager');
+    h.run.flushSuccess({ date: t, timezone: h.read('empTz')(), blockMin: 10, gapMin: 10, pings: 0, first: '', last: '', blocks: [] }, 'managerGetDayActivity');
+    return { h, y, act: { date: y, timezone: h.read('empTz')(), blockMin: 10, gapMin: 10, retentionDays: 14, pings: 52, first: '07:56', last: '17:06', blocks } };
+  };
+  const panel = (h) => h.document.getElementById('de-act');
+  const applies = (h) => [...panel(h).querySelectorAll('[data-de-apply]')].map((b) => b.getAttribute('data-de-apply'));
+  // (1) The race the finding described.
+  let { h, y, act } = open();
+  const ci = h.document.getElementById('de-clockin'), co = h.document.getElementById('de-clockout');
+  assert.strictEqual(h.read('_dePunches'), 'loading');
+  h.run.flushSuccess(act, 'managerGetDayActivity');                    // the activity lands FIRST
+  assert.ok(!panel(h).hidden && panel(h).querySelectorAll('.de-act-b.on').length > 40, 'the strip is drawn');
+  assert.deepStrictEqual(applies(h), [], 'THE REGRESSION: "In 7:56 AM [Apply]" was offered over a day whose punches had not arrived');
+  assert.ok(panel(h).querySelector('[data-de-act-wait]') && /Loading this day/.test(panel(h).textContent), 'and the panel says it is waiting');
+  h.read('deApplySuggestion_')('ClockIn');                             // a stale click, or any other caller
+  assert.deepStrictEqual([ci.value, !!h.read('_deTouched').clockin], ['', false], 'Apply refuses: the slot is not written and not marked touched');
+  h.run.flushSuccess({ days: [{ date: y, clockIn: '08:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.strictEqual(h.read('_dePunches'), 'loaded');
+  assert.strictEqual(ci.value, '08:00', 'THE REGRESSION: the real 08:00 never reached the form — the applied 07:56 had marked the slot touched, and Save rewrote the punch');
+  assert.deepStrictEqual(applies(h), ['ClockOut'], 'only the punch the day does not have is suggested');
+  assert.ok(!panel(h).querySelector('[data-de-act-wait]'), 'the waiting note is gone');
+  panel(h).querySelector('[data-de-apply="ClockOut"]').click();
+  assert.deepStrictEqual([co.value, h.document.getElementById('de-clockout-inf').hidden], ['17:06', false], 'and Apply works once the day is known');
+  // (2) The other order is unchanged: punches first, then the activity.
+  ({ h, y, act } = open());
+  h.run.flushSuccess({ days: [{ date: y, clockIn: '08:00:00', breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess(act, 'managerGetDayActivity');
+  assert.deepStrictEqual(applies(h), ['ClockOut']);
+  // (3) A day with no Timesheet row is KNOWN empty: both are offered.
+  ({ h, y, act } = open());
+  h.run.flushSuccess(act, 'managerGetDayActivity');
+  assert.deepStrictEqual(applies(h), []);
+  h.run.flushSuccess({ days: [] }, 'getEmployeeTimesheetForManager');
+  assert.deepStrictEqual(applies(h), ['ClockIn', 'ClockOut'], 'the panel is redrawn when the (empty) day lands');
+  // (4) The punches could not be read: nothing is suggested, and it is said.
+  ({ h, y, act } = open());
+  h.run.flushSuccess(act, 'managerGetDayActivity');
+  h.run.flushSuccess({ error: 'quota' }, 'getEmployeeTimesheetForManager');
+  assert.deepStrictEqual([h.read('_dePunches'), applies(h)], ['failed', []]);
+  assert.ok(/could not be loaded, so no time is suggested/.test(panel(h).textContent));
+  ({ h, y, act } = open());
+  h.run.flushSuccess(act, 'managerGetDayActivity');
+  h.run.flushFailure(new Error('offline'), 'getEmployeeTimesheetForManager');
+  assert.deepStrictEqual([h.read('_dePunches'), applies(h)], ['failed', []], 'a failed call is the same');
+  // (5) Changing the date starts over: the next day's activity alone suggests nothing.
+  ({ h, y, act } = open());
+  h.run.flushSuccess({ days: [] }, 'getEmployeeTimesheetForManager');
+  h.run.flushSuccess(act, 'managerGetDayActivity');
+  assert.deepStrictEqual(applies(h), ['ClockIn', 'ClockOut']);
+  const y2 = h.read('mgrAddDaysIso_')(y, -1);
+  const dEl = h.document.getElementById('de-date');
+  dEl.value = y2; dEl.dispatchEvent(new h.window.Event('change'));
+  assert.strictEqual(h.read('_dePunches'), 'loading');
+  h.run.flushSuccess(Object.assign({}, act, { date: y2 }), 'managerGetDayActivity');
+  assert.deepStrictEqual(applies(h), [], 'the new day is not known yet');
+});
+
+test('F29 + F30 DOM (cycle 26): the shell sends WHEN the last gesture was with its counts, and puts the counts back when the server answers that the row was not written — a ping that "succeeded" with its row lost used to drop them (driven)', () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false });
+  h.flushTimers();
+  h.run.drain();
+  const sum = (p) => (p && p.b || []).reduce((a, e) => [a[0] + e[1], a[1] + e[2]], [0, 0]);
+  const held = () => { const b = h.read('ACT_COUNTS.b'); return sum({ b: Object.keys(b).map((k) => [Number(k)].concat(b[k])) }); };
+  const key = () => h.document.body.dispatchEvent(new h.window.KeyboardEvent('keydown', { bubbles: true }));
+  const click = () => h.document.body.dispatchEvent(new h.window.Event('pointerdown', { bubbles: true }));
+  const t0 = Date.now();
+  click();
+  const ping = h.run.pending('recordPresence')[0].args[0];
+  assert.ok(ping.last >= t0 && ping.last <= ping.at, 'F29: the ping says when the last gesture was (' + (ping.at - ping.last) + ' ms before it was sent)');
+  // The server took the ping but could not write its row.
+  h.run.flushSuccess({ success: true, logged: false }, 'recordPresence');
+  assert.deepStrictEqual(held(), [1, 0], 'THE REGRESSION: the click in the lost row was gone — it is held for the next send');
+  key(); key();
+  h.read('actFlush_')();
+  const fl = h.run.pending('recordActivityCounts')[0].args[0];
+  assert.deepStrictEqual(sum(fl), [1, 2], 'the pause flush carries it with what was counted since');
+  assert.ok(fl.last >= ping.last && fl.last <= fl.at, 'and the time of the last key press');
+  h.run.flushSuccess({ success: false, logged: false }, 'recordActivityCounts');
+  assert.deepStrictEqual(held(), [1, 2], 'a flush whose row was not written puts them back too');
+  h.read('actFlush_')();
+  h.run.flushSuccess({ success: true, logged: true }, 'recordActivityCounts');
+  assert.deepStrictEqual(held(), [0, 0], 'written: nothing is held');
+  // A refusal that is not about the row keeps nothing (it would be kept for ever).
+  key();
+  h.read('actFlush_')();
+  h.run.flushSuccess({ success: false }, 'recordActivityCounts');
+  assert.deepStrictEqual(held(), [0, 0]);
 });
