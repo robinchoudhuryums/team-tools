@@ -49923,6 +49923,8 @@ test('PD: the Dashboard card — the pace divides by the rep\'s credited days an
   assert.deepStrictEqual(m1J(c.dashPartialLine_(res)), { text: '19.75 of 21 workdays, 2 partial', title: 'Partial days: Tue Nov 10 (0.5 day), Fri Oct 30 (0.25 day)' }, 'the handoff\'s two strings, to the letter');
   assert.strictEqual(c.dashPartialLine_({ workdays: { elapsed: 21, total: 23 }, partial: null }), null, 'no marked day: no line');
   assert.strictEqual(c.dashPartialLine_({ workdays: null, partial: res.partial }), null);
+  assert.strictEqual(c.dashPartialLine_({ workdays: { elapsed: 21, total: 23 }, partial: { credited: 21, days: [] } }), null, 'a partial object with no day in it is no line — never "0 partial"');
+  assert.strictEqual(c.dashPartialLine_({ workdays: { elapsed: 21, total: 23 }, partial: { days: [{ date: '2026-11-10', credit: 0.5 }] } }), null, 'nor one with no credited figure to state');
   assert.ok(/Thu Nov 12 \(not counted\)/.test(c.dashPartialLine_({ workdays: { elapsed: 9, total: 21 }, partial: { credited: 8, days: [{ date: '2026-11-12', credit: 0 }] } }).title), 'a credit of 0');
   const many = { workdays: { elapsed: 200, total: 261 }, partial: { credited: 195, days: Array.from({ length: 10 }, (_, i) => ({ date: '2026-03-' + String(i + 2).padStart(2, '0'), credit: 0.5 })) } };
   assert.ok(/, \+2 more$/.test(c.dashPartialLine_(many).title) && /10 partial$/.test(c.dashPartialLine_(many).text), 'eight named, the rest counted');

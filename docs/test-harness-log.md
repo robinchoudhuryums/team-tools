@@ -4196,5 +4196,8 @@ F53, F54, F57.**
   that mattered was "never opened by a literal name", and that is what the
   pin now asserts.
 - **Bite-checks: 99 mutations, 99 bit** — pure in three streams, DOM through
-  `bite.sh --dom --only`. One planned mutation was dropped as equivalent:
+  `bite.sh --dom --only`. One survived its first run: the credited-days
+  line's guard against a partial object with no day in it — the server never
+  ships one, so no case fed it one. The case was added and the mutation
+  re-run. One planned mutation was dropped as equivalent:
   `dashPartialScale_`'s no-mark early return is also 1 by arithmetic.
