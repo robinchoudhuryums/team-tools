@@ -49731,6 +49731,8 @@ test('PD: the reader opens ONLY columns A–C — the Reason column is never ask
   const noStamp = pdCtx_(pdTab_([pdRow_('2026-11-10', 'Ana Lopez', 0.5)]), { cdrDataStamp_: () => '' });
   noStamp.getCdrPartialDays_();
   assert.strictEqual(noStamp._puts.length, 0, 'no stamp: nothing to key the marks by, so they are read each time');
+  noStamp.getCdrPartialDays_();
+  assert.strictEqual(noStamp._opens.length, 1, 'but once per execution all the same — the Dashboard, the readers and Storage Health each ask');
   const degraded = pdCtx_(pdTab_([pdRow_('2026-11-10', 'A. Lopez', 0.5)]), { cdrNameMapDegraded_: () => true });
   degraded.getCdrPartialDays_();
   assert.strictEqual(degraded._puts.length, 0, 'marks named without the alias map are not kept (F16)');
