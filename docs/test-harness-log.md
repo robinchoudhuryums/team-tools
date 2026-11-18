@@ -4201,3 +4201,28 @@ F53, F54, F57.**
   ships one, so no case fed it one. The case was added and the mutation
   re-run. One planned mutation was dropped as equivalent:
   `dashPartialScale_`'s no-mark early return is also 1 by arithmetic.
+
+## Cycle 26 follow-ons after Batches 9, 10 and PD — FQ1–FQ10 (2026-11-18)
+
+- **Pure harness: nine `FQ` pins** — the idle line with a threshold, without
+  one and with a non-number; the purge cap note's grid; the Transfers row's
+  four states; the day label; the call sites of the DQE totals plus a driven
+  range that asks with the cohort and ships only the caller's row; the
+  outbound off-roster names, the pairing and a manager payload DRIVEN through
+  the rep view; the range's partial days (theirs only, not kept when the
+  marks could not be read) and its row; the Storage Health pairing and
+  findings; the stamp over tabs narrower and wider than their probes.
+- **DOM harness: four drives** — Refresh keeps the painted My Stats through
+  a failed read, and the day's label; Team's Transfers row and the outbound
+  hint (absent on the rep view); the range's Partial days row; the idle line.
+- **Older pins updated:** thirteen source checks and two sandboxes followed
+  the new keys, call shapes and fields; one older DOM drive of the idle line
+  passes the threshold it now needs.
+- **Two test slips of my own, caught by running:** an assertion that no
+  "Tran" appears matched the word "Transfers"; a "no literal 30+ min" check
+  read my own comment — it reads the code with comments stripped.
+- **Fixtures:** `idleAlertMin`, `hasTransferData`, `likelyMismatches` (one
+  pair on the populated Team fixture), the range's `partialDays`, the probe's
+  `likely`. One scenario: the 7D range for a rep with partial days.
+- **Bite-checks: 44 mutations, 44 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`.

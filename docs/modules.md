@@ -483,6 +483,13 @@ lighter `--warn-fill`.
      change; the Department card and Team Metrics are not adjusted; a rep
      sees only their own partial days, and never a reason.
 
+     **Cycle 26 follow-ons (FQ, 2026-11-18).** The hero names the day when
+     it is not literally yesterday; Refresh keeps the figures on screen until
+     the read answers; a 7D / 30D / custom range lists the rep's partial days
+     under Calls answered; Team shows no Transfers figure for a window with
+     no transfer rows, and managers get a "likely outbound name mismatch"
+     line when a rep's outbound calls sit under another spelling.
+
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
      unresolved-action walk — with each cell stating its own scope, and a

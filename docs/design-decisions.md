@@ -7299,6 +7299,36 @@ pick them up without re-deriving the context.
   - **Not done:** a manager-facing list of marks; partial days on Team
     Metrics or the Department card; the range view's own sparkline; any
     change to the adjusted (M1) figures.
+- <a id="c26-fq-follow-ons"></a>**The follow-ons after Batches 9, 10 and Partial Days: one cohort read for My Stats, name pairs for outbound calls and for marked agents, Refresh keeps the painted view (cycle 26 FQ1–FQ10, 2026-11-18).**
+  - **My Stats reads the cohort's totals and takes its own row (FQ6).** The
+    day every rep opens Stats on is now the window Team Metrics reads and the
+    hourly read-ahead already keeps (the Dashboard's "yesterday"), so the first
+    Stats open of the morning is usually served from the cache. The range's
+    per-day breakdown is still read for the one rep: a cohort's ninety days of
+    per-rep rows would not fit the 100 KB cache limit.
+  - **A name pair is the only actionable name signal, twice more (FQ7, FQ9).**
+    On a phone system shared with other departments, "agents not on this
+    roster" is always a long list. The pairing rule Team Metrics uses for
+    inbound calls (two shared name tokens) is applied to the Outbound Calls
+    tab (managers, on Team Metrics) and to the Partial Days tab (admins, on
+    Storage Health). The second shows agent NAMES from the tab to this app's
+    admins — never a date, a share or a reason. A roster name that already
+    has outbound calls, or already has a mark, is not offered.
+  - **The rep view is built field by field (FQ7).** See the gotcha amendment.
+  - **Refresh is a refetch, not a blank (FQ5).** It keeps what is painted and
+    shows the refreshing pill; `force` no longer changes what is drawn. The
+    cost: no loader flash to confirm the press — the pill is the confirmation.
+  - **"Yesterday" means yesterday (FQ4).** The preset chip still reads
+    Yesterday (it is the name of the shortcut); the hero names the day it
+    landed on.
+  - **Not done, and why:** a manager's view of partial-day marks (the handoff
+    limits them to the rep; an operator decision); counting an amendment out
+    of the Intake count (is an amendment a call? an operator decision, and a
+    new marker on the note); reading ahead the outbound windows (decided in
+    Batch 10); a server rate limit on activity counts (measure on DEV first);
+    confirming an inferred punch without changing its time (needs a design);
+    a bulk approval's per-request reasons and Team Punches after a failed
+    re-read (not investigated in this pass).
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

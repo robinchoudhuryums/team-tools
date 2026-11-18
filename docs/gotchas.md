@@ -1040,6 +1040,17 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and nothing else; the My Stats series marks only the caller's own point;
   Storage Health ships counts.
 
+  **AMENDED (cycle 26 FQ7): a whitelist that copies an object.**
+  `teamMetricsRepView_` names every field a rep may see, and for `outboundMeta`
+  it named the object: `outboundMeta: full.outboundMeta`. That was a
+  whitelist while the object held three scalars. FQ7 added
+  `likelyMismatches` — colleague names — to the manager's object, and the
+  rep view would have shipped them on the same line without a character of it
+  changing. It is built field by field now (`available`, `error`, `through`),
+  and the pin drives a manager payload carrying a pair through the view.
+  **The check when adding a field to a nested object:** grep for who copies
+  the parent whole.
+
 <a id="g34-fire-and-forget-email"></a>
 
 - **Fire-and-forget email.** Decision emails
@@ -5241,6 +5252,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   figure now names its window from its own payload's `days`, and an older
   payload with none shows none. Verify: the Batch 6b follow-on drive.
 
+  **AMENDED (cycle 26 FQ1): the idle line's "30+ min".** Batch 9 moved the
+  idle chip onto the server's `IDLE_ALERT_MIN` and left the summary line under
+  Live Status with the number typed into its sentence. The two agree today
+  because the constant is 30. `getManagerDashboard` now ships `idleAlertMin`
+  and the line names it; a payload without it names no number ("have been
+  idle while clocked in") rather than a guess.
+
 <a id="g132-a-test-that-appends-to-a-gate"></a>
 
 - **A test that APPENDS to a gate property or a LIVE tab owes
@@ -5415,6 +5433,13 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   (`callDataPending`, `teamCallDataState_`); the rail draws one "Calls —"
   row with the reason, a rep with `hasCdrData: false` draws "—" in Rung,
   Answered, Missed and ATT, and Copy table exports those blank.
+
+  **AMENDED (cycle 26 FQ3): the Transfers row was the same zero.** F35 took
+  the call rows off a window with no call data and left "Transfers 0" under
+  them — a second source with the same lag. The server says whether any
+  listed rep has a transfer row (`teamTotals.hasTransferData`); with none,
+  the row is absent beside "Calls —" and a dash with its reason when the
+  calls are in and the transfers are not.
 
 <a id="g137-a-static-net-that-pre-declares-names"></a>
 

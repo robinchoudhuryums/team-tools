@@ -316,7 +316,9 @@ entry says which it is.
   **Names:** a mark counts for the roster name the call data counts for — an
   agent whose phone name differs needs their Agent Alias Overrides row, as
   for every other call figure. Marks for agents not on this roster (other
-  departments) are ignored and counted on the System tab's CDR row.
+  departments) are ignored and counted on the System tab's CDR row. A
+  marked name that LOOKS like a roster name spelled differently is named
+  there as a warning (FQ9) — add its Agent Alias Overrides row and it clears.
   **If something is wrong:** Admin → System → the CDR Report row states the
   tab ("sheet · N marks for M agents", "no tab yet", "no day is marked"). A
   warning there means row 1 is no longer `Date | Agent | Credit` (a change

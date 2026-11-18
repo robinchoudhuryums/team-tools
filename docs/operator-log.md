@@ -11,6 +11,26 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-18 — Cycle 26 follow-ons after Batches 9, 10 and Partial Days (FQ1–FQ10)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats:** the hero names the day (a Monday reads "Fri Nov 13", not
+  "Yesterday"); Refresh no longer blanks the page, and a refresh that fails
+  keeps what was showing; a range lists your partial days; Team has no
+  "Transfers 0" on a day that is not in yet.
+- **Managers:** Team Metrics names a rep whose OUTBOUND calls are logged
+  under another spelling ("likely outbound name mismatch") — fix it with an
+  Agent Alias Overrides row, as for inbound. The idle line under Live Status
+  takes its minutes from the server's setting.
+- **Admins:** Manage → Admin → System warns when a name marked on the
+  Department Dashboard's Partial Days tab looks like a roster name spelled
+  differently — that rep's partial days are not being applied until the
+  alias row exists. The purge audit note now names the cap that was hit.
+- **Faster first open:** My Stats' day totals come from the read Team
+  Metrics and the hourly read-ahead already keep.
+
 ## 2026-11-18 — Cycle 26 Batch PD (Partial Days)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
