@@ -49072,6 +49072,8 @@ test('F27 (cycle 26): both readers hold the rule — the raw slice (with the blo
     [day0 + 2 * 60000, 'E1', blk(day0 + 60000) + 'c1k1', 'counts'],               // the flush for 00:01
     [day0 + 8 * H, 'E1', blk(day0 + 8 * H) + 'c4k20', ''],
     [day0 + 10 * H + 5 * 60000, 'E1', fake.join(' '), ''],
+    [day0 + 24 * H + 3 * 60000, 'E1', '', ''],                                     // 00:03 the next morning …
+    [day0 + 24 * H + 5 * 60000, 'E1', blk(day0 + 23 * H + 55 * 60000) + 'c7k7', 'counts'],   // … and the flush for 23:55
   ];
   const reads = [];
   const rawSheet = { getLastRow: () => raw.length + 1, getRange: (r, col, n, w) => { reads.push([r, col, n, w]);
@@ -49089,7 +49091,8 @@ test('F27 (cycle 26): both readers hold the rule — the raw slice (with the blo
   assert.strictEqual(one.level[0], 2, 'but it vouches for 00:00 — the slice starts one block before the day');
   assert.deepStrictEqual(reads.filter((x) => x[1] === 2).map((x) => x[0]), [2], 'row 2: the 23:56 ping is inside the slice');
   const drawn = one.level.map((x, i) => (x ? i : -1)).filter((i) => i >= 0);
-  assert.deepStrictEqual(drawn, [0, 48, 49, 59], 'THE REGRESSION: the raw reader drew the fabricated gap: ' + JSON.stringify(drawn));
+  assert.deepStrictEqual(drawn, [0, 48, 49, 59, 143], 'THE REGRESSION: the raw reader drew the fabricated gap: ' + JSON.stringify(drawn));
+  assert.strictEqual(one.level[143], 14, 'a ping just after midnight vouches for 23:50 — and is not this day\'s ping');
   assert.strictEqual(one.ignored, 9, 'the payload says so');
   const old = gJ(c.managerGetDayActivity('E3', '2026-11-10'));
   assert.ok(old.fromSummary && old.pings === 2, 'from its summary row');
@@ -49253,6 +49256,12 @@ test('F30 (cycle 26): an ActivityLog row that could not be written is no longer 
   const some = m.deActivityHtml_({ pings: 1, first: '08:00', last: '08:00', blocks, blockMin: 10, logFails: { count: 1, firstDate: '2026-11-18', lastDate: '2026-11-18' } }, { punches: 'loaded' });
   assert.ok(/could not be written 1 time on 2026-11-18,/.test(some), 'a day WITH some activity says it too — what is drawn may be short');
   assert.ok(!/data-de-act-fails/.test(m.deActivityHtml_({ pings: 0, first: '', last: '', date: '2026-11-18', logFails: null }, {})), 'no failures, no note');
+  // The Team Punches day table's note under the bars.
+  const tm = vm.createContext({ String, Number, Math, Object, Array, esc: b9Esc_, isoDateTz: () => '2026-11-18', empTz: () => 'UTC',
+    TEAMACT: { cache: { '2026-11-18': { reps: {}, logFails: { count: 2 } }, '2026-11-17': { reps: {}, logFails: null } }, failed: {} } });
+  ['actNum_', 'deHourLabel_', 'tcalActRange_', 'tcalActNoteHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), tm));
+  assert.ok(/The activity log could not be written 2 times around this day, so some activity may be missing\./.test(tm.tcalActNoteHtml_('2026-11-18')), tm.tcalActNoteHtml_('2026-11-18'));
+  assert.ok(!/could not be written/.test(tm.tcalActNoteHtml_('2026-11-17')), 'and nothing on a day it wrote');
 });
 
 test('F30 (cycle 26): the page puts counts back when the server says the row was NOT written — its success handler used to ignore the answer, so only a failed CALL restored them; a block too old for the server to take is let go (driven)', () => {
@@ -49340,7 +49349,7 @@ test('F30 (cycle 26): a day is condensed only once no count for it can still arr
 
 test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s — it was CONFIG.TIMEZONE (India), a day ahead every Central afternoon — a day is "editable" by the REP\'s own today (Day Edit\'s rule), and the card names the roster\'s zone instead of "Dates in IST" (driven)', () => {
   // 2 pm Central on 2026-10-15 is 00:30 on the 16th in Kolkata (and 3 am on the 16th in Manila).
-  const days = { 'America/Chicago': '2026-10-15', 'Asia/Kolkata': '2026-10-16', 'Asia/Manila': '2026-10-16' };
+  const days = { 'America/Chicago': '2026-10-15', 'Asia/Kolkata': '2026-10-16', 'Asia/Manila': '2026-10-16', 'Pacific/Honolulu': '2026-10-14' };
   const asked = [];
   const mk = (rosterRows) => {
     const ctx = e2Ctx_({ adpSheetTz_: () => 'UTC', CONFIG: { TIMEZONE: 'Asia/Kolkata', MANAGER_TIMEZONE: 'America/Chicago', ADJUST_WINDOW_DAYS: 30 }, OPEN_PUNCH_GRACE_DAYS: 2,
@@ -49350,7 +49359,8 @@ test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s —
       empRosterEmail_: (r) => String(r[2] || '').trim(),
       fmtDateTz_: (d, tz) => { asked.push(tz); return days[tz]; },
       fmtDate_: () => { throw new Error('THE REGRESSION: today was read in CONFIG.TIMEZONE'); },
-      workedHoursByEmpForRange_: () => ({ perDayByEmp: { E1: { '2026-09-15': ctx.INC, '2026-09-16': ctx.INC }, E2: { '2026-09-16': ctx.INC } } }),
+      workedHoursByEmpForRange_: () => ({ perDayByEmp: { E1: { '2026-09-15': ctx.INC, '2026-09-16': ctx.INC }, E2: { '2026-09-15': ctx.INC, '2026-09-16': ctx.INC },
+        E3: { '2026-09-14': ctx.INC, '2026-09-15': ctx.INC } } }),
       getOrCreateTimeOffSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }),
       getOrCreatePunchAdjustSheet_: () => ({ getDataRange: () => ({ getValues: () => [['h']] }) }) });
     vm.runInContext(['payrollSubjectId_', 'getPayPeriodClose'].map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
@@ -49358,6 +49368,7 @@ test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s —
   };
   const chicago = [['h'], ['E1', 'Ann', 'a@x', 'America/Chicago'], ['E2', 'Raj', 'r@x', 'America/Chicago']];
   let res = JSON.parse(JSON.stringify(mk(chicago).getPayPeriodClose()));
+  assert.deepStrictEqual(Array.from(new Set(asked)).sort(), ['America/Chicago'], 'the manager\'s zone and the reps\' — which here are the same one');
   assert.strictEqual(res.error, undefined, String(res.error));
   assert.strictEqual(res.todayIso, '2026-10-15', 'the manager\'s today');
   assert.ok(asked.indexOf('America/Chicago') >= 0 && asked.indexOf('Asia/Kolkata') < 0, 'CONFIG.TIMEZONE is never asked what day it is: ' + asked.join(','));
@@ -49370,11 +49381,13 @@ test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s —
   assert.deepStrictEqual([res.tzAbbr, res.tzMixed], ['CST', false], 'one zone on the roster: named — never CONFIG.TIMEZONE\'s');
   // Two zones: each rep's own today decides editable, and the card says the dates are each person's own.
   asked.length = 0;
-  const mixed = [['h'], ['E1', 'Ann', 'a@x', 'America/Chicago'], ['E2', 'Raj', 'r@x', 'Asia/Manila']];
+  const mixed = [['h'], ['E1', 'Ann', 'a@x', 'America/Chicago'], ['E2', 'Raj', 'r@x', 'Asia/Manila'], ['E3', 'Kai', 'k@x', 'Pacific/Honolulu']];
   res = JSON.parse(JSON.stringify(mk(mixed).getPayPeriodClose()));
   const prev = res.periods.filter((p) => p.which === 'previous')[0];
   const by = (id) => prev.reps.filter((r) => r.id === id)[0].openDays.map((d) => d.date + ':' + d.editable);
-  assert.deepStrictEqual([by('E1'), by('E2')], [['2026-09-15:true', '2026-09-16:true'], ['2026-09-16:true']]);
+  assert.deepStrictEqual(by('E1'), ['2026-09-15:true', '2026-09-16:true'], 'Chicago: the manager\'s own day');
+  assert.deepStrictEqual(by('E2'), ['2026-09-15:false', '2026-09-16:true'], 'Manila is already on the 16th: Day Edit would refuse the 15th, so the card does not offer it');
+  assert.deepStrictEqual(by('E3'), ['2026-09-14:true', '2026-09-15:true'], 'Honolulu is still on the 14th: the 14th is inside ITS window, and Day Edit takes it');
   assert.deepStrictEqual([res.tzAbbr, res.tzMixed], ['', true]);
   // The planner: a rep whose own today is a day on has a window a day later; with none given it falls back to the caller's today.
   const pctx = e2Ctx_({});
