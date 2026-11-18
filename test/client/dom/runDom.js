@@ -14909,6 +14909,9 @@ test('F35 + F34 DOM: My Stats — a day whose outbound export is not in says so 
   assert.ok(!/Outbound calls/.test(rail()), 'the export holds the day and no call was placed: no row');
   h.window.mRenderMyStats_(c25MyDay_({ cdr: null, outbound: zero, outboundThrough: '2026-10-12', adjusted: null }));
   assert.ok(h.$('#m-my-content .m-empty') && /Outbound calls\s*—\s*not in yet/.test(h.$('#m-my-content').textContent), 'below the "No call data" card too');
+  // A RANGE that reaches past the export: the count of the part that is in, and the day it is in through.
+  h.window.mRenderMyStats_(Object.assign(c25MyDay_({ cdr, outbound: zero, outboundThrough: '2026-10-12', adjusted: null }), { date: undefined, from: '2026-10-07', to: '2026-10-13' }));
+  assert.ok(/Outbound calls\s*0\s*data through 10-12/.test(rail()), 'a range: ' + rail());
   h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: zero, outboundThrough: '2026-10-13',
     adjusted: { handled: 40, talkSec: 12000, talkFormatted: '3:20:00', outbound: zero, intakeTimed: 3, intakeAvgSec: 1000, attSec: 300, attFormatted: '0:05:00', attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' } }));
   const panel = h.$('#m-my-content .m-adj');

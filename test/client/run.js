@@ -49510,7 +49510,8 @@ test('F34: "Avg talk excl. intake" is given only when the timed forms ran LONGER
   const long = m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 1800 }));
   assert.deepStrictEqual([long.attSec, long.attExIntakeSec, long.attExIntakeFormatted], [240, 205, '0:03:25'], '(9600 − 1800) ÷ 38, beside 9600 ÷ 40');
   assert.strictEqual(m1J(c.metricsAdjusted_(cdr, null, { timed: 2, seconds: 480 })).attExIntakeSec, null, 'forms exactly at the average take nothing out');
-  assert.strictEqual(m1J(c.metricsAdjusted_({ totalAnswered: 0, tttSeconds: 0 }, { placed: 2, connected: 1, talkSec: 30 }, null)).attSec, null, 'nothing answered: no average at all, never 0');
+  const noAns = c.metricsAdjusted_({ totalAnswered: 0, tttSeconds: 0 }, { placed: 2, connected: 1, talkSec: 30 }, null);
+  assert.ok(noAns.attSec === null && noAns.attFormatted === null, 'nothing answered: no average at all, never 0 and never a formatted nothing');
   let given = 0;
   for (let ans = 2; ans <= 60; ans += 7) for (let ttt = 60; ttt <= 20000; ttt += 1777) for (let timed = 1; timed <= 5; timed++) for (let isec = 30; isec <= 9000; isec += 613) {
     const r = c.metricsAdjusted_({ totalAnswered: ans, tttSeconds: ttt }, null, { timed, seconds: isec });
@@ -49550,7 +49551,7 @@ test('F34: the Adjusted line names the average it was taken from; the explanatio
 test('F35: every sortable column of the Team table has a sort — "Intake" was marked sortable with no case, so the header turned and the rows did not (driven + derived)', () => {
   const c = vm.createContext({ String });
   vm.runInContext(extractFunction('metrics/script_metrics.html', 'mSortReps_'), c);
-  const reps = [{ repName: 'A', intakeNotes: 2 }, { repName: 'B', intakeNotes: null }, { repName: 'C', intakeNotes: 5 }, { repName: 'D', intakeNotes: 0 }];
+  const reps = [{ repName: 'A', intakeNotes: 2 }, { repName: 'D', intakeNotes: 0 }, { repName: 'B', intakeNotes: null }, { repName: 'C', intakeNotes: 5 }];
   const order = (dir) => m1J(c.mSortReps_(reps, { key: 'intakeNotes', dir })).map((r) => r.repName).join('');
   assert.strictEqual(order('desc'), 'CADB', 'THE REGRESSION: every row compared equal and the table kept the server\'s name order');
   assert.strictEqual(order('asc'), 'BDAC', 'an unread count sorts lowest, below a real zero');
@@ -49617,6 +49618,10 @@ test('F35: the outbound row says how far the export reaches WHATEVER was placed 
   assert.ok(/title="not in yet — outbound data is in through 11-10">—</.test(past[0].cell({ outbound: zero })), 'the Team column: a dash with the reason, where it drew a muted 0');
   const inWin = c.mTeamAdjColumns_({ from: '2026-11-10', to: '2026-11-10', outboundMeta: { available: true, through: '2026-11-10' }, reps: [] });
   assert.ok(/>0</.test(inWin[0].cell({ outbound: zero })) && !/—/.test(inWin[0].cell({ outbound: zero })), 'a covered day: a real zero');
+  const withHandled = c.mTeamAdjColumns_({ outboundMeta: { available: false }, reps: [{ adjusted: { handled: 12, outbound: { placed: 3 } } }] });
+  assert.deepStrictEqual(m1J(withHandled.map((x) => x.key)), ['adjHandled']);
+  assert.ok(/—/.test(withHandled[0].cell({ hasCdrData: false, totalAnswered: 0, adjusted: null })) && withHandled[0].cell({ hasCdrData: true, totalAnswered: 7, adjusted: null }) === '7',
+    'Handled for a rep with no call-data row and nothing adjusted is a dash, not their zero answered');
   const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.strictEqual((src.match(/mOutboundRowHtml_\([^;]*data\.from \|\| data\.date\)/g) || []).length, 3, 'all three callers name the window\'s start');
 });
