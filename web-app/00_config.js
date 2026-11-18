@@ -207,6 +207,10 @@ const CONFIG = {
   // export family (call-data-reporting's outboundCallsExport.js; read here BY
   // HEADER — Call Date / Agent Name / Connected / Talk Sec).
   CDR_OUTBOUND_TAB:  'Outbound Calls',
+  // Batch PD (cycle 26, operator 2026-11-18): the Department Dashboard's
+  // Partial Days tab — a day an agent worked only part of. Columns A–C only
+  // (Date | Agent | Credit); see CDR_PARTIAL_COLS.
+  CDR_PARTIAL_DAYS_TAB: 'Partial Days',
   // PST(stored) → CST(anchor). A HAND-MIRROR of call-data-reporting's
   // INBOUND_HEATMAP_CST_SHIFT_HOURS (both zones observe DST together, so a
   // fixed 2h holds year-round). Change both or the two dashboards disagree.
@@ -1986,6 +1990,18 @@ var _cdrNameMapExpiry = 0;
 // read the whole column once, not once per window. _resetCdrCaches_ clears both.
 var _cdrStampMemo = null;
 var _cdrDateColMemo = {};
+// Batch PD (cycle 26): the Partial Days tab, read once per execution
+// (getCdrPartialDays_; its CacheService tier is keyed by the data stamp) —
+// and whether that read FAILED, so nothing computed without the marks is kept.
+// _resetCdrCaches_ clears both.
+var _cdrPartialMemo = null;
+var _cdrPartialFailed = false;
+// THE WIDTH of every read of the Partial Days tab: Date | Agent | Credit.
+// Column D is the Reason — for admins of the Department Dashboard only — and
+// E–F are who added the row and when. This app never reads past column C:
+// not for a header check, not for the data stamp. One constant, so the pin
+// can require it at every read.
+var CDR_PARTIAL_COLS = 3;
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;

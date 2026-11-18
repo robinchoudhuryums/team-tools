@@ -1030,6 +1030,10 @@ function runRecAgo(msAgo, notes) {
         // M8 (cycle 22): MTD/YTD run to TODAY and carry dataThrough (the last
         // day the CDR holds) — the projection's denominator; yesterday is one day.
         to: period === 'yesterday' ? daysAgo(1) : todayIso,
+        // F12 (cycle 25): the workday basis; Batch PD (cycle 26): the rep's
+        // partial days — null here, a marked rep under `?partial=1` below.
+        workdays: period === 'yesterday' ? null : (mtd ? { elapsed: 16, total: 21 } : { elapsed: 143, total: 261 }),
+        partial: null,
         dataThrough: period === 'yesterday' ? undefined : daysAgo(1) };   // kpiMinCohort mirrors the operator-2026-08-06 MIN_COHORT=1
     },
     // activeNotIn (note 10, 2026-09-10): the server's ONE presence boolean —
@@ -2834,7 +2838,8 @@ function runRecAgo(msAgo, notes) {
             // F-08 / F-09 — cdrStandardProbe_ / cdrHolidayProbe_'s shapes: the
             // published, all-clear state (the System tab still reads clean).
             { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
-              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' } }),
+              holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' },
+              partialDays: { source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, error: '' } }),   // Batch PD
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             // ADM-04 (cycle 23): the shape the server now ships for an unset
@@ -3042,6 +3047,35 @@ function runRecAgo(msAgo, notes) {
   // `?pendingadj=1` — seeds a pending punch-adjustment request so the Clock
   // view's awaiting-approval chip renders on camera (the state the operator
   // reported as invisible). Not a missing fixture; a deliberate variant.
+  // `?partial=1` (Batch PD, cycle 26) — a rep with two partial days this
+  // month: the Dashboard card's credited days and scaled deltas, and the My
+  // Stats count trends' ring and note. The shapes are the server's: `partial`
+  // {uncredited, credited, days newest first}, `prev.ownScale`, and a
+  // `partial` credit on the rep's own Answered / Missed points.
+  try {
+    if (/[?&]partial=1\b/.test(window.location.search)) {
+      var pdWork = [];
+      for (var pdi = 2; pdi <= 14 && pdWork.length < 2; pdi++) { if (!isWeekendIso(daysAgo(pdi))) pdWork.push(daysAgo(pdi)); }
+      var pdDash = FIXTURES.getDashboardMetrics;
+      FIXTURES.getDashboardMetrics = function (period) {
+        var r = pdDash(period);
+        if (r.workdays) {
+          r.partial = { uncredited: 0.75, credited: Math.round((r.workdays.elapsed - 0.75) * 100) / 100,
+            days: [{ date: pdWork[0], credit: 0.5 }, { date: pdWork[1], credit: 0.75 }] };
+          if (r.prev) r.prev.ownScale = Math.round(((r.workdays.elapsed - 0.75) / r.workdays.elapsed) * 10000) / 10000;
+        }
+        return r;
+      };
+      var pdMy = FIXTURES.getMyMetrics;
+      FIXTURES.getMyMetrics = function (date) {
+        var r = pdMy(date);
+        ['answered', 'missed'].forEach(function (k) {
+          (r.series[k] || []).forEach(function (pt) { if (pt.date === pdWork[0]) pt.partial = 0.5; if (pt.date === pdWork[1]) pt.partial = 0.75; });
+        });
+        return r;
+      };
+    }
+  } catch (e) {}
   try {
     if (/[?&]pendingadj=1/.test(window.location.search)) {
       FIXTURES.getEmployeeState.pendingAdjustments = [{ punchType: 'ClockIn', time: '08:30' }];

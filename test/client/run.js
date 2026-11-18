@@ -882,12 +882,14 @@ test('M2/M8 (cycle 22): getDashboardMetrics ships dataThrough, the cards project
   // returns range.dataThrough unless the import is pending (pinned by the Batch 11 drive).
   assert.ok(/dataThrough: align\.dataThrough,/.test(dash) && /var align = dashboardAlignToData_\(range, cur\.latestDate, prevWorkdayIso_\(todayIso\), todayIso\);/.test(dash),
     'the payload carries the last day with data');
-  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending && !cdrNameMapDegraded_\(\)\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate; F16 (cycle 25) the alias gate
+  assert.ok(/if \(useCache && !noteRes\.unavailable && !prevUnavailable && cur\.team && !importPending && !cdrNameMapDegraded_\(\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(dash),   // MET-5 (cycle 23) added the import gate; F16 (cycle 25) the alias gate; Batch PD (cycle 26) the partial-days gate
     'M2 — an all-empty window (the pre-import morning) is not pinned for the dashboard TTL');
   const clk = fs.readFileSync(path.join(__dirname, '../../web-app/tc/script_clock.html'), 'utf8');
   const calls = [...clk.matchAll(/dashProjection_\(([^)]*)\)/g)].map((m) => m[1]).filter((a) => /res\./.test(a));
   assert.strictEqual(calls.length, 2, 'both cards project');
-  calls.forEach((a) => assert.ok(/res\.from, res\.dataThrough, res\.periodKey, res\.workdays$/.test(a), 'M8 — projected over the data days, not to today; F12 — on the workday basis: ' + a));
+  calls.forEach((a) => assert.ok(/res\.from, res\.dataThrough, res\.periodKey, res\.workdays(, res\.partial)?$/.test(a), 'M8 — projected over the data days, not to today; F12 — on the workday basis: ' + a));
+  // Batch PD (cycle 26): the rep's partial days ride their OWN card's projection only — never the Team card's.
+  assert.deepStrictEqual(calls.map((a) => /^o\.answered/.test(a) + ':' + /res\.partial$/.test(a)).sort(), ['false:false', 'true:true'], 'own card: with the rep\'s credited days; Team card: without');
 });
 test('dashboardTeamAggregate_: sums, recomputes pct, answered-weighted ATT; null below cohort', () => {
   const agents = {
@@ -1845,6 +1847,11 @@ function pf1CdrHelpers_(ctx) {
   if (typeof ctx.console === 'undefined') ctx.console = { warn() {}, log() {} };
   vm.runInContext('var _cdrCacheOversize = [];', ctx);
   ['cdrCacheOversizeNote_', 'cdrCachePutSized_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  // Batch PD (cycle 26): the readers ask for the partial-day marks — none, and
+  // read cleanly, unless the context supplies them.
+  vm.runInContext(extractRawFunction('Code.js', 'cdrPartialDayCounts_'), ctx);
+  if (typeof ctx.getCdrPartialDays_ !== 'function') ctx.getCdrPartialDays_ = () => ({ source: 'no-tab', marks: {}, rows: 0, kept: 0 });
+  if (typeof ctx.cdrPartialDaysDegraded_ !== 'function') ctx.cdrPartialDaysDegraded_ = () => false;
   return ctx;
 }
 function m3CdrCtx_(rows, noSheet) {
@@ -4262,7 +4269,7 @@ test('trainQuizAnalytics_: per-quiz counts, distinct reps, pass rate, averages; 
 
 // T4 #5/#6 — metrics anonymized team-avg + transfers data layer (pure helpers).
 console.log('\nmetrics — percent parse + anonymized team-avg cohort guard (T4 #5/#6)');
-['cdrExcludeSet_', 'metricsParsePercent_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
+['cdrExcludeSet_', 'metricsParsePercent_', 'metricsKpiIsCount_', 'metricsTeamAvgSeries_', 'metricsBuildKpiSeries_'].forEach((fn) => {
   vm.runInContext(extractRawFunction('Code.js', fn), sb, { filename: 'Code.js#' + fn });
 });
 test('metricsParsePercent_: strips %, commas; null on empty/garbage', () => {
@@ -8825,9 +8832,9 @@ test('Dashboard team card shows the aggregate at any cohort; the My Stats series
   // operator 2026-08-18) — a stale entry must never serve the previous
   // contract for the TTL after a deploy. The day in the key is load-bearing
   // at the longer TTL: a payload must never straddle the rep-local midnight.
-  assert.ok(/dash_metrics_v8:/.test(dash) && !/dash_metrics_v[1234567]:/.test(dash),
+  assert.ok(/dash_metrics_v9:/.test(dash) && !/dash_metrics_v[12345678]:/.test(dash),
     'the cache key bumped with the payload semantics (v7: the pre-import window ends on its newest data day — cycle 23 Batch 11)');
-  assert.ok(/dash_metrics_v8:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso/.test(dash),
+  assert.ok(/dash_metrics_v9:' \+ emp\.id \+ ':' \+ periodKey \+ ':' \+ todayIso \+ ':' \+ cdrPartialKeyPart_\(/.test(dash),
     'the v4 key carries the rep-local day');
   assert.ok(/DASHBOARD_CACHE_TTL\)/.test(dash), 'the put uses the dashboard TTL, not the 5-min CDR TTL');
   // The decision is SCOPED: the per-day anonymized series (the back-solvable
@@ -22404,7 +22411,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v5:/.test(my) && /metrics_range_v5:/.test(rng) && /team_metrics_v5:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v5:/.test(rng) && /team_metrics_v5:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -22880,7 +22887,7 @@ test('F-08/F-09 server: the CDR Storage Health row carries the standard and the 
   assert.strictEqual(thr.cdrHolidayProbe_().source, 'unavailable'); assert.strictEqual(thr.cdrHolidayProbe_().error, 'nope');
   assert.strictEqual(thr.cdrStandardProbe_().source, 'unavailable', 'an empty reader result is unavailable, not a standard');
   const sh = foNc(extractRawFunction('Code.js', 'getStorageHealth'));
-  assert.ok(/if \(cdrStore\.reachable\) \{\s*cdrStore\.standard = cdrStandardProbe_\(\);\s*cdrStore\.holidays = cdrHolidayProbe_\(\);\s*\}/.test(sh), 'both probes ride the CDR row, and only when the store is reachable');
+  assert.ok(/if \(cdrStore\.reachable\) \{\s*cdrStore\.standard = cdrStandardProbe_\(\);\s*cdrStore\.holidays = cdrHolidayProbe_\(\);\s*cdrStore\.partialDays = cdrPartialProbe_\(\);\s*\}/.test(sh), 'both probes ride the CDR row (and, since Batch PD, the Partial Days one), and only when the store is reachable');
   assert.ok(/Company Holidays \+ Dashboard Standards/.test(sh), 'the row\'s role names the two tabs');
 });
 
@@ -29788,7 +29795,7 @@ test('F12 (cycle 25): the run-rate projects over WORKDAYS when the payload carri
   // The endpoint: one calendar read, passed to the comparison, and the basis in the payload.
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
   assert.ok(/dashHol = companyHolidayMap_\(/.test(dash), 'the company calendar is read once');
-  assert.ok(/workdays: \(align\.dataThrough && \(periodKey === 'mtd' \|\| periodKey === 'ytd'\)\)\s*\? \{ elapsed: dashWorkdayCount_\(from, align\.dataThrough, dashHol\), total: dashWorkdayCount_\(from, periodEnd, dashHol\) \} : null,/.test(dash),
+  assert.ok(/var workdays = \(align\.dataThrough && \(periodKey === 'mtd' \|\| periodKey === 'ytd'\)\)\s*\? \{ elapsed: dashWorkdayCount_\(from, align\.dataThrough, dashHol\), total: dashWorkdayCount_\(from, periodEnd, dashHol\) \} : null;/.test(dash) && /workdays: workdays,/.test(dash),
     'the payload carries the workdays with data and the workdays in the period');
 });
 
@@ -29824,7 +29831,7 @@ test('F16 (cycle 25): a failed alias-map read is answered with {} but never memo
   assert.strictEqual(reads, 2);
   assert.strictEqual(ctx.cdrNameMapDegraded_(), true, 'a later success in the same execution does not clear it — the round already used {}');
   const dash = stripJsComments_(extractRawFunction('Code.js', 'getDashboardMetrics'));
-  assert.ok(/!importPending && !cdrNameMapDegraded_\(\)\) \{/.test(dash), 'the six-hour dashboard cache never pins such a round');
+  assert.ok(/!importPending && !cdrNameMapDegraded_\(\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(dash), 'the six-hour dashboard cache never pins such a round');
 });
 
 test('F14 (cycle 25): ONE Spanish pending window — Needs-you, the scheduled auto-assign and the Dashboard card read the tab\'s 30 days, so a claimed request left 8+ days stays on its owner\'s Needs-you (driven over the real Needs-you block)', () => {
@@ -33901,7 +33908,7 @@ test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoi
 
 test('MET-2/MET-3/MET-4 (cycle 23): a degraded CDR round is never cached — My Stats while cdrUnavailable, the ambient badge (which now SAYS unavailable), and a Team Metrics range whose trend failed (driven ambient + the cache guards)', () => {
   const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
-  assert.ok(/if \(useMetricsCache && !noteRes\.unavailable && !cdrUnavailable && !\(obRes\.error && !obRes\.steady\)\) \{/.test(my), 'MET-2: My Stats does not pin an unavailable CDR read for the TTL (M1: nor a failed outbound read)');
+  assert.ok(/if \(useMetricsCache && !noteRes\.unavailable && !cdrUnavailable && !\(obRes\.error && !obRes\.steady\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(my), 'MET-2: My Stats does not pin an unavailable CDR read for the TTL (M1: nor a failed outbound read; Batch PD: nor a round without the partial-day marks)');
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   assert.ok(/catch \(eRt\) \{ trendData = null; trendFailed = true; \}/.test(team) && /&& !transferMeta\.error && !trendFailed && /.test(team), 'MET-4: a failed range trend is not cached');
   assert.ok(/if \(rangeBreakdown && rangeBreakdown\.error\) throw new Error\(rangeBreakdown\.error\);/.test(team), 'MET-4: a missing tab is a failed range trend, not an empty one');
@@ -44828,7 +44835,7 @@ test('PF1: the stamp — the same data is the same stamp; a new row, a changed c
   const tabs = { 'DQE Historical Data': tab([['h'], ['1'], ['2']]), 'CSR Transfer Historical Data': tab([['h'], ['t']]), 'Agent Alias Overrides': tab([['Old'], ['a']]) };
   const mk = () => {
     const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300 }, CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 }, CSR_TRANSFER_TAB: 'CSR Transfer Historical Data',
-      CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300,
+      CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300, CDR_PARTIAL_COLS: 3,
       Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
       getCdrSS_: () => { opens++; if (fail) throw new Error('down'); return { getSheetByName: (n) => tabs[n] || null }; },
       CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v, t) => { store[k] = v; puts.push([k, t]); } }) } });
@@ -44850,13 +44857,13 @@ test('PF1: the stamp — the same data is the same stamp; a new row, a changed c
 
 test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle under the test override and while the stamp is the one it last warmed; on new data it reads the dashboard\u2019s three windows and the Stats default trend for the cohort, and remembers the stamp only when every read worked; no stamp is a failed run (driven + registries)', () => {
   const asked = [], store = {};
-  let stamp = 'S1', fail = '', cdrStore = true, noTransferTab = false;
+  let stamp = 'S1', fail = '', cdrStore = true, noTransferTab = false, pdDown = false;
   const ctx = vm.createContext({ JSON, String, Date, Math, Number, console: { log() {}, warn() {} }, CONFIG: { TIMEZONE: 'America/Chicago', CDR_SS_ID: 'YOUR_CDR_SPREADSHEET_ID' },
     storeConfigured_: (prop, fallback, over) => { asked.push('store:' + prop + ':' + fallback + ':' + over); return cdrStore; },
     DASHBOARD_PERIOD_KEYS: ['yesterday', 'mtd', 'ytd'], CDR_WARM_CACHE_KEY: 'cdr_warm_stamp_v1', CDR_WINDOW_CACHE_TTL: 21600, heartbeats: [],
     assertManagerCaller_: (l) => asked.push('gate:' + l), runAutomationJob_: (k, fn) => ({ key: k, outcome: fn().outcome }),
     automationOutcome_: (st, msg, sk) => ({ status: st, message: msg || '', skipped: sk || [] }),
-    stampDigestLastRun_: (k) => asked.push('beat:' + k), cdrDataStamp_: () => stamp,
+    stampDigestLastRun_: (k) => asked.push('beat:' + k), cdrDataStamp_: () => stamp, cdrPartialDaysDegraded_: () => pdDown,
     CacheService: { getScriptCache: () => ({ get: (k) => store[k] || null, put: (k, v) => { store[k] = v; } }) },
     getEmployeeRosterRows_: () => [['h'], ['Ann', 'a@x'], ['Gone', ''], ['Bo', 'b@x']], EMP: { NAME: 0 }, empRosterEmail_: (r) => r[1],
     Utilities: { formatDate: () => '2026-11-09' },
@@ -44905,6 +44912,12 @@ test('PF1: the call-data read-ahead — manager-gated, heartbeat first; idle und
   r = ctx.warmCdrMetricsCache();
   assert.ok(r.outcome.status === 'partial' && /unreadable/.test(r.outcome.message), 'a Transfer read that really failed is still a partial run');
   assert.deepStrictEqual([ctx.cdrWarmReadFailed_({ error: 'x' }), ctx.cdrWarmReadFailed_({ error: 'x', missingTab: true }), ctx.cdrWarmReadFailed_({}), ctx.cdrWarmReadFailed_(null)], [true, false, false, false]);
+  // Batch PD (cycle 26): the windows were read, but with the Partial Days tab unreadable no reader kept them.
+  stamp = 'S6'; fail = ''; pdDown = true;
+  r = ctx.warmCdrMetricsCache();
+  assert.ok(r.outcome.status === 'partial' && /Partial Days tab could not be read/.test(r.outcome.message), 'THE RULE: a read-ahead that kept nothing is not ok: ' + JSON.stringify(r.outcome));
+  assert.notStrictEqual(store.cdr_warm_stamp_v1, 'S6', 'and the stamp is not remembered — the next hour tries again');
+  pdDown = false;
   // (3) A window that was read but is too large to KEEP was not read ahead.
   fail = ''; stamp = 'S6';
   ctx.getCdrAgentMetrics_ = (f, t) => { if (f === '2026-01-01') ctx._cdrCacheOversize.push({ what: 'the call totals ' + f + '..' + t, bytes: 140000 }); return { agents: {}, meta: {} }; };
@@ -49425,7 +49438,7 @@ const b10Stamp_ = (obRows) => {
   const tabs = { 'DQE Historical Data': tab('dqe', [['h'], ['1'], ['2']]), 'CSR Transfer Historical Data': tab('tr', [['h'], ['t']]), 'Agent Alias Overrides': tab('al', [['Old'], ['a']]) };
   if (obRows) tabs['Outbound Calls'] = tab('ob', obRows);
   const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300, CDR_OUTBOUND_TAB: 'Outbound Calls' }, CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 },
-    CSR_TRANSFER_TAB: 'CSR Transfer Historical Data', CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300,
+    CSR_TRANSFER_TAB: 'CSR Transfer Historical Data', CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300, CDR_PARTIAL_COLS: 3,
     Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
     getCdrSS_: () => ({ getSheetByName: (n) => tabs[n] || null }),
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) } });
@@ -49624,6 +49637,355 @@ test('F35: the outbound row says how far the export reaches WHATEVER was placed 
     'Handled for a rep with no call-data row and nothing adjusted is a dash, not their zero answered');
   const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.strictEqual((src.match(/mOutboundRowHtml_\([^;]*data\.from \|\| data\.date\)/g) || []).length, 3, 'all three callers name the window\'s start');
+});
+
+console.log('\nCycle 26 Batch PD — Partial Days (the Department Dashboard\'s marks, columns A–C only)');
+
+const PD_HEAD = ['Date', 'Agent', 'Credit', 'Reason', 'Added By', 'Added At'];
+const PD_SECRET = 'SECRET-REASON-never-read';
+/** A Partial Days tab of six columns whose getRange THROWS when asked for
+ *  anything past column C — so a test that passes proves D–F were never read. */
+const pdTab_ = (dataRows, opts) => {
+  const o = opts || {};
+  const rows = [o.head || PD_HEAD].concat(dataRows);
+  const reads = [];
+  return { reads, sheet: {
+    getLastRow: () => (o.blank ? 0 : rows.length), getLastColumn: () => 6,
+    getRange: (r, c, n, w) => {
+      reads.push([r, c, n, w]);
+      if (o.boom) throw new Error('quota');
+      if (c !== 1 || w !== 3) throw new Error('read outside columns A–C: ' + [r, c, n, w].join(','));
+      const slice = rows.slice(r - 1, r - 1 + n).map((x) => x.slice(0, 3));
+      return { getValues: () => slice, getDisplayValues: () => slice.map((x) => x.map((v) => (v instanceof Date ? v.toISOString() : String(v == null ? '' : v)))) };
+    } } };
+};
+const pdRow_ = (d, agent, credit) => [d, agent, credit, PD_SECRET, 'admin@x', '2026-11-16T10:00:00'];
+const pdCtx_ = (tab, extra) => {
+  const store = {}, puts = [], opens = [];
+  const ctx = vm.createContext(Object.assign({ JSON, String, Number, Math, Object, Array, Date, isFinite, Error, console: { warn() {}, log() {} },
+    CONFIG: { CDR_PARTIAL_DAYS_TAB: 'Partial Days', CDR_CACHE_KEY: 'cdr', CDR_CACHE_TTL: 300 }, CDR_PARTIAL_COLS: 3, CDR_WINDOW_CACHE_TTL: 21600,
+    CacheService: { getScriptCache: () => ({ get: (k) => (k in store ? store[k] : null), put: (k, v, t) => { store[k] = v; puts.push([k, t]); } }) },
+    Utilities: { formatDate: (d, tz) => 'fmt:' + tz + ':' + d.toISOString().slice(0, 10) },
+    getCdrSS_: () => { opens.push(1); return { getSheetByName: (n) => (n === 'Partial Days' ? (tab ? tab.sheet : null) : null), getSpreadsheetTimeZone: () => 'America/Mexico_City' }; },
+    getCdrNameMap_: () => ({ 'A. Lopez': 'Ana Lopez' }), cdrNameMapDegraded_: () => false, cdrDataStamp_: () => 'S1' }, extra || {}));
+  vm.runInContext('var _cdrPartialMemo = null; var _cdrPartialFailed = false; var _cdrCacheOversize = [];', ctx);
+  vm.runInContext(/var CDR_CACHE_VALUE_MAX = \d+;/.exec(serverSource())[0], ctx);
+  ['cdrRowDateIso_', 'cdrCacheOversizeNote_', 'cdrCachePutSized_', 'cdrPartialCredit_', 'cdrPartialHeaderOk_', 'cdrPartialParse_', 'getCdrPartialDays_', 'cdrPartialDaysDegraded_',
+    'cdrPartialKeyPart_', 'cdrPartialDayCounts_', 'dashPartialView_', 'dashPartialScale_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'PD#' + f }));
+  ctx._store = store; ctx._puts = puts; ctx._opens = opens;
+  return ctx;
+};
+
+test('PD: a Credit is a share of a day — a number or numeric text with 0 <= credit < 1; a blank is not zero, and 1 is the dashboard\'s "whole day" dismissal (pure)', () => {
+  const c = pdCtx_(null);
+  [[0, 0], [0.25, 0.25], [0.5, 0.5], [0.75, 0.75], ['0.5', 0.5], [' .25 ', 0.25], ['0', 0]].forEach((g) => assert.strictEqual(c.cdrPartialCredit_(g[0]), g[1], 'kept: ' + JSON.stringify(g[0])));
+  [1, 1.5, -0.1, '', '   ', 'x', '0.5x', '1', '-0.25', null, undefined, true, false, NaN, Infinity, {}].forEach((v) => assert.strictEqual(c.cdrPartialCredit_(v), null, 'no mark: ' + String(v)));
+});
+
+test('PD: the tab is read by its header, never by position — Date | Agent | Credit in A–C, case and padding aside; anything else is not read (pure)', () => {
+  const c = pdCtx_(null);
+  assert.strictEqual(c.cdrPartialHeaderOk_(PD_HEAD), true);
+  assert.strictEqual(c.cdrPartialHeaderOk_([' date ', 'AGENT', 'credit']), true);
+  [['Date', 'Credit', 'Agent'], ['Agent', 'Date', 'Credit'], ['Date', 'Agent', 'Reason'], ['Date', 'Agent'], [], null, ['Day', 'Agent', 'Credit']]
+    .forEach((h) => assert.strictEqual(c.cdrPartialHeaderOk_(h), false, 'not this app\'s shape: ' + JSON.stringify(h)));
+});
+
+test('PD: rows become marks — the first row wins for a (date, agent), a name under the phone system\'s spelling counts for the roster name, and a row with no agent, no day or no credit is no mark (pure)', () => {
+  const c = pdCtx_(null);
+  const dateOf = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? String(v) : '');
+  const p = m1J(c.cdrPartialParse_([
+    ['2026-11-10', 'Ana Lopez', 0.5], ['2026-11-10', 'Ana Lopez', 0.25], ['2026-10-30', 'A. Lopez', 0.25], ['2026-11-11', ' Ben Ray ', '0.75'],
+    ['2026-11-12', 'Ben Ray', 1], ['2026-11-13', '', 0.5], ['not a day', 'Ben Ray', 0.5], ['2026-11-14', 'Ben Ray', ''], ['2026-11-16', 'Cy Dee', 0],
+  ], { dateOf, aliasMap: { 'A. Lopez': 'Ana Lopez' } }));
+  assert.deepStrictEqual(p.marks, { 'Ana Lopez': { '2026-11-10': 0.5, '2026-10-30': 0.25 }, 'Ben Ray': { '2026-11-11': 0.75 }, 'Cy Dee': { '2026-11-16': 0 } },
+    'the duplicate\'s second row, the Credit-1 dismissal, the blank agent, the bad date and the blank credit are no marks; a credit of 0 is one');
+  assert.strictEqual(p.kept, 4);
+});
+
+test('PD: the reader opens ONLY columns A–C — the Reason column is never asked for, read, kept or returned; a missing tab, an empty one, a moved header and a failed read are each no marks, and each says which (driven)', () => {
+  const tab = pdTab_([pdRow_('2026-11-10', 'Ana Lopez', 0.5), pdRow_(new Date('2026-10-30T06:00:00Z'), 'A. Lopez', 0.25), pdRow_('2026-11-12', 'Ben Ray', 1)]);
+  const c = pdCtx_(tab);
+  const out = m1J(c.getCdrPartialDays_());
+  assert.deepStrictEqual(out, { source: 'sheet', marks: { 'Ana Lopez': { '2026-11-10': 0.5, 'fmt:America/Mexico_City:2026-10-30': 0.25 } }, rows: 3, kept: 2 },
+    'a text date as written; a Date cell formatted in the SPREADSHEET\'s timezone (the stub shows which zone was asked for); the alias resolved');
+  assert.deepStrictEqual(tab.reads, [[1, 1, 1, 3], [2, 1, 3, 3]], 'THE RULE: the header and the data, each three columns wide from column 1 — the fake throws on anything else');
+  assert.ok(JSON.stringify(out).indexOf('SECRET') < 0 && JSON.stringify(c._store).indexOf('SECRET') < 0 && JSON.stringify(c._store).indexOf('admin@x') < 0, 'no reason and no "added by" in the result or in the cache');
+  assert.deepStrictEqual(c._puts, [['cdr:pd:S1', 21600]], 'kept against the data stamp');
+  c.getCdrPartialDays_();
+  assert.strictEqual(c._opens.length, 1, 'once per execution');
+  const again = pdCtx_(pdTab_([], { boom: true }), { CacheService: { getScriptCache: () => ({ get: (k) => c._store[k] || null, put() {} }) } });
+  assert.deepStrictEqual([m1J(again.getCdrPartialDays_()).kept, again._opens.length], [2, 0], 'another execution under the same stamp reads the kept marks, not the workbook');
+  assert.deepStrictEqual(m1J(pdCtx_(null).getCdrPartialDays_()), { source: 'no-tab', marks: {}, rows: 0, kept: 0 }, 'no tab yet (the dashboard creates it on first use): no marks, and not a failure');
+  assert.strictEqual(pdCtx_(null).cdrPartialDaysDegraded_(), false);
+  assert.strictEqual(m1J(pdCtx_(pdTab_([])).getCdrPartialDays_()).source, 'empty', 'a header and nothing under it');
+  assert.strictEqual(m1J(pdCtx_(pdTab_([], { blank: true })).getCdrPartialDays_()).source, 'empty', 'a tab with nothing in it');
+  assert.strictEqual(m1J(pdCtx_(pdTab_([pdRow_('2026-11-12', 'Ben Ray', 1)])).getCdrPartialDays_()).source, 'empty', 'only dismissals: no mark');
+  const moved = pdTab_([['Ana Lopez', '2026-11-10', 0.5, PD_SECRET, '', '']], { head: ['Agent', 'Date', 'Credit', 'Reason', 'Added By', 'Added At'] });
+  const mv = m1J(pdCtx_(moved).getCdrPartialDays_());
+  assert.deepStrictEqual([mv.source, mv.marks, moved.reads], ['bad-header', {}, [[1, 1, 1, 3]]], 'columns that moved are NOT read by position — the data range is never asked for');
+  const bad = pdCtx_(pdTab_([pdRow_('2026-11-10', 'Ana Lopez', 0.5)], { boom: true }));
+  const b = m1J(bad.getCdrPartialDays_());
+  assert.ok(b.source === 'unavailable' && /quota/.test(b.error) && Object.keys(b.marks).length === 0, 'a read that throws: no marks for this response');
+  assert.ok(bad.cdrPartialDaysDegraded_() === true && bad._puts.length === 0, 'and the execution is marked — nothing is cached, here or by any reader (g129)');
+  assert.strictEqual(pdCtx_(tab, { cdrDataStamp_: () => '' })._puts.length, 0);
+  const noStamp = pdCtx_(pdTab_([pdRow_('2026-11-10', 'Ana Lopez', 0.5)]), { cdrDataStamp_: () => '' });
+  noStamp.getCdrPartialDays_();
+  assert.strictEqual(noStamp._puts.length, 0, 'no stamp: nothing to key the marks by, so they are read each time');
+  const degraded = pdCtx_(pdTab_([pdRow_('2026-11-10', 'A. Lopez', 0.5)]), { cdrNameMapDegraded_: () => true });
+  degraded.getCdrPartialDays_();
+  assert.strictEqual(degraded._puts.length, 0, 'marks named without the alias map are not kept (F16)');
+});
+
+test('PD: every read of the Partial Days tab in the server is three columns wide — the tab is named in one CONFIG key and opened in two places, the reader and the data stamp (source)', () => {
+  const src = stripJsComments_(serverSource());
+  assert.ok(/var CDR_PARTIAL_COLS = 3;/.test(src), 'the one width');
+  assert.ok(/CDR_PARTIAL_DAYS_TAB: 'Partial Days',/.test(src) && !/getSheetByName\(\s*['"]Partial Days['"]/.test(src), 'the tab is opened by its CONFIG key, never by a literal name of its own');
+  assert.strictEqual((src.match(/CONFIG\.CDR_PARTIAL_DAYS_TAB/g) || []).length, 2, 'and used twice: the reader and the stamp probe');
+  const rd = stripJsComments_(extractRawFunction('Code.js', 'getCdrPartialDays_'));
+  const ranges = rd.match(/\.getRange\([^)]*\)/g) || [];
+  assert.strictEqual(ranges.length, 2);
+  ranges.forEach((r) => assert.ok(/^\.getRange\((1|2), 1, [^,]+, CDR_PARTIAL_COLS\)$/.test(r), 'from column 1, CDR_PARTIAL_COLS wide: ' + r));
+  assert.ok(!/getLastColumn|getDataRange/.test(rd), 'never the tab\'s own width');
+  const st = stripJsComments_(extractRawFunction('Code.js', 'cdrDataStamp_'));
+  assert.ok(/\[CONFIG\.CDR_PARTIAL_DAYS_TAB, CDR_PARTIAL_COLS, true\]/.test(st), 'the stamp probe names the same width, and reads the tab whole (a mark anywhere changes a day)');
+  assert.ok(!/getCdrPartialDays_|CDR_PARTIAL_DAYS_TAB/.test(stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'))), 'Team Metrics does not read the marks at all');
+});
+
+test('PD: the data stamp watches the Partial Days tab\'s three columns — a new or changed mark is a new stamp; a changed REASON is not, because it is never read (driven)', () => {
+  const run = (pdRows) => {
+    const reads = [];
+    const tab = (name, rows, guard) => ({ getLastRow: () => rows.length, getLastColumn: () => (rows[0] || []).length,
+      getRange: (r, col, n, w) => { reads.push([name, r, col, n, w]); if (guard && (col !== 1 || w !== 3)) throw new Error('past column C');
+        return { getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w).map(String)) }; } });
+    const tabs = { 'DQE Historical Data': tab('dqe', [['h'], ['1']]), 'CSR Transfer Historical Data': tab('tr', [['h'], ['t']]), 'Agent Alias Overrides': tab('al', [['Old'], ['a']]) };
+    if (pdRows) tabs['Partial Days'] = tab('pd', pdRows, true);
+    const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300, CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_PARTIAL_DAYS_TAB: 'Partial Days' },
+      CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 }, CSR_TRANSFER_TAB: 'CSR Transfer Historical Data', CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300, CDR_PARTIAL_COLS: 3,
+      Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
+      getCdrSS_: () => ({ getSheetByName: (n) => tabs[n] || null }), CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) } });
+    vm.runInContext('var _cdrStampMemo = null;', ctx);
+    ['cdrDigestHex_', 'cdrStampFromProbes_', 'cdrDataStamp_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { stamp: ctx.cdrDataStamp_(), reads };
+  };
+  const rows = [PD_HEAD, pdRow_('2026-11-10', 'Ana Lopez', 0.5)];
+  const base = run(rows);
+  assert.ok(/^[0-9a-f]{32}$/.test(base.stamp));
+  assert.deepStrictEqual(base.reads.filter((r) => r[0] === 'pd'), [['pd', 1, 1, 2, 3]], 'the whole tab, columns A–C');
+  assert.notStrictEqual(run([PD_HEAD, pdRow_('2026-11-10', 'Ana Lopez', 0.25)]).stamp, base.stamp, 'a changed credit');
+  assert.notStrictEqual(run(rows.concat([pdRow_('2026-11-11', 'Ben Ray', 0.5)])).stamp, base.stamp, 'a new mark');
+  const reason = [PD_HEAD, ['2026-11-10', 'Ana Lopez', 0.5, 'a different reason', 'someone else', 'later']];
+  assert.strictEqual(run(reason).stamp, base.stamp, 'THE RULE: columns D–F are not part of anything this app computes');
+  assert.ok(/^[0-9a-f]{32}$/.test(run(null).stamp) && run(null).stamp !== base.stamp, 'no tab is a stamp too');
+});
+
+test('PD: a marked day counts only when the agent took a call on it; the marks ride BESIDE the agents map, never on an agent\'s object; a round read without the marks is not kept (driven)', () => {
+  const c0 = pdCtx_(null);
+  [[0.5, 3, 2, 1, true], [0, 1, 0, 0, true], [0.5, 0, 0, 2, true], [0.5, 0, 0, 0, false], [null, 9, 9, 0, false], [undefined, 9, 9, 0, false]]
+    .forEach((g) => assert.strictEqual(c0.cdrPartialDayCounts_(g[0], g[1], g[2], g[3]), g[4], JSON.stringify(g)));
+  const data = [['Q', '2026-11-09', 'Ann', '1', 10, 10, 2, 8, '0:40:00', '0:05:00'], ['Q', '2026-11-10', 'Ann', '1', 6, 6, 1, 5, '0:20:00', '0:04:00'],
+    ['Q', '2026-11-10', 'Bo', '2', 4, 4, 0, 4, '0:16:00', '0:04:00'], ['Q', '2026-11-11', 'Bo', '2', 0, 0, 0, 0, '0:00:00', '0:00:00']];
+  const marks = { Ann: { '2026-11-10': 0.5, '2026-11-12': 0.25 }, Bo: { '2026-11-11': 0.5 } };
+  let down = false;
+  const mk = (m) => pf1Ctx_(pf1DqeSheet_(data).sheet, { cdrDataStamp_: () => 'S1', getCdrPartialDays_: () => ({ source: 'sheet', marks: m }), cdrPartialDaysDegraded_: () => down });
+  const marked = mk(marks), plain = mk({});
+  const a = m1J(marked.getCdrAgentMetrics_('2026-11-09', '2026-11-12', ['Ann', 'Bo']));
+  const b = m1J(plain.getCdrAgentMetrics_('2026-11-09', '2026-11-12', ['Ann', 'Bo']));
+  assert.deepStrictEqual(a.partial, { Ann: [['2026-11-10', 0.5]] }, 'Ann\'s mark on the day she took calls; her mark on a day with no row and Bo\'s on a day with nothing rung count for nothing');
+  assert.ok(!('partial' in b), 'no mark: no field');
+  assert.deepStrictEqual(a.agents, b.agents, 'THE RULE: every count, total, rate and talk time is byte-identical with and without the marks');
+  Object.keys(a.agents).forEach((k) => assert.ok(!('partial' in a.agents[k]) && !('credit' in a.agents[k]), 'nothing on the agent object — other endpoints pass those on'));
+  assert.strictEqual(marked._puts.length, 1);
+  down = true;
+  const lost = mk(marks);
+  lost.getCdrAgentMetrics_('2026-11-09', '2026-11-12', ['Ann', 'Bo']);
+  assert.strictEqual(lost._puts.length, 0, 'a window read while the marks could not be: not kept');
+  lost.getCdrDailyBreakdown_('2026-11-09', '2026-11-12', ['Ann', 'Bo']);
+  assert.strictEqual(lost._puts.length, 0, 'nor the daily breakdown');
+  down = false;
+  const d = m1J(marked.getCdrDailyBreakdown_('2026-11-09', '2026-11-12', ['Ann', 'Bo']));
+  assert.deepStrictEqual(d.credits, { '2026-11-10': { Ann: 0.5 } }, 'the daily breakdown: credits in a map of their own');
+  const d0 = m1J(plain.getCdrDailyBreakdown_('2026-11-09', '2026-11-12', ['Ann', 'Bo']));
+  assert.ok(!('credits' in d0));
+  assert.deepStrictEqual([d.perRepDaily, d.daily, d.agents], [d0.perRepDaily, d0.daily, d0.agents], 'and the per-rep days are what they were');
+});
+
+test('PD: what the marks do to a divisor — the handoff\'s own example (21 workdays, marks of 0.5 and 0.25 → 19.75); a marked weekend was never in the divisor; the comparison scale is exactly 1 with no mark (pure)', () => {
+  const c = pdCtx_(null);
+  const wk = (iso) => { const dow = new Date(iso + 'T12:00:00Z').getUTCDay(); return dow !== 0 && dow !== 6; };
+  const v = m1J(c.dashPartialView_([['2026-10-30', 0.25], ['2026-11-10', 0.5]], '2026-10-19', '2026-11-16', wk));
+  assert.deepStrictEqual(v, { uncredited: 1.25, days: [{ date: '2026-11-10', credit: 0.5 }, { date: '2026-10-30', credit: 0.25 }] }, '0.5 + 0.75 of a day comes out; the days newest first');
+  assert.strictEqual(21 - v.uncredited, 19.75, 'the handoff\'s worked example');
+  assert.strictEqual(Math.round(419 / (21 - v.uncredited) * 10) / 10, 21.2, '419 answered over 19.75 credited days');
+  assert.strictEqual(c.dashPartialView_([['2026-11-07', 0.5]], '2026-11-01', '2026-11-19', wk), null, 'a marked Saturday: the workday divisor never held it');
+  assert.strictEqual(c.dashPartialView_([['2026-10-30', 0.5]], '2026-11-01', '2026-11-19', wk), null, 'outside the window');
+  assert.strictEqual(c.dashPartialView_([['2026-11-20', 0.5]], '2026-11-01', '2026-11-19', wk), null, 'after the last day with data');
+  assert.strictEqual(c.dashPartialView_(null, '2026-11-01', '2026-11-19', wk), null);
+  assert.strictEqual(c.dashPartialView_([['2026-11-10', 1]], '2026-11-01', '2026-11-19', wk), null, 'a credit of 1 is not a partial day');
+  assert.deepStrictEqual(m1J(c.dashPartialView_([['2026-11-10', 0]], '2026-11-01', '2026-11-19', wk)), { uncredited: 1, days: [{ date: '2026-11-10', credit: 0 }] }, 'a day not counted at all');
+  assert.strictEqual(c.dashPartialScale_(14, 0, 14, 0), 1);
+  assert.strictEqual(c.dashPartialScale_(14, 0, 11, 0), 1, 'THE RULE: no mark, no scale — even when the prior month was clamped shorter, an unmarked rep\'s delta is what it was');
+  assert.strictEqual(c.dashPartialScale_(10, 1, 10, 0), 0.9, 'nine credited days of ten: last month is compared at nine tenths');
+  assert.strictEqual(c.dashPartialScale_(10, 0, 10, 1), 1.1111, 'a partial day LAST month scales the other way');
+  assert.strictEqual(c.dashPartialScale_(10, 1, 10, 1), 1, 'the same share both months');
+  assert.strictEqual(c.dashPartialScale_(1, 0.5, 10, 0), 1, 'under one credited day this month: totals are compared as before');
+  assert.strictEqual(c.dashPartialScale_(10, 0.5, 1, 0.75), 1, 'or last month');
+  const dig = (x) => require('crypto').createHash('md5').update(String(x)).digest('hex');
+  assert.strictEqual(c.cdrPartialKeyPart_(undefined, dig), '0');
+  assert.strictEqual(c.cdrPartialKeyPart_({}, dig), '0');
+  const k1 = c.cdrPartialKeyPart_({ '2026-11-10': 0.5, '2026-10-30': 0.25 }, dig);
+  assert.ok(/^[0-9a-f]{10}$/.test(k1) && k1 === c.cdrPartialKeyPart_({ '2026-10-30': 0.25, '2026-11-10': 0.5 }, dig), 'the same marks in any order are the same key part');
+  assert.notStrictEqual(c.cdrPartialKeyPart_({ '2026-11-10': 0.25, '2026-10-30': 0.25 }, dig), k1, 'a changed credit is a new one');
+});
+
+test('PD: the team average of a COUNT is per credited rep-day — a partial rep\'s calls stay in the sum and they count as their share; the cohort is still people; rates and talk time are untouched; only the rep\'s OWN partial day rides their series (pure)', () => {
+  const prd = { '2026-11-10': { A: { answered: 30, missed: 3, pctAnswered: 90, attSeconds: 240 }, B: { answered: 20, missed: 1, pctAnswered: 95, attSeconds: 200 }, C: { answered: 10, missed: 2, pctAnswered: 83, attSeconds: 220 } } };
+  const dates = ['2026-11-10'];
+  const credits = { '2026-11-10': { C: 0.5 } };
+  assert.deepStrictEqual(m1J(sb.metricsTeamAvgSeries_(prd, dates, 'answered', 3, [], credits)), [{ date: '2026-11-10', cohort: 3, avg: 24 }], '60 calls over 2.5 credited rep-days');
+  assert.deepStrictEqual(m1J(sb.metricsTeamAvgSeries_(prd, dates, 'answered', 3, [])), [{ date: '2026-11-10', cohort: 3, avg: 20 }], 'no credits: the head count, as before');
+  assert.deepStrictEqual(m1J(sb.metricsTeamAvgSeries_(prd, dates, 'missed', 3, [], credits)), [{ date: '2026-11-10', cohort: 3, avg: 2.4 }]);
+  ['pctAnswered', 'attSeconds'].forEach((k) => assert.deepStrictEqual(m1J(sb.metricsTeamAvgSeries_(prd, dates, k, 3, [], credits)), m1J(sb.metricsTeamAvgSeries_(prd, dates, k, 3, [])), k + ' is not a count of calls: unchanged'));
+  assert.strictEqual(sb.metricsTeamAvgSeries_(prd, dates, 'answered', 3, [], { '2026-11-10': { A: 0.25, B: 0.25, C: 0.25 } })[0].avg, null, 'under one credited day in all: no average');
+  assert.strictEqual(sb.metricsTeamAvgSeries_(prd, dates, 'answered', 4, [], credits)[0].avg, null, 'the cohort guard counts PEOPLE (3 < 4), not credited days');
+  const own = m1J(sb.metricsBuildKpiSeries_(prd, dates, 'C', 'answered', 3, [], credits));
+  assert.deepStrictEqual(own, [{ date: '2026-11-10', own: 10, team: 24, cohort: 3, partial: 0.5 }], 'the rep\'s own count is kept and the point is marked');
+  const other = m1J(sb.metricsBuildKpiSeries_(prd, dates, 'A', 'answered', 3, [], credits));
+  assert.deepStrictEqual(other, [{ date: '2026-11-10', own: 30, team: 24, cohort: 3 }], 'THE RULE: a colleague\'s partial day is not on anyone else\'s series');
+  assert.ok(!('partial' in m1J(sb.metricsBuildKpiSeries_(prd, dates, 'C', 'pctAnswered', 3, [], credits))[0]), 'and never on a rate');
+  assert.deepStrictEqual(m1J(sb.metricsBuildKpiSeries_(prd, dates, 'C', 'answered', 3, [])), [{ date: '2026-11-10', own: 10, team: 20, cohort: 3 }], 'no credits: the shape and the numbers of before');
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
+  assert.ok(/'answered', MIN_COHORT, std\.teamAvgExcludes, dqCredits\)/.test(my) && /'missed', MIN_COHORT, std\.teamAvgExcludes, dqCredits\)/.test(my) && (my.match(/dqCredits\)/g) || []).length === 2,
+    'My Stats passes the credits to the two count series and no other');
+});
+
+/** The Dashboard endpoint, driven: today is Fri 2026-11-20, MTD. */
+const pdDash_ = (o) => {
+  const puts = [];
+  const curAgents = { Ann: { totalRung: 300, totalAnswered: 280, totalMissed: 20, pctAnswered: 93.3, attSeconds: 240, attFormatted: '0:04:00' },
+    Bo: { totalRung: 200, totalAnswered: 190, totalMissed: 10, pctAnswered: 95, attSeconds: 200, attFormatted: '0:03:20' } };
+  const prevAgents = { Ann: { totalRung: 310, totalAnswered: 290, totalMissed: 20, pctAnswered: 93.5, attSeconds: 250, attFormatted: '0:04:10' },
+    Bo: { totalRung: 200, totalAnswered: 180, totalMissed: 20, pctAnswered: 90, attSeconds: 210, attFormatted: '0:03:30' } };
+  const ctx = vm.createContext({ JSON, String, Number, Math, Object, Array, Date, isFinite, Error, console: { log() {}, warn() {} },
+    getEmployeeInfo_: () => ({ id: 'e1', name: 'Ann' }), DASHBOARD_PERIOD_KEYS: ['yesterday', 'mtd', 'ytd'], DASHBOARD_CACHE_TTL: 21600, DASH_MONTH_ABBR: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+    CONFIG: { CDR_TRANSFER_TARGET_PCT: 20 }, CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
+    empTz_: () => 'UTC', Utilities: { formatDate: () => '2026-11-20' },
+    getCdrPartialDays_: () => ({ source: o.down ? 'unavailable' : 'sheet', marks: o.marks || {} }), cdrPartialDaysDegraded_: () => !!o.down,
+    cdrDigestHex_: (x) => require('crypto').createHash('md5').update(String(x)).digest('hex'),
+    getCdrDashboardStandard_: () => ({ teamAvgExcludes: [] }), cdrStandardShip_: () => ({ alertThreshold: 90, alertBand: 5, standardSource: 'sheet' }),
+    cdrCohortNames_: () => ['Ann', 'Bo'], getEmployeeRosterRows_: () => [],
+    getCdrAgentMetrics_: (f) => (f === '2026-11-01'
+      ? Object.assign({ agents: curAgents, meta: { latestDate: '2026-11-19' } }, o.cur ? { partial: o.cur } : {})
+      : Object.assign({ agents: prevAgents, meta: { latestDate: '2026-10-20' } }, o.prev ? { partial: o.prev } : {})),
+    cdrAgentsOrThrow_: (r) => r.agents, getCsrTransferPerRepDaily_: () => ({ agents: {} }),
+    prevWorkdayIso_: () => '2026-11-19', companyHolidayMap_: () => ({}),
+    cnCountNotesResult_: () => ({ count: 100 }), cnNoteCoverage_: () => 36, cdrNameMapDegraded_: () => false });
+  ['cdrExcludeSet_', 'cdrAnswerPct_', 'dashboardPeriodRange_', 'dashboardImportPending_', 'dashboardAlignToData_', 'dashWorkdayCount_', 'dashboardPrevRange_', 'dashboardTeamAggregate_',
+    'dashboardTeamTransfer_', 'cdrPartialKeyPart_', 'dashPartialView_', 'dashPartialScale_', 'getDashboardMetrics'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'PDdash#' + f }));
+  return { out: m1J(ctx.getDashboardMetrics(o.period || 'mtd')), puts };
+};
+
+test('PD: the Dashboard endpoint — the rep\'s own partial days, credited days and comparison scale ride the payload; another rep\'s marks never do; the Team figures, every count and the workday basis are unchanged; an unmarked rep\'s payload has neither (driven)', () => {
+  const plain = pdDash_({});
+  assert.ok(!plain.out.error, plain.out.error);
+  assert.deepStrictEqual([plain.out.workdays, plain.out.partial, plain.out.prev.label, 'ownScale' in plain.out.prev], [{ elapsed: 14, total: 21 }, null, 'Oct 1–20', false], 'an unmarked rep: no partial days, no scale');
+  assert.strictEqual(plain.puts.length, 1);
+  assert.ok(/^dash_metrics_v9:e1:mtd:2026-11-20:0$/.test(plain.puts[0]), plain.puts[0]);
+  const marked = pdDash_({ marks: { Ann: { '2026-11-10': 0.5 }, Bo: { '2026-11-11': 0.25 } }, cur: { Ann: [['2026-11-07', 0.25], ['2026-11-10', 0.5]], Bo: [['2026-11-11', 0.25]] } });
+  assert.deepStrictEqual(marked.out.partial, { uncredited: 0.5, credited: 13.5, days: [{ date: '2026-11-10', credit: 0.5 }] }, 'half a day out of fourteen workdays; the marked Saturday was never among them');
+  assert.strictEqual(marked.out.prev.ownScale, 0.9643, '13.5 of 14 credited this month, 14 of 14 last month');
+  assert.ok(JSON.stringify(marked.out).indexOf('2026-11-11') < 0 && JSON.stringify(marked.out).indexOf('0.25') < 0, 'THE RULE: Bo\'s partial day is nowhere in Ann\'s payload');
+  ['own', 'team', 'workdays', 'cohort', 'noteCount', 'from', 'to', 'dataThrough'].forEach((k) => assert.deepStrictEqual(marked.out[k], plain.out[k], k + ' is what it was — no count, total or rate moves, and the Team card has nothing to adjust'));
+  assert.deepStrictEqual([marked.out.prev.own, marked.out.prev.team], [plain.out.prev.own, plain.out.prev.team], 'last month\'s figures are shipped as they are; the scale is beside them');
+  assert.ok(/^dash_metrics_v9:e1:mtd:2026-11-20:[0-9a-f]{10}$/.test(marked.puts[0]) && marked.puts[0] !== plain.puts[0], 'the six-hour key carries the rep\'s own marks — a mark added today is a miss, not a wait');
+  const both = pdDash_({ cur: { Ann: [['2026-11-10', 0.5]] }, prev: { Ann: [['2026-10-15', 0.5]] } });
+  assert.ok(!('ownScale' in both.out.prev) && both.out.partial.credited === 13.5, 'the same share both months: no scale, the credited days still shown');
+  const down = pdDash_({ down: true });
+  assert.ok(down.out.partial === null && down.puts.length === 0, 'the marks could not be read: no day is partial in this response, and it is not kept for six hours');
+  const y = pdDash_({ period: 'yesterday', cur: { Ann: [['2026-11-10', 0.5]] } });
+  assert.ok(y.out.partial === null && y.out.workdays === null, 'a single day has no day-based figure');
+});
+
+test('PD: the Dashboard card — the pace divides by the rep\'s credited days and says so in the handoff\'s words; counts are compared over the same share; the Team card is never adjusted (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, Object, Array, JSON });
+  ['dashProjection_', 'dashPartialNum_', 'dashPartialLine_', 'dashPrevScaled_', 'dashDelta_'].forEach((f) => vm.runInContext(extractFunction('tc/script_clock.html', f), c));
+  const wd = { elapsed: 21, total: 42 };
+  const base = m1J(c.dashProjection_(419, '2026-10-19', '2026-11-16', 'ytd', wd));
+  assert.deepStrictEqual(base, { projected: 838, elapsed: 21, total: 42, endLabel: 'Dec 31' }, 'no partial day: the pace of before, and the shape of before');
+  assert.deepStrictEqual(m1J(c.dashProjection_(419, '2026-10-19', '2026-11-16', 'ytd', wd, null)), base);
+  const p = m1J(c.dashProjection_(419, '2026-10-19', '2026-11-16', 'ytd', wd, { credited: 19.75 }));
+  assert.deepStrictEqual([p.projected, p.credited, p.elapsed, p.total], [891, 19.75, 21, 42], '419 × 42 ÷ 19.75 — the pace while present');
+  assert.strictEqual(c.dashProjection_(40, '2026-11-01', '2026-11-05', 'mtd', { elapsed: 3, total: 21 }, { credited: 0.75 }), null, 'under one credited day: no pace at all');
+  assert.strictEqual(m1J(c.dashProjection_(40, '2026-11-01', '2026-11-05', 'mtd', { elapsed: 3, total: 21 }, { credited: 1 })).projected, 840);
+  assert.deepStrictEqual(m1J(c.dashProjection_(419, '2026-10-19', '2026-11-16', 'ytd', null, { credited: 19.75 })), m1J(c.dashProjection_(419, '2026-10-19', '2026-11-16', 'ytd', null)), 'no workday basis (an older payload): the credited days are not applied to calendar days');
+  const res = { workdays: { elapsed: 21, total: 23 }, partial: { uncredited: 1.25, credited: 19.75, days: [{ date: '2026-11-10', credit: 0.5 }, { date: '2026-10-30', credit: 0.25 }] } };
+  assert.deepStrictEqual(m1J(c.dashPartialLine_(res)), { text: '19.75 of 21 workdays, 2 partial', title: 'Partial days: Tue Nov 10 (0.5 day), Fri Oct 30 (0.25 day)' }, 'the handoff\'s two strings, to the letter');
+  assert.strictEqual(c.dashPartialLine_({ workdays: { elapsed: 21, total: 23 }, partial: null }), null, 'no marked day: no line');
+  assert.strictEqual(c.dashPartialLine_({ workdays: null, partial: res.partial }), null);
+  assert.ok(/Thu Nov 12 \(not counted\)/.test(c.dashPartialLine_({ workdays: { elapsed: 9, total: 21 }, partial: { credited: 8, days: [{ date: '2026-11-12', credit: 0 }] } }).title), 'a credit of 0');
+  const many = { workdays: { elapsed: 200, total: 261 }, partial: { credited: 195, days: Array.from({ length: 10 }, (_, i) => ({ date: '2026-03-' + String(i + 2).padStart(2, '0'), credit: 0.5 })) } };
+  assert.ok(/, \+2 more$/.test(c.dashPartialLine_(many).title) && /10 partial$/.test(c.dashPartialLine_(many).text), 'eight named, the rest counted');
+  assert.strictEqual(c.dashPartialLine_({ workdays: { elapsed: 1, total: 21 }, partial: { credited: 0.5, days: [{ date: '2026-11-02', credit: 0.5 }] } }).text, '0.5 of 1 workday, 1 partial');
+  assert.strictEqual(c.dashPrevScaled_(200, { prev: { ownScale: 0.9 } }), 180, 'last month at the same share of credited days');
+  assert.strictEqual(c.dashPrevScaled_(200, { prev: {} }), 200);
+  assert.strictEqual(c.dashPrevScaled_(200, { prev: { ownScale: 0 } }), 200, 'a scale that is not a positive number is no scale');
+  assert.strictEqual(c.dashPrevScaled_(null, { prev: { ownScale: 0.9 } }), null, 'a missing comparison stays missing');
+  assert.strictEqual(c.dashDelta_(180, c.dashPrevScaled_(200, { prev: { ownScale: 0.9 } }), 'count').text, 'no change', '180 this month against 200 over nine tenths of the days');
+  const clk = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  const team = extractFunction('tc/script_clock.html', 'clkDashTeamCard_');
+  assert.ok(!/partial|dashPrevScaled_|ownScale/.test(team), 'THE RULE: the Team card reads no partial day and scales nothing');
+  const own = extractFunction('tc/script_clock.html', 'clkDashOwnCard_');
+  assert.strictEqual((own.match(/dashPrevScaled_\(/g) || []).length, 2, 'the own card scales the two COUNTS');
+  assert.ok(/dashDelta_\(o\.answered, dashPrevScaled_\(pv && pv\.answered, res\), 'count'\)/.test(own) && /dashDelta_\(o\.missed, dashPrevScaled_\(pv && pv\.missed, res\), 'count'\)/.test(own)
+    && /dashDelta_\(o\.pctAnswered, pv && pv\.pctAnswered, 'pp', false\)/.test(own) && /dashDelta_\(o\.attSeconds, pv && pv\.attSeconds, 'sec'\)/.test(own), 'Answered and Missed — the rate and the talk time are compared as they are');
+  assert.ok(/\.dash-partial \{/.test(clk) && /\.dash-partial-row \{/.test(clk), 'the line\'s classes have rules');
+});
+
+test('PD: My Stats draws the rep\'s partial days on the two count trends — a ring on the day and its date and share in words under the chart (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, Object, Array, JSON, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') });
+  ['mPartialNoteHtml_', 'mBuildDualSparkSvg_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const s = [{ date: '2026-11-09', own: 30, team: 28, cohort: 5 }, { date: '2026-11-10', own: 12, team: 27, cohort: 5, partial: 0.5 }, { date: '2026-11-11', own: 31, team: 29, cohort: 5 }, { date: '2026-11-12', own: 5, team: 30, cohort: 5, partial: 0 }];
+  assert.strictEqual(c.mPartialNoteHtml_(s), '<div class="m-kpi-note">Partial days: Nov 12 (not counted), Nov 10 (0.5 day)</div>', 'newest first, in words');
+  assert.strictEqual(c.mPartialNoteHtml_(s.slice(0, 2)), '<div class="m-kpi-note">Partial day: Nov 10 (0.5 day)</div>');
+  assert.strictEqual(c.mPartialNoteHtml_(s.filter((p) => p.partial == null)), '', 'no partial day: nothing');
+  assert.strictEqual(c.mPartialNoteHtml_(null), '');
+  const six = Array.from({ length: 6 }, (_, i) => ({ date: '2026-11-' + String(i + 2).padStart(2, '0'), own: 9, team: 9, partial: 0.5 }));
+  assert.ok(/, \+2 more<\/div>$/.test(c.mPartialNoteHtml_(six)), 'four named, the rest counted');
+  const svg = c.mBuildDualSparkSvg_(s);
+  assert.strictEqual((svg.match(/class="own-partial"/g) || []).length, 2, 'a ring on each partial day');
+  assert.strictEqual((c.mBuildDualSparkSvg_(s.map((p) => ({ date: p.date, own: p.own, team: p.team }))).match(/own-partial/g) || []).length, 0);
+  const mx = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/\.m-dual-spark \.own-partial \{/.test(mx) && /\.m-kpi-note \{/.test(mx), 'both classes have rules');
+  assert.ok(/mBuildDualSparkSvg_\(series\) \+\s*mPartialNoteHtml_\(series\) \+/.test(extractFunction('metrics/script_metrics.html', 'mKpiTrendCard_')), 'under every trend card\'s chart');
+});
+
+test('PD: Storage Health states the Partial Days tab — counts only, a missing tab is not a warning, a moved header and a failed read are; the read-ahead says when it kept nothing (driven)', () => {
+  const pc = vm.createContext({ String, Object, Array, EMP: { NAME: 0 }, getEmployeeRosterRows_: () => [], cdrCohortNames_: () => ['Ana Lopez', 'Ben Ray'],
+    getCdrPartialDays_: () => ({ source: 'sheet', rows: 7, kept: 4, marks: { 'Ana Lopez': { '2026-11-10': 0.5, '2026-10-30': 0.25 }, 'Ben Ray': { '2026-11-11': 0.75 }, 'Other Dept': { '2026-11-12': 0.5 } } }) });
+  vm.runInContext(extractRawFunction('Code.js', 'cdrPartialProbe_'), pc);
+  const probe = m1J(pc.cdrPartialProbe_());
+  assert.deepStrictEqual(probe, { source: 'sheet', rows: 7, marks: 4, agents: 3, offRoster: 1, error: '' }, 'counts — no name, no date');
+  pc.getCdrPartialDays_ = () => { throw new Error('boom'); };
+  assert.deepStrictEqual(m1J(pc.cdrPartialProbe_()), { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, error: 'boom' }, 'the probe never takes the inventory down');
+  const cc = vm.createContext({ String });
+  ['cnPartialDaysFact_', 'cnPartialDaysFindings_'].forEach((f) => vm.runInContext(extractFunction('cn/script_callnotes.html', f), cc));
+  const find = (pd) => { const got = []; cc.cnPartialDaysFindings_((id, area, level, title, detail, fix) => got.push({ id, area, level, title, detail: detail || '', fix: fix || '' }), pd); return got[0]; };
+  const ok = find(probe);
+  assert.ok(ok.id === 'cdrPartialDays' && ok.area === 'cdr' && ok.level === 'ok' && /4 marks for 3 agents — 1 for agents not on this roster/.test(ok.detail), JSON.stringify(ok));
+  assert.strictEqual(find({ source: 'no-tab' }).level, 'ok', 'THE RULE: no tab yet is the steady state — a warning here could never clear on a team that marks no day (g02)');
+  assert.strictEqual(find({ source: 'empty' }).level, 'ok');
+  const bad = find({ source: 'bad-header' });
+  assert.ok(bad.level === 'warn' && /Date \| Agent \| Credit/.test(bad.detail) && /counts no day as partial/.test(bad.detail) && bad.fix);
+  const un = find({ source: 'unavailable', error: 'quota' });
+  assert.ok(un.level === 'warn' && /quota/.test(un.detail) && /nothing computed without it is cached/.test(un.detail));
+  assert.strictEqual(cc.cnPartialDaysFact_(probe), ' · 4 marks for 3 agents (1 not on this roster)');
+  assert.ok(/no tab yet/.test(cc.cnPartialDaysFact_({ source: 'no-tab' })) && /not read/.test(cc.cnPartialDaysFact_({ source: 'bad-header' })));
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/if \(s\.partialDays\) cnPartialDaysFindings_\(add, s\.partialDays\);/.test(cn) && /if \(s\.partialDays\) parts\.push\(/.test(cn), 'the finding and the row\'s fact are both drawn');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/partialDays: \{ source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, error: '' \}/.test(mock) && /partial: null,/.test(mock), 'the fixtures carry the new fields (INV-185)');
+  const warm = stripJsComments_(extractRawFunction('Code.js', 'warmCdrMetricsCache'));
+  assert.ok(/if \(cdrPartialDaysDegraded_\(\)\) \{\s*return \{ outcome: automationOutcome_\('partial', 'The Partial Days tab could not be read, so the call-data windows read ahead were not kept\.', \['Partial Days'\]\) \};/.test(warm),
+    'a read-ahead that kept nothing because the marks could not be read is partial, never ok');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

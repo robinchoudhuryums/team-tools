@@ -273,6 +273,13 @@ const SCENARIOS = [
   // Cycle 26 F35: My Stats on TODAY — the outbound export never holds it, and
   // the rail says so whatever was placed (no row at all before).
   ['metrics-today-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '', "M_STATE.myMode='single';M_STATE.myDate=mTodayIso_();mMyStatsSyncPresets_();mLoadMyStats_()"],
+  // Batch PD (cycle 26): a rep with two partial days — the Dashboard card's
+  // "15.25 of 16 workdays, 2 partial" beside its pace, and the My Stats count
+  // trends' rings and "Partial days: …" note.
+  ['clock-partial-light-wide', { tool: 'timeClock', tab: 'clock' }, WIDE, 'light', '?partial=1'],
+  ['clock-partial-dark-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'dark', '?partial=1'],
+  ['metrics-partial-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '?partial=1'],
+  ['metrics-partial-dark-mobile', { tool: 'timeClock', tab: 'metricsMyStats' }, MOBILE, 'dark', '?partial=1'],
   ['metrics-team-dark-wide',  { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],

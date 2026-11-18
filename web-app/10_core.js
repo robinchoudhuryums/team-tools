@@ -2840,6 +2840,7 @@ function getStorageHealth(opts) {
     if (cdrStore.reachable) {
       cdrStore.standard = cdrStandardProbe_();
       cdrStore.holidays = cdrHolidayProbe_();
+      cdrStore.partialDays = cdrPartialProbe_();   // Batch PD
     }
     stores.push(cdrStore);
 
@@ -3136,6 +3137,24 @@ function cdrHolidayProbe_() {
     try { thisYear = (source === 'sheet') ? companyHolidayDatesInYear_(ranges, year).length : 0; } catch (e2) { thisYear = 0; }
     return { source: source, ranges: ranges.length, thisYear: thisYear, year: year, error: hol.error || '' };
   } catch (e) { return { source: 'unavailable', ranges: 0, thisYear: 0, year: '', error: String((e && e.message) || e) }; }
+}
+
+/** Batch PD (cycle 26) — the Partial Days tab's state as the Storage Health
+ *  row carries it: {source, rows, marks, agents, offRoster, error}. COUNTS
+ *  only — no name, no date and no reason (the Reason column is never read).
+ *  `offRoster` is how many marked agents are not on this roster: on a phone
+ *  system shared with other departments that is normal, so it is a fact on
+ *  the row and never a warning (g02). A missing tab is the steady state — the
+ *  dashboard creates it on first use. */
+function cdrPartialProbe_() {
+  try {
+    const pd = getCdrPartialDays_() || {};
+    const onRoster = {};
+    cdrCohortNames_(getEmployeeRosterRows_()).forEach(function (n) { onRoster[n] = true; });
+    const agents = Object.keys(pd.marks || {});
+    return { source: pd.source || 'unavailable', rows: pd.rows || 0, marks: pd.kept || 0, agents: agents.length,
+             offRoster: agents.filter(function (a) { return !onRoster[a]; }).length, error: pd.error || '' };
+  } catch (e) { return { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, error: String((e && e.message) || e) }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -323,6 +323,8 @@ function _resetCdrCaches_() {
     // not leak across the override boundary.
     _cdrHolidaysMemo = null;
     _cdrStandardsMemo = null;   // H2
+    _cdrPartialMemo = null;     // Batch PD: a fixture's marks must not leak
+    _cdrPartialFailed = false;
   } catch (e) {}
 }
 
@@ -1683,6 +1685,7 @@ function _registerIntegrationB_() {
   // ── Metrics / CDR endpoint integration (uses the CDR fixture) ───────────
   _integrationTest('companyHolidays_readsFixtureTab',           test_companyHolidays_readsFixtureTab);
   _integrationTest('dashboardStandard_readsFixtureTab',         test_dashboardStandard_readsFixtureTab);
+  _integrationTest('partialDays_readsFixtureTab',               test_partialDays_readsFixtureTab);   // Batch PD (cycle 26)
   _integrationTest('metrics_getMyMetrics_cdrIntegration',       test_metrics_getMyMetrics_cdrIntegration);
   _integrationTest('metrics_getTeamMetrics_queueGrouping', test_metrics_getTeamMetrics_queueGrouping);
   _integrationTest('metrics_getTeamMetrics_queueBreakdown', test_metrics_getTeamMetrics_queueBreakdown);
@@ -2199,6 +2202,54 @@ function test_companyHolidays_readsFixtureTab() {
       _assertEq(prevWorkdayIso_('2026-11-30'), '2026-11-25', 'the Monday after Thanksgiving week looks back to Wednesday');
     } finally {
       _cdrHolidaysMemo = null;
+      try { ss.deleteSheet(tab); } catch (e) {}
+    }
+  });
+}
+
+/** Batch PD (integration, cycle 26): the reader against a REAL `Partial Days`
+ *  tab in the TEST CDR fixture — six columns as the Department Dashboard
+ *  writes them, read three wide: a text date, a coerced Date cell keyed in the
+ *  spreadsheet tz, a Credit-1 dismissal, a duplicate — and the marked day
+ *  beside the DQE reader's result. The Reason column is filled with a marker
+ *  that must appear nowhere in what the app read. The tab is deleted after. */
+function test_partialDays_readsFixtureTab() {
+  _assertSuiteCaller_();
+  _withTestCdr_(function () {
+    const ss = SpreadsheetApp.openById(_TEST_CDR_SS_ID);
+    let tab = ss.getSheetByName(CONFIG.CDR_PARTIAL_DAYS_TAB);
+    if (tab) ss.deleteSheet(tab);
+    tab = ss.insertSheet(CONFIG.CDR_PARTIAL_DAYS_TAB);
+    try {
+      const MARK = 'REASON-MUST-NOT-BE-READ';
+      tab.getRange(1, 1, 1, 6).setValues([['Date', 'Agent', 'Credit', 'Reason', 'Added By', 'Added At']]);
+      tab.getRange(2, 1, 4, 1).setNumberFormat('@');
+      tab.getRange(2, 1, 4, 6).setValues([
+        [_TEST_CDR_DATE, _TEST_INDIA_NAME, 0.5, MARK, 'test', '2026-11-16T00:00:00'],
+        [_TEST_CDR_DATE, _TEST_INDIA_NAME, 0.25, MARK, 'test', '2026-11-16T00:00:00'],
+        ['2026-01-05', _TEST_INDIA_NAME, 1, MARK, 'test', '2026-11-16T00:00:00'],
+        ['2026-01-06', '', 0.5, MARK, 'test', '2026-11-16T00:00:00'],
+      ]);
+      // A date typed without the text pin: Sheets coerces it to a Date.
+      tab.getRange(6, 1).setValue('2026-01-07');
+      tab.getRange(6, 2).setValue(_TEST_INDIA_NAME);
+      tab.getRange(6, 3).setValue(0.75);
+      tab.getRange(6, 4).setValue(MARK);
+      SpreadsheetApp.flush();
+      _cdrPartialMemo = null; _cdrPartialFailed = false;
+      const pd = getCdrPartialDays_();
+      _assertEq(pd.source, 'sheet');
+      _assertEq(pd.kept, 2, 'the first of the duplicate pair and the coerced-date row; the dismissal and the blank agent are no marks');
+      const mine = pd.marks[_TEST_INDIA_NAME] || {};
+      _assertEq(mine[_TEST_CDR_DATE], 0.5, 'the first row wins');
+      _assertEq(mine['2026-01-07'], 0.75, 'a coerced Date cell is keyed in the spreadsheet timezone');
+      _assertTrue(JSON.stringify(pd).indexOf(MARK) < 0, 'the Reason column is nowhere in what was read');
+      const res = getCdrAgentMetrics_(_TEST_CDR_DATE, _TEST_CDR_DATE, [_TEST_INDIA_NAME]);
+      _assertEq((res.partial || {})[_TEST_INDIA_NAME], [[_TEST_CDR_DATE, 0.5]], 'the marked day rides beside the agents map');
+      _assertTrue(!('partial' in res.agents[_TEST_INDIA_NAME]), 'and not on the agent');
+      _assertTrue(JSON.stringify(res).indexOf(MARK) < 0, 'nor any reason');
+    } finally {
+      _cdrPartialMemo = null; _cdrPartialFailed = false;
       try { ss.deleteSheet(tab); } catch (e) {}
     }
   });

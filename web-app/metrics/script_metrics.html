@@ -406,6 +406,9 @@
   stroke-linejoin: round; stroke-linecap: round;
 }
 .m-dual-spark .own-dot { fill: var(--accent); }
+/* Batch PD: a partial day on the rep's own line — a ring, and a line of text under the chart. */
+.m-dual-spark .own-partial { fill: var(--paper-card); stroke: var(--accent); stroke-width: 1.5; }
+.m-kpi-note { font-size: 10px; color: var(--muted); margin-top: 4px; }
 .m-trends-note { font-size: 10px; color: var(--muted); margin-top: 6px; }
 /* A role="alert" saying a CDR tab could not be read, so the columns beside it
    may be incomplete. It had no rule at all: it rendered as plain body text,
@@ -1055,7 +1058,24 @@ function mKpiTrendCard_(def, series) {
         '<span class="team">team ' + esc(mKpiFmt_(def, teamLatest)) + '</span></span>' +
     '</div>' +
     mBuildDualSparkSvg_(series) +
+    mPartialNoteHtml_(series) +
   '</div>';
+}
+/** PURE — Batch PD: the rep's partial days on a trend card, as TEXT under the
+ *  chart (the chart itself is decorative): "Partial day: Nov 10 (0.5 day)".
+ *  Newest first, at most four named. '' when no point is marked. The count on
+ *  such a day is real and stays; the note says why it may read low. */
+function mPartialNoteHtml_(series) {
+  var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
+  if (!pts.length) return '';
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var names = pts.slice().reverse().slice(0, 4).map(function (p) {
+    var dt = new Date(String(p.date) + 'T12:00:00Z');
+    var lbl = isNaN(dt.getTime()) ? String(p.date) : MON[dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+    return lbl + ' (' + (Number(p.partial) === 0 ? 'not counted' : String(Math.round(Number(p.partial) * 100) / 100) + ' day') + ')';
+  });
+  var more = pts.length - names.length;
+  return '<div class="m-kpi-note">' + esc('Partial day' + (pts.length === 1 ? '' : 's') + ': ' + names.join(', ') + (more > 0 ? ', +' + more + ' more' : '')) + '</div>';
 }
 /** Own (accent) + team-avg (muted dashed) over one shared scale. Both lines
  *  skip null points; the own series gets an end dot. */
@@ -1081,8 +1101,15 @@ function mBuildDualSparkSvg_(series) {
   var lastOwn = null;
   for (var k = n - 1; k >= 0; k--) { if (series[k].own != null && !isNaN(series[k].own)) { lastOwn = { i: k, v: series[k].own }; break; } }
   var dot = lastOwn ? '<circle class="own-dot" cx="' + (pad + lastOwn.i * xs).toFixed(1) + '" cy="' + (h - pad - lastOwn.v * ys).toFixed(1) + '" r="2.5"/>' : '';
+  // Batch PD: a ring on each of the rep's partial days.
+  var rings = '';
+  for (var q = 0; q < n; q++) {
+    if (series[q].partial != null && series[q].own != null && !isNaN(series[q].own)) {
+      rings += '<circle class="own-partial" cx="' + (pad + q * xs).toFixed(1) + '" cy="' + (h - pad - series[q].own * ys).toFixed(1) + '" r="3"/>';
+    }
+  }
   return '<svg class="m-dual-spark" aria-hidden="true" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
-    lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot +
+    lineFor('team', 'team-line') + lineFor('own', 'own-line') + dot + rings +
   '</svg>';
 }
 

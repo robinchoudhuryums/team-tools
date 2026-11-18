@@ -12113,6 +12113,8 @@ function cnRenderStoragePanel_(res) {
         (ho.source === 'sheet' ? ' · ' + esc(ho.thisYear) + ' in ' + esc(ho.year) + ' (' + esc(ho.ranges) + ' on the tab)' : ' · federal fallback in use') +
         (ho.error ? ' · ' + esc(ho.error) : '') + '</div>');
     }
+    // Batch PD — the Partial Days tab's state (counts only).
+    if (s.partialDays) parts.push('<div>Partial Days: <strong>' + esc(s.partialDays.source) + '</strong>' + esc(cnPartialDaysFact_(s.partialDays)) + '</div>');
     // Cycle 7 (M-14 class) — locale drift: a locale that differs from the ADP
     // sheet's changes WHICH string shapes Sheets coerces to Dates on read.
     if (s.localeMatch === false) {
@@ -12653,6 +12655,39 @@ function cnStandardFindings_(add, st) {
     add('cdrStandard', 'cdr', 'warn', 'No answer standard' + dept, why + ' — Metrics shows no target line, no % Answered tone and no sidebar badge', fix);
   }
 }
+/** Batch PD (cycle 26) — the Partial Days tab (the Department Dashboard's
+ *  marks for a day an agent worked part of). A missing or empty tab is the
+ *  steady state and an ok fact; a tab whose first row is not Date | Agent |
+ *  Credit, or one that could not be read, is a warning that says what Stats
+ *  does meanwhile — counts no day as partial. Counts only, never a name. */
+function cnPartialDaysFact_(pd) {
+  if (pd.source === 'sheet') {
+    return ' · ' + pd.marks + ' mark' + (pd.marks === 1 ? '' : 's') + ' for ' + pd.agents + ' agent' + (pd.agents === 1 ? '' : 's') +
+      (pd.offRoster > 0 ? ' (' + pd.offRoster + ' not on this roster)' : '');
+  }
+  if (pd.source === 'no-tab') return ' · no tab yet — the Department Dashboard creates it when a day is first marked';
+  if (pd.source === 'empty') return ' · no day is marked';
+  if (pd.source === 'bad-header') return ' · row 1 is not Date | Agent | Credit — not read';
+  return pd.error ? ' · ' + pd.error : '';
+}
+function cnPartialDaysFindings_(add, pd) {
+  if (pd.source === 'sheet') {
+    add('cdrPartialDays', 'cdr', 'ok', 'Partial days from the CDR Report',
+      pd.marks + ' mark' + (pd.marks === 1 ? '' : 's') + ' for ' + pd.agents + ' agent' + (pd.agents === 1 ? '' : 's') +
+      (pd.offRoster > 0 ? ' — ' + pd.offRoster + ' for agents not on this roster (another department\u2019s, or a name that needs an Agent Alias Overrides row)' : ''));
+  } else if (pd.source === 'no-tab' || pd.source === 'empty') {
+    add('cdrPartialDays', 'cdr', 'ok', 'No partial days marked',
+      pd.source === 'no-tab' ? 'the CDR Report has no Partial Days tab yet — the Department Dashboard creates it when a day is first marked' : 'the Partial Days tab holds no mark');
+  } else if (pd.source === 'bad-header') {
+    add('cdrPartialDays', 'cdr', 'warn', 'Partial Days tab is not in the shape this app reads',
+      'row 1 is not Date | Agent | Credit in columns A–C, so the tab is not read — Stats counts no day as partial meanwhile',
+      'Open the CDR Report and check the Partial Days tab’s first three headers; if call-data-reporting moved them, Team Tools needs the same change.');
+  } else {
+    add('cdrPartialDays', 'cdr', 'warn', 'Partial Days could not be read',
+      (pd.error || 'the tab did not read') + ' — Stats counts no day as partial until it does, and nothing computed without it is cached',
+      'Open the CDR Report and check the Partial Days tab opens; it is read again on the next load.');
+  }
+}
 /** F-09 — which holiday calendar is LIVE. getCompanyHolidays_ falls back to
  *  the computed US-federal list whenever the CDR tab is absent, empty or
  *  unreadable (g123) and says nothing; this finding says it. The fallback
@@ -12885,6 +12920,7 @@ function cnHealthFindings_(health, storage, oop) {
       // Both are CDR-area findings: what the app judges call data against.
       if (s.standard) cnStandardFindings_(add, s.standard);
       if (s.holidays) cnHolidayFindings_(add, s.holidays);
+      if (s.partialDays) cnPartialDaysFindings_(add, s.partialDays);   // Batch PD
     });
     // (F3, 2026-09-09) Where copies of every outgoing email go. MAIL_BCC_ALL
     // is merged into EVERY send — intake bodies carry full patient answers —

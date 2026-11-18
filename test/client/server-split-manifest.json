@@ -4622,6 +4622,41 @@
     "metricsAdjusted_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-18",
+   "why": "Cycle 26 Batch PD: the Partial Days reader (columns A–C), its stamp probe, the credited-days maths for the Dashboard and the My Stats count series, the Storage Health probe",
+   "added": [
+    "CDR_PARTIAL_COLS",
+    "_cdrPartialFailed",
+    "_cdrPartialMemo",
+    "cdrPartialCredit_",
+    "cdrPartialDayCounts_",
+    "cdrPartialDaysDegraded_",
+    "cdrPartialHeaderOk_",
+    "cdrPartialKeyPart_",
+    "cdrPartialParse_",
+    "cdrPartialProbe_",
+    "dashPartialScale_",
+    "dashPartialView_",
+    "getCdrPartialDays_",
+    "metricsKpiIsCount_"
+   ],
+   "removed": [],
+   "changed": [
+    "CONFIG",
+    "cdrDailyBreakdownUncached_",
+    "cdrDataStamp_",
+    "getCdrAgentMetrics_",
+    "getCdrDailyBreakdown_",
+    "getDashboardMetrics",
+    "getMyMetrics",
+    "getStorageHealth",
+    "metricsBuildKpiSeries_",
+    "metricsTeamAvgSeries_",
+    "warmCdrMetricsCache"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4870,6 +4905,11 @@
    "file": "40_metrics.js",
    "kind": "var",
    "sha": "01e71763816e9865"
+  },
+  "CDR_PARTIAL_COLS": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "d0f5ab71b8acd1a0"
   },
   "CDR_QUEUE_LIST_CAP": {
    "file": "00_config.js",
@@ -5289,7 +5329,7 @@
   "CONFIG": {
    "file": "00_config.js",
    "kind": "const",
-   "sha": "a95b19440bad7fe3"
+   "sha": "16dbb1ab77fddd29"
   },
   "CSRT": {
    "file": "00_config.js",
@@ -7896,6 +7936,16 @@
    "kind": "var",
    "sha": "361f01ee3f6c0616"
   },
+  "_cdrPartialFailed": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "5320a0a15545ad5d"
+  },
+  "_cdrPartialMemo": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "bb7e9ba891f78bd1"
+  },
   "_cdrStampMemo": {
    "file": "00_config.js",
    "kind": "var",
@@ -8794,7 +8844,7 @@
   "cdrDailyBreakdownUncached_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "0b7e063b1d88ec94"
+   "sha": "2eb7cd110bd9da64"
   },
   "cdrDashboardDept_": {
    "file": "40_metrics.js",
@@ -8804,7 +8854,7 @@
   "cdrDataStamp_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "338caf7d42a5fde8"
+   "sha": "653bda182423d642"
   },
   "cdrDateColIsos_": {
    "file": "40_metrics.js",
@@ -8880,6 +8930,41 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "283080131ced9fc2"
+  },
+  "cdrPartialCredit_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "6080be5e2beda6dd"
+  },
+  "cdrPartialDayCounts_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "9dc93d6d822c9a04"
+  },
+  "cdrPartialDaysDegraded_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "99a2bcb0dd79c863"
+  },
+  "cdrPartialHeaderOk_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "f561c94659572400"
+  },
+  "cdrPartialKeyPart_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "aaf4924e39e17d6c"
+  },
+  "cdrPartialParse_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "95cda8b19aab78ad"
+  },
+  "cdrPartialProbe_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "b99be43b72334dc6"
   },
   "cdrQueueInventory_": {
    "file": "40_metrics.js",
@@ -9430,6 +9515,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "63a1b74c154ae033"
+  },
+  "dashPartialScale_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "6c02d42cb26d40fb"
+  },
+  "dashPartialView_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "9d70c4fcbfa49446"
   },
   "dashTeamLayoutFor_": {
    "file": "20_timeclock.js",
@@ -10494,7 +10589,7 @@
   "getCdrAgentMetrics_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "17bb52acf365a335"
+   "sha": "593fd173e52469ac"
   },
   "getCdrCompanyHolidayRanges_": {
    "file": "40_metrics.js",
@@ -10504,7 +10599,7 @@
   "getCdrDailyBreakdown_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c8f3f5727c220549"
+   "sha": "092336f8aa5a1aec"
   },
   "getCdrDashboardStandard_": {
    "file": "40_metrics.js",
@@ -10525,6 +10620,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "bb5b02952df6a2c6"
+  },
+  "getCdrPartialDays_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "de758ea49741c148"
   },
   "getCdrQueueGroups_": {
    "file": "40_metrics.js",
@@ -10574,7 +10674,7 @@
   "getDashboardMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "a79fe81fedacf67a"
+   "sha": "41c1ba4466f6812f"
   },
   "getDepartmentEmails_": {
    "file": "10_core.js",
@@ -10924,7 +11024,7 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "b7db0ea8764f721f"
+   "sha": "2717944e74e052d9"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
@@ -11349,7 +11449,7 @@
   "getStorageHealth": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "d33fdbd7f277ca86"
+   "sha": "febb457dc94c0fb3"
   },
   "getTeamCalendar": {
    "file": "20_timeclock.js",
@@ -12979,7 +13079,12 @@
   "metricsBuildKpiSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "71402de002bf7cef"
+   "sha": "db631bd7687a856f"
+  },
+  "metricsKpiIsCount_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "6cf1f0eeb1f03820"
   },
   "metricsOutboundOf_": {
    "file": "40_metrics.js",
@@ -12994,7 +13099,7 @@
   "metricsTeamAvgSeries_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "6165c124b3f40db0"
+   "sha": "4cce16afeb5f8fdd"
   },
   "metricsWorkdayIsos_": {
    "file": "40_metrics.js",
@@ -15474,7 +15579,7 @@
   "warmCdrMetricsCache": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "35d18ba46cc8050a"
+   "sha": "43b5a9ac7f396791"
   },
   "withAutomationErrorLock_": {
    "file": "10_core.js",

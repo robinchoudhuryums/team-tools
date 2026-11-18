@@ -14928,3 +14928,79 @@ test('F34 DOM: an AMENDED intake send logs its call note with no form time — c
   h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {}, amendsSubmissionId: '' }, 'Sales', null, false, 95);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[1].args[0].subformData)), { intakeType: 'pmd', completionSeconds: 95 }, 'a new submission keeps its time');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cycle 26 Batch PD — Partial Days
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 26 Batch PD — Partial Days');
+
+const pdDashRes_ = (over) => Object.assign({ periodKey: 'mtd', label: 'Month to date', from: '2026-11-01', to: '2026-11-20', dataThrough: '2026-11-19', importPending: false,
+  workdays: { elapsed: 14, total: 21 }, partial: null,
+  own: { rung: 300, answered: 280, missed: 20, pctAnswered: 93.3, attSeconds: 240, attFormatted: '0:04:00', transferPct: 9, calls: 300 },
+  team: { rung: 500, answered: 470, missed: 30, pctAnswered: 94, attSeconds: 220, transferPct: 12 }, cohort: 2, noteCount: 100, noteCoverage: 36, kpiMinCohort: 1,
+  alertThreshold: 90, alertBand: 5, standardSource: 'sheet', transferTarget: 20,
+  prev: { from: '2026-10-01', to: '2026-10-20', label: 'Oct 1–20', clamped: false,
+    own: { rung: 310, answered: 290, missed: 20, pctAnswered: 93.5, attSeconds: 250, attFormatted: '0:04:10', transferPct: 10 },
+    team: { rung: 510, answered: 470, missed: 40, pctAnswered: 92.2, attSeconds: 230, transferPct: 11 } }, prevUnavailable: false }, over || {});
+
+test('PD DOM: the Dashboard "Your numbers" card — the pace over the rep\'s credited days, "13.5 of 14 workdays, 1 partial" with the day and its share on hover, Answered and Missed compared over the same share; the Department card and an unmarked rep draw as before', () => {
+  const h = boot(); h.bootShell();
+  const host = mount_(h, 'pd-host');
+  const plainRes = pdDashRes_();
+  host.innerHTML = h.read('clkDashOwnCard_')(plainRes);
+  const deltas = () => Array.from(host.querySelectorAll('.dash-kpi')).map((k) => k.querySelector('.dash-kpi-l').textContent + ': ' + ((k.querySelector('.dash-kpi-d') || {}).textContent || ''));
+  assert.ok(!host.querySelector('.dash-partial'), 'no marked day: no line');
+  assert.ok(/On pace for ~420 answered by Nov 30/.test(host.querySelector('.dash-proj').textContent), '280 × 21 ÷ 14: ' + host.querySelector('.dash-proj').textContent);
+  const before = deltas();
+  assert.ok(before.indexOf('Answered: ▼ 10') >= 0 && before.indexOf('Missed: no change') >= 0, before.join(' | '));
+  const marked = pdDashRes_({ partial: { uncredited: 0.5, credited: 13.5, days: [{ date: '2026-11-10', credit: 0.5 }] } });
+  marked.prev.ownScale = 0.9643;
+  host.innerHTML = h.read('clkDashOwnCard_')(marked);
+  const line = host.querySelector('.dash-partial');
+  assert.ok(line && line.textContent === '13.5 of 14 workdays, 1 partial', line && line.textContent);
+  assert.strictEqual(line.getAttribute('title'), 'Partial days: Tue Nov 10 (0.5 day)');
+  assert.ok(/13\.5 of 14 workdays, 1 partial\. Partial days: Tue Nov 10 \(0\.5 day\)/.test(line.getAttribute('aria-label')), 'the hover text is also the accessible name');
+  assert.ok(/On pace for ~436 answered by Nov 30$/.test(host.querySelector('.dash-proj').textContent.trim()), 'THE RULE: 280 × 21 ÷ 13.5 — the pace while present: ' + host.querySelector('.dash-proj').textContent);
+  assert.ok(host.querySelector('.dash-partial-row') && host.querySelector('.dash-partial-row').contains(line) && !host.querySelector('.dash-proj').contains(line), 'the credited days sit on a line of their own, under the pace');
+  const after = deltas();
+  assert.ok(after.indexOf('Answered: no change') >= 0, '280 against 290 × 0.9643 = 279.6: ' + after.join(' | '));
+  assert.ok(after.indexOf('Missed: ▲ 1') >= 0, '20 against 19.3: ' + after.join(' | '));
+  ['Transfer %', '% Answered', 'Avg talk'].forEach((k) => assert.strictEqual(after.filter((d) => d.indexOf(k + ':') === 0)[0], before.filter((d) => d.indexOf(k + ':') === 0)[0], k + ' is not day-based and is compared as it was'));
+  const ansDelta = Array.from(host.querySelectorAll('.dash-kpi')).filter((k) => k.querySelector('.dash-kpi-l').textContent === 'Answered')[0].querySelector('.dash-kpi-d');
+  assert.strictEqual(ansDelta.getAttribute('title'), 'vs Oct 1–20, adjusted for partial days', 'and the comparison says so');
+  assert.strictEqual(Array.from(host.querySelectorAll('.dash-kpi-v')).map((v) => v.textContent).join('|'), '9%|93.3%|280|20|0:04:00', 'every figure itself is unchanged');
+  // The Department card: the same payload, nothing adjusted.
+  host.innerHTML = h.read('clkDashTeamCard_')(marked);
+  assert.ok(!host.querySelector('.dash-partial') && /On pace for ~705 answered/.test(host.querySelector('.dash-proj').textContent), 'THE RULE: 470 × 21 ÷ 14, the calendar\'s workdays — ' + host.querySelector('.dash-proj').textContent);
+  assert.ok(Array.from(host.querySelectorAll('.dash-kpi')).some((k) => /^Answered/.test(k.querySelector('.dash-kpi-l').textContent) && /no change/.test(k.textContent)), '470 against 470, unscaled');
+  // Under one credited day: no pace, but the days are still said.
+  host.innerHTML = h.read('clkDashOwnCard_')(pdDashRes_({ workdays: { elapsed: 3, total: 21 }, dataThrough: '2026-11-04', partial: { uncredited: 2.5, credited: 0.5, days: [{ date: '2026-11-04', credit: 0 }, { date: '2026-11-03', credit: 0 }, { date: '2026-11-02', credit: 0.5 }] } }));
+  assert.ok(!/On pace/.test(host.textContent) && !host.querySelector('.dash-proj') && host.querySelector('.dash-partial').textContent === '0.5 of 3 workdays, 3 partial', host.textContent.slice(-120));
+  assert.ok(/Wed Nov 4 \(not counted\), Tue Nov 3 \(not counted\), Mon Nov 2 \(0\.5 day\)/.test(host.querySelector('.dash-partial').getAttribute('title')));
+});
+
+test('PD DOM: My Stats — the Answered and Missed trend cards mark the rep\'s partial day with a ring and say it in words; the rate cards do not', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  const days = ['2026-10-08', '2026-10-09', '2026-10-12', '2026-10-13'];
+  const mk = (base, partialAt) => days.map((d, i) => Object.assign({ date: d, own: base + i, team: base + 2, cohort: 5 }, i === partialAt ? { partial: 0.5 } : {}));
+  const cdr = { totalRung: 46, totalAnswered: 40, totalMissed: 6, pctAnswered: 87, tttFormatted: '3:20:00', attFormatted: '0:05:00', tttSeconds: 12000, attSeconds: 300 };
+  h.window.mRenderMyStats_(c25MyDay_({ cdr, outbound: { placed: 0, connected: 0, talkSec: 0 }, outboundThrough: '2026-10-13',
+    series: { pctAnswered: mk(85, -1), answered: mk(30, 2), missed: mk(2, 2), attSeconds: mk(240, -1), transferPct: mk(9, -1) } }));
+  const cards = Array.from(h.$$('#m-my-content .m-kpi-card'));
+  const of = (label) => cards.filter((c) => c.querySelector('.m-kpi-label').textContent === label)[0];
+  ['Answered', 'Missed'].forEach((l) => {
+    assert.strictEqual(of(l).querySelector('.m-kpi-note').textContent, 'Partial day: Oct 12 (0.5 day)', l);
+    assert.strictEqual(of(l).querySelectorAll('circle.own-partial').length, 1, l + ': a ring on the day');
+  });
+  ['% Answered', 'Avg Talk', 'Transfer %'].forEach((l) => assert.ok(!of(l).querySelector('.m-kpi-note') && !of(l).querySelector('.own-partial'), l + ' carries no partial day'));
+  assert.strictEqual(of('Answered').querySelector('.m-kpi-vals .own').textContent, '33', 'the count itself is drawn as it is');
+});
+
+test('PD DOM: Admin → System — a Partial Days tab this app cannot read is a finding, and the row states a readable one in counts', () => {
+  const h = boot(); h.bootShell();
+  const add = [];
+  h.read('cnPartialDaysFindings_')((id, area, level, title) => add.push([id, area, level, title]), { source: 'unavailable', error: 'quota' });
+  assert.deepStrictEqual(add, [['cdrPartialDays', 'cdr', 'warn', 'Partial Days could not be read']]);
+  assert.strictEqual(h.read('cnPartialDaysFact_')({ source: 'sheet', marks: 1, agents: 1, offRoster: 0 }), ' · 1 mark for 1 agent');
+});
