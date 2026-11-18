@@ -2002,6 +2002,9 @@ var _cdrPartialFailed = false;
 // not for a header check, not for the data stamp. One constant, so the pin
 // can require it at every read.
 var CDR_PARTIAL_COLS = 3;
+// FQ9 / FQ7 (cycle 26): how many likely name mismatches a diagnostic lists.
+var CDR_PARTIAL_LIKELY_MAX = 12;
+var CDR_OUTBOUND_OFFROSTER_MAX = 200;   // off-roster outbound agent names kept beside a window (names only)
 // H1: the Company Holidays tab, memoized per execution (the CacheService tier
 // is inside getCdrCompanyHolidayRanges_); _resetCdrCaches_ clears it.
 var _cdrHolidaysMemo = null;

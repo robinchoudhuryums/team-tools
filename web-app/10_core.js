@@ -1167,6 +1167,21 @@ function contiguousRowRunsDesc_(rowIdxs) {
 /** Delete rows of `sheet` whose column-A stamp is older than cutoffMs —
  *  OLDEST first (append order), at most `budget` rows. Returns
  *  {removed, hitCap}. Caller holds the lock. */
+/** PURE (Node-pinned) — FQ2 (cycle 26): which purge hit its per-run cap, and
+ *  THAT cap. The note named the shared diagnostics budget whichever tab hit —
+ *  the activity log has its own, three times larger, so "hitPerRunCap=2000"
+ *  was written for a run that had removed 6000 activity rows. `hits` is
+ *  [{name, hit, cap}]; tabs sharing one budget are named together. */
+function diagPurgeCapNote_(hits) {
+  var by = {}, order = [];
+  (hits || []).forEach(function (h) {
+    if (!h || !h.hit) return;
+    var k = String(h.cap);
+    if (!by[k]) { by[k] = []; order.push(k); }
+    by[k].push(h.name);
+  });
+  return order.map(function (k) { return by[k].join('+') + ':' + k; }).join(',');
+}
 function diagPurgeTab_(sheet, cutoffMs, budget) {
   const out = { removed: 0, hitCap: false };
   if (!sheet || !(budget > 0)) return out;
@@ -1370,7 +1385,10 @@ function purgeOldDiagnostics() {
       `viewUsageDays=${vuDays}; clientErrDays=${ceDays}; digestDeliveryDays=${ddDays}; viewUsageRemoved=${vu.removed}; clientErrorsRemoved=${ce.removed}; digestDeliveriesRemoved=${dd.removed}` +
       `; activityLogDays=${ACTIVITY_LOG_DAYS}; activityDaysCondensed=` + (alError ? 'not run' : al.condensed) + `; activityLogRemoved=${al.removed}` +
       `; searchSignalDays=${KB_SEARCH_SIGNAL_DAYS}; searchSignalRemoved=` + (ksError ? 'not run' : ks.removed) +
-      (capped ? `; hitPerRunCap=${DIAG_PURGE_MAX_ROWS_PER_RUN}` : ''));
+      (capped ? '; hitPerRunCap=' + diagPurgeCapNote_([
+        { name: 'ViewUsage', hit: vu.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN }, { name: 'ClientErrors', hit: ce.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN },
+        { name: 'DigestDeliveries', hit: dd.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN }, { name: 'KbSearchSignal', hit: ks.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN },
+        { name: 'ActivityLog', hit: al.hitCap, cap: ACTIVITY_LOG_PURGE_MAX_PER_RUN }]) : ''));
     Logger.log(`purgeOldDiagnostics: removed ${vu.removed} ViewUsage + ${ce.removed} ClientErrors + ${dd.removed} DigestDeliveries + ${al.removed} ActivityLog + ${ks.removed} KbSearchSignal row(s); condensed ${al.condensed} activity day(s)` +
       (capped ? ' (per-run cap hit — the backlog drains over successive runs)' : '') + (ksError ? ' — the KB store could not be opened: ' + ksError : '') +
       (alError ? ' — the activity log was not condensed (nothing of it purged): ' + alError : '') + '.');
@@ -3152,9 +3170,19 @@ function cdrPartialProbe_() {
     const onRoster = {};
     cdrCohortNames_(getEmployeeRosterRows_()).forEach(function (n) { onRoster[n] = true; });
     const agents = Object.keys(pd.marks || {});
+    const off = agents.filter(function (a) { return !onRoster[a]; });
+    // FQ9 (cycle 26): the count could not tell another department's agent
+    // from a colleague whose name is spelled differently in the tab — and the
+    // second one's partial days are silently not applied. The pairing Team
+    // Metrics uses for call data (two shared name tokens) picks those out:
+    // NAMES only, for the admin who can add the alias row — never a date, a
+    // credit or a reason. Roster names that already have a mark are not
+    // offered (their marks are applied).
+    const unmarked = Object.keys(onRoster).filter(function (n) { return !(pd.marks || {})[n]; });
+    const likely = cdrLikelyNameMismatches_(unmarked, off).slice(0, CDR_PARTIAL_LIKELY_MAX);
     return { source: pd.source || 'unavailable', rows: pd.rows || 0, marks: pd.kept || 0, agents: agents.length,
-             offRoster: agents.filter(function (a) { return !onRoster[a]; }).length, error: pd.error || '' };
-  } catch (e) { return { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, error: String((e && e.message) || e) }; }
+             offRoster: off.length, likely: likely, error: pd.error || '' };
+  } catch (e) { return { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, likely: [], error: String((e && e.message) || e) }; }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -12019,7 +12019,7 @@ test('B8 DOM: an idle rep gets an amber "idle" chip on their Live Status card an
   const h = boot();
   const fn = h.read('mgrIdleSummaryHtml_');
   const rows = [{ name: 'Ana', idleMin: 42 }, { name: 'Bo <x>', idleMin: 95 }, { name: 'Cy', idleMin: null }];
-  const line = fn(rows);
+  const line = fn(rows, false, 30);   // FQ1 (cycle 26): the threshold is the payload's
   assert.ok(/2 reps have been idle 30\+ min while clocked in: Bo &lt;x&gt; \(1 h 35 min\), Ana \(42 min\)/.test(line), line);
   assert.strictEqual(fn([{ name: 'Cy', idleMin: null }]), '', 'nobody idle, no line');
   const chip = h.read('mgrIdleChip_')({ idleMin: 42 });
@@ -15003,4 +15003,78 @@ test('PD DOM: Admin → System — a Partial Days tab this app cannot read is a 
   h.read('cnPartialDaysFindings_')((id, area, level, title) => add.push([id, area, level, title]), { source: 'unavailable', error: 'quota' });
   assert.deepStrictEqual(add, [['cdrPartialDays', 'cdr', 'warn', 'Partial Days could not be read']]);
   assert.strictEqual(h.read('cnPartialDaysFact_')({ source: 'sheet', marks: 1, agents: 1, offRoster: 0 }), ' · 1 mark for 1 agent');
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Cycle 26 follow-ons after Batches 9, 10 and PD (FQ1–FQ10)
+// ═════════════════════════════════════════════════════════════════════════════
+section('Cycle 26 follow-ons — FQ1–FQ10');
+
+test('FQ5 + FQ4 DOM: Refresh keeps the painted My Stats until the read answers — a refresh that FAILS leaves the last-good view and says so, where it drew an error card; and Friday\'s day is named, not called Yesterday', () => {
+  const h = boot(); h.bootShell();
+  h.run.drain();
+  h.window.enterTool('timeClock', 'metricsMyStats');
+  const day = h.read('M_STATE').myDate;
+  const good = Object.assign(c25MyDay_({ cdr: { totalRung: 20, totalAnswered: 18, totalMissed: 2, pctAnswered: 90, tttFormatted: '0:30:00', attFormatted: '1:40', tttSeconds: 1800, attSeconds: 100 } }), { date: day });
+  h.run.flushSuccess(good, 'getMyMetrics');
+  assert.ok(/90/.test(h.$('#m-my-content').textContent), 'painted (non-vacuous)');
+  h.window.mLoadMyStats_({ force: true });   // the Refresh button
+  assert.ok(/90/.test(h.$('#m-my-content').textContent) && !h.$('#m-my-content .lo-sweep'), 'THE REGRESSION: Refresh blanked the view to a loader before it knew the read would work');
+  assert.strictEqual(h.run.pending('getMyMetrics').length, 1, 'and the read is still made');
+  h.run.flushFailure(new Error('timeout'), 'getMyMetrics');
+  assert.ok(!h.$('#m-my-content .error-state') && /90/.test(h.$('#m-my-content').textContent), 'a failed refresh keeps the last-good view');
+  assert.ok(h.$$('#toast-stack .toast').some((t) => /showing last loaded/.test(t.textContent)), 'and says so');
+  h.window.mLoadMyStats_({ force: true });
+  h.run.flushSuccess(Object.assign({}, good, { cdr: Object.assign({}, good.cdr, { pctAnswered: 77 }) }), 'getMyMetrics');
+  assert.ok(/77/.test(h.$('#m-my-content .m-hero-value').textContent), 'a refresh that works paints the new figures');
+  // FQ4: a day that is neither today nor the calendar's yesterday is named.
+  h.window.mRenderMyStats_(Object.assign({}, good, { date: '2026-06-12' }));
+  assert.ok(/Fri Jun 12/.test(h.$('#m-my-content .m-hero-label').textContent) && !/Yesterday/.test(h.$('#m-my-content .m-hero-label').textContent), h.$('#m-my-content .m-hero-label').textContent);
+  h.window.mRenderMyStats_(Object.assign({}, good, { date: h.read('mDaysAgo_')(1) }));
+  assert.ok(/Yesterday/.test(h.$('#m-my-content .m-hero-label').textContent), 'the calendar\'s yesterday is still Yesterday');
+});
+
+test('FQ3 + FQ7 DOM: Team Metrics — no "Transfers 0" beside "Calls —", a dash with its reason when only the transfers are missing; a paired outbound name is a warning managers see, and the rep view shows none', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const tm = { available: true, error: null, queueColumns: [] };
+  const labels = () => Array.from(h.$$('#m-team-content .m-rail .m-row-label')).map((l) => l.textContent);
+  h.window.mRenderTeamMetrics_(fullTeamData_({ transferMeta: tm, teamTotals: { pctAnswered: null, rung: 0, answered: 0, missed: 0, tttFormatted: '0:00:00', noteCount: 4, noteCoverage: null, transferred: 0, transferPct: null,
+    hasCallData: false, callDataPending: true, hasTransferData: false }, reps: [] }));
+  assert.ok(labels().indexOf('Calls') >= 0 && labels().indexOf('Transfers') < 0, 'THE REGRESSION: "Transfers 0" under a day that is not in — ' + labels().join('|'));
+  h.window.mRenderTeamMetrics_(fullTeamData_({ transferMeta: tm, teamTotals: { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, transferred: 0, transferPct: null,
+    hasCallData: true, hasTransferData: false }, reps: [] }));
+  assert.ok(/Transfers\s*—\s*no transfer data for this day/.test(h.$('#m-team-content .m-rail').textContent), h.$('#m-team-content .m-rail').textContent);
+  const pair = { available: true, error: null, through: '2026-06-15', likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] };
+  const totals = { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, transferred: 3, transferPct: 12.5, hasCallData: true, hasTransferData: true,
+    outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0 };
+  h.window.mRenderTeamMetrics_(fullTeamData_({ transferMeta: tm, teamTotals: totals, outboundMeta: pair, reps: [b10Rep_('E1', 'Ana')] }));
+  assert.ok(/Transfers\s*3\s*12\.5% of calls/.test(h.$('#m-team-content .m-rail').textContent), 'a window with transfer rows draws its figure');
+  const hint = Array.from(h.$$('#m-team-content .m-hint')).filter((x) => /outbound name mismatch/.test(x.textContent))[0];
+  assert.ok(hint && /1 likely outbound name mismatch — these reps’ outbound calls are probably missing from this table: Tran, Jo → Jo Tran\. Fix with an Agent Alias Overrides row/.test(hint.textContent), hint && hint.textContent);
+  h.window.mRenderTeamMetrics_(fullTeamData_({ transferMeta: tm, teamTotals: totals, outboundMeta: Object.assign({}, pair, { likelyMismatches: [] }), reps: [b10Rep_('E1', 'Ana')] }));
+  assert.ok(!Array.from(h.$$('#m-team-content .m-hint')).some((x) => /outbound name mismatch/.test(x.textContent)), 'no pair, no line');
+  h.window.mRenderTeamMetrics_({ repView: true, from: '2026-06-15', to: '2026-06-15', date: '2026-06-15', teamTotals: totals, trend: null, transferMeta: tm, outboundMeta: { available: true, error: null, through: '2026-06-15' } });
+  assert.ok(!/Jo Tran|Tran, Jo|name mismatch/.test(h.$('#m-team-content').textContent) && /Team-level metrics only/.test(h.$('#m-team-content').textContent), 'the rep view: the aggregate, no names');
+});
+
+test('FQ8 DOM: the My Stats range view names the rep\'s partial days under its Calls answered row — and draws no such row without one', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-my-content');
+  const cdr = { totalRung: 46, totalAnswered: 40, totalMissed: 6, pctAnswered: 87, tttFormatted: '3:20:00', attFormatted: '0:05:00', tttSeconds: 12000, attSeconds: 300 };
+  const range = (pd) => Object.assign(c25MyDay_({ cdr, outbound: { placed: 0, connected: 0, talkSec: 0 }, outboundThrough: '2026-10-13', adjusted: null }),
+    { date: undefined, from: '2026-10-07', to: '2026-10-13', partialDays: pd });
+  h.window.mRenderMyStats_(range([{ date: '2026-10-12', credit: 0.5 }, { date: '2026-10-08', credit: 0 }]));
+  const rows = () => Array.from(h.$$('#m-my-content .m-rail .m-row')).map((r) => r.textContent.replace(/\s+/g, ' ').trim());
+  const at = rows().findIndex((t) => /^Partial days/.test(t));
+  assert.ok(at > 0 && /^Partial days ?2 ?Oct 12 \(0\.5 day\), Oct 8 \(not counted\)/.test(rows()[at]), rows().join(' | '));
+  assert.ok(/^Calls answered/.test(rows()[at - 1]), 'directly under the count it explains');
+  h.window.mRenderMyStats_(range([]));
+  assert.ok(!rows().some((t) => /^Partial days/.test(t)), 'no partial day: no row');
+});
+
+test('FQ1 DOM: the manager card\'s idle line names the threshold the server sent', () => {
+  const h = boot(); h.bootShell();
+  const html = h.read('mgrIdleSummaryHtml_')([{ name: 'Ana', idleMin: 61 }], false, 45);
+  assert.ok(/1 rep has been idle 45\+ min while clocked in: Ana \(1 h 1 min\)/.test(html.replace(/<[^>]+>/g, '')), html);
 });

@@ -873,7 +873,7 @@ function runRecAgo(msAgo, notes) {
     getMyMetricsRange: { from: daysAgo(6), to: todayIso, repName: 'Avery Blake',
       cdr: { totalRung: 287, totalAnswered: 254, totalMissed: 33, pctAnswered: 89,
              tttFormatted: '19:54:20', attFormatted: '0:04:42', tttSeconds: 71660, attSeconds: 282 },
-      noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(),
+      noteCount: 218, noteCoverage: 86, intakeNotes: 17, trend: trend30(), partialDays: [],   // FQ8
       outbound: { placed: 21, connected: 16, talkSec: 5100 }, outboundThrough: daysAgo(1), outboundUnavailable: null,   // M1
       intakeTimed: { timed: 15, seconds: 15300 },
       adjusted: adjOf({ totalAnswered: 254, tttSeconds: 71660 }, { placed: 21, connected: 16, talkSec: 5100 }, { timed: 15, seconds: 15300 }),
@@ -916,8 +916,8 @@ function runRecAgo(msAgo, notes) {
           transferred: 0, queueTotal: 0, transferCalls: 0, pctAnswered: null, attFormatted: '0:00:00',
           tttFormatted: '0:00:00', noteCoverage: null, transferPct: null,
           outboundPlaced: 0, outboundConnected: 0, outboundTalkSec: 0, adjusted: null,
-          hasCallData: false, callDataPending: true },   // F35: today's call data is not in yet
-        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
+          hasCallData: false, callDataPending: true, hasTransferData: false },   // F35: today's call data is not in yet; FQ3
+        outboundMeta: { available: true, error: null, through: daysAgo(1), likelyMismatches: [] },   // M1; FQ7
         unmatchedAgents: [], rosterWithNoCdr: reps.map(function (r) { return r.repName; }), likelyMismatches: [],
         queueRows: [], groupRows: [],
         transferMeta: { available: true, error: null, queueColumns: [] },
@@ -974,7 +974,7 @@ function runRecAgo(msAgo, notes) {
       totals.adjusted = adjOf({ totalAnswered: totals.answered, tttSeconds: totals.tttSeconds },
         { placed: totals.outboundPlaced, connected: totals.outboundConnected, talkSec: totals.outboundTalkSec }, tIt);
       totals.pctAnswered = Math.round((totals.answered / totals.rung) * 1000) / 10;
-      totals.hasCallData = true; totals.callDataPending = false;   // F35
+      totals.hasCallData = true; totals.callDataPending = false; totals.hasTransferData = true;   // F35; FQ3
       totals.attFormatted = '0:04:30'; totals.tttFormatted = '12:50:56';
       totals.noteCoverage = cnNoteCoverage_(totals.noteCount, totals.answered);
       // #5 — mirrors the server: null unless the Transfer read succeeded AND
@@ -998,7 +998,8 @@ function runRecAgo(msAgo, notes) {
         likelyMismatches: [{ roster: 'Bob Smith', cdr: 'Smith, Bob' }],
         trend: trend30(),
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
-        outboundMeta: { available: true, error: null, through: daysAgo(1) },   // M1
+        // FQ7: one PAIRED outbound name — Jo Tran placed no outbound call under her roster name.
+        outboundMeta: { available: true, error: null, through: daysAgo(1), likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] },   // M1; FQ7
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
@@ -1895,7 +1896,7 @@ function runRecAgo(msAgo, notes) {
                         { empId: 'E-1088', empName: 'Sam Ortiz', date: daysAgo(1), time: '17:02:00', type: 'ClockOut', isAdjustment: true, empTzAbbr: 'PHT', canDelete: true }],
         recentAudits: [{ timestamp: daysAgo(0) + ' 08:04:12', empName: 'Avery Blake', action: 'PunchIn', actor: '', notes: '', punchDate: todayIso, punchTime: '08:04:00', isAdjustment: false },
                        { timestamp: daysAgo(1) + ' 17:03:40', empName: 'Sam Ortiz', action: 'TimeOffStatusChange', actor: 'mgr@umsupply.com', notes: 'Pending->Approved (Full Day)', punchDate: daysAgo(-4), punchTime: '', isAdjustment: false }],
-        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST', idleCheckFailed: false,
+        missedLookbackDays: 7, mgrDeleteWindowDays: 7, adjustWindowDays: 30, ptoEnabled: true, mgrTzAbbr: 'CST', idleCheckFailed: false, idleAlertMin: 30,
         punchTrend: wspark(8, 3, 0).map(function (x) { return { date: x.date, count: 10 + x.count * 3 }; }),
         toSummary: { approved: 6, pending: 1, denied: 1 },
         pendingTrend: spark(14, 1), missedTrend: wspark(14, 2, 1),
@@ -2839,7 +2840,7 @@ function runRecAgo(msAgo, notes) {
             // published, all-clear state (the System tab still reads clean).
             { standard: { dept: 'CSR', target: 92, band: 2, source: 'sheet', error: '' },
               holidays: { source: 'sheet', ranges: 9, thisYear: 9, year: '2026', error: '' },
-              partialDays: { source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, error: '' } }),   // Batch PD
+              partialDays: { source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, likely: [], error: '' } }),   // Batch PD; FQ9
           store('Intake (PHI)', 'Offerings + PPD/PMD/PAP submissions', 'PHI', 'Optional purge', 'INTAKE_SS_ID'),
           store('Forms (PHI)', 'FormTokens + FormSubmissions', 'PHI', '90-day purge (if enabled)', 'FORMS_SS_ID',
             // ADM-04 (cycle 23): the shape the server now ships for an unset
@@ -3066,6 +3067,8 @@ function runRecAgo(msAgo, notes) {
         }
         return r;
       };
+      // FQ8: the same two days on the range view.
+      FIXTURES.getMyMetricsRange.partialDays = [{ date: pdWork[0], credit: 0.5 }, { date: pdWork[1], credit: 0.75 }];
       var pdMy = FIXTURES.getMyMetrics;
       FIXTURES.getMyMetrics = function (date) {
         var r = pdMy(date);

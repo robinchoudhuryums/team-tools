@@ -280,6 +280,8 @@ const SCENARIOS = [
   ['clock-partial-dark-mobile', { tool: 'timeClock', tab: 'clock' }, MOBILE, 'dark', '?partial=1'],
   ['metrics-partial-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '?partial=1'],
   ['metrics-partial-dark-mobile', { tool: 'timeClock', tab: 'metricsMyStats' }, MOBILE, 'dark', '?partial=1'],
+  // FQ8 (cycle 26): the same rep's 7-day RANGE — the "Partial days" row under Calls answered.
+  ['metrics-partial-range-light-wide', { tool: 'timeClock', tab: 'metricsMyStats' }, WIDE, 'light', '?partial=1', "mMyPreset_('7d')"],
   ['metrics-team-dark-wide',  { tool: 'timeClock', tab: 'metricsTeam' },   WIDE, 'dark',  '?teamrange=7d'],
   ['intake-light-wide',     { tool: 'intake',    tab: null },         WIDE, 'light', ''],
   ['intake-catalog-light-wide', { tool: 'intake', tab: 'intakeCatalog' }, WIDE, 'light', ''],

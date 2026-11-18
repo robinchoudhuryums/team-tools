@@ -11050,8 +11050,8 @@ test('the three slow tabs paint last-good instantly and refresh behind the pill'
   // ANY same-key cached payload paints (the old fresh-only paint re-showed the
   // loader after the 45s TTL — almost every re-enter); the key is the exact
   // query, so an old payload is never the WRONG data.
-  assert.ok(/if \(!opts\.force && cached\) \{/.test(my), 'My Stats paints any cached payload');
-  assert.ok(/if \(!opts\.force && cached\) \{/.test(team), 'Team Metrics paints any cached payload');
+  assert.ok(/if \(cached\) \{/.test(my) && !/opts\.force/.test(my), 'My Stats paints any cached payload — Refresh included (FQ5, cycle 26)');
+  assert.ok(/if \(cached\) \{/.test(team) && !/opts\.force/.test(team), 'Team Metrics paints any cached payload — Refresh included');
   const sp = nc(extractFunction('metrics/script_metrics.html', 'spanishLoad_'));
   // Spanish seeds all three parts (stats + both lists) and a background stats
   // arrival swaps ONLY the head, so the painted list is never disturbed.
@@ -11081,7 +11081,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\)\) \{/.test(f),   // MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v5:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v6:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -11362,8 +11362,8 @@ test('My Stats lands on the previous workday; Team Metrics deliberately keeps To
   const teamPresets = /scope: 'team'[\s\S]*?presets: \[([^\]]*)\]/.exec(m);
   assert.ok(teamPresets && /key: 'today', label: 'Today'/.test(teamPresets[1]), 'Team Metrics keeps its Today preset');
   // The single-day hero label is honest about which day it shows.
-  assert.ok(/data\.date === mPrevWorkdayIso_\(\) \? 'Yesterday'/.test(m),
-    'the hero period label says Yesterday only when the date IS the previous workday');
+  assert.ok(/: esc\(mDayLabel_\(data\.date, mTodayIso_\(\), mDaysAgo_\(1\)\)\);/.test(m) && !/data\.date === mPrevWorkdayIso_\(\) \? 'Yesterday'/.test(m),
+    'the hero period label says Yesterday only when the date IS yesterday — the previous workday is named by its day (FQ4, cycle 26)');
 });
 
 test('PPD send footer offers a validated custom recipient (the PMD/PAP parity)', () => {
@@ -22411,7 +22411,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v5:/.test(rng) && /team_metrics_v5:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v6:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -33889,9 +33889,9 @@ test('MET-1 (cycle 23): a CDR read that FAILED is an error from the range endpoi
       getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }),
       cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: c.cdrAgentsOrThrow_,
       getCdrOutboundPerRep_: () => ({ agents: {}, through: null }),   // M1: the outbound tab, read clean and empty
-      cdrCohortNames_: () => ['Ann'], getEmployeeRosterRows_: () => [] };   // F24: asked with the one cohort list
+      cdrCohortNames_: () => ['Ann'], getEmployeeRosterRows_: () => [], cdrPartialDaysDegraded_: () => false };   // F24: asked with the one cohort list; FQ8
     vm.createContext(ctx);
-    ['metricsOutboundOf_', 'metricsAdjusted_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    ['metricsOutboundOf_', 'metricsAdjusted_', 'metricsOwnPartialDays_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     vm.runInContext(extractRawFunction('Code.js', 'getMyMetricsRange'), ctx);
     return { out: JSON.parse(JSON.stringify(ctx.getMyMetricsRange('2026-05-04', '2026-05-06'))), puts };
   };
@@ -43479,12 +43479,12 @@ test('M1: the three Stats endpoints carry outbound + adjusted beside the actual 
   assert.ok(/var obRes = getCdrOutboundPerRep_\(date, date, allNames\);/.test(my) && /var ob = metricsOutboundOf_\(obRes, emp\.name\);/.test(my) && /outboundUnavailable: obRes\.error \|\| null,/.test(my), 'My Stats reads the own day — out of the cohort\'s one read (F24)');
   assert.ok(/adjusted: cdrUnavailable \? null : metricsAdjusted_\(todayCdr, ob,/.test(my), 'an unread inbound day has nothing to adjust');
   const rng = stripJsComments_(extractRawFunction('Code.js', 'getMyMetricsRange'));
-  assert.ok(/getCdrOutboundPerRep_\(from, to, cdrCohortNames_\(getEmployeeRosterRows_\(\)\)\)/.test(rng) && /&& !\(obRes\.error && !obRes\.steady\)\) \{/.test(rng), 'the range reads it (the cohort\'s one read, F24), and a failed read is never cached');
+  assert.ok(/var cohort = cdrCohortNames_\(getEmployeeRosterRows_\(\)\);/.test(rng) && /getCdrOutboundPerRep_\(from, to, cohort\)/.test(rng) && /&& !\(obRes\.error && !obRes\.steady\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(rng), 'the range reads it (the cohort\'s one read, F24), and a failed read is never cached');
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   assert.ok(/var obRes = getCdrOutboundPerRep_\(from, toDate, rosterNames\);/.test(team) && /outboundMeta: outboundMeta,/.test(team), 'one read for the team, its state shipped');
   assert.ok(/\|\| \(rep\.outbound && rep\.outbound\.placed > 0\)\) \{/.test(team), 'a rep with outbound calls and no inbound ones is still listed');
   assert.ok(/teamTotals\.intakeNotesPartial \? null : teamIntake/.test(team), 'a team total built from an unreadable rep Sheet has no intake adjustment');
-  assert.ok(/outboundMeta: full\.outboundMeta,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')), 'the rep view carries the tab\'s state (no names in it)');
+  assert.ok(/outboundMeta: full\.outboundMeta \? \{ available: !!full\.outboundMeta\.available, error: full\.outboundMeta\.error \|\| null, through: full\.outboundMeta\.through \|\| null \} : full\.outboundMeta,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')), 'the rep view carries the tab\'s state, field by field (no names in it — FQ7)');
   // Driven range: outbound read clean → shipped and adjusted; read failed → named, null, not cached.
   const run = (ob) => {
     const puts = [];
@@ -43496,9 +43496,9 @@ test('M1: the three Stats endpoints carry outbound + adjusted beside the actual 
       getCdrDailyBreakdown_: () => ({ perRepDaily: {} }), metricsWorkdayIsos_: () => [],
       getCsrTransferPerRepDaily_: () => ({ agents: {} }), cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 2, timed: 2, seconds: 1200 }),
       cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents, getCdrOutboundPerRep_: () => ob,
-      cdrCohortNames_: () => ['Ann', 'Ben'], getEmployeeRosterRows_: () => [] };
+      cdrCohortNames_: () => ['Ann', 'Ben'], getEmployeeRosterRows_: () => [], cdrPartialDaysDegraded_: () => false };
     vm.createContext(ctx);
-    ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'metricsOwnPartialDays_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
     return { out: m1J(ctx.getMyMetricsRange('2026-11-03', '2026-11-07')), puts };
   };
   let r = run({ agents: { Ann: { placed: 5, connected: 3, talkSec: 600 } }, through: '2026-11-06' });
@@ -43546,7 +43546,7 @@ test('M1: the client — the intake form timer starts on the first input, is tak
   const mtx = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.ok(/var ob = \(r\.outbound && !obPast\) \? r\.outbound : null;/.test(mtx) && /row\.push\(ob \? ob\.placed : '', ob \? ob\.connected : '', ob \? mFmtTalk_\(ob\.talkSec\) : '',/.test(mtx), 'an unread outbound figure — or one the export has not reached (F35) — exports BLANK, never 0');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
-  assert.ok(/outboundMeta: \{ available: true, error: null, through: daysAgo\(1\) \}/.test(mock) && /adjusted: adjOf\(kpis, myObOn\(date\), myIt\)/.test(mock), 'the fixtures carry the new fields (INV-185)');
+  assert.ok(/outboundMeta: \{ available: true, error: null, through: daysAgo\(1\), likelyMismatches: \[/.test(mock) && /adjusted: adjOf\(kpis, myObOn\(date\), myIt\)/.test(mock), 'the fixtures carry the new fields (INV-185)');
 });
 
 console.log('\nOperator round 2026-11-02 — Batch F (coaching 1-on-1s, cadence, screenshot)');
@@ -44831,7 +44831,7 @@ test('PF1: the stamp — the same data is the same stamp; a new row, a changed c
   // The probe: memo, cache, failure.
   const store = {}, puts = [];
   let opens = 0, fail = false;
-  const tab = (rows) => ({ getLastRow: () => rows.length, getRange: (r, col, n, w) => ({ getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w)) }) });
+  const tab = (rows) => ({ getLastRow: () => rows.length, getLastColumn: () => 12, getRange: (r, col, n, w) => ({ getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w)) }) });
   const tabs = { 'DQE Historical Data': tab([['h'], ['1'], ['2']]), 'CSR Transfer Historical Data': tab([['h'], ['t']]), 'Agent Alias Overrides': tab([['Old'], ['a']]) };
   const mk = () => {
     const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300 }, CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 }, CSR_TRANSFER_TAB: 'CSR Transfer Historical Data',
@@ -49148,11 +49148,11 @@ test('F29 (cycle 26): the idle alert fails toward NO flags — a failed read of 
   // The card: said, never an empty line that reads "nobody is idle" (g53).
   const m = b9Mgr_(['mgrIdleText_', 'mgrIdleChip_', 'mgrIdleSummaryHtml_']);
   const live = [{ name: 'Ana', idleMin: 45 }, { name: 'Bo', idleMin: null }];
-  assert.ok(/1 rep has been idle 30\+ min while clocked in: Ana \(45 min\)/.test(m.mgrIdleSummaryHtml_(live, false)));
+  assert.ok(/1 rep has been idle 30\+ min while clocked in: Ana \(45 min\)/.test(m.mgrIdleSummaryHtml_(live, false, 30)));
   const failed = m.mgrIdleSummaryHtml_([{ name: 'Ana', idleMin: null }], true);
   assert.ok(/Idle time could not be checked just now/.test(failed) && /not checked/.test(failed) && !/been idle/.test(failed), failed);
   assert.strictEqual(m.mgrIdleSummaryHtml_([{ name: 'Ana', idleMin: null }], false), '', 'a check that RAN and found nobody says nothing');
-  assert.ok(/mgrIdleSummaryHtml_\(data\.liveStatus, data\.idleCheckFailed === true\)/.test(extractFunction('tc/script_manager.html', 'renderManagerView')), 'the view passes it');
+  assert.ok(/mgrIdleSummaryHtml_\(data\.liveStatus, data\.idleCheckFailed === true, data\.idleAlertMin\)/.test(extractFunction('tc/script_manager.html', 'renderManagerView')), 'the view passes it');
   // The chip no longer states sampled minutes as exact.
   const chip = m.mgrIdleChip_({ idleMin: 45 });
   assert.ok(/for about 45 minutes/.test(chip) && /up to 10 minutes over/.test(chip) && />idle 45 min</.test(chip), chip);
@@ -49461,7 +49461,7 @@ test('F24: the CDR data stamp watches the Outbound Calls tab — its newest rows
   assert.ok(/^[0-9a-f]{32}$/.test(none.stamp) && none.stamp !== base.stamp, 'no Outbound Calls tab: still a stamp (the tab is optional), and not the one with it');
   const headOnly = b10Stamp_([B10_OB_HEAD]);
   assert.ok(/^[0-9a-f]{32}$/.test(headOnly.stamp) && !headOnly.reads.some((r) => r[0] === 'ob'), 'a header-only tab has no row to read and no zero-row range is asked for');
-  assert.deepStrictEqual(base.reads.filter((r) => r[0] === 'dqe')[0].slice(1), [2, 1, 2, PF1_CDR.ATT], 'the DQE probe keeps its own fixed width');
+  assert.deepStrictEqual(base.reads.filter((r) => r[0] === 'dqe')[0].slice(1), [2, 1, 2, 1], 'the DQE probe asks for its own width, clamped to what this one-column fake has (FQ10)');
 });
 
 test('F24: the outbound reader is keyed by the data stamp and asked with ONE cohort list — read once for the team and kept until the data changes; a window that starts after the tab\'s newest day opens no sheet; no stamp is five minutes; a round without the aliases is not kept; a failed read keeps nothing (driven)', () => {
@@ -49502,7 +49502,7 @@ test('F24: the outbound reader is keyed by the data stamp and asked with ONE coh
   // The callers: one list, so one key.
   const calls = stripJsComments_(['getMyMetrics', 'getMyMetricsRange', 'getTeamMetrics'].map((f) => extractRawFunction('Code.js', f)).join('\n')).match(/getCdrOutboundPerRep_\([^;]*\);/g) || [];
   assert.strictEqual(calls.length, 3, 'the three Stats endpoints: ' + calls.join(' | '));
-  calls.forEach((cl) => assert.ok(!/emp\.name/.test(cl) && /allNames|cdrCohortNames_\(getEmployeeRosterRows_\(\)\)|rosterNames/.test(cl), 'asked with the cohort, never the rep\'s own name: ' + cl));
+  calls.forEach((cl) => assert.ok(!/emp\.name/.test(cl) && /allNames|\bcohort\b|rosterNames/.test(cl), 'asked with the cohort, never the rep\'s own name: ' + cl));
   assert.ok(!/cdr_outbound_v1/.test(serverSource()), 'the per-rep key is gone');
 });
 
@@ -49590,7 +49590,7 @@ test('F35: a Team window in which no rep has a call-data row has no call figures
   assert.ok(/teamTotals\.hasCallData = callState\.hasCallData;\s*teamTotals\.callDataPending = callState\.callDataPending;/.test(team), 'on the totals, which the rep view ships whole');
   assert.ok(/teamTotals: full\.teamTotals,/.test(extractRawFunction('Code.js', 'teamMetricsRepView_')));
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
-  assert.ok(/hasCallData: false, callDataPending: true \}/.test(mock) && /totals\.hasCallData = true; totals\.callDataPending = false;/.test(mock), 'both Team fixtures carry the state (INV-185)');
+  assert.ok(/hasCallData: false, callDataPending: true, hasTransferData: false \}/.test(mock) && /totals\.hasCallData = true; totals\.callDataPending = false;/.test(mock), 'both Team fixtures carry the state (INV-185)');
 });
 
 test('F35: the Team rail draws ONE row with no figure for a window with no call data — never "Answered 0 · Missed 0" in green; a window with data, and a payload from before this, draw the four rows (driven)', () => {
@@ -49946,7 +49946,7 @@ test('PD: the Dashboard card — the pace divides by the rep\'s credited days an
 
 test('PD: My Stats draws the rep\'s partial days on the two count trends — a ring on the day and its date and share in words under the chart (driven)', () => {
   const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, Object, Array, JSON, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;') });
-  ['mPartialNoteHtml_', 'mBuildDualSparkSvg_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mPartialDaysText_', 'mPartialNoteHtml_', 'mBuildDualSparkSvg_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   const s = [{ date: '2026-11-09', own: 30, team: 28, cohort: 5 }, { date: '2026-11-10', own: 12, team: 27, cohort: 5, partial: 0.5 }, { date: '2026-11-11', own: 31, team: 29, cohort: 5 }, { date: '2026-11-12', own: 5, team: 30, cohort: 5, partial: 0 }];
   assert.strictEqual(c.mPartialNoteHtml_(s), '<div class="m-kpi-note">Partial days: Nov 12 (not counted), Nov 10 (0.5 day)</div>', 'newest first, in words');
   assert.strictEqual(c.mPartialNoteHtml_(s.slice(0, 2)), '<div class="m-kpi-note">Partial day: Nov 10 (0.5 day)</div>');
@@ -49963,18 +49963,18 @@ test('PD: My Stats draws the rep\'s partial days on the two count trends — a r
 });
 
 test('PD: Storage Health states the Partial Days tab — counts only, a missing tab is not a warning, a moved header and a failed read are; the read-ahead says when it kept nothing (driven)', () => {
-  const pc = vm.createContext({ String, Object, Array, EMP: { NAME: 0 }, getEmployeeRosterRows_: () => [], cdrCohortNames_: () => ['Ana Lopez', 'Ben Ray'],
+  const pc = vm.createContext({ String, Object, Array, EMP: { NAME: 0 }, getEmployeeRosterRows_: () => [], cdrCohortNames_: () => ['Ana Lopez', 'Ben Ray'], CDR_PARTIAL_LIKELY_MAX: 12,
     getCdrPartialDays_: () => ({ source: 'sheet', rows: 7, kept: 4, marks: { 'Ana Lopez': { '2026-11-10': 0.5, '2026-10-30': 0.25 }, 'Ben Ray': { '2026-11-11': 0.75 }, 'Other Dept': { '2026-11-12': 0.5 } } }) });
-  vm.runInContext(extractRawFunction('Code.js', 'cdrPartialProbe_'), pc);
+  ['cdrNameTokens_', 'cdrLikelyNameMismatches_', 'cdrPartialProbe_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), pc));
   const probe = m1J(pc.cdrPartialProbe_());
-  assert.deepStrictEqual(probe, { source: 'sheet', rows: 7, marks: 4, agents: 3, offRoster: 1, error: '' }, 'counts — no name, no date');
+  assert.deepStrictEqual(probe, { source: 'sheet', rows: 7, marks: 4, agents: 3, offRoster: 1, likely: [], error: '' }, 'counts — no date, no credit; and no name unless it pairs with a roster name (FQ9)');
   pc.getCdrPartialDays_ = () => { throw new Error('boom'); };
-  assert.deepStrictEqual(m1J(pc.cdrPartialProbe_()), { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, error: 'boom' }, 'the probe never takes the inventory down');
+  assert.deepStrictEqual(m1J(pc.cdrPartialProbe_()), { source: 'unavailable', rows: 0, marks: 0, agents: 0, offRoster: 0, likely: [], error: 'boom' }, 'the probe never takes the inventory down');
   const cc = vm.createContext({ String });
   ['cnPartialDaysFact_', 'cnPartialDaysFindings_'].forEach((f) => vm.runInContext(extractFunction('cn/script_callnotes.html', f), cc));
   const find = (pd) => { const got = []; cc.cnPartialDaysFindings_((id, area, level, title, detail, fix) => got.push({ id, area, level, title, detail: detail || '', fix: fix || '' }), pd); return got[0]; };
   const ok = find(probe);
-  assert.ok(ok.id === 'cdrPartialDays' && ok.area === 'cdr' && ok.level === 'ok' && /4 marks for 3 agents — 1 for agents not on this roster/.test(ok.detail), JSON.stringify(ok));
+  assert.ok(ok.id === 'cdrPartialDays' && ok.area === 'cdr' && ok.level === 'ok' && /4 marks for 3 agents — 1 for agents not on this roster \(another department/.test(ok.detail), JSON.stringify(ok));
   assert.strictEqual(find({ source: 'no-tab' }).level, 'ok', 'THE RULE: no tab yet is the steady state — a warning here could never clear on a team that marks no day (g02)');
   assert.strictEqual(find({ source: 'empty' }).level, 'ok');
   const bad = find({ source: 'bad-header' });
@@ -49986,10 +49986,203 @@ test('PD: Storage Health states the Partial Days tab — counts only, a missing 
   const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
   assert.ok(/if \(s\.partialDays\) cnPartialDaysFindings_\(add, s\.partialDays\);/.test(cn) && /if \(s\.partialDays\) parts\.push\(/.test(cn), 'the finding and the row\'s fact are both drawn');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
-  assert.ok(/partialDays: \{ source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, error: '' \}/.test(mock) && /partial: null,/.test(mock), 'the fixtures carry the new fields (INV-185)');
+  assert.ok(/partialDays: \{ source: 'sheet', rows: 7, marks: 6, agents: 3, offRoster: 1, likely: \[\], error: '' \}/.test(mock) && /partial: null,/.test(mock), 'the fixtures carry the new fields (INV-185)');
   const warm = stripJsComments_(extractRawFunction('Code.js', 'warmCdrMetricsCache'));
   assert.ok(/if \(cdrPartialDaysDegraded_\(\)\) \{\s*return \{ outcome: automationOutcome_\('partial', 'The Partial Days tab could not be read, so the call-data windows read ahead were not kept\.', \['Partial Days'\]\) \};/.test(warm),
     'a read-ahead that kept nothing because the marks could not be read is partial, never ok');
+});
+
+console.log('\nCycle 26 follow-ons after Batches 9, 10 and PD (FQ1–FQ10)');
+
+test('FQ1: the idle summary names the SERVER\'s threshold — the payload carries it, and a payload without it names no number (driven + source)', () => {
+  const m = b9Mgr_(['mgrIdleText_', 'mgrIdleSummaryHtml_']);
+  const live = [{ name: 'Ana', idleMin: 50 }, { name: 'Bo', idleMin: 75 }];
+  assert.ok(/2 reps have been idle 45\+ min while clocked in: Bo \(1 h 15 min\), Ana \(50 min\)/.test(m.mgrIdleSummaryHtml_(live, false, 45)), 'THE REGRESSION: "30+ min" whatever IDLE_ALERT_MIN is');
+  const bare = m.mgrIdleSummaryHtml_(live, false);
+  assert.ok(/2 reps have been idle while clocked in: /.test(bare) && !/\d+\+ min/.test(bare), 'an older payload: no number is claimed (g131): ' + bare);
+  assert.ok(!/\d+\+ min/.test(m.mgrIdleSummaryHtml_(live, false, 0)) && !/\d+\+ min/.test(m.mgrIdleSummaryHtml_(live, false, '30')), 'nor from a value that is not a positive number');
+  assert.ok(!/30\+ min/.test(stripJsComments_(extractFunction('tc/script_manager.html', 'mgrIdleSummaryHtml_'))), 'no literal of the threshold in the client\'s code');
+  const dash = stripJsComments_(extractRawFunction('Code.js', 'getManagerDashboard'));
+  assert.ok(/idleAlertMin:\s+IDLE_ALERT_MIN,/.test(dash), 'the endpoint ships the constant the chip is decided at');
+  assert.ok(/mgrIdleSummaryHtml_\(data\.liveStatus, data\.idleCheckFailed === true, data\.idleAlertMin\)/.test(extractFunction('tc/script_manager.html', 'renderManagerView')), 'and the view passes it');
+  assert.ok(/idleCheckFailed: false, idleAlertMin: 30,/.test(fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8')), 'the fixture carries it (INV-185)');
+});
+
+test('FQ2: the diagnostics purge note names the tab that hit its per-run cap and THAT cap — the activity log has its own (driven + source)', () => {
+  const c = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'diagPurgeCapNote_'), c);
+  assert.strictEqual(c.diagPurgeCapNote_([{ name: 'ViewUsage', hit: false, cap: 2000 }, { name: 'ActivityLog', hit: true, cap: 6000 }]), 'ActivityLog:6000',
+    'THE REGRESSION: "hitPerRunCap=2000" for a run that removed six thousand activity rows');
+  assert.strictEqual(c.diagPurgeCapNote_([{ name: 'ViewUsage', hit: true, cap: 2000 }, { name: 'ClientErrors', hit: true, cap: 2000 }, { name: 'ActivityLog', hit: true, cap: 6000 }]), 'ViewUsage+ClientErrors:2000,ActivityLog:6000',
+    'tabs that share one budget are named together');
+  assert.strictEqual(c.diagPurgeCapNote_([{ name: 'ViewUsage', hit: false, cap: 2000 }]), '');
+  assert.strictEqual(c.diagPurgeCapNote_(null), '');
+  const src = stripJsComments_(extractRawFunction('Code.js', 'purgeOldDiagnostics'));
+  assert.ok(/'; hitPerRunCap=' \+ diagPurgeCapNote_\(\[/.test(src) && /\{ name: 'ActivityLog', hit: al\.hitCap, cap: ACTIVITY_LOG_PURGE_MAX_PER_RUN \}/.test(src) && !/hitPerRunCap=\$\{DIAG_PURGE_MAX_ROWS_PER_RUN\}/.test(src),
+    'the job builds its note from each purge\'s own flag and cap');
+  ['vu', 'ce', 'dd', 'ks'].forEach((v) => assert.ok(new RegExp('hit: ' + v + '\\.hitCap, cap: DIAG_PURGE_MAX_ROWS_PER_RUN').test(src), v + ' rides the shared budget'));
+});
+
+test('FQ3: a Team window in which no listed rep has a transfer row has no transfer figure — nothing beside "Calls —", a dash with the reason when the calls are in; never "Transfers 0" (driven + source)', () => {
+  const c = vm.createContext({ String, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mTeamTransferRowHtml_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  assert.strictEqual(c.mTeamTransferRowHtml_({ transferred: 0, transferPct: null, hasTransferData: false, hasCallData: false }, false), '', 'THE REGRESSION: "Transfers 0" under "Calls — not in yet"');
+  const late = c.mTeamTransferRowHtml_({ transferred: 0, transferPct: null, hasTransferData: false, hasCallData: true }, false);
+  assert.ok(/Transfers<\/span><span class="m-row-value">—<\/span><div class="m-row-sub">no transfer data for this day</.test(late), late);
+  assert.ok(/no transfer data for this range/.test(c.mTeamTransferRowHtml_({ transferred: 0, hasTransferData: false, hasCallData: true }, true)));
+  const real = c.mTeamTransferRowHtml_({ transferred: 0, transferPct: 0, hasTransferData: true, hasCallData: true }, false);
+  assert.ok(/m-row-value">0<\/span><div class="m-row-sub">0% of calls</.test(real), 'rows with no transfer in them: a real zero — ' + real);
+  assert.ok(/m-row-value">7</.test(c.mTeamTransferRowHtml_({ transferred: 7, transferPct: 3.5 }, false)), 'a payload that does not say draws as before');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/teamTotals\.hasTransferData = reps\.some\(function \(rp\) \{ return rp\.hasTransferData; \}\);/.test(team), 'from the listed reps\' own transfer rows');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/hasTransferData: false \}/.test(mock) && /totals\.hasTransferData = true;/.test(mock), 'both Team fixtures carry it (INV-185)');
+});
+
+test('FQ4: a single day is "Yesterday" only when it IS yesterday — the previous workday on a Monday is named by its day (pure)', () => {
+  const c = vm.createContext({ String, Date, isNaN });
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'mDayLabel_'), c);
+  assert.strictEqual(c.mDayLabel_('2026-11-13', '2026-11-16', '2026-11-15'), 'Fri Nov 13', 'THE REGRESSION: "Yesterday" over Friday\'s calls on a Monday');
+  assert.strictEqual(c.mDayLabel_('2026-11-17', '2026-11-18', '2026-11-17'), 'Yesterday');
+  assert.strictEqual(c.mDayLabel_('2026-11-18', '2026-11-18', '2026-11-17'), 'Today');
+  assert.strictEqual(c.mDayLabel_('2026-11-25', '2026-11-30', '2026-11-29'), 'Wed Nov 25', 'the Monday after a holiday week');
+  assert.strictEqual(c.mDayLabel_('', '2026-11-18', '2026-11-17'), '');
+  assert.strictEqual(c.mDayLabel_('not-a-day', '2026-11-18', '2026-11-17'), 'not-a-day', 'an unreadable day is shown as it came, never a made-up one');
+});
+
+test('FQ6: My Stats takes its own totals out of the COHORT\'s read — the window Team Metrics and the read-ahead keep; no endpoint asks the DQE totals with the rep\'s own name (source + driven)', () => {
+  const src = stripJsComments_(['getMyMetrics', 'getMyMetricsRange', 'getDashboardMetrics', 'getTeamMetrics'].map((f) => extractRawFunction('Code.js', f)).join('\n'));
+  const calls = src.match(/getCdrAgentMetrics_\([^;]*?\)[;)]/g) || [];
+  assert.strictEqual(calls.length, 4, calls.join(' | '));
+  calls.forEach((cl) => assert.ok(!/emp\.name\]/.test(cl), 'THE REGRESSION: asked with [emp.name], the key was the rep\'s own — ' + cl));
+  const my = stripJsComments_(extractRawFunction('Code.js', 'getMyMetrics'));
+  assert.ok(/var todayResult = getCdrAgentMetrics_\(date, date, allNames\);\s*var todayCdr = todayResult\.agents\[emp\.name\] \|\| null;/.test(my), 'the day: the cohort, then the rep\'s row');
+  // Driven: the range asks with the cohort and still ships only the caller's row.
+  const asked = [];
+  const ctx = vm.createContext({ String, Number, Math, Date, JSON, Object, Error, isFinite, console: { warn() {} },
+    getEmployeeInfo_: () => ({ id: 'e1', name: 'Ann' }), CONFIG: { CDR_CACHE_TTL: 60 }, CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    getCdrDashboardStandard_: () => ({}), cdrStandardShip_: () => ({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }),
+    getCdrAgentMetrics_: (f, t, names) => { asked.push(names.join(',')); return { agents: { Ann: { totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83.3, tttSeconds: 3000 }, Ben: { totalRung: 99, totalAnswered: 90, totalMissed: 9, pctAnswered: 90.9, tttSeconds: 9999 } }, meta: {} }; },
+    getCdrDailyBreakdown_: () => ({ perRepDaily: {} }), metricsWorkdayIsos_: () => [], getCsrTransferPerRepDaily_: () => ({ agents: {} }),
+    cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }), cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents,
+    getCdrOutboundPerRep_: () => ({ agents: {}, through: null }), cdrCohortNames_: () => ['Ann', 'Ben'], getEmployeeRosterRows_: () => [], cdrPartialDaysDegraded_: () => false });
+  ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'metricsOwnPartialDays_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  const out = m1J(ctx.getMyMetricsRange('2026-11-03', '2026-11-07'));
+  assert.deepStrictEqual(asked, ['Ann,Ben'], 'one read, with the cohort');
+  assert.ok(out.cdr.totalAnswered === 10 && JSON.stringify(out).indexOf('9999') < 0 && JSON.stringify(out).indexOf('Ben') < 0, 'THE RULE: only the caller\'s own row leaves the server');
+});
+
+test('FQ7: an outbound agent not on the roster is remembered by name, and Team Metrics pairs those with the roster reps who show no outbound call — managers only; the rep view carries the tab\'s state and nothing else (driven + source)', () => {
+  const c = m1Ctx_();
+  const col = { date: 0, agent: 1, connected: 2, talk: 3 };
+  const rows = [['2026-11-09', 'Ana Lopez', true, 60], ['2026-11-09', 'Tran, Jo', true, 30], ['2026-11-09', 'Other Dept', true, 30], ['2026-11-09', 'Tran, Jo', false, 0],
+    ['2026-11-08', 'Old Agent', true, 30], ['2026-11-09', 'J. Smith', true, 30]];
+  const r = m1J(c.cdrOutboundAggregate_(rows, col, { from: '2026-11-09', to: '2026-11-09', aliasMap: { 'J. Smith': 'Jay Smith-Dept2' }, rosterNames: ['Ana Lopez', 'Jo Tran'], dateOf: (v) => v }));
+  assert.deepStrictEqual(r.offRoster, ['Jay Smith-Dept2', 'Other Dept', 'Tran, Jo'], 'in-window agents not on the roster, once each, alias-resolved, sorted — an out-of-window one is not');
+  assert.deepStrictEqual(Object.keys(r.agents), ['Ana Lopez'], 'and the roster\'s own figures are what they were');
+  const pair = vm.createContext({ String, Array });
+  ['cdrNameTokens_', 'cdrLikelyNameMismatches_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), pair));
+  assert.deepStrictEqual(m1J(pair.cdrLikelyNameMismatches_(['Jo Tran'], r.offRoster)), [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }], 'the pairing Team Metrics already uses for call data');
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/outboundMeta\.likelyMismatches = cdrLikelyNameMismatches_\(\s*rosterNames\.filter\(function \(nm\) \{ return !\(obRes\.agents \|\| \{\}\)\[nm\]; \}\), obRes\.offRoster \|\| \[\]\)\.slice\(0, CDR_PARTIAL_LIKELY_MAX\);/.test(team),
+    'reps with NO outbound call in the window against the off-roster names — capped');
+  const reader = stripJsComments_(extractRawFunction('Code.js', 'getCdrOutboundPerRep_'));
+  assert.ok(/out\.offRoster = agg\.offRoster\.slice\(0, CDR_OUTBOUND_OFFROSTER_MAX\);/.test(reader), 'kept beside the window, bounded');
+  // The rep view: driven over a manager payload that carries a pair.
+  const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
+  const full = { from: 'a', to: 'b', date: 'a', teamTotals: {}, trend: [], transferMeta: {}, queueRows: [], groupRows: [], alertThreshold: 1, alertBand: 1, standardSource: 's',
+    reps: [{ repName: 'Jo Tran' }], likelyMismatches: [{ roster: 'x', cdr: 'y' }],
+    outboundMeta: { available: true, error: null, through: '2026-11-09', likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] } };
+  const view = m1J(rv.teamMetricsRepView_(full));
+  assert.deepStrictEqual(view.outboundMeta, { available: true, error: null, through: '2026-11-09' }, 'THE RULE: built field by field — a whole-object copy would ship the name pairs to every rep');
+  assert.ok(JSON.stringify(view).indexOf('Tran') < 0, 'no colleague\'s name anywhere in the rep view');
+  assert.strictEqual(rv.teamMetricsRepView_(Object.assign({}, full, { outboundMeta: undefined })).outboundMeta, undefined, 'an older payload with no outbound state stays without one');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/likelyMismatches: \[\{ roster: 'Jo Tran', cdr: 'Tran, Jo' \}\]/.test(mock), 'the populated fixture shows a pair (INV-185)');
+});
+
+test('FQ8: the range view names the rep\'s own partial days — out of the breakdown\'s credits, theirs only, newest first; a round read without the marks is not kept (driven)', () => {
+  const c = vm.createContext({ String, Number, Object });
+  vm.runInContext(extractRawFunction('Code.js', 'metricsOwnPartialDays_'), c);
+  const credits = { '2026-11-10': { Ann: 0.5, Ben: 0.25 }, '2026-11-12': { Ben: 0.75 }, '2026-11-13': { Ann: 0 } };
+  assert.deepStrictEqual(m1J(c.metricsOwnPartialDays_(credits, 'Ann')), [{ date: '2026-11-13', credit: 0 }, { date: '2026-11-10', credit: 0.5 }], 'Ann\'s two days — a credit of 0 is one');
+  assert.deepStrictEqual(m1J(c.metricsOwnPartialDays_(credits, 'Cy')), []);
+  assert.deepStrictEqual(m1J(c.metricsOwnPartialDays_(undefined, 'Ann')), []);
+  const run = (bd, down) => {
+    const puts = [];
+    const ctx = vm.createContext({ String, Number, Math, Date, JSON, Object, Error, isFinite, console: { warn() {} },
+      getEmployeeInfo_: () => ({ id: 'e1', name: 'Ann' }), CONFIG: { CDR_CACHE_TTL: 60 }, CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
+      getCdrDashboardStandard_: () => ({}), cdrStandardShip_: () => ({ alertThreshold: 92, alertBand: 2, standardSource: 'sheet' }),
+      getCdrAgentMetrics_: () => ({ agents: { Ann: { totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83.3, tttSeconds: 3000 } }, meta: {} }),
+      getCdrDailyBreakdown_: () => bd, metricsWorkdayIsos_: () => ['2026-11-10'], getCsrTransferPerRepDaily_: () => ({ agents: {} }),
+      cnCountNotesResult_: () => ({ count: 1 }), cnCountIntakeNotesResult_: () => ({ count: 0 }), cnNoteCoverage_: () => 50, cdrAgentsOrThrow_: (r) => r.agents,
+      getCdrOutboundPerRep_: () => ({ agents: {}, through: null }), cdrCohortNames_: () => ['Ann', 'Ben'], getEmployeeRosterRows_: () => [], cdrPartialDaysDegraded_: () => !!down });
+    ['cdrFmtHms_', 'metricsOutboundOf_', 'metricsAdjusted_', 'metricsOwnPartialDays_', 'getMyMetricsRange'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { out: m1J(ctx.getMyMetricsRange('2026-11-09', '2026-11-13')), puts };
+  };
+  const marked = run({ perRepDaily: { '2026-11-10': { Ann: { answered: 4, missed: 1, pctAnswered: 80 } } }, credits });
+  assert.deepStrictEqual(marked.out.partialDays, [{ date: '2026-11-13', credit: 0 }, { date: '2026-11-10', credit: 0.5 }]);
+  assert.ok(JSON.stringify(marked.out).indexOf('0.75') < 0 && JSON.stringify(marked.out).indexOf('0.25') < 0, 'Ben\'s credits are not in Ann\'s payload');
+  assert.ok(marked.puts.length === 1 && /^metrics_range_v6:/.test(marked.puts[0]), 'kept, under the bumped key (INV-85)');
+  assert.deepStrictEqual(run({ perRepDaily: {} }).out.partialDays, [], 'no mark: an empty list, not a missing field');
+  assert.strictEqual(run({ perRepDaily: {}, credits }, true).puts.length, 0, 'the marks could not be read: nothing is kept');
+  const cc = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), mMiniSparkSvg_: () => '' });
+  ['mRailRow_', 'mPartialDaysText_', 'mPartialDaysRowHtml_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), cc));
+  const row = cc.mPartialDaysRowHtml_(marked.out.partialDays);
+  assert.ok(/Partial days<\/span><span class="m-row-value">2<\/span><div class="m-row-sub">Nov 13 \(not counted\), Nov 10 \(0\.5 day\)</.test(row), row);
+  assert.strictEqual(cc.mPartialDaysRowHtml_([]), '');
+  assert.strictEqual(cc.mPartialDaysRowHtml_(undefined), '', 'an older payload: no row');
+  assert.ok(/, \+2 more</.test(cc.mPartialDaysRowHtml_(Array.from({ length: 8 }, (_, i) => ({ date: '2026-11-0' + (i + 1), credit: 0.5 })))), 'six named, the rest counted');
+});
+
+test('FQ9: Storage Health pairs a marked agent with the roster name it looks like — names only, a warning that clears with the alias row; another department\'s agent stays a count (driven)', () => {
+  const marks = { 'Ana Lopez': { '2026-11-10': 0.5 }, 'Tran, Jo': { '2026-11-11': 0.25 }, 'Other Dept': { '2026-11-12': 0.5 } };
+  const pc = vm.createContext({ String, Object, Array, CDR_PARTIAL_LIKELY_MAX: 12, getEmployeeRosterRows_: () => [], cdrCohortNames_: () => ['Ana Lopez', 'Jo Tran', 'Ben Ray'],
+    getCdrPartialDays_: () => ({ source: 'sheet', rows: 3, kept: 3, marks }) });
+  ['cdrNameTokens_', 'cdrLikelyNameMismatches_', 'cdrPartialProbe_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), pc));
+  const probe = m1J(pc.cdrPartialProbe_());
+  assert.deepStrictEqual([probe.offRoster, probe.likely], [2, [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }]], 'THE REGRESSION: "2 not on this roster" — and Jo\'s partial day silently not applied');
+  assert.ok(JSON.stringify(probe).indexOf('2026-') < 0 && JSON.stringify(probe).indexOf('0.25') < 0, 'names only: no date, no credit');
+  marks['Jo Tran'] = { '2026-11-11': 0.25 };
+  assert.deepStrictEqual(m1J(pc.cdrPartialProbe_()).likely, [], 'a roster name that already has its mark is not offered');
+  const cc = vm.createContext({ String });
+  ['cnPartialDaysFact_', 'cnPartialDaysFindings_'].forEach((f) => vm.runInContext(extractFunction('cn/script_callnotes.html', f), cc));
+  const find = (pd) => { const got = []; cc.cnPartialDaysFindings_((id, area, level, title, detail, fix) => got.push({ id, area, level, title, detail: detail || '', fix: fix || '' }), pd); return got; };
+  const warn = find(probe);
+  assert.ok(warn.length === 1 && warn[0].level === 'warn' && /1 marked agent not matched to the roster/.test(warn[0].title) && /Tran, Jo \(Partial Days\) → Jo Tran \(roster\)/.test(warn[0].detail)
+    && /not applied/.test(warn[0].detail) && /Agent Alias Overrides/.test(warn[0].fix), JSON.stringify(warn));
+  const ok = find(Object.assign({}, probe, { likely: [] }));
+  assert.ok(ok.length === 1 && ok[0].level === 'ok' && /2 for agents not on this roster/.test(ok[0].detail), 'unpaired off-roster agents are a fact, not a warning (g02): ' + JSON.stringify(ok));
+  assert.strictEqual(find({ source: 'sheet', marks: 1, agents: 1, offRoster: 0 })[0].level, 'ok', 'an older payload with no `likely` is not a warning');
+});
+
+test('FQ10: the data stamp never asks a tab for more columns than it has — a tab trimmed narrower than its probe cost every reader its stamp (driven)', () => {
+  const run = (dqeCols, pdCols) => {
+    const reads = [];
+    const tab = (name, rows) => ({ getLastRow: () => rows.length, getLastColumn: () => (rows[0] || []).length,
+      getRange: (r, col, n, w) => { reads.push([name, w]); if (col + w - 1 > (rows[0] || []).length) throw new Error('Those columns are out of bounds.');
+        return { getDisplayValues: () => rows.slice(r - 1, r - 1 + n).map((x) => x.slice(col - 1, col - 1 + w).map(String)) }; } });
+    const wide = (n) => [Array.from({ length: n }, (_, i) => 'h' + i), Array.from({ length: n }, (_, i) => 'v' + i)];
+    const tabs = { 'DQE Historical Data': tab('dqe', wide(dqeCols)), 'CSR Transfer Historical Data': tab('tr', wide(7)), 'Agent Alias Overrides': tab('al', wide(2)) };
+    if (pdCols) tabs['Partial Days'] = tab('pd', wide(pdCols));
+    const ctx = vm.createContext({ JSON, String, Math, console: { warn() {} }, CONFIG: { CDR_CACHE_TTL: 300, CDR_OUTBOUND_TAB: 'Outbound Calls', CDR_PARTIAL_DAYS_TAB: 'Partial Days' },
+      CDR: PF1_CDR, CSRT: { TRANSFERRED: 6 }, CSR_TRANSFER_TAB: 'CSR Transfer Historical Data', CDR_STAMP_CACHE_KEY: 'cdr_stamp_v1', CDR_STAMP_TTL: 120, CDR_STAMP_TAIL_ROWS: 300, CDR_PARTIAL_COLS: 3,
+      Utilities: { DigestAlgorithm: { MD5: 'MD5' }, computeDigest: (a, x) => Array.from(require('crypto').createHash('md5').update(String(x)).digest()) },
+      getCdrSS_: () => ({ getSheetByName: (n) => tabs[n] || null }), CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) } });
+    vm.runInContext('var _cdrStampMemo = null;', ctx);
+    ['cdrDigestHex_', 'cdrStampFromProbes_', 'cdrDataStamp_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+    return { stamp: ctx.cdrDataStamp_(), reads };
+  };
+  const full = run(12);
+  assert.ok(/^[0-9a-f]{32}$/.test(full.stamp));
+  assert.deepStrictEqual(full.reads, [['dqe', PF1_CDR.ATT], ['tr', 7], ['al', 2]], 'a full-width tab: each probe\'s own width — and the two-column alias tab is asked for two, not three');
+  const narrow = run(8);
+  assert.ok(/^[0-9a-f]{32}$/.test(narrow.stamp), 'THE REGRESSION: a DQE tab trimmed to eight columns threw, and there was no stamp at all');
+  assert.deepStrictEqual(narrow.reads[0], ['dqe', 8]);
+  assert.notStrictEqual(narrow.stamp, full.stamp);
+  assert.deepStrictEqual(run(12, 6).reads.filter((r) => r[0] === 'pd'), [['pd', 3]], 'the Partial Days probe is clamped DOWN only — six columns on the tab, three read');
+  assert.deepStrictEqual(run(12, 2).reads.filter((r) => r[0] === 'pd'), [['pd', 2]], 'and a two-column one is asked for two');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

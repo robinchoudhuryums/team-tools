@@ -329,7 +329,13 @@ function cdrDataStamp_() {
       var last = sh.getLastRow();
       var n = t[2] ? Math.max(0, last) : Math.min(CDR_STAMP_TAIL_ROWS, Math.max(0, last - 1));
       var first = t[2] ? 1 : last - n + 1;
-      var width = t[1] || sh.getLastColumn();   // F24: 0 = every column the tab has (a tab read by header)
+      // FQ10 (cycle 26): never wider than the tab. A fixed width past the
+      // tab's last column THROWS, and one throw is no stamp for every reader —
+      // a tab trimmed narrower cost the whole call-data cache. Clamped, the
+      // probe reads what is there (and never more than its own width: the
+      // Partial Days probe stays inside column C).
+      var lastCol = sh.getLastColumn();
+      var width = Math.min(t[1] || lastCol, lastCol);   // F24: 0 = every column the tab has (a tab read by header)
       return { name: t[0], lastRow: last, tail: n > 0 && width > 0 ? sh.getRange(first, 1, n, width).getDisplayValues() : [] };
     });
     stamp = cdrStampFromProbes_(probes, cdrDigestHex_);
@@ -759,6 +765,13 @@ function cdrPartialKeyPart_(marksForRep, digest) {
   if (!days.length) return '0';
   return String(digest(JSON.stringify(days.map(function (d) { return [d, marksForRep[d]]; })))).slice(0, 10);
 }
+/** PURE (Node-pinned) — FQ8: one rep's partial days out of a daily
+ *  breakdown's `credits` ({dateIso: {rep: credit}}): [{date, credit}], newest
+ *  first. Only that rep's — the map holds every marked rep of the read. */
+function metricsOwnPartialDays_(credits, name) {
+  return Object.keys(credits || {}).filter(function (d) { return credits[d] && credits[d][name] != null; })
+    .sort().reverse().map(function (d) { return { date: d, credit: Number(credits[d][name]) }; });
+}
 /** PURE (Node-pinned) — a marked day counts toward an agent's days only when
  *  they took a call on it (the dashboard's rule): a mark on a day with no row,
  *  or a row with nothing rung, answered or missed, changes nothing. */
@@ -821,14 +834,17 @@ function cdrOutboundAggregate_(rows, col, opts) {
   var aliasMap = o.aliasMap || {};
   var nameSet = {};
   (o.rosterNames || []).forEach(function (n) { nameSet[n] = true; });
-  var agents = {}, latestDate = null;
+  var agents = {}, latestDate = null, off = {};
   (rows || []).forEach(function (r) {
     var raw = String(r[col.agent] == null ? '' : r[col.agent]).trim();
     if (!raw) return;
     var iso = o.dateOf(r[col.date]);
     if (!iso || iso < o.from || iso > o.to) return;
     var agent = (aliasMap[raw] && nameSet[aliasMap[raw]]) ? aliasMap[raw] : raw;
-    if (!nameSet[agent]) return;
+    // FQ7 (cycle 26): an in-window agent NOT on the roster is remembered by
+    // name (alias-resolved, as the DQE reader records its own) — the only way
+    // a colleague spelled differently here can be found.
+    if (!nameSet[agent]) { off[aliasMap[raw] || raw] = true; return; }
     var a = agents[agent] || (agents[agent] = { placed: 0, connected: 0, talkSec: 0 });
     a.placed++;
     var c = r[col.connected];
@@ -838,7 +854,7 @@ function cdrOutboundAggregate_(rows, col, opts) {
     if (isFinite(sec) && sec > 0) a.talkSec += Math.round(sec);
     if (!latestDate || iso > latestDate) latestDate = iso;
   });
-  return { agents: agents, latestDate: latestDate };
+  return { agents: agents, latestDate: latestDate, offRoster: Object.keys(off).sort() };
 }
 /** M1 — each roster rep's OUTBOUND calls over [from, to] from the CDR
  *  Report's `Outbound Calls` tab. The date column bounds the read
@@ -892,6 +908,7 @@ function getCdrOutboundPerRep_(from, to, rosterNames) {
         var agg = cdrOutboundAggregate_(rows, shifted, { from: from, to: to, aliasMap: getCdrNameMap_(), rosterNames: rosterNames || [],
           dateOf: function (v) { return cdrRowDateIso_(v, tz); } });
         out.agents = agg.agents;
+        if (agg.offRoster && agg.offRoster.length) out.offRoster = agg.offRoster.slice(0, CDR_OUTBOUND_OFFROSTER_MAX);   // FQ7
       }
     }
     if (useCache) {
@@ -2236,7 +2253,11 @@ function getMyMetrics(date) {
     var trPRD = transfer.perRepDaily || {};
     var dqCredits = breakdown.credits || null;   // Batch PD: partial-day credits, for the two count series
 
-    var todayResult = getCdrAgentMetrics_(date, date, [emp.name]);
+    // FQ6 (cycle 26): the COHORT's read, the rep's own row out of it — the
+    // window Team Metrics and the hourly read-ahead already keep. Asked with
+    // [emp.name] the key carried the rep's own roster hash, so the day every
+    // rep opens Stats on was read once per rep.
+    var todayResult = getCdrAgentMetrics_(date, date, allNames);
     var todayCdr = todayResult.agents[emp.name] || null;
     // F-47 (2026-09-17): a reader-returned meta.error (the DQE tab missing or
     // renamed) came back as agents:{} and shipped cdr:null — indistinguishable
@@ -2369,7 +2390,7 @@ function getMyMetricsRange(from, to) {
     // error results never cached; bypassed under the CDR test override for
     // the same fixture-masking reason as getMyMetrics.
     var rangeCache = CacheService.getScriptCache();
-    var rangeKey = 'metrics_range_v5:' + emp.id + ':' + from + ':' + to;   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var rangeKey = 'metrics_range_v6:' + emp.id + ':' + from + ':' + to;   // v6 (cycle 26 FQ8): the rep's partial days   // v5 (cycle 26 F34): the same-basis adjusted average   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var useRangeCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useRangeCache) {
       try {
@@ -2384,7 +2405,8 @@ function getMyMetricsRange(from, to) {
     // beside an empty `agents` map read as "a rep who took no calls", and was
     // CACHED that way. It now throws into the catch below: an honest {error},
     // never cached.
-    var c = cdrAgentsOrThrow_(getCdrAgentMetrics_(from, to, [emp.name]))[emp.name] || null;
+    var cohort = cdrCohortNames_(getEmployeeRosterRows_());   // FQ6: one list, one key (the outbound read below asks with it too)
+    var c = cdrAgentsOrThrow_(getCdrAgentMetrics_(from, to, cohort))[emp.name] || null;
 
     // Per-day trend across the range for the sparklines (own row only).
     // L-3 (cycle 11): a thrown breakdown read degrades to trend=[] for THIS
@@ -2394,10 +2416,12 @@ function getMyMetricsRange(from, to) {
     // healthy aggregate for the full CDR_CACHE_TTL).
     var trend = [];
     var trendFailed = false;
+    var rangePartial = [];   // FQ8 (cycle 26): the rep's own partial days inside the range
     try {
       var bd = getCdrDailyBreakdown_(from, to, [emp.name]);
       if (bd && bd.error) throw new Error(bd.error);   // MET-1: a missing tab is a failed trend, not an empty one
       var prd = (bd && bd.perRepDaily) || {};
+      rangePartial = metricsOwnPartialDays_(bd && bd.credits, emp.name);
       metricsWorkdayIsos_(from, to).forEach(function (iso) {   // workdays only
         var own = prd[iso] && prd[iso][emp.name];
         trend.push({
@@ -2427,7 +2451,7 @@ function getMyMetricsRange(from, to) {
     var noteRes = cnCountNotesResult_(emp, from, to);   // F5
     var noteCount = noteRes.count;
     var intakeRes = cnCountIntakeNotesResult_(emp, from, to);   // batch 6 — additive
-    var obRes = getCdrOutboundPerRep_(from, to, cdrCohortNames_(getEmployeeRosterRows_()));   // M1; F24: the cohort's one read
+    var obRes = getCdrOutboundPerRep_(from, to, cohort);   // M1; F24: the cohort's one read
     var ob = metricsOutboundOf_(obRes, emp.name);
     var rangeResult = {
       from: from, to: to, repName: emp.name,
@@ -2452,6 +2476,9 @@ function getMyMetricsRange(from, to) {
         ? null : cnNoteCoverage_(noteCount, c ? c.totalAnswered : 0),
       noteCountUnavailable: !!noteRes.unavailable,   // F5
       trend: trend,
+      // FQ8: [{date, credit}] newest first, the caller's own — the range's
+      // sparklines are raw daily counts, and a low day now says why.
+      partialDays: rangePartial,
       transfer: trTotals,                                   // #5 — null = absent, never 0
       alertThreshold: ship.alertThreshold,     // #4 / H2 — see getMyMetrics
       alertBand: ship.alertBand,
@@ -2460,7 +2487,7 @@ function getMyMetricsRange(from, to) {
     if (trendFailed) rangeResult.trendUnavailable = true;   // L-3: honest partial, client-ignorable
     // F5: a failed note read is the same class of partial as a failed trend
     // read (L-3) — never stamp it into the cache as a fresh, confident 0.
-    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable && !(obRes.error && !obRes.steady)) {
+    if (useRangeCache && !trendFailed && !transferThrew && !noteRes.unavailable && !(obRes.error && !obRes.steady) && !cdrPartialDaysDegraded_()) {   // FQ8: nor a round read without the marks
       try { rangeCache.put(rangeKey, JSON.stringify(rangeResult), CONFIG.CDR_CACHE_TTL); } catch (_) {}
     }
     return rangeResult;
@@ -2489,7 +2516,10 @@ function teamMetricsRepView_(full) {
     teamTotals: full.teamTotals,
     trend: full.trend,
     transferMeta: full.transferMeta,
-    outboundMeta: full.outboundMeta,       // M1 — the tab's state, no names
+    // M1 — the tab's STATE, no names. FQ7: built field by field — the manager
+    // payload's outboundMeta also carries name pairs, and a whole-object copy
+    // would ship them to every rep.
+    outboundMeta: full.outboundMeta ? { available: !!full.outboundMeta.available, error: full.outboundMeta.error || null, through: full.outboundMeta.through || null } : full.outboundMeta,
     queueRows: full.queueRows,
     groupRows: full.groupRows,
     alertThreshold: full.alertThreshold,
@@ -2548,7 +2578,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v5:' + from + ':' + toDate;   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v6:' + from + ':' + toDate;   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2663,6 +2693,14 @@ function getTeamMetrics(dateOrFrom, to) {
     // cells are null, never zero; the rest of the table stands.
     var obRes = getCdrOutboundPerRep_(from, toDate, rosterNames);
     var outboundMeta = { available: !obRes.error, error: obRes.error || null, through: obRes.error ? null : obRes.through };
+    // FQ7 (cycle 26): roster reps with no outbound call in the window, paired
+    // with the window's off-roster outbound agents by name. On a shared phone
+    // system both lists are long and mean nothing alone; a PAIR is a colleague
+    // whose outbound calls are missing here. Managers only (see the rep view).
+    if (!obRes.error) {
+      outboundMeta.likelyMismatches = cdrLikelyNameMismatches_(
+        rosterNames.filter(function (nm) { return !(obRes.agents || {})[nm]; }), obRes.offRoster || []).slice(0, CDR_PARTIAL_LIKELY_MAX);
+    }
     var reps = [];
     var teamTotals = { rung: 0, answered: 0, missed: 0, tttSeconds: 0, noteCount: 0,
       transferred: 0, queueTotal: 0, transferCalls: 0 };
@@ -2779,6 +2817,10 @@ function getTeamMetrics(dateOrFrom, to) {
       prevWorkdayIso_(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd')));
     teamTotals.hasCallData = callState.hasCallData;
     teamTotals.callDataPending = callState.callDataPending;
+    // FQ3 (cycle 26): the same question of the Transfer tab — a window in
+    // which no listed rep has a transfer row has no transfer figure, and the
+    // rail drew "Transfers 0" beside "Calls —".
+    teamTotals.hasTransferData = reps.some(function (rp) { return rp.hasTransferData; });
     // M1 — the team's adjusted figures, by the same rule as each rep's.
     teamTotals.adjusted = metricsAdjusted_({ totalAnswered: teamTotals.answered, tttSeconds: teamTotals.tttSeconds },
       outboundMeta.available ? { placed: teamTotals.outboundPlaced, connected: teamTotals.outboundConnected, talkSec: teamTotals.outboundTalkSec } : null,

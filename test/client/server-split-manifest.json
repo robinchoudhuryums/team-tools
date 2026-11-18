@@ -4657,6 +4657,30 @@
     "warmCdrMetricsCache"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-18",
+   "why": "Cycle 26 follow-ons FQ1-FQ10: the idle threshold in the payload, the purge cap note, the transfer state, the outbound name pairs, My Stats on the cohort key, the range partial days, the Storage Health pairs, the clamped stamp probe",
+   "added": [
+    "CDR_OUTBOUND_OFFROSTER_MAX",
+    "CDR_PARTIAL_LIKELY_MAX",
+    "diagPurgeCapNote_",
+    "metricsOwnPartialDays_"
+   ],
+   "removed": [],
+   "changed": [
+    "cdrDataStamp_",
+    "cdrOutboundAggregate_",
+    "cdrPartialProbe_",
+    "getCdrOutboundPerRep_",
+    "getManagerDashboard",
+    "getMyMetrics",
+    "getMyMetricsRange",
+    "getTeamMetrics",
+    "purgeOldDiagnostics",
+    "teamMetricsRepView_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4906,10 +4930,20 @@
    "kind": "var",
    "sha": "01e71763816e9865"
   },
+  "CDR_OUTBOUND_OFFROSTER_MAX": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "86af321f84964936"
+  },
   "CDR_PARTIAL_COLS": {
    "file": "00_config.js",
    "kind": "var",
    "sha": "d0f5ab71b8acd1a0"
+  },
+  "CDR_PARTIAL_LIKELY_MAX": {
+   "file": "00_config.js",
+   "kind": "var",
+   "sha": "626861ed29971419"
   },
   "CDR_QUEUE_LIST_CAP": {
    "file": "00_config.js",
@@ -8854,7 +8888,7 @@
   "cdrDataStamp_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "653bda182423d642"
+   "sha": "842ba3980db57089"
   },
   "cdrDateColIsos_": {
    "file": "40_metrics.js",
@@ -8909,7 +8943,7 @@
   "cdrOutboundAggregate_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "e89dae6cfb239b50"
+   "sha": "141afe0b52748040"
   },
   "cdrOutboundColumns_": {
    "file": "40_metrics.js",
@@ -8964,7 +8998,7 @@
   "cdrPartialProbe_": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "b99be43b72334dc6"
+   "sha": "bcd9dfcf3a93b340"
   },
   "cdrQueueInventory_": {
    "file": "40_metrics.js",
@@ -9615,6 +9649,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "e220b8d1a1a4a385"
+  },
+  "diagPurgeCapNote_": {
+   "file": "10_core.js",
+   "kind": "function",
+   "sha": "6048bd594b358373"
   },
   "diagPurgeTab_": {
    "file": "10_core.js",
@@ -10619,7 +10658,7 @@
   "getCdrOutboundPerRep_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "bb5b02952df6a2c6"
+   "sha": "15e43b15161ab983"
   },
   "getCdrPartialDays_": {
    "file": "40_metrics.js",
@@ -10954,7 +10993,7 @@
   "getManagerDashboard": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7ba46ce7cc65e067"
+   "sha": "7455ae9957184ca9"
   },
   "getManagerEmails_": {
    "file": "10_core.js",
@@ -11024,12 +11063,12 @@
   "getMyMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "2717944e74e052d9"
+   "sha": "2483b048de279e83"
   },
   "getMyMetricsRange": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "d149780d9f6cbe9d"
+   "sha": "dcdaf3df53cb4fbe"
   },
   "getMyNoteHourBuckets": {
    "file": "30_callnotes.js",
@@ -11459,7 +11498,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "c74423d4eac91b54"
+   "sha": "1d3702bf6766994b"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -13091,6 +13130,11 @@
    "kind": "function",
    "sha": "af917c46be77e00e"
   },
+  "metricsOwnPartialDays_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "4345006c812f708c"
+  },
   "metricsParsePercent_": {
    "file": "40_metrics.js",
    "kind": "function",
@@ -13664,7 +13708,7 @@
   "purgeOldDiagnostics": {
    "file": "10_core.js",
    "kind": "function",
-   "sha": "98e3c067c1d004e0"
+   "sha": "87b77465d2f65f30"
   },
   "purgeOldQaReviews": {
    "file": "90_qa.js",
@@ -15249,7 +15293,7 @@
   "teamMetricsRepView_": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "ae3df307839451f9"
+   "sha": "79979e690a876252"
   },
   "teammateActiveNotIn_": {
    "file": "20_timeclock.js",

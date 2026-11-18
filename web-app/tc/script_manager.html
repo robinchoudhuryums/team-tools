@@ -824,7 +824,7 @@ function mgrIdleText_(min) {
   return min >= 60 ? Math.floor(min / 60) + ' h ' + (min % 60) + ' min' : min + ' min';
 }
 /** The Needs-you line under Live Status: who is idle, longest first. */
-function mgrIdleSummaryHtml_(liveStatus, checkFailed) {
+function mgrIdleSummaryHtml_(liveStatus, checkFailed, alertMin) {
   // F29: the check could not run — said, never read as "nobody is idle" (g53).
   if (checkFailed) {
     return '<div class="mgr-card-sub" style="color:var(--muted)">' + icon('clock', 12) +
@@ -833,7 +833,11 @@ function mgrIdleSummaryHtml_(liveStatus, checkFailed) {
   const idle = (liveStatus || []).filter(e => typeof e.idleMin === 'number').sort((a, b) => b.idleMin - a.idleMin);
   if (!idle.length) return '';
   return '<div class="mgr-card-sub" style="color:var(--warning-deep)">' + icon('clock', 12) + ' ' + idle.length +
-    (idle.length === 1 ? ' rep has' : ' reps have') + ' been idle 30+ min while clocked in: ' +
+    // FQ1 (cycle 26): the threshold is the server's (`idleAlertMin`), never a
+    // literal here — a changed IDLE_ALERT_MIN left this line saying "30+ min".
+    // A payload that does not carry it names no number at all (g131).
+    (idle.length === 1 ? ' rep has' : ' reps have') + ' been idle ' +
+    ((typeof alertMin === 'number' && alertMin > 0) ? alertMin + '+ min ' : '') + 'while clocked in: ' +
     idle.map(e => esc(e.name) + ' (' + esc(mgrIdleText_(e.idleMin)) + ')').join(', ') + '</div>';
 }
 function renderManagerView(area, data) {
@@ -1154,7 +1158,7 @@ function renderManagerView(area, data) {
         <span>Live Status</span>
         <span class="count-pill">${counts.clocked_in}/${totalEmp} in</span>
       </h2>
-      ${mgrIdleSummaryHtml_(data.liveStatus, data.idleCheckFailed === true)}
+      ${mgrIdleSummaryHtml_(data.liveStatus, data.idleCheckFailed === true, data.idleAlertMin)}
       ${liveHtml}
     </div>
 

@@ -2697,6 +2697,9 @@ function getManagerDashboard() {
       // F29 (cycle 26): no idle chip is "nobody is idle" only when the check
       // RAN — a failed stamp read says so on the card (g53).
       idleCheckFailed:     seenLast === null,
+      // FQ1 (cycle 26): the threshold the idle chip is decided at — the card's
+      // summary names it from here, never from a literal of its own (g131).
+      idleAlertMin:        IDLE_ALERT_MIN,
       punchTrend, toSummary,
       pendingTrend, missedTrend,
     };

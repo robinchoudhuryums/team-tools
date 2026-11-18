@@ -688,6 +688,20 @@ function mMyPreset_(key) {
   mLoadMyStats_();
 }
 
+/** PURE (Node-pinned) — FQ4 (cycle 26): what a single day is called. "Today"
+ *  and "Yesterday" only when the day IS today or the calendar's yesterday;
+ *  any other day by its weekday and date ("Fri Nov 13"). The Yesterday preset
+ *  lands on the previous WORKDAY, so on a Monday the hero read "Yesterday"
+ *  over Friday's calls — the Dashboard card already named the day. */
+function mDayLabel_(dateIso, todayIso, calYesterdayIso) {
+  var d = String(dateIso || '');
+  if (d && d === todayIso) return 'Today';
+  if (d && d === calYesterdayIso) return 'Yesterday';
+  var dt = new Date(d + 'T12:00:00Z');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(dt.getTime())) return d;
+  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()] + ' ' +
+    ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getUTCMonth()] + ' ' + dt.getUTCDate();
+}
 function mLoadMyStats_(opts) {
   opts = opts || {};
   var requestedView = currentView;
@@ -710,7 +724,11 @@ function mLoadMyStats_(opts) {
   M_STATE.myCache = M_STATE.myCache || {};
   var cached = M_STATE.myCache[key];
   var painted = false;
-  if (!opts.force && cached) {
+  // FQ5 (cycle 26): Refresh (`force`) took the loader branch, so a refresh
+  // that then FAILED replaced the last-good view with an error card — the one
+  // path F56's "keep what is painted" did not cover. The refetch below always
+  // runs; a same-key payload stays on screen behind the pill until it answers.
+  if (cached) {
     mRenderMyStats_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -783,9 +801,7 @@ function mRenderMyStats_(data) {
   // Single-day label is honest about WHICH day (the preset now lands on the
   // previous workday, and Custom can pick any day — a hardcoded 'Today' lied).
   var periodLabel = isRange ? (esc(data.from) + ' → ' + esc(data.to))
-    : (data.date === mTodayIso_() ? 'Today'
-      : data.date === mPrevWorkdayIso_() ? 'Yesterday'
-      : esc(data.date || ''));
+    : esc(mDayLabel_(data.date, mTodayIso_(), mDaysAgo_(1)));
 
   // No CDR data → minimal fallback (per S43)
   if (!c) {
@@ -882,6 +898,9 @@ function mRenderMyStats_(data) {
   }
   html += mRailRow_('Calls answered', c.totalAnswered, 'good', null,
     { values: trend.map(function (t) { return t.answered; }) });
+  // FQ8 (cycle 26): a range's sparklines are the rep's raw daily counts — a
+  // partial day in it is named here (their own days only; never a reason).
+  html += mPartialDaysRowHtml_(data.partialDays);
   html += mRailRow_('Missed', c.totalMissed, c.totalMissed > 0 ? 'warn' : 'good',
     c.totalMissed > 0 ? c.totalMissed + ' calls unanswered' : 'no missed calls',
     { values: trend.map(function (t) { return t.missed; }), tone: 'warn' });
@@ -1061,6 +1080,12 @@ function mKpiTrendCard_(def, series) {
     mPartialNoteHtml_(series) +
   '</div>';
 }
+/** PURE — FQ8: the range view's row for the rep's partial days, '' with none. */
+function mPartialDaysRowHtml_(days) {
+  var d = (days || []).filter(function (x) { return x && x.credit != null && isFinite(x.credit); });
+  if (!d.length) return '';
+  return mRailRow_('Partial days', d.length, mPartialDaysText_(d.map(function (x) { return { date: x.date, partial: x.credit }; }), 6));
+}
 /** PURE — Batch PD: the rep's partial days on a trend card, as TEXT under the
  *  chart (the chart itself is decorative): "Partial day: Nov 10 (0.5 day)".
  *  Newest first, at most four named. '' when no point is marked. The count on
@@ -1068,14 +1093,20 @@ function mKpiTrendCard_(def, series) {
 function mPartialNoteHtml_(series) {
   var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
   if (!pts.length) return '';
+  return '<div class="m-kpi-note">' + esc('Partial day' + (pts.length === 1 ? '' : 's') + ': ' + mPartialDaysText_(pts.slice().reverse(), 4)) + '</div>';
+}
+/** PURE — the days as words, in the order given, at most `max` named:
+ *  "Nov 12 (not counted), Nov 10 (0.5 day), +2 more". One text for the trend
+ *  card's note and the range view's row. */
+function mPartialDaysText_(pts, max) {
   var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var names = pts.slice().reverse().slice(0, 4).map(function (p) {
+  var names = (pts || []).slice(0, max).map(function (p) {
     var dt = new Date(String(p.date) + 'T12:00:00Z');
     var lbl = isNaN(dt.getTime()) ? String(p.date) : MON[dt.getUTCMonth()] + ' ' + dt.getUTCDate();
     return lbl + ' (' + (Number(p.partial) === 0 ? 'not counted' : String(Math.round(Number(p.partial) * 100) / 100) + ' day') + ')';
   });
-  var more = pts.length - names.length;
-  return '<div class="m-kpi-note">' + esc('Partial day' + (pts.length === 1 ? '' : 's') + ': ' + names.join(', ') + (more > 0 ? ', +' + more + ' more' : '')) + '</div>';
+  var more = (pts || []).length - names.length;
+  return names.join(', ') + (more > 0 ? ', +' + more + ' more' : '');
 }
 /** Own (accent) + team-avg (muted dashed) over one shared scale. Both lines
  *  skip null points; the own series gets an end dot. */
@@ -1636,7 +1667,7 @@ function mLoadTeamMetrics_(opts) {
   M_STATE.teamCache = M_STATE.teamCache || {};
   var cached = M_STATE.teamCache[key];
   var painted = false;
-  if (!opts.force && cached) {
+  if (cached) {   // FQ5: Refresh keeps what is on screen until the read answers (see mLoadMyStats_)
     mRenderTeamMetrics_(cached.data);
     if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(true);
     painted = true;
@@ -1683,6 +1714,18 @@ function mTeamCallRowsHtml_(t, multiDay) {
   }
   return mRailRow_('Rung', t.rung) + mRailRow_('Answered', t.answered, 'good') +
     mRailRow_('Missed', t.missed, t.missed > 0 ? 'warn' : 'good') + mRailRow_('Total talk', t.tttFormatted);
+}
+/** PURE — FQ3 (cycle 26): the Team rail's Transfers row. With no listed rep
+ *  holding a transfer row there is no transfer figure: nothing at all beside
+ *  "Calls —" (that row already says the day is not in), and "—" with the
+ *  reason when the calls are in and the transfers are not. It drew
+ *  "Transfers 0". `hasTransferData` absent (an older payload) draws as before. */
+function mTeamTransferRowHtml_(t, multiDay) {
+  if (t.hasTransferData === false) {
+    if (t.hasCallData === false) return '';
+    return mRailRow_('Transfers', '—', 'no transfer data for this ' + (multiDay ? 'range' : 'day'));
+  }
+  return mRailRow_('Transfers', t.transferred, t.transferPct != null ? t.transferPct + '% of calls' : null);
 }
 function mRenderTeamMetrics_(data) {
   var el = document.getElementById('m-team-content');
@@ -1770,8 +1813,7 @@ function mRenderTeamMetrics_(data) {
   // (INV-175: a failed auxiliary read must not render as "0 transfers");
   // transferPct is null without its own-sheet denominator (INV-129).
   if (data.transferMeta && data.transferMeta.available && t.transferred != null) {
-    html += mRailRow_('Transfers', t.transferred,
-      t.transferPct != null ? t.transferPct + '% of calls' : null);
+    html += mTeamTransferRowHtml_(t, multiDay);
   }
   // M1 — the team's outbound calls (named when the tab could not be read).
   var om = data.outboundMeta || null;
@@ -1962,6 +2004,18 @@ function mRenderTeamMetrics_(data) {
       }).join('; ')) +
       (data.likelyMismatches.length > M_NAME_CAP
         ? ' <em>+' + (data.likelyMismatches.length - M_NAME_CAP) + ' more</em>' : '') +
+      '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
+  }
+
+  // FQ7 (cycle 26): the same pairing for the Outbound Calls tab — a rep whose
+  // outbound calls sit under another spelling had no line anywhere.
+  var obLikely = (data.outboundMeta && data.outboundMeta.likelyMismatches) || [];
+  if (obLikely.length > 0) {
+    html += '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' +
+      icon('warning', 14) + ' ' + obLikely.length + ' likely outbound name mismatch' + (obLikely.length === 1 ? '' : 'es') +
+      ' — these reps’ outbound calls are probably missing from this table: ' +
+      esc(obLikely.slice(0, M_NAME_CAP).map(function (m) { return m.cdr + ' → ' + m.roster; }).join('; ')) +
+      (obLikely.length > M_NAME_CAP ? ' <em>+' + (obLikely.length - M_NAME_CAP) + ' more</em>' : '') +
       '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
   }
 

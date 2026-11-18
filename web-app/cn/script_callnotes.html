@@ -12672,9 +12672,20 @@ function cnPartialDaysFact_(pd) {
 }
 function cnPartialDaysFindings_(add, pd) {
   if (pd.source === 'sheet') {
-    add('cdrPartialDays', 'cdr', 'ok', 'Partial days from the CDR Report',
-      pd.marks + ' mark' + (pd.marks === 1 ? '' : 's') + ' for ' + pd.agents + ' agent' + (pd.agents === 1 ? '' : 's') +
-      (pd.offRoster > 0 ? ' — ' + pd.offRoster + ' for agents not on this roster (another department\u2019s, or a name that needs an Agent Alias Overrides row)' : ''));
+    // FQ9 (cycle 26): a marked agent whose name PAIRS with a roster name is a
+    // colleague spelled differently in the tab — their partial days are not
+    // being applied. A warning that names the pair and clears with the alias
+    // row; the bare "not on this roster" count stays a fact (g02).
+    var likely = pd.likely || [];
+    if (likely.length) {
+      add('cdrPartialDays', 'cdr', 'warn', likely.length + ' marked agent' + (likely.length === 1 ? '' : 's') + ' not matched to the roster',
+        likely.map(function (m) { return m.cdr + ' (Partial Days) → ' + m.roster + ' (roster)'; }).join(' · ') + ' — their partial days are not applied',
+        'Add a row to the CDR Report’s Agent Alias Overrides tab for each name; it is read again within a couple of minutes.');
+    } else {
+      add('cdrPartialDays', 'cdr', 'ok', 'Partial days from the CDR Report',
+        pd.marks + ' mark' + (pd.marks === 1 ? '' : 's') + ' for ' + pd.agents + ' agent' + (pd.agents === 1 ? '' : 's') +
+        (pd.offRoster > 0 ? ' — ' + pd.offRoster + ' for agents not on this roster (another department\u2019s)' : ''));
+    }
   } else if (pd.source === 'no-tab' || pd.source === 'empty') {
     add('cdrPartialDays', 'cdr', 'ok', 'No partial days marked',
       pd.source === 'no-tab' ? 'the CDR Report has no Partial Days tab yet — the Department Dashboard creates it when a day is first marked' : 'the Partial Days tab holds no mark');
