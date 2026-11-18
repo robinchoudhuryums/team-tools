@@ -248,7 +248,10 @@ not restate it. Server endpoints live in the fourteen server files
      incomplete day (counted up to two days before today, so a shift in
      progress is not flagged) and every pending time-off or punch-adjustment
      request dated inside the period. An open day inside the 30-day edit window
-     opens Day Edit; an older one is named as a hand-edit. The collapsed
+     opens Day Edit; an older one is named as a hand-edit. "Today" is the
+     manager's (the 8 am open-punch scan's frame), a day is "inside the window"
+     by the REP's own today — Day Edit's rule — and the caption names the
+     roster's timezone (cycle 26 F31; it was CONFIG.TIMEZONE and "Dates in IST"). The collapsed
      Periodic row says critical / warning / ready / check failed — a failed read
      never reads as ready. An offboarded rep whose punches the export still
      ships by ID is found too, labelled (`payrollSubjectId_`, F19), and Day Edit
@@ -264,7 +267,10 @@ not restate it. Server endpoints live in the fourteen server files
      (`payStmtAdjustments_`; a failed read is named). Manage Time's Live Status
      flags a clocked-in rep idle 30+ minutes — no app activity and no punch,
      scheduled breaks taken out — with an amber chip and a line under the card
-     (`liveIdleMin_`, INV-391; in-app only).
+     (`liveIdleMin_`, INV-391; in-app only). Since cycle 26 (F29) the time is
+     measured from the rep's last gesture (the pause flush reports it), the
+     chip says "about", and when the activity stamps cannot be read the card
+     says the check did not run instead of flagging everyone.
 
      **25post round 12 E2 (operator 2026-10-28): app activity and inferred
      punches.** Every presence ping (a real gesture, at most one per window per
@@ -665,6 +671,15 @@ summary row per rep per day (first and last activity, active minutes, the
 10-minute map), written nightly before the raw pings — now kept 14 days — are
 purged. Day Edit's activity strip reads the summary for any condensed day and
 says when a day predates what was kept.
+
+**Cycle 26 Batch 9:** Day Edit suggests a Clock In / Out from app activity only
+once the day's own punches have loaded (F16). A block's clicks and keystrokes
+are drawn only beside a ping — that block or the one either side — and capped
+per block; counts sent for blocks with nothing beside them are counted and
+said, not drawn (F27). A row the activity log could not write is counted
+(`ACTIVITY_LOG_FAILS`), reported on Admin → System for 48 hours and named on
+the day's panel (F30). A day is condensed once it ended more than six hours
+ago, so counts that arrive late are in its summary.
 
 **Batch B (operator 2026-11-02):** a department email's send tags its note:
 - Close Order `close-<reason>`, through `CLOSE_REASON_TAGS`.

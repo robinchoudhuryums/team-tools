@@ -4089,3 +4089,31 @@ F53, F54, F57.**
   old stylesheets against `shoot.mjs --ci`.
 - **One NO BITE, fixed:** listing the same pair twice passed the self-check;
   it asserts the pair is listed once now, and that mutation bites.
+
+## Cycle 26 Batch 9 — Time Clock (2026-11-18)
+
+- **Ten pure pins, two DOM drives.** F16 (the renderer over every state, and
+  the page's one state variable by source), F26 (the F58 net one hop down:
+  derived over every private helper that takes the project lock and every
+  public function that reaches one; driven with `LockService` throwing), F27
+  ×2 (the day view, the condense, both readers), F29 ×2, F30 ×3 (the
+  endpoints, counter and views; the page's restore; the condense window and
+  the purge), F31 (the endpoint over rosters in one zone and three).
+- **Thirteen older pins encoded what changed** and were updated with the
+  fix: the shared activity sandboxes (`e2aCtx_`, `gCtx_`) gained the new
+  helpers and a `PropertiesService` stub; three fixtures had counts with no
+  ping anywhere near them — exactly the shape F27 stops drawing — and gained
+  the ping a real window would have sent; the flush pin's "no cache at all"
+  became "never the presence key"; the pay-close fixture reads
+  `fmtDateTz_`; the health fixtures gained `activityLogFails`.
+- **A fixture that only works because of the defect.** The AC1 condense pin
+  asserted that a count for 23:50, sent after midnight with no ping since
+  17:00, was kept. Under the old code that was a feature; it is also what a
+  fabricated send looks like. Fixtures for a rule about plausibility have to
+  be plausible (g116's twenty-third direction, from the other side).
+- **Three cases were added to the new pins before bite-checking** because
+  writing the mutations showed lines no test would fail on: the morning-after
+  edge in the raw reader, `roster[].todayIso` (every rep in the first fixture
+  shared the manager's day), and the team table's lost-rows note.
+- **Bite-checks: 81 mutations, 81 bit** — pure in two streams, DOM through
+  `bite.sh --dom --only`.

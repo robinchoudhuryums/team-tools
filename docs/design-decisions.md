@@ -7137,6 +7137,66 @@ pick them up without re-deriving the context.
     button's own words (WCAG 2.5.3).
   INV-427; S186.
 
+- <a id="c26-batch-9-time-clock"></a>**Batch 9 (Time Clock): activity counts are kept beside a ping and judged at read; the idle time is from the last gesture and a failed check says so; lost activity rows are counted; a day is condensed once nothing more can arrive; the close card is in the manager's day (cycle 26, 2026-11-18).**
+  - **Counts are vetted where they are READ, not where they are written
+    (F27).** The alternative was to refuse, at `recordActivityCounts`, a block
+    with no ping near it. That needs a read of the rep's recent rows on every
+    send — on the one path that is deliberately read-free and lock-free,
+    because every rep's gestures go through it — and it would protect only
+    rows written after the deploy. The readers and the nightly condense
+    already hold a day's pings beside its counts, so the rule costs nothing
+    there and also applies to what is already stored, including summaries
+    condensed before it (judged by their own block map). The rule itself —
+    a ping in the block or the one either side — follows from how the page
+    works: a window pings at its first gesture after a ten-minute gap, so any
+    counted gesture has that window's ping within the ten minutes before it;
+    the block after allows for a client clock a few minutes off the server's
+    block boundaries. A ping's time is the server's and cannot be back-dated.
+    What a rep can still do is inflate counts in blocks where they really
+    were present, up to the per-block cap; that is why the cap is on the
+    block's total and the bars are captioned "context, not a score".
+  - **Blocks that were not drawn are said.** A filter that silently hides
+    what it rejects would make a lost ping row look like a quiet rep. Day Edit
+    says how many blocks' counts had nothing beside them. It does not say
+    why: a fabricated send and a ping row that failed to write look the same,
+    and F30's note covers the second.
+  - **The idle stamp follows the gesture, and only forward (F29).** The pause
+    flush already fires two minutes after a rep stops; it now says when the
+    last gesture was. It sends that as a time on the client's clock beside its
+    own send time, and the server uses only the difference, so a wrong clock
+    cancels out. The stamp is moved with a read-then-write on the cache
+    (another window's later ping must not be undone); it is a cache stamp
+    read once per dashboard load, so a lost race costs a minute of precision.
+    The flush still never writes the 30-minute presence key — that rule (a
+    flush is not a gesture) is why the idle stamp is a separate key.
+  - **A failed idle check gives NO verdict, and says so.** "Fail toward no
+    flags" alone would leave an empty line that reads "nobody is idle".
+  - **The lost-row counter is a Script Property, read like
+    `DIGEST_DELIVERY_LOG_FAILS` (F30).** One key, bounded, lock-free, written
+    only on a failure. It records first and last failure and a count; it does
+    not know about successes, so Automation Health reports it for 48 hours
+    after the latest and then lets it age out, and a day's view shows it only
+    when the failures' span touches that day.
+  - **The condense waits six hours past midnight (F30).** That is
+    `ACTIVITY_COUNTS_MAX_AGE_MS`, the age up to which the server still takes
+    a block — one constant, so the two cannot drift. At the usual 2 am run
+    this condenses a day one night later than before; nothing reads the
+    difference (a day not yet summarised is read from the raw rows, which are
+    kept 14 days).
+  - **The close card: the manager's today for the periods, the rep's for
+    "editable" (F31).** Periods and "checked through" are the manager's
+    question and share the 8 am scan's frame. Whether a day can still be
+    opened in Day Edit is the server's rule, which is the rep's own today — so
+    the card asks the same question the click will.
+  - **Day Edit's state is three-valued and defaults to "not loaded" (F16).**
+    A boolean would have conflated "still loading" with "failed", and they
+    need different words. The renderer suggests only on an explicit
+    `'loaded'`, so a caller that forgets to say gets the safe behaviour.
+  - **The lock gate went into the helpers, not the wrappers (F26)** — two
+    wrappers share `punchAdjustDecideAll_`, and a third would have inherited
+    the defect. The pin checks either placement.
+  INV-428; S187.
+
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

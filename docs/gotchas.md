@@ -605,6 +605,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   count in the script cache — a window that does not slide, the same thing
   once — failing OPEN when the cache cannot be read. Verify: the two F52 pins.
 
+  **AMENDED (cycle 26 F26): one hop down.** F58's net derived its set from
+  PUBLIC functions that call `waitLock` themselves. `recordPunch` does not —
+  it calls `recordPunchCore_`, which does — and `updatePunchAdjustStatus` /
+  `…Bulk` call `punchAdjustDecideAll_`. Both helpers took the lock and THEN
+  read the caller, so a signed-in domain user who is not on the roster, or any
+  rep calling a manager endpoint, waited up to 15 s on the one project lock
+  and then held it through a roster read, in front of every punch. The gate
+  still refused; the rule was about who waits. Both helpers read the caller
+  first now (in the helper, so both wrappers are covered at once), and the
+  decide helper refuses a bad status before the lock too. The F26 pin follows
+  the hop: every private helper that takes the project lock, and every public
+  function that reaches one, must be gated before the lock — by the helper
+  ahead of its lock, or by the wrapper ahead of the call (`getEmployeeInfo_`,
+  `assertManagerCaller_` or the suite's `_assertSuiteCaller_`). A new wrapper
+  with no gate over a locking helper fails it.
+
 <a id="g18-normalizetype-strips-the-adj-prefix"></a>
 
 - **`normalizeType_` strips the `ADJ-` prefix.** Adjustments are
@@ -1686,6 +1702,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   what the app writes into Team Tools' tabs. Verify: the F53 pin, which runs
   with real timezones and a clock set to 1 pm Central.
 
+  **AMENDED (cycle 26 F31): the pay-period close card was a third frame.**
+  `getPayPeriodClose` computed today with `fmtDate_` — CONFIG.TIMEZONE, India
+  — while `checkOpenPunches`, which shares its grace constant, uses the
+  manager's timezone. From about 12:30 pm Central the card was a day ahead: a
+  period was "(just ended)" on its last afternoon, the card and the 8 am scan
+  disagreed about which days were open, and a day exactly thirty days back was
+  "past the 30-day edit window: hand-edit the Timesheet" while Day Edit, which
+  judges by the REP's own today, still took it. And it captioned the list
+  "Dates in IST" — the dates are Timesheet dates, each in that rep's roster
+  timezone. Today is the manager's now; `editable` is judged by each rep's own
+  today (`roster[].todayIso`), which is what Day Edit will do with the click;
+  and the caption names the roster's zone when there is one, says "each date
+  is in that person's own timezone" when there are several, and claims nothing
+  otherwise. Three frames, as the family heading says — the fix was to name
+  which one each number is in.
+
 <a id="g52-the-test-roster-rows-keep-their-fixture"></a>
 
 - **The TEST roster rows keep their FIXTURE timezones, and setup restores them
@@ -1937,6 +1969,31 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   copy, the contents and the text on screen. Verify: the three F47 DOM drives
   and the F55 kept-copy drive; the visual scenarios `handbook-failed-light-wide`,
   `handbook-saved-failed-light-mobile` and `handbook-stale-dark-mobile`.
+
+  **AMENDED (cycle 26 F30): the activity record could fail without a trace.**
+  Every gesture ping appends a row to ActivityLog, best-effort: the presence
+  stamp must not depend on its record. But "best-effort" was `console.warn`
+  and nothing else. `recordPresence` returned `success: true` whether or not
+  the row was written; `recordActivityCounts` returned `success: false`
+  through a success handler that ignored its argument. So the counts in a lost
+  row were gone (the page only put them back when the CALL failed), and if
+  appends kept failing — a protected tab, the workbook at its cell limit —
+  Day Edit and Team Punches read "No app activity recorded" for everyone,
+  indefinitely, with nothing anywhere saying why. Now: both endpoints return
+  `logged`; the page restores a send's counts on `logged: false`
+  (`actSent_`), dropping blocks the server would refuse as too old; each lost
+  row increments `ACTIVITY_LOG_FAILS` (the DigestDeliveries counter's shape);
+  Automation Health reports it for 48 hours after the latest; and the two
+  activity views name it on a day the failures touch — "none recorded" is
+  then not "none happened". The counter does not know about later successes,
+  which is why it ages out rather than clears.
+  The same batch found two quieter losses in the nightly condense: a day was
+  summarised at 2 am although the server still takes a block up to six hours
+  old, so an evening's counts arriving at 2:30 were decoded and then skipped
+  for ever (a day is now condensed only once it ended more than that long
+  ago); and a counts-only row sent just after midnight on a day the rep never
+  pinged was keyed for purging by its own day, which is never summarised — it
+  is purged by the days of the blocks it names.
 
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
@@ -2428,6 +2485,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   failed silently left a form whose Save would wipe the day; it now disables
   Save and says "reopen to retry". Apply the same two guards to any modal that
   prefills asynchronously. Pinned by the Day Edit DOM test.
+
+  **AMENDED (cycle 26 F16): a suggestion is a read of the form, too.** Day
+  Edit opens with two reads — the day's punches (the prefill) and the rep's
+  app activity (the suggestion panel) — and either can land first. The panel
+  offers "In 7:56 AM [Apply]" for a slot the day left EMPTY, and it decided
+  "empty" by looking at the inputs, which are blank until the punches arrive.
+  With the activity first, Apply was offered over a real 08:00 Clock In;
+  applying marked the slot touched, so the prefill (rightly, by the rule
+  above) skipped it, the 08:00 was never shown, and Save rewrote the punch to
+  07:56, marked Inferred. The prefill was correct and the user's action was
+  respected — the defect was a THIRD reader of the same fields that did not
+  know they were unfilled. The state of the punches read now rides the panel
+  (`_dePunches`: loading, loaded, failed): nothing is suggested, and Apply
+  itself refuses, until it is `loaded` for this open. A day with no Timesheet
+  row is `loaded` too (known empty), and the panel is redrawn when it lands.
+  The pure renderer treats anything but `'loaded'` — including "not said" — as
+  "do not suggest": the safe direction is the default.
 
 <a id="g69-location-reload-reloads-the-iframe-not-the"></a>
 
@@ -4928,6 +5002,27 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   no meta at all has flagged nothing — that is an answer, not a failure.
   Verify: the F47 changelog pin (the control: a flagged change asks again).
 
+  **AMENDED (cycle 26 F29): "could not read the stamps" is not "no stamps".**
+  The idle alert measures a clocked-in rep from the later of their last punch
+  and their last gesture (a six-hour cache stamp). `presenceLastTimes_` caught
+  a failed `getAll` and returned `{}`, and its own comment said the rule would
+  then "measure from the last punch" — for EVERY rep. At 3 pm the manager's
+  card read "N reps have been idle 30+ min", each "idle 2 h 30 min", because
+  the cache had a bad moment. Its sibling `presenceMap_` fails toward no
+  flags; this failed toward flagging everyone. It returns `null` now, the live
+  view gives no idle verdict at all, and the card says "Idle time could not be
+  checked just now" — an empty line would read "nobody is idle" (g53). A rep
+  with no stamp in a read that WORKED is still measured from the last punch:
+  that is the documented rule, and after six hours it is true.
+  The other half was precision. The stamp was written only by the presence
+  ping, at most once per ten minutes per window, so a rep active 10:00–10:09
+  was "idle 30 min" at 10:30 after 21. The pause flush now carries the time of
+  the last gesture counted (`last`, on the client's clock beside its `at`, so
+  only the difference is used and a wrong clock cancels out) and moves the
+  stamp forward — only that stamp, never the 30-minute presence one, and never
+  backwards. A window that closes before its flush still leaves the stamp up
+  to ten minutes old, so the chip says "about" and says why.
+
 <a id="g129-never-cache-a-failure-as-a-value"></a>
 
 - **Never cache a FAILURE as a value (Batch 2 of the 2026-09-17 /broad-scan,
@@ -6764,6 +6859,27 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   of any allowlist: who wrote the list? Fires when you whitelist input against
   a list, or call a payload safe because it is validated. Verify: the KB-2
   drive (`kbGetFacetGuidance` end to end).
+
+  **AMENDED (cycle 26 F27): a count a page sends about its own user.** AC1's
+  activity levels are clicks and keystrokes per 10-minute block, counted in
+  the browser and sent with the next ping or after a pause. The server
+  validated the SHAPE — integers, a per-send cap, blocks within the last six
+  hours (a laptop asleep sends late) — and that validation read as safety.
+  But any block of six hours was accepted whether or not the rep had been
+  there, and the cap was per send: a rep back from two hours away could call
+  `recordActivityCounts` from the console with counts for the whole gap, as
+  many times as they liked, and the manager's bars showed steady work across
+  it. A rep cannot back-date a PING (its time is the server's, and it is what
+  first/last and the suggested punches use). So the counts are now believed
+  only beside one: a block's counts are drawn when a ping sits in that block
+  or the one either side, and a block's total is capped over every row. A
+  window that counts a gesture has always pinged within the ten minutes
+  before it, so real counts lose nothing; the ±1 allows for a client clock a
+  few minutes off the server's block boundaries. It is judged where the pings
+  are already in hand — the two readers and the nightly condense — not on the
+  write, which is the hot path and reads nothing; so it also holds for rows
+  and summaries stored before the rule. Blocks that were not drawn are
+  counted and said on Day Edit, never silently dropped.
 
 <a id="g168-an-important-on-root-loses-to-a-declaration-on-body"></a>
 

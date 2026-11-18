@@ -2373,7 +2373,14 @@ entry says which it is.
   each person used the app, block by block — use of this app only, so a call
   or work in another program looks idle.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
-  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Nothing
+  activity and inferred punches (25post round 12 E2, 2026-10-28).** **Since
+  cycle 26 (F30)** a row that cannot be written is counted in the auto-managed
+  Script Property `ACTIVITY_LOG_FAILS` (`{count, firstMs, lastMs, lastError}`).
+  Admin → System lists it for 48 hours after the latest failure, and Day Edit
+  and Team Punches say so on a day the failures touch. If it appears: check
+  the tab exists, is not protected against the deploying account, and that the
+  ADP workbook is not at its cell limit. It ages out on its own; delete the
+  property to reset the count. **Nothing
   to set up:** the tab is auto-provisioned on the first presence ping after
   the deploy. Columns: Timestamp (CONFIG.TIMEZONE) · EmpId · Ms (epoch
   milliseconds — the column Day Edit searches). One row per presence ping —

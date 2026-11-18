@@ -11,6 +11,33 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-18 — Cycle 26 Batch 9 (Time Clock)
+
+**Adds one auto-managed Script Property, nothing to set:** `ACTIVITY_LOG_FAILS`
+(appears only if an activity row cannot be written). Deploy Team Tools
+(`clasp push -f` + New version). The handbook app is not touched.
+
+- **Day Edit:** the "Suggested from app activity … Apply" line waits until the
+  day's punches have loaded. Before, on a slow load it could be offered over a
+  punch that was about to appear, and applying replaced that punch.
+- **App activity bars:** clicks and keystrokes are drawn only next to real app
+  activity (a ping within about ten minutes). Counts sent for stretches with
+  none are not drawn, and Day Edit says how many blocks that was. A day's
+  summary keeps the same.
+- **Idle chip:** timed from the rep's last click or key press, not from the
+  last ten-minute ping — it could show "idle 30 min" up to ten minutes early.
+  If the check cannot run, the card says so instead of showing the whole team
+  idle.
+- **If the activity log cannot be written** (a protected tab, a full
+  workbook), Admin → System now lists it and Day Edit says activity may be
+  missing; before, the day just read "No app activity recorded".
+- **Pay Period Close:** "today" is yours (it was India's, a day ahead every
+  afternoon), a day exactly 30 days back is still a Day Edit button, and the
+  caption says "Dates in CST." rather than "Dates in IST".
+- **Not visible:** a refused caller no longer waits on the app's one lock when
+  punching or deciding adjustments; the nightly activity summary waits six
+  hours past midnight so late counts are included.
+
 ## 2026-11-17 — Cycle 26, the second pass over the Batch 8 follow-ons
 
 **Adds NO operator state.** Deploy BOTH apps when convenient: Team Tools
