@@ -589,6 +589,16 @@ lighter `--warn-fill`.
   Resolution, and find in the page.
 - **Shortcut:** Ctrl/⌘+Shift+S opens or closes it from any page.
 
+**Cycle 26 Batch 11 (F58): the Scratchpad keeps what was typed.** Unsaved
+text is held per page, so switching page while a save is running no longer
+loses the last lines; a refresh that answers late never paints older text
+over newer; a page that will not open offers "Try again". Unsaved text is
+also kept in the browser (for the account that typed it, up to 24 hours) and
+restored after a reload — saved once the page is confirmed unchanged, or put
+on a "Recovered text" page if it was changed elsewhere. **F59:** an unsaved
+call note from another window that the rep answered "Not now" to is kept and
+offered again, instead of being replaced by the next keystroke.
+
 The server allowlist and the client sanitizer were widened together. A link
 keeps only an http(s) href.
 

@@ -4360,3 +4360,37 @@ F53, F54, F57.**
   `Visual Audit Stage` heading twice in `.cycle/config.md` (its inserted block
   carried the heading it was inserted before). No check reads for a doubled
   heading; this batch's script tripped on it and it was removed.
+
+## Cycle 26 Batch 11 — Shell and Call Notes client, F58–F63 (2026-11-19)
+
+- **Pure harness: seven pins.** The Scratchpad's next-page rule; its mirror
+  (blob, read, verdict) over other accounts, the TTL and both stamp orders;
+  the parked-draft list; the tour's wait verdict with its three structural
+  hooks; the reminder's signature and validity; the dialog layer read from
+  four partials, with a sweep for the unread `danger: true`; the three
+  modals' guards, their `saved` closes counted, and the Adjust rule driven.
+- **DOM harness: ten drives.** Four for the Scratchpad (a switch mid-save
+  with typing on both pages; a refresh that answers after a save; a page
+  that will not open, retried; a reload — restored, saved, moved aside on a
+  changed page, another account's left alone). One each for the parked
+  draft, the tour (a loader held for forty polls, the cap by a moved clock,
+  the trap, the usage log), the stale reminder (in this window and in
+  another), the unsaved-note dialog with view-as, the delete confirm, and
+  the three modals.
+- **Older pins updated:** four pure (the accessible-name scan — the three
+  static dialogs now name themselves at the call; the Scratchpad's
+  failure-shape and failed-save checks; the counts row; the discard guard's
+  first line) and two DOM (the reminder drive answers the state read; the
+  Day Edit save's close).
+- **Harness facts that shaped the drives:** `clearTimeout` is a no-op and
+  `flushTimers` runs one generation of timers, so a held loader is forty
+  flushes; jsdom reports every rect as 0×0, so "visible" is a stubbed
+  `getBoundingClientRect`; a first-run tour takes Escape for itself, so a
+  drive that presses Escape marks the tour seen first.
+- **Visual:** two scenarios — the Scratchpad's New page prompt (light) and
+  Delete page confirm (dark) in the 480×800 pop-out; both read.
+- **Bite-checks: 82 mutations (35 pure, 47 DOM), each biting — four only after
+  a pin or a drive was strengthened:** a recovered page that is not on screen;
+  a clean tour run after one that gave up; the waiting card's 1.5 s threshold;
+  and a pure pin whose lazy regex ran past its function to the next match in
+  the file (the DOM drive had caught the same mutation).

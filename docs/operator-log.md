@@ -11,6 +11,33 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 Batch 11: Shell and Call Notes client (F58–F63)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version) and
+`npm run handbook:push` (its copies of the shell and the stylesheet changed).
+
+- **Scratchpad (F58):** switching page while it is saving no longer loses the
+  last lines typed. Unsaved text survives a reload: a notice at start-up says
+  so, and opening the pad restores it. If that page was changed on another
+  computer in between, the text is put on a new page called "Recovered
+  text". A page that fails to open has a "Try again" button.
+- **Call notes (F59):** answering "Not now" to "Restore an unsaved call
+  note?" now keeps that note — it is offered again the next time Call Notes
+  loads, for 24 hours.
+- **Tour (F60):** it waits for a slow page instead of skipping its step, and
+  no longer counts as visits in Feature usage.
+- **Reminders (F61):** a "Lunch out" button on an old reminder no longer
+  records a second lunch. The dialog for a call note that did not save now
+  says that, not that the clipboard was blocked. Switching View as keeps the
+  What's-new star and the nav badges.
+- **Dialogs (F62):** the Scratchpad's New page / Delete page dialogs appear
+  above the pad; Delete is the red button.
+- **Three forms ask before discarding (F63):** Request Punch Adjustment,
+  Edit Day and Add time off ask "Discard changes?" before Escape, Cancel or
+  a click outside loses typed work.
+- **Browser storage:** two new keys, `umsScratchUnsaved` and
+  `umsCallNotesParkedDrafts` — unsaved text only, 24 hours.
+
 ## 2026-11-19 — Cycle 26 decisions, third round (DT1)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

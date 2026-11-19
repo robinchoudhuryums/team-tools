@@ -7465,6 +7465,37 @@ pick them up without re-deriving the context.
     Confirm button stays on the pay statement (the other rep surfaces do not
     show the Inferred mark); no "confirm all"; no per-day figure on the Team
     rail; the Dashboard's Department card is not adjusted for partial days.
+- <a id="c26-batch-11-shell-and-call-notes"></a>**Batch 11 — the Scratchpad keeps unsaved text per page and in the browser; a declined draft is parked; the tour waits on a loading view; a reminder's punch is tied to the punches it saw (cycle 26 F58–F63).**
+  - **Per page, not per pad (F58).** The fix could have been narrower — stop
+    the draining save from re-reading the editor — but the slot would still
+    hold one page's text, and typing on a second page while the first's
+    waits is exactly what a rep does. `pending` by page id removes the
+    question of which page a text belongs to. The single session copy
+    (`cache`) is unchanged: it is a paint-at-once convenience, not the
+    record.
+  - **The mirror is settled, not trusted.** Text kept across a reload may be
+    older than the server's copy (the same rep, another computer). It is
+    shown at once — losing sight of it would be the worse failure — but not
+    saved until its page is read, and the test is the page's own stamp, not
+    a time: "is the server copy the one this was typed on top of?" If not,
+    the text goes to a "Recovered text" page; nothing is overwritten and
+    nothing is dropped. The mirror holds unsaved text only, so a saved pad
+    leaves nothing at rest in the browser.
+  - **Parking, not a second slot per window (F59).** One parked draft per
+    originating window, the three newest, 24 hours. It bounds what two live
+    windows can pile up, and "Not now" becomes a real answer: kept, and
+    offered again.
+  - **The tour waits on the view's own loader (F60).** `renderLoading` is the
+    one full-view loader every tool uses, so "is it visible" is the loaded
+    signal the tour needed and nothing had to be added to the views. A run
+    that had to give up on a step is offered again rather than stamped — the
+    point of the stamp is that the rep saw the tour.
+  - **A reminder asks the server before it punches (F61).** One extra read on
+    a click that writes payroll. The signature (day, count, last punch) is
+    what makes a second lunch refusable when the state machine allows it.
+  - **Chosen dirt for the three static modals (F63).** See the amendment
+    under g166 — "any input" would have asked about a date pick or the time
+    the Adjust modal opens with.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

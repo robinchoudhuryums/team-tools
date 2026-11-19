@@ -511,6 +511,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   "denied" about a time that IS confirmed. Approval writes what the manager's
   own Confirm as is writes: column J, and a PunchConfirm audit row.
 
+  **AMENDED (cycle 26 F61): a reminder's punch is for the punches it saw.**
+  A reminder toast is sticky and carries the punch as a button. The click
+  re-checked that the punch was ALLOWED — but Lunch out is allowed again
+  once the rep is back from lunch (a second break is legal), so a lunch
+  reminder left on screen through lunch recorded a second one. And "where
+  the rep is" was this window's own copy: a lunch punched in the main window
+  left the pop-out's reminder live. The button now carries a signature of
+  the day's punches as offered (`remindPunchSig_` — the day, the count, the
+  last punch); the click asks the server for the rep's state first and
+  punches only when that signature is unchanged. A failed ask judges on what
+  the window has.
+
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
@@ -2448,6 +2460,19 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and the counter: paper has no Next. Pinned by the 2026-10-19 slideshow pin,
   which reads the rule inside the one block.
 
+  **AMENDED (cycle 26 F58 + F59): two keys that hold a rep's words.**
+  `umsScratchUnsaved` mirrors the Scratchpad's UNSAVED text only — a reload
+  or a closed tab inside the autosave's 800 ms, or after a failed save, used
+  to lose it. It is keyed to the account that typed it (another account on
+  the same computer neither sees nor removes it), removed the moment the
+  text is saved, and dropped after the sticky draft's 24 hours. On the next
+  open the text is shown at once but saved only after its page has been
+  read: if the page's server stamp is still the one the text was typed on
+  top of, it is saved; if the page was saved from somewhere else since, the
+  text goes onto a new "Recovered text" page. The comparison uses two SERVER
+  stamps — a computer clock that is off cannot decide it.
+  `umsCallNotesParkedDrafts` is the parked call-note drafts (g86).
+
 <a id="g113-read-the-server-through-serversource-never-by"></a>
 
 - **Read the server through `serverSource()` — never by FILENAME, and never by
@@ -3084,6 +3109,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   reader. "Could not tell whether you manage a team" is said, with Try again.
   Verify: the FO2 pin and DOM drive (the profile held on a gate).
 
+  **AMENDED (cycle 26 F58 + F60): an answer older than the screen, and a
+  wait that guesses.** The Scratchpad paints from its session copy and
+  refreshes behind it. A refresh asked for before the rep typed and saved
+  could answer AFTER that save, with the text as it was before — and it was
+  painted over the newer text, so the next keystroke saved the old text plus
+  one character. Each page has a `touched` count (a keystroke, a save
+  landing); a load compares it with the count when it was asked for, and an
+  answer the screen has moved past is neither painted nor kept as the
+  session copy. A page that will not open now offers "Try again" instead of
+  an empty, disabled pad.
+
+  The tour had the opposite mistake: it did not wait for an answer at all,
+  only for ~1.9 seconds. A view that took longer — any cold read — lost its
+  step, and the run then stamped the tour seen. The ~1.9 s now counts only
+  while the view is NOT showing its loader; a view still loading at 20 s is
+  given up on, and that run is not stamped.
+
 <a id="g82-cnrendersubforms-is-shape-keyed-via-host-dataset"></a>
 
 - **`cnRenderSubforms_` is shape-keyed via `host.dataset.shapeKey`.**
@@ -3208,6 +3250,26 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   draft, or one from before a reload (the two cannot be told apart), is offered
   (Restore / Not now), and a Restore into a form already typed into opens the copy
   dialog instead. Verify: the F40(e) (cycle 25) DOM drive.
+
+  **AMENDED (cycle 26 F59 + F58): one slot, and what gets written over.**
+  F40(e) made another window's draft something this window OFFERS. But the
+  slot still held one draft: after "Not now", the rep's next keystroke in
+  this window persisted this window's form into the slot, over the declined
+  one — and with it gone, it was never offered again. Before this window
+  writes the slot it now PARKS a draft that is another window's
+  (`umsCallNotesParkedDrafts` — one per originating window, its newest, the
+  three newest, the slot's own 24 hours). "Not now" parks at once and says
+  the note is kept; a parked draft is offered on the next Log enter that has
+  nothing foreign in the slot; Restore unparks; a window's own entry leaves
+  the list when its note is saved or cleared.
+
+  The Scratchpad had the same shape in memory: ONE `latest` / `latestPage`
+  pair for the text not yet saved. Type on page A while a save is in flight,
+  switch to B, and the save that drained re-read the editor — by then
+  showing B — and stored B's text; A's last typing was never sent. Typing on
+  B replaced A's waiting text outright. Unsaved text is now `pending`, by
+  page id, kept until a save of exactly that text lands; the editor is read
+  only as the page it shows; a save sends an off-screen page first.
 
 <a id="g87-voice-dictation-routes-audio-outside-the-baa"></a>
 
@@ -3421,6 +3483,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   count (Batch C) was built the same way from the start. Verify: the Batch E DOM
   drive.
 
+  **AMENDED (cycle 26 F61): what a re-render of the shell takes with it.**
+  View-as calls `renderShell`, which rebuilds the sidebar and the header.
+  Everything ADDED to them since boot went with the old nodes: the
+  What's-new star (rendered once, at boot) for the rest of the session, and
+  each poller's badge until that poller's next round. The switch now carries
+  across every child of a nav button the shell's own template does not write
+  — keyed by nav form and tool, so a badge whose tool the previewed role
+  cannot see goes nowhere — and re-renders the star.
+
 <a id="g100-modals-close-on-escape-through-their-close"></a>
 
 - **Modals close on Escape THROUGH their close hook — dynamic overlays
@@ -3534,6 +3605,16 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   deferred a tick, since a send re-renders the Log after the close; found again by id if
   rebuilt; never while another dialog is open, nor when focus already sits somewhere
   real. Verify: the F40 (cycle 25) composer-focus DOM drive.
+
+  **AMENDED (cycle 26 F62): the layer above the overlay layer.** Two
+  non-modal panels sit above the overlays on purpose — the Reference drawer
+  (55) and the floating Scratchpad (56) — so a rep can read or type while a
+  modal is open. A confirm or prompt is not that kind of modal: it is the one
+  thing that must be answered, and the Scratchpad's own "New page" and
+  "Delete page" dialogs opened UNDER the pad (in the pop-out the pad covers
+  most of the window). `.overlay.ui-dialog` is 57. The same finding: the
+  delete confirm passed `danger: true`, which the dialog does not read — the
+  option is `tone: 'danger'` — and a pin now refuses the wrong spelling.
 
 <a id="g101-public-form-endpoints-have-no-employee-auth"></a>
 
@@ -5984,6 +6065,14 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   live button that said the reconcile was under way. The label and icon are
   restored on both paths.
 
+  **AMENDED (cycle 26 F61): the wrong cause on a failed save.** The dialog
+  that shows text "to copy by hand" was written for a blocked clipboard, and
+  says so: "This browser blocked the clipboard, so nothing was copied." It
+  is also where a call note that did not SAVE is put when it cannot go back
+  into the form — and that rep was told about a clipboard. The dialog takes
+  the reason from its caller now; the failed save says the note was not
+  saved and to log it again.
+
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
 - **A LEADING underscore is not private — `google.script.run` reaches every
@@ -7118,6 +7207,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   reader has left when the result arrives it is said in a sticky toast and the
   quiz list refreshed — it used to be dropped without a word. Verify: the F55
   net (pure) and the F55 "a quiz in progress" DOM drive.
+
+  **AMENDED (cycle 26 F63): the three static modals.** The punch-adjustment
+  batch, Day Edit and the manager's time-off form are nodes in `modals.html`,
+  not overlays `ensureOverlay` creates — and the "typed into since this
+  open" listener is attached only in the creation branch, so none of the
+  three could ever be dirty, and one Escape lost a filled Day Edit. Each now
+  opens with `unsaved`. Their dirt is chosen per modal rather than "any
+  input": the Adjust modal opens with today's date, a punch type and the
+  time NOW, so its rule is a queued entry, a changed time or a typed reason;
+  Day Edit's date picker is how a manager moves between days, so it never
+  marks the modal dirty and a date change clears it (the form is replaced);
+  a slot filled by a BUTTON (Apply, + Add break, Confirm as is) fires no
+  input event and is marked through `deMarkTouched_`. A hook-less modal
+  closing after its own save passes `{ saved: true }` — it has nothing to
+  discard.
 
 <a id="g167-a-vocabulary-built-from-user-text-is-user-text"></a>
 
