@@ -4310,3 +4310,26 @@ F53, F54, F57.**
   rep's statement for the previous period, wide and on a phone.
 - **Bite-checks: 57 mutations, each biting — two only after their pins were strengthened** — pure in three streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 follow-ons after the second round of decisions — FS1–FS3 (2026-11-19)
+
+- **Pure harness: five pins.** `FS1` ×2 — the close plan DRIVEN over six
+  requests (the one that counts; a decided one, an ordinary adjustment, one
+  naming another time, another punch type, another person) and over a capped
+  list; the card's entry text, its line in four wordings, its order and the
+  strict-true rule. `FS3` ×3 — the decision's grid; both writers DRIVEN over
+  a fake cache to the cap and past it (stamps still land, no row, one audit
+  row, another person, the next block, a dead cache), with the cap's floor
+  derived from the client's constants; the helper's structure.
+- **DOM harness: three drives** — the close card with one request waiting;
+  the reconcile button through a cancelled dialog, a refusal, a failed call
+  and a third press; Recent Activity drawing the limit's audit row.
+- **Editor suite: one test** — `activity_rowLimitRefusesPastTheCap`, against
+  the real cache with the count pre-set one under the cap (NOT RUN here).
+- **Older pins updated:** four — the close-plan sandbox loads the action
+  reader and the key helper; the AC1 and F30 sandboxes stub the limit (it has
+  its own pins); the FR1 fixture check reads the two new fields.
+- **Removed rather than pinned:** a `!!x.time` guard in the plan — the range
+  reader never emits an entry without its time.
+- **Bite-checks: 47 mutations, each biting — one only after its drive gained a cancelled dialog** — pure in three streams, DOM through
+  `bite.sh --dom --only`.

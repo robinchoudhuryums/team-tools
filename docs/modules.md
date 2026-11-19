@@ -313,7 +313,9 @@ not restate it. Server endpoints live in the fourteen server files
      request on the punch-adjustment queue; nothing changes until a manager
      approves it, and then only the Inferred mark moves to Confirmed. A
      request that no longer matches the day (the time was changed) cannot be
-     approved — the manager denies it.
+     approved — the manager denies it. **Since FS1** the Pay Period Close
+     card's list of unconfirmed inferred times says which ones already have
+     the rep's request waiting, and where to approve it.
 
      **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
      clicks and keystrokes in each 10-minute block (counts only; a two-minute

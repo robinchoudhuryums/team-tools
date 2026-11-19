@@ -11,6 +11,26 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 follow-ons after the second round (FS1–FS3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied stylesheet in step.
+
+- **Pay Period Close (FS1):** a time set from app activity that the rep has
+  already asked to confirm says so on the card ("· rep asked to confirm"),
+  with a line naming where to approve it. The request is still counted as a
+  pending punch adjustment, as before.
+- **PTO Balance Drift (FS2):** a refused or failed "Credit & reconcile" used
+  to leave its button reading "Reconciling…"; it now reads "Credit &
+  reconcile" again. Recent Activity and this card were checked for the
+  bulk-failure problem fixed in FR2 — neither has a bulk action.
+- **App activity (FS3):** one person can add at most forty ActivityLog rows
+  in ten minutes. Real use is far below that. If it is ever reached, the
+  extra rows are not kept and one `ActivityRowsLimited` row appears in the
+  AuditLog and under Manage → Recent Activity, naming the person.
+- **Editor suite:** one new test, `activity_rowLimitRefusesPastTheCap` (it
+  writes no ActivityLog row).
+
 ## 2026-11-19 — Cycle 26 decisions, second round (DS1–DS2)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);

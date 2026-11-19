@@ -5972,6 +5972,18 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   listing each undecided request — who, the date, its own reason — and the
   landed ones still leave the list.
 
+  **AMENDED (cycle 26 FS2): a button that says it is still working.** The
+  follow-on was to check the two manager panels FR2 had not reached — Recent
+  Activity and the PTO drift card — for a bulk action that answers a partial
+  failure with a count. Neither has one: Recent Activity is a read-only list,
+  Recent Punches deletes one row and restores its button, and "Credit &
+  reconcile" acts on one rep and toasts the server's own reason. What the
+  check did find is the same family one step down. The press set the button
+  to "Reconciling…" and, on a refusal ("PTO tracking is off…") or a failed
+  call, re-enabled it WITHOUT putting its label back — so the card kept a
+  live button that said the reconcile was under way. The label and icon are
+  restored on both paths.
+
 <a id="g143-a-leading-underscore-is-not-private"></a>
 
 - **A LEADING underscore is not private — `google.script.run` reaches every
@@ -7127,6 +7139,28 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   write, which is the hot path and reads nothing; so it also holds for rows
   and summaries stored before the rule. Blocks that were not drawn are
   counted and said on Day Edit, never silently dropped.
+
+  **AMENDED (cycle 26 FS3): how often a page reports is a claim too.** F27
+  made the COUNTS a page sends about its user trustworthy only beside a
+  server-timed ping, capped per block at read time. The rows themselves had
+  no limit: `recordPresence` and `recordActivityCounts` each append one
+  ActivityLog row per call, lock-free, for any enrolled caller — so a stuck
+  page or a console loop grew a tab that Day Edit, Team Punches, the idle
+  card and the nightly condense all walk. The follow-on had been parked as
+  "measure first", for want of the legitimate rate. That rate is in the
+  client: a window sends at most one ping per ten-minute gap and one counts
+  row per two-minute pause — six rows a block at the very most. The limit is
+  forty rows a person per block (five windows at that ceiling, plus margin;
+  the pin derives the floor from the client's own constants). It is a
+  ScriptCache counter keyed by person and block: no lock, no property (g7),
+  and an unreadable cache ALLOWS — the limit must never be why a working
+  rep's day reads empty. Past it the presence and idle stamps still land, no
+  row is written, and the answer is `logged: false`, which the window already
+  treats as "keep these counts for the next send" (F30). The first refusal of
+  a block writes one `ActivityRowsLimited` audit row naming the person, which
+  Recent Activity reads as its note. It is deliberately NOT counted as a lost
+  row (`ACTIVITY_LOG_FAILS`): that record puts a caution on every rep's day,
+  and this is one person's page.
 
 <a id="g168-an-important-on-root-loses-to-a-declaration-on-body"></a>
 

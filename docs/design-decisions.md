@@ -7424,6 +7424,30 @@ pick them up without re-deriving the context.
     Edit and Team Punches ("can skip for now"); a back-fill of the amended
     mark onto older intake notes (the count corrects itself as the 92-day
     windows roll).
+- <a id="c26-fs-follow-ons"></a>**The follow-ons after the second round of decisions: the close card names an inferred time a rep asked to confirm; a limit on activity rows per person (cycle 26 FS1–FS3).**
+  - **The close card says a request is waiting (FS1).** After DS1 the same
+    time could appear twice on the Pay Period Close card with nothing tying
+    the two together: once in the list of times set from app activity, and
+    once as "1 pending punch adjustment". The list entry now says the rep has
+    asked, and one line says where to approve it. The match is exact on
+    purpose — rep, day, punch type and the time still shown — because a
+    request that names a time since changed cannot be approved (DS1), and the
+    card must not say the rep vouched for a time they never saw.
+  - **The row limit is a ceiling derived from the client, not a measurement
+    (FS3).** See the amendment under g167. The limit is per person and per
+    ten-minute block because that is the unit everything downstream already
+    reads activity in; forty is five windows at the most a window can send.
+    The refusal is recorded in the AuditLog, not in the lost-row counter:
+    the counter cautions every rep's day, and a limit hit is one person's
+    page. Nothing is charged to a rep for it — the row says rows "were not
+    kept", which is all the server knows.
+  - **Checked and left (FS2):** Recent Activity and the PTO drift card have
+    no bulk action, so FR2's pattern does not apply; the one defect found
+    there (a button left reading "Reconciling…") is fixed.
+  - **Not built — the operator's to decide:** the rep's Confirm button on
+    surfaces that do not show the Inferred mark today (the Time / PTO day
+    popover, the Dashboard); a "confirm all"; a per-day figure on the Team
+    rail and for "Handled (adj.)".
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

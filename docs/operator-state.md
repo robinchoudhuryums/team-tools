@@ -2415,7 +2415,14 @@ entry says which it is.
   skipped. Days condensed before AC1 have no counts and draw on/off as
   before. **Tell the team** that Day Edit and Team Punches now show how much
   each person used the app, block by block — use of this app only, so a call
-  or work in another program looks idle.
+  or work in another program looks idle. **Since cycle 26 FS3** one person
+  can add at most forty ActivityLog rows in a ten-minute block (pings and
+  counts rows together — several times what real windows send). Past that
+  the rows are not written and ONE AuditLog row, `ActivityRowsLimited`, names
+  the person and the time; Manage → Recent Activity shows it. Nothing to set:
+  the count lives in the script cache. If you ever see that row, a browser
+  tab of theirs is stuck or something is calling the app in a loop — have
+  them reload.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Since
   cycle 26 DQ3** Timesheet column J holds `Inferred (app activity)` or, after
