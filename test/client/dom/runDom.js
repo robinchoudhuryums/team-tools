@@ -15512,6 +15512,12 @@ test('FS2 DOM: a refused or failed "Credit & reconcile" gives the button back as
     h.click(h.$('.ui-dialog-ok'));
     await tick(); await tick();
   };
+  // Cancelling the dialog sends nothing and leaves the button alone.
+  h.read('fixPtoReconRep_')(btn());
+  await tick();
+  h.click(h.$('.ui-dialog-cancel'));
+  await tick(); await tick();
+  assert.deepStrictEqual([h.run.pending('fixPtoReconciliation').length, btn().disabled, btn().innerHTML], [0, false, label], 'a cancelled dialog reconciles nothing');
   // The server refuses (PTO tracking off): the reason is said and the button is the button again.
   await press();
   assert.ok(btn().disabled && /Reconciling…/.test(btn().textContent), 'in flight');
