@@ -7329,6 +7329,42 @@ pick them up without re-deriving the context.
     confirming an inferred punch without changing its time (needs a design);
     a bulk approval's per-request reasons and Team Punches after a failed
     re-read (not investigated in this pass).
+- <a id="c26-dq-decisions"></a>**The operator's three decisions after the follow-ons: managers see partial days on Team Metrics, an amended intake note is not an intake call, an inferred time can be confirmed as is (cycle 26 DQ1–DQ3, operator 2026-11-19).**
+  - **Managers see their reps' partial days — on Team Metrics, as marks, not
+    as adjusted figures (DQ1).** The handoff from call-data-reporting limited
+    a rep's partial days to that rep; the operator widened it to managers in
+    this app. The marks are shown where a manager judges call figures: a chip
+    beside the rep's name and, under the table, the days as text (a chip's
+    hover is not reachable on a phone or by keyboard). Team Metrics' figures
+    were deliberately not adjusted in Batch PD and still are not — the line
+    says so, so a manager reads a low count next to its reason rather than a
+    silently changed number. A round in which the marks could not be read
+    says that instead of showing rows with no chip. Reps: unchanged — the rep
+    view has no rows at all. Reasons: never read.
+  - **An amended intake send is a correction, not an occurrence (DQ2).** The
+    note is still logged (it is what the rep pastes into the CRM, and the
+    history should show the correction), but it is marked and left out of the
+    intake count and of the timed intake calls. The mark is on the NOTE, not
+    looked up from the submissions tab, so the count stays a two-column read
+    of the rep's own Sheet. Not back-filled: amendments sent before the deploy
+    carry no mark.
+  - **"Confirm as is" keeps the time and changes the mark (DQ3).** Column J
+    gains a third state, `Confirmed (app activity)`, instead of being cleared:
+    the Timesheet row keeps where its time came from, and the AuditLog's
+    PunchConfirm row keeps who vouched for it. **The export:** the uploaded
+    file is byte-for-byte what it was — it never carried column J, and a
+    confirm does not touch the time. Beside the file, the "inferred from app
+    activity" list (the export link and the automated email) now holds only
+    the punches nobody has confirmed, so it works as a to-do list before
+    payroll; the confirmed ones are a count on their own line. Only a time
+    already SAVED as inferred can be confirmed, so applying and confirming
+    are always two saves.
+  - **Alternatives not taken:** adjusting Team Metrics' figures for partial
+    days (a separate decision — Batch PD left the team view unadjusted on
+    purpose); clearing column J on confirm (loses the provenance once the
+    AuditLog row scrolls out of the tail); requiring a reason or a second
+    manager to confirm (the audit row names the manager; the reason is
+    recorded when given).
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

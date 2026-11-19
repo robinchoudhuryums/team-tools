@@ -4226,3 +4226,33 @@ F53, F54, F57.**
   `likely`. One scenario: the 7D range for a rep with partial days.
 - **Bite-checks: 44 mutations, 44 bit** — pure in three streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 decisions after the follow-ons — DQ1–DQ3 (2026-11-19)
+
+- **Pure harness: eight pins.** `DQ3` ×4 — the confirm plan's grid; a Day
+  Edit save DRIVEN over a fake Timesheet (the cells written are asserted
+  whole, so a confirm that touched the time would show); column J's writer,
+  the two row readers and the export driven over inferred, confirmed and
+  plain rows; the client's slot-mark grid. `DQ2` ×2 — the counter over a fake
+  Notes tab, the whitelist's five cases, the send and the chip. `DQ1` ×2 — the
+  server helper, a manager payload driven through the rep view, and the
+  client's chip, line and copied column.
+- **DOM harness: three drives** — Day Edit's button through press, Undo, a
+  typed time, range mode, an applied time and a new day (the RPC's arguments
+  are read each time); the Team table for a manager, with no marks, with
+  unread marks and as a rep; the amended chip.
+- **Editor suite: one test** — `managerSaveDay_confirmsInferredAsIs` (NOT RUN
+  here; it needs the DEV instance).
+- **Older pins updated:** two cache-key pins, the put-gate pin, four sandboxes
+  that needed the new helpers or the new mark, and the F34 DOM drive, whose
+  amended note now also carries the mark.
+- **A slip of my own, caught by running:** the new pins opened with the DOM
+  harness's `section()`; the pure harness prints its headings.
+- **Fixtures:** `reps[].partialDays` (one marked rep on the populated Team
+  fixture) and `partialDaysUnavailable`; `?inferred=1` loads Day Edit with a
+  saved inferred Clock In. Two scenarios: the Confirm button, and the pressed
+  state on a phone.
+- **Bite-checks: 67 mutations, 66 bit** — pure in three streams, DOM through
+  `bite.sh --dom --only`. The one that did not bite was an equivalent
+  mutant: `deSlotMark_` opened with an empty-slot guard its next two lines
+  already imply. The guard was removed rather than pinned.

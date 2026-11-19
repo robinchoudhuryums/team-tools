@@ -11,6 +11,29 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 decisions after the follow-ons (DQ1–DQ3)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app's copied stylesheet changed with it, so `npm run handbook:push`
+keeps the two in step; nothing a handbook reader sees changes.
+
+- **Managers — partial days (DQ1):** Stats → Team marks a rep who has partial
+  days in the window and lists the days under the table. The figures are not
+  adjusted. Reps still see only their own. **Tell call-data-reporting:** the
+  handoff said "an agent sees this for their OWN numbers only"; managers in
+  Team Tools now see dates and shares for their reps (never a reason — column
+  D is still not read).
+- **Intake count (DQ2):** amending a sent form no longer adds to "Intake".
+  The amended note shows "PMD amended". Amendments sent before this deploy
+  still count.
+- **Day Edit — Confirm as is (DQ3):** a time saved from app activity can be
+  confirmed without changing it. **The payroll export file does not change.**
+  The "inferred from app activity" list beside it now shows only punches
+  nobody has confirmed; confirmed ones are counted on their own line. Timesheet
+  column J reads `Confirmed (app activity)` for them — leave the cell alone.
+- **Editor suite:** one new test, `managerSaveDay_confirmsInferredAsIs`; the
+  run prints its own Expected count.
+
 ## 2026-11-18 — Cycle 26 follow-ons after Batches 9, 10 and Partial Days (FQ1–FQ10)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

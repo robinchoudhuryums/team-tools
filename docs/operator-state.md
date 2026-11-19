@@ -310,7 +310,10 @@ entry says which it is.
   in the Dashboard's "on pace" line, in the month-to-date change on Answered
   and Missed, and in the daily Answered / Missed trends on Stats. The calls
   stay in every count; rates and talk time do not change; the Department
-  card and Team Metrics are not adjusted. A Credit of 1 is the dashboard's
+  card and Team Metrics are not adjusted. **Since DQ1 (2026-11-19)** a
+  manager's Team Metrics names each rep's partial days — dates and shares,
+  beside the name and under the table; a rep still sees only their own, and
+  nobody sees a reason. A Credit of 1 is the dashboard's
   "reviewed, a whole day" and is ignored, as is a mark on a day the rep took
   no call.
   **Names:** a mark counts for the roster name the call data counts for — an
@@ -2412,6 +2415,10 @@ entry says which it is.
   or work in another program looks idle.
 - **The `ActivityLog` tab (ADP spreadsheet) and Timesheet column J — app
   activity and inferred punches (25post round 12 E2, 2026-10-28).** **Since
+  cycle 26 DQ3** Timesheet column J holds `Inferred (app activity)` or, after
+  a manager pressed Confirm as is in Day Edit, `Confirmed (app activity)` — do
+  not type or clear either by hand: the first puts the punch on the export's
+  inferred list, the second on its confirmed count. **Since
   cycle 26 (F30)** a row that cannot be written is counted in the auto-managed
   Script Property `ACTIVITY_LOG_FAILS` (`{count, firstMs, lastMs, lastError}`).
   Admin → System lists it for 48 hours after the latest failure, and Day Edit

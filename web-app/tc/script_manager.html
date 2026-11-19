@@ -2078,7 +2078,6 @@ var DE_SLOT_LABEL = { ClockIn: 'Clock In', ClockOut: 'Clock Out' };
  *  time; 'inferred' while it holds a time applied or loaded as inferred; ''
  *  for an empty slot or a time the manager typed. */
 function deSlotMark_(value, infVal, savedInf, confirming) {
-  if (!value) return '';
   if (confirming && savedInf && value === savedInf) return 'confirm';
   if (infVal && value === infVal) return 'inferred';
   return '';

@@ -480,6 +480,20 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   stamp and the card names it. Verify: the TC-08 drive (calcHours_ before and
   after the collapse).
 
+  **AMENDED (cycle 26 DQ3, operator 2026-11-19): confirming an inferred time
+  is not an edit.** A time saved from app activity kept its Inferred mark until
+  somebody CHANGED it, so a manager who had checked a correct time had to
+  nudge it by a minute to clear the mark. Day Edit now has "Confirm as is".
+  Three rules keep it from becoming a way to launder a guess: (1) the button
+  is offered only on a time the day was LOADED with as inferred — never one
+  applied from the activity panel in the same open, which nobody has checked;
+  (2) the save sends an explicit `slots.confirmed[type] === true`, and
+  `managerConfirmPlan_` writes only when the day's shown row carries the
+  Inferred mark and the slot still holds its HH:mm — a changed time is an
+  ordinary edit, a row with no mark is nothing; (3) the time cell is never
+  written: column J moves to `Confirmed (app activity)` and a `PunchConfirm`
+  audit row names the manager. Range mode confirms nothing.
+
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
@@ -1050,6 +1064,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and the pin drives a manager payload carrying a pair through the view.
   **The check when adding a field to a nested object:** grep for who copies
   the parent whole.
+
+  **AMENDED (cycle 26 DQ1, operator 2026-11-19): managers see their reps'
+  partial days.** Batch PD kept a rep's marks to that rep, as the handoff from
+  call-data-reporting asked. The operator decided managers should see them in
+  Team Tools too. They ride ONE place: `reps[].partialDays` on the manager's
+  Team Metrics payload (dates and shares, newest first), built from the same
+  `partial` map of the cohort read. `teamMetricsRepView_` lists its fields and
+  `reps` is not one of them, so the rule above still holds for a rep — the
+  DQ1 pin drives a manager payload with marked rows through the view and finds
+  no row, no date and not even `partialDaysUnavailable` in it. The Reason
+  column is still never opened. **No figure is computed from the marks on
+  Team Metrics** — the line under the table says so.
 
 <a id="g34-fire-and-forget-email"></a>
 
@@ -2929,6 +2955,18 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   columns. `callNoteRowToObject_` tries `JSON.parse` and returns
   `null` on failure rather than throwing — corrupted blobs should
   never break a read.
+
+  **AMENDED (cycle 26 DQ2, operator 2026-11-19): a key that changes what a
+  note counts as.** The intake count is "notes whose SubformData has an
+  `intakeType`". An amended send logs a note too, so correcting a form was
+  counted as a second intake call. The amended send's note now carries
+  `intakeAmend: true`, and `cnIntakeNoteCounts_` — the one test the counter
+  asks — leaves it out (not counted, not timed). Because the key changes a
+  metric, the whitelist is narrow: only the boolean `true`, and only when the
+  same payload has a valid `intakeType`. Notes saved before DQ2 have no mark
+  and count as they did; nothing is back-filled. The chip on the note reads
+  "PMD amended", which is where a rep or a manager can see why a note is not
+  in the count.
 
 <a id="g81-late-google-script-run-successhandlers-in-call"></a>
 

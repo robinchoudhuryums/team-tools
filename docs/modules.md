@@ -292,6 +292,14 @@ not restate it. Server endpoints live in the fourteen server files
      the export link and in the automated export email
      (`exportInferredLines_`).
 
+     **Cycle 26 DQ3 (operator 2026-11-19) — Confirm as is.** A time already
+     saved as inferred has a "Confirm as is" button in Day Edit. Saving keeps
+     the time, sets column J to `Confirmed (app activity)` and writes a
+     `PunchConfirm` audit row. The Inferred chip goes from every timesheet
+     surface; the export's inferred list drops the punch and a line counts
+     the confirmed ones. A time applied in the same open cannot be confirmed
+     until it has been saved.
+
      **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
      clicks and keystrokes in each 10-minute block (counts only; a two-minute
      pause flushes the rest without a presence stamp). Day Edit draws bars per
@@ -489,6 +497,13 @@ lighter `--warn-fill`.
      under Calls answered; Team shows no Transfers figure for a window with
      no transfer rows, and managers get a "likely outbound name mismatch"
      line when a rep's outbound calls sit under another spelling.
+
+     **Cycle 26 decisions (DQ1 + DQ2, operator 2026-11-19).** A manager's
+     Team table marks a rep who has partial days in the window ("2 partial"
+     beside the name) and names the days under the table; the figures are not
+     adjusted, and the copied table gains a Partial days column. A rep's Team
+     view is unchanged. The "Intake" count no longer includes the note of an
+     AMENDED intake send — that note wears "PMD amended" in Call Notes.
 
      **Batch 6 (2026-09-18):** the Admin Overview KPI strip reports TEAM
      numbers — notes across every enrolled rep (all-time) and the cross-rep
