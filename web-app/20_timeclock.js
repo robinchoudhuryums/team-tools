@@ -298,10 +298,8 @@ function workedHoursByEmpForRange_(startIso, endIso) {
     const type = normalizeType_(String(r[ADP.COMMENTS]));
     const time = normalizeTime_(r[ADP.TIME]);
     punchDayAdd_(perDay[id][date], type, time);
-    if (type === 'ClockIn' || type === 'ClockOut') {
-      const day = (infLast[id] || (infLast[id] = {}))[date] || (infLast[id][date] = {});
-      day[type] = adpRowInferred_(r) ? String(time).substring(0, 5) : '';
-    }
+    const infDay = (infLast[id] || (infLast[id] = {}))[date] || (infLast[id][date] = {});
+    infDay[type] = adpRowInferred_(r) ? String(time).substring(0, 5) : '';   // timesheetInferredByEmp_ reads the two clock types only
   });
   const archivedRows = read.archivedRows;
   const byEmp = {}, perDayByEmp = {};

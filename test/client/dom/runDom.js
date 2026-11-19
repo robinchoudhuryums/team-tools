@@ -15345,12 +15345,13 @@ test('FR2 DOM: the time-off bulk bar — two selected, one approved and one refu
   await tick();
   const calls = h.run.pending('updateTimeOffStatus');
   assert.strictEqual(calls.length, 2, 'one RPC per request');
+  // The REFUSAL lands first: nothing is said until every answer is in.
+  h.run.flushSuccess({ success: false, error: 'This request was already decided by another manager.' }, 'updateTimeOffStatus');
+  assert.strictEqual(h.$('.overlay.open.ui-dialog'), null, 'one answer of two: no notice yet');
   h.run.flushSuccess({ success: true }, 'updateTimeOffStatus');
-  assert.strictEqual(h.$('.overlay.open.ui-dialog'), null, 'nothing is said until every answer is in');
-  h.run.flushSuccess({ success: false, error: 'Nina Patel already has approved time off on 2026-12-02.' }, 'updateTimeOffStatus');
   const dlg = h.$('.overlay.open.ui-dialog');
   assert.ok(dlg, 'THE REGRESSION: a toast with two counts and no reason');
   assert.match(dlg.querySelector('.modal-title').textContent, /^1 request not approved$/);
-  assert.match(dlg.querySelector('.ui-dialog-body').textContent, /1 approved\. Not approved:.*Nina Patel · 2026-12-02 — Nina Patel already has approved time off on 2026-12-02\./);
+  assert.match(dlg.querySelector('.ui-dialog-body').textContent, /1 approved\. Not approved:.*Sam Ortiz · 2026-12-01 — This request was already decided by another manager\./);
   assert.strictEqual(dlg.querySelectorAll('.ui-dialog-cancel').length, 0);
 });
