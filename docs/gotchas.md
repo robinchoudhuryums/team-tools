@@ -2056,6 +2056,22 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   pinged was keyed for purging by its own day, which is never summarised — it
   is purged by the days of the blocks it names.
 
+  **AMENDED (cycle 26 FR3 + FR4): a kept last-good view must say it was
+  kept.** The stale-while-revalidate tabs paint the last complete round and
+  refresh behind it; when the refresh fails, keeping the painted round is
+  right — and saying nothing about it is this gotcha again, because the
+  absence of a notice reads as "this is current". Two places did: **Team
+  Punches** re-reads today's app activity on every select, and a failed
+  re-read left the earlier bars under the note "App activity is clicks and
+  keystrokes…" (the failure message was written only for a day with nothing
+  kept); and the **Spanish inbox**, where a transport failure toasted but a
+  server `{error}` on the stats, and either list half failing in the
+  background, were silent. Team Punches now prefixes the note with how old
+  the bars are (`tcalActStaleText_`, timed from `TEAMACT.at`); the Spanish
+  inbox says "showing last loaded" once per round (`spanishRefreshFailed_`).
+  **The check when you keep last-good:** find the branch that keeps it and ask
+  what the page says there.
+
 <a id="g54-an-unknown-duration-is-not-the-same"></a>
 
 - **An UNKNOWN duration is not the same as an elapsed one — never substitute
@@ -5918,6 +5934,17 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   the message follows the kind, and a checksum failure is beaconed with the
   file KEY only (an allowlisted name — never an image, a value or a URL).
   Verify: the F75 pure pin + DOM drive.
+
+  **AMENDED (cycle 26 FR2): a bulk decide's failure named the wrong reason,
+  or none.** Approving several requests at once can partly fail — another
+  manager decided one, a date fell out of the edit window. The time-off bar
+  answered "1 succeeded, 1 failed" and refreshed; the punch-adjustment bar
+  answered "1 approved, 1 failed — " followed by the BATCH's `res.error`,
+  which is not any one request's reason (and is empty when the batch itself
+  succeeded). The per-request reason was in each result all along. Both bars
+  now open a notice (`mgrBulkFailDialog_`: one button, stays until read)
+  listing each undecided request — who, the date, its own reason — and the
+  landed ones still leave the list.
 
 <a id="g143-a-leading-underscore-is-not-private"></a>
 

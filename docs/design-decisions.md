@@ -7365,6 +7365,39 @@ pick them up without re-deriving the context.
     AuditLog row scrolls out of the tail); requiring a reason or a second
     manager to confirm (the audit row names the manager; the reason is
     recorded when given).
+- <a id="c26-fr-follow-ons"></a>**The follow-ons after the decisions: unconfirmed inferred times on the close card beside its state, a bulk decide's reasons in a notice, kept views that say they were kept (cycle 26 FR1–FR4, 2026-11-19).**
+  - **Unconfirmed inferred times are a list to check, not a blocker (FR1).**
+    DQ3 made the export's inferred list a to-do list, but the export is the
+    last step — the first place the list was gathered was the email sent with
+    the file. The Pay Period Close card now names them per period, each a
+    button into Day Edit (where Confirm as is lives). They are NOT part of
+    "Ready to close": the export file is identical whether a time is inferred
+    or confirmed, so calling the period unready would be a false alarm of the
+    g02 kind — the Periodic summary names the count beside its state and
+    keeps its tone. The list comes out of the Timesheet read the card already
+    makes; the mark read is the day's SHOWN row, so the card and Day Edit
+    cannot disagree about which time is inferred.
+  - **A partial failure is answered where it can be read (FR2).** A notice
+    with one button rather than a toast: a manager who approved ten requests
+    needs to know WHICH two did not land and why before deciding whether to
+    retry. `uiConfirm` gained `hideCancel` for it — a notice has nothing to
+    cancel, and a second button that does the same thing is a question the
+    reader should not have to answer.
+  - **A kept view says it was kept (FR3, FR4).** See the gotcha amendment.
+    Team Punches states the age of the bars rather than a clock time, so no
+    timezone is implied.
+  - **Not done, and why:** a rep confirming their own inferred time (it would
+    remove the one control DQ3 kept — a second person); Team Metrics'
+    figures adjusted for partial days (Batch PD left them unadjusted on
+    purpose; a separate decision); partial days on Day Edit and Team Punches
+    (it would put a call-data read on the Timesheet path for a mark that
+    judges call figures, not hours — say if it is wanted); a back-fill of
+    `intakeAmend` onto amendments sent before DQ2 (a heuristic write into the
+    reps' PHI Sheets, matching notes to submissions by time; the count
+    corrects itself as the 92-day windows roll); a server rate limit on
+    activity counts (measure on DEV first); the read-ahead warming outbound
+    windows (decided in Batch 10); My Stats' range sharing its per-day
+    breakdown (a cohort's ninety days does not fit the 100 KB cache).
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

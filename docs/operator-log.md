@@ -11,6 +11,23 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 follow-ons after the decisions (FR1–FR4)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied shell and stylesheet
+in step (nothing a reader sees changes).
+
+- **Pay Period Close:** the card lists clock times set from app activity
+  that nobody has confirmed yet, per pay period, each opening Day Edit. A
+  period still reads "Ready to close" with such a list — the export file is
+  the same either way. The Periodic summary says "· N inferred to check".
+- **Bulk approve / deny:** when some requests cannot be decided, a notice
+  names each one and its reason (it used to be a count in a toast).
+- **Team Punches:** if today's app-activity bars could not be refreshed, the
+  note under the table says how old they are.
+- **Spanish Inbox:** a refresh that fails says "showing last loaded" once,
+  including when the server answers with an error.
+
 ## 2026-11-19 — Cycle 26 decisions after the follow-ons (DQ1–DQ3)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The

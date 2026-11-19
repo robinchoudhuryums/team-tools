@@ -4256,3 +4256,29 @@ F53, F54, F57.**
   `bite.sh --dom --only`. The one that did not bite was an equivalent
   mutant: `deSlotMark_` opened with an empty-slot guard its next two lines
   already imply. The guard was removed rather than pinned.
+
+## Cycle 26 follow-ons after the decisions — FR1–FR4 (2026-11-19)
+
+- **Pure harness: six `FR` pins** — the inferred index's grid and the range
+  reader DRIVEN over a fake Timesheet (last row of a type decides; one read);
+  the close plan's list (cycle, dates, each rep's own today, the cap, `ready`
+  untouched, an older caller with no map); the card's list and the summary;
+  the bulk notice's lines and message; the stale-bars text and note; the
+  Spanish once-per-round notice.
+- **DOM harness: five drives** — both bulk bars through a partial failure
+  (the adjustment bar by its function, the time-off bar by its checkboxes,
+  the confirm dialog and two answers); the close card's button into Day Edit;
+  Team Punches through a failed re-read, a server error and a clean one; the
+  Spanish inbox through a failed second round.
+- **Older pins updated:** six — two source shapes and four sandboxes that
+  needed the new helpers or constant.
+- **Two slips of my own, caught by running:** the edit script stopped at a
+  pattern that also matched `uiPrompt` (the rest was applied by hand, and the
+  click binding to a now-optional Cancel button guarded); the Spanish drive
+  answered the DASHBOARD card's request — the oldest pending call of that
+  name — until it drained those first.
+- **Fixtures:** `counts.inferred` and `inferred` on every close-card period
+  (three times across two of them, one past the edit window). One scenario:
+  the bulk notice on a phone.
+- **Bite-checks: 56 mutations, 55 bit — one only after its drive was strengthened; the other was an equivalent mutant, a redundant guard, removed** — pure in three streams, DOM through
+  `bite.sh --dom --only`.

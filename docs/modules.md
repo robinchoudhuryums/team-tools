@@ -300,6 +300,13 @@ not restate it. Server endpoints live in the fourteen server files
      the confirmed ones. A time applied in the same open cannot be confirmed
      until it has been saved.
 
+     **Cycle 26 follow-ons (FR, 2026-11-19).** The Pay Period Close card lists
+     each period's inferred times nobody has confirmed, each a button into Day
+     Edit; they are named beside "Ready to close", never counted against it.
+     A bulk approve or deny that partly fails opens a notice naming each
+     request it could not decide and why. Team Punches says when today's
+     activity bars are from an earlier read.
+
      **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
      clicks and keystrokes in each 10-minute block (counts only; a two-minute
      pause flushes the rest without a presence stamp). Day Edit draws bars per
