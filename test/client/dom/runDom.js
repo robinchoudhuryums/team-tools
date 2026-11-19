@@ -15880,7 +15880,15 @@ test('F60 DOM: the tour WAITS for a view that is still loading instead of skippi
   h.window.tourStart('full');
   for (let i = 0; i < 40; i++) h.flushTimers();            // far past the old 24-try (~1.9 s) limit
   assert.strictEqual(h.read('TOUR_I'), 0, 'THE REGRESSION: a view still loading after ~1.9 s lost its step for good');
-  assert.ok(!/Late one/.test((h.$('#tour-pop') || {}).textContent || ''), 'not painted yet either — its target is not there');
+  assert.ok(!/Loads slowly/.test((h.$('#tour-pop') || {}).textContent || ''), 'not painted yet either — its target is not there');
+  // A wait that long is said, with a way out — the page is dimmed and blocked meanwhile.
+  const now0 = h.window.Date.now;
+  h.window.Date.now = () => now0() + 3000;
+  try { h.flushTimers(); } finally { h.window.Date.now = now0; }
+  const waitCard = h.$('#tour-pop');
+  assert.ok(/Late one/.test(waitCard.textContent) && /still loading/.test(waitCard.textContent) && waitCard.querySelector('[data-tour="skip"]') && !waitCard.querySelector('[data-tour="next"]'),
+    'the wait is shown as a card with Skip — ' + waitCard.textContent);
+  assert.strictEqual(h.read('TOUR_I'), 0);
   // The view finishes loading: the target is there, the step shows.
   loader.remove();
   const target = visible(doc.createElement('div')); target.id = 'b11-late'; target.scrollIntoView = () => {};

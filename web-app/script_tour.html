@@ -317,6 +317,7 @@ function tourGoTo_(i, dir) {
   let tries = 0;
   const MAX = 24;   // ~1.9s at 80ms — of time the view is not loading
   const startedAt = Date.now();
+  let waitingShown = false;
   (function poll() {
     if (!TOUR_ACTIVE || TOUR_I !== i) return;   // superseded by a faster click
     if (tourVisibleTarget_(step.selector)) { tourPaint_(step); return; }
@@ -324,13 +325,39 @@ function tourGoTo_(i, dir) {
     if (w === 'gaveUp') _tourGaveUp = true;      // still loading at the cap — not "absent"
     if (w !== 'wait' && w !== 'loading') { tourGoTo_(i + dir, dir); return; }   // absent from a loaded view, or the cap → skip
     if (w === 'wait') tries++;
+    // A wait this long is said: the page is dimmed and blocked while the tour
+    // is up, and the last step's card has already faded out.
+    else if (!waitingShown && Date.now() - startedAt >= TOUR_WAIT_NOTE_MS) { waitingShown = true; tourPaintWaiting_(step); }
     setTimeout(poll, 80);
   })();
 }
 /** F60 — how long a step waits on a view that is still loading before it is
  *  given up on. A cold Stats or Team Notes read is seconds; this is far past it. */
 const TOUR_LOAD_CAP_MS = 20000;
+const TOUR_WAIT_NOTE_MS = 1500;
 let _tourGaveUp = false;
+/** F60 — the card shown while a step's page is still loading: the step's
+ *  title, that the tour is waiting, and Skip. Centred, no spotlight. */
+function tourPaintWaiting_(step) {
+  const block = document.getElementById('tour-block');
+  const spot = document.getElementById('tour-spot');
+  const pop = document.getElementById('tour-pop');
+  if (!TOUR_ACTIVE || !block || !spot || !pop) return;
+  block.classList.add('show', 'dim');
+  spot.classList.remove('show');
+  pop.classList.add('show');
+  pop.innerHTML =
+    '<button class="tour-btn ghost tour-skip" data-tour="skip">Skip</button>' +
+    '<div class="tour-kicker">' + (TOUR_MODE === 'new' ? 'What’s new · ' : 'Step ') + (TOUR_I + 1) + ' of ' + TOUR_VISIBLE.length + '</div>' +
+    '<div class="tour-title" id="tour-pop-title">' + step.title + '</div>' +
+    '<div class="tour-body" id="tour-pop-body">This page is still loading — the tour carries on as soon as it is ready.</div>';
+  tourWirePop_();
+  const skip = pop.querySelector('[data-tour="skip"]');
+  if (skip) { try { skip.focus({ preventScroll: true }); } catch (_) {} }
+  pop.style.left = Math.max(8, (window.innerWidth - pop.offsetWidth) / 2) + 'px';
+  pop.style.top = Math.max(8, (window.innerHeight - pop.offsetHeight) / 2) + 'px';
+  pop.classList.add('in');
+}
 /** F60 — is the current view still showing its full-view loader (renderLoading's
  *  `.state-center[role=status]`)? Visible only: a loader left in a hidden tab
  *  does not hold the tour. */
