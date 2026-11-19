@@ -4721,6 +4721,16 @@
     "workedHoursByEmpForRange_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "cycle 26 FR1: the range reader records every type's last-row mark (a redundant type guard removed)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "workedHoursByEmpForRange_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -15723,7 +15733,7 @@
   "workedHoursByEmpForRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "6daf5554622db3dc"
+   "sha": "5cb8acfda7b3d443"
   },
   "workedHoursForEmpMonth_": {
    "file": "20_timeclock.js",
