@@ -15880,7 +15880,7 @@ test('F60 DOM: the tour WAITS for a view that is still loading instead of skippi
   h.window.tourStart('full');
   for (let i = 0; i < 40; i++) h.flushTimers();            // far past the old 24-try (~1.9 s) limit
   assert.strictEqual(h.read('TOUR_I'), 0, 'THE REGRESSION: a view still loading after ~1.9 s lost its step for good');
-  assert.ok(!/Loads slowly/.test((h.$('#tour-pop') || {}).textContent || ''), 'not painted yet either — its target is not there');
+  assert.ok(!/Loads slowly|still loading/.test((h.$('#tour-pop') || {}).textContent || ''), 'not painted yet either — its target is not there; and a wait this short (the forty polls ran in milliseconds) says nothing');
   // A wait that long is said, with a way out — the page is dimmed and blocked meanwhile.
   const now0 = h.window.Date.now;
   h.window.Date.now = () => now0() + 3000;
