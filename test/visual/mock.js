@@ -935,7 +935,7 @@ function runRecAgo(msAgo, notes) {
           noteCount: notes, noteCoverage: cov, noteCountUnavailable: false, intakeNotes: Math.max(0, Math.round(notes / 9) - (rung % 2)), hasCdrData: true,
           transferred: transferred, transferPct: Math.round((transferred / ans) * 1000) / 10,
           queues: queues, queueTotal: qt, queueUnattributed: Math.max(0, transferred - qt),
-          hasTransferData: true };
+          hasTransferData: true, partialDays: [] };   // DQ1: a manager's row carries the rep's partial days
       };
       var reps = [
         mk('E-1042', 'Avery Blake', 46, 41, 5, '0:04:41', 35, 85, 14, { A_Q_Sales: 6, A_Q_PAP: 3 }, { placed: 6, connected: 4, talkSec: 1325 }, { timed: 3, seconds: 3240 }),
@@ -950,7 +950,9 @@ function runRecAgo(msAgo, notes) {
         pctAnswered: null, tttFormatted: '0:00:00', attFormatted: '0:00:00', tttSeconds: 0, attSeconds: 0,
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
         transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
-        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null });
+        outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null, partialDays: [] });
+      // DQ1 (cycle 26): one rep with two partial days in the window — the chip beside the name and the line under the table.
+      reps[2].partialDays = [{ date: daysAgo(2), credit: 0.5 }, { date: daysAgo(4), credit: 0 }];
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {
@@ -1000,6 +1002,7 @@ function runRecAgo(msAgo, notes) {
         transferMeta: { available: true, error: null, queueColumns: Object.keys(tq) },
         // FQ7: one PAIRED outbound name — Jo Tran placed no outbound call under her roster name.
         outboundMeta: { available: true, error: null, through: daysAgo(1), likelyMismatches: [{ roster: 'Jo Tran', cdr: 'Tran, Jo' }] },   // M1; FQ7
+        partialDaysUnavailable: false,   // DQ1 — the marks were read
         queueRows: qRows,
         alertThreshold: 85,   // #4 / H2 — mirrors the published Dashboard Standards target
         alertBand: 5,         // H2 — the amber band that rides with it
@@ -2064,7 +2067,8 @@ function runRecAgo(msAgo, notes) {
       return {
         days: [{
           date: start, dayName: 'Tue',
-          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: false, infClockOut: false,
+          // `?inferred=1` (DQ3, cycle 26): the Clock In was SAVED as inferred — the Confirm as is button's case.
+          clockIn: '08:00:00', clockOut: '21:00:00', infClockIn: /[?&]inferred=1\b/.test(window.location.search), infClockOut: false,
           lunchOut: '12:00:00', lunchIn: '12:30:00',
           breaks: [{ out: '12:00:00', in: '12:30:00' }, { out: '17:00:00', in: '19:00:00' }],
           openBreak: null,   // T1: a closed day — the leave-with-no-return field is null

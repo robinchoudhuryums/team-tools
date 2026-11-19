@@ -93,9 +93,11 @@
     </div>
     <div class="field-row">
       <div class="field"><label for="de-clockin">Clock In</label><input type="time" id="de-clockin" aria-describedby="de-clockin-inf">
-        <span class="de-inf-tag" id="de-clockin-inf" hidden>Inferred (app activity)</span></div>
+        <span class="de-inf-tag" id="de-clockin-inf" hidden>Inferred (app activity)</span>
+        <button type="button" class="de-inf-confirm" id="de-clockin-inf-confirm" hidden>Confirm as is</button></div>
       <div class="field"><label for="de-clockout">Clock Out</label><input type="time" id="de-clockout" aria-describedby="de-clockout-inf">
-        <span class="de-inf-tag" id="de-clockout-inf" hidden>Inferred (app activity)</span></div>
+        <span class="de-inf-tag" id="de-clockout-inf" hidden>Inferred (app activity)</span>
+        <button type="button" class="de-inf-confirm" id="de-clockout-inf-confirm" hidden>Confirm as is</button></div>
     </div>
     <!-- Round 12 E2 (operator 2026-10-28): the rep's app activity this day, in
          10-minute blocks, and the first / last ping offered as a Clock In /

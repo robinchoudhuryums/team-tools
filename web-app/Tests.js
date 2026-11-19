@@ -1620,6 +1620,7 @@ function _registerIntegrationA_() {
   _integrationTest('managerSaveDay_addOnly',                   test_managerSaveDay_addOnly);
   _integrationTest('managerSaveDay_collapsesDuplicateRows',    test_managerSaveDay_collapsesDuplicateRows);
   _integrationTest('managerSaveDay_updateOnly',                test_managerSaveDay_updateOnly);
+  _integrationTest('managerSaveDay_confirmsInferredAsIs',      test_managerSaveDay_confirmsInferredAsIs);
   _integrationTest('managerSaveDay_deleteOnly',                test_managerSaveDay_deleteOnly);
   _integrationTest('managerSaveDay_mixedChanges',              test_managerSaveDay_mixedChanges);
   _integrationTest('managerSaveDay_openBreakRoundTrips',       test_managerSaveDay_openBreakRoundTrips);
@@ -4176,6 +4177,57 @@ function test_managerSaveDay_updateOnly() {
   _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 4);
   _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'), before + 1,
     'Exactly one PunchEdit audit row expected');
+}
+
+/** Cycle 26 DQ3 — "Confirm as is": a Clock In saved as inferred keeps its time,
+ *  its column-J mark moves to Confirmed, and one PunchConfirm audit row is
+ *  written. A save without the press leaves the mark alone. */
+function test_managerSaveDay_confirmsInferredAsIs() {
+  _assertSuiteCaller_();
+  _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  const clockIn = () => {
+    const rows = getAdpSS_().getSheetByName(CONFIG.ADP_TAB).getDataRange().getValues();
+    for (let i = rows.length - 1; i >= 2; i--) {
+      if (String(rows[i][ADP.EMP_ID]).trim() !== _TEST_PH_ID) continue;
+      if (normalizeDate_(rows[i][ADP.DATE]) !== _TEST_DATE_OLD) continue;
+      if (normalizeType_(String(rows[i][ADP.COMMENTS])) !== 'ClockIn') continue;
+      return { mark: String(rows[i][ADP.INFERRED] || '').trim(), time: normalizeTime_(rows[i][ADP.TIME]).substring(0, 5) };
+    }
+    return null;
+  };
+  try {
+    const day = { ClockIn: '07:56', ClockOut: '17:00', breaks: [] };
+    _asUser(_TEST_MGR_EMAIL, () => {
+      _assertSuccess(managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: true, ClockOut: false } }), 'DQ3 fixture'));
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'the fixture row is marked inferred');
+    const before = _countAuditRows(_TEST_PH_ID, 'PunchConfirm');
+    const edits = _countAuditRows(_TEST_PH_ID, 'PunchEdit');
+    // A re-save that still sends the slot as inferred changes nothing.
+    _asUser(_TEST_MGR_EMAIL, () => {
+      const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: true, ClockOut: false } }), 'DQ3 no press');
+      _assertSuccess(r);
+      _assertEq(r.changes, 0, 'no press, no change');
+    });
+    _assertEq(clockIn().mark, ADP_INFERRED_MARK, 'still inferred');
+    // The press.
+    _asUser(_TEST_MGR_EMAIL, () => {
+      const r = managerSaveDay(_TEST_PH_ID, _TEST_DATE_OLD,
+        Object.assign({}, day, { inferred: { ClockIn: false, ClockOut: false }, confirmed: { ClockIn: true, ClockOut: false } }), 'DQ3 confirmed with the rep');
+      _assertSuccess(r);
+      _assertEq(r.changes, 1, 'the confirm is the one change');
+    });
+    const after = clockIn();
+    _assertEq(after.mark, ADP_CONFIRMED_MARK, 'column J reads Confirmed');
+    _assertEq(after.time, '07:56', 'the time did not move');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchConfirm'), before + 1, 'exactly one PunchConfirm audit row');
+    _assertEq(_countAuditRows(_TEST_PH_ID, 'PunchEdit'), edits, 'and no PunchEdit — nothing was edited');
+    _assertEq(_countTimesheetRows(_TEST_PH_ID, _TEST_DATE_OLD, null), 2, 'two rows, as before');
+  } finally {
+    _clearPunchesForDay(_TEST_PH_ID, _TEST_DATE_OLD);
+  }
 }
 
 function test_managerSaveDay_deleteOnly() {

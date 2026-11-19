@@ -5316,6 +5316,12 @@ function cnIntakePillHtml_(note) {
   const ft = String(t || '').toLowerCase();
   if (ft !== 'ppd' && ft !== 'pmd' && ft !== 'pap') return '';
   const label = ft === 'ppd' ? 'PPD' : ft === 'pmd' ? 'PMD' : 'PAP';
+  // DQ2 (cycle 26): the note of an AMENDED send says so — it is not counted
+  // as an intake call, and the chip is where a rep or a manager can see why.
+  if (note.subformData.intakeAmend === true) {
+    return '<span class="cn-intake-pill ' + ft + '" title="Logged from an amended Intake ' + label + ' submission — not counted as an intake call">' +
+      icon('clipboardList', 10) + label + ' amended</span>';
+  }
   return '<span class="cn-intake-pill ' + ft + '" title="Logged from an Intake ' + label + ' submission">' +
     icon('clipboardList', 10) + label + '</span>';
 }

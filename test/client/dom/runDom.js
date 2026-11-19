@@ -14923,7 +14923,7 @@ test('F34 DOM: an AMENDED intake send logs its call note with no form time — c
   const h = boot(); mount_(h, 'view-area');
   h.run.drain();
   h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {}, amendsSubmissionId: 'SUB-77' }, 'Sales', null, false, 95);
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[0].args[0].subformData)), { intakeType: 'pmd' },
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[0].args[0].subformData)), { intakeType: 'pmd', intakeAmend: true },   // DQ2: and marked, so it is not counted as an intake call
     'THE REGRESSION: completionSeconds 95 — counted as a timed intake call and taken out of the rep\'s average talk time');
   h.read('intakeAutoLogNote_')('pmd', { patientInfo: 'P', answers: {}, amendsSubmissionId: '' }, 'Sales', null, false, 95);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(h.run.pending('submitCallNote')[1].args[0].subformData)), { intakeType: 'pmd', completionSeconds: 95 }, 'a new submission keeps its time');
@@ -15077,4 +15077,119 @@ test('FQ1 DOM: the manager card\'s idle line names the threshold the server sent
   const h = boot(); h.bootShell();
   const html = h.read('mgrIdleSummaryHtml_')([{ name: 'Ana', idleMin: 61 }], false, 45);
   assert.ok(/1 rep has been idle 45\+ min while clocked in: Ana \(1 h 1 min\)/.test(html.replace(/<[^>]+>/g, '')), html);
+});
+
+section('DOM harness — cycle 26 decisions (DQ1 partial days for managers, DQ3 confirm as is)');
+
+test('DQ3 DOM: Day Edit offers "Confirm as is" on a SAVED inferred time — the press retags the slot, the save sends it as confirmed (not inferred), Undo and typing another time take it back, and a time applied in this open has no such button', () => {
+  const h = boot();
+  h.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const day = h.read('_deDate');
+  const ci = h.document.getElementById('de-clockin'), co = h.document.getElementById('de-clockout');
+  const tag = h.document.getElementById('de-clockin-inf'), btn = h.document.getElementById('de-clockin-inf-confirm');
+  const btnOut = h.document.getElementById('de-clockout-inf-confirm');
+  assert.ok(btn.hidden && btnOut.hidden, 'nothing to confirm before the day loads');
+  h.run.flushSuccess({ days: [{ date: day, clockIn: '07:56:23', infClockIn: true, clockOut: '17:00:00', infClockOut: false, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  assert.ok(!tag.hidden && /Inferred \(app activity\)/.test(tag.textContent), 'the saved inferred Clock In loads tagged');
+  assert.ok(!btn.hidden && btn.textContent === 'Confirm as is', 'THE CAPABILITY: and can be confirmed without changing it');
+  assert.match(btn.getAttribute('aria-label'), /^Confirm Clock In as is/);
+  assert.ok(btnOut.hidden, 'a Clock Out that was never inferred has no button');
+  // The press.
+  btn.click();
+  assert.ok(!tag.hidden && /^Confirmed as is/.test(tag.textContent) && tag.classList.contains('confirmed'), tag.textContent);
+  assert.ok(btn.textContent === 'Undo' && /^Undo confirming Clock In/.test(btn.getAttribute('aria-label')));
+  assert.strictEqual(ci.value, '07:56', 'the time is not touched');
+  h.document.getElementById('de-save').click();
+  let sent = h.run.pending('managerSaveDay')[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify([sent.args[2].ClockIn, sent.args[2].inferred, sent.args[2].confirmed])),
+    ['07:56', { ClockIn: false, ClockOut: false }, { ClockIn: true, ClockOut: false }], 'the save: same time, confirmed, no longer sent as inferred');
+  h.run.flushFailure(new Error('busy'), 'managerSaveDay');
+  // Undo: back to inferred.
+  btn.click();
+  assert.ok(/Inferred \(app activity\)/.test(tag.textContent) && !tag.classList.contains('confirmed') && btn.textContent === 'Confirm as is');
+  h.document.getElementById('de-save').click();
+  sent = h.run.pending('managerSaveDay')[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify([sent.args[2].inferred, sent.args[2].confirmed])), [{ ClockIn: true, ClockOut: false }, { ClockIn: false, ClockOut: false }], 'undone: an unchanged inferred time stays inferred');
+  h.run.flushFailure(new Error('busy'), 'managerSaveDay');
+  // Pressed, then another time typed: the manager's own entry — neither mark, no button.
+  btn.click();
+  ci.value = '08:05'; ci.dispatchEvent(new h.window.Event('input'));
+  assert.ok(tag.hidden && btn.hidden, 'a typed time is neither inferred nor confirmable');
+  h.document.getElementById('de-save').click();
+  sent = h.run.pending('managerSaveDay')[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify([sent.args[2].inferred, sent.args[2].confirmed])), [{ ClockIn: false, ClockOut: false }, { ClockIn: false, ClockOut: false }], 'a stale press does not ride a changed time');
+  h.run.flushFailure(new Error('busy'), 'managerSaveDay');
+  // Typed back to the saved time: the press is remembered, and shown.
+  ci.value = '07:56'; ci.dispatchEvent(new h.window.Event('input'));
+  assert.ok(!btn.hidden && btn.textContent === 'Undo' && /^Confirmed as is/.test(tag.textContent));
+  // Range mode: a range save confirms nothing, so the button goes.
+  const to = h.document.getElementById('de-date-to');
+  to.value = h.read('deNextDay_')(day); to.dispatchEvent(new h.window.Event('change'));
+  assert.ok(btn.hidden, 'no confirm in range mode');
+
+  // A time APPLIED from app activity in this open: tagged, but nobody has checked it yet.
+  const h2 = boot();
+  h2.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const d2 = h2.read('_deDate'), tz = h2.read('empTz')();
+  const y = h2.read('mgrAddDaysIso_')(d2, -1);
+  const dEl = h2.document.getElementById('de-date');
+  dEl.value = y; dEl.dispatchEvent(new h2.window.Event('change'));
+  h2.run.drain();
+  dEl.value = d2; dEl.dispatchEvent(new h2.window.Event('change'));
+  h2.run.flushSuccess({ days: [{ date: d2, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  const blocks = new Array(144).fill(0); blocks[47] = 1;
+  h2.run.flushSuccess({ date: d2, timezone: tz, blockMin: 10, gapMin: 10, retentionDays: 60, pings: 1, first: '07:56', last: '07:56', blocks }, 'managerGetDayActivity');
+  h2.document.querySelector('#de-act [data-de-apply="ClockIn"]').click();
+  assert.ok(!h2.document.getElementById('de-clockin-inf').hidden, 'applied: tagged Inferred');
+  assert.ok(h2.document.getElementById('de-clockin-inf-confirm').hidden, 'THE RULE: but not confirmable — only a time already saved as inferred is');
+  // A new day forgets the press.
+  const h3 = boot();
+  h3.read('openDayEditModal')('E-1077', 'Nina Patel');
+  const d3 = h3.read('_deDate');
+  h3.run.flushSuccess({ days: [{ date: d3, clockIn: '07:56:00', infClockIn: true, breaks: [] }] }, 'getEmployeeTimesheetForManager');
+  h3.document.getElementById('de-clockin-inf-confirm').click();
+  const dEl3 = h3.document.getElementById('de-date');
+  const y3 = h3.read('mgrAddDaysIso_')(d3, -1);
+  dEl3.value = y3; dEl3.dispatchEvent(new h3.window.Event('change'));
+  h3.run.drain();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(h3.read('_deConfirm'))), { ClockIn: false, ClockOut: false }, 'another day starts unconfirmed');
+  assert.ok(h3.document.getElementById('de-clockin-inf-confirm').hidden);
+});
+
+test('DQ1 DOM: a manager\'s Team table marks a rep with partial days beside the name and names the days under the table, with "not adjusted"; a failed read of the marks is said; the copied table carries them; the rep view shows nothing of it', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const rep = (id, name, pd) => ({ repId: id, repName: name, totalRung: 12, totalAnswered: 10, totalMissed: 2, pctAnswered: 83, tttFormatted: '1:00:00', attFormatted: '0:06:00',
+    tttSeconds: 3600, attSeconds: 360, noteCount: 8, noteCoverage: 80, noteCountUnavailable: false, intakeNotes: 1, hasCdrData: true, transferred: 0, transferPct: null, queues: {}, partialDays: pd });
+  const totals = { pctAnswered: 83, rung: 24, answered: 20, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, hasCallData: true };
+  const data = fullTeamData_({ from: '2026-06-08', to: '2026-06-15', teamTotals: totals,
+    reps: [rep('E1', 'Jo Tran', [{ date: '2026-06-12', credit: 0.5 }, { date: '2026-06-09', credit: 0 }]), rep('E2', 'Ana Lopez', [])] });
+  h.window.mRenderTeamMetrics_(data);
+  const host = h.$('#m-team-content');
+  const chips = Array.from(host.querySelectorAll('.m-partial-chip'));
+  assert.strictEqual(chips.length, 1, 'one rep has partial days');
+  assert.ok(chips[0].textContent === '2 partial' && /Jo Tran/.test(chips[0].parentNode.textContent) && /Jun 12 \(0\.5 day\), Jun 9 \(not counted\)/.test(chips[0].getAttribute('title')), chips[0].outerHTML);
+  const hints = () => Array.from(host.querySelectorAll('.m-hint')).map((n) => n.textContent);
+  assert.ok(hints().some((t) => /1 rep with partial days in this window — Jo Tran: Jun 12 \(0\.5 day\), Jun 9 \(not counted\)\. The figures in this table are not adjusted for them\./.test(t)),
+    'THE CAPABILITY: the days are text on the page, not only a hover — ' + hints().join(' | '));
+  const tsv = h.read('mTeamTableTsv_')(data, 'reps', { key: 'repName', dir: 'asc' }).split('\n');
+  assert.ok(/\tPartial days$/.test(tsv[0]) && /^Jo Tran\t.*\tJun 12 \(0\.5 day\), Jun 9 \(not counted\)$/.test(tsv.find((l) => /^Jo Tran/.test(l))) && /\t$/.test(tsv.find((l) => /^Ana Lopez/.test(l))), tsv.join(' / '));
+  // No partial day in the window: no chip, no line, no column.
+  const none = fullTeamData_({ teamTotals: totals, reps: [rep('E1', 'Jo Tran', []), rep('E2', 'Ana Lopez', [])] });
+  h.window.mRenderTeamMetrics_(none);
+  assert.ok(!host.querySelector('.m-partial-chip') && !hints().some((t) => /partial/i.test(t)));
+  assert.ok(!/Partial days/.test(h.read('mTeamTableTsv_')(none, 'reps', { key: 'repName', dir: 'asc' })));
+  // The marks could not be read: said, and no row reads as "no partial days".
+  h.window.mRenderTeamMetrics_(fullTeamData_({ teamTotals: totals, partialDaysUnavailable: true, reps: [rep('E1', 'Jo Tran', []), rep('E2', 'Ana Lopez', [])] }));
+  assert.ok(hints().some((t) => /Partial-day marks could not be read/.test(t)), hints().join(' | '));
+  // The rep view (the server ships no rows): nothing.
+  h.window.mRenderTeamMetrics_({ repView: true, from: '2026-06-08', to: '2026-06-15', date: '2026-06-08', teamTotals: totals, trend: null });
+  assert.ok(!host.querySelector('.m-partial-chip') && !/partial/i.test(host.textContent), 'a rep sees no colleague\'s partial days');
+});
+
+test('DQ2 DOM: a call note logged from an amended intake send wears "PMD amended"', () => {
+  const h = boot(); h.bootShell();
+  const html = h.read('cnIntakePillHtml_')({ subformData: { intakeType: 'pmd', intakeAmend: true } });
+  assert.ok(/cn-intake-pill pmd/.test(html) && />PMD amended<\/span>$/.test(html.replace(/<svg[\s\S]*?<\/svg>/, '')), html);
+  assert.ok(!/amended/.test(h.read('cnIntakePillHtml_')({ subformData: { intakeType: 'pmd' } })));
 });

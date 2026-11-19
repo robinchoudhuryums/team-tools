@@ -4888,8 +4888,14 @@ function intakeNoteFields_(formType, payload, recipient, recs) {
 /** PURE — the form time an intake send's call note carries: the seconds from
  *  first input to send, and none for an amendment of a sent submission. */
 function intakeNoteTimedSec_(payload, formSec) {
-  if (payload && String(payload.amendsSubmissionId || '').trim()) return 0;
+  if (intakeNoteIsAmend_(payload)) return 0;
   return formSec > 0 ? formSec : 0;
+}
+/** PURE — DQ2 (cycle 26): is this send an AMENDMENT of a form already sent?
+ *  Its call note is marked (subformData.intakeAmend), so the intake count
+ *  leaves it out — a correction is not a new intake call. */
+function intakeNoteIsAmend_(payload) {
+  return !!(payload && String(payload.amendsSubmissionId || '').trim());
 }
 function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec) {
   var f = intakeNoteFields_(formType, payload, recipient, recs);
@@ -4927,6 +4933,7 @@ function intakeAutoLogNote_(formType, payload, recipient, recs, onView, formSec)
   // call, and its few seconds were counted as a timed intake call and taken
   // out of the rep's average talk time.
   if (intakeNoteTimedSec_(payload, formSec) > 0) notePayload.subformData.completionSeconds = formSec;
+  if (intakeNoteIsAmend_(payload)) notePayload.subformData.intakeAmend = true;   // DQ2: not counted as an intake call
   google.script.run
     .withSuccessHandler(function (res) {
       var ok = res && res.success;

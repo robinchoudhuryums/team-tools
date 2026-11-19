@@ -4681,6 +4681,31 @@
     "teamMetricsRepView_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "cycle 26 DQ1-DQ3: managers see partial days on Team Metrics, an amended intake note is not counted, Confirm as is for an inferred punch",
+   "added": [
+    "ADP_CONFIRMED_MARK",
+    "adpRowConfirmed_",
+    "adpSetSource_",
+    "cnIntakeNoteCounts_",
+    "exportConfirmedLine_",
+    "managerConfirmPlan_",
+    "metricsTeamPartialDays_"
+   ],
+   "removed": [],
+   "changed": [
+    "adpSetInferred_",
+    "cnCountIntakeNotesResult_",
+    "exportAdpRange",
+    "generateExportSheet_",
+    "getTeamMetrics",
+    "managerSaveDay",
+    "sanitizeCallNotePayload_",
+    "sendAutomatedExport_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4804,6 +4829,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "da28af4268944744"
+  },
+  "ADP_CONFIRMED_MARK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "4208e237b5ea6751"
   },
   "ADP_INFERRED_MARK": {
    "file": "00_config.js",
@@ -8390,6 +8420,11 @@
    "kind": "function",
    "sha": "118f9fb9ee8cb5c7"
   },
+  "adpRowConfirmed_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "89dd4af8a1a0195b"
+  },
   "adpRowInferred_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -8398,7 +8433,12 @@
   "adpSetInferred_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "9cccd794604fcf79"
+   "sha": "20347e5b0a389246"
+  },
+  "adpSetSource_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "31e762344e00688d"
   },
   "adpSheetTz_": {
    "file": "20_timeclock.js",
@@ -9133,7 +9173,7 @@
   "cnCountIntakeNotesResult_": {
    "file": "60_intake.js",
    "kind": "function",
-   "sha": "8e76d58edd30c789"
+   "sha": "19d2cc8299208ab4"
   },
   "cnCountNotesResult_": {
    "file": "30_callnotes.js",
@@ -9184,6 +9224,11 @@
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "2249e402ca22868f"
+  },
+  "cnIntakeNoteCounts_": {
+   "file": "60_intake.js",
+   "kind": "function",
+   "sha": "670575439fd9649c"
   },
   "cnIsoToDayNum_": {
    "file": "30_callnotes.js",
@@ -10313,12 +10358,17 @@
   "exportAdpRange": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "eb7a0b3fafd561cc"
+   "sha": "738016b7b333b1b0"
   },
   "exportCallNotesRange": {
    "file": "30_callnotes.js",
    "kind": "function",
    "sha": "d293c84556a37d55"
+  },
+  "exportConfirmedLine_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "1ac4d2fadf4598c1"
   },
   "exportHandbookFeedback": {
    "file": "70_kb.js",
@@ -10503,7 +10553,7 @@
   "generateExportSheet_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b51a274aec3efc3c"
+   "sha": "819deab4062bd3a8"
   },
   "generateFormToken_": {
    "file": "61_forms.js",
@@ -11498,7 +11548,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "1d3702bf6766994b"
+   "sha": "aabc1cca2a5bd55c"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
@@ -13000,6 +13050,11 @@
    "kind": "function",
    "sha": "b4eaed133e7101ae"
   },
+  "managerConfirmPlan_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "3be14c253cc7a39c"
+  },
   "managerDeleteCallNote": {
    "file": "30_callnotes.js",
    "kind": "function",
@@ -13063,7 +13118,7 @@
   "managerSaveDay": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a1e05e4a5cf40233"
+   "sha": "7e624f706802312b"
   },
   "managerSaveDayRange": {
    "file": "20_timeclock.js",
@@ -13144,6 +13199,11 @@
    "file": "40_metrics.js",
    "kind": "function",
    "sha": "4cce16afeb5f8fdd"
+  },
+  "metricsTeamPartialDays_": {
+   "file": "40_metrics.js",
+   "kind": "function",
+   "sha": "c120876bb7f90a61"
   },
   "metricsWorkdayIsos_": {
    "file": "40_metrics.js",
@@ -14433,7 +14493,7 @@
   "sanitizeCallNotePayload_": {
    "file": "30_callnotes.js",
    "kind": "function",
-   "sha": "42c4160dc54aedf8"
+   "sha": "a6208f9873e98709"
   },
   "sanitizeEmailSelections_": {
    "file": "30_callnotes.js",
@@ -14663,7 +14723,7 @@
   "sendAutomatedExport_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "21e25fe98b53dc21"
+   "sha": "d2434ef81916289e"
   },
   "sendAutomationHealthDigest": {
    "file": "10_core.js",

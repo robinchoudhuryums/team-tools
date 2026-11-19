@@ -5189,6 +5189,28 @@ function managerParseBreakSlots_(slots) {
  *
  *  Returns `{updates, deletions, additions}` — pure, no sheet access.
  */
+/** PURE (Node-pinned) — cycle 26 DQ3: the clock rows a Day Edit save
+ *  CONFIRMS as they stand. A confirm is explicit (`confirmed[type] === true`,
+ *  sent by the Confirm as is button), and it is refused quietly — nothing is
+ *  written — unless all of this holds: the slot is not also sent as inferred;
+ *  the day's shown row (the last of its type) carries the Inferred mark; and
+ *  the slot still holds that row's HH:mm. A slot whose time changed is an
+ *  edit, which clears the mark by its own path. Returns [{rowIndex, type,
+ *  time}] — `time` is the stored one, seconds and all. */
+function managerConfirmPlan_(rowsByType, cleanSlots, confirmed, inferredIn) {
+  const out = [];
+  ['ClockIn', 'ClockOut'].forEach(function (type) {
+    if (!confirmed || confirmed[type] !== true) return;
+    if (inferredIn && inferredIn[type]) return;
+    const list = (rowsByType && rowsByType[type]) || [];
+    const cur = list[list.length - 1];
+    if (!cur || cur.inferred !== true) return;
+    const slot = (cleanSlots && cleanSlots[type]) || '';
+    if (!slot || String(cur.time || '').substring(0, 5) !== slot) return;
+    out.push({ rowIndex: cur.rowIndex, type: type, time: cur.time });
+  });
+  return out;
+}
 function managerPlanDay_(rowsByType, cleanSlots, cleanBreaks) {
   const updates = [], deletions = [], additions = [];
 
@@ -5401,6 +5423,7 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       rowsByType[type].push({
         rowIndex: i + 1,
         time: normalizeTime_(allRows[i][ADP.TIME]).trim(),
+        inferred: adpRowInferred_(allRows[i]),   // DQ3: only a marked row can be confirmed
       });
     }
     const changes = [];
@@ -5428,6 +5451,15 @@ function managerSaveDay(targetEmpId, date, slots, reason) {
       writeAuditLog_(targetEmp, 'PunchEdit', date, timeFull, true, daysBack,
         `${u.type}: ${u.oldTime} → ${timeFull} (manager edit)${infNote(u.type)}${noteSuffix}`, callerEmp.email);
       changes.push({ type: u.type, action: 'update' });
+    });
+    // DQ3 (cycle 26): "Confirm as is" — the time stands, the row's mark moves
+    // from Inferred to Confirmed, and the audit row says who. Row indexes are
+    // still the snapshot's here (no delete has run).
+    managerConfirmPlan_(rowsByType, cleanSlots, slots && slots.confirmed, inferredIn).forEach(c => {
+      adpSetSource_(sheet, c.rowIndex, ADP_CONFIRMED_MARK);
+      writeAuditLog_(targetEmp, 'PunchConfirm', date, c.time, true, daysBack,
+        `${c.type}: ${c.time} confirmed as is by manager (was inferred from app activity)${noteSuffix}`, callerEmp.email);
+      changes.push({ type: c.type, action: 'confirm' });
     });
 
     // Then deletions, descending, so earlier removals don't shift later indices.
@@ -5485,7 +5517,8 @@ function exportAdpRange(startDate, endDate) {
       (result.archivedRowCount ? `; archivedRows=${result.archivedRowCount}` : ''));
     return { success: true, url: result.url, fileName: result.fileName, rowCount: result.rowCount,
       archivedRowCount: result.archivedRowCount || 0,
-      inferredCount: result.inferredCount || 0, inferred: result.inferred || [] };   // E2
+      inferredCount: result.inferredCount || 0, inferred: result.inferred || [],   // E2
+      inferredConfirmedCount: result.inferredConfirmedCount || 0 };   // DQ3
   } catch (err) { return { error: err.message }; }
 }
 
@@ -6671,7 +6704,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
         `Employees:  ${result.employeeCount} (${payCycleFilter})\n` +
         `Rows:       ${result.rowCount}\n` +
         (result.inferredCount ? `Inferred:   ${result.inferredCount} punch(es) set from app activity — ` +
-          exportInferredLines_(result.inferred, result.inferredCount).join('; ') + '\n' : '') + '\n' +
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ') + '\n' : '') +
+        (result.inferredConfirmedCount ? `Confirmed:  ${exportConfirmedLine_(result.inferredConfirmedCount)}\n` : '') + '\n' +
         `Also accessible as a Google Sheet:\n${result.url}\n\n` +
         `— UMS Time Clock (automated)`,
       htmlBody: buildBrandedEmailHtml_('ADP export ready',
@@ -6680,7 +6714,8 @@ function sendAutomatedExport_(payCycleFilter, range, subjectPrefix) {
           ['Employees', result.employeeCount + ' (' + payCycleFilter + ')'],
           ['Rows', String(result.rowCount)],
         ].concat(result.inferredCount ? [['Inferred from app activity',
-          exportInferredLines_(result.inferred, result.inferredCount).join('; ')]] : [])) +
+          exportInferredLines_(result.inferred, result.inferredCount).join('; ')]] : [])
+          .concat(result.inferredConfirmedCount ? [['Confirmed by a manager', exportConfirmedLine_(result.inferredConfirmedCount)]] : [])) +
         '',
         { accent: CN_EMAIL_PALETTE.brand, subLabel: 'Payroll', statusLabel: 'Ready',
           ctaUrl: result.url, ctaLabel: 'Open as a Google Sheet' }),
@@ -6851,6 +6886,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
   }
   const liveCount = read.rows.length - read.archivedRows;   // live rows first, then archive rows
   const inferred = [];   // E2 — named BESIDE the file (the link, the email); the upload itself is untouched
+  let inferredConfirmed = 0;   // DQ3 — an inferred time a manager confirmed as is: counted, not listed
   read.rows.forEach((r, n) => {
     const rowId = String(r[ADP.EMP_ID]).trim();
     if (!rowId && n >= liveCount) return;   // an archive row with no id was skipped before the move too
@@ -6860,6 +6896,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     matched.push(cleaned);
     if (adpRowInferred_(r)) inferred.push({ id: rowId, name: String(r[ADP.EMP_NAME] || ''), date: normalizeDate_(r[ADP.DATE]),
       time: normalizeTime_(r[ADP.TIME]).substring(0, 5), type: normalizeType_(String(r[ADP.COMMENTS])) });
+    else if (adpRowConfirmed_(r)) inferredConfirmed++;
   });
   const archivedRowCount = read.archivedRows;
 
@@ -6917,6 +6954,7 @@ function generateExportSheet_(startDate, endDate, cycleFilter) {
     // NOT a tab in the file — the file is the ADP upload, kept exactly its
     // shape — but named beside it: the export link and the automated email.
     inferredCount: inferred.length, inferred: inferred.slice(0, EXPORT_INFERRED_LIST_MAX),
+    inferredConfirmedCount: inferredConfirmed,   // DQ3
     // F1: how many of rowCount came from the cold archive (0 in the normal
     // current-period case). Additive — existing callers ignore it.
     archivedRowCount: archivedRowCount };
@@ -8530,17 +8568,33 @@ function exportInferredLines_(list, total) {
  *  carries. Unmarking a tab that has no column J is a no-op; marking grows the
  *  grid and names the column the first time. Callers hold the script lock. */
 function adpSetInferred_(sheet, rowIndex, on) {
+  adpSetSource_(sheet, rowIndex, on ? ADP_INFERRED_MARK : '');
+}
+/** Cycle 26 DQ3 — write column J's mark: ADP_INFERRED_MARK, ADP_CONFIRMED_MARK
+ *  or '' (a person's own time). The one writer of that column. */
+function adpSetSource_(sheet, rowIndex, mark) {
   const col = ADP.INFERRED + 1;
   if (sheet.getMaxColumns() < col) {
-    if (!on) return;
+    if (!mark) return;
     sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
   }
-  if (on && !String(sheet.getRange(1, col).getValue() || '').trim()) sheet.getRange(1, col).setValue(sheetSafe_('Source'));
-  sheet.getRange(rowIndex, col).setValue(sheetSafe_(on ? ADP_INFERRED_MARK : ''));
+  if (mark && !String(sheet.getRange(1, col).getValue() || '').trim()) sheet.getRange(1, col).setValue(sheetSafe_('Source'));
+  sheet.getRange(rowIndex, col).setValue(sheetSafe_(mark || ''));
 }
-/** PURE (Node-pinned) — is this Timesheet row marked inferred? */
+/** PURE (Node-pinned) — is this Timesheet row marked inferred? A CONFIRMED
+ *  row is not: its time has been checked by a manager (DQ3). */
 function adpRowInferred_(row) {
   return String((row && row[ADP.INFERRED]) || '').trim() === ADP_INFERRED_MARK;
+}
+/** PURE (Node-pinned) — DQ3: was this row's inferred time confirmed as is? */
+function adpRowConfirmed_(row) {
+  return String((row && row[ADP.INFERRED]) || '').trim() === ADP_CONFIRMED_MARK;
+}
+/** PURE (Node-pinned) — DQ3: the export's line for confirmed punches, '' for
+ *  none: "2 punches set from app activity, confirmed by a manager". */
+function exportConfirmedLine_(n) {
+  n = Number(n) || 0;
+  return n > 0 ? n + ' punch' + (n === 1 ? '' : 'es') + ' set from app activity, confirmed by a manager' : '';
 }
 function openPersonalSs_(sheetId) {
   if (!_personalSsCache[sheetId]) _personalSsCache[sheetId] = SpreadsheetApp.openById(sheetId);

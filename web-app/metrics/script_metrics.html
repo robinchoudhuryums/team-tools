@@ -295,6 +295,11 @@
   font: inherit; color: inherit; cursor: pointer;
 }
 .m-rep-link:hover { color: var(--info-deep); text-decoration: underline; }
+/* DQ1 (cycle 26): a rep with partial days in the window — the days are named in the hint under the table. */
+.m-partial-chip {
+  display: inline-block; margin-left: 6px; padding: 0 6px; font-size: 10px; font-weight: 600; white-space: nowrap;
+  color: var(--info-deep); border: 1px dashed var(--info-deep); border-radius: var(--radius-pill);
+}
 
 /* ── #10 — copy-table button ─────────────────────────────────────── */
 .m-section-row { display: flex; align-items: center; gap: var(--space-sm); }
@@ -1090,6 +1095,40 @@ function mPartialDaysRowHtml_(days) {
  *  chart (the chart itself is decorative): "Partial day: Nov 10 (0.5 day)".
  *  Newest first, at most four named. '' when no point is marked. The count on
  *  such a day is real and stays; the note says why it may read low. */
+/** PURE — DQ1 (cycle 26): a rep's partial days in a Team window, as words:
+ *  "Nov 10 (0.5 day), Nov 5 (not counted)". '' for none. */
+function mTeamPartialText_(r, max) {
+  var d = ((r && r.partialDays) || []).filter(function (x) { return x && x.credit != null && isFinite(x.credit); });
+  return d.length ? mPartialDaysText_(d.map(function (x) { return { date: x.date, partial: x.credit }; }), max) : '';
+}
+/** PURE — DQ1: the mark beside a rep's name on the manager's Team table. The
+ *  days themselves are TEXT in the hint under the table; the title repeats
+ *  them for a pointer. '' for a rep with none. */
+function mTeamPartialChipHtml_(r) {
+  var text = mTeamPartialText_(r, 6);
+  if (!text) return '';
+  var n = r.partialDays.length;
+  return '<span class="m-partial-chip" title="' + esc('Partial day' + (n === 1 ? '' : 's') + ': ' + text) + '">' +
+    esc(n + ' partial') + '</span>';
+}
+/** PURE — DQ1: the line under the manager's Team table. Marks that could not
+ *  be read are said (a row with no chip would read as a full window — g53);
+ *  otherwise each rep with partial days is named with them, and the line says
+ *  the table's figures are not adjusted. '' for a window with none. */
+function mTeamPartialHintHtml_(data, cap) {
+  if (!data || !data.reps) return '';
+  if (data.partialDaysUnavailable === true) {
+    return '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' + icon('warning', 14) +
+      ' Partial-day marks could not be read — a rep’s partial days are not shown here. Refresh to try again.</div>';
+  }
+  var marked = data.reps.filter(function (r) { return !!mTeamPartialText_(r, 1); });
+  if (!marked.length) return '';
+  return '<div class="m-hint" style="margin-top:var(--space-md)">' +
+    esc(marked.length + ' rep' + (marked.length === 1 ? '' : 's') + ' with partial days in this window — ' +
+      marked.slice(0, cap).map(function (r) { return r.repName + ': ' + mTeamPartialText_(r, 4); }).join('; ')) +
+    (marked.length > cap ? ' <em>+' + (marked.length - cap) + ' more</em>' : '') +
+    '. The figures in this table are not adjusted for them.</div>';
+}
 function mPartialNoteHtml_(series) {
   var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
   if (!pts.length) return '';
@@ -1946,7 +1985,8 @@ function mRenderTeamMetrics_(data) {
         { key: 'repName', label: 'Rep', name: true, sortable: true, cell: function (r) {
             return '<button type="button" class="m-rep-link" data-rep="' + esc(r.repId) + '"' +
               ' data-date="' + esc(drillDate) + '" onclick="mRepDrill_(this)"' +
-              ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>'; } },
+              ' title="Open this rep in Team Notes (Per-Rep View)">' + esc(r.repName) + '</button>' +
+              mTeamPartialChipHtml_(r); } },   // DQ1
         // F35 (cycle 26): a rep with no call-data row in the window (the lagged
         // Today, PTO, a non-phone day) has no call figures — "—", never a 0.
         { key: 'totalRung', label: 'Rung', numeric: true, sortable: true, cell: function (r) { return mNoCallData_(r) ? mNoCallCell_() : esc(r.totalRung); } },
@@ -2006,6 +2046,8 @@ function mRenderTeamMetrics_(data) {
         ? ' <em>+' + (data.likelyMismatches.length - M_NAME_CAP) + ' more</em>' : '') +
       '. Fix with an Agent Alias Overrides row in the CDR Report.</div>';
   }
+
+  html += mTeamPartialHintHtml_(data, M_NAME_CAP);   // DQ1 — managers only: the rep view carries no `reps`
 
   // FQ7 (cycle 26): the same pairing for the Outbound Calls tab — a rep whose
   // outbound calls sit under another spelling had no line anywhere.
@@ -2148,6 +2190,8 @@ function mTeamTableTsv_(data, scope, sort) {
     var hasAdjAtt = (data.reps || []).some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; });
     if (hasAdjAtt) head.push('ATT excl. intake');
     if (hasTr) head.push('Transfers');
+    var hasPd = (data.reps || []).some(function (r) { return !!mTeamPartialText_(r, 1); });   // DQ1
+    if (hasPd) head.push('Partial days');
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
     reps.forEach(function (r) {
@@ -2164,6 +2208,7 @@ function mTeamTableTsv_(data, scope, sort) {
         r.adjusted ? r.adjusted.handled : (noCalls ? '' : r.totalAnswered));
       if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
+      if (hasPd) row.push(mTeamPartialText_(r, 99));
       out.push(tsvRow_(row));
     });
   }

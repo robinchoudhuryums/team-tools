@@ -11078,10 +11078,10 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
     'BOTH return paths (cache hit + fresh compute) strip for a non-manager');
   // INV-129: cache only a fully-successful round — a per-rep-Sheet failure or
   // a transfer-read error must not pin a degraded aggregate for the TTL.
-  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\)\) \{/.test(f),   // MET-4: a failed trend read is degraded too; M1: a failed outbound read
+  assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(f),   // DQ1: nor a round read without the partial-day marks; MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v6:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v7:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v7: cycle 26 DQ1; v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -18860,7 +18860,7 @@ test('getTeamCalendar — behavioral (real enums + empRosterEmail_/normalizeType
   // pattern: never re-declare an enum in the test.
   const tcCtx = vm.createContext({});
   ['const EMP = \\{[\\s\\S]*?\\};', 'const ADP = \\{[\\s\\S]*?\\};', 'const TO  = \\{[\\s\\S]*?\\};',
-   "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';"].forEach(re => {
+   "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';", "const ADP_CONFIRMED_MARK = '[^']*';"].forEach(re => {
     const m = new RegExp(re).exec(codeSrc);
     assert.ok(m, 'located: ' + re.slice(0, 20));
     vm.runInContext(m[0], tcCtx);
@@ -22411,7 +22411,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v6:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v7:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -36635,8 +36635,9 @@ console.log('\ncycle 23 Batch 14 — TC2-9 archive-aware timesheet readers');
 // six readers lean on. `env` = { live, arch, archiveThrows, days, cache }.
 const b14Ctx_ = (fns, env, extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, Set, isFinite, parseInt, RegExp, Error, console: { warn() {} } }, extra || {}));
-  ['const ADP = \\{[\\s\\S]*?\\};', "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;'].forEach((re) => vm.runInContext(new RegExp(re).exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
+  ['const ADP = \\{[\\s\\S]*?\\};', "const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];", "const ADP_INFERRED_MARK = '[^']*';", "const ADP_CONFIRMED_MARK = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;'].forEach((re) => vm.runInContext(new RegExp(re).exec(codeSrc)[0].replace(/^const /, 'var '), ctx));
   vm.runInContext(extractRawFunction('Code.js', 'adpRowInferred_'), ctx);   // E2 — every reader asks it
+  vm.runInContext(extractRawFunction('Code.js', 'adpRowConfirmed_'), ctx);   // DQ3 — the export counts a confirmed row
   const reads = { live: 0, archFull: 0, archCol: 0 };
   const live = env.live, arch = env.arch;
   const archSheet = arch ? {
@@ -40850,12 +40851,12 @@ test('B8: the manager live view flags only a PUNCHED-IN rep idle IDLE_ALERT_MIN+
 const e2aCtx_ = (extra) => {
   const ctx = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error,
     console: { warn() {} }, PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) } }, extra || {}));
-  ['const ADP = \\{[\\s\\S]*?\\};', 'const ACTIVITY_COUNTS_MAX_PER_BLOCK = \\d+;', "const ACTIVITY_LOG_FAIL_PROP = '[^']*';", "const ADP_INFERRED_MARK = '[^']*';", 'const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
+  ['const ADP = \\{[\\s\\S]*?\\};', 'const ACTIVITY_COUNTS_MAX_PER_BLOCK = \\d+;', "const ACTIVITY_LOG_FAIL_PROP = '[^']*';", "const ADP_INFERRED_MARK = '[^']*';", "const ADP_CONFIRMED_MARK = '[^']*';", 'const ACTIVITY_BLOCK_MIN = \\d+;', 'const ACTIVITY_PING_GAP_MIN = \\d+;',
     'const ACTIVITY_LOG_DAYS = \\d+;', "const ACTIVITY_LOG_TAB = '[^']*';", 'const EXPORT_INFERRED_LIST_MAX = \\d+;',
     "const ACTIVITY_SUMMARY_TAB = '[^']*';", 'const ACTIVITY_SUMMARY_HEADERS = \\[[^\\]]*\\];', "const ACTIVITY_COUNTS_KIND = '[^']*';", 'const ACTIVITY_COUNTS_MAX_AGE_MS = [^;]*;']
     .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
   ['activityDayView_', 'activityLowerBound_', 'activityBlocksDecode_', 'activitySummaryKeys_', 'activityCountsDecode_', 'activityDayCountsDecode_', 'activityDaysFor_',
-    'activityLogFailsView_', 'activityLogFailsFor_', 'managerGetDayActivity', 'adpSetInferred_', 'adpRowInferred_', 'exportInferredLines_']
+    'activityLogFailsView_', 'activityLogFailsFor_', 'managerGetDayActivity', 'adpSetInferred_', 'adpSetSource_', 'adpRowInferred_', 'adpRowConfirmed_', 'exportInferredLines_', 'exportConfirmedLine_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'E2a#' + f }));
   return ctx;
 };
@@ -43382,7 +43383,7 @@ const m1Ctx_ = (extra) => {
   if (typeof ctx.cdrDataStamp_ !== 'function') ctx.cdrDataStamp_ = () => '';   // F24: no stamp unless a test names one
   ['cdrParseHms_', 'cdrFmtHms_', 'cdrRowDateIso_', 'cdrDateColIsos_', 'cdrDqeWindowSpan_', 'cdrOutboundColumns_', 'cdrOutboundAggregate_',
     'cdrWindowCacheSpec_', 'cdrCacheOversizeNote_', 'cdrCachePutSized_', 'cdrOutboundWindowIsPastData_',
-    'getCdrOutboundPerRep_', 'metricsAdjusted_', 'metricsOutboundOf_', 'cnCountIntakeNotesResult_']
+    'getCdrOutboundPerRep_', 'metricsAdjusted_', 'metricsOutboundOf_', 'cnCountIntakeNotesResult_', 'cnIntakeNoteCounts_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'M1#' + f }));
   return ctx;
 };
@@ -49552,6 +49553,7 @@ test('F34: the Adjusted line names the average it was taken from; the explanatio
   assert.ok(/title="0:05:00 with the 3 timed intake calls">0:04:03</.test(cols[0].cell({ adjusted: adj })), 'the team column: ' + cols[0].cell({ adjusted: adj }));
   assert.ok(/title="0:05:00 with the 1 timed intake call">/.test(cols[0].cell({ adjusted: Object.assign({}, adj, { intakeTimed: 1 }) })));
   const ic = vm.createContext({ String });
+  vm.runInContext(extractFunction('intake/script_intake.html', 'intakeNoteIsAmend_'), ic);   // DQ2
   vm.runInContext(extractFunction('intake/script_intake.html', 'intakeNoteTimedSec_'), ic);
   [[{}, 95, 95], [{ amendsSubmissionId: 'SUB-1' }, 95, 0], [{ amendsSubmissionId: '  ' }, 95, 95], [null, 95, 95], [{}, 0, 0], [{}, -4, 0], [{}, undefined, 0]]
     .forEach((g) => assert.strictEqual(ic.intakeNoteTimedSec_(g[0], g[1]), g[2], JSON.stringify(g)));
@@ -50183,6 +50185,254 @@ test('FQ10: the data stamp never asks a tab for more columns than it has — a t
   assert.notStrictEqual(narrow.stamp, full.stamp);
   assert.deepStrictEqual(run(12, 6).reads.filter((r) => r[0] === 'pd'), [['pd', 3]], 'the Partial Days probe is clamped DOWN only — six columns on the tab, three read');
   assert.deepStrictEqual(run(12, 2).reads.filter((r) => r[0] === 'pd'), [['pd', 2]], 'and a two-column one is asked for two');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Cycle 26 — the operator's three decisions after the follow-ons (2026-11-19)
+//  DQ1 managers see their reps' partial days on Team Metrics · DQ2 an amended
+//  intake send is not an intake call · DQ3 "Confirm as is" for an inferred punch
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCycle 26 decisions (DQ1–DQ3) — partial days for managers, an amended intake send, confirm as is');
+
+test('DQ3: the confirm plan — explicit, only a row that carries the Inferred mark, only while the slot still holds its time; the stored time is what is confirmed (driven)', () => {
+  const c = vm.createContext({ String });
+  vm.runInContext(extractRawFunction('Code.js', 'managerConfirmPlan_'), c);
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  const day = () => ({ ClockIn: [{ rowIndex: 7, time: '07:56:23', inferred: true }], ClockOut: [{ rowIndex: 9, time: '17:06:00', inferred: true }] });
+  const slots = { ClockIn: '07:56', ClockOut: '17:06' };
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), slots, { ClockIn: true }, {})), [{ rowIndex: 7, type: 'ClockIn', time: '07:56:23' }],
+    'the one slot confirmed — with the stored seconds, at the row the day shows');
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), slots, { ClockIn: true, ClockOut: true }, {})).map((x) => x.type), ['ClockIn', 'ClockOut']);
+  // Explicit: nothing but `true` confirms.
+  [undefined, null, {}, { ClockIn: 'true' }, { ClockIn: 1 }, { ClockIn: false }, { LunchOut: true }].forEach((cf) =>
+    assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), slots, cf, {})), [], 'not a confirm: ' + JSON.stringify(cf)));
+  // A slot still sent as inferred is not being confirmed.
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), slots, { ClockIn: true }, { ClockIn: true })), []);
+  // The time changed: an edit, which clears the mark by its own path.
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), { ClockIn: '08:00', ClockOut: '17:06' }, { ClockIn: true }, {})), [], 'another time is an edit');
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(day(), { ClockIn: '', ClockOut: '17:06' }, { ClockIn: true }, {})), [], 'a blanked slot is a delete');
+  // Only a marked row.
+  const plain = day(); plain.ClockIn[0].inferred = false;
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(plain, slots, { ClockIn: true }, {})), [], 'a row with no mark has nothing to confirm (a stale modal)');
+  // Duplicates: the row the modal showed is the last; an earlier marked row is about to be collapsed, never confirmed.
+  const dup = { ClockIn: [{ rowIndex: 4, time: '07:56:00', inferred: true }, { rowIndex: 7, time: '07:56:40', inferred: false }] };
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(dup, slots, { ClockIn: true }, {})), []);
+  const dup2 = { ClockIn: [{ rowIndex: 4, time: '07:50:00', inferred: false }, { rowIndex: 7, time: '07:56:40', inferred: true }] };
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(dup2, slots, { ClockIn: true }, {})), [{ rowIndex: 7, type: 'ClockIn', time: '07:56:40' }]);
+  assert.deepStrictEqual(J(c.managerConfirmPlan_({}, slots, { ClockIn: true }, {})), [], 'no row at all');
+  assert.deepStrictEqual(J(c.managerConfirmPlan_(null, null, { ClockIn: true }, null)), []);
+});
+
+test('DQ3: a Day Edit save that confirms — the time cell is not written, column J moves from Inferred to Confirmed, one PunchConfirm audit row names it; a changed time is an ordinary edit that clears the mark (driven over a fake Timesheet)', () => {
+  const run = (rows, slots, reason) => {
+    const cells = {}; const audit = []; const deleted = [];
+    const sheet = {
+      getDataRange: () => ({ getValues: () => rows }),
+      getMaxColumns: () => 10, insertColumnsAfter() {}, getLastRow: () => rows.length,
+      deleteRow: (r) => deleted.push(r),
+      getRange: (r, col) => ({ getValue: () => (r === 1 && col === 10 ? 'Source' : ''), setValue: (v) => { cells[r + ':' + col] = v; } }),
+    };
+    const ctx = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, isFinite, parseInt, Error, console: { warn() {} },
+      getEmployeeInfo_: () => ({ isManager: true, email: 'mgr@example.test' }),
+      LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+      lookupEmployeeById_: () => ({ id: 'E1', name: 'Avery Blake', sheetId: '' }),
+      empTz_: () => 'UTC', fmtDateTz_: () => '2026-11-12', fmtTimeTz_: () => '23:59:59', daysBetween_: () => 2,
+      CONFIG: { ADJUST_WINDOW_DAYS: 30, OLD_ADJUST_ALERT_DAYS: 7, ADP_TAB: 'Timesheet' },
+      normalizeDate_: (v) => String(v || ''), normalizeTime_: (v) => String(v || ''), sheetSafe_: (v) => v,
+      getAdpSS_: () => ({ getSheetByName: () => sheet }),
+      writeAuditLog_: (emp, action, date, time, adj, back, notes, by) => audit.push({ action, date, time, notes, by }),
+      appendToAdpSheet_() {}, writeToEmployeeSheet_() {}, clearFromEmployeeSheet_() {} });
+    ['const ADP = \\{[\\s\\S]*?\\};', 'const PUNCH_LABELS_ = \\[[\\s\\S]*?\\];', "const ADP_INFERRED_MARK = '[^']*';", "const ADP_CONFIRMED_MARK = '[^']*';", 'const MANAGER_DAY_MAX_BREAKS = \\d+;']
+      .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), ctx));
+    ['normalizeType_', 'timeToMins_', 'breakSortKey_', 'managerClockOrderError_', 'managerParseBreakSlots_', 'managerPlanDay_', 'managerConfirmPlan_',
+      'adpRowInferred_', 'adpSetInferred_', 'adpSetSource_', 'managerSaveDay']
+      .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx, { filename: 'DQ3#' + f }));
+    return { res: JSON.parse(JSON.stringify(ctx.managerSaveDay('E1', '2026-11-10', slots, reason || ''))), cells, audit, deleted };
+  };
+  const row = (time, type, mark) => ['E1', 'Avery Blake', '2026-11-10', time, 'IN', 'None', 'Missing punch', 'SUBMIT', type, mark || ''];
+  const sheetRows = () => [['h1'], ['h2'], row('07:56:23', 'ADJ-ClockIn', 'Inferred (app activity)'), row('17:00:00', 'ClockOut', '')];
+  // (a) Confirm as is.
+  let r = run(sheetRows(), { ClockIn: '07:56', ClockOut: '17:00', breaks: [], inferred: { ClockIn: false, ClockOut: false }, confirmed: { ClockIn: true, ClockOut: false } }, 'rep confirmed by phone');
+  assert.ok(r.res.success, JSON.stringify(r.res));
+  assert.deepStrictEqual([r.res.changes, r.res.summary], [1, 'confirm ClockIn']);
+  assert.deepStrictEqual(r.cells, { '3:10': 'Confirmed (app activity)' }, 'THE RULE: one cell written — column J of the row; the time and the type are untouched');
+  assert.strictEqual(r.audit.length, 1);
+  assert.deepStrictEqual([r.audit[0].action, r.audit[0].time, r.audit[0].by], ['PunchConfirm', '07:56:23', 'mgr@example.test']);
+  assert.match(r.audit[0].notes, /^ClockIn: 07:56:23 confirmed as is by manager \(was inferred from app activity\) — rep confirmed by phone$/);
+  assert.deepStrictEqual(r.deleted, []);
+  // (b) The same save WITHOUT the press changes nothing — an unchanged inferred time stays inferred.
+  r = run(sheetRows(), { ClockIn: '07:56', ClockOut: '17:00', breaks: [], inferred: { ClockIn: true, ClockOut: false } });
+  assert.deepStrictEqual([r.res.changes, Object.keys(r.cells).length, r.audit.length], [0, 0, 0], 'no press, no write');
+  // (c) A stale press on a slot whose time was then changed: an edit — the mark is cleared, not confirmed.
+  r = run(sheetRows(), { ClockIn: '08:00', ClockOut: '17:00', breaks: [], inferred: { ClockIn: false, ClockOut: false }, confirmed: { ClockIn: true } });
+  assert.deepStrictEqual([r.cells['3:4'], r.cells['3:10'], r.audit.map((a) => a.action).join()], ['08:00:00', '', 'PunchEdit'], 'the manager\'s own time: no mark of either kind');
+  // (d) A press against a row with no mark writes nothing.
+  r = run(sheetRows(), { ClockIn: '07:56', ClockOut: '17:00', breaks: [], confirmed: { ClockOut: true } });
+  assert.deepStrictEqual([r.res.changes, Object.keys(r.cells).length], [0, 0]);
+  // The confirm is applied with the updates — before any delete can shift a row.
+  const src = stripJsComments_(extractRawFunction('Code.js', 'managerSaveDay'));
+  assert.ok(src.indexOf('managerConfirmPlan_(') > 0 && src.indexOf('managerConfirmPlan_(') < src.indexOf('deletions.sort('), 'confirmed by snapshot row index, before the deletes');
+  assert.ok(/inferred: adpRowInferred_\(allRows\[i\]\)/.test(src), 'the snapshot carries each row\'s mark');
+});
+
+test('DQ3: column J has three states and one writer; a confirmed row is not "inferred" on any surface; the export counts it apart and the file is still nine columns (driven)', () => {
+  const c = e2aCtx_({ sheetSafe_: (v) => v });
+  const cells = {}; let maxCols = 9;
+  const sh = { getMaxColumns: () => maxCols, insertColumnsAfter: (a, n) => { maxCols += n; },
+    getRange: (r, col) => ({ getValue: () => cells[r + ':' + col] || '', setValue: (v) => { cells[r + ':' + col] = v; } }) };
+  c.adpSetSource_(sh, 5, '');
+  assert.strictEqual(Object.keys(cells).length, 0, 'clearing a tab with no column J writes nothing');
+  c.adpSetSource_(sh, 5, 'Confirmed (app activity)');
+  assert.deepStrictEqual([maxCols, cells['1:10'], cells['5:10']], [10, 'Source', 'Confirmed (app activity)']);
+  c.adpSetInferred_(sh, 5, true);
+  assert.strictEqual(cells['5:10'], 'Inferred (app activity)', 'adpSetInferred_ is the same writer');
+  c.adpSetInferred_(sh, 5, false);
+  assert.strictEqual(cells['5:10'], '');
+  assert.strictEqual((serverSource().match(/getRange\(rowIndex, col\)\.setValue\(/g) || []).length, 1, 'ONE writer of the column');
+  const mk = (v) => { const r = new Array(10).fill(''); r[9] = v; return r; };
+  assert.deepStrictEqual([c.adpRowInferred_(mk('Confirmed (app activity)')), c.adpRowConfirmed_(mk('Confirmed (app activity)')), c.adpRowConfirmed_(mk('Inferred (app activity)')), c.adpRowConfirmed_(mk('')), c.adpRowConfirmed_(null)],
+    [false, true, false, false, false], 'THE RULE: confirmed is not inferred — no chip, no line in the export\'s list');
+  assert.deepStrictEqual([c.exportConfirmedLine_(0), c.exportConfirmedLine_(null), c.exportConfirmedLine_(1), c.exportConfirmedLine_(3)],
+    ['', '', '1 punch set from app activity, confirmed by a manager', '3 punches set from app activity, confirmed by a manager']);
+  // The export, driven: one inferred, two confirmed, one plain.
+  const ADPi = vm.runInContext('ADP', c);
+  const row = (id, time, type, mark) => { const r = new Array(10).fill(''); r[ADPi.EMP_ID] = id; r[ADPi.EMP_NAME] = 'N ' + id; r[ADPi.DATE] = '2026-11-10'; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type; r[ADPi.INFERRED] = mark; return r; };
+  const live = [['h1'], ['h2'], row('A1', '07:56:00', 'ADJ-ClockIn', 'Inferred (app activity)'), row('A1', '17:00:00', 'ClockOut', ''),
+    row('A2', '08:01:00', 'ADJ-ClockIn', 'Confirmed (app activity)'), row('A2', '17:02:00', 'ADJ-ClockOut', 'Confirmed (app activity)')];
+  let appended = null;
+  const x = b14Ctx_(['generateExportSheet_'], { live, arch: null }, { appendRowsSafe_: (s, rows) => { appended = rows; }, sheetSafeRows_: (v) => v, fmtTime_: () => '120000',
+    createPinnedSpreadsheet_: () => ({ getActiveSheet: () => ({ setName() {}, getRange: () => ({ setValues() {}, setFontWeight() {} }), setFrozenRows() {} }), getId: () => 'f', getUrl: () => 'u', addEditor() {} }),
+    SpreadsheetApp: { flush() {} }, getActiveUserEmail_: () => '', Session: { getEffectiveUser: () => ({ getEmail: () => 'o' }) } });
+  const ex = JSON.parse(JSON.stringify(x.generateExportSheet_('2026-11-01', '2026-11-30', '')));
+  assert.deepStrictEqual([ex.rowCount, ex.inferredCount, ex.inferredConfirmedCount, ex.inferred.map((p) => p.id).join()], [4, 1, 2, 'A1'], 'the list holds the one still inferred; the confirmed are a count');
+  assert.ok(appended.every((r) => r.length === 9), 'THE FILE: nine columns a row — no mark of either kind reaches the upload');
+  // Both senders carry the count, and the audit panel reads the new action.
+  const expR = stripJsComments_(extractRawFunction('Code.js', 'exportAdpRange'));
+  assert.ok(/inferredConfirmedCount: result\.inferredConfirmedCount \|\| 0/.test(expR), 'the manual export returns it');
+  const all = stripJsComments_(serverSource());
+  assert.ok(/`Confirmed:  \$\{exportConfirmedLine_\(result\.inferredConfirmedCount\)\}\\n`/.test(all) && /\['Confirmed by a manager', exportConfirmedLine_\(result\.inferredConfirmedCount\)\]/.test(all), 'the automated email says it in both bodies');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/a\.action === 'PunchEdit' \|\| a\.action === 'PunchAdd' \|\| a\.action === 'PunchConfirm'/.test(mgr), 'Recent activity reads a PunchConfirm row as its note');
+  assert.ok(/\+ expConfirmedHtml_\(result\.inferredConfirmedCount\);/.test(mgr), 'and the export link shows the count');
+});
+
+test('DQ3: the Day Edit slot mark — a press confirms only a time the day was LOADED with as inferred, still unchanged, never in range mode; one applied in this open cannot be confirmed (driven)', () => {
+  const c = vm.createContext({ Number, String });
+  ['deSlotMark_', 'deSlotCanConfirm_', 'expConfirmedHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), c));
+  c.esc = (s) => String(s);
+  [ // value, infVal, savedInf, confirming → mark
+    ['', '07:56', '07:56', true, ''],
+    ['07:56', '07:56', '07:56', false, 'inferred'],
+    ['07:56', '07:56', '07:56', true, 'confirm'],
+    ['07:56', '07:56', '', true, 'inferred'],          // applied in this open: a press cannot confirm it
+    ['08:00', '07:56', '07:56', true, ''],             // typed over: the manager's own time
+    ['08:00', '07:56', '07:56', false, ''],
+    ['07:56', '', '', false, ''],
+    ['07:56', '', '07:56', true, 'confirm'],
+  ].forEach((g) => assert.strictEqual(c.deSlotMark_(g[0], g[1], g[2], g[3]), g[4], JSON.stringify(g)));
+  [ // value, savedInf, rangeMode → can
+    ['07:56', '07:56', false, true], ['07:56', '07:56', true, false], ['07:56', '', false, false], ['08:00', '07:56', false, false], ['', '', false, false],
+  ].forEach((g) => assert.strictEqual(c.deSlotCanConfirm_(g[0], g[1], g[2]), g[3], JSON.stringify(g)));
+  assert.deepStrictEqual([c.expConfirmedHtml_(0), c.expConfirmedHtml_(undefined)], ['', '']);
+  assert.strictEqual(c.expConfirmedHtml_(2), '<div class="exp-inferred">2 punches set from app activity, confirmed by a manager</div>');
+  assert.match(c.expConfirmedHtml_(1), />1 punch set from/);
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/slots\.confirmed = \{ ClockIn: deSlotConfirmed_\('ClockIn'\), ClockOut: deSlotConfirmed_\('ClockOut'\) \};/.test(mgr), 'the save sends the press');
+  assert.ok(/_deSavedInf = \{ ClockIn: '', ClockOut: '' \};\s*\/\/[^\n]*\n\s*_deConfirm = \{ ClockIn: false, ClockOut: false \};/.test(extractFunction('tc/script_manager.html', 'deLoadActivity_')), 'a new day forgets both');
+  const modals = fs.readFileSync(path.join(PA_WEB, 'modals.html'), 'utf8');
+  assert.strictEqual((modals.match(/<button type="button" class="de-inf-confirm" id="de-clock(in|out)-inf-confirm" hidden>Confirm as is<\/button>/g) || []).length, 2, 'a real button per clock slot, hidden until a saved inferred time loads');
+});
+
+test('DQ2: the note of an AMENDED intake send is marked, and the intake count leaves it out — not counted, not timed; an unmarked note counts as before (driven)', () => {
+  const c = m1Ctx_();
+  assert.deepStrictEqual([{ intakeType: 'pmd' }, { intakeType: 'pmd', intakeAmend: true }, { intakeType: 'pmd', intakeAmend: 'true' }, { intakeType: 'pmd', intakeAmend: false }, { intakeAmend: true }, {}, null]
+    .map((sd) => c.cnIntakeNoteCounts_(sd)), [true, false, true, true, false, false, false], 'only the boolean mark takes a note out; a note with no intakeType was never in');
+  // The counter over a fake Notes tab: three intake notes that day, one of them an amendment with a form time.
+  const subs = [JSON.stringify({ intakeType: 'pmd', completionSeconds: 600 }), JSON.stringify({ intakeType: 'pmd', intakeAmend: true, completionSeconds: 500 }),
+    JSON.stringify({ intakeType: 'ppd' }), JSON.stringify({ tags: ['x'] })];
+  const cc = m1Ctx_({ CN: { DATE_LOCAL: 1, SUBFORM_DATA: 15 }, cnDateLocalString_: (v) => v, getCallNotesSheet_: () => ({ getLastRow: () => subs.length + 1,
+    getRange: (r, col) => ({ getValues: () => (col === 16 ? subs.map((s) => [s]) : subs.map(() => ['2026-11-09'])) }) }) });
+  const r = m1J(cc.cnCountIntakeNotesResult_({ id: 'E1', callNotesSheetId: 's' }, '2026-11-09', '2026-11-09'));
+  assert.deepStrictEqual([r.count, r.timed, r.seconds, r.unavailable], [2, 1, 600, false], 'THE RULE: the amendment is neither an intake call nor a timed one');
+  // The mark reaches the Sheet only through the whitelist — `true`, and only beside an intakeType.
+  const sc = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, CN_FLAG_TYPES: [], CONFIG: { CALL_NOTES: {} } });
+  ['sanitizeFlagsArray_', 'deriveFlagType_', 'sanitizeTagsArray_', 'sanitizeCallNotePayload_'].forEach((fn) => { try { vm.runInContext(extractRawFunction('Code.js', fn), sc); } catch (e) { /* loaded below if it needs more */ } });
+  const san = (sub) => { const o = sc.sanitizeCallNotePayload_({ issue: 'x', subformData: sub }); return o.subformData ? JSON.parse(JSON.stringify(o.subformData)) : null; };
+  assert.deepStrictEqual(san({ intakeType: 'pmd', intakeAmend: true }), { intakeType: 'pmd', intakeAmend: true });
+  assert.deepStrictEqual(san({ intakeType: 'pmd', intakeAmend: 'true' }), { intakeType: 'pmd' }, 'only the boolean');
+  assert.deepStrictEqual(san({ intakeType: 'pmd', intakeAmend: 1 }), { intakeType: 'pmd' });
+  assert.strictEqual(san({ intakeAmend: true }), null, 'never without an intakeType — it is not a general-purpose field');
+  assert.strictEqual(san({ intakeType: 'other', intakeAmend: true }), null);
+});
+
+test('DQ2: the intake send marks its note when it amends; the chip on the note says "amended" and why it is not counted (driven)', () => {
+  const ic = vm.createContext({ String });
+  ['intakeNoteIsAmend_', 'intakeNoteTimedSec_'].forEach((f) => vm.runInContext(extractFunction('intake/script_intake.html', f), ic));
+  assert.deepStrictEqual([{ amendsSubmissionId: 'S-1' }, { amendsSubmissionId: '  ' }, { amendsSubmissionId: '' }, {}, null].map((p) => ic.intakeNoteIsAmend_(p)), [true, false, false, false, false]);
+  assert.deepStrictEqual([ic.intakeNoteTimedSec_({ amendsSubmissionId: 'S-1' }, 300), ic.intakeNoteTimedSec_({}, 300)], [0, 300], 'one test of "amended" for the time and the mark');
+  const send = stripJsComments_(extractFunction('intake/script_intake.html', 'intakeAutoLogNote_'));
+  assert.ok(/if \(intakeNoteIsAmend_\(payload\)\) notePayload\.subformData\.intakeAmend = true;/.test(send), 'the note carries the mark');
+  const pc = vm.createContext({ String, esc: (s) => String(s), icon: () => '<i></i>' });
+  vm.runInContext(extractFunction('cn/script_callnotes.html', 'cnIntakePillHtml_'), pc);
+  const plain = pc.cnIntakePillHtml_({ subformData: { intakeType: 'pmd' } });
+  const amended = pc.cnIntakePillHtml_({ subformData: { intakeType: 'pmd', intakeAmend: true } });
+  assert.ok(/>PMD<\/span>$/.test(plain) && !/amended/.test(plain), plain);
+  assert.ok(/class="cn-intake-pill pmd"/.test(amended) && /PMD amended<\/span>$/.test(amended) && /not counted as an intake call/.test(amended), amended);
+  assert.ok(!/amended/.test(pc.cnIntakePillHtml_({ subformData: { intakeType: 'pap', intakeAmend: 'true' } })), 'only the boolean mark');
+  assert.strictEqual(pc.cnIntakePillHtml_({ subformData: { intakeAmend: true } }), '', 'no chip without a type');
+  assert.strictEqual(pc.cnIntakePillHtml_(null), '');
+});
+
+test('DQ1: a manager\'s Team Metrics row names the rep\'s partial days — dates and shares, newest first; the rep view carries none of it; a round read without the marks says so and is not kept (driven + source)', () => {
+  const c = vm.createContext({ String, Number, isFinite });
+  vm.runInContext(extractRawFunction('Code.js', 'metricsTeamPartialDays_'), c);
+  const partial = { 'Jo Tran': [['2026-11-05', 0.5], ['2026-11-10', 0], ['2026-11-07', 0.25]], 'Ana Lopez': [['2026-11-06', 0.75]], Bad: [['2026-11-06', null], ['', 0.5], null, ['2026-11-07', 'x']] };
+  assert.deepStrictEqual(m1J(c.metricsTeamPartialDays_(partial, 'Jo Tran')), [{ date: '2026-11-10', credit: 0 }, { date: '2026-11-07', credit: 0.25 }, { date: '2026-11-05', credit: 0.5 }], 'that rep\'s days, newest first — a credit of 0 is a day');
+  assert.deepStrictEqual(m1J(c.metricsTeamPartialDays_(partial, 'Cy')), []);
+  assert.deepStrictEqual(m1J(c.metricsTeamPartialDays_(partial, 'Bad')), [], 'a row without a date or a number is not a day');
+  assert.deepStrictEqual(m1J(c.metricsTeamPartialDays_(undefined, 'Jo Tran')), []);
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  assert.ok(/rep\.partialDays = metricsTeamPartialDays_\(cdrResult\.partial, name\);/.test(team), 'each rep row, out of the one cohort read');
+  assert.ok(/partialDaysUnavailable: cdrPartialDaysDegraded_\(\),/.test(team), 'marks that could not be read are said, never read as "none"');
+  assert.ok(/&& !cdrPartialDaysDegraded_\(\)\) \{\s*try \{ teamMetricsCache\.put\(/.test(team), 'and that round is not kept');
+  // No figure moves: the totals and the rep's call figures are built before and without the marks.
+  assert.ok(!/partialDays/.test(team.replace(/rep\.partialDays = [^\n]*\n/, '').replace(/partialDaysUnavailable: [^\n]*\n/, '')), 'the marks are shown, and nothing is computed from them');
+  // The rep view, driven over a manager payload with marked rows.
+  const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
+  const full = { from: '2026-11-03', to: '2026-11-10', date: '2026-11-03', teamTotals: { answered: 5 }, trend: [], transferMeta: {}, queueRows: [], groupRows: [], alertThreshold: 1, alertBand: 1, standardSource: 's',
+    partialDaysUnavailable: true, reps: [{ repName: 'Jo Tran', partialDays: [{ date: '2026-11-05', credit: 0.5 }] }], outboundMeta: { available: true } };
+  const view = JSON.stringify(rv.teamMetricsRepView_(full));
+  assert.ok(view.indexOf('partialDays') < 0 && view.indexOf('2026-11-05') < 0 && view.indexOf('Jo Tran') < 0 && view.indexOf('reps') < 0,
+    'THE RULE: a colleague\'s partial days never reach a rep — not the rows, not the days, not even whether the marks were read');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/partialDays = \[\{ date: /.test(mock) && /partialDaysUnavailable: false/.test(mock), 'the fixtures mirror both fields (INV-185)');
+});
+
+test('DQ1: the Team table\'s partial-day chip, the line under it and the copied column — the days are TEXT, a failed read is said, and the line states the figures are not adjusted (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<i></i>' });
+  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialChipHtml_', 'mTeamPartialHintHtml_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const jo = { repName: 'Jo Tran', partialDays: [{ date: '2026-11-10', credit: 0 }, { date: '2026-11-05', credit: 0.5 }] };
+  const ana = { repName: 'Ana <b>', partialDays: [{ date: '2026-11-06', credit: 0.75 }] };
+  const cy = { repName: 'Cy', partialDays: [] };
+  assert.strictEqual(c.mTeamPartialText_(jo, 6), 'Nov 10 (not counted), Nov 5 (0.5 day)');
+  assert.deepStrictEqual([c.mTeamPartialText_(cy, 6), c.mTeamPartialText_({}, 6), c.mTeamPartialText_(null, 6), c.mTeamPartialText_({ partialDays: [{ date: '2026-11-06', credit: null }] }, 6)], ['', '', '', '']);
+  assert.strictEqual(c.mTeamPartialChipHtml_(jo), '<span class="m-partial-chip" title="Partial days: Nov 10 (not counted), Nov 5 (0.5 day)">2 partial</span>');
+  assert.match(c.mTeamPartialChipHtml_(ana), /title="Partial day: Nov 6 \(0\.75 day\)">1 partial</);
+  assert.deepStrictEqual([c.mTeamPartialChipHtml_(cy), c.mTeamPartialChipHtml_({ repName: 'x' })], ['', '']);
+  const hint = c.mTeamPartialHintHtml_({ reps: [jo, cy, ana] }, 8);
+  assert.ok(/^<div class="m-hint"/.test(hint) && /2 reps with partial days in this window — Jo Tran: Nov 10 \(not counted\), Nov 5 \(0\.5 day\); Ana &lt;b>: Nov 6 \(0\.75 day\)\. The figures in this table are not adjusted for them\.<\/div>$/.test(hint), hint);
+  assert.match(c.mTeamPartialHintHtml_({ reps: [ana] }, 8), /^<div class="m-hint"[^>]*>1 rep with partial days/);
+  assert.match(c.mTeamPartialHintHtml_({ reps: [jo, ana, { repName: 'Z', partialDays: [{ date: '2026-11-04', credit: 0.5 }] }] }, 2), /Ana &lt;b>: Nov 6 \(0\.75 day\) <em>\+1 more<\/em>\./);
+  assert.strictEqual(c.mTeamPartialHintHtml_({ reps: [cy] }, 8), '', 'a window with no partial day says nothing');
+  assert.match(c.mTeamPartialHintHtml_({ reps: [jo], partialDaysUnavailable: true }, 8), /Partial-day marks could not be read/, 'THE RULE: a failed read is said — never a table that reads as full days');
+  assert.ok(!/Jo Tran/.test(c.mTeamPartialHintHtml_({ reps: [jo], partialDaysUnavailable: true }, 8)));
+  assert.deepStrictEqual([c.mTeamPartialHintHtml_({ repView: true, teamTotals: {} }, 8), c.mTeamPartialHintHtml_(null, 8)], ['', ''], 'the rep view has no rows, so no line');
+  const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
+  assert.ok(/esc\(r\.repName\) \+ '<\/button>' \+\s*mTeamPartialChipHtml_\(r\); \} \},/.test(src), 'the chip sits beside the rep\'s name');
+  assert.ok(/html \+= mTeamPartialHintHtml_\(data, M_NAME_CAP\);/.test(src), 'the line is drawn under the table');
+  assert.ok(/if \(hasPd\) head\.push\('Partial days'\);/.test(src) && /if \(hasPd\) row\.push\(mTeamPartialText_\(r, 99\)\);/.test(src), 'the copied table carries the days as a column, only when a rep has one');
+  assert.ok(/\.m-partial-chip \{/.test(src), 'the chip has a rule (g140)');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

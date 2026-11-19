@@ -768,6 +768,16 @@ function cdrPartialKeyPart_(marksForRep, digest) {
 /** PURE (Node-pinned) — FQ8: one rep's partial days out of a daily
  *  breakdown's `credits` ({dateIso: {rep: credit}}): [{date, credit}], newest
  *  first. Only that rep's — the map holds every marked rep of the read. */
+/** PURE (Node-pinned) — cycle 26 DQ1: one rep's partial days out of
+ *  getCdrAgentMetrics_'s `partial` ({agent: [[iso, credit]]}) for a MANAGER's
+ *  Team Metrics row: [{date, credit}], newest first, [] for none. Dates and
+ *  shares only — the reader never opens the Reason column. */
+function metricsTeamPartialDays_(partial, name) {
+  var days = (partial && partial[name]) || [];
+  return days.filter(function (d) { return d && d[0] && d[1] != null && isFinite(Number(d[1])); })
+    .map(function (d) { return { date: String(d[0]), credit: Number(d[1]) }; })
+    .sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+}
 function metricsOwnPartialDays_(credits, name) {
   return Object.keys(credits || {}).filter(function (d) { return credits[d] && credits[d][name] != null; })
     .sort().reverse().map(function (d) { return { date: d, credit: Number(credits[d][name]) }; });
@@ -2578,7 +2588,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v6:' + from + ':' + toDate;   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v7:' + from + ':' + toDate;   // v7 (cycle 26 DQ1): each rep's partial days   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2747,6 +2757,9 @@ function getTeamMetrics(dateOrFrom, to) {
         hasCdrData: !!cdr,
       };
       rep.outbound = metricsOutboundOf_(obRes, name);   // M1 — null when the tab was not read
+      // DQ1 (operator 2026-11-19): the rep's partial days, for the MANAGER's
+      // row. `reps` never reaches a rep (teamMetricsRepView_ does not list it).
+      rep.partialDays = metricsTeamPartialDays_(cdrResult.partial, name);
       rep.intakeTimed = intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 };
       rep.adjusted = metricsAdjusted_(cdr, rep.outbound, intakeRes.unavailable ? null : intakeRes);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
@@ -2867,6 +2880,9 @@ function getTeamMetrics(dateOrFrom, to) {
       // failed" (INV-175).
       transferMeta: transferMeta,
       outboundMeta: outboundMeta,   // M1
+      // DQ1: the marks could not be read this round, so "no partial days" on a
+      // row is not known (g53). Managers only — the rep view does not carry it.
+      partialDaysUnavailable: cdrPartialDaysDegraded_(),
       queueRows: qRows,
       alertThreshold: ship.alertThreshold,   // #4 / H2 — see getMyMetrics
       alertBand: ship.alertBand,
@@ -2882,7 +2898,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // (noteCountPartial) or ANY transfer-read error would pin a degraded
     // aggregate as authoritative for the TTL. On a deployment with no Transfer
     // tab this endpoint simply stays uncached — the pre-cache behaviour.
-    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed && !(obRes.error && !obRes.steady)) {
+    if (useTeamCache && !teamTotals.noteCountPartial && !transferMeta.error && !trendFailed && !(obRes.error && !obRes.steady) && !cdrPartialDaysDegraded_()) {   // DQ1: nor a round read without the marks
       try { teamMetricsCache.put(teamCacheKey, JSON.stringify(teamResult), CONFIG.CDR_CACHE_TTL || 300); }
       catch (_) { /* >100KB or transient — the cache is a convenience */ }
     }

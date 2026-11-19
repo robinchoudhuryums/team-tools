@@ -2204,6 +2204,10 @@ function sanitizeCallNotePayload_(p) {
     // un-chipped. Bounded enum only; anything else drops.
     const it = s(rawSub.intakeType).toLowerCase();
     if (it === 'ppd' || it === 'pmd' || it === 'pap') subformData.intakeType = it;
+    // Cycle 26 DQ2 (operator 2026-11-19): the note of an AMENDED send. Only
+    // `true`, and only beside an intakeType — it marks an intake note as a
+    // correction, which the intake count leaves out.
+    if (subformData.intakeType && rawSub.intakeAmend === true) subformData.intakeAmend = true;
     // Round-1 pilot #1 (2026-08-21): optional comment on a review-flagged note —
     // the trainingQuestion mechanism mirrored (same trim + 2000-char cell guard).
     const rc = s(rawSub.reviewComment);

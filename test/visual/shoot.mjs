@@ -692,6 +692,13 @@ const SCENARIOS = [
   // the Inferred tag is on camera beside the Out suggestion still offered).
   ['dayedit-activity-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '', DAYEDIT_ACTIVITY],
   ['dayedit-activity-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '', DAYEDIT_ACTIVITY],
+  // DQ3 (cycle 26, operator 2026-11-19): a Clock In SAVED as inferred — the
+  // "Confirm as is" button beside its tag; and, on the phone, after the press
+  // (the tag reads Confirmed, the button Undo).
+  ['dayedit-confirm-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?inferred=1',
+    "openDayEditModal('E-1077', 'Nina Patel')"],
+  ['dayedit-confirm-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '?inferred=1',
+    "openDayEditModal('E-1077', 'Nina Patel'); setTimeout(function(){ var b=document.getElementById('de-clockin-inf-confirm'); if (b) b.click(); }, 900)"],
   // AC1 (operator 2026-11-11): the same day's clicks and keystrokes per HOUR.
   ['dayedit-activity-hourly-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '',
     DAYEDIT_ACTIVITY + "; setTimeout(function(){ var b=document.querySelector('#de-act [data-de-act-scale=\"hour\"]'); if (b) b.click(); }, 900)"],

@@ -60,6 +60,14 @@ function serveIntakeFeedbackPage_(submissionId, formType) {
  *  Same outcome contract as cnCountNotesResult_: {count, unavailable,
  *  unenrolled} — a failed read is never a confident 0. 2-column bounded read
  *  (the taxonomy pattern) + a substring pre-filter before any JSON.parse. */
+/** PURE (Node-pinned) — does this note's SubformData count as an INTAKE
+ *  CALL? It carries an intakeType, and it is not the note of an amended send
+ *  (cycle 26 DQ2): correcting a form already sent is not a new call, so it is
+ *  neither counted nor timed. A note saved before DQ2 has no mark and counts
+ *  as it always did. */
+function cnIntakeNoteCounts_(sd) {
+  return !!(sd && sd.intakeType && sd.intakeAmend !== true);
+}
 function cnCountIntakeNotesResult_(emp, from, to) {
   if (!emp || !emp.callNotesSheetId) return { count: 0, unavailable: false, unenrolled: true };
   try {
@@ -76,7 +84,7 @@ function cnCountIntakeNotesResult_(emp, from, to) {
       if (raw.indexOf('"intakeType"') < 0) continue;
       try {
         const sd = JSON.parse(raw);
-        if (sd && sd.intakeType) {
+        if (cnIntakeNoteCounts_(sd)) {
           n++;
           // M1: the intake form's time, when the send recorded it — a time no
           // call takes is not counted (METRICS_INTAKE_TIMED_*).

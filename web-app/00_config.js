@@ -487,6 +487,11 @@ const ADP = { EMP_ID:0, EMP_NAME:1, DATE:2, TIME:3, DIR:4, LOCATION:5, REASON:6,
   // Clock In / Clock Out a manager saved from the app-activity suggestion.
   INFERRED:9 };
 const ADP_INFERRED_MARK = 'Inferred (app activity)';
+// Cycle 26 DQ3 (operator 2026-11-19): the same column once a manager has
+// CONFIRMED an inferred time as it stands. The time did not change; who
+// confirmed it is the AuditLog's PunchConfirm row. No surface draws the
+// Inferred chip for it, and the export counts it apart from the inferred.
+const ADP_CONFIRMED_MARK = 'Confirmed (app activity)';
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 // Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {

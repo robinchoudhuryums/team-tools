@@ -1081,7 +1081,7 @@ function renderManagerView(area, data) {
           ? `Punch deleted: ${a.punchDate} ${dispTime(a.punchTime)}`
           : a.action === 'PunchSelfUndo'
           ? `${a.notes} (${a.punchDate} ${dispTime(a.punchTime)})`
-          : a.action === 'PunchEdit' || a.action === 'PunchAdd'
+          : a.action === 'PunchEdit' || a.action === 'PunchAdd' || a.action === 'PunchConfirm'
           ? `${a.notes} on ${a.punchDate}`
           : a.action === 'TimeOffCancel'
           ? `Time off cancelled for ${a.punchDate}`
@@ -1482,7 +1482,9 @@ document.getElementById('exp-submit').addEventListener('click', () => {
                 }).join('')
               + (result.inferredCount > (result.inferred || []).length ? '<li>and ' + esc(String(result.inferredCount - (result.inferred || []).length)) + ' more</li>' : '')
               + '</ul></details>'
-            : '');
+            : '')
+          // DQ3 (cycle 26): inferred times a manager confirmed as is — counted, not listed.
+          + expConfirmedHtml_(result.inferredConfirmedCount);
       }
       let exWin = null;
       try { exWin = window.open(result.url, '_blank'); } catch (_) { exWin = null; }
@@ -2058,16 +2060,73 @@ var DE_ACT = { seq: 0, data: null, failed: false, hourly: false };
  * suggested, or can be applied, until it is 'loaded' for this open. */
 var _dePunches = 'loading';
 var _deInfVal = { ClockIn: '', ClockOut: '' };
+/* DQ3 (cycle 26, operator 2026-11-19) — "Confirm as is". A time SAVED with the
+ * Inferred mark could only lose it by being changed, so a manager who had
+ * checked it (the rep said yes, the schedule agrees) had to nudge a correct
+ * time by a minute. `_deSavedInf` is the time the day LOADED with the mark —
+ * never one applied in this open, which nobody has had the chance to check —
+ * and `_deConfirm` is the manager's press. A confirmed slot is sent with
+ * `slots.confirmed`, not `slots.inferred`: the server keeps the time, moves
+ * the row's mark to Confirmed and writes who did it. Typing another time
+ * makes it an ordinary edit again. */
+var _deSavedInf = { ClockIn: '', ClockOut: '' };
+var _deConfirm = { ClockIn: false, ClockOut: false };
 var DE_SLOT_INPUT = { ClockIn: 'de-clockin', ClockOut: 'de-clockout' };
-function deSlotInferred_(type) {
-  var el = document.getElementById(DE_SLOT_INPUT[type]);
-  return !!(el && el.value && _deInfVal[type] && el.value === _deInfVal[type]);
+var DE_SLOT_LABEL = { ClockIn: 'Clock In', ClockOut: 'Clock Out' };
+/** PURE (Node-pinned) — what a clock slot's mark is: 'confirm' when the
+ *  manager pressed Confirm as is and the slot still holds the saved inferred
+ *  time; 'inferred' while it holds a time applied or loaded as inferred; ''
+ *  for an empty slot or a time the manager typed. */
+function deSlotMark_(value, infVal, savedInf, confirming) {
+  if (!value) return '';
+  if (confirming && savedInf && value === savedInf) return 'confirm';
+  if (infVal && value === infVal) return 'inferred';
+  return '';
 }
+/** PURE (Node-pinned) — may this slot be confirmed? Only a time the day was
+ *  LOADED with as inferred, still unchanged, and never in range mode (a range
+ *  save writes other days and confirms nothing). */
+function deSlotCanConfirm_(value, savedInf, rangeMode) {
+  return !!(value && savedInf && value === savedInf && !rangeMode);
+}
+function deSlotState_(type) {
+  var el = document.getElementById(DE_SLOT_INPUT[type]);
+  var v = (el && el.value) || '';
+  return { mark: deSlotMark_(v, _deInfVal[type], _deSavedInf[type], _deConfirm[type]),
+    canConfirm: deSlotCanConfirm_(v, _deSavedInf[type], deRangeModeOn_()) };
+}
+function deSlotInferred_(type) { return deSlotState_(type).mark === 'inferred'; }
+function deSlotConfirmed_(type) { var s = deSlotState_(type); return s.mark === 'confirm' && s.canConfirm; }
 function deSyncInferredTags_() {
   ['ClockIn', 'ClockOut'].forEach(function (t) {
+    var s = deSlotState_(t);
+    var confirming = s.mark === 'confirm' && s.canConfirm;
     var tag = document.getElementById(DE_SLOT_INPUT[t] + '-inf');
-    if (tag) tag.hidden = !deSlotInferred_(t);
+    if (tag) {
+      tag.hidden = !s.mark;
+      tag.textContent = confirming ? 'Confirmed as is — Save Changes to keep' : 'Inferred (app activity)';
+      tag.classList.toggle('confirmed', confirming);
+    }
+    var btn = document.getElementById(DE_SLOT_INPUT[t] + '-inf-confirm');
+    if (btn) {
+      btn.hidden = !s.canConfirm;
+      btn.textContent = confirming ? 'Undo' : 'Confirm as is';
+      btn.setAttribute('aria-label', confirming ? ('Undo confirming ' + DE_SLOT_LABEL[t])
+        : ('Confirm ' + DE_SLOT_LABEL[t] + ' as is — keep the time and clear the Inferred mark'));
+    }
   });
+}
+function deToggleConfirm_(type) {
+  if (!deSlotState_(type).canConfirm) return;
+  _deConfirm[type] = !_deConfirm[type];
+  deSyncInferredTags_();
+}
+/** PURE — DQ3: the export result's line for confirmed punches ('' for none). */
+function expConfirmedHtml_(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '';
+  return '<div class="exp-inferred">' + esc(n + ' punch' + (n === 1 ? '' : 'es') +
+    ' set from app activity, confirmed by a manager') + '</div>';
 }
 function deHourLabel_(h) { h = ((h % 24) + 24) % 24; return (h % 12 || 12) + (h < 12 ? ' AM' : ' PM'); }
 /** PURE (DOM-free; Node + DOM pinned) — the activity panel for one day.
@@ -2187,6 +2246,8 @@ function deLoadActivity_(empId, date) {
   var seq = ++DE_ACT.seq;
   DE_ACT.data = null; DE_ACT.failed = false;
   _deInfVal = { ClockIn: '', ClockOut: '' };
+  _deSavedInf = { ClockIn: '', ClockOut: '' };      // DQ3: a new day, nothing loaded yet
+  _deConfirm = { ClockIn: false, ClockOut: false };
   deSyncInferredTags_();
   deRenderActivity_();
   google.script.run
@@ -2388,9 +2449,11 @@ function loadDayEditPunches(empId, start, end) {
       }
       // Fill only what the manager has NOT typed into yet (the race above).
       if (!_deTouched.clockin)  { document.getElementById('de-clockin').value  = day.clockIn  ? day.clockIn.substring(0, 5) : ''; _dePrefilled.clockin = true;
-        _deInfVal.ClockIn = (day.infClockIn && day.clockIn) ? day.clockIn.substring(0, 5) : ''; }   // E2: a saved inferred time stays marked until changed
+        _deInfVal.ClockIn = (day.infClockIn && day.clockIn) ? day.clockIn.substring(0, 5) : '';   // E2: a saved inferred time stays marked until changed
+        _deSavedInf.ClockIn = _deInfVal.ClockIn; }   // DQ3: and only a SAVED one can be confirmed
       if (!_deTouched.clockout) { document.getElementById('de-clockout').value = day.clockOut ? day.clockOut.substring(0, 5) : ''; _dePrefilled.clockout = true;
-        _deInfVal.ClockOut = (day.infClockOut && day.clockOut) ? day.clockOut.substring(0, 5) : ''; }
+        _deInfVal.ClockOut = (day.infClockOut && day.clockOut) ? day.clockOut.substring(0, 5) : '';
+        _deSavedInf.ClockOut = _deInfVal.ClockOut; }
       if (!_deTouched.breaks)   { deSetBreaksFromDay_(day); _dePrefilled.breaks = true; }
       deSyncInferredTags_();
       deRenderActivity_();   // E2: a suggestion shows only for a slot the day left empty
@@ -2410,6 +2473,8 @@ function loadDayEditPunches(empId, start, end) {
  * delegated on the host so it survives each re-render. */
 document.getElementById('de-clockin').addEventListener('input', function () { deMarkTouched_('clockin'); deSyncInferredTags_(); deRenderActivity_(); });
 document.getElementById('de-clockout').addEventListener('input', function () { deMarkTouched_('clockout'); deSyncInferredTags_(); deRenderActivity_(); });
+document.getElementById('de-clockin-inf-confirm').addEventListener('click', function () { deToggleConfirm_('ClockIn'); });   // DQ3
+document.getElementById('de-clockout-inf-confirm').addEventListener('click', function () { deToggleConfirm_('ClockOut'); });
 // E2: Apply on a suggestion (delegated — the panel is rebuilt on every render).
 document.getElementById('de-act').addEventListener('click', function (e) {
   var b = e.target.closest ? e.target.closest('[data-de-apply]') : null;
@@ -2449,6 +2514,7 @@ document.getElementById('de-date-to').addEventListener('change', deApplyRangePre
 // Filling/clearing "To" flips range mode, which caps the list at one pair.
 document.getElementById('de-date-to').addEventListener('change', deSyncRangeMode_);
 document.getElementById('de-date-to').addEventListener('change', function () { deRenderActivity_(); });   // E2: no single-day suggestion in range mode
+document.getElementById('de-date-to').addEventListener('change', deSyncInferredTags_);   // DQ3: no confirm in range mode, and the mark returns with the times
 // Typing into a break field can change nothing structural, but the row COUNT
 // is what gates the add button and the range note, so keep them in step.
 document.getElementById('de-breaks').addEventListener('input', deSyncRangeMode_);
@@ -2508,6 +2574,8 @@ document.getElementById('de-save').addEventListener('click', function () {
   };
   // E2: which clock slots still hold a time applied from app activity.
   slots.inferred = { ClockIn: deSlotInferred_('ClockIn'), ClockOut: deSlotInferred_('ClockOut') };
+  // DQ3: which saved inferred times the manager confirmed as they stand.
+  slots.confirmed = { ClockIn: deSlotConfirmed_('ClockIn'), ClockOut: deSlotConfirmed_('ClockOut') };
   var strayMsg = deStrayUnresolved_(slots.breaks);
   if (strayMsg) { showToast(strayMsg, 'toast-error'); return; }
   var reason = document.getElementById('de-reason').value.trim();
