@@ -4311,6 +4311,9 @@ function recordPresence(counts) {
     // is the presence either way, but the counts in a row that was not written
     // are gone unless the window puts them back — it only did so when the
     // call itself failed, never when the append did.
+    // FS3 (cycle 26): past the per-person row limit the stamps above stand but
+    // no row is written — `logged` false, so the window keeps its counts.
+    if (!activityRowAllowed_(emp, Date.now())) return { success: true, logged: false, limited: true };
     const logged = activityLogAppend_(emp.id, Date.now(), activityCountsClean_(counts, Date.now()), '');
     return { success: true, logged: logged };
   } catch (e) {
@@ -4407,11 +4410,43 @@ function recordActivityCounts(counts) {
     if (!clean.length) return { success: true, empty: true };
     // F30: `logged` false is "not written — send these again"; the page's
     // success handler used to ignore a false `success`.
+    if (!activityRowAllowed_(emp, now)) return { success: false, logged: false, limited: true };   // FS3
     const logged = activityLogAppend_(emp.id, now, clean, ACTIVITY_COUNTS_KIND);
     return { success: logged, logged: logged };
   } catch (e) {
     return { success: false };
   }
+}
+/** PURE (Node-pinned, FS3) — what the row limit decides from the count the
+ *  cache held for this person's block: `allow` while fewer than `max` rows
+ *  have been taken; `next` is the count to store (it stops one past the
+ *  limit); `note` is true exactly ONCE a block, on the first refusal. */
+function activityRowDecision_(have, max) {
+  const h = Number(have);
+  const n = isFinite(h) && h > 0 ? Math.floor(h) : 0;
+  return { allow: n < max, next: Math.min(n + 1, max + 1), note: n === max };
+}
+/** FS3 (cycle 26) — may this person add another ActivityLog row in this
+ *  10-minute block? Both writers ask: neither had a limit, so a page (or a
+ *  script) that kept calling added a row per call to a tab every reader walks.
+ *  Cache only and lock-free — a guard, not an accounting: two calls at once can
+ *  read the same count. A cache that cannot be read ALLOWS the row: the limit
+ *  must never be the reason a working rep's day reads empty. The first refusal
+ *  of a block writes ONE AuditLog row naming the person (ActivityRowsLimited),
+ *  so their day's reader can see rows were not kept. Never throws. */
+function activityRowAllowed_(emp, nowMs) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const key = ACTIVITY_ROWS_PREFIX + emp.id + ':' + Math.floor(nowMs / (ACTIVITY_BLOCK_MIN * 60000));
+    const d = activityRowDecision_(cache.get(key), ACTIVITY_ROWS_MAX_PER_BLOCK);
+    cache.put(key, String(d.next), ACTIVITY_ROWS_TTL_SEC);
+    if (d.note) {
+      const at = new Date(nowMs);
+      writeAuditLog_(emp, 'ActivityRowsLimited', fmtDate_(at), fmtTime_(at), false, 0,
+        'More than ' + ACTIVITY_ROWS_MAX_PER_BLOCK + ' app-activity rows in ten minutes — the rows past the limit were not kept');
+    }
+    return d.allow;
+  } catch (e) { return true; }
 }
 /** PURE (Node-pinned, F29) — the server time of a window's last gesture, from
  *  the client's `{at, last}` (both on ITS clock, so only their difference is
@@ -6590,6 +6625,7 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
   const checkedThroughMax = addDaysIso_(todayIso, -graceDays);
   const editableFrom = addDaysIso_(todayIso, -adjustWindowDays);
   const pending = [];   // {id, name, date, kind, label}
+  const asked = {};     // FS1: 'id|date|type' → the HH:mm a pending confirm request names
   (toRows || []).slice(1).forEach((r) => {
     if (String(r[TO.STATUS]).toLowerCase().trim() !== 'pending') return;
     pending.push({ id: String(r[TO.EMP_ID]).trim(), name: String(r[TO.EMP_NAME]).trim(), date: normalizeDate_(r[TO.DATE]),
@@ -6599,6 +6635,11 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
     if (String(r[PAR.STATUS]).toLowerCase().trim() !== 'pending') return;
     pending.push({ id: String(r[PAR.EMP_ID]).trim(), name: String(r[PAR.EMP_NAME]).trim(), date: normalizeDate_(r[PAR.DATE]),
       kind: 'adjust', label: String(r[PAR.PUNCH_TYPE] || '').trim() });
+    // FS1 (cycle 26): a rep's pending CONFIRM request, by the time it names.
+    if (parAction_(r[PAR.ACTION]) === 'confirm') {
+      asked[payCloseAskKey_(String(r[PAR.EMP_ID]).trim(), normalizeDate_(r[PAR.DATE]), String(r[PAR.PUNCH_TYPE] || '').trim())] =
+        normalizeTime_(r[PAR.REQ_TIME]).trim().substring(0, 5);
+    }
   });
   const orphans = pending.filter((p) => p.date && !byId[p.id]);
   const out = (periods || []).map((per) => {
@@ -6634,8 +6675,13 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
       if (emp.payCycle !== per.cycle) return;
       ((inferredByEmp && inferredByEmp[emp.id]) || []).forEach((x) => {
         if (!x || !x.date || x.date < per.start || x.date > per.end) return;
+        // FS1: `requested` — the rep has asked for THIS time to be confirmed
+        // and the request is still waiting. A request that names another time
+        // (the time was changed since) is not one for this time: approving it
+        // is refused, and the list must not say the rep vouched for what shows.
         inferred.push({ id: emp.id, name: emp.name, timezone: emp.timezone || '', date: x.date, type: x.type, time: x.time,
-          editable: x.date >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom) });
+          editable: x.date >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom),
+          requested: !!x.time && asked[payCloseAskKey_(emp.id, x.date, x.type)] === x.time });
       });
     });
     inferred.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
@@ -6648,12 +6694,16 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
       (a.openDays.length + a.pendingTimeOff.length + a.pendingAdjust.length) || (a.name < b.name ? -1 : 1));
     const sum = (k) => list.reduce((n, r) => n + r[k].length, 0);
     const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust'),
-      inferred: inferred.length };
+      inferred: inferred.length, inferredRequested: inferred.filter((x) => x.requested).length };
     return { cycle: per.cycle, which: per.which, start: per.start, end: per.end, checkedThrough: through,
       reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust,
       inferred: inferred.slice(0, PAY_CLOSE_INFERRED_LIST_MAX) };
   });
   return { periods: out, orphans: orphans.map((p) => ({ id: p.id, name: p.name, date: p.date, kind: p.kind, label: p.label })) };
+}
+/** PURE (FS1) — the key a pending confirm request and an inferred time meet on. */
+function payCloseAskKey_(id, date, type) {
+  return String(id) + '|' + String(date) + '|' + String(type);
 }
 /** G1 (cycle 25 E2) — MANAGER-gated, read-only, no lock: the pay-period close
  *  checklist behind Manage Time → Periodic. Every payroll subject (offboarded

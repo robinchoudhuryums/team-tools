@@ -1678,6 +1678,7 @@ function _registerIntegrationB_() {
   _integrationTest('deptReq_detailScoped',                    test_deptReq_detailScoped);
   // ── Operator testing note 10: presence stamp + activeNotIn (INV-24 amendment)
   _integrationTest('presence_stampAndFlag',                   test_presence_stampAndFlag);
+  _integrationTest('activity_rowLimitRefusesPastTheCap',      test_activity_rowLimitRefusesPastTheCap);
   // ── Pilot round 2: scheduled-call reminders flow ──────────────────────────
   _integrationTest('scheduledCalls_flow',                     test_scheduledCalls_flow);
   // ── Pilot round 3: scratchpad + Reference comments ────────────────────────
@@ -7367,6 +7368,31 @@ function test_presence_stampAndFlag() {
     });
   } finally {
     cache.remove(key);
+  }
+}
+
+// FS3 (cycle 26): the per-person limit on ActivityLog rows, against the REAL
+// cache. The count for this block is set one under the cap, so the test writes
+// no ActivityLog row at all — it asks the limit, which is what both writers do.
+function test_activity_rowLimitRefusesPastTheCap() {
+  _assertSuiteCaller_();
+  const emp = { id: _TEST_INDIA_ID, name: _TEST_INDIA_NAME, email: _TEST_INDIA_EMAIL };
+  const cache = CacheService.getScriptCache();
+  const now = Date.now();
+  const key = ACTIVITY_ROWS_PREFIX + emp.id + ':' + Math.floor(now / (ACTIVITY_BLOCK_MIN * 60000));
+  const before = _countAuditRows(emp.id, 'ActivityRowsLimited');
+  try {
+    cache.put(key, String(ACTIVITY_ROWS_MAX_PER_BLOCK - 1), ACTIVITY_ROWS_TTL_SEC);
+    _assertEq(activityRowAllowed_(emp, now), true, 'the last row under the cap is allowed');
+    _assertEq(Number(cache.get(key)), ACTIVITY_ROWS_MAX_PER_BLOCK, 'and counted');
+    _assertEq(activityRowAllowed_(emp, now), false, 'the next one is refused');
+    _assertEq(activityRowAllowed_(emp, now), false, 'and the one after');
+    _assertEq(Number(cache.get(key)), ACTIVITY_ROWS_MAX_PER_BLOCK + 1, 'the count stops one past the cap');
+    _assertEq(_countAuditRows(emp.id, 'ActivityRowsLimited'), before + 1, 'exactly one audit row for the block');
+    _assertEq(activityRowAllowed_(emp, now + ACTIVITY_BLOCK_MIN * 60000), true, 'the next block starts again');
+  } finally {
+    cache.remove(key);
+    cache.remove(ACTIVITY_ROWS_PREFIX + emp.id + ':' + (Math.floor(now / (ACTIVITY_BLOCK_MIN * 60000)) + 1));
   }
 }
 

@@ -964,10 +964,10 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1767 | `node test/client/run.js` |
-| DOM harness tests | 478 | `node test/client/dom/runDom.js` |
+| Pure harness tests | 1772 | `node test/client/run.js` |
+| DOM harness tests | 481 | `node test/client/dom/runDom.js` |
 | Visual matrix scenarios | 314 | `shoot.mjs`'s `SCENARIOS` |
-| Editor suite registrations | 354 | `Tests.js`; a run prints its own `Expected:` line |
+| Editor suite registrations | 355 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 112 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |

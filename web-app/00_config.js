@@ -1025,6 +1025,14 @@ const ACTIVITY_COUNTS_KIND = 'counts';
 const ACTIVITY_COUNTS_MAX_ENTRIES = 48;     // one send's blocks — 8 hours, far past any real gap
 const ACTIVITY_COUNTS_MAX_PER_BLOCK = 5000; // a block's clicks (or keys) past this are not a person
 const ACTIVITY_COUNTS_MAX_AGE_MS = 6 * 3600000;   // a block older than this when it arrives is dropped (a laptop asleep overnight)
+// FS3 (cycle 26): the most ActivityLog rows ONE person may add in one
+// 10-minute block, pings and counts rows together. A window sends at most one
+// ping per gap and one counts row per two-minute pause — six a block at the
+// very most — so this is five windows at that ceiling, plus margin. Past it
+// the sender is not a person at a keyboard, and the tab must not grow by it.
+const ACTIVITY_ROWS_MAX_PER_BLOCK = 40;
+const ACTIVITY_ROWS_PREFIX = 'act_rows_v1:';
+const ACTIVITY_ROWS_TTL_SEC = 1200;   // two blocks — the key names its block, so it only has to outlive it
 // Batch G (operator 2026-11-02 — "condense, archive condensed, then delete"):
 // each night every FINISHED day's pings become ONE ActivitySummary row per rep
 // (the day's 10-minute map included, so Day Edit draws it unchanged), kept

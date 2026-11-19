@@ -4759,6 +4759,25 @@
     "writeAdjustPunchForEmployee_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "FS1-FS3: the close plan marks an inferred time a rep asked to confirm; a per-person limit on ActivityLog rows",
+   "added": [
+    "ACTIVITY_ROWS_MAX_PER_BLOCK",
+    "ACTIVITY_ROWS_PREFIX",
+    "ACTIVITY_ROWS_TTL_SEC",
+    "activityRowAllowed_",
+    "activityRowDecision_",
+    "payCloseAskKey_"
+   ],
+   "removed": [],
+   "changed": [
+    "planPayPeriodClose_",
+    "recordActivityCounts",
+    "recordPresence"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -4842,6 +4861,21 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "46ddb07ec8694106"
+  },
+  "ACTIVITY_ROWS_MAX_PER_BLOCK": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "8895bcadf1884bbc"
+  },
+  "ACTIVITY_ROWS_PREFIX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "7fd803577502761e"
+  },
+  "ACTIVITY_ROWS_TTL_SEC": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "3e70fa8de713a639"
   },
   "ACTIVITY_SUMMARY_HEADERS": {
    "file": "00_config.js",
@@ -8372,6 +8406,16 @@
    "file": "20_timeclock.js",
    "kind": "function",
    "sha": "8491aaa49cb1d540"
+  },
+  "activityRowAllowed_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "009411cbe7efb1db"
+  },
+  "activityRowDecision_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "a60a468ef79fd637"
   },
   "activitySummaryKeys_": {
    "file": "20_timeclock.js",
@@ -13628,6 +13672,11 @@
    "kind": "function",
    "sha": "30e926f10feaa052"
   },
+  "payCloseAskKey_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "75364d0d933db26d"
+  },
   "payPeriodRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -13706,7 +13755,7 @@
   "planPayPeriodClose_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "455e4a8a6a7a4d8b"
+   "sha": "7d83ecb3d6b04b44"
   },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
@@ -14336,7 +14385,7 @@
   "recordActivityCounts": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "ceee4f8f44a5eaf3"
+   "sha": "653436cbb7c3aa71"
   },
   "recordAutomationOutcome_": {
    "file": "10_core.js",
@@ -14351,7 +14400,7 @@
   "recordPresence": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "bb6e4033f15352dc"
+   "sha": "d0292e007fd9be04"
   },
   "recordPunch": {
    "file": "20_timeclock.js",

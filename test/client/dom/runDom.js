@@ -15456,3 +15456,93 @@ test('DS2 DOM: a manager\'s Team table on a range has "Ans / day" — answered o
   assert.ok(heads().length > 3 && !heads().some((t) => /^Ans \/ day/.test(t)), 'a single day has no per-day column');
   assert.ok(!/Ans \/ day/.test(h.read('mTeamTableTsv_')(fullTeamData_({ teamTotals: totals, reps: reps }), 'reps', { key: 'repName', dir: 'asc' })));
 });
+
+// ── Cycle 26 follow-ons after the second round of decisions (FS1–FS3) ───────
+section('DOM harness — cycle 26 follow-ons after the second round of decisions (FS1–FS3)');
+
+test('FS1 DOM: the Pay Period Close card says which unconfirmed inferred time already has the rep\'s request — on its button and in the line under the head — and the period still waits on that pending adjustment', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const today = h.read('isoDateTz')('Asia/Kolkata');
+  const back = (n) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getPayPeriodClose', () => ({ adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST', orphans: [], periods: [
+    { cycle: 'Monthly', which: 'previous', start: back(40), end: back(10), checkedThrough: back(10), ready: false,
+      reps: [{ id: 'E7', name: 'Nina Patel', offboarded: false, timezone: 'Asia/Kolkata', openDays: [], pendingTimeOff: [], pendingAdjust: [{ date: back(12), label: 'ClockIn' }] }],
+      counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 1, inferred: 2, inferredRequested: 1 },
+      inferred: [{ id: 'E7', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: back(12), type: 'ClockIn', time: '07:56', editable: true, requested: true },
+        { id: 'E8', name: 'Omar Diaz', timezone: 'Asia/Kolkata', date: back(11), type: 'ClockOut', time: '17:04', editable: true, requested: false }] }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const card = h.window.document.getElementById('mgr-pay-close');
+  const btns = Array.from(card.querySelectorAll('.payclose-inf button[data-date]'));
+  assert.deepStrictEqual(btns.map((b) => /rep asked to confirm/.test(b.textContent)), [true, false], card.textContent);
+  const line = card.querySelector('.payclose-inf-asked');
+  assert.ok(line && /^1 of them has a rep’s request to confirm waiting — approving it under Pending Punch Adjustments confirms the time\.$/.test(line.textContent.trim()), line && line.textContent);
+  assert.ok(/1 pending punch adjustment/.test(card.textContent) && !/Ready to close/.test(card.textContent), 'the request is still what the period waits on');
+  // The button still opens the day (a manager may confirm or correct it there instead).
+  h.read('mgrPayCloseEdit_')(btns[0]);
+  h.flushTimers();
+  assert.strictEqual(h.read('_deEmpId'), 'E7');
+});
+
+test('FS2 DOM: a refused or failed "Credit & reconcile" gives the button back as it was — its label and its icon, enabled — with the reason in a toast; it used to stay reading "Reconciling…"', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getPtoReconciliation', () => ({ reps: [{ empId: 'E7', name: 'Nina Patel', overAnnual: 1, overSick: 0, storedAnnual: 4, storedSick: 0,
+    dates: [{ date: '2026-10-02', approvedCount: 2 }] }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const btn = () => h.window.document.querySelector('#mgr-pto-recon button[data-emp-id="E7"]');
+  assert.ok(btn(), 'the drift card is drawn');
+  const label = btn().innerHTML;
+  assert.ok(/Credit &amp; reconcile/.test(label));
+  assert.strictEqual(btn().getAttribute('onclick'), 'fixPtoReconRep_(this)');
+  const press = async () => {
+    h.read('fixPtoReconRep_')(btn());   // the button's own onclick, called as the attribute calls it
+    await tick();
+    assert.ok(/Credit the over-charged day\(s\) back to Nina Patel/.test(h.$('.ui-dialog').textContent), 'it asks first');
+    h.click(h.$('.ui-dialog-ok'));
+    await tick(); await tick();
+  };
+  // The server refuses (PTO tracking off): the reason is said and the button is the button again.
+  await press();
+  assert.ok(btn().disabled && /Reconciling…/.test(btn().textContent), 'in flight');
+  assert.strictEqual(h.run.pending('fixPtoReconciliation').length, 1);
+  h.run.flushSuccess({ success: false, error: 'PTO tracking is off, so no balance can be credited — nothing was changed.' }, 'fixPtoReconciliation');
+  await tick();
+  assert.deepStrictEqual([btn().disabled, btn().innerHTML], [false, label], 'THE REGRESSION: it stayed "Reconciling…", enabled');
+  assert.ok(/PTO tracking is off/.test(h.window.document.body.textContent), 'the reason reached a toast');
+  // The call itself fails: the same.
+  await press();
+  h.run.flushFailure(new Error('Service timed out'), 'fixPtoReconciliation');
+  await tick();
+  assert.deepStrictEqual([btn().disabled, btn().innerHTML], [false, label]);
+  // And it still works: a third press reaches the server again.
+  await press();
+  assert.strictEqual(h.run.pending('fixPtoReconciliation').length, 1, 'the restored button is live');
+});
+
+test('FS3 DOM: Recent Activity reads an ActivityRowsLimited audit row as its note — who, what happened and when — not as a bare action name', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30,
+    recentAudits: [{ timestamp: '2026-11-19 10:00:00', timestampMgr: '11-18 22:30', empName: 'Nina <Patel>', action: 'ActivityRowsLimited', punchDate: '2026-11-19', punchTime: '10:00:00',
+      isAdjustment: false, daysBack: 0, notes: 'More than 40 app-activity rows in ten minutes — the rows past the limit were not kept' }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const row = h.window.document.querySelector('.audit-row .audit-body');
+  assert.ok(row, 'the panel drew its row');
+  assert.ok(/Nina <Patel>\s*·\s*More than 40 app-activity rows in ten minutes — the rows past the limit were not kept \(2026-11-19 /.test(row.textContent.replace(/\s+/g, ' ')), row.textContent);
+  assert.ok(!/ActivityRowsLimited/.test(row.textContent), 'never the bare action name');
+  assert.ok(!row.querySelector('patel'), 'the name is escaped');
+});

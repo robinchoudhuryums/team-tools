@@ -39208,7 +39208,7 @@ const e2Ctx_ = (extra) => {
   vm.runInContext(/const PAY_CLOSE_INFERRED_LIST_MAX = \d+;/.exec(code)[0].replace(/^const /, 'var '), ctx);   // FR1
   vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = '" + dayConsts[1] + "'; var TIMESHEET_DAY_ORPHAN = '" + dayConsts[2] + "';\n" +
     ['TO', 'PAR'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
-    ['addDaysIso_', 'isoFromUtc_', 'normalizeDate_', 'biweeklyRangeFor_', 'payPeriodsForClose_', 'planPayPeriodClose_']
+    ['addDaysIso_', 'isoFromUtc_', 'normalizeDate_', 'normalizeTime_', 'parAction_', 'payCloseAskKey_', 'biweeklyRangeFor_', 'payPeriodsForClose_', 'planPayPeriodClose_']   // FS1: the plan reads a confirm request's action and time
       .map((f) => extractRawFunction('Code.js', f)).join('\n'), ctx);
   ctx.INC = dayConsts[1]; ctx.ORPH = dayConsts[2];
   return ctx;
@@ -43301,7 +43301,7 @@ test('AC1: the pause flush is rep-gated, writes a counts row and stamps NO prese
   ['recordActivityCounts', 'activityCountsClean_', 'activityCountsEncode_', 'activityLogAppend_', 'activityHealHeader_', 'activityLastGestureMs_', 'presenceLastStampAtLeast_']
     .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
   Object.assign(c, { getEmployeeInfo_: () => emp, fmtDate_: () => '2026-11-10', fmtTime_: () => '17:20:00', sheetSafeRow_: (r) => r, sheetSafeRows_: (r) => r,
-    noteActivityLogWriteFailure_: () => {},
+    noteActivityLogWriteFailure_: () => {}, activityRowAllowed_: () => true,   // FS3: the row limit has its own pin
     CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => puts.push(k) }) },
     getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => appended.push(r) }) });
   const now = Date.now(), b = Math.floor(now / 600000);
@@ -49227,7 +49227,7 @@ test('F30 (cycle 26): an ActivityLog row that could not be written is no longer 
     ['recordPresence', 'recordActivityCounts', 'activityCountsClean_', 'activityCountsEncode_', 'activityLogAppend_', 'activityLastGestureMs_', 'presenceLastStampAtLeast_']
       .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
     Object.assign(c, { getEmployeeInfo_: () => ({ id: 'E1' }), fmtDate_: () => '2026-11-18', fmtTime_: () => '10:00:00', sheetSafeRow_: (r) => r,
-      noteActivityLogWriteFailure_: (e) => log.noted.push(e.message),
+      noteActivityLogWriteFailure_: (e) => log.noted.push(e.message), activityRowAllowed_: () => true,   // FS3: the row limit has its own pin
       CacheService: { getScriptCache: () => ({ get: () => null, put: (k) => log.cache.push(k) }) },
       getOrCreateActivityLogSheet_: () => { if (!appendOk) throw new Error('This document has reached its cell limit'); return { appendRow() {} }; } });
     return { c, log };
@@ -50539,7 +50539,7 @@ test('FR1: the close card names each unconfirmed inferred time as a Day Edit but
   res.periods.forEach((p) => { p.counts.inferred = 0; });
   assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: 'ready', tone: 'ok' });
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
-  assert.ok(/inferred: 2 \}, ready: false,/.test(mock) && /type: 'ClockOut', time: '17:06', editable: false \}/.test(mock), 'the fixture shows a list with one past the window (INV-185)');
+  assert.ok(/inferred: 2, inferredRequested: 1 \}, ready: false,/.test(mock) && /type: 'ClockOut', time: '17:06', editable: false, requested: false \}/.test(mock), 'the fixture shows a list with one past the window (INV-185)');
 });
 
 test('FR2: a partly failed bulk approve or deny names each request it could not decide, with that request\'s own reason, in a dialog that stays — both bulk bars (driven + source)', () => {
@@ -50822,6 +50822,174 @@ test('DS2: the Team table\'s "Ans / day" — a range only, its basis on hover, "
   const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.ok(/\]\.concat\(multiDay \? \[\{ key: 'answeredPerDay', label: 'Ans \/ day', numeric: true, sortable: true, cell: mTeamPerDayCell_ \}\] : \[\]\)/.test(src), 'the column exists for a range only');
   assert.ok(/if \(hasPerDay\) head\.push\('Ans \/ day', 'Credited days'\);/.test(src), 'and the copied table carries the figure with its divisor');
+});
+
+// ── Cycle 26 follow-ons after the second round of decisions (FS1–FS3) ───────
+console.log('\nCycle 26 follow-ons after the second round of decisions (FS1–FS3)');
+
+test('FS1: the close plan marks an unconfirmed inferred time the rep has ASKED to confirm — a pending confirm request for that rep, day and punch that names the time still shown; a decided request, an ordinary adjustment and a request for another time are not one (driven)', () => {
+  const ctx = e2Ctx_({ adpSheetTz_: () => 'UTC' });
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  const roster = [{ id: 'E1', name: 'Bo', payCycle: 'Monthly', timezone: 'Asia/Kolkata', todayIso: '2026-10-15' }, { id: 'E2', name: 'Al', payCycle: 'Monthly', timezone: 'Asia/Manila', todayIso: '2026-10-16' }];
+  const periods = [{ cycle: 'Monthly', which: 'previous', start: '2026-09-01', end: '2026-09-30' }];
+  const inf = { E1: [{ date: '2026-09-14', type: 'ClockIn', time: '07:56' }, { date: '2026-09-15', type: 'ClockOut', time: '17:06' }, { date: '2026-09-16', type: 'ClockIn', time: '08:10' }, { date: '2026-09-17', type: 'ClockIn', time: '08:11' }],
+    E2: [{ date: '2026-09-15', type: 'ClockOut', time: '17:06' }, { date: '2026-09-16', type: 'ClockIn', time: '08:03' }] };
+  // ReqId, EmpId, EmpName, Date, PunchType, RequestedTime, Reason, Status, SubmittedAt, Action
+  const par = (id, date, type, time, status, action) => ['R', id, 'n', date, type, time, '', status, '', action];
+  const parRows = [['h'],
+    par('E1', '2026-09-15', 'ClockOut', '17:06:00', ' Pending ', 'CONFIRM'),   // the one: status and action as a hand-edit leaves them, the time with seconds
+    par('E1', '2026-09-14', 'ClockIn', '07:56', 'Approved', 'confirm'),         // decided — no longer waiting
+    par('E1', '2026-09-16', 'ClockIn', '08:10', 'Pending', ''),                 // an ordinary adjustment to the same time
+    par('E1', '2026-09-17', 'ClockIn', '08:00', 'Pending', 'confirm'),          // names another time — the time was changed since
+    par('E2', '2026-09-16', 'ClockOut', '08:03', 'Pending', 'confirm'),         // another punch type
+    par('E9', '2026-09-15', 'ClockOut', '17:06', 'Pending', 'confirm')];        // another person's (off the roster)
+  const prev = J(ctx.planPayPeriodClose_(roster, {}, [['h']], parRows, periods, '2026-10-15', 30, 2, inf)).periods[0];
+  assert.deepStrictEqual(prev.inferred.map((x) => x.name + ' ' + x.date + ' ' + x.type + ' ' + x.requested),
+    ['Bo 2026-09-14 ClockIn false', 'Al 2026-09-15 ClockOut false', 'Bo 2026-09-15 ClockOut true', 'Al 2026-09-16 ClockIn false', 'Bo 2026-09-16 ClockIn false', 'Bo 2026-09-17 ClockIn false'],
+    'THE RULE: only the pending confirm that names the shown time — and it is Bo\'s, not Al\'s same day and punch');
+  assert.deepStrictEqual([prev.counts.inferred, prev.counts.inferredRequested], [6, 1]);
+  assert.deepStrictEqual([prev.counts.pendingAdjust, prev.ready], [4, false], 'the requests are still pending adjustments — the period waits on them as before');
+  // No requests at all: every entry says false, the count is 0 (never undefined — the card reads it).
+  const none = J(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], periods, '2026-10-15', 30, 2, inf)).periods[0];
+  assert.deepStrictEqual([none.counts.inferredRequested, none.inferred.every((x) => x.requested === false)], [0, true]);
+  // The count is whole when the list is capped.
+  const many = { E1: [] }, manyPar = [['h']];
+  for (let d = 1; d <= 30; d++) {
+    const iso = '2026-09-' + String(d).padStart(2, '0');
+    many.E1.push({ date: iso, type: 'ClockIn', time: '08:00' }, { date: iso, type: 'ClockOut', time: '17:00' });
+    manyPar.push(par('E1', iso, 'ClockOut', '17:00', 'Pending', 'confirm'));
+  }
+  const capped = J(ctx.planPayPeriodClose_(roster, {}, [['h']], manyPar, periods, '2026-10-15', 30, 2, many)).periods[0];
+  assert.deepStrictEqual([capped.counts.inferred, capped.counts.inferredRequested, capped.inferred.length < 60], [60, 30, true]);
+});
+
+test('FS1: the close card says which unconfirmed inferred times already have the rep\'s request — on the entry and in one line that names where to approve it; none asked, no line (driven)', () => {
+  const sb = buildSandbox([]);
+  sb.esc = b9Esc_; sb.icon = () => ''; sb.dispTime = (t) => t;
+  loadFunction(sb, 'tc/script_manager.html', 'payCloseInferredHtml_');
+  const item = (name, requested, editable) => ({ id: 'E1', name, timezone: 'UTC', date: '2026-09-15', type: 'ClockIn', time: '07:56', editable: editable !== false, requested });
+  const html = (list, asked) => sb.payCloseInferredHtml_({ counts: { inferred: list.length, inferredRequested: asked }, inferred: list }, 30);
+  const mixed = html([item('Bo', true), item('Al', false), item('Cy', true, false)], 2);
+  const entries = mixed.split(/(?=<button|<span style="display:inline-block)/).slice(1);
+  assert.deepStrictEqual(entries.map((e) => /rep asked to confirm/.test(e)), [true, false, true], 'the entry itself says so — a button inside the window, text past it');
+  assert.ok(/<div class="payclose-inf-asked">2 of them have a rep’s request to confirm waiting — approving it under Pending Punch Adjustments confirms the time\.<\/div>/.test(mixed), mixed);
+  assert.ok(mixed.indexOf('payclose-inf-asked') > mixed.indexOf('payclose-inf-head') && mixed.indexOf('payclose-inf-asked') < mixed.indexOf('<button'), 'the line sits under the head, above the list');
+  assert.ok(/1 of them has a rep’s request/.test(html([item('Bo', true), item('Al', false)], 1)));
+  assert.ok(/The reps have asked to confirm all of them — approving it/.test(html([item('Bo', true), item('Al', true)], 2)));
+  assert.ok(/The rep has asked to confirm it — approving it/.test(html([item('Bo', true)], 1)));
+  const none = html([item('Bo', false), item('Al', false)], 0);
+  assert.ok(!/payclose-inf-asked|asked to confirm/.test(none), 'nobody asked: the card is FR1\'s, word for word');
+  // Only a strict true marks an entry (an older server ships no field), and a missing count draws no line.
+  const old = sb.payCloseInferredHtml_({ counts: { inferred: 1 }, inferred: [Object.assign(item('Bo'), { requested: 'true' })] }, 30);
+  assert.ok(!/asked to confirm/.test(old));
+  const css = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  assert.ok(/\.payclose-inf-asked \{/.test(css), 'the line\'s class has a rule (T6)');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/time: '07:56', editable: true, requested: true \}/.test(mock), 'the fixture shows one asked (INV-185)');
+});
+
+test('FS3: the ActivityLog row limit — a person\'s rows in one 10-minute block are allowed up to the cap, the first refusal is noted ONCE, and the stored count stops one past the cap (driven)', () => {
+  const c = vm.createContext({ Number, Math, isFinite });
+  vm.runInContext(extractRawFunction('Code.js', 'activityRowDecision_'), c);
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(J(c.activityRowDecision_(null, 3)), { allow: true, next: 1, note: false }, 'nothing stored: the first row');
+  assert.deepStrictEqual(J(c.activityRowDecision_('2', 3)), { allow: true, next: 3, note: false }, 'the last one allowed');
+  assert.deepStrictEqual(J(c.activityRowDecision_('3', 3)), { allow: false, next: 4, note: true }, 'THE RULE: the first row past the cap is refused, and noted');
+  assert.deepStrictEqual(J(c.activityRowDecision_('4', 3)), { allow: false, next: 4, note: false }, 'every later one is refused without another note — and the count stays put');
+  assert.deepStrictEqual(J(c.activityRowDecision_('99', 3)), { allow: false, next: 4, note: false });
+  ['', 'x', '-2', undefined, NaN].forEach((v) => assert.deepStrictEqual(J(c.activityRowDecision_(v, 3)), { allow: true, next: 1, note: false }, 'an unreadable count is none: ' + v));
+});
+
+test('FS3: both activity writers ask the limit before they write a row — past it the presence and idle stamps still land, no row is appended, the answer says `logged: false` so the window keeps its counts, ONE audit row names the person, and the next block or another person is unaffected; an unreadable cache allows (driven)', () => {
+  const mk = (cacheThrows) => {
+    const log = { rows: [], audits: [], store: {} };
+    const c = vm.createContext({ String, Number, Math, Object, Array, JSON, Date, isFinite, Error, console: { warn() {} } });
+    ['const ACTIVITY_BLOCK_MIN = \\d+;', "const ACTIVITY_COUNTS_KIND = '[^']*';", 'const ACTIVITY_COUNTS_MAX_ENTRIES = \\d+;', 'const ACTIVITY_COUNTS_MAX_PER_BLOCK = \\d+;',
+      'const ACTIVITY_COUNTS_MAX_AGE_MS = [^;]*;', "const PRESENCE_LAST_PREFIX = '[^']*';", 'const PRESENCE_LAST_TTL_SEC = \\d+;', "const PRESENCE_CACHE_PREFIX = '[^']*';", 'const PRESENCE_TTL_SEC = \\d+;',
+      'const ACTIVITY_ROWS_MAX_PER_BLOCK = \\d+;', "const ACTIVITY_ROWS_PREFIX = '[^']*';", 'const ACTIVITY_ROWS_TTL_SEC = \\d+;']
+      .forEach((re) => vm.runInContext(new RegExp(re).exec(serverSource())[0].replace(/^const /, 'var '), c));
+    ['recordPresence', 'recordActivityCounts', 'activityCountsClean_', 'activityCountsEncode_', 'activityLogAppend_', 'activityLastGestureMs_', 'presenceLastStampAtLeast_', 'activityRowDecision_', 'activityRowAllowed_']
+      .forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+    let who = { id: 'E1', name: 'Bo', email: 'bo@x.test' };
+    Object.assign(c, { getEmployeeInfo_: () => who, fmtDate_: () => '2026-11-19', fmtTime_: () => '10:00:00', sheetSafeRow_: (r) => r,
+      noteActivityLogWriteFailure_: () => { throw new Error('a refused row is not a failed write'); },
+      writeAuditLog_: (emp, action, d, t, adj, days, notes) => { log.audits.push(emp.id + ' ' + action + ' ' + notes); return true; },
+      CacheService: { getScriptCache: () => ({
+        get: (k) => { if (cacheThrows && k.indexOf(c.ACTIVITY_ROWS_PREFIX) === 0) throw new Error('cache down'); return k in log.store ? log.store[k] : null; },
+        put: (k, v) => { log.store[k] = v; } }) },
+      getOrCreateActivityLogSheet_: () => ({ appendRow: (r) => log.rows.push(r) }) });
+    return { c, log, as: (e) => { who = e; } };
+  };
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  const realNow = Date.now;
+  let now = 1700000000000 - (1700000000000 % 600000) + 1000;   // one second into a block
+  Date.now = () => now;
+  try {
+    const x = mk(false), cap = x.c.ACTIVITY_ROWS_MAX_PER_BLOCK, b = Math.floor(now / 600000);
+    const p = () => ({ at: now, last: now, b: [[b, 2, 9]] });
+    // Up to the cap: pings and counts rows together are written.
+    for (let i = 0; i < cap; i++) {
+      const res = i % 2 ? x.c.recordActivityCounts(p()) : x.c.recordPresence(p());
+      assert.deepStrictEqual(J(res), { success: true, logged: true }, 'row ' + (i + 1));
+    }
+    assert.deepStrictEqual([x.log.rows.length, x.log.audits.length], [cap, 0]);
+    // Past it — the ping: the stamps stand, no row.
+    delete x.log.store[x.c.PRESENCE_CACHE_PREFIX + 'E1'];
+    assert.deepStrictEqual(J(x.c.recordPresence(p())), { success: true, logged: false, limited: true }, 'THE RULE: the ping past the cap writes no row and says so');
+    assert.ok(x.c.PRESENCE_CACHE_PREFIX + 'E1' in x.log.store, 'the presence stamp still lands — the limit is on the record, never on being seen');
+    assert.strictEqual(x.log.rows.length, cap);
+    assert.deepStrictEqual(x.log.audits.length, 1);
+    assert.ok(new RegExp('^E1 ActivityRowsLimited More than ' + cap + ' app-activity rows in ten minutes').test(x.log.audits[0]), x.log.audits[0]);
+    // …and the flush: the idle stamp still moves, no row, no second audit row.
+    delete x.log.store[x.c.PRESENCE_LAST_PREFIX + 'E1'];
+    assert.deepStrictEqual(J(x.c.recordActivityCounts(p())), { success: false, logged: false, limited: true }, 'the flush past the cap too');
+    assert.ok(x.c.PRESENCE_LAST_PREFIX + 'E1' in x.log.store, 'the idle stamp is moved before the limit is asked');
+    for (let i = 0; i < 5; i++) x.c.recordPresence(p());
+    assert.deepStrictEqual([x.log.rows.length, x.log.audits.length], [cap, 1], 'ONE audit row a block, however long it goes on');
+    // A flush with nothing in it never spends the allowance (it writes no row).
+    const before = x.log.store[x.c.ACTIVITY_ROWS_PREFIX + 'E1:' + b];
+    assert.strictEqual(J(x.c.recordActivityCounts({ at: now, b: [] })).empty, true);
+    assert.strictEqual(x.log.store[x.c.ACTIVITY_ROWS_PREFIX + 'E1:' + b], before);
+    // Another person, the same block: unaffected.
+    x.as({ id: 'E2', name: 'Al', email: 'al@x.test' });
+    assert.deepStrictEqual(J(x.c.recordPresence(p())), { success: true, logged: true });
+    // The same person, the next block: allowed again.
+    x.as({ id: 'E1', name: 'Bo', email: 'bo@x.test' });
+    now += 600000;
+    assert.deepStrictEqual(J(x.c.recordPresence({ at: now, last: now, b: [] })), { success: true, logged: true });
+    assert.strictEqual(x.log.audits.length, 1);
+    // A cache that cannot be read ALLOWS — the limit is never why a day reads empty.
+    const y = mk(true);
+    for (let i = 0; i < cap + 3; i++) assert.deepStrictEqual(J(y.c.recordActivityCounts(p())).logged, true);
+    assert.deepStrictEqual([y.log.rows.length, y.log.audits.length], [cap + 3, 0]);
+  } finally { Date.now = realNow; }
+  // The cap is above what real windows can send: one ping per gap and one counts row per pause, five windows.
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  const blockMs = Number(/var ACT_BLOCK_MS = (\d+) \* 60 \* 1000;/.exec(core)[1]) * 60000, pauseMs = Number(/var ACT_FLUSH_IDLE_MS = (\d+) \* 60 \* 1000;/.exec(core)[1]) * 60000;
+  const capSrc = Number(/const ACTIVITY_ROWS_MAX_PER_BLOCK = (\d+);/.exec(serverSource())[1]);
+  assert.ok(capSrc >= 5 * (1 + blockMs / pauseMs), 'five windows at the client\'s own ceiling fit under the cap (' + capSrc + ')');
+  assert.ok(Number(/const ACTIVITY_ROWS_TTL_SEC = (\d+);/.exec(serverSource())[1]) * 1000 >= blockMs, 'the count outlives its block');
+  // The window keeps its counts on a limited answer (F30's rule: `logged: false` puts them back).
+  const sb = buildSandbox([]);
+  sb.ACT_BLOCK_MS = blockMs; sb.ACT_MAX_AGE_MS = 6 * 3600000; sb.ACT_COUNTS = { b: {}, t: null, last: 0 };
+  ['actTake_', 'actRestore_', 'actSent_'].forEach((f) => loadFunction(sb, 'script_core.html', f));
+  const blk = Math.floor(Date.now() / blockMs);
+  sb.actSent_({ at: Date.now(), b: [[blk, 3, 4]] }, { success: true, logged: false, limited: true });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sb.ACT_COUNTS.b[blk])), [3, 4]);
+});
+
+test('FS3: the limit is the only thing the two writers gained — the row limit helper takes no lock and writes no sheet row of its own beyond the one audit row, and recordPresence still writes no audit row itself (structure)', () => {
+  const al = stripJsComments_(extractRawFunction('Code.js', 'activityRowAllowed_'));
+  assert.ok(!/waitLock|getScriptLock|appendRow|setValue|PropertiesService/.test(al), 'cache only — every gesture would otherwise queue on the project lock, and a per-person property is banned (g7)');
+  assert.ok(/catch \(e\) \{ return true; \}/.test(al), 'fails open');
+  assert.ok(/if \(d\.note\) \{[\s\S]*writeAuditLog_\(emp, 'ActivityRowsLimited'/.test(al), 'the audit row rides the first refusal only');
+  const rp = stripJsComments_(extractRawFunction('Code.js', 'recordPresence'));
+  assert.ok(rp.indexOf('PRESENCE_LAST_PREFIX') < rp.indexOf('activityRowAllowed_(emp, Date.now())') && rp.indexOf('activityRowAllowed_(emp, Date.now())') < rp.indexOf('activityLogAppend_('), 'stamps, then the limit, then the row');
+  const fl = stripJsComments_(extractRawFunction('Code.js', 'recordActivityCounts'));
+  assert.ok(fl.indexOf('presenceLastStampAtLeast_(') < fl.indexOf('activityRowAllowed_(emp, now)') && fl.indexOf('if (!clean.length)') < fl.indexOf('activityRowAllowed_(emp, now)') &&
+    fl.indexOf('activityRowAllowed_(emp, now)') < fl.indexOf('activityLogAppend_('), 'the idle stamp and the empty check come before the limit; the row after');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/a\.action === 'ActivityRowsLimited'[^\n]*\n\s*\? `\$\{a\.notes\} \(\$\{a\.punchDate\} \$\{dispTime\(a\.punchTime\)\}\)`/.test(mgr), 'Recent Activity reads the row as its note, not as a bare action name');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
