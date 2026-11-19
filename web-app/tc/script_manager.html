@@ -328,9 +328,35 @@ function payCloseSummary_(res) {
   const ended = periods.filter(function (p) { return p.which === 'previous' && (left(p) > 0 || p.error); });
   const cur = periods.filter(function (p) { return p.which === 'current' && (left(p) > 0 || p.error); });
   const n = periods.reduce(function (t, p) { return t + left(p); }, 0) + (res.orphans || []).length;
-  if (!n && !ended.length && !cur.length) return { text: 'ready', tone: 'ok' };
-  if (ended.length) return { text: n + ' item' + (n === 1 ? '' : 's') + ' · a period that has ended', tone: 'crit' };
-  return { text: n + ' item' + (n === 1 ? '' : 's') + ' in the current period', tone: 'warn' };
+  // FR1 (cycle 26): inferred times nobody has confirmed are named beside the
+  // state, never counted into it — they do not stand between a period and its export.
+  const inf = periods.reduce(function (t, p) { return t + ((p.counts && p.counts.inferred) || 0); }, 0);
+  const tail = inf ? ' · ' + inf + ' inferred to check' : '';
+  if (!n && !ended.length && !cur.length) return { text: 'ready' + tail, tone: 'ok' };
+  if (ended.length) return { text: n + ' item' + (n === 1 ? '' : 's') + ' · a period that has ended' + tail, tone: 'crit' };
+  return { text: n + ' item' + (n === 1 ? '' : 's') + ' in the current period' + tail, tone: 'warn' };
+}
+/** PURE (Node + DOM pinned) — FR1: one period's clock times set from app
+ *  activity that nobody has confirmed. Each inside the Day Edit window is a
+ *  button that opens that rep's day (where Confirm as is lives); an older one
+ *  is text. '' for a period with none. `adjustWindowDays` is the payload's. */
+function payCloseInferredHtml_(p, adjustWindowDays) {
+  const total = (p && p.counts && p.counts.inferred) || 0;
+  const list = (p && p.inferred) || [];
+  if (!total || !list.length) return '';
+  const label = { ClockIn: 'Clock In', ClockOut: 'Clock Out' };
+  const items = list.map(function (x) {
+    const text = esc(x.name) + ' · ' + esc(x.date) + ' · ' + esc(label[x.type] || x.type) + ' ' + esc(dispTime(x.time));
+    if (x.editable) {
+      return '<button type="button" class="refresh-btn" style="margin:2px 4px 2px 0" data-emp-id="' + esc(x.id) + '" data-emp-name="' + esc(x.name) +
+        '" data-date="' + esc(x.date) + '" data-tz="' + esc(x.timezone || '') + '" onclick="mgrPayCloseEdit_(this)">' + icon('adjust', 12) + text + '</button>';
+    }
+    return '<span style="display:inline-block;margin:2px 6px 2px 0;font-size:12px;color:var(--muted)">' + text +
+      ' — past the ' + esc(String(adjustWindowDays)) + '-day edit window</span>';
+  }).join('');
+  const more = total > list.length ? ' <span style="font-size:12px;color:var(--muted)">and ' + esc(String(total - list.length)) + ' more</span>' : '';
+  return '<div class="payclose-inf"><div class="payclose-inf-head">' + esc(total + ' time' + (total === 1 ? '' : 's')) +
+    ' set from app activity, not yet confirmed — open the day to confirm or correct. These do not hold up the export.</div>' + items + more + '</div>';
 }
 /** PURE (Node + DOM pinned): the checklist card. Every server string escaped;
  *  each open day inside the Day Edit window is a button (data-* only — g133),
@@ -348,7 +374,8 @@ function renderPayCloseCard_(res) {
       (p.start ? ' · ' + esc(p.start) + ' → ' + esc(p.end) : '') + ' ' +
       muted(p.which === 'previous' ? '(just ended)' : '(current' + (p.checkedThrough && p.checkedThrough < p.end ? ', checked through ' + esc(p.checkedThrough) : '') + ')') + '</div>';
     if (p.error) return title + '<div style="font-size:12px;color:var(--warning-deep)">' + esc(p.error) + '</div>';
-    if (p.ready) return title + '<div style="font-size:12px;color:var(--success-deep)">' + icon('check', 12) + ' Ready to close — no open days, no pending requests.</div>';
+    if (p.ready) return title + '<div style="font-size:12px;color:var(--success-deep)">' + icon('check', 12) + ' Ready to close — no open days, no pending requests.</div>' +
+      payCloseInferredHtml_(p, res.adjustWindowDays);   // FR1
     const reps = (p.reps || []).map(function (r) {
       const days = r.openDays.map(function (d) {
         if (d.editable) {
@@ -373,7 +400,7 @@ function renderPayCloseCard_(res) {
     return title + '<div style="font-size:12px;color:var(--warning-deep);margin-bottom:4px">' +
       [c.openDays ? plural(c.openDays, 'open day') : '', c.pendingTimeOff ? plural(c.pendingTimeOff, 'pending time-off request') : '',
        c.pendingAdjust ? plural(c.pendingAdjust, 'pending adjustment') : ''].filter(Boolean).join(' · ') +
-      ' before this period exports cleanly</div>' + reps;
+      ' before this period exports cleanly</div>' + reps + payCloseInferredHtml_(p, res.adjustWindowDays);
   }).join('');
   const orphans = (res.orphans || []).length
     ? '<div style="font-size:12px;color:var(--warning-deep);margin-top:10px">Pending request(s) for an employee id the roster does not carry, so no pay period can be placed: ' +
@@ -653,7 +680,7 @@ function renderAdjustQueueCard_(requests) {
         ' (clock-out becomes a break — the gap is unpaid)'
       : r.punchType + ' · ' + r.date + ' · ' + r.time + mgrAdjIntentText_(r);
     return '<div class="mgr-adj-row" data-req-row="' + esc(r.reqId) + '">' +
-      (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
+      (multi ? '<input type="checkbox" class="mgr-adj-chk" data-req-id="' + esc(r.reqId) + '" data-emp-name="' + esc(r.empName) + '" data-date="' + esc(r.date) + '" aria-label="Select the request from ' + esc(r.empName) + '" onchange="adjBulkSync_()">' : '') +
       '<div class="mgr-adj-text">' +
         '<div style="font-weight:600;font-size:13px;color:var(--ink)">' + esc(r.empName) +
           ' <span style="color:var(--muted);font-weight:400">— ' + esc(detail) + '</span></div>' +
@@ -748,6 +775,29 @@ function adjBulk_(status) {
     adjBulkConfirmed_(status, checked.map(function (c) { return c.getAttribute('data-req-id'); }));
   });
 }
+/** PURE (Node-pinned) — FR2 (cycle 26): the lines a bulk approve / deny shows
+ *  for the requests it could not decide — "Nina Patel · 2026-11-12 — <reason>",
+ *  at most `cap`, then how many more. `fails` is [{who, date, error}]. */
+function mgrBulkFailLines_(fails, cap) {
+  const list = fails || [];
+  const lines = list.slice(0, cap).map(function (f) {
+    return [f.who || 'A request', f.date].filter(Boolean).join(' · ') + ' — ' + (String(f.error || '').trim() || 'no reason given');
+  });
+  if (list.length > lines.length) lines.push('and ' + (list.length - lines.length) + ' more');
+  return lines;
+}
+/** FR2: a partly failed bulk decide SAYS which requests failed and why, in a
+ *  dialog that stays until it is read — the toast gave a count ("2 failed")
+ *  and was gone in seconds, and the reason is what tells a manager whether to
+ *  retry, or that another manager already decided it. */
+function mgrBulkFailDialog_(status, done, fails) {
+  const verb = String(status || '').toLowerCase();
+  return uiConfirm({
+    title: fails.length + ' request' + (fails.length === 1 ? '' : 's') + ' not ' + verb,
+    message: (done ? done + ' ' + verb + '. ' : '') + 'Not ' + verb + ':\n' + mgrBulkFailLines_(fails, 8).join('\n'),
+    confirmLabel: 'OK', hideCancel: true,
+  });
+}
 function adjBulkConfirmed_(status, ids) {
   const rows = ids.map(adjRowFor_);
   rows.forEach(function (r) { adjSetDeciding_(r, true); });
@@ -757,13 +807,18 @@ function adjBulkConfirmed_(status, ids) {
     .withSuccessHandler(function (res) {
       const results = (res && res.results) || [];
       if (!results.length) { showToast((res && res.error) || 'Action failed', 'toast-error'); restore(); return; }
-      let done = 0, failed = 0;
+      let done = 0;
+      const fails = [];
       results.forEach(function (r) {
         const row = adjRowFor_(r.reqId);
         if (r.success) { done++; adjRemoveRow_(row); }
-        else { failed++; adjSetDeciding_(row, false); }
+        else {
+          const chk = row && row.querySelector('.mgr-adj-chk');
+          fails.push({ who: chk ? chk.getAttribute('data-emp-name') : '', date: chk ? chk.getAttribute('data-date') : '', error: r.error });
+          adjSetDeciding_(row, false);
+        }
       });
-      if (failed) showToast(done + ' ' + status.toLowerCase() + ', ' + failed + ' failed — ' + ((res && res.error) || ''), 'toast-warn');
+      if (fails.length) mgrBulkFailDialog_(status, done, fails);   // FR2: each request's own reason
       else showToast(done + ' ' + status.toLowerCase(), 'toast-success');
       adjBulkSync_();
       loadPendingAdjustments_();
@@ -1274,24 +1329,26 @@ function renderManagerView(area, data) {
   function handleBulkActionConfirmed_(status, checked) {
     if (bulkApprove) bulkApprove.disabled = true;
     if (bulkDeny) bulkDeny.disabled = true;
-    let done = 0, errors = 0;
+    let done = 0;
+    const fails = [];   // FR2: {who, date, error} per request that was not decided
+    const finish = () => {
+      if (done !== checked.length) return;
+      if (fails.length) mgrBulkFailDialog_(status, done - fails.length, fails);
+      else showToast(`${done} ${status.toLowerCase()}`, 'toast-success');
+      refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
+    };
     checked.forEach(c => {
+      const who = c.dataset.empName, date = c.dataset.date;
       google.script.run
         .withSuccessHandler(res => {
           done++;
-          if (!res.success) errors++;
-          if (done === checked.length) {
-            if (errors > 0) showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
-            else showToast(`${done} ${status.toLowerCase()}`, 'toast-success');
-            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
-          }
+          if (!res || !res.success) fails.push({ who: who, date: date, error: res && res.error });
+          finish();
         })
-        .withFailureHandler(() => {
-          done++; errors++;
-          if (done === checked.length) {
-            showToast(`${done - errors} succeeded, ${errors} failed`, 'toast-warn');
-            refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
-          }
+        .withFailureHandler(err => {
+          done++;
+          fails.push({ who: who, date: date, error: (err && err.message) || 'the request did not reach the server' });
+          finish();
         })
         .updateTimeOffStatus(c.dataset.empId, c.dataset.date, c.dataset.submittedAt, status);
     });
@@ -1812,7 +1869,18 @@ function tcalDayTableHtml_(data) {
  * failed read is never cached (INV-129) and is said under the table, never
  * drawn as "no activity". Every rep's bars share one hour range, so two rows
  * can be compared by eye. */
-var TEAMACT = { cache: {}, failed: {}, seq: 0 };
+var TEAMACT = { cache: {}, failed: {}, at: {}, seq: 0 };
+/** PURE (Node-pinned) — FR3 (cycle 26): today's bars are re-read on every
+ *  select, and a re-read that FAILED left the earlier read on screen with
+ *  nothing said — a manager read an hour-old strip as now. '' unless the day
+ *  has a kept read AND its latest read failed; then how old the bars are. */
+function tcalActStaleText_(hasData, failed, atMs, nowMs) {
+  if (!hasData || !failed) return '';
+  const mins = (atMs > 0 && nowMs >= atMs) ? Math.floor((nowMs - atMs) / 60000) : null;
+  return 'App activity could not be refreshed just now — these bars are from ' +
+    (mins === null ? 'an earlier read' : mins < 1 ? 'a read under a minute ago' : 'a read ' + (mins >= 60 ? Math.floor(mins / 60) + ' h ' : '') + (mins % 60) + ' min ago') +
+    '. Select the day again to retry. ';
+}
 function tcalActLoad_(dateIso) {
   var todayIso = isoDateTz(empTz());
   if (!dateIso || dateIso > todayIso) return;
@@ -1821,7 +1889,7 @@ function tcalActLoad_(dateIso) {
   delete TEAMACT.failed[dateIso];
   google.script.run
     .withSuccessHandler(function (res) {
-      if (res && !res.error && res.reps) TEAMACT.cache[dateIso] = res;
+      if (res && !res.error && res.reps) { TEAMACT.cache[dateIso] = res; TEAMACT.at[dateIso] = Date.now(); }
       else TEAMACT.failed[dateIso] = true;
       if (seq !== TEAMACT.seq || TEAMCAL.selDate !== dateIso || currentView !== 'manage') return;
       tcalActFill_(dateIso);
@@ -1878,7 +1946,9 @@ function tcalActNoteHtml_(dateIso) {
   var lf = data && data.logFails && data.logFails.count > 0 ? data.logFails : null;
   var fails = lf ? ' The activity log could not be written ' + esc(actNum_(lf.count)) + ' time' + (lf.count === 1 ? '' : 's') +
     ' around this day, so some activity may be missing.' : '';
-  return 'App activity is clicks and keystrokes in this app only, each rep on their own clock — a call or another program reads as idle. Context, not a score.' + span + kept + fails;
+  const stale = esc(tcalActStaleText_(!!data, !!TEAMACT.failed[dateIso], TEAMACT.at[dateIso] || 0, Date.now()));   // FR3
+  return (stale ? '<span class="tcal-act-stale">' + stale + '</span>' : '') +
+    'App activity is clicks and keystrokes in this app only, each rep on their own clock — a call or another program reads as idle. Context, not a score.' + span + kept + fails;
 }
 function tcalActFill_(dateIso) {
   var slot = document.getElementById('mgr-team-cal');

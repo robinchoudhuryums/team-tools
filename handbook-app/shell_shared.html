@@ -311,7 +311,8 @@ function uiConfirm(opts) {
         + titleHtml
         + bodyHtml
         + '<div class="modal-footer">'
-          + '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+          + (opts.hideCancel ? ''   /* FR2 (cycle 26): a notice has nothing to cancel — one button; Escape and the backdrop still close it */
+            : '<button type="button" class="btn-modal-cancel ui-dialog-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>')
           + '<button type="button" class="btn-modal-ok ui-dialog-ok' + (isDanger ? ' is-danger' : '') + '">' + esc(opts.confirmLabel || 'Confirm') + '</button>'
         + '</div>'
       + '</div>';
@@ -353,7 +354,8 @@ function uiConfirm(opts) {
         cleanup(!onCancel);
       }
     };
-    overlay.querySelector('.ui-dialog-cancel').addEventListener('click', function () { cleanup(false); });
+    const cancelBtn = overlay.querySelector('.ui-dialog-cancel');   // absent under hideCancel (FR2)
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { cleanup(false); });
     overlay.querySelector('.ui-dialog-ok').addEventListener('click', function () { cleanup(true); });
     overlay.addEventListener('click', function (e) { if (e.target === overlay) cleanup(false); });
     document.addEventListener('keydown', onKey, true);

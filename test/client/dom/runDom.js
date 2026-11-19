@@ -15193,3 +15193,164 @@ test('DQ2 DOM: a call note logged from an amended intake send wears "PMD amended
   assert.ok(/cn-intake-pill pmd/.test(html) && />PMD amended<\/span>$/.test(html.replace(/<svg[\s\S]*?<\/svg>/, '')), html);
   assert.ok(!/amended/.test(h.read('cnIntakePillHtml_')({ subformData: { intakeType: 'pmd' } })));
 });
+
+section('DOM harness — cycle 26 follow-ons after the decisions (FR1–FR4)');
+
+test('FR2 DOM: a partly failed bulk approve of punch adjustments opens a dialog naming the failed request and ITS reason — one button, the landed row gone, the failed row back and selectable', () => {
+  const h = boot(); h.bootShell({ isManager: true });
+  mount_(h, 'mgr-adjust-queue');
+  const reqs = [{ reqId: 'r1', empName: 'Nina Patel', punchType: 'ClockOut', date: '2026-11-12', time: '17:00', reason: 'forgot' },
+    { reqId: 'r2', empName: 'Sam <b>Ortiz', punchType: 'ClockIn', date: '2026-11-13', time: '08:00', reason: 'late badge' }];
+  h.document.getElementById('mgr-adjust-queue').innerHTML = h.read('renderAdjustQueueCard_')(reqs);
+  assert.strictEqual(h.$$('.mgr-adj-chk[data-date]').length, 2, 'each row\'s checkbox carries its date');
+  h.read('adjBulkConfirmed_')('Approved', ['r1', 'r2']);
+  h.run.flushSuccess({ success: false, error: 'first error only', results: [{ reqId: 'r1', success: true },
+    { reqId: 'r2', success: false, error: 'This request was already Approved by another manager.' }] }, 'updatePunchAdjustStatusBulk');
+  const dlg = h.$('.overlay.open.ui-dialog');
+  assert.ok(dlg, 'THE CAPABILITY: a dialog, not a toast that is gone in seconds');
+  assert.match(dlg.querySelector('.modal-title').textContent, /^1 request not approved$/);
+  const body = dlg.querySelector('.ui-dialog-body');
+  assert.ok(/1 approved\. Not approved:/.test(body.textContent) && /Sam <b>Ortiz · 2026-11-13 — This request was already Approved by another manager\./.test(body.textContent), body.textContent);
+  assert.strictEqual(body.querySelectorAll('b').length, 0, 'the name is text');
+  assert.ok(!/first error only/.test(body.textContent), 'each request\'s OWN reason, not the batch\'s first');
+  assert.deepStrictEqual([dlg.querySelectorAll('.ui-dialog-cancel').length, dlg.querySelectorAll('.ui-dialog-ok').length], [0, 1], 'a notice has one button');
+  assert.strictEqual(h.read('adjRowFor_')('r1'), null, 'the approved row left');
+  const r2 = h.read('adjRowFor_')('r2');
+  assert.ok(r2 && !r2.classList.contains('is-deciding') && !r2.querySelector('.mgr-adj-chk').disabled, 'the failed row is back, and can be tried again');
+  dlg.querySelector('.ui-dialog-ok').click();
+  assert.strictEqual(h.$('.overlay.open.ui-dialog'), null, 'OK closes it');
+  h.run.drain();
+  // All landed: the ordinary toast, no dialog.
+  h.document.getElementById('mgr-adjust-queue').innerHTML = h.read('renderAdjustQueueCard_')(reqs);
+  h.read('adjBulkConfirmed_')('Denied', ['r1', 'r2']);
+  h.run.flushSuccess({ success: true, results: [{ reqId: 'r1', success: true }, { reqId: 'r2', success: true }] }, 'updatePunchAdjustStatusBulk');
+  assert.strictEqual(h.$('.overlay.open.ui-dialog'), null);
+  assert.match(h.$('#toast-stack .toast').textContent, /2 denied/);
+});
+
+test('FR1 DOM: the Pay Period Close card lists an unconfirmed inferred time under a READY period, and its button opens Day Edit for that rep and day; the Periodic summary names the count', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const today = h.read('isoDateTz')('Asia/Kolkata');
+  const back = (n) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.run.respond('getPayPeriodClose', () => ({ adjustWindowDays: 30, graceDays: 2, tzAbbr: 'IST', orphans: [], periods: [
+    { cycle: 'Monthly', which: 'previous', start: back(40), end: back(10), checkedThrough: back(10), ready: true, reps: [],
+      counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 1 },
+      inferred: [{ id: 'E7', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: back(12), type: 'ClockIn', time: '07:56', editable: true }] }] }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick(); await tick();
+  const card = h.window.document.getElementById('mgr-pay-close');
+  assert.ok(/Ready to close/.test(card.textContent) && /1 time set from app activity, not yet confirmed/.test(card.textContent), card.textContent);
+  const sum = h.window.document.getElementById('mgr-sum-payclose');
+  assert.ok(/^ready · 1 inferred to check$/.test(sum.textContent.trim()) && sum.getAttribute('data-tone') === 'ok', sum.textContent + ' / ' + sum.getAttribute('data-tone'));
+  const btn = card.querySelector('.payclose-inf button[data-date]');
+  assert.ok(btn && /Nina Patel · .* · Clock In/.test(btn.textContent) && btn.getAttribute('onclick') === 'mgrPayCloseEdit_(this)');
+  h.read('mgrPayCloseEdit_')(btn);
+  h.flushTimers();
+  assert.strictEqual(h.read('_deEmpId'), 'E7');
+  assert.strictEqual(h.window.document.getElementById('de-date').value, back(12), 'Day Edit opens on the day — where Confirm as is lives');
+});
+
+test('FR3 DOM: Team Punches keeps today\'s bars when a re-read fails — and now SAYS they are from an earlier read; the next clean read clears the notice', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const today = h.read('isoDateTz')(h.read('empTz')());
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [], missedPunches: [], recentPunches: [], recentAudits: [],
+    ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  const days = {}; days[today] = { reps: [{ id: 'E1', name: 'Ana Reyes', clockIn: '08:00:00', clockOut: null, hours: null, punchCount: 1 }], off: [] };
+  h.run.respond('getTeamCalendar', () => ({ month: today.substring(0, 7), rosterCount: 1, adjustWindowDays: 30, holidays: {}, days: days }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick();
+  const hrs = new Array(24).fill(0); hrs[8] = 40; hrs[9] = 80;
+  const good = { date: today, blockMin: 10, keptFrom: '', reps: { E1: { hours: hrs, hasCounts: true, clicks: 50, keys: 70, activeMin: 90, pings: 9, first: '08:00', last: '09:50' } } };
+  h.run.pending('managerGetTeamActivity').forEach(() => h.run.flushSuccess(good, 'managerGetTeamActivity'));
+  const cell = () => h.document.querySelector('[data-tcal-act="E1"]');
+  const note = () => h.document.getElementById('tcal-act-note');
+  assert.match(cell().textContent, /120 clicks \+ keys/);
+  assert.ok(!note().querySelector('.tcal-act-stale'), 'a clean read: no notice');
+  // Today is re-read on every select; this one fails.
+  h.read('tcalSelect_')(today);
+  assert.strictEqual(h.run.pending('managerGetTeamActivity').length, 1, 'today is read again');
+  h.run.flushFailure(new Error('quota'), 'managerGetTeamActivity');
+  assert.match(cell().textContent, /120 clicks \+ keys/, 'the earlier bars stay (last-good)');
+  const stale = note().querySelector('.tcal-act-stale');
+  assert.ok(stale && /could not be refreshed just now — these bars are from a read (under a minute|\d+ min) ago/.test(stale.textContent), 'THE REGRESSION: nothing said they were old — ' + note().textContent);
+  // A server {error} is the same failure.
+  h.read('tcalSelect_')(today);
+  h.run.flushSuccess({ error: 'Manager access required.' }, 'managerGetTeamActivity');
+  assert.ok(note().querySelector('.tcal-act-stale'));
+  // The next clean read clears it.
+  h.read('tcalSelect_')(today);
+  h.run.flushSuccess(good, 'managerGetTeamActivity');
+  assert.ok(!note().querySelector('.tcal-act-stale'), 'refreshed: the notice goes');
+});
+
+test('FR4 DOM: the Spanish inbox paints its last round, and a refresh whose stats come back as a server {error} — with both list halves failing too — keeps that round and says so ONCE', () => {
+  const stats = () => ({ address: 'spanishcalls@x.com', days: 30, pending: 1, resolved: 0,
+    avgMinutes: null, medianMinutes: null, avgBusinessMinutes: null, medianBusinessMinutes: null, businessCount: 0,
+    businessHours: { startMin: 480, endMin: 1020, weekdaysOnly: true }, membersConfigured: true, threadsScanned: 1, truncated: false });
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: false, canSeeSpanish: true });
+  h.flushTimers();
+  h.run.drain();   // the Dashboard's own Spanish card asks the same endpoints — not this view's round
+  h.window.enterTool('timeClock', 'metricsSpanish');
+  h.flushTimers();
+  // The first, cold round: answered by hand so the cache holds a complete round.
+  h.run.flushSuccess(stats(), 'getSpanishInboxStats');
+  h.flushTimers();
+  h.run.flushSuccess({ pending: [], members: ['sam@x.com'], truncated: false }, 'getSpanishInboxPending');
+  h.run.flushSuccess({ resolved: [], members: ['sam@x.com'], truncated: false }, 'getSpanishInboxResolved');
+  h.flushTimers();
+  const toasts = () => Array.from(h.$$('#toast-stack .toast')).map((t) => t.textContent).filter((t) => /Spanish inbox/.test(t));
+  assert.ok(h.$('#spanish-head') && toasts().length === 0, 'painted, nothing to report');
+  const headBefore = h.$('#spanish-head').innerHTML;
+  // The second round paints from the cache and refreshes behind it.
+  h.read('spanishLoad_')();
+  h.flushTimers();
+  assert.ok(h.$('#spanish-head'), 'the cached round is on screen');
+  h.run.flushSuccess({ error: 'Gmail quota exceeded' }, 'getSpanishInboxStats');
+  assert.strictEqual(h.$('#spanish-head').innerHTML, headBefore, 'the painted figures stay');
+  assert.strictEqual(toasts().length, 1, 'THE REGRESSION: a server {error} kept the old round and said nothing');
+  h.run.flushFailure(new Error('timeout'), 'getSpanishInboxPending');
+  h.run.flushSuccess({ error: 'Gmail quota exceeded' }, 'getSpanishInboxResolved');
+  h.flushTimers();
+  assert.strictEqual(toasts().length, 1, 'one notice for the round, not three');
+  assert.ok(!/Could not load/.test(h.$('#spanish-body').textContent), 'and no error card over the last-good lists');
+});
+
+test('FR2 DOM: the time-off bulk bar — two selected, one approved and one refused by the server: the dialog names the refused request and its reason, where the toast said "1 succeeded, 1 failed"', async () => {
+  const h = boot();
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: h.read('TOUR_VERSION') }));
+  h.bootShell({ isManager: true });
+  const pend = (id, name, date) => ({ empId: id, empName: name, name: name, date: date, type: 'Full Day', notes: '', submittedAt: '2026-11-10 10:12:00',
+    conflictsOff: [], holidayName: null, balanceAfter: 7.5, ptoEnabled: true, annualLeave: 8.5, tzAbbr: 'CST' });
+  h.run.respond('getManagerDashboard', () => ({ liveStatus: [], pending: [pend('E1', 'Sam Ortiz', '2026-12-01'), pend('E2', 'Nina Patel', '2026-12-02')],
+    missedPunches: [], recentPunches: [], recentAudits: [], ptoEnabled: true, mgrTzAbbr: 'CST', adjustWindowDays: 30 }));
+  h.window.enterTool('manage', 'manage');
+  h.flushTimers();
+  await tick();
+  const boxes = h.$$('.mgr-pending-chk');
+  assert.strictEqual(boxes.length, 2);
+  boxes.forEach((b) => { b.checked = true; b.dispatchEvent(new h.window.Event('change')); });
+  h.document.getElementById('mgr-bulk-approve').click();
+  await tick();
+  h.$('.overlay.open.ui-dialog .ui-dialog-ok').click();   // "Approve all"
+  await tick();
+  const calls = h.run.pending('updateTimeOffStatus');
+  assert.strictEqual(calls.length, 2, 'one RPC per request');
+  h.run.flushSuccess({ success: true }, 'updateTimeOffStatus');
+  assert.strictEqual(h.$('.overlay.open.ui-dialog'), null, 'nothing is said until every answer is in');
+  h.run.flushSuccess({ success: false, error: 'Nina Patel already has approved time off on 2026-12-02.' }, 'updateTimeOffStatus');
+  const dlg = h.$('.overlay.open.ui-dialog');
+  assert.ok(dlg, 'THE REGRESSION: a toast with two counts and no reason');
+  assert.match(dlg.querySelector('.modal-title').textContent, /^1 request not approved$/);
+  assert.match(dlg.querySelector('.ui-dialog-body').textContent, /1 approved\. Not approved:.*Nina Patel · 2026-12-02 — Nina Patel already has approved time off on 2026-12-02\./);
+  assert.strictEqual(dlg.querySelectorAll('.ui-dialog-cancel').length, 0);
+});

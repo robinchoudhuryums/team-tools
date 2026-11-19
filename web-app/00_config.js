@@ -492,6 +492,9 @@ const ADP_INFERRED_MARK = 'Inferred (app activity)';
 // confirmed it is the AuditLog's PunchConfirm row. No surface draws the
 // Inferred chip for it, and the export counts it apart from the inferred.
 const ADP_CONFIRMED_MARK = 'Confirmed (app activity)';
+// Cycle 26 FR1: how many unconfirmed inferred times one period of the Pay
+// Period Close card names; the count is always the whole number.
+const PAY_CLOSE_INFERRED_LIST_MAX = 40;
 // Phase 7: columns I (ANNUAL_LEAVE) and J (SICK_LEAVE)
 // Phase 8 (Call Notes): column L (CALL_NOTES_SHEET_ID) — per-rep Sheet ID
 const EMP = {

@@ -281,6 +281,10 @@ function timesheetRowsInRange_(startIso, endIso, opts) {
  *  hours (INV-176) — the caller reports it rather than silently under-crediting. */
 function workedHoursByEmpForRange_(startIso, endIso) {
   const perDay = {};            // empId -> dateIso -> {ClockIn, ClockOut, LunchOut, LunchIn}
+  // FR1 (cycle 26): the mark of each day's SHOWN clock row (the last of its
+  // type, as Day Edit and the calendars read it) — empId -> dateIso -> type ->
+  // 'HH:mm' while that row is still Inferred, '' once it is not.
+  const infLast = {};
   // TC2-9 (cycle 23 Batch 14): THE range reader — the archive gate keys on how
   // far the archive reaches, not the live tab's oldest row; strict, so a
   // failed archive read throws rather than under-crediting.
@@ -291,7 +295,13 @@ function workedHoursByEmpForRange_(startIso, endIso) {
     if (!id || !date) return;
     if (!perDay[id]) perDay[id] = {};
     if (!perDay[id][date]) perDay[id][date] = {};
-    punchDayAdd_(perDay[id][date], normalizeType_(String(r[ADP.COMMENTS])), normalizeTime_(r[ADP.TIME]));
+    const type = normalizeType_(String(r[ADP.COMMENTS]));
+    const time = normalizeTime_(r[ADP.TIME]);
+    punchDayAdd_(perDay[id][date], type, time);
+    if (type === 'ClockIn' || type === 'ClockOut') {
+      const day = (infLast[id] || (infLast[id] = {}))[date] || (infLast[id][date] = {});
+      day[type] = adpRowInferred_(r) ? String(time).substring(0, 5) : '';
+    }
   });
   const archivedRows = read.archivedRows;
   const byEmp = {}, perDayByEmp = {};
@@ -321,7 +331,26 @@ function workedHoursByEmpForRange_(startIso, endIso) {
   // (a sentinel = a day that contributed no hours, and which of the two it is),
   // so a multi-month catch-up can slice one month out WITHOUT a second
   // Timesheet read — see workedHoursForEmpMonth_.
-  return { byEmp: byEmp, perDayByEmp: perDayByEmp, archivedRows: archivedRows };
+  return { byEmp: byEmp, perDayByEmp: perDayByEmp, archivedRows: archivedRows,
+    inferredByEmp: timesheetInferredByEmp_(infLast) };   // FR1
+}
+/** PURE (Node-pinned) — FR1: the clock times still marked Inferred, out of the
+ *  last-row marks ({empId: {dateIso: {type: 'HH:mm' | ''}}}): {empId: [{date,
+ *  type, time}]}, oldest first, Clock In before Clock Out. A confirmed or
+ *  edited time is '' and is not listed. */
+function timesheetInferredByEmp_(infLast) {
+  const out = {};
+  Object.keys(infLast || {}).forEach(function (id) {
+    const list = [];
+    Object.keys(infLast[id] || {}).sort().forEach(function (date) {
+      ['ClockIn', 'ClockOut'].forEach(function (type) {
+        const t = infLast[id][date][type];
+        if (t) list.push({ date: date, type: type, time: t });
+      });
+    });
+    if (list.length) out[id] = list;
+  });
+  return out;
 }
 /** THE accrual resolver: what a run WOULD do, with NOTHING written.
  *
@@ -6556,7 +6585,7 @@ function payWeekEmail_(email, name, pw) {
  *  (older days are hand-edit only). A pending request for an id no roster row
  *  carries goes to `orphans` — its pay cycle is unknown, so it cannot be put in
  *  a period, and dropping it would read as one less thing to close. */
-function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, adjustWindowDays, graceDays) {
+function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, adjustWindowDays, graceDays, inferredByEmp) {
   const byId = {};
   (roster || []).forEach((r) => { byId[r.id] = r; });
   const checkedThroughMax = addDaysIso_(todayIso, -graceDays);
@@ -6596,6 +6625,21 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
       if (!emp || emp.payCycle !== per.cycle || !p.date || p.date < per.start || p.date > per.end) return;
       repOf(emp)[p.kind === 'timeOff' ? 'pendingTimeOff' : 'pendingAdjust'].push({ date: p.date, label: p.label });
     });
+    // FR1 (cycle 26): clock times set from app activity that nobody has
+    // confirmed. They do not stand between the period and its export (the file
+    // is the same either way), so they are NOT part of `ready` — they are a
+    // list to check, and until now the export's own email was the first place
+    // it was gathered. Whole period (start..end): a time is a time, in progress or not.
+    const inferred = [];
+    (roster || []).forEach((emp) => {
+      if (emp.payCycle !== per.cycle) return;
+      ((inferredByEmp && inferredByEmp[emp.id]) || []).forEach((x) => {
+        if (!x || !x.date || x.date < per.start || x.date > per.end) return;
+        inferred.push({ id: emp.id, name: emp.name, timezone: emp.timezone || '', date: x.date, type: x.type, time: x.time,
+          editable: x.date >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom) });
+      });
+    });
+    inferred.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
     const list = Object.keys(reps).map((k) => reps[k]);
     list.forEach((r) => {
       r.pendingTimeOff.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -6604,9 +6648,11 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
     list.sort((a, b) => (b.openDays.length + b.pendingTimeOff.length + b.pendingAdjust.length) -
       (a.openDays.length + a.pendingTimeOff.length + a.pendingAdjust.length) || (a.name < b.name ? -1 : 1));
     const sum = (k) => list.reduce((n, r) => n + r[k].length, 0);
-    const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust') };
+    const counts = { openDays: sum('openDays'), pendingTimeOff: sum('pendingTimeOff'), pendingAdjust: sum('pendingAdjust'),
+      inferred: inferred.length };
     return { cycle: per.cycle, which: per.which, start: per.start, end: per.end, checkedThrough: through,
-      reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust };
+      reps: list, counts: counts, ready: !counts.openDays && !counts.pendingTimeOff && !counts.pendingAdjust,
+      inferred: inferred.slice(0, PAY_CLOSE_INFERRED_LIST_MAX) };
   });
   return { periods: out, orphans: orphans.map((p) => ({ id: p.id, name: p.name, date: p.date, kind: p.kind, label: p.label })) };
 }
@@ -6644,15 +6690,17 @@ function getPayPeriodClose() {
     const todayIso = fmtDateTz_(now, CONFIG.MANAGER_TIMEZONE || CONFIG.TIMEZONE);
     const periods = payPeriodsForClose_(todayIso, cycles, anchor);
     const dated = periods.filter((p) => !p.error);
-    let perDayByEmp = {};
+    let perDayByEmp = {}, inferredByEmp = {};
     if (dated.length) {
       const from = dated.reduce((m, p) => (p.start < m ? p.start : m), dated[0].start);
       const to = dated.reduce((m, p) => (p.end > m ? p.end : m), dated[0].end);
-      perDayByEmp = workedHoursByEmpForRange_(from, to).perDayByEmp;
+      const idx = workedHoursByEmpForRange_(from, to);
+      perDayByEmp = idx.perDayByEmp;
+      inferredByEmp = idx.inferredByEmp || {};   // FR1 — the same one read
     }
     const toRows = getOrCreateTimeOffSheet_().getDataRange().getValues();
     const parRows = getOrCreatePunchAdjustSheet_().getDataRange().getValues();
-    const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS);
+    const plan = planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, todayIso, CONFIG.ADJUST_WINDOW_DAYS, OPEN_PUNCH_GRACE_DAYS, inferredByEmp);
     // The dates listed are Timesheet dates — each in that rep's ROSTER timezone,
     // never CONFIG.TIMEZONE (the card said "Dates in IST" over Chicago dates).
     // One zone on the roster is named; more than one is said, not guessed.

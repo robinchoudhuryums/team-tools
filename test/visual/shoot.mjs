@@ -251,6 +251,9 @@ const SCENARIOS = [
   ['manage-periodic-light-wide',   { tool: 'manage', tab: 'manage' }, WIDE,   'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['manage-periodic-light-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'light', '', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
   ['manage-periodic-error-light-wide', { tool: 'manage', tab: 'manage' }, WIDE, 'light', '?failrpc=getPayPeriodClose', "mgrToggleGroup_('periodic', document.querySelector('#mgr-group-periodic .mgr-group-toggle'))"],
+  // FR2 (cycle 26): the notice a partly failed bulk approve shows — each request's own reason, one button; the phone is where a long reason wraps.
+  ['manage-bulkfail-dark-mobile', { tool: 'manage', tab: 'manage' }, MOBILE, 'dark', '',
+    "mgrBulkFailDialog_('Approved', 2, [{ who: 'Nina Patel', date: '2026-11-12', error: 'This request was already Approved by another manager.' }, { who: 'Sam Ortiz', date: '2026-11-13', error: 'Cannot edit dates more than 30 days back.' }])"],
   ['cn-log-light-wide',     { tool: 'callNotes', tab: 'callNotes' },  WIDE, 'light', ''],
   // F35 (cycle 25): History had never been shot; its preset row gained a button.
   ['cn-history-light-wide',   { tool: 'callNotes', tab: 'callNotesHistory' }, WIDE,   'light', ''],

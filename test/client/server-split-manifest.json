@@ -4706,6 +4706,21 @@
     "sendAutomatedExport_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "cycle 26 FR1: the close card's unconfirmed inferred times (timesheetInferredByEmp_, PAY_CLOSE_INFERRED_LIST_MAX)",
+   "added": [
+    "PAY_CLOSE_INFERRED_LIST_MAX",
+    "timesheetInferredByEmp_"
+   ],
+   "removed": [],
+   "changed": [
+    "getPayPeriodClose",
+    "planPayPeriodClose_",
+    "workedHoursByEmpForRange_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -7074,6 +7089,11 @@
    "file": "00_config.js",
    "kind": "const",
    "sha": "34002a38529dc907"
+  },
+  "PAY_CLOSE_INFERRED_LIST_MAX": {
+   "file": "00_config.js",
+   "kind": "const",
+   "sha": "dccbdb2fb8d6f992"
   },
   "PAY_WEEK_MONTHLY_MIN_DAYS": {
    "file": "00_config.js",
@@ -11408,7 +11428,7 @@
   "getPayPeriodClose": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "a26d98bbfa3bd419"
+   "sha": "6ed44ce2813778cd"
   },
   "getPtoReconciliation": {
    "file": "20_timeclock.js",
@@ -13613,7 +13633,7 @@
   "planPayPeriodClose_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "dde544936200855c"
+   "sha": "455e4a8a6a7a4d8b"
   },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
@@ -15395,6 +15415,11 @@
    "kind": "function",
    "sha": "76c3c074c03e5c6f"
   },
+  "timesheetInferredByEmp_": {
+   "file": "20_timeclock.js",
+   "kind": "function",
+   "sha": "facfae403161df7d"
+  },
   "timesheetRowsInRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
@@ -15698,7 +15723,7 @@
   "workedHoursByEmpForRange_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "b7389e6a065a78b3"
+   "sha": "6daf5554622db3dc"
   },
   "workedHoursForEmpMonth_": {
    "file": "20_timeclock.js",

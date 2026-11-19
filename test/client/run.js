@@ -22038,7 +22038,7 @@ test('OPS-2: the multi-select adjust approve is ONE lock + ONE read, per-id outc
   assert.ok(/adjRemoveRow_\(row\)/.test(decide) && (decide.match(/adjSetDeciding_\(row, false\)/g) || []).length === 2, 'removed on success, restored on BOTH failure shapes');
   const bulk = extractFnFrom(mgr, 'adjBulkConfirmed_');
   assert.ok(/\.updatePunchAdjustStatusBulk\(ids, status\)/.test(bulk), 'the bulk bar calls the bulk endpoint, not N singles');
-  assert.ok(/if \(r\.success\) \{ done\+\+; adjRemoveRow_\(row\); \}/.test(bulk) && /else \{ failed\+\+; adjSetDeciding_\(row, false\); \}/.test(bulk), 'per-id: landed rows leave, failed rows come back');
+  assert.ok(/if \(r\.success\) \{ done\+\+; adjRemoveRow_\(row\); \}/.test(bulk) && /fails\.push\(\{ who: [^}]*error: r\.error \}\);\s*adjSetDeciding_\(row, false\);/.test(bulk), 'per-id: landed rows leave, failed rows come back — each with its own reason (FR2)');
   assert.ok(/uiConfirm\(\{/.test(extractFnFrom(mgr, 'adjBulk_')), 'a bulk decision confirms first');
   assert.ok(/if \(left === 0 && slot\) slot\.innerHTML = renderAdjustQueueCard_\(\[\]\);/.test(extractFnFrom(mgr, 'adjRemoveRow_')), 'the last row swaps in the empty card');
   const loader = extractFnFrom(mgr, 'loadPendingAdjustments_');
@@ -36654,7 +36654,7 @@ const b14Ctx_ = (fns, env, extra) => {
     CacheService: { getScriptCache: () => ({ get: (k) => (k in cache ? cache[k] : null), put: (k, v) => { cache[k] = v; }, remove: (k) => { delete cache[k]; } }) },
     normalizeDate_: (v) => String(v || ''), normalizeTime_: (v) => String(v || ''),
   });
-  ['normalizeType_', 'timeToMins_', 'breakSortKey_', 'breakPairs_', 'punchDayAdd_', 'punchFirst_', 'calcHours_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
+  ['normalizeType_', 'timeToMins_', 'breakSortKey_', 'breakPairs_', 'punchDayAdd_', 'punchFirst_', 'calcHours_', 'timesheetInferredByEmp_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));   // FR1: the range index names unconfirmed inferred times
   vm.runInContext(b14ReaderSrc_(), ctx);
   fns.forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), ctx));
   ctx.__reads = reads; ctx.__cache = cache;
@@ -39198,6 +39198,7 @@ const e2Ctx_ = (extra) => {
     Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) } }, extra || {}));
   const code = serverSource();
   const dayConsts = /const TIMESHEET_DAY_INCOMPLETE = '([a-z]+)';\s*const TIMESHEET_DAY_ORPHAN = '([a-z]+)';/.exec(stripJsComments_(code));
+  vm.runInContext(/const PAY_CLOSE_INFERRED_LIST_MAX = \d+;/.exec(code)[0].replace(/^const /, 'var '), ctx);   // FR1
   vm.runInContext("var TIMESHEET_DAY_INCOMPLETE = '" + dayConsts[1] + "'; var TIMESHEET_DAY_ORPHAN = '" + dayConsts[2] + "';\n" +
     ['TO', 'PAR'].map((k) => extractConstDecl_(k).replace(/^const /, 'var ')).join('\n') + '\n' +
     ['addDaysIso_', 'isoFromUtc_', 'normalizeDate_', 'biweeklyRangeFor_', 'payPeriodsForClose_', 'planPayPeriodClose_']
@@ -39314,6 +39315,7 @@ test('E2 + F19 (cycle 25): the endpoint is manager-gated before any read, includ
 });
 
 test('E2 (cycle 25): the Pay Period Close card — a failed check is never "ready", a clean period says ready, each open day inside the window is a Day Edit button carrying the rep\'s timezone, an older one is a hand-edit, offboarded is labelled, orphans named, all escaped; the summary row states it (driven)', () => {
+  loadFunction(sb, 'tc/script_manager.html', 'payCloseInferredHtml_');   // FR1
   const card = loadFunction(sb, 'tc/script_manager.html', 'renderPayCloseCard_');
   const summary = loadFunction(sb, 'tc/script_manager.html', 'payCloseSummary_');
   let h = card({ error: 'archive unreadable' });
@@ -43368,7 +43370,7 @@ test('AC1: the bars — a height against the busiest bar shown, never under 8% f
   c.TEAMACT.failed['2026-11-08'] = true;
   assert.ok(/—/.test(c.tcalActCellHtml_('A', '2026-11-08')), 'a failed read is a dash in the cell (the note under the table names it)');
   assert.ok(/'App activity could not be read for this day — reload to try again\.'/.test(s), 'and the note says so');
-  assert.ok(/if \(res && !res\.error && res\.reps\) TEAMACT\.cache\[dateIso\] = res;\s*else TEAMACT\.failed\[dateIso\] = true;/.test(s), 'a failure is never cached as data (INV-129)');
+  assert.ok(/if \(res && !res\.error && res\.reps\) \{ TEAMACT\.cache\[dateIso\] = res; TEAMACT\.at\[dateIso\] = Date\.now\(\); \}\s*else TEAMACT\.failed\[dateIso\] = true;/.test(s), 'a failure is never cached as data (INV-129) — and a kept read is timed (FR3)');
 });
 
 console.log('\nOperator round 2026-11-11 — M1 (adjusted metrics: outbound calls + the intake form timer)');
@@ -49278,8 +49280,8 @@ test('F30 (cycle 26): an ActivityLog row that could not be written is no longer 
   assert.ok(!/data-de-act-fails/.test(m.deActivityHtml_({ pings: 0, first: '', last: '', date: '2026-11-18', logFails: null }, {})), 'no failures, no note');
   // The Team Punches day table's note under the bars.
   const tm = vm.createContext({ String, Number, Math, Object, Array, esc: b9Esc_, isoDateTz: () => '2026-11-18', empTz: () => 'UTC',
-    TEAMACT: { cache: { '2026-11-18': { reps: {}, logFails: { count: 2 } }, '2026-11-17': { reps: {}, logFails: null } }, failed: {} } });
-  ['actNum_', 'deHourLabel_', 'tcalActRange_', 'tcalActNoteHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), tm));
+    TEAMACT: { cache: { '2026-11-18': { reps: {}, logFails: { count: 2 } }, '2026-11-17': { reps: {}, logFails: null } }, failed: {}, at: {} }, Date });
+  ['actNum_', 'deHourLabel_', 'tcalActRange_', 'tcalActStaleText_', 'tcalActNoteHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), tm));
   assert.ok(/The activity log could not be written 2 times around this day, so some activity may be missing\./.test(tm.tcalActNoteHtml_('2026-11-18')), tm.tcalActNoteHtml_('2026-11-18'));
   assert.ok(!/could not be written/.test(tm.tcalActNoteHtml_('2026-11-17')), 'and nothing on a day it wrote');
 });
@@ -49420,6 +49422,7 @@ test('F31 (cycle 26): the pay-period close card\'s "today" is the MANAGER\'s —
   const sb = buildSandbox([]);
   sb.errorStateHtml_ = (t) => '<div class="err">' + b9Esc_(t) + '</div>';
   sb.esc = b9Esc_; sb.icon = () => '';
+  loadFunction(sb, 'tc/script_manager.html', 'payCloseInferredHtml_');   // FR1
   const card = loadFunction(sb, 'tc/script_manager.html', 'renderPayCloseCard_');
   const base = { adjustWindowDays: 30, graceDays: 2, orphans: [], periods: [] };
   assert.ok(/Dates in CST\.<\/div>/.test(card(Object.assign({ tzAbbr: 'CST', tzMixed: false }, base))));
@@ -50433,6 +50436,165 @@ test('DQ1: the Team table\'s partial-day chip, the line under it and the copied 
   assert.ok(/html \+= mTeamPartialHintHtml_\(data, M_NAME_CAP\);/.test(src), 'the line is drawn under the table');
   assert.ok(/if \(hasPd\) head\.push\('Partial days'\);/.test(src) && /if \(hasPd\) row\.push\(mTeamPartialText_\(r, 99\)\);/.test(src), 'the copied table carries the days as a column, only when a rep has one');
   assert.ok(/\.m-partial-chip \{/.test(src), 'the chip has a rule (g140)');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Cycle 26 — follow-ons after the operator's decisions (FR1–FR4)
+// ═══════════════════════════════════════════════════════════════════════════
+console.log('\nCycle 26 follow-ons after the decisions (FR1–FR4) — the close card\'s inferred times, a bulk decide\'s reasons, stale activity bars, the Spanish inbox\'s failed refresh');
+
+test('FR1: the range index names the clock times still marked Inferred — by the day\'s SHOWN row (the last of its type), so a confirmed, an edited or a superseded time is not one (driven)', () => {
+  const c = vm.createContext({ Object });
+  vm.runInContext(extractRawFunction('Code.js', 'timesheetInferredByEmp_'), c);
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  assert.deepStrictEqual(J(c.timesheetInferredByEmp_({ A1: { '2026-11-12': { ClockOut: '17:06', ClockIn: '07:56' }, '2026-11-10': { ClockIn: '08:01', ClockOut: '' } }, A2: { '2026-11-11': { ClockIn: '' } } })),
+    { A1: [{ date: '2026-11-10', type: 'ClockIn', time: '08:01' }, { date: '2026-11-12', type: 'ClockIn', time: '07:56' }, { date: '2026-11-12', type: 'ClockOut', time: '17:06' }] },
+    'oldest first, In before Out; a rep with none has no key');
+  assert.deepStrictEqual([J(c.timesheetInferredByEmp_({})), J(c.timesheetInferredByEmp_(null))], [{}, {}]);
+  // Driven through the real range reader over a fake Timesheet.
+  const ADPi = vm.runInContext("var ADP = " + /const ADP = (\{[\s\S]*?\});/.exec(codeSrc)[1] + "; ADP", vm.createContext({}));
+  const row = (id, date, time, type, mark) => { const r = new Array(10).fill(''); r[ADPi.EMP_ID] = id; r[ADPi.DATE] = date; r[ADPi.TIME] = time; r[ADPi.COMMENTS] = type; r[ADPi.INFERRED] = mark || ''; return r; };
+  const INF = 'Inferred (app activity)', CONF = 'Confirmed (app activity)';
+  const live = [['h1'], ['h2'],
+    row('A1', '2026-11-10', '07:56:00', 'ADJ-ClockIn', INF), row('A1', '2026-11-10', '17:00:00', 'ClockOut', ''),
+    row('A1', '2026-11-11', '07:50:00', 'ADJ-ClockIn', INF), row('A1', '2026-11-11', '08:05:00', 'ADJ-ClockIn', ''),      // a later row of the type: the shown one is plain
+    row('A1', '2026-11-11', '17:06:30', 'ADJ-ClockOut', INF),
+    row('A2', '2026-11-10', '08:00:00', 'ADJ-ClockIn', CONF), row('A2', '2026-11-10', '17:00:00', 'ADJ-ClockOut', CONF),   // confirmed: not inferred
+    row('A3', '2026-11-10', '08:00:00', 'ADJ-ClockIn', ''), row('A3', '2026-11-10', '08:10:00', 'ADJ-ClockIn', INF),       // the later row is the inferred one
+    row('A3', '2026-11-10', '12:00:00', 'ADJ-LunchOut', INF)];                                                             // a break row is never listed
+  const x = b14Ctx_(['workedHoursByEmpForRange_'], { live, arch: null }, { TIMESHEET_DAY_INCOMPLETE: 'incomplete', TIMESHEET_DAY_ORPHAN: 'orphan' });
+  const idx = J(x.workedHoursByEmpForRange_('2026-11-01', '2026-11-30'));
+  assert.deepStrictEqual(idx.inferredByEmp, { A1: [{ date: '2026-11-10', type: 'ClockIn', time: '07:56' }, { date: '2026-11-11', type: 'ClockOut', time: '17:06' }],
+    A3: [{ date: '2026-11-10', type: 'ClockIn', time: '08:10' }] }, 'THE RULE: the last row of a type decides, as Day Edit shows it');
+  assert.strictEqual(idx.byEmp.A1.daysWorked, 2, 'and the hours index is what it was');
+  assert.strictEqual(x.__reads.live, 1, 'the SAME one read — no second pass over the Timesheet');
+});
+
+test('FR1: the close plan lists a period\'s unconfirmed inferred times — by pay cycle and date, editable by the rep\'s own today, counted whole and listed to a cap, and never part of "ready" (driven)', () => {
+  const ctx = e2Ctx_({ adpSheetTz_: () => 'UTC' });
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  const roster = [{ id: 'E1', name: 'Bo', payCycle: 'Monthly', timezone: 'Asia/Kolkata', todayIso: '2026-10-15' }, { id: 'E2', name: 'Al', payCycle: 'Monthly', timezone: 'Asia/Manila', todayIso: '2026-10-16' },
+    { id: 'E3', name: 'Cy', payCycle: 'Biweekly', timezone: 'UTC' }];
+  const periods = [{ cycle: 'Monthly', which: 'previous', start: '2026-09-01', end: '2026-09-30' }, { cycle: 'Monthly', which: 'current', start: '2026-10-01', end: '2026-10-31' }];
+  const inf = { E1: [{ date: '2026-09-14', type: 'ClockIn', time: '07:56' }, { date: '2026-09-15', type: 'ClockOut', time: '17:06' }, { date: '2026-10-14', type: 'ClockIn', time: '08:00' }, { date: '2026-08-31', type: 'ClockIn', time: '08:00' }],
+    E2: [{ date: '2026-09-15', type: 'ClockIn', time: '08:02' }, { date: '2026-09-16', type: 'ClockIn', time: '08:03' }], E3: [{ date: '2026-09-15', type: 'ClockIn', time: '09:00' }], E9: [{ date: '2026-09-15', type: 'ClockIn', time: '09:00' }] };
+  const out = J(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], periods, '2026-10-15', 30, 2, inf));
+  const prev = out.periods[0], cur = out.periods[1];
+  assert.deepStrictEqual(prev.inferred.map((x) => x.name + ' ' + x.date + ' ' + x.type + ' ' + x.time + ' ' + x.editable),
+    ['Bo 2026-09-14 ClockIn 07:56 false', 'Al 2026-09-15 ClockIn 08:02 false', 'Bo 2026-09-15 ClockOut 17:06 true', 'Al 2026-09-16 ClockIn 08:03 true'],
+    'by date then name; another cycle\'s rep, an id off the roster and a day outside the period are not in it; editable by each rep\'s OWN today (Bo from 09-15, Al from 09-16)');
+  assert.deepStrictEqual([prev.inferred[0].id, prev.inferred[0].timezone], ['E1', 'Asia/Kolkata'], 'each carries what Day Edit needs');
+  assert.deepStrictEqual([prev.counts.inferred, prev.ready, prev.reps.length], [4, true, 0], 'THE RULE: listed and counted, and the period is still ready — they do not hold up the export');
+  assert.deepStrictEqual([cur.counts.inferred, cur.inferred.length, cur.inferred[0].date], [1, 1, '2026-10-14'], 'the current period counts a day inside the grace too — a time is a time');
+  // The cap: the count is whole, the list bounded.
+  const many = { E1: [] };
+  for (let d = 1; d <= 30; d++) { const iso = '2026-09-' + String(d).padStart(2, '0'); many.E1.push({ date: iso, type: 'ClockIn', time: '08:00' }, { date: iso, type: 'ClockOut', time: '17:00' }); }
+  const capped = J(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], periods, '2026-10-15', 30, 2, many)).periods[0];
+  const cap = Number(/const PAY_CLOSE_INFERRED_LIST_MAX = (\d+);/.exec(serverSource())[1]);
+  assert.deepStrictEqual([capped.counts.inferred, capped.inferred.length], [60, cap]);
+  // An older caller that passes no map gets none, and nothing else moves.
+  const none = J(ctx.planPayPeriodClose_(roster, {}, [['h']], [['h']], periods, '2026-10-15', 30, 2)).periods[0];
+  assert.deepStrictEqual([none.counts.inferred, none.inferred, none.ready], [0, [], true]);
+  const ep = stripJsComments_(extractRawFunction('Code.js', 'getPayPeriodClose'));
+  assert.ok(/const idx = workedHoursByEmpForRange_\(from, to\);\s*perDayByEmp = idx\.perDayByEmp;\s*inferredByEmp = idx\.inferredByEmp \|\| \{\};/.test(ep) && /OPEN_PUNCH_GRACE_DAYS, inferredByEmp\);/.test(ep),
+    'the endpoint hands the plan the list its one Timesheet read produced');
+});
+
+test('FR1: the close card names each unconfirmed inferred time as a Day Edit button (text past the edit window), under a ready period too; the Periodic summary says how many, without changing its state (driven)', () => {
+  const sb = buildSandbox([]);
+  sb.errorStateHtml_ = (t) => '<div class="err">' + b9Esc_(t) + '</div>';
+  sb.esc = b9Esc_; sb.icon = () => ''; sb.dispTime = (t) => 'T' + t;
+  const inf = loadFunction(sb, 'tc/script_manager.html', 'payCloseInferredHtml_');
+  const card = loadFunction(sb, 'tc/script_manager.html', 'renderPayCloseCard_');
+  const summary = loadFunction(sb, 'tc/script_manager.html', 'payCloseSummary_');
+  const list = [{ id: 'E1', name: 'Bo <b>', timezone: 'Asia/Kolkata', date: '2026-09-15', type: 'ClockOut', time: '17:06', editable: true },
+    { id: 'E2', name: 'Al', timezone: 'Asia/Manila', date: '2026-08-02', type: 'ClockIn', time: '08:02', editable: false }];
+  const h = inf({ counts: { inferred: 5 }, inferred: list }, 30);
+  assert.ok(/^<div class="payclose-inf"><div class="payclose-inf-head">5 times set from app activity, not yet confirmed — open the day to confirm or correct\. These do not hold up the export\.<\/div>/.test(h), h);
+  assert.ok(/<button type="button" class="refresh-btn"[^>]* data-emp-id="E1" data-emp-name="Bo &lt;b&gt;" data-date="2026-09-15" data-tz="Asia\/Kolkata" onclick="mgrPayCloseEdit_\(this\)">Bo &lt;b&gt; · 2026-09-15 · Clock Out T17:06<\/button>/.test(h), 'a button with data-* only (g133), the name escaped');
+  assert.ok(/<span[^>]*>Al · 2026-08-02 · Clock In T08:02 — past the 30-day edit window<\/span>/.test(h) && !/data-emp-id="E2"/.test(h), 'past the window: text, no button');
+  assert.ok(/and 3 more<\/span><\/div>$/.test(h), 'the count is whole; the rest is said');
+  assert.match(inf({ counts: { inferred: 1 }, inferred: [list[0]] }, 30), />1 time set from app activity/);
+  assert.deepStrictEqual([inf({ counts: { inferred: 0 }, inferred: [] }, 30), inf({ counts: {} }, 30), inf(null, 30), inf({ counts: { inferred: 2 }, inferred: [] }, 30)], ['', '', '', '']);
+  const res = { adjustWindowDays: 30, graceDays: 2, orphans: [], periods: [
+    { cycle: 'Monthly', which: 'previous', start: '2026-09-01', end: '2026-09-30', ready: true, reps: [], counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 1 }, inferred: [list[0]] },
+    { cycle: 'Monthly', which: 'current', start: '2026-10-01', end: '2026-10-31', ready: false, counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0, inferred: 1 }, inferred: [list[1]],
+      reps: [{ id: 'E2', name: 'Al', timezone: '', openDays: [{ date: '2026-10-05', kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] }] };
+  const html = card(res);
+  assert.strictEqual((html.match(/class="payclose-inf"/g) || []).length, 2, 'under a READY period and under one with open days');
+  assert.ok(/Ready to close — no open days, no pending requests\.<\/div><div class="payclose-inf">/.test(html), 'ready still reads ready, with the list beneath');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: '1 item in the current period · 2 inferred to check', tone: 'warn' });
+  res.periods[1].counts.openDays = 0; res.periods[1].ready = true; res.periods[1].reps = [];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: 'ready · 2 inferred to check', tone: 'ok' }, 'THE RULE: named beside the state, never counted into it');
+  res.periods.forEach((p) => { p.counts.inferred = 0; });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(summary(res))), { text: 'ready', tone: 'ok' });
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/inferred: 2 \}, ready: false,/.test(mock) && /type: 'ClockOut', time: '17:06', editable: false \}/.test(mock), 'the fixture shows a list with one past the window (INV-185)');
+});
+
+test('FR2: a partly failed bulk approve or deny names each request it could not decide, with that request\'s own reason, in a dialog that stays — both bulk bars (driven + source)', () => {
+  const said = [];
+  const c = vm.createContext({ String, uiConfirm: (o) => { said.push(o); return 'p'; } });
+  ['mgrBulkFailLines_', 'mgrBulkFailDialog_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), c));
+  const J = (v) => JSON.parse(JSON.stringify(v));
+  const fails = [{ who: 'Nina Patel', date: '2026-11-12', error: 'Already Approved.' }, { who: 'Sam Ortiz', date: '', error: '  ' }, { who: '', date: '2026-11-13', error: 'Cannot edit dates more than 30 days back.' }];
+  assert.deepStrictEqual(J(c.mgrBulkFailLines_(fails, 8)), ['Nina Patel · 2026-11-12 — Already Approved.', 'Sam Ortiz — no reason given', 'A request · 2026-11-13 — Cannot edit dates more than 30 days back.']);
+  assert.deepStrictEqual(J(c.mgrBulkFailLines_(fails, 2)), ['Nina Patel · 2026-11-12 — Already Approved.', 'Sam Ortiz — no reason given', 'and 1 more']);
+  assert.deepStrictEqual([J(c.mgrBulkFailLines_([], 8)), J(c.mgrBulkFailLines_(null, 8))], [[], []]);
+  assert.strictEqual(c.mgrBulkFailDialog_('Approved', 2, fails.slice(0, 1)), 'p');
+  assert.deepStrictEqual(J(said[0]), { title: '1 request not approved', message: '2 approved. Not approved:\nNina Patel · 2026-11-12 — Already Approved.', confirmLabel: 'OK', hideCancel: true });
+  c.mgrBulkFailDialog_('Denied', 0, fails);
+  assert.deepStrictEqual([said[1].title, said[1].message.split('\n')[0]], ['3 requests not denied', 'Not denied:'], 'nothing decided: no "0 denied"');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  const bulk = extractFunction('tc/script_manager.html', 'adjBulkConfirmed_');
+  assert.ok(/if \(fails\.length\) mgrBulkFailDialog_\(status, done, fails\);/.test(bulk) && !/failed — /.test(bulk), 'the adjustment bar: the dialog, not one reason for all');
+  assert.ok(/data-emp-name="' \+ esc\(r\.empName\) \+ '" data-date="' \+ esc\(r\.date\) \+ '"/.test(mgr), 'the row\'s checkbox carries its date');
+  assert.ok(/if \(!res \|\| !res\.success\) fails\.push\(\{ who: who, date: date, error: res && res\.error \}\);/.test(mgr) && /if \(fails\.length\) mgrBulkFailDialog_\(status, done - fails\.length, fails\);/.test(mgr)
+    && !/succeeded, \$\{errors\} failed/.test(mgr), 'the time-off bar: THE REGRESSION was "N succeeded, M failed" and nothing else');
+  // The dialog option: one button, and no listener bound to a button that is not there.
+  const core = fs.readFileSync(path.join(PA_WEB, 'script_core.html'), 'utf8');
+  const ui = core.slice(core.indexOf('function uiConfirm(opts) {'), core.indexOf('function uiPrompt(opts) {'));
+  assert.ok(/\(opts\.hideCancel \? ''/.test(ui) && /const cancelBtn = overlay\.querySelector\('\.ui-dialog-cancel'\);[^\n]*\n\s*if \(cancelBtn\) cancelBtn\.addEventListener/.test(ui), 'hideCancel draws one button and binds nothing to the absent one');
+});
+
+test('FR3: Team Punches says when today\'s activity bars are from an EARLIER read — a re-read that failed left them on screen with nothing said (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Object, Array, esc: b9Esc_, isoDateTz: () => '2026-11-18', empTz: () => 'UTC', Date: { now: () => 1000000000 },
+    TEAMACT: { cache: { '2026-11-18': { reps: {} } }, failed: {}, at: {} } });
+  ['actNum_', 'deHourLabel_', 'tcalActRange_', 'tcalActStaleText_', 'tcalActNoteHtml_'].forEach((f) => vm.runInContext(extractFunction('tc/script_manager.html', f), c));
+  const t = (has, failed, at, now) => c.tcalActStaleText_(has, failed, at, now);
+  assert.deepStrictEqual([t(true, false, 1, 2), t(false, true, 1, 2), t(false, false, 0, 0)], ['', '', ''], 'nothing kept, or nothing failed: nothing to say');
+  assert.match(t(true, true, 1000000000 - 7 * 60000, 1000000000), /^App activity could not be refreshed just now — these bars are from a read 7 min ago\. Select the day again to retry\. $/);
+  assert.match(t(true, true, 1000000000 - 125 * 60000, 1000000000), /from a read 2 h 5 min ago\./);
+  assert.match(t(true, true, 1000000000 - 20000, 1000000000), /from a read under a minute ago\./);
+  assert.match(t(true, true, 0, 1000000000), /from an earlier read\./, 'an unknown time is said as such, never as "0 min ago"');
+  assert.match(t(true, true, 2000000000, 1000000000), /from an earlier read\./, 'nor a read "in the future"');
+  // The note under the table.
+  assert.ok(!/could not be refreshed/.test(c.tcalActNoteHtml_('2026-11-18')), 'a clean read: no notice');
+  c.TEAMACT.failed['2026-11-18'] = true; c.TEAMACT.at['2026-11-18'] = 1000000000 - 3 * 60000;
+  const note = c.tcalActNoteHtml_('2026-11-18');
+  assert.ok(/^<span class="tcal-act-stale">App activity could not be refreshed just now — these bars are from a read 3 min ago\. Select the day again to retry\. <\/span>App activity is clicks and keystrokes/.test(note), note);
+  delete c.TEAMACT.cache['2026-11-18'];
+  assert.strictEqual(c.tcalActNoteHtml_('2026-11-18'), 'App activity could not be read for this day — reload to try again.', 'nothing kept: the older message stands');
+});
+
+test('FR4: a Spanish inbox refresh that FAILED behind a painted round says so, once per round — a server {error} on the stats and either list half were silent (driven + source)', () => {
+  const toasts = [];
+  const c = vm.createContext({ SPANISH_STATE: { seq: 3, listSeq: 5 }, showToast: (m, t) => toasts.push([m, t]) });
+  vm.runInContext(extractFunction('metrics/script_metrics.html', 'spanishRefreshFailed_'), c);
+  c.spanishRefreshFailed_(); c.spanishRefreshFailed_(); c.spanishRefreshFailed_();
+  assert.deepStrictEqual(toasts, [['Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn']], 'the stats and both halves of one round: ONE toast');
+  c.SPANISH_STATE.seq = 4; c.SPANISH_STATE.listSeq = 6;
+  c.spanishRefreshFailed_();
+  assert.strictEqual(toasts.length, 2, 'the next round says it again');
+  c.SPANISH_STATE.listSeq = 7;   // a list reload after an action, inside the same stats round
+  c.spanishRefreshFailed_();
+  assert.strictEqual(toasts.length, 3);
+  const load = stripJsComments_(extractFunction('metrics/script_metrics.html', 'spanishLoad_'));
+  assert.ok(/\} else spanishRefreshFailed_\(\);\s*return;/.test(load), 'THE REGRESSION: a server {error} on a painted round kept the old figures and said nothing');
+  assert.ok(/if \(painted\) \{ spanishRefreshFailed_\(\); return; \}/.test(load), 'a transport failure goes through the same once-per-round notice');
+  const lists = stripJsComments_(extractFunction('metrics/script_metrics.html', 'spanishLoadList_'));
+  assert.strictEqual((lists.match(/else spanishRefreshFailed_\(\);/g) || []).length, 4, 'both halves, both failure shapes');
+  assert.strictEqual((lists.match(/if \(!opts\.background\) SPANISH_STATE\.(pending|resolved)Err = /g) || []).length, 4, 'a COLD failure still draws its own error card — only a background one is a toast');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

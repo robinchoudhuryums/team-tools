@@ -1913,7 +1913,10 @@ function runRecAgo(msAgo, notes) {
       todayIso: todayIso, adjustWindowDays: 30, graceDays: 2, tzAbbr: 'CST', tzMixed: false,   // F31: the roster's own zone, never CONFIG.TIMEZONE
       periods: [
         { cycle: 'Monthly', which: 'previous', start: daysAgo(44), end: daysAgo(14), checkedThrough: daysAgo(14),
-          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1 }, ready: false,
+          counts: { openDays: 3, pendingTimeOff: 1, pendingAdjust: 1, inferred: 2 }, ready: false,
+          // FR1 (cycle 26): two times set from app activity that nobody has confirmed — one inside the edit window, one past it.
+          inferred: [{ id: 'E-1007', name: 'Avery Blake', timezone: 'Asia/Kolkata', date: daysAgo(40), type: 'ClockOut', time: '17:06', editable: false },
+            { id: 'E-1077', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: daysAgo(18), type: 'ClockIn', time: '07:56', editable: true }],
           reps: [
             { id: 'E-1042', name: 'Jordan Reyes', offboarded: true, timezone: 'Asia/Kolkata',
               openDays: [{ date: daysAgo(20), kind: 'no clock-out', editable: true }, { date: daysAgo(36), kind: 'clock-out with no clock-in', editable: false }],
@@ -1922,11 +1925,12 @@ function runRecAgo(msAgo, notes) {
               openDays: [{ date: daysAgo(16), kind: 'no clock-out', editable: true }], pendingTimeOff: [{ date: daysAgo(15), label: 'Full Day' }], pendingAdjust: [] },
           ] },
         { cycle: 'Monthly', which: 'current', start: daysAgo(13), end: daysAgo(-17), checkedThrough: daysAgo(2),
-          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 1 }, ready: true, reps: [],
+          inferred: [{ id: 'E-1077', name: 'Nina Patel', timezone: 'Asia/Kolkata', date: daysAgo(3), type: 'ClockIn', time: '08:02', editable: true }] },
         { cycle: 'Biweekly', which: 'previous', start: daysAgo(20), end: daysAgo(7), checkedThrough: daysAgo(7),
-          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0 }, ready: true, reps: [] },
+          counts: { openDays: 0, pendingTimeOff: 0, pendingAdjust: 0, inferred: 0 }, ready: true, reps: [], inferred: [] },
         { cycle: 'Biweekly', which: 'current', start: daysAgo(6), end: daysAgo(-7), checkedThrough: daysAgo(2),
-          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0 }, ready: false,
+          counts: { openDays: 1, pendingTimeOff: 0, pendingAdjust: 0, inferred: 0 }, ready: false, inferred: [],
           reps: [{ id: 'E-1088', name: 'Sam Ortiz', offboarded: false, timezone: 'Asia/Manila',
             openDays: [{ date: daysAgo(4), kind: 'no clock-out', editable: true }], pendingTimeOff: [], pendingAdjust: [] }] },
       ],

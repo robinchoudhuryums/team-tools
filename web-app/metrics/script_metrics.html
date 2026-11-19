@@ -2445,6 +2445,16 @@ function enterSpanishInboxView(area) {
   spanishLoad_();
 }
 
+/** FR4 (cycle 26): a background refresh that failed kept the painted round
+ *  and said nothing — a server {error} on the stats, or either list half, left
+ *  a manager reading a pending list that might be an hour old as current. One
+ *  toast per load round (the stats and both halves share it). */
+function spanishRefreshFailed_() {
+  var round = (SPANISH_STATE.seq || 0) + ':' + (SPANISH_STATE.listSeq || 0);
+  if (SPANISH_STATE.failToastRound === round) return;
+  SPANISH_STATE.failToastRound = round;
+  showToast('Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn');
+}
 function spanishLoad_() {
   var body = document.getElementById('spanish-body'); if (!body) return;
   // SWR (operator 2026-08-13 — the tab is three Gmail-scanning RPCs, so every
@@ -2478,7 +2488,7 @@ function spanishLoad_() {
         if (d && !d.error) {
           var h = document.getElementById('spanish-head');
           if (h) h.innerHTML = spanishHeadHtml_(d);
-        }
+        } else spanishRefreshFailed_();   // FR4: kept, and said
         return;   // a failed refresh keeps the painted round (last-good)
       }
       spanishRender_(d);
@@ -2486,7 +2496,7 @@ function spanishLoad_() {
     .withFailureHandler(function (e) {
       if (currentView !== 'metricsSpanish' || seq !== SPANISH_STATE.seq) return;
       if (typeof viewRefreshingPill_ === 'function') viewRefreshingPill_(false);
-      if (painted) { showToast('Couldn’t refresh the Spanish inbox — showing last loaded', 'toast-warn'); return; }
+      if (painted) { spanishRefreshFailed_(); return; }
       body.innerHTML = errorStateHtml_((e && e.message) || 'Failed to load');   // A12
     })
     .getSpanishInboxStats(days);
@@ -2811,12 +2821,14 @@ function spanishLoadList_(opts) {
       if (!d || d.error) {
         // A background refresh failing keeps the painted last-good half.
         if (!opts.background) SPANISH_STATE.pendingErr = (d && d.error) || 'Could not load pending';
+        else spanishRefreshFailed_();   // FR4
       } else { SPANISH_STATE.pendingRes = d; SPANISH_STATE.pendingErr = null; cacheHalf('pending', d); }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!opts.background) SPANISH_STATE.pendingErr = (e && e.message) || 'Could not load pending';
+      else spanishRefreshFailed_();
       done();
     })
     .getSpanishInboxPending(days);
@@ -2825,12 +2837,14 @@ function spanishLoadList_(opts) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!d || d.error) {
         if (!opts.background) SPANISH_STATE.resolvedErr = (d && d.error) || 'Could not load resolved';
+        else spanishRefreshFailed_();
       } else { SPANISH_STATE.resolvedRes = d; SPANISH_STATE.resolvedErr = null; cacheHalf('resolved', d); }
       done();
     })
     .withFailureHandler(function (e) {
       if (seq !== SPANISH_STATE.listSeq) return;
       if (!opts.background) SPANISH_STATE.resolvedErr = (e && e.message) || 'Could not load resolved';
+      else spanishRefreshFailed_();
       done();
     })
     .getSpanishInboxResolved(days);
