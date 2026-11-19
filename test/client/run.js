@@ -51216,7 +51216,9 @@ test('F63: the three static modals open guarded, their own save closes with `sav
   assert.deepStrictEqual([closes(mgr, 'day-edit-overlay').length, saved(closes(mgr, 'day-edit-overlay'))], [3, 1]);
   assert.deepStrictEqual([closes(mgr, 'mgr-timeoff-overlay').length, saved(closes(mgr, 'mgr-timeoff-overlay'))], [3, 1]);
   // Day Edit's button-driven edits mark it dirty; its date picker does not, and resets it.
-  assert.ok(/function deMarkTouched_\(key\) \{\s*_deTouched\[key\] = true;[\s\S]*?overlayMarkDirty_\('day-edit-overlay'\)/.test(mgr));
+  // Scoped to the function: an unscoped lazy match ran on to the NEXT overlayMarkDirty_ in the file and held with this one removed.
+  const touched = stripJsComments_(extractFunction('tc/script_manager.html', 'deMarkTouched_'));
+  assert.ok(/_deTouched\[key\] = true;/.test(touched) && /overlayMarkDirty_\('day-edit-overlay'\)/.test(touched), 'a slot filled by a button marks the modal dirty');
   assert.ok(/overlayMarkDirty_\('day-edit-overlay'\)/.test(extractFunction('tc/script_manager.html', 'deToggleConfirm_')), 'Confirm as is is a press, not an input');
   assert.ok(/if \(e\.target && e\.target\.id === 'de-date'\) return;\s*overlayMarkDirty_\(ov\);/.test(mgr));
   // The Adjust modal's own rule, driven.
