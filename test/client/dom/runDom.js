@@ -15778,6 +15778,22 @@ test('F58 DOM: unsaved Scratchpad text survives a reload — kept in the browser
   assert.ok(/changed somewhere else after you typed/.test(h3.$('#toast-stack').textContent));
   assert.strictEqual(h3.read('CN_SCRATCH.cache').content, 'saved from the other computer', 'the page itself keeps what the server has');
 
+  // Unsaved text of a page that is NOT the one on screen is settled too — read, and moved aside when its page changed.
+  const h5 = bootLog();
+  const p5 = b11Pad(h5);
+  h5.window.localStorage.setItem(KEY, JSON.stringify({ who: 'TEST_E1', at: Date.now(), pages: { main: { text: 'main unsaved', base: 500 }, p2: { text: 'p2 unsaved', base: 200 } } }));
+  h5.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(p5.ed().innerHTML, 'main unsaved');
+  p5.load('v0', 500);                                     // main: unchanged → saved
+  assert.deepStrictEqual(p5.sent(), ['main:main unsaved'], 'only the checked page is sent — the other waits for its own read');
+  const read2 = h5.run.pending('getMyScratchpad');
+  assert.deepStrictEqual(read2.map((c) => c.args[0]), ['p2'], 'the off-screen page is read');
+  h5.run.flushSuccess({ content: 'p2 changed elsewhere', format: 'html', updatedAtMs: 999, pageId: 'p2', pages: b11Pages }, 'getMyScratchpad');
+  h5.run.flushSuccess({ success: true, pageId: 'r2', pages: b11Pages.concat([{ id: 'r2', name: 'Recovered text' }]) }, 'scratchpadPageOp');
+  p5.saved(600);                                          // main's save lands; the drain sends the recovered page
+  assert.ok(p5.sent().indexOf('r2:p2 unsaved') >= 0, 'THE RULE: its text goes to a new page — never dropped, never over the changed page (' + p5.sent().join(' | ') + ')');
+  assert.strictEqual(p5.ed().innerHTML, 'main unsaved', 'and the page on screen is not disturbed');
+
   // Another account's kept text (a shared computer) is neither shown nor removed; an old one is removed.
   const h4 = bootLog();
   const p4 = b11Pad(h4);
@@ -15904,7 +15920,16 @@ test('F60 DOM: the tour WAITS for a view that is still loading instead of skippi
   h.click(h.$('#tour-pop [data-tour="next"]'));
   assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, 1, 'THE RULE: not stamped — the rep has not seen that step');
   assert.ok(/will be offered again next time/.test(h.$('#toast-stack').textContent));
+  // The next run starts clean: its view loads, every step is shown, and it IS stamped.
+  loader.remove();
+  doc.body.appendChild(target);
+  h.window.tourStart('full');
+  h.flushTimers(); h.flushTimers();
+  h.click(h.$('#tour-pop [data-tour="next"]')); h.flushTimers(); h.flushTimers();
+  h.click(h.$('#tour-pop [data-tour="next"]'));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'), 'one run that gave up does not mark every later run');
   // Skip is the rep's own choice, and always stamps.
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
   h.window.tourStart('full');
   h.flushTimers();
   h.dispatchKey('Escape');
