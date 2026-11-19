@@ -15988,7 +15988,8 @@ test('F61 DOM: the note that did not save is shown with the real cause — not "
   assert.ok(q('.nav-btn[data-tool="callNotes"] .cn-stale-badge'), 'on both nav forms');
   assert.ok(q('.sb-link[data-tool="manage"] .sb-health-dot'));
   assert.strictEqual(h2.document.querySelectorAll('.sb-link[data-tool="callNotes"] .cn-stale-badge').length, 1, 'once');
-  assert.ok(q('.sb-link[data-tool="callNotes"] .sb-icon') && q('.sb-link[data-tool="callNotes"] .sb-lbl'), 'the shell\'s own icon and label are the new ones');
+  assert.deepStrictEqual([h2.document.querySelectorAll('.sb-link[data-tool="callNotes"] .sb-icon').length, h2.document.querySelectorAll('.sb-link[data-tool="callNotes"] .sb-lbl').length,
+    h2.document.querySelectorAll('.nav-btn[data-tool="callNotes"] .nav-icon').length], [1, 1, 1], 'only what was ADDED is carried — the shell\'s own icon and label are the new render\'s, once');
   // A role with no Manage tool has no button for its dot — it goes nowhere.
   h2.read('viewAsSet_')('csr');
   h2.run.drain();
