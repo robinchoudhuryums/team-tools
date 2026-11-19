@@ -928,7 +928,9 @@ function runRecAgo(msAgo, notes) {
       var mk = function (id, name, rung, ans, missed, att, notes, cov, transferred, queues, ob, it) {
         var qt = 0; Object.keys(queues).forEach(function (q) { qt += queues[q]; });
         ob = ob || { placed: 0, connected: 0, talkSec: 0 }; it = it || { timed: 0, seconds: 0 };   // M1
-        return { outbound: ob, intakeTimed: it, adjusted: adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it),
+        var adj = adjOf({ totalAnswered: ans, tttSeconds: 11564 }, ob, it);
+        return { outbound: ob, intakeTimed: it, adjusted: adj,
+          handledPerDay: Math.round(((adj ? adj.handled : ans) / 5) * 10) / 10,   // DT1: Handled (adj.) per credited day
           repId: id, repName: name, totalRung: rung, totalAnswered: ans,
           totalMissed: missed, pctAnswered: Math.round((ans / (ans + missed)) * 100),
           tttFormatted: '3:12:44', attFormatted: att, tttSeconds: 11564, attSeconds: 281,
@@ -952,10 +954,11 @@ function runRecAgo(msAgo, notes) {
         noteCount: 6, noteCoverage: null, noteCountUnavailable: false, intakeNotes: 0, hasCdrData: false,
         transferred: 0, transferPct: null, queues: {}, queueTotal: 0, queueUnattributed: 0, hasTransferData: false,
         outbound: { placed: 0, connected: 0, talkSec: 0 }, intakeTimed: { timed: 0, seconds: 0 }, adjusted: null, partialDays: [],
-        daysActive: 0, creditedDays: 0, answeredPerDay: null });
+        daysActive: 0, creditedDays: 0, answeredPerDay: null, handledPerDay: null });
       // DQ1 (cycle 26): one rep with two partial days in the window — the chip beside the name and the line under the table.
       reps[2].partialDays = [{ date: daysAgo(2), credit: 0.5 }, { date: daysAgo(4), credit: 0 }];
       reps[2].creditedDays = 3.5; reps[2].answeredPerDay = Math.round((reps[2].totalAnswered / 3.5) * 10) / 10;   // DS2: 5 days with calls, 1.5 not credited
+      reps[2].handledPerDay = Math.round((reps[2].adjusted.handled / 3.5) * 10) / 10;   // DT1: over the same credited days
       var tq = {};
       reps.forEach(function (r) {
         Object.keys(r.queues).forEach(function (q) {

@@ -15552,3 +15552,63 @@ test('FS3 DOM: Recent Activity reads an ActivityRowsLimited audit row as its not
   assert.ok(!/ActivityRowsLimited/.test(row.textContent), 'never the bare action name');
   assert.ok(!row.querySelector('patel'), 'the name is escaped');
 });
+
+// ── Cycle 26 decisions, third round (DT1) ───────────────────────────────────
+section('DOM harness — cycle 26 decisions, third round (DT1)');
+
+test('DT1 DOM: a manager\'s Team table on a range has "Handled / day" beside Handled (adj.) — the handled count over the rep\'s credited days, what was added on hover; the header sorts; the copied table carries it; a single day has no such column', () => {
+  const h = boot(); h.bootShell();
+  mount_(h, 'm-team-content');
+  const rep = (id, name, ans, days, credited, perDay, hPerDay, ob, adjusted, pd) => ({ repId: id, repName: name, totalRung: ans + 2, totalAnswered: ans, totalMissed: 2, pctAnswered: 90, tttFormatted: '1:00:00', attFormatted: '0:06:00',
+    tttSeconds: 3600, attSeconds: 360, noteCount: 8, noteCoverage: 80, noteCountUnavailable: false, intakeNotes: 1, hasCdrData: true, transferred: 0, transferPct: null, queues: {},
+    partialDays: pd || [], daysActive: days, creditedDays: credited, answeredPerDay: perDay, handledPerDay: hPerDay, outbound: ob, adjusted: adjusted });
+  const ob = (placed, connected) => ({ placed: placed, connected: connected, talkSec: 600 });
+  const totals = { pctAnswered: 90, rung: 78, answered: 74, missed: 4, tttFormatted: '2:00:00', noteCount: 16, noteCoverage: 80, hasCallData: true, outboundPlaced: 11, outboundConnected: 8, outboundTalkSec: 600 };
+  const reps = [
+    rep('E1', 'Jo Tran', 44, 5, 4.5, 9.8, 11.6, ob(11, 8), { handled: 52, outbound: ob(11, 8), attExIntakeFormatted: null }, [{ date: '2026-06-12', credit: 0.5 }]),
+    rep('E2', 'Ana Lopez', 30, 3, 3, 10, 10, ob(0, 0), null)];
+  const meta = { available: true, through: '2026-06-16', error: null };
+  const range = fullTeamData_({ from: '2026-06-08', to: '2026-06-15', teamTotals: totals, reps: reps, outboundMeta: meta });
+  h.window.mRenderTeamMetrics_(range);
+  const host = h.$('#m-team-content');
+  const heads = () => Array.from(host.querySelectorAll('table th')).map((t) => t.textContent.trim());
+  const at = () => heads().findIndex((t) => /^Handled \/ day/.test(t));
+  assert.ok(at() > 0 && /^Handled \(adj\.\)/.test(heads()[at() - 1]), 'THE CAPABILITY: the column sits directly after Handled (adj.) — ' + heads().join(' | '));
+  const rows = () => Array.from(host.querySelectorAll('table tbody tr')).filter((r) => r.querySelector('.m-rep-link'));
+  const cellOf = (name, i) => rows().find((r) => r.textContent.indexOf(name) >= 0).querySelectorAll('td')[i];
+  assert.strictEqual(cellOf('Jo Tran', at()).textContent.trim(), '11.6');
+  assert.strictEqual(cellOf('Jo Tran', at()).querySelector('span').getAttribute('title'), '52 handled (44 answered + 8 outbound connected) over 4.5 credited days (5 days with calls, 1 partial)');
+  assert.strictEqual(cellOf('Ana Lopez', at()).querySelector('span').getAttribute('title'), '30 answered, no outbound call over 3 days with calls');
+  // The count beside it is the count, unchanged; Ans / day is still there.
+  assert.strictEqual(cellOf('Jo Tran', at() - 1).textContent.trim(), '52');
+  assert.ok(heads().some((t) => /^Ans \/ day/.test(t)));
+  // The header sorts the rows (the column is declared sortable).
+  const names = () => rows().map((r) => r.querySelector('.m-rep-link').textContent.trim());
+  h.read('mTeamSort_')('handledPerDay');
+  const first = names().join();
+  h.read('mTeamSort_')('handledPerDay');
+  assert.ok(first !== names().join() && [first, names().join()].sort().join('|') === 'Ana Lopez,Jo Tran|Jo Tran,Ana Lopez', 'pressing the header twice gives both orders — ' + first + ' / ' + names().join());
+  // The line under the table names both per-day columns.
+  assert.ok(/Ans \/ day and Handled \/ day count each as its share/.test(host.textContent), 'the partial-day line names the twin');
+  // The copied table.
+  const tsv = h.read('mTeamTableTsv_')(range, 'reps', { key: 'repName', dir: 'asc' }).split('\n');
+  const cols = tsv[0].split('\t');
+  const jo = tsv.find((l) => /^Jo Tran/.test(l)).split('\t');
+  assert.ok(cols.indexOf('Handled (adj.) / day') === cols.indexOf('Ans / day') + 1 && cols.indexOf('Credited days') === cols.indexOf('Ans / day') + 2, cols.join(' | '));
+  assert.deepStrictEqual([jo[cols.indexOf('Handled (adj.)')], jo[cols.indexOf('Handled (adj.) / day')], jo[cols.indexOf('Ans / day')], jo[cols.indexOf('Credited days')]], ['52', '11.6', '9.8', '4.5']);
+  assert.strictEqual(jo.length, cols.length, 'every row is as wide as the header');
+  // A rep with no figure exports blank, never 0.
+  const none = Object.assign({}, reps[1], { repName: 'Cy Half', repId: 'E3', creditedDays: 0.5, daysActive: 1, answeredPerDay: null, handledPerDay: null });
+  const tsv2 = h.read('mTeamTableTsv_')(Object.assign({}, range, { reps: reps.concat([none]) }), 'reps', { key: 'repName', dir: 'asc' }).split('\n');
+  assert.strictEqual(tsv2.find((l) => /^Cy Half/.test(l)).split('\t')[cols.indexOf('Handled (adj.) / day')], '');
+  // Outbound not read: the copy has no Handled columns at all, and the table no twin.
+  const noOb = fullTeamData_({ from: '2026-06-08', to: '2026-06-15', teamTotals: totals, reps: reps.map((r) => Object.assign({}, r, { outbound: null, adjusted: null })), outboundMeta: { available: false, error: 'x' } });
+  assert.ok(!/Handled/.test(h.read('mTeamTableTsv_')(noOb, 'reps', { key: 'repName', dir: 'asc' }).split('\n')[0]));
+  h.window.mRenderTeamMetrics_(noOb);
+  assert.ok(heads().length > 3 && !heads().some((t) => /^Handled/.test(t)));
+  // One day: no per-day column.
+  const day = fullTeamData_({ teamTotals: totals, reps: reps, outboundMeta: meta });
+  h.window.mRenderTeamMetrics_(day);
+  assert.ok(heads().some((t) => /^Handled \(adj\.\)/.test(t)) && !heads().some((t) => /^Handled \/ day/.test(t)), 'a single day keeps Handled (adj.) and has no per-day twin');
+  assert.ok(!/\/ day/.test(h.read('mTeamTableTsv_')(day, 'reps', { key: 'repName', dir: 'asc' }).split('\n')[0]));
+});

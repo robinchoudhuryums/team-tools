@@ -2608,7 +2608,7 @@ function getTeamMetrics(dateOrFrom, to) {
     // test-override bypass as the getMyMetrics/getMyMetricsRange siblings
     // (L-1/INV-129); the WRITE below skips any degraded round, so a partial
     // aggregate is never pinned for the TTL.
-    var teamCacheKey = 'team_metrics_v8:' + from + ':' + toDate;   // v8 (cycle 26 DS2): answered per credited day   // v7 (cycle 26 DQ1): each rep's partial days   // v6 (cycle 26 FQ3/FQ7): the transfer state + the outbound name pairs   // v5 (cycle 26 F34/F35): the same-basis adjusted average + the call-data state   // v4 (M1): outbound + adjusted   // v3 (H2): rate formula + published standard (INV-85)
+    var teamCacheKey = 'team_metrics_v9:' + from + ':' + toDate;   // v9 (cycle 26 DT1): Handled (adj.) per credited day on each manager row; v8 was DS2's answered per credited day
     var teamMetricsCache = CacheService.getScriptCache();
     var useTeamCache = !(typeof _TEST_OVERRIDE_CDR_SS_ID !== 'undefined' && _TEST_OVERRIDE_CDR_SS_ID);
     if (useTeamCache) {
@@ -2788,6 +2788,10 @@ function getTeamMetrics(dateOrFrom, to) {
       rep.answeredPerDay = metricsPerCreditedDay_(cdr ? cdr.totalAnswered : null, rep.creditedDays);
       rep.intakeTimed = intakeRes.unavailable ? null : { timed: intakeRes.timed || 0, seconds: intakeRes.seconds || 0 };
       rep.adjusted = metricsAdjusted_(cdr, rep.outbound, intakeRes.unavailable ? null : intakeRes);
+      // DT1 (operator 2026-11-19): Handled (adj.) per credited day, beside Ans /
+      // day and over the SAME days — the days the rep took inbound calls. With
+      // nothing adjusted it is the answered figure, as the Handled column reads.
+      rep.handledPerDay = metricsPerCreditedDay_(rep.adjusted ? rep.adjusted.handled : (cdr ? cdr.totalAnswered : null), rep.creditedDays);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
       // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
       // total is never derived by summing queues.

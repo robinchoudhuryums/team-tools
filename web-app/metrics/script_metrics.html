@@ -1120,7 +1120,7 @@ function mTeamPartialHintHtml_(data, cap, multiDay) {
   if (data.partialDaysUnavailable === true) {
     return '<div class="m-hint" style="margin-top:var(--space-md);color:var(--warning-deep)">' + icon('warning', 14) +
       ' Partial-day marks could not be read — a rep’s partial days are not shown here' +
-      (multiDay ? ', and Ans / day counts every day as a whole one' : '') + '. Refresh to try again.</div>';
+      (multiDay ? ', and ' + mTeamPerDayNames_(data, 'counts', 'count') + ' every day as a whole one' : '') + '. Refresh to try again.</div>';
   }
   var marked = data.reps.filter(function (r) { return !!mTeamPartialText_(r, 1); });
   if (!marked.length) return '';
@@ -1129,7 +1129,7 @@ function mTeamPartialHintHtml_(data, cap, multiDay) {
       marked.slice(0, cap).map(function (r) { return r.repName + ': ' + mTeamPartialText_(r, 4); }).join('; ')) +
     (marked.length > cap ? ' <em>+' + (marked.length - cap) + ' more</em>' : '') +
     // DS2: on a range the per-day column counts them; nothing else in the table moves.
-    (multiDay ? '. Ans / day counts each as its share; no count, rate or talk time is changed.</div>'
+    (multiDay ? '. ' + esc(mTeamPerDayNames_(data, 'counts', 'count')) + ' each as its share; no count, rate or talk time is changed.</div>'
       : '. The figures in this table are not adjusted for them.</div>');
 }
 /** PURE — DS2 (cycle 26): a rep's answered calls per CREDITED day on the
@@ -1137,16 +1137,46 @@ function mTeamPartialHintHtml_(data, cap, multiDay) {
  *  credited days (5 days with calls, 1 partial)". "—" when the server gives no
  *  figure: no call data, or under one credited day. */
 function mTeamPerDayCell_(r) {
-  if (!r || r.answeredPerDay == null) {
-    var why = (r && r.hasCdrData !== false && r.creditedDays != null && r.creditedDays < 1) ? 'under one credited day in this range' : 'no call data in this range';
-    return '<span style="color:var(--muted)" title="' + esc(why) + '">—</span>';
-  }
+  if (!r || r.answeredPerDay == null) return mTeamPerDayNoneCell_(r);
+  return '<span title="' + esc(r.totalAnswered + ' answered over ' + mTeamPerDayBasis_(r)) + '">' + esc(Number(r.answeredPerDay).toFixed(1)) + '</span>';
+}
+/** PURE — the divisor both per-day cells name: "4.5 credited days (5 days with
+ *  calls, 1 partial)", or "3 days with calls" for a rep with no marked day. */
+function mTeamPerDayBasis_(r) {
   var np = (r.partialDays || []).length;
   var days = Number(r.daysActive) || 0;
-  var basis = r.totalAnswered + ' answered over ' + (np
+  return np
     ? r.creditedDays + ' credited day' + (r.creditedDays === 1 ? '' : 's') + ' (' + days + ' day' + (days === 1 ? '' : 's') + ' with calls, ' + np + ' partial)'
-    : days + ' day' + (days === 1 ? '' : 's') + ' with calls');
-  return '<span title="' + esc(basis) + '">' + esc(Number(r.answeredPerDay).toFixed(1)) + '</span>';
+    : days + ' day' + (days === 1 ? '' : 's') + ' with calls';
+}
+/** PURE — a per-day cell with no figure: "—", and why in its title. */
+function mTeamPerDayNoneCell_(r) {
+  var why = (r && r.hasCdrData !== false && r.creditedDays != null && r.creditedDays < 1) ? 'under one credited day in this range' : 'no call data in this range';
+  return '<span style="color:var(--muted)" title="' + esc(why) + '">—</span>';
+}
+/** PURE — DT1 (cycle 26, operator 2026-11-19): Handled (adj.) per credited
+ *  day. The same days as Ans / day — the days the rep took INBOUND calls — and
+ *  the title says what was added: "52 handled (44 answered + 8 outbound
+ *  connected) over 4.5 credited days (…)". A rep with nothing adjusted reads
+ *  their answered figure, as the Handled column itself does. */
+function mTeamHandledPerDayCell_(r) {
+  if (!r || r.handledPerDay == null) return mTeamPerDayNoneCell_(r);
+  var ob = r.adjusted && r.adjusted.outbound;
+  var what = r.adjusted
+    ? r.adjusted.handled + ' handled (' + r.totalAnswered + ' answered + ' + (ob ? ob.connected : 0) + ' outbound connected)'
+    : r.totalAnswered + ' answered, no outbound call';
+  return '<span title="' + esc(what + ' over ' + mTeamPerDayBasis_(r)) + '">' + esc(Number(r.handledPerDay).toFixed(1)) + '</span>';
+}
+/** PURE — DT1: does the Team table show Handled (adj.)? One rule for the
+ *  column, its per-day twin and the line under the table: a rep placed an
+ *  outbound call in the window. */
+function mTeamHasAdjHandled_(data) {
+  return ((data && data.reps) || []).some(function (r) { return !!(r && r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0); });
+}
+/** PURE — DT1: the per-day column(s) a range shows, as the line under the
+ *  table names them, with the verb that agrees. */
+function mTeamPerDayNames_(data, one, many) {
+  return mTeamHasAdjHandled_(data) ? 'Ans / day and Handled / day ' + many : 'Ans / day ' + one;
 }
 function mPartialNoteHtml_(series) {
   var pts = (series || []).filter(function (p) { return p && p.partial != null && isFinite(p.partial); });
@@ -1442,9 +1472,13 @@ function mTeamAdjColumns_(data) {
       if (!r.outbound.placed) return '<span style="color:var(--muted)">0</span>';
       return '<span title="' + esc(r.outbound.connected + ' connected · ' + mFmtTalk_(r.outbound.talkSec) + ' talk') + '">' + esc(r.outbound.placed) + '</span>'; } });
   }
-  if (reps.some(function (r) { return r.adjusted && r.adjusted.outbound && r.adjusted.outbound.placed > 0; })) {
+  if (mTeamHasAdjHandled_(data)) {
     cols.push({ key: 'adjHandled', label: 'Handled (adj.)', numeric: true, sortable: true, cell: function (r) {
       return r.adjusted ? esc(r.adjusted.handled) : (mNoCallData_(r) ? mNoCallCell_() : esc(r.totalAnswered)); } });
+    // DT1 (cycle 26): its per-day twin — a range only, like Ans / day.
+    if (data.from && data.to && data.from !== data.to) {
+      cols.push({ key: 'handledPerDay', label: 'Handled / day', numeric: true, sortable: true, cell: mTeamHandledPerDayCell_ });
+    }
   }
   if (reps.some(function (r) { return r.adjusted && r.adjusted.attExIntakeFormatted; })) {
     cols.push({ key: 'attExIntake', label: 'ATT excl. intake', numeric: true, sortable: true, cell: function (r) {
@@ -1476,6 +1510,7 @@ function mSortReps_(reps, sort) {
       case 'transferred': return r.transferred || 0;   // Phase 2
       case 'outboundPlaced': return r.outbound ? r.outbound.placed : -1;   // M1: unread sorts lowest
       case 'adjHandled': return r.adjusted ? r.adjusted.handled : (r.totalAnswered || 0);
+      case 'handledPerDay': return (r.handledPerDay == null ? -1 : r.handledPerDay);   // DT1: no figure sorts lowest
       case 'attExIntake': return r.adjusted && r.adjusted.attExIntakeSec != null ? r.adjusted.attExIntakeSec : -1;
       default: return 0;
     }
@@ -2214,7 +2249,7 @@ function mTeamTableTsv_(data, scope, sort) {
     if (hasTr) head.push('Transfers');
     var hasPd = (data.reps || []).some(function (r) { return !!mTeamPartialText_(r, 1); });   // DQ1
     var hasPerDay = !!(data.from && data.to && data.from !== data.to);   // DS2 — a range only
-    if (hasPerDay) head.push('Ans / day', 'Credited days');
+    if (hasPerDay) head.push.apply(head, ['Ans / day'].concat(hasOb ? ['Handled (adj.) / day'] : [], ['Credited days']));   // DT1
     if (hasPd) head.push('Partial days');
     out.push(tsvRow_(head));
     var reps = mSortReps_(data.reps || [], sort || { key: 'pctAnswered', dir: 'desc' });
@@ -2232,7 +2267,11 @@ function mTeamTableTsv_(data, scope, sort) {
         r.adjusted ? r.adjusted.handled : (noCalls ? '' : r.totalAnswered));
       if (hasAdjAtt) row.push(r.adjusted && r.adjusted.attExIntakeFormatted ? r.adjusted.attExIntakeFormatted : '');
       if (hasTr) row.push(r.transferred);
-      if (hasPerDay) row.push(r.answeredPerDay == null ? '' : Number(r.answeredPerDay).toFixed(1), noCalls || r.creditedDays == null ? '' : r.creditedDays);
+      if (hasPerDay) {
+        row.push(r.answeredPerDay == null ? '' : Number(r.answeredPerDay).toFixed(1));
+        if (hasOb) row.push(r.handledPerDay == null ? '' : Number(r.handledPerDay).toFixed(1));   // DT1: no figure exports BLANK
+        row.push(noCalls || r.creditedDays == null ? '' : r.creditedDays);
+      }
       if (hasPd) row.push(mTeamPartialText_(r, 99));
       out.push(tsvRow_(row));
     });

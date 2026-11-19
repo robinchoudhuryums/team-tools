@@ -11081,7 +11081,7 @@ test('getTeamMetrics endpoint cache: org-wide key, degraded rounds never cached'
   assert.ok(/if \(useTeamCache && !teamTotals\.noteCountPartial && !transferMeta\.error && !trendFailed && !\(obRes\.error && !obRes\.steady\) && !cdrPartialDaysDegraded_\(\)\) \{/.test(f),   // DQ1: nor a round read without the partial-day marks; MET-4: a failed trend read is degraded too; M1: a failed outbound read
     'the put is gated on the round being clean');
   assert.ok(/_TEST_OVERRIDE_CDR_SS_ID/.test(f), 'bypassed under the CDR test override (the getMyMetrics pattern)');
-  assert.ok(/team_metrics_v8:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v8: cycle 26 DS2; v7: cycle 26 DQ1; v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
+  assert.ok(/team_metrics_v9:' \+ from \+ ':' \+ toDate/.test(f), 'keyed by range only — every manager sees the same aggregate (v8: cycle 26 DS2; v7: cycle 26 DQ1; v6: cycle 26 FQ3/FQ7; v5: cycle 26 F34/F35; v4: M1 outbound + adjusted; v3: H2 rate formula + published standard, INV-85)');
 });
 
 test('Team Metrics for reps: whitelist-built aggregate, no per-rep leak, card click-throughs', () => {
@@ -22415,7 +22415,7 @@ test('MW-1: Metrics trends walk WORKDAYS — metricsWorkdayIsos_ behavioural, al
   assert.ok(/metricsWorkdayIsos_\(from, to\)\.forEach/.test(rng), 'getMyMetricsRange: the per-day trend walks workdays');
   assert.strictEqual((team.match(/metricsWorkdayIsos_\(/g) || []).length, 2, 'getTeamMetrics: BOTH trends (single-day 30-day + multi-day range) walk workdays');
   assert.ok(!/setUTCDate\(/.test(rng.slice(rng.indexOf('var trend = []'))) && !/setUTCDate\(rd\.getUTCDate/.test(team), 'no calendar walk survives in either');
-  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v8:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
+  assert.ok(/metrics_my_v6:/.test(my) && /metrics_range_v6:/.test(rng) && /team_metrics_v9:/.test(team), 'all three endpoint result caches bumped — a cached calendar-day payload is never served under the new shape (INV-85; v3 = H2, v4 = M1)');
   assert.ok(!/metrics_my_v[12]:|metrics_range_v[12]:|team_metrics_v[12]:/.test(my + rng + team), 'no v1/v2 key survives');
   const mock = fs.readFileSync(path.join(__dirname, '../../test/visual/mock.js'), 'utf8');
   const t30 = mock.slice(mock.indexOf('function trend30('), mock.indexOf('var FIXTURES = {'));
@@ -43536,7 +43536,7 @@ test('M1: the client — the intake form timer starts on the first input, is tak
   const cn = stripJsComments_(extractRawFunction('Code.js', 'sanitizeCallNotePayload_'));
   assert.ok(/subformData\.completionSeconds = Math\.round\(cs\)/.test(cn), 'the server keeps completionSeconds (the whitelist)');
   const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
-  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamHasAdjHandled_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   vm.runInContext('var M_ADJ_SEQ = 0;', c);
   assert.strictEqual(c.mAdjustedHtml_(null, 'my'), '', 'nothing to adjust, no panel');
   const adj = { handled: 44, talkSec: 12900, talkFormatted: '3:35:00', outbound: { placed: 6, connected: 4, talkSec: 900, talkFormatted: '0:15:00' }, intakeTimed: 3, intakeAvgSec: 1000, attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
@@ -49552,7 +49552,7 @@ test('F34: "Avg talk excl. intake" is given only when the timed forms ran LONGER
 
 test('F34: the Adjusted line names the average it was taken from; the explanation says when the figure is given; the team column carries it on hover; an amendment\'s note carries no form time (driven)', () => {
   const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
-  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mAdjustedHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamHasAdjHandled_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   vm.runInContext('var M_ADJ_SEQ = 0;', c);
   const adj = { handled: 40, talkSec: 12000, talkFormatted: '3:20:00', outbound: null, intakeTimed: 3, intakeAvgSec: 1000, attSec: 300, attFormatted: '0:05:00', attExIntakeSec: 243, attExIntakeFormatted: '0:04:03' };
   const html = c.mAdjustedHtml_(adj, 'my');
@@ -49623,7 +49623,7 @@ test('F35: the Team rail draws ONE row with no figure for a window with no call 
 
 test('F35: the outbound row says how far the export reaches WHATEVER was placed — a window wholly past it has no figure, one that reaches past it keeps its count, a covered window with no call draws nothing; the Team column and its export follow (driven)', () => {
   const c = vm.createContext({ String, Number, Math, Object, Array, JSON, isFinite, esc: (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<svg></svg>', mMiniSparkSvg_: () => '' });
-  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mOutboundRowHtml_', 'mNoCallData_', 'mNoCallCell_', 'mTeamHasAdjHandled_', 'mTeamAdjColumns_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   const L = (th, f, t) => m1J(c.mOutboundLag_(th, f, t));
   assert.deepStrictEqual(L('2026-11-10', '2026-11-10', '2026-11-10'), { state: 'in', text: '' });
   assert.deepStrictEqual(L('2026-11-10', '2026-11-11', '2026-11-11'), { state: 'none', text: 'not in yet — outbound data is in through 11-10' });
@@ -50424,7 +50424,7 @@ test('DQ1: a manager\'s Team Metrics row names the rep\'s partial days — dates
 
 test('DQ1: the Team table\'s partial-day chip, the line under it and the copied column — the days are TEXT, a failed read is said, and the line states the figures are not adjusted (driven)', () => {
   const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<i></i>' });
-  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialChipHtml_', 'mTeamPartialHintHtml_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialChipHtml_', 'mTeamPartialHintHtml_', 'mTeamHasAdjHandled_', 'mTeamPerDayNames_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   const jo = { repName: 'Jo Tran', partialDays: [{ date: '2026-11-10', credit: 0 }, { date: '2026-11-05', credit: 0.5 }] };
   const ana = { repName: 'Ana <b>', partialDays: [{ date: '2026-11-06', credit: 0.75 }] };
   const cy = { repName: 'Cy', partialDays: [] };
@@ -50793,15 +50793,15 @@ test('DS2: answered per CREDITED day — the days a rep took calls, a marked day
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   assert.ok(/rep\.daysActive = cdr \? \(cdr\.daysActive \|\| 0\) : 0;\s*rep\.creditedDays = metricsCreditedDays_\(rep\.daysActive, rep\.partialDays\);\s*rep\.answeredPerDay = metricsPerCreditedDay_\(cdr \? cdr\.totalAnswered : null, rep\.creditedDays\);/.test(team),
     'each manager row: the days with calls, the credited days, and answered over them — null with no call data');
-  assert.ok(!/creditedDays|answeredPerDay/.test(team.replace(/rep\.(daysActive|creditedDays|answeredPerDay) = [^\n]*\n/g, '')), 'nothing else on the row or in the totals reads it — no count, rate or total moves');
-  assert.ok(/team_metrics_v8:/.test(team), 'a cached row without the figure is never served (INV-85)');
+  assert.ok(!/creditedDays|answeredPerDay|handledPerDay/.test(team.replace(/rep\.(daysActive|creditedDays|answeredPerDay|handledPerDay) = [^\n]*\n/g, '')), 'nothing else on the row or in the totals reads it — no count, rate or total moves (DT1: the Handled twin is the one other reader of the credited days)');
+  assert.ok(/team_metrics_v9:/.test(team), 'a cached row without the figure is never served (INV-85)');
   const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
   assert.ok(/answeredPerDay: /.test(mock) && /creditedDays: /.test(mock) && /daysActive: /.test(mock), 'the fixture rows mirror the three fields (INV-185)');
 });
 
 test('DS2: the Team table\'s "Ans / day" — a range only, its basis on hover, "—" with its reason, sortable with no figure lowest, in the copied table with the credited days; the line under the table names the one figure that counts a partial day (driven)', () => {
   const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<i></i>' });
-  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialHintHtml_', 'mTeamPerDayCell_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialHintHtml_', 'mTeamHasAdjHandled_', 'mTeamPerDayNames_', 'mTeamPerDayCell_', 'mTeamPerDayBasis_', 'mTeamPerDayNoneCell_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
   const jo = { repName: 'Jo', totalAnswered: 44, daysActive: 5, creditedDays: 4.5, answeredPerDay: 9.8, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }] };
   const ana = { repName: 'Ana', totalAnswered: 30, daysActive: 3, creditedDays: 3, answeredPerDay: 10, hasCdrData: true, partialDays: [] };
   const half = { repName: 'Cy', totalAnswered: 6, daysActive: 1, creditedDays: 0.5, answeredPerDay: null, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }] };
@@ -50821,7 +50821,7 @@ test('DS2: the Team table\'s "Ans / day" — a range only, its basis on hover, "
   assert.ok(!/Ans \/ day/.test(c.mTeamPartialHintHtml_({ reps: [jo], partialDaysUnavailable: true }, 8, false)));
   const src = fs.readFileSync(path.join(PA_WEB, 'metrics/script_metrics.html'), 'utf8');
   assert.ok(/\]\.concat\(multiDay \? \[\{ key: 'answeredPerDay', label: 'Ans \/ day', numeric: true, sortable: true, cell: mTeamPerDayCell_ \}\] : \[\]\)/.test(src), 'the column exists for a range only');
-  assert.ok(/if \(hasPerDay\) head\.push\('Ans \/ day', 'Credited days'\);/.test(src), 'and the copied table carries the figure with its divisor');
+  assert.ok(/if \(hasPerDay\) head\.push\.apply\(head, \['Ans \/ day'\]\.concat\(hasOb \? \['Handled \(adj\.\) \/ day'\] : \[\], \['Credited days'\]\)\);/.test(src), 'and the copied table carries the figure with its divisor (DT1: the Handled twin between them when outbound was read)');
 });
 
 // ── Cycle 26 follow-ons after the second round of decisions (FS1–FS3) ───────
@@ -50990,6 +50990,77 @@ test('FS3: the limit is the only thing the two writers gained — the row limit 
     fl.indexOf('activityRowAllowed_(emp, now)') < fl.indexOf('activityLogAppend_('), 'the idle stamp and the empty check come before the limit; the row after');
   const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
   assert.ok(/a\.action === 'ActivityRowsLimited'[^\n]*\n\s*\? `\$\{a\.notes\} \(\$\{a\.punchDate\} \$\{dispTime\(a\.punchTime\)\}\)`/.test(mgr), 'Recent Activity reads the row as its note, not as a bare action name');
+});
+
+// ── Cycle 26 decisions, third round (DT1) ───────────────────────────────────
+console.log('\nCycle 26 decisions, third round (DT1)');
+
+test('DT1: Handled (adj.) per CREDITED day — the adjusted handled count over the same days as Ans / day; the answered figure when nothing was adjusted; none with no call data or under one credited day (the endpoint\'s own expression, driven)', () => {
+  const c = vm.createContext({ Number, Math, isFinite });
+  ['metricsCreditedDays_', 'metricsPerCreditedDay_'].forEach((f) => vm.runInContext(extractRawFunction('Code.js', f), c));
+  const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
+  const m = /rep\.handledPerDay = ([^;\n]+);/.exec(team);
+  assert.ok(m, 'each manager row carries the figure');
+  const run = vm.runInContext('(function (rep, cdr) { return ' + m[1] + '; })', c);
+  const row = (handled, credited) => ({ adjusted: handled == null ? null : { handled: handled }, creditedDays: credited });
+  assert.strictEqual(run(row(52, 4.5), { totalAnswered: 44 }), 11.6, 'THE CAPABILITY: 44 answered + 8 outbound connected over 4.5 credited days');
+  assert.strictEqual(run(row(null, 4.5), { totalAnswered: 44 }), 9.8, 'nothing adjusted: the answered figure, as the Handled column itself reads');
+  assert.strictEqual(run(row(null, 0), null), null, 'no call data: no figure');
+  assert.strictEqual(run(row(8, 0), null), null, 'outbound calls but no inbound day: there is no credited day to divide by');
+  assert.strictEqual(run(row(20, 0.5), { totalAnswered: 12 }), null, 'under one credited day there is no average (DS2\'s rule)');
+  assert.strictEqual(run(row(0, 3), { totalAnswered: 0 }), 0, 'a real zero is a zero');
+  // Where it sits: after the adjusted figures exist and the credited days are known — and it is the only new reader of them.
+  assert.ok(team.indexOf('rep.creditedDays = metricsCreditedDays_(') < team.indexOf('rep.handledPerDay = ') && team.indexOf('rep.adjusted = metricsAdjusted_(') < team.indexOf('rep.handledPerDay = '));
+  assert.ok(!/handledPerDay/.test(team.replace(/rep\.handledPerDay = [^\n]*\n/, '')), 'no total, count or rate reads it');
+  assert.ok(/team_metrics_v9:/.test(team), 'a cached row without the figure is never served (INV-85)');
+  // The rep view never carries a manager row.
+  const rv = vm.createContext({});
+  vm.runInContext(extractRawFunction('Code.js', 'teamMetricsRepView_'), rv);
+  const view = JSON.stringify(rv.teamMetricsRepView_({ from: 'a', to: 'b', date: 'a', teamTotals: {}, trend: [], transferMeta: {}, queueRows: [], groupRows: [], reps: [{ repName: 'Jo', handledPerDay: 11.6 }], outboundMeta: { available: true } }));
+  assert.ok(!/handledPerDay|11\.6/.test(view), 'INV-124: the figure rides `reps`, which a rep is never sent');
+  const mock = fs.readFileSync(path.join(__dirname, '../visual/mock.js'), 'utf8');
+  assert.ok(/handledPerDay: Math\.round\(/.test(mock) && /answeredPerDay: null, handledPerDay: null \}\)/.test(mock), 'the fixture rows mirror the field (INV-185)');
+});
+
+test('DT1: the Team table\'s "Handled / day" — beside Handled (adj.), a range only and only when that column shows; its hover says what was added and over which days; "—" with its reason; sortable; the line under the table names both per-day columns (driven)', () => {
+  const c = vm.createContext({ String, Number, Math, Date, isFinite, isNaN, esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), icon: () => '<i></i>' });
+  ['mPartialDaysText_', 'mTeamPartialText_', 'mTeamPartialHintHtml_', 'mTeamHasAdjHandled_', 'mTeamPerDayNames_', 'mTeamPerDayBasis_', 'mTeamPerDayNoneCell_', 'mTeamPerDayCell_', 'mTeamHandledPerDayCell_',
+    'mRailRow_', 'mFmtTalk_', 'mOutboundLag_', 'mNoCallData_', 'mNoCallCell_', 'mTeamAdjColumns_', 'mSortReps_'].forEach((f) => vm.runInContext(extractFunction('metrics/script_metrics.html', f), c));
+  const adj = (handled, placed, connected) => ({ handled: handled, outbound: { placed: placed, connected: connected, talkSec: 600 } });
+  const jo = { repName: 'Jo', totalAnswered: 44, daysActive: 5, creditedDays: 4.5, answeredPerDay: 9.8, handledPerDay: 11.6, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }],
+    outbound: { placed: 11, connected: 8, talkSec: 600 }, adjusted: adj(52, 11, 8) };
+  const ana = { repName: 'Ana', totalAnswered: 30, daysActive: 3, creditedDays: 3, answeredPerDay: 10, handledPerDay: 10, hasCdrData: true, partialDays: [], outbound: { placed: 0, connected: 0, talkSec: 0 }, adjusted: null };
+  const half = { repName: 'Cy', totalAnswered: 6, daysActive: 1, creditedDays: 0.5, answeredPerDay: null, handledPerDay: null, hasCdrData: true, partialDays: [{ date: '2026-11-10', credit: 0.5 }], outbound: null, adjusted: null };
+  const obOnly = { repName: 'Di', totalAnswered: 0, daysActive: 0, creditedDays: 0, answeredPerDay: null, handledPerDay: null, hasCdrData: false, partialDays: [], outbound: { placed: 4, connected: 3, talkSec: 200 }, adjusted: adj(3, 4, 3) };
+  // The cell.
+  assert.strictEqual(c.mTeamHandledPerDayCell_(jo), '<span title="52 handled (44 answered + 8 outbound connected) over 4.5 credited days (5 days with calls, 1 partial)">11.6</span>');
+  assert.strictEqual(c.mTeamHandledPerDayCell_(ana), '<span title="30 answered, no outbound call over 3 days with calls">10.0</span>', 'a rep with nothing adjusted says so — the figure is their answered one');
+  assert.match(c.mTeamHandledPerDayCell_(Object.assign({}, jo, { adjusted: { handled: 47, outbound: null }, handledPerDay: 10.4 })), /47 handled \(44 answered \+ 0 outbound connected\) over 4\.5 credited days/, 'adjusted for timed intake only: nothing outbound was added');
+  assert.match(c.mTeamHandledPerDayCell_(half), /title="under one credited day in this range">—</);
+  assert.match(c.mTeamHandledPerDayCell_(obOnly), /title="no call data in this range">—</, 'outbound calls with no inbound day: no figure, and why');
+  assert.match(c.mTeamHandledPerDayCell_(null), />—</);
+  // Ans / day's own cell is word for word what it was (it shares the basis and the empty cell now).
+  assert.strictEqual(c.mTeamPerDayCell_(jo), '<span title="44 answered over 4.5 credited days (5 days with calls, 1 partial)">9.8</span>');
+  assert.match(c.mTeamPerDayCell_(half), /title="under one credited day in this range">—</);
+  // The column: only beside Handled (adj.), only on a range.
+  const keys = (data) => Array.from(c.mTeamAdjColumns_(data)).map((x) => x.key);
+  const meta = { available: true, through: '2026-11-12' };
+  const range = { from: '2026-11-03', to: '2026-11-10', date: '2026-11-03', outboundMeta: meta, reps: [jo, ana, half, obOnly] };
+  assert.deepStrictEqual(keys(range), ['outboundPlaced', 'adjHandled', 'handledPerDay'], 'THE CAPABILITY: the twin sits directly after Handled (adj.)');
+  assert.deepStrictEqual(keys(Object.assign({}, range, { to: '2026-11-03' })), ['outboundPlaced', 'adjHandled'], 'a single day has no per-day column');
+  assert.deepStrictEqual(keys(Object.assign({}, range, { from: undefined, to: undefined })), ['outboundPlaced', 'adjHandled'], 'a payload with no range draws as one day');
+  assert.deepStrictEqual(keys(Object.assign({}, range, { reps: [ana, half] })), ['outboundPlaced'], 'nobody placed an outbound call: no Handled column, so no twin of it');
+  const col = Array.from(c.mTeamAdjColumns_(range))[2];
+  assert.deepStrictEqual([col.label, col.numeric, col.sortable, col.cell(jo)], ['Handled / day', true, true, c.mTeamHandledPerDayCell_(jo)]);
+  // Sortable, so it has a case (g04): by the figure, none lowest.
+  const order = (dir) => Array.from(c.mSortReps_([half, jo, obOnly, ana], { key: 'handledPerDay', dir: dir })).map((r) => r.repName).join();
+  assert.deepStrictEqual([order('desc').slice(0, 6), order('asc').slice(-6)], ['Jo,Ana', 'Ana,Jo']);
+  // The line under the table names what counts a partial day.
+  assert.deepStrictEqual([c.mTeamHasAdjHandled_(range), c.mTeamHasAdjHandled_({ reps: [ana, half] }), c.mTeamHasAdjHandled_(null), c.mTeamHasAdjHandled_({ reps: [null, { adjusted: { outbound: { placed: 0 } } }] })], [true, false, false, false]);
+  assert.match(c.mTeamPartialHintHtml_(range, 8, true), /\. Ans \/ day and Handled \/ day count each as its share; no count, rate or talk time is changed\.<\/div>$/);
+  assert.match(c.mTeamPartialHintHtml_({ reps: [half] }, 8, true), /\. Ans \/ day counts each as its share; no count, rate or talk time is changed\.<\/div>$/, 'without the Handled column the line is DS2\'s');
+  assert.match(c.mTeamPartialHintHtml_(Object.assign({}, range, { partialDaysUnavailable: true }), 8, true), /not shown here, and Ans \/ day and Handled \/ day count every day as a whole one\. Refresh to try again\./);
+  assert.match(c.mTeamPartialHintHtml_(range, 8, false), /\. The figures in this table are not adjusted for them\.<\/div>$/);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

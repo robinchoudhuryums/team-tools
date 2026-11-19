@@ -4788,6 +4788,16 @@
     "planPayPeriodClose_"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "DT1: Handled (adj.) per credited day on each manager row; the Team key is v9",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getTeamMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -11680,7 +11690,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "a08a17820bf0b927"
+   "sha": "2e8f6bbc8ab86df0"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",
