@@ -15374,7 +15374,13 @@ test('DS1 DOM: a rep\'s pay statement offers "Confirm Clock In" on a time set fr
   const dlg = h.$('.overlay.open.ui-dialog');
   assert.ok(dlg && /Confirm this Clock In\?/.test(dlg.textContent) && /set by a manager from your app activity/.test(dlg.textContent) && /use Adjust to request the right time/.test(dlg.textContent), 'it asks first, and says what to do if the time is wrong');
   assert.strictEqual(h.run.pending('submitPunchAdjustRequests').length, 0, 'nothing is sent before the rep agrees');
-  dlg.querySelector('.ui-dialog-ok').click();
+  // Cancel is a real answer: nothing is filed, and the button is still there.
+  dlg.querySelector('.ui-dialog-cancel').click();
+  await tick();
+  assert.strictEqual(h.run.pending('submitPunchAdjustRequests').length, 0, 'THE RULE: cancelling files nothing');
+  assert.ok(btn() && !btn().disabled);
+  btn().click();
+  h.$('.overlay.open.ui-dialog .ui-dialog-ok').click();
   await tick();
   {
     const call = h.run.pending('submitPunchAdjustRequests')[0];

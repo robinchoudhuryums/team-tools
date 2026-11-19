@@ -50753,6 +50753,9 @@ test('DS1: the rep\'s side — a Confirm button per inferred time on their OWN p
   assert.ok(/data-cf-date="2026-11-05" data-cf-type="ClockIn" data-cf-time="07:56"[^>]*>Confirm Clock In<\/button>/.test(both) && /data-cf-type="ClockOut" data-cf-time="17:06"[^>]*>Confirm Clock Out<\/button>/.test(both), both);
   assert.ok(!/onclick/.test(both), 'data-* only — the handler is bound (g133)');
   assert.strictEqual((c.payStmtConfirmBtnsHtml_({ date: 'd', clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: true, infClockOut: false }, [], true).match(/<button/g) || []).length, 1, 'only an inferred time');
+  const outOnly = c.payStmtConfirmBtnsHtml_({ date: 'd', clockIn: '07:56:00', clockOut: '17:00:00', infClockIn: false, infClockOut: true }, [], true);
+  assert.ok(!/data-cf-type="ClockIn"/.test(outOnly) && /data-cf-type="ClockOut"/.test(outOnly), 'a Clock In that was never inferred has nothing to confirm');
+  assert.strictEqual(c.payStmtConfirmBtnsHtml_({ date: 'd', clockIn: '07:56:00', clockOut: '17:00:00' }, [], true), '', 'an ordinary day: no button');
   assert.strictEqual(c.payStmtConfirmBtnsHtml_(day, [], false), '', 'not on another rep\'s statement, nor outside the adjust window');
   const pendIn = c.payStmtConfirmBtnsHtml_(day, [{ punchType: 'ClockIn', status: ' Pending ', action: 'confirm' }], true);
   assert.ok(!/data-cf-type="ClockIn"/.test(pendIn) && /data-cf-type="ClockOut"/.test(pendIn), 'a pending request for the punch — its confirm or an adjustment — takes the button away');
