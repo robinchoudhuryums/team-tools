@@ -6334,6 +6334,21 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   there is no figure — a lone half day would read as double its calls. The
   column exists on a range only; its title gives the divisor.
 
+  **AMENDED (cycle 26 DT1, operator 2026-11-19): the twin for Handled
+  (adj.).** Asked whether the adjusted figures should have a per-day form
+  too, the operator said "maybe just for Handled (adj.) for now". So a range
+  gains `Handled / day`, directly after `Handled (adj.)`: the handled count
+  (answered plus connected outbound) over the SAME credited days as
+  `Ans / day`. The divisor is deliberately not widened to "days with any
+  call": the Outbound Calls read keeps totals per rep, not days, and carrying
+  each rep's dates in a cached window is what the 100 KB cap (g157) argues
+  against. The cost is stated rather than hidden — a day a rep spent ONLY on
+  outbound calls adds its calls and no day, so that rep's figure reads high;
+  a rep with outbound calls and no inbound day at all has no figure. A rep
+  with nothing adjusted reads their answered figure, as the Handled column
+  itself does, and the hover says "no outbound call". Not on the Team rail,
+  and the Department card is still not adjusted (the operator, the same day).
+
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 
 - **A timestamp parser documented as "only used for differences" is a claim

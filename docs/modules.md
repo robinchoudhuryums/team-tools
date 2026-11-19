@@ -521,7 +521,9 @@ lighter `--warn-fill`.
      and talk time are not adjusted, and the copied table gains a Partial days
      column. **Since DS2** a range also has an "Ans / day" column — answered
      over the days the rep took calls, a partial day as its share (none under
-     one credited day); it is the one figure on the table that counts them. A rep's Team
+     one credited day); it is the one figure on the table that counts them —
+     with, **since DT1**, its twin "Handled / day" after Handled (adj.): the
+     handled count over the same credited days. A rep's Team
      view is unchanged. The "Intake" count no longer includes the note of an
      AMENDED intake send — that note wears "PMD amended" in Call Notes.
 

@@ -4333,3 +4333,30 @@ F53, F54, F57.**
   reader never emits an entry without its time.
 - **Bite-checks: 47 mutations, each biting — one only after its drive gained a cancelled dialog** — pure in three streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 decisions, third round — DT1 (2026-11-19)
+
+- **Pure harness: two pins.** The endpoint's own `rep.handledPerDay`
+  expression lifted out of the source and DRIVEN (handled over credited days;
+  answered when nothing was adjusted; none with no call data, with outbound
+  and no inbound day, and under one credited day), with its position, its
+  one reader and the rep view; the cell's three hovers, the empty cell's two
+  reasons, the column rule (beside Handled (adj.), a range only), the sort,
+  and the line under the table.
+- **DOM harness: one drive** — the Team table on a range through the header
+  position, the hovers, two sort presses, the line, the copied table (its
+  column order, a blank for no figure, no Handled columns without outbound),
+  and a single day.
+- **Older pins updated:** eight — three Team key pins; DS2's "nothing else
+  reads the credited days" and its copied-header check; five sandboxes that
+  load the hint or the adjusted-columns helper now load the two new helpers.
+- **Measured, not read:** the table's width against its frame at three window
+  widths (1,327px in a 1,192px frame at 1440 with every optional column).
+- **Bite-checks: 28 mutations — 27 bit; the other was an equivalent mutant** (the
+  expression's `null` for a rep with no call data could not be reached: such a
+  rep has no credited day), so the branch was removed and its three
+  mutations re-run on the new form.
+- **A slip of the batch before, found here:** the FS docs script left the
+  `Visual Audit Stage` heading twice in `.cycle/config.md` (its inserted block
+  carried the heading it was inserted before). No check reads for a doubled
+  heading; this batch's script tripped on it and it was removed.

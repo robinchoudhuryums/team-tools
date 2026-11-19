@@ -7448,6 +7448,23 @@ pick them up without re-deriving the context.
     surfaces that do not show the Inferred mark today (the Time / PTO day
     popover, the Dashboard); a "confirm all"; a per-day figure on the Team
     rail and for "Handled (adj.)".
+- <a id="c26-dt-decisions"></a>**The third round of decisions: Handled (adj.) per credited day; four things left as they are (cycle 26 DT1, operator 2026-11-19).**
+  - **Built — `Handled / day` (DT1).** The operator's answer to "a per-day
+    figure on the Team rail, or for Handled (adj.)?" was "maybe just for
+    Handled (adj.) for now". It is a column, like `Ans / day`, because that is
+    what makes it sortable and copyable; it divides by the same credited days
+    (see the amendment under g148 for why not "days with any call", and what
+    that costs).
+  - **Its width is a known cost.** With every optional column showing
+    (Outbound, Handled (adj.), ATT excl. intake, Transfers) the table was
+    already 21px wider than its 1,192px frame at a 1440px window and scrolled
+    inside it; the new column makes that 135px. Without ATT excl. intake it
+    fits with a pixel to spare. The frame scrolls by design; if the scroll is
+    felt, the figure can move into the Handled (adj.) cell's hover.
+  - **Left as they are, by the operator's decision the same day:** the rep's
+    Confirm button stays on the pay statement (the other rep surfaces do not
+    show the Inferred mark); no "confirm all"; no per-day figure on the Team
+    rail; the Dashboard's Department card is not adjusted for partial days.
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

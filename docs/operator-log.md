@@ -11,6 +11,24 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 decisions, third round (DT1)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version). The
+handbook app is not touched.
+
+- **Stats → Team (DT1):** on a range, "Handled / day" now sits directly after
+  "Handled (adj.)": handled calls (answered plus connected outbound) over the
+  days the rep took inbound calls, a partial day counted as its share. Hover a
+  figure for what was added and the divisor. Copy table carries it as
+  "Handled (adj.) / day".
+- **Two things to know:** a day a rep spent only on outbound calls adds its
+  calls but no day, so that rep's figure reads high. And with every optional
+  column showing, the table is wider than its frame on a 1440px screen and
+  scrolls sideways inside it.
+- **Left as they are, by your decision:** the Confirm button stays on the pay
+  statement only; no "confirm all"; no per-day figure on the Team totals; the
+  Department card is not adjusted for partial days.
+
 ## 2026-11-19 — Cycle 26 follow-ons after the second round (FS1–FS3)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);

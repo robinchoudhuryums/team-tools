@@ -315,7 +315,8 @@ entry says which it is.
   beside the name and under the table; a rep still sees only their own, and
   nobody sees a reason. **Since DS2** the manager's table on a range has an
   "Ans / day" column that counts a marked day as its share (the days the rep
-  took calls are the basis); no other figure there moves. A Credit of 1 is
+  took calls are the basis); no other figure there moves. **Since DT1**
+  "Handled / day" does the same for Handled (adj.), over the same days. A Credit of 1 is
   the dashboard's
   "reviewed, a whole day" and is ignored, as is a mark on a day the rep took
   no call.
