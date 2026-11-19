@@ -307,6 +307,14 @@ not restate it. Server endpoints live in the fourteen server files
      request it could not decide and why. Team Punches says when today's
      activity bars are from an earlier read.
 
+     **Cycle 26 DS1 (operator 2026-11-19) — a rep's confirm request.** On
+     their own pay statement a rep sees "Confirm Clock In" (or Out) under a
+     day whose time a manager set from app activity. Pressing it files a
+     request on the punch-adjustment queue; nothing changes until a manager
+     approves it, and then only the Inferred mark moves to Confirmed. A
+     request that no longer matches the day (the time was changed) cannot be
+     approved — the manager denies it.
+
      **AC1 (operator 2026-11-11) — activity levels.** The ping also counts the
      clicks and keystrokes in each 10-minute block (counts only; a two-minute
      pause flushes the rest without a presence stamp). Day Edit draws bars per
@@ -507,8 +515,11 @@ lighter `--warn-fill`.
 
      **Cycle 26 decisions (DQ1 + DQ2, operator 2026-11-19).** A manager's
      Team table marks a rep who has partial days in the window ("2 partial"
-     beside the name) and names the days under the table; the figures are not
-     adjusted, and the copied table gains a Partial days column. A rep's Team
+     beside the name) and names the days under the table; the counts, rates
+     and talk time are not adjusted, and the copied table gains a Partial days
+     column. **Since DS2** a range also has an "Ans / day" column — answered
+     over the days the rep took calls, a partial day as its share (none under
+     one credited day); it is the one figure on the table that counts them. A rep's Team
      view is unchanged. The "Intake" count no longer includes the note of an
      AMENDED intake send — that note wears "PMD amended" in Call Notes.
 

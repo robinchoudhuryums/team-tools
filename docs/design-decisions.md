@@ -7398,6 +7398,32 @@ pick them up without re-deriving the context.
     activity counts (measure on DEV first); the read-ahead warming outbound
     windows (decided in Batch 10); My Stats' range sharing its per-day
     breakdown (a cohort's ninety days does not fit the 100 KB cache).
+- <a id="c26-ds-decisions"></a>**The second round of decisions: a rep asks and a manager approves — the confirm request; answered per credited day on Team Metrics (cycle 26 DS1–DS2, operator 2026-11-19).**
+  - **A rep's "confirm" is a request (DS1).** The operator's words: the rep can
+    confirm it, "but want that to submit it for manager approval instead of
+    just applying it". So the rep's press never touches the Timesheet. It
+    rides the punch-adjustment queue rather than a new one, because every
+    part of that queue is what a confirm needs: the manager email on filing,
+    the approval card and its bulk bar, the pending line on the rep's
+    Dashboard and statement, the decision email, the pay-period close card's
+    count of pending requests, and the one-open-request-per-punch guard. The
+    cost of reuse is a third value in one column, read in one place.
+  - **What approval writes is what the manager's own Confirm as is writes.**
+    Column J and a PunchConfirm audit row — never a time. The audit note says
+    it was "at the rep's request, approved by manager", so the two routes are
+    distinguishable in the log and identical on the Timesheet.
+  - **The rep's button is on the pay statement,** the one rep-facing surface
+    that already shows the Inferred chip and each day's requests. Not on the
+    Dashboard: an inferred time is by definition a past correction, not
+    something the rep meets mid-shift.
+  - **Answered per credited day is an added figure (DS2).** See the gotcha
+    amendment under g148. The basis is days with calls (the Department
+    Dashboard's rule), not this app's workday count, so the two products'
+    per-day figures for a rep agree, and PTO does not lower one.
+  - **Decided NOT to build (operator, the same day):** partial days on Day
+    Edit and Team Punches ("can skip for now"); a back-fill of the amended
+    mark onto older intake notes (the count corrects itself as the 92-day
+    windows roll).
 - <a id="c26-one-verdict-for-employee-docs"></a>**One verdict for Verify, the certificate and the copy; the copy email is capped and reaches only today's managers; pdf.js is checksum-checked (cycle 26 Batch 6: F13, F14, F15, F44, F56, F64).**
   - **`verified` is its own field, not "not tampered" (F13).** A check has
     three outcomes and the old flag recorded one of them. `empDocVerdict_`

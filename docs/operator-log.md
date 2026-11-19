@@ -11,6 +11,28 @@ keeps the standing state (the storage map, the property inventory and the
 per-property entries); this file keeps the history of how it got there.
 
 
+## 2026-11-19 — Cycle 26 decisions, second round (DS1–DS2)
+
+**Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);
+`npm run handbook:push` keeps the handbook app's copied stylesheet in step.
+The `PunchAdjustRequests` tab's `Action` column may now read `confirm`.
+
+- **Reps — confirm an inferred time (DS1):** on the pay statement, a day
+  whose Clock In or Clock Out a manager set from app activity has a "Confirm"
+  button. It sends a request to the manager; the time stays marked Inferred
+  until a manager approves. If the time is wrong the rep uses Adjust instead.
+- **Managers:** the request arrives in the punch-adjustment queue (and by
+  email) as "Confirm ClockIn … (set from app activity — approving keeps the
+  time and clears the Inferred mark)". If the time was changed after the rep
+  asked, approval is refused with the reason — deny the request.
+- **Stats → Team (DS2):** a range now has "Ans / day": answered calls over
+  the days the rep took calls, with a partial day counted as its share. Hover
+  a figure for its divisor. Answered, Missed, % Ans and talk time are
+  unchanged. A rep with under one credited day shows "—".
+- **Not built, by your decision:** partial days on Day Edit and Team Punches;
+  a back-fill of "amended" onto older intake notes.
+- **Editor suite:** one new test, `punchAdjust_confirmRequestMovesOnlyTheMark`.
+
 ## 2026-11-19 — Cycle 26 follow-ons after the decisions (FR1–FR4)
 
 **Nothing to set.** Deploy Team Tools (`clasp push -f` + New version);

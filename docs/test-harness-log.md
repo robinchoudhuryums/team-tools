@@ -4282,3 +4282,31 @@ F53, F54, F57.**
   the bulk notice on a phone.
 - **Bite-checks: 56 mutations, 55 bit — one only after its drive was strengthened; the other was an equivalent mutant, a redundant guard, removed** — pure in three streams, DOM through
   `bite.sh --dom --only`.
+
+## Cycle 26 decisions, second round — DS1–DS2 (2026-11-19)
+
+- **Pure harness: six pins.** `DS1` ×4 — the action reader and the confirm
+  rule's grid; the submit endpoint DRIVEN over a fake queue (filed as Pending
+  with the action, eight refusals with nothing queued); the approval DRIVEN
+  over a fake Timesheet and queue (one cell written; refused, done and denied
+  cases; the punch writer stubbed to throw if a confirm ever reaches it); the
+  rep's buttons, lines and the four surfaces that name a request. `DS2` ×2 —
+  the two helpers (the handoff's 19.75 example), the endpoint's three fields
+  and nothing else reading them; the cell, the sort, the line and the copy.
+- **DOM harness: three drives** — the rep's statement through the press, the
+  dialog, the filed request, the reload and a refusal; the manager's queue
+  row and another rep's statement; the Team table on a range and on one day.
+- **Editor suite: one test** — `punchAdjust_confirmRequestMovesOnlyTheMark`
+  (NOT RUN here).
+- **Older pins updated:** nine — the two Team key pins, the B3 action pin
+  (now drives `parAction_`), four sandboxes that load the submit endpoint or
+  the statement's adjustments, and the two DQ1 pins and one DQ1 drive whose
+  "nothing is computed from the marks" and hint wording changed with DS2.
+- **Found by the tools, not by reading:** a new pin's `' Pending '` fixture
+  showed the button helper did not trim a status; the phone-width shot's
+  `narrowText` measured the day's times at 44px beside the new button.
+- **Fixtures:** `daysActive`, `creditedDays`, `answeredPerDay` on the Team
+  rows; a pending confirm on the pay statement's 28th. Two scenarios: the
+  rep's statement for the previous period, wide and on a phone.
+- **Bite-checks: 57 mutations, each biting — two only after their pins were strengthened** — pure in three streams, DOM through
+  `bite.sh --dom --only`.

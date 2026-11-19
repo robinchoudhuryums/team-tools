@@ -494,6 +494,23 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   written: column J moves to `Confirmed (app activity)` and a `PunchConfirm`
   audit row names the manager. Range mode confirms nothing.
 
+  **AMENDED (cycle 26 DS1, operator 2026-11-19): a rep may ask; only a
+  manager confirms.** The operator's rule for a rep's own inferred time: the
+  rep can "confirm" it, and that submits it for manager approval rather than
+  applying it. So it is a REQUEST on the punch-adjustment queue with a third
+  action, `confirm` (beside `resume` and the ordinary `set`), read in one
+  place (`parAction_`). Filing writes one Pending row and nothing else. It is
+  checked against the day twice — at submit and again at approval, because
+  the day can change while it waits — by one pure rule,
+  `confirmRequestTarget_`: the day's shown row of that clock type must still
+  be Inferred at the requested HH:mm. A changed time, or a time that was
+  never inferred, is refused with its reason and the request stays Pending
+  for the manager to deny (g163: a writer that cannot tell refuses). A time a
+  manager already confirmed in Day Edit is the one case that simply
+  succeeds — the request's purpose is met, and denying it would tell the rep
+  "denied" about a time that IS confirmed. Approval writes what the manager's
+  own Confirm as is writes: column J, and a PunchConfirm audit row.
+
 <a id="g16-cn-date-local-is-a-sheets-coerced"></a>
 
 - **`CN.DATE_LOCAL` is a Sheets-coerced Date on read.** The
@@ -2758,6 +2775,15 @@ still reads straight. The index is CLAUDE.md's `## Common Gotchas`.
   and fails on one that has none. Fixing the fold then put the reader bar at
   566px, where its chapter name had 9px — its narrow form starts at 640px now
   (measured: the name has a word's room from about 630px).
+
+  **AMENDED (cycle 26 DS1): a sixth, the same shape as the third.** The
+  rep's "Confirm Clock In" button was first put beside the day's hours on
+  the pay statement — an unshrinkable sibling in the same row as the
+  `min-width: 0` column that holds the day's times. At 390px the times were
+  laid out in 44px ("8:02 AM – 5:02 PM · lunc…" one word a line). No
+  overflow, no error; the matrix's `narrowText` measured it on the first
+  shot. The button now sits on its own line under the day
+  (`.pay-stmt-confirm-row`), where the adjustment lines already are.
 
 <a id="g73-the-hidden-attribute-loses-to-any-class"></a>
 
@@ -6282,6 +6308,19 @@ Verify: the 4a-FU1 drive + CORE-01's `briefConfig` assertion.
   days and may differ on an unmarked rep's divisor, as they did before.
   **The check:** before copying another system's formula, find what its
   divisor already is here.
+
+  **AMENDED (cycle 26 DS2, operator 2026-11-19): the Team table's one
+  day-based figure.** Batch PD left Team Metrics unadjusted because nothing
+  on it was day-based: every column is a count, a rate or a total, and those
+  never move for a partial day. The operator asked for the manager's per-rep
+  figures to be adjusted too, and the honest form of that is to ADD the
+  figure a partial day belongs in rather than bend one that it does not:
+  `Ans / day` — answered over the rep's CREDITED days. Here the basis is the
+  Department Dashboard's own (the days the rep took a call, a marked day as
+  its share), not this app's workday divisor: a table that compares reps
+  should not lower a rep's rate for a day of PTO. Under one credited day
+  there is no figure — a lone half day would read as double its calls. The
+  column exists on a range only; its title gives the divisor.
 
 <a id="g149-a-stamp-parser-documented-as-differences-only"></a>
 

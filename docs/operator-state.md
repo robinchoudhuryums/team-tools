@@ -313,7 +313,10 @@ entry says which it is.
   card and Team Metrics are not adjusted. **Since DQ1 (2026-11-19)** a
   manager's Team Metrics names each rep's partial days — dates and shares,
   beside the name and under the table; a rep still sees only their own, and
-  nobody sees a reason. A Credit of 1 is the dashboard's
+  nobody sees a reason. **Since DS2** the manager's table on a range has an
+  "Ans / day" column that counts a marked day as its share (the days the rep
+  took calls are the basis); no other figure there moves. A Credit of 1 is
+  the dashboard's
   "reviewed, a whole day" and is ignored, as is a mark on a day the rep took
   no call.
   **Names:** a mark counts for the roster name the call data counts for — an
@@ -2687,7 +2690,9 @@ entry says which it is.
   Tracks employee-requested punch corrections (ReqId, EmpId, EmpName, Date,
   PunchType, RequestedTime, Reason, Status, SubmittedAt) pending manager
   approval. No manual setup needed. Two TRAILING columns self-heal onto an
-  existing tab: `Action` (B3 — `resume` marks a resume-shift request) and
+  existing tab: `Action` (B3 — `resume` marks a resume-shift request; since
+  cycle 26 DS1 `confirm` marks a rep's request that a time set from app
+  activity be confirmed as it stands — approving it writes no time) and
   **`EndTime` (cycle 22 T3, 2026-09-23)** — the rep's filed FINISH for a
   pending resume, attached when they file an Adjust → Clock Out for that day.
   Leave both alone. A blank `EndTime` on a resume for a day that has already
