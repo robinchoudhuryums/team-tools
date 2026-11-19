@@ -2791,7 +2791,7 @@ function getTeamMetrics(dateOrFrom, to) {
       // DT1 (operator 2026-11-19): Handled (adj.) per credited day, beside Ans /
       // day and over the SAME days — the days the rep took inbound calls. With
       // nothing adjusted it is the answered figure, as the Handled column reads.
-      rep.handledPerDay = metricsPerCreditedDay_(rep.adjusted ? rep.adjusted.handled : (cdr ? cdr.totalAnswered : null), rep.creditedDays);
+      rep.handledPerDay = metricsPerCreditedDay_(rep.adjusted ? rep.adjusted.handled : rep.totalAnswered, rep.creditedDays);
       // Phase 2 — transfers + their per-queue split. INV-180: `queues` is a
       // COMPONENT of `transferred`, so `queueUnattributed` rides along and the
       // total is never derived by summing queues.

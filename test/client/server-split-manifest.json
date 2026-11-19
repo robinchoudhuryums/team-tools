@@ -4798,6 +4798,16 @@
     "getTeamMetrics"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "DT1: the per-day expression reads the row's own answered count (the null branch could not be reached)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "getTeamMetrics"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -11690,7 +11700,7 @@
   "getTeamMetrics": {
    "file": "40_metrics.js",
    "kind": "function",
-   "sha": "2e8f6bbc8ab86df0"
+   "sha": "f9e50c3039f3b22b"
   },
   "getTeammateStatus": {
    "file": "20_timeclock.js",

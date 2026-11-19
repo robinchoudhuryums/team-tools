@@ -51001,14 +51001,15 @@ test('DT1: Handled (adj.) per CREDITED day — the adjusted handled count over t
   const team = stripJsComments_(extractRawFunction('Code.js', 'getTeamMetrics'));
   const m = /rep\.handledPerDay = ([^;\n]+);/.exec(team);
   assert.ok(m, 'each manager row carries the figure');
-  const run = vm.runInContext('(function (rep, cdr) { return ' + m[1] + '; })', c);
-  const row = (handled, credited) => ({ adjusted: handled == null ? null : { handled: handled }, creditedDays: credited });
-  assert.strictEqual(run(row(52, 4.5), { totalAnswered: 44 }), 11.6, 'THE CAPABILITY: 44 answered + 8 outbound connected over 4.5 credited days');
-  assert.strictEqual(run(row(null, 4.5), { totalAnswered: 44 }), 9.8, 'nothing adjusted: the answered figure, as the Handled column itself reads');
-  assert.strictEqual(run(row(null, 0), null), null, 'no call data: no figure');
-  assert.strictEqual(run(row(8, 0), null), null, 'outbound calls but no inbound day: there is no credited day to divide by');
-  assert.strictEqual(run(row(20, 0.5), { totalAnswered: 12 }), null, 'under one credited day there is no average (DS2\'s rule)');
-  assert.strictEqual(run(row(0, 3), { totalAnswered: 0 }), 0, 'a real zero is a zero');
+  const run = vm.runInContext('(function (rep) { return ' + m[1] + '; })', c);
+  // A row as the endpoint has it by then: the answered count (0 with no call data), the adjusted figures or null, the credited days.
+  const row = (answered, handled, credited) => ({ totalAnswered: answered, adjusted: handled == null ? null : { handled: handled }, creditedDays: credited });
+  assert.strictEqual(run(row(44, 52, 4.5)), 11.6, 'THE CAPABILITY: 44 answered + 8 outbound connected over 4.5 credited days');
+  assert.strictEqual(run(row(44, null, 4.5)), 9.8, 'nothing adjusted: the answered figure, as the Handled column itself reads');
+  assert.strictEqual(run(row(0, null, 0)), null, 'no call data: no credited day, so no figure — never 0');
+  assert.strictEqual(run(row(0, 8, 0)), null, 'outbound calls but no inbound day: there is no credited day to divide by');
+  assert.strictEqual(run(row(12, 20, 0.5)), null, 'under one credited day there is no average (DS2\'s rule)');
+  assert.strictEqual(run(row(0, 0, 3)), 0, 'a real zero is a zero');
   // Where it sits: after the adjusted figures exist and the credited days are known — and it is the only new reader of them.
   assert.ok(team.indexOf('rep.creditedDays = metricsCreditedDays_(') < team.indexOf('rep.handledPerDay = ') && team.indexOf('rep.adjusted = metricsAdjusted_(') < team.indexOf('rep.handledPerDay = '));
   assert.ok(!/handledPerDay/.test(team.replace(/rep\.handledPerDay = [^\n]*\n/, '')), 'no total, count or rate reads it');
