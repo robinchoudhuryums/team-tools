@@ -1588,8 +1588,22 @@ function openMgrTimeOffModal(data) {
   document.getElementById('mto-type').value = 'Full Day';
   document.getElementById('mto-notes').value = '';
   document.getElementById('mto-auto').checked = true;
-  ensureOverlay('mgr-timeoff-overlay');   // F-40: the focus stash/restore lifecycle
+  ensureOverlay('mgr-timeoff-overlay', { labelledBy: 'mgr-timeoff-title', unsaved: { what: 'this time-off request' } });   // F-40: the focus stash/restore lifecycle; F63: asks before it discards
 }
+// F63 (cycle 26): the two manager modals are STATIC nodes, so the shared
+// "typed into since this open" listener (wired when ensureOverlay CREATES an
+// overlay) was never on them. Anything picked or typed marks the modal dirty;
+// Day Edit's date picker does not — it is how a manager moves between days.
+['mgr-timeoff-overlay', 'day-edit-overlay'].forEach(function (id) {
+  var ov = document.getElementById(id);
+  if (!ov) return;
+  ['input', 'change'].forEach(function (evName) {
+    ov.addEventListener(evName, function (e) {
+      if (e.target && e.target.id === 'de-date') return;
+      overlayMarkDirty_(ov);
+    });
+  });
+});
 
 document.getElementById('mto-cancel').addEventListener('click', () => {
   closeOverlay(document.getElementById('mgr-timeoff-overlay'));
@@ -1619,7 +1633,7 @@ document.getElementById('mto-submit').addEventListener('click', () => {
       btn.disabled = false;
       btn.textContent = 'File Request';
       if (!result.success) { showToast((result.error||'Error'),'toast-error'); return; }
-      closeOverlay(document.getElementById('mgr-timeoff-overlay'));
+      closeOverlay(document.getElementById('mgr-timeoff-overlay'), { saved: true });   // F63: filed, not discarded
       showToast(`Time off filed${result.status === 'Approved' ? ' & approved' : ''}`, 'toast-success');
       refreshViewIfCurrent('manage', 'Refreshing…', loadManagerDashboard);
     })
@@ -2126,7 +2140,12 @@ function deSyncRangeMode_() {
  * that never loaded would wipe the day. */
 var _deLoadSeq = 0;
 var _deTouched = {};
-function deMarkTouched_(key) { _deTouched[key] = true; }
+function deMarkTouched_(key) {
+  _deTouched[key] = true;
+  // F63 (cycle 26): a slot filled by a BUTTON (Apply, + Add break, a break's
+  // remove) fires no input event, so the modal's dirty listener never saw it.
+  if (typeof overlayMarkDirty_ === 'function') overlayMarkDirty_('day-edit-overlay');
+}
 
 /* Round 12 E2 (operator 2026-10-28) — the rep's APP ACTIVITY in Day Edit:
  * managerGetDayActivity's pings in 10-minute blocks, and the first / last
@@ -2206,6 +2225,7 @@ function deSyncInferredTags_() {
 function deToggleConfirm_(type) {
   if (!deSlotState_(type).canConfirm) return;
   _deConfirm[type] = !_deConfirm[type];
+  if (typeof overlayMarkDirty_ === 'function') overlayMarkDirty_('day-edit-overlay');   // F63: a press, not an input
   deSyncInferredTags_();
 }
 /** PURE — DQ3: the export result's line for confirmed punches ('' for none). */
@@ -2502,7 +2522,7 @@ function openDayEditModal(empId, empName, prefillDate, tzHint) {
   // usually re-syncs a moment later, but not when the day has no row or the
   // read fails, which is exactly when a manager is adding punches by hand.
   deRenderBreaks_([]);
-  ensureOverlay('day-edit-overlay');   // F-40: the focus stash/restore lifecycle
+  ensureOverlay('day-edit-overlay', { labelledBy: 'day-edit-title', unsaved: { what: 'this day' } });   // F-40: the focus stash/restore lifecycle; F63: asks before it discards
   loadDayEditPunches(empId, _deDate, _deDate);
   deLoadActivity_(empId, _deDate);   // round 12 E2
 }
@@ -2637,6 +2657,10 @@ document.getElementById('de-date').addEventListener('change', function () {
   if (!d || !_deEmpId) return;
   _deDate = d;
   _deTouched = {};
+  // F63: another day is being loaded over the form — nothing typed is left in
+  // it to ask about (the picker itself never marks the modal dirty).
+  var deOv = document.getElementById('day-edit-overlay');
+  if (deOv) deOv._dirty = false;
   deSetLoading_(true, 'loading punches…');
   // F(cycle-8 M-2): keep the "To" picker's floor tracking the edit date; a
   // now-invalid To (≤ the new From) is cleared rather than silently kept.
@@ -2689,7 +2713,7 @@ document.getElementById('de-save').addEventListener('click', function () {
     btn.textContent = 'Save Changes';
     if (!result.success) { showToast((result.error || 'Error'), 'toast-error'); return; }
     var savedEmp = _deEmpId;
-    closeOverlay(document.getElementById('day-edit-overlay'));
+    closeOverlay(document.getElementById('day-edit-overlay'), { saved: true });   // F63: saved, not discarded
     if (typeof payStmtReturnAfterEdit_ === 'function') payStmtReturnAfterEdit_(savedEmp);   // 25post B4
     showToast(rangeMode
       ? ('Applied ' + (result.punchesWritten || 0) + ' punch(es) across ' + (result.daysTouched || 0) + ' day(s)')

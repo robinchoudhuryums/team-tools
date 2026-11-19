@@ -964,16 +964,16 @@ this block, or the command that prints the number.
 
 | Count | Value | Derived from |
 |---|---|---|
-| Pure harness tests | 1774 | `node test/client/run.js` |
-| DOM harness tests | 482 | `node test/client/dom/runDom.js` |
-| Visual matrix scenarios | 314 | `shoot.mjs`'s `SCENARIOS` |
+| Pure harness tests | 1781 | `node test/client/run.js` |
+| DOM harness tests | 492 | `node test/client/dom/runDom.js` |
+| Visual matrix scenarios | 316 | `shoot.mjs`'s `SCENARIOS` |
 | Editor suite registrations | 355 | `Tests.js`; a run prints its own `Expected:` line |
 | Admin-tier endpoints (INV-136) | 62 | `'Admin access required.'` in the server source |
 | Manager-gated endpoints | 112 | `'Manager access required.'` or `assertManagerCaller_` in the server source |
 | QA-gated endpoints (`canSeeQa_`) | 17 | `'QA access required.'` in the server source |
 | Installable triggers created | 16 | `installAutomationTriggers` |
 | Jobs riding a dispatcher | 14 | `TRIGGER_GROUPS` |
-| localStorage keys | 24 | `ums…` literals in `web-app/` |
+| localStorage keys | 26 | `ums…` literals in `web-app/` |
 | Invariant library entries | 426 | `.cycle/config.md` |
 | Regression scenarios (S*) | 193 | `.cycle/config.md` |
 

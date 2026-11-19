@@ -3137,6 +3137,7 @@ function openAdjustModal(prefillDate, prefillType) {
     }
   }
   document.getElementById('adj-time').value = timeHmTz(tz);
+  _adjPrefillTime = document.getElementById('adj-time').value;   // F63: the time the modal opens with is not the rep's typing
   document.getElementById('adj-reason').value = '';
   updateAdjReasonRequirement();
   ADJ_BATCH = [];
@@ -3147,7 +3148,18 @@ function openAdjustModal(prefillDate, prefillType) {
   const applyBtn = document.getElementById('adj-apply-now');
   if (applyBtn) applyBtn.style.display = flagOn_('employeeImmediateAdjust') ? '' : 'none';
   adjRefreshBreakTarget_(true);   // TC-02 — fresh each open: the day may have changed since
-  ensureOverlay('adjust-overlay');   // F-40: the focus stash/restore lifecycle
+  // F63 (cycle 26): Escape, the backdrop and Cancel ask first while there is
+  // typed work in it — a list of adjustments, a time or a reason.
+  ensureOverlay('adjust-overlay', { labelledBy: 'adjust-title', unsaved: { what: 'this punch adjustment', dirty: adjModalDirty_ } });   // F-40: the focus stash/restore lifecycle
+}
+/** F63 — is there work in the Adjust modal that a close would lose? The date,
+ *  the punch type and the time are what the modal opens with (the time is now);
+ *  a queued entry, a time the rep changed and a typed reason are work. */
+let _adjPrefillTime = '';
+function adjModalDirty_() {
+  const v = function (id) { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  const t = v('adj-time');
+  return ADJ_BATCH.length > 0 || (!!t && t !== _adjPrefillTime) || !!v('adj-reason');
 }
 
 /**
@@ -3200,7 +3212,7 @@ document.getElementById('adj-add').addEventListener('click', () => {
 document.getElementById('adj-apply-now').addEventListener('click', () => {
   const entry = adjReadEntry_();
   if (!entry) return;
-  closeOverlay(document.getElementById('adjust-overlay'));
+  closeOverlay(document.getElementById('adjust-overlay'), { saved: true });   // F63: applied, not discarded
   submitPunch(entry.punchType, { date: entry.date, time: entry.time, reason: entry.reason, breakIntent: entry.breakIntent || null });
 });
 
@@ -3221,7 +3233,7 @@ document.getElementById('adj-submit').addEventListener('click', () => {
     .withSuccessHandler(function (res) {
       btn.disabled = false;
       if (!res || !res.success) { showToast((res && res.error) || 'Submit failed', 'toast-error'); return; }
-      closeOverlay(document.getElementById('adjust-overlay'));
+      closeOverlay(document.getElementById('adjust-overlay'), { saved: true });   // F63: submitted, not discarded
       ADJ_BATCH = [];
       // T3: a Clock Out for a day whose resume is pending ATTACHES to that
       // request as its finish rather than queuing a second one — say so.

@@ -13950,11 +13950,16 @@ console.log('\nround-3 pilot — intake arrow nav / scratchpad / Reference comme
     const saveFn = strip(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'));
     // A failed save is VISIBLE and retryable: the error branch keeps dirty
     // (no dirty=false before the success path) and paints the warn status.
-    const errBranch = saveFn.slice(saveFn.indexOf('if (!r || r.error || !r.success)'), saveFn.indexOf('CN_SCRATCH.dirty = false'));
-    assert.ok(errBranch.indexOf('dirty = false') < 0, 'a failed save keeps the pad dirty (retries on next edit)');
+    // F58 (cycle 26): "dirty" is "something is pending", and only a save that
+    // LANDED takes a page's text out of `pending` — the failure path never does.
+    const failedFn = /var failed = function \(msg\) \{([\s\S]*?)\n  \};/.exec(saveFn);
+    assert.ok(failedFn && !/cnScratchUnpend_|CN_SCRATCH\.pending|dirty = false/.test(failedFn[1]), 'a failed save keeps the pad dirty (retries on next edit)');
+    assert.strictEqual((saveFn.match(/cnScratchUnpend_\(/g) || []).length, 1, 'the one place a page stops being pending is the save that landed');
     assert.ok(/Save failed/.test(saveFn), 'the failure is stated in the status line (INV-187)');
     const open = extractFunction('cn/script_callnotes.html', 'cnOpenScratchpadModal_');
-    assert.strictEqual((strip(open).match(/errorStateHtml_/g) || []).length, 2,
+    // F58: one handler for both shapes (an {error} answer and a failed call).
+    assert.strictEqual((strip(open).match(/errorStateHtml_/g) || []).length, 1);
+    assert.ok(/if \(!res \|\| res\.error\) \{ failedLoad\(/.test(strip(open)) && /\.withFailureHandler\(function \(err\) \{[\s\S]*?failedLoad\(/.test(strip(open)),
       'BOTH load-failure shapes render the warn card, never an empty pad (A12)');
   });
 
@@ -35654,7 +35659,8 @@ test('UI-ESC (cycle 23): the four editors are GUARDED, and closeOverlay asks bef
   });
   const core = read('script_core.html');
   const close = /function closeOverlay\(el, opts\) \{([\s\S]*?)\n\}/.exec(core)[1];
-  assert.ok(/if \(!\(opts && opts\.discard\) && overlayDiscardGuard_\(el\)\) return;/.test(close.split('\n').slice(0, 3).join('\n')), 'the guard runs FIRST, before the hook');
+  assert.ok(/if \(!\(opts && \(opts\.discard \|\| opts\.saved\)\) && overlayDiscardGuard_\(el\)\) return;/.test(close.split('\n').slice(0, 5).join('\n')) &&
+    close.indexOf('overlayDiscardGuard_(el)') < close.indexOf('OVERLAY_CLOSE_HOOKS[el.id]'), 'the guard runs FIRST, before the hook (F63: a close after a save is not asked)');
 });
 
 
@@ -51062,6 +51068,164 @@ test('DT1: the Team table\'s "Handled / day" — beside Handled (adj.), a range 
   assert.match(c.mTeamPartialHintHtml_({ reps: [half] }, 8, true), /\. Ans \/ day counts each as its share; no count, rate or talk time is changed\.<\/div>$/, 'without the Handled column the line is DS2\'s');
   assert.match(c.mTeamPartialHintHtml_(Object.assign({}, range, { partialDaysUnavailable: true }), 8, true), /not shown here, and Ans \/ day and Handled \/ day count every day as a whole one\. Refresh to try again\./);
   assert.match(c.mTeamPartialHintHtml_(range, 8, false), /\. The figures in this table are not adjusted for them\.<\/div>$/);
+});
+
+// ── Cycle 26 Batch 11 — Shell and Call Notes client (F58–F63) ────────────────
+console.log('\nCycle 26 Batch 11 — Shell and Call Notes client (F58–F63)');
+
+const b11Fn = (partial, names, extra) => {
+  const c = vm.createContext(Object.assign({ String, Number, Math, Object, Array, JSON, Date, isFinite }, extra || {}));
+  names.forEach((f) => vm.runInContext(extractFunction(partial, f), c));
+  return c;
+};
+const b11J = (v) => JSON.parse(JSON.stringify(v));
+
+test('F58: which Scratchpad page a save sends next — never one whose mirrored text is unchecked, a page that is NOT on screen first, nothing when nothing may be sent (driven)', () => {
+  const c = b11Fn('cn/script_callnotes.html', ['cnScratchNextPage_']);
+  assert.strictEqual(c.cnScratchNextPage_({}, 'main', {}), '');
+  assert.strictEqual(c.cnScratchNextPage_({ main: 'a' }, 'main', {}), 'main');
+  assert.strictEqual(c.cnScratchNextPage_({ main: 'a', p2: 'b' }, 'main', {}), 'p2', 'THE RULE: the page off screen first — its text exists nowhere else');
+  assert.strictEqual(c.cnScratchNextPage_({ main: 'a', p2: 'b' }, 'p2', {}), 'main');
+  assert.strictEqual(c.cnScratchNextPage_({ main: 'a', p2: 'b' }, 'main', { p2: true }), 'main', 'an unchecked page waits for its read');
+  assert.strictEqual(c.cnScratchNextPage_({ p2: 'b' }, 'main', { p2: true }), '', 'only unchecked text: nothing is sent');
+  assert.strictEqual(c.cnScratchNextPage_({ main: '' }, 'main', null), 'main', 'an emptied page is still a save');
+  assert.strictEqual(c.cnScratchNextPage_(null, 'main', null), '');
+});
+
+test('F58: the browser mirror of unsaved Scratchpad text — this account only, the draft TTL, the server stamp each text was typed on; and mirrored text meets its page by the SERVER\'s stamps, never a clock (driven)', () => {
+  const c = b11Fn('cn/script_callnotes.html', ['cnScratchMirrorBlob_', 'cnScratchMirrorRead_', 'cnScratchMirrorVerdict_']);
+  const DAY = 24 * 3600 * 1000, now = 1800000000000;
+  assert.strictEqual(c.cnScratchMirrorBlob_('E1', {}, {}, now), '', 'nothing pending: nothing kept');
+  assert.strictEqual(c.cnScratchMirrorBlob_('', { main: 'x' }, {}, now), '', 'no account to key it by: nothing kept');
+  const blob = c.cnScratchMirrorBlob_('E1', { main: 'typed', p2: '' }, { main: 500 }, now);
+  assert.deepStrictEqual(JSON.parse(blob), { who: 'E1', at: now, pages: { main: { text: 'typed', base: 500 }, p2: { text: '', base: null } } });
+  const read = (raw, who, at) => b11J(c.cnScratchMirrorRead_(raw, who, at == null ? now + 1000 : at, DAY));
+  assert.deepStrictEqual(read(blob, 'E1'), { pages: { main: { text: 'typed', base: 500 }, p2: { text: '', base: null } }, stale: false });
+  assert.deepStrictEqual(read(blob, 'E2'), { pages: null, stale: false }, 'THE RULE: another account\'s text is not read — and not removed');
+  assert.deepStrictEqual(read(blob, ''), { pages: null, stale: false });
+  assert.deepStrictEqual(read(blob, 'E1', now + DAY + 1), { pages: null, stale: true }, 'past the TTL it is to be removed, whoever it belongs to');
+  assert.deepStrictEqual(read(blob, 'E2', now + DAY + 1), { pages: null, stale: true });
+  assert.deepStrictEqual(read(null, 'E1'), { pages: null, stale: false });
+  assert.deepStrictEqual(read('{not json', 'E1'), { pages: null, stale: true }, 'an unreadable blob is removed');
+  assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', at: now, pages: { main: { text: 5 }, p2: null } }), 'E1'), { pages: null, stale: false }, 'an entry that is not text is not a page');
+  assert.deepStrictEqual(read(JSON.stringify({ who: 'E1', pages: { main: { text: 'x' } } }), 'E1'), { pages: null, stale: true }, 'no stamp: cannot be aged, so it is not kept');
+  // The verdict.
+  assert.deepStrictEqual([c.cnScratchMirrorVerdict_(500, 500), c.cnScratchMirrorVerdict_(500, '500'), c.cnScratchMirrorVerdict_(0, null)], ['save', 'save', 'save']);
+  assert.deepStrictEqual([c.cnScratchMirrorVerdict_(500, 900), c.cnScratchMirrorVerdict_(500, 100), c.cnScratchMirrorVerdict_(500, null)], ['conflict', 'conflict', 'conflict'],
+    'the page was saved from somewhere else since — older or newer by the clock makes no difference');
+  assert.deepStrictEqual([c.cnScratchMirrorVerdict_(null, 900), c.cnScratchMirrorVerdict_(undefined, null)], ['save', 'save'], 'an unknown base is last-write-wins, as the pad says');
+  // The pad reads the editor only as the page it shows, and one account's key is one ums… key.
+  const src = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/var CN_SCRATCH_MIRROR_KEY = 'umsScratchUnsaved';/.test(src));
+  const mirror = extractFunction('cn/script_callnotes.html', 'cnScratchMirrorNow_');
+  assert.ok(/try \{[\s\S]*localStorage\.setItem\(CN_SCRATCH_MIRROR_KEY, blob\)[\s\S]*\} catch \(e\)/.test(mirror), 'every write is in a try/catch (g112)');
+  assert.ok(!/latestPage|CN_SCRATCH\.latest\b/.test(stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnScratchSave_'))), 'the single slot is gone from the save');
+});
+
+test('F59: the parked call-note drafts — live ones with text, one per originating window (its newest), newest first, capped; a window\'s own entry leaves the list (driven)', () => {
+  const c = b11Fn('cn/script_callnotes.html', ['cnDraftHasText_', 'cnParkedList_']);
+  const DAY = 24 * 3600 * 1000, now = 1800000000000;
+  const d = (by, ago, issue, extra) => Object.assign({ by: by, at: now - ago, values: { caller: '', issue: issue } }, extra || {});
+  assert.deepStrictEqual([c.cnDraftHasText_(d('a', 0, 'x')), c.cnDraftHasText_(d('a', 0, '  ')), c.cnDraftHasText_(d('a', 0, '', { trainingQ: 'q' })), c.cnDraftHasText_(d('a', 0, '', { reviewC: 'r' })),
+    c.cnDraftHasText_({ flags: ['urgent'], values: {} }), c.cnDraftHasText_(null)], [true, false, true, true, false, false], 'text a rep typed — a flag alone is not a note to keep');
+  const list = (l, add, dropBy, max) => b11J(c.cnParkedList_(l, now, DAY, max || 3, add, dropBy)).map((x) => x.by + ':' + x.values.issue);
+  assert.deepStrictEqual(list([d('a', 5000, 'old a'), d('b', 1000, 'b1')], d('a', 100, 'new a')), ['a:new a', 'b:b1'], 'one per window — its newest — newest first');
+  assert.deepStrictEqual(list([d('a', 100, 'newer a')], d('a', 5000, 'older a')), ['a:newer a'], 'an older copy never replaces a newer one');
+  assert.deepStrictEqual(list([d('a', 1, 'a'), d('b', 2, 'b'), d('c', 3, 'c'), d('e', 4, 'e')]), ['a:a', 'b:b', 'c:c'], 'capped, the newest kept');
+  assert.deepStrictEqual(list([d('a', DAY + 1, 'expired'), d('b', 10, '   '), d('', 10, 'no window'), { at: now, values: { issue: 'no by' } }, null, d('c', 10, 'c')]), ['c:c'],
+    'expired, blank, and un-owned entries are not kept');
+  assert.deepStrictEqual(list([d('me', 10, 'mine'), d('b', 20, 'b')], null, 'me'), ['b:b'], 'this window\'s own entry leaves (its text is in its form)');
+  assert.deepStrictEqual(list('not a list', d('a', 1, 'a')), ['a:a']);
+  // The persister parks before it writes, and a clear drops this window's own parked entry.
+  const persist = stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnPersistActiveFormDraft_'));
+  assert.ok(persist.indexOf('cnParkForeignDraft_()') > 0 && persist.indexOf('cnParkForeignDraft_()') < persist.indexOf('localStorage.setItem(CN_FORM_STICKY_LS_KEY'), 'THE RULE: parked BEFORE the slot is written over');
+  assert.ok(/cnParkForeignDraft_\(\);[\s\S]*localStorage\.setItem\(CN_FORM_STICKY_LS_KEY/.test(stripJsComments_(extractFunction('cn/script_callnotes.html', 'cnSaveSnapshotAsStickyDraft_'))), 'the failed-save path writes the slot too');
+  assert.ok(/cnParkDraft_\(null\)/.test(extractFunction('cn/script_callnotes.html', 'cnClearStickyFormDraft_')));
+  const src = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  assert.ok(/const CN_FORM_PARKED_LS_KEY = 'umsCallNotesParkedDrafts';/.test(src));
+  ['cnReadParkedDrafts_', 'cnWriteParkedDrafts_', 'cnParkForeignDraft_', 'cnUnparkDraft_'].forEach((f) =>
+    assert.ok(/try \{[\s\S]*\} catch \(e\)/.test(extractFunction('cn/script_callnotes.html', f)), f + ' guards its localStorage use (g112)'));
+});
+
+test('F60: what a tour step\'s wait does — a loading view never spends the grace, a loaded view gets the same ~1.9 s as before, and only the cap gives up on a view still loading (driven); the tour is not a tab visit, and its popover is outside the focus trap', () => {
+  const c = b11Fn('script_tour.html', ['tourWaitVerdict_']);
+  const v = (loading, tries, elapsed) => c.tourWaitVerdict_(loading, tries, 24, elapsed, 20000);
+  assert.deepStrictEqual([v(true, 0, 0), v(true, 0, 5000), v(true, 23, 19999)], ['loading', 'loading', 'loading'], 'THE RULE: while the loader shows, the step waits — whatever the tries');
+  assert.strictEqual(v(true, 0, 20000), 'gaveUp');
+  assert.deepStrictEqual([v(false, 0, 0), v(false, 22, 60000)], ['wait', 'wait']);
+  assert.deepStrictEqual([v(false, 23, 100), v(false, 30, 100)], ['absent', 'absent'], 'the 24th look at a LOADED view skips the step, as before');
+  const tour = fs.readFileSync(path.join(PA_WEB, 'script_tour.html'), 'utf8');
+  assert.ok(/const MAX = 24;/.test(tour) && /const TOUR_LOAD_CAP_MS = 20000;/.test(tour));
+  const end = stripJsComments_(extractFunction('script_tour.html', 'tourEnd_'));
+  assert.ok(/const unseen = completed && _tourGaveUp;\s*if \(!unseen\) \{[\s\S]*p\.seenVersion = TOUR_VERSION;/.test(end), 'a run that gave up on a step is not stamped seen; a Skip (not completed) always is');
+  const usage = stripJsComments_(extractFunction('script_core.html', 'recordViewUsage_'));
+  assert.ok(/if \(typeof TOUR_ACTIVE !== 'undefined' && TOUR_ACTIVE\) return;/.test(usage) && usage.indexOf('TOUR_ACTIVE') < usage.indexOf('recordViewEnter'), 'no usage row for a tab the tour opened');
+  const trap = stripJsComments_(extractFunction('script_core.html', 'overlayFocusTrap_'));
+  assert.ok(/closest\('#tour-pop'\)\) return;/.test(trap) && trap.indexOf("'#tour-pop'") < trap.indexOf("querySelectorAll('.overlay.open')"), 'the tour\'s own dialog is exempt, before any overlay is looked for');
+});
+
+test('F61: a reminder\'s punch goes ahead only while the punch is allowed AND nothing has been punched since it was offered (driven)', () => {
+  const c = b11Fn('script_core.html', ['remindPunchSig_', 'remindPunchStillValid_']);
+  const st = (punches, acts, today) => ({ today: today || '2026-11-19', punches: punches, nextActions: acts });
+  const am = [{ type: 'ClockIn', time: '08:00:00' }];
+  const back = am.concat([{ type: 'LunchOut', time: '12:00:00' }, { type: 'LunchIn', time: '12:30:00' }]);
+  assert.deepStrictEqual([c.remindPunchSig_(st(am)), c.remindPunchSig_(st([])), c.remindPunchSig_(null), c.remindPunchSig_({ punches: am })],
+    ['2026-11-19|1|ClockIn@08:00:00', '2026-11-19|0|', '|0|', '|1|ClockIn@08:00:00']);
+  const sig = c.remindPunchSig_(st(am));
+  assert.strictEqual(c.remindPunchStillValid_(st(am, ['LunchOut', 'ClockOut']), 'LunchOut', sig), true);
+  assert.strictEqual(c.remindPunchStillValid_(st(back, ['LunchOut', 'ClockOut']), 'LunchOut', sig), false, 'THE RULE: Lunch out is allowed again after lunch — the punches since are what refuse it');
+  assert.strictEqual(c.remindPunchStillValid_(st(am, ['ClockOut']), 'LunchOut', sig), false, 'not allowed now: refused, as before');
+  assert.strictEqual(c.remindPunchStillValid_(st(am, ['LunchOut'], '2026-11-20'), 'LunchOut', sig), false, 'yesterday\'s reminder is not today\'s punch');
+  assert.strictEqual(c.remindPunchStillValid_(st([{ type: 'ClockIn', time: '08:05:00' }], ['LunchOut']), 'LunchOut', sig), false, 'the same count with another time is a change');
+  assert.strictEqual(c.remindPunchStillValid_(st(back, ['LunchOut']), 'LunchOut', undefined), true, 'a reminder with no signature (an older page\'s) is judged on the first rule only');
+  assert.strictEqual(c.remindPunchStillValid_(null, 'LunchOut', sig), false);
+  const now = stripJsComments_(extractFunction('script_core.html', 'remindPunchNow_'));
+  assert.ok(now.indexOf('.getEmployeeState()') > 0 && /withFailureHandler\(function \(\) \{ go\(\); \}\)/.test(now), 'the click asks the server first, and a failed ask judges on what this window has');
+  assert.ok(/remindPunchNow_\(action\.punch, action\.sig\)/.test(extractFunction('script_core.html', 'notifyRemind_')), 'the toast hands its signature to the click');
+});
+
+test('F62: a confirm or a prompt paints above the floating Scratchpad and the Reference drawer, and below the tour and the toasts (the layers read from the source)', () => {
+  const z = (src, selRe) => { const m = new RegExp(selRe + '[^}]*?z-index:\\s*(\\d+)').exec(src); assert.ok(m, 'found ' + selRe); return Number(m[1]); };
+  const css = fs.readFileSync(path.join(PA_WEB, 'styles.html'), 'utf8');
+  const cn = fs.readFileSync(path.join(PA_WEB, 'cn/script_callnotes.html'), 'utf8');
+  const kb = fs.readFileSync(path.join(PA_WEB, 'kb/script_kb.html'), 'utf8');
+  const tour = fs.readFileSync(path.join(PA_WEB, 'script_tour.html'), 'utf8');
+  const dialog = z(css, '\\.overlay\\.ui-dialog \\{'), overlay = z(css, '\\n  \\.overlay \\{'), pad = z(cn, '\\.cn-float-panel \\{'), drawer = z(kb, '#kb-drawer \\{'), tourZ = z(tour, '#tour-block \\{');
+  assert.ok(dialog > pad && dialog > drawer && dialog > overlay, 'THE REGRESSION: the pad (' + pad + ') painted over the dialogs it opens (' + overlay + ') — dialog is ' + dialog);
+  assert.ok(dialog < tourZ, 'the tour still sits above a dialog');
+  assert.ok(/uiConfirm\(\{ title: 'Delete "' \+ cnScratchPageName_\(id\) \+ '"\?'[^\n]*tone: 'danger' \}\)/.test(cn), 'the delete confirm asks in the destructive tone the dialog reads');
+  // No other caller passes the option the dialog does not read.
+  const offenders = [];
+  ['script_core.html', 'cn/script_callnotes.html', 'tc/script_manager.html', 'tc/script_clock.html', 'tc/script_timeoff.html', 'kb/script_kb.html', 'intake/script_intake.html', 'metrics/script_metrics.html'].forEach((f) => {
+    const src = stripJsComments_(fs.readFileSync(path.join(PA_WEB, f), 'utf8'));
+    (src.match(/ui(?:Confirm|Prompt)\(\{[^}]*\bdanger:\s*true[^}]*\}/g) || []).forEach((hit) => offenders.push(f + ': ' + hit.slice(0, 60)));
+  });
+  assert.deepStrictEqual(offenders, [], '`danger: true` is silently ignored — the option is `tone: \'danger\'`');
+});
+
+test('F63: the three static modals open guarded, their own save closes with `saved`, and closeOverlay asks before anything else unless the close is a discard or a save (structure)', () => {
+  const clock = fs.readFileSync(path.join(PA_WEB, 'tc/script_clock.html'), 'utf8');
+  const mgr = fs.readFileSync(path.join(PA_WEB, 'tc/script_manager.html'), 'utf8');
+  assert.ok(/ensureOverlay\('adjust-overlay', \{ labelledBy: 'adjust-title', unsaved: \{ what: 'this punch adjustment', dirty: adjModalDirty_ \} \}\)/.test(clock));
+  assert.ok(/ensureOverlay\('day-edit-overlay', \{ labelledBy: 'day-edit-title', unsaved: \{ what: 'this day' \} \}\)/.test(mgr));
+  assert.ok(/ensureOverlay\('mgr-timeoff-overlay', \{ labelledBy: 'mgr-timeoff-title', unsaved: \{ what: 'this time-off request' \} \}\)/.test(mgr));
+  // Every close of these three that follows the modal's OWN action says so; the rest go through the guard.
+  const closes = (src, id) => (stripJsComments_(src).match(new RegExp("closeOverlay\\(document\\.getElementById\\('" + id + "'\\)(, \\{ saved: true \\})?\\)", 'g')) || []);
+  const saved = (list) => list.filter((x) => /saved: true/.test(x)).length;
+  assert.deepStrictEqual([closes(clock, 'adjust-overlay').length, saved(closes(clock, 'adjust-overlay'))], [4, 2], 'Adjust: Cancel and the backdrop ask; Apply now and a submitted batch do not');
+  assert.deepStrictEqual([closes(mgr, 'day-edit-overlay').length, saved(closes(mgr, 'day-edit-overlay'))], [3, 1]);
+  assert.deepStrictEqual([closes(mgr, 'mgr-timeoff-overlay').length, saved(closes(mgr, 'mgr-timeoff-overlay'))], [3, 1]);
+  // Day Edit's button-driven edits mark it dirty; its date picker does not, and resets it.
+  assert.ok(/function deMarkTouched_\(key\) \{\s*_deTouched\[key\] = true;[\s\S]*?overlayMarkDirty_\('day-edit-overlay'\)/.test(mgr));
+  assert.ok(/overlayMarkDirty_\('day-edit-overlay'\)/.test(extractFunction('tc/script_manager.html', 'deToggleConfirm_')), 'Confirm as is is a press, not an input');
+  assert.ok(/if \(e\.target && e\.target\.id === 'de-date'\) return;\s*overlayMarkDirty_\(ov\);/.test(mgr));
+  // The Adjust modal's own rule, driven.
+  const doc = { els: {}, getElementById(id) { return this.els[id] || null; } };
+  const c = vm.createContext({ String, document: doc });
+  vm.runInContext('var ADJ_BATCH = []; ' + /let _adjPrefillTime = '';/.exec(clock)[0].replace('let ', 'var ') + '\n' + extractFunction('tc/script_clock.html', 'adjModalDirty_'), c);
+  const set = (time, reason, batch, pre) => { doc.els = { 'adj-time': { value: time }, 'adj-reason': { value: reason } }; c.ADJ_BATCH = batch || []; c._adjPrefillTime = pre == null ? '09:00' : pre; return c.adjModalDirty_(); };
+  assert.deepStrictEqual([set('09:00', ''), set('', ''), set('09:00', '   ')], [false, false, false], 'what the modal opens with is not work');
+  assert.deepStrictEqual([set('17:05', ''), set('09:00', 'Forgot'), set('', '', [{}])], [true, true, true], 'a changed time, a reason, a queued entry');
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

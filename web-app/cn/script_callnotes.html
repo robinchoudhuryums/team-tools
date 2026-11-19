@@ -1238,6 +1238,8 @@
   .cn-scratch-count.over { color: var(--danger); font-weight: 700; }
   .cn-scratch-status { font-size: 10.5px; color: var(--muted-2); min-height: 14px; margin: 2px 0 6px; }
   .cn-scratch-status.warn { color: var(--warning-deep); }
+  /* F58 (cycle 26): "Try again" on a page that would not open. */
+  .cn-sp-retry { font: inherit; color: var(--accent-ink); background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
 
   /* Round-1 pilot #1 — review-comment line on a saved review-flagged card
      (the training-question line mirrored, in the review flag's green). */
@@ -2657,6 +2659,13 @@ const CN_WINDOW_ID = 'w' + Date.now().toString(36) + Math.random().toString(36).
 // computer. 24h covers an overnight resume; older drafts are wiped on the
 // next restore attempt instead of resurfacing.
 const CN_FORM_STICKY_MAX_AGE_MS = 24 * 3600 * 1000;
+// F59 (cycle 26): the slot holds ONE draft, and a draft from another window
+// (or from before a reload) that the rep answered "Not now" to was overwritten
+// by this window's next keystroke — gone, and never offered again. Before this
+// window writes over another window's draft it is PARKED here: at most one per
+// originating window, the newest CN_FORM_PARKED_MAX, for the slot's own 24 h.
+const CN_FORM_PARKED_LS_KEY = 'umsCallNotesParkedDrafts';
+const CN_FORM_PARKED_MAX = 3;
 
 // ── View enter handlers (called by the shell router) ────────────────────
 
@@ -4023,6 +4032,7 @@ function cnPersistActiveFormDraft_() {
                     || (data.trainingQ && data.trainingQ.trim())
                     || (data.reviewC && data.reviewC.trim());
     if (anyContent) {
+      cnParkForeignDraft_();   // F59: never write over another window's unsaved note
       localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify(data));
     } else if (cnStickyDraftIsMine_()) {
       localStorage.removeItem(CN_FORM_STICKY_LS_KEY);   // F40(e): an empty form never removes ANOTHER window's draft
@@ -4207,13 +4217,75 @@ function cnApplyStickyDraft_(data) {
 function cnRestoreActiveFormDraft_() {
   try {
     const data = cnReadStickyDraft_();
-    if (!data) return false;
     // F40(e): another window's draft (or this window's before a reload) is
     // offered, not loaded — it may be a different caller's note.
-    if (data.by && data.by !== CN_WINDOW_ID) { cnOfferForeignDraft_(data); return false; }
-    cnApplyStickyDraft_(data);
-    return true;
+    if (data && data.by && data.by !== CN_WINDOW_ID) { cnOfferForeignDraft_(data); return false; }
+    if (data) cnApplyStickyDraft_(data);
+    // F59: with nothing foreign in the slot, a PARKED draft is offered — the
+    // one a "Not now" (or this window's typing) kept from being overwritten.
+    const parked = cnReadParkedDrafts_().filter(function (d) { return d.by !== CN_WINDOW_ID; })[0];
+    if (parked) cnOfferForeignDraft_(parked);
+    return !!data;
   } catch (e) { return false; }
+}
+/** PURE (Node-pinned) — F59: does a draft hold anything a rep typed? */
+function cnDraftHasText_(d) {
+  if (!d) return false;
+  const t = function (x) { return String(x == null ? '' : x).trim(); };
+  const v = d.values || {};
+  return Object.keys(v).some(function (k) { return t(v[k]) !== ''; }) || t(d.trainingQ) !== '' || t(d.reviewC) !== '';
+}
+/** PURE (Node-pinned) — F59: the parked list as it is kept and read. Live
+ *  drafts only (inside the PHI TTL, with text), one per originating window —
+ *  its NEWEST — newest first, at most `max`. `add` (optional) is a draft being
+ *  parked now; `dropBy` (optional) a window whose own entry leaves the list. */
+function cnParkedList_(list, nowMs, maxAgeMs, max, add, dropBy) {
+  const all = (Array.isArray(list) ? list : []).concat(add ? [add] : []);
+  const live = all.filter(function (d) {
+    return d && d.by && d.at && (nowMs - d.at) <= maxAgeMs && d.by !== dropBy && cnDraftHasText_(d);
+  }).sort(function (a, b) { return b.at - a.at; });
+  const seen = {}, out = [];
+  live.forEach(function (d) { if (!seen[d.by]) { seen[d.by] = true; out.push(d); } });
+  return out.slice(0, max);
+}
+function cnReadParkedDrafts_() {
+  try {
+    return cnParkedList_(JSON.parse(localStorage.getItem(CN_FORM_PARKED_LS_KEY) || '[]'), Date.now(), CN_FORM_STICKY_MAX_AGE_MS, CN_FORM_PARKED_MAX);
+  } catch (e) { return []; }
+}
+function cnWriteParkedDrafts_(list) {
+  try {
+    if (list && list.length) localStorage.setItem(CN_FORM_PARKED_LS_KEY, JSON.stringify(list));
+    else localStorage.removeItem(CN_FORM_PARKED_LS_KEY);
+  } catch (e) { /* localStorage unavailable — the slot's own behaviour stands */ }
+}
+/** F59 — park `draft` (another window's) so nothing this window does loses it;
+ *  this window's own entry, if another window had parked it, leaves the list —
+ *  its text is in this window's form. */
+function cnParkDraft_(draft) {
+  let raw = [];
+  try { raw = JSON.parse(localStorage.getItem(CN_FORM_PARKED_LS_KEY) || '[]'); } catch (e) { raw = []; }
+  cnWriteParkedDrafts_(cnParkedList_(raw, Date.now(), CN_FORM_STICKY_MAX_AGE_MS, CN_FORM_PARKED_MAX,
+    (draft && draft.by !== CN_WINDOW_ID) ? draft : null, CN_WINDOW_ID));
+}
+/** F59 — called before this window writes its draft into the slot: if the slot
+ *  holds another window's live draft, park it first. (A draft with no `by` is
+ *  a legacy one this window may overwrite, as before.) */
+function cnParkForeignDraft_() {
+  try {
+    const raw = localStorage.getItem(CN_FORM_STICKY_LS_KEY);
+    const cur = raw ? JSON.parse(raw) : null;
+    cnParkDraft_(cur && cur.by && cur.by !== CN_WINDOW_ID ? cur : null);
+  } catch (e) {}
+}
+/** F59 — one parked draft leaves the list (it was restored). */
+function cnUnparkDraft_(draft) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CN_FORM_PARKED_LS_KEY) || '[]');
+    cnWriteParkedDrafts_(cnParkedList_((Array.isArray(raw) ? raw : []).filter(function (d) {
+      return !(d && draft && d.by === draft.by && d.at === draft.at);
+    }), Date.now(), CN_FORM_STICKY_MAX_AGE_MS, CN_FORM_PARKED_MAX));
+  } catch (e) {}
 }
 /** F40(e) — "an unsaved note is waiting": Restore loads it into this form and
  *  this window takes it over; Not now leaves it in the slot (asked once per
@@ -4221,8 +4293,12 @@ function cnRestoreActiveFormDraft_() {
  *  Restore shows the draft in the copy dialog instead of overwriting their
  *  typing (g68: an async fill never lands on top of what was typed). */
 function cnOfferForeignDraft_(data) {
-  if (CN_STATE.foreignDraftAsked === data.at) return;
-  CN_STATE.foreignDraftAsked = data.at;
+  // F59: asked once per draft per page — by draft, since a parked one can be
+  // offered after the slot's.
+  if (!CN_STATE.foreignDraftAsked || typeof CN_STATE.foreignDraftAsked !== 'object') CN_STATE.foreignDraftAsked = {};
+  const askKey = String(data.by || '') + '@' + String(data.at || '');
+  if (CN_STATE.foreignDraftAsked[askKey]) return;
+  CN_STATE.foreignDraftAsked[askKey] = true;
   const v = data.values || {};
   const what = String(v.patient || v.caller || v.issue || '').trim();
   let when = '';
@@ -4234,19 +4310,28 @@ function cnOfferForeignDraft_(data) {
       '. It came from another Call Notes window, or from before this page reloaded.',
     confirmLabel: 'Restore', cancelLabel: 'Not now',
   }).then(function (ok) {
-    if (!ok) return;
+    if (!ok) {
+      // F59: "Not now" KEEPS it. It used to stay only in the slot, where this
+      // window's next keystroke wrote over it.
+      cnParkDraft_(data);
+      showToast('Kept — it will be offered again when Call Notes next loads (for 24 hours)', 'toast-info');
+      return;
+    }
     let cur = null;
     try { cur = cnReadStickyDraft_(); } catch (e) { cur = null; }
-    if (!cur || cur.at !== data.at) cur = data;   // the slot moved on meanwhile: restore what was offered
+    if (!cur || cur.at !== data.at || cur.by !== data.by) cur = data;   // the slot moved on meanwhile (or this one was parked): restore what was offered
     const form = document.getElementById('cn-active-form');
     const typed = form && ['callback','caller','relationship','patient','issue','transferred','resolution']
       .some(function (k) { return String(cnGetFieldValue_('cn-fld-' + k) || '').trim(); });
     if (!form || typed) {
       const cv = cur.values || {};
-      manualCopyModal_(cnFormatNoteForCopy_(Object.assign({}, cv, { patientAndTrx: cv.patient })), 'The unsaved call note');
+      cnParkDraft_(cur);   // F59: shown to copy, not taken over — it stays kept
+      manualCopyModal_(cnFormatNoteForCopy_(Object.assign({}, cv, { patientAndTrx: cv.patient })), 'The unsaved call note',
+        { title: 'The unsaved call note', why: 'You have typed into the form since, so it was not put there. Here it is — select it and press Ctrl/⌘+C to copy it.' });   // F61: not a clipboard failure
       return;
     }
     cnApplyStickyDraft_(cur);
+    cnUnparkDraft_(cur);            // F59: restored — no longer waiting
     cnPersistActiveFormDraft_();   // this window owns it now
   });
 }
@@ -4255,6 +4340,7 @@ function cnClearStickyFormDraft_() {
   // F40(e): a save or a clear in THIS window empties only this window's draft —
   // the pop-out's save used to wipe the main window's unsaved note too.
   try { if (cnStickyDraftIsMine_()) localStorage.removeItem(CN_FORM_STICKY_LS_KEY); } catch (e) {}
+  cnParkDraft_(null);   // F59: and this window's own draft, if another window had parked it — the note is saved or cleared
 }
 
 /** Voice-to-text mic markup, gated on (a) CONFIG.CALL_NOTES.VOICE_INPUT_ENABLED
@@ -4624,7 +4710,10 @@ function cnRevertPendingSubmit_(pendingId, snapshot, message) {
 function cnShowUnsavedNote_(lostNote, snapshot) {
   const v = (snapshot && snapshot.values) || {};
   manualCopyModal_(cnFormatNoteForCopy_(lostNote || Object.assign({}, v, { patientAndTrx: v.patient })),
-    'The call note that did not save');
+    'The call note that did not save',
+    // F61 (cycle 26): this is a failed SAVE — the dialog used to tell the rep
+    // the browser had blocked the clipboard and nothing was copied.
+    { title: 'This call note was not saved', why: 'It could not be saved and is not in the form. Here it is — select it and press Ctrl/⌘+C to copy it, then log it again.' });
 }
 
 /** Park a failed-submit snapshot in the sticky-draft slot (same shape
@@ -4654,6 +4743,7 @@ function cnStickyDraftHasOtherText_(snap) {
 }
 function cnSaveSnapshotAsStickyDraft_(snap) {
   try {
+    cnParkForeignDraft_();   // F59: the failed note goes into the slot — another window's draft there is parked, not lost
     localStorage.setItem(CN_FORM_STICKY_LS_KEY, JSON.stringify({
       values: snap.values || {},
       flags: Array.isArray(snap.flags) ? snap.flags : (snap.flag ? [snap.flag] : []),
@@ -5542,16 +5632,174 @@ function cnSchedStatus_(btn, id, status) {
 // is gone still has something to send. Before it, a close during an in-flight
 // save queued a drain that found no field and saved nothing, and a success
 // marked the pad clean even when the rep had typed more while it ran.
-var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false, latest: null,
+// F58 (cycle 26): `pending` replaces the single `latest` / `latestPage` slot —
+// the unsaved text of EACH page, by page id, kept until a save of exactly that
+// text lands. One slot could hold one page's text: a save that drained after
+// a page switch re-read the editor (by then showing the OTHER page) and wrote
+// that, so the text typed last on the first page was never sent; and typing
+// on the second page replaced the first page's waiting text outright.
+// `dirty` is "anything pending". `base` is the server stamp each pending text
+// was typed on top of, `touched` a per-page counter a load compares so an
+// answer older than the screen is never painted, `unchecked` the pages whose
+// text came from the browser mirror and has not been compared with the server.
+var CN_SCRATCH = { dirty: false, timer: null, saving: false, queued: false,
+  pending: {}, base: {}, touched: {}, unchecked: {}, mirrorTimer: null, mirrorBound: false,
   // 22post A-2a: the last copy this session loaded or saved — {content,
   // updatedAtMs, format, maxChars} — so a reopen paints INSTANTLY and
   // refreshes behind it.
   cache: null, prefetching: false, maxChars: null, resizeObs: null, geomTimer: null,
-  // Batch S (operator 2026-11-02): named PAGES. `page` is the one shown;
-  // `latestPage` the page `latest` was typed on (a save always names it, so a
-  // switch mid-save never writes one page's text into another); `loadSeq`
-  // drops a page load that is no longer the one wanted.
-  page: 'main', pages: null, maxPages: 10, latestPage: null, loadSeq: 0 };
+  // Batch S (operator 2026-11-02): named PAGES. `page` is the one shown (a
+  // save always names the page its text was typed on — `pending`'s key);
+  // `loadSeq` drops a page load that is no longer the one wanted.
+  page: 'main', pages: null, maxPages: 10, loadSeq: 0 };
+
+// ── F58: the pending texts, and their mirror in the browser ──────────────────
+function cnScratchHasPending_(page) { return Object.prototype.hasOwnProperty.call(CN_SCRATCH.pending, page); }
+function cnScratchTouchedOf_(page) { return CN_SCRATCH.touched[page] || 0; }
+/** `text` is the newest unsaved text of `page`. The first pend of a page
+ *  records the server stamp it was typed on top of (`base`). */
+function cnScratchPend_(page, text) {
+  if (!cnScratchHasPending_(page) && !Object.prototype.hasOwnProperty.call(CN_SCRATCH.base, page)) {
+    CN_SCRATCH.base[page] = (CN_SCRATCH.cache && CN_SCRATCH.cache.page === page) ? (CN_SCRATCH.cache.updatedAtMs || null) : null;
+  }
+  CN_SCRATCH.pending[page] = text;
+  CN_SCRATCH.touched[page] = cnScratchTouchedOf_(page) + 1;
+  CN_SCRATCH.dirty = true;
+  cnScratchMirrorSoon_();
+}
+function cnScratchUnpend_(page) {
+  delete CN_SCRATCH.pending[page];
+  delete CN_SCRATCH.base[page];
+  delete CN_SCRATCH.unchecked[page];
+  CN_SCRATCH.dirty = Object.keys(CN_SCRATCH.pending).length > 0;
+  cnScratchMirrorSoon_();
+}
+/** PURE (Node-pinned) — which pending page a save sends next: never one whose
+ *  mirrored text is still unchecked; a page that is NOT on screen first (its
+ *  text exists nowhere else); '' when there is nothing to send. */
+function cnScratchNextPage_(pending, shown, unchecked) {
+  var pages = Object.keys(pending || {}).filter(function (pg) { return !(unchecked && unchecked[pg]); });
+  if (!pages.length) return '';
+  var off = pages.filter(function (pg) { return pg !== shown; });
+  return off.length ? off[0] : pages[0];
+}
+/** PURE (Node-pinned) — mirrored text meets the server's copy of its page:
+ *  'save' when that copy is the one the text was typed on top of (or the base
+ *  is unknown — last write wins, as the pad says), 'conflict' when the page
+ *  was saved from somewhere else since. Both stamps are the SERVER's, so a
+ *  computer clock that is off cannot decide this. */
+function cnScratchMirrorVerdict_(base, serverUpdatedAtMs) {
+  if (base == null) return 'save';
+  return Number(serverUpdatedAtMs || 0) === Number(base || 0) ? 'save' : 'conflict';
+}
+// The mirror: unsaved text only, for this account only, for the sticky draft's
+// own 24 hours. A reload, a closed tab or a crash inside the autosave's 800 ms
+// — or after a save that failed — used to lose it; nothing on the page could
+// stop that (an unload save is unreliable inside the Apps Script frame).
+var CN_SCRATCH_MIRROR_KEY = 'umsScratchUnsaved';
+function cnScratchWho_() { return (typeof empState !== 'undefined' && empState && empState.id) ? String(empState.id) : ''; }
+function cnScratchMirrorSoon_() {
+  if (!CN_SCRATCH.mirrorBound) {
+    CN_SCRATCH.mirrorBound = true;
+    try { window.addEventListener('pagehide', cnScratchMirrorNow_); } catch (e) {}
+  }
+  clearTimeout(CN_SCRATCH.mirrorTimer);
+  CN_SCRATCH.mirrorTimer = setTimeout(cnScratchMirrorNow_, 250);
+}
+/** PURE (Node-pinned) — the mirror blob for these pending texts ('' for none,
+ *  or with no account to key it by). */
+function cnScratchMirrorBlob_(who, pending, base, nowMs) {
+  var pages = Object.keys(pending || {});
+  if (!who || !pages.length) return '';
+  var out = { who: String(who), at: nowMs, pages: {} };
+  pages.forEach(function (pg) { out.pages[pg] = { text: String(pending[pg]), base: (base && base[pg] != null) ? base[pg] : null }; });
+  return JSON.stringify(out);
+}
+/** PURE (Node-pinned) — what a stored blob gives THIS account: {pageId: {text,
+ *  base}}, or null — nothing stored, unreadable, another account's, or older
+ *  than `maxAgeMs`. `stale` says the blob should be removed (too old). */
+function cnScratchMirrorRead_(raw, who, nowMs, maxAgeMs) {
+  var m = null;
+  try { m = JSON.parse(raw); } catch (e) { m = null; }
+  if (!m || typeof m !== 'object' || !m.pages || typeof m.pages !== 'object') return { pages: null, stale: !!raw };
+  if (!(m.at > 0) || (nowMs - m.at) > maxAgeMs) return { pages: null, stale: true };
+  if (!who || String(m.who || '') !== String(who)) return { pages: null, stale: false };
+  var out = {}, n = 0;
+  Object.keys(m.pages).forEach(function (pg) {
+    var e = m.pages[pg];
+    if (!e || typeof e.text !== 'string') return;
+    out[pg] = { text: e.text, base: e.base == null ? null : Number(e.base) };
+    n++;
+  });
+  return { pages: n ? out : null, stale: false };
+}
+function cnScratchMirrorNow_() {
+  clearTimeout(CN_SCRATCH.mirrorTimer); CN_SCRATCH.mirrorTimer = null;
+  try {
+    var blob = cnScratchMirrorBlob_(cnScratchWho_(), CN_SCRATCH.pending, CN_SCRATCH.base, Date.now());
+    if (blob) { localStorage.setItem(CN_SCRATCH_MIRROR_KEY, blob); return; }
+    // Nothing pending: remove OUR blob — never another account's on a shared computer.
+    var r = cnScratchMirrorRead_(localStorage.getItem(CN_SCRATCH_MIRROR_KEY), cnScratchWho_(), Date.now(), CN_FORM_STICKY_MAX_AGE_MS);
+    if (r.pages || r.stale) localStorage.removeItem(CN_SCRATCH_MIRROR_KEY);
+  } catch (e) { /* privacy mode — the pad works as it did before the mirror */ }
+}
+/** Take mirrored text into `pending` (a page this session already has unsaved
+ *  text for keeps the session's). Adopted pages are `unchecked`: nothing saves
+ *  them until their page's server copy has been read (cnScratchSettleAdopted_).
+ *  Returns the page ids adopted. */
+function cnScratchAdoptMirror_() {
+  var got = [];
+  try {
+    var r = cnScratchMirrorRead_(localStorage.getItem(CN_SCRATCH_MIRROR_KEY), cnScratchWho_(), Date.now(), CN_FORM_STICKY_MAX_AGE_MS);
+    if (r.stale) localStorage.removeItem(CN_SCRATCH_MIRROR_KEY);
+    Object.keys(r.pages || {}).forEach(function (pg) {
+      if (cnScratchHasPending_(pg)) return;
+      CN_SCRATCH.pending[pg] = r.pages[pg].text;
+      CN_SCRATCH.base[pg] = r.pages[pg].base;
+      CN_SCRATCH.unchecked[pg] = true;
+      CN_SCRATCH.dirty = true;
+      got.push(pg);
+    });
+  } catch (e) {}
+  return got;
+}
+/** The server's answer for a page whose text was adopted from the mirror: save
+ *  it, or — the page is gone, or was saved from elsewhere since the text was
+ *  typed — put the text on a new page rather than over what is there. A read
+ *  that FAILED decides nothing: the text stays pending and the next edit or
+ *  Save now writes it (last write wins). */
+function cnScratchSettleAdopted_(page, res) {
+  delete CN_SCRATCH.unchecked[page];
+  if (!cnScratchHasPending_(page)) return;
+  if (!res || res.error) return;
+  if (res.missing || cnScratchMirrorVerdict_(CN_SCRATCH.base[page], res.updatedAtMs) === 'conflict') {
+    cnScratchRecover_(page, res.missing ? 'gone' : 'changed');
+    return;
+  }
+  cnScratchSave_(true);
+}
+/** Adopted pages that are not the one on screen: read each and settle it. */
+function cnScratchCheckUnchecked_() {
+  Object.keys(CN_SCRATCH.unchecked).forEach(function (pg) {
+    if (pg === CN_SCRATCH.page) return;   // the open's own load settles the shown page
+    google.script.run
+      .withSuccessHandler(function (res) { cnScratchSettleAdopted_(pg, res); })
+      .withFailureHandler(function () { cnScratchSettleAdopted_(pg, null); })
+      .getMyScratchpad(pg);
+  });
+}
+/** Shell boot: say so when this account has Scratchpad text that was never
+ *  saved — the pad may not be opened again for hours. */
+function cnScratchBootNotice_() {
+  try {
+    if (!cnScratchWho_()) return;
+    var r = cnScratchMirrorRead_(localStorage.getItem(CN_SCRATCH_MIRROR_KEY), cnScratchWho_(), Date.now(), CN_FORM_STICKY_MAX_AGE_MS);
+    if (r.stale) { localStorage.removeItem(CN_SCRATCH_MIRROR_KEY); return; }
+    if (!r.pages) return;
+    showToast('Your Scratchpad has text that was not saved last time — open it to keep it', 'toast-warn', {
+      sticky: true, actionLabel: 'Open Scratchpad', onAction: function () { cnOpenScratchpadModal_(); } });
+  } catch (e) {}
+}
 
 // 22post B-2b (operator 2026-09-27): the Scratchpad is a FLOATING, NON-MODAL
 // panel — no backdrop or blur, usable while filling in a note (or with the
@@ -5891,77 +6139,91 @@ function cnOpenScratchpadModal_() {
   }
   // C6: text a previous close could not save (its save failed, or is still in
   // flight) is carried into this open rather than replaced by the server copy.
-  var carry = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;
-  if (!carry) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; CN_SCRATCH.latestPage = null; }
-  else if (CN_SCRATCH.latestPage) CN_SCRATCH.page = CN_SCRATCH.latestPage;   // Batch S: reopen on the page the unsaved text belongs to
+  // F58: so is text the browser mirror kept across a reload — but that text is
+  // not saved until its page's server copy has been read (it may be older).
+  cnScratchAdoptMirror_();
+  var carryPages = Object.keys(CN_SCRATCH.pending);
+  var carry = carryPages.length > 0;
+  if (!carry) CN_SCRATCH.dirty = false;
+  else if (!cnScratchHasPending_(CN_SCRATCH.page)) CN_SCRATCH.page = carryPages[0];   // Batch S: reopen on a page the unsaved text belongs to
   cnScratchRenderPages_();
   var wantPage = CN_SCRATCH.page;
   var seq = ++CN_SCRATCH.loadSeq;
-  clearTimeout(CN_SCRATCH.timer);
+  clearTimeout(CN_SCRATCH.timer); CN_SCRATCH.timer = null;
   var ed0 = cnScratchEditor_();
   // 22post A-2a: paint at once from the unsaved carry or this session's copy;
   // the server read below then refreshes it (unless the rep has typed since).
+  var mine = cnScratchHasPending_(wantPage);
+  var adopted = !!CN_SCRATCH.unchecked[wantPage];
   var painted = null;
-  if (carry) painted = CN_SCRATCH.latest;
+  if (mine) painted = CN_SCRATCH.pending[wantPage];
   else if (CN_SCRATCH.cache && CN_SCRATCH.cache.page === wantPage) painted = CN_SCRATCH.cache.content;
   if (ed0 && painted != null) {
     cnScratchEnable_(ed0);
     cnScratchSetValue_(painted);
-    cnScratchStatus_(carry ? 'Unsaved changes from last time — saving…' : 'Refreshing…', false);
-    if (carry) cnScratchSave_(true);
+    cnScratchStatus_(adopted ? 'Unsaved text from last time — checking…' : (mine ? 'Unsaved changes from last time — saving…' : 'Refreshing…'), false);
     try { ed0.focus(); } catch (_) {}
   }
+  if (carry) cnScratchSave_(true);   // every page that may be sent now (an unchecked one waits)
+  var touchedAt = cnScratchTouchedOf_(wantPage);
+  var failedLoad = function (msg) {
+    if (adopted) cnScratchSettleAdopted_(wantPage, null);
+    cnScratchCheckUnchecked_();
+    if (painted != null) {   // keep the painted copy editable; say the refresh failed
+      cnScratchStatus_(mine ? 'Could not refresh — your unsaved text is shown; edit it or press Save now to save it'
+        : 'Could not refresh — showing your copy from earlier in this session; saving still works', true);
+      return;
+    }
+    // A12/INV-175 — a failed load is a warn card, never an empty pad the
+    // rep would type into and lose.
+    var ed = cnScratchEditor_();
+    var body = ed && ed.closest('.cn-scratch-body');
+    if (body) body.innerHTML = errorStateHtml_(msg || 'Could not load your scratchpad');
+  };
   google.script.run
     .withSuccessHandler(function (res) {
       var ed = cnScratchEditor_();
       if (!ed) return;   // closed before the load landed
       if (seq !== CN_SCRATCH.loadSeq) return;   // Batch S: a page switch since — this load is not wanted
-      if (!res || res.error) {
-        if (painted != null) {   // keep the painted copy editable; say the refresh failed
-          cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
-          return;
-        }
-        // A12/INV-175 — a failed load is a warn card, never an empty pad the
-        // rep would type into and lose.
-        var body = ed.closest('.cn-scratch-body');
-        if (body) body.innerHTML = errorStateHtml_((res && res.error) || 'Could not load your scratchpad');
-        return;
-      }
+      if (!res || res.error) { failedLoad((res && res.error) || ''); return; }
       if (res.maxChars) CN_SCRATCH.maxChars = res.maxChars;
+      var stillMine = cnScratchHasPending_(wantPage);   // re-read: a carried save may have landed meanwhile
       cnScratchTakePages_(res);
+      // The server sent ANOTHER page (this one was deleted elsewhere) while its
+      // unsaved text is on screen: the text stays under its own page id — the
+      // save finds the page gone and moves it to a new page.
+      if (stillMine && res.missing) { CN_SCRATCH.page = wantPage; cnScratchRenderPages_(); }
       var html = cnScratchLoadedHtml_(res);
-      CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
+      // F58: an answer the screen has moved past (typed and saved since it was
+      // asked for) is older than what is shown — it is neither painted nor kept.
+      var fresh = cnScratchTouchedOf_(wantPage) === touchedAt;
+      if (!res.missing && (fresh || painted == null)) CN_SCRATCH.cache = { page: wantPage, content: html, updatedAtMs: res.updatedAtMs || null };
       cnScratchEnable_(ed);
-      var stillUnsaved = CN_SCRATCH.dirty && CN_SCRATCH.latest != null;   // re-read: a carried save may have landed meanwhile
-      if (res.missing && !stillUnsaved) {   // the page was deleted in another window: show the one that came instead
+      if (res.missing && !stillMine) {   // the page was deleted in another window: show the one that came instead
+        CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
         cnScratchSetValue_(html);
         cnScratchStatus_('That page was deleted in another window — showing "' + cnScratchPageName_(CN_SCRATCH.page) + '"', true);
         cnScratchCount_();
+        cnScratchCheckUnchecked_();
         return;
       }
-      if (stillUnsaved) {
-        if (painted == null) {   // not painted yet: show the unsaved text and save it
-          cnScratchSetValue_(CN_SCRATCH.latest);
-          cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true);
-        }
+      if (stillMine) {
+        if (painted == null) cnScratchSetValue_(CN_SCRATCH.pending[wantPage]);   // not painted yet: show the unsaved text
         // painted and typed since (or a carried save running): the rep's text wins — never overwritten
-      } else {
+        if (adopted) cnScratchSettleAdopted_(wantPage, res);   // F58: now it can be saved — or moved aside
+        else if (painted == null) { cnScratchStatus_('Unsaved changes from last time — saving…', false); cnScratchSave_(true); }
+      } else if (fresh || painted == null) {
         if (cnScratchSanitize_(html) !== cnScratchValue_()) cnScratchSetValue_(html);
         cnScratchStatus_(res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : '', false);
       }
       cnScratchCount_();
+      cnScratchCheckUnchecked_();
       if (painted == null) { try { ed.focus(); } catch (_) {} }
     })
     .withFailureHandler(function (err) {
-      var ed = cnScratchEditor_();
-      if (!ed) return;
+      if (!cnScratchEditor_()) return;
       if (seq !== CN_SCRATCH.loadSeq) return;
-      if (painted != null) {
-        cnScratchStatus_('Could not refresh — showing your copy from earlier in this session; saving still works', true);
-        return;
-      }
-      var body = ed.closest('.cn-scratch-body');
-      if (body) body.innerHTML = errorStateHtml_((err && err.message) || 'Could not load your scratchpad');
+      failedLoad((err && err.message) || '');
     })
     .getMyScratchpad(wantPage);
 }
@@ -5975,9 +6237,11 @@ function cnCloseScratchpadModal_() {
   var panel = document.getElementById('cn-scratch-panel');
   if (CN_SCRATCH.dirty) {
     var ed = cnScratchEditor_();
-    if (cnScratchReady_(ed)) { CN_SCRATCH.latest = cnScratchHtmlOf_(ed); CN_SCRATCH.latestPage = CN_SCRATCH.page; }   // read synchronously, BEFORE the DOM goes
-    cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `latest`
+    // Read synchronously, BEFORE the DOM goes — the shown page's text only (F58).
+    if (cnScratchReady_(ed) && cnScratchHasPending_(CN_SCRATCH.page)) cnScratchPend_(CN_SCRATCH.page, cnScratchHtmlOf_(ed));
+    cnScratchSave_(true);   // runs now, or queues behind an in-flight save and drains from `pending`
   }
+  cnScratchMirrorNow_();   // F58: whatever is still unsaved is in the browser before the panel goes
   if (!panel) return;
   cnScratchSaveGeom_();
   if (CN_SCRATCH.resizeObs) { try { CN_SCRATCH.resizeObs.disconnect(); } catch (_) {} CN_SCRATCH.resizeObs = null; }
@@ -5987,21 +6251,32 @@ function cnCloseScratchpadModal_() {
   if (hadFocus && restore && restore.isConnected) { try { restore.focus(); } catch (_) {} }
 }
 
-function cnScratchStatus_(msg, warn) {
+/** The status line. `retry` (F58) adds a "Try again" button that calls it — a
+ *  page that would not open left the pad empty and disabled, with nothing to
+ *  press but another page. */
+function cnScratchStatus_(msg, warn, retry) {
   var el = document.getElementById('cn-scratch-status');
   if (!el) return;
   el.textContent = msg || '';
   el.classList.toggle('warn', !!warn);
+  if (typeof retry === 'function') {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cn-sp-retry';
+    b.textContent = 'Try again';
+    b.addEventListener('click', retry);
+    el.appendChild(document.createTextNode(' '));
+    el.appendChild(b);
+  }
 }
 
 function cnScratchInput_() {
-  CN_SCRATCH.dirty = true;
   var v = cnScratchValue_();
-  if (v != null) { CN_SCRATCH.latest = v; CN_SCRATCH.latestPage = CN_SCRATCH.page; }
+  if (v != null) cnScratchPend_(CN_SCRATCH.page, v);
   cnScratchStatus_('Unsaved changes…', false);
   cnScratchCount_();
   clearTimeout(CN_SCRATCH.timer);
-  CN_SCRATCH.timer = setTimeout(function () { cnScratchSave_(false); }, 800);
+  CN_SCRATCH.timer = setTimeout(function () { CN_SCRATCH.timer = null; cnScratchSave_(false); }, 800);
 }
 
 /** 22post B-2c — a paste keeps only allowlisted formatting (a page copied from
@@ -6109,21 +6384,23 @@ function cnScratchToolClick_(e) {
 
 function cnScratchSave_(force) {
   var ed = cnScratchEditor_();
-  // The text to save: the live editor while the panel is open, else what the
-  // close captured (C6). With neither — or nothing unsaved and no editor — there
-  // is nothing to do (the INV-148 root-guard).
-  if (cnScratchReady_(ed)) { CN_SCRATCH.latest = cnScratchHtmlOf_(ed); CN_SCRATCH.latestPage = CN_SCRATCH.page; }
-  else if (!CN_SCRATCH.dirty) return;
-  var text = CN_SCRATCH.latest;
-  if (text == null) return;
-  var page = CN_SCRATCH.latestPage || CN_SCRATCH.page;   // Batch S: the page this text was typed on
-  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; the drain sends `latest` as it is THEN
+  // The live editor is the newest text of the page it SHOWS — and of no other
+  // page (F58): while another page's text waits, the editor is not read for
+  // it. With nothing pending at all, "Save now" still saves what is shown.
+  if (cnScratchReady_(ed) && (cnScratchHasPending_(CN_SCRATCH.page) || !CN_SCRATCH.dirty)) {
+    var live = cnScratchHtmlOf_(ed);
+    if (!cnScratchHasPending_(CN_SCRATCH.page) || CN_SCRATCH.pending[CN_SCRATCH.page] !== live) cnScratchPend_(CN_SCRATCH.page, live);
+  }
+  var page = cnScratchNextPage_(CN_SCRATCH.pending, CN_SCRATCH.page, CN_SCRATCH.unchecked);
+  if (!page) return;   // nothing to send (the INV-148 root-guard) — or only text still being checked
+  if (CN_SCRATCH.saving) { CN_SCRATCH.queued = true; return; }   // serialize; the drain sends what is pending THEN
+  var text = CN_SCRATCH.pending[page];
   CN_SCRATCH.saving = true;
-  clearTimeout(CN_SCRATCH.timer);
+  clearTimeout(CN_SCRATCH.timer); CN_SCRATCH.timer = null;
   cnScratchStatus_('Saving…', false);
   var failed = function (msg) {
     CN_SCRATCH.saving = false;
-    // Keep dirty so the next edit (or Save now, or the next open) retries —
+    // Still pending, so the next edit (or Save now, or the next open) retries —
     // visible, never silent. With the panel gone the status line is gone too,
     // so the failure is a toast instead.
     if (cnScratchEditor_()) cnScratchStatus_(msg, true);
@@ -6132,20 +6409,28 @@ function cnScratchSave_(force) {
   var clean = cnScratchSanitize_(text);   // 22post B-2c: the server sanitizes too — it is the authority
   google.script.run
     .withSuccessHandler(function (r) {
-      if (r && r.pageGone) { CN_SCRATCH.saving = false; cnScratchRecover_(page); return; }
+      if (r && r.pageGone) { CN_SCRATCH.saving = false; cnScratchRecover_(page, 'gone'); return; }
       if (!r || r.error || !r.success) { failed((r && r.error) || 'Save failed — edit or press Save now to retry'); return; }
       CN_SCRATCH.saving = false;
-      CN_SCRATCH.cache = { page: page, content: clean, updatedAtMs: r.updatedAtMs || Date.now() };   // 22post A-2a: the next open paints this
-      // Clean only if nothing was typed while this save ran (C6) — on this page.
-      if (CN_SCRATCH.latest === text && (CN_SCRATCH.latestPage || CN_SCRATCH.page) === page) CN_SCRATCH.dirty = false;
-      cnScratchStatus_(CN_SCRATCH.dirty ? 'Unsaved changes…' : 'Saved · ' + cnSchedFmt_(r.updatedAtMs), false);
-      // Drain a save that waited on this one (a close, a Save now, a debounce
-      // fire). With the panel still open and nothing waiting, newer typing is
-      // left to its own debounce.
-      if (CN_SCRATCH.queued || (CN_SCRATCH.dirty && !cnScratchEditor_())) {
-        CN_SCRATCH.queued = false;
-        if (CN_SCRATCH.dirty) cnScratchSave_(true);
-      }
+      var at = r.updatedAtMs || Date.now();
+      CN_SCRATCH.cache = { page: page, content: clean, updatedAtMs: at };   // 22post A-2a: the next open paints this
+      CN_SCRATCH.touched[page] = cnScratchTouchedOf_(page) + 1;             // F58: a load asked for before this is now older than the server
+      // Saved only if nothing was typed on THIS page while the save ran (C6).
+      if (CN_SCRATCH.pending[page] === text) cnScratchUnpend_(page);
+      else if (cnScratchHasPending_(page)) CN_SCRATCH.base[page] = at;      // newer typing now sits on top of this save
+      cnScratchStatus_(cnScratchHasPending_(CN_SCRATCH.page) ? 'Unsaved changes…'
+        : (CN_SCRATCH.dirty ? 'Saving…' : 'Saved · ' + cnSchedFmt_(at)), false);
+      // Drain: a save that waited on this one (a close, a Save now, a debounce
+      // fire), text of a page that is no longer on screen, or a closed panel.
+      // Newer typing on the page still on screen is left to its own debounce —
+      // re-armed here, because starting this save cleared it.
+      var waiting = CN_SCRATCH.queued;
+      CN_SCRATCH.queued = false;
+      if (!CN_SCRATCH.dirty) return;
+      var next = cnScratchNextPage_(CN_SCRATCH.pending, CN_SCRATCH.page, CN_SCRATCH.unchecked);
+      if (!next) return;
+      if (waiting || next !== CN_SCRATCH.page || !cnScratchEditor_()) { cnScratchSave_(true); return; }
+      if (!CN_SCRATCH.timer) CN_SCRATCH.timer = setTimeout(function () { CN_SCRATCH.timer = null; cnScratchSave_(false); }, 800);
     })
     .withFailureHandler(function (e) { failed((e && e.message) || 'Save failed — edit or press Save now to retry'); })
     .saveMyScratchpad(clean, 'html', page);
@@ -6180,14 +6465,18 @@ function cnScratchRenderPages_() {
   var host = document.getElementById('cn-scratch-pages');
   if (host) host.innerHTML = cnScratchPagesHtml_();
 }
-/** Show another page: the current page's unsaved text is saved first (the
- *  save names its own page), then the new page loads; a load overtaken by
- *  another switch is dropped (loadSeq). */
+/** Show another page: the current page's unsaved text is captured under ITS
+ *  id and saved (F58 — before the editor is given to the next page), then the
+ *  new page loads; a load overtaken by another switch is dropped (loadSeq),
+ *  and one the screen has moved past is not painted (`touched`). */
 function cnScratchSwitchPage_(id) {
   id = String(id || '');
   if (!id || id === CN_SCRATCH.page) return;
   var ed = cnScratchEditor_();
-  if (cnScratchReady_(ed) && CN_SCRATCH.dirty) cnScratchSave_(true);
+  if (cnScratchReady_(ed) && cnScratchHasPending_(CN_SCRATCH.page)) cnScratchPend_(CN_SCRATCH.page, cnScratchHtmlOf_(ed));
+  // The save runs while `page` still names what the editor shows — the editor
+  // is only ever read as the page it is showing.
+  if (CN_SCRATCH.dirty) cnScratchSave_(true);
   CN_SCRATCH.page = id;
   var seq = ++CN_SCRATCH.loadSeq;
   cnScratchRenderPages_();
@@ -6197,29 +6486,48 @@ function cnScratchSwitchPage_(id) {
     ed.innerHTML = '';
     ed.setAttribute('data-placeholder', 'Loading…');
   }
+  // F58: this page's own unsaved text is newer than the session's copy of it.
+  var mine = cnScratchHasPending_(id) ? CN_SCRATCH.pending[id] : null;
   var cached = CN_SCRATCH.cache && CN_SCRATCH.cache.page === id ? CN_SCRATCH.cache : null;
-  if (cached && ed) { cnScratchEnable_(ed); cnScratchSetValue_(cached.content); }
-  cnScratchStatus_('Opening "' + cnScratchPageName_(id) + '"…', false);
+  var painted = mine != null ? mine : (cached ? cached.content : null);
+  if (painted != null && ed) { cnScratchEnable_(ed); cnScratchSetValue_(painted); }
+  cnScratchStatus_(mine != null ? 'Unsaved changes…' : 'Opening "' + cnScratchPageName_(id) + '"…', false);
+  var touchedAt = cnScratchTouchedOf_(id);
+  var failedOpen = function (msg) {
+    if (seq !== CN_SCRATCH.loadSeq || !cnScratchEditor_()) return;
+    if (painted != null) {
+      cnScratchStatus_('Could not refresh "' + cnScratchPageName_(id) + '" — showing your copy from earlier in this session; saving still works', true);
+      return;
+    }
+    // F58: a page that would not open is not a dead end — try it again.
+    var ed3 = cnScratchEditor_();
+    if (ed3) ed3.setAttribute('data-placeholder', 'This page could not be opened.');
+    cnScratchStatus_(msg || 'Could not open that page', true, function () { CN_SCRATCH.page = ''; cnScratchSwitchPage_(id); });
+  };
   google.script.run
     .withSuccessHandler(function (res) {
       var ed2 = cnScratchEditor_();
       if (!ed2 || seq !== CN_SCRATCH.loadSeq) return;
-      if (!res || res.error) { cnScratchStatus_((res && res.error) || 'Could not open that page', true); return; }
+      if (!res || res.error) { failedOpen((res && res.error) || ''); return; }
+      var stillMine = cnScratchHasPending_(id);
       cnScratchTakePages_(res);
+      if (stillMine && res.missing) { CN_SCRATCH.page = id; cnScratchRenderPages_(); }   // its text keeps its own page id (the save moves it)
       var html = cnScratchLoadedHtml_(res);
-      CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
+      var fresh = cnScratchTouchedOf_(id) === touchedAt;
+      if (res.missing && !stillMine) CN_SCRATCH.cache = { page: CN_SCRATCH.page, content: html, updatedAtMs: res.updatedAtMs || null };
+      else if (!res.missing && (fresh || painted == null)) CN_SCRATCH.cache = { page: id, content: html, updatedAtMs: res.updatedAtMs || null };
       cnScratchEnable_(ed2);
-      // Typing into the cached copy while this loaded wins over the server copy.
-      if (!(CN_SCRATCH.dirty && CN_SCRATCH.latestPage === CN_SCRATCH.page)) cnScratchSetValue_(html);
-      cnScratchStatus_(res.missing ? 'That page was deleted in another window — showing "' + cnScratchPageName_(CN_SCRATCH.page) + '"'
-        : (res.updatedAtMs ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : ''), !!res.missing);
+      // Unsaved typing on this page wins over the server copy; so does a screen
+      // that was typed on and saved while this load was on its way.
+      if (!stillMine && (fresh || painted == null || res.missing)) cnScratchSetValue_(html);
+      if (!stillMine) {
+        cnScratchStatus_(res.missing ? 'That page was deleted in another window — showing "' + cnScratchPageName_(CN_SCRATCH.page) + '"'
+          : (res.updatedAtMs && (fresh || painted == null) ? 'Saved · ' + cnSchedFmt_(res.updatedAtMs) : ''), !!res.missing);
+      }
       cnScratchCount_();
       try { ed2.focus(); } catch (_) {}
     })
-    .withFailureHandler(function (err) {
-      if (seq !== CN_SCRATCH.loadSeq || !cnScratchEditor_()) return;
-      cnScratchStatus_((err && err.message) || 'Could not open that page', true);
-    })
+    .withFailureHandler(function (err) { failedOpen((err && err.message) || ''); })
     .getMyScratchpad(id);
 }
 function cnScratchPageOp_(op, id, name, done) {
@@ -6249,27 +6557,37 @@ function cnScratchPageRename_() {
 }
 function cnScratchPageDelete_() {
   var id = CN_SCRATCH.page;
-  uiConfirm({ title: 'Delete "' + cnScratchPageName_(id) + '"?', message: 'Its text is removed for good.', confirmLabel: 'Delete page', danger: true })
+  uiConfirm({ title: 'Delete "' + cnScratchPageName_(id) + '"?', message: 'Its text is removed for good.', confirmLabel: 'Delete page', tone: 'danger' })   // F62: `danger: true` is not an option the dialog reads
     .then(function (ok) {
       if (!ok) return;
       cnScratchPageOp_('delete', id, '', function (r) {
-        if (CN_SCRATCH.latestPage === id) { CN_SCRATCH.dirty = false; CN_SCRATCH.latest = null; CN_SCRATCH.latestPage = null; }
+        if (cnScratchHasPending_(id)) cnScratchUnpend_(id);   // its unsaved text went with it — the other pages' did not (F58)
         if (CN_SCRATCH.cache && CN_SCRATCH.cache.page === id) CN_SCRATCH.cache = null;
         CN_SCRATCH.page = '';   // so the switch below always loads
         cnScratchSwitchPage_(r.pageId);
       });
     });
 }
-/** A save whose page was deleted in another window: the text is never written
- *  into some other page and never dropped — it goes onto a NEW page, named so. */
-function cnScratchRecover_(lostPage) {
+/** Text that cannot go back onto its page — the page was deleted in another
+ *  window ('gone'), or it was saved from somewhere else after the text was
+ *  typed and only the browser mirror kept it ('changed', F58): it is never
+ *  written over another page's text and never dropped — it goes onto a NEW
+ *  page, named so. */
+function cnScratchRecover_(lostPage, why) {
   cnScratchPageOp_('add', '', 'Recovered text', function (r) {
-    if (CN_SCRATCH.latestPage === lostPage) CN_SCRATCH.latestPage = r.pageId;
+    if (cnScratchHasPending_(lostPage)) {
+      var text = CN_SCRATCH.pending[lostPage];
+      cnScratchUnpend_(lostPage);
+      CN_SCRATCH.base[r.pageId] = null;
+      cnScratchPend_(r.pageId, text);
+    }
     if (CN_SCRATCH.page === lostPage) CN_SCRATCH.page = r.pageId;
     cnScratchRenderPages_();
     cnScratchSave_(true);
     // A toast, not only the status line: the save that follows rewrites the status.
-    showToast('That scratchpad page was deleted in another window — your text is on a new page, "Recovered text"', 'toast-warn');
+    showToast(why === 'changed'
+      ? 'That scratchpad page was changed somewhere else after you typed — your unsaved text is on a new page, "Recovered text"'
+      : 'That scratchpad page was deleted in another window — your text is on a new page, "Recovered text"', 'toast-warn');
   });
 }
 

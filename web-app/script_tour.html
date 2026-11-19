@@ -252,6 +252,7 @@ function tourStart(mode) {
   _tourRestoreFocus = (ae && ae !== document.body) ? ae : null;
   TOUR_VISIBLE = steps;
   TOUR_I = -1;
+  _tourGaveUp = false;   // F60
   tourEnsureNodes_();
   window.addEventListener('resize', tourReposition_);
   document.addEventListener('keydown', tourKeydown_, true);
@@ -290,8 +291,15 @@ function tourPrev_() { tourGoTo_(TOUR_I - 1, -1); }
  *  Views render asynchronously (e.g. enterCallNotesView shows a spinner and
  *  only builds #cn-frame after its RPCs return), so a synchronous querySelector
  *  right after enterTool would miss every async-rendered target and wrongly
- *  skip the step — the Step-7→14 jump. We poll for up to ~1.8s; only a real
- *  timeout skips the step, advancing in `dir` so Back still works. */
+ *  skip the step — the Step-7→14 jump.
+ *
+ *  F60 (cycle 26): the wait was a flat ~1.9 s, so a view that took longer to
+ *  load — an ordinary cold read — lost its step, and the tour then stamped
+ *  itself seen. The ~1.9 s now counts only time the view is NOT loading
+ *  (tourViewLoading_): while its loader shows, the step waits, up to
+ *  TOUR_LOAD_CAP_MS. Only a target absent from a view that HAS loaded is
+ *  skipped; a step given up on at the cap is remembered, and that run does not
+ *  stamp the tour seen (tourEnd_). */
 function tourGoTo_(i, dir) {
   if (i < 0) return;
   if (i >= TOUR_VISIBLE.length) { tourEnd_(true); return; }
@@ -307,13 +315,36 @@ function tourGoTo_(i, dir) {
   }
   if (!step.selector) { setTimeout(function () { tourPaint_(step); }, 90); return; }
   let tries = 0;
-  const MAX = 24;   // ~1.9s at 80ms
+  const MAX = 24;   // ~1.9s at 80ms — of time the view is not loading
+  const startedAt = Date.now();
   (function poll() {
     if (!TOUR_ACTIVE || TOUR_I !== i) return;   // superseded by a faster click
     if (tourVisibleTarget_(step.selector)) { tourPaint_(step); return; }
-    if (++tries >= MAX) { tourGoTo_(i + dir, dir); return; }   // genuinely absent/hidden → skip
+    const w = tourWaitVerdict_(tourViewLoading_(), tries, MAX, Date.now() - startedAt, TOUR_LOAD_CAP_MS);
+    if (w === 'gaveUp') _tourGaveUp = true;      // still loading at the cap — not "absent"
+    if (w !== 'wait' && w !== 'loading') { tourGoTo_(i + dir, dir); return; }   // absent from a loaded view, or the cap → skip
+    if (w === 'wait') tries++;
     setTimeout(poll, 80);
   })();
+}
+/** F60 — how long a step waits on a view that is still loading before it is
+ *  given up on. A cold Stats or Team Notes read is seconds; this is far past it. */
+const TOUR_LOAD_CAP_MS = 20000;
+let _tourGaveUp = false;
+/** F60 — is the current view still showing its full-view loader (renderLoading's
+ *  `.state-center[role=status]`)? Visible only: a loader left in a hidden tab
+ *  does not hold the tour. */
+function tourViewLoading_() {
+  return !!tourVisibleTarget_('.state-center[role="status"]');
+}
+/** PURE (Node-pinned) — F60: what a step's poll does when its target is not
+ *  there yet. 'loading' — the view's loader is up: keep waiting, without
+ *  spending the grace; 'wait' — loaded but not found yet: spend one try;
+ *  'absent' — loaded and the grace is spent: skip the step; 'gaveUp' — still
+ *  loading at the cap: skip it, and say so (the run is not stamped seen). */
+function tourWaitVerdict_(loading, tries, maxTries, elapsedMs, capMs) {
+  if (loading) return elapsedMs >= capMs ? 'gaveUp' : 'loading';
+  return tries + 1 >= maxTries ? 'absent' : 'wait';
 }
 
 // Cycle-11 L-10: DOM presence isn't targetability — below 1024px the sidebar
@@ -482,9 +513,15 @@ function tourEnd_(completed) {
     if (el) el.remove();
   });
   // Stamp seen so auto-start won't fire again (until TOUR_VERSION bumps).
-  const p = tourPrefs_();
-  p.seenVersion = TOUR_VERSION;
-  tourSave_(p);
+  // F60: not when the run finished having given up on a step whose view never
+  // loaded — the rep has not seen that step, so the tour is offered again. A
+  // Skip is the rep's own choice and always stamps.
+  const unseen = completed && _tourGaveUp;
+  if (!unseen) {
+    const p = tourPrefs_();
+    p.seenVersion = TOUR_VERSION;
+    tourSave_(p);
+  }
   // Return the rep to where they started (the tour navigated them away).
   if (_tourReturnView && _tourReturnView !== currentView &&
       typeof VIEW_TO_TOOL !== 'undefined' && VIEW_TO_TOOL[_tourReturnView] &&
@@ -496,6 +533,7 @@ function tourEnd_(completed) {
   const restore = _tourRestoreFocus;
   _tourRestoreFocus = null;
   if (restore && restore.isConnected) { try { restore.focus(); } catch (_) {} }
-  if (completed) showToast('Tour complete — replay it anytime from Settings', 'toast-success');
+  if (unseen) showToast('Tour finished — a step was left out because its page was still loading, so the tour will be offered again next time', 'toast-info');
+  else if (completed) showToast('Tour complete — replay it anytime from Settings', 'toast-success');
 }
 </script>

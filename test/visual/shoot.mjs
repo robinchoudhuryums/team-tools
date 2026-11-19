@@ -462,6 +462,9 @@ const SCENARIOS = [
   // 22post B-2b — the floating panel in the pop-out: clamped inside the narrow
   // window, the form still visible around it (no backdrop).
   ['cn-scratchpad-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_()"],
+  // F62 (cycle 26): the pad's own dialogs paint ABOVE it — in the pop-out the pad covers most of the window.
+  ['cn-scratchpad-newpage-light-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'light', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageAdd_(); }, 400)"],
+  ['cn-scratchpad-delete-dark-compact', { tool: 'callNotes', tab: 'callNotes' }, COMPACT, 'dark', '?compact=1', "cnOpenScratchpadModal_(); setTimeout(function () { cnScratchPageDelete_(); }, 400)"],
   // Operator 2026-08-17 (full-width round): the new .sp-top head+chart grid
   // stacks <1024px — shoot the stacked form so the breakpoint is on camera.
   ['spanish-light-mobile', { tool: 'timeClock', tab: 'metricsSpanish' }, MOBILE, 'light', ''],

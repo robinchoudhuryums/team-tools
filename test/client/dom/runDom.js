@@ -1927,11 +1927,14 @@ test('Operator 2026-11-02 DOM: a punch reminder carries the punch — the button
   h.read('currentView = "callNotes"');
   assert.strictEqual(h.read('remindPunchAction_')('ClockIn'), null, 'no Clock in button while clocked in');
   const act = h.read('remindPunchAction_')('ClockOut');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(act)), { label: 'Clock out', punch: 'ClockOut' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(act)), { label: 'Clock out', punch: 'ClockOut', sig: '|0|' });   // F61: with the punches it was offered under
   h.read('notifyRemind_')('Your shift ended at 5:00 PM and you are still clocked in', 'toast-warn', act);
   const btn = doc.querySelector('#toast-stack .toast-sticky .toast-act');
   assert.ok(btn && btn.textContent === 'Clock out', 'the sticky reminder carries a named Clock out button');
   btn.click();
+  // F61 (cycle 26): the click first asks the server where the rep is — this window's copy may be older than a punch made in another.
+  assert.strictEqual(h.run.pending('recordPunch').length, 0);
+  h.run.flushSuccess({ id: 'TEST_E1', name: 'Test Rep', nextActions: ['LunchOut', 'ClockOut', 'Adjust'], timezone: 'Asia/Kolkata', adjustWindowDays: 30 }, 'getEmployeeState');
   const rp = h.run.pending('recordPunch');
   assert.strictEqual(rp.length, 1, 'one click records the punch — from the Call Notes page');
   assert.strictEqual(rp[0].args[0], 'ClockOut');
@@ -1941,6 +1944,7 @@ test('Operator 2026-11-02 DOM: a punch reminder carries the punch — the button
   // A second reminder still on screen from before: its click punches nothing.
   h.read('notifyRemind_')('Lunch starts now', 'toast-warn', { label: 'Lunch out', punch: 'LunchOut' });
   doc.querySelector('#toast-stack .toast-sticky .toast-act').click();
+  h.run.flushSuccess({ id: 'TEST_E1', name: 'Test Rep', nextActions: ['Adjust'], timezone: 'Asia/Kolkata', adjustWindowDays: 30 }, 'getEmployeeState');
   assert.strictEqual(h.run.pending('recordPunch').length, 0, 'no second punch — the state no longer allows Lunch out');
   assert.ok(/punches changed/.test(doc.getElementById('toast-stack').textContent), 'and the rep is told why');
   // A reminder with no action stays a plain sticky toast.
@@ -11913,7 +11917,7 @@ test('B4 DOM: the real Day Edit opener clears a stale return ticket, and its sav
   h.window.openDayEditModal('E-9', 'Someone else', '', 'America/Chicago');
   assert.strictEqual(h.read('PAY_STMT.returnAfterEdit'), null, 'a Day Edit opened from anywhere else never reopens a statement');
   const src = require('fs').readFileSync(require('path').join(__dirname, '../../../web-app/tc/script_manager.html'), 'utf8');
-  assert.ok(/var savedEmp = _deEmpId;\s*closeOverlay\(document\.getElementById\('day-edit-overlay'\)\);\s*if \(typeof payStmtReturnAfterEdit_ === 'function'\) payStmtReturnAfterEdit_\(savedEmp\);/.test(src),
+  assert.ok(/var savedEmp = _deEmpId;\s*closeOverlay\(document\.getElementById\('day-edit-overlay'\), \{ saved: true \}\);[^\n]*\s*if \(typeof payStmtReturnAfterEdit_ === 'function'\) payStmtReturnAfterEdit_\(savedEmp\);/.test(src),
     'the save success hands the saved rep to the statement\'s return');
 });
 
@@ -15611,4 +15615,491 @@ test('DT1 DOM: a manager\'s Team table on a range has "Handled / day" beside Han
   h.window.mRenderTeamMetrics_(day);
   assert.ok(heads().some((t) => /^Handled \(adj\.\)/.test(t)) && !heads().some((t) => /^Handled \/ day/.test(t)), 'a single day keeps Handled (adj.) and has no per-day twin');
   assert.ok(!/\/ day/.test(h.read('mTeamTableTsv_')(day, 'reps', { key: 'repName', dir: 'asc' }).split('\n')[0]));
+});
+
+// ── Cycle 26 Batch 11 — Shell and Call Notes client (F58–F63) ────────────────
+section('DOM harness — cycle 26 Batch 11: Shell and Call Notes client (F58–F63)');
+
+const b11Pages = [{ id: 'main', name: 'Notes' }, { id: 'p2', name: 'Escalations' }];
+const b11Pad = (h) => {
+  const doc = h.document, w = h.window;
+  const ed = () => doc.getElementById('cn-scratch-text');
+  return {
+    ed,
+    type: (t) => { ed().innerHTML = t; ed().dispatchEvent(new w.Event('input')); },
+    sent: () => h.run.pending('saveMyScratchpad').map((c) => c.args[2] + ':' + c.args[0]),
+    status: () => doc.getElementById('cn-scratch-status').textContent,
+    load: (content, at, page, extra) => h.run.flushSuccess(Object.assign({ content: content, format: 'html', updatedAtMs: at, maxChars: 40000, pageId: page || 'main', pages: b11Pages, maxPages: 10 }, extra || {}), 'getMyScratchpad'),
+    saved: (at) => h.run.flushSuccess({ success: true, updatedAtMs: at || Date.now() }, 'saveMyScratchpad'),
+  };
+};
+
+test('F58 DOM: text typed on a page while an autosave is in flight is still SAVED after a page switch — under its own page, never replaced by the page then on screen; and typing on the second page does not lose it', () => {
+  const h = boot();
+  const p = b11Pad(h);
+  h.read('cnOpenScratchpadModal_')();
+  p.load('main v0', 100);
+  p.type('main T1');
+  h.read('cnScratchSave_')(true);                       // "Save now" — S1 in flight
+  assert.deepStrictEqual(p.sent(), ['main:main T1']);
+  p.type('main T1 and T2');                              // typed while S1 runs
+  h.read('cnScratchSwitchPage_')('p2');                 // …then the rep changes page
+  assert.deepStrictEqual(p.sent(), ['main:main T1'], 'the newer text waits behind the save in flight');
+  p.load('p2 v0', 200, 'p2');                            // the other page arrives FIRST and is on screen
+  assert.strictEqual(p.ed().innerHTML, 'p2 v0');
+  p.type('p2 edited');                                   // and the rep types on it
+  p.saved(300);                                          // S1 lands
+  assert.deepStrictEqual(p.sent(), ['main:main T1 and T2'],
+    'THE REGRESSION: the waiting save re-read the editor — by then the other page — and sent that; the text typed last on the first page was never saved');
+  p.saved(400);
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), true, 'the second page\'s typing is still pending');
+  h.flushTimers();                                       // its own debounce
+  assert.deepStrictEqual(p.sent(), ['p2:p2 edited'], 'and each page is saved under its own id');
+  p.saved(500);
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), false);
+  assert.deepStrictEqual(Object.keys(h.read('CN_SCRATCH.pending')), []);
+  assert.strictEqual(p.ed().innerHTML, 'p2 edited', 'the screen was never repainted under the rep');
+  // Going back shows what was saved for that page.
+  h.read('cnScratchSwitchPage_')('main');
+  p.load('main T1 and T2', 300, 'main');
+  assert.strictEqual(p.ed().innerHTML, 'main T1 and T2');
+  // Unsaved text of a page is what that page shows when the rep comes back to it — not an older session copy.
+  p.type('main T3');
+  h.read('cnScratchSwitchPage_')('p2');
+  p.load('p2 edited', 500, 'p2');
+  h.read('cnScratchSwitchPage_')('main');
+  assert.strictEqual(p.ed().innerHTML, 'main T3', 'the page\'s own unsaved text, at once');
+  assert.ok(/Unsaved changes/.test(p.status()));
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('F58 DOM: a load that lands after the rep typed and saved does NOT repaint the older text over the screen, nor replace the session copy', () => {
+  const h = boot();
+  const p = b11Pad(h);
+  h.read('cnOpenScratchpadModal_')();
+  p.load('v0', 100);
+  h.read('cnCloseScratchpadModal_')();
+  h.read('cnOpenScratchpadModal_')();                   // paints 'v0' from the session copy; its refresh is in flight
+  assert.strictEqual(p.ed().innerHTML, 'v0');
+  assert.strictEqual(h.run.pending('getMyScratchpad').length, 1);
+  p.type('v0 plus a line');
+  h.read('cnScratchSave_')(true);
+  p.saved(300);                                          // typed AND saved before the refresh answers
+  assert.strictEqual(h.read('CN_SCRATCH.dirty'), false);
+  p.load('v0', 100);                                     // the refresh, read before that save
+  assert.strictEqual(p.ed().innerHTML, 'v0 plus a line', 'THE REGRESSION: the older answer was painted over the saved text — the next keystroke then saved the old text plus that keystroke');
+  assert.strictEqual(h.read('CN_SCRATCH.cache').content, 'v0 plus a line', 'and the session copy stays the newer one');
+  // An answer for a screen nobody touched still refreshes it.
+  h.read('cnCloseScratchpadModal_')();
+  h.read('cnOpenScratchpadModal_')();
+  p.load('changed in another window', 900);
+  assert.strictEqual(p.ed().innerHTML, 'changed in another window');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('F58 DOM: a page that will not open is not a dead end — the status offers "Try again", which asks for the page again; a page shown from the session copy says the refresh failed and stays editable', () => {
+  const h = boot();
+  const p = b11Pad(h);
+  h.read('cnOpenScratchpadModal_')();
+  p.load('main v0', 100);
+  h.read('cnScratchSwitchPage_')('p2');
+  h.run.flushFailure(new Error('Service timed out'), 'getMyScratchpad');
+  const st = h.document.getElementById('cn-scratch-status');
+  const retry = st.querySelector('button.cn-sp-retry');
+  assert.ok(retry && /Try again/.test(retry.textContent), 'THE REGRESSION: an empty, disabled pad and nothing to press — ' + st.textContent);
+  assert.ok(/Service timed out/.test(st.textContent) && st.classList.contains('warn'));
+  assert.strictEqual(p.ed().getAttribute('contenteditable'), 'false', 'nothing to type into until it opens');
+  h.click(retry);
+  const again = h.run.pending('getMyScratchpad');
+  assert.deepStrictEqual([again.length, again[0].args[0]], [1, 'p2'], 'the press asks for the same page');
+  h.run.flushSuccess({ error: 'still down' }, 'getMyScratchpad');
+  assert.ok(st.querySelector('button.cn-sp-retry') && /still down/.test(st.textContent), 'an {error} answer is the same failure');
+  h.click(st.querySelector('button.cn-sp-retry'));
+  p.load('p2 v0', 200, 'p2');
+  assert.deepStrictEqual([p.ed().innerHTML, p.ed().getAttribute('contenteditable'), !!st.querySelector('button')], ['p2 v0', 'true', false]);
+  // Back to main: nothing is cached for it (one session copy), so it loads; then p2 IS the copy — fail its refresh.
+  h.read('cnScratchSwitchPage_')('main');
+  p.load('main v0', 100, 'main');
+  h.read('cnScratchSwitchPage_')('p2');
+  h.read('cnScratchSwitchPage_')('main');                // main is the session copy: painted at once
+  assert.strictEqual(p.ed().innerHTML, 'main v0');
+  h.run.pending('getMyScratchpad').slice(0, -1).forEach(() => h.run.flushSuccess({ content: 'x', format: 'html', pageId: 'p2', pages: b11Pages }, 'getMyScratchpad'));   // the overtaken load is dropped
+  h.run.flushFailure(new Error('offline'), 'getMyScratchpad');
+  assert.ok(/Could not refresh "Notes" — showing your copy from earlier in this session; saving still works/.test(st.textContent) && !st.querySelector('button'), st.textContent);
+  assert.strictEqual(p.ed().getAttribute('contenteditable'), 'true');
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('F58 DOM: unsaved Scratchpad text survives a reload — kept in the browser for this account only, said at boot, restored on open and saved once the page\'s server copy is the one it was typed on; a page changed elsewhere since gets it on a new page instead', () => {
+  const KEY = 'umsScratchUnsaved';
+  const h = bootLog();
+  const p = b11Pad(h);
+  h.read('cnOpenScratchpadModal_')();
+  p.load('v0', 500);
+  p.type('v0 and unsaved work');
+  h.read('cnScratchMirrorNow_')();                        // (its 250 ms debounce)
+  const blob = h.window.localStorage.getItem(KEY);
+  const m = JSON.parse(blob);
+  assert.deepStrictEqual([m.who, Object.keys(m.pages), m.pages.main.text, m.pages.main.base], ['TEST_E1', ['main'], 'v0 and unsaved work', 500],
+    'THE CAPABILITY: what is unsaved is in the browser, with the server stamp it was typed on top of');
+  h.read('cnScratchSave_')(true);
+  p.saved(600);
+  h.read('cnScratchMirrorNow_')();
+  assert.strictEqual(h.window.localStorage.getItem(KEY), null, 'once saved it is no longer kept at rest');
+
+  // "Reload": a new page with what the browser kept.
+  const h2 = bootLog();
+  const p2 = b11Pad(h2);
+  h2.window.localStorage.setItem(KEY, blob);
+  h2.read('cnScratchBootNotice_')();
+  const toast = Array.from(h2.document.querySelectorAll('#toast-stack .toast-sticky')).find((t) => /text that was not saved last time/.test(t.textContent));
+  assert.ok(toast && /Open Scratchpad/.test(toast.querySelector('.toast-act').textContent), 'said at boot, with the way to it');
+  h2.read('cnOpenScratchpadModal_')();
+  assert.strictEqual(p2.ed().innerHTML, 'v0 and unsaved work', 'restored at once');
+  assert.deepStrictEqual(p2.sent(), [], 'but not saved until the page has been read — the text may be older than the server\'s');
+  assert.ok(/checking/.test(p2.status()));
+  p2.load('v0', 500);                                     // the copy it was typed on top of
+  assert.deepStrictEqual(p2.sent(), ['main:v0 and unsaved work']);
+  p2.saved(700);
+  h2.read('cnScratchMirrorNow_')();
+  assert.deepStrictEqual([h2.read('CN_SCRATCH.dirty'), h2.window.localStorage.getItem(KEY)], [false, null]);
+
+  // The page was saved from somewhere else since: never written over it.
+  const h3 = bootLog();
+  const p3 = b11Pad(h3);
+  h3.window.localStorage.setItem(KEY, blob);
+  h3.read('cnOpenScratchpadModal_')();
+  p3.load('saved from the other computer', 900);
+  assert.deepStrictEqual(p3.sent(), [], 'THE RULE: no save over a page that changed after the text was typed');
+  const op = h3.run.pending('scratchpadPageOp');
+  assert.deepStrictEqual([op.length, op[0].args[0], op[0].args[2]], [1, 'add', 'Recovered text']);
+  h3.run.flushSuccess({ success: true, pageId: 'r1', pages: b11Pages.concat([{ id: 'r1', name: 'Recovered text' }]) }, 'scratchpadPageOp');
+  assert.deepStrictEqual(p3.sent(), ['r1:v0 and unsaved work'], 'it goes onto a new page');
+  assert.ok(/changed somewhere else after you typed/.test(h3.$('#toast-stack').textContent));
+  assert.strictEqual(h3.read('CN_SCRATCH.cache').content, 'saved from the other computer', 'the page itself keeps what the server has');
+
+  // Another account's kept text (a shared computer) is neither shown nor removed; an old one is removed.
+  const h4 = bootLog();
+  const p4 = b11Pad(h4);
+  h4.window.localStorage.setItem(KEY, JSON.stringify(Object.assign({}, m, { who: 'SOMEONE_ELSE' })));
+  h4.read('cnScratchBootNotice_')();
+  assert.ok(!/not saved last time/.test(h4.$('#toast-stack').textContent));
+  h4.read('cnOpenScratchpadModal_')();
+  p4.load('mine', 100);
+  assert.strictEqual(p4.ed().innerHTML, 'mine');
+  h4.read('cnCloseScratchpadModal_')();
+  assert.ok(/SOMEONE_ELSE/.test(h4.window.localStorage.getItem(KEY)), 'their text is still theirs');
+  h4.window.localStorage.setItem(KEY, JSON.stringify(Object.assign({}, m, { at: Date.now() - 25 * 3600 * 1000 })));
+  h4.read('cnScratchBootNotice_')();
+  assert.strictEqual(h4.window.localStorage.getItem(KEY), null, 'past the draft TTL it is not kept at rest');
+});
+
+test('F59 DOM: "Restore an unsaved call note? → Not now" KEEPS the draft — this window\'s typing no longer writes over it, it is offered again on the next load, and Restore puts it in the form', async () => {
+  const SLOT = 'umsCallNotesActiveFormDraft', PARK = 'umsCallNotesParkedDrafts';
+  const h = bootLog();
+  const ls = h.window.localStorage;
+  const theirs = { values: { caller: 'Jane Roe', issue: 'Refill for the 14th' }, flags: [], tags: [], at: Date.now() - 60000, by: 'wOTHER' };
+  ls.setItem(SLOT, JSON.stringify(theirs));
+  const parked = () => JSON.parse(ls.getItem(PARK) || '[]');
+  const ask = () => { const d = h.$('.ui-dialog'); return d && /Restore an unsaved call note\?/.test(d.textContent) ? d : null; };
+  h.read('cnRestoreActiveFormDraft_')();
+  assert.ok(ask() && /Jane Roe/.test(ask().textContent), 'another window\'s draft is offered');
+  h.click(ask().querySelector('.ui-dialog-cancel'));     // Not now
+  await tick();
+  assert.deepStrictEqual(parked().map((d) => d.values.caller), ['Jane Roe'], 'Not now parks it');
+  assert.ok(/Kept — it will be offered again/.test(h.$('#toast-stack').textContent), 'and says so');
+  // The rep takes the next call in this window.
+  h.read('cnSetFieldValue_')('cn-fld-issue', 'A different caller');
+  h.read('cnPersistActiveFormDraft_')();
+  const slot = JSON.parse(ls.getItem(SLOT));
+  assert.strictEqual(slot.values.issue, 'A different caller');
+  assert.deepStrictEqual(parked().map((d) => d.values.caller + '/' + d.by), ['Jane Roe/wOTHER'],
+    'THE REGRESSION: the slot holds one draft, and this keystroke wrote over the declined one — gone, and never offered again');
+  // Asked once per draft per page…
+  h.read('cnRestoreActiveFormDraft_')();
+  assert.ok(!ask(), 'not asked twice on one page');
+  // …and again on the next load. The form has this window's typing, so Restore shows it to copy.
+  h.read('CN_STATE.foreignDraftAsked = {}');
+  h.read('cnRestoreActiveFormDraft_')();
+  assert.ok(ask() && /Jane Roe/.test(ask().textContent), 'offered again');
+  h.click(ask().querySelector('.ui-dialog-ok'));
+  await tick();
+  const copy = h.$('#manual-copy-overlay.open');
+  assert.ok(copy && /Jane Roe/.test(copy.querySelector('#manual-copy-val').value), 'typed-over form: shown to copy, never over the typing');
+  assert.ok(/You have typed into the form since/.test(copy.textContent) && !/blocked the clipboard/.test(copy.textContent), 'F61: with the real reason, not a clipboard failure');
+  assert.strictEqual(parked().length, 1, 'shown, not taken — still kept');
+  h.window.closeOverlay(copy);
+  // With an empty form, Restore puts it in and it stops waiting.
+  h.read('cnSetFieldValue_')('cn-fld-issue', '');
+  ls.removeItem(SLOT);
+  h.read('CN_STATE.foreignDraftAsked = {}');
+  h.read('cnRestoreActiveFormDraft_')();
+  h.click(ask().querySelector('.ui-dialog-ok'));
+  await tick();
+  assert.strictEqual(h.read('cnGetFieldValue_')('cn-fld-issue'), 'Refill for the 14th');
+  assert.deepStrictEqual(parked(), [], 'restored: no longer parked');
+  assert.strictEqual(JSON.parse(ls.getItem(SLOT)).by, h.read('CN_WINDOW_ID'), 'and this window owns it');
+  // A parked draft past the TTL is not offered, and is dropped at the next write.
+  ls.setItem(PARK, JSON.stringify([Object.assign({}, theirs, { at: Date.now() - 25 * 3600 * 1000 })]));
+  h.read('CN_STATE.foreignDraftAsked = {}');
+  ls.removeItem(SLOT);
+  h.read('cnRestoreActiveFormDraft_')();
+  assert.ok(!ask(), 'an expired one is not offered');
+});
+
+test('F60 DOM: the tour WAITS for a view that is still loading instead of skipping its step, does not log the tabs it walks as used, keeps focus on its own buttons over an open overlay — and a run that gave up on a loading view is not stamped seen', () => {
+  const h = boot();
+  b9TourSeen(h);
+  h.bootShell();
+  h.flushTimers();
+  h.run.drain();
+  const view = h.read('currentView');
+  const doc = h.document;
+  const visible = (el) => { el.getBoundingClientRect = () => ({ width: 40, height: 20, top: 10, left: 10, bottom: 30, right: 50 }); return el; };
+  const loader = visible(doc.createElement('div'));
+  loader.className = 'state-center'; loader.setAttribute('role', 'status');
+  doc.body.appendChild(loader);
+  h.window.tourVisibleSteps_ = () => [{ view: view, title: 'Late one', body: 'Loads slowly.', selector: '#b11-late' }, { view: view, title: 'Last', body: 'Done.', selector: null }];
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  h.window.tourStart('full');
+  for (let i = 0; i < 40; i++) h.flushTimers();            // far past the old 24-try (~1.9 s) limit
+  assert.strictEqual(h.read('TOUR_I'), 0, 'THE REGRESSION: a view still loading after ~1.9 s lost its step for good');
+  assert.ok(!/Late one/.test((h.$('#tour-pop') || {}).textContent || ''), 'not painted yet either — its target is not there');
+  // The view finishes loading: the target is there, the step shows.
+  loader.remove();
+  const target = visible(doc.createElement('div')); target.id = 'b11-late'; target.scrollIntoView = () => {};
+  doc.body.appendChild(target);
+  h.flushTimers(); h.flushTimers();
+  assert.ok(/Late one/.test(h.$('#tour-pop').textContent), 'the step is shown once its view has loaded');
+  // Focus: an overlay open underneath does not take focus off the tour's buttons.
+  const ov = h.window.ensureOverlay('b11-under', { label: 'Under the tour' });
+  ov.innerHTML = '<div class="modal"><button id="b11-under-btn">x</button></div>';
+  const next = h.$('#tour-pop [data-tour="next"]');
+  next.focus();
+  h.window.overlayFocusTrap_({ target: next });
+  assert.strictEqual(doc.activeElement, next, 'THE REGRESSION: the overlay focus trap pulled focus into the overlay beneath the dim');
+  h.window.closeOverlay(ov);
+  // The tour's navigation is not "using a tab".
+  h.run.drain();
+  h.read('_viewUsageSent = Object.create(null)');
+  h.read('recordViewUsage_')('metricsMy');
+  assert.strictEqual(h.run.pending('recordViewEnter').length, 0, 'no usage row while the tour walks the tabs');
+  h.click(next); h.flushTimers(); h.flushTimers();
+  h.click(h.$('#tour-pop [data-tour="next"]'));            // Done
+  assert.strictEqual(h.read('TOUR_ACTIVE'), false);
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'), 'a complete run is stamped');
+  h.read('recordViewUsage_')('metricsMy');
+  assert.strictEqual(h.run.pending('recordViewEnter').length, 1, 'and outside the tour a tab visit is logged as before');
+  // A view that never finishes loading: the step is given up on at the cap, and the run is NOT stamped seen.
+  target.remove();
+  doc.body.appendChild(loader);
+  h.window.localStorage.setItem('umsTour', JSON.stringify({ seenVersion: 1 }));
+  h.window.tourStart('full');
+  h.flushTimers();
+  assert.strictEqual(h.read('TOUR_I'), 0);
+  const realNow = h.window.Date.now;
+  h.window.Date.now = () => realNow() + 60000;             // past TOUR_LOAD_CAP_MS
+  try { h.flushTimers(); h.flushTimers(); } finally { h.window.Date.now = realNow; }
+  assert.strictEqual(h.read('TOUR_I'), 1, 'given up on at the cap');
+  h.click(h.$('#tour-pop [data-tour="next"]'));
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, 1, 'THE RULE: not stamped — the rep has not seen that step');
+  assert.ok(/will be offered again next time/.test(h.$('#toast-stack').textContent));
+  // Skip is the rep's own choice, and always stamps.
+  h.window.tourStart('full');
+  h.flushTimers();
+  h.dispatchKey('Escape');
+  assert.strictEqual(JSON.parse(h.window.localStorage.getItem('umsTour')).seenVersion, h.read('TOUR_VERSION'));
+});
+
+test('F61 DOM: a lunch reminder left on screen does not record a SECOND lunch once the rep has been to lunch and back — and a punch made in another window is seen before the click punches', () => {
+  const h = boot();
+  const doc = h.document;
+  const state = (punches, acts) => ({ id: 'TEST_E1', name: 'Test Rep', timezone: 'Asia/Kolkata', adjustWindowDays: 30, today: '2026-11-19', punches: punches, nextActions: acts });
+  const morning = [{ type: 'ClockIn', time: '08:00:00' }];
+  const setState = (s) => h.read('empState = ' + JSON.stringify(s));
+  setState(state(morning, ['LunchOut', 'ClockOut', 'Adjust']));
+  h.read('currentView = "callNotes"');
+  const act = h.read('remindPunchAction_')('LunchOut');
+  assert.strictEqual(act.sig, '2026-11-19|1|ClockIn@08:00:00', 'the reminder remembers the punches it was offered under');
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', act);
+  const btn = () => Array.from(doc.querySelectorAll('#toast-stack .toast-sticky .toast-act')).find((b) => b.textContent === 'Lunch out');
+  // The rep goes to lunch and comes back (Lunch out is allowed AGAIN after Lunch in).
+  const after = morning.concat([{ type: 'LunchOut', time: '12:00:00' }, { type: 'LunchIn', time: '12:30:00' }]);
+  setState(state(after, ['LunchOut', 'ClockOut', 'Adjust']));
+  btn().click();
+  h.run.flushSuccess(state(after, ['LunchOut', 'ClockOut', 'Adjust']), 'getEmployeeState');
+  assert.strictEqual(h.run.pending('recordPunch').length, 0, 'THE REGRESSION: "is Lunch out allowed now" was yes, and the stale button recorded a second lunch');
+  assert.ok(/punches changed since this reminder/.test(doc.getElementById('toast-stack').textContent));
+  // The lunch was punched in ANOTHER window: this one's copy still says the morning.
+  setState(state(morning, ['LunchOut', 'ClockOut', 'Adjust']));
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', h.read('remindPunchAction_')('LunchOut'));
+  const btns = Array.from(doc.querySelectorAll('#toast-stack .toast-sticky .toast-act')).filter((b) => b.textContent === 'Lunch out');
+  btns[btns.length - 1].click();
+  assert.strictEqual(h.run.pending('recordPunch').length, 0, 'nothing is punched before the server says where the rep is');
+  h.run.flushSuccess(state(after, ['LunchOut', 'ClockOut', 'Adjust']), 'getEmployeeState');
+  assert.strictEqual(h.run.pending('recordPunch').length, 0, 'the other window\'s lunch is seen');
+  // Nothing changed: one click punches.
+  setState(state(morning, ['LunchOut', 'ClockOut', 'Adjust']));
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', h.read('remindPunchAction_')('LunchOut'));
+  const last = Array.from(doc.querySelectorAll('#toast-stack .toast-sticky .toast-act')).filter((b) => b.textContent === 'Lunch out').pop();
+  last.click();
+  h.run.flushSuccess(state(morning, ['LunchOut', 'ClockOut', 'Adjust']), 'getEmployeeState');
+  assert.deepStrictEqual(h.run.pending('recordPunch').map((c) => c.args[0]), ['LunchOut']);
+  h.run.drain();
+  // The ask itself failing judges on what this window has.
+  h.read('notifyRemind_')('Lunch starts now', 'toast-warn', h.read('remindPunchAction_')('LunchOut'));
+  Array.from(doc.querySelectorAll('#toast-stack .toast-sticky .toast-act')).filter((b) => b.textContent === 'Lunch out').pop().click();
+  h.run.flushFailure(new Error('offline'), 'getEmployeeState');
+  assert.strictEqual(h.run.pending('recordPunch').length, 1);
+});
+
+test('F61 DOM: the note that did not save is shown with the real cause — not "this browser blocked the clipboard"; and a view-as switch keeps the What\'s-new star and the badges on the nav', () => {
+  const h = bootLog();
+  h.read('cnShowUnsavedNote_')(null, { values: { caller: 'Jane Roe', issue: 'Refill' } });
+  const ov = h.$('#manual-copy-overlay.open');
+  assert.ok(ov && /Jane Roe/.test(ov.querySelector('#manual-copy-val').value));
+  assert.strictEqual(ov.querySelector('#manual-copy-h').textContent, 'This call note was not saved');
+  assert.ok(/could not be saved/.test(ov.querySelector('.manual-copy-why').textContent), ov.textContent);
+  assert.ok(!/blocked the clipboard|nothing was copied/.test(ov.textContent), 'THE REGRESSION: a failed save was explained as a clipboard failure');
+  h.window.closeOverlay(ov);
+  // The clipboard's own failure still says so.
+  const cp = h.read('manualCopyModal_')('some text', 'The price');
+  assert.ok(/blocked the clipboard/.test(cp.textContent) && cp.querySelector('#manual-copy-h').textContent === 'Copy it by hand');
+  h.window.closeOverlay(cp);
+  // A hostile reason is text.
+  const hx = h.read('manualCopyModal_')('t', 'w', { title: '<img src=x onerror=1>', why: '<b>why</b>' });
+  assert.ok(!hx.querySelector('img') && !hx.querySelector('.manual-copy-why b'));
+  h.window.closeOverlay(hx);
+
+  // View-as.
+  const h2 = boot();
+  h2.bootShell({ isAdmin: true, isManager: true });
+  h2.run.drain();
+  h2.read('WHATSNEW_STATE = { title: "What is new", bodyMd: "- one", stamp: "s1" }');
+  h2.read('whatsNewRenderSidebarBtn_')();
+  h2.read('cnRenderStaleBadge_')(3);
+  h2.read('renderHealthBadge_')({ failing: true, count: 2 });
+  const q = (sel) => h2.document.querySelector(sel);
+  assert.ok(q('#sb-whatsnew-btn') && q('.sb-link[data-tool="callNotes"] .cn-stale-badge') && q('.sb-link[data-tool="manage"] .sb-health-dot'), 'before: the star, a badge and the health dot are on the nav');
+  h2.read('viewAsSet_')('manager');
+  h2.run.drain();
+  assert.ok(q('#sb-whatsnew-btn') && q('#hdr-whatsnew-btn'), 'THE REGRESSION: the What\'s-new star went with the re-rendered sidebar and never came back');
+  assert.strictEqual(q('.sb-link[data-tool="callNotes"] .cn-stale-badge').textContent, '3', 'a poller\'s badge is carried across');
+  assert.ok(q('.nav-btn[data-tool="callNotes"] .cn-stale-badge'), 'on both nav forms');
+  assert.ok(q('.sb-link[data-tool="manage"] .sb-health-dot'));
+  assert.strictEqual(h2.document.querySelectorAll('.sb-link[data-tool="callNotes"] .cn-stale-badge').length, 1, 'once');
+  assert.ok(q('.sb-link[data-tool="callNotes"] .sb-icon') && q('.sb-link[data-tool="callNotes"] .sb-lbl'), 'the shell\'s own icon and label are the new ones');
+  // A role with no Manage tool has no button for its dot — it goes nowhere.
+  h2.read('viewAsSet_')('csr');
+  h2.run.drain();
+  assert.ok(!q('.sb-link[data-tool="manage"]') && !q('.sb-health-dot'));
+  assert.ok(q('#sb-whatsnew-btn') && q('.sb-link[data-tool="callNotes"] .cn-stale-badge'));
+});
+
+test('F62 DOM: the Scratchpad\'s "Delete page" confirm is styled destructive', async () => {
+  const h = boot();
+  const p = b11Pad(h);
+  h.read('cnOpenScratchpadModal_')();
+  p.load('main v0', 100);
+  h.read('cnScratchPageDelete_')();
+  const dlg = h.$('.ui-dialog');
+  assert.ok(dlg && /Delete "Notes"\?/.test(dlg.textContent));
+  assert.ok(dlg.querySelector('.ui-dialog-ok').classList.contains('is-danger'), 'THE REGRESSION: `danger: true` is not an option the dialog reads — a delete looked like any OK');
+  h.click(dlg.querySelector('.ui-dialog-cancel'));
+  await tick();
+  assert.strictEqual(h.run.pending('scratchpadPageOp').length, 0);
+  h.read('cnCloseScratchpadModal_')();
+});
+
+test('F63 DOM: the punch-adjustment, Day Edit and manager time-off modals ASK before Escape, Cancel or the backdrop discards typed work — Keep editing keeps it, a clean modal closes at once, and their own save closes without asking', async () => {
+  const h = boot();
+  b9TourSeen(h);   // the first-run tour takes Escape for itself
+  h.bootShell({ isManager: true });
+  h.flushTimers();
+  h.run.drain();
+  const open = (id) => { const el = h.$('#' + id); return !!(el && el.classList.contains('open')); };
+  const keep = async () => { h.click(b9Ask(h).querySelector('.ui-dialog-cancel')); await tick(); };
+  const discard = async () => { h.click(b9Ask(h).querySelector('.ui-dialog-ok')); await tick(); };
+
+  // ── Punch adjustment ──
+  h.window.openAdjustModal(null, null);
+  h.run.drain();
+  h.dispatchKey('Escape');
+  assert.ok(!open('adjust-overlay') && !h.$('.ui-dialog'), 'nothing typed: Escape closes at once');
+  h.window.openAdjustModal(null, null);
+  h.run.drain();
+  h.setField('adj-date', '2026-11-18');
+  h.$('#adj-date').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  h.dispatchKey('Escape');
+  assert.ok(!open('adjust-overlay'), 'picking a date alone is not work (nor is the time the modal opened with)');
+  h.window.openAdjustModal(null, null);
+  h.run.drain();
+  h.setField('adj-time', '17:05');
+  h.dispatchKey('Escape');
+  assert.ok(open('adjust-overlay') && b9Ask(h), 'a time the rep changed is');
+  await discard();
+  h.window.openAdjustModal(null, null);
+  h.run.drain();
+  h.setField('adj-reason', 'Forgot to clock out — was on a call');
+  h.dispatchKey('Escape', { target: h.$('#adj-reason') });
+  assert.ok(open('adjust-overlay') && b9Ask(h), 'THE REGRESSION: one Escape threw a typed reason away');
+  assert.ok(/this punch adjustment/.test(b9Ask(h).textContent));
+  await keep();
+  assert.ok(open('adjust-overlay') && h.$('#adj-reason').value === 'Forgot to clock out — was on a call', 'Keep editing keeps it');
+  h.click('#adj-cancel');
+  assert.ok(b9Ask(h), 'Cancel asks too');
+  await keep();
+  h.$('#adjust-overlay').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(b9Ask(h), 'and the backdrop');
+  await discard();
+  assert.ok(!open('adjust-overlay'), 'Discard closes');
+  // Its own submit closes without a question.
+  h.window.openAdjustModal(null, null);
+  h.run.drain();
+  h.setField('adj-date', '2026-11-18'); h.setField('adj-time', '17:05'); h.setField('adj-reason', 'Forgot');
+  h.click('#adj-submit');
+  h.run.flushSuccess({ success: true, count: 1 }, 'submitPunchAdjustRequests');
+  assert.ok(!open('adjust-overlay') && !h.$('.ui-dialog'), 'a submitted batch is not "discarded"');
+  h.run.drain();
+
+  // ── Day Edit ──
+  h.window.openDayEditModal('E-9', 'Nina Patel', '', 'America/Chicago');
+  h.run.drain();
+  h.dispatchKey('Escape');
+  assert.ok(!open('day-edit-overlay') && !h.$('.ui-dialog'), 'an untouched day closes at once');
+  h.window.openDayEditModal('E-9', 'Nina Patel', '', 'America/Chicago');
+  h.run.drain();
+  h.setField('de-clockout', '17:30');
+  h.dispatchKey('Escape', { target: h.$('#de-clockout') });
+  assert.ok(open('day-edit-overlay') && b9Ask(h) && /this day/.test(b9Ask(h).textContent), 'THE REGRESSION: one Escape lost a filled Day Edit');
+  await keep();
+  assert.strictEqual(h.$('#de-clockout').value, '17:30');
+  // Moving to another day loads over the form — the picker is not "work", and nothing typed is left.
+  h.setField('de-date', '2026-11-10');
+  h.$('#de-date').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  h.run.drain();
+  h.dispatchKey('Escape');
+  assert.ok(!open('day-edit-overlay') && !h.$('.ui-dialog'), 'a day just loaded has nothing to discard');
+  // A slot filled by a button (no input event) is work too.
+  h.window.openDayEditModal('E-9', 'Nina Patel', '', 'America/Chicago');
+  h.run.drain();
+  h.click('#de-break-add');
+  h.click('#de-cancel');
+  assert.ok(b9Ask(h), 'an added break is asked about');
+  await discard();
+  assert.ok(!open('day-edit-overlay'));
+
+  // ── Manager time off ──
+  h.window.openMgrTimeOffModal({ liveStatus: [{ id: 'E-9', name: 'Nina Patel' }] });
+  h.dispatchKey('Escape');
+  assert.ok(!open('mgr-timeoff-overlay') && !h.$('.ui-dialog'), 'untouched: closes at once');
+  h.window.openMgrTimeOffModal({ liveStatus: [{ id: 'E-9', name: 'Nina Patel' }] });
+  h.setField('mto-notes', 'Called in — family emergency');
+  h.$('#mgr-timeoff-overlay').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
+  assert.ok(open('mgr-timeoff-overlay') && b9Ask(h) && /this time-off request/.test(b9Ask(h).textContent), 'THE REGRESSION: a backdrop click lost the typed request');
+  await keep();
+  h.$('#mto-emp').value = 'E-9';
+  h.click('#mto-submit');
+  h.run.flushSuccess({ success: true, status: 'Approved' }, 'managerSubmitTimeOff');
+  assert.ok(!open('mgr-timeoff-overlay') && !h.$('.ui-dialog'), 'a filed request closes without a question');
 });

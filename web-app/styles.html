@@ -2036,6 +2036,11 @@
     align-items: center; justify-content: center; padding: 20px;
   }
   .overlay.open { display: flex; animation: fadein .18s var(--ease); }
+  /* F62 (cycle 26): a confirm or a prompt is the one thing on screen that must
+     be answered, so it paints above the two non-modal panels that sit over the
+     overlay layer — the Reference drawer (55) and the floating Scratchpad (56).
+     The Scratchpad's own "New page" and "Delete page" dialogs opened UNDER it. */
+  .overlay.ui-dialog { z-index: 57; }
   /* Round 2 · 8c — hover-mode tethered popover. The backdrop becomes
      transparent + non-interactive so the rep can sweep across other
      calendar cells without dismissing; the modal itself catches pointer
