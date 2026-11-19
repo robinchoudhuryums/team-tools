@@ -6681,7 +6681,7 @@ function planPayPeriodClose_(roster, perDayByEmp, toRows, parRows, periods, toda
         // is refused, and the list must not say the rep vouched for what shows.
         inferred.push({ id: emp.id, name: emp.name, timezone: emp.timezone || '', date: x.date, type: x.type, time: x.time,
           editable: x.date >= (emp.todayIso ? addDaysIso_(emp.todayIso, -adjustWindowDays) : editableFrom),
-          requested: !!x.time && asked[payCloseAskKey_(emp.id, x.date, x.type)] === x.time });
+          requested: asked[payCloseAskKey_(emp.id, x.date, x.type)] === x.time });
       });
     });
     inferred.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));

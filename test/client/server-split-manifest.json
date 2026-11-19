@@ -4778,6 +4778,16 @@
     "recordPresence"
    ],
    "moved": []
+  },
+  {
+   "date": "2026-11-19",
+   "why": "FS1: the requested test is the one comparison (an inferred entry always carries its time)",
+   "added": [],
+   "removed": [],
+   "changed": [
+    "planPayPeriodClose_"
+   ],
+   "moved": []
   }
  ],
  "order": [
@@ -13755,7 +13765,7 @@
   "planPayPeriodClose_": {
    "file": "20_timeclock.js",
    "kind": "function",
-   "sha": "7d83ecb3d6b04b44"
+   "sha": "b34c8b066dfeb8b5"
   },
   "planPtoAccrualRun_": {
    "file": "20_timeclock.js",
